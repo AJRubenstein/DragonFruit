@@ -103,7 +103,8 @@ struct RowSpan {
 
 #[derive(Debug)]
 struct ScanlineSegmentIndex {
-    starts: Vec<Vec<ActiveEdge>>,
+    starts: Vec<ActiveEdge>,
+    row_offsets: Vec<usize>,
     y_start: usize,
     y_end_exclusive: usize,
 }
@@ -917,7 +918,7 @@ fn apply_edge_box_blur_to_mask_in_roi(
 }
 
 fn encode_mask_to_rle(mask: &[u8], width: usize, height: usize) -> Vec<crate::rle::RleRun> {
-    use crate::rle::{emit_row, RleAccum};
+    use crate::rle::{RleAccum, emit_row};
 
     let mut rle = RleAccum::new();
     for row_index in 0..height {
@@ -935,7 +936,12 @@ fn build_scanline_segment_index(
     subrow_phase: f32,
 ) -> Option<ScanlineSegmentIndex> {
     let sub_height = height * aa_steps;
-    let mut starts = vec![Vec::<usize>::new(); sub_height];
+    if sub_height == 0 {
+        return None;
+    }
+
+    let mut start_counts = vec![0usize; sub_height];
+    let mut start_rows = vec![usize::MAX; segments.len()];
     let mut end_exclusive = vec![0usize; segments.len()];
     let mut global_start = sub_height;
     let mut global_end = 0usize;
@@ -953,7 +959,8 @@ fn build_scanline_segment_index(
             continue;
         }
 
-        starts[clamped_start].push(idx);
+        start_counts[clamped_start] += 1;
+        start_rows[idx] = clamped_start;
         end_exclusive[idx] = clamped_end;
         global_start = global_start.min(clamped_start);
         global_end = global_end.max(clamped_end);
@@ -963,27 +970,52 @@ fn build_scanline_segment_index(
         return None;
     }
 
-    let mut indexed = vec![Vec::<ActiveEdge>::new(); sub_height];
+    let mut row_offsets = vec![0usize; sub_height + 1];
     for y in 0..sub_height {
-        if starts[y].is_empty() {
+        row_offsets[y + 1] = row_offsets[y] + start_counts[y];
+    }
+
+    let total_starts = row_offsets[sub_height];
+    let mut indexed = vec![
+        ActiveEdge {
+            x: 0.0,
+            dx_dy: 0.0,
+            wind: 0,
+            end_exclusive: 0,
+        };
+        total_starts
+    ];
+    let mut write_offsets = row_offsets[..sub_height].to_vec();
+
+    for (seg_idx, seg) in segments.iter().enumerate() {
+        let y = start_rows[seg_idx];
+        if y == usize::MAX {
             continue;
         }
+
         let y_sample = (y as f32 + subrow_phase) / f_steps;
-        for seg_idx in &starts[y] {
-            let seg = &segments[*seg_idx];
-            let x = seg.x1 + (y_sample - seg.y1) * seg.dx_dy;
-            indexed[y].push(ActiveEdge {
-                x,
-                dx_dy: seg.dx_dy / f_steps,
-                wind: seg.wind,
-                end_exclusive: end_exclusive[*seg_idx],
-            });
+        let x = seg.x1 + (y_sample - seg.y1) * seg.dx_dy;
+        let pos = write_offsets[y];
+        indexed[pos] = ActiveEdge {
+            x,
+            dx_dy: seg.dx_dy / f_steps,
+            wind: seg.wind,
+            end_exclusive: end_exclusive[seg_idx],
+        };
+        write_offsets[y] += 1;
+    }
+
+    for y in global_start..global_end {
+        let start = row_offsets[y];
+        let end = row_offsets[y + 1];
+        if end.saturating_sub(start) > 1 {
+            indexed[start..end].sort_unstable_by(active_edge_cmp);
         }
-        indexed[y].sort_unstable_by(active_edge_cmp);
     }
 
     Some(ScanlineSegmentIndex {
         starts: indexed,
+        row_offsets,
         y_start: global_start,
         y_end_exclusive: global_end,
     })
@@ -1047,6 +1079,7 @@ pub fn rasterize_layer_with_stats(
         return (mask, stats);
     };
     let scanline_starts = scanline_index.starts;
+    let scanline_row_offsets = scanline_index.row_offsets;
     let y_start = scanline_index.y_start;
     let y_end_exclusive = scanline_index.y_end_exclusive;
     let track_aa_components = compute_area_stats && aa_enabled;
@@ -1142,10 +1175,14 @@ pub fn rasterize_layer_with_stats(
         }
 
         active_edges.retain(|edge| edge.end_exclusive > y);
-        if let Some(starting) = scanline_starts.get(y) {
-            if !starting.is_empty() {
-                merge_active_edges_sorted(&mut active_edges, starting, &mut merge_scratch);
-            }
+        let row_start = scanline_row_offsets[y];
+        let row_end = scanline_row_offsets[y + 1];
+        if row_start != row_end {
+            merge_active_edges_sorted(
+                &mut active_edges,
+                &scanline_starts[row_start..row_end],
+                &mut merge_scratch,
+            );
         }
         if active_edges.is_empty() {
             continue;
@@ -1469,6 +1506,7 @@ fn rasterize_layer_3daa(
         let y_start = scanline_index.y_start;
         let y_end_exclusive = scanline_index.y_end_exclusive;
         let scanline_starts = scanline_index.starts;
+        let scanline_row_offsets = scanline_index.row_offsets;
 
         active_edges.clear();
         row_accum.fill(0);
@@ -1482,10 +1520,14 @@ fn rasterize_layer_3daa(
         for y in y_start..y_end_exclusive {
             // y is already a physical row index (aa_steps=1).
             active_edges.retain(|edge| edge.end_exclusive > y);
-            if let Some(starting) = scanline_starts.get(y) {
-                if !starting.is_empty() {
-                    merge_active_edges_sorted(&mut active_edges, starting, &mut merge_scratch);
-                }
+            let row_start = scanline_row_offsets[y];
+            let row_end = scanline_row_offsets[y + 1];
+            if row_start != row_end {
+                merge_active_edges_sorted(
+                    &mut active_edges,
+                    &scanline_starts[row_start..row_end],
+                    &mut merge_scratch,
+                );
             }
 
             if !active_edges.is_empty() {
@@ -1742,7 +1784,7 @@ pub fn rasterize_layer_rle(
     layer_index: u32,
     compute_area_stats: bool,
 ) -> (Vec<crate::rle::RleRun>, LayerAreaStatsV3) {
-    use crate::rle::{emit_row, emit_zero_rows, RleAccum};
+    use crate::rle::{RleAccum, emit_row, emit_zero_rows};
 
     let width = job.effective_render_width_px() as usize;
     let height = job.source_height_px as usize;
@@ -1797,6 +1839,7 @@ pub fn rasterize_layer_rle(
         return (rle.finish(), stats);
     };
     let scanline_starts = scanline_index.starts;
+    let scanline_row_offsets = scanline_index.row_offsets;
     let y_start = scanline_index.y_start;
     let y_end_exclusive = scanline_index.y_end_exclusive;
     let track_aa_components = compute_area_stats && aa_enabled;
@@ -1916,10 +1959,14 @@ pub fn rasterize_layer_rle(
         }
 
         active_edges.retain(|edge| edge.end_exclusive > y);
-        if let Some(starting) = scanline_starts.get(y) {
-            if !starting.is_empty() {
-                merge_active_edges_sorted(&mut active_edges, starting, &mut merge_scratch);
-            }
+        let row_start = scanline_row_offsets[y];
+        let row_end = scanline_row_offsets[y + 1];
+        if row_start != row_end {
+            merge_active_edges_sorted(
+                &mut active_edges,
+                &scanline_starts[row_start..row_end],
+                &mut merge_scratch,
+            );
         }
         if active_edges.is_empty() {
             continue;
