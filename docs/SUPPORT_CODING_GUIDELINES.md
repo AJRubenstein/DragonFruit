@@ -91,3 +91,17 @@ For support interaction changes:
 - Don’t let hover state mutate while gizmo drag lock is active
 - Don’t assume map key uniqueness if IDs may be reused by different target sources
 - Don’t update only one rendering path (batched or detailed) when changing interaction behavior
+
+## 10) Visualisation layers vs. renderer paths
+
+`SupportRenderer` runs the batched (instanced) and detailed (per-type)
+renderer paths simultaneously — each support flows through exactly one
+of them, but both paths emit meshes into the scene together. A new
+visualisation that needs to cover EVERY support (e.g. the support
+volume halo introduced with `SupportVolumeHalo`) should subscribe to
+`SupportState` directly and emit its own mesh layer as a sibling of the
+renderer branches — not as a child of either path. This decouples
+visualisation coverage from the internal batched/detailed routing.
+
+See `docs/SHADER_GUIDELINES.md` for the shader patterns these layers
+use (onBeforeCompile, useRef uniforms, render-order discipline).

@@ -14463,20 +14463,6 @@ export default function Home() {
               zOffsetMm={0}
             />
 
-            <IslandOverlayControls
-              key="analysis-overlay-controls"
-              enabled={islands.overlayEnabled}
-              onEnabledChange={islands.setOverlayEnabled}
-              brushRadiusMm={islands.overlayBrushRadius}
-              onBrushRadiusChange={islands.setOverlayBrushRadius}
-              color={islands.overlayColor}
-              onColorChange={islands.setOverlayColor}
-              opacity={islands.overlayOpacity}
-              onOpacityChange={islands.setOverlayOpacity}
-              taper={islands.overlayTaper}
-              onTaperChange={islands.setOverlayTaper}
-              islandCount={islands.scanData?.islands.length ?? 0}
-            />
 
             <IslandVoxelControls
               key="analysis-island-voxel"
@@ -14564,6 +14550,24 @@ export default function Home() {
         ) : scene.mode === 'support' ? (
           <>
             <SupportSidebar key="support-settings" />
+            <IslandOverlayControls
+              key="support-overlay-controls"
+              enabled={islands.overlayEnabled}
+              onEnabledChange={islands.setOverlayEnabled}
+              brushRadiusMm={islands.overlayBrushRadius}
+              onBrushRadiusChange={islands.setOverlayBrushRadius}
+              color={islands.overlayColor}
+              onColorChange={islands.setOverlayColor}
+              opacity={islands.overlayOpacity}
+              onOpacityChange={islands.setOverlayOpacity}
+              taper={islands.overlayTaper}
+              onTaperChange={islands.setOverlayTaper}
+              islandCount={islands.scanData?.islands.length ?? 0}
+              haloIntensity={islands.supportVolumeHaloIntensity}
+              onHaloIntensityChange={islands.setSupportVolumeHaloIntensity}
+              showSupportVolumeHalo={islands.showSupportVolumeHalo}
+              onShowSupportVolumeHaloChange={islands.setShowSupportVolumeHalo}
+            />
           </>
         ) : scene.mode === 'printing' ? (
           <>
@@ -14944,6 +14948,10 @@ export default function Home() {
             overlayColor={islands.overlayColor}
             overlayOpacity={islands.overlayOpacity}
             overlaySelectedIslandId={islands.selectedIslandId}
+            overlayHaloIntensity={islands.overlayHaloIntensity}
+            overlayHaloPulseEnabled={islands.overlayHaloPulseEnabled}
+            showSupportVolumeHalo={islands.showSupportVolumeHalo}
+            supportVolumeHaloIntensity={islands.supportVolumeHaloIntensity}
             ambientIntensity={scene.ambientIntensity}
             directionalIntensity={scene.directionalIntensity}
             materialRoughness={scene.materialRoughness}

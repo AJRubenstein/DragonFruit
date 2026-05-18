@@ -14,11 +14,21 @@ type IslandOverlayControlsProps = {
   taper: number;
   onTaperChange: (taper: number) => void;
   islandCount: number;
+  // Halo shader controls — primary surface.
+  haloIntensity?: number;
+  onHaloIntensityChange?: (intensity: number) => void;
+  // Support coverage halo toggle (step 10).
+  showSupportVolumeHalo?: boolean;
+  onShowSupportVolumeHaloChange?: (show: boolean) => void;
 };
 
 /**
- * Control card for island overlay visualization settings.
- * Displays toggle, brush size, color, and opacity controls.
+ * Control card for the island overlay. Primary surface is the cognitive
+ * minimum — one slider for halo intensity, one toggle for the breathing
+ * pulse animation, one toggle for support coverage. Existing legacy
+ * controls (brushRadiusMm / color / opacity / taper) drive the vertex-
+ * color painter path and live under an "Advanced" disclosure so power
+ * users can still tweak them without crowding the primary surface.
  */
 export function IslandOverlayControls({
   enabled,
@@ -31,12 +41,16 @@ export function IslandOverlayControls({
   onOpacityChange,
   taper,
   onTaperChange,
-  islandCount
+  islandCount,
+  haloIntensity = 0.7,
+  onHaloIntensityChange,
+  showSupportVolumeHalo = false,
+  onShowSupportVolumeHaloChange,
 }: IslandOverlayControlsProps) {
   const [expanded, setExpanded] = useState(enabled);
+  const [advancedExpanded, setAdvancedExpanded] = useState(false);
   const [editingColor, setEditingColor] = useState(color);
 
-  // Sync editing values when props change
   React.useEffect(() => {
     setEditingColor(color);
   }, [color]);
@@ -100,100 +114,129 @@ export function IslandOverlayControls({
             </div>
           )}
 
+          {/* Primary halo controls. */}
           <div className="space-y-1">
-            <label className="ui-meta flex justify-between">
-              <span>Brush Size</span>
-              <div className="flex items-center gap-1">
-                <NumberInput
-                  value={brushRadiusMm}
-                  onChange={(val) => {
-                    if (val >= 0.1 && val <= 10.0) {
-                      onBrushRadiusChange(val);
-                    }
-                  }}
-                  className="ui-input w-14 !h-8 px-1.5 py-0 text-[11px] text-right no-spinners"
-                />
-                <span className="ui-meta">mm</span>
-              </div>
+            <label
+              className="ui-meta flex justify-between"
+              title="How loudly the halos draw attention. Lower values make small islands quieter without hiding them."
+            >
+              <span>Halo intensity</span>
+              <span style={{ color: 'var(--text-strong)' }}>{Math.round(haloIntensity * 100)}%</span>
             </label>
             <input
               type="range"
-              min="0.1"
-              max="5.0"
-              step="0.1"
-              value={brushRadiusMm}
-              onChange={(e) => onBrushRadiusChange(parseFloat(e.target.value))}
+              min="0"
+              max="1"
+              step="0.05"
+              value={haloIntensity}
+              onChange={(e) => onHaloIntensityChange?.(parseFloat(e.target.value))}
               className="ui-range"
+              title="How loudly the halos draw attention. Lower values make small islands quieter without hiding them."
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="ui-meta">Color</label>
-            <div className="flex gap-1.5 items-center">
-              <input
-                type="color"
-                value={color}
-                onChange={(e) => {
-                  const newColor = e.target.value;
-                  setEditingColor(newColor);
-                  onColorChange(newColor);
-                }}
-                className="w-10 h-8 rounded border cursor-pointer p-0"
-                style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}
-              />
-              <Input
-                type="text"
-                value={editingColor}
-                onChange={(e) => setEditingColor(e.target.value)}
-                onBlur={(e) => {
-                  const val = e.target.value.trim();
-                  if (/^#[0-9a-fA-F]{6}$/.test(val) || /^#[0-9a-fA-F]{3}$/.test(val)) {
-                    onColorChange(val);
-                  } else {
-                    setEditingColor(color);
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.currentTarget.blur();
-                  }
-                }}
-                className="flex-1 !h-8 px-2 py-0 text-sm uppercase"
-                placeholder="#FF0000"
-              />
+
+          {/* Support Coverage sub-section — visually divided from island controls. */}
+          <div
+            className="pt-2.5 mt-1.5"
+            style={{ borderTop: '1px solid var(--border-subtle)' }}
+          >
+            <div className="ui-meta mb-1.5" style={{ color: 'var(--text-strong)' }}>
+              Support Coverage
             </div>
+            <label
+              className="ui-meta flex items-center gap-2 cursor-pointer"
+              title="Visualise roughly how much model each support is holding up."
+            >
+              <input
+                type="checkbox"
+                checked={showSupportVolumeHalo}
+                onChange={(e) => onShowSupportVolumeHaloChange?.(e.target.checked)}
+              />
+              <span>Show support coverage</span>
+            </label>
           </div>
 
-          <div className="space-y-1">
-            <label className="ui-meta flex justify-between">
-              <span>Opacity</span>
-              <span style={{ color: 'var(--text-strong)' }}>{Math.round(opacity * 100)}%</span>
-            </label>
-            <input
-              type="range"
-              min="0.1"
-              max="1.0"
-              step="0.05"
-              value={opacity}
-              onChange={(e) => onOpacityChange(parseFloat(e.target.value))}
-              className="ui-range"
-            />
-          </div>
+          {/* Advanced disclosure — preserves the legacy painter knobs. */}
+          <div
+            className="pt-2.5 mt-1.5"
+            style={{ borderTop: '1px solid var(--border-subtle)' }}
+          >
+            <button
+              type="button"
+              onClick={() => setAdvancedExpanded(!advancedExpanded)}
+              className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide"
+              style={{ color: 'var(--text-muted)' }}
+              title="Override automatic halo parameters and the legacy vertex-colour brush."
+            >
+              <svg
+                className="w-3 h-3 transform transition-transform"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                style={{ transform: advancedExpanded ? 'rotate(90deg)' : undefined }}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+              <span>Advanced</span>
+            </button>
 
-          <div className="space-y-1">
-            <label className="ui-meta flex justify-between">
-              <span>Taper</span>
-              <span style={{ color: 'var(--text-strong)' }}>{Math.round((1 - taper) * 100)}%</span>
-            </label>
-            <input
-              type="range"
-              min="0.0"
-              max="1.0"
-              step="0.05"
-              value={taper}
-              onChange={(e) => onTaperChange(parseFloat(e.target.value))}
-              className="ui-range"
-            />
+            {advancedExpanded && (
+              <div className="mt-2 space-y-2.5">
+                <div className="space-y-1">
+                  <label className="ui-meta">Color</label>
+                  <div className="flex gap-1.5 items-center">
+                    <input
+                      type="color"
+                      value={color}
+                      onChange={(e) => {
+                        const newColor = e.target.value;
+                        setEditingColor(newColor);
+                        onColorChange(newColor);
+                      }}
+                      className="w-10 h-8 rounded border cursor-pointer p-0"
+                      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}
+                    />
+                    <Input
+                      type="text"
+                      value={editingColor}
+                      onChange={(e) => setEditingColor(e.target.value)}
+                      onBlur={(e) => {
+                        const val = e.target.value.trim();
+                        if (/^#[0-9a-fA-F]{6}$/.test(val) || /^#[0-9a-fA-F]{3}$/.test(val)) {
+                          onColorChange(val);
+                        } else {
+                          setEditingColor(color);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      className="flex-1 !h-8 px-2 py-0 text-sm uppercase"
+                      placeholder="#0433FF"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="ui-meta flex justify-between">
+                    <span>Opacity</span>
+                    <span style={{ color: 'var(--text-strong)' }}>{Math.round(opacity * 100)}%</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1.0"
+                    step="0.05"
+                    value={opacity}
+                    onChange={(e) => onOpacityChange(parseFloat(e.target.value))}
+                    className="ui-range"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

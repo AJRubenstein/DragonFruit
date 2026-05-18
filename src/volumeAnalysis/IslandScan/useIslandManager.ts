@@ -40,13 +40,21 @@ export function useIslandManager({ geom, transform, layerHeightMm }: IslandManag
   // UI State
   const [scanCardExpanded, setScanCardExpanded] = useState<boolean>(true);
 
-  // Overlay State
-  const [overlayEnabled, setOverlayEnabled] = useState<boolean>(false);
+  // Overlay State. enabled + support coverage default ON so users see the
+  // feature without having to discover the toggles.
+  const [overlayEnabled, setOverlayEnabled] = useState<boolean>(true);
   const [overlayBrushRadius, setOverlayBrushRadius] = useState<number>(0.5);
-  const [overlayColor, setOverlayColor] = useState<string>('#ff0000');
+  // Default blue picked for visibility against the typical pink/magenta
+  // model colour and against the orange supports.
+  const [overlayColor, setOverlayColor] = useState<string>('#0433FF');
   const [overlayOpacity, setOverlayOpacity] = useState<number>(1.0);
   const [showIslandIdLabels, setShowIslandIdLabels] = useState<boolean>(false);
   const [overlayTaper, setOverlayTaper] = useState<number>(0.60);
+  // Halo shader state (primary cognitive surface).
+  const [overlayHaloIntensity, setOverlayHaloIntensity] = useState<number>(0.7);
+  const [overlayHaloPulseEnabled, setOverlayHaloPulseEnabled] = useState<boolean>(true);
+  const [showSupportVolumeHalo, setShowSupportVolumeHalo] = useState<boolean>(true);
+  const [supportVolumeHaloIntensity, setSupportVolumeHaloIntensity] = useState<number>(0.7);
 
   // Selection State
   const [selectedIslandId, setSelectedIslandId] = useState<number | null>(null);
@@ -227,6 +235,10 @@ export function useIslandManager({ geom, transform, layerHeightMm }: IslandManag
     overlayOpacity, setOverlayOpacity,
     showIslandIdLabels, setShowIslandIdLabels,
     overlayTaper, setOverlayTaper,
+    overlayHaloIntensity, setOverlayHaloIntensity,
+    overlayHaloPulseEnabled, setOverlayHaloPulseEnabled,
+    showSupportVolumeHalo, setShowSupportVolumeHalo,
+    supportVolumeHaloIntensity, setSupportVolumeHaloIntensity,
     selectedIslandId, setSelectedIslandId,
     showMerged, setShowMerged,
     voxelEnabled, setVoxelEnabled,

@@ -336,6 +336,11 @@ export function rleLabelComponents(mask: RleMask, connectivity: 4 | 8 = 4): { la
         const prevRow = y > 0 ? labelRows[y - 1] : null;
         const currentRowLabels: number[] = [];
 
+        if (!row) {
+            labelRows[y] = new Int32Array(0);
+            continue;
+        }
+
         for (let i = 0; i < row.length; i += 2) {
             const start = row[i];
             const len = row[i + 1];

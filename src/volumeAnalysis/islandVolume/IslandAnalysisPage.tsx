@@ -97,6 +97,8 @@ export function IslandAnalysisPage() {
                             centerY: p.y,
                             baseZ: p.z,
                             pixelCount: 1,
+                            weight: 0,
+                            geometryHeight: 0,
                             geometry: geom,
                         };
                     })}

@@ -8,6 +8,8 @@ import { NormalDebugMaterial } from './normalDebug';
 import { WireframeMaterial } from './wireframe';
 import { XrayMaterial } from './xray';
 import { OverhangHeatmapMaterial } from './overhangHeatmap';
+import type { SupportCoverageTipData } from './softClay';
+export type { SupportCoverageTipData } from './softClay';
 
 export function MeshShaderMaterial({
   shaderType,
@@ -28,6 +30,9 @@ export function MeshShaderMaterial({
   matcapVariant,
   flatUseVertexColors,
   toonSteps,
+  supportCoverageTips,
+  supportCoverageColor,
+  supportCoverageIntensity,
 }: {
   shaderType: MeshShaderType;
   isSelected: boolean;
@@ -47,6 +52,12 @@ export function MeshShaderMaterial({
   matcapVariant?: MatcapVariant;
   flatUseVertexColors?: boolean;
   toonSteps?: number;
+  // Support-coverage halo data — consumed by SoftClayMaterial's shader
+  // patch. Other shader variants (matcap, toon, xray, etc.) ignore it
+  // for now; extend their patches similarly to enable the halo there.
+  supportCoverageTips?: SupportCoverageTipData;
+  supportCoverageColor?: string;
+  supportCoverageIntensity?: number;
 }) {
   switch (shaderType) {
     case 'flat_unlit':
@@ -163,6 +174,9 @@ export function MeshShaderMaterial({
           meshColor={meshColor}
           materialRoughness={materialRoughness}
           clippingPlanes={clippingPlanes}
+          supportCoverageTips={supportCoverageTips}
+          supportCoverageColor={supportCoverageColor}
+          supportCoverageIntensity={supportCoverageIntensity}
         />
       );
   }

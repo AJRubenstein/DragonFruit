@@ -286,7 +286,7 @@
     {
       "id": "support",
       "matchPanelIds": ["support-settings"],
-      "order": ["visual-settings", "support-settings"],
+      "order": ["visual-settings", "support-settings", "support-overlay-controls"],
       "anchors": {
         "visual-settings": {
           "to": "support-settings",
@@ -295,6 +295,10 @@
         "support-settings": {
           "to": "visual-settings",
           "side": "left"
+        },
+        "support-overlay-controls": {
+          "to": "support-settings",
+          "side": "left-edge"
         }
       }
     },

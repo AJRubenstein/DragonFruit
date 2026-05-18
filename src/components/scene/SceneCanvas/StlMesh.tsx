@@ -177,6 +177,9 @@ function StlMeshComponent({
   isExternallyHovered,
   deferExternalTransformUpdates,
   supportSectionGeometry,
+  supportCoverageTips,
+  supportCoverageColor,
+  supportCoverageIntensity,
   children,
 }: {
   geometry: THREE.BufferGeometry;
@@ -242,6 +245,11 @@ function StlMeshComponent({
   /** When present (model+support mixed import), this geometry contains only the support-section
    *  triangles and is rendered as an orange overlay on top of the main mesh. */
   supportSectionGeometry?: THREE.BufferGeometry | null;
+  /** Packed support-coverage tip data — feeds SoftClayMaterial's
+   *  per-pixel halo shader. xyzr quartets, max 64 tips. */
+  supportCoverageTips?: import('@/features/shaders/mesh/registry').SupportCoverageTipData;
+  supportCoverageColor?: string;
+  supportCoverageIntensity?: number;
   children?: React.ReactNode;
 }) {
   // Access GPU picking state to detect gizmo hover
@@ -1187,6 +1195,9 @@ if (uDitherAmount > 0.0) {
             xrayOpacity={xrayOpacity}
             heatmapContrast={heatmapContrast}
             heatmapColors={heatmapColors}
+            supportCoverageTips={supportCoverageTips}
+            supportCoverageColor={supportCoverageColor}
+            supportCoverageIntensity={supportCoverageIntensity}
           />
         )}
       </mesh>

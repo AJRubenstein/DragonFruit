@@ -71,6 +71,7 @@ import {
   writeCornerOnlyWireframePositions,
 } from './SceneCanvasGeometry';
 import { ModelAttachedSupportLayer } from './ModelAttachedSupportLayer';
+import { useSupportCoverageTips } from '@/supports/SupportPrimitives/VolumeHalo/SupportCoveragePaintLayer';
 import {
   CameraModeEntryFramingController,
   CameraProjectionController,
@@ -319,6 +320,10 @@ export function SceneCanvas({
   overlayColor,
   overlayOpacity,
   overlaySelectedIslandId,
+  overlayHaloIntensity,
+  overlayHaloPulseEnabled,
+  showSupportVolumeHalo,
+  supportVolumeHaloIntensity,
   materialRoughness,
   scanResults,
   layerHeightMm,
@@ -424,6 +429,10 @@ export function SceneCanvas({
   overlayColor?: string;
   overlayOpacity?: number;
   overlaySelectedIslandId?: number | null;
+  overlayHaloIntensity?: number;
+  overlayHaloPulseEnabled?: boolean;
+  showSupportVolumeHalo?: boolean;
+  supportVolumeHaloIntensity?: number;
   ambientIntensity?: number;
   directionalIntensity?: number;
   headlightIntensity?: number;
@@ -818,6 +827,16 @@ export function SceneCanvas({
     if (visualActiveModelId === null && !activeModelId) return null;
     return activeModelId;
   }, [activeModelId, visualActiveModelId]);
+
+  // Pack support-coverage tip data once per support-state change.
+  // The result feeds into every <StlMesh supportCoverageTips={...}/> below,
+  // where it's threaded through MeshShaderMaterial → SoftClayMaterial's
+  // shader patch. The halo is computed PER PIXEL there so the gradient
+  // is independent of mesh triangulation (Ty / Renato's design).
+  const supportCoverageTipData = useSupportCoverageTips({
+    enabled: !!showSupportVolumeHalo,
+    modelId: activeModelId,
+  });
 
   const colorActiveModelId = React.useMemo(() => committedActiveModelId, [committedActiveModelId]);
 
@@ -4951,6 +4970,9 @@ export function SceneCanvas({
                       clipLower={clipLower}
                       clipUpper={clipUpper}
                       meshColor={model.color || meshColor} // Use model color
+                      supportCoverageTips={supportCoverageTipData}
+                      supportCoverageColor={overlayColor}
+                      supportCoverageIntensity={(supportVolumeHaloIntensity ?? 0.7) * (overlayOpacity ?? 1.0)}
                       meshRef={meshGroupRefCallback}
                       actualMeshRef={actualMeshRefCallback}
                       materialRoughness={materialRoughness}
@@ -5986,6 +6008,8 @@ export function SceneCanvas({
                 selectedIslandId={overlaySelectedIslandId}
                 clipLower={clipLower}
                 clipUpper={clipUpper}
+                haloIntensity={overlayHaloIntensity ?? 0.7}
+                haloPulseEnabled={overlayHaloPulseEnabled ?? true}
               />
 
               <IslandVoxelVisualization

@@ -1,4 +1,5 @@
 import { type ScanResults, type GridRef, VOXEL_OFFSET_X, VOXEL_OFFSET_Y } from './ScanOrchestrator';
+import { computeIslandWeights } from './islandWeight';
 import * as THREE from 'three';
 
 export type IslandMarker = {
@@ -7,6 +8,14 @@ export type IslandMarker = {
   centerY: number;
   baseZ: number;
   pixelCount: number;
+  // Normalised severity weight in [0, 1] used to drive halo intensity / radius / color.
+  // Real-island markers carry a value computed from Island.totalAreaMm2 (or volumeMm3
+  // when every island in the scan has it). Debug markers (negative ids — seed/center
+  // visualisations) hardcode 0 so they never render as halos.
+  weight: number;
+  // Geometry's local z extent in mm — used by the halo shader to remap
+  // vertical falloff into [0, 1] regardless of baseZ. 0 for debug markers.
+  geometryHeight: number;
   geometry?: THREE.BufferGeometry; // 3D shape from island contours
 };
 
@@ -34,6 +43,7 @@ export function computeIslandMarkers(
 ): IslandMarker[] {
   const { grid, islands, islandLabelsPerLayer, compBase } = scanResults;
   const markers: IslandMarker[] = [];
+  const weightsById = computeIslandWeights(islands);
 
   // Build a map of actual layer ranges for each island from the label data.
   // This mirrors IslandVoxelVisualization and is more reliable than compBase
@@ -124,7 +134,19 @@ export function computeIslandMarkers(
 
     // Build 3D geometry from first few layers of this island, using the
     // same base layer we just computed.
-    const geometry = buildIslandGeometry(label, scanResults, bbox.min.z, layerHeightMm, 3, taperFactor, baseLayer);
+    const numLayers = 3;
+    const geometry = buildIslandGeometry(label, scanResults, bbox.min.z, layerHeightMm, numLayers, taperFactor, baseLayer);
+
+    // Compute weight from the same Island record we're iterating — no
+    // map lookup, no silent fallback. island and weight stay in lockstep.
+    const islandWeight = weightsById.get(island.id);
+    if (islandWeight === undefined) {
+      // Unreachable by construction: computeIslandWeights iterates the
+      // same islands array. If this fires, it's a contract violation
+      // worth knowing about rather than a silent zero halo.
+      console.error(`[islandOverlayLogic] missing weight for island ${island.id}`);
+      continue;
+    }
 
     markers.push({
       id: label,
@@ -132,6 +154,8 @@ export function computeIslandMarkers(
       centerY,
       baseZ,
       pixelCount: count,
+      weight: islandWeight,
+      geometryHeight: layerHeightMm * numLayers,
       geometry,
     });
   }
@@ -471,6 +495,8 @@ export function computeSeedMarkers(
       centerY: worldY,
       baseZ: worldZ,
       pixelCount: 1,
+      weight: 0, // Debug marker — never rendered as a halo.
+      geometryHeight: 0, // Debug marker — n/a, halo path is skipped on negative ids.
       geometry: geom
     });
   }
