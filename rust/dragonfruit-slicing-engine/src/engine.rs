@@ -13,7 +13,8 @@ use crate::metrics::SlicingPerfV3;
 use crate::pipeline::{render_layers_bounded, render_layers_rle, render_layers_rle_encoded};
 use crate::raster::{
     apply_blur_postprocess_inplace_with_roi, blur_gray_rle_streaming,
-    downsample_binary_rle_to_gray_rle, rasterize_layer_with_stats, remap_gray_rle_with_lut,
+    blur_gray_rle_streaming_with_bounds, downsample_binary_rle_to_gray_rle,
+    rasterize_layer_with_stats, remap_gray_rle_with_lut,
 };
 use crate::types::{
     LayerAreaStatsV3, ProgressCallbackV3, RenderedLayersV3, SliceArtifactV3, SliceJobV3,
@@ -177,6 +178,31 @@ struct RleRowDecoder<'a> {
     run_pos: usize,
 }
 
+type RleNonzeroBounds = Option<(usize, usize, usize, usize)>;
+
+#[derive(Clone)]
+struct PerturbRleModelLayer {
+    runs: Vec<crate::rle::RleRun>,
+    bounds: RleNonzeroBounds,
+}
+
+struct PendingPerturbRleLayer {
+    layer_idx: u32,
+    model: PerturbRleModelLayer,
+    support_runs: Option<Vec<crate::rle::RleRun>>,
+}
+
+struct PerturbRlePostInput {
+    layer_idx: u32,
+    model_runs: Vec<crate::rle::RleRun>,
+    support_runs: Option<Vec<crate::rle::RleRun>>,
+}
+
+struct PerturbRlePostOutput {
+    layer_idx: u32,
+    runs: Vec<crate::rle::RleRun>,
+}
+
 impl<'a> RleRowDecoder<'a> {
     fn new(runs: &'a [crate::rle::RleRun]) -> Self {
         Self {
@@ -250,7 +276,7 @@ fn nonzero_bounds_from_rle_runs(
     runs: &[crate::rle::RleRun],
     width: usize,
     height: usize,
-) -> Option<(usize, usize, usize, usize)> {
+) -> RleNonzeroBounds {
     if width == 0 || height == 0 || runs.is_empty() {
         return None;
     }
@@ -296,10 +322,7 @@ fn nonzero_bounds_from_rle_runs(
 }
 
 #[inline]
-fn merge_nonzero_bounds(
-    current: &mut Option<(usize, usize, usize, usize)>,
-    next: Option<(usize, usize, usize, usize)>,
-) {
+fn merge_nonzero_bounds(current: &mut RleNonzeroBounds, next: RleNonzeroBounds) {
     let Some((min_x, max_x, min_y, max_y)) = next else {
         return;
     };
@@ -315,13 +338,9 @@ fn merge_nonzero_bounds(
 }
 
 fn apply_z_gaussian_blur_to_rle_layer(
-    center: &[crate::rle::RleRun],
-    history: &VecDeque<Vec<crate::rle::RleRun>>,
-    future: &VecDeque<(
-        u32,
-        Vec<crate::rle::RleRun>,
-        Option<Vec<crate::rle::RleRun>>,
-    )>,
+    center: &PerturbRleModelLayer,
+    history: &VecDeque<PerturbRleModelLayer>,
+    future: &VecDeque<PendingPerturbRleLayer>,
     radius: usize,
     weights: &[u32],
     width: usize,
@@ -330,30 +349,34 @@ fn apply_z_gaussian_blur_to_rle_layer(
     use crate::rle::{emit_row, emit_zero_rows, RleAccum};
 
     if radius == 0 || width == 0 || height == 0 {
-        return center.to_vec();
+        return center.runs.clone();
     }
 
-    let mut sources: Vec<(u32, &[crate::rle::RleRun])> =
+    let mut sources: Vec<(u32, &[crate::rle::RleRun], RleNonzeroBounds)> =
         Vec::with_capacity(radius.saturating_mul(2).saturating_add(1));
-    sources.push((weights[0], center));
+    sources.push((weights[0], center.runs.as_slice(), center.bounds));
 
     for dist in 1..=radius {
         let weight = weights[dist];
         if let Some(prior) = history.iter().rev().nth(dist - 1) {
-            sources.push((weight, prior.as_slice()));
+            sources.push((weight, prior.runs.as_slice(), prior.bounds));
         }
-        if let Some((_, next_runs, _)) = future.get(dist - 1) {
-            sources.push((weight, next_runs.as_slice()));
+        if let Some(next_layer) = future.get(dist - 1) {
+            sources.push((
+                weight,
+                next_layer.model.runs.as_slice(),
+                next_layer.model.bounds,
+            ));
         }
     }
 
     if sources.len() <= 1 {
-        return center.to_vec();
+        return center.runs.clone();
     }
 
-    let mut roi: Option<(usize, usize, usize, usize)> = None;
-    for (_, runs) in &sources {
-        merge_nonzero_bounds(&mut roi, nonzero_bounds_from_rle_runs(runs, width, height));
+    let mut roi: RleNonzeroBounds = None;
+    for (_, _, bounds) in &sources {
+        merge_nonzero_bounds(&mut roi, *bounds);
     }
 
     let Some((roi_min_x, roi_max_x, roi_min_y, roi_max_y)) = roi else {
@@ -368,12 +391,12 @@ fn apply_z_gaussian_blur_to_rle_layer(
 
     let denom = sources
         .iter()
-        .map(|(weight, _)| *weight)
+        .map(|(weight, _, _)| *weight)
         .sum::<u32>()
         .max(1);
     let mut decoders: Vec<RleRowDecoder<'_>> = sources
         .iter()
-        .map(|(_, runs)| RleRowDecoder::new(runs))
+        .map(|(_, runs, _)| RleRowDecoder::new(runs))
         .collect();
     for decoder in &mut decoders {
         decoder.skip_pixels(roi_min_y.saturating_mul(width));
@@ -391,21 +414,13 @@ fn apply_z_gaussian_blur_to_rle_layer(
         }
 
         for x in 0..roi_w {
-            let mut coverage_hit = false;
             let mut accum = 0u32;
-            for ((weight, _), row) in sources.iter().zip(source_rows.iter()) {
+            for ((weight, _, _), row) in sources.iter().zip(source_rows.iter()) {
                 let value = row[x];
-                if value > 0 {
-                    coverage_hit = true;
-                }
                 accum = accum.saturating_add((value as u32).saturating_mul(*weight));
             }
 
-            out_row[x] = if coverage_hit {
-                ((accum + denom / 2) / denom).min(255) as u8
-            } else {
-                0
-            };
+            out_row[x] = ((accum + denom / 2) / denom).min(255) as u8;
         }
 
         if out_row.iter().all(|&value| value == 0) {
@@ -3584,103 +3599,243 @@ pub fn slice_and_rasterize_perturb_3daa_rle_v3(
         effective_perturb_3daa_rle_z_blur_radius(job.effective_z_blur_radius_layers());
     let z_blur_weights = perturb_3daa_rle_z_blur_weights(z_blur_radius);
     let custom_lut = job.normalized_custom_cure_lut();
+    let post_blur_ns_accum = Arc::new(AtomicU64::new(0));
+    let support_merge_ns_accum = Arc::new(AtomicU64::new(0));
 
-    let mut history: VecDeque<Vec<crate::rle::RleRun>> =
-        VecDeque::with_capacity(z_blur_radius.saturating_add(1));
-    let mut pending: VecDeque<(
-        u32,
-        Vec<crate::rle::RleRun>,
-        Option<Vec<crate::rle::RleRun>>,
-    )> = VecDeque::with_capacity(z_blur_radius.saturating_add(2));
-    let mut emitted_progress_layers: u32 = 0;
+    let post_buffer = z_blur_radius
+        .saturating_mul(2)
+        .saturating_add(4)
+        .clamp(4, 32);
+    let (rendered_layers, layer_area_stats, mut perf) = std::thread::scope(
+        |scope| -> Result<(RenderedLayersV3, Vec<LayerAreaStatsV3>, SlicingPerfV3), SlicerV3Error> {
+            let (post_tx, post_rx) = mpsc::sync_channel::<PerturbRlePostInput>(post_buffer);
+            let (post_out_tx, post_out_rx) =
+                mpsc::sync_channel::<PerturbRlePostOutput>(post_buffer);
+            let post_blur_ns_worker = Arc::clone(&post_blur_ns_accum);
+            let support_merge_ns_worker = Arc::clone(&support_merge_ns_accum);
 
-    let mut do_emit = |pending: &mut VecDeque<(
-        u32,
-        Vec<crate::rle::RleRun>,
-        Option<Vec<crate::rle::RleRun>>,
-    )>,
-                       history: &mut VecDeque<Vec<crate::rle::RleRun>>,
-                       on_rle_layer: &mut dyn FnMut(
-        u32,
-        Vec<crate::rle::RleRun>,
-    ) -> Result<(), SlicerV3Error>|
-     -> Result<(), SlicerV3Error> {
-        let (layer_idx, model_runs, support_runs) = pending
-            .pop_front()
-            .expect("pending perturb 3DAA RLE layer should exist");
-        let history_entry = model_runs.clone();
+            let post_worker = scope.spawn(move || -> Result<(), SlicerV3Error> {
+                let mut history: VecDeque<PerturbRleModelLayer> =
+                    VecDeque::with_capacity(z_blur_radius.saturating_add(1));
+                let mut pending: VecDeque<PendingPerturbRleLayer> =
+                    VecDeque::with_capacity(z_blur_radius.saturating_add(2));
 
-        let mut final_runs = apply_z_gaussian_blur_to_rle_layer(
-            &model_runs,
-            history,
-            pending,
-            z_blur_radius,
-            &z_blur_weights,
-            width,
-            height,
-        );
+                let emit_one = |pending: &mut VecDeque<PendingPerturbRleLayer>,
+                                history: &mut VecDeque<PerturbRleModelLayer>|
+                 -> Result<(), SlicerV3Error> {
+                    let PendingPerturbRleLayer {
+                        layer_idx,
+                        model,
+                        support_runs,
+                    } = pending
+                        .pop_front()
+                        .expect("pending perturb 3DAA RLE layer should exist");
 
-        if let Some(lut) = custom_lut.as_ref() {
-            final_runs = remap_gray_rle_with_lut(&final_runs, lut);
-        }
+                    let z_blur_start = std::time::Instant::now();
+                    let mut final_runs = apply_z_gaussian_blur_to_rle_layer(
+                        &model,
+                        history,
+                        pending,
+                        z_blur_radius,
+                        &z_blur_weights,
+                        width,
+                        height,
+                    );
+                    post_blur_ns_worker.fetch_add(
+                        z_blur_start.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+                        Ordering::Relaxed,
+                    );
 
-        if let Some(ref support_runs) = support_runs {
-            final_runs = merge_rle_max(final_runs, support_runs);
-        }
+                    if let Some(lut) = custom_lut.as_ref() {
+                        let lut_start = std::time::Instant::now();
+                        final_runs = remap_gray_rle_with_lut(&final_runs, lut);
+                        post_blur_ns_worker.fetch_add(
+                            lut_start.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+                            Ordering::Relaxed,
+                        );
+                    }
 
-        on_rle_layer(layer_idx, final_runs)?;
+                    if let Some(ref support_runs) = support_runs {
+                        let support_merge_start = std::time::Instant::now();
+                        final_runs = merge_rle_max(final_runs, support_runs);
+                        support_merge_ns_worker.fetch_add(
+                            support_merge_start
+                                .elapsed()
+                                .as_nanos()
+                                .min(u64::MAX as u128) as u64,
+                            Ordering::Relaxed,
+                        );
+                    }
 
-        history.push_back(history_entry);
-        while history.len() > z_blur_radius {
-            history.pop_front();
-        }
+                    post_out_tx
+                        .send(PerturbRlePostOutput {
+                            layer_idx,
+                            runs: final_runs,
+                        })
+                        .map_err(|_| {
+                            SlicerV3Error::LayerPreview(
+                                "perturbation 3DAA RLE post output channel closed".to_string(),
+                            )
+                        })?;
 
-        emitted_progress_layers = emitted_progress_layers.saturating_add(1);
-        if let Some(cb) = on_progress.as_ref() {
-            cb(SliceProgressUpdateV3 {
-                done: emitted_progress_layers.min(job.total_layers),
-                total: job.total_layers,
-                phase: SliceProgressPhaseV3::Slicing,
+                    history.push_back(model);
+                    while history.len() > z_blur_radius {
+                        history.pop_front();
+                    }
+                    Ok(())
+                };
+
+                for input in post_rx {
+                    let (model_runs, model_bounds) = if blur_radius > 0 {
+                        let xy_blur_start = std::time::Instant::now();
+                        let result = blur_gray_rle_streaming_with_bounds(
+                            &input.model_runs,
+                            width,
+                            height,
+                            blur_radius,
+                            0,
+                        );
+                        post_blur_ns_worker.fetch_add(
+                            xy_blur_start.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+                            Ordering::Relaxed,
+                        );
+                        result
+                    } else {
+                        let model_bounds = if z_blur_radius > 0 {
+                            nonzero_bounds_from_rle_runs(&input.model_runs, width, height)
+                        } else {
+                            None
+                        };
+                        (input.model_runs, model_bounds)
+                    };
+
+                    pending.push_back(PendingPerturbRleLayer {
+                        layer_idx: input.layer_idx,
+                        model: PerturbRleModelLayer {
+                            runs: model_runs,
+                            bounds: model_bounds,
+                        },
+                        support_runs: input.support_runs,
+                    });
+                    while pending.len() > z_blur_radius {
+                        emit_one(&mut pending, &mut history)?;
+                    }
+                }
+
+                while !pending.is_empty() {
+                    emit_one(&mut pending, &mut history)?;
+                }
+                Ok(())
             });
-        }
 
-        Ok(())
-    };
+            let mut emitted_progress_layers: u32 = 0;
+            let mut handle_post_output =
+                |output: PerturbRlePostOutput,
+                 on_rle_layer: &mut dyn FnMut(
+                    u32,
+                    Vec<crate::rle::RleRun>,
+                ) -> Result<(), SlicerV3Error>|
+                 -> Result<(), SlicerV3Error> {
+                    on_rle_layer(output.layer_idx, output.runs)?;
+                    emitted_progress_layers = emitted_progress_layers.saturating_add(1);
+                    if let Some(cb) = on_progress.as_ref() {
+                        cb(SliceProgressUpdateV3 {
+                            done: emitted_progress_layers.min(job.total_layers),
+                            total: job.total_layers,
+                            phase: SliceProgressPhaseV3::Slicing,
+                        });
+                    }
+                    Ok(())
+                };
 
-    let mut wrapped = |layer_idx: u32,
-                       model_runs: Vec<crate::rle::RleRun>,
-                       support_runs: Option<Vec<crate::rle::RleRun>>|
-     -> Result<(), SlicerV3Error> {
-        let model_runs = if blur_radius > 0 {
-            blur_gray_rle_streaming(&model_runs, width, height, blur_radius, 0)
-        } else {
-            model_runs
-        };
+            let mut drain_available =
+                |on_rle_layer: &mut dyn FnMut(
+                    u32,
+                    Vec<crate::rle::RleRun>,
+                ) -> Result<(), SlicerV3Error>|
+                 -> Result<(), SlicerV3Error> {
+                    loop {
+                        match post_out_rx.try_recv() {
+                            Ok(output) => handle_post_output(output, on_rle_layer)?,
+                            Err(mpsc::TryRecvError::Empty)
+                            | Err(mpsc::TryRecvError::Disconnected) => {
+                                break;
+                            }
+                        }
+                    }
+                    Ok(())
+                };
 
-        pending.push_back((layer_idx, model_runs, support_runs));
-        while pending.len() > z_blur_radius {
-            do_emit(&mut pending, &mut history, &mut on_rle_layer)?;
-        }
-        Ok(())
-    };
+            let mut wrapped = |layer_idx: u32,
+                               model_runs: Vec<crate::rle::RleRun>,
+                               support_runs: Option<Vec<crate::rle::RleRun>>|
+             -> Result<(), SlicerV3Error> {
+                let mut input = Some(PerturbRlePostInput {
+                    layer_idx,
+                    model_runs,
+                    support_runs,
+                });
+                loop {
+                    drain_available(&mut on_rle_layer)?;
+                    match post_tx.try_send(input.take().expect("post input should exist")) {
+                        Ok(()) => break,
+                        Err(mpsc::TrySendError::Full(returned_input)) => {
+                            input = Some(returned_input);
+                            std::thread::yield_now();
+                        }
+                        Err(mpsc::TrySendError::Disconnected(_)) => {
+                            return Err(SlicerV3Error::LayerPreview(
+                                "perturbation 3DAA RLE post worker stopped".to_string(),
+                            ));
+                        }
+                    }
+                }
+                Ok(())
+            };
 
-    let (rendered_layers, layer_area_stats, mut perf) = render_layers_rle(
-        &raster_job,
-        &triangles,
-        &layer_index,
-        compute_area_stats,
-        support_split_model_triangle_count,
-        &mut wrapped,
-        None,
-        cancel_flag,
+            let render_result = render_layers_rle(
+                &raster_job,
+                &triangles,
+                &layer_index,
+                compute_area_stats,
+                support_split_model_triangle_count,
+                &mut wrapped,
+                None,
+                cancel_flag,
+            );
+            drop(wrapped);
+            drop(drain_available);
+            drop(post_tx);
+
+            let final_result = match render_result {
+                Ok(rendered) => {
+                    for output in post_out_rx {
+                        handle_post_output(output, &mut on_rle_layer)?;
+                    }
+                    Ok(rendered)
+                }
+                Err(err) => {
+                    drop(post_out_rx);
+                    Err(err)
+                }
+            };
+
+            let worker_result = post_worker.join().map_err(|_| {
+                SlicerV3Error::LayerPreview(
+                    "perturbation 3DAA RLE post worker panicked".to_string(),
+                )
+            })?;
+
+            worker_result?;
+            final_result
+        },
     )?;
-    drop(wrapped);
-
-    while !pending.is_empty() {
-        do_emit(&mut pending, &mut history, &mut on_rle_layer)?;
-    }
 
     perf.index_build_ns = index_ns;
+    perf.post_blur_ns = post_blur_ns_accum.load(Ordering::Relaxed);
+    perf.support_merge_ns = support_merge_ns_accum.load(Ordering::Relaxed);
+    perf.daa_post_threads = 1;
+    perf.daa_post_buffer_depth = post_buffer as u32;
     Ok((rendered_layers, layer_area_stats, perf))
 }
 

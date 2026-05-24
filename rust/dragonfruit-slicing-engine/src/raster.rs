@@ -388,21 +388,18 @@ fn build_z_perturbed_segments_list(
     let z_steps = zaa::z_steps_for_aa(aa_steps, duplicate_terminal_z);
     let pattern = zaa::perturbation_pattern(job);
 
-    let unique_segments: Vec<Vec<Segment>> = (0..z_steps)
+    // `duplicate_terminal_z` intentionally reuses the same Z positions for
+    // multiple XY sub-samples.  Keep only unique Z segment lists here and let
+    // the scanline index map repeated samples back to them; cloning every
+    // segment list doubles setup work for 32x duplicate-Z jobs with no quality
+    // benefit.
+    (0..z_steps)
         .map(|sample_idx| {
             let offset = zaa::perturbation_offset(pattern, sample_idx, z_steps);
             let z_mm = (layer_index as f32 + offset) * job.layer_height_mm;
             build_segments_at_z(job, triangles, layer_indices, z_mm)
         })
-        .collect();
-
-    if duplicate_terminal_z {
-        (0..aa_steps)
-            .map(|sample_idx| unique_segments[sample_idx % z_steps].clone())
-            .collect()
-    } else {
-        unique_segments
-    }
+        .collect()
 }
 
 fn compute_component_area_stats_8_connected(
@@ -1487,8 +1484,10 @@ fn build_scanline_segment_index_z_perturbed(
         return None;
     }
 
-    let mut buckets_list = vec![vec![Vec::<&Segment>::new(); height]; aa_steps];
-    for (sample_idx, segments) in segments_list.iter().enumerate().take(aa_steps) {
+    let unique_sample_count = segments_list.len().min(aa_steps);
+    let mut buckets_list = vec![vec![Vec::<&Segment>::new(); height]; unique_sample_count];
+    for sample_idx in 0..unique_sample_count {
+        let segments = &segments_list[sample_idx];
         for seg in segments {
             let py_min = (seg.y_min.floor() as i32).max(0) as usize;
             let py_max = (seg.y_max.ceil() as i32).clamp(0, height as i32) as usize;
@@ -1506,12 +1505,13 @@ fn build_scanline_segment_index_z_perturbed(
 
     for y in 0..sub_height {
         let sample_idx = y % aa_steps;
+        let unique_sample_idx = sample_idx % unique_sample_count;
         let physical_y = y / aa_steps;
         if physical_y >= height {
             continue;
         }
 
-        let segments_for_row = &buckets_list[sample_idx][physical_y];
+        let segments_for_row = &buckets_list[unique_sample_idx][physical_y];
         if segments_for_row.is_empty() {
             continue;
         }
@@ -2910,10 +2910,30 @@ pub fn blur_gray_rle_streaming(
     radius: usize,
     min_alpha_u8: u8,
 ) -> Vec<crate::rle::RleRun> {
+    blur_gray_rle_streaming_with_bounds(runs, width, height, radius, min_alpha_u8).0
+}
+
+pub fn blur_gray_rle_streaming_with_bounds(
+    runs: &[crate::rle::RleRun],
+    width: usize,
+    height: usize,
+    radius: usize,
+    min_alpha_u8: u8,
+) -> (
+    Vec<crate::rle::RleRun>,
+    Option<(usize, usize, usize, usize)>,
+) {
     use crate::rle::{emit_row, emit_zero_rows, RleAccum};
 
-    if radius == 0 || width == 0 || height == 0 {
-        return runs.to_vec();
+    if width == 0 || height == 0 {
+        return (runs.to_vec(), None);
+    }
+
+    if radius == 0 {
+        return (
+            runs.to_vec(),
+            compute_nonzero_bounds_from_rle(runs, width, height),
+        );
     }
 
     let Some((min_x, max_x, min_y, max_y)) = compute_nonzero_bounds_from_rle(runs, width, height)
@@ -2921,7 +2941,7 @@ pub fn blur_gray_rle_streaming(
         // All-zero image: blur of zero is zero.
         let mut out = RleAccum::new();
         emit_zero_rows(&mut out, height, width);
-        return out.finish();
+        return (out.finish(), None);
     };
 
     let roi_min_x = min_x.saturating_sub(radius);
@@ -2942,6 +2962,7 @@ pub fn blur_gray_rle_streaming(
     let mut decode_buf = vec![0u8; roi_w];
     let mut emit_buf = vec![0u8; roi_w];
     let mut out_rle = RleAccum::new();
+    let mut out_bounds: Option<(usize, usize, usize, usize)> = None;
 
     emit_zero_rows(&mut out_rle, roi_min_y, width);
 
@@ -3076,6 +3097,25 @@ pub fn blur_gray_rle_streaming(
             if all_zero {
                 emit_zero_rows(&mut out_rle, 1, width);
             } else {
+                let row_min_x = roi_min_x
+                    + emit_buf
+                        .iter()
+                        .position(|&value| value != 0)
+                        .expect("nonzero blur row should have a first nonzero pixel");
+                let row_max_x = roi_min_x
+                    + emit_buf
+                        .iter()
+                        .rposition(|&value| value != 0)
+                        .expect("nonzero blur row should have a last nonzero pixel");
+                if let Some((min_x, max_x, min_y, max_y)) = out_bounds.as_mut() {
+                    *min_x = (*min_x).min(row_min_x);
+                    *max_x = (*max_x).max(row_max_x);
+                    *min_y = (*min_y).min(global_out_y);
+                    *max_y = (*max_y).max(global_out_y);
+                } else {
+                    out_bounds = Some((row_min_x, row_max_x, global_out_y, global_out_y));
+                }
+
                 if roi_min_x > 0 {
                     out_rle.push_run(roi_min_x as u32, 0);
                 }
@@ -3099,7 +3139,7 @@ pub fn blur_gray_rle_streaming(
 
     emit_zero_rows(&mut out_rle, height - 1 - roi_max_y, width);
 
-    out_rle.finish()
+    (out_rle.finish(), out_bounds)
 }
 
 #[cfg(test)]
