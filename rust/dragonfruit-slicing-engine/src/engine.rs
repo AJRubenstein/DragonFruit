@@ -171,6 +171,261 @@ fn merge_rle_max(
     out.finish()
 }
 
+struct RleRowDecoder<'a> {
+    runs: &'a [crate::rle::RleRun],
+    run_idx: usize,
+    run_pos: usize,
+}
+
+impl<'a> RleRowDecoder<'a> {
+    fn new(runs: &'a [crate::rle::RleRun]) -> Self {
+        Self {
+            runs,
+            run_idx: 0,
+            run_pos: 0,
+        }
+    }
+
+    fn skip_pixels(&mut self, mut count: usize) {
+        while count > 0 {
+            if self.run_idx >= self.runs.len() {
+                break;
+            }
+
+            let run = self.runs[self.run_idx];
+            let available = (run.length as usize).saturating_sub(self.run_pos);
+            if available == 0 {
+                self.run_idx += 1;
+                self.run_pos = 0;
+                continue;
+            }
+
+            let take = available.min(count);
+            count -= take;
+            self.run_pos += take;
+            if self.run_pos >= run.length as usize {
+                self.run_idx += 1;
+                self.run_pos = 0;
+            }
+        }
+    }
+
+    fn decode_next_row_span(&mut self, width: usize, start_x: usize, row: &mut [u8]) {
+        debug_assert!(start_x <= width);
+        debug_assert!(start_x.saturating_add(row.len()) <= width);
+
+        self.skip_pixels(start_x);
+        let mut written = 0usize;
+        while written < row.len() {
+            if self.run_idx >= self.runs.len() {
+                row[written..].fill(0);
+                break;
+            }
+
+            let run = self.runs[self.run_idx];
+            let available = (run.length as usize).saturating_sub(self.run_pos);
+            if available == 0 {
+                self.run_idx += 1;
+                self.run_pos = 0;
+                continue;
+            }
+
+            let take = available.min(row.len() - written);
+            row[written..written + take].fill(run.value);
+            written += take;
+            self.run_pos += take;
+            if self.run_pos >= run.length as usize {
+                self.run_idx += 1;
+                self.run_pos = 0;
+            }
+        }
+
+        let consumed = start_x.saturating_add(row.len()).min(width);
+        self.skip_pixels(width.saturating_sub(consumed));
+    }
+}
+
+#[inline]
+fn nonzero_bounds_from_rle_runs(
+    runs: &[crate::rle::RleRun],
+    width: usize,
+    height: usize,
+) -> Option<(usize, usize, usize, usize)> {
+    if width == 0 || height == 0 || runs.is_empty() {
+        return None;
+    }
+
+    let total_pixels = width.saturating_mul(height);
+    let mut pos = 0usize;
+    let mut min_x = width;
+    let mut min_y = height;
+    let mut max_x = 0usize;
+    let mut max_y = 0usize;
+    let mut any_non_zero = false;
+
+    for run in runs {
+        if pos >= total_pixels {
+            break;
+        }
+
+        let run_len = (run.length as usize).min(total_pixels - pos);
+        if run_len == 0 {
+            continue;
+        }
+
+        if run.value != 0 {
+            any_non_zero = true;
+            let mut cur = pos;
+            let end = pos + run_len;
+            while cur < end {
+                let row = cur / width;
+                let col = cur % width;
+                let take = (end - cur).min(width - col);
+                min_x = min_x.min(col);
+                max_x = max_x.max(col + take - 1);
+                min_y = min_y.min(row);
+                max_y = max_y.max(row);
+                cur += take;
+            }
+        }
+
+        pos += run_len;
+    }
+
+    any_non_zero.then_some((min_x, max_x, min_y, max_y))
+}
+
+#[inline]
+fn merge_nonzero_bounds(
+    current: &mut Option<(usize, usize, usize, usize)>,
+    next: Option<(usize, usize, usize, usize)>,
+) {
+    let Some((min_x, max_x, min_y, max_y)) = next else {
+        return;
+    };
+
+    if let Some((cur_min_x, cur_max_x, cur_min_y, cur_max_y)) = current.as_mut() {
+        *cur_min_x = (*cur_min_x).min(min_x);
+        *cur_max_x = (*cur_max_x).max(max_x);
+        *cur_min_y = (*cur_min_y).min(min_y);
+        *cur_max_y = (*cur_max_y).max(max_y);
+    } else {
+        *current = Some((min_x, max_x, min_y, max_y));
+    }
+}
+
+fn apply_z_gaussian_blur_to_rle_layer(
+    center: &[crate::rle::RleRun],
+    history: &VecDeque<Vec<crate::rle::RleRun>>,
+    future: &VecDeque<(
+        u32,
+        Vec<crate::rle::RleRun>,
+        Option<Vec<crate::rle::RleRun>>,
+    )>,
+    radius: usize,
+    weights: &[u32],
+    width: usize,
+    height: usize,
+) -> Vec<crate::rle::RleRun> {
+    use crate::rle::{emit_row, emit_zero_rows, RleAccum};
+
+    if radius == 0 || width == 0 || height == 0 {
+        return center.to_vec();
+    }
+
+    let mut sources: Vec<(u32, &[crate::rle::RleRun])> =
+        Vec::with_capacity(radius.saturating_mul(2).saturating_add(1));
+    sources.push((weights[0], center));
+
+    for dist in 1..=radius {
+        let weight = weights[dist];
+        if let Some(prior) = history.iter().rev().nth(dist - 1) {
+            sources.push((weight, prior.as_slice()));
+        }
+        if let Some((_, next_runs, _)) = future.get(dist - 1) {
+            sources.push((weight, next_runs.as_slice()));
+        }
+    }
+
+    if sources.len() <= 1 {
+        return center.to_vec();
+    }
+
+    let mut roi: Option<(usize, usize, usize, usize)> = None;
+    for (_, runs) in &sources {
+        merge_nonzero_bounds(&mut roi, nonzero_bounds_from_rle_runs(runs, width, height));
+    }
+
+    let Some((roi_min_x, roi_max_x, roi_min_y, roi_max_y)) = roi else {
+        let mut out = RleAccum::new();
+        emit_zero_rows(&mut out, height, width);
+        return out.finish();
+    };
+
+    let roi_w = roi_max_x - roi_min_x + 1;
+    let left_zeros = roi_min_x;
+    let right_zeros = width - 1 - roi_max_x;
+
+    let denom = sources
+        .iter()
+        .map(|(weight, _)| *weight)
+        .sum::<u32>()
+        .max(1);
+    let mut decoders: Vec<RleRowDecoder<'_>> = sources
+        .iter()
+        .map(|(_, runs)| RleRowDecoder::new(runs))
+        .collect();
+    for decoder in &mut decoders {
+        decoder.skip_pixels(roi_min_y.saturating_mul(width));
+    }
+
+    let mut source_rows = vec![vec![0u8; roi_w]; sources.len()];
+    let mut out_row = vec![0u8; roi_w];
+    let mut out = RleAccum::new();
+
+    emit_zero_rows(&mut out, roi_min_y, width);
+
+    for _y in roi_min_y..=roi_max_y {
+        for (decoder, row) in decoders.iter_mut().zip(source_rows.iter_mut()) {
+            decoder.decode_next_row_span(width, roi_min_x, row);
+        }
+
+        for x in 0..roi_w {
+            let mut coverage_hit = false;
+            let mut accum = 0u32;
+            for ((weight, _), row) in sources.iter().zip(source_rows.iter()) {
+                let value = row[x];
+                if value > 0 {
+                    coverage_hit = true;
+                }
+                accum = accum.saturating_add((value as u32).saturating_mul(*weight));
+            }
+
+            out_row[x] = if coverage_hit {
+                ((accum + denom / 2) / denom).min(255) as u8
+            } else {
+                0
+            };
+        }
+
+        if out_row.iter().all(|&value| value == 0) {
+            emit_zero_rows(&mut out, 1, width);
+        } else {
+            if left_zeros > 0 {
+                out.push_run(left_zeros as u32, 0);
+            }
+            emit_row(&mut out, &out_row);
+            if right_zeros > 0 {
+                out.push_run(right_zeros as u32, 0);
+            }
+        }
+    }
+
+    emit_zero_rows(&mut out, height - 1 - roi_max_y, width);
+
+    out.finish()
+}
+
 struct SupportMaskContext {
     support_job: SliceJobV3,
     triangles: Vec<crate::geometry::Triangle>,
@@ -497,6 +752,27 @@ fn effective_xy_blur_radius(radius: usize) -> usize {
 }
 
 #[inline]
+fn effective_perturb_3daa_rle_xy_blur_radius(radius: usize) -> usize {
+    if radius == 0 {
+        return 0;
+    }
+
+    // Aaron's 3DAA branch clamps spatial blur radii to 1..=6 and does not
+    // apply Dragonfruit's generic Blur-mode 1.5x boost.  Keep that behavior
+    // for the low-memory perturbation RLE path so an 8px UI value does not
+    // become a much wider radius-12 box blur.
+    radius.clamp(1, 6)
+}
+
+#[inline]
+fn effective_perturb_3daa_rle_z_blur_radius(radius: usize) -> usize {
+    // Match Aaron's Z-blur guard: user values above 6 are accepted by the UI,
+    // but the 3DAA post kernel itself stays bounded to avoid excessive smear
+    // and to keep the row-streamed RLE window small.
+    radius.min(6)
+}
+
+#[inline]
 fn choose_3daa_post_threads(width: usize, height: usize, total_layers: u32) -> usize {
     let hw = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -687,6 +963,30 @@ fn gaussian_z_weights(radius: usize) -> Vec<u32> {
         weights.push(scaled.max(1) as u32);
     }
     weights
+}
+
+fn gaussian_z_weights_with_sigma(radius: usize, sigma: f64) -> Vec<u32> {
+    if radius == 0 {
+        return vec![1024];
+    }
+
+    let sigma = sigma.max(0.01);
+    let mut weights = Vec::with_capacity(radius + 1);
+    for d in 0..=radius {
+        let dist = d as f64;
+        let exponent = -((dist * dist) / (2.0 * sigma * sigma));
+        weights.push((exponent.exp() * 1024.0).round().max(1.0) as u32);
+    }
+    weights
+}
+
+#[inline]
+fn perturb_3daa_rle_z_blur_weights(radius: usize) -> Vec<u32> {
+    // Aaron's branch defaults sigma_z to 0.5.  The generic Dragonfruit Z-blur
+    // weights intentionally broaden the kernel and weaken the center sample,
+    // which made perturbation 3DAA look far blurrier than Aaron's reference.
+    let sigma = env_override_f64("DF_3DAA_RLE_Z_BLUR_SIGMA").unwrap_or(0.5);
+    gaussian_z_weights_with_sigma(radius, sigma)
 }
 
 #[inline]
@@ -1526,7 +1826,8 @@ fn rasterize_vertical_aa_streaming_v3(
                             if encoded == enc_total_layers || encoded % enc_log_every == 0 {
                                 let total_elapsed = encode_start.elapsed().as_secs_f64().max(1e-9);
                                 let window_elapsed = window_start.elapsed().as_secs_f64().max(1e-9);
-                                let window_layers = encoded.saturating_sub(window_layers_base).max(1);
+                                let window_layers =
+                                    encoded.saturating_sub(window_layers_base).max(1);
                                 let total_lps = encoded as f64 / total_elapsed;
                                 let window_lps = window_layers as f64 / window_elapsed;
                                 let forwarded = forwarded_layers_enc.load(Ordering::Relaxed);
@@ -2711,8 +3012,21 @@ pub fn slice_with_progress_v3(
 
             // Parallel-encode path: rasterize + encode PNG in rayon workers.
             let (_rendered_layers, layer_area_stats, mut perf) = if is_3daa
-                && !use_raster_perturbation
+                && use_raster_perturbation
             {
+                // RLE-native perturbation 3DAA: raster emits grayscale RLE,
+                // then we apply XY blur, Z blur, LUT, and support merge in
+                // streaming order without materializing full-frame masks.
+                let mut rle_sink =
+                    |idx: u32, runs: Vec<crate::rle::RleRun>| rle_enc.consume_rle_layer(idx, runs);
+                slice_and_rasterize_perturb_3daa_rle_v3(
+                    job,
+                    requires_area_stats,
+                    &mut rle_sink,
+                    slicing_progress,
+                    cancel_flag,
+                )?
+            } else if is_3daa && !use_raster_perturbation {
                 // RLE-native legacy 3DAA: z-blend via sliding binary topology window.
                 let mut rle_sink =
                     |idx: u32, runs: Vec<crate::rle::RleRun>| rle_enc.consume_rle_layer(idx, runs);
@@ -2923,7 +3237,12 @@ pub fn slice_and_rasterize_rle_v3(
         } else {
             (job.configured_xy_aa_steps() as usize).max(1)
         };
-    let blur_radius = if job.anti_aliasing_mode_is_blur() && job.blur_brush_radius_px > 0 {
+    let use_raster_perturbation = is_vertical_aa_mode(&job.anti_aliasing_mode)
+        && zaa::use_raster_perturbation(job)
+        && job.effective_xy_aa_steps() > 1;
+    let blur_radius = if (job.anti_aliasing_mode_is_blur() || use_raster_perturbation)
+        && job.blur_brush_radius_px > 0
+    {
         effective_xy_blur_radius(job.blur_brush_radius_px.max(1) as usize)
     } else {
         0
@@ -2942,23 +3261,24 @@ pub fn slice_and_rasterize_rle_v3(
     // engine is used unchanged.  Triangles are NOT copied here — they're parsed
     // from the original `job` below and then projected at the (potentially
     // super-resolved) raster dimensions.
-    let raster_job_owned: Option<SliceJobV3> = if ssaa_factor > 1 || blur_radius > 0 {
-        let mut j = job.clone();
-        j.triangles_xyz = Vec::new(); // avoid copying potentially-GB mesh data
-        j.anti_aliasing_level = "Off".to_string();
-        j.anti_aliasing_mode = "Coverage".to_string();
-        j.blur_brush_radius_px = 0;
-        j.minimum_aa_alpha_percent = 0.0;
-        if ssaa_factor > 1 {
-            j.source_width_px = job.source_width_px.saturating_mul(ssaa_factor as u32);
-            j.source_height_px = job.source_height_px.saturating_mul(ssaa_factor as u32);
-            j.width_px = job.width_px.saturating_mul(ssaa_factor as u32);
-            j.height_px = job.height_px.saturating_mul(ssaa_factor as u32);
-        }
-        Some(j)
-    } else {
-        None
-    };
+    let raster_job_owned: Option<SliceJobV3> =
+        if ssaa_factor > 1 || (blur_radius > 0 && !use_raster_perturbation) {
+            let mut j = job.clone();
+            j.triangles_xyz = Vec::new(); // avoid copying potentially-GB mesh data
+            j.anti_aliasing_level = "Off".to_string();
+            j.anti_aliasing_mode = "Coverage".to_string();
+            j.blur_brush_radius_px = 0;
+            j.minimum_aa_alpha_percent = 0.0;
+            if ssaa_factor > 1 {
+                j.source_width_px = job.source_width_px.saturating_mul(ssaa_factor as u32);
+                j.source_height_px = job.source_height_px.saturating_mul(ssaa_factor as u32);
+                j.width_px = job.width_px.saturating_mul(ssaa_factor as u32);
+                j.height_px = job.height_px.saturating_mul(ssaa_factor as u32);
+            }
+            Some(j)
+        } else {
+            None
+        };
     let raster_job = raster_job_owned.as_ref().unwrap_or(job);
 
     let mut triangles = parse_triangles(&job.triangles_xyz);
@@ -3011,7 +3331,7 @@ pub fn slice_and_rasterize_rle_v3(
                     out_width,
                     out_height,
                     blur_radius,
-                    if blur_custom_lut.is_some() {
+                    if blur_custom_lut.is_some() || use_raster_perturbation {
                         0
                     } else {
                         min_alpha_u8
@@ -3216,6 +3536,154 @@ pub fn slice_and_rasterize_3daa_rle_v3(
     Ok((rendered_layers, layer_area_stats, perf))
 }
 
+/// Streaming perturbation-3DAA RLE pipeline.
+///
+/// The rasterizer emits Z-perturbed grayscale RLE directly.  This function then
+/// applies the Aaron-style ordering while staying RLE/row-streamed:
+/// per-layer XY blur → bounded symmetric Z blur → LUT/remap → support merge.
+pub fn slice_and_rasterize_perturb_3daa_rle_v3(
+    job: &SliceJobV3,
+    compute_area_stats: bool,
+    mut on_rle_layer: impl FnMut(u32, Vec<crate::rle::RleRun>) -> Result<(), SlicerV3Error>,
+    on_progress: Option<ProgressCallbackV3>,
+    cancel_flag: Option<&AtomicBool>,
+) -> Result<(RenderedLayersV3, Vec<LayerAreaStatsV3>, SlicingPerfV3), SlicerV3Error> {
+    validate_job(job)?;
+
+    let mut raster_job = job.clone();
+    raster_job.triangles_xyz = Vec::new();
+    // Keep Vertical2 + zaa_kernel=perturb + AA level intact: those settings are
+    // what make rasterize_layer_rle emit the sub-layer grayscale coverage.
+    // Only post blur/remap is handled here.
+    raster_job.blur_brush_radius_px = 0;
+    raster_job.minimum_aa_alpha_percent = 0.0;
+
+    let mut triangles = parse_triangles(&job.triangles_xyz);
+    project_triangles_inplace(&mut triangles, &raster_job);
+
+    let support_split_model_triangle_count = if !job.aa_on_supports {
+        let model_count = (job.model_triangle_count as usize).min(triangles.len());
+        (model_count > 0 && model_count < triangles.len()).then_some(model_count)
+    } else {
+        None
+    };
+
+    let index_start = std::time::Instant::now();
+    let layer_index = build_layer_index(
+        &triangles,
+        raster_job.total_layers,
+        raster_job.layer_height_mm,
+        layer_index_sampling_span(&raster_job),
+    );
+    let index_ns = index_start.elapsed().as_nanos() as u64;
+
+    let width = raster_job.effective_render_width_px() as usize;
+    let height = raster_job.source_height_px as usize;
+    let blur_radius = effective_perturb_3daa_rle_xy_blur_radius(job.blur_brush_radius_px as usize);
+    let z_blur_radius =
+        effective_perturb_3daa_rle_z_blur_radius(job.effective_z_blur_radius_layers());
+    let z_blur_weights = perturb_3daa_rle_z_blur_weights(z_blur_radius);
+    let custom_lut = job.normalized_custom_cure_lut();
+
+    let mut history: VecDeque<Vec<crate::rle::RleRun>> =
+        VecDeque::with_capacity(z_blur_radius.saturating_add(1));
+    let mut pending: VecDeque<(
+        u32,
+        Vec<crate::rle::RleRun>,
+        Option<Vec<crate::rle::RleRun>>,
+    )> = VecDeque::with_capacity(z_blur_radius.saturating_add(2));
+    let mut emitted_progress_layers: u32 = 0;
+
+    let mut do_emit = |pending: &mut VecDeque<(
+        u32,
+        Vec<crate::rle::RleRun>,
+        Option<Vec<crate::rle::RleRun>>,
+    )>,
+                       history: &mut VecDeque<Vec<crate::rle::RleRun>>,
+                       on_rle_layer: &mut dyn FnMut(
+        u32,
+        Vec<crate::rle::RleRun>,
+    ) -> Result<(), SlicerV3Error>|
+     -> Result<(), SlicerV3Error> {
+        let (layer_idx, model_runs, support_runs) = pending
+            .pop_front()
+            .expect("pending perturb 3DAA RLE layer should exist");
+        let history_entry = model_runs.clone();
+
+        let mut final_runs = apply_z_gaussian_blur_to_rle_layer(
+            &model_runs,
+            history,
+            pending,
+            z_blur_radius,
+            &z_blur_weights,
+            width,
+            height,
+        );
+
+        if let Some(lut) = custom_lut.as_ref() {
+            final_runs = remap_gray_rle_with_lut(&final_runs, lut);
+        }
+
+        if let Some(ref support_runs) = support_runs {
+            final_runs = merge_rle_max(final_runs, support_runs);
+        }
+
+        on_rle_layer(layer_idx, final_runs)?;
+
+        history.push_back(history_entry);
+        while history.len() > z_blur_radius {
+            history.pop_front();
+        }
+
+        emitted_progress_layers = emitted_progress_layers.saturating_add(1);
+        if let Some(cb) = on_progress.as_ref() {
+            cb(SliceProgressUpdateV3 {
+                done: emitted_progress_layers.min(job.total_layers),
+                total: job.total_layers,
+                phase: SliceProgressPhaseV3::Slicing,
+            });
+        }
+
+        Ok(())
+    };
+
+    let mut wrapped = |layer_idx: u32,
+                       model_runs: Vec<crate::rle::RleRun>,
+                       support_runs: Option<Vec<crate::rle::RleRun>>|
+     -> Result<(), SlicerV3Error> {
+        let model_runs = if blur_radius > 0 {
+            blur_gray_rle_streaming(&model_runs, width, height, blur_radius, 0)
+        } else {
+            model_runs
+        };
+
+        pending.push_back((layer_idx, model_runs, support_runs));
+        while pending.len() > z_blur_radius {
+            do_emit(&mut pending, &mut history, &mut on_rle_layer)?;
+        }
+        Ok(())
+    };
+
+    let (rendered_layers, layer_area_stats, mut perf) = render_layers_rle(
+        &raster_job,
+        &triangles,
+        &layer_index,
+        compute_area_stats,
+        support_split_model_triangle_count,
+        &mut wrapped,
+        None,
+        cancel_flag,
+    )?;
+    drop(wrapped);
+
+    while !pending.is_empty() {
+        do_emit(&mut pending, &mut history, &mut on_rle_layer)?;
+    }
+
+    perf.index_build_ns = index_ns;
+    Ok((rendered_layers, layer_area_stats, perf))
+}
+
 /// Fast raster stage that encodes RLE runs into layer bytes in parallel rayon workers.
 pub fn slice_and_rasterize_rle_encoded_v3(
     job: &SliceJobV3,
@@ -3237,7 +3705,12 @@ pub fn slice_and_rasterize_rle_encoded_v3(
         } else {
             (job.configured_xy_aa_steps() as usize).max(1)
         };
-    let blur_radius = if job.anti_aliasing_mode_is_blur() && job.blur_brush_radius_px > 0 {
+    let use_raster_perturbation = is_vertical_aa_mode(&job.anti_aliasing_mode)
+        && zaa::use_raster_perturbation(job)
+        && job.effective_xy_aa_steps() > 1;
+    let blur_radius = if (job.anti_aliasing_mode_is_blur() || use_raster_perturbation)
+        && job.blur_brush_radius_px > 0
+    {
         effective_xy_blur_radius(job.blur_brush_radius_px.max(1) as usize)
     } else {
         0
@@ -3251,23 +3724,24 @@ pub fn slice_and_rasterize_rle_encoded_v3(
     };
 
     // Build super-resolution raster job when SSAA or blur is active.
-    let raster_job_owned: Option<SliceJobV3> = if ssaa_factor > 1 || blur_radius > 0 {
-        let mut j = job.clone();
-        j.triangles_xyz = Vec::new();
-        j.anti_aliasing_level = "Off".to_string();
-        j.anti_aliasing_mode = "Coverage".to_string();
-        j.blur_brush_radius_px = 0;
-        j.minimum_aa_alpha_percent = 0.0;
-        if ssaa_factor > 1 {
-            j.source_width_px = job.source_width_px.saturating_mul(ssaa_factor as u32);
-            j.source_height_px = job.source_height_px.saturating_mul(ssaa_factor as u32);
-            j.width_px = job.width_px.saturating_mul(ssaa_factor as u32);
-            j.height_px = job.height_px.saturating_mul(ssaa_factor as u32);
-        }
-        Some(j)
-    } else {
-        None
-    };
+    let raster_job_owned: Option<SliceJobV3> =
+        if ssaa_factor > 1 || (blur_radius > 0 && !use_raster_perturbation) {
+            let mut j = job.clone();
+            j.triangles_xyz = Vec::new();
+            j.anti_aliasing_level = "Off".to_string();
+            j.anti_aliasing_mode = "Coverage".to_string();
+            j.blur_brush_radius_px = 0;
+            j.minimum_aa_alpha_percent = 0.0;
+            if ssaa_factor > 1 {
+                j.source_width_px = job.source_width_px.saturating_mul(ssaa_factor as u32);
+                j.source_height_px = job.source_height_px.saturating_mul(ssaa_factor as u32);
+                j.width_px = job.width_px.saturating_mul(ssaa_factor as u32);
+                j.height_px = job.height_px.saturating_mul(ssaa_factor as u32);
+            }
+            Some(j)
+        } else {
+            None
+        };
     let raster_job = raster_job_owned.as_ref().unwrap_or(job);
 
     let mut triangles = parse_triangles(&job.triangles_xyz);
@@ -3332,7 +3806,7 @@ pub fn slice_and_rasterize_rle_encoded_v3(
                         out_width,
                         out_height,
                         blur_radius,
-                        if blur_custom_lut.is_some() {
+                        if blur_custom_lut.is_some() || use_raster_perturbation {
                             0
                         } else {
                             min_alpha_u8
@@ -3613,8 +4087,21 @@ pub fn slice_with_progress_v3_to_path(
             });
 
             let (_rendered_layers, layer_area_stats, mut perf) = if is_3daa
-                && !use_raster_perturbation
+                && use_raster_perturbation
             {
+                // RLE-native perturbation 3DAA: raster emits grayscale RLE,
+                // then we apply XY blur, Z blur, LUT, and support merge in
+                // streaming order without materializing full-frame masks.
+                let mut rle_sink =
+                    |idx: u32, runs: Vec<crate::rle::RleRun>| rle_enc.consume_rle_layer(idx, runs);
+                slice_and_rasterize_perturb_3daa_rle_v3(
+                    job,
+                    requires_area_stats,
+                    &mut rle_sink,
+                    slicing_progress,
+                    cancel_flag,
+                )?
+            } else if is_3daa && !use_raster_perturbation {
                 // RLE-native legacy 3DAA: z-blend via sliding binary topology window.
                 let mut rle_sink =
                     |idx: u32, runs: Vec<crate::rle::RleRun>| rle_enc.consume_rle_layer(idx, runs);
@@ -3834,6 +4321,7 @@ fn _empty_perf() -> SlicingPerfV3 {
 #[cfg(test)]
 mod tests {
     use super::ssaa_downsample_min_alpha_u8;
+    use crate::rle::expand_rle_to_mask;
     use crate::types::SliceJobV3;
 
     fn push_box_triangles(
@@ -3888,6 +4376,184 @@ mod tests {
         assert_eq!(ssaa_downsample_min_alpha_u8(0, 89), 89);
         assert_eq!(ssaa_downsample_min_alpha_u8(2, 89), 0);
         assert_eq!(ssaa_downsample_min_alpha_u8(4, 255), 0);
+    }
+
+    fn nonzero_bounds(
+        mask: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Option<(usize, usize, usize, usize)> {
+        let mut min_x = width;
+        let mut max_x = 0usize;
+        let mut min_y = height;
+        let mut max_y = 0usize;
+        let mut any = false;
+        for y in 0..height {
+            let row_start = y * width;
+            for x in 0..width {
+                if mask[row_start + x] == 0 {
+                    continue;
+                }
+                any = true;
+                min_x = min_x.min(x);
+                max_x = max_x.max(x);
+                min_y = min_y.min(y);
+                max_y = max_y.max(y);
+            }
+        }
+        any.then_some((min_x, max_x, min_y, max_y))
+    }
+
+    fn base_perturb_3daa_rle_test_job() -> SliceJobV3 {
+        SliceJobV3 {
+            output_format: ".png".to_string(),
+            format_version: None,
+            source_width_px: 64,
+            source_height_px: 64,
+            width_px: 64,
+            height_px: 64,
+            x_packing_mode: "none".to_string(),
+            build_width_mm: 64.0,
+            build_depth_mm: 64.0,
+            layer_height_mm: 1.0,
+            total_layers: 17,
+            export_thumbnail_png_base64: None,
+            png_compression_strategy: "fastest".to_string(),
+            container_compression_level: 0,
+            anti_aliasing_level: "32x".to_string(),
+            anti_aliasing_mode: "Vertical2".to_string(),
+            blur_brush_radius_px: 8,
+            z_blur_radius_layers: 0,
+            aa_on_supports: false,
+            model_triangle_count: 0,
+            minimum_aa_alpha_percent: 0.0,
+            mirror_x: false,
+            mirror_y: false,
+            z_blend_look_back: 2,
+            z_blend_fade_px: 20,
+            z_blend_auto_fade: false,
+            z_blend_minimum_alpha_percent: 0.0,
+            z_blend_max_alpha_percent: 90.0,
+            z_blend_custom_lut: None,
+            zaa_kernel: Some("perturb".to_string()),
+            zaa_pattern: Some("halton".to_string()),
+            zaa_duplicate_z: Some(false),
+            triangles_xyz: Vec::new(),
+            metadata_json: "{}".to_string(),
+        }
+    }
+
+    fn render_perturb_3daa_rle_masks(job: &SliceJobV3) -> Vec<Vec<u8>> {
+        let mut layer_runs = vec![None; job.total_layers as usize];
+        super::slice_and_rasterize_perturb_3daa_rle_v3(
+            job,
+            false,
+            |layer_idx, runs| {
+                layer_runs[layer_idx as usize] = Some(runs);
+                Ok(())
+            },
+            None,
+            None,
+        )
+        .expect("perturbation 3DAA RLE test slice should render successfully");
+
+        layer_runs
+            .into_iter()
+            .map(|runs| {
+                expand_rle_to_mask(
+                    &runs.expect("all perturbation 3DAA RLE layers should be emitted"),
+                    (job.width_px as usize).saturating_mul(job.height_px as usize),
+                )
+            })
+            .collect()
+    }
+
+    fn render_perturb_3daa_rle_test_layer(job: &SliceJobV3, target_layer: u32) -> Vec<u8> {
+        render_perturb_3daa_rle_masks(job)
+            .into_iter()
+            .nth(target_layer as usize)
+            .expect("target perturbation 3DAA RLE layer should be emitted")
+    }
+
+    #[test]
+    fn perturb_3daa_rle_path_applies_xy_blur_without_full_mask_pump() {
+        let mut unblurred = base_perturb_3daa_rle_test_job();
+        unblurred.blur_brush_radius_px = 0;
+        push_box_triangles(
+            &mut unblurred.triangles_xyz,
+            0.0,
+            0.0,
+            0.0,
+            17.0,
+            16.0,
+            16.0,
+        );
+
+        let mut blurred = unblurred.clone();
+        blurred.blur_brush_radius_px = 8;
+
+        let target_layer = 8;
+        let unblurred_mask = render_perturb_3daa_rle_test_layer(&unblurred, target_layer);
+        let blurred_mask = render_perturb_3daa_rle_test_layer(&blurred, target_layer);
+        let unblurred_bounds = nonzero_bounds(&unblurred_mask, 64, 64)
+            .expect("unblurred RLE 3DAA layer should contain model pixels");
+        let blurred_bounds = nonzero_bounds(&blurred_mask, 64, 64)
+            .expect("blurred RLE 3DAA layer should contain model pixels");
+
+        assert!(
+            blurred_bounds.0 < unblurred_bounds.0
+                || blurred_bounds.1 > unblurred_bounds.1
+                || blurred_bounds.2 < unblurred_bounds.2
+                || blurred_bounds.3 > unblurred_bounds.3,
+            "XY blur radius 8 should expand the RLE 3DAA footprint; unblurred={unblurred_bounds:?}, blurred={blurred_bounds:?}"
+        );
+
+        let gray_outside_original = (0..64).any(|y| {
+            let row = y * 64;
+            (0..64).any(|x| {
+                (x < unblurred_bounds.0
+                    || x > unblurred_bounds.1
+                    || y < unblurred_bounds.2
+                    || y > unblurred_bounds.3)
+                    && blurred_mask[row + x] > 0
+                    && blurred_mask[row + x] < 255
+            })
+        });
+        assert!(
+            gray_outside_original,
+            "RLE 3DAA XY blur should create grayscale pixels outside the unblurred footprint"
+        );
+    }
+
+    #[test]
+    fn perturb_3daa_rle_path_applies_z_blur_before_lut_and_support_merge() {
+        let mut job = base_perturb_3daa_rle_test_job();
+        job.blur_brush_radius_px = 0;
+        job.z_blur_radius_layers = 8;
+
+        // A sub-layer-thick slab near layer 8 produces low, localized coverage;
+        // the RLE Z blur should spread to adjacent layers, but the Aaron-style
+        // radius clamp/tight Gaussian should not smear all the way to radius 8.
+        push_box_triangles(&mut job.triangles_xyz, 0.0, 0.0, 8.0, 8.25, 16.0, 16.0);
+
+        let masks = render_perturb_3daa_rle_masks(&job);
+        let center_max = masks[8].iter().copied().max().unwrap_or(0);
+        assert!(
+            center_max > 0 && center_max < 255,
+            "center perturbation RLE layer should retain grayscale coverage before tail remap; max={center_max}"
+        );
+
+        let near_neighbor_max = masks[7].iter().copied().max().unwrap_or(0);
+        assert!(
+            near_neighbor_max > 0 && near_neighbor_max < 255,
+            "RLE Z blur should spread grayscale coverage to an adjacent layer; max={near_neighbor_max}"
+        );
+
+        let radius_8_tail_max = masks[0].iter().copied().max().unwrap_or(0);
+        assert_eq!(
+            radius_8_tail_max, 0,
+            "Aaron-compatible RLE Z blur should clamp radius 8 input and avoid far-tail smear"
+        );
     }
 
     #[test]
