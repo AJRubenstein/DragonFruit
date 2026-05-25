@@ -5,6 +5,8 @@
 
 DragonFruit is an open-source resin slicer and support-generation environment built by the Open Resin Alliance. It combines a modern Next.js + React frontend with native Rust slicing backends and a Tauri desktop runtime.
 
+Unless a subdirectory or submodule states otherwise, DragonFruit content in this repository is licensed under **AGPL-3.0-or-later**.
+
 > :warning: **DragonFruit is under active development. Please exercise caution for production print workflows, validate outputs, and avoid unattended printing on first use.**
 
 ## Table of Contents
@@ -41,7 +43,7 @@ To get started with DragonFruit, follow one of these variants depending on your 
 
 ### Submodule note (plugin development)
 
-DragonFruit supports complex plugins that can be sourced as Git submodules (for example `plugins/ctb`).
+DragonFruit supports plugins that can be sourced as Git submodules (for example `plugins/ctb`).
 If your local clone is missing plugin folders, generation/build will continue with available plugins only (missing submodules are skipped with warnings).
 Initialize/update submodules when you need to develop or validate those specific plugin integrations.
 
@@ -74,7 +76,6 @@ For release-style builds and bundles:
    - `npm run tauri:bundle:linux`
    - `npm run tauri:bundle:macos`
    - `npm run tauri:bundle:macos:arm64`
-4. **Flatpak (Linux):** After a Linux Tauri build, run `bash flatpak/build.sh` to produce a `.flatpak` bundle in `dist/`. See [`flatpak/README.md`](flatpak/README.md) for details.
 
 ## Project Structure
 
@@ -98,7 +99,9 @@ We welcome and appreciate contributions to DragonFruit! If you'd like to contrib
 
 ## License
 
-DragonFruit licensing details are currently being finalized in-repo. Until a top-level license file is published, please coordinate usage and redistribution questions with the maintainers via the Open Resin Alliance channels.
+Unless stated otherwise in a subdirectory or submodule, DragonFruit is licensed under **AGPL-3.0-or-later**. See the top-level `LICENSE` file for the full terms.
+
+The plugin submodules under `plugins/` are licensed separately under **MIT**. Each plugin repository includes its own `LICENSE` file.
 
 ## Contact
 
