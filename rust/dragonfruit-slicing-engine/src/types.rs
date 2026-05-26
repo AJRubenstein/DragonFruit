@@ -100,6 +100,27 @@ impl SliceJobV3 {
     pub fn effective_render_width_px(&self) -> u32 {
         self.source_width_px
     }
+
+    // TEMP UNBLOCK: the ctb plugin submodule was bumped on `dev` to call
+    // `produces_grayscale_output()`, but the matching host helper lives on
+    // `paul/3daa-2.0` (commit a4dc8c1) and hasn't merged to `dev` yet. This
+    // stub is keyed off `dev`'s existing `anti_aliasing_level` field so the
+    // build succeeds. Delete this method when `paul/3daa-2.0` lands — its
+    // version is richer (handles `anti_aliasing_mode` + `blur_brush_radius_px`
+    // which don't exist on `dev` yet).
+    #[inline]
+    pub fn produces_grayscale_output(&self) -> bool {
+        let normalized = self.anti_aliasing_level.trim().to_ascii_lowercase();
+        if normalized == "off" {
+            return false;
+        }
+        if let Some(raw_steps) = normalized.strip_suffix('x') {
+            if let Ok(parsed) = raw_steps.parse::<u16>() {
+                return parsed > 1;
+            }
+        }
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
