@@ -1263,7 +1263,10 @@ export function MaterialAntiAliasingSection({ draft, onChange, lockActivationTog
                     isOpen={editingTarget !== null}
                     savedCurves={savedCurves}
                     selectedCurveId={settings.selectedLutCurveId}
-                    onSelectCurve={(id) => updateAaSettings({ selectedLutCurveId: id })}
+                    onSelectCurve={(id) => {
+                      updateAaSettings({ selectedLutCurveId: id });
+                      setEditingTarget(id);
+                    }}
                     onImportCurve={(curve) => {
                       const importedId = curve.id.trim() || crypto.randomUUID();
                       const normalizedName = curve.name.trim() || 'Imported Curve';
