@@ -72,11 +72,10 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            args: --target aarch64-apple-darwin --bundles app,dmg
-            artifact_name: dragonfruit-macos-arm64
-          - platform: macos-latest
-            args: --target x86_64-apple-darwin --bundles app,dmg
-            artifact_name: dragonfruit-macos-x64
+            args: --target universal-apple-darwin --bundles app,dmg
+            artifact_name: dragonfruit-macos-universal
+            cmake_archs: "arm64;x86_64"
+            df_build_triple: universal-apple-darwin
           - platform: ubuntu-22.04
             args: --target x86_64-unknown-linux-gnu --bundles deb,rpm
             artifact_name: dragonfruit-linux-x64
@@ -133,9 +132,17 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           APPIMAGE_EXTRACT_AND_RUN: ${{ matrix.platform == 'ubuntu-22.04' && '1' || '' }}
+          CMAKE_OSX_ARCHITECTURES: ${{ matrix.cmake_archs || '' }}
+          DF_BUILD_TARGET_TRIPLE: ${{ matrix.df_build_triple || '' }}
         with:
           tauriScript: npx tauri
           args: ${{ matrix.args }}
+
+      - name: Embed QuickLook extension + verify universal bundle
+        if: matrix.platform == 'macos-latest'
+        run: |
+          node scripts/macos-embed-appex.mjs --target ${{ matrix.df_build_triple }}
+          node scripts/verify-universal-bundle.mjs
 
       - name: Upload bundle artifact
         uses: actions/upload-artifact@v4
