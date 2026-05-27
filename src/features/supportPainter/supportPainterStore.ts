@@ -1,4 +1,3 @@
-import { useSyncExternalStore } from 'react';
 import {
   type BrushType,
   type BrushInteractionPhase,
@@ -10,6 +9,7 @@ import {
   type VoxlROIExtension,
   BRUSH_COLORS,
 } from './supportPainterTypes';
+import { type ClientAdjacencyMap } from './useClientAdjacencyMap';
 
 const listeners = new Set<() => void>();
 
@@ -21,6 +21,8 @@ let regions = new Map<string, ROIRegion>();
 let triangleColorMap: TriangleColorMap = new Map();
 let hoveredTriangleId: number | null = null;
 let proposedTriangleIds = new Set<number>();
+let directGenEnabled = false;
+let clientAdjacencyMap: ClientAdjacencyMap | null = null;
 
 let storeSnapshot: SupportPainterState = {
   isActive,
@@ -31,6 +33,7 @@ let storeSnapshot: SupportPainterState = {
   triangleColorMap,
   hoveredTriangleId,
   proposedTriangleIds,
+  directGenEnabled,
 };
 
 function notify() {
@@ -53,6 +56,7 @@ function updateSnapshot() {
     triangleColorMap: new Map(triangleColorMap),
     hoveredTriangleId,
     proposedTriangleIds: new Set(proposedTriangleIds),
+    directGenEnabled,
   };
 }
 
@@ -111,9 +115,25 @@ export const supportPainterStore = {
     interactionPhase = 'Idle';
     hoveredTriangleId = null;
     proposedTriangleIds.clear();
+    clientAdjacencyMap = null; // Clean up memory cache
     triangleColorMap = _recomputeTriangleColorMap();
     updateSnapshot();
     notify();
+  },
+
+  setDirectGenEnabled(enabled: boolean) {
+    if (directGenEnabled === enabled) return;
+    directGenEnabled = enabled;
+    updateSnapshot();
+    notify();
+  },
+
+  getClientAdjacencyMap(): ClientAdjacencyMap | null {
+    return clientAdjacencyMap;
+  },
+
+  setClientAdjacencyMap(map: ClientAdjacencyMap | null) {
+    clientAdjacencyMap = map;
   },
 
   setActiveBrush(brush: BrushType) {
@@ -257,3 +277,6 @@ export function useSupportPainterState(): SupportPainterState {
     supportPainterStore.getSnapshot
   );
 }
+
+// React import added safely
+import { useSyncExternalStore } from 'react';

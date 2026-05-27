@@ -10,6 +10,8 @@ import { supportPainterStore, useSupportPainterState } from '@/features/supportP
 import { PAINT_ROI_ADD, PAINT_ROI_REMOVE } from '@/features/supportPainter/supportPainterHistoryTypes';
 import { pushHistory } from '@/history/historyStore';
 import { useRoiHighlightMaterial } from '@/features/supportPainter/shaders/roiHighlight';
+import { generateSupportsFromPainter } from '@/features/supportPainter/supportScriptingEngine';
+import { type ROIRegion, BRUSH_COLORS } from '@/features/supportPainter/supportPainterTypes';
 import {
   beginMeshSmoothingStroke,
   updateMeshSmoothingStroke,
@@ -1107,6 +1109,29 @@ if (uDitherAmount > 0.0) {
                     });
                   }
                 }
+              } else if (snap.directGenEnabled) {
+                // Direct Click-to-Generate Mode
+                const triangleIds = snap.proposedTriangleIds.size > 0
+                  ? new Set(snap.proposedTriangleIds)
+                  : new Set([faceIndex]);
+
+                const mockRegion: ROIRegion = {
+                  id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
+                  brushType: snap.activeBrush,
+                  seedTriangleId: faceIndex,
+                  triangleIds,
+                  color: BRUSH_COLORS[snap.activeBrush],
+                  proposedOnly: false,
+                  createdAt: Date.now(),
+                };
+
+                // Instantly generate and place supports
+                generateSupportsFromPainter(modelId, e.object as THREE.Mesh, [mockRegion])
+                  .catch((err) => console.error('[StlMesh] Direct generation failed', err));
+
+                // Clear active hover preview
+                supportPainterStore.setHoveredTriangle(null);
+                supportPainterStore.setProposedTriangleIds([]);
               } else {
                 // Commit/Expand mode
                 supportPainterStore.setInteractionPhase('Expand');

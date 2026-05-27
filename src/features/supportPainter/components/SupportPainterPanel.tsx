@@ -149,6 +149,35 @@ export function SupportPainterPanel({
         </button>
       </div>
 
+      {/* Direct Click-to-Generate Toggle */}
+      <div
+        className="flex items-center justify-between p-2.5 rounded-lg border text-xs"
+        style={{
+          background: 'color-mix(in srgb, var(--surface-1) 50%, transparent)',
+          borderColor: 'var(--border-subtle)',
+        }}
+      >
+        <div className="flex flex-col gap-0.5 min-w-0 pr-2">
+          <span className="font-semibold text-white/90">Direct Click-to-Generate</span>
+          <span className="text-[9px] opacity-60">Generate supports instantly on click</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => supportPainterStore.setDirectGenEnabled(!state.directGenEnabled)}
+          className="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+          style={{
+            backgroundColor: state.directGenEnabled ? '#ff5b6f' : 'rgba(255,255,255,0.15)',
+          }}
+        >
+          <span
+            className="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+            style={{
+              transform: state.directGenEnabled ? 'translateX(16px)' : 'translateX(0)',
+            }}
+          />
+        </button>
+      </div>
+
       {/* Brushes Selection */}
       <div className="flex flex-col gap-2">
         <span className="text-[10px] uppercase tracking-wider opacity-60 font-bold">
@@ -208,6 +237,11 @@ export function SupportPainterPanel({
           <div className="flex items-center gap-1.5 text-orange-400">
             <span className="font-bold">Subtract Mode active:</span> Click on a painted triangle to delete its entire region.
           </div>
+        ) : state.directGenEnabled ? (
+          <div className="flex flex-col gap-0.5">
+            <span className="font-medium text-[#ff5b6f]">{activeDetails.label}: Instant Placement</span>
+            <span>Click model to instantly generate & place supports in the highlighted region.</span>
+          </div>
         ) : (
           <div className="flex flex-col gap-0.5">
             <span className="font-medium text-white/90">{activeDetails.label}: {activeDetails.desc}</span>
@@ -236,7 +270,9 @@ export function SupportPainterPanel({
         <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-1.5 scrollbar-thin">
           {state.regions.size === 0 ? (
             <div className="flex flex-col items-center justify-center py-6 text-center text-[11px] opacity-40 italic">
-              No regions painted yet
+              {state.directGenEnabled
+                ? 'Direct Generation Mode: Click mesh to instantly place supports'
+                : 'No regions painted yet'}
             </div>
           ) : (
             Array.from(state.regions.values())

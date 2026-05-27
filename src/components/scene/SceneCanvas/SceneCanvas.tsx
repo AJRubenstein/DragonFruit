@@ -833,10 +833,6 @@ export function SceneCanvas({
     return models.find((m) => m.id === activeModelId)?.geometry.geometry || null;
   }, [activeModelId, models]);
 
-  // Support Painter Hook Invocations & Synchronization
-  const painterState = useSupportPainterState();
-  useSupportPainterManager(painterState.isActive, activeModelId, activeModelGeom);
-
   const getActiveMesh = React.useCallback(() => {
     if (!activeModelId) return null;
     const group = meshRefs.current[activeModelId];
@@ -849,6 +845,10 @@ export function SceneCanvas({
     });
     return mesh;
   }, [activeModelId]);
+
+  // Support Painter Hook Invocations & Synchronization
+  const painterState = useSupportPainterState();
+  useSupportPainterManager(painterState.isActive, activeModelId, activeModelGeom, getActiveMesh);
 
   React.useEffect(() => {
     if (mode === 'supportPainter') {
