@@ -73,4 +73,30 @@ describe('SupportModelLinker', () => {
     assert.ok(!afterState.twigs['twig-a'], 'Twig for deleted model should be removed');
     assert.ok(!!afterState.twigs['twig-b'], 'Twig for other models should remain');
   });
+
+  it('deletes supports for multiple models sequentially without restoring deleted ones', () => {
+    resetStore();
+
+    const twigA = makeTwig('twig-a', 'model-a');
+    const twigB = makeTwig('twig-b', 'model-b');
+    const twigC = makeTwig('twig-c', 'model-c');
+
+    addTwig(twigA);
+    addTwig(twigB);
+    addTwig(twigC);
+
+    const targetIds = ['model-a', 'model-b'];
+    let totalRemoved = 0;
+
+    targetIds.forEach((modelId) => {
+      totalRemoved += deleteSupportsForModel(getSnapshot(), modelId);
+    });
+
+    assert.strictEqual(totalRemoved, 2, 'Expected exactly two twigs to be removed');
+
+    const afterState = getSnapshot();
+    assert.ok(!afterState.twigs['twig-a'], 'Twig A should be removed');
+    assert.ok(!afterState.twigs['twig-b'], 'Twig B should be removed');
+    assert.ok(!!afterState.twigs['twig-c'], 'Twig C should remain');
+  });
 });

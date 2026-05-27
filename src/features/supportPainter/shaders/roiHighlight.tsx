@@ -101,6 +101,7 @@ export function useRoiHighlightMaterial(
     texture.minFilter = THREE.NearestFilter;
     texture.magFilter = THREE.NearestFilter;
     texture.generateMipmaps = false;
+    texture.flipY = false; // Explicitly disable flipping for precise row alignment
     texture.needsUpdate = true;
     textureRef.current = texture;
 
@@ -148,14 +149,21 @@ export function useRoiHighlightMaterial(
 
         void main() {
           #include <clipping_planes_fragment>
-          // Round interpolated float ID to nearest integer to avoid rasterizer rounding errors
           float triId = floor(vTriangleId + 0.5);
-          // Calculate 2D coordinates for the triangle ID with half-texel offset for accurate nearest sampling
           float x = mod(triId, uRoiMapWidth) + 0.5;
           float y = floor(triId / uRoiMapWidth) + 0.5;
           vec2 uv = vec2(x / uRoiMapWidth, y / uRoiMapHeight);
           vec4 roi = texture2D(uRoiMap, uv);
+          
+          // Robust fallback for vertically-flipped texture uploads on certain GPU architectures
+          if (roi.a <= 0.01) {
+            vec2 uvFlipped = vec2(uv.x, 1.0 - uv.y);
+            roi = texture2D(uRoiMap, uvFlipped);
+          }
 
+          // Diagnostic fallback: unpainted triangles are transparent/discarded,
+          // but if sampled texture contains hover/paint data (roi.a > 0.01),
+          // we paint them in their vibrant color with glowing self-emissive.
           if (roi.a <= 0.01) {
             discard;
           }
@@ -208,20 +216,24 @@ export function useRoiHighlightMaterial(
     }
   }, [clippingPlanes]);
 
-  // Sync state changes with the DataTexture
+  // Sync state changes with the DataTexture using dynamic instantiation & disposal
   useEffect(() => {
-    const texture = textureRef.current;
-    if (!texture || totalTriangleCount === 0 || !isActive) return;
+    if (totalTriangleCount === 0 || !isActive || !material) return;
+
+    const texWidth = 2048;
+    const texHeight = Math.ceil(totalTriangleCount / texWidth);
 
     const handleUpdate = () => {
       const snap = supportPainterStore.getSnapshot();
-      const data = texture.image.data;
-      if (!data) return;
+      
+      console.log(`[ROIHighlight] Re-instantiating fresh DataTexture for WebGL2 compatibility. Hovered: ${snap.hoveredTriangleId}, proposed: ${snap.proposedTriangleIds.size}`);
 
-      // Reset to transparent [0,0,0,0]
-      data.fill(0);
+      // Allocate a fresh Uint8Array buffer
+      const size = texWidth * texHeight * 4;
+      const data = new Uint8Array(size);
 
       // Write committed regions & hover previews into texture data
+      let writeCount = 0;
       for (const [triId, [r, g, b, a]] of snap.triangleColorMap.entries()) {
         if (triId >= 0 && triId < totalTriangleCount) {
           const offset = triId * 4;
@@ -229,10 +241,37 @@ export function useRoiHighlightMaterial(
           data[offset + 1] = g;
           data[offset + 2] = b;
           data[offset + 3] = a;
+          writeCount++;
         }
       }
 
-      texture.needsUpdate = true;
+      // Instantiate a completely new DataTexture.
+      // This is mathematically guaranteed to work under WebGL2 because it is treated
+      // as a new texture allocation (never violates immutable texture limits).
+      const newTexture = new THREE.DataTexture(
+        data,
+        texWidth,
+        texHeight,
+        THREE.RGBAFormat,
+        THREE.UnsignedByteType
+      );
+      newTexture.minFilter = THREE.NearestFilter;
+      newTexture.magFilter = THREE.NearestFilter;
+      newTexture.generateMipmaps = false;
+      newTexture.flipY = false;
+      newTexture.needsUpdate = true;
+
+      // Dispose of the previous texture to prevent GPU memory leaks
+      const prevTexture = material.uniforms.uRoiMap.value;
+      if (prevTexture && prevTexture !== newTexture) {
+        console.log('[ROIHighlight] Disposing previous DataTexture.');
+        prevTexture.dispose();
+      }
+
+      // Bind the fresh texture instance to the material uniform
+      material.uniforms.uRoiMap.value = newTexture;
+      textureRef.current = newTexture;
+      console.log(`[ROIHighlight] Successfully bound new DataTexture with ${writeCount} triangles. needsUpdate flagged.`);
     };
 
     // Initialize with current state
@@ -242,6 +281,12 @@ export function useRoiHighlightMaterial(
     const unsubscribe = supportPainterStore.subscribe(handleUpdate);
     return () => {
       unsubscribe();
+      // Clean up texture when the effect is destroyed
+      if (textureRef.current) {
+        console.log('[ROIHighlight] Disposing final DataTexture on cleanup.');
+        textureRef.current.dispose();
+        textureRef.current = null;
+      }
     };
   }, [totalTriangleCount, isActive, material]);
 

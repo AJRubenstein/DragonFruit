@@ -2636,11 +2636,10 @@ export function useSceneCollectionManager() {
     setSelectedModelIds(nextSelectedModelIds);
 
     // Clean up associated supports before capturing the "after" snapshot so undo/redo remains atomic.
-    const supportState = getSnapshot();
     let totalRemovedSupports = 0;
     if (includeSupportHistory) {
       ids.forEach((id) => {
-        totalRemovedSupports += deleteSupportsForModel(supportState, id);
+        totalRemovedSupports += deleteSupportsForModel(getSnapshot(), id);
       });
 
       // Defensive pass: guarantee no orphaned supports survive model deletion.
@@ -2717,9 +2716,8 @@ export function useSceneCollectionManager() {
     const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, { includeSupportState: true });
 
     let totalRemovedSupports = 0;
-    const supportState = getSnapshot();
     targetIds.forEach((modelId) => {
-      totalRemovedSupports += deleteSupportsForModel(supportState, modelId);
+      totalRemovedSupports += deleteSupportsForModel(getSnapshot(), modelId);
     });
 
     const after = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, { includeSupportState: true });

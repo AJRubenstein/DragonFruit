@@ -132,19 +132,29 @@ export function useSupportPainterManager(
   // 4. Synchronous, Low-Latency Client-Side Region Proposal (runs in <1ms!)
   useEffect(() => {
     if (!isActive || !activeModelId || hoveredTriangleId === null || initializedModelId !== activeModelId) {
+      if (isActive && hoveredTriangleId === null) {
+        console.log('[SupportPainterManager] Hovered triangle is null - clearing proposals.');
+      }
       return;
     }
 
     const map = supportPainterStore.getClientAdjacencyMap();
-    if (!map) return;
+    if (!map) {
+      console.warn('[SupportPainterManager] Client adjacency map not available!');
+      return;
+    }
 
     try {
       // Resolve the live mesh and its up-to-date matrixWorld dynamically at hover time
       const mesh = meshResolver?.();
       const matrixWorld = mesh?.matrixWorld || new THREE.Matrix4();
       
+      console.log(`[SupportPainterManager] Running proposal on seed: ${hoveredTriangleId}, active brush: ${activeBrush}, mesh resolved: ${!!mesh}`);
+      
       // Execute the brush walk synchronously in JavaScript using the live transform
       const proposedIds = proposeRegionOnClient(map, hoveredTriangleId, activeBrush, matrixWorld);
+      
+      console.log(`[SupportPainterManager] Smart brush search returned ${proposedIds.length} triangles.`);
       supportPainterStore.setProposedTriangleIds(proposedIds);
     } catch (err) {
       console.error('[SupportPainterManager] Client proposal failed', err);
