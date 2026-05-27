@@ -838,23 +838,19 @@ export function SceneCanvas({
   useSupportPainterManager(painterState.isActive, activeModelId, activeModelGeom);
 
   React.useEffect(() => {
-    if (painterState.isActive && mode !== 'supportPainter') {
-      onSupportClick?.(null as any);
-      clearSupportSelection();
-      onActiveModelChange?.(activeModelId, { selectionMode: 'single' });
-      onModeChange?.('supportPainter');
-    } else if (!painterState.isActive && mode === 'supportPainter') {
-      onModeChange?.('support');
+    if (mode === 'supportPainter') {
+      if (!painterState.isActive) {
+        onSupportClick?.(null as any);
+        clearSupportSelection();
+        onActiveModelChange?.(activeModelId, { selectionMode: 'single' });
+        supportPainterStore.activate();
+      }
+    } else {
+      if (painterState.isActive) {
+        supportPainterStore.deactivate();
+      }
     }
-  }, [painterState.isActive, mode, onModeChange, activeModelId, onActiveModelChange, onSupportClick]);
-
-  React.useEffect(() => {
-    if (mode !== 'supportPainter' && painterState.isActive) {
-      supportPainterStore.deactivate();
-    } else if (mode === 'supportPainter' && !painterState.isActive) {
-      supportPainterStore.activate();
-    }
-  }, [mode, painterState.isActive]);
+  }, [mode, painterState.isActive, activeModelId, onActiveModelChange, onSupportClick]);
 
   const meshRefs = React.useRef<Record<string, THREE.Group | null>>({});
   const actualMeshRefs = React.useRef<Record<string, THREE.Mesh | null>>({});
