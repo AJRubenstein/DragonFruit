@@ -52,6 +52,10 @@ export class SDFCache {
     readonly cellSize: number;
 
     private readonly mesh: THREE.Mesh;
+    private readonly geometry: THREE.BufferGeometry;
+    private readonly index: THREE.BufferAttribute | null;
+    private readonly positionAttribute: THREE.BufferAttribute;
+
     /** BVH instance from three-mesh-bvh (geometry.boundsTree) */
     private readonly bvh: any;
     private inverseMatrix = new THREE.Matrix4();
@@ -74,11 +78,14 @@ export class SDFCache {
         this.cellSize = opts?.cellSize ?? 0.5;
         this.mesh = mesh;
 
-        const geom = mesh.geometry as any;
-        this.bvh = geom.boundsTree;
+        const geom = mesh.geometry as THREE.BufferGeometry;
+        this.geometry = geom;
+        this.bvh = (geom as any).boundsTree;
         if (!this.bvh) {
             throw new Error('SDFCache: mesh geometry has no boundsTree (BVH). Ensure BVH is computed before constructing the cache.');
         }
+        this.index = geom.index as THREE.BufferAttribute | null;
+        this.positionAttribute = geom.getAttribute('position') as THREE.BufferAttribute;
 
         this._snapshotMatrix();
     }
@@ -176,9 +183,8 @@ export class SDFCache {
         let fn = this._faceNormalCache.get(faceIndex);
 
         if (!fn) {
-            const geom = this.mesh.geometry;
-            const posAttr = geom.getAttribute('position');
-            const idx = geom.index;
+            const posAttr = this.positionAttribute;
+            const idx = this.index;
 
             // Look up vertex indices for this triangle
             let i0: number, i1: number, i2: number;

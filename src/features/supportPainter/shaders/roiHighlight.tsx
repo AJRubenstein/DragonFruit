@@ -26,7 +26,8 @@ function buildTriangleIdAttribute(geometry: THREE.BufferGeometry): THREE.BufferA
 export function useRoiHighlightMaterial(
   geometry: THREE.BufferGeometry | null,
   isActive: boolean,
-  meshColor: string = '#c8c8ce'
+  meshColor: string = '#c8c8ce',
+  clippingPlanes: THREE.Plane[] = []
 ): { material: THREE.ShaderMaterial | null; geometry: THREE.BufferGeometry | null } {
   const timeRef = useRef<number>(0);
   const textureRef = useRef<THREE.DataTexture | null>(null);
@@ -40,16 +41,29 @@ export function useRoiHighlightMaterial(
   // Compute non-indexed rendering geometry copy if original is indexed
   const renderingGeometry = useMemo(() => {
     if (!geometry || !isActive) return geometry;
-    if (geometry.index) {
-      console.log('[ROIHighlight] Converting indexed geometry to non-indexed copy for high-fidelity paint highlighting');
-      try {
-        return geometry.toNonIndexed();
-      } catch (err) {
-        console.error('[ROIHighlight] Failed to convert indexed geometry to non-indexed', err);
-        return geometry;
+
+    console.log('[ROIHighlight] Creating dedicated rendering geometry copy for paint highlighting');
+    let geom: THREE.BufferGeometry;
+    try {
+      if (geometry.index) {
+        geom = geometry.toNonIndexed();
+      } else {
+        geom = geometry.clone();
       }
+
+      // SYNCHRONOUS INITIALIZATION: Attach attribute BEFORE geometry is ever rendered
+      const attr = buildTriangleIdAttribute(geom);
+      geom.setAttribute('aTriangleId', attr);
+
+      // Compute BVH bounds tree for collision detection & raycasting support
+      (geom as any).computeBoundsTree?.();
+
+      console.log('[ROIHighlight] Synchronously built attribute and computed BVH boundsTree');
+    } catch (err) {
+      console.error('[ROIHighlight] Failed to initialize rendering geometry copy', err);
+      geom = geometry;
     }
-    return geometry;
+    return geom;
   }, [geometry, isActive]);
 
   // Clean up non-indexed copy on change or unmount
@@ -67,19 +81,6 @@ export function useRoiHighlightMaterial(
     const pos = renderingGeometry.getAttribute('position');
     return pos ? Math.floor(pos.count / 3) : 0;
   }, [renderingGeometry]);
-
-  // Setup Geometry Attribute for Triangle IDs
-  useEffect(() => {
-    if (!renderingGeometry || totalTriangleCount === 0) return;
-    if (!renderingGeometry.getAttribute('aTriangleId')) {
-      try {
-        const attr = buildTriangleIdAttribute(renderingGeometry);
-        renderingGeometry.setAttribute('aTriangleId', attr);
-      } catch (err) {
-        console.error('[ROIHighlight] failed to build aTriangleId attribute', err);
-      }
-    }
-  }, [renderingGeometry, totalTriangleCount]);
 
   // Setup DataTexture and ShaderMaterial
   const material = useMemo(() => {
@@ -105,6 +106,7 @@ export function useRoiHighlightMaterial(
 
     // 2. Define Custom Shader Material with basic Diffuse shading for beautiful premium visuals
     const mat = new THREE.ShaderMaterial({
+      precision: 'highp', // Enforce highp for high-density mesh indexing
       uniforms: {
         uRoiMap: { value: texture },
         uRoiMapWidth: { value: texWidth },
@@ -113,17 +115,21 @@ export function useRoiHighlightMaterial(
         uBaseColor: { value: baseColor },
       },
       vertexShader: `
+        #include <clipping_planes_pars_vertex>
         attribute float aTriangleId;
         varying float vTriangleId;
         varying vec3 vNormal;
 
         void main() {
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          #include <clipping_planes_vertex>
           vTriangleId = aTriangleId;
           vNormal = normalize(normalMatrix * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
         }
       `,
       fragmentShader: `
+        #include <clipping_planes_pars_fragment>
         uniform sampler2D uRoiMap;
         uniform float uRoiMapWidth;
         uniform float uRoiMapHeight;
@@ -134,9 +140,12 @@ export function useRoiHighlightMaterial(
         varying vec3 vNormal;
 
         void main() {
+          #include <clipping_planes_fragment>
+          // Round interpolated float ID to nearest integer to avoid rasterizer rounding errors
+          float triId = floor(vTriangleId + 0.5);
           // Calculate 2D coordinates for the triangle ID with half-texel offset for accurate nearest sampling
-          float x = mod(vTriangleId, uRoiMapWidth) + 0.5;
-          float y = floor(vTriangleId / uRoiMapWidth) + 0.5;
+          float x = mod(triId, uRoiMapWidth) + 0.5;
+          float y = floor(triId / uRoiMapWidth) + 0.5;
           vec2 uv = vec2(x / uRoiMapWidth, y / uRoiMapHeight);
           vec4 roi = texture2D(uRoiMap, uv);
 
@@ -181,6 +190,13 @@ export function useRoiHighlightMaterial(
     materialRef.current = mat;
     return mat;
   }, [renderingGeometry, totalTriangleCount, isActive, baseColor]);
+
+  // Sync clipping planes dynamically
+  useEffect(() => {
+    if (materialRef.current) {
+      materialRef.current.clippingPlanes = clippingPlanes;
+    }
+  }, [clippingPlanes]);
 
   // Sync state changes with the DataTexture
   useEffect(() => {

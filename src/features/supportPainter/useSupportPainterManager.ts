@@ -102,7 +102,7 @@ export function useSupportPainterManager(
     };
   }, [isActive]);
 
-  // 3. Build & Cache the Client Adjacency Map locally
+  // 3. Build & Cache the Client Adjacency Map locally (in LOCAL SPACE)
   useEffect(() => {
     if (!isActive || !activeModelId || !geometry) {
       supportPainterStore.setClientAdjacencyMap(null);
@@ -116,10 +116,8 @@ export function useSupportPainterManager(
     }
 
     try {
-      console.log(`[SupportPainterManager] Indexing client-side face adjacency map for model ${activeModelId}`);
-      const mesh = meshResolver?.();
-      const matrixWorld = mesh?.matrixWorld || new THREE.Matrix4();
-      const newMap = buildClientAdjacencyMap(geometry, matrixWorld);
+      console.log(`[SupportPainterManager] Indexing client-side face adjacency map (local space) for model ${activeModelId}`);
+      const newMap = buildClientAdjacencyMap(geometry);
       
       supportPainterStore.setClientAdjacencyMap(newMap);
       setInitializedModelId(activeModelId);
@@ -129,7 +127,7 @@ export function useSupportPainterManager(
       supportPainterStore.setClientAdjacencyMap(null);
       setInitializedModelId(null);
     }
-  }, [isActive, activeModelId, geometry, meshResolver, initializedModelId]);
+  }, [isActive, activeModelId, geometry, initializedModelId]);
 
   // 4. Synchronous, Low-Latency Client-Side Region Proposal (runs in <1ms!)
   useEffect(() => {
@@ -141,11 +139,15 @@ export function useSupportPainterManager(
     if (!map) return;
 
     try {
-      // Execute the brush walk synchronously in JavaScript
-      const proposedIds = proposeRegionOnClient(map, hoveredTriangleId, activeBrush);
+      // Resolve the live mesh and its up-to-date matrixWorld dynamically at hover time
+      const mesh = meshResolver?.();
+      const matrixWorld = mesh?.matrixWorld || new THREE.Matrix4();
+      
+      // Execute the brush walk synchronously in JavaScript using the live transform
+      const proposedIds = proposeRegionOnClient(map, hoveredTriangleId, activeBrush, matrixWorld);
       supportPainterStore.setProposedTriangleIds(proposedIds);
     } catch (err) {
       console.error('[SupportPainterManager] Client proposal failed', err);
     }
-  }, [isActive, activeModelId, hoveredTriangleId, activeBrush, initializedModelId]);
+  }, [isActive, activeModelId, hoveredTriangleId, activeBrush, initializedModelId, meshResolver]);
 }

@@ -8,12 +8,21 @@ import {
   addRoot,
   addTrunk,
   addAnchor,
+  addBranch,
+  addKnot,
+  updateKnot,
+  updateTrunk,
+  addTwig,
+  addStick,
 } from '@/supports/state';
-import { getShaftProfile } from '@/supports/Settings';
+import { getShaftProfile, getSettings } from '@/supports/Settings';
 import { buildTrunkData } from '@/supports/SupportTypes/Trunk/trunkBuilder';
-import { buildAnchorData } from '@/supports/SupportTypes/Anchor/anchorBuilder';
 import { pushHistory } from '@/history/historyStore';
 import { SUPPORT_EDIT_REPLACE } from '@/supports/history/actionTypes';
+import { decideGridPlacement } from '@/supports/PlacementLogic/Grid/gridPlacement';
+import { computeAndApplyTrunkDiameterProfile } from '@/supports/SupportTypes/Trunk/TrunkReplacement';
+import { buildTwig } from '@/supports/SupportTypes/Twig/twigBuilder';
+import { buildStick } from '@/supports/SupportTypes/Stick/stickBuilder';
 
 function expandGeometryToTriangleSoup(geometry: THREE.BufferGeometry): Float32Array {
   const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute;
@@ -526,43 +535,169 @@ export async function generateSupportsFromPainter(
     }
   }
 
-  // 4. Perform Support Generation inside a Transaction Batch
-  beginSupportStateBatch();
+  // 4. Helper function to compile and route cavity sticks straight down when pathfinding gets trapped
+  const _cavityRaycaster = new THREE.Raycaster();
+  const _downDir = new THREE.Vector3(0, 0, -1);
 
-  try {
-    // 4a. Place Z-minima heavy anchors
-    for (const anchorPoint of allHeavyAnchors) {
-      const build = buildAnchorData({
-        tipPos: anchorPoint.pos,
-        tipNormal: anchorPoint.normal,
-        modelId,
-      });
-      if (build?.anchor) {
-        addAnchor(build.anchor);
+  const buildCavityStick = (
+    tipPos: { x: number; y: number; z: number },
+    tipNormal: { x: number; y: number; z: number },
+    modelId: string,
+    mesh: THREE.Mesh,
+  ) => {
+    _cavityRaycaster.set(
+      new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z),
+      _downDir,
+    );
+    const OFFSET_MM = 0.5;
+    _cavityRaycaster.ray.origin.addScaledVector(
+      new THREE.Vector3(tipNormal.x, tipNormal.y, tipNormal.z),
+      OFFSET_MM,
+    );
+    _cavityRaycaster.ray.origin.z -= OFFSET_MM * 0.1;
+
+    const hits = _cavityRaycaster.intersectObject(mesh, false);
+    if (hits.length === 0) return null;
+
+    const BELOW_EPS_MM = 0.1;
+    const FLOOR_Z_MIN = 0.35;
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+
+    type Candidate = { hit: THREE.Intersection; normal: THREE.Vector3 };
+    const MAX_HIT_SCAN = 64;
+    let scanned = 0;
+    let firstBelowCandidate: Candidate | null = null;
+    let floorCandidate: Candidate | null = null;
+
+    for (const h of hits) {
+      scanned += 1;
+      if (scanned > MAX_HIT_SCAN) break;
+      if (h.point.z >= tipPos.z - BELOW_EPS_MM) continue;
+      if (!h.face) continue;
+      const n = h.face.normal.clone().applyNormalMatrix(normalMatrix).normalize();
+      const candidate = { hit: h, normal: n };
+      if (!firstBelowCandidate) firstBelowCandidate = candidate;
+      if (n.z >= FLOOR_Z_MIN) {
+        floorCandidate = candidate;
+        break;
       }
     }
 
-    // 4b. Place perimeter and infill columns (Trunks)
+    const chosen = floorCandidate ?? firstBelowCandidate;
+    if (!chosen) return null;
+
+    const bPos = { x: chosen.hit.point.x, y: chosen.hit.point.y, z: chosen.hit.point.z };
+    const bNormal = { x: chosen.normal.x, y: chosen.normal.y, z: chosen.normal.z };
+
+    const settings = getSettings();
+    const cutoff = settings.meshToMesh?.stickVsTwigCutoffMm ?? 5;
+    const dx = tipPos.x - bPos.x;
+    const dy = tipPos.y - bPos.y;
+    const dz = tipPos.z - bPos.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const kind: 'twig' | 'stick' = dist > cutoff ? 'stick' : 'twig';
+
+    if (kind === 'twig') {
+      const { twig } = buildTwig({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal });
+      return { kind, twig };
+    }
+
+    const { stick } = buildStick({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal });
+    return { kind: 'stick', stick };
+  };
+
+  // 5. Perform Support Generation inside a Transaction Batch leveraging the high quality grid placement solver
+  beginSupportStateBatch();
+
+  const settings = getSettings();
+
+  const processPointPlacement = (col: SampledPoint) => {
+    const build = buildTrunkData({
+      tipPos: col.pos,
+      tipNormal: col.normal,
+      modelId,
+      mesh,
+    });
+
+    // Check closed cavity or self-overhang pathfinding failures and fall back to cavity sticks/twigs
+    if (build.stagnated || build.exhaustedBudget) {
+      if (mesh) {
+        const cavity = buildCavityStick(col.pos, col.normal, modelId, mesh);
+        if (cavity) {
+          if (cavity.kind === 'twig' && cavity.twig) {
+            addTwig(cavity.twig);
+          } else if (cavity.kind === 'stick' && cavity.stick) {
+            addStick(cavity.stick);
+          }
+        }
+      }
+      return;
+    }
+
+    // Standard high quality grid placement solver
+    const snapshot = getSupportSnapshot();
+    const decision = decideGridPlacement({
+      settings,
+      snapshot,
+      candidate: build,
+      tipPos: col.pos,
+      tipNormal: col.normal,
+      modelId,
+      mesh,
+    });
+
+    if (decision.kind === 'place_trunk') {
+      const tb = decision.trunkBuild;
+      if (tb?.trunk && !tb.stagnated && !tb.exhaustedBudget && !tb.error) {
+        addRoot(tb.root);
+        addTrunk(tb.trunk);
+      }
+    } else if (decision.kind === 'place_branch') {
+      addKnot(decision.knot);
+      addBranch(decision.branch);
+
+      const snapshotAfterAdd = getSupportSnapshot();
+      const hostTrunk = snapshotAfterAdd.trunks[decision.hostTrunkId];
+      if (hostTrunk) {
+        const applied = computeAndApplyTrunkDiameterProfile(snapshotAfterAdd, decision.hostTrunkId);
+        if (applied) {
+          for (const u of applied.knotUpdates) {
+            updateKnot(u.after);
+          }
+          updateTrunk(applied.trunk);
+        }
+      }
+    } else if (decision.kind === 'place_anchor') {
+      addAnchor(decision.anchor);
+    } else if (decision.kind === 'replace_trunk') {
+      addKnot(decision.promoteKnot);
+      addBranch(decision.promoteBranch);
+
+      const tb = decision.trunkBuild;
+      if (tb?.trunk) {
+        addRoot(tb.root);
+        addTrunk(tb.trunk);
+      }
+    }
+  };
+
+  try {
+    // 5a. Place Z-minima heavy anchors
+    for (const anchorPoint of allHeavyAnchors) {
+      processPointPlacement(anchorPoint);
+    }
+
+    // 5b. Place perimeter and infill columns
     const allColumns = [...filteredPerimeterColumns, ...allInfillColumns];
     for (const col of allColumns) {
-      const build = buildTrunkData({
-        tipPos: col.pos,
-        tipNormal: col.normal,
-        modelId,
-        mesh,
-      });
-
-      // Avoid placing stagnated, out-of-bound, or faulty routed supports that fail validation/safeguards (Issue 1)
-      if (build?.trunk && !build.stagnated && !build.exhaustedBudget && !build.error) {
-        addRoot(build.root);
-        addTrunk(build.trunk);
-      }
+      processPointPlacement(col);
     }
   } catch (err) {
     console.error('[SupportScriptingEngine] Error batching support additions', err);
   } finally {
     endSupportStateBatch();
   }
+
 
   // 5. Capture snapshot after execution and push a unified history step
   const afterState = getSupportSnapshot();

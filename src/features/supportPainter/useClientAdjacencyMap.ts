@@ -11,11 +11,26 @@ export interface ClientAdjacencyMap {
 
 /**
  * Builds a high-performance face adjacency map and spatial cache on the client side
- * directly from the Three.js BufferGeometry, avoiding duplicate uploads to Rust.
+ * directly from the Three.js BufferGeometry, in LOCAL SPACE to ensure 100% robustness
+ * against transform timing, scales, and rotation states.
  */
-export function buildClientAdjacencyMap(geometry: THREE.BufferGeometry, matrixWorld: THREE.Matrix4): ClientAdjacencyMap {
-  const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute;
+export function buildClientAdjacencyMap(geometry: THREE.BufferGeometry): ClientAdjacencyMap {
+  let geom = geometry;
+  let needsDispose = false;
+
+  if (geometry.index) {
+    console.log('[useClientAdjacencyMap] Converting indexed geometry to non-indexed for accurate adjacency map building');
+    try {
+      geom = geometry.toNonIndexed();
+      needsDispose = true;
+    } catch (err) {
+      console.error('[useClientAdjacencyMap] Failed to convert indexed geometry to non-indexed', err);
+    }
+  }
+
+  const posAttr = geom.getAttribute('position') as THREE.BufferAttribute;
   if (!posAttr) {
+    if (needsDispose) geom.dispose();
     return { faceCount: 0, faceToFaces: [], faceNormals: [], faceCentroids: [], faceZBounds: [] };
   }
   const positions = posAttr.array;
@@ -41,9 +56,9 @@ export function buildClientAdjacencyMap(geometry: THREE.BufferGeometry, matrixWo
 
   for (let f = 0; f < faceCount; f++) {
     const o = f * 9;
-    v0.set(positions[o], positions[o + 1], positions[o + 2]).applyMatrix4(matrixWorld);
-    v1.set(positions[o + 3], positions[o + 4], positions[o + 5]).applyMatrix4(matrixWorld);
-    v2.set(positions[o + 6], positions[o + 7], positions[o + 8]).applyMatrix4(matrixWorld);
+    v0.set(positions[o], positions[o + 1], positions[o + 2]);
+    v1.set(positions[o + 3], positions[o + 4], positions[o + 5]);
+    v2.set(positions[o + 6], positions[o + 7], positions[o + 8]);
 
     // 1. Centroid
     const centroid = new THREE.Vector3(
@@ -84,9 +99,9 @@ export function buildClientAdjacencyMap(geometry: THREE.BufferGeometry, matrixWo
 
   for (let f = 0; f < faceCount; f++) {
     const o = f * 9;
-    v0.set(positions[o], positions[o + 1], positions[o + 2]).applyMatrix4(matrixWorld);
-    v1.set(positions[o + 3], positions[o + 4], positions[o + 5]).applyMatrix4(matrixWorld);
-    v2.set(positions[o + 6], positions[o + 7], positions[o + 8]).applyMatrix4(matrixWorld);
+    v0.set(positions[o], positions[o + 1], positions[o + 2]);
+    v1.set(positions[o + 3], positions[o + 4], positions[o + 5]);
+    v2.set(positions[o + 6], positions[o + 7], positions[o + 8]);
 
     const k0 = getVertexKey(v0.x, v0.y, v0.z);
     const k1 = getVertexKey(v1.x, v1.y, v1.z);
@@ -108,6 +123,10 @@ export function buildClientAdjacencyMap(geometry: THREE.BufferGeometry, matrixWo
     }
   }
 
+  if (needsDispose) {
+    geom.dispose();
+  }
+
   return {
     faceCount,
     faceToFaces,
@@ -118,33 +137,43 @@ export function buildClientAdjacencyMap(geometry: THREE.BufferGeometry, matrixWo
 }
 
 /**
- * Executes a high-performance client-side region-wrapping search based on the active smart brush.
+ * Executes a high-performance client-side region-wrapping search based on the active smart brush,
+ * resolving Z-overhangs and centroids on-the-fly dynamically relative to the model's matrixWorld.
  */
 export function proposeRegionOnClient(
   map: ClientAdjacencyMap,
   seedFaceIndex: number,
-  brushType: BrushType
+  brushType: BrushType,
+  matrixWorld: THREE.Matrix4
 ): number[] {
   if (seedFaceIndex < 0 || seedFaceIndex >= map.faceCount) return [];
 
+  // Compute local up vector and world scale on-the-fly from the live matrixWorld
+  const inv = new THREE.Matrix4().copy(matrixWorld).invert();
+  const localUp = new THREE.Vector3(0, 0, 1).transformDirection(inv);
+
+  const scale = new THREE.Vector3();
+  matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+  const worldScale = (scale.x + scale.y + scale.z) / 3;
+
   switch (brushType) {
     case 'MacroFace':
-      return walkMacroFace(map, seedFaceIndex);
+      return walkMacroFace(map, seedFaceIndex, localUp);
     case 'Ridge':
-      return walkRidge(map, seedFaceIndex);
+      return walkRidge(map, seedFaceIndex, localUp);
     case 'CylinderSides':
-      return walkCylinderSides(map, seedFaceIndex);
+      return walkCylinderSides(map, seedFaceIndex, localUp);
     case 'CylinderMinima':
-      return walkCylinderMinima(map, seedFaceIndex);
+      return walkCylinderMinima(map, seedFaceIndex, localUp);
     case 'Point':
-      return walkPoint(map, seedFaceIndex);
+      return walkPoint(map, seedFaceIndex, localUp, worldScale);
     case 'Ring':
-      return walkRing(map, seedFaceIndex);
+      return walkRing(map, seedFaceIndex, localUp, matrixWorld);
     default:
       // Legacy 1-ring fallback
-      if (map.faceNormals[seedFaceIndex].z <= 0.2) {
+      if (map.faceNormals[seedFaceIndex].dot(localUp) <= 0.2) {
         const list = [seedFaceIndex, ...map.faceToFaces[seedFaceIndex]];
-        return list.filter((idx) => map.faceNormals[idx].z <= 0.0);
+        return list.filter((idx) => idx === seedFaceIndex || map.faceNormals[idx].dot(localUp) <= 0.2);
       }
       return [];
   }
@@ -152,13 +181,13 @@ export function proposeRegionOnClient(
 
 // --- Smart Brush Graph Search Walks ---
 
-function walkMacroFace(map: ClientAdjacencyMap, seed: number): number[] {
+function walkMacroFace(map: ClientAdjacencyMap, seed: number, localUp: THREE.Vector3): number[] {
   const visited = new Set<number>();
   const queue: number[] = [seed];
   visited.add(seed);
 
   const seedNormal = map.faceNormals[seed];
-  if (seedNormal.z > 0.2) return [];
+  if (seedNormal.dot(localUp) > 0.2) return [];
 
   while (queue.length > 0) {
     const curr = queue.shift()!;
@@ -167,7 +196,7 @@ function walkMacroFace(map: ClientAdjacencyMap, seed: number): number[] {
     for (const adj of adjs) {
       if (!visited.has(adj)) {
         const nAdj = map.faceNormals[adj];
-        if (nAdj.z <= 0.2) {
+        if (nAdj.dot(localUp) <= 0.2) {
           const normalDeviation = seedNormal.angleTo(nAdj);
           const nCurr = map.faceNormals[curr];
           const edgeDihedral = nCurr.angleTo(nAdj);
@@ -182,13 +211,13 @@ function walkMacroFace(map: ClientAdjacencyMap, seed: number): number[] {
     }
   }
 
-  return Array.from(visited).filter((idx) => map.faceNormals[idx].z <= 0.0);
+  return Array.from(visited).filter((idx) => idx === seed || map.faceNormals[idx].dot(localUp) <= 0.2);
 }
 
-function walkRidge(map: ClientAdjacencyMap, seed: number): number[] {
+function walkRidge(map: ClientAdjacencyMap, seed: number, localUp: THREE.Vector3): number[] {
   const visited = new Set<number>();
   const seedNormal = map.faceNormals[seed];
-  if (seedNormal.z > 0.2) return [];
+  if (seedNormal.dot(localUp) > 0.2) return [];
 
   // Checks on-the-fly if face sits on a crease fold (angle with any neighbor > 12 deg / 0.21 rad)
   const isCrease = (f: number): boolean => {
@@ -207,7 +236,7 @@ function walkRidge(map: ClientAdjacencyMap, seed: number): number[] {
     const list: { adj: number; angle: number }[] = [];
     for (const adj of map.faceToFaces[f]) {
       if (visited.has(adj)) continue;
-      if (map.faceNormals[adj].z > 0.2) continue;
+      if (map.faceNormals[adj].dot(localUp) > 0.2) continue;
       const angle = norm.angleTo(map.faceNormals[adj]);
       if (angle > 0.21) {
         list.push({ adj, angle });
@@ -241,10 +270,10 @@ function walkRidge(map: ClientAdjacencyMap, seed: number): number[] {
     }
   }
 
-  return Array.from(visited).filter((idx) => map.faceNormals[idx].z <= 0.0);
+  return Array.from(visited).filter((idx) => idx === seed || map.faceNormals[idx].dot(localUp) <= 0.2);
 }
 
-function walkCylinderSides(map: ClientAdjacencyMap, seed: number): number[] {
+function walkCylinderSides(map: ClientAdjacencyMap, seed: number, localUp: THREE.Vector3): number[] {
   const visited = new Set<number>();
   const queue: number[] = [];
 
@@ -258,7 +287,7 @@ function walkCylinderSides(map: ClientAdjacencyMap, seed: number): number[] {
     return maxAngle > 0.03 && minAngle < 0.05;
   };
 
-  if (map.faceNormals[seed].z <= 0.2 && isAnisotropicCylinder(seed)) {
+  if (map.faceNormals[seed].dot(localUp) <= 0.2 && isAnisotropicCylinder(seed)) {
     queue.push(seed);
     visited.add(seed);
 
@@ -267,7 +296,7 @@ function walkCylinderSides(map: ClientAdjacencyMap, seed: number): number[] {
       const adjs = map.faceToFaces[curr];
       for (const adj of adjs) {
         if (!visited.has(adj)) {
-          if (map.faceNormals[adj].z <= 0.2 && isAnisotropicCylinder(adj)) {
+          if (map.faceNormals[adj].dot(localUp) <= 0.2 && isAnisotropicCylinder(adj)) {
             visited.add(adj);
             queue.push(adj);
           }
@@ -276,10 +305,10 @@ function walkCylinderSides(map: ClientAdjacencyMap, seed: number): number[] {
     }
   }
 
-  return Array.from(visited).filter((idx) => map.faceNormals[idx].z <= 0.0);
+  return Array.from(visited).filter((idx) => idx === seed || map.faceNormals[idx].dot(localUp) <= 0.2);
 }
 
-function walkCylinderMinima(map: ClientAdjacencyMap, seed: number): number[] {
+function walkCylinderMinima(map: ClientAdjacencyMap, seed: number, localUp: THREE.Vector3): number[] {
   const visited = new Set<number>();
 
   const isAnisotropicCylinder = (f: number): boolean => {
@@ -291,19 +320,19 @@ function walkCylinderMinima(map: ClientAdjacencyMap, seed: number): number[] {
     return maxAngle > 0.03 && minAngle < 0.05;
   };
 
-  if (map.faceNormals[seed].z <= 0.2 && isAnisotropicCylinder(seed)) {
+  if (map.faceNormals[seed].dot(localUp) <= 0.2 && isAnisotropicCylinder(seed)) {
     visited.add(seed);
 
     const getCylinderCandidates = (f: number): number[] => {
       const list: number[] = [];
       for (const adj of map.faceToFaces[f]) {
         if (visited.has(adj)) continue;
-        if (map.faceNormals[adj].z > 0.2) continue;
+        if (map.faceNormals[adj].dot(localUp) > 0.2) continue;
         if (isAnisotropicCylinder(adj)) {
           list.push(adj);
         }
       }
-      list.sort((a, b) => map.faceNormals[a].z - map.faceNormals[b].z);
+      list.sort((a, b) => map.faceNormals[a].dot(localUp) - map.faceNormals[b].dot(localUp));
       return list;
     };
 
@@ -332,10 +361,10 @@ function walkCylinderMinima(map: ClientAdjacencyMap, seed: number): number[] {
     }
   }
 
-  return Array.from(visited).filter((idx) => map.faceNormals[idx].z <= 0.0);
+  return Array.from(visited).filter((idx) => idx === seed || map.faceNormals[idx].dot(localUp) <= 0.2);
 }
 
-function walkPoint(map: ClientAdjacencyMap, seed: number): number[] {
+function walkPoint(map: ClientAdjacencyMap, seed: number, localUp: THREE.Vector3, worldScale: number): number[] {
   const proposed: number[] = [];
   const dists = new Map<number, number>();
   
@@ -345,7 +374,7 @@ function walkPoint(map: ClientAdjacencyMap, seed: number): number[] {
   }
 
   const queue: DijkstraState[] = [];
-  if (map.faceNormals[seed].z <= 0.2) {
+  if (map.faceNormals[seed].dot(localUp) <= 0.2) {
     const rLimit = 8.0; // mm
     dists.set(seed, 0);
     queue.push({ cost: 0, face: seed });
@@ -363,9 +392,9 @@ function walkPoint(map: ClientAdjacencyMap, seed: number): number[] {
       const adjs = map.faceToFaces[face];
 
       for (const adj of adjs) {
-        if (map.faceNormals[adj].z <= 0.2) {
+        if (map.faceNormals[adj].dot(localUp) <= 0.2) {
           const centroidAdj = map.faceCentroids[adj];
-          const stepCost = centroidCurr.distanceTo(centroidAdj);
+          const stepCost = centroidCurr.distanceTo(centroidAdj) * worldScale;
           const nextCost = cost + stepCost;
 
           const currentBest = dists.get(adj) ?? Infinity;
@@ -378,16 +407,16 @@ function walkPoint(map: ClientAdjacencyMap, seed: number): number[] {
     }
   }
 
-  return proposed.filter((idx) => map.faceNormals[idx].z <= 0.0);
+  return proposed.filter((idx) => idx === seed || map.faceNormals[idx].dot(localUp) <= 0.2);
 }
 
-function walkRing(map: ClientAdjacencyMap, seed: number): number[] {
+function walkRing(map: ClientAdjacencyMap, seed: number, localUp: THREE.Vector3, matrixWorld: THREE.Matrix4): number[] {
   const visited = new Set<number>();
   const queue: number[] = [];
 
-  if (map.faceNormals[seed].z <= 0.2) {
-    const seedCentroid = map.faceCentroids[seed];
-    const seedZ = seedCentroid.z;
+  if (map.faceNormals[seed].dot(localUp) <= 0.2) {
+    const seedCentroidWorld = map.faceCentroids[seed].clone().applyMatrix4(matrixWorld);
+    const seedZ = seedCentroidWorld.z;
 
     queue.push(seed);
     visited.add(seed);
@@ -398,9 +427,9 @@ function walkRing(map: ClientAdjacencyMap, seed: number): number[] {
 
       for (const adj of adjs) {
         if (!visited.has(adj)) {
-          if (map.faceNormals[adj].z <= 0.2) {
-            const zBounds = map.faceZBounds[adj];
-            if (zBounds.min <= seedZ + 1.0 && zBounds.max >= seedZ - 1.0) {
+          if (map.faceNormals[adj].dot(localUp) <= 0.2) {
+            const adjCentroidWorld = map.faceCentroids[adj].clone().applyMatrix4(matrixWorld);
+            if (adjCentroidWorld.z <= seedZ + 1.0 && adjCentroidWorld.z >= seedZ - 1.0) {
               visited.add(adj);
               queue.push(adj);
             }
@@ -410,5 +439,5 @@ function walkRing(map: ClientAdjacencyMap, seed: number): number[] {
     }
   }
 
-  return Array.from(visited).filter((idx) => map.faceNormals[idx].z <= 0.0);
+  return Array.from(visited).filter((idx) => idx === seed || map.faceNormals[idx].dot(localUp) <= 0.2);
 }

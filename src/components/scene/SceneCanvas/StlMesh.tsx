@@ -257,12 +257,32 @@ function StlMeshComponent({
   const [isPointerHovered, setIsPointerHovered] = React.useState(false);
   const { camera } = useThree();
 
+  // Build clipping planes directly from current props so clipping never lags
+  // by one frame when layer slider updates.
+  const planes = React.useMemo(() => {
+    const next: THREE.Plane[] = [];
+
+    if (clipLower != null) {
+      // Clip below clipLower in world space
+      // Normal points up (0,0,1), hide points where world Z < clipLower
+      next.push(new THREE.Plane(new THREE.Vector3(0, 0, 1), -clipLower));
+    }
+    if (clipUpper != null) {
+      // Clip above clipUpper in world space
+      // Normal points down (0,0,-1), hide points where world Z > clipUpper
+      next.push(new THREE.Plane(new THREE.Vector3(0, 0, -1), clipUpper));
+    }
+
+    return next;
+  }, [clipLower, clipUpper]);
+
   const painterState = useSupportPainterState();
   const isPainterActive = !!(mode === 'supportPainter' && isActiveModel && painterState.isActive);
   const { material: localRoiMaterial, geometry: paintGeometry } = useRoiHighlightMaterial(
     geometry,
     isPainterActive,
-    meshColor
+    meshColor,
+    planes
   ) || {};
   const finalGeometry = isPainterActive && paintGeometry ? paintGeometry : geometry;
   const finalMaterialOverride = materialOverride || localRoiMaterial;
@@ -289,25 +309,6 @@ function StlMeshComponent({
       THREE.Mesh.prototype.raycast.call(this, raycaster, intersects);
     } as THREE.Mesh['raycast'],
   );
-
-  // Build clipping planes directly from current props so clipping never lags
-  // by one frame when layer slider updates.
-  const planes = React.useMemo(() => {
-    const next: THREE.Plane[] = [];
-
-    if (clipLower != null) {
-      // Clip below clipLower in world space
-      // Normal points up (0,0,1), hide points where world Z < clipLower
-      next.push(new THREE.Plane(new THREE.Vector3(0, 0, 1), -clipLower));
-    }
-    if (clipUpper != null) {
-      // Clip above clipUpper in world space
-      // Normal points down (0,0,-1), hide points where world Z > clipUpper
-      next.push(new THREE.Plane(new THREE.Vector3(0, 0, -1), clipUpper));
-    }
-
-    return next;
-  }, [clipLower, clipUpper]);
 
   React.useEffect(() => {
     if (mode === 'prepare' && transformMode === 'smoothing' && isActiveModel) {
@@ -823,6 +824,7 @@ if (uDitherAmount > 0.0) {
           else if (actualMeshRef) (actualMeshRef as React.MutableRefObject<THREE.Mesh | null>).current = node;
           if (node) applyRaycastDisabledState();
         }}
+        key={isPainterActive ? 'paint-mesh' : 'standard-mesh'}
         userData={{ modelId, thumbnailTintTarget: 'modelMesh' }}
         geometry={finalGeometry}
         position={meshLocalOffset}
@@ -1208,7 +1210,7 @@ if (uDitherAmount > 0.0) {
         }}
       >
         {finalMaterialOverride ? (
-          <primitive object={finalMaterialOverride} attach="material" />
+          <primitive key={finalMaterialOverride.uuid} object={finalMaterialOverride} attach="material" />
         ) : typeof revealGhostOpacity === 'number' ? (
           <meshStandardMaterial
             color={meshColor ?? '#c8c8ce'}

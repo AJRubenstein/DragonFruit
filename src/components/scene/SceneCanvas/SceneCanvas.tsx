@@ -835,15 +835,7 @@ export function SceneCanvas({
 
   const getActiveMesh = React.useCallback(() => {
     if (!activeModelId) return null;
-    const group = meshRefs.current[activeModelId];
-    if (!group) return null;
-    let mesh: THREE.Mesh | null = null;
-    group.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        mesh = child;
-      }
-    });
-    return mesh;
+    return actualMeshRefs.current[activeModelId] || null;
   }, [activeModelId]);
 
   // Support Painter Hook Invocations & Synchronization
