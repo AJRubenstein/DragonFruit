@@ -9,6 +9,7 @@ import {
   addTrunk,
   addAnchor,
 } from '@/supports/state';
+import { getShaftProfile } from '@/supports/Settings';
 import { buildTrunkData } from '@/supports/SupportTypes/Trunk/trunkBuilder';
 import { buildAnchorData } from '@/supports/SupportTypes/Anchor/anchorBuilder';
 import { pushHistory } from '@/history/historyStore';
@@ -150,6 +151,12 @@ export async function generateSupportsFromPainter(
   regions: ROIRegion[]
 ): Promise<void> {
   if (!mesh || !regions || regions.length === 0) return;
+
+  const trunkWidth = getShaftProfile()?.diameterMm ?? 1.5;
+  const spacing = trunkWidth * 4.0; // center-to-center interval
+  const perimeterSpacing = spacing;
+  const infillSpacing = spacing;
+  const minimaSuppressionRadius = spacing;
 
   // 1. Capture snapshot before execution for single-stroke history undo
   const beforeState = getSupportSnapshot();
@@ -334,7 +341,7 @@ export async function generateSupportsFromPainter(
       }
 
       // Sample along this polyline
-      const samples = samplePolylineWithNormals(path, 4.0, uniqueVertices, vertexNormals);
+      const samples = samplePolylineWithNormals(path, perimeterSpacing, uniqueVertices, vertexNormals);
       if (samples.length > 0) {
         regionPerimeters.push(samples);
         allPerimeterColumns.push(...samples);
@@ -392,7 +399,7 @@ export async function generateSupportsFromPainter(
     for (const cand of localMinima) {
       let tooClose = false;
       for (const accepted of regionMinima) {
-        if (cand.pos.distanceTo(accepted.pos) < 5.0) {
+        if (cand.pos.distanceTo(accepted.pos) < minimaSuppressionRadius) {
           tooClose = true;
           break;
         }
@@ -405,7 +412,7 @@ export async function generateSupportsFromPainter(
 
     // 3d. Poisson-Disc Infill Sampling (spacing = 6.0 mm)
     // Only populated for large surfaces (MacroFace / Cylinder)
-    if (region.brushType === 'MacroFace' || region.brushType === 'Cylinder') {
+    if (region.brushType === 'MacroFace' || region.brushType === 'CylinderSides') {
       const minXY = new THREE.Vector2(Infinity, Infinity);
       const maxXY = new THREE.Vector2(-Infinity, -Infinity);
 
@@ -420,7 +427,6 @@ export async function generateSupportsFromPainter(
         }
       }
 
-      const infillSpacing = 6.0;
       const infillCandidates: SampledPoint[] = [];
 
       const startX = minXY.x + infillSpacing / 2;
@@ -468,7 +474,7 @@ export async function generateSupportsFromPainter(
 
         // Against Z-minima anchors
         for (const anchor of regionMinima) {
-          if (cand.pos.distanceTo(anchor.pos) < 5.0) {
+          if (cand.pos.distanceTo(anchor.pos) < minimaSuppressionRadius) {
             tooClose = true;
             break;
           }
@@ -477,7 +483,7 @@ export async function generateSupportsFromPainter(
 
         // Against perimeter columns
         for (const peri of regionPerimeterPoints) {
-          if (cand.pos.distanceTo(peri.pos) < 5.0) {
+          if (cand.pos.distanceTo(peri.pos) < minimaSuppressionRadius) {
             tooClose = true;
             break;
           }

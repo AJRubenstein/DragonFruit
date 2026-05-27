@@ -5,7 +5,9 @@ import { getKickstandSnapshot, setKickstandSnapshot } from '../SupportTypes/Kick
 type SupportCollectionsState = Pick<
     SupportState,
     'roots' | 'trunks' | 'branches' | 'braces' | 'leaves' | 'twigs' | 'sticks'
->;
+> & {
+    anchors?: SupportState['anchors'];
+};
 
 /**
  * SupportModelLinker
@@ -26,6 +28,7 @@ interface ModelSupportIds {
     leaves: string[];
     twigs: string[];
     sticks: string[];
+    anchors: string[];
 }
 
 /**
@@ -40,6 +43,7 @@ export function getSupportsForModel(state: SupportCollectionsState, modelId: str
         leaves: [],
         twigs: [],
         sticks: [],
+        anchors: [],
     };
 
     // Scan Roots
@@ -91,6 +95,15 @@ export function getSupportsForModel(state: SupportCollectionsState, modelId: str
         }
     }
 
+    // Scan Anchors
+    if (state.anchors) {
+        for (const [id, anchor] of Object.entries(state.anchors)) {
+            if (anchor.modelId === modelId) {
+                result.anchors.push(id);
+            }
+        }
+    }
+
     return result;
 }
 
@@ -130,6 +143,7 @@ export function deleteSupportsForModel(state: SupportState, modelId: string): nu
     const leavesToRemove = new Set(ids.leaves);
     const twigsToRemove = new Set(ids.twigs);
     const sticksToRemove = new Set(ids.sticks);
+    const anchorsToRemove = new Set(ids.anchors || []);
 
     const segmentsToRemove = new Set<string>();
     for (const trunkId of trunksToRemove) {
@@ -189,6 +203,7 @@ export function deleteSupportsForModel(state: SupportState, modelId: string): nu
         twigs: filterRecord(state.twigs, (id) => twigsToRemove.has(id)),
         sticks: filterRecord(state.sticks, (id) => sticksToRemove.has(id)),
         braces: filterRecord(state.braces, (id) => bracesToRemove.has(id)),
+        anchors: filterRecord(state.anchors, (id) => anchorsToRemove.has(id)),
         knots: filterRecord(state.knots, (id) => knotsToRemove.has(id)),
         selectedId: null,
         selectedCategory: null,
@@ -222,7 +237,8 @@ export function deleteSupportsForModel(state: SupportState, modelId: string): nu
         + ids.braces.length
         + ids.leaves.length
         + ids.twigs.length
-        + ids.sticks.length;
+        + ids.sticks.length
+        + ids.anchors.length;
 
     removedCount += kickstandIdsToRemove.length;
 

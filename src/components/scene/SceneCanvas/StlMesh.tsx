@@ -257,11 +257,12 @@ function StlMeshComponent({
 
   const painterState = useSupportPainterState();
   const isPainterActive = !!(mode === 'supportPainter' && isActiveModel && painterState.isActive);
-  const localRoiMaterial = useRoiHighlightMaterial(
+  const { material: localRoiMaterial, geometry: paintGeometry } = useRoiHighlightMaterial(
     geometry,
     isPainterActive,
     meshColor
-  );
+  ) || {};
+  const finalGeometry = isPainterActive && paintGeometry ? paintGeometry : geometry;
   const finalMaterialOverride = materialOverride || localRoiMaterial;
 
   const smoothingScratchLocalPointRef = React.useRef(new THREE.Vector3());
@@ -821,7 +822,7 @@ if (uDitherAmount > 0.0) {
           if (node) applyRaycastDisabledState();
         }}
         userData={{ modelId, thumbnailTintTarget: 'modelMesh' }}
-        geometry={geometry}
+        geometry={finalGeometry}
         position={meshLocalOffset}
         renderOrder={baseShaderType === 'xray' || isSupportDimmed ? 2 : 0}
         onClick={(e) => {
@@ -1220,19 +1221,19 @@ if (uDitherAmount > 0.0) {
       </mesh>
 
       {showOpaqueWireOverlay && (
-        <mesh geometry={geometry} position={meshLocalOffset} renderOrder={1} raycast={() => null}>
+        <mesh geometry={finalGeometry} position={meshLocalOffset} renderOrder={1} raycast={() => null}>
           <OpaqueWireOverlayMaterial clippingPlanes={planes} />
         </mesh>
       )}
 
       {outOfBoundsMaterial && (
-        <mesh geometry={geometry} position={meshLocalOffset} renderOrder={3} raycast={() => null}>
+        <mesh geometry={finalGeometry} position={meshLocalOffset} renderOrder={3} raycast={() => null}>
           <primitive object={outOfBoundsMaterial} attach="material" />
         </mesh>
       )}
 
       {supportPlacementGuideEnabled && supportPlacementGuideMaterial && (
-        <mesh geometry={geometry} position={meshLocalOffset} renderOrder={4} raycast={() => null}>
+        <mesh geometry={finalGeometry} position={meshLocalOffset} renderOrder={4} raycast={() => null}>
           <primitive object={supportPlacementGuideMaterial} attach="material" />
         </mesh>
       )}

@@ -1,15 +1,16 @@
 // ─── Brush Identity ─────────────────────────────────────────────────────────
 
-export type BrushType = 'MacroFace' | 'Ridge' | 'Point' | 'Cylinder' | 'Ring';
+export type BrushType = 'MacroFace' | 'Ridge' | 'Point' | 'CylinderSides' | 'CylinderMinima' | 'Ring';
 
 // Each brush type maps to a fixed display color in the shader.
 // Colors are defined as CSS hex strings here; converted to vec3 for GLSL.
 export const BRUSH_COLORS: Record<BrushType, string> = {
-  MacroFace:  '#4A90E2',   // blue
-  Ridge:      '#E2844A',   // orange
-  Point:      '#7ED321',   // green
-  Cylinder:   '#9B59B6',   // purple
-  Ring:       '#FF5B6F',   // pink/red
+  MacroFace:      '#4A90E2',   // blue
+  Ridge:          '#E2844A',   // orange
+  Point:          '#7ED321',   // green
+  CylinderSides:  '#9B59B6',   // purple
+  CylinderMinima: '#A569BD',   // light purple/lavender
+  Ring:           '#FF5B6F',   // pink/red
 };
 
 // ─── Interaction Phase State Machine ────────────────────────────────────────

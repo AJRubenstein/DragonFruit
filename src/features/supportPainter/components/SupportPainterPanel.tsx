@@ -1,24 +1,77 @@
 import React, { useState } from 'react';
 import * as THREE from 'three';
+import {
+  Focus,
+  Spline,
+  CircleDot,
+  Cylinder,
+  GitCommit,
+  Circle,
+  WandSparkles,
+} from 'lucide-react';
 import { supportPainterStore, useSupportPainterState } from '../supportPainterStore';
 import { type BrushType, BRUSH_COLORS } from '../supportPainterTypes';
 import { generateSupportsFromPainter } from '../supportScriptingEngine';
+
+const BRUSH_DETAILS: Record<
+  BrushType,
+  { label: string; desc: string; icon: React.ComponentType<any> }
+> = {
+  MacroFace: {
+    label: 'MacroFace',
+    desc: 'Paint coplanar surfaces',
+    icon: Focus,
+  },
+  Ridge: {
+    label: 'Ridge Crease',
+    desc: 'Trace 1D convex crease',
+    icon: Spline,
+  },
+  Point: {
+    label: 'Point Geodesic',
+    desc: 'Geodesic circular brush',
+    icon: CircleDot,
+  },
+  CylinderSides: {
+    label: 'Cyl. Sides',
+    desc: 'Paint cylinder side bands',
+    icon: Cylinder,
+  },
+  CylinderMinima: {
+    label: 'Cyl. Minima',
+    desc: 'Trace bottom cylinder spine',
+    icon: GitCommit,
+  },
+  Ring: {
+    label: 'Z-Plane Ring',
+    desc: 'Horizontal Z-plane slice',
+    icon: Circle,
+  },
+};
 
 export function SupportPainterPanel({
   onExit,
   activeModelId,
   getActiveMesh,
+  onModeChange,
 }: {
   onExit?: () => void;
   activeModelId?: string | null;
   getActiveMesh?: () => THREE.Mesh | null;
+  onModeChange?: (mode: 'support' | 'supportPainter') => void;
 }) {
   const state = useSupportPainterState();
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleExit = () => {
     supportPainterStore.deactivate();
+    if (onModeChange) onModeChange('support');
     if (onExit) onExit();
+  };
+
+  const handleExpand = () => {
+    supportPainterStore.activate();
+    if (onModeChange) onModeChange('supportPainter');
   };
 
   const handleGenerate = async () => {
@@ -38,11 +91,40 @@ export function SupportPainterPanel({
     }
   };
 
+  const activeDetails = BRUSH_DETAILS[state.activeBrush] || BRUSH_DETAILS.MacroFace;
   const activeColor = BRUSH_COLORS[state.activeBrush];
 
+  // --- Collapsed Rollup Card on the Left ---
+  if (!state.isActive) {
+    return (
+      <div
+        onClick={handleExpand}
+        className="absolute left-3 top-20 z-[70] w-[200px] rounded-xl border p-3 flex items-center justify-between shadow-xl cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl"
+        style={{
+          background: 'color-mix(in srgb, var(--surface-0) 85%, transparent)',
+          backdropFilter: 'blur(16px)',
+          borderColor: 'color-mix(in srgb, var(--border-subtle), transparent 30%)',
+          color: 'var(--text-strong)',
+        }}
+        title="Click to expand Support Painter"
+      >
+        <div className="flex items-center gap-2">
+          <WandSparkles className="h-4 w-4 text-[#ff5b6f] animate-pulse" />
+          <span className="text-xs font-semibold tracking-wide" style={{ fontFamily: 'var(--font-geist-sans)' }}>
+            Support Painter
+          </span>
+        </div>
+        <span className="text-[10px] font-semibold opacity-70 hover:opacity-100 bg-[#ff5b6f]/10 border border-[#ff5b6f]/20 hover:bg-[#ff5b6f]/20 text-[#ff5b6f] px-2 py-0.5 rounded transition-all">
+          Paint
+        </span>
+      </div>
+    );
+  }
+
+  // --- Full Expanded Dashboard ---
   return (
     <div
-      className="absolute left-3 top-20 z-[70] w-[320px] rounded-xl border p-4 shadow-2xl flex flex-col gap-4 transition-all duration-300"
+      className="absolute left-3 top-20 z-[70] w-[330px] rounded-xl border p-4 shadow-2xl flex flex-col gap-4 transition-all duration-300"
       style={{
         background: 'color-mix(in srgb, var(--surface-0) 85%, transparent)',
         backdropFilter: 'blur(16px)',
@@ -53,7 +135,7 @@ export function SupportPainterPanel({
       {/* Header */}
       <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: 'var(--border-subtle)' }}>
         <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: activeColor }} />
+          <WandSparkles className="h-4 w-4" style={{ color: activeColor }} />
           <h3 className="text-sm font-semibold tracking-wide" style={{ fontFamily: 'var(--font-geist-sans)' }}>
             Support Painter
           </h3>
@@ -69,21 +151,23 @@ export function SupportPainterPanel({
       </div>
 
       {/* Brushes Selection */}
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[10px] uppercase tracking-wider opacity-60 font-semibold">
+      <div className="flex flex-col gap-2">
+        <span className="text-[10px] uppercase tracking-wider opacity-60 font-bold">
           Select Smart Brush
         </span>
         <div className="grid grid-cols-2 gap-2">
-          {(['MacroFace', 'Ridge', 'Point', 'Cylinder', 'Ring'] as BrushType[]).map((brush) => {
+          {(Object.keys(BRUSH_DETAILS) as BrushType[]).map((brush) => {
             const isSelected = state.activeBrush === brush;
+            const details = BRUSH_DETAILS[brush];
             const brushColor = BRUSH_COLORS[brush];
+            const Icon = details.icon;
             return (
               <button
                 key={brush}
                 type="button"
                 onClick={() => supportPainterStore.setActiveBrush(brush)}
-                className={`flex flex-col items-center justify-center p-2.5 rounded-lg border transition-all duration-200 ${
-                  isSelected ? 'scale-[1.02] shadow-md' : 'opacity-70 hover:opacity-100'
+                className={`flex items-center gap-2 p-2 rounded-lg border transition-all duration-200 text-left ${
+                  isSelected ? 'scale-[1.01] shadow-md' : 'opacity-70 hover:opacity-100'
                 }`}
                 style={{
                   background: isSelected
@@ -93,10 +177,19 @@ export function SupportPainterPanel({
                 }}
               >
                 <div
-                  className="w-3.5 h-3.5 rounded-full mb-1 border"
-                  style={{ backgroundColor: brushColor, borderColor: isSelected ? '#ffffff50' : 'transparent' }}
-                />
-                <span className="text-[11px] font-medium">{brush}</span>
+                  className="w-7 h-7 rounded-lg flex items-center justify-center border transition-all"
+                  style={{
+                    backgroundColor: isSelected ? brushColor : 'color-mix(in srgb, var(--surface-2) 40%, transparent)',
+                    borderColor: isSelected ? '#ffffff20' : 'var(--border-subtle)',
+                    color: isSelected ? '#fff' : brushColor,
+                  }}
+                >
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[11px] font-semibold truncate leading-none mb-0.5">{details.label}</span>
+                  <span className="text-[9px] opacity-50 truncate leading-none">{details.desc}</span>
+                </div>
               </button>
             );
           })}
@@ -117,16 +210,17 @@ export function SupportPainterPanel({
             <span className="font-bold">Subtract Mode active:</span> Click on a painted triangle to delete its entire region.
           </div>
         ) : (
-          <div>
-            Click model to paint regions. Hold <kbd className="px-1 rounded bg-neutral-800 text-[10px] border border-neutral-700">Alt</kbd> + click to subtract.
+          <div className="flex flex-col gap-0.5">
+            <span className="font-medium text-white/90">{activeDetails.label}: {activeDetails.desc}</span>
+            <span>Click model to paint. Hold <kbd className="px-1 rounded bg-neutral-800 text-[10px] border border-neutral-700">Alt</kbd> + click to subtract.</span>
           </div>
         )}
       </div>
 
       {/* Painted ROI Regions List */}
-      <div className="flex flex-col gap-1.5 flex-1 min-h-[140px] max-h-[260px] overflow-hidden">
+      <div className="flex flex-col gap-1.5 flex-1 min-h-[140px] max-h-[220px] overflow-hidden">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-wider opacity-60 font-semibold">
+          <span className="text-[10px] uppercase tracking-wider opacity-60 font-bold">
             Painted Regions ({state.regions.size})
           </span>
           {state.regions.size > 0 && (
@@ -148,34 +242,37 @@ export function SupportPainterPanel({
           ) : (
             Array.from(state.regions.values())
               .sort((a, b) => b.createdAt - a.createdAt)
-              .map((region) => (
-                <div
-                  key={region.id}
-                  className="flex items-center justify-between p-2 rounded-lg border text-xs bg-white/5"
-                  style={{ borderColor: 'var(--border-subtle)' }}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-3.5 h-3.5 rounded border" style={{ backgroundColor: region.color, borderColor: '#ffffff20' }} />
-                    <div className="flex flex-col">
-                      <span className="font-medium">{region.brushType}</span>
-                      <span className="text-[9px] opacity-50">Seed #{region.seedTriangleId}</span>
+              .map((region) => {
+                const details = BRUSH_DETAILS[region.brushType];
+                return (
+                  <div
+                    key={region.id}
+                    className="flex items-center justify-between p-2 rounded-lg border text-xs bg-white/5"
+                    style={{ borderColor: 'var(--border-subtle)' }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-3.5 h-3.5 rounded border flex-shrink-0" style={{ backgroundColor: region.color, borderColor: '#ffffff20' }} />
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-semibold truncate">{details?.label || region.brushType}</span>
+                        <span className="text-[9px] opacity-50">Seed #{region.seedTriangleId}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 opacity-80">
+                        {region.triangleIds.size} tri
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => supportPainterStore.removeRegion(region.id)}
+                        className="p-1 hover:bg-red-500/20 rounded text-[10px] text-red-400 hover:text-red-300 transition-colors"
+                        title="Delete region"
+                      >
+                        🗑
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 opacity-80">
-                      {region.triangleIds.size} tri
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => supportPainterStore.removeRegion(region.id)}
-                      className="p-1 hover:bg-red-500/20 rounded text-[10px] text-red-400 hover:text-red-300 transition-colors"
-                      title="Delete region"
-                    >
-                      🗑
-                    </button>
-                  </div>
-                </div>
-              ))
+                );
+              })
           )}
         </div>
       </div>

@@ -27,7 +27,7 @@ export function useRoiHighlightMaterial(
   geometry: THREE.BufferGeometry | null,
   isActive: boolean,
   meshColor: string = '#c8c8ce'
-): THREE.ShaderMaterial | null {
+): { material: THREE.ShaderMaterial | null; geometry: THREE.BufferGeometry | null } {
   const timeRef = useRef<number>(0);
   const textureRef = useRef<THREE.DataTexture | null>(null);
   const materialRef = useRef<THREE.ShaderMaterial | null>(null);
@@ -37,29 +37,53 @@ export function useRoiHighlightMaterial(
     return new THREE.Color(meshColor);
   }, [meshColor]);
 
+  // Compute non-indexed rendering geometry copy if original is indexed
+  const renderingGeometry = useMemo(() => {
+    if (!geometry || !isActive) return geometry;
+    if (geometry.index) {
+      console.log('[ROIHighlight] Converting indexed geometry to non-indexed copy for high-fidelity paint highlighting');
+      try {
+        return geometry.toNonIndexed();
+      } catch (err) {
+        console.error('[ROIHighlight] Failed to convert indexed geometry to non-indexed', err);
+        return geometry;
+      }
+    }
+    return geometry;
+  }, [geometry, isActive]);
+
+  // Clean up non-indexed copy on change or unmount
+  useEffect(() => {
+    return () => {
+      if (renderingGeometry && renderingGeometry !== geometry) {
+        renderingGeometry.dispose();
+      }
+    };
+  }, [renderingGeometry, geometry]);
+
   // Compute total triangle count
   const totalTriangleCount = useMemo(() => {
-    if (!geometry) return 0;
-    const pos = geometry.getAttribute('position');
+    if (!renderingGeometry) return 0;
+    const pos = renderingGeometry.getAttribute('position');
     return pos ? Math.floor(pos.count / 3) : 0;
-  }, [geometry]);
+  }, [renderingGeometry]);
 
   // Setup Geometry Attribute for Triangle IDs
   useEffect(() => {
-    if (!geometry || totalTriangleCount === 0) return;
-    if (!geometry.getAttribute('aTriangleId')) {
+    if (!renderingGeometry || totalTriangleCount === 0) return;
+    if (!renderingGeometry.getAttribute('aTriangleId')) {
       try {
-        const attr = buildTriangleIdAttribute(geometry);
-        geometry.setAttribute('aTriangleId', attr);
+        const attr = buildTriangleIdAttribute(renderingGeometry);
+        renderingGeometry.setAttribute('aTriangleId', attr);
       } catch (err) {
         console.error('[ROIHighlight] failed to build aTriangleId attribute', err);
       }
     }
-  }, [geometry, totalTriangleCount]);
+  }, [renderingGeometry, totalTriangleCount]);
 
   // Setup DataTexture and ShaderMaterial
   const material = useMemo(() => {
-    if (!geometry || totalTriangleCount === 0 || !isActive) return null;
+    if (!renderingGeometry || totalTriangleCount === 0 || !isActive) return null;
 
     // 1. Create a 1D DataTexture: Width = totalTriangleCount, Height = 1
     const size = totalTriangleCount * 4; // RGBA
@@ -150,7 +174,7 @@ export function useRoiHighlightMaterial(
 
     materialRef.current = mat;
     return mat;
-  }, [geometry, totalTriangleCount, isActive, baseColor]);
+  }, [renderingGeometry, totalTriangleCount, isActive, baseColor]);
 
   // Sync state changes with the DataTexture
   useEffect(() => {
@@ -211,5 +235,5 @@ export function useRoiHighlightMaterial(
     };
   }, []);
 
-  return material;
+  return { material, geometry: renderingGeometry };
 }

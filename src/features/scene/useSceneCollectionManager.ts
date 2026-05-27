@@ -2583,6 +2583,7 @@ export function useSceneCollectionManager() {
         + supportIds.leaves.length
         + supportIds.twigs.length
         + supportIds.sticks.length
+        + supportIds.anchors.length
         + kickstandCount;
 
       supportPrimitiveCountByModel.set(model.id, supportPrimitiveCount);
@@ -2607,7 +2608,8 @@ export function useSceneCollectionManager() {
         || supportIds.braces.length > 0
         || supportIds.leaves.length > 0
         || supportIds.twigs.length > 0
-        || supportIds.sticks.length > 0;
+        || supportIds.sticks.length > 0
+        || supportIds.anchors.length > 0;
 
       if (hasMainSupports) return true;
 

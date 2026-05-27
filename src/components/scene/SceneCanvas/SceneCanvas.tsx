@@ -6609,8 +6609,12 @@ export function SceneCanvas({
         </div>
       )}
 
-      {painterState.isActive && (
-        <SupportPainterPanel activeModelId={activeModelId} getActiveMesh={getActiveMesh} />
+      {(mode === 'support' || mode === 'supportPainter') && (
+        <SupportPainterPanel
+          activeModelId={activeModelId}
+          getActiveMesh={getActiveMesh}
+          onModeChange={onModeChange}
+        />
       )}
     </div>
   );

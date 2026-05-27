@@ -324,7 +324,7 @@ pub async fn propose_brush_region(
             }
             Ok(visited.into_iter().collect())
         }
-        "Cylinder" => {
+        "CylinderSides" => {
             let mut queue = VecDeque::new();
             let mut visited = HashSet::new();
 
@@ -346,6 +346,82 @@ pub async fn propose_brush_region(
                                 }
                             }
                         }
+                    }
+                }
+            }
+            Ok(visited.into_iter().collect())
+        }
+        "CylinderMinima" => {
+            let mut visited = HashSet::new();
+
+            let seed_curv = &cached.curvatures[seed];
+            if cached.normals[seed].z < 0.0 && seed_curv.k1 > 0.05 && seed_curv.k2 < 0.02 {
+                visited.insert(seed_triangle_id);
+
+                // Get adjacent faces of the seed
+                let adjs = adj_faces(&cached.mesh, &cached.topology, seed_triangle_id);
+                let mut candidates: Vec<u32> = adjs.into_iter()
+                    .filter(|&adj| {
+                        let idx = adj as usize;
+                        let curv = &cached.curvatures[idx];
+                        cached.normals[idx].z < 0.0 && curv.k1 > 0.05 && curv.k2 < 0.02
+                    })
+                    .collect();
+
+                // Sort candidates by normal.z ascending (most straight down first, closest to -1.0)
+                candidates.sort_by(|&a, &b| {
+                    cached.normals[a as usize].z.partial_cmp(&cached.normals[b as usize].z).unwrap_or(std::cmp::Ordering::Equal)
+                });
+
+                // Follow branch A (the most downward-facing cylinder segment)
+                if candidates.len() > 0 {
+                    let mut curr_a = candidates[0];
+                    visited.insert(curr_a);
+
+                    loop {
+                        let adjs_a = adj_faces(&cached.mesh, &cached.topology, curr_a);
+                        let mut next_candidates: Vec<u32> = adjs_a.into_iter()
+                            .filter(|&adj| {
+                                let idx = adj as usize;
+                                let curv = &cached.curvatures[idx];
+                                !visited.contains(&adj) && cached.normals[idx].z < 0.0 && curv.k1 > 0.05 && curv.k2 < 0.02
+                            })
+                            .collect();
+                        if next_candidates.is_empty() {
+                            break;
+                        }
+                        // Greedily pick the neighbor that points most centrally down (min normal.z)
+                        next_candidates.sort_by(|&a, &b| {
+                            cached.normals[a as usize].z.partial_cmp(&cached.normals[b as usize].z).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        curr_a = next_candidates[0];
+                        visited.insert(curr_a);
+                    }
+                }
+
+                // Follow branch B (the second most downward-facing segment, extending opposite)
+                if candidates.len() > 1 {
+                    let mut curr_b = candidates[1];
+                    visited.insert(curr_b);
+
+                    loop {
+                        let adjs_b = adj_faces(&cached.mesh, &cached.topology, curr_b);
+                        let mut next_candidates: Vec<u32> = adjs_b.into_iter()
+                            .filter(|&adj| {
+                                let idx = adj as usize;
+                                let curv = &cached.curvatures[idx];
+                                !visited.contains(&adj) && cached.normals[idx].z < 0.0 && curv.k1 > 0.05 && curv.k2 < 0.02
+                            })
+                            .collect();
+                        if next_candidates.is_empty() {
+                            break;
+                        }
+                        // Greedily pick the neighbor that points most centrally down (min normal.z)
+                        next_candidates.sort_by(|&a, &b| {
+                            cached.normals[a as usize].z.partial_cmp(&cached.normals[b as usize].z).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        curr_b = next_candidates[0];
+                        visited.insert(curr_b);
                     }
                 }
             }
@@ -404,19 +480,26 @@ pub async fn propose_brush_region(
                     let adjs = adj_faces(&cached.mesh, &cached.topology, curr);
                     for adj in adjs {
                         if !visited.contains(&adj) {
-                            let idx = adj as usize;
-                            if cached.normals[idx].z < 0.0 {
-                                let centroid = tri_centroid(&cached.mesh, adj);
-                                if (centroid.z - seed_z).abs() <= 1.0 {
-                                    visited.insert(adj);
-                                    queue.push_back(adj);
-                                }
+                            let [a, b, c] = cached.mesh.tri_positions(adj);
+                            let min_z = a.z.min(b.z).min(c.z);
+                            let max_z = a.z.max(b.z).max(c.z);
+
+                            // Contiguous check within Z +- 1.0mm thickness
+                            if min_z <= seed_z + 1.0 && max_z >= seed_z - 1.0 {
+                                visited.insert(adj);
+                                queue.push_back(adj);
                             }
                         }
                     }
                 }
             }
-            Ok(visited.into_iter().collect())
+
+            // Bound final proposal strictly to downward-facing and horizontal normals,
+            // excluding strictly upward-pointing ones (nz <= 0.0)
+            let filtered: Vec<u32> = visited.into_iter()
+                .filter(|&adj| cached.normals[adj as usize].z <= 0.0)
+                .collect();
+            Ok(filtered)
         }
         _ => {
             // Fallback: return seed face + 1-ring neighbors (Phase 2 legacy) if normal points below horizontal

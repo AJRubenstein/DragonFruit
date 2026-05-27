@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { supportPainterStore, useSupportPainterState } from './supportPainterStore';
 import { PAINT_ROI_ADD, PAINT_ROI_REMOVE } from './supportPainterHistoryTypes';
@@ -57,6 +57,7 @@ export function useSupportPainterManager(
 ) {
   const { hoveredTriangleId, activeBrush } = useSupportPainterState();
 
+  const [initializedModelId, setInitializedModelId] = useState<string | null>(null);
   const initializedModelIdRef = useRef<string | null>(null);
   const lastModelIdRef = useRef<string | null>(null);
   const lastRequestTimeRef = useRef<number>(0);
@@ -159,6 +160,7 @@ export function useSupportPainterManager(
   useEffect(() => {
     if (!isActive || !activeModelId || !geometry) {
       initializedModelIdRef.current = null;
+      setInitializedModelId(null);
       return;
     }
 
@@ -168,6 +170,7 @@ export function useSupportPainterManager(
 
     // Set lock immediately to prevent redundant parallel executions
     initializedModelIdRef.current = activeModelId;
+    setInitializedModelId(null);
 
     let active = true;
 
@@ -186,12 +189,14 @@ export function useSupportPainterManager(
 
         if (active) {
           console.log(`[SupportPainterManager] Topology initialization completed for model ${activeModelId}`);
+          setInitializedModelId(activeModelId);
         }
       } catch (err) {
         console.error('[SupportPainterManager] Initialization failed', err);
         if (active) {
           // Clear lock on failure to allow retry
           initializedModelIdRef.current = null;
+          setInitializedModelId(null);
         }
       }
     };
@@ -210,7 +215,7 @@ export function useSupportPainterManager(
     }
 
     // Only run if the model has actually been initialized
-    if (initializedModelIdRef.current !== activeModelId) {
+    if (initializedModelId !== activeModelId) {
       return;
     }
 
@@ -262,7 +267,7 @@ export function useSupportPainterManager(
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [isActive, activeModelId, hoveredTriangleId, activeBrush]);
+  }, [isActive, activeModelId, hoveredTriangleId, activeBrush, initializedModelId]);
 
   // 6. Cleanup: Evict cache on model change, deactivation, or unmount
   useEffect(() => {
