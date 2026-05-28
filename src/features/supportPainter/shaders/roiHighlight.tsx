@@ -108,8 +108,9 @@ export function useRoiHighlightMaterial(
     // 2. Define Custom Shader Material with basic Diffuse shading for beautiful premium visuals
     const mat = new THREE.ShaderMaterial({
       precision: 'highp', // Enforce highp for high-density mesh indexing
-      transparent: true,
-      depthWrite: false,
+      transparent: false, // Transition to opaque pass to guarantee absolute depth safety and GPU occlusion
+      depthWrite: true,   // Write to depth buffer to align rendering queue
+      depthTest: true,    // Explicitly enforce depth testing to guarantee occlusion by other surfaces
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
@@ -127,9 +128,10 @@ export function useRoiHighlightMaterial(
         varying vec3 vNormal;
 
         void main() {
-          // Microscopic dilation along normal (0.05mm) to pull the overlay in front
-          vec3 dilatedPosition = position + normal * 0.05;
-          vec4 mvPosition = modelViewMatrix * vec4(dilatedPosition, 1.0);
+          // Zero-dilation projection ensures absolute alignment with model geometry.
+          // Relies entirely on GPU-hardware polygonOffset to pull the overlay in front,
+          // which is mathematically immune to normal inversion or thin-wall bleeding.
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           #include <clipping_planes_vertex>
           vTriangleId = aTriangleId;
           vNormal = normalize(normalMatrix * normal);
@@ -154,30 +156,23 @@ export function useRoiHighlightMaterial(
           float y = floor(triId / uRoiMapWidth) + 0.5;
           vec2 uv = vec2(x / uRoiMapWidth, y / uRoiMapHeight);
           vec4 roi = texture2D(uRoiMap, uv);
-          
-          // Robust fallback for vertically-flipped texture uploads on certain GPU architectures
-          if (roi.a <= 0.01) {
-            vec2 uvFlipped = vec2(uv.x, 1.0 - uv.y);
-            roi = texture2D(uRoiMap, uvFlipped);
-          }
 
-          // Diagnostic fallback: unpainted triangles are transparent/discarded,
-          // but if sampled texture contains hover/paint data (roi.a > 0.01),
-          // we paint them in their vibrant color with glowing self-emissive.
+          // Unpainted triangles are transparent/discarded from both color and depth passes
           if (roi.a <= 0.01) {
             discard;
           }
 
           vec3 finalColor = roi.rgb;
-          float blendFactor = 0.0;
+          float emissiveBoost = 0.0;
 
           if (roi.a < 0.6) {
-            // Proposed preview (flashing/pulsing hover with 0.35 opacity floor)
-            float pulse = 0.35 + 0.5 * sin(uTime * 8.0);
-            blendFactor = pulse * 0.85;
+            // Proposed preview: pulse color blend between model base color and active brush color
+            float pulse = 0.35 + 0.45 * sin(uTime * 8.0);
+            finalColor = mix(uBaseColor, roi.rgb, pulse);
+            emissiveBoost = pulse * 0.5;
           } else {
             // Committed ROI color
-            blendFactor = 0.75;
+            emissiveBoost = 0.65;
           }
 
           vec3 normalVec = vNormal;
@@ -192,13 +187,13 @@ export function useRoiHighlightMaterial(
           vec3 litColor = finalColor * diffuse;
 
           // Boost self-emissive glow for high contrast
-          litColor += finalColor * 0.35 * blendFactor;
+          litColor += roi.rgb * 0.25 * emissiveBoost;
 
           // Add a subtle rim light/ambient glow to the selection
           float rim = 1.0 - max(0.0, dot(normalizedNormal, vec3(0.0, 0.0, 1.0)));
-          litColor += finalColor * pow(rim, 4.0) * blendFactor * 0.35;
+          litColor += roi.rgb * pow(rim, 4.0) * 0.25 * emissiveBoost;
 
-          gl_FragColor = vec4(litColor, blendFactor);
+          gl_FragColor = vec4(litColor, 1.0);
         }
       `,
       side: THREE.FrontSide,
