@@ -1,6 +1,13 @@
 import * as THREE from 'three';
-import { type ROIRegion, type BrushType } from './supportPainterTypes';
+import {
+  type ROIRegion,
+  type BrushType,
+  type VoxlROIBoundaryLoop,
+  type BrushMetadata,
+  type SupportGenerationMetadata,
+} from './supportPainterTypes';
 import { supportPainterStore } from './supportPainterStore';
+import { compressRLE } from './voxlCodec';
 import {
   getSnapshot as getSupportSnapshot,
   setSnapshot as setSupportSnapshot,
@@ -274,6 +281,8 @@ export async function generateSupportsFromPainter(
     const triangleIds = region.triangleIds;
     if (triangleIds.size === 0) continue;
 
+    const regionLoops: VoxlROIBoundaryLoop[] = [];
+
     // 3a. Pre-calculate average vertex normals inside this ROI
     const vertexNormals = new Map<number, THREE.Vector3>();
     for (const triId of triangleIds) {
@@ -407,6 +416,12 @@ export async function generateSupportsFromPainter(
         finalPath = rotated;
       }
 
+      // Assemble persistent boundary loop info
+      regionLoops.push({
+        type: 'outer',
+        vertexIds: [...finalPath],
+      });
+
       // Sample along this aligned polyline
       const samples = samplePolylineWithNormals(finalPath, perimeterSpacing, uniqueVertices, vertexNormals);
       for (const sample of samples) {
@@ -525,7 +540,44 @@ export async function generateSupportsFromPainter(
         }
       }
     }
+
+    // ─── Version 2 Persistent Elements Generation ───
+    // [AGENT_NOTE] Compute persistent loops, RLE spans, and metadata in-place
+    const rleSpans = compressRLE(Array.from(region.triangleIds));
+
+    const brush: BrushMetadata = {
+      brushType: region.brushType,
+      parameters: {
+        coplanarityAngleDeg: region.brushType === 'MacroFace' ? 15 : undefined,
+        creaseAngleDeg: region.brushType === 'Ridge' ? 30 : undefined,
+        radiusMm: region.brushType === 'Point' ? 5 : undefined,
+      },
+    };
+
+    const support: SupportGenerationMetadata = {
+      presetId: 'default',
+      presetName: 'Default Preset',
+      parameters: {
+        shaftDiameterMm: trunkWidth,
+        perimeterSpacingMm: perimeterSpacing,
+        infillSpacingMm: infillSpacing,
+        minimaSuppressionRadiusMm: minimaSuppressionRadius,
+        suppressionSettings: {
+          minima: { ...suppressionSettings.minima },
+          perimeter: { ...suppressionSettings.perimeter },
+          infill: { ...suppressionSettings.infill },
+        },
+      },
+    };
+
+    region.loops = regionLoops;
+    region.rleSpans = rleSpans;
+    region.brush = brush;
+    region.support = support;
   }
+
+  // Save mutated regions with loops, RLE spans, and metadata back to the store
+  supportPainterStore.restoreRegions(new Map(regions.map(r => [r.id, r])));
 
   // ─── Configurable Stage-Based Suppression Sequencer [SUPPRESSION_SEQUENCER] ───
   // [AGENT_NOTE] Processed sequentially across all ROIs based on target rules.
@@ -711,9 +763,11 @@ export async function generateSupportsFromPainter(
         const cavity = buildCavityStick(col.pos, col.normal, modelId, mesh);
         if (cavity) {
           if (cavity.kind === 'twig' && cavity.twig) {
+            cavity.twig.roiId = col.regionId;
             addTwig(cavity.twig);
             registerPlacement(col);
           } else if (cavity.kind === 'stick' && cavity.stick) {
+            cavity.stick.roiId = col.regionId;
             addStick(cavity.stick);
             registerPlacement(col);
           }
@@ -737,11 +791,14 @@ export async function generateSupportsFromPainter(
     if (decision.kind === 'place_trunk') {
       const tb = decision.trunkBuild;
       if (tb?.trunk && !tb.stagnated && !tb.exhaustedBudget && !tb.error) {
+        if (tb.root) tb.root.roiId = col.regionId;
+        tb.trunk.roiId = col.regionId;
         addRoot(tb.root);
         addTrunk(tb.trunk);
         registerPlacement(col);
       }
     } else if (decision.kind === 'place_branch') {
+      decision.branch.roiId = col.regionId;
       addKnot(decision.knot);
       addBranch(decision.branch);
 
@@ -758,14 +815,18 @@ export async function generateSupportsFromPainter(
       }
       registerPlacement(col);
     } else if (decision.kind === 'place_anchor') {
+      decision.anchor.roiId = col.regionId;
       addAnchor(decision.anchor);
       registerPlacement(col);
     } else if (decision.kind === 'replace_trunk') {
+      decision.promoteBranch.roiId = col.regionId;
       addKnot(decision.promoteKnot);
       addBranch(decision.promoteBranch);
 
       const tb = decision.trunkBuild;
       if (tb?.trunk) {
+        if (tb.root) tb.root.roiId = col.regionId;
+        tb.trunk.roiId = col.regionId;
         addRoot(tb.root);
         addTrunk(tb.trunk);
         registerPlacement(col);

@@ -1191,7 +1191,7 @@ export class ExportManager {
           dataBase64: this.toBase64(thumbnailBytes),
         };
       }
-      if (hasROIs) {
+      if (hasROIs && painterState.roiTrackingMode === 'voxl') {
         const activeModelId = sceneContext?.activeModelId;
         if (activeModelId) {
           voxlExtensions['dragonfruit.roi'] = serializeROIsForVoxl(painterState.regions, activeModelId);

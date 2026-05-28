@@ -12,6 +12,7 @@ import {
   BRUSH_COLORS,
 } from './supportPainterTypes';
 import { type ClientAdjacencyMap } from './useClientAdjacencyMap';
+import { deserializeROIsFromVoxl } from './voxlCodec';
 
 const listeners = new Set<() => void>();
 
@@ -50,6 +51,9 @@ let suppressionSettings: SuppressionSettings = { ...DEFAULT_SUPPRESSION_SETTINGS
 let toast: SupportPainterToast | null = null;
 let toastTimeout: NodeJS.Timeout | null = null;
 
+// ─── Granular Storage / Tracking Mode State ───
+let roiTrackingMode: 'none' | 'session' | 'voxl' = 'voxl'; // Default persistent mode
+
 let storeSnapshot: SupportPainterState = {
   isActive,
   activeBrush,
@@ -64,6 +68,7 @@ let storeSnapshot: SupportPainterState = {
   infillSpacingOverride,
   suppressionSettings: { ...suppressionSettings },
   toast: null,
+  roiTrackingMode,
 };
 
 function notify() {
@@ -91,6 +96,7 @@ function updateSnapshot() {
     infillSpacingOverride,
     suppressionSettings: { ...suppressionSettings },
     toast: toast ? { ...toast } : null,
+    roiTrackingMode,
   };
 }
 
@@ -276,18 +282,7 @@ export const supportPainterStore = {
   },
 
   loadFromVoxl(ext: VoxlROIExtension) {
-    regions.clear();
-    for (const r of ext.regions) {
-      regions.set(r.id, {
-        id: r.id,
-        brushType: r.brushType,
-        seedTriangleId: r.seedTriangleId,
-        triangleIds: new Set(r.triangleIds),
-        color: r.color,
-        proposedOnly: false,
-        createdAt: r.createdAt,
-      });
-    }
+    regions = deserializeROIsFromVoxl(ext);
     triangleColorMap = _recomputeTriangleColorMap();
     updateSnapshot();
     notify();
@@ -342,6 +337,32 @@ export const supportPainterStore = {
   clearToast() {
     if (toastTimeout) clearTimeout(toastTimeout);
     toast = null;
+    updateSnapshot();
+    notify();
+  },
+
+  setRoiTrackingMode(mode: 'none' | 'session' | 'voxl') {
+    if (roiTrackingMode === mode) return;
+    roiTrackingMode = mode;
+    
+    // If switched to 'none', immediately purge all memory regions.
+    if (mode === 'none') {
+      regions.clear();
+      proposedTriangleIds.clear();
+      hoveredTriangleId = null;
+      triangleColorMap = _recomputeTriangleColorMap();
+    }
+    
+    updateSnapshot();
+    notify();
+  },
+
+  stripRoiData(modelId?: string | null) {
+    // Purges active ROI map globally or for the specific model.
+    regions.clear();
+    proposedTriangleIds.clear();
+    hoveredTriangleId = null;
+    triangleColorMap = _recomputeTriangleColorMap();
     updateSnapshot();
     notify();
   },

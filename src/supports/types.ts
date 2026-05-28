@@ -47,6 +47,9 @@ export interface SupportEntity {
     id: string;
     modelId: string; // The model this support belongs to
     settingsCodeHex?: string;
+    // ─── Persistent ROI Link [PERSISTENT_ROI_LINK] ───
+    // [AGENT_NOTE] Links this physical support entity to its originating painted ROI region.
+    roiId?: string;
 }
 
 /**

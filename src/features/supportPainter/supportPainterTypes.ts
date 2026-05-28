@@ -37,6 +37,13 @@ export interface ROIRegion {
   color:           string;          // CSS hex, sourced from BRUSH_COLORS
   proposedOnly:    boolean;         // true if not yet committed (hover preview)
   createdAt:       number;          // Date.now()
+
+  // ─── Version 2 Persistent Serialization Elements ───
+  // [AGENT_NOTE] Pre-computed during commitment/generation when geometry is available.
+  loops?:          VoxlROIBoundaryLoop[];
+  rleSpans?:       VoxlROIRunLength[];
+  brush?:          BrushMetadata;
+  support?:        SupportGenerationMetadata;
 }
 
 // ─── Stage-Based Suppression Configurations [STAGE_SUPPRESSION] ───────────────
@@ -99,6 +106,10 @@ export interface SupportPainterState {
   infillSpacingOverride:    number | null;
   suppressionSettings:      SuppressionSettings;
   toast:                    SupportPainterToast | null;
+
+  // ─── Granular Storage / Tracking Mode ───
+  // [AGENT_NOTE] Governs persistence of ROIs: 'none' (transient), 'session' (in-memory only), 'voxl' (serialized to file).
+  roiTrackingMode:          'none' | 'session' | 'voxl';
 }
 
 // ─── Store Action Payloads ───────────────────────────────────────────────────
@@ -115,18 +126,56 @@ export interface SubtractRegionPayload {
 // ─── VOXL Serialization Types ────────────────────────────────────────────────
 // Used by voxlCodec.ts to round-trip ROI data through the EXTD chunk.
 
+export interface VoxlROIBoundaryLoop {
+  type: 'outer' | 'hole';
+  vertexIds: number[]; // Directed closed loop vertex indices in local mesh space
+}
+
+export interface VoxlROIRunLength {
+  start: number;
+  count: number;
+}
+
+export interface BrushMetadata {
+  brushType: BrushType;
+  parameters: {
+    coplanarityAngleDeg?: number; // MacroFace
+    creaseAngleDeg?: number;      // Ridge
+    radiusMm?: number;            // Point Geodesic
+    zThresholdMm?: number;        // Ring
+  };
+}
+
+export interface SupportGenerationMetadata {
+  presetId: string;
+  presetName: string;
+  parameters: {
+    shaftDiameterMm: number;
+    perimeterSpacingMm: number;
+    infillSpacingMm: number;
+    minimaSuppressionRadiusMm: number;
+    suppressionSettings: SuppressionSettings;
+  };
+}
+
 export interface VoxlROIRegion {
   id:              string;
   brushType:       BrushType;
   seedTriangleId:  number;
-  triangleIds:     number[];   // Array for JSON (Set is not JSON-serializable)
+  triangleIds?:    number[];   // Optional in version 2 (reconstructed from boundary-loops or RLE fallback)
   color:           string;
   createdAt:       number;
+
+  // ─── Version 2 Persistent Serialization Elements ───
+  loops?:          VoxlROIBoundaryLoop[];
+  rleSpans?:       VoxlROIRunLength[];
+  brush?:          BrushMetadata;
+  support?:        SupportGenerationMetadata;
 }
 
 export interface VoxlROIExtension {
   kind:     'support-painter-rois';
-  version:  1;
+  version:  number; // Incremented to support boundary-loops/RLE fallback (version 2)
   modelId:  string;            // UUID of the model these ROIs belong to
   regions:  VoxlROIRegion[];
 }
