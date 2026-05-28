@@ -6602,11 +6602,16 @@ export function SceneCanvas({
       )}
 
       {(mode === 'support' || mode === 'supportPainter') && (
-        <SupportPainterPanel
-          activeModelId={activeModelId}
-          getActiveMesh={getActiveMesh}
-          onModeChange={onModeChange}
-        />
+        <div
+          className="absolute pointer-events-auto"
+          style={{ top: 12, left: 12, width: 320 }}
+        >
+          <SupportPainterPanel
+            activeModelId={activeModelId}
+            getActiveMesh={getActiveMesh}
+            onModeChange={onModeChange}
+          />
+        </div>
       )}
     </div>
   );

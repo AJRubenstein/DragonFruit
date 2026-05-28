@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as THREE from 'three';
 import {
   Focus,
@@ -8,7 +8,12 @@ import {
   GitCommit,
   Circle,
   WandSparkles,
+  ChevronDown,
+  ChevronRight,
+  X,
+  Trash2,
 } from 'lucide-react';
+import { Card, CardHeader, IconButton, Button } from '@/components/ui/primitives';
 import { supportPainterStore, useSupportPainterState } from '../supportPainterStore';
 import { type BrushType, BRUSH_COLORS } from '../supportPainterTypes';
 import { generateSupportsFromPainter } from '../supportScriptingEngine';
@@ -62,16 +67,20 @@ export function SupportPainterPanel({
 }) {
   const state = useSupportPainterState();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+
+  // Activate the painter on mount; deactivate on unmount
+  useEffect(() => {
+    supportPainterStore.activate();
+    return () => {
+      supportPainterStore.deactivate();
+    };
+  }, []);
 
   const handleExit = () => {
     supportPainterStore.deactivate();
     if (onModeChange) onModeChange('support');
     if (onExit) onExit();
-  };
-
-  const handleExpand = () => {
-    supportPainterStore.activate();
-    if (onModeChange) onModeChange('supportPainter');
   };
 
   const handleGenerate = async () => {
@@ -91,248 +100,248 @@ export function SupportPainterPanel({
   };
 
   const activeDetails = BRUSH_DETAILS[state.activeBrush] || BRUSH_DETAILS.MacroFace;
-  const activeColor = BRUSH_COLORS[state.activeBrush];
 
-  // --- Collapsed Rollup Card on the Left ---
-  if (!state.isActive) {
-    return (
-      <div
-        onClick={handleExpand}
-        className="absolute left-3 top-20 z-[70] w-[200px] rounded-xl border p-3 flex items-center justify-between shadow-xl cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl"
-        style={{
-          background: 'color-mix(in srgb, var(--surface-0) 85%, transparent)',
-          backdropFilter: 'blur(16px)',
-          borderColor: 'color-mix(in srgb, var(--border-subtle), transparent 30%)',
-          color: 'var(--text-strong)',
-        }}
-        title="Click to expand Support Painter"
-      >
-        <div className="flex items-center gap-2">
-          <WandSparkles className="h-4 w-4 text-[#ff5b6f] animate-pulse" />
-          <span className="text-xs font-semibold tracking-wide" style={{ fontFamily: 'var(--font-geist-sans)' }}>
-            Support Painter
-          </span>
-        </div>
-        <span className="text-[10px] font-semibold opacity-70 hover:opacity-100 bg-[#ff5b6f]/10 border border-[#ff5b6f]/20 hover:bg-[#ff5b6f]/20 text-[#ff5b6f] px-2 py-0.5 rounded transition-all">
-          Paint
-        </span>
-      </div>
-    );
-  }
-
-  // --- Full Expanded Dashboard ---
   return (
-    <div
-      className="absolute left-3 top-20 z-[70] w-[330px] rounded-xl border p-4 shadow-2xl flex flex-col gap-4 transition-all duration-300"
-      style={{
-        background: 'color-mix(in srgb, var(--surface-0) 85%, transparent)',
-        backdropFilter: 'blur(16px)',
-        borderColor: 'color-mix(in srgb, var(--border-subtle), transparent 30%)',
-        color: 'var(--text-strong)',
-      }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: 'var(--border-subtle)' }}>
-        <div className="flex items-center gap-2">
-          <WandSparkles className="h-4 w-4" style={{ color: activeColor }} />
-          <h3 className="text-sm font-semibold tracking-wide" style={{ fontFamily: 'var(--font-geist-sans)' }}>
-            Support Painter
-          </h3>
-        </div>
-        <button
-          type="button"
-          onClick={handleExit}
-          className="rounded-md p-1 hover:bg-white/10 transition-colors text-xs opacity-70 hover:opacity-100"
-          title="Exit paint mode"
-        >
-          ✕
-        </button>
-      </div>
+    <Card>
+      <CardHeader
+        left={
+          <>
+            <IconButton
+              onClick={() => setExpanded(v => !v)}
+              className="!p-0.5"
+              title={expanded ? 'Collapse' : 'Expand'}
+            >
+              {expanded
+                ? <ChevronDown className="w-3 h-3" />
+                : <ChevronRight className="w-3 h-3" />}
+            </IconButton>
+            <WandSparkles className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+              Support Painter
+            </h3>
+          </>
+        }
+        right={
+          <IconButton onClick={handleExit} title="Exit paint mode">
+            <X className="w-3.5 h-3.5" />
+          </IconButton>
+        }
+      />
 
-      {/* Direct Click-to-Generate Toggle */}
-      <div
-        className="flex items-center justify-between p-2.5 rounded-lg border text-xs"
-        style={{
-          background: 'color-mix(in srgb, var(--surface-1) 50%, transparent)',
-          borderColor: 'var(--border-subtle)',
-        }}
-      >
-        <div className="flex flex-col gap-0.5 min-w-0 pr-2">
-          <span className="font-semibold text-white/90">Direct Click-to-Generate</span>
-          <span className="text-[9px] opacity-60">Generate supports instantly on click</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => supportPainterStore.setDirectGenEnabled(!state.directGenEnabled)}
-          className="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-          style={{
-            backgroundColor: state.directGenEnabled ? '#ff5b6f' : 'rgba(255,255,255,0.15)',
-          }}
-        >
-          <span
-            className="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+      {expanded && (
+        <div className="px-3 pb-3 pt-1 flex flex-col gap-3">
+
+          {/* Direct Click-to-Generate Toggle */}
+          <div
+            className="flex items-center justify-between p-2.5 rounded-lg border text-xs"
             style={{
-              transform: state.directGenEnabled ? 'translateX(16px)' : 'translateX(0)',
+              background: 'var(--surface-2)',
+              borderColor: 'var(--border-subtle)',
             }}
-          />
-        </button>
-      </div>
-
-      {/* Brushes Selection */}
-      <div className="flex flex-col gap-2">
-        <span className="text-[10px] uppercase tracking-wider opacity-60 font-bold">
-          Select Smart Brush
-        </span>
-        <div className="grid grid-cols-2 gap-2">
-          {(Object.keys(BRUSH_DETAILS) as BrushType[]).map((brush) => {
-            const isSelected = state.activeBrush === brush;
-            const details = BRUSH_DETAILS[brush];
-            const brushColor = BRUSH_COLORS[brush];
-            const Icon = details.icon;
-            return (
-              <button
-                key={brush}
-                type="button"
-                onClick={() => supportPainterStore.setActiveBrush(brush)}
-                className={`flex items-center gap-2 p-2 rounded-lg border transition-all duration-200 text-left ${
-                  isSelected ? 'scale-[1.01] shadow-md' : 'opacity-70 hover:opacity-100'
-                }`}
-                style={{
-                  background: isSelected
-                    ? `color-mix(in srgb, ${brushColor} 12%, var(--surface-1))`
-                    : 'var(--surface-1)',
-                  borderColor: isSelected ? brushColor : 'var(--border-subtle)',
-                }}
-              >
-                <div
-                  className="w-7 h-7 rounded-lg flex items-center justify-center border transition-all"
-                  style={{
-                    backgroundColor: isSelected ? brushColor : 'color-mix(in srgb, var(--surface-2) 40%, transparent)',
-                    borderColor: isSelected ? '#ffffff20' : 'var(--border-subtle)',
-                    color: isSelected ? '#fff' : brushColor,
-                  }}
-                >
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-[11px] font-semibold truncate leading-none mb-0.5">{details.label}</span>
-                  <span className="text-[9px] opacity-50 truncate leading-none">{details.desc}</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Interaction Context Help */}
-      <div
-        className="rounded-lg p-2.5 text-[11px] leading-relaxed border"
-        style={{
-          background: 'color-mix(in srgb, var(--surface-1), transparent 50%)',
-          borderColor: 'var(--border-subtle)',
-          color: 'var(--text-muted)',
-        }}
-      >
-        {state.modifierKeys.alt ? (
-          <div className="flex items-center gap-1.5 text-orange-400">
-            <span className="font-bold">Subtract Mode active:</span> Click on a painted triangle to delete its entire region.
-          </div>
-        ) : state.directGenEnabled ? (
-          <div className="flex flex-col gap-0.5">
-            <span className="font-medium text-[#ff5b6f]">{activeDetails.label}: Instant Placement</span>
-            <span>Click model to instantly generate & place supports in the highlighted region.</span>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-0.5">
-            <span className="font-medium text-white/90">{activeDetails.label}: {activeDetails.desc}</span>
-            <span>Click model to paint. Hold <kbd className="px-1 rounded bg-neutral-800 text-[10px] border border-neutral-700">Alt</kbd> + click to subtract.</span>
-          </div>
-        )}
-      </div>
-
-      {/* Painted ROI Regions List */}
-      <div className="flex flex-col gap-1.5 flex-1 min-h-[140px] max-h-[220px] overflow-hidden">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-wider opacity-60 font-bold">
-            Painted Regions ({state.regions.size})
-          </span>
-          {state.regions.size > 0 && (
+          >
+            <div className="flex flex-col gap-0.5 min-w-0 pr-2">
+              <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>
+                Direct Click-to-Generate
+              </span>
+              <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>
+                Generate supports instantly on click
+              </span>
+            </div>
             <button
               type="button"
-              onClick={() => supportPainterStore.clearAll()}
-              className="text-[10px] text-red-400 hover:text-red-300 font-medium hover:underline transition-all"
+              onClick={() => supportPainterStore.setDirectGenEnabled(!state.directGenEnabled)}
+              className="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+              style={{
+                backgroundColor: state.directGenEnabled ? 'var(--accent)' : 'var(--surface-1)',
+              }}
             >
-              Clear All
+              <span
+                className="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                style={{
+                  transform: state.directGenEnabled ? 'translateX(16px)' : 'translateX(0)',
+                }}
+              />
             </button>
-          )}
-        </div>
+          </div>
 
-        <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-1.5 scrollbar-thin">
-          {state.regions.size === 0 ? (
-            <div className="flex flex-col items-center justify-center py-6 text-center text-[11px] opacity-40 italic">
-              {state.directGenEnabled
-                ? 'Direct Generation Mode: Click mesh to instantly place supports'
-                : 'No regions painted yet'}
-            </div>
-          ) : (
-            Array.from(state.regions.values())
-              .sort((a, b) => b.createdAt - a.createdAt)
-              .map((region) => {
-                const details = BRUSH_DETAILS[region.brushType];
+          {/* Brush Selection */}
+          <div className="flex flex-col gap-2">
+            <span
+              className="text-[10px] uppercase tracking-wider font-bold"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Select Smart Brush
+            </span>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(Object.keys(BRUSH_DETAILS) as BrushType[]).map((brush) => {
+                const isSelected = state.activeBrush === brush;
+                const details = BRUSH_DETAILS[brush];
+                const brushColor = BRUSH_COLORS[brush];
+                const Icon = details.icon;
                 return (
-                  <div
-                    key={region.id}
-                    className="flex items-center justify-between p-2 rounded-lg border text-xs bg-white/5"
-                    style={{ borderColor: 'var(--border-subtle)' }}
+                  <IconButton
+                    key={brush}
+                    active={isSelected}
+                    onClick={() => supportPainterStore.setActiveBrush(brush)}
+                    className="w-full !justify-start gap-2 !p-2"
+                    title={details.desc}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-3.5 h-3.5 rounded border flex-shrink-0" style={{ backgroundColor: region.color, borderColor: '#ffffff20' }} />
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-semibold truncate">{details?.label || region.brushType}</span>
-                        <span className="text-[9px] opacity-50">Seed #{region.seedTriangleId}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 opacity-80">
-                        {region.triangleIds.size} tri
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => supportPainterStore.removeRegion(region.id)}
-                        className="p-1 hover:bg-red-500/20 rounded text-[10px] text-red-400 hover:text-red-300 transition-colors"
-                        title="Delete region"
-                      >
-                        🗑
-                      </button>
-                    </div>
-                  </div>
+                    <div
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ background: brushColor }}
+                    />
+                    <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="text-[11px] font-medium truncate">{details.label}</span>
+                  </IconButton>
                 );
-              })
-          )}
-        </div>
-      </div>
+              })}
+            </div>
+          </div>
 
-      {/* Footer Support Generation */}
-      <button
-        type="button"
-        disabled={state.regions.size === 0 || isGenerating}
-        onClick={handleGenerate}
-        className={`w-full py-2.5 rounded-lg text-xs font-semibold text-center border transition-all duration-200 ${
-          state.regions.size === 0 || isGenerating
-            ? 'opacity-40 cursor-not-allowed bg-neutral-800 border-neutral-700 text-neutral-400'
-            : 'hover:scale-[1.01] hover:shadow-lg active:scale-[0.99] border-[#ff5b6f]/30 text-white cursor-pointer'
-        }`}
-        style={{
-          background: state.regions.size === 0 || isGenerating
-            ? 'var(--surface-1)'
-            : 'linear-gradient(135deg, #ff5b6f 0%, #d92b43 100%)',
-          borderColor: state.regions.size === 0 || isGenerating
-            ? 'var(--border-subtle)'
-            : '#ff5b6f50',
-        }}
-      >
-        {isGenerating ? 'Generating Supports...' : `Generate Supports (${state.regions.size} Regions)`}
-      </button>
-    </div>
+          {/* Interaction Context Hint */}
+          <div
+            className="rounded-lg p-2.5 text-[11px] leading-relaxed border"
+            style={{
+              background: 'var(--surface-2)',
+              borderColor: 'var(--border-subtle)',
+              color: 'var(--text-muted)',
+            }}
+          >
+            {state.modifierKeys.alt ? (
+              <div className="flex items-center gap-1.5 font-medium" style={{ color: 'var(--warning, #f59e0b)' }}>
+                <span className="font-bold">Subtract Mode active:</span>
+                &nbsp;Click a painted triangle to delete its region.
+              </div>
+            ) : state.directGenEnabled ? (
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium" style={{ color: 'var(--accent)' }}>
+                  {activeDetails.label}: Instant Placement
+                </span>
+                <span>Click model to instantly generate &amp; place supports in the highlighted region.</span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium" style={{ color: 'var(--text-strong)' }}>
+                  {activeDetails.label}: {activeDetails.desc}
+                </span>
+                <span>
+                  Click to paint. Hold{' '}
+                  <kbd
+                    className="px-1 rounded text-[10px] border"
+                    style={{ background: 'var(--surface-0)', borderColor: 'var(--border-subtle)' }}
+                  >
+                    Alt
+                  </kbd>
+                  {' '}+ click to subtract.
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Painted Regions List */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span
+                className="text-[10px] uppercase tracking-wider font-bold"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Painted Regions ({state.regions.size})
+              </span>
+              {state.regions.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => supportPainterStore.clearAll()}
+                  className="text-[10px] font-medium hover:underline transition-colors"
+                  style={{ color: 'var(--danger, #ef4444)' }}
+                >
+                  Clear All
+                </button>
+              )}
+            </div>
+
+            <div className="max-h-[180px] overflow-y-auto pr-1 flex flex-col gap-1.5 scrollbar-thin">
+              {state.regions.size === 0 ? (
+                <div
+                  className="flex flex-col items-center justify-center py-5 text-center text-[11px] italic"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {state.directGenEnabled
+                    ? 'Direct Generation Mode: Click mesh to instantly place supports'
+                    : 'No regions painted yet'}
+                </div>
+              ) : (
+                Array.from(state.regions.values())
+                  .sort((a, b) => b.createdAt - a.createdAt)
+                  .map((region) => {
+                    const details = BRUSH_DETAILS[region.brushType];
+                    return (
+                      <div
+                        key={region.id}
+                        className="flex items-center justify-between p-2 rounded-lg border text-xs"
+                        style={{
+                          background: 'var(--surface-2)',
+                          borderColor: 'var(--border-subtle)',
+                        }}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className="w-3 h-3 rounded border flex-shrink-0"
+                            style={{
+                              backgroundColor: region.color,
+                              borderColor: 'var(--border-subtle)',
+                            }}
+                          />
+                          <div className="flex flex-col min-w-0">
+                            <span
+                              className="font-semibold truncate"
+                              style={{ color: 'var(--text-strong)' }}
+                            >
+                              {details?.label || region.brushType}
+                            </span>
+                            <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>
+                              Seed #{region.seedTriangleId}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded border"
+                            style={{
+                              background: 'var(--surface-1)',
+                              borderColor: 'var(--border-subtle)',
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            {region.triangleIds.size} tri
+                          </span>
+                          <IconButton
+                            onClick={() => supportPainterStore.removeRegion(region.id)}
+                            className="!p-1"
+                            title="Delete region"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </IconButton>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+
+          {/* Generate Button */}
+          <Button
+            variant="accent"
+            size="sm"
+            className="w-full"
+            disabled={state.regions.size === 0 || isGenerating}
+            onClick={handleGenerate}
+          >
+            {isGenerating ? 'Generating…' : `Generate Supports (${state.regions.size})`}
+          </Button>
+
+        </div>
+      )}
+    </Card>
   );
 }
