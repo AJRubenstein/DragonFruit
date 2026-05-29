@@ -181,6 +181,203 @@ function samplePolylineWithNormals(
   return samples;
 }
 
+function getSegmentLength(indices: number[], uniqueVertices: THREE.Vector3[]): number {
+  let len = 0;
+  for (let i = 0; i < indices.length - 1; i++) {
+    len += uniqueVertices[indices[i]].distanceTo(uniqueVertices[indices[i + 1]]);
+  }
+  return len;
+}
+
+function sampleSegmentEvenly(
+  indices: number[],
+  targetSpacing: number,
+  NPrime: number,
+  uniqueVertices: THREE.Vector3[],
+  vertexNormals: Map<number, THREE.Vector3>
+): BasicSampledPoint[] {
+  const samples: BasicSampledPoint[] = [];
+  if (indices.length < 2) return [];
+
+  // Always emit the first point of the segment
+  const startIdx = indices[0];
+  samples.push({
+    pos: uniqueVertices[startIdx].clone(),
+    normal: (vertexNormals.get(startIdx) || new THREE.Vector3(0, 0, 1)).clone(),
+  });
+
+  let accumulatedDist = 0;
+  let count = 1;
+
+  for (let i = 0; i < indices.length - 1; i++) {
+    const idx0 = indices[i];
+    const idx1 = indices[i + 1];
+    const p0 = uniqueVertices[idx0];
+    const p1 = uniqueVertices[idx1];
+    const n0 = vertexNormals.get(idx0) || new THREE.Vector3(0, 0, 1);
+    const n1 = vertexNormals.get(idx1) || new THREE.Vector3(0, 0, 1);
+
+    const segDir = new THREE.Vector3().subVectors(p1, p0);
+    const segLen = segDir.length();
+    if (segLen === 0) continue;
+    segDir.normalize();
+
+    let tSeg = 0;
+    while (count < NPrime && accumulatedDist + (segLen - tSeg * segLen) >= targetSpacing) {
+      const needed = targetSpacing - accumulatedDist;
+      tSeg += needed / segLen;
+      const pos = new THREE.Vector3().lerpVectors(p0, p1, tSeg);
+      const normal = new THREE.Vector3().lerpVectors(n0, n1, tSeg).normalize();
+      samples.push({ pos, normal });
+      count++;
+      accumulatedDist = 0;
+    }
+    accumulatedDist += segLen * (1 - tSeg);
+  }
+
+  return samples;
+}
+
+export function sampleSequencePolyline(
+  indices: number[],
+  sequence: number[],
+  uniqueVertices: THREE.Vector3[],
+  vertexNormals: Map<number, THREE.Vector3>
+): BasicSampledPoint[] {
+  if (indices.length < 2) return [];
+
+  const samples: BasicSampledPoint[] = [];
+
+  // Always add first point
+  const firstIdx = indices[0];
+  samples.push({
+    pos: uniqueVertices[firstIdx].clone(),
+    normal: (vertexNormals.get(firstIdx) || new THREE.Vector3(0, 0, 1)).clone(),
+  });
+
+  let seqIdx = 0;
+  let neededSpacing = sequence[0];
+  let accumulatedDist = 0;
+
+  for (let i = 0; i < indices.length - 1; i++) {
+    const idx0 = indices[i];
+    const idx1 = indices[i + 1];
+    const p0 = uniqueVertices[idx0];
+    const p1 = uniqueVertices[idx1];
+    const n0 = vertexNormals.get(idx0) || new THREE.Vector3(0, 0, 1);
+    const n1 = vertexNormals.get(idx1) || new THREE.Vector3(0, 0, 1);
+
+    const segDir = new THREE.Vector3().subVectors(p1, p0);
+    const segLen = segDir.length();
+    if (segLen === 0) continue;
+    segDir.normalize();
+
+    let tSeg = 0;
+    while (accumulatedDist + (segLen - tSeg * segLen) >= neededSpacing) {
+      const needed = neededSpacing - accumulatedDist;
+      tSeg += needed / segLen;
+      const pos = new THREE.Vector3().lerpVectors(p0, p1, tSeg);
+      const normal = new THREE.Vector3().lerpVectors(n0, n1, tSeg).normalize();
+      samples.push({ pos, normal });
+      
+      seqIdx++;
+      neededSpacing = sequence[seqIdx] !== undefined ? sequence[seqIdx] : sequence[sequence.length - 1];
+      accumulatedDist = 0;
+    }
+    accumulatedDist += segLen * (1 - tSeg);
+  }
+
+  return samples;
+}
+
+export function solvePerimeterWithInflections(
+  indices: number[],
+  baseSpacing: number,
+  solverMode: 'standard' | 'closest' | 'add' | 'remove',
+  uniqueVertices: THREE.Vector3[],
+  vertexNormals: Map<number, THREE.Vector3>
+): BasicSampledPoint[] {
+  if (indices.length < 2) return [];
+
+  // A. Project boundary loop coordinates onto horizontal XY plane
+  const q = indices.map(idx => new THREE.Vector2(uniqueVertices[idx].x, uniqueVertices[idx].y));
+
+  // B. Run q through a running 1D Gaussian kernel to suppress high-frequency noise
+  const qSmoothed: THREE.Vector2[] = [];
+  const w = 2; // window span
+  const sigma = 1.0;
+  const weights = [-2, -1, 0, 1, 2].map(j => Math.exp(-(j * j) / (2 * sigma * sigma)));
+  const sumWeights = weights.reduce((a, b) => a + b, 0);
+
+  for (let i = 0; i < q.length; i++) {
+    let sx = 0, sy = 0;
+    for (let j = -w; j <= w; j++) {
+      const idx = (i + j + q.length) % q.length;
+      sx += q[idx].x * weights[j + w];
+      sy += q[idx].y * weights[j + w];
+    }
+    qSmoothed.push(new THREE.Vector2(sx / sumWeights, sy / sumWeights));
+  }
+
+  // C. Calculate 2D signed curvature angles between adjacent tangents
+  const angles: number[] = [];
+  for (let i = 0; i < qSmoothed.length; i++) {
+    const prev = qSmoothed[(i - 1 + qSmoothed.length) % qSmoothed.length];
+    const curr = qSmoothed[i];
+    const next = qSmoothed[(i + 1) % qSmoothed.length];
+
+    const t1 = new THREE.Vector2().subVectors(curr, prev).normalize();
+    const t2 = new THREE.Vector2().subVectors(next, curr).normalize();
+
+    let diff = Math.atan2(t2.y, t2.x) - Math.atan2(t1.y, t1.x);
+    if (diff < -Math.PI) diff += 2 * Math.PI;
+    if (diff > Math.PI) diff -= 2 * Math.PI;
+    angles.push(diff);
+  }
+
+  // D. Find inflection points where curvature signs change
+  const inflections: number[] = [0]; // Always anchor at starting vertical minima
+  for (let i = 1; i < angles.length; i++) {
+    if (angles[i] * angles[i - 1] < 0 && Math.abs(angles[i] - angles[i - 1]) > 0.02) {
+      inflections.push(i);
+    }
+  }
+  // Make sure we include the end of the loop
+  if (inflections[inflections.length - 1] !== indices.length - 1) {
+    inflections.push(indices.length - 1);
+  }
+
+  // E. Solve even spacing segment-by-segment
+  const samples: BasicSampledPoint[] = [];
+  for (let s = 0; s < inflections.length - 1; s++) {
+    const startIdx = inflections[s];
+    const endIdx = inflections[s + 1];
+
+    const segIndices = indices.slice(startIdx, endIdx + 1);
+    const L = getSegmentLength(segIndices, uniqueVertices);
+    if (L < 0.1) continue;
+
+    const N = L / baseSpacing;
+    let NPrime = Math.round(N);
+    if (solverMode === 'add') NPrime = Math.ceil(N);
+    if (solverMode === 'remove') NPrime = Math.floor(N);
+    NPrime = Math.max(1, NPrime);
+
+    const targetSpacing = L / NPrime;
+
+    // Linearly distribute NPrime supports evenly inside this segment
+    const segSamples = sampleSegmentEvenly(segIndices, targetSpacing, NPrime, uniqueVertices, vertexNormals);
+    
+    // Append to samples, skipping duplicate boundary vertices between segments
+    if (samples.length > 0 && segSamples.length > 0) {
+      samples.pop(); // Remove duplicate overlap endpoint
+    }
+    samples.push(...segSamples);
+  }
+
+  return samples;
+}
+
 function sampleSpineWithNormals(
   points: THREE.Vector3[],
   normals: THREE.Vector3[],
@@ -319,14 +516,21 @@ export async function generateSupportsFromPainter(
   const rawPerimeter: SampledPoint[] = [];
   const rawInfill: SampledPoint[] = [];
 
-  // 3. Process each committed region
+  const regionVertexNormals = new Map<string, Map<number, THREE.Vector3>>();
+  const regionBoundaryLoops = new Map<string, VoxlROIBoundaryLoop[]>();
+  const regionSpines = new Map<string, { points: THREE.Vector3[]; normals: THREE.Vector3[] }>();
+  const regionMinimaPoints = new Map<string, { pos: THREE.Vector3; idx: number }[]>();
+
+  const allRegions = new Map<string, ROIRegion>(regions.map(r => [r.id, r]));
+
+  // A. Precompute topological structures and metadata for each region
   for (const region of regions) {
     const triangleIds = region.triangleIds;
     if (triangleIds.size === 0) continue;
 
     const regionLoops: VoxlROIBoundaryLoop[] = [];
 
-    // 3a. Pre-calculate average vertex normals inside this ROI
+    // Pre-calculate average vertex normals inside this ROI
     const vertexNormals = new Map<number, THREE.Vector3>();
     for (const triId of triangleIds) {
       const tri = triangles[triId];
@@ -345,9 +549,12 @@ export async function generateSupportsFromPainter(
     for (const idx of vertexNormals.keys()) {
       vertexNormals.get(idx)!.normalize();
     }
+    regionVertexNormals.set(region.id, vertexNormals);
+
+    let spineData: { points: THREE.Vector3[]; normals: THREE.Vector3[] } | null = null;
 
     if (region.brushType === 'CylinderMinima' || region.brushType === 'Ridge') {
-      // ─── 1D Centroid Chain Walk crease spine sampling ───
+      // 1D Centroid Chain Walk crease spine sampling
       const regionAdj = new Map<number, number[]>();
       const addRegionAdj = (ta: number, tb: number) => {
         let list = regionAdj.get(ta);
@@ -421,19 +628,10 @@ export async function generateSupportsFromPainter(
         vertexIds: orderedFaces.map(f => triangles[f].idx0),
       });
 
-      const samples = sampleSpineWithNormals(spinePoints, spineNormals, perimeterSpacing);
-      for (const sample of samples) {
-        rawPerimeter.push({
-          pos: sample.pos,
-          normal: sample.normal,
-          regionId: region.id,
-          regionType: region.brushType,
-          regionTriCount: region.triangleIds.size,
-          stage: 'perimeter',
-        });
-      }
+      spineData = { points: spinePoints, normals: spineNormals };
+      regionSpines.set(region.id, spineData);
     } else {
-      // 3b. Identify boundary edges (Standard 2D Loop sampling)
+      // Identify boundary edges (Standard 2D Loop sampling)
       const edgeCount = new Map<string, number>();
       const edgeToVertices = new Map<string, [number, number]>();
 
@@ -521,8 +719,7 @@ export async function generateSupportsFromPainter(
           }
         }
 
-        // ─── Perimeter Minima Alignment [PERIMETER_MINIMA] ───
-        // [AGENT_NOTE] Shift/rotate the boundary path so the vertex with the lowest Z coordinate is first.
+        // Perimeter Minima Alignment
         const isClosed = path.length > 1 && path[0] === path[path.length - 1];
         let finalPath = path;
 
@@ -537,37 +734,24 @@ export async function generateSupportsFromPainter(
               minZIndex = j;
             }
           }
-          // Rotate loopVertices so that minZIndex is at 0
           const rotated = [
             ...loopVertices.slice(minZIndex),
             ...loopVertices.slice(0, minZIndex)
           ];
-          rotated.push(rotated[0]); // Maintain closed loop
+          rotated.push(rotated[0]);
           finalPath = rotated;
         }
 
-        // Assemble persistent boundary loop info
         regionLoops.push({
           type: 'outer',
           vertexIds: [...finalPath],
         });
-
-        // Sample along this aligned polyline
-        const samples = samplePolylineWithNormals(finalPath, perimeterSpacing, uniqueVertices, vertexNormals);
-        for (const sample of samples) {
-          rawPerimeter.push({
-            pos: sample.pos,
-            normal: sample.normal,
-            regionId: region.id,
-            regionType: region.brushType,
-            regionTriCount: region.triangleIds.size,
-            stage: 'perimeter',
-          });
-        }
       }
     }
+    regionBoundaryLoops.set(region.id, regionLoops);
 
-    // 3c. Local Z-Minima (Tip Snapping / Heavy Anchors)
+    // Compute Local Z-Minima points
+    const minimaPoints: { pos: THREE.Vector3; idx: number }[] = [];
     const vertexAdj = new Map<number, Set<number>>();
     const addVertexAdj = (a: number, b: number) => {
       let set = vertexAdj.get(a);
@@ -600,80 +784,12 @@ export async function generateSupportsFromPainter(
         }
       }
       if (isMin) {
-        rawMinima.push({
-          pos: pos.clone(),
-          normal: (vertexNormals.get(idx) || new THREE.Vector3(0, 0, 1)).clone(),
-          regionId: region.id,
-          regionType: region.brushType,
-          regionTriCount: region.triangleIds.size,
-          stage: 'minima',
-        });
+        minimaPoints.push({ pos: pos.clone(), idx });
       }
     }
+    regionMinimaPoints.set(region.id, minimaPoints);
 
-    // 3d. Poisson-Disc Infill Sampling
-    // Only populated for large surfaces (MacroFace / Cylinder)
-    if (region.brushType === 'MacroFace' || region.brushType === 'CylinderSides') {
-      const minXY = new THREE.Vector2(Infinity, Infinity);
-      const maxXY = new THREE.Vector2(-Infinity, -Infinity);
-
-      for (const triId of triangleIds) {
-        const tri = triangles[triId];
-        if (!tri) continue;
-        for (const v of [tri.v0, tri.v1, tri.v2]) {
-          minXY.x = Math.min(minXY.x, v.x);
-          minXY.y = Math.min(minXY.y, v.y);
-          maxXY.x = Math.max(maxXY.x, v.x);
-          maxXY.y = Math.max(maxXY.y, v.y);
-        }
-      }
-
-      const startX = minXY.x + infillSpacing / 2;
-      const startY = minXY.y + infillSpacing / 2;
-
-      for (let gx = startX; gx <= maxXY.x; gx += infillSpacing) {
-        for (let gy = startY; gy <= maxXY.y; gy += infillSpacing) {
-          // Standard jitter
-          const jitterX = (Math.random() - 0.5) * infillSpacing * 0.3;
-          const jitterY = (Math.random() - 0.5) * infillSpacing * 0.3;
-          const px = gx + jitterX;
-          const py = gy + jitterY;
-
-          let bestZ = -Infinity;
-          let matchingTri: WeldedTriangle | null = null;
-          let bary: { u: number; v: number; w: number } | null = null;
-
-          for (const triId of triangleIds) {
-            const tri = triangles[triId];
-            if (!tri) continue;
-
-            const res = pointInTriangle2D(px, py, tri.v0.x, tri.v0.y, tri.v1.x, tri.v1.y, tri.v2.x, tri.v2.y);
-            if (res.in) {
-              const z = tri.v0.z * res.w + tri.v1.z * res.v + tri.v2.z * res.u;
-              if (z > bestZ) {
-                bestZ = z;
-                matchingTri = tri;
-                bary = res;
-              }
-            }
-          }
-
-          if (matchingTri && bary) {
-            rawInfill.push({
-              pos: new THREE.Vector3(px, py, bestZ),
-              normal: matchingTri.normal.clone(),
-              regionId: region.id,
-              regionType: region.brushType,
-              regionTriCount: region.triangleIds.size,
-              stage: 'infill',
-            });
-          }
-        }
-      }
-    }
-
-    // ─── Version 2 Persistent Elements Generation ───
-    // [AGENT_NOTE] Compute persistent loops, RLE spans, and metadata in-place
+    // Version 2 persistent serialization elements and metadata
     const rleSpans = compressRLE(Array.from(region.triangleIds));
 
     const brush: BrushMetadata = {
@@ -727,71 +843,428 @@ export async function generateSupportsFromPainter(
   supportPainterStore.restoreRegions(currentRegions);
 
   // ─── Configurable Stage-Based Suppression Sequencer [SUPPRESSION_SEQUENCER] ───
-  // [AGENT_NOTE] Processed sequentially across all ROIs based on target rules.
-  // Dynamic radius applies: perimeter checks use perimeterSpacing, infill uses infillSpacing, minima uses minimaSuppressionRadius.
   const acceptedMinima: SampledPoint[] = [];
   const acceptedPerimeter: SampledPoint[] = [];
   const acceptedInfill: SampledPoint[] = [];
 
-  // helper evaluator
-  const evaluateSuppression = (cand: SampledPoint, config: typeof suppressionSettings.minima): boolean => {
-    // Override candidate check: CylinderSides and CylinderMinima always enforce suppression
-    const isOverrideCandidate =
-      cand.regionType === 'CylinderSides' ||
-      cand.regionType === 'CylinderMinima';
+  const acceptedPoints = () => [...acceptedMinima, ...acceptedPerimeter, ...acceptedInfill];
 
-    const effectiveMode = isOverrideCandidate ? 'all' : config.mode;
-    if (effectiveMode === 'none') return false;
-
-    const allAccepted = [...acceptedMinima, ...acceptedPerimeter, ...acceptedInfill];
-    for (const accepted of allAccepted) {
-      const checkStageTypes = isOverrideCandidate ? ['minima', 'perimeter', 'infill'] : config.types;
-
-      if (checkStageTypes.includes(accepted.stage)) {
-        // ROI scope check
-        if (effectiveMode === 'current' && accepted.regionId !== cand.regionId) {
-          continue;
-        }
-        // Match suppression radius to the compared target point
-        let radius = accepted.stage === 'perimeter'
-          ? perimeterSpacing
-          : accepted.stage === 'infill'
-            ? infillSpacing
-            : minimaSuppressionRadius;
-
-        // Custom Overrides for CylinderSides and CylinderMinima (3.0x trunk width spacing)
-        if (cand.regionType === 'CylinderSides' || accepted.regionType === 'CylinderSides' ||
-            cand.regionType === 'CylinderMinima' || accepted.regionType === 'CylinderMinima') {
-          radius = trunkWidth * 3.0;
-        }
-
-        if (distance2D(cand.pos, accepted.pos) < radius) {
-          return true; // Suppressed!
-        }
-      }
+  const areRegionsIntersecting = (r1: ROIRegion, r2: ROIRegion): boolean => {
+    for (const triId of r1.triangleIds) {
+      if (r2.triangleIds.has(triId)) return true;
     }
     return false;
   };
 
-  // Stage 1: Evaluate Minima (sorted by Z ascending, lowest Z wins)
-  const sortedMinima = [...rawMinima].sort((a, b) => a.pos.z - b.pos.z);
-  for (const cand of sortedMinima) {
-    if (!evaluateSuppression(cand, suppressionSettings.minima)) {
-      acceptedMinima.push(cand);
+  const getRegionSuppressionRule = (
+    region: ROIRegion,
+    stage: 'minima' | 'perimeter' | 'infill'
+  ) => {
+    if (region.customBrush) {
+      const op = region.customBrush.operations.find(o => o.type === stage && o.enabled);
+      if (op && op.suppression.enabled) {
+        return {
+          enabled: true,
+          distanceMm: op.suppression.distanceMm,
+          types: op.suppression.suppressAgainst,
+          mode: 'all' as const,
+        };
+      } else {
+        return {
+          enabled: false,
+          distanceMm: 0,
+          types: [] as ('minima' | 'perimeter' | 'infill')[],
+          mode: 'none' as const,
+        };
+      }
     }
-  }
 
-  // Stage 2: Evaluate Perimeter
-  for (const cand of rawPerimeter) {
-    if (!evaluateSuppression(cand, suppressionSettings.perimeter)) {
-      acceptedPerimeter.push(cand);
+    const config = suppressionSettings[stage];
+    const isOverrideCandidate =
+      region.brushType === 'CylinderSides' ||
+      region.brushType === 'CylinderMinima';
+
+    const effectiveMode = isOverrideCandidate ? 'all' : config.mode;
+    if (effectiveMode === 'none') {
+      return {
+        enabled: false,
+        distanceMm: 0,
+        types: [] as ('minima' | 'perimeter' | 'infill')[],
+        mode: 'none' as const,
+      };
     }
-  }
 
-  // Stage 3: Evaluate Infill
-  for (const cand of rawInfill) {
-    if (!evaluateSuppression(cand, suppressionSettings.infill)) {
-      acceptedInfill.push(cand);
+    let radius = stage === 'perimeter'
+      ? perimeterSpacing
+      : stage === 'infill'
+        ? infillSpacing
+        : minimaSuppressionRadius;
+
+    if (region.brushType === 'CylinderSides' || region.brushType === 'CylinderMinima') {
+      radius = trunkWidth * 3.0;
+    }
+
+    return {
+      enabled: true,
+      distanceMm: radius,
+      types: isOverrideCandidate ? ['minima', 'perimeter', 'infill'] as ('minima' | 'perimeter' | 'infill')[] : config.types,
+      mode: effectiveMode,
+    };
+  };
+
+  const evaluateSuppression = (cand: SampledPoint, accepted: SampledPoint[]): boolean => {
+    const region = allRegions.get(cand.regionId);
+    if (!region) return false;
+
+    let combinedEnabled = false;
+    let maxDistance = 0;
+    const combinedTypes = new Set<'minima' | 'perimeter' | 'infill'>();
+    let combinedMode: 'none' | 'current' | 'all' = 'none';
+
+    for (const r of regions) {
+      if (r.id === cand.regionId || areRegionsIntersecting(region, r)) {
+        const rule = getRegionSuppressionRule(r, cand.stage);
+        if (rule.enabled) {
+          combinedEnabled = true;
+          maxDistance = Math.max(maxDistance, rule.distanceMm);
+          for (const t of rule.types) {
+            combinedTypes.add(t);
+          }
+          if (rule.mode === 'all') {
+            combinedMode = 'all';
+          } else if (rule.mode === 'current' && combinedMode !== 'all') {
+            combinedMode = 'current';
+          }
+        }
+      }
+    }
+
+    if (!combinedEnabled) return false;
+
+    for (const acc of accepted) {
+      if (combinedTypes.has(acc.stage)) {
+        if (combinedMode === 'all' || (combinedMode === 'current' && acc.regionId === cand.regionId)) {
+          let effectiveRadius = maxDistance;
+          if (cand.regionType === 'CylinderSides' || acc.regionType === 'CylinderSides' ||
+              cand.regionType === 'CylinderMinima' || acc.regionType === 'CylinderMinima') {
+            effectiveRadius = Math.max(effectiveRadius, trunkWidth * 3.0);
+          }
+
+          if (distance2D(cand.pos, acc.pos) < effectiveRadius) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  };
+
+  // Pipeline execution for each region
+  for (const region of regions) {
+    const vertexNormals = regionVertexNormals.get(region.id);
+    if (!vertexNormals) continue;
+
+    const pipeline: {
+      type: 'minima' | 'perimeter' | 'infill';
+      enabled: boolean;
+      spacing: {
+        baseSpacingMm: number;
+        sequence?: number[];
+        solverMode?: 'standard' | 'closest' | 'add' | 'remove';
+        useInflectionPoints?: boolean;
+        infillPattern?: 'PoissonDisc' | 'Grid' | 'Honeycomb' | 'Concentric';
+        seedFromMinima?: boolean;
+      };
+    }[] = [];
+
+    if (region.customBrush) {
+      for (const op of region.customBrush.operations) {
+        pipeline.push({
+          type: op.type,
+          enabled: op.enabled,
+          spacing: {
+            baseSpacingMm: op.spacing.baseSpacingMm,
+            sequence: op.spacing.sequence,
+            solverMode: op.spacing.solverMode,
+            useInflectionPoints: op.spacing.useInflectionPoints,
+            infillPattern: op.spacing.infillPattern,
+            seedFromMinima: op.spacing.seedFromMinima,
+          },
+        });
+      }
+    } else {
+      pipeline.push({
+        type: 'minima',
+        enabled: true,
+        spacing: { baseSpacingMm: minimaSuppressionRadius },
+      });
+      pipeline.push({
+        type: 'perimeter',
+        enabled: true,
+        spacing: { baseSpacingMm: perimeterSpacing },
+      });
+      pipeline.push({
+        type: 'infill',
+        enabled: true,
+        spacing: { baseSpacingMm: infillSpacing },
+      });
+    }
+
+    for (const stage of pipeline) {
+      if (!stage.enabled) continue;
+
+      const candidates: SampledPoint[] = [];
+
+      if (stage.type === 'minima') {
+        const minimaPoints = regionMinimaPoints.get(region.id) || [];
+        for (const m of minimaPoints) {
+          candidates.push({
+            pos: m.pos.clone(),
+            normal: (vertexNormals.get(m.idx) || new THREE.Vector3(0, 0, 1)).clone(),
+            regionId: region.id,
+            regionType: region.brushType,
+            regionTriCount: region.triangleIds.size,
+            stage: 'minima',
+          });
+        }
+        candidates.sort((a, b) => a.pos.z - b.pos.z);
+        rawMinima.push(...candidates);
+      } else if (stage.type === 'perimeter') {
+        const spine = regionSpines.get(region.id);
+        if (spine) {
+          const spacing = Math.max(0.1, stage.spacing.baseSpacingMm);
+          const samples = sampleSpineWithNormals(spine.points, spine.normals, spacing);
+          for (const sample of samples) {
+            candidates.push({
+              pos: sample.pos,
+              normal: sample.normal,
+              regionId: region.id,
+              regionType: region.brushType,
+              regionTriCount: region.triangleIds.size,
+              stage: 'perimeter',
+            });
+          }
+        } else {
+          const loops = regionBoundaryLoops.get(region.id) || [];
+          for (const loop of loops) {
+            if (loop.vertexIds.length < 2) continue;
+            let samples: BasicSampledPoint[] = [];
+
+            const spacing = Math.max(0.1, stage.spacing.baseSpacingMm);
+
+            if (stage.spacing.useInflectionPoints) {
+              const solverMode = stage.spacing.solverMode || 'standard';
+              samples = solvePerimeterWithInflections(
+                loop.vertexIds,
+                spacing,
+                solverMode,
+                uniqueVertices,
+                vertexNormals
+              );
+            } else if (stage.spacing.sequence && stage.spacing.sequence.length > 0) {
+              samples = sampleSequencePolyline(
+                loop.vertexIds,
+                stage.spacing.sequence,
+                uniqueVertices,
+                vertexNormals
+              );
+            } else {
+              samples = samplePolylineWithNormals(
+                loop.vertexIds,
+                spacing,
+                uniqueVertices,
+                vertexNormals
+              );
+            }
+
+            for (const sample of samples) {
+              candidates.push({
+                pos: sample.pos,
+                normal: sample.normal,
+                regionId: region.id,
+                regionType: region.brushType,
+                regionTriCount: region.triangleIds.size,
+                stage: 'perimeter',
+              });
+            }
+          }
+        }
+        rawPerimeter.push(...candidates);
+      } else if (stage.type === 'infill') {
+        if (region.brushType === 'MacroFace' || region.brushType === 'CylinderSides') {
+          const spacing = Math.max(0.1, stage.spacing.baseSpacingMm);
+          const minXY = new THREE.Vector2(Infinity, Infinity);
+          const maxXY = new THREE.Vector2(-Infinity, -Infinity);
+
+          for (const triId of region.triangleIds) {
+            const tri = triangles[triId];
+            if (!tri) continue;
+            for (const v of [tri.v0, tri.v1, tri.v2]) {
+              minXY.x = Math.min(minXY.x, v.x);
+              minXY.y = Math.min(minXY.y, v.y);
+              maxXY.x = Math.max(maxXY.x, v.x);
+              maxXY.y = Math.max(maxXY.y, v.y);
+            }
+          }
+
+          let offsetX = 0;
+          let offsetY = 0;
+          let useSeeding = false;
+
+          const minimaPoints = regionMinimaPoints.get(region.id) || [];
+          if (stage.spacing.seedFromMinima && minimaPoints.length > 0) {
+            const sorted = [...minimaPoints].sort((a, b) => a.pos.z - b.pos.z);
+            offsetX = sorted[0].pos.x;
+            offsetY = sorted[0].pos.y;
+            useSeeding = true;
+          }
+
+          const pattern = stage.spacing.infillPattern || 'PoissonDisc';
+
+          if (pattern === 'Grid') {
+            const startX = useSeeding ? offsetX + Math.ceil((minXY.x - offsetX) / spacing) * spacing : minXY.x + spacing / 2;
+            const startY = useSeeding ? offsetY + Math.ceil((minXY.y - offsetY) / spacing) * spacing : minXY.y + spacing / 2;
+
+            for (let gx = startX; gx <= maxXY.x; gx += spacing) {
+              for (let gy = startY; gy <= maxXY.y; gy += spacing) {
+                const px = gx;
+                const py = gy;
+
+                let bestZ = -Infinity;
+                let matchingTri: WeldedTriangle | null = null;
+                let bary: { u: number; v: number; w: number } | null = null;
+
+                for (const triId of region.triangleIds) {
+                  const tri = triangles[triId];
+                  if (!tri) continue;
+
+                  const res = pointInTriangle2D(px, py, tri.v0.x, tri.v0.y, tri.v1.x, tri.v1.y, tri.v2.x, tri.v2.y);
+                  if (res.in) {
+                    const z = tri.v0.z * res.w + tri.v1.z * res.v + tri.v2.z * res.u;
+                    if (z > bestZ) {
+                      bestZ = z;
+                      matchingTri = tri;
+                      bary = res;
+                    }
+                  }
+                }
+
+                if (matchingTri && bary) {
+                  candidates.push({
+                    pos: new THREE.Vector3(px, py, bestZ),
+                    normal: matchingTri.normal.clone(),
+                    regionId: region.id,
+                    regionType: region.brushType,
+                    regionTriCount: region.triangleIds.size,
+                    stage: 'infill',
+                  });
+                }
+              }
+            }
+          } else if (pattern === 'Honeycomb') {
+            const rowHeight = spacing * 0.8660254;
+            const startY = useSeeding ? offsetY + Math.ceil((minXY.y - offsetY) / rowHeight) * rowHeight : minXY.y + rowHeight / 2;
+
+            for (let gy = startY; gy <= maxXY.y; gy += rowHeight) {
+              const j = useSeeding ? Math.round((gy - offsetY) / rowHeight) : Math.round((gy - minXY.y) / rowHeight);
+              const shiftX = (j % 2 === 0) ? 0 : spacing / 2;
+
+              const startX = useSeeding ? offsetX + shiftX + Math.ceil((minXY.x - offsetX - shiftX) / spacing) * spacing : minXY.x + shiftX + spacing / 2;
+
+              for (let gx = startX; gx <= maxXY.x; gx += spacing) {
+                const px = gx;
+                const py = gy;
+
+                let bestZ = -Infinity;
+                let matchingTri: WeldedTriangle | null = null;
+                let bary: { u: number; v: number; w: number } | null = null;
+
+                for (const triId of region.triangleIds) {
+                  const tri = triangles[triId];
+                  if (!tri) continue;
+
+                  const res = pointInTriangle2D(px, py, tri.v0.x, tri.v0.y, tri.v1.x, tri.v1.y, tri.v2.x, tri.v2.y);
+                  if (res.in) {
+                    const z = tri.v0.z * res.w + tri.v1.z * res.v + tri.v2.z * res.u;
+                    if (z > bestZ) {
+                      bestZ = z;
+                      matchingTri = tri;
+                      bary = res;
+                    }
+                  }
+                }
+
+                if (matchingTri && bary) {
+                  candidates.push({
+                    pos: new THREE.Vector3(px, py, bestZ),
+                    normal: matchingTri.normal.clone(),
+                    regionId: region.id,
+                    regionType: region.brushType,
+                    regionTriCount: region.triangleIds.size,
+                    stage: 'infill',
+                  });
+                }
+              }
+            }
+          } else {
+            const startX = useSeeding ? offsetX + Math.ceil((minXY.x - offsetX) / spacing) * spacing : minXY.x + spacing / 2;
+            const startY = useSeeding ? offsetY + Math.ceil((minXY.y - offsetY) / spacing) * spacing : minXY.y + spacing / 2;
+
+            for (let gx = startX; gx <= maxXY.x; gx += spacing) {
+              for (let gy = startY; gy <= maxXY.y; gy += spacing) {
+                const jitterX = (Math.random() - 0.5) * spacing * 0.3;
+                const jitterY = (Math.random() - 0.5) * spacing * 0.3;
+                const px = gx + jitterX;
+                const py = gy + jitterY;
+
+                let bestZ = -Infinity;
+                let matchingTri: WeldedTriangle | null = null;
+                let bary: { u: number; v: number; w: number } | null = null;
+
+                for (const triId of region.triangleIds) {
+                  const tri = triangles[triId];
+                  if (!tri) continue;
+
+                  const res = pointInTriangle2D(px, py, tri.v0.x, tri.v0.y, tri.v1.x, tri.v1.y, tri.v2.x, tri.v2.y);
+                  if (res.in) {
+                    const z = tri.v0.z * res.w + tri.v1.z * res.v + tri.v2.z * res.u;
+                    if (z > bestZ) {
+                      bestZ = z;
+                      matchingTri = tri;
+                      bary = res;
+                    }
+                  }
+                }
+
+                if (matchingTri && bary) {
+                  candidates.push({
+                    pos: new THREE.Vector3(px, py, bestZ),
+                    normal: matchingTri.normal.clone(),
+                    regionId: region.id,
+                    regionType: region.brushType,
+                    regionTriCount: region.triangleIds.size,
+                    stage: 'infill',
+                  });
+                }
+              }
+            }
+          }
+        }
+        rawInfill.push(...candidates);
+      }
+
+      for (const cand of candidates) {
+        if (!evaluateSuppression(cand, acceptedPoints())) {
+          if (stage.type === 'minima') {
+            acceptedMinima.push(cand);
+          } else if (stage.type === 'perimeter') {
+            acceptedPerimeter.push(cand);
+          } else if (stage.type === 'infill') {
+            acceptedInfill.push(cand);
+          }
+        }
+      }
     }
   }
 

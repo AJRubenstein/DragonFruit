@@ -280,14 +280,18 @@ export const supportPainterStore = {
       ? new Set(proposedTriangleIds)
       : new Set([payload.seedTriangleId]);
 
+    const activeCustomBrush = activeCustomBrushId ? customBrushes.get(activeCustomBrushId) : undefined;
+    const color = activeCustomBrush ? activeCustomBrush.color : BRUSH_COLORS[payload.brushType];
+
     const newRegion: ROIRegion = {
       id,
       brushType: payload.brushType,
       seedTriangleId: payload.seedTriangleId,
       triangleIds,
-      color: BRUSH_COLORS[payload.brushType],
+      color,
       proposedOnly: false,
       createdAt: Date.now(),
+      customBrush: activeCustomBrush ? { ...activeCustomBrush } : undefined,
     };
     regions.set(id, newRegion);
     proposedTriangleIds.clear();

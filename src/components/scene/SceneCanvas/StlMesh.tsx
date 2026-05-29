@@ -1137,14 +1137,18 @@ if (uDitherAmount > 0.0) {
                   ? new Set(snap.proposedTriangleIds)
                   : new Set([faceIndex]);
 
+                const activeCustomBrush = snap.activeCustomBrushId ? snap.customBrushes.get(snap.activeCustomBrushId) : undefined;
+                const color = activeCustomBrush ? activeCustomBrush.color : BRUSH_COLORS[snap.activeBrush];
+
                 const mockRegion: ROIRegion = {
                   id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
                   brushType: snap.activeBrush,
                   seedTriangleId: faceIndex,
                   triangleIds,
-                  color: BRUSH_COLORS[snap.activeBrush],
+                  color,
                   proposedOnly: false,
                   createdAt: Date.now(),
+                  customBrush: activeCustomBrush ? { ...activeCustomBrush } : undefined,
                 };
 
                 // Instantly generate and place supports
