@@ -212,12 +212,13 @@ function walkMacroFace(
   const seedNormal = map.faceNormals[seed];
   const selection = customBrush?.selection;
   const degToRad = Math.PI / 180;
+  const localDown = new THREE.Vector3().copy(localUp).negate();
 
   // Overhang slope check for seed
   if (selection) {
     const minSlopeRad = selection.overhangSlopeMinDeg * degToRad;
     const maxSlopeRad = selection.overhangSlopeMaxDeg * degToRad;
-    const seedSlope = seedNormal.angleTo(localUp);
+    const seedSlope = seedNormal.angleTo(localDown);
     if (seedSlope < minSlopeRad || seedSlope > maxSlopeRad) return [];
   } else {
     if (seedNormal.dot(localUp) > 0.2) return [];
@@ -235,7 +236,7 @@ function walkMacroFace(
         if (selection) {
           const minSlopeRad = selection.overhangSlopeMinDeg * degToRad;
           const maxSlopeRad = selection.overhangSlopeMaxDeg * degToRad;
-          const adjSlope = nAdj.angleTo(localUp);
+          const adjSlope = nAdj.angleTo(localDown);
           slopeOk = adjSlope >= minSlopeRad && adjSlope <= maxSlopeRad;
         } else {
           slopeOk = nAdj.dot(localUp) <= 0.2;
@@ -283,7 +284,7 @@ function walkMacroFace(
     const maxSlopeRad = selection.overhangSlopeMaxDeg * degToRad;
     return Array.from(visited).filter((idx) => {
       if (idx === seed) return true;
-      const slope = map.faceNormals[idx].angleTo(localUp);
+      const slope = map.faceNormals[idx].angleTo(localDown);
       return slope >= minSlopeRad && slope <= maxSlopeRad;
     });
   } else {
