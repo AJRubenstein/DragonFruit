@@ -195,7 +195,9 @@ export function useSupportPainterManager(
       const activeCustomBrush = activeCustomBrushId ? customBrushes.get(activeCustomBrushId) : undefined;
 
       // Execute the brush walk synchronously in JavaScript using the live transform
-      const proposedIds = proposeRegionOnClient(map, hoveredTriangleId, activeBrush, matrixWorld, brushRadiusMm, activeCustomBrush);
+      const isCircleOrSquare = activeBrush === 'Point' || activeBrush === 'ManualCircle' || activeBrush === 'ManualSquare';
+      const effectiveRadius = isCircleOrSquare ? brushRadiusMm * 0.5 : brushRadiusMm;
+      const proposedIds = proposeRegionOnClient(map, hoveredTriangleId, activeBrush, matrixWorld, effectiveRadius, activeCustomBrush);
       
       console.log(`[SupportPainterManager] Smart brush search returned ${proposedIds.length} triangles.`);
       supportPainterStore.setProposedTriangleIds(proposedIds);
