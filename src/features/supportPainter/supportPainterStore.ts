@@ -302,9 +302,11 @@ export const supportPainterStore = {
 
   setHoveredTriangle(id: number | null, worldPoint?: [number, number, number] | null) {
     let changed = false;
+    let faceChanged = false;
     if (hoveredTriangleId !== id) {
       hoveredTriangleId = id;
       changed = true;
+      faceChanged = true;
     }
     if (!hoveredWorldPoint && !worldPoint) {
       // do nothing
@@ -314,7 +316,7 @@ export const supportPainterStore = {
     }
     
     if (changed) {
-      if (activeBrush !== 'PointPath') {
+      if (faceChanged && activeBrush !== 'PointPath') {
         proposedTriangleIds.clear();
         if (id !== null) {
           proposedTriangleIds.add(id);

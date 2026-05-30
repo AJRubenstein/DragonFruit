@@ -31,7 +31,7 @@ import {
 } from '@/supports/state';
 import { deleteSupportsForRoi } from '@/supports/PlacementLogic/SupportModelLinker';
 import { SUPPORT_EDIT_REPLACE } from '@/supports/history/actionTypes';
-import { PAINT_ROI_STRIP } from '../supportPainterHistoryTypes';
+import { PAINT_ROI_STRIP, PAINT_ROI_ADD } from '../supportPainterHistoryTypes';
 import { pushHistory } from '@/history/historyStore';
 import { CustomBrushModal } from './CustomBrushModal';
 
@@ -1022,9 +1022,18 @@ export function SupportPainterPanel({
                       onClick={() => {
                         const firstPt = state.pointPathPoints[0];
                         if (firstPt) {
-                          supportPainterStore.commitPointPathRegion({
+                          const newId = supportPainterStore.commitPointPathRegion({
                             seedTriangleId: firstPt.faceIndex
                           });
+                          const nextSnap = supportPainterStore.getSnapshot();
+                          const addedRegion = nextSnap.regions.get(newId);
+                          if (addedRegion) {
+                            pushHistory({
+                              type: PAINT_ROI_ADD,
+                              description: 'Paint line path region of interest',
+                              payload: { region: addedRegion },
+                            });
+                          }
                         }
                       }}
                     >
@@ -1037,9 +1046,18 @@ export function SupportPainterPanel({
                       onClick={() => {
                         const firstPt = state.pointPathPoints[0];
                         if (firstPt) {
-                          supportPainterStore.commitPointPathRegion({
+                          const newId = supportPainterStore.commitPointPathRegion({
                             seedTriangleId: firstPt.faceIndex
                           });
+                          const nextSnap = supportPainterStore.getSnapshot();
+                          const addedRegion = nextSnap.regions.get(newId);
+                          if (addedRegion) {
+                            pushHistory({
+                              type: PAINT_ROI_ADD,
+                              description: 'Paint polygon region of interest',
+                              payload: { region: addedRegion },
+                            });
+                          }
                         }
                       }}
                     >
