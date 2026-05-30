@@ -75,8 +75,13 @@ const MIN_ROUTING_SEARCH_LATERAL_MM = 60;
 const MAX_ROUTING_SEARCH_LATERAL_MM = 120;
 const ROUTING_SEARCH_LATERAL_PER_VERTICAL_MM = 3.0;
 const ROUTING_SEARCH_SWEEP_RADII_MM = [1, 2, 3, 4, 6, 8, 10, 14, 18, 24, 30, 36, 44, 52, 60, 72, 84, 96, 108];
-const STRAIGHT_SOCKET_RESCUE_RADII_MM = [0, 0.5, 1, 1.5, 2, 3, 4, 6];
+const STRAIGHT_SOCKET_RESCUE_RADII_MM = [0, 0.5, 1, 1.5, 2, 3, 4];
 const STRAIGHT_SOCKET_RESCUE_DIRECTIONS = 16;
+const MIXED_SOCKET_RESCUE_RADII_MM = [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6];
+const MIXED_SOCKET_RESCUE_DIRECTIONS = 8;
+const MIXED_SOCKET_RESCUE_JOINT_RADII_MM = [0, 0.6, 1.2, 1.8];
+const MIXED_SOCKET_RESCUE_JOINT_DIRECTIONS = 12;
+const MIXED_SOCKET_RESCUE_JOINT_Z_STEP_MM = 2.0;
 const BASE_WIDE_PASS_EXPANSIONS_AT_2MM = 600;
 const BASE_PREVIEW_WIDE_PASS_EXPANSIONS_AT_2MM = 250;
 const ENABLE_AGGRESSIVE_POST_PATH_STRAIGHTENING = false;
@@ -156,6 +161,173 @@ export function buildStraightSocketRescueCandidates(args: {
     }
 
     return candidates;
+}
+
+function buildMixedSocketRescueCandidates(args: {
+    socketPos: Vec3;
+    maxTotalLateralMm: number;
+}): Vec3[] {
+    const maxRadius = Math.max(0, Math.min(args.maxTotalLateralMm, MIXED_SOCKET_RESCUE_RADII_MM[MIXED_SOCKET_RESCUE_RADII_MM.length - 1]));
+    const candidates: Vec3[] = [{ ...args.socketPos }];
+
+    for (const radius of MIXED_SOCKET_RESCUE_RADII_MM) {
+        if (radius <= 0 || radius > maxRadius + 0.000001) continue;
+        for (let dir = 0; dir < MIXED_SOCKET_RESCUE_DIRECTIONS; dir++) {
+            const angle = (dir / MIXED_SOCKET_RESCUE_DIRECTIONS) * Math.PI * 2;
+            candidates.push({
+                x: args.socketPos.x + Math.cos(angle) * radius,
+                y: args.socketPos.y + Math.sin(angle) * radius,
+                z: args.socketPos.z,
+            });
+        }
+    }
+
+    return candidates;
+}
+
+interface MixedSocketRescueCandidate {
+    socketPos: Vec3;
+    base: ResolvedBaseCandidate;
+    joints: Vec3[];
+    socketShiftMm: number;
+    metrics: ResolvedChainMetrics;
+}
+
+function isMixedSocketRescueCandidateBetter(
+    candidate: MixedSocketRescueCandidate,
+    current: MixedSocketRescueCandidate,
+): boolean {
+    const eps = 0.000001;
+
+    if (candidate.socketShiftMm < current.socketShiftMm - eps) {
+        return true;
+    }
+    if (candidate.socketShiftMm > current.socketShiftMm + eps) {
+        return false;
+    }
+
+    return isResolvedChainReplacementBetter(candidate.metrics, current.metrics);
+}
+
+export function findMixedSocketRescueCandidate(args: {
+    socketPos: Vec3;
+    rootTopZ: number;
+    maxTotalLateralMm: number;
+    gridEnabled: boolean;
+    spacingMm: number;
+    maxNearestNodeSearchRings: number;
+    sdf: SDFCache;
+    diskHeight: number;
+    coneHeight: number;
+    rootsRadius: number;
+    shaftRadius: number;
+    clearance: number;
+    maxAngleFromVerticalDeg: number;
+    buildNearestCandidateNodeKeys?: (preferredKey: string, maxRings: number) => string[];
+    subGridOffset?: { x: number; y: number } | null;
+}): { socketPos: Vec3; base: ResolvedBaseCandidate; joints: Vec3[] } | null {
+    const candidates = buildMixedSocketRescueCandidates({
+        socketPos: args.socketPos,
+        maxTotalLateralMm: args.maxTotalLateralMm,
+    });
+
+    let best: MixedSocketRescueCandidate | null = null;
+
+    for (const candidateSocketPos of candidates) {
+        const resolvedBase = resolveCommittedBaseCandidate({
+            preferredBottomPos: { x: candidateSocketPos.x, y: candidateSocketPos.y, z: 0 },
+            lastSegmentStart: null,
+            rootTopZ: args.rootTopZ,
+            gridEnabled: args.gridEnabled,
+            spacingMm: args.spacingMm,
+            maxNearestNodeSearchRings: args.maxNearestNodeSearchRings,
+            sdf: args.sdf,
+            diskHeight: args.diskHeight,
+            coneHeight: args.coneHeight,
+            rootsRadius: args.rootsRadius,
+            shaftRadius: args.shaftRadius,
+            clearance: args.clearance,
+            buildNearestCandidateNodeKeys: args.buildNearestCandidateNodeKeys,
+            subGridOffset: args.subGridOffset,
+        });
+        if (!resolvedBase) {
+            continue;
+        }
+
+        const rootTopTarget = resolvedBase.rootTopTarget;
+        const socketShiftMm = distanceXY(candidateSocketPos, args.socketPos);
+
+        const considerCandidate = (joints: Vec3[]): void => {
+            const chainPoints = [candidateSocketPos, ...joints, rootTopTarget];
+            for (let i = 0; i < chainPoints.length - 1; i++) {
+                const start = chainPoints[i];
+                const end = chainPoints[i + 1];
+                if (args.sdf.segmentBlocked(start.x, start.y, start.z, end.x, end.y, end.z, args.clearance)) {
+                    return;
+                }
+                if (!segmentSatisfiesLengthAwareMaxAngleFromVertical(start, end, args.maxAngleFromVerticalDeg)) {
+                    return;
+                }
+            }
+
+            const candidate: MixedSocketRescueCandidate = {
+                socketPos: candidateSocketPos,
+                base: resolvedBase,
+                joints,
+                socketShiftMm,
+                metrics: getResolvedChainMetrics(candidateSocketPos, joints, rootTopTarget),
+            };
+
+            if (!best || isMixedSocketRescueCandidateBetter(candidate, best)) {
+                best = candidate;
+            }
+        };
+
+        considerCandidate([]);
+
+        const availableDrop = candidateSocketPos.z - args.rootTopZ;
+        if (availableDrop <= MIXED_SOCKET_RESCUE_JOINT_Z_STEP_MM + 0.000001) {
+            continue;
+        }
+
+        for (
+            let jointZ = candidateSocketPos.z - MIXED_SOCKET_RESCUE_JOINT_Z_STEP_MM;
+            jointZ > args.rootTopZ + MIXED_SOCKET_RESCUE_JOINT_Z_STEP_MM;
+            jointZ -= MIXED_SOCKET_RESCUE_JOINT_Z_STEP_MM
+        ) {
+            const t = (candidateSocketPos.z - jointZ) / availableDrop;
+            const centerX = candidateSocketPos.x + (rootTopTarget.x - candidateSocketPos.x) * t;
+            const centerY = candidateSocketPos.y + (rootTopTarget.y - candidateSocketPos.y) * t;
+
+            for (const jointRadius of MIXED_SOCKET_RESCUE_JOINT_RADII_MM) {
+                if (jointRadius === 0) {
+                    considerCandidate([{ x: centerX, y: centerY, z: jointZ }]);
+                    continue;
+                }
+
+                for (let dir = 0; dir < MIXED_SOCKET_RESCUE_JOINT_DIRECTIONS; dir++) {
+                    const angle = (dir / MIXED_SOCKET_RESCUE_JOINT_DIRECTIONS) * Math.PI * 2;
+                    considerCandidate([{
+                        x: centerX + Math.cos(angle) * jointRadius,
+                        y: centerY + Math.sin(angle) * jointRadius,
+                        z: jointZ,
+                    }]);
+                }
+            }
+        }
+    }
+
+    if (!best) {
+        return null;
+    }
+
+    const resolvedBest = best as unknown as MixedSocketRescueCandidate;
+
+    return {
+        socketPos: resolvedBest.socketPos,
+        base: resolvedBest.base,
+        joints: resolvedBest.joints,
+    };
 }
 
 export function findStraightSocketRescueCandidate(args: {
@@ -348,8 +520,42 @@ function rootsDiskBlocked(
 export interface ResolvedBaseCandidate {
     basePos: Vec3;
     rootTopTarget: Vec3;
+    inboundLateralMm?: number;
     snapDistance: number;
     nodeKey: string | null;
+}
+
+function isResolvedBaseCandidateBetter(
+    candidate: ResolvedBaseCandidate,
+    current: ResolvedBaseCandidate | null,
+    lastSegmentStart: Vec3 | null,
+): boolean {
+    if (!current) {
+        return true;
+    }
+
+    const eps = 0.000001;
+
+    if (lastSegmentStart) {
+        const candidateInboundLateralMm = candidate.inboundLateralMm ?? 0;
+        const currentInboundLateralMm = current.inboundLateralMm ?? 0;
+
+        if (candidateInboundLateralMm < currentInboundLateralMm - eps) {
+            return true;
+        }
+        if (candidateInboundLateralMm > currentInboundLateralMm + eps) {
+            return false;
+        }
+    }
+
+    if (candidate.snapDistance < current.snapDistance - eps) {
+        return true;
+    }
+    if (candidate.snapDistance > current.snapDistance + eps) {
+        return false;
+    }
+
+    return (candidate.inboundLateralMm ?? 0) < (current.inboundLateralMm ?? 0) - eps;
 }
 
 export function resolveCommittedBaseCandidate(args: {
@@ -418,13 +624,18 @@ export function resolveCommittedBaseCandidate(args: {
         }
 
         const snapDistance = distanceXY(basePos, args.preferredBottomPos);
-        if (!bestBase || snapDistance < bestBase.snapDistance) {
-            bestBase = {
-                basePos,
-                rootTopTarget,
-                snapDistance,
-                nodeKey: args.gridEnabled ? nodeKey : null,
-            };
+        const inboundLateralMm = args.lastSegmentStart
+            ? distanceXY(rootTopTarget, args.lastSegmentStart)
+            : 0;
+        const candidateBase: ResolvedBaseCandidate = {
+            basePos,
+            rootTopTarget,
+            inboundLateralMm,
+            snapDistance,
+            nodeKey: args.gridEnabled ? nodeKey : null,
+        };
+        if (isResolvedBaseCandidateBetter(candidateBase, bestBase, args.lastSegmentStart)) {
+            bestBase = candidateBase;
         }
     }
 
@@ -633,7 +844,59 @@ export function calculateSmartPlacementV2(
             y: input.tipPos.y - Math.round(input.tipPos.y / FINE_ASTAR_STEP_MM) * FINE_ASTAR_STEP_MM,
         } : null,
     });
+    let mixedSocketRescueCache:
+        | { socketPos: Vec3; base: ResolvedBaseCandidate; joints: Vec3[] }
+        | null
+        | undefined;
+    const getMixedSocketRescueFallback = () => {
+        if (mixedSocketRescueCache !== undefined) {
+            return mixedSocketRescueCache;
+        }
+
+        mixedSocketRescueCache = findMixedSocketRescueCandidate({
+            socketPos,
+            rootTopZ,
+            maxTotalLateralMm,
+            gridEnabled: settings.grid.enabled,
+            spacingMm: settings.grid.spacingMm,
+            maxNearestNodeSearchRings: MAX_NEAREST_NODE_SEARCH_RINGS,
+            sdf,
+            diskHeight,
+            coneHeight,
+            rootsRadius,
+            shaftRadius,
+            clearance,
+            maxAngleFromVerticalDeg: maxSegmentAngleFromVerticalDeg,
+            buildNearestCandidateNodeKeys,
+            subGridOffset: !settings.grid.enabled ? {
+                x: input.tipPos.x - Math.round(input.tipPos.x / FINE_ASTAR_STEP_MM) * FINE_ASTAR_STEP_MM,
+                y: input.tipPos.y - Math.round(input.tipPos.y / FINE_ASTAR_STEP_MM) * FINE_ASTAR_STEP_MM,
+            } : null,
+        });
+
+        return mixedSocketRescueCache;
+    };
     const buildStraightRescueFallback = (): TrunkPlacementResult | null => {
+        const mixedSocketRescue = getMixedSocketRescueFallback();
+        if (mixedSocketRescue) {
+            if (!isPreview) {
+                console.log(
+                    `[SmartPlacementV2] MIXED socket rescue fallback — socket=(${mixedSocketRescue.socketPos.x.toFixed(2)},${mixedSocketRescue.socketPos.y.toFixed(2)},${mixedSocketRescue.socketPos.z.toFixed(2)}) joints=[${mixedSocketRescue.joints.map((joint) => `(${joint.x.toFixed(2)},${joint.y.toFixed(2)},${joint.z.toFixed(2)})`).join(' ')}] base=(${mixedSocketRescue.base.basePos.x.toFixed(2)},${mixedSocketRescue.base.basePos.y.toFixed(2)},${mixedSocketRescue.base.basePos.z.toFixed(2)})`,
+                );
+            }
+
+            return {
+                ...standard,
+                socketPos: mixedSocketRescue.socketPos,
+                basePos: mixedSocketRescue.base.basePos,
+                unsnappedBottomPos: mixedSocketRescue.base.basePos,
+                snappedNodeKey: mixedSocketRescue.base.nodeKey,
+                joints: mixedSocketRescue.joints,
+                constructionJoints: [],
+                error: undefined,
+            };
+        }
+
         if (!straightRescue) return null;
         if (!isPreview) {
             console.log(
@@ -808,6 +1071,7 @@ export function calculateSmartPlacementV2(
                     nodeKey: null,
                 };
             }
+            const _resolvedWideBase = _best as ResolvedBaseCandidate;
             // Z-monotonicity filter (wide A* also allows limited upward moves)
             const _rawJoints = widePathJoints.map((j: Vec3) => ({ x: j.x, y: j.y, z: j.z }));
             const _zJoints: Vec3[] = [];
@@ -816,7 +1080,7 @@ export function calculateSmartPlacementV2(
                 if (_wj.z < _prevZ) { _zJoints.push(_wj); _prevZ = _wj.z; }
             }
 
-            const _wideRootTop: Vec3 = { x: _best.basePos.x, y: _best.basePos.y, z: rootTopZ };
+            const _wideRootTop: Vec3 = { x: _resolvedWideBase.basePos.x, y: _resolvedWideBase.basePos.y, z: rootTopZ };
             const _warning = standard.warning;
 
             // Preview fast-path: skip expensive simplification/straightening passes.
@@ -825,9 +1089,9 @@ export function calculateSmartPlacementV2(
                 return {
                     ...standard,
                     joints: _zJoints,
-                    basePos: _best.basePos,
+                    basePos: _resolvedWideBase.basePos,
                     unsnappedBottomPos: _ubp,
-                    snappedNodeKey: _best.nodeKey ?? null,
+                    snappedNodeKey: _resolvedWideBase.nodeKey ?? null,
                     warning: _warning,
                     error: undefined,
                 };
@@ -848,7 +1112,7 @@ export function calculateSmartPlacementV2(
             // Zero-joint sweep: try a straight line to the current base, below
             // the socket, and at small radial offsets.
             let _finalJoints = _simplifiedJoints;
-            let _finalBase = _best;
+            let _finalBase: ResolvedBaseCandidate = _resolvedWideBase;
             let _finalRootTop = _wideRootTop;
             let _oneJointStats: string | null = null;
             const _currentChainIsBetterThan = (candidateJoints: Vec3[], candidateRootTop: Vec3) => {
@@ -861,7 +1125,7 @@ export function calculateSmartPlacementV2(
                 // Zero-joint sweep: try straight lines from socket to candidate bases,
                 // expanding outward ring-by-ring with early termination once no ring
                 // can improve the best distance found so far.
-                const _distSA = distanceXY(socketPos, _best.basePos);
+                const _distSA = distanceXY(socketPos, _resolvedWideBase.basePos);
 
                 const _tryZeroCandidate = (sc: { x: number; y: number }): boolean => {
                     const _crt: Vec3 = { x: sc.x, y: sc.y, z: rootTopZ };
@@ -889,7 +1153,7 @@ export function calculateSmartPlacementV2(
 
                 // Try seed candidates first (socket XY = dist 0, A* base).
                 _tryZeroCandidate({ x: socketPos.x, y: socketPos.y });
-                _tryZeroCandidate({ x: _best.basePos.x, y: _best.basePos.y });
+                _tryZeroCandidate({ x: _resolvedWideBase.basePos.x, y: _resolvedWideBase.basePos.y });
 
                 // Expand rings outward; terminate when no candidate in this ring
                 // or any larger ring can beat the current best.
@@ -902,7 +1166,7 @@ export function calculateSmartPlacementV2(
                     for (let _d = 0; _d < 16; _d++) {
                         const _a = (_d / 16) * Math.PI * 2;
                         _tryZeroCandidate({ x: socketPos.x + Math.cos(_a) * _r, y: socketPos.y + Math.sin(_a) * _r });
-                        _tryZeroCandidate({ x: _best.basePos.x + Math.cos(_a) * _r, y: _best.basePos.y + Math.sin(_a) * _r });
+                        _tryZeroCandidate({ x: _resolvedWideBase.basePos.x + Math.cos(_a) * _r, y: _resolvedWideBase.basePos.y + Math.sin(_a) * _r });
                     }
                 }
 

@@ -64,3 +64,27 @@ test('resolveCommittedBaseCandidate rejects snapped nodes whose final inbound se
 
     assert.equal(resolved, null);
 });
+
+test('resolveCommittedBaseCandidate prefers a farther snapped base when it makes the bottom-most shaft straighter', () => {
+    const sdf = makeOpenSdf();
+
+    const resolved = resolveCommittedBaseCandidate({
+        preferredBottomPos: { x: 0.2, y: 0, z: 0 },
+        lastSegmentStart: { x: 4, y: 0, z: 6 },
+        rootTopZ: 3,
+        gridEnabled: true,
+        spacingMm: 4,
+        maxNearestNodeSearchRings: 1,
+        sdf,
+        diskHeight: 1,
+        coneHeight: 2,
+        rootsRadius: 1.5,
+        shaftRadius: 0.75,
+        clearance: 0.8,
+        buildNearestCandidateNodeKeys: () => ['0,0', '1,0'],
+    });
+
+    assert.ok(resolved);
+    assert.deepEqual(resolved?.basePos, { x: 4, y: 0, z: 0 });
+    assert.equal(resolved?.inboundLateralMm, 0);
+});
