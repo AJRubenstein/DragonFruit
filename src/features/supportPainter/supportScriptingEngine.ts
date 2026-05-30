@@ -1299,6 +1299,45 @@ export async function generateSupportsFromPainter(
     };
   }
 
+  // Project perturbed coordinates back onto the local surface sheet along surface normal
+  function findSurfaceProjectedPointTangent(
+    mesh: THREE.Mesh,
+    perturbedPos: THREE.Vector3,
+    originalNormal: THREE.Vector3
+  ): { pos: THREE.Vector3; normal: THREE.Vector3 } | null {
+    const raycaster = new THREE.Raycaster();
+    const envelope = 2.0; // 2mm safety envelope
+    const origin = perturbedPos.clone().addScaledVector(originalNormal, envelope);
+    const direction = originalNormal.clone().negate(); // Cast ray opposite to normal
+    
+    raycaster.set(origin, direction);
+    raycaster.far = envelope * 2; // Look up to 2mm deep (4mm total sweep)
+
+    const hits = raycaster.intersectObject(mesh, false);
+    if (hits.length === 0) return null;
+
+    let bestHit: THREE.Intersection | null = null;
+    let minDistance = Infinity;
+
+    for (const hit of hits) {
+      const dist = hit.point.distanceTo(perturbedPos);
+      if (dist < minDistance && hit.face) {
+        minDistance = dist;
+        bestHit = hit;
+      }
+    }
+
+    if (!bestHit || !bestHit.face) return null;
+
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+    const normal = bestHit.face.normal.clone().applyNormalMatrix(normalMatrix).normalize();
+
+    return {
+      pos: bestHit.point.clone(),
+      normal,
+    };
+  }
+
   // ─── Placement Statistics Tracking [STATS_TRACKING] ───
   // [AGENT_NOTE] Compiles exact attempt and placement stats mapped back to ROIs.
   const statsMap = new Map<string, {
@@ -1352,13 +1391,30 @@ export async function generateSupportsFromPainter(
       console.log(`[SupportScriptingEngine] Proposed tip at (${col.pos.x.toFixed(2)},${col.pos.y.toFixed(2)},${col.pos.z.toFixed(2)}) is unprintable or collides. Perturbing tip destination...`);
       
       let foundAcceptablePerturbation = false;
+
+      /* [LEGACY_XY_PERTURBATION_STEPS]
       const searchRadiusSteps = [0.05, 0.10, 0.15, 0.20];
+      */
+
+      // Scale perturbation radii dynamically based on active support stage spacing (up to 10% of spacing interval)
+      let baseInterval = 2.0; // Standard fallback
+      if (col.stage === 'perimeter') {
+        baseInterval = perimeterSpacing;
+      } else if (col.stage === 'infill') {
+        baseInterval = infillSpacing;
+      } else if (col.stage === 'minima') {
+        baseInterval = minimaSuppressionRadius || 2.0;
+      }
+      const searchRadiusSteps = [0.025, 0.05, 0.075, 0.10].map(pct => baseInterval * pct);
+
       const searchDirections = 8;
       const angleStep = (Math.PI * 2) / searchDirections;
 
       perturbLoop: for (const radius of searchRadiusSteps) {
         for (let d = 0; d < searchDirections; d++) {
           const angle = d * angleStep;
+
+          /* [LEGACY_XY_PERTURBATION]
           const offsetX = Math.cos(angle) * radius;
           const offsetY = Math.sin(angle) * radius;
 
@@ -1367,6 +1423,29 @@ export async function generateSupportsFromPainter(
             col.pos.x + offsetX,
             col.pos.y + offsetY,
             col.pos.z,
+            col.normal
+          );
+          */
+
+          // 1. Construct local 3D tangent plane basis relative to surface normal
+          const t1 = new THREE.Vector3();
+          if (Math.abs(col.normal.x) > Math.abs(col.normal.z)) {
+            t1.set(-col.normal.y, col.normal.x, 0).normalize();
+          } else {
+            t1.set(0, -col.normal.z, col.normal.y).normalize();
+          }
+          const t2 = new THREE.Vector3().crossVectors(col.normal, t1).normalize();
+
+          // 2. Shift point along tangent vectors
+          const shift = new THREE.Vector3()
+            .addScaledVector(t1, Math.cos(angle) * radius)
+            .addScaledVector(t2, Math.sin(angle) * radius);
+          const perturbedPos = col.pos.clone().add(shift);
+
+          // 3. Project back onto surface along the normal direction
+          const proj = findSurfaceProjectedPointTangent(
+            mesh,
+            perturbedPos,
             col.normal
           );
 

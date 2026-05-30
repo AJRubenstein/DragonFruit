@@ -182,9 +182,9 @@ describe('Support Painter Phase 1 - Custom Brush Store & Codec Tests', () => {
 
     // 2. Serialize and verify that stale cached rleSpans was ignored, and dynamic compressRLE was used instead
     const serialized = serializeROIsForVoxl(regionsByModel, testModelId);
-    assert.strictEqual(serialized.regions[0].rleSpans.length, 1);
-    assert.strictEqual(serialized.regions[0].rleSpans[0].start, 10);
-    assert.strictEqual(serialized.regions[0].rleSpans[0].count, 3, 'Dynamic serialization should always re-compress active triangleIds');
+    assert.strictEqual(serialized.regions[0].rleSpans?.length, 1);
+    assert.strictEqual(serialized.regions[0].rleSpans?.[0].start, 10);
+    assert.strictEqual(serialized.regions[0].rleSpans?.[0].count, 3, 'Dynamic serialization should always re-compress active triangleIds');
 
     // 3. Test store mutative invalidation
     // Initialize the store active model
@@ -196,7 +196,7 @@ describe('Support Painter Phase 1 - Custom Brush Store & Codec Tests', () => {
     // Populate loops and rleSpans in the active store region to simulate generated supports
     const activeRegion = supportPainterStore.getSnapshot().regions.get(testRegionId)!;
     activeRegion.rleSpans = [{ start: 10, count: 3 }];
-    activeRegion.loops = [[{ x: 0, y: 0 }, { x: 1, y: 1 }]];
+    activeRegion.loops = [{ type: 'outer', vertexIds: [1, 2, 3] }];
 
     // Run append stroke
     supportPainterStore.appendTrianglesToRegion(testRegionId, [13, 14]);
@@ -209,7 +209,7 @@ describe('Support Painter Phase 1 - Custom Brush Store & Codec Tests', () => {
 
     // Re-populate and run subtract
     mutatedRegion.rleSpans = [{ start: 10, count: 5 }];
-    mutatedRegion.loops = [[{ x: 0, y: 0 }]];
+    mutatedRegion.loops = [{ type: 'hole', vertexIds: [4, 5, 6] }];
     supportPainterStore.subtractTrianglesFromRegions([14]);
 
     const subtractedRegion = supportPainterStore.getSnapshot().regions.get(testRegionId)!;
