@@ -385,7 +385,6 @@ function installReactDevtoolsSemverGuard() {
 if (typeof window !== 'undefined') {
   initializeBVH();
   installReactDevtoolsSemverGuard();
-  console.log('[App] BVH acceleration initialized');
 }
 
 type ExportThumbnailRenderOptions = {
@@ -12657,7 +12656,6 @@ export default function Home() {
     transformMgr.setIsTransforming(false);
 
     if (operation === 'rotate') {
-      console.log('[Rotation] Clearing scan data - rotation invalidates island detection');
       islands.clearScanData();
       applyPostRotateLift();
     } else {
@@ -12836,24 +12834,6 @@ export default function Home() {
           scale: entry.after.scale.clone(),
         },
       }));
-
-    const formatVec3 = (v: THREE.Vector3) => `(${v.x.toFixed(4)}, ${v.y.toFixed(4)}, ${v.z.toFixed(4)})`;
-    console.groupCollapsed(`[MultiGizmo][Page] ${payload.operation} commit`);
-    console.log('selected models:', payload.entries.map((entry) => entry.modelId));
-    console.log('model positions:', payload.entries.map((entry) => ({
-      modelId: entry.modelId,
-      position: formatVec3(entry.before.position),
-    })));
-    const draggedEntry = payload.entries.find((entry) => entry.modelId === scene.activeModelId) ?? payload.entries[0] ?? null;
-    console.log('model dragged to:', draggedEntry ? {
-      modelId: draggedEntry.modelId,
-      position: formatVec3(draggedEntry.after.position),
-    } : null);
-    console.log('model updated position:', updates.map((entry) => ({
-      modelId: entry.id,
-      position: formatVec3(entry.transform.position),
-    })));
-    console.groupEnd();
 
     if (updates.length === 0) {
       beginSupportDragSyncTransaction([], {
@@ -13818,11 +13798,8 @@ export default function Home() {
     const { modelId, flips, previewTransform, initialGeometry } = session;
     const anyFlip = flips.x || flips.y || flips.z;
 
-    console.log('[Mirror] finalizeMirrorSession:', { modelId, flips, anyFlip });
-
     if (!anyFlip) {
       // Net-zero session (e.g. user clicked X twice). Nothing to commit.
-      console.log('[Mirror] No flips to commit, returning');
       return;
     }
 
@@ -13833,9 +13810,7 @@ export default function Home() {
       console.error('[Mirror] bakeWithFlips threw during finalize, preserving live mirrored state:', error);
       return;
     }
-    console.log('[Mirror] bakeWithFlips result:', { baked, isValid: !!baked });
     if (!baked) {
-      console.log('[Mirror] bakeWithFlips returned null, aborting');
       return;
     }
 
@@ -13872,11 +13847,9 @@ export default function Home() {
     // direct state and the final batched React state has both the correct geometry
     // AND the correct transform.
     const axes = [flips.x && 'X', flips.y && 'Y', flips.z && 'Z'].filter(Boolean).join(', ');
-    console.log('[Mirror] Replacing geometry with axes:', axes);
     scene.replaceModelGeometry(modelId, baked, `Mirror Model (${axes})`, {
       includeSupportState: !flips.z,
     });
-    console.log('[Mirror] Applying finalized mirrored transform');
     scene.setModelTransformRaw(modelId, {
       position: finalizedTransform.position.clone(),
       rotation: finalizedTransform.rotation.clone(),
@@ -14059,9 +14032,7 @@ export default function Home() {
   React.useEffect(() => {
     const wasActive = mirrorPrevToolActiveRef.current;
     mirrorPrevToolActiveRef.current = mirrorToolActive;
-    console.log('[Mirror] useEffect check - wasActive:', wasActive, 'mirrorToolActive:', mirrorToolActive);
     if (wasActive && !mirrorToolActive) {
-      console.log('[Mirror] Calling flushPendingBake from useEffect');
       flushPendingBake();
     }
   }, [mirrorToolActive, flushPendingBake]);
@@ -14072,11 +14043,8 @@ export default function Home() {
     const model = scene.models.find((m) => m.id === modelId);
     if (!model) return;
 
-    console.log('[Mirror] handleMirror called, axis:', axis, 'modelId:', modelId);
-
     if (!mirrorSessionRef.current || mirrorSessionRef.current.modelId !== modelId) {
       // Finalize any prior session that was for a different model first.
-      console.log('[Mirror] Creating new session');
       if (mirrorSessionRef.current) flushPendingBake();
       mirrorSessionRef.current = {
         modelId,
@@ -14100,7 +14068,6 @@ export default function Home() {
 
     const performMirror = () => {
       session.flips[axis] = !session.flips[axis];
-      console.log('[Mirror] performMirror axis:', axis, 'flips now:', session.flips);
 
       // Reflect the model's transform across the world-space axis through the
       // model's world bbox center. This produces a true world-space mirror
