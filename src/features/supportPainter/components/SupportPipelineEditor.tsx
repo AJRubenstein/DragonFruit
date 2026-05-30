@@ -11,6 +11,7 @@ import { type CustomSupportOperation } from '../supportPainterTypes';
 
 interface SupportPipelineEditorProps {
   initialPipeline: CustomSupportOperation[];
+  comparisonPipeline?: CustomSupportOperation[];
   onChange: (pipeline: CustomSupportOperation[]) => void;
   isEmbedded?: boolean;
   onSave?: () => void;
@@ -20,6 +21,7 @@ interface SupportPipelineEditorProps {
 
 export function SupportPipelineEditor({
   initialPipeline,
+  comparisonPipeline,
   onChange,
   isEmbedded = false,
   onSave,
@@ -86,6 +88,7 @@ export function SupportPipelineEditor({
         <div className="flex flex-col gap-2.5">
           {initialPipeline.map((op, index) => {
             const isExpanded = expandedOp === op.type;
+            const compOp = comparisonPipeline?.find(c => c.type === op.type);
             const label =
               op.type === 'minima'
                 ? 'Local Minima Placement'
@@ -172,7 +175,14 @@ export function SupportPipelineEditor({
                       
                       <div className="grid grid-cols-2 gap-3">
                         <div className="flex flex-col gap-1">
-                          <span>Base Spacing (mm)</span>
+                          <div className="flex items-center gap-1.5 justify-between w-full">
+                            <span>Base Spacing (mm)</span>
+                            {compOp && compOp.spacing.baseSpacingMm !== op.spacing.baseSpacingMm && (
+                              <span className="text-[9px] text-[#A5A6B5] font-semibold bg-black/35 px-1.5 py-0.5 rounded">
+                                Last: {compOp.spacing.baseSpacingMm.toFixed(1)} mm
+                              </span>
+                            )}
+                          </div>
                           <input
                             type="number"
                             step="0.1"
@@ -195,7 +205,14 @@ export function SupportPipelineEditor({
                         {op.type === 'perimeter' && (
                           <>
                             <div className="flex flex-col gap-1">
-                              <span>Advanced Solver Mode</span>
+                              <div className="flex items-center gap-1.5 justify-between w-full">
+                                <span>Advanced Solver Mode</span>
+                                {compOp && compOp.spacing.solverMode !== op.spacing.solverMode && (
+                                  <span className="text-[9px] text-[#A5A6B5] font-semibold bg-black/35 px-1.5 py-0.5 rounded capitalize">
+                                    Last: {compOp.spacing.solverMode || 'standard'}
+                                  </span>
+                                )}
+                              </div>
                               <select
                                 value={op.spacing.solverMode || 'standard'}
                                 onChange={e =>
@@ -262,7 +279,14 @@ export function SupportPipelineEditor({
                         {op.type === 'infill' && (
                           <>
                             <div className="flex flex-col gap-1">
-                              <span>Infill Pattern</span>
+                              <div className="flex items-center gap-1.5 justify-between w-full">
+                                <span>Infill Pattern</span>
+                                {compOp && compOp.spacing.infillPattern !== op.spacing.infillPattern && (
+                                  <span className="text-[9px] text-[#A5A6B5] font-semibold bg-black/35 px-1.5 py-0.5 rounded capitalize">
+                                    Last: {compOp.spacing.infillPattern || 'PoissonDisc'}
+                                  </span>
+                                )}
+                              </div>
                               <select
                                 value={op.spacing.infillPattern || 'PoissonDisc'}
                                 onChange={e =>
@@ -329,7 +353,14 @@ export function SupportPipelineEditor({
                       {op.suppression.enabled && (
                         <div className="grid grid-cols-2 gap-3 mt-1 animate-fade-in">
                           <div className="flex flex-col gap-1">
-                            <span>Suppression Distance (mm)</span>
+                            <div className="flex items-center gap-1.5 justify-between w-full">
+                              <span>Suppression Distance (mm)</span>
+                              {compOp && compOp.suppression.distanceMm !== op.suppression.distanceMm && (
+                                <span className="text-[9px] text-[#A5A6B5] font-semibold bg-black/35 px-1.5 py-0.5 rounded">
+                                  Last: {compOp.suppression.distanceMm.toFixed(1)} mm
+                                </span>
+                              )}
+                            </div>
                             <input
                               type="number"
                               step="0.1"

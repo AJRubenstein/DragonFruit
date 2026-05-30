@@ -1084,7 +1084,7 @@ export async function generateSupportsFromPainter(
         }
         rawPerimeter.push(...candidates);
       } else if (stage.type === 'infill') {
-        if (region.brushType === 'MacroFace' || region.brushType === 'CylinderSides') {
+        if (region.triangleIds.size > 0) {
           const spacing = Math.max(0.1, stage.spacing.baseSpacingMm);
           const minXY = new THREE.Vector2(Infinity, Infinity);
           const maxXY = new THREE.Vector2(-Infinity, -Infinity);

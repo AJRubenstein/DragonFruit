@@ -185,8 +185,8 @@ export function SupportPainterPanel({
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
   const [isMaintenanceExpanded, setIsMaintenanceExpanded] = useState(false);
-  const trunkWidth = activeSettings.shaft.diameterMm;
-  const defaultSpacing = trunkWidth * 4.0;
+  const trunkWidth = activeSettings?.shaft?.diameterMm ?? 1.0;
+  const defaultSpacing = isNaN(trunkWidth) ? 4.0 : trunkWidth * 4.0;
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isEditingMarkerRadius, setIsEditingMarkerRadius] = useState(false);
@@ -246,6 +246,68 @@ export function SupportPainterPanel({
         },
       },
     ];
+  };
+
+  const getComparisonPipeline = (
+    context: 'active' | 'roi' | null,
+    regionId?: string | null
+  ): CustomSupportOperation[] | undefined => {
+    if (!context) return undefined;
+    if (context === 'active') {
+      return getDefaultPipeline(state.activeBrush);
+    } else if (context === 'roi' && regionId) {
+      const region = state.regions.get(regionId);
+      if (!region) return undefined;
+      
+      if (region.support) {
+        const isPointPathOrMarker = region.brushType === 'PointPath' || region.brushType === 'Marker';
+        const params = region.support.parameters;
+        return [
+          {
+            type: 'minima',
+            enabled: !isPointPathOrMarker,
+            suppression: {
+              enabled: params.suppressionSettings?.minima?.mode !== 'none',
+              distanceMm: params.minimaSuppressionRadiusMm ?? defaultSpacing,
+              suppressAgainst: params.suppressionSettings?.minima?.types || ['minima'],
+            },
+            spacing: {
+              baseSpacingMm: params.minimaSuppressionRadiusMm ?? defaultSpacing,
+            },
+          },
+          {
+            type: 'perimeter',
+            enabled: !isPointPathOrMarker,
+            suppression: {
+              enabled: params.suppressionSettings?.perimeter?.mode !== 'none',
+              distanceMm: params.perimeterSpacingMm ?? defaultSpacing,
+              suppressAgainst: params.suppressionSettings?.perimeter?.types || [],
+            },
+            spacing: {
+              baseSpacingMm: params.perimeterSpacingMm ?? defaultSpacing,
+              solverMode: 'standard',
+              useInflectionPoints: false,
+            },
+          },
+          {
+            type: 'infill',
+            enabled: true,
+            suppression: {
+              enabled: params.suppressionSettings?.infill?.mode !== 'none',
+              distanceMm: params.infillSpacingMm ?? defaultSpacing,
+              suppressAgainst: params.suppressionSettings?.infill?.types || ['minima', 'perimeter', 'infill'],
+            },
+            spacing: {
+              baseSpacingMm: params.infillSpacingMm ?? defaultSpacing,
+              infillPattern: 'PoissonDisc',
+              seedFromMinima: true,
+            },
+          },
+        ];
+      }
+      return getDefaultPipeline(region.brushType);
+    }
+    return undefined;
   };
 
   // Partition regions into Pending vs Completed/Saved History
@@ -661,10 +723,12 @@ export function SupportPainterPanel({
                   min="0.1"
                   max="20"
                   placeholder={defaultSpacing.toFixed(1)}
-                  value={state.perimeterSpacingOverride !== null ? state.perimeterSpacingOverride : ''}
+                  value={state.perimeterSpacingOverride !== null && !isNaN(state.perimeterSpacingOverride) ? state.perimeterSpacingOverride : ''}
                   onChange={(e) => {
                     const val = e.target.value === '' ? null : parseFloat(e.target.value);
-                    supportPainterStore.setPerimeterSpacingOverride(val);
+                    if (val === null || !isNaN(val)) {
+                      supportPainterStore.setPerimeterSpacingOverride(val);
+                    }
                   }}
                   className="w-full text-[11px] px-2 py-1.5 rounded border outline-none font-medium text-right"
                   style={{
@@ -682,10 +746,12 @@ export function SupportPainterPanel({
                   min="0.1"
                   max="20"
                   placeholder={defaultSpacing.toFixed(1)}
-                  value={state.infillSpacingOverride !== null ? state.infillSpacingOverride : ''}
+                  value={state.infillSpacingOverride !== null && !isNaN(state.infillSpacingOverride) ? state.infillSpacingOverride : ''}
                   onChange={(e) => {
                     const val = e.target.value === '' ? null : parseFloat(e.target.value);
-                    supportPainterStore.setInfillSpacingOverride(val);
+                    if (val === null || !isNaN(val)) {
+                      supportPainterStore.setInfillSpacingOverride(val);
+                    }
                   }}
                   className="w-full text-[11px] px-2 py-1.5 rounded border outline-none font-medium text-right"
                   style={{
@@ -939,26 +1005,28 @@ export function SupportPainterPanel({
                         onPointerDown={(e) => {
                           const rect = e.currentTarget.getBoundingClientRect();
                           const handlePointerMove = (moveEv: PointerEvent) => {
-                            const cx = rect.left + rect.width / 2;
-                            const cy = rect.top + rect.height / 2;
-                            const dx = moveEv.clientX - cx;
-                            const dy = moveEv.clientY - cy;
-                            let angleRad = Math.atan2(dy, dx);
-                            // Convert to 0-360 degrees
-                            let angleDeg = Math.round((angleRad * 180) / Math.PI);
-                            if (angleDeg < 0) angleDeg += 360;
-                            
-                            if (isCustomMarker) {
-                              supportPainterStore.updateCustomBrush(activeCustomBrush.id, {
-                                selection: {
-                                  ...activeCustomBrush.selection,
-                                  markerTipRotationDeg: angleDeg,
-                                }
-                              });
-                            } else {
-                              supportPainterStore.setMarkerTipRotationDeg(angleDeg);
-                            }
-                          };
+                             const cx = rect.left + rect.width / 2;
+                             const cy = rect.top + rect.height / 2;
+                             const dx = moveEv.clientX - cx;
+                             const dy = moveEv.clientY - cy;
+                             let angleRad = Math.atan2(dy, dx);
+                             // Convert to 0-360 degrees
+                             let angleDeg = Math.round((angleRad * 180) / Math.PI);
+                             if (angleDeg < 0) angleDeg += 360;
+                             
+                             if (!isNaN(angleDeg)) {
+                               if (isCustomMarker) {
+                                 supportPainterStore.updateCustomBrush(activeCustomBrush.id, {
+                                   selection: {
+                                     ...activeCustomBrush.selection,
+                                     markerTipRotationDeg: angleDeg,
+                                   }
+                                 });
+                               } else {
+                                 supportPainterStore.setMarkerTipRotationDeg(angleDeg);
+                               }
+                             }
+                           };
 
                           handlePointerMove(e.nativeEvent);
 
@@ -975,7 +1043,8 @@ export function SupportPainterPanel({
                         <circle cx="50" cy="50" r="45" fill="var(--surface-1)" stroke="var(--border-subtle)" strokeWidth="4" />
                         {/* Selected angle radius line indicator */}
                         {(() => {
-                          const angle = isCustomMarker ? (activeCustomBrush.selection.markerTipRotationDeg ?? 0) : state.markerTipRotationDeg;
+                          const angleRaw = isCustomMarker ? (activeCustomBrush.selection.markerTipRotationDeg ?? 0) : state.markerTipRotationDeg;
+                          const angle = isNaN(angleRaw) ? 0 : angleRaw;
                           const angleRad = (angle * Math.PI) / 180;
                           const tx = 50 + 40 * Math.cos(angleRad);
                           const ty = 50 + 40 * Math.sin(angleRad);
@@ -997,24 +1066,32 @@ export function SupportPainterPanel({
                         min="0"
                         max="360"
                         step="5"
-                        value={isCustomMarker ? (activeCustomBrush.selection.markerTipRotationDeg ?? 0) : state.markerTipRotationDeg}
+                        value={(() => {
+                          const val = isCustomMarker ? (activeCustomBrush.selection.markerTipRotationDeg ?? 0) : state.markerTipRotationDeg;
+                          return isNaN(val) ? 0 : val;
+                        })()}
                         onChange={(e) => {
                           const val = parseInt(e.target.value);
-                          if (isCustomMarker) {
-                            supportPainterStore.updateCustomBrush(activeCustomBrush.id, {
-                              selection: {
-                                ...activeCustomBrush.selection,
-                                markerTipRotationDeg: val,
-                              }
-                            });
-                          } else {
-                            supportPainterStore.setMarkerTipRotationDeg(val);
+                          if (!isNaN(val)) {
+                            if (isCustomMarker) {
+                              supportPainterStore.updateCustomBrush(activeCustomBrush.id, {
+                                selection: {
+                                  ...activeCustomBrush.selection,
+                                  markerTipRotationDeg: val,
+                                }
+                              });
+                            } else {
+                              supportPainterStore.setMarkerTipRotationDeg(val);
+                            }
                           }
                         }}
                         className="flex-1 accent-accent cursor-pointer"
                       />
                       <span className="font-bold min-w-[36px] text-right" style={{ color: 'var(--text-strong)' }}>
-                        {isCustomMarker ? (activeCustomBrush.selection.markerTipRotationDeg ?? 0) : state.markerTipRotationDeg}°
+                        {(() => {
+                          const val = isCustomMarker ? (activeCustomBrush.selection.markerTipRotationDeg ?? 0) : state.markerTipRotationDeg;
+                          return isNaN(val) ? 0 : val;
+                        })()}°
                       </span>
                     </div>
                   </div>
@@ -1991,6 +2068,7 @@ export function SupportPainterPanel({
       {pipelineEditingContext !== null && (
         <SupportPipelineEditor
           initialPipeline={editingPipeline}
+          comparisonPipeline={getComparisonPipeline(pipelineEditingContext, state.selectedRegionId)}
           onChange={setEditingPipeline}
           onClose={() => setPipelineEditingContext(null)}
           onSave={async () => {
