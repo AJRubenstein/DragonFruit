@@ -161,7 +161,13 @@ export function proposeRegionOnClient(
     closed: boolean;
   }
 ): number[] {
-  if (seedFaceIndex < 0 || seedFaceIndex >= map.faceCount) return [];
+  if (seedFaceIndex < 0 || seedFaceIndex >= map.faceCount) {
+    if (brushType === 'PointPath' && pointPathParams && pointPathParams.points.length > 0) {
+      // Allow execution to proceed without a valid seed face for PointPath drawing
+    } else {
+      return [];
+    }
+  }
 
   // Compute local up vector and world scale on-the-fly from the live matrixWorld
   const inv = new THREE.Matrix4().copy(matrixWorld).invert();
