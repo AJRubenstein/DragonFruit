@@ -153,7 +153,13 @@ export function proposeRegionOnClient(
     rotationDeg: number;
     collisionMode: 'fence' | 'push' | 'merge';
   },
-  occupiedFaces?: Set<number>
+  occupiedFaces?: Set<number>,
+  pointPathParams?: {
+    points: { point: [number, number, number]; faceIndex: number }[];
+    widthMm: number;
+    mode: 'line' | 'polygon';
+    closed: boolean;
+  }
 ): number[] {
   if (seedFaceIndex < 0 || seedFaceIndex >= map.faceCount) return [];
 
@@ -200,6 +206,21 @@ export function proposeRegionOnClient(
         );
       }
       return walkManualCircle(map, seedFaceIndex, localUp, worldScale, brushRadiusMm);
+    case 'PointPath':
+      if (pointPathParams && pointPathParams.points.length > 0) {
+        const pts = pointPathParams.points.map((p) => p.faceIndex);
+        if (seedFaceIndex >= 0 && seedFaceIndex < map.faceCount && !pointPathParams.closed) {
+          pts.push(seedFaceIndex);
+        }
+        if (pointPathParams.mode === 'line') {
+          return walkPointPathLine(map, pts, pointPathParams.widthMm, localUp, worldScale);
+        } else {
+          return walkPointPathPolygon(map, pts, localUp, worldScale);
+        }
+      } else if (seedFaceIndex >= 0 && seedFaceIndex < map.faceCount) {
+        return [seedFaceIndex];
+      }
+      return [];
     default:
       // Legacy 1-ring fallback
       if (map.faceNormals[seedFaceIndex].dot(localUp) <= 0.2) {
@@ -846,4 +867,259 @@ function walkMarkerShape(
   }
 
   return proposed.filter((idx) => idx === seed || map.faceNormals[idx].dot(localUp) <= 0.2);
+}
+
+export function findDijkstraFacePath(
+  map: ClientAdjacencyMap,
+  startFace: number,
+  endFace: number,
+  worldScale: number
+): number[] {
+  if (startFace === endFace) return [startFace];
+
+  const dists = new Map<number, number>();
+  const prev = new Map<number, number>();
+
+  interface PathState {
+    cost: number;
+    face: number;
+  }
+
+  const queue: PathState[] = [];
+  dists.set(startFace, 0);
+  queue.push({ cost: 0, face: startFace });
+
+  while (queue.length > 0) {
+    queue.sort((a, b) => a.cost - b.cost);
+    const { cost, face } = queue.shift()!;
+
+    if (face === endFace) break;
+
+    const currentBest = dists.get(face) ?? Infinity;
+    if (cost > currentBest) continue;
+
+    const centroidCurr = map.faceCentroids[face];
+    const adjs = map.faceToFaces[face];
+
+    for (const adj of adjs) {
+      const centroidAdj = map.faceCentroids[adj];
+      const stepCost = centroidCurr.distanceTo(centroidAdj) * worldScale;
+      const nextCost = cost + stepCost;
+
+      const adjBest = dists.get(adj) ?? Infinity;
+      if (nextCost < adjBest) {
+        dists.set(adj, nextCost);
+        prev.set(adj, face);
+        queue.push({ cost: nextCost, face: adj });
+      }
+    }
+  }
+
+  if (!prev.has(endFace)) {
+    return [startFace, endFace];
+  }
+
+  const path: number[] = [];
+  let curr: number | undefined = endFace;
+  while (curr !== undefined) {
+    path.push(curr);
+    curr = prev.get(curr);
+  }
+  return path.reverse();
+}
+
+export function walkPointPathLine(
+  map: ClientAdjacencyMap,
+  points: number[],
+  widthMm: number,
+  localUp: THREE.Vector3,
+  worldScale: number
+): number[] {
+  if (points.length === 0) return [];
+  if (points.length === 1) {
+    return walkManualCircle(map, points[0], localUp, worldScale, widthMm * 0.5);
+  }
+
+  const skeleton = new Set<number>();
+  for (let i = 0; i < points.length - 1; i++) {
+    const segment = findDijkstraFacePath(map, points[i], points[i + 1], worldScale);
+    for (const face of segment) {
+      skeleton.add(face);
+    }
+  }
+
+  const radiusMm = widthMm * 0.5;
+  const proposed: number[] = [];
+  const dists = new Map<number, number>();
+
+  interface DijkstraState {
+    cost: number;
+    face: number;
+  }
+
+  const queue: DijkstraState[] = [];
+
+  for (const face of skeleton) {
+    dists.set(face, 0);
+    queue.push({ cost: 0, face });
+  }
+
+  while (queue.length > 0) {
+    queue.sort((a, b) => a.cost - b.cost);
+    const { cost, face } = queue.shift()!;
+
+    if (cost > radiusMm) continue;
+    if (!proposed.includes(face)) {
+      proposed.push(face);
+    }
+
+    const centroidCurr = map.faceCentroids[face];
+    const adjs = map.faceToFaces[face];
+
+    for (const adj of adjs) {
+      const centroidAdj = map.faceCentroids[adj];
+      const stepCost = centroidCurr.distanceTo(centroidAdj) * worldScale;
+      const nextCost = cost + stepCost;
+
+      const currentBest = dists.get(adj) ?? Infinity;
+      if (nextCost < currentBest && nextCost <= radiusMm) {
+        dists.set(adj, nextCost);
+        queue.push({ cost: nextCost, face: adj });
+      }
+    }
+  }
+
+  return proposed;
+}
+
+export function walkPointPathPolygon(
+  map: ClientAdjacencyMap,
+  points: number[],
+  localUp: THREE.Vector3,
+  worldScale: number
+): number[] {
+  if (points.length === 0) return [];
+  if (points.length < 3) {
+    return walkPointPathLine(map, points, 2.0, localUp, worldScale);
+  }
+
+  const boundary = new Set<number>();
+  for (let i = 0; i < points.length; i++) {
+    const nextIdx = (i + 1) % points.length;
+    const segment = findDijkstraFacePath(map, points[i], points[nextIdx], worldScale);
+    for (const face of segment) {
+      boundary.add(face);
+    }
+  }
+
+  const firstSeed = points[0];
+  const seedNormal = map.faceNormals[firstSeed];
+
+  const tangentU = new THREE.Vector3(1, 0, 0).cross(seedNormal);
+  if (tangentU.lengthSq() < 1e-4) {
+    tangentU.copy(new THREE.Vector3(0, 1, 0).cross(seedNormal));
+  }
+  tangentU.normalize();
+  const tangentV = new THREE.Vector3().crossVectors(seedNormal, tangentU).normalize();
+
+  const seedCentroid = map.faceCentroids[firstSeed];
+
+  const boundaryList = Array.from(boundary);
+  const projected2D: { u: number; v: number }[] = boundaryList.map((face) => {
+    const rel = new THREE.Vector3().subVectors(map.faceCentroids[face], seedCentroid);
+    return {
+      u: rel.dot(tangentU),
+      v: rel.dot(tangentV),
+    };
+  });
+
+  let sumU = 0, sumV = 0;
+  for (const pt of projected2D) {
+    sumU += pt.u;
+    sumV += pt.v;
+  }
+  const avgU = sumU / projected2D.length;
+  const avgV = sumV / projected2D.length;
+
+  const isPointInPolygon = (u: number, v: number, poly: { u: number; v: number }[]): boolean => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].u, yi = poly[i].v;
+      const xj = poly[j].u, yj = poly[j].v;
+      const intersect = ((yi > v) !== (yj > v)) && (u < (xj - xi) * (v - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  let interiorSeed = -1;
+  let bestDistSq = Infinity;
+
+  const checkFaces = new Set<number>();
+  const scanQueue: number[] = [...boundaryList];
+  const scanVisited = new Set<number>(boundaryList);
+
+  let ringsScanned = 0;
+  while (scanQueue.length > 0 && ringsScanned < 15) {
+    const levelSize = scanQueue.length;
+    for (let l = 0; l < levelSize; l++) {
+      const curr = scanQueue.shift()!;
+      const adjs = map.faceToFaces[curr];
+      for (const adj of adjs) {
+        if (!scanVisited.has(adj)) {
+          scanVisited.add(adj);
+          scanQueue.push(adj);
+          checkFaces.add(adj);
+        }
+      }
+    }
+    ringsScanned++;
+  }
+
+  for (const face of checkFaces) {
+    const rel = new THREE.Vector3().subVectors(map.faceCentroids[face], seedCentroid);
+    const u = rel.dot(tangentU);
+    const v = rel.dot(tangentV);
+
+    if (isPointInPolygon(u, v, projected2D)) {
+      const distSq = (u - avgU) * (u - avgU) + (v - avgV) * (v - avgV);
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        interiorSeed = face;
+      }
+    }
+  }
+
+  if (interiorSeed === -1) {
+    return boundaryList;
+  }
+
+  const filled = new Set<number>(boundary);
+  const fillQueue: number[] = [interiorSeed];
+  filled.add(interiorSeed);
+
+  const maxFillCount = Math.max(1000, map.faceCount * 0.20);
+  let failed = false;
+
+  while (fillQueue.length > 0) {
+    const curr = fillQueue.shift()!;
+    if (filled.size > maxFillCount) {
+      failed = true;
+      break;
+    }
+
+    const adjs = map.faceToFaces[curr];
+    for (const adj of adjs) {
+      if (!filled.has(adj)) {
+        filled.add(adj);
+        fillQueue.push(adj);
+      }
+    }
+  }
+
+  if (failed) {
+    return boundaryList;
+  }
+
+  return Array.from(filled);
 }

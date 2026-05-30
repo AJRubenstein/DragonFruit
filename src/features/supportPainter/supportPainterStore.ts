@@ -78,6 +78,12 @@ let markerTipRotationDeg = 0;
 let markerEraserMode = false;
 let markerCollisionMode: 'fence' | 'push' | 'merge' = 'fence';
 
+// ─── Point Path Brush State ───
+let pointPathPoints: { point: [number, number, number]; faceIndex: number }[] = [];
+let pointPathWidthMm = 2.0;
+let pointPathMode: 'line' | 'polygon' = 'line';
+let pointPathClosed = false;
+
 const LOCAL_STORAGE_KEY = 'dragonfruit.support-painter.custom-brushes';
 
 function saveCustomBrushesToLocalStorage() {
@@ -136,6 +142,10 @@ let storeSnapshot: SupportPainterState = {
   markerTipRotationDeg,
   markerEraserMode,
   markerCollisionMode,
+  pointPathPoints: [],
+  pointPathWidthMm,
+  pointPathMode,
+  pointPathClosed,
 };
 
 function notify() {
@@ -174,6 +184,10 @@ function updateSnapshot() {
     markerTipRotationDeg,
     markerEraserMode,
     markerCollisionMode,
+    pointPathPoints: [...pointPathPoints],
+    pointPathWidthMm,
+    pointPathMode,
+    pointPathClosed,
   };
 }
 
@@ -222,6 +236,8 @@ export const supportPainterStore = {
     interactionPhase = 'Idle';
     hoveredTriangleId = null;
     proposedTriangleIds.clear();
+    pointPathPoints = [];
+    pointPathClosed = false;
     triangleColorMap = _recomputeTriangleColorMap();
     updateSnapshot();
     notify();
@@ -234,6 +250,8 @@ export const supportPainterStore = {
     hoveredTriangleId = null;
     proposedTriangleIds.clear();
     scannedMinima = [];
+    pointPathPoints = [];
+    pointPathClosed = false;
     clientAdjacencyMap = null; // Clean up memory cache
     triangleColorMap = _recomputeTriangleColorMap();
     updateSnapshot();
@@ -965,6 +983,72 @@ export const supportPainterStore = {
     scannedMinima = [];
     updateSnapshot();
     notify();
+  },
+
+  addPointPathPoint(point: [number, number, number], faceIndex: number) {
+    pointPathPoints = [...pointPathPoints, { point, faceIndex }];
+    updateSnapshot();
+    notify();
+  },
+
+  clearPointPathPoints() {
+    pointPathPoints = [];
+    pointPathClosed = false;
+    proposedTriangleIds.clear();
+    triangleColorMap = _recomputeTriangleColorMap();
+    updateSnapshot();
+    notify();
+  },
+
+  setPointPathWidthMm(width: number) {
+    if (pointPathWidthMm === width) return;
+    pointPathWidthMm = width;
+    updateSnapshot();
+    notify();
+  },
+
+  setPointPathMode(mode: 'line' | 'polygon') {
+    if (pointPathMode === mode) return;
+    pointPathMode = mode;
+    updateSnapshot();
+    notify();
+  },
+
+  setPointPathClosed(closed: boolean) {
+    if (pointPathClosed === closed) return;
+    pointPathClosed = closed;
+    updateSnapshot();
+    notify();
+  },
+
+  commitPointPathRegion(payload: { seedTriangleId: number }): string {
+    if (proposedTriangleIds.size === 0) return '';
+
+    const id = crypto.randomUUID?.() || Math.random().toString(36).substring(2);
+    const color = BRUSH_COLORS.PointPath;
+
+    const newRegion: ROIRegion = {
+      id,
+      brushType: 'PointPath',
+      seedTriangleId: payload.seedTriangleId,
+      triangleIds: new Set(proposedTriangleIds),
+      color,
+      proposedOnly: false,
+      createdAt: Date.now(),
+    };
+
+    regions.set(id, newRegion);
+    selectedRegionId = id;
+
+    // Reset drawing state
+    pointPathPoints = [];
+    pointPathClosed = false;
+    proposedTriangleIds.clear();
+
+    triangleColorMap = _recomputeTriangleColorMap();
+    updateSnapshot();
+    notify();
+    return id;
   },
 };
 

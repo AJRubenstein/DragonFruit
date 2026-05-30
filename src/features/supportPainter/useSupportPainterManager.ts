@@ -28,6 +28,10 @@ export function useSupportPainterManager(
     markerTipShape,
     markerTipRotationDeg,
     markerCollisionMode,
+    pointPathPoints,
+    pointPathWidthMm,
+    pointPathMode,
+    pointPathClosed,
   } = useSupportPainterState();
   const [initializedModelId, setInitializedModelId] = useState<string | null>(null);
 
@@ -180,6 +184,7 @@ export function useSupportPainterManager(
   // 4. Synchronous, Low-Latency Client-Side Region Proposal (runs in <1ms!)
   const activeCustomBrush = activeCustomBrushId ? customBrushes.get(activeCustomBrushId) : undefined;
   const customBrushParamsJson = activeCustomBrush ? JSON.stringify(activeCustomBrush.selection) : '';
+  const pointPathPointsJson = JSON.stringify(pointPathPoints);
 
   useEffect(() => {
     if (!isActive || !activeModelId || hoveredTriangleId === null || initializedModelId !== activeModelId) {
@@ -231,6 +236,13 @@ export function useSupportPainterManager(
         collisionMode,
       };
 
+      const pointPathParams = {
+        points: snap.pointPathPoints,
+        widthMm: snap.pointPathWidthMm,
+        mode: snap.pointPathMode,
+        closed: snap.pointPathClosed,
+      };
+
       const occupiedFaces = new Set<number>();
       for (const [id, reg] of snap.regions.entries()) {
         if (id === snap.selectedRegionId) continue;
@@ -251,7 +263,8 @@ export function useSupportPainterManager(
         activeBrushType === 'Marker' ? radius : effectiveRadius,
         activeCustomBrush,
         markerParams,
-        occupiedFaces
+        occupiedFaces,
+        pointPathParams
       );
       
       console.log(`[SupportPainterManager] Smart brush search returned ${proposedIds.length} triangles.`);
@@ -273,5 +286,9 @@ export function useSupportPainterManager(
     markerTipShape,
     markerTipRotationDeg,
     markerCollisionMode,
+    pointPathPointsJson,
+    pointPathWidthMm,
+    pointPathMode,
+    pointPathClosed,
   ]);
 }

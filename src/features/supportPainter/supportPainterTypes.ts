@@ -1,6 +1,6 @@
 // ─── Brush Identity ─────────────────────────────────────────────────────────
 
-export type BrushType = 'MacroFace' | 'Ridge' | 'Point' | 'CylinderSides' | 'CylinderMinima' | 'Ring' | 'ManualCircle' | 'ManualSquare' | 'Marker';
+export type BrushType = 'MacroFace' | 'Ridge' | 'Point' | 'CylinderSides' | 'CylinderMinima' | 'Ring' | 'ManualCircle' | 'ManualSquare' | 'Marker' | 'PointPath';
 
 // ─── Custom Support Operations & Pipeline Typings ───────────────────────────
 
@@ -70,6 +70,10 @@ export interface CustomBrushTemplate {
     markerTipRotationDeg?: number;
     markerEraserMode?: boolean;
     markerCollisionMode?: 'fence' | 'push' | 'merge';
+
+    // Point-path specific parameters
+    pointPathWidthMm?: number;
+    pointPathMode?: 'line' | 'polygon';
   };
 
   // Ordered operational pipeline
@@ -88,6 +92,7 @@ export const BRUSH_COLORS: Record<BrushType, string> = {
   ManualCircle:   '#06B6D4',   // teal/cyan
   ManualSquare:   '#F59E0B',   // amber/gold
   Marker:         '#E11D48',   // premium rose/red
+  PointPath:      '#10B981',   // emerald/mint green
 };
 
 // ─── Interaction Phase State Machine ────────────────────────────────────────
@@ -216,6 +221,12 @@ export interface SupportPainterState {
   markerTipRotationDeg:   number;
   markerEraserMode:       boolean;
   markerCollisionMode:    'fence' | 'push' | 'merge';
+
+  // ─── Point Path Brush State ───
+  pointPathPoints:        { point: [number, number, number]; faceIndex: number }[];
+  pointPathWidthMm:       number;
+  pointPathMode:          'line' | 'polygon';
+  pointPathClosed:        boolean;
 }
 
 // ─── Store Action Payloads ───────────────────────────────────────────────────

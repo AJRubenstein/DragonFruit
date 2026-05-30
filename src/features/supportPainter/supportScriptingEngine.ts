@@ -32,6 +32,7 @@ const BRUSH_DETAILS: Record<BrushType, { label: string }> = {
   ManualCircle:   { label: 'Manual Circle' },
   ManualSquare:   { label: 'Manual Square' },
   Marker:         { label: 'Marker Brush' },
+  PointPath:      { label: 'Point Path' },
 };
 
 function expandGeometryToTriangleSoup(geometry: THREE.BufferGeometry): Float32Array {

@@ -107,6 +107,10 @@ const presets: Record<BrushType, Partial<CustomBrushTemplate['selection']>> = {
   CylinderMinima: {},
   ManualCircle: {},
   ManualSquare: {},
+  PointPath: {
+    pointPathWidthMm: 2.0,
+    pointPathMode: 'line',
+  },
 };
 
 const DEFAULT_TEMPLATE: CustomBrushTemplate = {

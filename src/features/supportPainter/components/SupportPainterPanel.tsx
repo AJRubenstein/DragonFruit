@@ -84,6 +84,11 @@ const BRUSH_DETAILS: Record<
     desc: 'Brush with rotated shapes & collision strategies',
     icon: CircleDot,
   },
+  PointPath: {
+    label: 'Point Path',
+    desc: 'Select points to draw paths or closed loops',
+    icon: GitCommit,
+  },
 };
 
 function getSupportTips(supportState: any, activeModelId: string): THREE.Vector3[] {
