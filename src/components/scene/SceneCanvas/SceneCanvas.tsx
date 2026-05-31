@@ -126,7 +126,7 @@ import {
 import { computeLowestZ } from '@/utils/geometry';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { emitImmediateModelHover } from '@/supports/interaction/pointerOcclusion';
-import { SupportPathfindingDebugOverlay } from '@/components/scene/SupportPathfindingDebugOverlay';
+import { SupportPathfindingDebugHud, SupportPathfindingDebugOverlay } from '@/components/scene/SupportPathfindingDebugOverlay';
 import {
   getSupportPathfindingDebugState,
   subscribeToSupportPathfindingDebugState,
@@ -6346,6 +6346,10 @@ export function SceneCanvas({
         {children}
       </Canvas>
 
+      {mode === 'support' && supportPathfindingDebugState.enabled && (
+        <SupportPathfindingDebugHud snapshot={supportPathfindingDebugState.snapshot} />
+      )}
+
       <SceneMoodOverlay />
 
       {frozenViewportDataUrl && freezeViewportActive && (
@@ -6410,9 +6414,9 @@ export function SceneCanvas({
 
       {/* Support Limitation Tooltip Overlay */}
       <SupportLimitationFeedback
-        error={suppressSupportPlacementPreviewRendering ? null : (leafPlacementPreview?.error ?? (isBranchPlacementActive ? branchPlacementPreview?.error : null) ?? trunkPlacementPreview?.error ?? null)}
+        error={suppressSupportPlacementPreviewRendering || supportPathfindingDebugState.enabled ? null : (leafPlacementPreview?.error ?? (isBranchPlacementActive ? branchPlacementPreview?.error : null) ?? trunkPlacementPreview?.error ?? null)}
         warning={
-          suppressSupportPlacementPreviewRendering
+          suppressSupportPlacementPreviewRendering || supportPathfindingDebugState.enabled
             ? null
             : (
               leafPlacementPreview?.warning ??

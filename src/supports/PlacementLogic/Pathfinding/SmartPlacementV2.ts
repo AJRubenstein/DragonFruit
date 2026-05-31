@@ -26,7 +26,12 @@ import { buildNearestCandidateNodeKeys } from '../Grid/nearestCandidateNodeKeys'
 import { SDFCache } from './SDFCache';
 import { gridAStar, type GridAStarDebugSnapshot, type WarmStartState } from './GridAStar';
 import type { SupportOccupancy } from './SupportOccupancy';
-import { getSupportPathfindingDebugEnabled, setSupportPathfindingDebugSnapshot } from './pathfindingDebugState';
+import {
+    getSupportPathfindingDebugEnabled,
+    setSupportPathfindingDebugSnapshot,
+    type SupportPathfindingDebugEvent,
+    type SupportPathfindingDebugOutcome,
+} from './pathfindingDebugState';
 import {
     distanceXY,
     distance3D,
@@ -111,6 +116,7 @@ const CONTACT_CONE_MAX_STRETCH_RATIO = 0.40;
 const CONTACT_DISK_IDEAL_DIRECTION_DEVIATION_DEG = 20;
 const CONTACT_DISK_DIRECTION_DEVIATION_WEIGHT = 0.06;
 const CONTACT_DISK_DIRECTION_DEVIATION_QUADRATIC_WEIGHT = 0.04;
+const CONTACT_DISK_MAX_CONE_AXIS_ANGLE_DEG = 70;
 
 function buildUnitCircleDirections(count: number): Array<{ x: number; y: number }> {
     const directions: Array<{ x: number; y: number }> = [];
@@ -246,6 +252,7 @@ interface ContactConeRescuePenaltyMetrics {
     addedLengthMm: number;
     directionDeviationDeg: number;
     exceedsStretchLimit: boolean;
+    exceedsDiskAngleLimit: boolean;
 }
 
 interface ContactConeClearSocketSeed {
@@ -353,6 +360,8 @@ function getContactConeRescuePenaltyMetrics(args: {
         addedLengthMm,
         directionDeviationDeg,
         exceedsStretchLimit: addedLengthMm > referenceLengthMm * CONTACT_CONE_MAX_STRETCH_RATIO + 0.000001,
+        exceedsDiskAngleLimit: coneScoring.tipProfile.type === 'disk'
+            && angleFromSurfaceNormalDeg > CONTACT_DISK_MAX_CONE_AXIS_ANGLE_DEG + 0.000001,
     };
 }
 
@@ -504,7 +513,7 @@ function findContactConeClearSocketSeed(args: {
             coneScoring: args.coneScoring,
             reference: baselineConePenaltyMetrics,
         });
-        if (metrics.exceedsStretchLimit) {
+        if (metrics.exceedsStretchLimit || metrics.exceedsDiskAngleLimit) {
             continue;
         }
         const candidate: ContactConeClearSocketSeed = {
@@ -597,6 +606,7 @@ export function findMixedSocketRescueCandidate(args: {
     rootsDiskBlockedAt?: RootsDiskBlockedAt;
     segmentBlockedBetween?: SegmentBlockedBetween;
     contactConeBlockedAt?: ContactConeBlockedAt;
+    requireJoint?: boolean;
 }): { socketPos: Vec3; base: ResolvedBaseCandidate; joints: Vec3[] } | null {
     const candidates = buildMixedSocketRescueCandidates({
         socketPos: args.socketPos,
@@ -678,6 +688,10 @@ export function findMixedSocketRescueCandidate(args: {
         const preferNominalReachAround = socketShiftMm <= 0.000001;
 
         const considerCandidate = (joints: Vec3[]): void => {
+            if (args.requireJoint && joints.length === 0) {
+                return;
+            }
+
             const chainPrefix = [candidateSocketPos, ...joints];
             for (let i = 0; i < chainPrefix.length - 1; i++) {
                 const start = chainPrefix[i];
@@ -705,7 +719,7 @@ export function findMixedSocketRescueCandidate(args: {
             }
 
             const conePenaltyMetrics = getConePenaltyMetrics(candidateSocketPos);
-            if (conePenaltyMetrics.exceedsStretchLimit) {
+            if (conePenaltyMetrics.exceedsStretchLimit || conePenaltyMetrics.exceedsDiskAngleLimit) {
                 return;
             }
 
@@ -825,6 +839,7 @@ export function findStraightSocketRescueCandidate(args: {
                 addedLengthMm: 0,
                 directionDeviationDeg: 0,
                 exceedsStretchLimit: false,
+                exceedsDiskAngleLimit: false,
             };
         }
 
@@ -849,7 +864,7 @@ export function findStraightSocketRescueCandidate(args: {
         }
 
         const conePenaltyMetrics = getConePenaltyMetrics(candidateSocketPos);
-        if (conePenaltyMetrics.exceedsStretchLimit) {
+        if (conePenaltyMetrics.exceedsStretchLimit || conePenaltyMetrics.exceedsDiskAngleLimit) {
             continue;
         }
         const conePenaltyScore = conePenaltyMetrics.score;
@@ -1401,6 +1416,24 @@ export function calculateSmartPlacementV2(
     const clearance = shaftRadius + COLLISION_AVOIDANCE_MM;
     const debugEnabled = getSupportPathfindingDebugEnabled();
     let debugPasses: GridAStarDebugSnapshot[] = [];
+    const debugEvents: SupportPathfindingDebugEvent[] = [];
+    let debugOutcome: SupportPathfindingDebugOutcome = {
+        status: 'pending',
+        reason: 'search in progress',
+    };
+    let debugBasePos: Vec3 | undefined;
+    let debugFinalChain: Vec3[] | undefined;
+    const recordDebugEvent = (event: SupportPathfindingDebugEvent): void => {
+        if (!debugEnabled) return;
+        debugEvents.push(event);
+        if (debugEvents.length > 24) {
+            debugEvents.splice(0, debugEvents.length - 24);
+        }
+    };
+    const setDebugOutcome = (status: SupportPathfindingDebugOutcome['status'], reason: string): void => {
+        if (!debugEnabled) return;
+        debugOutcome = { status, reason };
+    };
     const rootsRadius = settings.roots.diameterMm / 2;
     const diskHeight = settings.roots.diskHeightMm;
     const coneHeight = settings.roots.coneHeightMm;
@@ -1435,28 +1468,55 @@ export function calculateSmartPlacementV2(
     }
     const publishPathfindingDebugSnapshot = () => {
         if (!debugEnabled) return;
+        const activeConeMetrics = getContactConeRescuePenaltyMetrics({
+            socketPos,
+            coneScoring: {
+                tipPos: input.tipPos,
+                tipNormal: input.tipNormal,
+                tipProfile: input.tipProfile,
+            },
+        });
         setSupportPathfindingDebugSnapshot(
-            debugPasses.length > 0
-                ? {
-                    modelId,
-                    socketPos,
+            {
+                modelId,
+                socketPos,
+                nominalSocketPos,
+                rootTopZ,
+                clearanceMm: clearance,
+                basePos: debugBasePos,
+                finalChain: debugFinalChain,
+                outcome: debugOutcome,
+                cone: {
+                    nominalClear: coneClear,
+                    activeClear: activeConeClear,
+                    activeDiskAngleDeg: activeConeMetrics.angleFromSurfaceNormalDeg,
+                    maxDiskAngleDeg: CONTACT_DISK_MAX_CONE_AXIS_ANGLE_DEG,
+                    activeConeLengthMm: activeConeMetrics.lengthMm,
+                    activeAddedLengthMm: activeConeMetrics.addedLengthMm,
+                    stretchLimitExceeded: activeConeMetrics.exceedsStretchLimit,
+                    diskAngleLimitExceeded: activeConeMetrics.exceedsDiskAngleLimit,
+                },
+                envelope: {
+                    maxTotalLateralMm,
+                    rescueRadiiMm: rescueSweepRadiiMm,
                     rootTopZ,
                     clearanceMm: clearance,
-                    passes: debugPasses.map((pass) => ({
-                        label: pass.label,
-                        searchStepMm: pass.searchStepMm,
-                        expansions: pass.expansions,
-                        reached: pass.reached,
-                        stagnated: pass.stagnated,
-                        hitExpansionLimit: pass.hitExpansionLimit,
-                        expandedNodes: pass.expandedNodes,
-                        frontierNodes: pass.frontierNodes,
-                        rawPath: pass.rawPath,
-                        simplifiedPath: pass.simplifiedPath,
-                    })),
-                    updatedAtMs: typeof performance !== 'undefined' ? performance.now() : Date.now(),
-                }
-                : null,
+                },
+                events: [...debugEvents],
+                passes: debugPasses.map((pass) => ({
+                    label: pass.label,
+                    searchStepMm: pass.searchStepMm,
+                    expansions: pass.expansions,
+                    reached: pass.reached,
+                    stagnated: pass.stagnated,
+                    hitExpansionLimit: pass.hitExpansionLimit,
+                    expandedNodes: pass.expandedNodes,
+                    frontierNodes: pass.frontierNodes,
+                    rawPath: pass.rawPath,
+                    simplifiedPath: pass.simplifiedPath,
+                })),
+                updatedAtMs: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+            },
         );
     };
     const isPreview = context?.isPreview ?? false;
@@ -1482,6 +1542,11 @@ export function calculateSmartPlacementV2(
     });
 
     const coneClear = !contactConeBlockedAt(nominalSocketPos);
+    recordDebugEvent({
+        stage: 'cone',
+        severity: coneClear ? 'success' : 'warning',
+        message: coneClear ? 'Nominal contact cone is clear' : 'Nominal contact cone intersects model',
+    });
 
     let straightRescueCache:
         | { socketPos: Vec3; base: ResolvedBaseCandidate }
@@ -1545,6 +1610,10 @@ export function calculateSmartPlacementV2(
         | { socketPos: Vec3; base: ResolvedBaseCandidate; joints: Vec3[] }
         | null
         | undefined;
+    let jointedMixedSocketRescueCache:
+        | { socketPos: Vec3; base: ResolvedBaseCandidate; joints: Vec3[] }
+        | null
+        | undefined;
     const getMixedSocketRescueFallback = () => {
         if (mixedSocketRescueCache !== undefined) {
             return mixedSocketRescueCache;
@@ -1581,9 +1650,59 @@ export function calculateSmartPlacementV2(
 
         return mixedSocketRescueCache;
     };
+    const getJointedMixedSocketRescueFallback = () => {
+        if (jointedMixedSocketRescueCache !== undefined) {
+            return jointedMixedSocketRescueCache;
+        }
+
+        jointedMixedSocketRescueCache = findMixedSocketRescueCandidate({
+            socketPos: nominalSocketPos,
+            rootTopZ,
+            maxTotalLateralMm: nominalMaxTotalLateralMm,
+            gridEnabled: settings.grid.enabled,
+            spacingMm: settings.grid.spacingMm,
+            maxNearestNodeSearchRings: MAX_NEAREST_NODE_SEARCH_RINGS,
+            sdf,
+            diskHeight,
+            coneHeight,
+            rootsRadius,
+            shaftRadius,
+            clearance,
+            maxAngleFromVerticalDeg: maxSegmentAngleFromVerticalDeg,
+            coneScoring: {
+                tipPos: input.tipPos,
+                tipNormal: input.tipNormal,
+                tipProfile: input.tipProfile,
+            },
+            buildNearestCandidateNodeKeys,
+            subGridOffset: !settings.grid.enabled ? {
+                x: input.tipPos.x - Math.round(input.tipPos.x / FINE_ASTAR_STEP_MM) * FINE_ASTAR_STEP_MM,
+                y: input.tipPos.y - Math.round(input.tipPos.y / FINE_ASTAR_STEP_MM) * FINE_ASTAR_STEP_MM,
+            } : null,
+            rootsDiskBlockedAt,
+            segmentBlockedBetween,
+            contactConeBlockedAt,
+            requireJoint: true,
+        });
+
+        return jointedMixedSocketRescueCache;
+    };
     const buildStraightRescueFallback = (): TrunkPlacementResult | null => {
         const mixedSocketRescue = getMixedSocketRescueFallback();
         if (mixedSocketRescue) {
+            setDebugOutcome('fallback', 'mixed socket rescue');
+            debugBasePos = mixedSocketRescue.base.basePos;
+            debugFinalChain = [
+                mixedSocketRescue.socketPos,
+                ...mixedSocketRescue.joints,
+                mixedSocketRescue.base.rootTopTarget,
+            ];
+            recordDebugEvent({
+                stage: 'fallback',
+                severity: 'success',
+                message: `Mixed rescue accepted (${mixedSocketRescue.joints.length} joint${mixedSocketRescue.joints.length === 1 ? '' : 's'})`,
+                details: `base=(${mixedSocketRescue.base.basePos.x.toFixed(2)}, ${mixedSocketRescue.base.basePos.y.toFixed(2)})`,
+            });
             if (!isPreview) {
                 console.log(
                     `[SmartPlacementV2] MIXED socket rescue fallback — socket=(${mixedSocketRescue.socketPos.x.toFixed(2)},${mixedSocketRescue.socketPos.y.toFixed(2)},${mixedSocketRescue.socketPos.z.toFixed(2)}) joints=[${mixedSocketRescue.joints.map((joint) => `(${joint.x.toFixed(2)},${joint.y.toFixed(2)},${joint.z.toFixed(2)})`).join(' ')}] base=(${mixedSocketRescue.base.basePos.x.toFixed(2)},${mixedSocketRescue.base.basePos.y.toFixed(2)},${mixedSocketRescue.base.basePos.z.toFixed(2)})`,
@@ -1605,6 +1724,18 @@ export function calculateSmartPlacementV2(
 
         const straightRescue = getStraightSocketRescueFallback();
         if (!straightRescue) return null;
+        setDebugOutcome('fallback', 'straight socket rescue');
+        debugBasePos = straightRescue.base.basePos;
+        debugFinalChain = [
+            straightRescue.socketPos,
+            straightRescue.base.rootTopTarget,
+        ];
+        recordDebugEvent({
+            stage: 'fallback',
+            severity: 'success',
+            message: 'Straight rescue accepted',
+            details: `socket shift=${distanceXY(straightRescue.socketPos, nominalSocketPos).toFixed(2)}mm`,
+        });
         if (!isPreview) {
             console.log(
                 `[SmartPlacementV2] STRAIGHT rescue fallback — socket=(${straightRescue.socketPos.x.toFixed(2)},${straightRescue.socketPos.y.toFixed(2)},${straightRescue.socketPos.z.toFixed(2)}) base=(${straightRescue.base.basePos.x.toFixed(2)},${straightRescue.base.basePos.y.toFixed(2)},${straightRescue.base.basePos.z.toFixed(2)})`,
@@ -1625,8 +1756,21 @@ export function calculateSmartPlacementV2(
 
     let activeConeClear = coneClear;
     if (!coneClear) {
-        const mixedSocketRescue = getMixedSocketRescueFallback();
-        if (mixedSocketRescue && mixedSocketRescue.joints.length > 0) {
+        const mixedSocketRescue = getJointedMixedSocketRescueFallback();
+        if (mixedSocketRescue) {
+            setDebugOutcome('fallback', 'cone-blocked jointed rescue');
+            debugBasePos = mixedSocketRescue.base.basePos;
+            debugFinalChain = [
+                mixedSocketRescue.socketPos,
+                ...mixedSocketRescue.joints,
+                mixedSocketRescue.base.rootTopTarget,
+            ];
+            recordDebugEvent({
+                stage: 'cone',
+                severity: 'success',
+                message: 'Cone-blocked placement rescued with a shaft bend',
+                details: `joints=${mixedSocketRescue.joints.length}`,
+            });
             if (!isPreview) {
                 console.log(
                     `[SmartPlacementV2] cone-blocked mixed rescue — socket=(${mixedSocketRescue.socketPos.x.toFixed(2)},${mixedSocketRescue.socketPos.y.toFixed(2)},${mixedSocketRescue.socketPos.z.toFixed(2)}) joints=[${mixedSocketRescue.joints.map((joint) => `(${joint.x.toFixed(2)},${joint.y.toFixed(2)},${joint.z.toFixed(2)})`).join(' ')}] base=(${mixedSocketRescue.base.basePos.x.toFixed(2)},${mixedSocketRescue.base.basePos.y.toFixed(2)},${mixedSocketRescue.base.basePos.z.toFixed(2)})`,
@@ -1651,6 +1795,12 @@ export function calculateSmartPlacementV2(
         if (rescuedSocketPos) {
             socketPos = rescuedSocketPos;
             activeConeClear = true;
+            recordDebugEvent({
+                stage: 'cone',
+                severity: 'warning',
+                message: 'Used cone-clear socket seed',
+                details: `shift=${coneClearSeed?.socketShiftMm.toFixed(2) ?? '0.00'}mm added cone=${coneClearSeed?.addedLengthMm.toFixed(2) ?? '0.00'}mm`,
+            });
             ({ maxTotalLateralMm, rescueSweepRadiiMm } = getSmartPlacementV2SearchEnvelope({
                 socketPos,
                 rootTopZ,
@@ -1663,6 +1813,12 @@ export function calculateSmartPlacementV2(
             }
         } else {
             if (isPreview) {
+                setDebugOutcome('blocked', 'contact cone blocked during preview');
+                recordDebugEvent({
+                    stage: 'cone',
+                    severity: 'error',
+                    message: 'No clear contact-cone seed found',
+                });
                 publishPathfindingDebugSnapshot();
                 return {
                     ...standard,
@@ -1674,6 +1830,12 @@ export function calculateSmartPlacementV2(
             if (straightRescueFallback) {
                 return straightRescueFallback;
             }
+            setDebugOutcome('blocked', 'contact cone blocked');
+            recordDebugEvent({
+                stage: 'cone',
+                severity: 'error',
+                message: 'Cone blocked and all socket rescues failed',
+            });
         }
     }
 
@@ -1687,9 +1849,24 @@ export function calculateSmartPlacementV2(
     if (!isPreview) {
         console.log(`[SmartPlacementV2] called — nominalSocket=(${nominalSocketPos.x.toFixed(2)},${nominalSocketPos.y.toFixed(2)},${nominalSocketPos.z.toFixed(2)}) activeSocket=(${socketPos.x.toFixed(2)},${socketPos.y.toFixed(2)},${socketPos.z.toFixed(2)}) rootTopZ=${rootTopZ.toFixed(2)} nominalConeClear=${coneClear} activeConeClear=${activeConeClear} straightClear=${straightClear} rootsFit=${rootsFitStandard}`);
     }
+    recordDebugEvent({
+        stage: 'preflight',
+        severity: straightClear && rootsFitStandard ? 'success' : 'info',
+        message: `straight=${straightClear ? 'clear' : 'blocked'} roots=${rootsFitStandard ? 'fit' : 'blocked'}`,
+        details: `active socket=(${socketPos.x.toFixed(2)}, ${socketPos.y.toFixed(2)}, ${socketPos.z.toFixed(2)})`,
+    });
 
     if (activeConeClear && straightClear && rootsFitStandard) {
         if (!isPreview) console.log(`[SmartPlacementV2] STRAIGHT path — no routing needed`);
+        setDebugOutcome('straight', 'straight path clear');
+        debugBasePos = baseXY;
+        debugFinalChain = [socketPos, { x: socketPos.x, y: socketPos.y, z: rootTopZ }];
+        recordDebugEvent({
+            stage: 'result',
+            severity: 'success',
+            message: 'Placed straight support',
+        });
+        publishPathfindingDebugSnapshot();
         return {
             ...standard,
             socketPos,
@@ -1790,6 +1967,14 @@ export function calculateSmartPlacementV2(
     if (debugEnabled && result.debug) {
         debugPasses = [result.debug];
     }
+    recordDebugEvent({
+        stage: 'astar:fine',
+        severity: result.reached ? 'success' : result.stagnated || result.hitExpansionLimit ? 'warning' : 'info',
+        message: result.reached
+            ? `Fine A* reached in ${result.expansions} expansions`
+            : `Fine A* failed after ${result.expansions} expansions`,
+        details: result.stagnated ? 'stagnated' : result.hitExpansionLimit ? 'hit expansion limit' : undefined,
+    });
 
     // ---------- Wide-step fallback (V1 parity for large-detour overhangs) ----------
     //
@@ -1824,6 +2009,14 @@ export function calculateSmartPlacementV2(
         if (debugEnabled && wideResult.debug) {
             debugPasses = [...debugPasses, wideResult.debug];
         }
+        recordDebugEvent({
+            stage: 'astar:wide',
+            severity: wideResult.reached ? 'success' : wideResult.stagnated || wideResult.hitExpansionLimit ? 'warning' : 'info',
+            message: wideResult.reached
+                ? `Wide A* reached in ${wideResult.expansions} expansions`
+                : `Wide A* failed after ${wideResult.expansions} expansions`,
+            details: wideResult.stagnated ? 'stagnated' : wideResult.hitExpansionLimit ? 'hit expansion limit' : undefined,
+        });
         if (wideResult.reached) {
             // Wide-step succeeded — use its result. Don't write to warm-start maps
             // since the 0.6mm grid state is incompatible with the normal 0.25mm warm-start.
@@ -2710,6 +2903,15 @@ export function calculateSmartPlacementV2(
         angle: standard.angle,
         coneAxis: standard.coneAxis,
     };
+    setDebugOutcome(finalJoints.length === 0 ? 'straight' : 'routed', 'final validated chain');
+    debugBasePos = finalBase.basePos;
+    debugFinalChain = [socketPos, ...finalJoints, finalBase.rootTopTarget];
+    recordDebugEvent({
+        stage: 'result',
+        severity: 'success',
+        message: `Placed ${finalJoints.length === 0 ? 'straight' : 'routed'} support`,
+        details: `joints=${finalJoints.length} base=(${finalBase.basePos.x.toFixed(2)}, ${finalBase.basePos.y.toFixed(2)})`,
+    });
 
     if (!isPreview) {
         // Build the full chain for logging: socket → joints → rootTop

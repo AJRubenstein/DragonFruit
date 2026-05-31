@@ -63,22 +63,15 @@ test('findStraightSocketRescueCandidate finds a nearby clear straight support wh
     assert.equal(rescued?.base.basePos.z, 0);
 });
 
-test('findStraightSocketRescueCandidate prefers the less shallow cone direction when stretched rescue is unavoidable', () => {
-    const sdf = makeOpenSdf({
-        segmentBlocked: (ax: number, ay: number, _az: number, bx: number, by: number) => {
-            const blocksOrigin = Math.abs(ax) < 0.000001 && Math.abs(ay) < 0.000001 && Math.abs(bx) < 0.000001 && Math.abs(by) < 0.000001;
-            return blocksOrigin;
-        },
-    });
-
+test('findStraightSocketRescueCandidate rejects excessive contact disk to cone bend angles', () => {
     const rescued = findStraightSocketRescueCandidate({
         socketPos: { x: 0, y: 0, z: 10 },
         rootTopZ: 2,
-        maxTotalLateralMm: 1,
+        maxTotalLateralMm: 2,
         gridEnabled: false,
         spacingMm: 4,
         maxNearestNodeSearchRings: 1,
-        sdf,
+        sdf: makeOpenSdf(),
         diskHeight: 1,
         coneHeight: 1,
         rootsRadius: 1.5,
@@ -86,7 +79,7 @@ test('findStraightSocketRescueCandidate prefers the less shallow cone direction 
         clearance: 1,
         coneScoring: {
             tipPos: { x: 0, y: 0, z: 0 },
-            tipNormal: { x: 0, y: 1, z: 0 },
+            tipNormal: { x: 1, y: 0, z: 0 },
             tipProfile: {
                 type: 'disk',
                 contactDiameterMm: 0.3,
@@ -100,8 +93,7 @@ test('findStraightSocketRescueCandidate prefers the less shallow cone direction 
         },
     });
 
-    assert.ok(rescued);
-    assert.ok((rescued?.socketPos.y ?? 0) > 0.4, `expected rescue to prefer +Y-aligned cone, got (${rescued?.socketPos.x.toFixed(2)}, ${rescued?.socketPos.y.toFixed(2)})`);
+    assert.equal(rescued, null);
 });
 
 test('findMixedSocketRescueCandidate allows a small socket stretch plus a shaft bend before resorting to a farther straight rescue', () => {
@@ -129,7 +121,7 @@ test('findMixedSocketRescueCandidate allows a small socket stretch plus a shaft 
         maxAngleFromVerticalDeg: 80,
         coneScoring: {
             tipPos: { x: 0, y: 0, z: 0 },
-            tipNormal: { x: 1, y: 0, z: 0 },
+            tipNormal: { x: 0, y: 0, z: 1 },
             tipProfile: {
                 type: 'disk',
                 contactDiameterMm: 0.3,
@@ -146,6 +138,75 @@ test('findMixedSocketRescueCandidate allows a small socket stretch plus a shaft 
     assert.ok(rescued);
     assert.ok(Math.abs(rescued!.socketPos.x) <= 1.000001);
     assert.ok(rescued!.joints.length >= 1);
+});
+
+test('findMixedSocketRescueCandidate can require a shaft bend instead of accepting a zero-joint socket shift', () => {
+    const sdf = makeOpenSdf();
+
+    const zeroJointRescue = findMixedSocketRescueCandidate({
+        socketPos: { x: 0, y: 0, z: 2 },
+        rootTopZ: 0.5,
+        maxTotalLateralMm: 1,
+        gridEnabled: false,
+        spacingMm: 4,
+        maxNearestNodeSearchRings: 1,
+        sdf,
+        diskHeight: 0.25,
+        coneHeight: 0.25,
+        rootsRadius: 1.5,
+        shaftRadius: 0.75,
+        clearance: 1,
+        maxAngleFromVerticalDeg: 80,
+        coneScoring: {
+            tipPos: { x: 0, y: 0, z: 0 },
+            tipNormal: { x: 0, y: 0, z: 1 },
+            tipProfile: {
+                type: 'disk',
+                contactDiameterMm: 0.3,
+                bodyDiameterMm: 0.9,
+                lengthMm: 1.2,
+                penetrationMm: 0.15,
+                diskThicknessMm: 0.1,
+                maxStandoffMm: 0.35,
+                standoffAngleThreshold: Math.PI / 4,
+            },
+        },
+    });
+    const jointedRescue = findMixedSocketRescueCandidate({
+        socketPos: { x: 0, y: 0, z: 10 },
+        rootTopZ: 2,
+        maxTotalLateralMm: 1,
+        gridEnabled: false,
+        spacingMm: 4,
+        maxNearestNodeSearchRings: 1,
+        sdf,
+        diskHeight: 1,
+        coneHeight: 1,
+        rootsRadius: 1.5,
+        shaftRadius: 0.75,
+        clearance: 1,
+        maxAngleFromVerticalDeg: 80,
+        coneScoring: {
+            tipPos: { x: 0, y: 0, z: 0 },
+            tipNormal: { x: 0, y: 0, z: 1 },
+            tipProfile: {
+                type: 'disk',
+                contactDiameterMm: 0.3,
+                bodyDiameterMm: 0.9,
+                lengthMm: 1.2,
+                penetrationMm: 0.15,
+                diskThicknessMm: 0.1,
+                maxStandoffMm: 0.35,
+                standoffAngleThreshold: Math.PI / 4,
+            },
+        },
+        requireJoint: true,
+    });
+
+    assert.ok(zeroJointRescue);
+    assert.equal(zeroJointRescue!.joints.length, 0);
+    assert.ok(jointedRescue);
+    assert.ok(jointedRescue!.joints.length >= 1);
 });
 
 test('findMixedSocketRescueCandidate keeps the lower shaft under the last deviation instead of snapping back to the original socket column', () => {
@@ -173,7 +234,7 @@ test('findMixedSocketRescueCandidate keeps the lower shaft under the last deviat
         maxAngleFromVerticalDeg: 80,
         coneScoring: {
             tipPos: { x: 0, y: 0, z: 0 },
-            tipNormal: { x: 1, y: 0, z: 0 },
+            tipNormal: { x: 0, y: 0, z: 1 },
             tipProfile: {
                 type: 'disk',
                 contactDiameterMm: 0.3,

@@ -13,11 +13,48 @@ export interface GridAStarDebugPassSnapshot {
     simplifiedPath: Vec3[];
 }
 
+export interface SupportPathfindingDebugEvent {
+    stage: string;
+    severity: 'info' | 'success' | 'warning' | 'error';
+    message: string;
+    details?: string;
+}
+
+export interface SupportPathfindingConeDebugMetrics {
+    nominalClear: boolean;
+    activeClear: boolean;
+    activeDiskAngleDeg: number;
+    maxDiskAngleDeg: number;
+    activeConeLengthMm: number;
+    activeAddedLengthMm: number;
+    stretchLimitExceeded: boolean;
+    diskAngleLimitExceeded: boolean;
+}
+
+export interface SupportPathfindingSearchDebugEnvelope {
+    maxTotalLateralMm: number;
+    rescueRadiiMm: number[];
+    rootTopZ: number;
+    clearanceMm: number;
+}
+
+export interface SupportPathfindingDebugOutcome {
+    status: 'pending' | 'placed' | 'straight' | 'routed' | 'fallback' | 'blocked' | 'preview';
+    reason: string;
+}
+
 export interface SupportPathfindingDebugSnapshot {
     modelId: string;
     socketPos: Vec3;
+    nominalSocketPos?: Vec3;
     rootTopZ: number;
     clearanceMm: number;
+    basePos?: Vec3;
+    finalChain?: Vec3[];
+    outcome?: SupportPathfindingDebugOutcome;
+    cone?: SupportPathfindingConeDebugMetrics;
+    envelope?: SupportPathfindingSearchDebugEnvelope;
+    events?: SupportPathfindingDebugEvent[];
     passes: GridAStarDebugPassSnapshot[];
     updatedAtMs: number;
 }
