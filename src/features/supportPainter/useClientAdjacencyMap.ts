@@ -183,7 +183,7 @@ export function proposeRegionOnClient(
     case 'Ridge':
       return walkRidge(map, seedFaceIndex, localUp, customBrush);
     case 'RoughEdge':
-      return walkRoughEdge(map, seedFaceIndex, localUp);
+      return walkRoughEdge(map, seedFaceIndex, localUp, customBrush);
     case 'SoftRidge':
       return walkSoftRidge(map, seedFaceIndex, localUp, customBrush);
     case 'Point':
@@ -506,7 +506,12 @@ function walkRidge(
   return Array.from(visited).filter((idx) => idx === seed || map.faceNormals[idx].dot(localUp) <= 0.2);
 }
 
-export function walkRoughEdge(map: ClientAdjacencyMap, seed: number, localUp: THREE.Vector3): number[] {
+export function walkRoughEdge(
+  map: ClientAdjacencyMap,
+  seed: number,
+  localUp: THREE.Vector3,
+  customBrush?: CustomBrushTemplate
+): number[] {
   const visited = new Set<number>();
   const seedNormal = map.faceNormals[seed];
   if (seedNormal.dot(localUp) > 0.2) return [];
@@ -530,8 +535,8 @@ export function walkRoughEdge(map: ClientAdjacencyMap, seed: number, localUp: TH
     return count > 0 ? varianceSum / count : 0;
   };
 
-  // High entropy means rough edge. Smooth region < 0.05, rough edge > 0.15.
-  const ENTROPY_THRESHOLD = 0.08;
+  const selection = customBrush?.selection;
+  const ENTROPY_THRESHOLD = selection?.roughnessThreshold ?? 0.08;
 
   const queue: number[] = [seed];
   visited.add(seed);

@@ -120,8 +120,14 @@ const presets: Record<BrushType, Partial<CustomBrushTemplate['selection']>> = {
     markerEraserMode: false,
     markerCollisionMode: 'fence',
   },
-  CylinderSides: {},
-  CylinderMinima: {},
+  RoughEdge: {
+    roughnessThreshold: 0.08,
+  },
+  SoftRidge: {
+    creaseSeedAngleDeg: 1.5,
+    creasePropagateAngleDeg: 0.5,
+    ridgeAlignmentTolerance: 0.3,
+  },
   ManualCircle: {},
   ManualSquare: {},
   PointPath: {
@@ -158,6 +164,7 @@ const DEFAULT_TEMPLATE: CustomBrushTemplate = {
     markerTipRotationDeg: 0,
     markerEraserMode: false,
     markerCollisionMode: 'fence',
+    roughnessThreshold: 0.08,
   },
   operations: [...DEFAULT_OPERATIONS],
 };
@@ -323,6 +330,8 @@ export function CustomBrushModal({
                       <option value="Ring">Horizontal Ring (Ring)</option>
                       <option value="Marker">Rotated Tip Marker (Marker)</option>
                       <option value="PointPath">Point Path & Closed Loop (PointPath)</option>
+                      <option value="SoftRidge">Soft Ridge Line (SoftRidge)</option>
+                      <option value="RoughEdge">Rough Edge Boundary (RoughEdge)</option>
                     </select>
                   </div>
 
@@ -359,7 +368,7 @@ export function CustomBrushModal({
                   Preset Starting Templates
                 </label>
                 <div className="flex gap-2">
-                  {(['MacroFace', 'Ridge', 'Point', 'Ring', 'Marker', 'PointPath'] as BrushType[]).map(type => (
+                  {(['MacroFace', 'Ridge', 'Point', 'Ring', 'Marker', 'PointPath', 'SoftRidge', 'RoughEdge'] as BrushType[]).map(type => (
                     <button
                       key={type}
                       type="button"
@@ -504,8 +513,8 @@ export function CustomBrushModal({
                 </div>
               )}
 
-              {/* Ridge base style controls */}
-              {brush.baseBrush === 'Ridge' && (
+              {/* Ridge & SoftRidge base style controls */}
+              {(brush.baseBrush === 'Ridge' || brush.baseBrush === 'SoftRidge') && (
                 <div className="flex flex-col gap-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="flex flex-col gap-1.5 text-xs">
@@ -569,6 +578,31 @@ export function CustomBrushModal({
                         />
                         <span className="font-bold min-w-[32px] text-right">
                           {(brush.selection.ridgeAlignmentTolerance ?? 0.3).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* RoughEdge base style controls */}
+              {brush.baseBrush === 'RoughEdge' && (
+                <div className="flex flex-col gap-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5 text-xs">
+                      <span className="font-semibold text-gray-300">Roughness (Entropy) Threshold</span>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="0.01"
+                          max="0.30"
+                          step="0.01"
+                          value={safeNum(brush.selection.roughnessThreshold, 0.08)}
+                          onChange={e => updateSelection({ roughnessThreshold: parseFloat(e.target.value) })}
+                          className="flex-1 accent-accent cursor-pointer"
+                        />
+                        <span className="font-bold min-w-[32px] text-right">
+                          {safeNum(brush.selection.roughnessThreshold, 0.08).toFixed(2)}
                         </span>
                       </div>
                     </div>

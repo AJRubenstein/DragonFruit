@@ -56,14 +56,14 @@ const BRUSH_DETAILS: Record<
     desc: 'Geodesic circular brush',
     icon: CircleDot,
   },
-  CylinderSides: {
-    label: 'Cyl. Sides',
-    desc: 'Paint cylinder side bands',
+  RoughEdge: {
+    label: 'Rough Edge',
+    desc: 'Paint tattered edge crease',
     icon: Cylinder,
   },
-  CylinderMinima: {
-    label: 'Cyl. Minima',
-    desc: 'Trace bottom cylinder spine',
+  SoftRidge: {
+    label: 'Soft Ridge',
+    desc: 'Trace bottom soft ridge spine',
     icon: GitCommit,
   },
   Ring: {
@@ -209,7 +209,7 @@ export function SupportPainterPanel({
 
   const getDefaultPipeline = (brushType: BrushType): CustomSupportOperation[] => {
     const isPointPathOrMarker = brushType === 'PointPath' || brushType === 'Marker';
-    const isLineBrush = brushType === 'Ridge' || brushType === 'CylinderMinima' || (
+    const isLineBrush = brushType === 'Ridge' || brushType === 'SoftRidge' || (
       brushType === 'PointPath' && state.pointPathMode === 'line' && !state.pointPathClosed
     );
 
@@ -283,7 +283,7 @@ export function SupportPainterPanel({
       
       if (region.support) {
         const isPointPathOrMarker = region.brushType === 'PointPath' || region.brushType === 'Marker';
-        const isLineBrush = region.brushType === 'Ridge' || region.brushType === 'CylinderMinima' || (
+        const isLineBrush = region.brushType === 'Ridge' || region.brushType === 'SoftRidge' || (
           region.brushType === 'PointPath' && region.brush?.parameters?.pointPathMode === 'line'
         );
         const params = region.support.parameters;

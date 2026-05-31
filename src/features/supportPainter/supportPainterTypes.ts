@@ -63,6 +63,7 @@ export interface CustomBrushTemplate {
     ridgeAlignmentTolerance?: number;    // Ridge: path direction dot product limit
     geodesicPathType?: 'circle' | 'square'; // Point: Dijkstra vs Tangent clamp
     zHeightEnvelopeToleranceMm?: number; // Ring: Z window tolerance
+    roughnessThreshold?: number;         // RoughEdge: entropy/roughness threshold
 
     // Marker-specific parameters
     markerRadiusMm?: number;
