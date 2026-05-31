@@ -320,3 +320,106 @@ export interface VoxlROIExtension {
   modelId:  string;            // UUID of the model these ROIs belong to
   regions:  VoxlROIRegion[];
 }
+
+/**
+ * Upgrades a pipeline of CustomSupportOperations to ensure all standard operations
+ * (minima, perimeter, infill, centerline) are present, in the correct order.
+ * This is crucial for backward-compatibility with legacy VOXL formats or older custom brushes.
+ */
+export function upgradePipeline(
+  ops: CustomSupportOperation[] | undefined,
+  brushType: BrushType,
+  defaultSpacing: number = 4.0
+): CustomSupportOperation[] {
+  const isPointPathOrMarker = brushType === 'PointPath' || brushType === 'Marker';
+  const isLineBrush = brushType === 'Ridge' || brushType === 'CylinderMinima' || brushType === 'PointPath';
+
+  const standardTypes: ('minima' | 'perimeter' | 'infill' | 'centerline')[] = [
+    'minima',
+    'perimeter',
+    'infill',
+    'centerline',
+  ];
+
+  const defaultOps: Record<'minima' | 'perimeter' | 'infill' | 'centerline', CustomSupportOperation> = {
+    minima: {
+      type: 'minima',
+      enabled: !isPointPathOrMarker && !isLineBrush,
+      suppression: {
+        enabled: true,
+        distanceMm: defaultSpacing,
+        suppressAgainst: ['minima'],
+      },
+      spacing: {
+        baseSpacingMm: defaultSpacing,
+      },
+    },
+    perimeter: {
+      type: 'perimeter',
+      enabled: !isPointPathOrMarker && !isLineBrush,
+      suppression: {
+        enabled: false,
+        distanceMm: defaultSpacing,
+        suppressAgainst: [],
+      },
+      spacing: {
+        baseSpacingMm: defaultSpacing,
+        solverMode: 'standard',
+        useInflectionPoints: false,
+      },
+    },
+    infill: {
+      type: 'infill',
+      enabled: !isLineBrush,
+      suppression: {
+        enabled: true,
+        distanceMm: defaultSpacing,
+        suppressAgainst: ['minima', 'perimeter', 'infill'],
+      },
+      spacing: {
+        baseSpacingMm: defaultSpacing,
+        infillPattern: 'PoissonDisc',
+        seedFromMinima: true,
+      },
+    },
+    centerline: {
+      type: 'centerline',
+      enabled: isLineBrush,
+      suppression: {
+        enabled: true,
+        distanceMm: defaultSpacing,
+        suppressAgainst: ['minima', 'perimeter', 'infill', 'centerline'],
+      },
+      spacing: {
+        baseSpacingMm: defaultSpacing,
+        seedFromMinima: true,
+      },
+    },
+  };
+
+  const inputOps = ops || [];
+
+  return standardTypes.map(type => {
+    const existing = inputOps.find(op => op.type === type);
+    if (existing) {
+      const mergedSuppression = {
+        enabled: existing.suppression?.enabled ?? defaultOps[type].suppression.enabled,
+        distanceMm: existing.suppression?.distanceMm ?? defaultOps[type].suppression.distanceMm,
+        suppressAgainst: existing.suppression?.suppressAgainst ?? defaultOps[type].suppression.suppressAgainst,
+      };
+      
+      return {
+        ...defaultOps[type],
+        ...existing,
+        suppression: mergedSuppression,
+        spacing: {
+          ...defaultOps[type].spacing,
+          ...existing.spacing,
+        },
+      };
+    } else {
+      return defaultOps[type];
+    }
+  });
+}
+

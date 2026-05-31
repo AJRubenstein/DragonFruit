@@ -3,6 +3,7 @@ import {
   type VoxlROIExtension,
   type VoxlROIRunLength,
   type VoxlROIRegion,
+  upgradePipeline,
 } from './supportPainterTypes';
 
 // ─── RLE Codec for Persistent ROIs [RLE_CODEC] ───
@@ -110,6 +111,11 @@ export function deserializeROIsFromVoxl(
       ? decompressRLE(r.rleSpans)
       : [];
 
+    const customBrush = r.customBrush ? {
+      ...r.customBrush,
+      operations: upgradePipeline(r.customBrush.operations, r.brushType),
+    } : undefined;
+
     modelMap.set(r.id, {
       id: r.id,
       brushType: r.brushType,
@@ -126,7 +132,7 @@ export function deserializeROIsFromVoxl(
       loadedFromVoxl: true,
       placedCount: r.placedCount,
       attemptedCount: r.attemptedCount,
-      customBrush: r.customBrush, // Safely deserialized V3 field
+      customBrush,
     });
   }
   return result;

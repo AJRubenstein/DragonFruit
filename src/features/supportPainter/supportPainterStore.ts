@@ -14,6 +14,7 @@ import {
   type LocalMinimum,
   type CustomSupportOperation,
   BRUSH_COLORS,
+  upgradePipeline,
 } from './supportPainterTypes';
 import { type ClientAdjacencyMap, proposeRegionOnClient } from './useClientAdjacencyMap';
 import { deserializeROIsFromVoxl } from './voxlCodec';
@@ -114,7 +115,11 @@ function loadCustomBrushesFromLocalStorage() {
         const list = JSON.parse(raw) as CustomBrushTemplate[];
         customBrushes.clear();
         for (const brush of list) {
-          customBrushes.set(brush.id, brush);
+          const upgradedBrush = {
+            ...brush,
+            operations: upgradePipeline(brush.operations, brush.baseBrush || 'MacroFace'),
+          };
+          customBrushes.set(brush.id, upgradedBrush);
         }
       }
     }

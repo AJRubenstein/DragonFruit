@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { Card, CardHeader, IconButton, Button, Toast, ToastViewport } from '@/components/ui/primitives';
 import { supportPainterStore, useSupportPainterState } from '../supportPainterStore';
-import { type BrushType, type CustomBrushTemplate, type CustomSupportOperation, BRUSH_COLORS } from '../supportPainterTypes';
+import { type BrushType, type CustomBrushTemplate, type CustomSupportOperation, BRUSH_COLORS, upgradePipeline } from '../supportPainterTypes';
 import { generateSupportsFromPainter, regenerateSupportsForRoi } from '../supportScriptingEngine';
 import { subscribeToSettings, getSettings } from '@/supports/Settings';
 import {
@@ -1448,7 +1448,8 @@ export function SupportPainterPanel({
             size="sm"
             onClick={() => {
               const activeCustomBrush = state.activeCustomBrushId ? state.customBrushes.get(state.activeCustomBrushId) : undefined;
-              const currentPipeline = state.activeBrushPipeline || (activeCustomBrush?.operations) || getDefaultPipeline(state.activeBrush);
+              const rawPipeline = state.activeBrushPipeline || (activeCustomBrush?.operations) || getDefaultPipeline(state.activeBrush);
+              const currentPipeline = upgradePipeline(rawPipeline, state.activeBrush, defaultSpacing);
               setEditingPipeline(JSON.parse(JSON.stringify(currentPipeline)));
               setPipelineEditingContext('active');
             }}
@@ -1876,7 +1877,8 @@ export function SupportPainterPanel({
                       onClick={() => {
                         const selectedRegion = state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null;
                         if (selectedRegion) {
-                          const currentPipeline = selectedRegion.customBrush?.operations || getDefaultPipeline(selectedRegion.brushType);
+                          const rawPipeline = selectedRegion.customBrush?.operations || getDefaultPipeline(selectedRegion.brushType);
+                          const currentPipeline = upgradePipeline(rawPipeline, selectedRegion.brushType, defaultSpacing);
                           setEditingPipeline(JSON.parse(JSON.stringify(currentPipeline)));
                           setPipelineEditingContext('roi');
                         }

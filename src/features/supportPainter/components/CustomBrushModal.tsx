@@ -9,7 +9,7 @@ import { IconButton, Button } from '@/components/ui/primitives';
 import { SymmetricalClockWidget } from './SymmetricalClockWidget';
 import { OverhangArcGauge } from './OverhangArcGauge';
 import { SupportPipelineEditor } from './SupportPipelineEditor';
-import { type CustomBrushTemplate, type CustomSupportOperation, type BrushType } from '../supportPainterTypes';
+import { type CustomBrushTemplate, type CustomSupportOperation, type BrushType, upgradePipeline } from '../supportPainterTypes';
 
 const safeNum = (val: number | undefined, fallback: number): number => {
   return val === undefined || isNaN(val) ? fallback : val;
@@ -175,7 +175,7 @@ export function CustomBrushModal({
         ...initialBrush,
         baseBrush: initialBrush.baseBrush || 'MacroFace',
         selection: { ...DEFAULT_TEMPLATE.selection, ...initialBrush.selection },
-        operations: initialBrush.operations.map(op => ({
+        operations: upgradePipeline(initialBrush.operations, initialBrush.baseBrush || 'MacroFace').map(op => ({
           ...op,
           suppression: { ...op.suppression, suppressAgainst: [...op.suppression.suppressAgainst] },
           spacing: { ...op.spacing, sequence: op.spacing.sequence ? [...op.spacing.sequence] : undefined },
