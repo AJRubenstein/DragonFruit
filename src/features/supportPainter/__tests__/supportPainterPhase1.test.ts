@@ -131,7 +131,14 @@ describe('Support Painter Phase 1 - Custom Brush Store & Codec Tests', () => {
     const expectedBrush = {
       ...mockBrush,
       operations: [
-        ...mockBrush.operations,
+        {
+          ...mockBrush.operations[0],
+          spacing: {
+            ...mockBrush.operations[0].spacing,
+            attemptLeafCreation: false,
+          },
+        },
+        mockBrush.operations[1],
         {
           type: 'infill',
           enabled: true,

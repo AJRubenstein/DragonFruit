@@ -29,6 +29,9 @@ export interface CustomSupportOperation {
     // Infill-specific configurations
     infillPattern?: 'PoissonDisc' | 'Grid' | 'Honeycomb' | 'Concentric';
     seedFromMinima?: boolean;
+    
+    // Minima-specific leaf creation configurations
+    attemptLeafCreation?: boolean;
   };
 }
 
@@ -365,6 +368,7 @@ export function upgradePipeline(
       },
       spacing: {
         baseSpacingMm: defaultSpacing,
+        attemptLeafCreation: isMinimaIslands,
       },
     },
     perimeter: {

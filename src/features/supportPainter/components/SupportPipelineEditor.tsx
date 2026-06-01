@@ -178,7 +178,7 @@ export function SupportPipelineEditor({
                       <div className="grid grid-cols-2 gap-3">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-1.5 justify-between w-full">
-                            <span>Base Spacing (mm)</span>
+                            <span>{op.type === 'minima' && op.spacing.attemptLeafCreation ? 'Leaf Search Interval (mm)' : 'Base Spacing (mm)'}</span>
                             {compOp && compOp.spacing.baseSpacingMm !== op.spacing.baseSpacingMm && (
                               <span className="text-[9px] text-[#A5A6B5] font-semibold bg-black/35 px-1.5 py-0.5 rounded">
                                 Last: {compOp.spacing.baseSpacingMm.toFixed(1)} mm
@@ -211,6 +211,29 @@ export function SupportPipelineEditor({
                             }}
                           />
                         </div>
+                        
+                        {/* Minima-specific fields */}
+                        {op.type === 'minima' && (
+                          <div className="col-span-2 flex flex-col gap-1.5 mt-1 border-b pb-3" style={{ borderColor: 'var(--border-subtle, #2d3748)' }}>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={op.spacing.attemptLeafCreation || false}
+                                onChange={e =>
+                                  updateOpSpacing(index, { attemptLeafCreation: e.target.checked })
+                                }
+                                className="w-4 h-4 rounded accent-accent cursor-pointer"
+                                id={`leaf-check-${op.type}`}
+                              />
+                              <label htmlFor={`leaf-check-${op.type}`} className="cursor-pointer font-medium select-none text-[11px] text-gray-200">
+                                Attempt leaf support creation for Z-minima
+                              </label>
+                            </div>
+                            <p className="text-[10px] text-gray-400 leading-normal pl-6">
+                              When enabled, Z-minima points that fall within the search interval of an already successfully placed support trunk will branch off as a lightweight leaf contact cone instead of creating a full, separate vertical column.
+                            </p>
+                          </div>
+                        )}
 
                         {/* Perimeter-specific fields */}
                         {op.type === 'perimeter' && (

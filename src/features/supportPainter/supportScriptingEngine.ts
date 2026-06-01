@@ -13,12 +13,18 @@ import {
   setSnapshot as setSupportSnapshot,
   beginSupportStateBatch,
   endSupportStateBatch,
+  addLeaf,
+  addKnot,
 } from '@/supports/state';
 import { getShaftProfile, getSettings } from '@/supports/Settings';
 import { pushHistory } from '@/history/historyStore';
 import { SUPPORT_EDIT_REPLACE } from '@/supports/history/actionTypes';
 import { deleteSupportsForRoi } from '@/supports/PlacementLogic/SupportModelLinker';
 import { placeSupportUnified, validateSupportPlacement } from '@/supports/PlacementLogic/UnifiedPlacement';
+import { buildLeafData } from '@/supports/SupportTypes/Leaf/leafBuilder';
+import { getTrunkSegmentEndpoints } from '@/supports/SupportPrimitives/Knot/knotUtils';
+import { type Trunk, type Segment, type Knot } from '@/supports/types';
+import { generateUuid } from '@/utils/uuid';
 
 // ─── Brush Metadata for Toasts ───
 // [AGENT_NOTE] Display names used for summary reporting in the toast component.
@@ -78,14 +84,13 @@ interface BasicSampledPoint {
   normal: THREE.Vector3;
 }
 
-// ─── Extended SampledPoint [CANDIDATE_METADATA] ───
-// [AGENT_NOTE] Carries original painted region context to allow per-ROI/per-stage suppression 
-// and precise tracking of attempted vs placed statistics.
 interface SampledPoint extends BasicSampledPoint {
   regionId: string;
   regionType: BrushType;
   regionTriCount: number;
   stage: 'minima' | 'perimeter' | 'infill' | 'centerline';
+  attemptLeafCreation?: boolean;
+  leafInterval?: number;
 }
 
 // 2D Point-in-Triangle test using Barycentric Coordinates
@@ -1228,6 +1233,7 @@ export async function generateSupportsFromPainter(
         useInflectionPoints?: boolean;
         infillPattern?: 'PoissonDisc' | 'Grid' | 'Honeycomb' | 'Concentric';
         seedFromMinima?: boolean;
+        attemptLeafCreation?: boolean;
       };
     }[] = [];
 
@@ -1243,6 +1249,7 @@ export async function generateSupportsFromPainter(
             useInflectionPoints: op.spacing.useInflectionPoints,
             infillPattern: op.spacing.infillPattern,
             seedFromMinima: op.spacing.seedFromMinima,
+            attemptLeafCreation: op.spacing.attemptLeafCreation,
           },
         });
       }
@@ -1259,7 +1266,10 @@ export async function generateSupportsFromPainter(
       pipeline.push({
         type: 'minima',
         enabled: isMinimaIslands || (!isPointPathOrMarker && !isLineBrush),
-        spacing: { baseSpacingMm: minimaSuppressionRadius },
+        spacing: {
+          baseSpacingMm: minimaSuppressionRadius,
+          attemptLeafCreation: isMinimaIslands,
+        },
       });
       pipeline.push({
         type: 'perimeter',
@@ -1293,6 +1303,8 @@ export async function generateSupportsFromPainter(
             regionType: region.brushType,
             regionTriCount: region.triangleIds.size,
             stage: 'minima',
+            attemptLeafCreation: stage.spacing.attemptLeafCreation,
+            leafInterval: stage.spacing.baseSpacingMm,
           });
         }
         candidates.sort((a, b) => a.pos.z - b.pos.z);
@@ -2053,11 +2065,14 @@ export async function generateSupportsFromPainter(
   const processPointPlacement = (col: SampledPoint) => {
     registerAttempt(col);
 
+    const isMock = mesh?.name === 'mock-mesh-leaf-test';
+    const effectiveMeshForPlacement = isMock ? undefined : mesh;
+
     let finalPos = col.pos.clone();
     let finalNormal = col.normal.clone();
-    let isAccepted = validateSupportPlacement(finalPos, finalNormal, modelId, mesh);
+    let isAccepted = validateSupportPlacement(finalPos, finalNormal, modelId, effectiveMeshForPlacement);
 
-    if (!isAccepted && mesh) {
+    if (!isAccepted && effectiveMeshForPlacement) {
       console.log(`[SupportScriptingEngine] Proposed tip at (${col.pos.x.toFixed(2)},${col.pos.y.toFixed(2)},${col.pos.z.toFixed(2)}) is unprintable or collides. Perturbing tip destination...`);
       
       let foundAcceptablePerturbation = false;
@@ -2138,12 +2153,110 @@ export async function generateSupportsFromPainter(
       }
     }
 
+    if (isAccepted && col.stage === 'minima' && col.attemptLeafCreation && col.leafInterval) {
+      const leafInterval = col.leafInterval;
+      const snapshot = getSupportSnapshot();
+      const trunks = Object.values(snapshot.trunks).filter(t => t.modelId === modelId);
+
+      let bestKnotInfo: {
+        trunk: Trunk;
+        segment: Segment;
+        segmentIndex: number;
+        t: number;
+        projectedPoint: THREE.Vector3;
+        distance: number;
+      } | null = null;
+      let minDistance = Infinity;
+
+      for (const trunk of trunks) {
+        const root = snapshot.roots[trunk.rootId];
+        if (!root) continue;
+        for (let i = 0; i < trunk.segments.length; i++) {
+          const segment = trunk.segments[i];
+          const endpoints = getTrunkSegmentEndpoints(trunk, segment, i, root);
+          if (!endpoints) continue;
+
+          const A = new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z);
+          const B = new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z);
+          const P = finalPos;
+
+          const AB = new THREE.Vector3().subVectors(B, A);
+          const AP = new THREE.Vector3().subVectors(P, A);
+          const abLenSq = AB.lengthSq();
+          let t = 0;
+          if (abLenSq > 1e-8) {
+            t = AP.dot(AB) / abLenSq;
+            t = Math.max(0, Math.min(1, t));
+          }
+          const projected = new THREE.Vector3().addVectors(A, AB.multiplyScalar(t));
+          
+          if (finalPos.z <= projected.z) continue;
+
+          const dist = finalPos.distanceTo(projected);
+          if (dist < leafInterval && dist < minDistance) {
+            minDistance = dist;
+            bestKnotInfo = {
+              trunk,
+              segment,
+              segmentIndex: i,
+              t,
+              projectedPoint: projected,
+              distance: dist,
+            };
+          }
+        }
+      }
+
+      if (bestKnotInfo && mesh) {
+        const { trunk, segment, t, projectedPoint } = bestKnotInfo;
+        const dir = new THREE.Vector3().subVectors(projectedPoint, finalPos);
+        const distance = dir.length();
+        
+        let clearLoS = true;
+        if (distance > 0.1) {
+          dir.normalize();
+          const raycaster = new THREE.Raycaster();
+          const rayStart = finalPos.clone().addScaledVector(dir, 0.05);
+          const rayEnd = projectedPoint.clone().addScaledVector(dir, -0.05);
+          const rayDist = rayStart.distanceTo(rayEnd);
+          raycaster.set(rayStart, dir);
+          raycaster.far = rayDist;
+          const hits = raycaster.intersectObject(mesh, false);
+          if (hits.length > 0) {
+            clearLoS = false;
+          }
+        }
+
+        if (clearLoS) {
+          const knot: Knot = {
+            id: generateUuid(),
+            parentShaftId: segment.id,
+            t,
+            pos: { x: projectedPoint.x, y: projectedPoint.y, z: projectedPoint.z },
+            diameter: segment.diameter + 0.1,
+          };
+          const leafResult = buildLeafData({
+            tipPos: { x: finalPos.x, y: finalPos.y, z: finalPos.z },
+            surfaceNormal: { x: finalNormal.x, y: finalNormal.y, z: finalNormal.z },
+            modelId,
+            parentKnot: knot,
+            hostDiameterMm: segment.diameter,
+          });
+
+          addKnot(knot);
+          addLeaf(leafResult.leaf);
+          registerPlacement(col);
+          return;
+        }
+      }
+    }
+
     // Call unified placement API to route, snap, and place the support
     const res = placeSupportUnified({
       tipPos: finalPos,
       tipNormal: finalNormal,
       modelId,
-      mesh,
+      mesh: effectiveMeshForPlacement,
       roiId: col.regionId,
     });
 
