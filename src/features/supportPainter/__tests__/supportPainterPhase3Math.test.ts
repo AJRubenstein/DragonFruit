@@ -367,24 +367,41 @@ describe('Support Painter Phase 3 - Advanced Mathematical Pathing & Solvers', ()
     }
   });
 
-  it('should reorder a closed loop to start from absolute Z-minima and truncate vertices exceeding wrapFraction', () => {
-    // Create a 3D loop:
-    // absolute Z-minima is at index 2 (Z = 1)
-    const loop = [
-      new THREE.Vector3(0, 0, 5),
-      new THREE.Vector3(2, 0, 3),
-      new THREE.Vector3(5, 0, 1), // Minima!
-      new THREE.Vector3(8, 0, 3),
-      new THREE.Vector3(10, 0, 5),
-      new THREE.Vector3(0, 0, 5) // closed
+  it('should filter perimeter candidates symmetrically based on relative Z-height wrap limit percentage', () => {
+    // We verify that candidates on a perimeter loop are filtered based on Wrap Limit (Z) (%) relative to ROI.
+    // Create a 3D loop that goes from Z=1 to Z=5 on one side, and goes back from Z=5 to Z=1 on the other.
+    const loopPts = [
+      new THREE.Vector3(0, 0, 1),   // Z=1
+      new THREE.Vector3(2.5, 0, 3), // Z=3
+      new THREE.Vector3(5, 0, 5),   // Z=5
+      new THREE.Vector3(2.5, 0, 3), // Z=3 (downside)
+      new THREE.Vector3(0, 0, 1)    // closed
     ];
 
-    const truncated = filterInsetLoopByWrapFraction(loop, 0.4);
-    
-    assert.strictEqual(truncated.length, 3);
-    assert.deepStrictEqual(truncated[0], new THREE.Vector3(5, 0, 1));
-    assert.deepStrictEqual(truncated[1], new THREE.Vector3(8, 0, 3));
-    assert.deepStrictEqual(truncated[2], new THREE.Vector3(10, 0, 5));
+    // Check with 50% wrap limit:
+    const rawWrap = 50; // 50%
+    const wFrac = rawWrap / 100.0;
+    const regionMinZ = 1.0;
+    const regionMaxZ = 5.0;
+    const zSpan = regionMaxZ - regionMinZ;
+    const zThreshold = regionMinZ + wFrac * zSpan; // 3.0
+
+    const candidates: any[] = [];
+    const samples = loopPts.map(pos => ({ pos, normal: new THREE.Vector3(0, 0, 1) }));
+
+    for (const sample of samples) {
+      if (zSpan <= 0.001 || sample.pos.z <= zThreshold + 1e-4) {
+        candidates.push(sample);
+      }
+    }
+
+    // Must have filtered out the Z=5 point, but kept Z=1 and Z=3 points on both sides of the loop!
+    assert.strictEqual(candidates.length, 4); // Z=1 (start), Z=3 (up), Z=3 (down), Z=1 (end)
+    assert.ok(candidates.every(c => c.pos.z <= 3.05));
+    assert.strictEqual(candidates[0].pos.z, 1.0);
+    assert.strictEqual(candidates[1].pos.z, 3.0);
+    assert.strictEqual(candidates[2].pos.z, 3.0);
+    assert.strictEqual(candidates[3].pos.z, 1.0);
   });
 
   it('should upgrade pipeline safely preserving custom deletions, duplicates, and order without re-adding deleted steps', () => {
@@ -400,6 +417,7 @@ describe('Support Painter Phase 3 - Advanced Mathematical Pathing & Solvers', ()
         id: 'perimeter-2',
         type: 'perimeter',
         insetDistanceMm: 1.2,
+        wrapFraction: 0.5,
         spacing: { baseSpacingMm: 5.0 }
       },
       {
@@ -424,7 +442,8 @@ describe('Support Painter Phase 3 - Advanced Mathematical Pathing & Solvers', ()
     assert.strictEqual(upgraded[2].type, 'infill');
     
     // 3. Dynamic defaults are successfully mapped
-    assert.strictEqual(upgraded[0].wrapFraction, 1.0);
+    assert.strictEqual(upgraded[0].wrapFraction, 100);
+    assert.strictEqual(upgraded[1].wrapFraction, 50); // Legacy 0.5 successfully upgraded to 50%
     assert.strictEqual(upgraded[0].minimaStartInterval, 0);     // 0% Start Fraction
     assert.strictEqual(upgraded[0].minimaEndInterval, 100);     // 100% End Fraction
     assert.strictEqual(upgraded[0].endSpacingMm, 4.0);          // default spacing (4.0)

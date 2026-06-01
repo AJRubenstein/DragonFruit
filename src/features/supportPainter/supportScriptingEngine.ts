@@ -1693,13 +1693,8 @@ export async function generateSupportsFromPainter(
 
           if (loopPts.length < 2) continue;
 
-          // B. Wrap Fraction Truncation Loop Filtering
-          const wrapFraction = (stage as any).wrapFraction ?? 1.0;
-          if (wrapFraction < 0.999) {
-            loopPts = filterInsetLoopByWrapFraction(loopPts, wrapFraction);
-          }
-
-          if (loopPts.length < 2) continue;
+          // B. Wrap Fraction Truncation Loop Filtering bypassed to avoid artificial open-loop bridging.
+          // Filtering is now performed post-sampling using the Z-height cutoff relative to the ROI.
 
           // C. Re-register points into uniqueVertices and vertexNormals
           const loopIndices: number[] = [];
@@ -1760,16 +1755,29 @@ export async function generateSupportsFromPainter(
             );
           }
 
+          // E. Filter samples by Wrap Limit Percentage (Z Cutoff)
+          const rawWrap = (stage as any).wrapFraction ?? 100;
+          // Support backward compatibility (if <= 1.0, treat as float, e.g. 0.5 -> 50%)
+          const wFrac = typeof rawWrap === 'number' ? (rawWrap > 1.0 ? rawWrap / 100.0 : rawWrap) : 1.0;
+
+          const zSpan = regionMaxZ - regionMinZ;
+          const zThreshold = regionMinZ + wFrac * zSpan;
+
           for (const sample of samples) {
-            candidates.push({
-              pos: sample.pos,
-              normal: sample.normal,
-              regionId: region.id,
-              regionType: region.brushType,
-              regionTriCount: region.triangleIds.size,
-              stage: 'perimeter',
-              supportPresetId: stage.supportPresetId,
-            });
+            const zRel = sample.pos.z - regionMinZ;
+
+            // Only keep supports within the Wrap Limit Z span
+            if (zSpan <= 0.001 || sample.pos.z <= zThreshold + 1e-4) {
+              candidates.push({
+                pos: sample.pos,
+                normal: sample.normal,
+                regionId: region.id,
+                regionType: region.brushType,
+                regionTriCount: region.triangleIds.size,
+                stage: 'perimeter',
+                supportPresetId: stage.supportPresetId,
+              });
+            }
           }
         }
         rawPerimeter.push(...candidates);

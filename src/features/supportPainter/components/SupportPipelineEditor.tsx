@@ -89,7 +89,7 @@ export function SupportPipelineEditor({
       supportPresetId: 'structure',
       isIntervalDirectlyEdited: false,
       insetDistanceMm: 0.0,
-      wrapFraction: 1.0,
+      wrapFraction: 100,
       enableZHeightDensity: false,
       minimaStartInterval: 0,
       minimaEndInterval: 100,
@@ -321,17 +321,17 @@ export function SupportPipelineEditor({
                             </div>
 
                             <div className="flex flex-col gap-1">
-                              <span>Wrap Fraction</span>
+                              <span>Wrap Limit (Z) (%)</span>
                               <input
                                 type="number"
-                                step="0.05"
-                                min="0.1"
-                                max="1.0"
-                                value={isNaN(op.wrapFraction ?? 1.0) ? '' : (op.wrapFraction ?? 1.0)}
+                                step="1"
+                                min="1"
+                                max="100"
+                                value={isNaN(op.wrapFraction ?? 100) ? '' : (op.wrapFraction ?? 100)}
                                 onChange={e => {
-                                  const val = parseFloat(e.target.value);
+                                  const val = parseInt(e.target.value, 10);
                                   updateOp(index, {
-                                    wrapFraction: isNaN(val) ? 1.0 : val,
+                                    wrapFraction: isNaN(val) ? 100 : val,
                                   });
                                 }}
                                 className="px-2.5 py-1.5 rounded border font-medium outline-none"

@@ -373,7 +373,9 @@ export function upgradePipeline(
       minimaStartInterval: op.minimaStartInterval ?? 0,     // Default to 0% Start Offset
       minimaEndInterval: op.minimaEndInterval ?? 100,       // Default to 100% End Offset
       endSpacingMm: op.endSpacingMm ?? defaultSpacing,      // Default to 4x trunk size
-      wrapFraction: op.wrapFraction ?? 1.0,
+      wrapFraction: op.wrapFraction !== undefined
+        ? (op.wrapFraction <= 1.0 ? Math.round(op.wrapFraction * 100) : op.wrapFraction)
+        : 100,
     }));
   }
 
@@ -455,7 +457,7 @@ export function upgradePipeline(
     minimaStartInterval: 0,
     minimaEndInterval: 100,
     endSpacingMm: defaultSpacing,
-    wrapFraction: 1.0,
+    wrapFraction: 100,
   }));
 }
 
