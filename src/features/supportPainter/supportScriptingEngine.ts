@@ -1,10 +1,12 @@
 import * as THREE from 'three';
+import ClipperLib from 'clipper-lib';
 import {
   type ROIRegion,
   type BrushType,
   type VoxlROIBoundaryLoop,
   type BrushMetadata,
   type SupportGenerationMetadata,
+  type CustomSupportOperation,
 } from './supportPainterTypes';
 import { supportPainterStore } from './supportPainterStore';
 import { compressRLE } from './voxlCodec';
@@ -138,7 +140,13 @@ function samplePolylineWithNormals(
   indices: number[],
   spacing: number,
   uniqueVertices: THREE.Vector3[],
-  vertexNormals: Map<number, THREE.Vector3>
+  vertexNormals: Map<number, THREE.Vector3>,
+  zDensityParams?: {
+    minimaZ: number;
+    maximaZ: number;
+    op: CustomSupportOperation;
+    activeTrunkDiameter: number;
+  }
 ): BasicSampledPoint[] {
   if (indices.length < 2) return [];
 
@@ -166,13 +174,22 @@ function samplePolylineWithNormals(
     segDir.normalize();
 
     let tSeg = 0;
-    while (accumulatedDist + (segLen - tSeg * segLen) >= spacing) {
-      const needed = spacing - accumulatedDist;
-      tSeg += needed / segLen;
-      const pos = new THREE.Vector3().lerpVectors(p0, p1, tSeg);
-      const normal = new THREE.Vector3().lerpVectors(n0, n1, tSeg).normalize();
-      samples.push({ pos, normal });
-      accumulatedDist = 0;
+    while (true) {
+      const currentPos = new THREE.Vector3().lerpVectors(p0, p1, tSeg);
+      const currentSpacing = zDensityParams
+        ? calculateZHeightDensitySpacing(currentPos.z, zDensityParams.minimaZ, zDensityParams.maximaZ, zDensityParams.op, zDensityParams.activeTrunkDiameter)
+        : spacing;
+
+      if (accumulatedDist + (segLen - tSeg * segLen) >= currentSpacing) {
+        const needed = currentSpacing - accumulatedDist;
+        tSeg += needed / segLen;
+        const pos = new THREE.Vector3().lerpVectors(p0, p1, tSeg);
+        const normal = new THREE.Vector3().lerpVectors(n0, n1, tSeg).normalize();
+        samples.push({ pos, normal });
+        accumulatedDist = 0;
+      } else {
+        break;
+      }
     }
     accumulatedDist += segLen * (1 - tSeg);
   }
@@ -289,19 +306,218 @@ export function sampleSequencePolyline(
   return samples;
 }
 
+function resampleLoopUniformly(
+  vertices: THREE.Vector3[],
+  normals: THREE.Vector3[],
+  stepSizeMm: number
+): { vertices: THREE.Vector3[]; normals: THREE.Vector3[] } {
+  if (vertices.length < 2) return { vertices: [...vertices], normals: [...normals] };
+
+  const resampledVertices: THREE.Vector3[] = [vertices[0].clone()];
+  const resampledNormals: THREE.Vector3[] = [normals[0].clone()];
+
+  let currentPt = vertices[0].clone();
+  let currentNormal = normals[0].clone();
+  let nextIdx = 1;
+
+  while (nextIdx < vertices.length) {
+    const nextPt = vertices[nextIdx];
+    const nextNormal = normals[nextIdx];
+    const d = currentPt.distanceTo(nextPt);
+
+    if (d >= stepSizeMm) {
+      const t = stepSizeMm / d;
+      const interpPt = new THREE.Vector3().lerpVectors(currentPt, nextPt, t);
+      const interpNormal = new THREE.Vector3().lerpVectors(currentNormal, nextNormal, t).normalize();
+
+      resampledVertices.push(interpPt);
+      resampledNormals.push(interpNormal);
+
+      currentPt.copy(interpPt);
+      currentNormal.copy(interpNormal);
+    } else {
+      currentPt.copy(nextPt);
+      currentNormal.copy(nextNormal);
+      nextIdx++;
+    }
+  }
+
+  // Ensure closed loop has the last point matching the first
+  if (resampledVertices.length > 1 && !resampledVertices[resampledVertices.length - 1].equals(resampledVertices[0])) {
+    if (resampledVertices[resampledVertices.length - 1].distanceTo(resampledVertices[0]) < stepSizeMm * 0.5) {
+      resampledVertices[resampledVertices.length - 1].copy(resampledVertices[0]);
+      resampledNormals[resampledNormals.length - 1].copy(resampledNormals[0]);
+    } else {
+      resampledVertices.push(resampledVertices[0].clone());
+      resampledNormals.push(resampledNormals[0].clone());
+    }
+  }
+
+  return { vertices: resampledVertices, normals: resampledNormals };
+}
+
+export function insetBoundaryLoop(
+  vertices3D: THREE.Vector3[],
+  planeNormal: THREE.Vector3,
+  planeCentroid: THREE.Vector3,
+  insetDistanceMm: number
+): THREE.Vector3[] {
+  if (insetDistanceMm <= 0.001) return [...vertices3D];
+
+  const tangentU = new THREE.Vector3(1, 0, 0).cross(planeNormal);
+  if (tangentU.lengthSq() < 1e-4) {
+    tangentU.copy(new THREE.Vector3(0, 1, 0).cross(planeNormal));
+  }
+  tangentU.normalize();
+  const tangentV = new THREE.Vector3().crossVectors(planeNormal, tangentU).normalize();
+
+  const SCALE = 100000;
+  const path = vertices3D.map(p => {
+    const rel = new THREE.Vector3().subVectors(p, planeCentroid);
+    return {
+      X: Math.round(rel.dot(tangentU) * SCALE),
+      Y: Math.round(rel.dot(tangentV) * SCALE)
+    };
+  });
+
+  const co = new ClipperLib.ClipperOffset();
+  co.AddPaths([path], ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
+  
+  const solution: { X: number; Y: number }[][] = [];
+  co.Execute(solution, -insetDistanceMm * SCALE);
+
+  if (solution.length === 0 || solution[0].length === 0) {
+    return [];
+  }
+
+  const insetLoop3D = solution[0].map(pt => {
+    const u = pt.X / SCALE;
+    const v = pt.Y / SCALE;
+    return new THREE.Vector3()
+      .copy(planeCentroid)
+      .addScaledVector(tangentU, u)
+      .addScaledVector(tangentV, v);
+  });
+
+  return insetLoop3D;
+}
+
+export function filterInsetLoopByWrapFraction(
+  insetLoop: THREE.Vector3[],
+  wrapFraction: number
+): THREE.Vector3[] {
+  if (insetLoop.length < 3 || wrapFraction >= 0.999) return insetLoop;
+
+  let minIdx = 0;
+  let minZ = insetLoop[0].z;
+  for (let i = 1; i < insetLoop.length; i++) {
+    if (insetLoop[i].z < minZ) {
+      minZ = insetLoop[i].z;
+      minIdx = i;
+    }
+  }
+
+  const reordered = [...insetLoop.slice(minIdx), ...insetLoop.slice(0, minIdx)];
+  reordered.push(reordered[0]);
+
+  const segmentLengths: number[] = [];
+  let totalLength = 0;
+  for (let i = 0; i < reordered.length - 1; i++) {
+    const len = reordered[i].distanceTo(reordered[i + 1]);
+    segmentLengths.push(len);
+    totalLength += len;
+  }
+
+  const maxAllowedDistance = totalLength * wrapFraction;
+  const filteredLoop: THREE.Vector3[] = [reordered[0]];
+
+  let accumulatedDist = 0;
+  for (let i = 0; i < reordered.length - 1; i++) {
+    accumulatedDist += segmentLengths[i];
+    if (accumulatedDist <= maxAllowedDistance) {
+      filteredLoop.push(reordered[i + 1]);
+    } else {
+      break;
+    }
+  }
+
+  return filteredLoop;
+}
+
+export function calculateZHeightDensitySpacing(
+  pointZ: number,
+  minimaZ: number,
+  maximaZ: number,
+  op: CustomSupportOperation,
+  activeTrunkDiameter: number
+): number {
+  if (!op.enableZHeightDensity) return op.spacing.baseSpacingMm;
+
+  const zRel = pointZ - minimaZ;
+  const zSpanROI = maximaZ - minimaZ;
+  
+  const rawZEnd = (op.minimaEndInterval === 'auto' || op.minimaEndInterval === undefined)
+    ? activeTrunkDiameter * 4.0
+    : op.minimaEndInterval;
+
+  const zEnd = Math.min(rawZEnd, zSpanROI);
+  const zStart = op.minimaStartInterval ?? 0.5;
+
+  if (zEnd <= zStart) {
+    return op.spacing.baseSpacingMm;
+  }
+
+  if (zRel <= zStart) {
+    return op.spacing.baseSpacingMm;
+  }
+
+  const t = Math.max(0.0, Math.min(1.0, (zRel - zStart) / (zEnd - zStart)));
+  let curveVal = t;
+
+  if (op.zFactorCurve === 'sigmoid') {
+    curveVal = 3 * t * t - 2 * t * t * t;
+  } else if (op.zFactorCurve === 'parabolic') {
+    curveVal = t * t;
+  }
+
+  const safeZFactor = Math.max(1.0, op.zFactor ?? 2.0);
+  const scaleFactor = 1.0 + curveVal * (safeZFactor - 1.0);
+  return op.spacing.baseSpacingMm * scaleFactor;
+}
+
 export function solvePerimeterWithInflections(
   indices: number[],
   baseSpacing: number,
   solverMode: 'standard' | 'closest' | 'add' | 'remove',
   uniqueVertices: THREE.Vector3[],
-  vertexNormals: Map<number, THREE.Vector3>
+  vertexNormals: Map<number, THREE.Vector3>,
+  zDensityParams?: {
+    minimaZ: number;
+    maximaZ: number;
+    op: CustomSupportOperation;
+    activeTrunkDiameter: number;
+  }
 ): BasicSampledPoint[] {
   if (indices.length < 2) return [];
 
-  // A. Project boundary loop coordinates onto horizontal XY plane
-  const q = indices.map(idx => new THREE.Vector2(uniqueVertices[idx].x, uniqueVertices[idx].y));
+  // A. Resample the loop uniformly at 1.0mm steps to make it resolution-independent and filter false inflections
+  const rawVerts = indices.map(idx => uniqueVertices[idx]);
+  const rawNorms = indices.map(idx => vertexNormals.get(idx) || new THREE.Vector3(0, 0, 1));
+  
+  const { vertices: resampledVertices, normals: resampledNormals } = resampleLoopUniformly(
+    rawVerts,
+    rawNorms,
+    1.0
+  );
 
-  // B. Run q through a running 1D Gaussian kernel to suppress high-frequency noise
+  const mockIndices = Array.from({ length: resampledVertices.length }, (_, i) => i);
+  const mockVertexNormals = new Map<number, THREE.Vector3>();
+  resampledNormals.forEach((n, i) => mockVertexNormals.set(i, n));
+
+  // B. Project boundary loop coordinates onto horizontal XY plane
+  const q = mockIndices.map(idx => new THREE.Vector2(resampledVertices[idx].x, resampledVertices[idx].y));
+
+  // C. Run q through a running 1D Gaussian kernel to suppress high-frequency noise
   const qSmoothed: THREE.Vector2[] = [];
   const w = 2; // window span
   const sigma = 1.0;
@@ -318,17 +534,13 @@ export function solvePerimeterWithInflections(
     qSmoothed.push(new THREE.Vector2(sx / sumWeights, sy / sumWeights));
   }
 
-  // C. Calculate 2D signed curvature angles between adjacent tangents
+  // D. Calculate 2D signed curvature angles between adjacent tangents
   const angles: number[] = [];
   for (let i = 0; i < qSmoothed.length; i++) {
     const prev = qSmoothed[(i - 1 + qSmoothed.length) % qSmoothed.length];
     const curr = qSmoothed[i];
     const next = qSmoothed[(i + 1) % qSmoothed.length];
 
-    /* ORIGINAL:
-    const t1 = new THREE.Vector2().subVectors(curr, prev).normalize();
-    const t2 = new THREE.Vector2().subVectors(next, curr).normalize();
-    */
     const diffVec1 = new THREE.Vector2().subVectors(curr, prev);
     const t1 = diffVec1.lengthSq() < 1e-8 ? new THREE.Vector2(1, 0) : diffVec1.normalize();
     
@@ -341,7 +553,7 @@ export function solvePerimeterWithInflections(
     angles.push(diff);
   }
 
-  // D. Find inflection points where curvature signs change
+  // E. Find inflection points where curvature signs change
   const inflections: number[] = [0]; // Always anchor at starting vertical minima
   for (let i = 1; i < angles.length; i++) {
     if (angles[i] * angles[i - 1] < 0 && Math.abs(angles[i] - angles[i - 1]) > 0.02) {
@@ -349,21 +561,29 @@ export function solvePerimeterWithInflections(
     }
   }
   // Make sure we include the end of the loop
-  if (inflections[inflections.length - 1] !== indices.length - 1) {
-    inflections.push(indices.length - 1);
+  if (inflections[inflections.length - 1] !== mockIndices.length - 1) {
+    inflections.push(mockIndices.length - 1);
   }
 
-  // E. Solve even spacing segment-by-segment
+  // F. Solve even spacing segment-by-segment
   const samples: BasicSampledPoint[] = [];
   for (let s = 0; s < inflections.length - 1; s++) {
     const startIdx = inflections[s];
     const endIdx = inflections[s + 1];
 
-    const segIndices = indices.slice(startIdx, endIdx + 1);
-    const L = getSegmentLength(segIndices, uniqueVertices);
+    const segIndices = mockIndices.slice(startIdx, endIdx + 1);
+    const L = getSegmentLength(segIndices, resampledVertices);
     if (L < 0.1) continue;
 
-    const N = L / baseSpacing;
+    // Apply Z-Height Spacing Density Solver if enabled
+    const startPt = resampledVertices[segIndices[0]];
+    const endPt = resampledVertices[segIndices[segIndices.length - 1]];
+    const avgZ = (startPt.z + endPt.z) / 2;
+    const scaledSpacing = zDensityParams
+      ? calculateZHeightDensitySpacing(avgZ, zDensityParams.minimaZ, zDensityParams.maximaZ, zDensityParams.op, zDensityParams.activeTrunkDiameter)
+      : baseSpacing;
+
+    const N = L / scaledSpacing;
     let NPrime = Math.round(N);
     if (solverMode === 'add') NPrime = Math.ceil(N);
     if (solverMode === 'remove') NPrime = Math.floor(N);
@@ -372,7 +592,7 @@ export function solvePerimeterWithInflections(
     const targetSpacing = L / NPrime;
 
     // Linearly distribute NPrime supports evenly inside this segment
-    const segSamples = sampleSegmentEvenly(segIndices, targetSpacing, NPrime, uniqueVertices, vertexNormals);
+    const segSamples = sampleSegmentEvenly(segIndices, targetSpacing, NPrime, resampledVertices, mockVertexNormals);
     
     // Append to samples, skipping duplicate boundary vertices between segments
     if (samples.length > 0 && segSamples.length > 0) {
@@ -591,7 +811,13 @@ export function applyAlphaShapeToLoops(
 function sampleSpineWithNormals(
   points: THREE.Vector3[],
   normals: THREE.Vector3[],
-  spacing: number
+  spacing: number,
+  zDensityParams?: {
+    minimaZ: number;
+    maximaZ: number;
+    op: CustomSupportOperation;
+    activeTrunkDiameter: number;
+  }
 ): BasicSampledPoint[] {
   if (points.length === 0) return [];
   if (points.length === 1) {
@@ -615,13 +841,22 @@ function sampleSpineWithNormals(
     segDir.normalize();
 
     let tSeg = 0;
-    while (accumulatedDist + (segLen - tSeg * segLen) >= spacing) {
-      const needed = spacing - accumulatedDist;
-      tSeg += needed / segLen;
-      const pos = new THREE.Vector3().lerpVectors(p0, p1, tSeg);
-      const normal = new THREE.Vector3().lerpVectors(n0, n1, tSeg).normalize();
-      samples.push({ pos, normal });
-      accumulatedDist = 0;
+    while (true) {
+      const currentPos = new THREE.Vector3().lerpVectors(p0, p1, tSeg);
+      const currentSpacing = zDensityParams
+        ? calculateZHeightDensitySpacing(currentPos.z, zDensityParams.minimaZ, zDensityParams.maximaZ, zDensityParams.op, zDensityParams.activeTrunkDiameter)
+        : spacing;
+
+      if (accumulatedDist + (segLen - tSeg * segLen) >= currentSpacing) {
+        const needed = currentSpacing - accumulatedDist;
+        tSeg += needed / segLen;
+        const pos = new THREE.Vector3().lerpVectors(p0, p1, tSeg);
+        const normal = new THREE.Vector3().lerpVectors(n0, n1, tSeg).normalize();
+        samples.push({ pos, normal });
+        accumulatedDist = 0;
+      } else {
+        break;
+      }
     }
     accumulatedDist += segLen * (1 - tSeg);
   }
@@ -1245,6 +1480,13 @@ export async function generateSupportsFromPainter(
           type: op.type,
           enabled: op.enabled !== false,
           supportPresetId: op.supportPresetId,
+          insetDistanceMm: op.insetDistanceMm,
+          wrapFraction: op.wrapFraction,
+          enableZHeightDensity: op.enableZHeightDensity,
+          minimaStartInterval: op.minimaStartInterval,
+          minimaEndInterval: op.minimaEndInterval,
+          zFactor: op.zFactor,
+          zFactorCurve: op.zFactorCurve,
           spacing: {
             baseSpacingMm: op.spacing.baseSpacingMm,
             sequence: op.spacing.sequence,
@@ -1254,7 +1496,7 @@ export async function generateSupportsFromPainter(
             seedFromMinima: op.spacing.seedFromMinima,
             attemptLeafCreation: op.spacing.attemptLeafCreation,
           },
-        });
+        } as any);
       }
     } else {
       const isPointPathOrMarker = region.brushType === 'PointPath' || region.brushType === 'Marker' || region.brushType === 'RoughEdge' || region.brushType === 'Unk Legacy Brush';
@@ -1294,6 +1536,8 @@ export async function generateSupportsFromPainter(
     for (const stage of pipeline) {
       if (!stage.enabled) continue;
 
+      const preset = stage.supportPresetId ? getPresetById(stage.supportPresetId) : undefined;
+      const activeTrunkDiameter = preset ? preset.settings.shaft.diameterMm : getSettings().shaft.diameterMm;
       const candidates: SampledPoint[] = [];
 
       if (stage.type === 'minima') {
@@ -1324,37 +1568,113 @@ export async function generateSupportsFromPainter(
         const spacing = Math.max(0.1, stage.spacing.baseSpacingMm);
         const tolerance = Math.max(0.5, spacing * 0.2);
 
-        const simplifiedLoops = bridgedLoops.map(loop => ({
-          ...loop,
-          vertexIds: simplifyLoopEuclidean(loop.vertexIds, uniqueVertices, tolerance),
-        }));
-
-        for (const loop of simplifiedLoops) {
+        for (const loop of bridgedLoops) {
           if (loop.vertexIds.length < 2) continue;
+
+          // Project loop point positions for geometric offseting
+          let loopPts = loop.vertexIds.map(idx => uniqueVertices[idx].clone());
+
+          // A. Multi-Perimeter Inboard Insetting (Clipper.js Offset)
+          const insetDistance = (stage as any).insetDistanceMm ?? 0.0;
+          if (insetDistance > 0.001) {
+            const planeCentroid = new THREE.Vector3();
+            loopPts.forEach(p => planeCentroid.add(p));
+            planeCentroid.divideScalar(loopPts.length);
+
+            const planeNormal = new THREE.Vector3();
+            loop.vertexIds.forEach(idx => {
+              const norm = vertexNormals.get(idx);
+              if (norm) planeNormal.add(norm);
+            });
+            if (planeNormal.lengthSq() < 1e-4) {
+              planeNormal.set(0, 0, 1);
+            } else {
+              planeNormal.normalize();
+            }
+
+            loopPts = insetBoundaryLoop(loopPts, planeNormal, planeCentroid, insetDistance);
+          }
+
+          if (loopPts.length < 2) continue;
+
+          // B. Wrap Fraction Truncation Loop Filtering
+          const wrapFraction = (stage as any).wrapFraction ?? 1.0;
+          if (wrapFraction < 0.999) {
+            loopPts = filterInsetLoopByWrapFraction(loopPts, wrapFraction);
+          }
+
+          if (loopPts.length < 2) continue;
+
+          // C. Re-register points into uniqueVertices and vertexNormals
+          const loopIndices: number[] = [];
+          for (const pt of loopPts) {
+            const newIdx = uniqueVertices.length;
+            uniqueVertices.push(pt);
+            
+            let closestNorm = new THREE.Vector3(0, 0, 1);
+            let minDistSq = Infinity;
+            for (const origIdx of loop.vertexIds) {
+              const dSq = uniqueVertices[origIdx].distanceToSquared(pt);
+              if (dSq < minDistSq) {
+                minDistSq = dSq;
+                const norm = vertexNormals.get(origIdx);
+                if (norm) closestNorm = norm;
+              }
+            }
+            vertexNormals.set(newIdx, closestNorm.clone());
+            loopIndices.push(newIdx);
+          }
+
+          if (loopIndices.length > 1 && loopIndices[0] !== loopIndices[loopIndices.length - 1]) {
+            loopIndices.push(loopIndices[0]);
+          }
+
+          // D. Decimate loop points
+          const simplifiedIndices = simplifyLoopEuclidean(loopIndices, uniqueVertices, tolerance);
           let samples: BasicSampledPoint[] = [];
+
+          // Setup Z-height density spacing parameters lookup
+          let zDensityParams: any = undefined;
+          if ((stage as any).enableZHeightDensity) {
+            let minZ = Infinity;
+            let maxZ = -Infinity;
+            for (const idx of loop.vertexIds) {
+              const pt = uniqueVertices[idx];
+              if (pt.z < minZ) minZ = pt.z;
+              if (pt.z > maxZ) maxZ = pt.z;
+            }
+            zDensityParams = {
+              minimaZ: minZ,
+              maximaZ: maxZ,
+              op: stage,
+              activeTrunkDiameter: activeTrunkDiameter || 1.0,
+            };
+          }
 
           if (stage.spacing.useInflectionPoints) {
             const solverMode = stage.spacing.solverMode || 'standard';
             samples = solvePerimeterWithInflections(
-              loop.vertexIds,
+              simplifiedIndices,
               spacing,
               solverMode,
               uniqueVertices,
-              vertexNormals
+              vertexNormals,
+              zDensityParams
             );
           } else if (stage.spacing.sequence && stage.spacing.sequence.length > 0) {
             samples = sampleSequencePolyline(
-              loop.vertexIds,
+              simplifiedIndices,
               stage.spacing.sequence,
               uniqueVertices,
               vertexNormals
             );
           } else {
             samples = samplePolylineWithNormals(
-              loop.vertexIds,
+              simplifiedIndices,
               spacing,
               uniqueVertices,
-              vertexNormals
+              vertexNormals,
+              zDensityParams
             );
           }
 
@@ -1405,9 +1725,26 @@ export async function generateSupportsFromPainter(
               normsB.push(spine.normals[j]);
             }
 
+            // Setup Z-height density spacing parameters lookup
+            let zDensityParams: any = undefined;
+            if ((stage as any).enableZHeightDensity) {
+              let minZ = Infinity;
+              let maxZ = -Infinity;
+              for (const pt of spine.points) {
+                if (pt.z < minZ) minZ = pt.z;
+                if (pt.z > maxZ) maxZ = pt.z;
+              }
+              zDensityParams = {
+                minimaZ: minZ,
+                maximaZ: maxZ,
+                op: stage,
+                activeTrunkDiameter: activeTrunkDiameter || 1.0,
+              };
+            }
+
             // Sample both segments symmetrically outward from M
-            const samplesA = sampleSpineWithNormals(ptsA, normsA, spacing);
-            const samplesB = sampleSpineWithNormals(ptsB, normsB, spacing);
+            const samplesA = sampleSpineWithNormals(ptsA, normsA, spacing, zDensityParams);
+            const samplesB = sampleSpineWithNormals(ptsB, normsB, spacing, zDensityParams);
 
             // Merge results, skipping the duplicate starting point of samplesB
             samples.push(...samplesA);
@@ -1415,8 +1752,25 @@ export async function generateSupportsFromPainter(
               samples.push(...samplesB.slice(1));
             }
           } else {
+            // Setup Z-height density spacing parameters lookup
+            let zDensityParams: any = undefined;
+            if ((stage as any).enableZHeightDensity) {
+              let minZ = Infinity;
+              let maxZ = -Infinity;
+              for (const pt of spine.points) {
+                if (pt.z < minZ) minZ = pt.z;
+                if (pt.z > maxZ) maxZ = pt.z;
+              }
+              zDensityParams = {
+                minimaZ: minZ,
+                maximaZ: maxZ,
+                op: stage,
+                activeTrunkDiameter: activeTrunkDiameter || 1.0,
+              };
+            }
+
             // Standard sequential walk from tip to tip
-            samples = sampleSpineWithNormals(spine.points, spine.normals, spacing);
+            samples = sampleSpineWithNormals(spine.points, spine.normals, spacing, zDensityParams);
           }
 
           for (const sample of samples) {

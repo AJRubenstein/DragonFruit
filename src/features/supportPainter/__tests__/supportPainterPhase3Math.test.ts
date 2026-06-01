@@ -5,6 +5,9 @@ import {
   sampleSequencePolyline,
   solvePerimeterWithInflections,
   generateSupportsFromPainter,
+  calculateZHeightDensitySpacing,
+  insetBoundaryLoop,
+  filterInsetLoopByWrapFraction,
 } from '../supportScriptingEngine';
 import { supportPainterStore } from '../supportPainterStore';
 import { type ROIRegion, type CustomBrushTemplate } from '../supportPainterTypes';
@@ -289,5 +292,103 @@ describe('Support Painter Phase 3 - Advanced Mathematical Pathing & Solvers', ()
     }
 
     assert.ok(placedOnOuterBoundary > 0, 'Should place at least some perimeter trunks on the actual outer boundary loop');
+  });
+
+  it('should scale spacing dynamically along linear, sigmoid, and parabolic curves capped by ROI Z span', () => {
+    // Spacing configuration: base spacing is 2.0mm
+    const op: any = {
+      enableZHeightDensity: true,
+      minimaStartInterval: 0.5,
+      minimaEndInterval: 10.0,
+      zFactor: 3.0,
+      zFactorCurve: 'linear',
+      spacing: { baseSpacingMm: 2.0 }
+    };
+
+    // ROI span: minimaZ = 2.0, maximaZ = 7.0 (Z span is 5.0mm)
+    // op.minimaEndInterval is 10.0, but resolved zEnd must be capped at zSpanROI = 5.0mm.
+    // So resolved zEnd = Math.min(10.0, 5.0) = 5.0mm.
+    // zStart = 0.5mm.
+    // Let's check calculation for a point at Z = 2.0 (zRel = 0.0) -> below zStart, should return baseSpacing = 2.0mm.
+    const spacingAtBase = calculateZHeightDensitySpacing(2.0, 2.0, 7.0, op, 1.0);
+    assert.strictEqual(spacingAtBase, 2.0);
+
+    // Let's check calculation for a point at Z = 2.2 (zRel = 0.2) -> below zStart (0.5), should return baseSpacing = 2.0mm.
+    const spacingBelowStart = calculateZHeightDensitySpacing(2.2, 2.0, 7.0, op, 1.0);
+    assert.strictEqual(spacingBelowStart, 2.0);
+
+    // Let's check spacing at mid-gradient: Z = 4.75 (zRel = 2.75).
+    // Interpolation factor t = (zRel - zStart) / (zEnd - zStart) = (2.75 - 0.5) / (5.0 - 0.5) = 2.25 / 4.5 = 0.5.
+    // For 'linear' curve, curveVal = 0.5.
+    // scaleFactor = 1.0 + 0.5 * (3.0 - 1.0) = 2.0.
+    // Expected spacing = 2.0 * 2.0 = 4.0mm.
+    const spacingLinear = calculateZHeightDensitySpacing(4.75, 2.0, 7.0, op, 1.0);
+    assert.strictEqual(spacingLinear, 4.0);
+
+    // Now test 'sigmoid' curve:
+    // For t = 0.5, sigmoid value S(0.5) = 3 * 0.25 - 2 * 0.125 = 0.75 - 0.25 = 0.5.
+    // scaleFactor = 1.0 + 0.5 * (3.0 - 1.0) = 2.0.
+    // Expected spacing = 4.0mm.
+    const opSigmoid = { ...op, zFactorCurve: 'sigmoid' };
+    const spacingSigmoid = calculateZHeightDensitySpacing(4.75, 2.0, 7.0, opSigmoid, 1.0);
+    assert.strictEqual(spacingSigmoid, 4.0);
+
+    // Now test 'parabolic' curve:
+    // For t = 0.5, parabolic value P(0.5) = 0.25.
+    // scaleFactor = 1.0 + 0.25 * (3.0 - 1.0) = 1.5.
+    // Expected spacing = 2.0 * 1.5 = 3.0mm.
+    const opParabolic = { ...op, zFactorCurve: 'parabolic' };
+    const spacingParabolic = calculateZHeightDensitySpacing(4.75, 2.0, 7.0, opParabolic, 1.0);
+    assert.strictEqual(spacingParabolic, 3.0);
+  });
+
+  it('should inset a 3D loop correctly by projecting to local tangent plane and calling Clipper.js', () => {
+    // Create a 10mm x 10mm flat square loop on horizontal plane (Z = 5)
+    // Centroid = (5, 5, 5), normal = (0, 0, 1)
+    const loop = [
+      new THREE.Vector3(0, 0, 5),
+      new THREE.Vector3(10, 0, 5),
+      new THREE.Vector3(10, 10, 5),
+      new THREE.Vector3(0, 10, 5),
+      new THREE.Vector3(0, 0, 5) // closed
+    ];
+
+    const inset = insetBoundaryLoop(loop, new THREE.Vector3(0, 0, 1), new THREE.Vector3(5, 5, 5), 1.0);
+    // Insetting a 10x10 square by 1mm from all sides results in a 8x8 square.
+    // Vertices should be at x = [1, 9], y = [1, 9]
+    assert.strictEqual(inset.length, 4);
+    
+    // Check that the shrunken square contains all 4 expected corners
+    const expectedCorners = [
+      new THREE.Vector3(1, 1, 5),
+      new THREE.Vector3(9, 1, 5),
+      new THREE.Vector3(9, 9, 5),
+      new THREE.Vector3(1, 9, 5)
+    ];
+
+    for (const expected of expectedCorners) {
+      const found = inset.some(p => p.distanceTo(expected) < 0.05);
+      assert.ok(found, `Expected corner ${expected.x}, ${expected.y}, ${expected.z} not found in inset`);
+    }
+  });
+
+  it('should reorder a closed loop to start from absolute Z-minima and truncate vertices exceeding wrapFraction', () => {
+    // Create a 3D loop:
+    // absolute Z-minima is at index 2 (Z = 1)
+    const loop = [
+      new THREE.Vector3(0, 0, 5),
+      new THREE.Vector3(2, 0, 3),
+      new THREE.Vector3(5, 0, 1), // Minima!
+      new THREE.Vector3(8, 0, 3),
+      new THREE.Vector3(10, 0, 5),
+      new THREE.Vector3(0, 0, 5) // closed
+    ];
+
+    const truncated = filterInsetLoopByWrapFraction(loop, 0.4);
+    
+    assert.strictEqual(truncated.length, 3);
+    assert.deepStrictEqual(truncated[0], new THREE.Vector3(5, 0, 1));
+    assert.deepStrictEqual(truncated[1], new THREE.Vector3(8, 0, 3));
+    assert.deepStrictEqual(truncated[2], new THREE.Vector3(10, 0, 5));
   });
 });
