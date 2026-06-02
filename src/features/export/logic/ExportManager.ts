@@ -5,6 +5,7 @@ import { KNOWN_SOURCE_EXTENSION_STRIP_RE } from '@/features/plugins/pluginFileTy
 import { buildSupportExportFromStores, serializeVoxlDocumentV2 } from '@/features/scene/voxl';
 import { supportPainterStore } from '@/features/supportPainter/supportPainterStore';
 import { serializeROIsForVoxl } from '@/features/supportPainter/voxlCodec';
+import { getPresetList } from '@/supports/Settings/presets';
 import { buildScopedSupportExportDocument, buildScopedSupportGeometryGroup } from '@/features/export/logic/supportExportReconstruction';
 import { allocateMeshStagePath, exportMeshFile, pickSavePathWithNativeDialog, writeChunkedToNativePath } from '@/features/slicing/tauri/nativeSlicerBridge';
 import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
@@ -1199,7 +1200,12 @@ export class ExportManager {
       if (hasROIs && painterState.roiTrackingMode === 'voxl') {
         const activeModelId = sceneContext?.activeModelId;
         if (activeModelId) {
-          voxlExtensions['dragonfruit.roi'] = serializeROIsForVoxl(allRegions, activeModelId);
+          voxlExtensions['dragonfruit.roi'] = serializeROIsForVoxl(
+            allRegions,
+            activeModelId,
+            painterState.placementScripts,
+            getPresetList()
+          );
         }
       }
     }

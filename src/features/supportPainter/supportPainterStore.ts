@@ -15,11 +15,14 @@ import {
   type CustomSupportOperation,
   type SupportPlacementScript,
   type CustomSupportOperationType,
+  type ConflictItem,
   BRUSH_COLORS,
   upgradePipeline,
+  arePipelinesEquivalent,
 } from './supportPainterTypes';
 import { type ClientAdjacencyMap, proposeRegionOnClient } from './useClientAdjacencyMap';
 import { deserializeROIsFromVoxl } from './voxlCodec';
+import { getPresetById, importCustomPreset, getPresetList } from '@/supports/Settings/presets';
 import { getSnapshot as getSupportSnapshot, setSnapshot as setSupportSnapshot } from '@/supports/state';
 import { pushHistory } from '@/history/historyStore';
 import { SUPPORT_EDIT_REPLACE } from '@/supports/history/actionTypes';
@@ -219,6 +222,69 @@ function loadPlacementScriptsFromLocalStorage() {
   }
 }
 
+function savePlacementScriptToFile(script: SupportPlacementScript) {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('save_support_painter_file', {
+        id: script.id,
+        content: JSON.stringify(script, null, 2),
+      }).catch(err => {
+        console.error('[SupportPainterStore] Failed to save placement script file', err);
+      });
+    });
+  }
+}
+
+function deletePlacementScriptFile(id: string) {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('delete_support_painter_file', { id }).catch(err => {
+        console.error('[SupportPainterStore] Failed to delete placement script file', err);
+      });
+    });
+  }
+}
+
+async function loadPlacementScriptsFromFilesystem() {
+  try {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const files = await invoke<string[]>('load_support_painter_files');
+      if (files && files.length > 0) {
+        for (const fileContent of files) {
+          try {
+            const script = JSON.parse(fileContent) as SupportPlacementScript;
+            if (script && script.id) {
+              const baseType = script.operations.find((op: CustomSupportOperation) => op.enabled)?.type || 'perimeter';
+              const brushTypeMap: Record<string, BrushType> = {
+                minima: 'MinimaIslands',
+                perimeter: 'MacroFace',
+                infill: 'MacroFace',
+                centerline: 'Ridge',
+              };
+              const resolvedBrush = brushTypeMap[baseType] || 'MacroFace';
+              const upgradedOps = upgradePipeline(script.operations, resolvedBrush);
+              
+              placementScripts.set(script.id, {
+                ...script,
+                isBuiltIn: false,
+                operations: upgradedOps,
+              });
+            }
+          } catch (e) {
+            console.error('[SupportPainterStore] Failed to parse script file:', e);
+          }
+        }
+        savePlacementScriptsToLocalStorage();
+        updateSnapshot();
+        notify();
+      }
+    }
+  } catch (err) {
+    console.error('[SupportPainterStore] Failed to load placement scripts from filesystem', err);
+  }
+}
+
 // ─── Version 4 Manual Geodesic Brushes State ───
 let brushRadiusMm = 4.0;
 let scannedMinima: LocalMinimum[] = [];
@@ -238,6 +304,7 @@ let pointPathClosed = false;
 
 // ─── Phase III Active Brush Pipeline Override State ───
 let activeBrushPipeline: CustomSupportOperation[] | null = null;
+let conflictState: { conflicts: ConflictItem[]; pendingRoiExt: VoxlROIExtension } | null = null;
 
 const LOCAL_STORAGE_KEY = 'dragonfruit.support-painter.custom-brushes';
 
@@ -294,6 +361,7 @@ function loadCustomBrushesFromLocalStorage() {
 // Initial invocation on module load
 loadCustomBrushesFromLocalStorage();
 loadPlacementScriptsFromLocalStorage();
+loadPlacementScriptsFromFilesystem();
 
 let storeSnapshot: SupportPainterState = {
   isActive,
@@ -330,6 +398,7 @@ let storeSnapshot: SupportPainterState = {
   pointPathMode,
   pointPathClosed,
   activeBrushPipeline: null,
+  conflictState: null,
 };
 
 function notify() {
@@ -378,6 +447,7 @@ function updateSnapshot() {
     pointPathMode,
     pointPathClosed,
     activeBrushPipeline: activeBrushPipeline ? [...activeBrushPipeline] : null,
+    conflictState: conflictState ? { ...conflictState } : null,
   };
 }
 
@@ -963,10 +1033,135 @@ export const supportPainterStore = {
   },
 
   loadFromVoxl(ext: VoxlROIExtension) {
+    const conflicts: ConflictItem[] = [];
+
+    if (ext.version === 4) {
+      if (ext.customPlacementScripts) {
+        for (const imported of ext.customPlacementScripts) {
+          const local = placementScripts.get(imported.id);
+          if (local && !local.isBuiltIn) {
+            const different = local.name !== imported.name || !arePipelinesEquivalent(local.operations, imported.operations);
+            if (different) {
+              conflicts.push({
+                id: imported.id,
+                type: 'script',
+                name: imported.name,
+                localName: local.name,
+                importedValue: imported,
+                localValue: local,
+              });
+            }
+          }
+        }
+      }
+
+      if (ext.customSupportPresets) {
+        for (const imported of ext.customSupportPresets) {
+          const local = getPresetById(imported.id);
+          if (local && !local.isBuiltIn) {
+            const different = local.name !== imported.name || JSON.stringify(local.settings) !== JSON.stringify(imported.settings);
+            if (different) {
+              conflicts.push({
+                id: imported.id,
+                type: 'preset',
+                name: imported.name,
+                localName: local.name,
+                importedValue: imported,
+                localValue: local,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (conflicts.length > 0) {
+      conflictState = {
+        conflicts,
+        pendingRoiExt: ext,
+      };
+      updateSnapshot();
+      notify();
+      return;
+    }
+
+    this.executeLoadFromVoxl(ext);
+  },
+
+  executeLoadFromVoxl(ext: VoxlROIExtension, resolutions?: Record<string, 'overwrite' | 'keepLocal' | 'rename'>) {
+    // 1. Process custom scripts
+    if (ext.customPlacementScripts) {
+      for (const script of ext.customPlacementScripts) {
+        const res = resolutions?.[script.id];
+        if (res === 'keepLocal') {
+          continue;
+        } else if (res === 'rename') {
+          const newId = `${script.id}-imported-${Date.now()}`;
+          const newName = `${script.name} (Imported)`;
+          const renamedScript = {
+            ...script,
+            id: newId,
+            name: newName,
+            isBuiltIn: false,
+          };
+          this.addPlacementScript(renamedScript);
+          this.remapScriptIdInExtension(ext, script.id, newId);
+        } else {
+          this.addPlacementScript({
+            ...script,
+            isBuiltIn: false,
+          });
+        }
+      }
+    }
+
+    // 2. Process custom support presets
+    if (ext.customSupportPresets) {
+      for (const preset of ext.customSupportPresets) {
+        const res = resolutions?.[preset.id];
+        if (res === 'keepLocal') {
+          continue;
+        } else if (res === 'rename') {
+          const newId = `${preset.id}-imported-${Date.now()}`;
+          const newName = `${preset.name} (Imported)`;
+          const renamedPreset = {
+            ...preset,
+            id: newId,
+            name: newName,
+            isBuiltIn: false,
+          };
+          importCustomPreset(renamedPreset);
+          this.remapPresetIdInExtension(ext, preset.id, newId);
+        } else {
+          importCustomPreset({
+            ...preset,
+            isBuiltIn: false,
+          });
+        }
+      }
+    }
+
+    // 3. Process regions
     const loadedRegions = deserializeROIsFromVoxl(ext);
     for (const [mId, mRegions] of loadedRegions.entries()) {
       regionsByModel.set(mId, mRegions);
+      
+      for (const region of mRegions.values()) {
+        const scriptId = region.placementScriptId;
+        if (scriptId && !scriptId.startsWith('default-') && scriptId !== 'unsaved') {
+          if (region.customBrush && !placementScripts.has(scriptId)) {
+            this.addPlacementScript({
+              id: scriptId,
+              name: region.customBrush.name || `Imported Custom Script`,
+              operations: region.customBrush.operations,
+              isBuiltIn: false,
+              isReadOnly: false,
+            });
+          }
+        }
+      }
     }
+
     if (activeModelId) {
       let modelRegions = regionsByModel.get(activeModelId);
       if (!modelRegions) {
@@ -980,6 +1175,48 @@ export const supportPainterStore = {
     proposedTriangleIds.clear();
     hoveredTriangleId = null;
     triangleColorMap = _recomputeTriangleColorMap();
+    updateSnapshot();
+    notify();
+  },
+
+  remapScriptIdInExtension(ext: VoxlROIExtension, oldId: string, newId: string) {
+    for (const region of ext.regions) {
+      if (region.placementScriptId === oldId) {
+        region.placementScriptId = newId;
+      }
+    }
+  },
+
+  remapPresetIdInExtension(ext: VoxlROIExtension, oldId: string, newId: string) {
+    for (const region of ext.regions) {
+      if (region.customBrush?.operations) {
+        for (const op of region.customBrush.operations) {
+          if (op.supportPresetId === oldId) {
+            op.supportPresetId = newId;
+          }
+        }
+      }
+    }
+    if (ext.customPlacementScripts) {
+      for (const script of ext.customPlacementScripts) {
+        for (const op of script.operations) {
+          if (op.supportPresetId === oldId) {
+            op.supportPresetId = newId;
+          }
+        }
+      }
+    }
+  },
+
+  resolveImportConflicts(resolutions: Record<string, 'overwrite' | 'keepLocal' | 'rename'>) {
+    if (!conflictState) return;
+    const ext = conflictState.pendingRoiExt;
+    conflictState = null;
+    this.executeLoadFromVoxl(ext, resolutions);
+  },
+
+  cancelImportConflicts() {
+    conflictState = null;
     updateSnapshot();
     notify();
   },
@@ -1501,11 +1738,13 @@ export const supportPainterStore = {
   },
 
   addPlacementScript(script: SupportPlacementScript) {
-    placementScripts.set(script.id, {
+    const newScript = {
       ...script,
       isBuiltIn: false,
-    });
+    };
+    placementScripts.set(script.id, newScript);
     savePlacementScriptsToLocalStorage();
+    savePlacementScriptToFile(newScript);
     updateSnapshot();
     notify();
   },
@@ -1517,6 +1756,7 @@ export const supportPainterStore = {
       activePlacementScriptId = null;
     }
     savePlacementScriptsToLocalStorage();
+    deletePlacementScriptFile(id);
     updateSnapshot();
     notify();
   },
@@ -1524,12 +1764,14 @@ export const supportPainterStore = {
   updatePlacementScript(id: string, updates: Partial<SupportPlacementScript>) {
     const existing = placementScripts.get(id);
     if (!existing || existing.isBuiltIn) return;
-    placementScripts.set(id, {
+    const updated = {
       ...existing,
       ...updates,
       isBuiltIn: false,
-    });
+    };
+    placementScripts.set(id, updated);
     savePlacementScriptsToLocalStorage();
+    savePlacementScriptToFile(updated);
     updateSnapshot();
     notify();
   },
@@ -1576,6 +1818,44 @@ export const supportPainterStore = {
     
     updateSnapshot();
     notify();
+  },
+
+  exportConfigPack(): string {
+    const customScripts = Array.from(placementScripts.values()).filter(s => !s.isBuiltIn);
+    const customPresets = getPresetList().filter((p: any) => !p.isBuiltIn);
+    
+    const pack = {
+      kind: 'dragonfruit-config-pack',
+      version: 1,
+      exportedAt: Date.now(),
+      placementScripts: customScripts,
+      supportPresets: customPresets,
+    };
+    return JSON.stringify(pack, null, 2);
+  },
+
+  importConfigPack(packContent: string): { success: boolean; error?: string } {
+    try {
+      const pack = JSON.parse(packContent);
+      if (pack.kind !== 'dragonfruit-config-pack') {
+        return { success: false, error: 'Invalid configuration pack format.' };
+      }
+      
+      const dummyExt: VoxlROIExtension = {
+        kind: 'support-painter-rois',
+        version: 4,
+        modelId: 'config-pack-dummy',
+        regions: [],
+        customPlacementScripts: pack.placementScripts || [],
+        customSupportPresets: pack.supportPresets || [],
+      };
+      
+      // Suspend and check conflicts using existing loadFromVoxl
+      this.loadFromVoxl(dummyExt);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to parse configuration pack.' };
+    }
   },
 };
 

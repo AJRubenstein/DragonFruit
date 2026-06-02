@@ -2379,6 +2379,100 @@ async fn scene_autosave_read_voxl_bytes(app: DragonFruitAppHandle) -> Result<Res
     Ok(Response::new(bytes))
 }
 
+// ---------------------------------------------------------------------------
+// Support Painter Configs
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn get_support_painter_dir(app: DragonFruitAppHandle) -> Result<String, String> {
+    use tauri::Manager;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("Failed resolving app data dir: {err}"))?;
+    let dir = base.join("support-painter");
+    std::fs::create_dir_all(&dir)
+        .map_err(|err| format!("Failed creating support-painter dir '{}': {err}", dir.display()))?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn save_support_painter_file(
+    app: DragonFruitAppHandle,
+    id: String,
+    content: String,
+) -> Result<String, String> {
+    use tauri::Manager;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("Failed resolving app data dir: {err}"))?;
+    let dir = base.join("support-painter");
+    std::fs::create_dir_all(&dir)
+        .map_err(|err| format!("Failed creating support-painter dir: {err}"))?;
+    
+    // Sanitize filename to prevent directory traversal
+    let safe_id = id.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect::<String>();
+    if safe_id.is_empty() {
+        return Err("Invalid script ID for filename".to_string());
+    }
+    let file_path = dir.join(format!("{}.json", safe_id));
+    std::fs::write(&file_path, content.as_bytes())
+        .map_err(|err| format!("Failed writing configuration file '{}': {err}", file_path.display()))?;
+    Ok(file_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn delete_support_painter_file(
+    app: DragonFruitAppHandle,
+    id: String,
+) -> Result<bool, String> {
+    use tauri::Manager;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("Failed resolving app data dir: {err}"))?;
+    let dir = base.join("support-painter");
+    let safe_id = id.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect::<String>();
+    if safe_id.is_empty() {
+        return Err("Invalid script ID for filename".to_string());
+    }
+    let file_path = dir.join(format!("{}.json", safe_id));
+    if !file_path.exists() {
+        return Ok(false);
+    }
+    std::fs::remove_file(&file_path)
+        .map_err(|err| format!("Failed deleting configuration file '{}': {err}", file_path.display()))?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn load_support_painter_files(app: DragonFruitAppHandle) -> Result<Vec<String>, String> {
+    use tauri::Manager;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("Failed resolving app data dir: {err}"))?;
+    let dir = base.join("support-painter");
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    
+    let mut contents = Vec::new();
+    let entries = std::fs::read_dir(&dir)
+        .map_err(|err| format!("Failed reading support-painter dir: {err}"))?;
+    for entry in entries {
+        let entry = entry.map_err(|err| format!("Failed reading directory entry: {err}"))?;
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let content = std::fs::read_to_string(&path)
+                .map_err(|err| format!("Failed reading file '{}': {err}", path.display()))?;
+            contents.push(content);
+        }
+    }
+    Ok(contents)
+}
+
 fn is_scene_file_path(path: &std::path::Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
@@ -3256,7 +3350,11 @@ fn main() {
             support_painter::initialize_support_painter_model,
             support_painter::propose_brush_region,
             support_painter::clear_support_painter_model,
-            support_painter::find_all_local_minima
+            support_painter::find_all_local_minima,
+            get_support_painter_dir,
+            save_support_painter_file,
+            delete_support_painter_file,
+            load_support_painter_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running DragonFruit desktop app");

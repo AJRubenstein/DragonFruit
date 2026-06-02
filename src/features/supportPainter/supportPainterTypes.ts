@@ -1,4 +1,5 @@
 import { generateUuid } from '@/utils/uuid';
+import type { SupportPreset } from '../../supports/Settings/types';
 
 // ─── Brush Identity ─────────────────────────────────────────────────────────
 
@@ -273,6 +274,18 @@ export interface SupportPainterState {
   // ─── Support Placement Scripts State ───
   placementScripts:       Map<string, SupportPlacementScript>;
   activePlacementScriptId: string | null;
+
+  // ─── Phase 3 Config Pack / Import Conflict State ───
+  conflictState:          { conflicts: ConflictItem[]; pendingRoiExt: VoxlROIExtension } | null;
+}
+
+export interface ConflictItem {
+  id: string;
+  type: 'script' | 'preset';
+  name: string;
+  localName: string;
+  importedValue: any;
+  localValue: any;
 }
 
 // ─── Store Action Payloads ───────────────────────────────────────────────────
@@ -352,6 +365,7 @@ export interface VoxlROIRegion {
 
   // ─── Version 3 Custom Support Brushes Serialization ───
   customBrush?:    CustomBrushTemplate;
+  placementScriptId?: string | null;
 }
 
 export interface VoxlROIExtension {
@@ -359,6 +373,8 @@ export interface VoxlROIExtension {
   version:  number; // Incremented to support boundary-loops/RLE fallback (version 2)
   modelId:  string;            // UUID of the model these ROIs belong to
   regions:  VoxlROIRegion[];
+  customPlacementScripts?: SupportPlacementScript[];
+  customSupportPresets?: SupportPreset[];
 }
 
 /**

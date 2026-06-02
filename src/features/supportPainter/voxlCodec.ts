@@ -4,9 +4,11 @@ import {
   type VoxlROIRunLength,
   type VoxlROIRegion,
   type BrushType,
+  type SupportPlacementScript,
   upgradePipeline,
   BRUSH_COLORS,
 } from './supportPainterTypes';
+import { type SupportPreset } from '../../supports/Settings/types';
 
 const KNOWN_BRUSH_TYPES = new Set<string>([
   'MacroFace', 'Ridge', 'Point', 'RoughEdge', 'SoftRidge', 'Ring',
@@ -60,13 +62,17 @@ export function decompressRLE(spans: VoxlROIRunLength[]): number[] {
  */
 /**
  * Converts all in-memory ROIRegions across all models into a JSON-safe VoxlROIExtension object.
- * Supports Version 2 boundary-loops, RLE fallback, and model-specific grouping.
+ * Supports Version 2 boundary-loops, RLE fallback, model-specific grouping, and Version 4 packed assets.
  */
 export function serializeROIsForVoxl(
   regionsByModel: Map<string, Map<string, ROIRegion>>,
-  activeModelId: string
+  activeModelId: string,
+  allPlacementScripts?: Map<string, SupportPlacementScript>,
+  allSupportPresets?: SupportPreset[]
 ): VoxlROIExtension {
   const list: VoxlROIRegion[] = [];
+  const packedScripts = new Map<string, SupportPlacementScript>();
+  const packedPresets = new Map<string, SupportPreset>();
 
   for (const [modelId, modelRegions] of regionsByModel.entries()) {
     for (const r of modelRegions.values()) {
@@ -85,16 +91,63 @@ export function serializeROIsForVoxl(
         placedCount: r.placedCount,
         attemptedCount: r.attemptedCount,
         customBrush: r.customBrush, // Safely serialized V3 field
+        placementScriptId: r.placementScriptId,
       });
+
+      // Find referenced custom scripts
+      const scriptId = r.placementScriptId;
+      if (scriptId && allPlacementScripts && !scriptId.startsWith('default-') && scriptId !== 'unsaved') {
+        const script = allPlacementScripts.get(scriptId);
+        if (script && !script.isBuiltIn) {
+          packedScripts.set(scriptId, script);
+        }
+      }
     }
   }
 
-  return {
+  // Scan operations to pack referenced custom support presets
+  const checkOpsForPresets = (ops: any[]) => {
+    if (!ops || !allSupportPresets) return;
+    for (const op of ops) {
+      const presetId = op.supportPresetId;
+      if (presetId && !['detail', 'structure', 'anchor'].includes(presetId)) {
+        const preset = allSupportPresets.find(p => p.id === presetId);
+        if (preset && !preset.isBuiltIn) {
+          packedPresets.set(presetId, preset);
+        }
+      }
+    }
+  };
+
+  // Check custom scripts we are packing
+  for (const script of packedScripts.values()) {
+    checkOpsForPresets(script.operations);
+  }
+
+  // Check inline custom brushes in all regions
+  for (const [_, modelRegions] of regionsByModel.entries()) {
+    for (const r of modelRegions.values()) {
+      if (r.customBrush && r.customBrush.operations) {
+        checkOpsForPresets(r.customBrush.operations);
+      }
+    }
+  }
+
+  const extension: VoxlROIExtension = {
     kind: 'support-painter-rois',
-    version: 3, // Version 3 enables dynamic stackable operations and bound Support Studio presets
+    version: 4, // Version 4 packs custom placement scripts and support presets
     modelId: activeModelId,
     regions: list,
   };
+
+  if (packedScripts.size > 0) {
+    extension.customPlacementScripts = Array.from(packedScripts.values());
+  }
+  if (packedPresets.size > 0) {
+    extension.customSupportPresets = Array.from(packedPresets.values());
+  }
+
+  return extension;
 }
 
 /**
@@ -190,6 +243,8 @@ export function deserializeROIsFromVoxl(
 
     const color = brushType === 'Unk Legacy Brush' ? '#E11D48' : (r.color || BRUSH_COLORS[brushType]);
 
+    const resolvedScriptId = r.placementScriptId || (customBrush ? (customBrush.id || `custom-script-${r.id}`) : `default-${brushType}`);
+
     modelMap.set(r.id, {
       id: r.id,
       brushType,
@@ -207,6 +262,7 @@ export function deserializeROIsFromVoxl(
       placedCount: r.placedCount,
       attemptedCount: r.attemptedCount,
       customBrush,
+      placementScriptId: resolvedScriptId,
     });
   }
   return result;
@@ -221,7 +277,7 @@ export function isVoxlROIExtension(v: unknown): v is VoxlROIExtension {
   const candidate = v as Partial<VoxlROIExtension>;
   return (
     candidate.kind === 'support-painter-rois' &&
-    (candidate.version === 1 || candidate.version === 2 || candidate.version === 3) &&
+    (candidate.version === 1 || candidate.version === 2 || candidate.version === 3 || candidate.version === 4) &&
     typeof candidate.modelId === 'string' &&
     Array.isArray(candidate.regions)
   );

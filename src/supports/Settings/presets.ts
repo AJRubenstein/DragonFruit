@@ -602,6 +602,18 @@ export function createPreset(name: string): SupportPreset {
     return preset;
 }
 
+export function importCustomPreset(preset: SupportPreset): void {
+    presets.byId[preset.id] = {
+        ...preset,
+        isBuiltIn: false,
+    };
+    if (!presets.allIds.includes(preset.id)) {
+        presets.allIds.push(preset.id);
+    }
+    savePresetsToStorage();
+    notify();
+}
+
 export function deletePreset(id: string): void {
     if (!presets.byId[id]) {
         console.warn('[PresetStore] Cannot delete, preset not found:', id);

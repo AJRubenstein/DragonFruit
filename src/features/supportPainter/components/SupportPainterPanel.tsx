@@ -21,6 +21,8 @@ import {
   Settings,
   Save,
   X,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { Card, CardHeader, IconButton, Button, Toast, ToastViewport } from '@/components/ui/primitives';
 import { supportPainterStore, useSupportPainterState } from '../supportPainterStore';
@@ -41,6 +43,13 @@ import { pushHistory } from '@/history/historyStore';
 import { CustomBrushModal } from './CustomBrushModal';
 import { SupportPipelineEditor } from './SupportPipelineEditor';
 import { DivergentScriptWarningModal } from './DivergentScriptWarningModal';
+import { ImportConflictModal } from './ImportConflictModal';
+import {
+  pickSavePathWithNativeDialogOptions,
+  pickOpenFilesWithNativeDialog,
+  writeBytesToNativePath,
+  readPrintArtifactBytesFromPath,
+} from '@/features/slicing/tauri/nativeSlicerBridge';
 
 const BRUSH_DETAILS: Record<
   BrushType,
@@ -219,6 +228,50 @@ export function SupportPainterPanel({
   const activeSelectedIds = Array.from(state.selectedRegionIds).filter(id => state.regions.has(id));
   const [scriptNameInput, setScriptNameInput] = useState('');
   const [isSavingScript, setIsSavingScript] = useState(false);
+
+  const handleExportConfigs = async () => {
+    try {
+      const configPackJson = supportPainterStore.exportConfigPack();
+      const filename = 'support-painter-configs.json';
+      const destinationPath = await pickSavePathWithNativeDialogOptions(filename, {
+        filters: [{ name: 'Config Pack', extensions: ['json'] }]
+      });
+      if (destinationPath) {
+        const encoder = new TextEncoder();
+        const bytes = encoder.encode(configPackJson);
+        await writeBytesToNativePath(destinationPath, bytes);
+        supportPainterStore.showToast([`Successfully exported config pack to ${destinationPath}`]);
+      }
+    } catch (err: any) {
+      if (err !== 'Save cancelled by user' && err?.message !== 'Save cancelled by user') {
+        console.error('[SupportPainterPanel] Failed exporting configuration pack:', err);
+        supportPainterStore.showToast([`Export failed: ${err?.message || err}`]);
+      }
+    }
+  };
+
+  const handleImportConfigs = async () => {
+    try {
+      const picked = await pickOpenFilesWithNativeDialog('bundle', false);
+      if (picked && picked.length > 0) {
+        const filePath = picked[0].path;
+        const bytes = await readPrintArtifactBytesFromPath(filePath);
+        const decoder = new TextDecoder();
+        const content = decoder.decode(bytes);
+        const res = supportPainterStore.importConfigPack(content);
+        if (res.success) {
+          supportPainterStore.showToast([`Successfully loaded configuration pack.`]);
+        } else {
+          supportPainterStore.showToast([`Failed loading pack: ${res.error}`]);
+        }
+      }
+    } catch (err: any) {
+      if (err !== 'Open cancelled by user' && err?.message !== 'Open cancelled by user') {
+        console.error('[SupportPainterPanel] Failed importing configuration pack:', err);
+        supportPainterStore.showToast([`Import failed: ${err?.message || err}`]);
+      }
+    }
+  };
 
   // Find matched script for Active tab to keep inline input synchronized
   const activeCustomBrush = state.activeCustomBrushId ? state.customBrushes.get(state.activeCustomBrushId) : undefined;
@@ -1697,6 +1750,29 @@ export function SupportPainterPanel({
                     </IconButton>
                   )}
                 </div>
+
+                <div className="flex items-center gap-2 mt-2 w-full border-t border-border-subtle/30 pt-2 justify-end">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleImportConfigs}
+                    className="!text-[10px] py-1 px-2 flex items-center gap-1 hover:bg-black/10"
+                    title="Import configurations pack"
+                  >
+                    <Download className="w-3 h-3 text-sky-400" />
+                    <span>Import Configs</span>
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleExportConfigs}
+                    className="!text-[10px] py-1 px-2 flex items-center gap-1 hover:bg-black/10"
+                    title="Export custom configurations pack"
+                  >
+                    <Upload className="w-3 h-3 text-emerald-400" />
+                    <span>Export Configs</span>
+                  </Button>
+                </div>
               </div>
             );
           })()}
@@ -2530,6 +2606,13 @@ export function SupportPainterPanel({
             setEditingPlacementScriptId(firstScriptId);
             setPipelineEditingContext('roi');
           }}
+        />
+      )}
+      {state.conflictState && (
+        <ImportConflictModal
+          conflicts={state.conflictState.conflicts}
+          onClose={() => supportPainterStore.cancelImportConflicts()}
+          onResolve={(resolutions) => supportPainterStore.resolveImportConflicts(resolutions)}
         />
       )}
     </Card>
