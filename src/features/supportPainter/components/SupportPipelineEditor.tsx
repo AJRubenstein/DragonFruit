@@ -22,6 +22,8 @@ interface SupportPipelineEditorProps {
   onSave?: () => void;
   onClose?: () => void;
   colorTheme?: string; // Sourced from brush color
+  placementScriptId?: string | null;
+  onPlacementScriptIdChange?: (id: string | null) => void;
 }
 
 const SupportSpacingGauge = ({ op }: { op: CustomSupportOperation }) => {
@@ -168,6 +170,8 @@ export function SupportPipelineEditor({
   onSave,
   onClose,
   colorTheme = '#FF5B6F',
+  placementScriptId = null,
+  onPlacementScriptIdChange,
 }: SupportPipelineEditorProps) {
   const [expandedOp, setExpandedOp] = useState<string | null>(null);
   const state = useSupportPainterState();
@@ -175,21 +179,27 @@ export function SupportPipelineEditor({
   const [isSavingPopupScript, setIsSavingPopupScript] = useState(false);
 
   // Find matched script for SupportPipelineEditor to keep inline input synchronized
-  const activeSettings = getSettings();
-  const trunkWidth = activeSettings?.shaft?.diameterMm ?? 1.0;
-  const defaultSpacing = isNaN(trunkWidth) ? 4.0 : trunkWidth * 4.0;
+  const matchedScriptForSync = placementScriptId ? state.placementScripts.get(placementScriptId) : null;
+  const isReadOnly = !!(matchedScriptForSync?.isReadOnly);
 
-  const currentPipelineForMatch = upgradePipeline(initialPipeline, 'MacroFace', defaultSpacing);
-  const matchedScriptForSync = Array.from(state.placementScripts.values()).find(script => {
-    let scriptOps = script.operations;
-    if (script.isBuiltIn) {
-      const brushType = script.id.replace('default-', '') as BrushType;
-      scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
-    } else {
-      scriptOps = upgradePipeline(script.operations, 'MacroFace', defaultSpacing);
-    }
-    return arePipelinesEquivalent(scriptOps, currentPipelineForMatch);
-  });
+  const handleCloneToCustom = () => {
+    const defaultName = matchedScriptForSync ? `${matchedScriptForSync.name} (Custom)` : 'Custom Script';
+    const name = prompt('Enter a name for the custom support sequence:', defaultName);
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+
+    const newScriptId = `custom-script-${Date.now()}`;
+    const newScript = {
+      id: newScriptId,
+      name: trimmed,
+      operations: JSON.parse(JSON.stringify(initialPipeline)),
+      isBuiltIn: false,
+      isReadOnly: false,
+    };
+    supportPainterStore.addPlacementScript(newScript);
+    onPlacementScriptIdChange?.(newScriptId);
+  };
 
   useEffect(() => {
     if (matchedScriptForSync) {
@@ -200,6 +210,9 @@ export function SupportPipelineEditor({
   }, [matchedScriptForSync?.id]);
 
   const updateOp = (index: number, updates: Partial<CustomSupportOperation>) => {
+    if (placementScriptId && placementScriptId !== 'unsaved') {
+      onPlacementScriptIdChange?.('unsaved');
+    }
     const nextOps = initialPipeline.map((op, idx) => {
       if (idx === index) {
         return { ...op, ...updates };
@@ -210,6 +223,9 @@ export function SupportPipelineEditor({
   };
 
   const updateOpSpacing = (index: number, updates: Partial<CustomSupportOperation['spacing']>) => {
+    if (placementScriptId && placementScriptId !== 'unsaved') {
+      onPlacementScriptIdChange?.('unsaved');
+    }
     const nextOps = initialPipeline.map((op, idx) => {
       if (idx === index) {
         return {
@@ -223,6 +239,9 @@ export function SupportPipelineEditor({
   };
 
   const updateOpSuppression = (index: number, updates: Partial<CustomSupportOperation['suppression']>) => {
+    if (placementScriptId && placementScriptId !== 'unsaved') {
+      onPlacementScriptIdChange?.('unsaved');
+    }
     const nextOps = initialPipeline.map((op, idx) => {
       if (idx === index) {
         return {
@@ -238,6 +257,9 @@ export function SupportPipelineEditor({
   const moveOp = (index: number, dir: 'up' | 'down') => {
     if (dir === 'up' && index === 0) return;
     if (dir === 'down' && index === initialPipeline.length - 1) return;
+    if (placementScriptId && placementScriptId !== 'unsaved') {
+      onPlacementScriptIdChange?.('unsaved');
+    }
 
     const nextOps = [...initialPipeline];
     const targetIdx = dir === 'up' ? index - 1 : index + 1;
@@ -248,6 +270,9 @@ export function SupportPipelineEditor({
   };
 
   const addOp = (type: CustomSupportOperationType) => {
+    if (placementScriptId && placementScriptId !== 'unsaved') {
+      onPlacementScriptIdChange?.('unsaved');
+    }
     const defaultSpacing = 4.0;
     const newOp: CustomSupportOperation = {
       id: `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -281,11 +306,17 @@ export function SupportPipelineEditor({
   };
 
   const deleteOp = (index: number) => {
+    if (placementScriptId && placementScriptId !== 'unsaved') {
+      onPlacementScriptIdChange?.('unsaved');
+    }
     const nextOps = initialPipeline.filter((_, idx) => idx !== index);
     onChange(nextOps);
   };
 
   const applyPresetToOp = (index: number, presetId: string) => {
+    if (placementScriptId && placementScriptId !== 'unsaved') {
+      onPlacementScriptIdChange?.('unsaved');
+    }
     const nextOps = initialPipeline.map((op, idx) => {
       if (idx === index) {
         const preset = getPresetById(presetId);
@@ -309,30 +340,42 @@ export function SupportPipelineEditor({
   const renderContent = () => {
     return (
       <div className="flex flex-col gap-3">
+        {isReadOnly && (
+          <div
+            className="flex items-center justify-between p-3 rounded-lg border text-xs gap-3 mb-3 animate-fade-in"
+            style={{
+              background: 'rgba(217, 119, 6, 0.15)',
+              borderColor: 'rgb(217, 119, 6)',
+              color: 'var(--text-strong, #fff)',
+            }}
+          >
+            <div className="flex flex-col gap-0.5">
+              <span className="font-semibold text-amber-500">Built-in Template</span>
+              <span>This default sequence is read-only. Clone it to customize parameters.</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCloneToCustom}
+              className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold cursor-pointer transition-colors flex-shrink-0"
+            >
+              Clone to Custom
+            </button>
+          </div>
+        )}
         {/* Placement Script Preset Toolbar inside the popup (only when not embedded) */}
         {!isEmbedded && (() => {
-          const activeSettings = getSettings();
-          const trunkWidth = activeSettings?.shaft?.diameterMm ?? 1.0;
-          const defaultSpacing = isNaN(trunkWidth) ? 4.0 : trunkWidth * 4.0;
-
-          const currentPipeline = upgradePipeline(initialPipeline, 'MacroFace', defaultSpacing);
-          const matchedScript = Array.from(state.placementScripts.values()).find(script => {
-            let scriptOps = script.operations;
-            if (script.isBuiltIn) {
-              const brushType = script.id.replace('default-', '') as BrushType;
-              scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
-            } else {
-              scriptOps = upgradePipeline(script.operations, 'MacroFace', defaultSpacing);
-            }
-            return arePipelinesEquivalent(scriptOps, currentPipeline);
-          });
+          const matchedScript = placementScriptId ? state.placementScripts.get(placementScriptId) : null;
 
           const handleSelectPreset = (e: React.ChangeEvent<HTMLSelectElement>) => {
             const scriptId = e.target.value;
-            if (scriptId === 'unsaved') return;
+            if (scriptId === 'unsaved') {
+              onPlacementScriptIdChange?.('unsaved');
+              return;
+            }
             const script = state.placementScripts.get(scriptId);
             if (script) {
               onChange(JSON.parse(JSON.stringify(script.operations)));
+              onPlacementScriptIdChange?.(scriptId);
             }
           };
 
@@ -354,12 +397,14 @@ export function SupportPipelineEditor({
             const newScript = {
               id: scriptId,
               name,
-              operations: JSON.parse(JSON.stringify(currentPipeline)),
-              isBuiltIn: false
+              operations: JSON.parse(JSON.stringify(initialPipeline)),
+              isBuiltIn: false,
+              isReadOnly: false,
             };
 
             supportPainterStore.addPlacementScript(newScript);
             supportPainterStore.showToast([`Saved placement script "${name}"`]);
+            onPlacementScriptIdChange?.(scriptId);
             setIsSavingPopupScript(false);
           };
 
@@ -368,6 +413,7 @@ export function SupportPipelineEditor({
             if (confirm(`Are you sure you want to delete the placement script "${matchedScript.name}"?`)) {
               supportPainterStore.deletePlacementScript(matchedScript.id);
               supportPainterStore.showToast([`Deleted placement script "${matchedScript.name}"`]);
+              onPlacementScriptIdChange?.('unsaved');
             }
           };
 
@@ -503,14 +549,14 @@ export function SupportPipelineEditor({
                     {/* Sort buttons */}
                     <IconButton
                       onClick={() => moveOp(index, 'up')}
-                      disabled={index === 0}
+                      disabled={index === 0 || isReadOnly}
                       className="!p-0.5"
                     >
                       <ChevronUp className="w-3.5 h-3.5" />
                     </IconButton>
                     <IconButton
                       onClick={() => moveOp(index, 'down')}
-                      disabled={index === initialPipeline.length - 1}
+                      disabled={index === initialPipeline.length - 1 || isReadOnly}
                       className="!p-0.5"
                     >
                       <ChevronDown className="w-3.5 h-3.5" />
@@ -518,10 +564,11 @@ export function SupportPipelineEditor({
                     
                     <IconButton
                       onClick={() => deleteOp(index)}
-                      className="!p-0.5 hover:bg-red-500/10"
+                      disabled={isReadOnly}
+                      className="!p-0.5 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
                       title="Delete step from stack"
                     >
-                      <Trash className="w-3.5 h-3.5" style={{ color: 'var(--danger, #ef4444)' }} />
+                      <Trash className="w-3.5 h-3.5" style={{ color: isReadOnly ? 'var(--text-muted)' : 'var(--danger, #ef4444)' }} />
                     </IconButton>
 
                     <button
@@ -541,11 +588,17 @@ export function SupportPipelineEditor({
 
                 {/* Collapsible Config Area */}
                 {isExpanded && (
-                  <div
+                  <fieldset
+                    disabled={isReadOnly}
                     className="px-4 pb-4 pt-3 flex flex-col gap-4 border-t text-xs leading-normal"
                     style={{
                       borderColor: 'var(--border-subtle, #2d3748)',
                       background: 'rgba(0,0,0,0.15)',
+                      borderStyle: 'solid',
+                      borderWidth: '1px 0 0 0',
+                      padding: '12px 16px 16px 16px',
+                      margin: 0,
+                      minWidth: 0,
                     }}
                   >
                     {/* Spacing Parameters */}
@@ -1112,7 +1165,7 @@ export function SupportPipelineEditor({
                         )}
                       </div>
                     )}
-                  </div>
+                  </fieldset>
                 )}
               </div>
             );
@@ -1132,11 +1185,13 @@ export function SupportPipelineEditor({
                   key={type}
                   type="button"
                   onClick={() => addOp(type)}
-                  className="text-xs font-semibold px-3 py-1.5 rounded border transition-colors hover:bg-black/20"
+                  disabled={isReadOnly}
+                  className="text-xs font-semibold px-3 py-1.5 rounded border transition-colors hover:bg-black/20 disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{
-                    borderColor: colorTheme,
-                    color: colorTheme,
+                    borderColor: isReadOnly ? 'var(--text-muted, #718096)' : colorTheme,
+                    color: isReadOnly ? 'var(--text-muted, #718096)' : colorTheme,
                     background: 'transparent',
+                    opacity: isReadOnly ? 0.4 : 1,
                   }}
                 >
                   {label}

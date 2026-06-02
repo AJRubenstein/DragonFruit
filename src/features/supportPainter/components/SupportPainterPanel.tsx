@@ -40,6 +40,7 @@ import { PAINT_ROI_STRIP, PAINT_ROI_ADD } from '../supportPainterHistoryTypes';
 import { pushHistory } from '@/history/historyStore';
 import { CustomBrushModal } from './CustomBrushModal';
 import { SupportPipelineEditor } from './SupportPipelineEditor';
+import { DivergentScriptWarningModal } from './DivergentScriptWarningModal';
 
 const BRUSH_DETAILS: Record<
   BrushType,
@@ -213,6 +214,8 @@ export function SupportPainterPanel({
   const [isScanning, setIsScanning] = useState(false);
   const [pipelineEditingContext, setPipelineEditingContext] = useState<'active' | 'roi' | null>(null);
   const [editingPipeline, setEditingPipeline] = useState<CustomSupportOperation[]>([]);
+  const [editingPlacementScriptId, setEditingPlacementScriptId] = useState<string | null>(null);
+  const [showDivergentModal, setShowDivergentModal] = useState(false);
   const activeSelectedIds = Array.from(state.selectedRegionIds).filter(id => state.regions.has(id));
   const [scriptNameInput, setScriptNameInput] = useState('');
   const [isSavingScript, setIsSavingScript] = useState(false);
@@ -2133,22 +2136,51 @@ export function SupportPainterPanel({
                       variant="secondary"
                       size="sm"
                       onClick={() => {
-                        if (isSingleSelection && firstSelectedRegion) {
-                          const rawPipeline = firstSelectedRegion.customBrush?.operations || getDefaultPipeline(firstSelectedRegion.brushType);
-                          const currentPipeline = upgradePipeline(rawPipeline, firstSelectedRegion.brushType, defaultSpacing);
+                        if (!isSelectionActive) return;
+                        if (selectedIds.length === 1) {
+                          const first = state.regions.get(selectedIds[0])!;
+                          const rawPipeline = first.customBrush?.operations || getDefaultPipeline(first.brushType);
+                          const currentPipeline = upgradePipeline(rawPipeline, first.brushType, defaultSpacing);
                           setEditingPipeline(JSON.parse(JSON.stringify(currentPipeline)));
+                          setEditingPlacementScriptId(first.placementScriptId || 'unsaved');
                           setPipelineEditingContext('roi');
+                        } else {
+                          // Check for divergence
+                          const first = state.regions.get(selectedIds[0])!;
+                          const firstScriptId = first.placementScriptId || 'unsaved';
+                          const firstPipeline = first.customBrush?.operations || getDefaultPipeline(first.brushType);
+                          const firstPipelineUpgraded = upgradePipeline(firstPipeline, first.brushType, defaultSpacing);
+                          
+                          let divergent = false;
+                          for (let i = 1; i < selectedIds.length; i++) {
+                            const other = state.regions.get(selectedIds[i])!;
+                            const otherScriptId = other.placementScriptId || 'unsaved';
+                            const otherPipeline = other.customBrush?.operations || getDefaultPipeline(other.brushType);
+                            const otherPipelineUpgraded = upgradePipeline(otherPipeline, other.brushType, defaultSpacing);
+                            if (otherScriptId !== firstScriptId || !arePipelinesEquivalent(firstPipelineUpgraded, otherPipelineUpgraded)) {
+                              divergent = true;
+                              break;
+                            }
+                          }
+                          
+                          if (divergent) {
+                            setShowDivergentModal(true);
+                          } else {
+                            setEditingPipeline(JSON.parse(JSON.stringify(firstPipelineUpgraded)));
+                            setEditingPlacementScriptId(firstScriptId);
+                            setPipelineEditingContext('roi');
+                          }
                         }
                       }}
                       className="w-full !text-[10px] py-1.5 flex items-center justify-start px-2 gap-1.5"
-                      disabled={!isSingleSelection}
-                      title={!isSingleSelection ? "Multi-edit unlocked in Phase 2" : "Edit ROI Supports"}
+                      disabled={!isSelectionActive}
+                      title="Edit ROI Supports"
                       style={{
-                        opacity: !isSingleSelection ? 0.4 : 1,
-                        cursor: !isSingleSelection ? 'not-allowed' : 'pointer',
+                        opacity: !isSelectionActive ? 0.4 : 1,
+                        cursor: !isSelectionActive ? 'not-allowed' : 'pointer',
                       }}
                     >
-                      <Settings className="w-3.5 h-3.5" style={{ color: !isSingleSelection ? 'var(--text-muted)' : 'var(--accent)' }} />
+                      <Settings className="w-3.5 h-3.5" style={{ color: !isSelectionActive ? 'var(--text-muted)' : 'var(--accent)' }} />
                       <span>Edit ROI Supports</span>
                     </Button>
                     {/* Recalculate ROI Supports */}
@@ -2206,25 +2238,18 @@ export function SupportPainterPanel({
                       ROI Placement Script
                     </span>
                     {(() => {
-                      const rawPipeline = firstSelectedRegion.customBrush?.operations || getDefaultPipeline(firstSelectedRegion.brushType);
-                      const currentPipeline = upgradePipeline(rawPipeline, firstSelectedRegion.brushType, defaultSpacing);
-                      const matchedScript = Array.from(state.placementScripts.values()).find(script => {
-                        let scriptOps = script.operations;
-                        if (script.isBuiltIn) {
-                          const brushType = script.id.replace('default-', '') as BrushType;
-                          scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
-                        } else {
-                          scriptOps = upgradePipeline(script.operations, firstSelectedRegion.brushType, defaultSpacing);
-                        }
-                        return arePipelinesEquivalent(scriptOps, currentPipeline);
-                      });
+                      const matchedScriptId = firstSelectedRegion.placementScriptId || 'unsaved';
+                      const matchedScript = state.placementScripts.get(matchedScriptId);
 
                       const handleSelectRoiScript = (e: React.ChangeEvent<HTMLSelectElement>) => {
                         const scriptId = e.target.value;
-                        if (scriptId === 'unsaved') return;
+                        if (scriptId === 'unsaved') {
+                          supportPainterStore.updateRegionCustomBrush(firstSelectedRegion.id, firstSelectedRegion.customBrush?.operations || [], 'unsaved');
+                          return;
+                        }
                         const script = state.placementScripts.get(scriptId);
                         if (script) {
-                          supportPainterStore.updateRegionCustomBrush(firstSelectedRegion.id, JSON.parse(JSON.stringify(script.operations)));
+                          supportPainterStore.updateRegionCustomBrush(firstSelectedRegion.id, JSON.parse(JSON.stringify(script.operations)), scriptId);
                           const activeMesh = getActiveMesh?.();
                           if (activeModelId && activeMesh) {
                             void regenerateSupportsForRoi(activeModelId, activeMesh, firstSelectedRegion.id);
@@ -2234,7 +2259,7 @@ export function SupportPainterPanel({
 
                       return (
                         <select
-                          value={matchedScript ? matchedScript.id : 'unsaved'}
+                          value={matchedScriptId}
                           onChange={handleSelectRoiScript}
                           className="w-full bg-surface-1 text-text-strong text-[11px] px-2 py-1.5 rounded border border-border-subtle outline-none mt-1 cursor-pointer"
                           style={{
@@ -2243,12 +2268,12 @@ export function SupportPainterPanel({
                             color: 'var(--text-strong, #f3f4f6)',
                           }}
                         >
-                          {!matchedScript && (
+                          {matchedScriptId === 'unsaved' && (
                             <option value="unsaved">(Unsaved Placement Script)</option>
                           )}
                           {Array.from(state.placementScripts.values()).map(script => (
                             <option key={script.id} value={script.id}>
-                              {script.name}
+                                {script.name}
                             </option>
                           ))}
                         </select>
@@ -2434,16 +2459,50 @@ export function SupportPainterPanel({
           comparisonPipeline={getComparisonPipeline(pipelineEditingContext, state.selectedRegionId)}
           onChange={setEditingPipeline}
           onClose={() => setPipelineEditingContext(null)}
+          placementScriptId={editingPlacementScriptId}
+          onPlacementScriptIdChange={setEditingPlacementScriptId}
           onSave={async () => {
             if (pipelineEditingContext === 'active') {
               supportPainterStore.setActiveBrushPipeline(editingPipeline);
             } else if (pipelineEditingContext === 'roi') {
-              const activeSelected = state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null;
-              if (activeSelected) {
-                supportPainterStore.updateRegionCustomBrush(activeSelected.id, editingPipeline);
+              const selectedIds = Array.from(state.selectedRegionIds).filter(id => state.regions.has(id));
+              if (selectedIds.length > 1) {
+                // Batch update of the placement script and pipeline operations
+                beginSupportStateBatch();
+                try {
+                  for (const regionId of selectedIds) {
+                    supportPainterStore.updateRegionCustomBrush(regionId, editingPipeline, editingPlacementScriptId);
+                  }
+                } finally {
+                  endSupportStateBatch();
+                }
                 const activeMesh = getActiveMesh?.();
                 if (activeModelId && activeMesh) {
-                  void regenerateSupportsForRoi(activeModelId, activeMesh, activeSelected.id);
+                  const targetRegions = selectedIds.map(id => state.regions.get(id)).filter(Boolean) as ROIRegion[];
+                  setIsGenerating(true);
+                  try {
+                    // Purge supports for all targeted ROIs first in a single batch
+                    const beforeState = getSupportsSnapshot();
+                    let nextState = beforeState;
+                    for (const id of selectedIds) {
+                      nextState = deleteSupportsForRoi(nextState, id);
+                    }
+                    setSupportSnapshot(nextState);
+
+                    await generateSupportsFromPainter(activeModelId, activeMesh, targetRegions);
+                  } finally {
+                    setIsGenerating(false);
+                  }
+                }
+              } else {
+                // Single ROI update
+                const activeSelected = state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null;
+                if (activeSelected) {
+                  supportPainterStore.updateRegionCustomBrush(activeSelected.id, editingPipeline, editingPlacementScriptId);
+                  const activeMesh = getActiveMesh?.();
+                  if (activeModelId && activeMesh) {
+                    void regenerateSupportsForRoi(activeModelId, activeMesh, activeSelected.id);
+                  }
                 }
               }
             }
@@ -2454,6 +2513,23 @@ export function SupportPainterPanel({
               ? BRUSH_COLORS[state.activeBrush]
               : (state.selectedRegionId ? state.regions.get(state.selectedRegionId)?.color : undefined)
           }
+        />
+      )}
+      {showDivergentModal && (
+        <DivergentScriptWarningModal
+          selectedRegions={activeSelectedIds.map(id => state.regions.get(id)).filter(Boolean) as ROIRegion[]}
+          placementScripts={state.placementScripts}
+          onClose={() => setShowDivergentModal(false)}
+          onConfirm={() => {
+            setShowDivergentModal(false);
+            const first = state.regions.get(activeSelectedIds[0])!;
+            const firstScriptId = first.placementScriptId || 'unsaved';
+            const firstPipeline = first.customBrush?.operations || getDefaultPipeline(first.brushType);
+            const firstPipelineUpgraded = upgradePipeline(firstPipeline, first.brushType, defaultSpacing);
+            setEditingPipeline(JSON.parse(JSON.stringify(firstPipelineUpgraded)));
+            setEditingPlacementScriptId(firstScriptId);
+            setPipelineEditingContext('roi');
+          }}
         />
       )}
     </Card>

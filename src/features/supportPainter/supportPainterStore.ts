@@ -171,6 +171,7 @@ function initializeDefaultPlacementScripts() {
       name: `Default - ${brushType}`,
       operations: defaultOps,
       isBuiltIn: true,
+      isReadOnly: true,
     });
   }
 }
@@ -691,6 +692,8 @@ export const supportPainterStore = {
       operations: JSON.parse(JSON.stringify(resolvedOps)),
     };
 
+    const scriptId = activePlacementScriptId || `default-${activeCustomBrush ? activeCustomBrush.baseBrush : payload.brushType}`;
+
     const newRegion: ROIRegion = {
       id,
       brushType: payload.brushType,
@@ -700,6 +703,7 @@ export const supportPainterStore = {
       proposedOnly: false,
       createdAt: Date.now(),
       customBrush: customBrushOverride,
+      placementScriptId: scriptId,
     };
 
     regions.set(id, newRegion);
@@ -1536,7 +1540,7 @@ export const supportPainterStore = {
     notify();
   },
 
-  updateRegionCustomBrush(regionId: string, operations: CustomSupportOperation[]) {
+  updateRegionCustomBrush(regionId: string, operations: CustomSupportOperation[], placementScriptId?: string | null) {
     const region = regions.get(regionId);
     if (!region) return;
 
@@ -1561,6 +1565,10 @@ export const supportPainterStore = {
       ...baseTemplate,
       operations: [...operations],
     };
+
+    if (placementScriptId !== undefined) {
+      region.placementScriptId = placementScriptId;
+    }
 
     if (activeModelId) {
       regionsByModel.set(activeModelId, regions);

@@ -167,6 +167,7 @@ export interface ROIRegion {
 
   // ─── Version 3 Custom Support Brushes ───
   customBrush?:    CustomBrushTemplate;
+  placementScriptId?: string | null;
 }
 
 // ─── Stage-Based Suppression Configurations [STAGE_SUPPRESSION] ───────────────
@@ -470,6 +471,7 @@ export interface SupportPlacementScript {
   name: string;
   operations: CustomSupportOperation[];
   isBuiltIn?: boolean;
+  isReadOnly?: boolean;
 }
 
 export function arePipelinesEquivalent(a: CustomSupportOperation[], b: CustomSupportOperation[]): boolean {
