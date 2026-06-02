@@ -582,6 +582,7 @@ export const supportPainterStore = {
     if (activeBrush === brush) return;
     activeBrush = brush;
     activeBrushPipeline = null; // Clear override on brush swap
+    activePlacementScriptId = `default-${brush}`; // Synchronize preset dropdown to the brush default script!
     triangleColorMap = _recomputeTriangleColorMap();
     updateSnapshot();
     notify();
@@ -1133,6 +1134,7 @@ export const supportPainterStore = {
     if (activeCustomBrushId === id) return;
     activeCustomBrushId = id;
     activeBrushPipeline = null; // Clear override on brush swap
+    activePlacementScriptId = null; // Clear override to allow custom brush equivalent resolution
     updateSnapshot();
     notify();
   },

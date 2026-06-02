@@ -8,8 +8,10 @@ import {
   Trash,
 } from 'lucide-react';
 import { IconButton, Button } from '@/components/ui/primitives';
-import { type CustomSupportOperation, type CustomSupportOperationType } from '../supportPainterTypes';
+import { type CustomSupportOperation, type CustomSupportOperationType, type BrushType, arePipelinesEquivalent, upgradePipeline } from '../supportPainterTypes';
 import { getPresetList, getPresetById } from '@/supports/Settings/presets';
+import { supportPainterStore, useSupportPainterState } from '../supportPainterStore';
+import { getSettings } from '@/supports/Settings';
 
 interface SupportPipelineEditorProps {
   initialPipeline: CustomSupportOperation[];
@@ -167,6 +169,7 @@ export function SupportPipelineEditor({
   colorTheme = '#FF5B6F',
 }: SupportPipelineEditorProps) {
   const [expandedOp, setExpandedOp] = useState<string | null>(null);
+  const state = useSupportPainterState();
 
   const updateOp = (index: number, updates: Partial<CustomSupportOperation>) => {
     const nextOps = initialPipeline.map((op, idx) => {
@@ -278,6 +281,67 @@ export function SupportPipelineEditor({
   const renderContent = () => {
     return (
       <div className="flex flex-col gap-3">
+        {/* Placement Script Preset Toolbar inside the popup (only when not embedded) */}
+        {!isEmbedded && (() => {
+          const activeSettings = getSettings();
+          const trunkWidth = activeSettings?.shaft?.diameterMm ?? 1.0;
+          const defaultSpacing = isNaN(trunkWidth) ? 4.0 : trunkWidth * 4.0;
+
+          const currentPipeline = upgradePipeline(initialPipeline, 'MacroFace', defaultSpacing);
+          const matchedScript = Array.from(state.placementScripts.values()).find(script => {
+            let scriptOps = script.operations;
+            if (script.isBuiltIn) {
+              const brushType = script.id.replace('default-', '') as BrushType;
+              scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
+            } else {
+              scriptOps = upgradePipeline(script.operations, 'MacroFace', defaultSpacing);
+            }
+            return arePipelinesEquivalent(scriptOps, currentPipeline);
+          });
+
+          const handleSelectPreset = (e: React.ChangeEvent<HTMLSelectElement>) => {
+            const scriptId = e.target.value;
+            if (scriptId === 'unsaved') return;
+            const script = state.placementScripts.get(scriptId);
+            if (script) {
+              onChange(JSON.parse(JSON.stringify(script.operations)));
+            }
+          };
+
+          return (
+            <div
+              className="flex items-center gap-2.5 px-4 py-2 border text-xs flex-shrink-0 mb-3 rounded-lg animate-fade-in"
+              style={{
+                background: 'var(--surface-2, #1a202c)',
+                borderColor: 'var(--border-subtle, #2d3748)',
+              }}
+            >
+              <span className="font-semibold text-gray-300">
+                Load Preset Script:
+              </span>
+              <select
+                value={matchedScript ? matchedScript.id : 'unsaved'}
+                onChange={handleSelectPreset}
+                className="flex-1 max-w-[280px] bg-surface-1 text-text-strong text-[11px] px-2 py-1 rounded border border-border-subtle outline-none"
+                style={{
+                  background: 'var(--surface-1, #151a22)',
+                  borderColor: 'var(--border-subtle, #2d3748)',
+                  color: 'var(--text-strong, #f3f4f6)',
+                }}
+              >
+                {!matchedScript && (
+                  <option value="unsaved">(Unsaved Placement Script)</option>
+                )}
+                {Array.from(state.placementScripts.values()).map(script => (
+                  <option key={script.id} value={script.id}>
+                    {script.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })()}
+
         <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
           Operations Precedence Sequencer
         </span>

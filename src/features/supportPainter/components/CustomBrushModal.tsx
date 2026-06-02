@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Settings,
@@ -13,6 +13,7 @@ import { OverhangArcGauge } from './OverhangArcGauge';
 import { SupportPipelineEditor } from './SupportPipelineEditor';
 import { type CustomBrushTemplate, type CustomSupportOperation, type BrushType, upgradePipeline, arePipelinesEquivalent } from '../supportPainterTypes';
 import { supportPainterStore, useSupportPainterState } from '../supportPainterStore';
+import { getSettings } from '@/supports/Settings';
 
 const safeNum = (val: number | undefined, fallback: number): number => {
   return val === undefined || isNaN(val) ? fallback : val;
@@ -182,6 +183,9 @@ export function CustomBrushModal({
   const isEditing = !!initialBrush;
   const state = useSupportPainterState();
   const [activeTab, setActiveTab] = useState<'selection' | 'pipeline'>('selection');
+  const [modalScriptNameInput, setModalScriptNameInput] = useState('');
+  const [isSavingModalScript, setIsSavingModalScript] = useState(false);
+
   const [brush, setBrush] = useState<CustomBrushTemplate>(() => {
     if (initialBrush) {
       return {
@@ -205,6 +209,32 @@ export function CustomBrushModal({
       })),
     };
   });
+
+  // Find matched script for CustomBrushModal to keep inline input synchronized
+  const activeSettings = getSettings();
+  const trunkWidth = activeSettings?.shaft?.diameterMm ?? 1.0;
+  const defaultSpacing = isNaN(trunkWidth) ? 4.0 : trunkWidth * 4.0;
+
+  const currentModalPipeline = upgradePipeline(brush.operations, brush.baseBrush || 'MacroFace', defaultSpacing);
+  const matchedModalScript = Array.from(state.placementScripts.values()).find(script => {
+    let scriptOps = script.operations;
+    if (script.isBuiltIn) {
+      const brushType = script.id.replace('default-', '') as BrushType;
+      scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
+    } else {
+      scriptOps = upgradePipeline(script.operations, brush.baseBrush || 'MacroFace', defaultSpacing);
+    }
+    return arePipelinesEquivalent(scriptOps, currentModalPipeline);
+  });
+
+  // Keep modal script name input synchronized with matched script or base brush
+  useEffect(() => {
+    if (matchedModalScript) {
+      setModalScriptNameInput(matchedModalScript.isBuiltIn ? `${matchedModalScript.name} (Custom)` : matchedModalScript.name);
+    } else {
+      setModalScriptNameInput('');
+    }
+  }, [matchedModalScript?.id]);
 
   const handleSave = () => {
     if (!brush.name.trim()) {
@@ -873,10 +903,21 @@ export function CustomBrushModal({
             <div className="flex flex-col h-full overflow-hidden">
               {/* Presets Toolbar */}
               {(() => {
-                const currentPipeline = upgradePipeline(brush.operations, brush.baseBrush || 'MacroFace');
-                const matchedScript = Array.from(state.placementScripts.values()).find(script =>
-                  arePipelinesEquivalent(script.operations, currentPipeline)
-                );
+                const activeSettings = getSettings();
+                const trunkWidth = activeSettings?.shaft?.diameterMm ?? 1.0;
+                const defaultSpacing = isNaN(trunkWidth) ? 4.0 : trunkWidth * 4.0;
+
+                const currentPipeline = upgradePipeline(brush.operations, brush.baseBrush || 'MacroFace', defaultSpacing);
+                const matchedScript = Array.from(state.placementScripts.values()).find(script => {
+                  let scriptOps = script.operations;
+                  if (script.isBuiltIn) {
+                    const brushType = script.id.replace('default-', '') as BrushType;
+                    scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
+                  } else {
+                    scriptOps = upgradePipeline(script.operations, brush.baseBrush || 'MacroFace', defaultSpacing);
+                  }
+                  return arePipelinesEquivalent(scriptOps, currentPipeline);
+                });
 
                 const handleSelectPreset = (e: React.ChangeEvent<HTMLSelectElement>) => {
                   const scriptId = e.target.value;
@@ -891,11 +932,13 @@ export function CustomBrushModal({
                 };
 
                 const handleSavePreset = () => {
-                  let defaultName = matchedScript ? matchedScript.name : "";
-                  if (matchedScript?.isBuiltIn) {
-                    defaultName = `${matchedScript.name} (Custom)`;
+                  if (!isSavingModalScript) {
+                    setModalScriptNameInput('');
+                    setIsSavingModalScript(true);
+                    return;
                   }
-                  const name = prompt("Enter a name for the support placement script:", defaultName);
+
+                  const name = modalScriptNameInput.trim();
                   if (!name) return;
 
                   const existingCustom = Array.from(state.placementScripts.values()).find(
@@ -912,6 +955,7 @@ export function CustomBrushModal({
 
                   supportPainterStore.addPlacementScript(newScript);
                   supportPainterStore.showToast([`Saved placement script "${name}"`]);
+                  setIsSavingModalScript(false);
                 };
 
                 const handleDeletePreset = () => {
@@ -920,6 +964,11 @@ export function CustomBrushModal({
                     supportPainterStore.deletePlacementScript(matchedScript.id);
                     supportPainterStore.showToast([`Deleted placement script "${matchedScript.name}"`]);
                   }
+                };
+
+                const handleCancelSavePreset = () => {
+                  setIsSavingModalScript(false);
+                  setModalScriptNameInput('');
                 };
 
                 return (
@@ -933,42 +982,76 @@ export function CustomBrushModal({
                     <span className="font-semibold text-gray-300">
                       Preset Script:
                     </span>
-                    <select
-                      value={matchedScript ? matchedScript.id : 'unsaved'}
-                      onChange={handleSelectPreset}
-                      className="flex-1 max-w-[280px] bg-surface-1 text-text-strong text-[11px] px-2 py-1.5 rounded border border-border-subtle outline-none"
-                      style={{
-                        background: 'var(--surface-1, #151a22)',
-                        borderColor: 'var(--border-subtle, #2d3748)',
-                        color: 'var(--text-strong, #f3f4f6)',
-                      }}
-                    >
-                      {!matchedScript && (
-                        <option value="unsaved">(Unsaved Placement Script)</option>
-                      )}
-                      {Array.from(state.placementScripts.values()).map(script => (
-                        <option key={script.id} value={script.id}>
-                          {script.name}
-                        </option>
-                      ))}
-                    </select>
+                    {isSavingModalScript ? (
+                      <input
+                        type="text"
+                        value={modalScriptNameInput}
+                        onChange={(e) => setModalScriptNameInput(e.target.value)}
+                        placeholder="Enter Support Script Name"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleSavePreset();
+                          } else if (e.key === 'Escape') {
+                            handleCancelSavePreset();
+                          }
+                        }}
+                        className="flex-1 max-w-[400px] bg-surface-1 text-text-strong text-[11px] px-2 py-1.5 rounded border border-border-subtle outline-none"
+                        style={{
+                          background: 'var(--surface-1, #151a22)',
+                          borderColor: 'var(--border-subtle, #2d3748)',
+                          color: 'var(--text-strong, #f3f4f6)',
+                        }}
+                      />
+                    ) : (
+                      <select
+                        value={matchedScript ? matchedScript.id : 'unsaved'}
+                        onChange={handleSelectPreset}
+                        className="flex-1 max-w-[300px] bg-surface-1 text-text-strong text-[11px] px-2 py-1.5 rounded border border-border-subtle outline-none"
+                        style={{
+                          background: 'var(--surface-1, #151a22)',
+                          borderColor: 'var(--border-subtle, #2d3748)',
+                          color: 'var(--text-strong, #f3f4f6)',
+                        }}
+                      >
+                        {!matchedScript && (
+                          <option value="unsaved">(Unsaved Placement Script)</option>
+                        )}
+                        {Array.from(state.placementScripts.values()).map(script => (
+                          <option key={script.id} value={script.id}>
+                            {script.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
 
                     <IconButton
                       onClick={handleSavePreset}
-                      className="!p-1.5 hover:bg-black/20"
+                      disabled={isSavingModalScript && !modalScriptNameInput.trim()}
+                      className="!p-1.5 hover:bg-black/20 disabled:opacity-40 disabled:cursor-not-allowed"
                       title="Save Placement Script"
                     >
-                      <Save className="w-3.5 h-3.5" style={{ color: 'var(--accent, #4a90e2)' }} />
+                      <Save className="w-3.5 h-3.5" style={{ color: (isSavingModalScript && !modalScriptNameInput.trim()) ? 'var(--text-muted)' : 'var(--accent, #4a90e2)' }} />
                     </IconButton>
 
-                    <IconButton
-                      onClick={handleDeletePreset}
-                      disabled={!matchedScript || matchedScript.isBuiltIn}
-                      className="!p-1.5 hover:bg-black/20 disabled:opacity-40 disabled:cursor-not-allowed"
-                      title={matchedScript?.isBuiltIn ? "Cannot delete built-in script" : "Delete Placement Script"}
-                    >
-                      <Trash className="w-3.5 h-3.5" style={{ color: (!matchedScript || matchedScript.isBuiltIn) ? 'var(--text-muted, #718096)' : 'var(--danger, #ef4444)' }} />
-                    </IconButton>
+                    {isSavingModalScript ? (
+                      <IconButton
+                        onClick={handleCancelSavePreset}
+                        className="!p-1.5 hover:bg-black/20"
+                        title="Cancel Saving"
+                      >
+                        <X className="w-3.5 h-3.5" style={{ color: 'var(--text-muted, #718096)' }} />
+                      </IconButton>
+                    ) : (
+                      <IconButton
+                        onClick={handleDeletePreset}
+                        disabled={!matchedScript || matchedScript.isBuiltIn}
+                        className="!p-1.5 hover:bg-black/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={matchedScript?.isBuiltIn ? "Cannot delete built-in script" : "Delete Placement Script"}
+                      >
+                        <Trash className="w-3.5 h-3.5" style={{ color: (!matchedScript || matchedScript.isBuiltIn) ? 'var(--text-muted, #718096)' : 'var(--danger, #ef4444)' }} />
+                      </IconButton>
+                    )}
                   </div>
                 );
               })()}

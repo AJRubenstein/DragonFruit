@@ -1284,6 +1284,26 @@ if (uDitherAmount > 0.0) {
                 const activeCustomBrush = snap.activeCustomBrushId ? snap.customBrushes.get(snap.activeCustomBrushId) : undefined;
                 const color = activeCustomBrush ? activeCustomBrush.color : BRUSH_COLORS[snap.activeBrush];
 
+                let customBrushOverride = activeCustomBrush ? { ...activeCustomBrush } : undefined;
+                if (snap.activeBrushPipeline) {
+                  customBrushOverride = {
+                    id: `temp-pipeline-${Date.now()}`,
+                    name: `Temp ${activeCustomBrush ? activeCustomBrush.name : snap.activeBrush} Config`,
+                    color,
+                    baseBrush: activeCustomBrush ? activeCustomBrush.baseBrush : snap.activeBrush,
+                    selection: activeCustomBrush ? { ...activeCustomBrush.selection } : {
+                      normalConeAngleMinDeg: 0,
+                      normalConeAngleMaxDeg: 90,
+                      overhangSlopeMinDeg: 0,
+                      overhangSlopeMaxDeg: 90,
+                      curvatureMin: 0,
+                      curvatureMax: 1,
+                      dihedralAngleToleranceDeg: 0,
+                    },
+                    operations: [...snap.activeBrushPipeline],
+                  };
+                }
+
                 const mockRegion: ROIRegion = {
                   id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
                   brushType: snap.activeBrush,
@@ -1292,7 +1312,7 @@ if (uDitherAmount > 0.0) {
                   color,
                   proposedOnly: false,
                   createdAt: Date.now(),
-                  customBrush: activeCustomBrush ? { ...activeCustomBrush } : undefined,
+                  customBrush: customBrushOverride,
                 };
 
                 // Instantly generate and place supports

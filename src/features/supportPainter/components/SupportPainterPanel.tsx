@@ -20,6 +20,7 @@ import {
   Square,
   Settings,
   Save,
+  X,
 } from 'lucide-react';
 import { Card, CardHeader, IconButton, Button, Toast, ToastViewport } from '@/components/ui/primitives';
 import { supportPainterStore, useSupportPainterState } from '../supportPainterStore';
@@ -211,69 +212,36 @@ export function SupportPainterPanel({
   const [pipelineEditingContext, setPipelineEditingContext] = useState<'active' | 'roi' | null>(null);
   const [editingPipeline, setEditingPipeline] = useState<CustomSupportOperation[]>([]);
   const activeSelectedIds = Array.from(state.selectedRegionIds).filter(id => state.regions.has(id));
+  const [scriptNameInput, setScriptNameInput] = useState('');
+  const [isSavingScript, setIsSavingScript] = useState(false);
+
+  // Find matched script for Active tab to keep inline input synchronized
+  const activeCustomBrush = state.activeCustomBrushId ? state.customBrushes.get(state.activeCustomBrushId) : undefined;
+  const rawPipeline = state.activeBrushPipeline || (activeCustomBrush?.operations) || upgradePipeline(undefined, state.activeBrush, defaultSpacing);
+  const currentPipeline = upgradePipeline(rawPipeline, state.activeBrush, defaultSpacing);
+
+  const matchedActiveScript = Array.from(state.placementScripts.values()).find(script => {
+    let scriptOps = script.operations;
+    if (script.isBuiltIn) {
+      const brushType = script.id.replace('default-', '') as BrushType;
+      scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
+    } else {
+      scriptOps = upgradePipeline(script.operations, state.activeBrush, defaultSpacing);
+    }
+    return arePipelinesEquivalent(scriptOps, currentPipeline);
+  });
+
+  // Keep script name input synchronized with matched active script
+  useEffect(() => {
+    if (matchedActiveScript) {
+      setScriptNameInput(matchedActiveScript.isBuiltIn ? `${matchedActiveScript.name} (Custom)` : matchedActiveScript.name);
+    } else {
+      setScriptNameInput('');
+    }
+  }, [matchedActiveScript?.id]);
 
   const getDefaultPipeline = (brushType: BrushType): CustomSupportOperation[] => {
-    const isPointPathOrMarker = brushType === 'PointPath' || brushType === 'Marker';
-    const isLineBrush = brushType === 'Ridge' || brushType === 'SoftRidge' || (
-      brushType === 'PointPath' && state.pointPathMode === 'line' && !state.pointPathClosed
-    );
-    const isMinimaIslands = brushType === 'MinimaIslands';
-
-    return [
-      {
-        type: 'minima',
-        enabled: isMinimaIslands || (!isPointPathOrMarker && !isLineBrush),
-        suppression: {
-          enabled: !isMinimaIslands,
-          distanceMm: defaultSpacing,
-          suppressAgainst: ['minima'],
-        },
-        spacing: {
-          baseSpacingMm: defaultSpacing,
-        },
-      },
-      {
-        type: 'perimeter',
-        enabled: !isMinimaIslands && !isPointPathOrMarker && !isLineBrush,
-        suppression: {
-          enabled: false,
-          distanceMm: defaultSpacing,
-          suppressAgainst: [],
-        },
-        spacing: {
-          baseSpacingMm: defaultSpacing,
-          solverMode: 'standard',
-          useInflectionPoints: false,
-        },
-      },
-      {
-        type: 'infill',
-        enabled: !isMinimaIslands && !isLineBrush,
-        suppression: {
-          enabled: true,
-          distanceMm: defaultSpacing,
-          suppressAgainst: ['minima', 'perimeter', 'infill'],
-        },
-        spacing: {
-          baseSpacingMm: defaultSpacing,
-          infillPattern: 'PoissonDisc',
-          seedFromMinima: true,
-        },
-      },
-      {
-        type: 'centerline',
-        enabled: !isMinimaIslands && isLineBrush,
-        suppression: {
-          enabled: true,
-          distanceMm: defaultSpacing,
-          suppressAgainst: ['minima', 'perimeter', 'infill', 'centerline'],
-        },
-        spacing: {
-          baseSpacingMm: defaultSpacing,
-          seedFromMinima: true,
-        },
-      },
-    ];
+    return upgradePipeline(undefined, brushType, defaultSpacing);
   };
 
   const getComparisonPipeline = (
@@ -668,7 +636,6 @@ export function SupportPainterPanel({
   };
 
   const activeDetails = BRUSH_DETAILS[state.activeBrush] || BRUSH_DETAILS.MacroFace;
-  const activeCustomBrush = state.activeCustomBrushId ? state.customBrushes.get(state.activeCustomBrushId) : undefined;
   const isCustomMarker = !!(activeCustomBrush && activeCustomBrush.baseBrush === 'Marker');
   const isMarkerActive = state.activeBrush === 'Marker' || isCustomMarker;
 
@@ -819,70 +786,7 @@ export function SupportPainterPanel({
 
 
 
-              {/* 2. Spacing Overrides */}
-          {/* Spacing Overrides */}
-          <div
-            className="flex flex-col gap-2 p-2.5 rounded-lg border text-xs"
-            style={{
-              background: 'var(--surface-2)',
-              borderColor: 'var(--border-subtle)',
-            }}
-          >
-            <span className="font-semibold text-xs text-left" style={{ color: 'var(--text-strong)' }}>
-              Spacing Overrides
-            </span>
-            <div className="grid grid-cols-2 gap-2 mt-1">
-              <div className="flex flex-col gap-1 text-left">
-                <span style={{ color: 'var(--text-muted)' }}>Perimeter Spacing (mm)</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  max="20"
-                  placeholder={defaultSpacing.toFixed(1)}
-                  value={state.perimeterSpacingOverride !== null && !isNaN(state.perimeterSpacingOverride) ? state.perimeterSpacingOverride : ''}
-                  onChange={(e) => {
-                    const val = e.target.value === '' ? null : parseFloat(e.target.value);
-                    if (val === null || !isNaN(val)) {
-                      supportPainterStore.setPerimeterSpacingOverride(val);
-                    }
-                  }}
-                  className="w-full text-[11px] px-2 py-1.5 rounded border outline-none font-medium text-right"
-                  style={{
-                    background: 'var(--surface-1)',
-                    borderColor: 'var(--border-subtle)',
-                    color: 'var(--accent)',
-                  }}
-                />
-              </div>
-              <div className="flex flex-col gap-1 text-left">
-                <span style={{ color: 'var(--text-muted)' }}>Infill Spacing (mm)</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  max="20"
-                  placeholder={defaultSpacing.toFixed(1)}
-                  value={state.infillSpacingOverride !== null && !isNaN(state.infillSpacingOverride) ? state.infillSpacingOverride : ''}
-                  onChange={(e) => {
-                    const val = e.target.value === '' ? null : parseFloat(e.target.value);
-                    if (val === null || !isNaN(val)) {
-                      supportPainterStore.setInfillSpacingOverride(val);
-                    }
-                  }}
-                  className="w-full text-[11px] px-2 py-1.5 rounded border outline-none font-medium text-right"
-                  style={{
-                    background: 'var(--surface-1)',
-                    borderColor: 'var(--border-subtle)',
-                    color: 'var(--accent)',
-                  }}
-                />
-              </div>
-            </div>
-            <div className="text-[9px] mt-1 italic text-left" style={{ color: 'var(--text-muted)' }}>
-              Default spacing is computed dynamically as 4.0 × shaft diameter ({defaultSpacing.toFixed(2)} mm). Clear field to restore default.
-            </div>
-          </div>
+
 
               {/* 3. Select Smart Brush */}
           {/* Brush Selection */}
@@ -1521,9 +1425,16 @@ export function SupportPainterPanel({
             const currentPipeline = upgradePipeline(rawPipeline, state.activeBrush, defaultSpacing);
             
             // Find if current custom support operations matches any known placement script
-            const matchedScript = Array.from(state.placementScripts.values()).find(script =>
-              arePipelinesEquivalent(script.operations, currentPipeline)
-            );
+            const matchedScript = Array.from(state.placementScripts.values()).find(script => {
+              let scriptOps = script.operations;
+              if (script.isBuiltIn) {
+                const brushType = script.id.replace('default-', '') as BrushType;
+                scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
+              } else {
+                scriptOps = upgradePipeline(script.operations, state.activeBrush, defaultSpacing);
+              }
+              return arePipelinesEquivalent(scriptOps, currentPipeline);
+            });
             
             const handleSelectScript = (e: React.ChangeEvent<HTMLSelectElement>) => {
               const scriptId = e.target.value;
@@ -1536,11 +1447,13 @@ export function SupportPainterPanel({
             };
 
             const handleSaveScript = () => {
-              let defaultName = matchedScript ? matchedScript.name : "";
-              if (matchedScript?.isBuiltIn) {
-                defaultName = `${matchedScript.name} (Custom)`;
+              if (!isSavingScript) {
+                setScriptNameInput('');
+                setIsSavingScript(true);
+                return;
               }
-              const name = prompt("Enter a name for the support placement script:", defaultName);
+
+              const name = scriptNameInput.trim();
               if (!name) return;
               
               const existingCustom = Array.from(state.placementScripts.values()).find(
@@ -1558,6 +1471,7 @@ export function SupportPainterPanel({
               supportPainterStore.addPlacementScript(newScript);
               supportPainterStore.setActivePlacementScriptId(scriptId);
               supportPainterStore.showToast([`Saved placement script "${name}"`]);
+              setIsSavingScript(false);
             };
 
             const handleDeleteScript = () => {
@@ -1568,9 +1482,14 @@ export function SupportPainterPanel({
               }
             };
 
+            const handleCancelSaveScript = () => {
+              setIsSavingScript(false);
+              setScriptNameInput('');
+            };
+
             return (
               <div
-                className="flex flex-col gap-1.5 p-2 rounded-lg border text-xs"
+                className="flex flex-col gap-2 p-2.5 rounded-lg border text-xs"
                 style={{
                   background: 'var(--surface-2, #1a202c)',
                   borderColor: 'var(--border-subtle, #2d3748)',
@@ -1581,43 +1500,77 @@ export function SupportPainterPanel({
                     Placement Script
                   </span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <select
-                    value={matchedScript ? matchedScript.id : 'unsaved'}
-                    onChange={handleSelectScript}
-                    className="flex-1 bg-surface-1 text-text-strong text-[11px] px-2 py-1.5 rounded border border-border-subtle outline-none"
-                    style={{
-                      background: 'var(--surface-1, #151a22)',
-                      borderColor: 'var(--border-subtle, #2d3748)',
-                      color: 'var(--text-strong, #f3f4f6)',
-                    }}
-                  >
-                    {!matchedScript && (
-                      <option value="unsaved">(Unsaved Placement Script)</option>
-                    )}
-                    {Array.from(state.placementScripts.values()).map(script => (
-                      <option key={script.id} value={script.id}>
-                        {script.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="flex items-center gap-1.5 w-full">
+                  {isSavingScript ? (
+                    <input
+                      type="text"
+                      value={scriptNameInput}
+                      onChange={(e) => setScriptNameInput(e.target.value)}
+                      placeholder="Enter Support Script Name"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSaveScript();
+                        } else if (e.key === 'Escape') {
+                          handleCancelSaveScript();
+                        }
+                      }}
+                      className="flex-1 bg-surface-1 text-text-strong text-[11px] px-1.5 py-1 rounded border border-border-subtle outline-none"
+                      style={{
+                        background: 'var(--surface-1, #151a22)',
+                        borderColor: 'var(--border-subtle, #2d3748)',
+                        color: 'var(--text-strong, #f3f4f6)',
+                      }}
+                    />
+                  ) : (
+                    <select
+                      value={matchedScript ? matchedScript.id : 'unsaved'}
+                      onChange={handleSelectScript}
+                      className="flex-1 bg-surface-1 text-text-strong text-[11px] px-1.5 py-1 rounded border border-border-subtle outline-none"
+                      style={{
+                        background: 'var(--surface-1, #151a22)',
+                        borderColor: 'var(--border-subtle, #2d3748)',
+                        color: 'var(--text-strong, #f3f4f6)',
+                      }}
+                    >
+                      {!matchedScript && (
+                        <option value="unsaved">(Unsaved)</option>
+                      )}
+                      {Array.from(state.placementScripts.values()).map(script => (
+                        <option key={script.id} value={script.id}>
+                          {script.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   
                   <IconButton
                     onClick={handleSaveScript}
-                    className="!p-1.5 hover:bg-black/20"
+                    disabled={isSavingScript && !scriptNameInput.trim()}
+                    className="!p-1 hover:bg-black/20 disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Save Placement Script"
                   >
-                    <Save className="w-3.5 h-3.5" style={{ color: 'var(--accent, #4a90e2)' }} />
+                    <Save className="w-3.5 h-3.5" style={{ color: (isSavingScript && !scriptNameInput.trim()) ? 'var(--text-muted)' : 'var(--accent, #4a90e2)' }} />
                   </IconButton>
 
-                  <IconButton
-                    onClick={handleDeleteScript}
-                    disabled={!matchedScript || matchedScript.isBuiltIn}
-                    className="!p-1.5 hover:bg-black/20 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title={matchedScript?.isBuiltIn ? "Cannot delete built-in script" : "Delete Placement Script"}
-                  >
-                    <Trash className="w-3.5 h-3.5" style={{ color: (!matchedScript || matchedScript.isBuiltIn) ? 'var(--text-muted, #718096)' : 'var(--danger, #ef4444)' }} />
-                  </IconButton>
+                  {isSavingScript ? (
+                    <IconButton
+                      onClick={handleCancelSaveScript}
+                      className="!p-1 hover:bg-black/20"
+                      title="Cancel Saving"
+                    >
+                      <X className="w-3.5 h-3.5" style={{ color: 'var(--text-muted, #718096)' }} />
+                    </IconButton>
+                  ) : (
+                    <IconButton
+                      onClick={handleDeleteScript}
+                      disabled={!matchedScript || matchedScript.isBuiltIn}
+                      className="!p-1 hover:bg-black/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={matchedScript?.isBuiltIn ? "Cannot delete built-in script" : "Delete Placement Script"}
+                    >
+                      <Trash className="w-3.5 h-3.5" style={{ color: (!matchedScript || matchedScript.isBuiltIn) ? 'var(--text-muted, #718096)' : 'var(--danger, #ef4444)' }} />
+                    </IconButton>
+                  )}
                 </div>
               </div>
             );
@@ -2135,9 +2088,16 @@ export function SupportPainterPanel({
                     {(() => {
                       const rawPipeline = selectedRegion.customBrush?.operations || getDefaultPipeline(selectedRegion.brushType);
                       const currentPipeline = upgradePipeline(rawPipeline, selectedRegion.brushType, defaultSpacing);
-                      const matchedScript = Array.from(state.placementScripts.values()).find(script =>
-                        arePipelinesEquivalent(script.operations, currentPipeline)
-                      );
+                      const matchedScript = Array.from(state.placementScripts.values()).find(script => {
+                        let scriptOps = script.operations;
+                        if (script.isBuiltIn) {
+                          const brushType = script.id.replace('default-', '') as BrushType;
+                          scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
+                        } else {
+                          scriptOps = upgradePipeline(script.operations, selectedRegion.brushType, defaultSpacing);
+                        }
+                        return arePipelinesEquivalent(scriptOps, currentPipeline);
+                      });
 
                       const handleSelectRoiScript = (e: React.ChangeEvent<HTMLSelectElement>) => {
                         const scriptId = e.target.value;
