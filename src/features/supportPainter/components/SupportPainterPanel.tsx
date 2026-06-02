@@ -24,13 +24,15 @@ import {
 } from 'lucide-react';
 import { Card, CardHeader, IconButton, Button, Toast, ToastViewport } from '@/components/ui/primitives';
 import { supportPainterStore, useSupportPainterState } from '../supportPainterStore';
-import { type BrushType, type CustomBrushTemplate, type CustomSupportOperation, BRUSH_COLORS, upgradePipeline, arePipelinesEquivalent, type SupportPlacementScript } from '../supportPainterTypes';
+import { type BrushType, type CustomBrushTemplate, type CustomSupportOperation, BRUSH_COLORS, upgradePipeline, arePipelinesEquivalent, type SupportPlacementScript, type ROIRegion } from '../supportPainterTypes';
 import { generateSupportsFromPainter, regenerateSupportsForRoi } from '../supportScriptingEngine';
 import { subscribeToSettings, getSettings } from '@/supports/Settings';
 import {
   subscribe as subscribeToSupports,
   getSnapshot as getSupportsSnapshot,
   setSnapshot as setSupportSnapshot,
+  beginSupportStateBatch,
+  endSupportStateBatch,
 } from '@/supports/state';
 import { deleteSupportsForRoi } from '@/supports/PlacementLogic/SupportModelLinker';
 import { SUPPORT_EDIT_REPLACE } from '@/supports/history/actionTypes';
@@ -500,6 +502,126 @@ export function SupportPainterPanel({
         painterRegionsAfter: nextRegions,
       },
     });
+  };
+
+  const handleRemoveSupportsForRegions = (regionIds: string[]) => {
+    const beforeState = getSupportsSnapshot();
+    let nextState = beforeState;
+    const beforeRegions = new Map(supportPainterStore.getSnapshot().regions);
+    const nextRegions = new Map(beforeRegions);
+
+    beginSupportStateBatch();
+    try {
+      for (const regionId of regionIds) {
+        nextState = deleteSupportsForRoi(nextState, regionId);
+        const region = nextRegions.get(regionId);
+        if (region) {
+          nextRegions.set(regionId, {
+            ...region,
+            support: undefined,
+            loops: undefined,
+            placedCount: undefined,
+            attemptedCount: undefined,
+          });
+        }
+      }
+      setSupportSnapshot(nextState);
+      supportPainterStore.restoreRegions(nextRegions);
+    } finally {
+      endSupportStateBatch();
+    }
+
+    pushHistory({
+      type: SUPPORT_EDIT_REPLACE,
+      description: `Remove supports for ${regionIds.length} regions`,
+      payload: {
+        before: beforeState,
+        after: nextState,
+        painterRegionsBefore: beforeRegions,
+        painterRegionsAfter: nextRegions,
+      },
+    });
+  };
+
+  const handleDeleteRegions = (regionIds: string[]) => {
+    const beforeState = getSupportsSnapshot();
+    let nextState = beforeState;
+    const beforeRegions = new Map(supportPainterStore.getSnapshot().regions);
+    const nextRegions = new Map(beforeRegions);
+
+    beginSupportStateBatch();
+    try {
+      for (const regionId of regionIds) {
+        nextState = deleteSupportsForRoi(nextState, regionId);
+        nextRegions.delete(regionId);
+      }
+      setSupportSnapshot(nextState);
+      supportPainterStore.restoreRegions(nextRegions);
+    } finally {
+      endSupportStateBatch();
+    }
+
+    pushHistory({
+      type: SUPPORT_EDIT_REPLACE,
+      description: `Delete ${regionIds.length} ROI regions and supports`,
+      payload: {
+        before: beforeState,
+        after: nextState,
+        painterRegionsBefore: beforeRegions,
+        painterRegionsAfter: nextRegions,
+      },
+    });
+  };
+
+  const handleRemoveRoisOnly = (regionIds: string[]) => {
+    const beforeState = getSupportsSnapshot();
+    const beforeRegions = new Map(supportPainterStore.getSnapshot().regions);
+    const nextRegions = new Map(beforeRegions);
+
+    for (const regionId of regionIds) {
+      nextRegions.delete(regionId);
+    }
+
+    supportPainterStore.restoreRegions(nextRegions);
+
+    pushHistory({
+      type: SUPPORT_EDIT_REPLACE,
+      description: `Remove ${regionIds.length} ROIs Only`,
+      payload: {
+        before: beforeState,
+        after: beforeState,
+        painterRegionsBefore: beforeRegions,
+        painterRegionsAfter: nextRegions,
+      },
+    });
+  };
+
+  const handleRecalculateRegions = async (regionIds: string[]) => {
+    const activeMesh = getActiveMesh?.();
+    if (!activeModelId || !activeMesh || regionIds.length === 0) return;
+
+    setIsGenerating(true);
+    try {
+      const snap = supportPainterStore.getSnapshot();
+      const targetRegions = regionIds
+        .map((id) => snap.regions.get(id))
+        .filter(Boolean) as ROIRegion[];
+
+      // Purge supports for all targeted ROIs first in a single batch
+      const beforeState = getSupportsSnapshot();
+      let nextState = beforeState;
+      for (const id of regionIds) {
+        nextState = deleteSupportsForRoi(nextState, id);
+      }
+      setSupportSnapshot(nextState);
+
+      // Sequentially regenerate supports using supportScriptingEngine batch execution
+      await generateSupportsFromPainter(activeModelId, activeMesh, targetRegions);
+    } catch (err) {
+      console.error('[SupportPainterPanel] Batch regeneration failed', err);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleClearAllRegionsAndSupports = () => {
@@ -1915,23 +2037,23 @@ export function SupportPainterPanel({
             </div>
           )}
 
-              {/* 3. Selected ROI Actions */}
           {/* Selected ROI Actions */}
           {(() => {
-            const selectedRegion = state.selectedRegionId ? completedRegions.find(r => r.id === state.selectedRegionId) : null;
+            const selectedIds = Array.from(state.selectedRegionIds).filter(id => state.regions.has(id));
+            const isSelectionActive = selectedIds.length >= 1;
+            const isSingleSelection = selectedIds.length === 1;
+            const firstSelectedRegion = isSelectionActive ? completedRegions.find(r => r.id === selectedIds[0]) : null;
 
             let totalChildSupports = 0;
-            if (selectedRegion) {
-              const regionTrunks = Object.values(supportState.trunks).filter(t => t.roiId === selectedRegion.id);
-              const regionBranches = Object.values(supportState.branches).filter(b => b.roiId === selectedRegion.id);
-              const regionLeaves = Object.values(supportState.leaves).filter(l => l.roiId === selectedRegion.id);
-              const regionTwigs = Object.values(supportState.twigs).filter(t => t.roiId === selectedRegion.id);
-              const regionSticks = Object.values(supportState.sticks).filter(s => s.roiId === selectedRegion.id);
-              const regionAnchors = Object.values(supportState.anchors).filter(a => a.roiId === selectedRegion.id);
-              totalChildSupports = regionTrunks.length + regionBranches.length + regionLeaves.length + regionTwigs.length + regionSticks.length + regionAnchors.length;
+            for (const id of selectedIds) {
+              const regionTrunks = Object.values(supportState.trunks).filter(t => t.roiId === id);
+              const regionBranches = Object.values(supportState.branches).filter(b => b.roiId === id);
+              const regionLeaves = Object.values(supportState.leaves).filter(l => l.roiId === id);
+              const regionTwigs = Object.values(supportState.twigs).filter(t => t.roiId === id);
+              const regionSticks = Object.values(supportState.sticks).filter(s => s.roiId === id);
+              const regionAnchors = Object.values(supportState.anchors).filter(a => a.roiId === id);
+              totalChildSupports += regionTrunks.length + regionBranches.length + regionLeaves.length + regionTwigs.length + regionSticks.length + regionAnchors.length;
             }
-
-            const isBtnDisabled = selectedRegion === null;
 
             return (
               <div
@@ -1942,7 +2064,7 @@ export function SupportPainterPanel({
                   className="text-[10px] uppercase tracking-wider font-bold"
                   style={{ color: 'var(--accent, #ec4899)' }}
                 >
-                  Selected ROI Actions
+                  Selected ROI Actions {isSelectionActive && `(${selectedIds.length})`}
                 </span>
                 <div className="grid grid-cols-2 gap-2">
                   {/* Left Column */}
@@ -1951,15 +2073,15 @@ export function SupportPainterPanel({
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={() => selectedRegion && handleRemoveSupportsForRoi(selectedRegion.id)}
+                      onClick={() => isSelectionActive && handleRemoveSupportsForRegions(selectedIds)}
                       className="w-full !text-[10px] py-1.5 flex items-center justify-start px-2 gap-1.5"
-                      disabled={isBtnDisabled || totalChildSupports === 0}
+                      disabled={!isSelectionActive || totalChildSupports === 0}
                       style={{
-                        opacity: (isBtnDisabled || totalChildSupports === 0) ? 0.4 : 1,
-                        cursor: (isBtnDisabled || totalChildSupports === 0) ? 'not-allowed' : 'pointer',
+                        opacity: (!isSelectionActive || totalChildSupports === 0) ? 0.4 : 1,
+                        cursor: (!isSelectionActive || totalChildSupports === 0) ? 'not-allowed' : 'pointer',
                       }}
                     >
-                      <Eraser className="w-3.5 h-3.5" style={{ color: (isBtnDisabled || totalChildSupports === 0) ? 'var(--text-muted)' : 'var(--warning, #f59e0b)' }} />
+                      <Eraser className="w-3.5 h-3.5" style={{ color: (!isSelectionActive || totalChildSupports === 0) ? 'var(--text-muted)' : 'var(--warning, #f59e0b)' }} />
                       <span>Erase Supports</span>
                     </Button>
                     {/* Delete ROI Only */}
@@ -1967,19 +2089,19 @@ export function SupportPainterPanel({
                       variant="secondary"
                       size="sm"
                       onClick={() => {
-                        if (selectedRegion) {
-                          handleRemoveRoiOnly(selectedRegion.id);
-                          supportPainterStore.setSelectedRegionId(null);
+                        if (isSelectionActive) {
+                          handleRemoveRoisOnly(selectedIds);
+                          supportPainterStore.setSelectedRegionIds(new Set());
                         }
                       }}
                       className="w-full !text-[10px] py-1.5 flex items-center justify-start px-2 gap-1.5"
-                      disabled={isBtnDisabled}
+                      disabled={!isSelectionActive}
                       style={{
-                        opacity: isBtnDisabled ? 0.4 : 1,
-                        cursor: isBtnDisabled ? 'not-allowed' : 'pointer',
+                        opacity: !isSelectionActive ? 0.4 : 1,
+                        cursor: !isSelectionActive ? 'not-allowed' : 'pointer',
                       }}
                     >
-                      <Trash className="w-3.5 h-3.5" style={{ color: isBtnDisabled ? 'var(--text-muted)' : 'var(--text-strong)' }} />
+                      <Trash className="w-3.5 h-3.5" style={{ color: !isSelectionActive ? 'var(--text-muted)' : 'var(--text-strong)' }} />
                       <span>Delete ROI Only</span>
                     </Button>
                     {/* Delete ROI & Supports */}
@@ -1987,19 +2109,19 @@ export function SupportPainterPanel({
                       variant="secondary"
                       size="sm"
                       onClick={() => {
-                        if (selectedRegion) {
-                          handleDeleteRegion(selectedRegion.id);
-                          supportPainterStore.setSelectedRegionId(null);
+                        if (isSelectionActive) {
+                          handleDeleteRegions(selectedIds);
+                          supportPainterStore.setSelectedRegionIds(new Set());
                         }
                       }}
                       className="w-full !text-[10px] py-1.5 flex items-center justify-start px-2 gap-1.5"
-                      disabled={isBtnDisabled}
+                      disabled={!isSelectionActive}
                       style={{
-                        opacity: isBtnDisabled ? 0.4 : 1,
-                        cursor: isBtnDisabled ? 'not-allowed' : 'pointer',
+                        opacity: !isSelectionActive ? 0.4 : 1,
+                        cursor: !isSelectionActive ? 'not-allowed' : 'pointer',
                       }}
                     >
-                      <Trash2 className="w-3.5 h-3.5" style={{ color: isBtnDisabled ? 'var(--text-muted)' : 'var(--danger, #ef4444)' }} />
+                      <Trash2 className="w-3.5 h-3.5" style={{ color: !isSelectionActive ? 'var(--text-muted)' : 'var(--danger, #ef4444)' }} />
                       <span>Delete ROI &amp; Supp.</span>
                     </Button>
                   </div>
@@ -2011,22 +2133,22 @@ export function SupportPainterPanel({
                       variant="secondary"
                       size="sm"
                       onClick={() => {
-                        const selectedRegion = state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null;
-                        if (selectedRegion) {
-                          const rawPipeline = selectedRegion.customBrush?.operations || getDefaultPipeline(selectedRegion.brushType);
-                          const currentPipeline = upgradePipeline(rawPipeline, selectedRegion.brushType, defaultSpacing);
+                        if (isSingleSelection && firstSelectedRegion) {
+                          const rawPipeline = firstSelectedRegion.customBrush?.operations || getDefaultPipeline(firstSelectedRegion.brushType);
+                          const currentPipeline = upgradePipeline(rawPipeline, firstSelectedRegion.brushType, defaultSpacing);
                           setEditingPipeline(JSON.parse(JSON.stringify(currentPipeline)));
                           setPipelineEditingContext('roi');
                         }
                       }}
                       className="w-full !text-[10px] py-1.5 flex items-center justify-start px-2 gap-1.5"
-                      disabled={isBtnDisabled}
+                      disabled={!isSingleSelection}
+                      title={!isSingleSelection ? "Multi-edit unlocked in Phase 2" : "Edit ROI Supports"}
                       style={{
-                        opacity: isBtnDisabled ? 0.4 : 1,
-                        cursor: isBtnDisabled ? 'not-allowed' : 'pointer',
+                        opacity: !isSingleSelection ? 0.4 : 1,
+                        cursor: !isSingleSelection ? 'not-allowed' : 'pointer',
                       }}
                     >
-                      <Settings className="w-3.5 h-3.5" style={{ color: isBtnDisabled ? 'var(--text-muted)' : 'var(--accent)' }} />
+                      <Settings className="w-3.5 h-3.5" style={{ color: !isSingleSelection ? 'var(--text-muted)' : 'var(--accent)' }} />
                       <span>Edit ROI Supports</span>
                     </Button>
                     {/* Recalculate ROI Supports */}
@@ -2034,19 +2156,18 @@ export function SupportPainterPanel({
                       variant="secondary"
                       size="sm"
                       onClick={async () => {
-                        const activeMesh = getActiveMesh?.();
-                        if (activeModelId && activeMesh && selectedRegion) {
-                          await regenerateSupportsForRoi(activeModelId, activeMesh, selectedRegion.id);
+                        if (isSelectionActive) {
+                          await handleRecalculateRegions(selectedIds);
                         }
                       }}
                       className="w-full !text-[10px] py-1.5 flex items-center justify-start px-2 gap-1.5"
-                      disabled={isBtnDisabled}
+                      disabled={!isSelectionActive}
                       style={{
-                        opacity: isBtnDisabled ? 0.4 : 1,
-                        cursor: isBtnDisabled ? 'not-allowed' : 'pointer',
+                        opacity: !isSelectionActive ? 0.4 : 1,
+                        cursor: !isSelectionActive ? 'not-allowed' : 'pointer',
                       }}
                     >
-                      <RefreshCw className="w-3.5 h-3.5 animate-none" style={{ color: isBtnDisabled ? 'var(--text-muted)' : 'var(--accent)' }} />
+                      <RefreshCw className="w-3.5 h-3.5 animate-none" style={{ color: !isSelectionActive ? 'var(--text-muted)' : 'var(--accent)' }} />
                       <span>Recalculate ROI</span>
                     </Button>
                     {/* Recalculate All Supports */}
@@ -2056,9 +2177,8 @@ export function SupportPainterPanel({
                       onClick={async () => {
                         const activeMesh = getActiveMesh?.();
                         if (activeModelId && activeMesh && completedRegions.length > 0) {
-                          for (const region of completedRegions) {
-                            await regenerateSupportsForRoi(activeModelId, activeMesh, region.id);
-                          }
+                          const allIds = completedRegions.map(r => r.id);
+                          await handleRecalculateRegions(allIds);
                         }
                       }}
                       className="w-full !text-[10px] py-1.5 flex items-center justify-start px-2 gap-1.5"
@@ -2074,7 +2194,7 @@ export function SupportPainterPanel({
                   </div>
                 </div>
 
-                {selectedRegion && (
+                {isSingleSelection && firstSelectedRegion && (
                   <div
                     className="flex flex-col gap-1 p-2 rounded-lg border text-xs mt-2"
                     style={{
@@ -2086,15 +2206,15 @@ export function SupportPainterPanel({
                       ROI Placement Script
                     </span>
                     {(() => {
-                      const rawPipeline = selectedRegion.customBrush?.operations || getDefaultPipeline(selectedRegion.brushType);
-                      const currentPipeline = upgradePipeline(rawPipeline, selectedRegion.brushType, defaultSpacing);
+                      const rawPipeline = firstSelectedRegion.customBrush?.operations || getDefaultPipeline(firstSelectedRegion.brushType);
+                      const currentPipeline = upgradePipeline(rawPipeline, firstSelectedRegion.brushType, defaultSpacing);
                       const matchedScript = Array.from(state.placementScripts.values()).find(script => {
                         let scriptOps = script.operations;
                         if (script.isBuiltIn) {
                           const brushType = script.id.replace('default-', '') as BrushType;
                           scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
                         } else {
-                          scriptOps = upgradePipeline(script.operations, selectedRegion.brushType, defaultSpacing);
+                          scriptOps = upgradePipeline(script.operations, firstSelectedRegion.brushType, defaultSpacing);
                         }
                         return arePipelinesEquivalent(scriptOps, currentPipeline);
                       });
@@ -2104,10 +2224,10 @@ export function SupportPainterPanel({
                         if (scriptId === 'unsaved') return;
                         const script = state.placementScripts.get(scriptId);
                         if (script) {
-                          supportPainterStore.updateRegionCustomBrush(selectedRegion.id, JSON.parse(JSON.stringify(script.operations)));
+                          supportPainterStore.updateRegionCustomBrush(firstSelectedRegion.id, JSON.parse(JSON.stringify(script.operations)));
                           const activeMesh = getActiveMesh?.();
                           if (activeModelId && activeMesh) {
-                            void regenerateSupportsForRoi(activeModelId, activeMesh, selectedRegion.id);
+                            void regenerateSupportsForRoi(activeModelId, activeMesh, firstSelectedRegion.id);
                           }
                         }
                       };

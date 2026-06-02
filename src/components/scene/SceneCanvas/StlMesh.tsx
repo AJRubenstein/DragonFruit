@@ -1192,9 +1192,24 @@ if (uDitherAmount > 0.0) {
                     break;
                   }
                 }
+                
+                const nextSelection = new Set(snap.selectedRegionIds);
                 if (targetRegionId) {
-                  console.log(`[Support Painter] 3D canvas hotkey selection: ROI ${targetRegionId}`);
-                  supportPainterStore.setSelectedRegionId(targetRegionId);
+                  if (e.shiftKey) {
+                    // Additive selection: Ctrl + Shift + Click
+                    nextSelection.add(targetRegionId);
+                    supportPainterStore.setSelectedRegionIds(nextSelection);
+                  } else if (e.altKey) {
+                    // Subtractive selection: Ctrl + Alt + Click
+                    nextSelection.delete(targetRegionId);
+                    supportPainterStore.setSelectedRegionIds(nextSelection);
+                  } else {
+                    // Single selection: Ctrl + Click
+                    supportPainterStore.setSelectedRegionId(targetRegionId);
+                  }
+                } else {
+                  // Clicked empty area: Clear selection
+                  supportPainterStore.setSelectedRegionIds(new Set());
                 }
                 return;
               }
