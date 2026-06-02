@@ -21,6 +21,142 @@ interface SupportPipelineEditorProps {
   colorTheme?: string; // Sourced from brush color
 }
 
+const SupportSpacingGauge = ({ op }: { op: CustomSupportOperation }) => {
+  const preset = getPresetById(op.supportPresetId || 'structure');
+  
+  const shaftDiameter = preset?.settings?.shaft?.diameterMm ?? 1.2;
+  const tipContact = preset?.settings?.tip?.contactDiameterMm ?? 0.4;
+  const tipBody = preset?.settings?.tip?.bodyDiameterMm ?? 1.2;
+  const tipLength = preset?.settings?.tip?.lengthMm ?? 2.0;
+  
+  const startSpacing = op.spacing.baseSpacingMm ?? 4.0;
+  const endSpacing = typeof op.endSpacingMm === 'number' ? op.endSpacingMm : 4.0;
+  const isZDensity = !!op.enableZHeightDensity;
+  
+  const width = 280;
+  const height = 95;
+  
+  let scale = 20;
+  let cx1 = 0, cx2 = 0, cx3 = 0;
+  
+  if (isZDensity) {
+    const totalSpacing = startSpacing + endSpacing;
+    const maxVal = Math.max(totalSpacing + Math.max(shaftDiameter, tipBody) * 2.0, 3.0);
+    scale = 220 / maxVal;
+    
+    cx2 = width / 2;
+    cx1 = cx2 - startSpacing * scale;
+    cx3 = cx2 + endSpacing * scale;
+  } else {
+    const maxVal = Math.max(startSpacing + Math.max(shaftDiameter, tipBody) * 1.5, 3.0);
+    scale = 200 / maxVal;
+    
+    cx1 = width / 2 - (startSpacing * scale) / 2;
+    cx2 = width / 2 + (startSpacing * scale) / 2;
+  }
+  
+  const yContact = 20;
+  const yConeBase = yContact + tipLength * scale;
+  const yShaftBottom = 85;
+
+  const renderColumn = (cx: number, key: string) => {
+    const pts = [
+      `${cx - (tipContact * scale) / 2},${yContact}`,
+      `${cx + (tipContact * scale) / 2},${yContact}`,
+      `${cx + (tipBody * scale) / 2},${yConeBase}`,
+      `${cx - (tipBody * scale) / 2},${yConeBase}`
+    ].join(' ');
+    
+    return (
+      <g key={key}>
+        {/* Shaft/Trunk */}
+        <rect
+          x={cx - (shaftDiameter * scale) / 2}
+          y={yConeBase}
+          width={shaftDiameter * scale}
+          height={Math.max(2, yShaftBottom - yConeBase)}
+          fill="var(--accent, #4a90e2)"
+          opacity="0.8"
+          rx={1}
+        />
+        {/* Cone Tip */}
+        <polygon points={pts} fill="var(--accent, #4a90e2)" opacity="0.9" />
+        {/* Centerline marker */}
+        <line x1={cx} y1={yContact} x2={cx} y2={yShaftBottom} stroke="var(--text-strong, #fff)" strokeWidth="0.5" strokeDasharray="2,2" opacity="0.25" />
+      </g>
+    );
+  };
+
+  return (
+    <div 
+      className="flex flex-col items-center justify-center p-2 rounded border mb-1.5"
+      style={{
+        background: 'var(--surface-2, #1a202c)',
+        borderColor: 'var(--border-subtle, #2d3748)',
+      }}
+    >
+      <div className="text-[9px] font-bold text-gray-400 mb-1 uppercase tracking-wider">
+        Real-Time Spacing &amp; Geometry Gauge
+      </div>
+      <svg width={width} height={height} className="overflow-visible">
+        {/* Overhang Surface guide */}
+        <line x1={10} y1={yContact} x2={width - 10} y2={yContact} stroke="var(--text-muted, #4b5563)" strokeWidth="1.2" strokeDasharray="4,2" />
+        <text x={12} y={yContact - 5} fill="var(--text-muted, #718096)" fontSize="7" fontWeight="bold" letterSpacing="0.05em">
+          OVERHANG SURFACE
+        </text>
+
+        {/* Render active columns */}
+        {renderColumn(cx1, 'col1')}
+        {renderColumn(cx2, 'col2')}
+        {isZDensity && renderColumn(cx3, 'col3')}
+
+        {/* Annotations */}
+        {isZDensity ? (
+          <g>
+            {/* Left Dimension (Start Spacing) */}
+            <line x1={cx1} y1={55} x2={cx2} y2={55} stroke="var(--accent, #4a90e2)" strokeWidth="1" />
+            <polygon points={`${cx1},55 ${cx1 + 4},52 ${cx1 + 4},58`} fill="var(--accent, #4a90e2)" />
+            <polygon points={`${cx2},55 ${cx2 - 4},52 ${cx2 - 4},58`} fill="var(--accent, #4a90e2)" />
+            
+            {/* Left Badge */}
+            <rect x={(cx1 + cx2) / 2 - 20} y={47} width={40} height={15} rx={3} fill="var(--surface-1, #151a22)" stroke="var(--border-subtle, #2d3748)" strokeWidth="0.5" />
+            <text x={(cx1 + cx2) / 2} y={58} textAnchor="middle" fill="var(--accent, #4a90e2)" fontSize="8" fontWeight="bold">
+              {startSpacing.toFixed(1)}
+            </text>
+
+            {/* Right Dimension (End Spacing) */}
+            <line x1={cx2} y1={55} x2={cx3} y2={55} stroke="var(--accent, #4a90e2)" strokeWidth="1" />
+            <polygon points={`${cx2},55 ${cx2 + 4},52 ${cx2 + 4},58`} fill="var(--accent, #4a90e2)" />
+            <polygon points={`${cx3},55 ${cx3 - 4},52 ${cx3 - 4},58`} fill="var(--accent, #4a90e2)" />
+            
+            {/* Right Badge */}
+            <rect x={(cx2 + cx3) / 2 - 20} y={47} width={40} height={15} rx={3} fill="var(--surface-1, #151a22)" stroke="var(--border-subtle, #2d3748)" strokeWidth="0.5" />
+            <text x={(cx2 + cx3) / 2} y={58} textAnchor="middle" fill="var(--accent, #4a90e2)" fontSize="8" fontWeight="bold">
+              {endSpacing.toFixed(1)}
+            </text>
+            
+            <text x={cx1} y={yShaftBottom + 8} textAnchor="middle" fill="var(--text-muted, #718096)" fontSize="7" fontWeight="bold">START</text>
+            <text x={cx3} y={yShaftBottom + 8} textAnchor="middle" fill="var(--text-muted, #718096)" fontSize="7" fontWeight="bold">END</text>
+          </g>
+        ) : (
+          <g>
+            {/* Horizontal guideline */}
+            <line x1={cx1} y1={55} x2={cx2} y2={55} stroke="var(--accent, #4a90e2)" strokeWidth="1.2" />
+            <polygon points={`${cx1},55 ${cx1 + 5},52 ${cx1 + 5},58`} fill="var(--accent, #4a90e2)" />
+            <polygon points={`${cx2},55 ${cx2 - 5},52 ${cx2 - 5},58`} fill="var(--accent, #4a90e2)" />
+            
+            {/* Badge background */}
+            <rect x={width / 2 - 25} y={46} width={50} height={18} rx={3} fill="var(--surface-1, #151a22)" stroke="var(--border-subtle, #2d3748)" strokeWidth="0.5" />
+            <text x={width / 2} y={58} textAnchor="middle" fill="var(--accent, #4a90e2)" fontSize="9" fontWeight="bold">
+              {startSpacing.toFixed(1)} mm
+            </text>
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+};
+
 export function SupportPipelineEditor({
   initialPipeline,
   comparisonPipeline,
@@ -256,6 +392,11 @@ export function SupportPipelineEditor({
                               </option>
                             ))}
                           </select>
+                        </div>
+
+                        {/* Spacing Gauge Component */}
+                        <div className="col-span-2 flex justify-center py-1">
+                          <SupportSpacingGauge op={op} />
                         </div>
 
                         <div className="flex flex-col gap-1">
