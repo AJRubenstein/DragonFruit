@@ -658,13 +658,20 @@ export function SupportPipelineEditor({
                             value={isNaN(op.spacing.baseSpacingMm) ? '' : op.spacing.baseSpacingMm}
                             onChange={e => {
                               const val = parseFloat(e.target.value);
-                              updateOp(index, {
+                              const newBase = isNaN(val) ? 0 : val;
+                              const newSuppression = newBase > 0 ? Math.max(0.1, parseFloat((newBase - 0.1).toFixed(2))) : 0.1;
+                              const updates: Partial<CustomSupportOperation> = {
                                 isIntervalDirectlyEdited: true,
                                 spacing: {
                                   ...op.spacing,
-                                  baseSpacingMm: isNaN(val) ? 0 : val,
+                                  baseSpacingMm: newBase,
+                                },
+                                suppression: {
+                                  ...op.suppression,
+                                  distanceMm: newSuppression,
                                 }
-                              });
+                              };
+                              updateOp(index, updates);
                             }}
                             className="px-2.5 py-1.5 rounded border font-medium outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                             style={{
@@ -891,8 +898,7 @@ export function SupportPipelineEditor({
                       <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={op.suppression.enabled || (op.type === 'infill' && op.enableZHeightDensity)}
-                          disabled={op.type === 'infill' && op.enableZHeightDensity}
+                          checked={op.suppression.enabled}
                           onChange={e =>
                             updateOpSuppression(index, { enabled: e.target.checked })
                           }
@@ -901,13 +907,13 @@ export function SupportPipelineEditor({
                         />
                         <label
                           htmlFor={`suppress-check-${op.type}`}
-                          className="cursor-pointer font-medium select-none disabled:opacity-50"
+                          className="cursor-pointer font-medium select-none"
                         >
-                          Enable candidate proximity checking {op.type === 'infill' && op.enableZHeightDensity && "(Locked ON for Z-Density)"}
+                          Enable candidate proximity checking
                         </label>
                       </div>
 
-                      {(op.suppression.enabled || (op.type === 'infill' && op.enableZHeightDensity)) && (
+                      {op.suppression.enabled && (
                         <div className="grid grid-cols-2 gap-3 mt-1 animate-fade-in">
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-1.5 justify-between w-full">
@@ -922,8 +928,7 @@ export function SupportPipelineEditor({
                               type="number"
                               step="0.1"
                               min="0.1"
-                              disabled={op.type === 'infill' && op.enableZHeightDensity}
-                              value={op.type === 'infill' && op.enableZHeightDensity ? 0.1 : (isNaN(op.suppression.distanceMm) ? '' : op.suppression.distanceMm)}
+                              value={isNaN(op.suppression.distanceMm) ? '' : op.suppression.distanceMm}
                               onChange={e => {
                                 const val = parseFloat(e.target.value);
                                 updateOpSuppression(index, {
@@ -1043,13 +1048,20 @@ export function SupportPipelineEditor({
                                 value={isNaN(op.spacing.baseSpacingMm) ? '' : op.spacing.baseSpacingMm}
                                 onChange={e => {
                                   const val = parseFloat(e.target.value);
-                                  updateOp(index, {
+                                  const newBase = isNaN(val) ? 0 : val;
+                                  const newSuppression = newBase > 0 ? Math.max(0.1, parseFloat((newBase - 0.1).toFixed(2))) : 0.1;
+                                  const updates: any = {
                                     isIntervalDirectlyEdited: true,
                                     spacing: {
                                       ...op.spacing,
-                                      baseSpacingMm: isNaN(val) ? 0 : val,
+                                      baseSpacingMm: newBase,
+                                    },
+                                    suppression: {
+                                      ...op.suppression,
+                                      distanceMm: newSuppression,
                                     }
-                                  });
+                                  };
+                                  updateOp(index, updates);
                                 }}
                                 className="px-2.5 py-1.5 rounded border font-medium outline-none"
                                 style={{
