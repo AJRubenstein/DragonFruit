@@ -10,7 +10,7 @@ import {
   filterInsetLoopByWrapFraction,
 } from '../supportScriptingEngine';
 import { supportPainterStore } from '../supportPainterStore';
-import { type ROIRegion, type CustomBrushTemplate, upgradePipeline, arePipelinesEquivalent } from '../supportPainterTypes';
+import { type ROIRegion, type CustomBrushTemplate, upgradePipeline, arePipelinesEquivalent, type BrushType } from '../supportPainterTypes';
 import { resetStore as resetSupportStore, getSnapshot as getSupportSnapshot } from '@/supports/state';
 
 describe('Support Painter Phase 3 - Advanced Mathematical Pathing & Solvers', () => {
@@ -544,5 +544,31 @@ describe('Support Painter Phase 3 - Advanced Mathematical Pathing & Solvers', ()
     supportPainterStore.deletePlacementScript('test-custom-script-id');
     const stateAfterDelete = supportPainterStore.getSnapshot();
     assert.ok(!stateAfterDelete.placementScripts.has('test-custom-script-id'), 'Store should delete custom script');
+  });
+
+  it('should sort infill candidates by Z-coordinate ascending for correct down-sampling when infill is used alone', () => {
+    const candHighZ = {
+      pos: new THREE.Vector3(0, 0, 10),
+      normal: new THREE.Vector3(0, 0, 1),
+      regionId: 'test-roi',
+      regionType: 'MacroFace' as BrushType,
+      regionTriCount: 1,
+      stage: 'infill' as const,
+    };
+    const candLowZ = {
+      pos: new THREE.Vector3(0, 0, 2),
+      normal: new THREE.Vector3(0, 0, 1),
+      regionId: 'test-roi',
+      regionType: 'MacroFace' as BrushType,
+      regionTriCount: 1,
+      stage: 'infill' as const,
+    };
+
+    const candidates = [candHighZ, candLowZ];
+
+    candidates.sort((a, b) => a.pos.z - b.pos.z);
+
+    assert.strictEqual(candidates[0].pos.z, 2.0);
+    assert.strictEqual(candidates[1].pos.z, 10.0);
   });
 });

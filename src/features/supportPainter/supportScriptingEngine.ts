@@ -7,6 +7,7 @@ import {
   type BrushMetadata,
   type SupportGenerationMetadata,
   type CustomSupportOperation,
+  upgradePipeline,
 } from './supportPainterTypes';
 import { supportPainterStore } from './supportPainterStore';
 import { compressRLE } from './voxlCodec';
@@ -1393,64 +1394,26 @@ export async function generateSupportsFromPainter(
     region: ROIRegion,
     stage: 'minima' | 'perimeter' | 'infill' | 'centerline'
   ) => {
-    if (region.customBrush) {
-      const op = region.customBrush.operations.find(o => o.type === stage && o.enabled);
-      if (op && op.suppression.enabled) {
+    const resolvedOps = region.customBrush?.operations || upgradePipeline(undefined, region.brushType, defaultSpacing);
+    const op = resolvedOps.find(o => o.type === stage && o.enabled);
+    if (op) {
+      const isLockedInfillZ = stage === 'infill' && op.enableZHeightDensity;
+      const isEnabled = isLockedInfillZ || op.suppression.enabled;
+      const dist = isLockedInfillZ ? 0.1 : op.suppression.distanceMm;
+      if (isEnabled) {
         return {
           enabled: true,
-          distanceMm: op.suppression.distanceMm,
+          distanceMm: dist,
           types: op.suppression.suppressAgainst,
-          mode: 'all' as const,
-        };
-      } else {
-        return {
-          enabled: false,
-          distanceMm: 0,
-          types: [] as ('minima' | 'perimeter' | 'infill' | 'centerline')[],
-          mode: 'none' as const,
+          mode: 'all' as 'none' | 'current' | 'all',
         };
       }
     }
-
-    if (region.brushType === 'MinimaIslands') {
-      return {
-        enabled: false,
-        distanceMm: 0,
-        types: [] as ('minima' | 'perimeter' | 'infill' | 'centerline')[],
-        mode: 'none' as const,
-      };
-    }
-
-    const config = suppressionSettings[stage];
-    const isOverrideCandidate =
-      region.brushType === 'RoughEdge' ||
-      region.brushType === 'SoftRidge';
-
-    const effectiveMode = isOverrideCandidate ? 'all' : config.mode;
-    if (effectiveMode === 'none') {
-      return {
-        enabled: false,
-        distanceMm: 0,
-        types: [] as ('minima' | 'perimeter' | 'infill' | 'centerline')[],
-        mode: 'none' as const,
-      };
-    }
-
-    let radius = stage === 'perimeter' || stage === 'centerline'
-      ? perimeterSpacing
-      : stage === 'infill'
-        ? infillSpacing
-        : minimaSuppressionRadius;
-
-    if (region.brushType === 'RoughEdge' || region.brushType === 'SoftRidge') {
-      radius = trunkWidth * 3.0;
-    }
-
     return {
-      enabled: true,
-      distanceMm: radius,
-      types: isOverrideCandidate ? ['minima', 'perimeter', 'infill', 'centerline'] as ('minima' | 'perimeter' | 'infill' | 'centerline')[] : config.types,
-      mode: effectiveMode,
+      enabled: false,
+      distanceMm: 0,
+      types: [] as ('minima' | 'perimeter' | 'infill' | 'centerline')[],
+      mode: 'none' as 'none' | 'current' | 'all',
     };
   };
 
@@ -1507,7 +1470,8 @@ export async function generateSupportsFromPainter(
             effectiveRadius = Math.max(effectiveRadius, trunkWidth * 3.0);
           } else {
             // Apply Z-density dynamic scaling to suppression distance if enabled
-            const op = region.customBrush?.operations?.find(o => o.type === cand.stage && o.enabled);
+            const resolvedOps = region.customBrush?.operations || upgradePipeline(undefined, region.brushType, defaultSpacing);
+            const op = resolvedOps.find((o: CustomSupportOperation) => o.type === cand.stage && o.enabled);
             if (op && op.enableZHeightDensity) {
               const { minZ, maxZ } = getRegionZBounds(region);
               const preset = op.supportPresetId ? getPresetById(op.supportPresetId) : undefined;
@@ -1569,64 +1533,30 @@ export async function generateSupportsFromPainter(
       };
     }[] = [];
 
-    if (region.customBrush) {
-      for (const op of region.customBrush.operations) {
-        pipeline.push({
-          type: op.type,
-          enabled: op.enabled !== false,
-          supportPresetId: op.supportPresetId,
-          insetDistanceMm: op.insetDistanceMm,
-          wrapFraction: op.wrapFraction,
-          enableZHeightDensity: op.enableZHeightDensity,
-          minimaStartInterval: op.minimaStartInterval,
-          minimaEndInterval: op.minimaEndInterval,
-          endSpacingMm: op.endSpacingMm,
-          zFactor: op.zFactor,
-          zFactorCurve: op.zFactorCurve,
-          spacing: {
-            baseSpacingMm: op.spacing.baseSpacingMm,
-            sequence: op.spacing.sequence,
-            solverMode: op.spacing.solverMode,
-            useInflectionPoints: op.spacing.useInflectionPoints,
-            infillPattern: op.spacing.infillPattern,
-            seedFromMinima: op.spacing.seedFromMinima,
-            attemptLeafCreation: op.spacing.attemptLeafCreation,
-          },
-        } as any);
-      }
-    } else {
-      const isPointPathOrMarker = region.brushType === 'PointPath' || region.brushType === 'Marker' || region.brushType === 'RoughEdge' || region.brushType === 'Unk Legacy Brush';
-      const isLineBrush = region.brushType === 'Ridge' || region.brushType === 'SoftRidge' || (
-        region.brushType === 'PointPath' && (
-          (region.brush?.parameters?.pointPathMode === 'line') ||
-          (region.brush === undefined && state.pointPathMode === 'line' && !state.pointPathClosed)
-        )
-      );
-      const isMinimaIslands = region.brushType === 'MinimaIslands';
-
+    const resolvedOps = region.customBrush?.operations || upgradePipeline(undefined, region.brushType, defaultSpacing);
+    for (const op of resolvedOps) {
       pipeline.push({
-        type: 'minima',
-        enabled: isMinimaIslands || (!isPointPathOrMarker && !isLineBrush),
+        type: op.type,
+        enabled: op.enabled !== false,
+        supportPresetId: op.supportPresetId,
+        insetDistanceMm: op.insetDistanceMm,
+        wrapFraction: op.wrapFraction,
+        enableZHeightDensity: op.enableZHeightDensity,
+        minimaStartInterval: op.minimaStartInterval,
+        minimaEndInterval: op.minimaEndInterval,
+        endSpacingMm: op.endSpacingMm,
+        zFactor: op.zFactor,
+        zFactorCurve: op.zFactorCurve,
         spacing: {
-          baseSpacingMm: minimaSuppressionRadius,
-          attemptLeafCreation: isMinimaIslands,
+          baseSpacingMm: op.spacing.baseSpacingMm,
+          sequence: op.spacing.sequence,
+          solverMode: op.spacing.solverMode,
+          useInflectionPoints: op.spacing.useInflectionPoints,
+          infillPattern: op.spacing.infillPattern,
+          seedFromMinima: op.spacing.seedFromMinima,
+          attemptLeafCreation: op.spacing.attemptLeafCreation,
         },
-      });
-      pipeline.push({
-        type: 'perimeter',
-        enabled: !isMinimaIslands && !isPointPathOrMarker && !isLineBrush,
-        spacing: { baseSpacingMm: perimeterSpacing },
-      });
-      pipeline.push({
-        type: 'infill',
-        enabled: !isMinimaIslands && !isLineBrush,
-        spacing: { baseSpacingMm: infillSpacing },
-      });
-      pipeline.push({
-        type: 'centerline',
-        enabled: !isMinimaIslands && isLineBrush,
-        spacing: { baseSpacingMm: perimeterSpacing, seedFromMinima: true },
-      });
+      } as any);
     }
 
     for (const stage of pipeline) {
@@ -2027,6 +1957,7 @@ export async function generateSupportsFromPainter(
             }
           }
         }
+        candidates.sort((a, b) => a.pos.z - b.pos.z);
         rawInfill.push(...candidates);
       }
 

@@ -23,6 +23,7 @@ import { deserializeROIsFromVoxl } from './voxlCodec';
 import { getSnapshot as getSupportSnapshot, setSnapshot as setSupportSnapshot } from '@/supports/state';
 import { pushHistory } from '@/history/historyStore';
 import { SUPPORT_EDIT_REPLACE } from '@/supports/history/actionTypes';
+import { getShaftProfile } from '@/supports/Settings';
 
 const KNOWN_BRUSH_TYPES = new Set<string>([
   'MacroFace', 'Ridge', 'Point', 'RoughEdge', 'SoftRidge', 'Ring',
@@ -670,25 +671,25 @@ export const supportPainterStore = {
     const id = crypto.randomUUID?.() || Math.random().toString(36).substring(2);
     const color = activeCustomBrush ? activeCustomBrush.color : BRUSH_COLORS[payload.brushType];
 
-    let customBrushOverride = activeCustomBrush ? { ...activeCustomBrush } : undefined;
-    if (activeBrushPipeline) {
-      customBrushOverride = {
-        id: `temp-pipeline-${Date.now()}`,
-        name: `Temp ${activeCustomBrush ? activeCustomBrush.name : payload.brushType} Config`,
-        color,
-        baseBrush: activeCustomBrush ? activeCustomBrush.baseBrush : payload.brushType,
-        selection: activeCustomBrush ? { ...activeCustomBrush.selection } : {
-          normalConeAngleMinDeg: 0,
-          normalConeAngleMaxDeg: 90,
-          overhangSlopeMinDeg: 0,
-          overhangSlopeMaxDeg: 90,
-          curvatureMin: 0,
-          curvatureMax: 1,
-          dihedralAngleToleranceDeg: 0,
-        },
-        operations: [...activeBrushPipeline],
-      };
-    }
+    const trunkWidth = getShaftProfile()?.diameterMm ?? 1.5;
+    const defaultSpacing = trunkWidth * 4.0;
+    const resolvedOps = activeBrushPipeline || (activeCustomBrush?.operations) || getDefaultOperationsForBrush(payload.brushType, defaultSpacing);
+    const customBrushOverride = {
+      id: activeCustomBrush ? activeCustomBrush.id : `temp-pipeline-${Date.now()}`,
+      name: activeCustomBrush ? activeCustomBrush.name : `Temp ${payload.brushType} Config`,
+      color,
+      baseBrush: activeCustomBrush ? activeCustomBrush.baseBrush : payload.brushType,
+      selection: activeCustomBrush ? { ...activeCustomBrush.selection } : {
+        normalConeAngleMinDeg: 0,
+        normalConeAngleMaxDeg: 90,
+        overhangSlopeMinDeg: 0,
+        overhangSlopeMaxDeg: 90,
+        curvatureMin: 0,
+        curvatureMax: 1,
+        dihedralAngleToleranceDeg: 0,
+      },
+      operations: JSON.parse(JSON.stringify(resolvedOps)),
+    };
 
     const newRegion: ROIRegion = {
       id,
@@ -1444,25 +1445,25 @@ export const supportPainterStore = {
     const id = crypto.randomUUID?.() || Math.random().toString(36).substring(2);
     const color = BRUSH_COLORS.PointPath;
 
-    let customBrushOverride = undefined;
-    if (activeBrushPipeline) {
-      customBrushOverride = {
-        id: `temp-pipeline-${Date.now()}`,
-        name: `Temp PointPath Config`,
-        color,
-        baseBrush: 'PointPath' as BrushType,
-        selection: {
-          normalConeAngleMinDeg: 0,
-          normalConeAngleMaxDeg: 90,
-          overhangSlopeMinDeg: 0,
-          overhangSlopeMaxDeg: 90,
-          curvatureMin: 0,
-          curvatureMax: 1,
-          dihedralAngleToleranceDeg: 0,
-        },
-        operations: [...activeBrushPipeline],
-      };
-    }
+    const trunkWidth = getShaftProfile()?.diameterMm ?? 1.5;
+    const defaultSpacing = trunkWidth * 4.0;
+    const resolvedOps = activeBrushPipeline || getDefaultOperationsForBrush('PointPath', defaultSpacing);
+    const customBrushOverride = {
+      id: `temp-pipeline-${Date.now()}`,
+      name: `Temp PointPath Config`,
+      color,
+      baseBrush: 'PointPath' as BrushType,
+      selection: {
+        normalConeAngleMinDeg: 0,
+        normalConeAngleMaxDeg: 90,
+        overhangSlopeMinDeg: 0,
+        overhangSlopeMaxDeg: 90,
+        curvatureMin: 0,
+        curvatureMax: 1,
+        dihedralAngleToleranceDeg: 0,
+      },
+      operations: JSON.parse(JSON.stringify(resolvedOps)),
+    };
 
     const newRegion: ROIRegion = {
       id,

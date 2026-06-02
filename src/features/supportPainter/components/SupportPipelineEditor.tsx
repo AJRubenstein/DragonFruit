@@ -838,22 +838,23 @@ export function SupportPipelineEditor({
                       <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={op.suppression.enabled}
+                          checked={op.suppression.enabled || (op.type === 'infill' && op.enableZHeightDensity)}
+                          disabled={op.type === 'infill' && op.enableZHeightDensity}
                           onChange={e =>
                             updateOpSuppression(index, { enabled: e.target.checked })
                           }
-                          className="w-4 h-4 rounded accent-accent cursor-pointer"
+                          className="w-4 h-4 rounded accent-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           id={`suppress-check-${op.type}`}
                         />
                         <label
                           htmlFor={`suppress-check-${op.type}`}
-                          className="cursor-pointer font-medium select-none"
+                          className="cursor-pointer font-medium select-none disabled:opacity-50"
                         >
-                          Enable candidate proximity checking
+                          Enable candidate proximity checking {op.type === 'infill' && op.enableZHeightDensity && "(Locked ON for Z-Density)"}
                         </label>
                       </div>
 
-                      {op.suppression.enabled && (
+                      {(op.suppression.enabled || (op.type === 'infill' && op.enableZHeightDensity)) && (
                         <div className="grid grid-cols-2 gap-3 mt-1 animate-fade-in">
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-1.5 justify-between w-full">
@@ -867,23 +868,16 @@ export function SupportPipelineEditor({
                             <input
                               type="number"
                               step="0.1"
-                              min="0.5"
-                              /* ORIGINAL:
-                              value={op.suppression.distanceMm}
-                              onChange={e =>
-                                updateOpSuppression(index, {
-                                  distanceMm: parseFloat(e.target.value),
-                                })
-                              }
-                              */
-                              value={isNaN(op.suppression.distanceMm) ? '' : op.suppression.distanceMm}
+                              min="0.1"
+                              disabled={op.type === 'infill' && op.enableZHeightDensity}
+                              value={op.type === 'infill' && op.enableZHeightDensity ? 0.1 : (isNaN(op.suppression.distanceMm) ? '' : op.suppression.distanceMm)}
                               onChange={e => {
                                 const val = parseFloat(e.target.value);
                                 updateOpSuppression(index, {
                                   distanceMm: isNaN(val) ? 0 : val,
                                 });
                               }}
-                              className="px-2.5 py-1.5 rounded border font-medium outline-none"
+                              className="px-2.5 py-1.5 rounded border font-medium outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                               style={{
                                 background: 'var(--surface-1, #151a22)',
                                 borderColor: 'var(--border-subtle, #2d3748)',
@@ -935,12 +929,21 @@ export function SupportPipelineEditor({
                             <input
                               type="checkbox"
                               checked={op.enableZHeightDensity || false}
-                              onChange={e =>
-                                updateOp(index, {
-                                  enableZHeightDensity: e.target.checked,
+                              onChange={e => {
+                                const isChecked = e.target.checked;
+                                const updates: any = {
+                                  enableZHeightDensity: isChecked,
                                   isIntervalDirectlyEdited: true,
-                                })
-                              }
+                                };
+                                if (op.type === 'infill' && isChecked) {
+                                  updates.suppression = {
+                                    ...op.suppression,
+                                    enabled: true,
+                                    distanceMm: 0.1,
+                                  };
+                                }
+                                updateOp(index, updates);
+                              }}
                               className="w-4 h-4 rounded accent-accent cursor-pointer"
                               id={`zheight-check-${opKey}`}
                             />
