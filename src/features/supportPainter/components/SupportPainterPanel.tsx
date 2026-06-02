@@ -1576,8 +1576,8 @@ export function SupportPainterPanel({
             );
           })()}
 
-              {/* 5. Edit Current Brush Supports settings button */}
-          {/* Edit Current Brush Supports Button */}
+              {/* 5. Edit Current Support Sequence settings button */}
+          {/* Edit Current Support Sequence Button */}
           <Button
             variant="secondary"
             size="sm"
@@ -1591,7 +1591,7 @@ export function SupportPainterPanel({
             className="w-full !text-[11px] py-1.5 flex items-center justify-center gap-1.5"
           >
             <Settings className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
-            <span>Edit Current Brush Supports</span>
+            <span>Edit Current Support Sequence</span>
           </Button>
 
               {/* 6. Compact Direct Click-to-Generate Toggle */}

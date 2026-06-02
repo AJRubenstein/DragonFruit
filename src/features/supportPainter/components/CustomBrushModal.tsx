@@ -307,7 +307,7 @@ export function CustomBrushModal({
             }}
           >
             <Grid className="w-3.5 h-3.5" />
-            Placement Pipeline
+            Support Sequence
           </button>
         </div>
 

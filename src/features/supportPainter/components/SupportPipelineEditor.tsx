@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ChevronUp,
   ChevronDown,
@@ -6,6 +6,7 @@ import {
   Grid,
   X,
   Trash,
+  Save,
 } from 'lucide-react';
 import { IconButton, Button } from '@/components/ui/primitives';
 import { type CustomSupportOperation, type CustomSupportOperationType, type BrushType, arePipelinesEquivalent, upgradePipeline } from '../supportPainterTypes';
@@ -170,6 +171,33 @@ export function SupportPipelineEditor({
 }: SupportPipelineEditorProps) {
   const [expandedOp, setExpandedOp] = useState<string | null>(null);
   const state = useSupportPainterState();
+  const [popupScriptNameInput, setPopupScriptNameInput] = useState('');
+  const [isSavingPopupScript, setIsSavingPopupScript] = useState(false);
+
+  // Find matched script for SupportPipelineEditor to keep inline input synchronized
+  const activeSettings = getSettings();
+  const trunkWidth = activeSettings?.shaft?.diameterMm ?? 1.0;
+  const defaultSpacing = isNaN(trunkWidth) ? 4.0 : trunkWidth * 4.0;
+
+  const currentPipelineForMatch = upgradePipeline(initialPipeline, 'MacroFace', defaultSpacing);
+  const matchedScriptForSync = Array.from(state.placementScripts.values()).find(script => {
+    let scriptOps = script.operations;
+    if (script.isBuiltIn) {
+      const brushType = script.id.replace('default-', '') as BrushType;
+      scriptOps = upgradePipeline(undefined, brushType, defaultSpacing);
+    } else {
+      scriptOps = upgradePipeline(script.operations, 'MacroFace', defaultSpacing);
+    }
+    return arePipelinesEquivalent(scriptOps, currentPipelineForMatch);
+  });
+
+  useEffect(() => {
+    if (matchedScriptForSync) {
+      setPopupScriptNameInput(matchedScriptForSync.isBuiltIn ? `${matchedScriptForSync.name} (Custom)` : matchedScriptForSync.name);
+    } else {
+      setPopupScriptNameInput('');
+    }
+  }, [matchedScriptForSync?.id]);
 
   const updateOp = (index: number, updates: Partial<CustomSupportOperation>) => {
     const nextOps = initialPipeline.map((op, idx) => {
@@ -308,6 +336,46 @@ export function SupportPipelineEditor({
             }
           };
 
+          const handleSavePreset = () => {
+            if (!isSavingPopupScript) {
+              setPopupScriptNameInput('');
+              setIsSavingPopupScript(true);
+              return;
+            }
+
+            const name = popupScriptNameInput.trim();
+            if (!name) return;
+
+            const existingCustom = Array.from(state.placementScripts.values()).find(
+              s => s.name.toLowerCase() === name.toLowerCase() && !s.isBuiltIn
+            );
+
+            const scriptId = existingCustom ? existingCustom.id : `custom-script-${Date.now()}`;
+            const newScript = {
+              id: scriptId,
+              name,
+              operations: JSON.parse(JSON.stringify(currentPipeline)),
+              isBuiltIn: false
+            };
+
+            supportPainterStore.addPlacementScript(newScript);
+            supportPainterStore.showToast([`Saved placement script "${name}"`]);
+            setIsSavingPopupScript(false);
+          };
+
+          const handleDeletePreset = () => {
+            if (!matchedScript || matchedScript.isBuiltIn) return;
+            if (confirm(`Are you sure you want to delete the placement script "${matchedScript.name}"?`)) {
+              supportPainterStore.deletePlacementScript(matchedScript.id);
+              supportPainterStore.showToast([`Deleted placement script "${matchedScript.name}"`]);
+            }
+          };
+
+          const handleCancelSavePreset = () => {
+            setIsSavingPopupScript(false);
+            setPopupScriptNameInput('');
+          };
+
           return (
             <div
               className="flex items-center gap-2.5 px-4 py-2 border text-xs flex-shrink-0 mb-3 rounded-lg animate-fade-in"
@@ -317,27 +385,78 @@ export function SupportPipelineEditor({
               }}
             >
               <span className="font-semibold text-gray-300">
-                Load Preset Script:
+                Preset Script:
               </span>
-              <select
-                value={matchedScript ? matchedScript.id : 'unsaved'}
-                onChange={handleSelectPreset}
-                className="flex-1 max-w-[280px] bg-surface-1 text-text-strong text-[11px] px-2 py-1 rounded border border-border-subtle outline-none"
-                style={{
-                  background: 'var(--surface-1, #151a22)',
-                  borderColor: 'var(--border-subtle, #2d3748)',
-                  color: 'var(--text-strong, #f3f4f6)',
-                }}
+              {isSavingPopupScript ? (
+                <input
+                  type="text"
+                  value={popupScriptNameInput}
+                  onChange={(e) => setPopupScriptNameInput(e.target.value)}
+                  placeholder="Enter Support Script Name"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSavePreset();
+                    } else if (e.key === 'Escape') {
+                      handleCancelSavePreset();
+                    }
+                  }}
+                  className="flex-1 max-w-[280px] bg-surface-1 text-text-strong text-[11px] px-2 py-1 rounded border border-border-subtle outline-none"
+                  style={{
+                    background: 'var(--surface-1, #151a22)',
+                    borderColor: 'var(--border-subtle, #2d3748)',
+                    color: 'var(--text-strong, #f3f4f6)',
+                  }}
+                />
+              ) : (
+                <select
+                  value={matchedScript ? matchedScript.id : 'unsaved'}
+                  onChange={handleSelectPreset}
+                  className="flex-1 max-w-[280px] bg-surface-1 text-text-strong text-[11px] px-2 py-1 rounded border border-border-subtle outline-none"
+                  style={{
+                    background: 'var(--surface-1, #151a22)',
+                    borderColor: 'var(--border-subtle, #2d3748)',
+                    color: 'var(--text-strong, #f3f4f6)',
+                  }}
+                >
+                  {!matchedScript && (
+                    <option value="unsaved">(Unsaved Placement Script)</option>
+                  )}
+                  {Array.from(state.placementScripts.values()).map(script => (
+                    <option key={script.id} value={script.id}>
+                      {script.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <IconButton
+                onClick={handleSavePreset}
+                disabled={isSavingPopupScript && !popupScriptNameInput.trim()}
+                className="!p-1 hover:bg-black/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Save Placement Script"
               >
-                {!matchedScript && (
-                  <option value="unsaved">(Unsaved Placement Script)</option>
-                )}
-                {Array.from(state.placementScripts.values()).map(script => (
-                  <option key={script.id} value={script.id}>
-                    {script.name}
-                  </option>
-                ))}
-              </select>
+                <Save className="w-3.5 h-3.5" style={{ color: (isSavingPopupScript && !popupScriptNameInput.trim()) ? 'var(--text-muted)' : 'var(--accent, #4a90e2)' }} />
+              </IconButton>
+
+              {isSavingPopupScript ? (
+                <IconButton
+                  onClick={handleCancelSavePreset}
+                  className="!p-1 hover:bg-black/20"
+                  title="Cancel Saving"
+                >
+                  <X className="w-3.5 h-3.5" style={{ color: 'var(--text-muted, #718096)' }} />
+                </IconButton>
+              ) : (
+                <IconButton
+                  onClick={handleDeletePreset}
+                  disabled={!matchedScript || matchedScript.isBuiltIn}
+                  className="!p-1 hover:bg-black/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={matchedScript?.isBuiltIn ? "Cannot delete built-in script" : "Delete Placement Script"}
+                >
+                  <Trash className="w-3.5 h-3.5" style={{ color: (!matchedScript || matchedScript.isBuiltIn) ? 'var(--text-muted, #718096)' : 'var(--danger, #ef4444)' }} />
+                </IconButton>
+              )}
             </div>
           );
         })()}
