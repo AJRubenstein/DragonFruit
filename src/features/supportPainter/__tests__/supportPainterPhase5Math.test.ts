@@ -170,4 +170,49 @@ describe('Support Painter Phase 5 - Warp-Space Infill Z-Density Solver', () => {
       }
     }
   });
+
+  it('should be translation-invariant: generating similar point densities near the origin and far away', () => {
+    const shiftX = 150;
+    const shiftY = 150;
+
+    const shiftedT1: WeldedTriangle = {
+      ...t1,
+      v0: t1.v0.clone().add(new THREE.Vector3(shiftX, shiftY, 0)),
+      v1: t1.v1.clone().add(new THREE.Vector3(shiftX, shiftY, 0)),
+      v2: t1.v2.clone().add(new THREE.Vector3(shiftX, shiftY, 0)),
+    };
+
+    const shiftedT2: WeldedTriangle = {
+      ...t2,
+      v0: t2.v0.clone().add(new THREE.Vector3(shiftX, shiftY, 0)),
+      v1: t2.v1.clone().add(new THREE.Vector3(shiftX, shiftY, 0)),
+      v2: t2.v2.clone().add(new THREE.Vector3(shiftX, shiftY, 0)),
+    };
+
+    const shiftedTrianglesList = [shiftedT1, shiftedT2];
+
+    const resultsOrigin = samplePoissonDiscWarped(
+      region,
+      0,
+      40,
+      baseOp,
+      trianglesList,
+      1.0
+    );
+
+    const resultsShifted = samplePoissonDiscWarped(
+      region,
+      0,
+      40,
+      baseOp,
+      shiftedTrianglesList,
+      1.0
+    );
+
+    const ratio = resultsShifted.length / resultsOrigin.length;
+    assert.ok(
+      ratio > 0.8 && ratio < 1.25,
+      `Shifted coordinates produced ${resultsShifted.length} points vs ${resultsOrigin.length} at origin (ratio: ${ratio}). Should be translation-invariant.`
+    );
+  });
 });

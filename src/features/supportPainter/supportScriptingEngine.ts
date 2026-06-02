@@ -546,6 +546,20 @@ export function samplePoissonDiscWarped(
   const baseSpacing = Math.max(0.25, op.spacing.baseSpacingMm);
   const r = baseSpacing; // uniform radius in warped space
 
+  // 1. Calculate the 2D centroid/center of the ROI to prevent global coordinate shift during warping
+  let sumX = 0;
+  let sumY = 0;
+  let count = 0;
+  for (const triId of region.triangleIds) {
+    const tri = triangles[triId];
+    if (!tri) continue;
+    sumX += tri.v0.x + tri.v1.x + tri.v2.x;
+    sumY += tri.v0.y + tri.v1.y + tri.v2.y;
+    count += 3;
+  }
+  const centerX = count > 0 ? sumX / count : 0;
+  const centerY = count > 0 ? sumY / count : 0;
+
   const warpedTriangles: {
     id: number;
     v0: THREE.Vector2; // warped
@@ -571,9 +585,10 @@ export function samplePoissonDiscWarped(
     const w1 = getWarpScale(tri.v1.z);
     const w2 = getWarpScale(tri.v2.z);
 
-    const pv0 = new THREE.Vector2(tri.v0.x * w0, tri.v0.y * w0);
-    const pv1 = new THREE.Vector2(tri.v1.x * w1, tri.v1.y * w1);
-    const pv2 = new THREE.Vector2(tri.v2.x * w2, tri.v2.y * w2);
+    // Warp coordinates relative to the ROI's 2D center
+    const pv0 = new THREE.Vector2((tri.v0.x - centerX) * w0 + centerX, (tri.v0.y - centerY) * w0 + centerY);
+    const pv1 = new THREE.Vector2((tri.v1.x - centerX) * w1 + centerX, (tri.v1.y - centerY) * w1 + centerY);
+    const pv2 = new THREE.Vector2((tri.v2.x - centerX) * w2 + centerX, (tri.v2.y - centerY) * w2 + centerY);
 
     warpedTriangles.push({
       id: triId,
