@@ -263,6 +263,14 @@ type HomeSupportCollectionsSnapshot = Pick<
   'trunks' | 'branches' | 'leaves' | 'twigs' | 'sticks' | 'braces' | 'roots' | 'knots'
 >;
 
+function countRecordEntries(record: Record<string, unknown>): number {
+  let count = 0;
+  for (const _key in record) {
+    count += 1;
+  }
+  return count;
+}
+
 type HomeKickstandSnapshot = ReturnType<typeof getKickstandSnapshot>;
 type HomeKickstandCollectionsSnapshot = Pick<
   HomeKickstandSnapshot,
@@ -419,6 +427,7 @@ const PLUGIN_IMPORT_WARNING_DISMISSED_STORAGE_KEY =
   ?? 'dragonfruit.lysImportWarningDismissed';
 const COLD_START_SCENE_HANDOFF_DELAY_MS = 1150;
 const REMOTE_OFFLINE_LAYER_HEIGHT_GLOBAL_STORAGE_KEY = 'dragonfruit.slicing.remoteOfflineLayerHeightMm';
+const REMOTE_OFFLINE_LAYER_HEIGHT_CHANGED_EVENT = 'dragonfruit:slicing-remote-offline-layer-height-changed';
 const SUPPORT_DRAG_HOLD_FALLBACK_MS = 320;
 const DEFAULT_MONITOR_BUSY_GRACE_MS = 30_000;
 const REACHABILITY_PROBE_TIMEOUT_MS = 7_500;
@@ -429,6 +438,18 @@ const DEFAULT_RTSP_DEBUG_POLL_MS = 4_000;
 const DEFAULT_RELAY_AUTORETRY_LIMIT = 2;
 const DEFAULT_RELAY_AUTORETRY_DELAY_MS = 1200;
 const RESIN_ESTIMATE_BACKGROUND_REFRESH_MS = 12_000;
+
+function readRemoteOfflineLayerHeightSnapshotMm(): number | null {
+  if (typeof window === 'undefined') return null;
+
+  const raw = window.localStorage.getItem(REMOTE_OFFLINE_LAYER_HEIGHT_GLOBAL_STORAGE_KEY)
+    ?? window.sessionStorage.getItem(REMOTE_OFFLINE_LAYER_HEIGHT_GLOBAL_STORAGE_KEY);
+  if (raw == null || raw.trim().length === 0) return null;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.max(0.01, Math.min(1, parsed));
+}
 
 type TransformStoreCommitResult = {
   updated: boolean;
@@ -828,21 +849,6 @@ export default function Home() {
   );
   const activePrinterProfile = React.useMemo(() => getActivePrinterProfile(profileState), [profileState]);
   const activeMaterialProfile = React.useMemo(() => getActiveMaterialProfile(profileState), [profileState]);
-  const networkSelectedMaterialLayerHeightMm = React.useMemo(() => {
-    const profile = activePrinterProfile;
-    if (!profile || !profile.networkSupport) return null;
-    if (profile.networkConnection?.connected !== true) return null;
-    const selectedMaterialId = profile.networkConnection?.selectedMaterialId?.trim() ?? '';
-    if (!selectedMaterialId) return null;
-    const candidate = Number(profile.networkConnection?.selectedMaterialLayerHeightMm);
-    if (!Number.isFinite(candidate) || candidate <= 0) return null;
-    return candidate;
-  }, [
-    activePrinterProfile?.networkConnection?.connected,
-    activePrinterProfile?.networkConnection?.selectedMaterialId,
-    activePrinterProfile?.networkConnection?.selectedMaterialLayerHeightMm,
-    activePrinterProfile?.networkSupport,
-  ]);
   const hasActivePrinterProfile = Boolean(activePrinterProfile);
 
   // 2. Transform Management (needs geom for bounds)
@@ -2405,15 +2411,15 @@ export default function Home() {
         lastAt: historyDebug.lastAt,
       },
       supportCounts: {
-        trunks: Object.keys(supportStateSnapshot.trunks).length,
-        branches: Object.keys(supportStateSnapshot.branches).length,
-        leaves: Object.keys(supportStateSnapshot.leaves).length,
-        twigs: Object.keys(supportStateSnapshot.twigs).length,
-        sticks: Object.keys(supportStateSnapshot.sticks).length,
-        braces: Object.keys(supportStateSnapshot.braces).length,
-        roots: Object.keys(supportStateSnapshot.roots).length,
-        knots: Object.keys(supportStateSnapshot.knots).length,
-        kickstands: Object.keys(kickstandStateSnapshot.kickstands).length,
+        trunks: countRecordEntries(supportStateSnapshot.trunks),
+        branches: countRecordEntries(supportStateSnapshot.branches),
+        leaves: countRecordEntries(supportStateSnapshot.leaves),
+        twigs: countRecordEntries(supportStateSnapshot.twigs),
+        sticks: countRecordEntries(supportStateSnapshot.sticks),
+        braces: countRecordEntries(supportStateSnapshot.braces),
+        roots: countRecordEntries(supportStateSnapshot.roots),
+        knots: countRecordEntries(supportStateSnapshot.knots),
+        kickstands: countRecordEntries(kickstandStateSnapshot.kickstands),
       },
     };
   }, [kickstandStateSnapshot.kickstands, scene.activeModelId, scene.models, supportDragGroupRef, supportStateSnapshot.braces, supportStateSnapshot.branches, supportStateSnapshot.knots, supportStateSnapshot.leaves, supportStateSnapshot.roots, supportStateSnapshot.sticks, supportStateSnapshot.trunks, supportStateSnapshot.twigs, transformDebugTick, transformMgr.transform]);
@@ -3052,20 +3058,10 @@ export default function Home() {
     const printerHeight = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionY ?? 0));
     const pixelSizeX = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.x ?? 1));
     const pixelSizeY = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.y ?? 1));
-    const bitDepth = Math.max(0, Math.round(Number(activePrinterProfile?.bitDepth?.bits ?? 0)));
     const hasPrintableArtifact = (printingArtifact?.outputName ?? '').trim().length > 0;
 
     if (!hasPrintableArtifact || printerWidth <= 0 || printerHeight <= 0) {
       return null;
-    }
-
-    const isLikely16kClass = printerWidth >= 15000 && printerWidth <= 15400;
-    if (isLikely16kClass) {
-      if (bitDepth === 3) {
-        printerWidth = 15136;
-      } else if (bitDepth === 8) {
-        printerWidth = 15120;
-      }
     }
 
     return {
@@ -3079,7 +3075,6 @@ export default function Home() {
     activePrinterProfile?.display?.resolutionY,
     activePrinterProfile?.pixelSize?.x,
     activePrinterProfile?.pixelSize?.y,
-    activePrinterProfile?.bitDepth?.bits,
     printingArtifact?.outputName,
   ]);
 
@@ -3482,9 +3477,9 @@ export default function Home() {
   }, [computeBaseResinMlChunked]);
 
   // Support/raft aggregation is comparatively heavy, so keep it scoped to
-  // export + pre-artifact printing. Base model volume estimation runs in the
+  // pre-artifact printing only. Base model volume estimation runs in the
   // background across active editing modes (for warm, up-to-date estimates).
-  const shouldCalculateSupportAndRaftVolumes = scene.mode === 'export' || (scene.mode === 'printing' && !printingArtifact);
+  const shouldCalculateSupportAndRaftVolumes = scene.mode === 'printing' && !printingArtifact;
   const resinBuildVolumeBounds = React.useMemo(() => {
     if (!scene.view3dSettings.enabled) return null;
 
@@ -3570,7 +3565,7 @@ export default function Home() {
   const supportAndRaftResinMl = React.useMemo(() => {
     if (!shouldCalculateSupportAndRaftVolumes) return 0;
 
-    // Expensive calculation ONLY runs when mode is export/printing
+    // Expensive calculation ONLY runs in pre-artifact printing mode.
     const visibleModelIds = resinInBoundsModelIdSet;
     if (visibleModelIds.size === 0) return 0;
 
@@ -4038,23 +4033,58 @@ export default function Home() {
   const selectedSliceDeviceReachability = selectedSliceDeviceId
     ? (printerReachabilityByDeviceId[selectedSliceDeviceId] ?? null)
     : null;
-  const shouldUseRemoteOfflineLayerHeight = Boolean(activeNetworkUiAdapter) && (
-    activePrinterProfile?.networkConnection?.connected !== true
-    || selectedSliceDeviceReachability === false
-  );
-  const remoteOfflineSlicedLayerHeightMm = (() => {
-    if (!activeNetworkUiAdapter) return null;
+  const shouldUseRemoteOfflineLayerHeight = Boolean(activeNetworkUiAdapter)
+    && activeNetworkUiAdapter?.supportsRemoteMaterialProfiles !== false
+    && (
+      activePrinterProfile?.networkConnection?.connected !== true
+      || selectedSliceDeviceReachability === false
+    );
+  const [remoteOfflineLayerHeightSnapshotMm, setRemoteOfflineLayerHeightSnapshotMm] = React.useState<number | null>(() => (
+    readRemoteOfflineLayerHeightSnapshotMm()
+  ));
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const updateSnapshot = () => {
+      const next = readRemoteOfflineLayerHeightSnapshotMm();
+      setRemoteOfflineLayerHeightSnapshotMm((previous) => (Object.is(previous, next) ? previous : next));
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === REMOTE_OFFLINE_LAYER_HEIGHT_GLOBAL_STORAGE_KEY) updateSnapshot();
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(REMOTE_OFFLINE_LAYER_HEIGHT_CHANGED_EVENT, updateSnapshot);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(REMOTE_OFFLINE_LAYER_HEIGHT_CHANGED_EVENT, updateSnapshot);
+    };
+  }, []);
+
+  const remoteOfflineSlicedLayerHeightMm = React.useMemo(() => {
     if (!shouldUseRemoteOfflineLayerHeight) return null;
-    if (typeof window === 'undefined') return null;
+    return remoteOfflineLayerHeightSnapshotMm;
+  }, [remoteOfflineLayerHeightSnapshotMm, shouldUseRemoteOfflineLayerHeight]);
+  const remoteSelectedMaterialLayerHeightMm = React.useMemo(() => {
+    if (!activeNetworkUiAdapter) return null;
+    if (activeNetworkUiAdapter.supportsRemoteMaterialProfiles === false) return null;
+    if (activePrinterProfile?.networkConnection?.connected !== true) return null;
+    if (selectedSliceDeviceReachability === false) return null;
 
-    const raw = window.localStorage.getItem(REMOTE_OFFLINE_LAYER_HEIGHT_GLOBAL_STORAGE_KEY)
-      ?? window.sessionStorage.getItem(REMOTE_OFFLINE_LAYER_HEIGHT_GLOBAL_STORAGE_KEY);
-    if (raw == null || raw.trim().length === 0) return null;
+    const selectedMaterialId = activePrinterProfile.networkConnection?.selectedMaterialId?.trim() ?? '';
+    if (!selectedMaterialId) return null;
 
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed) || parsed <= 0) return null;
-    return Math.max(0.001, Math.min(1, parsed));
-  })();
+    const candidate = Number(activePrinterProfile.networkConnection?.selectedMaterialLayerHeightMm);
+    if (!Number.isFinite(candidate) || candidate <= 0) return null;
+    return Math.max(0.001, candidate);
+  }, [
+    activeNetworkUiAdapter,
+    activePrinterProfile?.networkConnection?.connected,
+    activePrinterProfile?.networkConnection?.selectedMaterialId,
+    activePrinterProfile?.networkConnection?.selectedMaterialLayerHeightMm,
+    selectedSliceDeviceReachability,
+  ]);
   const printingMonitoringAdapter = React.useMemo(
     () => getProfileMonitoringUiAdapter(activePrinterProfile?.networkSupport),
     [activePrinterProfile?.networkSupport],
@@ -4063,11 +4093,12 @@ export default function Home() {
     if (remoteOfflineSlicedLayerHeightMm != null) {
       return remoteOfflineSlicedLayerHeightMm;
     }
-    if (networkSelectedMaterialLayerHeightMm != null) {
-      return Math.max(0.001, Number(networkSelectedMaterialLayerHeightMm));
+    if (remoteSelectedMaterialLayerHeightMm != null) {
+      return remoteSelectedMaterialLayerHeightMm;
     }
     return Math.max(0.001, Number(activeMaterialProfile?.layerHeightMm ?? 0.05));
-  }, [activeMaterialProfile?.layerHeightMm, networkSelectedMaterialLayerHeightMm, remoteOfflineSlicedLayerHeightMm]);
+  }, [activeMaterialProfile?.layerHeightMm, remoteOfflineSlicedLayerHeightMm, remoteSelectedMaterialLayerHeightMm]);
+  const crossSectionLayerHeightMm = slicedLayerHeightMm;
   const isLayerHeightMatch = React.useCallback((candidateLayerHeightMm: number | null | undefined) => {
     if (candidateLayerHeightMm == null) return false;
     return Math.abs(candidateLayerHeightMm - slicedLayerHeightMm) <= 0.0005;
@@ -4357,11 +4388,6 @@ export default function Home() {
     printingArtifact
     && activeNetworkUiAdapter
     && printableConnectedPrinterFleet.length > 0,
-  );
-  const canRetrySendToPrinter = Boolean(
-    printingUploadDialogStage === 'failed'
-    && !printingSendBusy
-    && canSendToPrinter,
   );
   // Whether the slicing panel can offer Slice & Upload / Slice & Print actions
   const canSliceAndUpload = Boolean(
@@ -10625,8 +10651,17 @@ export default function Home() {
 
   const [sceneZRange, setSceneZRange] = useState(fallbackZRange);
 
+  const setSceneZRangeIfChanged = React.useCallback((nextRange: { min: number; max: number }) => {
+    setSceneZRange((previous) => {
+      if (Object.is(previous.min, nextRange.min) && Object.is(previous.max, nextRange.max)) {
+        return previous;
+      }
+      return nextRange;
+    });
+  }, []);
+
   const projectedZRangeCacheRef = React.useRef<Map<string, { min: number; max: number }>>(new Map());
-  const projectedZRangeCacheKey = React.useMemo(() => {
+  const buildProjectedZRangeCacheKey = React.useCallback(() => {
     const visibleSignature = scene.models
       .filter((model) => model.visible)
       .map((model) => {
@@ -10651,14 +10686,14 @@ export default function Home() {
       visibleSignature,
       `support-refresh:${supportRenderRefreshNonce}`,
       `raft-mode:${raftSettingsSnapshot.bottomMode}`,
-      `roots:${Object.keys(supportStateSnapshot.roots).length}`,
-      `trunks:${Object.keys(supportStateSnapshot.trunks).length}`,
-      `branches:${Object.keys(supportStateSnapshot.branches).length}`,
-      `leaves:${Object.keys(supportStateSnapshot.leaves).length}`,
-      `twigs:${Object.keys(supportStateSnapshot.twigs).length}`,
-      `sticks:${Object.keys(supportStateSnapshot.sticks).length}`,
-      `braces:${Object.keys(supportStateSnapshot.braces).length}`,
-      `kickstands:${Object.keys(kickstandStateSnapshot.kickstands).length}`,
+      `roots:${countRecordEntries(supportStateSnapshot.roots)}`,
+      `trunks:${countRecordEntries(supportStateSnapshot.trunks)}`,
+      `branches:${countRecordEntries(supportStateSnapshot.branches)}`,
+      `leaves:${countRecordEntries(supportStateSnapshot.leaves)}`,
+      `twigs:${countRecordEntries(supportStateSnapshot.twigs)}`,
+      `sticks:${countRecordEntries(supportStateSnapshot.sticks)}`,
+      `braces:${countRecordEntries(supportStateSnapshot.braces)}`,
+      `kickstands:${countRecordEntries(kickstandStateSnapshot.kickstands)}`,
     ].join('||');
   }, [
     kickstandStateSnapshot.kickstands,
@@ -10677,15 +10712,16 @@ export default function Home() {
   useEffect(() => {
     // Projected world-triangle bounds are expensive.
     // Analysis can run on fallback bounds to keep mode-entry instant.
-    // Printing needs accurate support/raft-aware bounds before a print artifact
-    // exists; Export needs the same fidelity so layer estimates match real slicing.
-    const needsAccurateZRange = (scene.mode === 'printing' && !printingArtifact) || scene.mode === 'export';
+    // Printing needs accurate support/raft-aware bounds before a print artifact exists.
+    // Export intentionally uses fallback bounds to avoid full-plate OOM spikes on entry.
+    const needsAccurateZRange = scene.mode === 'printing' && !printingArtifact;
     const shouldUseSlicerAlignedRange = scene.mode === 'printing' || scene.mode === 'export';
     
     if (needsAccurateZRange) {
+      const projectedZRangeCacheKey = buildProjectedZRangeCacheKey();
       const cached = projectedZRangeCacheRef.current.get(projectedZRangeCacheKey);
       if (cached) {
-        setSceneZRange(cached);
+        setSceneZRangeIfChanged(cached);
         return;
       }
 
@@ -10706,7 +10742,7 @@ export default function Home() {
           const oldest = projectedZRangeCacheRef.current.keys().next().value;
           if (oldest != null) projectedZRangeCacheRef.current.delete(oldest);
         }
-        setSceneZRange(nextRange);
+        setSceneZRangeIfChanged(nextRange);
       };
 
       timeoutId = window.setTimeout(() => {
@@ -10729,26 +10765,31 @@ export default function Home() {
       };
     } else {
       // Use fast fallback for non-export modes where projected bounds aren't required.
-      setSceneZRange(shouldUseSlicerAlignedRange ? normalizeToSlicerZRange(fallbackZRange) : fallbackZRange);
+      const nextRange = shouldUseSlicerAlignedRange
+        ? normalizeToSlicerZRange(fallbackZRange)
+        : fallbackZRange;
+      setSceneZRangeIfChanged(nextRange);
     }
   }, [
+    buildProjectedZRangeCacheKey,
     normalizeToSlicerZRange,
     fallbackZRange,
     printingArtifact,
-    projectedZRangeCacheKey,
     scene.mode,
     scene.models,
+    setSceneZRangeIfChanged,
   ]);
 
   const slicing = useSlicingManager({
     hasGeometry: scene.models.length > 0,
-    zRange: sceneZRange
+    zRange: sceneZRange,
+    layerHeightMm: crossSectionLayerHeightMm,
   });
 
   const estimatedSlicerLayerCount = React.useMemo(() => {
     if (scene.models.length === 0) return 0;
 
-    const layerHeightMm = Math.max(0.001, slicedLayerHeightMm || 0.05);
+    const layerHeightMm = Math.max(0.001, crossSectionLayerHeightMm || 0.05);
     const printableMaxZMm = Math.max(0, Number(sceneZRange.max) || 0);
     const buildHeightLimitMm = Math.max(0, Number(activePrinterProfile?.buildVolumeMm.height) || 0);
     const slicerHeightMm = buildHeightLimitMm > 0
@@ -10756,7 +10797,7 @@ export default function Home() {
       : printableMaxZMm;
 
     return Math.max(0, Math.ceil(slicerHeightMm / layerHeightMm));
-  }, [activePrinterProfile?.buildVolumeMm.height, scene.models.length, sceneZRange.max, slicedLayerHeightMm]);
+  }, [activePrinterProfile?.buildVolumeMm.height, crossSectionLayerHeightMm, scene.models.length, sceneZRange.max]);
 
   const modelStatsEstimatedPrintTimeLabel = React.useMemo(() => {
     if (!activeMaterialProfile) return '—';
@@ -10797,9 +10838,9 @@ export default function Home() {
     if (printingPreviewTotalLayers <= 0) return null;
 
     const clampedLayer = Math.max(1, Math.min(Math.max(1, printingPreviewTotalLayers), printingSelectedLayer));
-    const height = clampedLayer * slicedLayerHeightMm;
+    const height = clampedLayer * crossSectionLayerHeightMm;
     return Math.min(Math.max(height, 0), Math.max(slicing.heightMm, 0));
-  }, [printingPreviewTotalLayers, printingSelectedLayer, scene.mode, slicedLayerHeightMm, slicing.heightMm]);
+  }, [crossSectionLayerHeightMm, printingPreviewTotalLayers, printingSelectedLayer, scene.mode, slicing.heightMm]);
 
   React.useEffect(() => {
     const isTypingTarget = (target: EventTarget | null) => {
@@ -10916,12 +10957,12 @@ export default function Home() {
   }, [runExportThumbnailCapture]);
 
   React.useEffect(() => {
-    const targetMicron = Math.max(1, Math.round(slicedLayerHeightMm * 1000));
+    const targetMicron = Math.max(1, Math.round(crossSectionLayerHeightMm * 1000));
     if (slicing.layerHeightMicron !== targetMicron) {
       slicing.setLayerHeightMicron(targetMicron);
     }
   }, [
-    slicedLayerHeightMm,
+    crossSectionLayerHeightMm,
     slicing.layerHeightMicron,
     slicing.setLayerHeightMicron,
   ]);
@@ -14889,6 +14930,7 @@ export default function Home() {
               models={scene.models}
               activeModel={scene.activeModel}
               estimatedLayerCountOverride={estimatedSlicerLayerCount}
+              estimatedLayerHeightMmOverride={crossSectionLayerHeightMm}
               estimatedVolumeLabelOverride={estimatedVolumeMlLabel}
               captureSceneThumbnailPng={captureExportThumbnailPng}
               onSliceRunStarted={handleSliceRunStartedForPrinting}
@@ -14931,7 +14973,6 @@ export default function Home() {
               canSendToPrinter={canSendToPrinter}
               sendBusy={printingSendBusy}
               sendStatusText={printingSendStatusText}
-              sendCanRetry={canRetrySendToPrinter}
               sendButtonLabel={sendToPrinterButtonLabel}
               showSendTargetPicker={printableConnectedPrinterFleet.length > 1}
               onOpenSendTargetPicker={() => {
@@ -14941,7 +14982,6 @@ export default function Home() {
               onDownload={handleDownloadPrintArtifact}
               onSendToPrinter={handleSendToPrinter}
               onCancelSendToPrinter={handleCancelSendToPrinter}
-              onRetrySendToPrinter={handleSendToPrinter}
               sliceIntent={completedSliceIntent}
               savedFilePath={completedSaveDestinationPath}
             />
@@ -16961,6 +17001,17 @@ export default function Home() {
                     disabled={printingSendBusy || printingPrintNowBusy}
                   >
                     Close
+                  </button>
+                )}
+
+                {printingUploadDialogStage === 'failed' && (
+                  <button
+                    type="button"
+                    className="ui-button ui-button-accent !h-9 px-3 text-xs"
+                    onClick={() => { void handleSendToPrinter(); }}
+                    disabled={printingSendBusy || printingPrintNowBusy || !canSendToPrinter}
+                  >
+                    Retry Upload
                   </button>
                 )}
 

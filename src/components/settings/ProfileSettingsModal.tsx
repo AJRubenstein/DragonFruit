@@ -9,6 +9,7 @@ import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import {
   applyOfficialMaterialProfileUpdate,
   applyOfficialPrinterProfileUpdate,
+  DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
   addMaterialProfile,
   addPrinterProfileFromPreset,
   disconnectPrinterNetworkDevice,
@@ -90,6 +91,7 @@ import {
   LabeledResinFamilySelect,
   LabeledCurrencySelect,
   MaterialProfileFormSections,
+  MaterialAntiAliasingSection,
   MaterialProfileIdentitySection,
   PluginLocalMaterialSettingsSections,
   ReplacementMaterialEditorShell,
@@ -102,6 +104,7 @@ type ProfileSettingsModalProps = {
   initialTab?: 'printer' | 'material';
   openPrinterLibraryToken?: number;
   openNetworkSettingsToken?: number;
+  openMaterialAntiAliasingToken?: number;
 };
 
 type DeleteConfirmTarget =
@@ -300,6 +303,7 @@ export function ProfileSettingsModal({
   initialTab = 'printer',
   openPrinterLibraryToken = 0,
   openNetworkSettingsToken = 0,
+  openMaterialAntiAliasingToken = 0,
 }: ProfileSettingsModalProps) {
   const logNetworkScanDebug = React.useCallback((scope: string, details: Record<string, unknown>) => {
     try {
@@ -361,6 +365,7 @@ export function ProfileSettingsModal({
     liftSpeedMmMin: 60,
     retractSpeedMmMin: 150,
     minimumAaAlphaPercent: 35,
+    antiAliasingSettings: DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
   });
   const [newMaterialDraft, setNewMaterialDraft] = React.useState<Omit<MaterialProfile, 'id' | 'printerProfileId'>>({
     name: 'New Material',
@@ -378,6 +383,7 @@ export function ProfileSettingsModal({
     liftSpeedMmMin: 60,
     retractSpeedMmMin: 150,
     minimumAaAlphaPercent: 35,
+    antiAliasingSettings: DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
   });
   const [editMaterialLocalSettingsByOutput, setEditMaterialLocalSettingsByOutput] = React.useState<LocalSettingsByOutputDraft>({});
   const [newMaterialLocalSettingsByOutput, setNewMaterialLocalSettingsByOutput] = React.useState<LocalSettingsByOutputDraft>({});
@@ -525,6 +531,14 @@ export function ProfileSettingsModal({
     return profileState.printerProfiles.find((profile) => profile.id === selectedPrinterId) ?? fallback;
   }, [profileState, selectedPrinterId]);
 
+  const printerDitherBitDepth = React.useMemo<number | null>(() => {
+    const printerBitDepth = Number(selectedPrinter?.bitDepth?.bits);
+    if (!Number.isFinite(printerBitDepth) || printerBitDepth <= 0) {
+      return null;
+    }
+    return Math.max(2, Math.min(7, Math.round(printerBitDepth)));
+  }, [selectedPrinter?.bitDepth?.bits]);
+
   const selectedFormatVersionOptions = React.useMemo(() => {
     if (!selectedPrinter) return [] as Array<{ value: string; label: string; isDefault?: boolean }>;
     return getAvailableFormatVersionOptions(selectedPrinter.display.outputFormat);
@@ -568,7 +582,11 @@ export function ProfileSettingsModal({
     const declared = [...(selectedLocalMaterialSettingsAdapter.tabs ?? [])]
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .map((tab, index) => ({ id: tab.id, title: tab.title, order: tab.order ?? (index + 1) * 10 }));
-    return [...declared, { id: 'meta', title: 'Meta', order: 1000 }];
+    return [
+      ...declared,
+      { id: 'meta', title: 'Meta', order: 1000 },
+      { id: 'anti-aliasing', title: 'Anti-Aliasing', order: 1010 },
+    ];
   }, [selectedLocalMaterialSettingsAdapter, usePluginLocalSettingsAsReplacement]);
 
   const replacementMaterialEditorDefaultTab = React.useMemo(() => {
@@ -902,6 +920,8 @@ export function ProfileSettingsModal({
   const remoteMaterialsCacheRef = React.useRef<Map<string, RemoteMaterialsCacheEntry>>(new Map());
   const lastHandledOpenPrinterLibraryTokenRef = React.useRef(0);
   const lastHandledOpenNetworkSettingsTokenRef = React.useRef(0);
+  const lastHandledOpenMaterialAntiAliasingTokenRef = React.useRef(0);
+  const materialEditorInitialTabOverrideRef = React.useRef<string | null>(null);
   const wasOpenRef = React.useRef(false);
   const materialSelectionInitializedRef = React.useRef(false);
   const lastInitializedNetworkPrinterIdRef = React.useRef<string | null>(null);
@@ -1526,12 +1546,21 @@ export function ProfileSettingsModal({
       && openNetworkSettingsToken > 0
       && openNetworkSettingsToken > lastHandledOpenNetworkSettingsTokenRef.current;
 
+    const shouldOpenMaterialAntiAliasing =
+      initialTab === 'material'
+      && openMaterialAntiAliasingToken > 0
+      && openMaterialAntiAliasingToken > lastHandledOpenMaterialAntiAliasingTokenRef.current;
+
     if (shouldOpenPrinterLibrary) {
       lastHandledOpenPrinterLibraryTokenRef.current = openPrinterLibraryToken;
     }
 
     if (shouldOpenNetworkSettings) {
       lastHandledOpenNetworkSettingsTokenRef.current = openNetworkSettingsToken;
+    }
+
+    if (shouldOpenMaterialAntiAliasing) {
+      lastHandledOpenMaterialAntiAliasingTokenRef.current = openMaterialAntiAliasingToken;
     }
 
     setSelectedPrinterId(profileState.activePrinterProfileId);
@@ -1548,9 +1577,19 @@ export function ProfileSettingsModal({
     setSelectedMaterialId(activeMaterial?.id ?? null);
     setSelectedManufacturer(activeMaterial?.brand ?? null);
     setSelectedResinFamily(activeMaterial?.resinFamily ?? null);
+    if (shouldOpenMaterialAntiAliasing && activeMaterial) {
+      const isOfficial = typeof activeMaterial.officialTemplateId === 'string' && activeMaterial.officialTemplateId.trim().length > 0;
+      if (isOfficial) {
+        setShowOfficialMaterialLockDialog(true);
+      } else {
+        materialEditorInitialTabOverrideRef.current = 'anti-aliasing';
+        setIsMaterialEditorOpen(true);
+      }
+    }
   }, [
     initialTab,
     isOpen,
+    openMaterialAntiAliasingToken,
     openNetworkSettingsToken,
     openPrinterLibraryToken,
     profileState.activeMaterialProfileId,
@@ -2741,7 +2780,8 @@ export function ProfileSettingsModal({
 
   React.useEffect(() => {
     if (!isMaterialEditorOpen || !selectedMaterial) return;
-    setMaterialEditorTab(replacementMaterialEditorDefaultTab);
+    setMaterialEditorTab(materialEditorInitialTabOverrideRef.current ?? replacementMaterialEditorDefaultTab);
+    materialEditorInitialTabOverrideRef.current = null;
     setEditMaterialDraft({
       name: selectedMaterial.name,
       brand: selectedMaterial.brand,
@@ -2762,6 +2802,7 @@ export function ProfileSettingsModal({
       liftSpeedMmMin: selectedMaterial.liftSpeedMmMin,
       retractSpeedMmMin: selectedMaterial.retractSpeedMmMin,
       minimumAaAlphaPercent: selectedMaterial.minimumAaAlphaPercent,
+      antiAliasingSettings: selectedMaterial.antiAliasingSettings ?? DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
     });
     if (selectedPrinter) {
       setEditMaterialLocalSettingsByOutput(
@@ -2845,6 +2886,7 @@ export function ProfileSettingsModal({
       liftSpeedMmMin: 60,
       retractSpeedMmMin: 150,
       minimumAaAlphaPercent: 35,
+      antiAliasingSettings: DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
     });
     setNewMaterialLocalSettingsByOutput(
       resolveDefaultLocalSettingsForOutput(
@@ -2875,6 +2917,7 @@ export function ProfileSettingsModal({
       liftSpeedMmMin: preset.liftSpeedMmMin ?? 60,
       retractSpeedMmMin: preset.retractSpeedMmMin ?? 150,
       minimumAaAlphaPercent: preset.minimumAaAlphaPercent ?? 35,
+      antiAliasingSettings: preset.antiAliasingSettings ?? DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
       ...(preset.templateId ? { officialTemplateId: preset.templateId } : {}),
       ...(preset.profileVersion != null ? { officialTemplateVersion: preset.profileVersion } : {}),
     });
@@ -2922,6 +2965,7 @@ export function ProfileSettingsModal({
         liftSpeedMmMin: preset.liftSpeedMmMin ?? 60,
         retractSpeedMmMin: preset.retractSpeedMmMin ?? 150,
         minimumAaAlphaPercent: preset.minimumAaAlphaPercent ?? 35,
+        antiAliasingSettings: preset.antiAliasingSettings ?? DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
         ...(preset.templateId ? { officialTemplateId: preset.templateId } : {}),
         ...(preset.profileVersion != null ? { officialTemplateVersion: preset.profileVersion } : {}),
         localSettingsByOutput: preset.localSettingsByOutput
@@ -2971,6 +3015,7 @@ export function ProfileSettingsModal({
       setShowOfficialMaterialLockDialog(true);
       return;
     }
+    materialEditorInitialTabOverrideRef.current = null;
     setIsMaterialEditorOpen(true);
   }, [selectedMaterial]);
 
@@ -3050,6 +3095,7 @@ export function ProfileSettingsModal({
       liftSpeedMmMin: selectedMaterial.liftSpeedMmMin,
       retractSpeedMmMin: selectedMaterial.retractSpeedMmMin,
       minimumAaAlphaPercent: selectedMaterial.minimumAaAlphaPercent,
+      antiAliasingSettings: selectedMaterial.antiAliasingSettings ?? DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
       localSettingsByOutput: selectedMaterial.localSettingsByOutput,
       officialTemplateId: undefined,
       officialTemplateVersion: undefined,
@@ -3206,6 +3252,7 @@ export function ProfileSettingsModal({
           minimumAaAlphaPercent: Number.isFinite(Number(source.minimumAaAlphaPercent))
             ? Math.max(0, Math.min(100, Number(source.minimumAaAlphaPercent)))
             : 35,
+          antiAliasingSettings: source.antiAliasingSettings ?? DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
           localSettingsByOutput: source.localSettingsByOutput
             ? (source.localSettingsByOutput as Record<string, Record<string, string | number | boolean>>)
             : resolveDefaultLocalSettingsForOutput(selectedPrinter.display.outputFormat, selectedResolvedSettingsMode),
@@ -4666,6 +4713,7 @@ export function ProfileSettingsModal({
                     activeTabStyle={accentSecondaryActionStyle92}
                     draft={editMaterialDraft}
                     onDraftChange={setEditMaterialDraft}
+                    printerDitherBitDepth={printerDitherBitDepth}
                     outputFormat={selectedPrinter?.display.outputFormat ?? '.lys'}
                     settingsMode={selectedResolvedSettingsMode}
                     adapter={selectedLocalMaterialSettingsAdapter}
@@ -4675,6 +4723,11 @@ export function ProfileSettingsModal({
                 ) : (
                   <>
                     <MaterialProfileFormSections draft={editMaterialDraft} onChange={setEditMaterialDraft} />
+                    <MaterialAntiAliasingSection
+                      draft={editMaterialDraft}
+                      onChange={setEditMaterialDraft}
+                      printerDitherBitDepth={printerDitherBitDepth}
+                    />
                     <PluginLocalMaterialSettingsSections
                       outputFormat={selectedPrinter?.display.outputFormat ?? '.lys'}
                       settingsMode={selectedResolvedSettingsMode}
@@ -5366,6 +5419,7 @@ export function ProfileSettingsModal({
                     activeTabStyle={accentSecondaryActionStyle92}
                     draft={newMaterialDraft}
                     onDraftChange={setNewMaterialDraft}
+                    printerDitherBitDepth={printerDitherBitDepth}
                     outputFormat={selectedPrinter.display.outputFormat}
                     settingsMode={selectedResolvedSettingsMode}
                     adapter={selectedLocalMaterialSettingsAdapter}
@@ -5375,6 +5429,11 @@ export function ProfileSettingsModal({
                 ) : (
                   <>
                     <MaterialProfileFormSections draft={newMaterialDraft} onChange={setNewMaterialDraft} />
+                    <MaterialAntiAliasingSection
+                      draft={newMaterialDraft}
+                      onChange={setNewMaterialDraft}
+                      printerDitherBitDepth={printerDitherBitDepth}
+                    />
                     <PluginLocalMaterialSettingsSections
                       outputFormat={selectedPrinter.display.outputFormat}
                       settingsMode={selectedResolvedSettingsMode}
