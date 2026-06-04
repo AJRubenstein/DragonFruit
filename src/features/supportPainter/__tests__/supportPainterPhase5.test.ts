@@ -75,16 +75,13 @@ describe('Support Painter Phase 5 - Rust Minima Scanner & TypeScript batch conso
     assert.strictEqual(minimaOp.suppression.enabled, false, 'Suppression must be disabled for MinimaIslands minima stage');
 
     const perimeterOp = pipeline.find(op => op.type === 'perimeter');
-    assert.ok(perimeterOp, 'Perimeter stage operation must exist');
-    assert.strictEqual(perimeterOp.enabled, false, 'Perimeter stage must be disabled for MinimaIslands');
+    assert.ok(!perimeterOp, 'Perimeter stage operation must not exist for MinimaIslands');
 
     const infillOp = pipeline.find(op => op.type === 'infill');
-    assert.ok(infillOp, 'Infill stage operation must exist');
-    assert.strictEqual(infillOp.enabled, false, 'Infill stage must be disabled for MinimaIslands');
+    assert.ok(!infillOp, 'Infill stage operation must not exist for MinimaIslands');
 
     const centerlineOp = pipeline.find(op => op.type === 'centerline');
-    assert.ok(centerlineOp, 'Centerline stage operation must exist');
-    assert.strictEqual(centerlineOp.enabled, false, 'Centerline stage must be disabled for MinimaIslands');
+    assert.ok(!centerlineOp, 'Centerline stage operation must not exist for MinimaIslands');
   });
 
   it('should configure other standard brushes with typical pipeline enabled states for safety and no regression', () => {
@@ -102,7 +99,7 @@ describe('Support Painter Phase 5 - Rust Minima Scanner & TypeScript batch conso
     assert.strictEqual(infillOp?.enabled, true, 'Infill stage must be enabled for area brushes');
 
     const centerlineOp = areaPipeline.find(op => op.type === 'centerline');
-    assert.strictEqual(centerlineOp?.enabled, false, 'Centerline stage must be disabled for area brushes');
+    assert.strictEqual(centerlineOp, undefined, 'Centerline stage must not exist for area brushes');
   });
 
   it('should not prune disjointed triangle IDs for MinimaIslands regions in pruneOrphans', () => {

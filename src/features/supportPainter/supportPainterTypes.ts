@@ -492,7 +492,7 @@ export function upgradePipeline(
     minimaEndInterval: 100,
     endSpacingMm: defaultSpacing,
     wrapFraction: 100,
-  }));
+  })).filter(op => op.enabled);
 }
 
 export interface SupportPlacementScript {

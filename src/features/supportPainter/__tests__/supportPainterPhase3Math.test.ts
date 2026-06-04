@@ -448,13 +448,13 @@ describe('Support Painter Phase 3 - Advanced Mathematical Pathing & Solvers', ()
     assert.strictEqual(upgraded[0].minimaEndInterval, 100);     // 100% End Fraction
     assert.strictEqual(upgraded[0].endSpacingMm, 4.0);          // default spacing (4.0)
 
-    // B. Legacy undefined input falls back to default 4-stage pipeline
+    // B. Legacy undefined input falls back to default 3-stage pipeline (no centerline)
     const defaultPipeline = upgradePipeline(undefined, 'MacroFace');
-    assert.strictEqual(defaultPipeline.length, 4);
+    assert.strictEqual(defaultPipeline.length, 3);
     assert.ok(defaultPipeline.some(op => op.type === 'minima'));
     assert.ok(defaultPipeline.some(op => op.type === 'perimeter'));
     assert.ok(defaultPipeline.some(op => op.type === 'infill'));
-    assert.ok(defaultPipeline.some(op => op.type === 'centerline'));
+    assert.ok(!defaultPipeline.some(op => op.type === 'centerline'));
   });
 
   it('should calculate overall region Z bounds correctly and scale Z-density spacing without Alpha-Shape bridging', () => {
@@ -521,7 +521,7 @@ describe('Support Painter Phase 3 - Advanced Mathematical Pathing & Solvers', ()
     supportPainterStore.clearAll();
     
     const countBefore = supportPainterStore.getSnapshot().placementScripts.size;
-    assert.ok(countBefore >= 4, 'Should pre-populate at least 4 default placement scripts');
+    assert.ok(countBefore >= 5, 'Should pre-populate at least 5 default placement scripts');
 
     const customScript = {
       id: 'test-custom-script-id',

@@ -279,7 +279,13 @@ export function SupportPainterPanel({
   const rawPipeline = state.activeBrushPipeline || (activeCustomBrush?.operations) || upgradePipeline(undefined, state.activeBrush, defaultSpacing);
   const currentPipeline = upgradePipeline(rawPipeline, state.activeBrush, defaultSpacing);
 
-  const matchedActiveScript = Array.from(state.placementScripts.values()).find(script => {
+  const activeScript = state.activePlacementScriptId ? state.placementScripts.get(state.activePlacementScriptId) : null;
+  const isActiveScriptEquivalent = activeScript && arePipelinesEquivalent(
+    upgradePipeline(activeScript.operations, state.activeBrush, defaultSpacing),
+    currentPipeline
+  );
+
+  const matchedActiveScript = isActiveScriptEquivalent ? activeScript : Array.from(state.placementScripts.values()).find(script => {
     const scriptOps = upgradePipeline(script.operations, state.activeBrush, defaultSpacing);
     return arePipelinesEquivalent(scriptOps, currentPipeline);
   });
@@ -1598,7 +1604,13 @@ export function SupportPainterPanel({
             const currentPipeline = upgradePipeline(rawPipeline, state.activeBrush, defaultSpacing);
             
             // Find if current custom support operations matches any known placement script
-            const matchedScript = Array.from(state.placementScripts.values()).find(script => {
+            const activeScript = state.activePlacementScriptId ? state.placementScripts.get(state.activePlacementScriptId) : null;
+            const isActiveScriptEquivalent = activeScript && arePipelinesEquivalent(
+              upgradePipeline(activeScript.operations, state.activeBrush, defaultSpacing),
+              currentPipeline
+            );
+
+            const matchedScript = isActiveScriptEquivalent ? activeScript : Array.from(state.placementScripts.values()).find(script => {
               const scriptOps = upgradePipeline(script.operations, state.activeBrush, defaultSpacing);
               return arePipelinesEquivalent(scriptOps, currentPipeline);
             });
@@ -1667,7 +1679,7 @@ export function SupportPainterPanel({
                     Placement Script
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5 w-full">
+                <div className="flex items-center gap-1 w-full min-w-0">
                   {isSavingScript ? (
                     <input
                       type="text"
@@ -1682,7 +1694,7 @@ export function SupportPainterPanel({
                           handleCancelSaveScript();
                         }
                       }}
-                      className="flex-1 bg-surface-1 text-text-strong text-[11px] px-1.5 py-1 rounded border border-border-subtle outline-none"
+                      className="flex-1 min-w-0 bg-surface-1 text-text-strong text-[11px] px-1.5 py-1 rounded border border-border-subtle outline-none"
                       style={{
                         background: 'var(--surface-1, #151a22)',
                         borderColor: 'var(--border-subtle, #2d3748)',
@@ -1693,7 +1705,7 @@ export function SupportPainterPanel({
                     <select
                       value={matchedScript ? matchedScript.id : 'unsaved'}
                       onChange={handleSelectScript}
-                      className="flex-1 bg-surface-1 text-text-strong text-[11px] px-1.5 py-1 rounded border border-border-subtle outline-none"
+                      className="flex-1 min-w-0 bg-surface-1 text-text-strong text-[11px] px-1.5 py-1 rounded border border-border-subtle outline-none"
                       style={{
                         background: 'var(--surface-1, #151a22)',
                         borderColor: 'var(--border-subtle, #2d3748)',
@@ -1740,49 +1752,50 @@ export function SupportPainterPanel({
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 mt-2 w-full border-t border-border-subtle/30 pt-2 justify-end">
+                <div className="flex items-center gap-1 mt-2 w-full border-t border-border-subtle/30 pt-2 justify-between">
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={handleImportConfigs}
-                    className="!text-[10px] py-1 px-2 flex items-center gap-1 hover:bg-black/10"
+                    className="!text-[9px] py-1 px-1.5 flex-1 flex items-center justify-center gap-0.5 hover:bg-black/10"
                     title="Import configurations pack"
                   >
                     <Download className="w-3 h-3 text-sky-400" />
-                    <span>Import Configs</span>
+                    <span>Import</span>
                   </Button>
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={handleExportConfigs}
-                    className="!text-[10px] py-1 px-2 flex items-center gap-1 hover:bg-black/10"
+                    className="!text-[9px] py-1 px-1.5 flex-1 flex items-center justify-center gap-0.5 hover:bg-black/10"
                     title="Export custom configurations pack"
                   >
                     <Upload className="w-3 h-3 text-emerald-400" />
-                    <span>Export Configs</span>
+                    <span>Export</span>
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      const activeCustomBrush = state.activeCustomBrushId ? state.customBrushes.get(state.activeCustomBrushId) : undefined;
+                      const rawPipeline = state.activeBrushPipeline || (activeCustomBrush?.operations) || getDefaultPipeline(state.activeBrush);
+                      const currentPipeline = upgradePipeline(rawPipeline, state.activeBrush, defaultSpacing);
+                      setEditingPipeline(JSON.parse(JSON.stringify(currentPipeline)));
+                      setEditingPlacementScriptId(matchedScript ? matchedScript.id : 'unsaved');
+                      setPipelineEditingContext('active');
+                    }}
+                    className="!text-[9px] py-1 px-1.5 flex-1 flex items-center justify-center gap-0.5 hover:bg-black/10"
+                    title="Edit current support placement sequence"
+                  >
+                    <Settings className="w-3 h-3 text-sky-400" style={{ color: 'var(--accent, #4a90e2)' }} />
+                    <span>Edit Script</span>
                   </Button>
                 </div>
               </div>
             );
           })()}
 
-              {/* 5. Edit Current Support Sequence settings button */}
-          {/* Edit Current Support Sequence Button */}
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              const activeCustomBrush = state.activeCustomBrushId ? state.customBrushes.get(state.activeCustomBrushId) : undefined;
-              const rawPipeline = state.activeBrushPipeline || (activeCustomBrush?.operations) || getDefaultPipeline(state.activeBrush);
-              const currentPipeline = upgradePipeline(rawPipeline, state.activeBrush, defaultSpacing);
-              setEditingPipeline(JSON.parse(JSON.stringify(currentPipeline)));
-              setPipelineEditingContext('active');
-            }}
-            className="w-full !text-[11px] py-1.5 flex items-center justify-center gap-1.5"
-          >
-            <Settings className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
-            <span>Edit Current Support Sequence</span>
-          </Button>
+
 
               {/* 6. Compact Direct Click-to-Generate Toggle */}
           {/* Direct Click-to-Generate Toggle */}
@@ -2643,6 +2656,9 @@ export function SupportPainterPanel({
           onSave={async () => {
             if (pipelineEditingContext === 'active') {
               supportPainterStore.setActiveBrushPipeline(editingPipeline);
+              if (editingPlacementScriptId) {
+                supportPainterStore.setActivePlacementScriptId(editingPlacementScriptId);
+              }
             } else if (pipelineEditingContext === 'roi') {
               const selectedIds = Array.from(state.selectedRegionIds).filter(id => state.regions.has(id));
               if (selectedIds.length > 1) {

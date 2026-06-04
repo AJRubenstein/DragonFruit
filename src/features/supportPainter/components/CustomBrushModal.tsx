@@ -216,10 +216,19 @@ export function CustomBrushModal({
   const defaultSpacing = isNaN(trunkWidth) ? 4.0 : trunkWidth * 4.0;
 
   const currentModalPipeline = upgradePipeline(brush.operations, brush.baseBrush || 'MacroFace', defaultSpacing);
-  const matchedModalScript = Array.from(state.placementScripts.values()).find(script => {
-    const scriptOps = upgradePipeline(script.operations, brush.baseBrush || 'MacroFace', defaultSpacing);
-    return arePipelinesEquivalent(scriptOps, currentModalPipeline);
-  });
+  const matchedModalScript = (() => {
+    const activeScript = state.activePlacementScriptId ? state.placementScripts.get(state.activePlacementScriptId) : null;
+    const isActiveScriptEquivalent = activeScript && arePipelinesEquivalent(
+      upgradePipeline(activeScript.operations, brush.baseBrush || 'MacroFace', defaultSpacing),
+      currentModalPipeline
+    );
+    if (isActiveScriptEquivalent) return activeScript;
+
+    return Array.from(state.placementScripts.values()).find(script => {
+      const scriptOps = upgradePipeline(script.operations, brush.baseBrush || 'MacroFace', defaultSpacing);
+      return arePipelinesEquivalent(scriptOps, currentModalPipeline);
+    });
+  })();
 
   // Keep modal script name input synchronized with matched script or base brush
   useEffect(() => {
@@ -902,7 +911,13 @@ export function CustomBrushModal({
                 const defaultSpacing = isNaN(trunkWidth) ? 4.0 : trunkWidth * 4.0;
 
                 const currentPipeline = upgradePipeline(brush.operations, brush.baseBrush || 'MacroFace', defaultSpacing);
-                const matchedScript = Array.from(state.placementScripts.values()).find(script => {
+                const activeScript = state.activePlacementScriptId ? state.placementScripts.get(state.activePlacementScriptId) : null;
+                const isActiveScriptEquivalent = activeScript && arePipelinesEquivalent(
+                  upgradePipeline(activeScript.operations, brush.baseBrush || 'MacroFace', defaultSpacing),
+                  currentPipeline
+                );
+
+                const matchedScript = isActiveScriptEquivalent ? activeScript : Array.from(state.placementScripts.values()).find(script => {
                   const scriptOps = upgradePipeline(script.operations, brush.baseBrush || 'MacroFace', defaultSpacing);
                   return arePipelinesEquivalent(scriptOps, currentPipeline);
                 });
@@ -912,6 +927,7 @@ export function CustomBrushModal({
                   if (scriptId === 'unsaved') return;
                   const script = state.placementScripts.get(scriptId);
                   if (script) {
+                    supportPainterStore.setActivePlacementScriptId(scriptId);
                     setBrush(prev => ({
                       ...prev,
                       operations: JSON.parse(JSON.stringify(script.operations)),
@@ -938,10 +954,12 @@ export function CustomBrushModal({
                     id: scriptId,
                     name,
                     operations: JSON.parse(JSON.stringify(currentPipeline)),
-                    isBuiltIn: false
+                    isBuiltIn: false,
+                    isReadOnly: false,
                   };
 
                   supportPainterStore.addPlacementScript(newScript);
+                  supportPainterStore.setActivePlacementScriptId(scriptId);
                   supportPainterStore.showToast([`Saved placement script "${name}"`]);
                   setIsSavingModalScript(false);
                 };

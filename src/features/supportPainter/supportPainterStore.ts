@@ -164,16 +164,28 @@ function getDefaultOperationsForBrush(brushType: BrushType, defaultSpacing = 4.0
     minimaEndInterval: 100,
     endSpacingMm: defaultSpacing,
     wrapFraction: 100,
-  }));
+  })).filter(op => op.enabled);
 }
 
-function _getDefaultScriptIdForBrush(brush: BrushType, pathMode?: 'line' | 'polygon'): string {
-  const key = brush === 'PointPath' && pathMode ? `PointPath-${pathMode}` : brush;
+function _getDefaultScriptIdForBrush(brush: BrushType, pathMode?: 'line' | 'polygon', customBrushId?: string | null): string {
+  const key = customBrushId ? customBrushId : (brush === 'PointPath' && pathMode ? `PointPath-${pathMode}` : brush);
   if (brushDefaultScripts.has(key)) {
     const customId = brushDefaultScripts.get(key)!;
     if (placementScripts.has(customId)) {
       return customId;
     }
+  }
+
+  if (customBrushId) {
+    const customBrush = customBrushes.get(customBrushId);
+    if (customBrush) {
+      const matched = Array.from(placementScripts.values()).find(script => {
+        const scriptOps = upgradePipeline(script.operations, customBrush.baseBrush || 'MacroFace');
+        return arePipelinesEquivalent(scriptOps, customBrush.operations);
+      });
+      if (matched) return matched.id;
+    }
+    return 'unsaved';
   }
 
   switch (brush) {
@@ -209,24 +221,6 @@ function initializeDefaultPlacementScripts() {
     isBuiltIn: true,
     isReadOnly: true,
     operations: [
-      {
-        id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
-        type: 'minima',
-        enabled: true,
-        supportPresetId: 'structure',
-        minimaStartInterval: 0,
-        minimaEndInterval: 100,
-        endSpacingMm: 6.0,
-        wrapFraction: 100,
-        suppression: {
-          enabled: true,
-          distanceMm: 6.0,
-          suppressAgainst: ['minima'],
-        },
-        spacing: {
-          baseSpacingMm: 6.0,
-        },
-      },
       {
         id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
         type: 'perimeter',
@@ -266,25 +260,6 @@ function initializeDefaultPlacementScripts() {
           infillPattern: 'PoissonDisc',
           seedFromMinima: true,
         },
-      },
-      {
-        id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
-        type: 'centerline',
-        enabled: false,
-        supportPresetId: 'structure',
-        minimaStartInterval: 0,
-        minimaEndInterval: 100,
-        endSpacingMm: 6.0,
-        wrapFraction: 100,
-        suppression: {
-          enabled: true,
-          distanceMm: 6.0,
-          suppressAgainst: ['minima', 'perimeter', 'infill', 'centerline'],
-        },
-        spacing: {
-          baseSpacingMm: 6.0,
-          seedFromMinima: true,
-        },
       }
     ]
   });
@@ -296,44 +271,6 @@ function initializeDefaultPlacementScripts() {
     isBuiltIn: true,
     isReadOnly: true,
     operations: [
-      {
-        id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
-        type: 'minima',
-        enabled: false,
-        supportPresetId: 'structure',
-        minimaStartInterval: 0,
-        minimaEndInterval: 100,
-        endSpacingMm: 6.0,
-        wrapFraction: 100,
-        suppression: {
-          enabled: true,
-          distanceMm: 6.0,
-          suppressAgainst: ['minima'],
-        },
-        spacing: {
-          baseSpacingMm: 6.0,
-        },
-      },
-      {
-        id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
-        type: 'perimeter',
-        enabled: false,
-        supportPresetId: 'structure',
-        minimaStartInterval: 0,
-        minimaEndInterval: 100,
-        endSpacingMm: 6.0,
-        wrapFraction: 100,
-        suppression: {
-          enabled: false,
-          distanceMm: 6.0,
-          suppressAgainst: [],
-        },
-        spacing: {
-          baseSpacingMm: 6.0,
-          solverMode: 'standard',
-          useInflectionPoints: false,
-        },
-      },
       {
         id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
         type: 'infill',
@@ -353,25 +290,6 @@ function initializeDefaultPlacementScripts() {
           infillPattern: 'PoissonDisc',
           seedFromMinima: true,
         },
-      },
-      {
-        id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
-        type: 'centerline',
-        enabled: false,
-        supportPresetId: 'structure',
-        minimaStartInterval: 0,
-        minimaEndInterval: 100,
-        endSpacingMm: 6.0,
-        wrapFraction: 100,
-        suppression: {
-          enabled: true,
-          distanceMm: 6.0,
-          suppressAgainst: ['minima', 'perimeter', 'infill', 'centerline'],
-        },
-        spacing: {
-          baseSpacingMm: 6.0,
-          seedFromMinima: true,
-        },
       }
     ]
   });
@@ -383,64 +301,6 @@ function initializeDefaultPlacementScripts() {
     isBuiltIn: true,
     isReadOnly: true,
     operations: [
-      {
-        id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
-        type: 'minima',
-        enabled: false,
-        supportPresetId: 'detail',
-        minimaStartInterval: 0,
-        minimaEndInterval: 100,
-        endSpacingMm: 4.8,
-        wrapFraction: 100,
-        suppression: {
-          enabled: true,
-          distanceMm: 4.8,
-          suppressAgainst: ['minima'],
-        },
-        spacing: {
-          baseSpacingMm: 4.8,
-        },
-      },
-      {
-        id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
-        type: 'perimeter',
-        enabled: false,
-        supportPresetId: 'detail',
-        minimaStartInterval: 0,
-        minimaEndInterval: 100,
-        endSpacingMm: 4.8,
-        wrapFraction: 100,
-        suppression: {
-          enabled: false,
-          distanceMm: 4.8,
-          suppressAgainst: [],
-        },
-        spacing: {
-          baseSpacingMm: 4.8,
-          solverMode: 'standard',
-          useInflectionPoints: false,
-        },
-      },
-      {
-        id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
-        type: 'infill',
-        enabled: false,
-        supportPresetId: 'detail',
-        minimaStartInterval: 0,
-        minimaEndInterval: 100,
-        endSpacingMm: 4.8,
-        wrapFraction: 100,
-        suppression: {
-          enabled: true,
-          distanceMm: 4.8,
-          suppressAgainst: ['minima', 'perimeter', 'infill'],
-        },
-        spacing: {
-          baseSpacingMm: 4.8,
-          infillPattern: 'PoissonDisc',
-          seedFromMinima: true,
-        },
-      },
       {
         id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
         type: 'centerline',
@@ -488,65 +348,103 @@ function initializeDefaultPlacementScripts() {
           baseSpacingMm: 4.0,
           attemptLeafCreation: true,
         },
+      }
+    ]
+  });
+
+  // 5. Flat Base Supports (Z Demo)
+  placementScripts.set('default-flat-base-z-demo', {
+    id: 'default-flat-base-z-demo',
+    name: 'Flat Base Supports (Z Demo)',
+    isBuiltIn: true,
+    isReadOnly: true,
+    operations: [
+      {
+        id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
+        type: 'perimeter',
+        enabled: true,
+        suppression: {
+          enabled: false,
+          distanceMm: 0.7,
+          suppressAgainst: []
+        },
+        spacing: {
+          baseSpacingMm: 0.8,
+          solverMode: 'standard',
+          useInflectionPoints: false
+        },
+        minimaStartInterval: 0,
+        minimaEndInterval: 100,
+        endSpacingMm: 4,
+        wrapFraction: 100,
+        supportPresetId: 'detail',
+        enableZHeightDensity: true,
+        isIntervalDirectlyEdited: true
       },
       {
         id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
         type: 'perimeter',
-        enabled: false,
-        supportPresetId: 'detail',
+        enabled: true,
+        supportPresetId: 'anchor',
+        isIntervalDirectlyEdited: true,
+        insetDistanceMm: 1,
+        wrapFraction: 30,
+        enableZHeightDensity: true,
         minimaStartInterval: 0,
         minimaEndInterval: 100,
-        endSpacingMm: 4.8,
-        wrapFraction: 100,
+        endSpacingMm: 2,
+        zFactor: 2,
+        zFactorCurve: 'linear',
         suppression: {
           enabled: false,
-          distanceMm: 4.8,
-          suppressAgainst: [],
+          distanceMm: 0.9,
+          suppressAgainst: [
+            'minima',
+            'perimeter',
+            'infill',
+            'centerline'
+          ]
         },
         spacing: {
-          baseSpacingMm: 4.8,
+          baseSpacingMm: 1,
           solverMode: 'standard',
           useInflectionPoints: false,
-        },
+          infillPattern: 'PoissonDisc',
+          seedFromMinima: true,
+          attemptLeafCreation: false
+        }
       },
       {
         id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
         type: 'infill',
-        enabled: false,
-        supportPresetId: 'detail',
+        enabled: true,
+        supportPresetId: 'structure',
+        isIntervalDirectlyEdited: true,
+        insetDistanceMm: 0,
+        wrapFraction: 100,
+        enableZHeightDensity: true,
         minimaStartInterval: 0,
         minimaEndInterval: 100,
-        endSpacingMm: 4.8,
-        wrapFraction: 100,
+        endSpacingMm: 3,
+        zFactor: 2,
+        zFactorCurve: 'linear',
         suppression: {
           enabled: true,
-          distanceMm: 4.8,
-          suppressAgainst: ['minima', 'perimeter', 'infill'],
+          distanceMm: 0.9,
+          suppressAgainst: [
+            'minima',
+            'perimeter',
+            'infill'
+          ]
         },
         spacing: {
-          baseSpacingMm: 4.8,
+          baseSpacingMm: 1,
+          solverMode: 'standard',
+          useInflectionPoints: false,
           infillPattern: 'PoissonDisc',
           seedFromMinima: true,
-        },
-      },
-      {
-        id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
-        type: 'centerline',
-        enabled: false,
-        supportPresetId: 'detail',
-        minimaStartInterval: 0,
-        minimaEndInterval: 100,
-        endSpacingMm: 4.8,
-        wrapFraction: 100,
-        suppression: {
-          enabled: true,
-          distanceMm: 4.8,
-          suppressAgainst: ['minima', 'perimeter', 'infill', 'centerline'],
-        },
-        spacing: {
-          baseSpacingMm: 4.8,
-          seedFromMinima: true,
-        },
+          attemptLeafCreation: false
+        }
       }
     ]
   });
@@ -1059,8 +957,17 @@ export const supportPainterStore = {
   setActiveBrush(brush: BrushType) {
     if (activeBrush === brush) return;
     activeBrush = brush;
-    activeBrushPipeline = null; // Clear override on brush swap
-    activePlacementScriptId = _getDefaultScriptIdForBrush(brush, brush === 'PointPath' ? pointPathMode : undefined);
+    
+    const defaultScriptId = _getDefaultScriptIdForBrush(brush, brush === 'PointPath' ? pointPathMode : undefined, activeCustomBrushId);
+    activePlacementScriptId = defaultScriptId;
+    
+    const script = placementScripts.get(defaultScriptId);
+    if (script) {
+      activeBrushPipeline = JSON.parse(JSON.stringify(script.operations));
+    } else {
+      activeBrushPipeline = null;
+    }
+    
     triangleColorMap = _recomputeTriangleColorMap();
     updateSnapshot();
     notify();
@@ -1781,8 +1688,17 @@ export const supportPainterStore = {
   setActiveCustomBrushId(id: string | null) {
     if (activeCustomBrushId === id) return;
     activeCustomBrushId = id;
-    activeBrushPipeline = null; // Clear override on brush swap
-    activePlacementScriptId = null; // Clear override to allow custom brush equivalent resolution
+    
+    const defaultScriptId = _getDefaultScriptIdForBrush(activeBrush, activeBrush === 'PointPath' ? pointPathMode : undefined, id);
+    activePlacementScriptId = defaultScriptId;
+    
+    const script = placementScripts.get(defaultScriptId);
+    if (script) {
+      activeBrushPipeline = JSON.parse(JSON.stringify(script.operations));
+    } else {
+      activeBrushPipeline = null;
+    }
+    
     updateSnapshot();
     notify();
   },
@@ -2076,7 +1992,7 @@ export const supportPainterStore = {
     if (pointPathMode === mode) return;
     pointPathMode = mode;
     if (activeBrush === 'PointPath') {
-      activePlacementScriptId = _getDefaultScriptIdForBrush('PointPath', mode);
+      activePlacementScriptId = _getDefaultScriptIdForBrush('PointPath', mode, activeCustomBrushId);
       const script = placementScripts.get(activePlacementScriptId);
       if (script) {
         activeBrushPipeline = JSON.parse(JSON.stringify(script.operations));
@@ -2199,16 +2115,18 @@ export const supportPainterStore = {
     notify();
   },
 
-  getDefaultScriptIdForBrush(brush: BrushType, pathMode?: 'line' | 'polygon'): string {
-    return _getDefaultScriptIdForBrush(brush, pathMode);
+  getDefaultScriptIdForBrush(brush: BrushType, pathMode?: 'line' | 'polygon', customBrushId?: string | null): string {
+    return _getDefaultScriptIdForBrush(brush, pathMode, customBrushId);
   },
 
   assignBrushDefault(brush: BrushType, scriptId: string, currentOperations?: CustomSupportOperation[]) {
-    const key = brush === 'PointPath' ? `PointPath-${pointPathMode}` : brush;
+    const key = activeCustomBrushId ? activeCustomBrushId : (brush === 'PointPath' ? `PointPath-${pointPathMode}` : brush);
     let finalScriptId = scriptId;
     if (scriptId === 'unsaved' && currentOperations) {
       const newId = `custom-default-${brush.toLowerCase()}-${Date.now()}`;
-      const brushLabel = brush === 'PointPath' ? `PointPath (${pointPathMode})` : brush;
+      const brushLabel = activeCustomBrushId
+        ? (customBrushes.get(activeCustomBrushId)?.name || 'Custom Brush')
+        : (brush === 'PointPath' ? `PointPath (${pointPathMode})` : brush);
       const newScript: SupportPlacementScript = {
         id: newId,
         name: `Default Override - ${brushLabel}`,
@@ -2231,13 +2149,15 @@ export const supportPainterStore = {
   },
 
   resetBrushDefault(brush: BrushType) {
-    const keys = brush === 'PointPath' ? ['PointPath-line', 'PointPath-polygon'] : [brush];
+    const keys = activeCustomBrushId
+      ? [activeCustomBrushId]
+      : (brush === 'PointPath' ? ['PointPath-line', 'PointPath-polygon'] : [brush]);
     for (const k of keys) {
       brushDefaultScripts.delete(k);
     }
     saveBrushDefaultsToLocalStorage();
 
-    const defaultId = _getDefaultScriptIdForBrush(brush, brush === 'PointPath' ? pointPathMode : undefined);
+    const defaultId = _getDefaultScriptIdForBrush(brush, brush === 'PointPath' ? pointPathMode : undefined, activeCustomBrushId);
     activePlacementScriptId = defaultId;
     const script = placementScripts.get(defaultId);
     if (script) {
