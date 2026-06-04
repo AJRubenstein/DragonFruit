@@ -128,6 +128,19 @@ pub struct HollowOutcome {
     pub report: HollowReport,
 }
 
+#[derive(Debug, Clone)]
+pub struct HollowSession {
+    source_mesh: IndexedMesh,
+    source_bbox: Aabb,
+    grid: GridSpec,
+    solid: Vec<bool>,
+    dist: Vec<f32>,
+    source_void_components: Vec<i32>,
+    source_triangle_count: usize,
+    occupied_voxels: usize,
+    voxel_resolution: u16,
+}
+
 #[derive(Clone, Copy)]
 struct TriangleCache {
     a: Vec3,
@@ -145,7 +158,7 @@ impl TriangleCache {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct GridSpec {
     nx: usize,
     ny: usize,
@@ -576,6 +589,336 @@ pub fn hollow_voxel(mesh: IndexedMesh, options: &HollowOptions) -> HollowOutcome
             shell_voxels: kept_shell,
             removed_voxels,
         },
+    }
+}
+
+impl HollowSession {
+    pub fn new(mesh: IndexedMesh, voxel_resolution: u16) -> Self {
+        let source_triangle_count = mesh.triangle_count();
+        let source_bbox = mesh.bbox();
+        let diag = source_bbox.max.sub(source_bbox.min);
+        let max_extent = diag.x.max(diag.y).max(diag.z).max(1e-3);
+        let resolution = voxel_resolution.clamp(24, 192) as f32;
+        let voxel_mm = (max_extent / resolution).max(0.05);
+
+        let padded_min = source_bbox.min.sub(Vec3::new(voxel_mm, voxel_mm, voxel_mm));
+        let padded_max = source_bbox.max.add(Vec3::new(voxel_mm, voxel_mm, voxel_mm));
+        let padded = Aabb {
+            min: padded_min,
+            max: padded_max,
+        };
+
+        let size = padded.max.sub(padded.min);
+        let nx = ((size.x / voxel_mm).ceil() as usize).max(4);
+        let ny = ((size.y / voxel_mm).ceil() as usize).max(4);
+        let nz = ((size.z / voxel_mm).ceil() as usize).max(4);
+
+        let grid = GridSpec {
+            nx,
+            ny,
+            nz,
+            voxel_mm,
+            min: padded.min,
+        };
+
+        let tri_cache: Vec<TriangleCache> = mesh
+            .triangles
+            .iter()
+            .map(|tri| {
+                let a = mesh.positions[tri[0] as usize];
+                let b = mesh.positions[tri[1] as usize];
+                let c = mesh.positions[tri[2] as usize];
+                TriangleCache::from_points(a, b, c)
+            })
+            .collect();
+
+        let mut surface = vec![false; nx * ny * nz];
+        let voxel_diag_half = (3.0f32).sqrt() * voxel_mm * 0.5;
+        for tri in &tri_cache {
+            let min_ix =
+                (((tri.min.x - grid.min.x) / voxel_mm).floor() as isize - 1).max(0) as usize;
+            let max_ix = (((tri.max.x - grid.min.x) / voxel_mm).ceil() as isize + 1)
+                .min(nx as isize - 1) as usize;
+            let min_iy =
+                (((tri.min.y - grid.min.y) / voxel_mm).floor() as isize - 1).max(0) as usize;
+            let max_iy = (((tri.max.y - grid.min.y) / voxel_mm).ceil() as isize + 1)
+                .min(ny as isize - 1) as usize;
+            let min_iz =
+                (((tri.min.z - grid.min.z) / voxel_mm).floor() as isize - 1).max(0) as usize;
+            let max_iz = (((tri.max.z - grid.min.z) / voxel_mm).ceil() as isize + 1)
+                .min(nz as isize - 1) as usize;
+
+            for z in min_iz..=max_iz {
+                for y in min_iy..=max_iy {
+                    for x in min_ix..=max_ix {
+                        let p = grid.center_world(x, y, z);
+                        let d = point_triangle_distance(p, tri.a, tri.b, tri.c);
+                        if d <= voxel_diag_half {
+                            surface[grid.idx(x, y, z)] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut outside = vec![false; nx * ny * nz];
+        let mut q = VecDeque::<(usize, usize, usize)>::new();
+        let mut push_seed = |x: usize, y: usize, z: usize| {
+            let i = grid.idx(x, y, z);
+            if surface[i] || outside[i] {
+                return;
+            }
+            outside[i] = true;
+            q.push_back((x, y, z));
+        };
+
+        for x in 0..nx {
+            for y in 0..ny {
+                push_seed(x, y, 0);
+                push_seed(x, y, nz - 1);
+            }
+        }
+        for x in 0..nx {
+            for z in 0..nz {
+                push_seed(x, 0, z);
+                push_seed(x, ny - 1, z);
+            }
+        }
+        for y in 0..ny {
+            for z in 0..nz {
+                push_seed(0, y, z);
+                push_seed(nx - 1, y, z);
+            }
+        }
+
+        while let Some((x, y, z)) = q.pop_front() {
+            for (dx, dy, dz) in N6 {
+                let nx_i = x as isize + dx;
+                let ny_i = y as isize + dy;
+                let nz_i = z as isize + dz;
+                if !grid.in_bounds(nx_i, ny_i, nz_i) {
+                    continue;
+                }
+                let ux = nx_i as usize;
+                let uy = ny_i as usize;
+                let uz = nz_i as usize;
+                let i = grid.idx(ux, uy, uz);
+                if surface[i] || outside[i] {
+                    continue;
+                }
+                outside[i] = true;
+                q.push_back((ux, uy, uz));
+            }
+        }
+
+        let mut solid = vec![false; nx * ny * nz];
+        for i in 0..solid.len() {
+            solid[i] = !outside[i];
+        }
+
+        refine_non_surface_solid_components_with_parity(&grid, &surface, &mut solid, &mesh);
+        let source_void_components = label_void_components(&grid, &solid);
+        let occupied_voxels = solid.iter().filter(|v| **v).count();
+
+        let mut dist = vec![f32::INFINITY; nx * ny * nz];
+        for z in 0..nz {
+            for y in 0..ny {
+                for x in 0..nx {
+                    let i = grid.idx(x, y, z);
+                    if solid[i] && surface[i] {
+                        dist[i] = 0.0;
+                    }
+                }
+            }
+        }
+
+        for z in 0..nz {
+            for y in 0..ny {
+                for x in 0..nx {
+                    let i = grid.idx(x, y, z);
+                    if !solid[i] {
+                        continue;
+                    }
+                    let mut d = dist[i];
+                    for &((dx, dy, dz), w) in &SHELL_DIST_FORWARD {
+                        let nx_i = x as isize + dx;
+                        let ny_i = y as isize + dy;
+                        let nz_i = z as isize + dz;
+                        if !grid.in_bounds(nx_i, ny_i, nz_i) {
+                            continue;
+                        }
+                        let ni = grid.idx(nx_i as usize, ny_i as usize, nz_i as usize);
+                        if !solid[ni] {
+                            continue;
+                        }
+                        let candidate = dist[ni] + w;
+                        if candidate < d {
+                            d = candidate;
+                        }
+                    }
+                    dist[i] = d;
+                }
+            }
+        }
+
+        for z in (0..nz).rev() {
+            for y in (0..ny).rev() {
+                for x in (0..nx).rev() {
+                    let i = grid.idx(x, y, z);
+                    if !solid[i] {
+                        continue;
+                    }
+                    let mut d = dist[i];
+                    for &((dx, dy, dz), w) in &SHELL_DIST_BACKWARD {
+                        let nx_i = x as isize + dx;
+                        let ny_i = y as isize + dy;
+                        let nz_i = z as isize + dz;
+                        if !grid.in_bounds(nx_i, ny_i, nz_i) {
+                            continue;
+                        }
+                        let ni = grid.idx(nx_i as usize, ny_i as usize, nz_i as usize);
+                        if !solid[ni] {
+                            continue;
+                        }
+                        let candidate = dist[ni] + w;
+                        if candidate < d {
+                            d = candidate;
+                        }
+                    }
+                    dist[i] = d;
+                }
+            }
+        }
+
+        Self {
+            source_mesh: mesh,
+            source_bbox,
+            grid,
+            solid,
+            dist,
+            source_void_components,
+            source_triangle_count,
+            occupied_voxels,
+            voxel_resolution,
+        }
+    }
+
+    pub fn voxel_resolution(&self) -> u16 {
+        self.voxel_resolution
+    }
+
+    pub fn run(&self, options: &HollowOptions) -> HollowOutcome {
+        let shell_voxels = (options.shell_thickness_mm.max(0.2) / self.grid.voxel_mm).ceil() as i32;
+        let shell_voxels = shell_voxels.max(1);
+        let shell_voxels_f = options.shell_thickness_mm.max(0.2) / self.grid.voxel_mm;
+
+        let mut keep = vec![false; self.solid.len()];
+        let mut kept_shell = 0usize;
+        for i in 0..keep.len() {
+            if self.solid[i] && self.dist[i] <= shell_voxels_f {
+                keep[i] = true;
+                kept_shell += 1;
+            }
+        }
+
+        preserve_source_void_separators(
+            &self.grid,
+            &self.solid,
+            &self.source_void_components,
+            &mut keep,
+        );
+
+        if matches!(options.mode, HollowMode::Cavity) && !options.drain_holes.is_empty() {
+            for hole in &options.drain_holes {
+                apply_drain_hole_corridor(
+                    &self.grid,
+                    &mut keep,
+                    hole,
+                    &self.source_bbox,
+                    self.grid.voxel_mm,
+                );
+            }
+        }
+
+        if matches!(options.mode, HollowMode::ShellOpenFace) {
+            let depth = shell_voxels.max(1) as usize;
+            for z in 0..self.grid.nz {
+                for y in 0..self.grid.ny {
+                    for x in 0..self.grid.nx {
+                        let remove = match options.open_face {
+                            OpenFace::XMin => x < depth,
+                            OpenFace::XMax => x + depth >= self.grid.nx,
+                            OpenFace::YMin => y < depth,
+                            OpenFace::YMax => y + depth >= self.grid.ny,
+                            OpenFace::ZMin => z < depth,
+                            OpenFace::ZMax => z + depth >= self.grid.nz,
+                        };
+                        if remove {
+                            keep[self.grid.idx(x, y, z)] = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        if options.internal_chamfer_passes > 0 {
+            let max_passes = (shell_voxels_f.ceil() as u8).max(1).min(2);
+            let passes = options.internal_chamfer_passes.min(max_passes);
+            for _ in 0..passes {
+                apply_internal_cavity_chamfer_pass(&self.grid, &self.solid, &mut keep, &self.dist);
+            }
+            preserve_source_void_separators(
+                &self.grid,
+                &self.solid,
+                &self.source_void_components,
+                &mut keep,
+            );
+        }
+
+        if matches!(options.mode, HollowMode::Cavity) {
+            retain_largest_connected_cavity_component(&self.grid, &self.solid, &mut keep);
+        }
+
+        let removed_voxels =
+            self.occupied_voxels.saturating_sub(keep.iter().filter(|v| **v).count());
+        let cavity_scalar = build_smoothed_cavity_scalar_field(
+            &self.grid,
+            &self.solid,
+            &self.dist,
+            shell_voxels_f,
+        );
+        let cavity_mesh = smooth_cavity_mesh(
+            organic_cavity_boundary_mesh(&self.grid, &self.solid, &keep, &cavity_scalar),
+            self.grid.voxel_mm,
+            options.smooth_internal_surfaces,
+        );
+        let out_mesh = if options.preview_cavity_only {
+            cavity_mesh
+        } else {
+            let filtered_source = filter_source_mesh_for_openings(
+                &self.source_mesh,
+                options,
+                &self.source_bbox,
+                self.grid.voxel_mm,
+            );
+            merge_meshes(&filtered_source, &cavity_mesh)
+        };
+        let output_triangle_count = out_mesh.triangle_count();
+
+        HollowOutcome {
+            mesh: out_mesh,
+            report: HollowReport {
+                mode: options.mode,
+                voxel_resolution: self.voxel_resolution,
+                shell_thickness_mm: options.shell_thickness_mm,
+                source_triangle_count: self.source_triangle_count,
+                output_triangle_count,
+                grid_size: [self.grid.nx, self.grid.ny, self.grid.nz],
+                occupied_voxels: self.occupied_voxels,
+                shell_voxels: kept_shell,
+                removed_voxels,
+            },
+        }
     }
 }
 

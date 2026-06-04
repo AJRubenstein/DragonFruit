@@ -185,6 +185,19 @@ export async function hollowPreviewFromCapturedSource(
   return { report, positions };
 }
 
+export async function hollowApplyFromCapturedSource(
+  options: HollowOptions,
+): Promise<HollowResult | null> {
+  const core = await loadTauriCore();
+  if (!core) return null;
+
+  const optionsJson = JSON.stringify(options);
+  const reportJson = await core.invoke<string>('mesh_hollow_apply_from_captured_source', { optionsJson });
+  const report = JSON.parse(reportJson) as HollowReport;
+  const positions = await readStagedPositions(core.invoke);
+  return { report, positions };
+}
+
 export function applyHollowedPositions(geometry: THREE.BufferGeometry, positions: Float32Array): void {
   geometry.setIndex(null);
   const attrNames = Object.keys(geometry.attributes);

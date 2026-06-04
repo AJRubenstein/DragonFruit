@@ -192,6 +192,7 @@ import { uploadPrintJobWithProgress, type PluginUploadProgressEvent } from '@/fe
 import { pluginNetworkFetch } from '@/utils/pluginNetworkBridge';
 import { fetchRtspRelayStatus } from '@/utils/rtspRelayBridge';
 import {
+  hollowApplyFromCapturedSource,
   hollowFromGeometry,
   hollowPreviewFromCapturedSource,
   stageHollowPreviewSource,
@@ -14723,8 +14724,15 @@ export default function Home() {
           smoothInternalSurfaces: true,
           internalChamferPasses: 2,
         };
+        const sourceGeometryKey = buildGeometryVersionKey(sourceGeometry);
+        const staged = await stageHollowPreviewSource(
+          sourceGeometry,
+          `${activeModel.id}::${sourceGeometryKey}`,
+        );
 
-        const result = await hollowFromGeometry(sourceGeometry, options);
+        const result = staged
+          ? await hollowApplyFromCapturedSource(options)
+          : await hollowFromGeometry(sourceGeometry, options);
         if (!result) {
           setExportErrorToast({ id: Date.now(), text: 'Hollowing is available in DragonFruit Desktop only.' });
           setIsExportErrorToastVisible(true);

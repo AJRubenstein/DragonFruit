@@ -13,11 +13,11 @@
 //!   positions (little-endian f32, 9 per triangle), for frontend hydration.
 
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use dragonfruit_mesh_repair::{
     analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair, HolePunchOptions,
-    HollowOptions, IndexedMesh, RepairOptions,
+    HollowOptions, HollowSession, IndexedMesh, RepairOptions,
 };
 use serde::Deserialize;
 use tauri::ipc::Response;
@@ -27,13 +27,18 @@ use crate::{
     StageMeshStats,
 };
 
-static HOLLOW_PREVIEW_SOURCE_BYTES: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
+static HOLLOW_PREVIEW_SOURCE_MESH: OnceLock<Mutex<Option<Arc<IndexedMesh>>>> = OnceLock::new();
+static HOLLOW_PREVIEW_SESSION: OnceLock<Mutex<Option<Arc<HollowSession>>>> = OnceLock::new();
 static HOLLOW_PREVIEW_RESULT_BYTES: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
 static PUNCH_SOURCE_BYTES: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
 static PUNCH_RESULT_BYTES: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
 
-fn hollow_preview_source_bytes() -> &'static Mutex<Option<Vec<u8>>> {
-    HOLLOW_PREVIEW_SOURCE_BYTES.get_or_init(|| Mutex::new(None))
+fn hollow_preview_source_mesh() -> &'static Mutex<Option<Arc<IndexedMesh>>> {
+    HOLLOW_PREVIEW_SOURCE_MESH.get_or_init(|| Mutex::new(None))
+}
+
+fn hollow_preview_session() -> &'static Mutex<Option<Arc<HollowSession>>> {
+    HOLLOW_PREVIEW_SESSION.get_or_init(|| Mutex::new(None))
 }
 
 fn hollow_preview_result_bytes() -> &'static Mutex<Option<Vec<u8>>> {
@@ -229,9 +234,19 @@ pub async fn mesh_hollow_staged(options_json: String) -> Result<String, String> 
 #[tauri::command]
 pub async fn mesh_hollow_preview_capture_staged_source() -> Result<(), String> {
     let bytes = read_staging_bytes()?;
-    *hollow_preview_source_bytes()
+    let source_mesh = tauri::async_runtime::spawn_blocking(move || {
+        io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("hollow preview capture task panicked: {e}"))??;
+
+    *hollow_preview_source_mesh()
         .lock()
-        .map_err(|e| format!("hollow preview source lock poisoned: {e}"))? = Some(bytes);
+        .map_err(|e| format!("hollow preview source lock poisoned: {e}"))? =
+        Some(Arc::new(source_mesh));
+    *hollow_preview_session()
+        .lock()
+        .map_err(|e| format!("hollow preview session lock poisoned: {e}"))? = None;
     *hollow_preview_result_bytes()
         .lock()
         .map_err(|e| format!("hollow preview result lock poisoned: {e}"))? = None;
@@ -245,7 +260,7 @@ pub async fn mesh_hollow_preview_from_captured_source(
     options_json: String,
 ) -> Result<String, String> {
     let options = parse_hollow_options(&options_json);
-    let source_bytes = hollow_preview_source_bytes()
+    let source_mesh = hollow_preview_source_mesh()
         .lock()
         .map_err(|e| format!("hollow preview source lock poisoned: {e}"))?
         .clone()
@@ -254,9 +269,51 @@ pub async fn mesh_hollow_preview_from_captured_source(
                 .to_string()
         })?;
 
+    let cached_session = hollow_preview_session()
+        .lock()
+        .map_err(|e| format!("hollow preview session lock poisoned: {e}"))?
+        .clone();
+
+    let session = if let Some(session) = cached_session {
+        if session.voxel_resolution() == options.voxel_resolution {
+            session
+        } else {
+            let source_mesh_for_build = source_mesh.clone();
+            let resolution = options.voxel_resolution;
+            let session = tauri::async_runtime::spawn_blocking(move || {
+                Ok::<_, String>(Arc::new(HollowSession::new(
+                    (*source_mesh_for_build).clone(),
+                    resolution,
+                )))
+            })
+            .await
+            .map_err(|e| format!("hollow preview session build panicked: {e}"))??;
+            *hollow_preview_session()
+                .lock()
+                .map_err(|e| format!("hollow preview session lock poisoned: {e}"))? =
+                Some(session.clone());
+            session
+        }
+    } else {
+        let source_mesh_for_build = source_mesh.clone();
+        let resolution = options.voxel_resolution;
+        let session = tauri::async_runtime::spawn_blocking(move || {
+            Ok::<_, String>(Arc::new(HollowSession::new(
+                (*source_mesh_for_build).clone(),
+                resolution,
+            )))
+        })
+        .await
+        .map_err(|e| format!("hollow preview session build panicked: {e}"))??;
+        *hollow_preview_session()
+            .lock()
+            .map_err(|e| format!("hollow preview session lock poisoned: {e}"))? =
+            Some(session.clone());
+        session
+    };
+
     let (positions_bytes, report) = tauri::async_runtime::spawn_blocking(move || {
-        let mesh = io::staged::load_positions_le(&source_bytes).map_err(|e| e.to_string())?;
-        let outcome = hollow_voxel(mesh, &options);
+        let outcome = session.run(&options);
         let soup = outcome.mesh.to_triangle_soup();
         let bytes: Vec<u8> = bytemuck::cast_slice::<f32, u8>(&soup).to_vec();
         Ok::<_, String>((bytes, outcome.report))
@@ -269,6 +326,74 @@ pub async fn mesh_hollow_preview_from_captured_source(
         .map_err(|e| format!("hollow preview result lock poisoned: {e}"))? = Some(positions_bytes);
 
     serde_json::to_string(&report).map_err(|e| format!("serialize hollow preview report: {e}"))
+}
+
+#[tauri::command]
+pub async fn mesh_hollow_apply_from_captured_source(
+    options_json: String,
+) -> Result<String, String> {
+    let options = parse_hollow_options(&options_json);
+    let source_mesh = hollow_preview_source_mesh()
+        .lock()
+        .map_err(|e| format!("hollow preview source lock poisoned: {e}"))?
+        .clone()
+        .ok_or_else(|| {
+            "No captured hollow preview source — call mesh_hollow_preview_capture_staged_source first"
+                .to_string()
+        })?;
+
+    let cached_session = hollow_preview_session()
+        .lock()
+        .map_err(|e| format!("hollow preview session lock poisoned: {e}"))?
+        .clone();
+
+    let session = if let Some(session) = cached_session {
+        if session.voxel_resolution() == options.voxel_resolution {
+            session
+        } else {
+            let source_mesh_for_build = source_mesh.clone();
+            let resolution = options.voxel_resolution;
+            let session = tauri::async_runtime::spawn_blocking(move || {
+                Ok::<_, String>(Arc::new(HollowSession::new(
+                    (*source_mesh_for_build).clone(),
+                    resolution,
+                )))
+            })
+            .await
+            .map_err(|e| format!("hollow apply session build panicked: {e}"))??;
+            *hollow_preview_session()
+                .lock()
+                .map_err(|e| format!("hollow preview session lock poisoned: {e}"))? =
+                Some(session.clone());
+            session
+        }
+    } else {
+        let source_mesh_for_build = source_mesh.clone();
+        let resolution = options.voxel_resolution;
+        let session = tauri::async_runtime::spawn_blocking(move || {
+            Ok::<_, String>(Arc::new(HollowSession::new(
+                (*source_mesh_for_build).clone(),
+                resolution,
+            )))
+        })
+        .await
+        .map_err(|e| format!("hollow apply session build panicked: {e}"))??;
+        *hollow_preview_session()
+            .lock()
+            .map_err(|e| format!("hollow preview session lock poisoned: {e}"))? =
+            Some(session.clone());
+        session
+    };
+
+    let (mesh, report) = tauri::async_runtime::spawn_blocking(move || {
+        let outcome = session.run(&options);
+        Ok::<_, String>((outcome.mesh, outcome.report))
+    })
+    .await
+    .map_err(|e| format!("hollow apply task panicked: {e}"))??;
+
+    replace_staging_with_mesh(&mesh)?;
+    serde_json::to_string(&report).map_err(|e| format!("serialize hollow apply report: {e}"))
 }
 
 /// Returns the most recent non-mutating hollow preview positions as raw

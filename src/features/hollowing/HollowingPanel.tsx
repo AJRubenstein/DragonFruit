@@ -200,9 +200,34 @@ export function HollowingPanel({
               type="button"
               className="ui-button ui-button-accent flex-1 !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
               onClick={onApply}
-              disabled={isApplying || !canApply}
+              disabled={isApplying || isPreviewing || !canApply}
             >
-              {isApplying ? 'Applying…' : 'Apply'}
+              {isApplying ? 'Applying...' : isPreviewing ? (
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <svg
+                    className="h-3 w-3 animate-spin"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="9"
+                      stroke="currentColor"
+                      strokeOpacity="0.25"
+                      strokeWidth="3"
+                    />
+                    <path
+                      d="M21 12a9 9 0 0 0-9-9"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <span>Updating</span>
+                </span>
+              ) : 'Apply'}
             </button>
           </div>
         </div>

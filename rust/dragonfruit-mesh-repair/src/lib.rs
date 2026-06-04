@@ -17,7 +17,7 @@ pub use crate::core::mesh::{IndexedMesh, Vec3};
 pub use crate::hollowing::{
     hollow_voxel, punch_cylinders, DrainHoleSpec, HolePunchOptions, HolePunchOutcome,
     HolePunchReport, HolePunchSpec, HollowMode, HollowOptions, HollowOutcome, HollowReport,
-    OpenFace,
+    HollowSession, OpenFace,
 };
 pub use crate::repair::{classify_support_split, repair, RepairOptions, RepairOutcome};
 pub use crate::report::MeshHealthReport;
