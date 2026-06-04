@@ -545,8 +545,9 @@ pub fn hollow_voxel(mesh: IndexedMesh, options: &HollowOptions) -> HollowOutcome
 
     let removed_voxels = occupied_voxels.saturating_sub(keep.iter().filter(|v| **v).count());
 
+    let cavity_scalar = build_smoothed_cavity_scalar_field(&grid, &solid, &dist, shell_voxels_f);
     let cavity_mesh = smooth_cavity_mesh(
-        voxel_cavity_boundary_mesh(&grid, &solid, &keep),
+        organic_cavity_boundary_mesh(&grid, &solid, &keep, &cavity_scalar),
         voxel_mm,
         options.smooth_internal_surfaces,
     );
@@ -669,6 +670,314 @@ fn voxel_cavity_boundary_mesh(grid: &GridSpec, solid: &[bool], keep: &[bool]) ->
     IndexedMesh::from_triangle_soup(&soup, 1e-6)
 }
 
+const CUBE_CORNERS: [(usize, usize, usize); 8] = [
+    (0, 0, 0),
+    (1, 0, 0),
+    (1, 1, 0),
+    (0, 1, 0),
+    (0, 0, 1),
+    (1, 0, 1),
+    (1, 1, 1),
+    (0, 1, 1),
+];
+
+const TETRAHEDRA_IN_CUBE: [[usize; 4]; 6] = [
+    [0, 5, 1, 6],
+    [0, 1, 2, 6],
+    [0, 2, 3, 6],
+    [0, 3, 7, 6],
+    [0, 7, 4, 6],
+    [0, 4, 5, 6],
+];
+
+fn organic_cavity_boundary_mesh(
+    grid: &GridSpec,
+    solid: &[bool],
+    keep: &[bool],
+    scalar_field: &[f32],
+) -> IndexedMesh {
+    let mut soup = Vec::<f32>::new();
+    let mut corner_pos = [Vec3::ZERO; 8];
+    let mut corner_scalar = [0.0f32; 8];
+    let mut corner_kept = [false; 8];
+    let mut corner_carved = [false; 8];
+
+    for z in 0..grid.nz.saturating_sub(1) {
+        for y in 0..grid.ny.saturating_sub(1) {
+            for x in 0..grid.nx.saturating_sub(1) {
+                let mut has_kept = false;
+                let mut has_carved = false;
+
+                for (corner_i, &(dx, dy, dz)) in CUBE_CORNERS.iter().enumerate() {
+                    let vx = x + dx;
+                    let vy = y + dy;
+                    let vz = z + dz;
+                    let vi = grid.idx(vx, vy, vz);
+
+                    corner_pos[corner_i] = grid.center_world(vx, vy, vz);
+                    corner_kept[corner_i] = solid[vi] && keep[vi];
+                    corner_carved[corner_i] = solid[vi] && !keep[vi];
+                    has_kept |= corner_kept[corner_i];
+                    has_carved |= corner_carved[corner_i];
+                    corner_scalar[corner_i] = scalar_field[vi];
+                }
+
+                if !has_kept || !has_carved {
+                    continue;
+                }
+
+                for tet in TETRAHEDRA_IN_CUBE {
+                    polygonize_cavity_tetrahedron(
+                        &mut soup,
+                        tet,
+                        &corner_pos,
+                        &corner_scalar,
+                        &corner_kept,
+                        &corner_carved,
+                    );
+                }
+            }
+        }
+    }
+
+    IndexedMesh::from_triangle_soup(&soup, 1e-6)
+}
+
+fn build_smoothed_cavity_scalar_field(
+    grid: &GridSpec,
+    solid: &[bool],
+    dist: &[f32],
+    shell_voxels_f: f32,
+) -> Vec<f32> {
+    let exterior_value = -2.5f32;
+    let active_band_voxels = 4.5f32;
+    let mut field = vec![exterior_value; solid.len()];
+
+    for i in 0..solid.len() {
+        if solid[i] {
+            field[i] = shell_voxels_f - dist[i];
+        }
+    }
+
+    let mut active = vec![false; solid.len()];
+    for z in 0..grid.nz {
+        for y in 0..grid.ny {
+            for x in 0..grid.nx {
+                let i = grid.idx(x, y, z);
+                if !solid[i] {
+                    continue;
+                }
+
+                let center = field[i];
+                let mut touches_sign_change = false;
+                for dz in -1isize..=1 {
+                    for dy in -1isize..=1 {
+                        for dx in -1isize..=1 {
+                            if dx == 0 && dy == 0 && dz == 0 {
+                                continue;
+                            }
+                            let nx_i = x as isize + dx;
+                            let ny_i = y as isize + dy;
+                            let nz_i = z as isize + dz;
+                            if !grid.in_bounds(nx_i, ny_i, nz_i) {
+                                continue;
+                            }
+                            let ni = grid.idx(nx_i as usize, ny_i as usize, nz_i as usize);
+                            if !solid[ni] {
+                                continue;
+                            }
+                            if (center >= 0.0) != (field[ni] >= 0.0) {
+                                touches_sign_change = true;
+                                break;
+                            }
+                        }
+                        if touches_sign_change {
+                            break;
+                        }
+                    }
+                    if touches_sign_change {
+                        break;
+                    }
+                }
+
+                if touches_sign_change || center.abs() <= active_band_voxels {
+                    active[i] = true;
+                }
+            }
+        }
+    }
+
+    let mut scratch = field.clone();
+    for _ in 0..5 {
+        for z in 0..grid.nz {
+            for y in 0..grid.ny {
+                for x in 0..grid.nx {
+                    let i = grid.idx(x, y, z);
+                    if !active[i] {
+                        scratch[i] = field[i];
+                        continue;
+                    }
+
+                    let mut sum = field[i] * 5.0;
+                    let mut weight = 5.0;
+                    for dz in -1isize..=1 {
+                        for dy in -1isize..=1 {
+                            for dx in -1isize..=1 {
+                                if dx == 0 && dy == 0 && dz == 0 {
+                                    continue;
+                                }
+                                let nx_i = x as isize + dx;
+                                let ny_i = y as isize + dy;
+                                let nz_i = z as isize + dz;
+                                if !grid.in_bounds(nx_i, ny_i, nz_i) {
+                                    continue;
+                                }
+                                let ni = grid.idx(nx_i as usize, ny_i as usize, nz_i as usize);
+                                if !solid[ni] {
+                                    continue;
+                                }
+
+                                let step = dx.abs() + dy.abs() + dz.abs();
+                                let w = match step {
+                                    1 => 2.5,
+                                    2 => 1.25,
+                                    _ => 0.6,
+                                };
+                                sum += field[ni] * w;
+                                weight += w;
+                            }
+                        }
+                    }
+                    let blurred = sum / weight;
+                    scratch[i] = field[i] * 0.2 + blurred * 0.8;
+                }
+            }
+        }
+        std::mem::swap(&mut field, &mut scratch);
+    }
+
+    field
+}
+
+fn polygonize_cavity_tetrahedron(
+    soup: &mut Vec<f32>,
+    tet: [usize; 4],
+    positions: &[Vec3; 8],
+    scalar: &[f32; 8],
+    kept: &[bool; 8],
+    carved: &[bool; 8],
+) {
+    let tet_edges = [(0usize, 1usize), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+    let mut intersections = [Vec3::ZERO; 4];
+    let mut intersection_count = 0usize;
+
+    for (ea, eb) in tet_edges {
+        let ia = tet[ea];
+        let ib = tet[eb];
+        let a_pos = kept[ia];
+        let b_pos = kept[ib];
+        let a_neg = carved[ia];
+        let b_neg = carved[ib];
+
+        if !((a_pos && b_neg) || (a_neg && b_pos)) {
+            continue;
+        }
+
+        let pa = positions[ia];
+        let pb = positions[ib];
+        let va = scalar[ia];
+        let vb = scalar[ib];
+        let denom = va - vb;
+        let t = if denom.abs() <= 1e-6 {
+            0.5
+        } else {
+            (va / denom).clamp(0.0, 1.0)
+        };
+
+        intersections[intersection_count] = pa.add(pb.sub(pa).scale(t));
+        intersection_count += 1;
+    }
+
+    if intersection_count < 3 {
+        return;
+    }
+
+    let mut positive_centroid = Vec3::ZERO;
+    let mut negative_centroid = Vec3::ZERO;
+    let mut positive_count = 0usize;
+    let mut negative_count = 0usize;
+    for &i in &tet {
+        if kept[i] {
+            positive_centroid = positive_centroid.add(positions[i]);
+            positive_count += 1;
+        } else if carved[i] {
+            negative_centroid = negative_centroid.add(positions[i]);
+            negative_count += 1;
+        }
+    }
+
+    if positive_count == 0 || negative_count == 0 {
+        return;
+    }
+
+    positive_centroid = positive_centroid.scale(1.0 / positive_count as f32);
+    negative_centroid = negative_centroid.scale(1.0 / negative_count as f32);
+    let desired_normal = negative_centroid.sub(positive_centroid);
+
+    if intersection_count == 3 {
+        emit_oriented_triangle(
+            soup,
+            intersections[0],
+            intersections[1],
+            intersections[2],
+            desired_normal,
+        );
+        return;
+    }
+
+    if intersection_count == 4 {
+        let center = intersections[0]
+            .add(intersections[1])
+            .add(intersections[2])
+            .add(intersections[3])
+            .scale(0.25);
+
+        let mut ordered = [intersections[0], intersections[1], intersections[2], intersections[3]];
+        sort_points_around_axis(&mut ordered, center, desired_normal);
+
+        emit_oriented_triangle(soup, ordered[0], ordered[1], ordered[2], desired_normal);
+        emit_oriented_triangle(soup, ordered[0], ordered[2], ordered[3], desired_normal);
+    }
+}
+
+fn emit_oriented_triangle(soup: &mut Vec<f32>, a: Vec3, b: Vec3, c: Vec3, desired_normal: Vec3) {
+    let normal = b.sub(a).cross(c.sub(a));
+    if normal.dot(desired_normal) < 0.0 {
+        soup.extend_from_slice(&[a.x, a.y, a.z, c.x, c.y, c.z, b.x, b.y, b.z]);
+    } else {
+        soup.extend_from_slice(&[a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z]);
+    }
+}
+
+fn sort_points_around_axis(points: &mut [Vec3; 4], center: Vec3, axis: Vec3) {
+    let axis = vec3_normalize(axis).unwrap_or(Vec3::new(0.0, 0.0, 1.0));
+    let helper = if axis.z.abs() < 0.95 {
+        Vec3::new(0.0, 0.0, 1.0)
+    } else {
+        Vec3::new(0.0, 1.0, 0.0)
+    };
+    let u = vec3_normalize(helper.cross(axis)).unwrap_or(Vec3::new(1.0, 0.0, 0.0));
+    let v = vec3_normalize(axis.cross(u)).unwrap_or(Vec3::new(0.0, 1.0, 0.0));
+
+    points.sort_by(|a, b| {
+        let da = (*a).sub(center);
+        let db = (*b).sub(center);
+        let aa = da.dot(v).atan2(da.dot(u));
+        let ab = db.dot(v).atan2(db.dot(u));
+        aa.partial_cmp(&ab).unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
 fn smooth_cavity_mesh(mesh: IndexedMesh, voxel_mm: f32, enabled: bool) -> IndexedMesh {
     if !enabled || mesh.positions.len() < 4 || mesh.triangles.is_empty() {
         return mesh;
@@ -718,16 +1027,16 @@ fn smooth_cavity_mesh(mesh: IndexedMesh, voxel_mm: f32, enabled: bool) -> Indexe
     // Lock boundary vertices to preserve opening rims/cut contours where the
     // cavity mesh meets preserved source shell triangles.
     let mut positions = mesh.positions.clone();
-    let iterations = 6usize;
-    let max_step = (voxel_mm * 0.35).max(0.01);
+    let iterations = 8usize;
+    let max_step = (voxel_mm * 0.42).max(0.01);
 
     for _ in 0..iterations {
-        taubin_pass(&mut positions, &neighbors, &boundary_vertex, 0.34, max_step);
+        taubin_pass(&mut positions, &neighbors, &boundary_vertex, 0.36, max_step);
         taubin_pass(
             &mut positions,
             &neighbors,
             &boundary_vertex,
-            -0.36,
+            -0.38,
             max_step,
         );
     }
