@@ -6,6 +6,7 @@ import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 export interface HolePunchPanelState {
   radiusMm: number;
   depthMm: number;
+  depthMode: 'manual' | 'auto';
 }
 
 interface HolePunchPanelProps {
@@ -13,6 +14,7 @@ interface HolePunchPanelProps {
   onStateChange: (next: HolePunchPanelState) => void;
   onReset: () => void;
   onApply: () => void;
+  canUseAutoDepth?: boolean;
   isApplying?: boolean;
   canApply?: boolean;
   canReset?: boolean;
@@ -23,6 +25,7 @@ export function HolePunchPanel({
   onStateChange,
   onReset,
   onApply,
+  canUseAutoDepth = true,
   isApplying = false,
   canApply = false,
   canReset = true,
@@ -42,6 +45,17 @@ export function HolePunchPanel({
   const cardStyle: React.CSSProperties = {
     borderColor: 'var(--border-subtle)',
     background: 'var(--surface-1)',
+  };
+
+  const accentCardStyle: React.CSSProperties = {
+    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 76%)',
+    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 95%)',
+  };
+
+  const activeModeStyle: React.CSSProperties = {
+    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 30%)',
+    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 85%)',
+    color: 'var(--text-strong)',
   };
 
   return (
@@ -75,6 +89,48 @@ export function HolePunchPanel({
 
       {expanded && (
         <div className="px-2 pb-2 space-y-2 sm:px-2.5 sm:pb-2.5">
+          <div className="rounded-md border p-2 space-y-1.5" style={accentCardStyle}>
+            <div className="ui-meta" style={{ color: 'var(--text-muted)' }}>Depth Mode</div>
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
+                onClick={() => setState({ depthMode: 'auto' })}
+                disabled={isApplying || !canUseAutoDepth}
+                style={state.depthMode === 'auto' ? activeModeStyle : undefined}
+                title={!canUseAutoDepth ? 'Auto depth requires a hollowed model or hollow preview.' : undefined}
+              >
+                Auto
+              </button>
+              <button
+                type="button"
+                className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
+                onClick={() => setState({ depthMode: 'manual' })}
+                disabled={isApplying}
+                style={state.depthMode === 'manual' ? activeModeStyle : undefined}
+              >
+                Manual
+              </button>
+            </div>
+          </div>
+
+          {state.depthMode === 'manual' && (
+            <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
+              <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Punch Depth</label>
+              <ScrollableNumberField
+                value={state.depthMm}
+                onChange={(value) => setState({ depthMm: clampFloat(value, 1, 120, 1) })}
+                min={1}
+                max={120}
+                step={0.5}
+                unit="mm"
+                ariaLabel="Hole punch depth in millimeters"
+                disabled={isApplying}
+                className="mt-1"
+              />
+            </div>
+          )}
+
           <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
             <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Hole Diameter</label>
             <ScrollableNumberField
@@ -85,21 +141,6 @@ export function HolePunchPanel({
               step={0.1}
               unit="mm"
               ariaLabel="Hole punch diameter in millimeters"
-              disabled={isApplying}
-              className="mt-1"
-            />
-          </div>
-
-          <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
-            <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Punch Depth</label>
-            <ScrollableNumberField
-              value={state.depthMm}
-              onChange={(value) => setState({ depthMm: clampFloat(value, 1, 120, 1) })}
-              min={1}
-              max={120}
-              step={0.5}
-              unit="mm"
-              ariaLabel="Hole punch depth in millimeters"
               disabled={isApplying}
               className="mt-1"
             />

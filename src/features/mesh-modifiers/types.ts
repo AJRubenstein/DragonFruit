@@ -19,6 +19,7 @@ export type ModelHolePunchPlacement = {
   radiusMm: number;
   depthMm: number;
   direction: [number, number, number];
+  depthMode?: 'manual' | 'auto';
 };
 
 export type ModelMeshModifiers = {
