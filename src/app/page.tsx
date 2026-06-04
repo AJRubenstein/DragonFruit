@@ -271,6 +271,8 @@ type PrintingMonitorFeatureToggleResponse = {
 const PRINTING_MONITOR_DEBUG_CHANNELS = ['status', 'webcam', 'plates', 'taskHistory', 'taskDetails'] as const;
 type PrintingMonitorDebugChannel = (typeof PRINTING_MONITOR_DEBUG_CHANNELS)[number];
 
+type PendingModifierResetAction = 'hollowing' | 'hole_punch';
+
 const EMPTY_SUPPORT_BOUNDS_BY_MODEL_ID = new Map<string, THREE.Box3>();
 
 type HomeSupportSnapshot = ReturnType<typeof getSupportSnapshot>;
@@ -1527,6 +1529,7 @@ export default function Home() {
   const [holePunchHoverPlacement, setHolePunchHoverPlacement] = React.useState<HolePunchPlacementState | null>(null);
   const [isApplyingHolePunch, setIsApplyingHolePunch] = React.useState(false);
   const [isApplyingHollowing, setIsApplyingHollowing] = React.useState(false);
+  const [pendingModifierResetAction, setPendingModifierResetAction] = React.useState<PendingModifierResetAction | null>(null);
   const hollowPreviewDebounceTimerRef = React.useRef<number | ReturnType<typeof setTimeout> | null>(null);
   const hollowPreviewRequestSeqRef = React.useRef(0);
   const hollowPreviewResultCacheRef = React.useRef<Map<string, HollowPreviewCacheEntry>>(new Map());
@@ -14767,6 +14770,9 @@ export default function Home() {
         shellThicknessMm: defaultHollowingState.shellThicknessMm,
         openFace: defaultHollowingState.openFace,
       },
+      holePunchesBakedIntoGeometry: false,
+      holePunchSourcePositionsBase64: undefined,
+      holePunchSourcePositionCount: undefined,
     });
   }, [defaultHollowingState, persistActiveModelModifiers, scene.activeModel]);
 
@@ -14920,6 +14926,24 @@ export default function Home() {
   }, [scene.activeModel]);
 
   const isHollowingDirty = draftHollowingSignature !== persistedHollowingSignature;
+
+  const canResetHollowing = React.useMemo(() => {
+    const activeModel = scene.activeModel;
+    if (!activeModel) return false;
+    const modifier = activeModel.meshModifiers?.hollowing;
+    if (!modifier) return false;
+    return Boolean(modifier.enabled || isHollowingDirty || isHollowingApplied);
+  }, [isHollowingApplied, isHollowingDirty, scene.activeModel]);
+
+  const canResetHolePunch = React.useMemo(() => {
+    const activeModel = scene.activeModel;
+    if (!activeModel) return false;
+    return activeHolePunchPlacements.length > 0
+      || Boolean(
+        activeModel.meshModifiers?.holePunchesBakedIntoGeometry
+        && (activeModel.meshModifiers?.holePunches?.length ?? 0) > 0,
+      );
+  }, [activeHolePunchPlacements.length, scene.activeModel]);
 
   const buildHolePunchPlacementFromHit = React.useCallback((hit: THREE.Intersection, modelId: string): HolePunchPlacementState => {
     const localPoint = hit.object.worldToLocal(hit.point.clone());
@@ -15106,6 +15130,28 @@ export default function Home() {
     setHoveredHolePunchPlacementId(null);
     setHolePunchHoverPlacement(null);
   }, [defaultHolePunchState, persistActiveModelModifiers, scene.activeModel]);
+
+  const requestResetHollowing = React.useCallback(() => {
+    if (!canResetHollowing || isApplyingHollowing || isPreviewingHollowing) return;
+    setPendingModifierResetAction('hollowing');
+  }, [canResetHollowing, isApplyingHollowing, isPreviewingHollowing]);
+
+  const requestResetHolePunch = React.useCallback(() => {
+    if (!canResetHolePunch || isApplyingHolePunch) return;
+    setPendingModifierResetAction('hole_punch');
+  }, [canResetHolePunch, isApplyingHolePunch]);
+
+  const handleConfirmModifierReset = React.useCallback(() => {
+    const action = pendingModifierResetAction;
+    setPendingModifierResetAction(null);
+    if (action === 'hollowing') {
+      handleResetHollowing();
+      return;
+    }
+    if (action === 'hole_punch') {
+      handleResetHolePunch();
+    }
+  }, [handleResetHolePunch, handleResetHollowing, pendingModifierResetAction]);
 
   const handleApplyHolePunch = React.useCallback(() => {
     void (async () => {
@@ -16316,21 +16362,23 @@ export default function Home() {
                   key="prepare-hollowing-panel"
                   state={hollowingState}
                   onStateChange={handleHollowingStateChange}
-                  onReset={handleResetHollowing}
+                  onReset={requestResetHollowing}
                   onApply={() => { void handleApplyHollowing(); }}
                   isApplying={isApplyingHollowing}
                   isPreviewing={isPreviewingHollowing}
                   canApply={isHollowingDirty || !isHollowingApplied}
+                  canReset={canResetHollowing}
                 />
 
                 <HolePunchPanel
                   key="prepare-hole-punch-panel"
                   state={holePunchState}
                   onStateChange={handleHolePunchStateChange}
-                  onReset={handleResetHolePunch}
+                  onReset={requestResetHolePunch}
                   onApply={() => { void handleApplyHolePunch(); }}
                   isApplying={isApplyingHolePunch}
                   canApply={isHolePunchDirty || holePunchNeedsBake}
+                  canReset={canResetHolePunch}
                 />
               </>
             )}
@@ -17427,6 +17475,53 @@ export default function Home() {
         onCancel={handleCancelDestructiveTransform}
         onConfirm={handleConfirmDestructiveTransform}
       />
+
+      <StructuredDialogModal
+        open={pendingModifierResetAction !== null}
+        ariaLabel="Confirm modifier reset"
+        title={pendingModifierResetAction === 'hollowing' ? 'Remove Hollowing?' : 'Remove All Holes?'}
+        subtitle="This action can't be undone"
+        icon={<AlertTriangle className="h-4 w-4" />}
+        iconTone="warning"
+        closeAriaLabel="Close reset confirmation"
+        onClose={() => setPendingModifierResetAction(null)}
+        actions={(
+          <>
+            <button
+              type="button"
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+              onClick={() => setPendingModifierResetAction(null)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="ui-button !h-9 px-3 text-xs"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 36%)',
+                background: 'color-mix(in srgb, var(--danger), transparent 86%)',
+                color: 'var(--danger)',
+              }}
+              onClick={handleConfirmModifierReset}
+            >
+              {pendingModifierResetAction === 'hollowing' ? 'Remove Hollowing' : 'Remove All Holes'}
+            </button>
+          </>
+        )}
+      >
+        <div className="space-y-2">
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            {pendingModifierResetAction === 'hollowing'
+              ? 'Are you sure you want to remove hollowing from this model?'
+              : 'Are you sure you want to remove all hole punches from this model?'}
+          </p>
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            {pendingModifierResetAction === 'hollowing'
+              ? 'Your model will return to its solid version.'
+              : 'All holes on this model will be removed.'}
+          </p>
+        </div>
+      </StructuredDialogModal>
 
       {scene.sceneImportPlacementPrompt && (
         <div
