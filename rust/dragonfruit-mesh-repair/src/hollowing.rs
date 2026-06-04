@@ -1253,11 +1253,14 @@ fn build_hollow_output_mesh(
         shell_voxels_f,
         smoothing_profile.scalar_field_blur_iterations,
     );
-    let cavity_mesh = smooth_cavity_mesh(
-        organic_cavity_boundary_mesh(grid, solid, keep, &cavity_scalar),
+    let cavity_mesh = stabilize_cavity_mesh_for_boolean(
+        smooth_cavity_mesh(
+            organic_cavity_boundary_mesh(grid, solid, keep, &cavity_scalar),
+            grid.voxel_mm,
+            smoothing_profile.taubin_iterations,
+            smoothing_profile.taubin_max_step_scale,
+        ),
         grid.voxel_mm,
-        smoothing_profile.taubin_iterations,
-        smoothing_profile.taubin_max_step_scale,
     );
     let out_mesh = if options.preview_cavity_only {
         cavity_mesh
@@ -1406,6 +1409,7 @@ fn smooth_cavity_mesh(
 
     let vertex_count = mesh.positions.len();
     let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); vertex_count];
+    let mut vertex_faces: Vec<Vec<usize>> = vec![Vec::new(); vertex_count];
     let mut edge_counts: std::collections::HashMap<(u32, u32), u8> =
         std::collections::HashMap::with_capacity(mesh.triangles.len() * 2);
 
@@ -1429,6 +1433,11 @@ fn smooth_cavity_mesh(
         add_edge(b, c);
         add_edge(c, a);
     }
+    for (face_idx, tri) in mesh.triangles.iter().enumerate() {
+        vertex_faces[tri[0] as usize].push(face_idx);
+        vertex_faces[tri[1] as usize].push(face_idx);
+        vertex_faces[tri[2] as usize].push(face_idx);
+    }
 
     for ring in &mut neighbors {
         ring.sort_unstable();
@@ -1448,23 +1457,79 @@ fn smooth_cavity_mesh(
     // Lock boundary vertices to preserve opening rims/cut contours where the
     // cavity mesh meets preserved source shell triangles.
     let mut positions = mesh.positions.clone();
+    let area_floor = (voxel_mm * voxel_mm * 1e-4).max(1e-8);
     let iterations = iterations.max(1);
     let max_step = (voxel_mm * max_step_scale).max(0.01);
 
     for _ in 0..iterations {
-        taubin_pass(&mut positions, &neighbors, &boundary_vertex, 0.36, max_step);
-        taubin_pass(
+        let forward = taubin_pass(
             &mut positions,
+            &mesh.triangles,
             &neighbors,
+            &vertex_faces,
             &boundary_vertex,
-            -0.38,
+            0.36,
+            area_floor,
             max_step,
         );
+        let backward = taubin_pass(
+            &mut positions,
+            &mesh.triangles,
+            &neighbors,
+            &vertex_faces,
+            &boundary_vertex,
+            -0.38,
+            area_floor,
+            max_step,
+        );
+        if forward.applied_vertices + backward.applied_vertices == 0 {
+            break;
+        }
     }
 
     let mut out = mesh;
     out.positions = positions;
     out
+}
+
+fn stabilize_cavity_mesh_for_boolean(mesh: IndexedMesh, voxel_mm: f32) -> IndexedMesh {
+    if mesh.triangles.is_empty() || mesh.positions.is_empty() {
+        return mesh;
+    }
+
+    let topo = crate::core::halfedge::Topology::build(&mesh);
+    let boundary_edges = topo.boundary_edges().len();
+    let non_manifold_edges = topo.non_manifold_edges().len();
+    if boundary_edges == 0 && non_manifold_edges == 0 {
+        return mesh;
+    }
+
+    let bbox_diag = mesh.bbox().diag().max(1e-6);
+    let mut best_mesh = mesh;
+    let mut best_score = boundary_edges + non_manifold_edges * 4;
+
+    for absolute_weld_mm in [voxel_mm * 0.015, voxel_mm * 0.035, voxel_mm * 0.075] {
+        let weld_epsilon = (absolute_weld_mm / bbox_diag).clamp(1e-7, 1e-3);
+        let candidate = normalize_mesh_for_boolean_with_weld(best_mesh.clone(), weld_epsilon);
+        let candidate_topo = crate::core::halfedge::Topology::build(&candidate);
+        let candidate_boundary = candidate_topo.boundary_edges().len();
+        let candidate_non_manifold = candidate_topo.non_manifold_edges().len();
+        let candidate_score = candidate_boundary + candidate_non_manifold * 4;
+
+        if candidate_score < best_score
+            || (candidate_score == best_score
+                && candidate.triangle_count() >= best_mesh.triangle_count().saturating_sub(8))
+        {
+            best_score = candidate_score;
+            best_mesh = candidate;
+        }
+
+        if best_score == 0 {
+            break;
+        }
+    }
+
+    best_mesh
 }
 
 fn apply_internal_cavity_chamfer_pass(
@@ -1942,14 +2007,23 @@ fn retain_largest_connected_cavity_component(grid: &GridSpec, solid: &[bool], ke
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct TaubinPassStats {
+    applied_vertices: usize,
+}
+
 fn taubin_pass(
     positions: &mut [Vec3],
+    triangles: &[[u32; 3]],
     neighbors: &[Vec<usize>],
+    vertex_faces: &[Vec<usize>],
     boundary_vertex: &[bool],
     weight: f32,
+    area_floor: f32,
     max_step: f32,
-) {
+) -> TaubinPassStats {
     let prev = positions.to_vec();
+    let mut stats = TaubinPassStats::default();
 
     for i in 0..positions.len() {
         if boundary_vertex[i] {
@@ -1972,11 +2046,70 @@ fn taubin_pass(
             delta = delta.scale(max_step / len);
         }
 
-        let candidate = prev[i].add(delta);
-        if candidate.finite() {
+        for scale in [1.0_f32, 0.5, 0.25] {
+            let candidate = prev[i].add(delta.scale(scale));
+            if !candidate.finite() {
+                continue;
+            }
+            if !candidate_vertex_update_is_safe(
+                i,
+                candidate,
+                &prev,
+                triangles,
+                vertex_faces,
+                area_floor,
+            ) {
+                continue;
+            }
+
             positions[i] = candidate;
+            stats.applied_vertices += 1;
+            break;
         }
     }
+
+    stats
+}
+
+fn candidate_vertex_update_is_safe(
+    vertex_index: usize,
+    candidate: Vec3,
+    prev_positions: &[Vec3],
+    triangles: &[[u32; 3]],
+    vertex_faces: &[Vec<usize>],
+    area_floor: f32,
+) -> bool {
+    for &face_idx in &vertex_faces[vertex_index] {
+        let tri = triangles[face_idx];
+        let prev_tri = [
+            prev_positions[tri[0] as usize],
+            prev_positions[tri[1] as usize],
+            prev_positions[tri[2] as usize],
+        ];
+        let mut next_tri = prev_tri;
+        for (corner, &vertex) in tri.iter().enumerate() {
+            if vertex as usize == vertex_index {
+                next_tri[corner] = candidate;
+            }
+        }
+
+        let prev_cross = prev_tri[1].sub(prev_tri[0]).cross(prev_tri[2].sub(prev_tri[0]));
+        let next_cross = next_tri[1].sub(next_tri[0]).cross(next_tri[2].sub(next_tri[0]));
+        let prev_area2 = prev_cross.length();
+        let next_area2 = next_cross.length();
+
+        if !next_area2.is_finite() || next_area2 <= area_floor * 2.0 {
+            return false;
+        }
+        if prev_area2 > area_floor * 4.0 && next_area2 < prev_area2 * 0.12 {
+            return false;
+        }
+        if prev_area2 > area_floor * 4.0 && next_cross.dot(prev_cross) <= 0.0 {
+            return false;
+        }
+    }
+
+    true
 }
 
 #[cfg(not(feature = "manifold"))]
@@ -3211,6 +3344,59 @@ mod tests {
         let disabled = reduced_internal_cavity_smoothing_profile(reduced_thrice).unwrap();
         assert!(disabled.is_disabled());
         assert!(reduced_internal_cavity_smoothing_profile(disabled).is_none());
+    }
+
+    #[test]
+    fn cavity_smoothing_rejects_vertex_moves_that_flip_adjacent_triangles() {
+        let positions = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(-1.0, 0.0, 0.0),
+            Vec3::new(0.0, -1.0, 0.0),
+        ];
+        let triangles = vec![[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]];
+        let vertex_faces = vec![vec![0, 1, 2, 3], vec![0, 3], vec![0, 1], vec![1, 2], vec![2, 3]];
+
+        assert!(candidate_vertex_update_is_safe(
+            0,
+            Vec3::new(0.1, 0.1, 0.0),
+            &positions,
+            &triangles,
+            &vertex_faces,
+            1e-8,
+        ));
+        assert!(!candidate_vertex_update_is_safe(
+            0,
+            Vec3::new(1.6, 1.6, 0.0),
+            &positions,
+            &triangles,
+            &vertex_faces,
+            1e-8,
+        ));
+    }
+
+    #[test]
+    fn cavity_micro_repair_can_weld_a_tiny_near_seam_before_boolean() {
+        let v0 = Vec3::new(0.0, 0.0, 0.0);
+        let v1 = Vec3::new(1.0, 0.0, 0.0);
+        let v2 = Vec3::new(0.0, 1.0, 0.0);
+        let v3 = Vec3::new(0.0, 0.0, 1.0);
+        let v3_seam = Vec3::new(0.00002, 0.0, 1.00001);
+
+        let mesh = IndexedMesh {
+            positions: vec![v0, v1, v2, v3, v3_seam],
+            triangles: vec![[0, 1, 2], [0, 3, 1], [1, 4, 2], [2, 3, 0]],
+        };
+
+        let before = crate::core::halfedge::Topology::build(&mesh);
+        assert!(before.boundary_edges().len() > 0);
+
+        let repaired = stabilize_cavity_mesh_for_boolean(mesh, 1.0);
+        let after = crate::core::halfedge::Topology::build(&repaired);
+
+        assert_eq!(after.boundary_edges().len(), 0);
+        assert_eq!(after.non_manifold_edges().len(), 0);
     }
 
     fn hollow_box_mesh(
