@@ -2816,7 +2816,7 @@ fn punch_cylinders_manifold(
         .flat_map(|v| [v.x, v.y, v.z])
         .collect();
     let src_indices: Vec<u32> = mesh.triangles.iter().flat_map(|t| *t).collect();
-    let mut model = match Manifold::from_mesh_f32(&src_positions, 3, &src_indices) {
+    let model = match Manifold::from_mesh_f32(&src_positions, 3, &src_indices) {
         Ok(model) => model,
         Err(err) => {
             eprintln!(
@@ -2837,6 +2837,8 @@ fn punch_cylinders_manifold(
     }
 
     let bbox = mesh.bbox();
+    let mut cutters: Option<Manifold> = None;
+    let mut valid_punch_count = 0usize;
 
     for punch in &options.punches {
         if punch.radius_mm <= 0.0 {
@@ -2866,7 +2868,7 @@ fn punch_cylinders_manifold(
 
         let radius = punch.radius_mm.max(0.02);
         let circumference = std::f32::consts::TAU * radius;
-        let radial_segments = ((circumference / 0.35).ceil() as usize).clamp(28, 192);
+        let radial_segments = ((circumference / 0.7).ceil() as usize).clamp(16, 80);
         let punch_mesh = build_cylinder_mesh(center, axis, radius, length_mm, radial_segments);
         if punch_mesh.triangles.is_empty() {
             continue;
@@ -2903,16 +2905,40 @@ fn punch_cylinders_manifold(
             }
         };
 
-        model = model.difference(&punch_m);
-        if model.is_empty() || model.num_tri() == 0 {
-            eprintln!(
-                "[dragonfruit-mesh-repair] hole punch manifold: difference became empty after center={:?} radius_mm={} length_mm={}",
-                punch.center_norm,
-                radius,
-                length_mm
-            );
-            break;
-        }
+        valid_punch_count += 1;
+        cutters = Some(match cutters {
+            Some(existing) => existing.union(&punch_m),
+            None => punch_m,
+        });
+    }
+
+    let Some(cutters) = cutters else {
+        return Some(HolePunchOutcome {
+            mesh,
+            report: HolePunchReport {
+                source_triangle_count,
+                output_triangle_count: source_triangle_count,
+                removed_triangle_count: 0,
+                punch_count: options.punches.len(),
+            },
+        });
+    };
+
+    let model = model.difference(&cutters);
+    if model.is_empty() || model.num_tri() == 0 {
+        eprintln!(
+            "[dragonfruit-mesh-repair] hole punch manifold: batched difference became empty after {} valid punches",
+            valid_punch_count
+        );
+        return Some(HolePunchOutcome {
+            mesh: IndexedMesh::default(),
+            report: HolePunchReport {
+                source_triangle_count,
+                output_triangle_count: 0,
+                removed_triangle_count: source_triangle_count,
+                punch_count: options.punches.len(),
+            },
+        });
     }
 
     if model.is_empty() || model.num_tri() == 0 {
