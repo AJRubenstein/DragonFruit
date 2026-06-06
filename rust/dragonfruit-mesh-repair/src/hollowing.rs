@@ -1308,8 +1308,15 @@ fn build_smoothed_cavity_scalar_field(
     for i in 0..solid.len() {
         if solid[i] {
             let shell_signed = shell_voxels_f - dist[i];
-            let magnitude = shell_signed.abs();
-            field[i] = if keep[i] { magnitude } else { -magnitude };
+            if keep[i] {
+                // Shell-proper voxels keep their natural positive value.
+                // Blocked voxels deep in the cavity get a small epsilon so the
+                // zero-crossing sits just inside the blocked region and the
+                // scalar-field blur can smoothly diffuse it outward.
+                field[i] = shell_signed.max(0.05 * shell_voxels_f.max(0.2));
+            } else {
+                field[i] = shell_signed.min(-0.05 * shell_voxels_f.max(0.2));
+            }
         }
     }
 
