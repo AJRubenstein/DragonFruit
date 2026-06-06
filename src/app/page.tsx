@@ -2454,7 +2454,7 @@ export default function Home() {
   const [duplicateTotalCopies, setDuplicateTotalCopies] = React.useState(1);
   const [duplicateSpacingMm, setDuplicateSpacingMm] = React.useState(0.5);
   const showArrangeBlockingOverlay = isAutoArranging;
-  const showModifierApplyBlockingOverlay = isApplyingHollowing || isApplyingHolePunch || pendingHolePunchAutoApplyModelId !== null;
+  const showModifierApplyBlockingOverlay = isApplyingHollowing || isApplyingHolePunch || isPreviewingHollowing || pendingHolePunchAutoApplyModelId !== null;
   const [modifierApplyOverlayElapsedSec, setModifierApplyOverlayElapsedSec] = React.useState(0);
 
   const arrangeOverlayContent = React.useMemo(() => {
@@ -2528,6 +2528,16 @@ export default function Home() {
       };
     }
 
+    if (isPreviewingHollowing) {
+      return {
+        title: 'Applying Blockers...',
+        detailLines: [
+          'Updating the hollowing preview with your blocker changes.',
+          'Please wait a moment.',
+        ],
+      };
+    }
+
     return {
       title: 'Applying Model Changes...',
       detailLines: [
@@ -2535,7 +2545,7 @@ export default function Home() {
         'Please wait a moment.',
       ],
     };
-  }, [isApplyingHolePunch, isApplyingHollowing, pendingHolePunchAutoApplyModelId]);
+  }, [isApplyingHolePunch, isApplyingHollowing, isPreviewingHollowing, pendingHolePunchAutoApplyModelId]);
 
   React.useEffect(() => {
     if (!showArrangeBlockingOverlay) {
@@ -17716,6 +17726,7 @@ export default function Home() {
                   onApply={() => { void handleApplyHollowing(); }}
                   isApplying={isApplyingHollowing}
                   isPreviewing={isPreviewingHollowing}
+                  isApplyingBlockers={isPreviewingHollowing}
                   canApply={!isShellFaceSelectionPending && (isHollowingDirty || !isHollowingApplied)}
                   canReset={canResetHollowing}
                   canEdit={!isShellFaceSelectionPending && Boolean(scene.activeModel)}
