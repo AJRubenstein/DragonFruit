@@ -296,16 +296,21 @@ export function useTrunkPlacementV2() {
 
         const tipPos = { x: hit.point.x, y: hit.point.y, z: hit.point.z };
 
-        // Pass mesh for collision detection
-        const mesh = hit.object instanceof THREE.Mesh ? hit.object : undefined;
-        const result = buildTrunkData({ tipPos, tipNormal, modelId, mesh, isPreview: true });
         const settings = getSettings();
+        const isGridMode = Boolean(settings.grid?.enabled && settings.grid.spacingMm > 0);
+
+        // Grid mode is intentionally grid-native: build a cheap straight
+        // candidate, then let the fixed-grid resolver snap/merge/reject it.
+        // Feeding the mesh here starts the flexible A* router, which is the
+        // wrong cost model for hover on a fixed lattice.
+        const mesh = hit.object instanceof THREE.Mesh ? hit.object : undefined;
+        const result = buildTrunkData({ tipPos, tipNormal, modelId, mesh: isGridMode ? undefined : mesh, isPreview: true });
 
         // Fast-path for cavity hover when the trunk can't route to the build
         // plate: try a stick/twig bridge to the nearest surface below the tip.
         // This covers stagnation, budget exhaustion, AND general collision errors
         // (e.g. tip inside a "mouth" cavity where the straight path is blocked).
-        if (result.error || result.stagnated || result.exhaustedBudget) {
+        if (!isGridMode && (result.error || result.stagnated || result.exhaustedBudget)) {
             if (mesh) {
                 const cavityStick = resolveCavityStickPreview(hit, tipPos, tipNormal, modelId, mesh);
                 if (cavityStick) {
@@ -447,14 +452,18 @@ export function useTrunkPlacementV2() {
         const tipPos = { x: hit.point.x, y: hit.point.y, z: hit.point.z };
         const modelId = hit.object.userData.modelId || 'unknown';
         
-        // Pass mesh for collision detection
+        const settings = getSettings();
+        const isGridMode = Boolean(settings.grid?.enabled && settings.grid.spacingMm > 0);
+
+        // In grid mode, avoid the flexible A* route search entirely. The grid
+        // resolver owns snapping and same-node merge behavior.
         const mesh = hit.object instanceof THREE.Mesh ? hit.object : undefined;
-        const result = buildTrunkData({ tipPos, tipNormal, modelId, mesh });
+        const result = buildTrunkData({ tipPos, tipNormal, modelId, mesh: isGridMode ? undefined : mesh });
 
         // When the trunk can't route to the build plate (stagnation, budget
         // exhaustion, or general collision), fall back to a cavity stick/twig
         // that spans from the tip down to the nearest surface below.
-        if (result.error || result.stagnated || result.exhaustedBudget) {
+        if (!isGridMode && (result.error || result.stagnated || result.exhaustedBudget)) {
             if (mesh) {
                 const cavityStick = buildCavityStick(tipPos, tipNormal, modelId, mesh);
                 if (cavityStick) {
@@ -485,7 +494,6 @@ export function useTrunkPlacementV2() {
 
         // In grid mode, decideGridPlacement may override a trunk error into a place_branch decision.
         // Only bail on trunk errors when grid is disabled (direct placement path).
-        const settings = getSettings();
         if (result.error && !settings.grid?.enabled) {
             if (forcePlaceOverrideRef.current) {
                 commitTrunkBuild(result);
