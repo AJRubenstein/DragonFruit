@@ -279,7 +279,7 @@ type PrintingMonitorFeatureToggleResponse = {
 const PRINTING_MONITOR_DEBUG_CHANNELS = ['status', 'webcam', 'plates', 'taskHistory', 'taskDetails'] as const;
 type PrintingMonitorDebugChannel = (typeof PRINTING_MONITOR_DEBUG_CHANNELS)[number];
 
-type PendingModifierResetAction = 'hollowing' | 'hole_punch';
+type PendingModifierResetAction = 'hollowing' | 'hole_punch' | 'clear_hollowing';
 
 const EMPTY_SUPPORT_BOUNDS_BY_MODEL_ID = new Map<string, THREE.Box3>();
 
@@ -15051,6 +15051,63 @@ export default function Home() {
     });
   }, [defaultHollowingState, persistActiveModelModifiers, scene.activeModel]);
 
+  const handleClearAppliedHollowing = React.useCallback(() => {
+    const activeModel = scene.activeModel;
+    if (!activeModel) return;
+
+    const sourceEntry = hollowingSourceByModelIdRef.current.get(activeModel.id)
+      ?? (() => {
+        const restored = geometryFromSnapshot(activeModel.meshModifiers?.hollowing ?? {});
+        if (!restored) return null;
+        const entry = { geometry: restored };
+        hollowingSourceByModelIdRef.current.set(activeModel.id, entry);
+        return entry;
+      })();
+
+    if (sourceEntry) {
+      const restoredGeometry = sourceEntry.geometry.clone();
+      const restored = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Clear Hollowing');
+      if (!restored) {
+        restoredGeometry.dispose();
+      }
+    }
+
+    setHollowingDraftEnabled(false);
+    setHollowingEditMode(false);
+    setBlockedHollowVoxelIndices([]);
+    setEditingBlockedHollowVoxelIndices([]);
+    persistActiveModelModifiers({
+      ...(activeModel.meshModifiers ?? {}),
+      hollowing: {
+        enabled: false,
+        bakedIntoGeometry: false,
+        sourcePositionsBase64: activeModel.meshModifiers?.hollowing?.sourcePositionsBase64,
+        sourcePositionCount: activeModel.meshModifiers?.hollowing?.sourcePositionCount,
+        blockedVoxelIndices: [],
+        // Keep current settings — don't reset to defaults.
+        mode: hollowingState.mode,
+        voxelResolution: hollowingState.voxelResolution,
+        shellThicknessMm: hollowingState.shellThicknessMm,
+        infillMode: hollowingState.infillMode,
+        infillCellMm: hollowingState.infillCellMm,
+        infillBeamRadiusMm: hollowingState.infillBeamRadiusMm,
+        openFace: hollowingState.openFace,
+        openFaceSelected: hollowingState.mode === 'shell_open_face'
+          ? isShellOpenFaceSelected
+          : true,
+      },
+      holePunchAppliedPlacements: [],
+      holePunchesBakedIntoGeometry: false,
+      holePunchSourcePositionsBase64: undefined,
+      holePunchSourcePositionCount: undefined,
+    });
+  }, [hollowingState, isShellOpenFaceSelected, persistActiveModelModifiers, scene.activeModel]);
+
+  const handleResetHollowingSettings = React.useCallback(() => {
+    setHollowingState(defaultHollowingState);
+    setIsShellOpenFaceSelected(true);
+  }, [defaultHollowingState]);
+
   const handleHollowingStateChange = React.useCallback((next: HollowingPanelState) => {
     const openFaceChanged = next.openFace !== hollowingState.openFace;
     const resolutionChanged = next.voxelResolution !== hollowingState.voxelResolution;
@@ -15969,6 +16026,10 @@ export default function Home() {
     setPendingModifierResetAction('hollowing');
   }, [canResetHollowing, isApplyingHollowing, isPreviewingHollowing]);
 
+  const requestClearAppliedHollowing = React.useCallback(() => {
+    setPendingModifierResetAction('clear_hollowing');
+  }, []);
+
   const requestResetHolePunch = React.useCallback(() => {
     if (!canResetHolePunch || isApplyingHolePunch) return;
     setPendingModifierResetAction('hole_punch');
@@ -15981,10 +16042,14 @@ export default function Home() {
       handleResetHollowing();
       return;
     }
+    if (action === 'clear_hollowing') {
+      handleClearAppliedHollowing();
+      return;
+    }
     if (action === 'hole_punch') {
       handleResetHolePunch();
     }
-  }, [handleResetHolePunch, handleResetHollowing, pendingModifierResetAction]);
+  }, [handleClearAppliedHollowing, handleResetHolePunch, handleResetHollowing, pendingModifierResetAction]);
 
   const handleApplyHolePunch = React.useCallback(() => {
     void (async () => {
@@ -16903,17 +16968,15 @@ export default function Home() {
     const nextCanUseAutoHolePunchDepth = Boolean(
       persistedHollowing?.enabled || persistedHollowing?.bakedIntoGeometry,
     );
-    const nextHollowingPanelState = persistedHollowing?.enabled
-      ? {
-          mode: persistedHollowing.mode === 'shell_open_face' ? 'cavity' : persistedHollowing.mode,
-          voxelResolution: persistedHollowing.voxelResolution,
-          shellThicknessMm: persistedHollowing.shellThicknessMm,
-          infillMode: persistedHollowing.infillMode ?? defaultHollowingState.infillMode,
-          infillCellMm: persistedHollowing.infillCellMm ?? defaultHollowingState.infillCellMm,
-          infillBeamRadiusMm: persistedHollowing.infillBeamRadiusMm ?? defaultHollowingState.infillBeamRadiusMm,
-          openFace: persistedHollowing.openFace,
-        }
-      : defaultHollowingState;
+    const nextHollowingPanelState = {
+      mode: (persistedHollowing?.mode ?? defaultHollowingState.mode) === 'shell_open_face' ? 'cavity' : (persistedHollowing?.mode ?? defaultHollowingState.mode),
+      voxelResolution: persistedHollowing?.voxelResolution ?? defaultHollowingState.voxelResolution,
+      shellThicknessMm: persistedHollowing?.shellThicknessMm ?? defaultHollowingState.shellThicknessMm,
+      infillMode: persistedHollowing?.infillMode ?? defaultHollowingState.infillMode,
+      infillCellMm: persistedHollowing?.infillCellMm ?? defaultHollowingState.infillCellMm,
+      infillBeamRadiusMm: persistedHollowing?.infillBeamRadiusMm ?? defaultHollowingState.infillBeamRadiusMm,
+      openFace: persistedHollowing?.openFace ?? defaultHollowingState.openFace,
+    };
 
     const nextShellOpenFaceSelected = nextHollowingPanelState.mode === 'shell_open_face'
       ? (persistedHollowing?.openFaceSelected ?? true)
@@ -17645,7 +17708,8 @@ export default function Home() {
                   key="prepare-hollowing-panel"
                   state={hollowingState}
                   onStateChange={handleHollowingStateChange}
-                  onReset={requestResetHollowing}
+                  onReset={requestClearAppliedHollowing}
+                  onResetSettings={handleResetHollowingSettings}
                   onStartEdit={handleStartHollowVoxelEditing}
                   onDoneEdit={handleDoneHollowVoxelEditing}
                   onClearEdit={handleClearHollowVoxelEditing}

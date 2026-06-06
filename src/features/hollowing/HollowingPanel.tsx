@@ -18,6 +18,7 @@ interface HollowingPanelProps {
   state: HollowingPanelState;
   onStateChange: (next: HollowingPanelState) => void;
   onReset: () => void;
+  onResetSettings: () => void;
   onStartEdit: () => void;
   onDoneEdit: () => void;
   onClearEdit: () => void;
@@ -36,6 +37,7 @@ export function HollowingPanel({
   state,
   onStateChange,
   onReset,
+  onResetSettings,
   onStartEdit,
   onDoneEdit,
   onClearEdit,
@@ -318,48 +320,70 @@ export function HollowingPanel({
             </div>
           ) : (
             <div className="flex gap-2">
-              <button
-                type="button"
-                className="ui-button ui-button-secondary flex-1 !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
-                onClick={isHollowingApplied ? onReset : onStartEdit}
-                disabled={isApplying || isPreviewing || (isHollowingApplied ? !canReset : !canEdit)}
-              >
-                {isHollowingApplied ? 'Reset' : 'Edit'}
-              </button>
-
-              <button
-                type="button"
-                className="ui-button ui-button-accent flex-1 !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
-                onClick={onApply}
-                disabled={isApplying || isPreviewing || !canApply}
-              >
-                {isApplying ? 'Applying...' : isPreviewing ? (
-                  <span className="inline-flex items-center justify-center gap-1.5">
-                    <svg
-                      className="h-3 w-3 animate-spin"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <circle
-                        cx="12"
-                        cy="12"
-                        r="9"
-                        stroke="currentColor"
-                        strokeOpacity="0.25"
-                        strokeWidth="3"
-                      />
-                      <path
-                        d="M21 12a9 9 0 0 0-9-9"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <span>Updating</span>
-                  </span>
-                ) : 'Apply'}
-              </button>
+              {isHollowingApplied ? (
+                <>
+                  <button
+                    type="button"
+                    className="ui-button ui-button-secondary flex-1 !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
+                    onClick={onResetSettings}
+                    disabled={isApplying || isPreviewing}
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-button ui-button-accent flex-1 !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
+                    onClick={onReset}
+                    disabled={isApplying || isPreviewing}
+                  >
+                    Clear
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="ui-button ui-button-secondary flex-1 !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
+                    onClick={onStartEdit}
+                    disabled={isApplying || isPreviewing || !canEdit}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-button ui-button-accent flex-1 !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
+                    onClick={onApply}
+                    disabled={isApplying || isPreviewing || !canApply}
+                  >
+                    {isApplying ? 'Applying...' : isPreviewing ? (
+                      <span className="inline-flex items-center justify-center gap-1.5">
+                        <svg
+                          className="h-3 w-3 animate-spin"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <circle
+                            cx="12"
+                            cy="12"
+                            r="9"
+                            stroke="currentColor"
+                            strokeOpacity="0.25"
+                            strokeWidth="3"
+                          />
+                          <path
+                            d="M21 12a9 9 0 0 0-9-9"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                        <span>Updating</span>
+                      </span>
+                    ) : 'Apply'}
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
