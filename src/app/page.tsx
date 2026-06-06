@@ -1556,7 +1556,7 @@ export default function Home() {
   const [prepareSmoothingSettingsExpanded, setPrepareSmoothingSettingsExpanded] = React.useState(true);
   const [hollowingState, setHollowingState] = React.useState<HollowingPanelState>({
     mode: 'cavity',
-    voxelResolution: 96,
+    voxelResolution: 48,
     shellThicknessMm: 2.0,
     infillMode: 'lattice',
     infillCellMm: 4.2426,
@@ -1641,7 +1641,7 @@ export default function Home() {
 
   const defaultHollowingState = React.useMemo<HollowingPanelState>(() => ({
     mode: 'cavity',
-    voxelResolution: 96,
+    voxelResolution: 48,
     shellThicknessMm: 2.0,
     infillMode: 'lattice',
     infillCellMm: 4.2426,

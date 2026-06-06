@@ -66,7 +66,7 @@ impl Default for HollowOptions {
     fn default() -> Self {
         Self {
             mode: HollowMode::Cavity,
-            voxel_resolution: 96,
+            voxel_resolution: 48,
             shell_thickness_mm: 2.0,
             infill_mode: InfillMode::Lattice,
             infill_cell_mm: 4.2426,
