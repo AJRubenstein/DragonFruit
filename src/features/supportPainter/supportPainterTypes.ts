@@ -1,5 +1,6 @@
 import { generateUuid } from '@/utils/uuid';
 import type { SupportPreset } from '../../supports/Settings/types';
+import type { ClientAdjacencyMap } from './useClientAdjacencyMap';
 
 // ─── Brush Identity ─────────────────────────────────────────────────────────
 
@@ -268,6 +269,10 @@ export interface SupportPainterState {
   // ─── Version 3 Custom Support Brushes State ───
   customBrushes:          Map<string, CustomBrushTemplate>;
   activeCustomBrushId:    string | null;
+
+  // ─── Client Adjacency Map ───
+  clientAdjacencyMap:     ClientAdjacencyMap | null;
+
 
   // ─── Version 4 Manual Geodesic Brushes State ───
   brushRadiusMm:          number;

@@ -704,7 +704,9 @@ let storeSnapshot: SupportPainterState = {
   conflictState: null,
   failedCandidates: [],
   activeFailureIndex: null,
+  clientAdjacencyMap: null,
 };
+
 
 function notify() {
   listeners.forEach((listener) => {
@@ -755,8 +757,10 @@ function updateSnapshot() {
     conflictState: conflictState ? { ...conflictState } : null,
     failedCandidates: [...failedCandidates],
     activeFailureIndex,
+    clientAdjacencyMap,
   };
 }
+
 
 function _remapSupportsRoiId(state: any, sourceRoiIds: string[], targetRoiId: string): any {
   const sourceSet = new Set(sourceRoiIds);
@@ -955,7 +959,10 @@ export const supportPainterStore = {
 
   setClientAdjacencyMap(map: ClientAdjacencyMap | null) {
     clientAdjacencyMap = map;
+    updateSnapshot();
+    notify();
   },
+
 
   setActiveBrush(brush: BrushType) {
     if (activeBrush === brush) return;

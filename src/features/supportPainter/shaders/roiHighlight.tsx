@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
-import { supportPainterStore } from '../supportPainterStore';
+import { supportPainterStore, useSupportPainterState } from '../supportPainterStore';
+import type { ClientAdjacencyMap } from '../useClientAdjacencyMap';
 
 /**
  * Computes a unique float ID for every triangle in flat/non-indexed geometry.
@@ -20,6 +21,99 @@ function buildTriangleIdAttribute(geometry: THREE.BufferGeometry): THREE.BufferA
 }
 
 /**
+ * Computes custom attributes for neighbors and barycentric coordinates.
+ * Allows the fragment shader to identify boundary edges (where neighbor region state differs).
+ */
+function buildAdjacencyAttributes(
+  geometry: THREE.BufferGeometry,
+  map: ClientAdjacencyMap | null
+): { neighbors: THREE.BufferAttribute; barycentrics: THREE.BufferAttribute } {
+  const positionAttr = geometry.getAttribute('position');
+  if (!positionAttr) {
+    throw new Error('Position attribute is missing from geometry');
+  }
+  const vertexCount = positionAttr.count;
+  const faceCount = Math.floor(vertexCount / 3);
+  const positions = positionAttr.array;
+
+  const neighborsArray = new Float32Array(vertexCount * 3);
+  const barycentricsArray = new Float32Array(vertexCount * 3);
+
+  // Helper to round coordinates for vertex welding matching useClientAdjacencyMap
+  const getVertexKey = (x: number, y: number, z: number): string => {
+    return `${Math.round(x * 100000)},${Math.round(y * 100000)},${Math.round(z * 100000)}`;
+  };
+
+  // Pre-calculate vertex keys for all faces to avoid redundant string creation
+  const faceKeys: [string, string, string][] = [];
+  for (let f = 0; f < faceCount; f++) {
+    const o = f * 9;
+    const k0 = getVertexKey(positions[o], positions[o + 1], positions[o + 2]);
+    const k1 = getVertexKey(positions[o + 3], positions[o + 4], positions[o + 5]);
+    const k2 = getVertexKey(positions[o + 6], positions[o + 7], positions[o + 8]);
+    faceKeys.push([k0, k1, k2]);
+  }
+
+  for (let f = 0; f < faceCount; f++) {
+    const keys = faceKeys[f];
+
+    // Default neighbors to -1.0 (no neighbor)
+    let nX = -1.0; // shares v1, v2 (opposite v0)
+    let nY = -1.0; // shares v2, v0 (opposite v1)
+    let nZ = -1.0; // shares v0, v1 (opposite v2)
+
+    if (map && map.faceToFaces[f]) {
+      const candidates = map.faceToFaces[f];
+      for (const other of candidates) {
+        const otherKeys = faceKeys[other];
+        if (!otherKeys) continue;
+
+        const hasK0 = otherKeys.includes(keys[0]);
+        const hasK1 = otherKeys.includes(keys[1]);
+        const hasK2 = otherKeys.includes(keys[2]);
+
+        if (hasK1 && hasK2) {
+          nX = other;
+        } else if (hasK2 && hasK0) {
+          nY = other;
+        } else if (hasK0 && hasK1) {
+          nZ = other;
+        }
+      }
+    }
+
+    // Set neighbor indices for all 3 vertices of face f
+    for (let v = 0; v < 3; v++) {
+      const idx = (f * 3 + v) * 3;
+      neighborsArray[idx] = nX;
+      neighborsArray[idx + 1] = nY;
+      neighborsArray[idx + 2] = nZ;
+    }
+
+    // Set barycentric coordinates for the 3 vertices of face f
+    const idx0 = (f * 3) * 3;
+    barycentricsArray[idx0] = 1.0;
+    barycentricsArray[idx0 + 1] = 0.0;
+    barycentricsArray[idx0 + 2] = 0.0;
+
+    const idx1 = (f * 3 + 1) * 3;
+    barycentricsArray[idx1] = 0.0;
+    barycentricsArray[idx1 + 1] = 1.0;
+    barycentricsArray[idx1 + 2] = 0.0;
+
+    const idx2 = (f * 3 + 2) * 3;
+    barycentricsArray[idx2] = 0.0;
+    barycentricsArray[idx2 + 1] = 0.0;
+    barycentricsArray[idx2 + 2] = 1.0;
+  }
+
+  return {
+    neighbors: new THREE.BufferAttribute(neighborsArray, 3),
+    barycentrics: new THREE.BufferAttribute(barycentricsArray, 3)
+  };
+}
+
+/**
  * Renders high-quality color overlays per-triangle using a DataTexture lookup table.
  * Supports committed ROI blending and pulsing hover previews.
  */
@@ -32,6 +126,8 @@ export function useRoiHighlightMaterial(
   const timeRef = useRef<number>(0);
   const textureRef = useRef<THREE.DataTexture | null>(null);
   const materialRef = useRef<THREE.ShaderMaterial | null>(null);
+
+  const { clientAdjacencyMap } = useSupportPainterState();
 
   // Parse mesh base color
   const baseColor = useMemo(() => {
@@ -51,20 +147,25 @@ export function useRoiHighlightMaterial(
         geom = geometry.clone();
       }
 
-      // SYNCHRONOUS INITIALIZATION: Attach attribute BEFORE geometry is ever rendered
+      // Attach triangle ID attribute
       const attr = buildTriangleIdAttribute(geom);
       geom.setAttribute('aTriangleId', attr);
+
+      // Attach adjacency and barycentric attributes
+      const { neighbors, barycentrics } = buildAdjacencyAttributes(geom, clientAdjacencyMap);
+      geom.setAttribute('aNeighbors', neighbors);
+      geom.setAttribute('aBarycentric', barycentrics);
 
       // Compute BVH bounds tree for collision detection & raycasting support
       (geom as any).computeBoundsTree?.();
 
-      console.log('[ROIHighlight] Synchronously built attribute and computed BVH boundsTree');
+      console.log('[ROIHighlight] Synchronously built attributes and computed BVH boundsTree');
     } catch (err) {
       console.error('[ROIHighlight] Failed to initialize rendering geometry copy', err);
       geom = geometry;
     }
     return geom;
-  }, [geometry, isActive]);
+  }, [geometry, isActive, clientAdjacencyMap]);
 
   // Clean up non-indexed copy on change or unmount
   useEffect(() => {
@@ -124,7 +225,12 @@ export function useRoiHighlightMaterial(
       vertexShader: `
         #include <clipping_planes_pars_vertex>
         attribute float aTriangleId;
+        attribute vec3 aNeighbors;
+        attribute vec3 aBarycentric;
+
         varying float vTriangleId;
+        varying vec3 vNeighbors;
+        varying vec3 vBarycentric;
         varying vec3 vNormal;
         varying vec3 vViewPosition;
 
@@ -135,6 +241,8 @@ export function useRoiHighlightMaterial(
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           #include <clipping_planes_vertex>
           vTriangleId = aTriangleId;
+          vNeighbors = aNeighbors;
+          vBarycentric = aBarycentric;
           vNormal = normalize(normalMatrix * normal);
           vViewPosition = -mvPosition.xyz;
           gl_Position = projectionMatrix * mvPosition;
@@ -149,8 +257,22 @@ export function useRoiHighlightMaterial(
         uniform vec3 uBaseColor;
 
         varying float vTriangleId;
+        varying vec3 vNeighbors;
+        varying vec3 vBarycentric;
         varying vec3 vNormal;
         varying vec3 vViewPosition;
+
+        // Helper to retrieve ROI info for a neighbor triangle
+        vec4 getNeighborRoi(float neighborId) {
+          if (neighborId < -0.5) {
+            return vec4(0.0);
+          }
+          float triId = floor(neighborId + 0.5);
+          float x = mod(triId, uRoiMapWidth) + 0.5;
+          float y = floor(triId / uRoiMapWidth) + 0.5;
+          vec2 uv = vec2(x / uRoiMapWidth, y / uRoiMapHeight);
+          return texture2D(uRoiMap, uv);
+        }
 
         void main() {
           #include <clipping_planes_fragment>
@@ -172,12 +294,31 @@ export function useRoiHighlightMaterial(
           vec3 normalizedNormal = normalize(normalVec);
           vec3 viewDir = normalize(vViewPosition);
 
-          // Calculate silhouette edge outline mask
-          float ndotv = abs(dot(normalizedNormal, viewDir));
-          float edgeOutline = smoothstep(0.7, 0.9, 1.0 - ndotv);
+          // Calculate screen-space derivatives for clean antialiased boundary outline
+          vec3 widthVec = fwidth(vBarycentric) + vec3(1e-5);
+          float lineWidth = 1.5; // pixel width for the outline
+          vec3 edgeVal = smoothstep(vec3(0.0), lineWidth * widthVec, vBarycentric);
 
+          // Sample neighbors to check if they are boundaries
+          vec4 nRoiX = getNeighborRoi(vNeighbors.x);
+          vec4 nRoiY = getNeighborRoi(vNeighbors.y);
+          vec4 nRoiZ = getNeighborRoi(vNeighbors.z);
+
+          vec3 isBoundary = vec3(0.0);
+          if (nRoiX.a <= 0.01 || distance(nRoiX.rgb, roi.rgb) > 0.01 || abs(nRoiX.a - roi.a) > 0.01) isBoundary.x = 1.0;
+          if (nRoiY.a <= 0.01 || distance(nRoiY.rgb, roi.rgb) > 0.01 || abs(nRoiY.a - roi.a) > 0.01) isBoundary.y = 1.0;
+          if (nRoiZ.a <= 0.01 || distance(nRoiZ.rgb, roi.rgb) > 0.01 || abs(nRoiZ.a - roi.a) > 0.01) isBoundary.z = 1.0;
+
+          float boundaryOutline = 1.0;
+          if (isBoundary.x > 0.5) boundaryOutline = min(boundaryOutline, edgeVal.x);
+          if (isBoundary.y > 0.5) boundaryOutline = min(boundaryOutline, edgeVal.y);
+          if (isBoundary.z > 0.5) boundaryOutline = min(boundaryOutline, edgeVal.z);
+
+          // Base color logic
           vec3 finalColor = roi.rgb;
           float emissiveBoost = 0.0;
+          float rimPower = 4.0;
+          float rimGlowScale = 0.25;
 
           if (roi.a < 0.6) {
             // Proposed preview: pulse color blend between model base color and active brush color
@@ -185,20 +326,16 @@ export function useRoiHighlightMaterial(
             finalColor = mix(uBaseColor, roi.rgb, pulse);
             emissiveBoost = pulse * 0.5;
           } else if (roi.a < 0.85) {
-            // Selected/Focused region: slow sinusoidal pulse at ~1Hz
-            float pulse = 0.7 + 0.3 * sin(uTime * 6.28318);
-            finalColor = roi.rgb * pulse;
-            emissiveBoost = 0.6 + pulse * 0.8;
-            
-            // Pulse active selection's silhouette black edge
-            finalColor = mix(finalColor, vec3(0.0), edgeOutline * 0.95);
+            // Selected/Focused region: active pulsing selection with strong volume glow
+            float pulse = 0.5 + 0.5 * sin(uTime * 8.0); // 1.27 Hz pulse
+            finalColor = roi.rgb;
+            emissiveBoost = 1.0 + 1.5 * pulse; // Stronger self-emissive
+            rimPower = 2.5; // Wider rim light for "volume" glow
+            rimGlowScale = 1.2 + 0.8 * pulse; // Brighter rim glow
           } else {
-            // Committed inactive ROI: no pulsing, static darkened cell-shaded silhouette outline
+            // Committed inactive ROI
             finalColor = roi.rgb;
             emissiveBoost = 0.45;
-            
-            // Border is a static darkened outline of their respective color
-            finalColor = mix(finalColor, roi.rgb * 0.25, edgeOutline * 0.85);
           }
 
           // Harmonic Diffuse Lambertian Lighting
@@ -210,8 +347,11 @@ export function useRoiHighlightMaterial(
           litColor += finalColor * 0.25 * emissiveBoost;
 
           // Add a subtle rim light/ambient glow to the selection
-          float rim = 1.0 - max(0.0, dot(normalizedNormal, vec3(0.0, 0.0, 1.0)));
-          litColor += finalColor * pow(rim, 4.0) * 0.25 * emissiveBoost;
+          float rim = 1.0 - max(0.0, dot(normalizedNormal, viewDir));
+          litColor += finalColor * pow(rim, rimPower) * rimGlowScale * emissiveBoost;
+
+          // Wrap the outer boundary in a crisp black line
+          litColor = mix(vec3(0.0), litColor, boundaryOutline);
 
           gl_FragColor = vec4(litColor, 1.0);
         }
