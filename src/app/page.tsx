@@ -1614,7 +1614,9 @@ export default function Home() {
   const [sessionShaderOverride, setSessionShaderOverride] = React.useState<MeshShaderType | null>(null);
   const [isPreviewingHollowing, setIsPreviewingHollowing] = React.useState(false);
   const [hollowPreview, setHollowPreview] = React.useState<HollowPreviewState | null>(null);
-  const shouldForceHollowingXray = scene.mode === 'prepare' && transformMgr.transformMode === 'hollowing';
+  const shouldForceHollowingXray = scene.mode === 'prepare'
+    && transformMgr.transformMode === 'hollowing'
+    && !scene.activeModel?.meshModifiers?.hollowing?.bakedIntoGeometry;
   const effectiveShaderType = (shouldForceHollowingXray || hollowPreview)
     ? 'xray'
     : (sessionShaderOverride ?? scene.shaderType);
@@ -14969,6 +14971,11 @@ export default function Home() {
           nextGeometry.dispose();
           return;
         }
+
+        // Hollowing is now baked — clear the preview overlay and exit X-Ray
+        // forced shader so the user can see surface detail for hole placement.
+        clearHollowPreview();
+        setSessionShaderOverride(null);
 
         const sourceSnapshot = snapshotGeometryPositions(sourceGeometry);
 
