@@ -2382,6 +2382,7 @@ export function calculateSmartPlacementV2(
 
     const result = gridAStar(sdf, socketPos, rootTopZ, {
         clearanceMm: clearance,
+        shaftRadius: shaftRadius,
         maxLateralMm: maxTotalLateralMm,
         minAngleFromVerticalDeg: ROUTING_ANGLE_FROM_VERTICAL_DEG,
         occupancy: context?.occupancy,
@@ -2431,6 +2432,7 @@ export function calculateSmartPlacementV2(
     if (!result.reached) {
         const wideResult = gridAStar(sdf, socketPos, rootTopZ, {
             clearanceMm: clearance,
+            shaftRadius: shaftRadius,
             maxLateralMm: maxTotalLateralMm,
             minAngleFromVerticalDeg: ROUTING_ANGLE_FROM_VERTICAL_DEG,
             occupancy: context?.occupancy,

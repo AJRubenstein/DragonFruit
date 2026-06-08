@@ -36,6 +36,8 @@ export interface GridAStarOptions {
     maxLateralMm?: number;
     /** Clearance = shaft radius + safety margin. Cells closer than this are blocked. */
     clearanceMm: number;
+    /** Shaft radius for safety margin check. */
+    shaftRadius?: number;
     /** If provided, skip cells occupied by other supports. */
     occupancy?: SupportOccupancy;
     /** Support ID to ignore in occupancy checks (don't collide with self). */
@@ -335,6 +337,8 @@ export function gridAStar(
     const goalValidator = opts.goalValidator;
     const goalPlaneHeuristic = (qz: number): number => Math.max(0, qz - gqz) * step;
 
+    const safetyClearance = opts.shaftRadius ?? (clearance * 0.5);
+
     // Per-neighbor static costs (independent of node position).
     // Resin printing philosophy: go straight down. Only deviate the minimum
     // amount needed to clear an obstruction.  Lateral and shallow-angle
@@ -504,7 +508,7 @@ export function gridAStar(
                 )) {
                     return true;
                 }
-                return sdf.segmentBlocked(ax, ay, az, bx, by, bz, clearance);
+                return sdf.segmentBlocked(ax, ay, az, bx, by, bz, safetyClearance);
             },
         );
     }
@@ -565,6 +569,11 @@ export function gridAStar(
         }
         if (expansions - lastZProgressAt > STAGNATION_LIMIT) break;
 
+        const cwx = current.x * step;
+        const cwy = current.y * step;
+        const cwz = current.z * step;
+
+        // Swim-Walk: Check if we are in the running medium and can drop straight down
         if (current.z <= gqz) {
             const parentKey = currentState.cameFrom;
             const parentPos = parentKey === undefined
@@ -577,15 +586,34 @@ export function gridAStar(
                         z: parent.z * step,
                     };
                 })();
-            if (!goalValidator || goalValidator(current.x * step, current.y * step, current.z * step, parentPos)) {
+            if (!goalValidator || goalValidator(cwx, cwy, cwz, parentPos)) {
                 goalEntry = current;
                 break;
             }
+        } else {
+            const currentDist = getNodeDistance(current.key, cwx, cwy, cwz);
+            if (currentDist >= clearance) {
+                const dropBlocked = sdf.segmentBlocked(cwx, cwy, cwz, cwx, cwy, goalZ, clearance);
+                if (!dropBlocked) {
+                    const parentKey = currentState.cameFrom;
+                    const parentPos = parentKey === undefined
+                        ? null
+                        : (() => {
+                            const parent = decodeKey(parentKey);
+                            return {
+                                x: parent.x * step,
+                                y: parent.y * step,
+                                z: parent.z * step,
+                            };
+                        })();
+                    if (!goalValidator || goalValidator(cwx, cwy, goalZ, parentPos)) {
+                        goalEntry = current;
+                        break;
+                    }
+                }
+            }
         }
 
-        const cwx = current.x * step;
-        const cwy = current.y * step;
-        const cwz = current.z * step;
         const straightDescentOnlyIndex = chooseStraightDescentIndex(current, cwx, cwy, cwz);
 
         for (let ni = 0; ni < NEIGHBOR_RUNTIME.length; ni++) {
@@ -621,16 +649,20 @@ export function gridAStar(
             const dist = getNodeDistance(nKey, wx, wy, wz);
             const requiresSegmentCheck = !endpointOnlyCollisionCheck || Math.abs(nz - current.z) > 1;
             if (!requiresSegmentCheck) {
-                if (dist < clearance) continue;
+                if (dist < safetyClearance) continue;
             } else if (getSegmentMoveBlocked(current.key, nKey, cwx, cwy, cwz, wx, wy, wz)) {
                 continue;
             }
+
+            // Medium-based step cost: Swimming vs Running
+            const isSwimming = dist < clearance;
+            const swimPenalty = isSwimming ? step * 12.0 : 0; // high cost for swimming
 
             const clearancePenalty = dist < clearance * 1.3 ? (clearance * 1.3 - dist) * 0.5 : 0;
             const edgeCost = n.dx === 0 && n.dy === 0 && n.dz < -1
                 ? Math.abs(nz - current.z) * step
                 : neighborStaticCosts[ni];
-            const tentativeG = current.g + edgeCost + clearancePenalty;
+            const tentativeG = current.g + edgeCost + swimPenalty + clearancePenalty;
 
             const existingG = existingState?.g;
             if (existingG !== undefined && tentativeG >= existingG) continue;
@@ -694,6 +726,16 @@ export function gridAStar(
     }
 
     const rawPath: Vec3[] = [];
+
+    // If the goalEntry reached was an exit node above the goalZ, append the straight drop to goalZ first
+    if (goalEntry.z > gqz) {
+        rawPath.push({
+            x: goalEntry.x * step,
+            y: goalEntry.y * step,
+            z: goalZ,
+        });
+    }
+
     let traceKey = goalEntry.key;
 
     while (traceKey !== undefined) {
