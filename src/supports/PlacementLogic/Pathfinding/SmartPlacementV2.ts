@@ -688,10 +688,7 @@ function findContactConeClearSocketSeed(args: {
     contactConeBlockedAt: ContactConeBlockedAt;
     coneTuning?: ConeAutoTuneProfile | null;
 }): ContactConeClearSocketSeed | null {
-    const candidates = buildMixedSocketRescueCandidates({
-        socketPos: args.socketPos,
-        maxTotalLateralMm: args.maxTotalLateralMm,
-    });
+    const maxRadius = Math.max(0, Math.min(args.maxTotalLateralMm, MIXED_SOCKET_RESCUE_RADII_MM[MIXED_SOCKET_RESCUE_RADII_MM.length - 1]));
     const baselineConePenaltyMetrics = getContactConeRescuePenaltyMetrics({
         socketPos: args.socketPos,
         coneScoring: args.coneScoring,
@@ -701,54 +698,74 @@ function findContactConeClearSocketSeed(args: {
     let best: ContactConeClearSocketSeed | null = null;
     const eps = 0.000001;
 
-    for (const candidateSocketPos of candidates) {
-        if (args.contactConeBlockedAt(candidateSocketPos)) {
-            continue;
+    const tipNormal = args.coneScoring.tipNormal;
+    const thetaIdeal = (Math.abs(tipNormal.x) > 0.000001 || Math.abs(tipNormal.y) > 0.000001)
+        ? Math.atan2(tipNormal.y, tipNormal.x)
+        : 0;
+
+    const angleOffsetsDeg = [0, 5, -5, 10, -10, 22.5, -22.5, 45, -45, 90, -90, 135, -135, 180];
+
+    for (const radius of MIXED_SOCKET_RESCUE_RADII_MM) {
+        if (radius > maxRadius + 0.000001) continue;
+
+        let foundClearAtRadius = false;
+
+        for (const offsetDeg of angleOffsetsDeg) {
+            if (radius === 0 && offsetDeg !== 0) {
+                continue;
+            }
+
+            const angle = thetaIdeal + (offsetDeg * Math.PI / 180);
+            const candidateSocketPos = radius === 0
+                ? { ...args.socketPos }
+                : {
+                    x: args.socketPos.x + Math.cos(angle) * radius,
+                    y: args.socketPos.y + Math.sin(angle) * radius,
+                    z: args.socketPos.z,
+                };
+
+            if (args.contactConeBlockedAt(candidateSocketPos)) {
+                continue;
+            }
+
+            const metrics = getContactConeRescuePenaltyMetrics({
+                socketPos: candidateSocketPos,
+                coneScoring: args.coneScoring,
+                reference: baselineConePenaltyMetrics,
+                tuning: args.coneTuning,
+            });
+            if (metrics.exceedsStretchLimit || metrics.exceedsDiskAngleLimit) {
+                continue;
+            }
+            const candidate: ContactConeClearSocketSeed = {
+                socketPos: candidateSocketPos,
+                addedLengthMm: metrics.addedLengthMm,
+                score: metrics.score,
+                socketShiftMm: distanceXY(candidateSocketPos, args.socketPos),
+            };
+
+            let isBetter = false;
+            if (!best) {
+                isBetter = true;
+            } else if (candidate.addedLengthMm < best.addedLengthMm - eps) {
+                isBetter = true;
+            } else if (candidate.addedLengthMm > best.addedLengthMm + eps) {
+                isBetter = false;
+            } else if (candidate.score < best.score - eps) {
+                isBetter = true;
+            } else if (candidate.score > best.score + eps) {
+                isBetter = false;
+            } else if (candidate.socketShiftMm < best.socketShiftMm - eps) {
+                isBetter = true;
+            }
+
+            if (isBetter) {
+                best = candidate;
+                foundClearAtRadius = true;
+            }
         }
 
-        const metrics = getContactConeRescuePenaltyMetrics({
-            socketPos: candidateSocketPos,
-            coneScoring: args.coneScoring,
-            reference: baselineConePenaltyMetrics,
-            tuning: args.coneTuning,
-        });
-        if (metrics.exceedsStretchLimit || metrics.exceedsDiskAngleLimit) {
-            continue;
-        }
-        const candidate: ContactConeClearSocketSeed = {
-            socketPos: candidateSocketPos,
-            addedLengthMm: metrics.addedLengthMm,
-            score: metrics.score,
-            socketShiftMm: distanceXY(candidateSocketPos, args.socketPos),
-        };
-
-        if (!best) {
-            best = candidate;
-            continue;
-        }
-
-        if (candidate.addedLengthMm < best.addedLengthMm - eps) {
-            best = candidate;
-            continue;
-        }
-        if (candidate.addedLengthMm > best.addedLengthMm + eps) {
-            continue;
-        }
-
-        if (candidate.score < best.score - eps) {
-            best = candidate;
-            continue;
-        }
-        if (candidate.score > best.score + eps) {
-            continue;
-        }
-
-        if (candidate.socketShiftMm < best.socketShiftMm - eps) {
-            best = candidate;
-        }
-
-        // Early termination: perfect seed (nominal cone, zero shift) — stop.
-        if (candidate.addedLengthMm <= 0.001 && candidate.socketShiftMm <= 0.001) {
+        if (foundClearAtRadius) {
             break;
         }
     }
@@ -813,10 +830,7 @@ export function findMixedSocketRescueCandidate(args: {
     requireJoint?: boolean;
     coneTuning?: ConeAutoTuneProfile | null;
 }): { socketPos: Vec3; base: ResolvedBaseCandidate; joints: Vec3[] } | null {
-    const candidates = buildMixedSocketRescueCandidates({
-        socketPos: args.socketPos,
-        maxTotalLateralMm: args.maxTotalLateralMm,
-    });
+    const maxRadius = Math.max(0, Math.min(args.maxTotalLateralMm, MIXED_SOCKET_RESCUE_RADII_MM[MIXED_SOCKET_RESCUE_RADII_MM.length - 1]));
     const baselineConePenaltyMetrics = getContactConeRescuePenaltyMetrics({
         socketPos: args.socketPos,
         coneScoring: args.coneScoring,
@@ -890,117 +904,158 @@ export function findMixedSocketRescueCandidate(args: {
     let foundPerfectCandidate = false;
     let foundGoodEnoughCandidate = false;
 
-    for (const candidateSocketPos of candidates) {
-        if (args.contactConeBlockedAt?.(candidateSocketPos)) {
-            continue;
-        }
+    const tipNormal = args.coneScoring.tipNormal;
+    const thetaIdeal = (Math.abs(tipNormal.x) > 0.000001 || Math.abs(tipNormal.y) > 0.000001)
+        ? Math.atan2(tipNormal.y, tipNormal.x)
+        : 0;
 
-        const socketShiftMm = distanceXY(candidateSocketPos, args.socketPos);
-        const preferNominalReachAround = socketShiftMm <= 0.000001;
+    const angleOffsetsDeg = [0, 5, -5, 10, -10, 22.5, -22.5, 45, -45, 90, -90, 135, -135, 180];
 
-        const considerCandidate = (joints: Vec3[]): void => {
-            if (args.requireJoint && joints.length === 0) {
-                return;
+    for (const radius of MIXED_SOCKET_RESCUE_RADII_MM) {
+        if (radius > maxRadius + 0.000001) continue;
+
+        let foundClearAtRadius = false;
+
+        for (const offsetDeg of angleOffsetsDeg) {
+            if (radius === 0 && offsetDeg !== 0) {
+                continue;
             }
 
-            const chainPrefix = [candidateSocketPos, ...joints];
-            for (let i = 0; i < chainPrefix.length - 1; i++) {
-                const start = chainPrefix[i];
-                const end = chainPrefix[i + 1];
-                if (segmentBlockedBetween(start, end)) {
-                    return;
+            const angle = thetaIdeal + (offsetDeg * Math.PI / 180);
+            const candidateSocketPos = radius === 0
+                ? { ...args.socketPos }
+                : {
+                    x: args.socketPos.x + Math.cos(angle) * radius,
+                    y: args.socketPos.y + Math.sin(angle) * radius,
+                    z: args.socketPos.z,
+                };
+
+            if (args.contactConeBlockedAt?.(candidateSocketPos)) {
+                continue;
+            }
+
+            const socketShiftMm = distanceXY(candidateSocketPos, args.socketPos);
+            const preferNominalReachAround = socketShiftMm <= 0.000001;
+
+            let candidateValid = false;
+
+            const considerCandidate = (joints: Vec3[]): boolean => {
+                if (args.requireJoint && joints.length === 0) {
+                    return false;
                 }
-                if (!segmentSatisfiesLengthAwareMaxAngleFromVertical(start, end, args.maxAngleFromVerticalDeg)) {
-                    return;
+
+                const chainPrefix = [candidateSocketPos, ...joints];
+                for (let i = 0; i < chainPrefix.length - 1; i++) {
+                    const start = chainPrefix[i];
+                    const end = chainPrefix[i + 1];
+                    if (segmentBlockedBetween(start, end)) {
+                        return false;
+                    }
+                    if (!segmentSatisfiesLengthAwareMaxAngleFromVertical(start, end, args.maxAngleFromVerticalDeg)) {
+                        return false;
+                    }
                 }
-            }
 
-            const terminalPoint = joints[joints.length - 1] ?? candidateSocketPos;
-            const resolvedBase = getResolvedBaseForTerminalPoint(terminalPoint);
-            if (!resolvedBase) {
-                return;
-            }
+                const terminalPoint = joints[joints.length - 1] ?? candidateSocketPos;
+                const resolvedBase = getResolvedBaseForTerminalPoint(terminalPoint);
+                if (!resolvedBase) {
+                    return false;
+                }
 
-            const rootTopTarget = resolvedBase.rootTopTarget;
-            if (segmentBlockedBetween(terminalPoint, rootTopTarget)) {
-                return;
-            }
-            if (!segmentSatisfiesLengthAwareMaxAngleFromVertical(terminalPoint, rootTopTarget, args.maxAngleFromVerticalDeg)) {
-                return;
-            }
+                const rootTopTarget = resolvedBase.rootTopTarget;
+                if (segmentBlockedBetween(terminalPoint, rootTopTarget)) {
+                    return false;
+                }
+                if (!segmentSatisfiesLengthAwareMaxAngleFromVertical(terminalPoint, rootTopTarget, args.maxAngleFromVerticalDeg)) {
+                    return false;
+                }
 
-            const conePenaltyMetrics = getConePenaltyMetrics(candidateSocketPos);
-            if (conePenaltyMetrics.exceedsStretchLimit || conePenaltyMetrics.exceedsDiskAngleLimit) {
-                return;
-            }
+                const conePenaltyMetrics = getConePenaltyMetrics(candidateSocketPos);
+                if (conePenaltyMetrics.exceedsStretchLimit || conePenaltyMetrics.exceedsDiskAngleLimit) {
+                    return false;
+                }
 
-            const candidate: MixedSocketRescueCandidate = {
-                socketPos: candidateSocketPos,
-                base: resolvedBase,
-                joints,
-                coneAddedLengthMm: conePenaltyMetrics.addedLengthMm,
-                conePenaltyScore: conePenaltyMetrics.score,
-                socketShiftMm,
-                metrics: getResolvedChainMetrics(candidateSocketPos, joints, rootTopTarget),
+                const candidate: MixedSocketRescueCandidate = {
+                    socketPos: candidateSocketPos,
+                    base: resolvedBase,
+                    joints,
+                    coneAddedLengthMm: conePenaltyMetrics.addedLengthMm,
+                    conePenaltyScore: conePenaltyMetrics.score,
+                    socketShiftMm,
+                    metrics: getResolvedChainMetrics(candidateSocketPos, joints, rootTopTarget),
+                };
+
+                if (!best || isMixedSocketRescueCandidateBetter(candidate, best)) {
+                    best = candidate;
+                    foundPerfectCandidate = candidate.coneAddedLengthMm <= 0.001
+                        && candidate.socketShiftMm <= 0.001
+                        && candidate.joints.length === 0;
+                    foundGoodEnoughCandidate = candidate.coneAddedLengthMm <= 0.001
+                        && candidate.socketShiftMm <= 2.0;
+                }
+
+                return true;
             };
 
-            if (!best || isMixedSocketRescueCandidateBetter(candidate, best)) {
-                best = candidate;
-                foundPerfectCandidate = candidate.coneAddedLengthMm <= 0.001
-                    && candidate.socketShiftMm <= 0.001
-                    && candidate.joints.length === 0;
-                foundGoodEnoughCandidate = candidate.coneAddedLengthMm <= 0.001
-                    && candidate.socketShiftMm <= 2.0;
+            const ok = considerCandidate([]);
+            if (ok) {
+                candidateValid = true;
             }
-        };
 
-        considerCandidate([]);
+            if (foundPerfectCandidate) {
+                break;
+            }
 
-        // Early termination: if we already have a "perfect" candidate
-        // (zero cone stretch, tiny socket shift, zero joints), stop.
-        // Further candidates can't improve on this.
+            const skipJointSearch = foundGoodEnoughCandidate;
+            const jointZStepMm = preferNominalReachAround
+                ? MIXED_SOCKET_RESCUE_NOMINAL_JOINT_Z_STEP_MM
+                : MIXED_SOCKET_RESCUE_JOINT_Z_STEP_MM;
+            const jointRadii = preferNominalReachAround
+                ? MIXED_SOCKET_RESCUE_NOMINAL_JOINT_RADII_MM
+                : MIXED_SOCKET_RESCUE_NOMINAL_JOINT_RADII_MM;
+            const availableDrop = candidateSocketPos.z - args.rootTopZ;
+
+            if (availableDrop > jointZStepMm + 0.000001 && !skipJointSearch) {
+                for (
+                    let jointZ = candidateSocketPos.z - jointZStepMm;
+                    jointZ > args.rootTopZ + jointZStepMm;
+                    jointZ -= jointZStepMm
+                ) {
+                    const centerX = candidateSocketPos.x;
+                    const centerY = candidateSocketPos.y;
+
+                    for (const jointRadius of jointRadii) {
+                        if (jointRadius === 0) {
+                            if (considerCandidate([{ x: centerX, y: centerY, z: jointZ }])) {
+                                candidateValid = true;
+                            }
+                            continue;
+                        }
+
+                        for (const direction of MIXED_SOCKET_RESCUE_JOINT_DIRECTION_VECTORS) {
+                            if (considerCandidate([{
+                                x: centerX + direction.x * jointRadius,
+                                y: centerY + direction.y * jointRadius,
+                                z: jointZ,
+                            }])) {
+                                candidateValid = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (candidateValid) {
+                foundClearAtRadius = true;
+            }
+        }
+
         if (foundPerfectCandidate) {
             break;
         }
 
-        // Secondary early exit: if a good-enough candidate exists (no cone stretch,
-        // socket shift ≤ 2mm), skip expensive joint search for remaining candidates
-        // since they'll only differ in socket shift which is a lower-priority metric.
-        const skipJointSearch = foundGoodEnoughCandidate;
-
-        const jointZStepMm = preferNominalReachAround
-            ? MIXED_SOCKET_RESCUE_NOMINAL_JOINT_Z_STEP_MM
-            : MIXED_SOCKET_RESCUE_JOINT_Z_STEP_MM;
-        const jointRadii = preferNominalReachAround
-            ? MIXED_SOCKET_RESCUE_NOMINAL_JOINT_RADII_MM
-            : MIXED_SOCKET_RESCUE_JOINT_RADII_MM;
-        const availableDrop = candidateSocketPos.z - args.rootTopZ;
-        if (availableDrop <= jointZStepMm + 0.000001 || skipJointSearch) {
-            continue;
-        }
-
-        for (
-            let jointZ = candidateSocketPos.z - jointZStepMm;
-            jointZ > args.rootTopZ + jointZStepMm;
-            jointZ -= jointZStepMm
-        ) {
-            const centerX = candidateSocketPos.x;
-            const centerY = candidateSocketPos.y;
-
-            for (const jointRadius of jointRadii) {
-                if (jointRadius === 0) {
-                    considerCandidate([{ x: centerX, y: centerY, z: jointZ }]);
-                    continue;
-                }
-
-                for (const direction of MIXED_SOCKET_RESCUE_JOINT_DIRECTION_VECTORS) {
-                    considerCandidate([{
-                        x: centerX + direction.x * jointRadius,
-                        y: centerY + direction.y * jointRadius,
-                        z: jointZ,
-                    }]);
-                }
-            }
+        if (foundClearAtRadius) {
+            break;
         }
     }
 
@@ -1038,10 +1093,7 @@ export function findStraightSocketRescueCandidate(args: {
     contactConeBlockedAt?: ContactConeBlockedAt;
     coneTuning?: ConeAutoTuneProfile | null;
 }): { socketPos: Vec3; base: ResolvedBaseCandidate } | null {
-    const candidates = buildStraightSocketRescueCandidates({
-        socketPos: args.socketPos,
-        maxTotalLateralMm: args.maxTotalLateralMm,
-    });
+    const maxRadius = Math.max(0, Math.min(args.maxTotalLateralMm, STRAIGHT_SOCKET_RESCUE_RADII_MM[STRAIGHT_SOCKET_RESCUE_RADII_MM.length - 1]));
     const baselineConePenaltyMetrics = args.coneScoring
         ? getContactConeRescuePenaltyMetrics({
             socketPos: args.socketPos,
@@ -1089,99 +1141,124 @@ export function findStraightSocketRescueCandidate(args: {
         return metrics;
     };
 
-    for (const candidateSocketPos of candidates) {
-        if (args.contactConeBlockedAt?.(candidateSocketPos)) {
-            continue;
+    const tipNormal = args.coneScoring?.tipNormal ?? { x: 0, y: 0, z: 1 };
+    const thetaIdeal = (Math.abs(tipNormal.x) > 0.000001 || Math.abs(tipNormal.y) > 0.000001)
+        ? Math.atan2(tipNormal.y, tipNormal.x)
+        : 0;
+
+    const angleOffsetsDeg = [0, 5, -5, 10, -10, 22.5, -22.5, 45, -45, 90, -90, 135, -135, 180];
+
+    for (const radius of STRAIGHT_SOCKET_RESCUE_RADII_MM) {
+        if (radius > maxRadius + 0.000001) continue;
+
+        let foundClearAtRadius = false;
+
+        for (const offsetDeg of angleOffsetsDeg) {
+            if (radius === 0 && offsetDeg !== 0) {
+                continue;
+            }
+
+            const angle = thetaIdeal + (offsetDeg * Math.PI / 180);
+            const candidateSocketPos = radius === 0
+                ? { ...args.socketPos }
+                : {
+                    x: args.socketPos.x + Math.cos(angle) * radius,
+                    y: args.socketPos.y + Math.sin(angle) * radius,
+                    z: args.socketPos.z,
+                };
+
+            if (args.contactConeBlockedAt?.(candidateSocketPos)) {
+                continue;
+            }
+
+            const conePenaltyMetrics = getConePenaltyMetrics(candidateSocketPos);
+            if (conePenaltyMetrics.exceedsStretchLimit || conePenaltyMetrics.exceedsDiskAngleLimit) {
+                continue;
+            }
+            const conePenaltyScore = conePenaltyMetrics.score;
+            const coneAddedLengthMm = conePenaltyMetrics.addedLengthMm;
+            const socketShiftMm = distanceXY(candidateSocketPos, args.socketPos);
+            const eps = 0.000001;
+
+            if (bestCandidate) {
+                if (coneAddedLengthMm > bestCandidate.coneAddedLengthMm + eps) {
+                    continue;
+                }
+                if (coneAddedLengthMm < bestCandidate.coneAddedLengthMm - eps) {
+                    // continue evaluating this better-length candidate
+                } else if (conePenaltyScore > bestCandidate.conePenaltyScore + eps) {
+                    continue;
+                }
+                if (conePenaltyScore > bestCandidate.conePenaltyScore + eps) {
+                    continue;
+                }
+                if (
+                    Math.abs(conePenaltyScore - bestCandidate.conePenaltyScore) <= eps
+                    && socketShiftMm > bestCandidate.socketShiftMm + eps
+                ) {
+                    continue;
+                }
+            }
+
+            const resolved = resolveCommittedBaseCandidate({
+                preferredBottomPos: { x: candidateSocketPos.x, y: candidateSocketPos.y, z: 0 },
+                lastSegmentStart: candidateSocketPos,
+                rootTopZ: args.rootTopZ,
+                gridEnabled: args.gridEnabled,
+                spacingMm: args.spacingMm,
+                maxNearestNodeSearchRings: args.maxNearestNodeSearchRings,
+                sdf: args.sdf,
+                diskHeight: args.diskHeight,
+                coneHeight: args.coneHeight,
+                rootsRadius: args.rootsRadius,
+                shaftRadius: args.shaftRadius,
+                clearance: args.clearance,
+                buildNearestCandidateNodeKeys: args.buildNearestCandidateNodeKeys,
+                subGridOffset: args.subGridOffset,
+                rootsDiskBlockedAt: args.rootsDiskBlockedAt,
+                segmentBlockedBetween: args.segmentBlockedBetween,
+            });
+            if (resolved) {
+                const candidate = {
+                    socketPos: candidateSocketPos,
+                    base: resolved,
+                    coneAddedLengthMm,
+                    conePenaltyScore,
+                    socketShiftMm,
+                };
+
+                let isBetter = false;
+                if (!bestCandidate) {
+                    isBetter = true;
+                } else if (candidate.coneAddedLengthMm < bestCandidate.coneAddedLengthMm - eps) {
+                    isBetter = true;
+                } else if (candidate.coneAddedLengthMm > bestCandidate.coneAddedLengthMm + eps) {
+                    isBetter = false;
+                } else if (candidate.conePenaltyScore < bestCandidate.conePenaltyScore - eps) {
+                    isBetter = true;
+                } else if (candidate.conePenaltyScore > bestCandidate.conePenaltyScore + eps) {
+                    isBetter = false;
+                } else if (candidate.socketShiftMm < bestCandidate.socketShiftMm - eps) {
+                    isBetter = true;
+                } else if (candidate.socketShiftMm > bestCandidate.socketShiftMm + eps) {
+                    isBetter = false;
+                } else if ((candidate.base.inboundLateralMm ?? 0) < (bestCandidate.base.inboundLateralMm ?? 0) - eps) {
+                    isBetter = true;
+                } else if ((candidate.base.inboundLateralMm ?? 0) > (bestCandidate.base.inboundLateralMm ?? 0) + eps) {
+                    isBetter = false;
+                } else if (candidate.base.snapDistance < bestCandidate.base.snapDistance - eps) {
+                    isBetter = true;
+                }
+
+                if (isBetter) {
+                    bestCandidate = candidate;
+                    foundClearAtRadius = true;
+                }
+            }
         }
 
-        const conePenaltyMetrics = getConePenaltyMetrics(candidateSocketPos);
-        if (conePenaltyMetrics.exceedsStretchLimit || conePenaltyMetrics.exceedsDiskAngleLimit) {
-            continue;
-        }
-        const conePenaltyScore = conePenaltyMetrics.score;
-        const coneAddedLengthMm = conePenaltyMetrics.addedLengthMm;
-        const socketShiftMm = distanceXY(candidateSocketPos, args.socketPos);
-        const eps = 0.000001;
-        if (bestCandidate) {
-            if (coneAddedLengthMm > bestCandidate.coneAddedLengthMm + eps) {
-                continue;
-            }
-            if (coneAddedLengthMm < bestCandidate.coneAddedLengthMm - eps) {
-                // continue evaluating this better-length candidate
-            } else if (conePenaltyScore > bestCandidate.conePenaltyScore + eps) {
-                continue;
-            }
-            if (conePenaltyScore > bestCandidate.conePenaltyScore + eps) {
-                continue;
-            }
-            if (
-                Math.abs(conePenaltyScore - bestCandidate.conePenaltyScore) <= eps
-                && socketShiftMm > bestCandidate.socketShiftMm + eps
-            ) {
-                continue;
-            }
-        }
-
-        const resolved = resolveCommittedBaseCandidate({
-            preferredBottomPos: { x: candidateSocketPos.x, y: candidateSocketPos.y, z: 0 },
-            lastSegmentStart: candidateSocketPos,
-            rootTopZ: args.rootTopZ,
-            gridEnabled: args.gridEnabled,
-            spacingMm: args.spacingMm,
-            maxNearestNodeSearchRings: args.maxNearestNodeSearchRings,
-            sdf: args.sdf,
-            diskHeight: args.diskHeight,
-            coneHeight: args.coneHeight,
-            rootsRadius: args.rootsRadius,
-            shaftRadius: args.shaftRadius,
-            clearance: args.clearance,
-            buildNearestCandidateNodeKeys: args.buildNearestCandidateNodeKeys,
-            subGridOffset: args.subGridOffset,
-            rootsDiskBlockedAt: args.rootsDiskBlockedAt,
-            segmentBlockedBetween: args.segmentBlockedBetween,
-        });
-        if (resolved) {
-            const candidate = {
-                socketPos: candidateSocketPos,
-                base: resolved,
-                coneAddedLengthMm,
-                conePenaltyScore,
-                socketShiftMm,
-            };
-
-            if (!bestCandidate) {
-                bestCandidate = candidate;
-                continue;
-            }
-
-            if (candidate.coneAddedLengthMm < bestCandidate.coneAddedLengthMm - eps) {
-                bestCandidate = candidate;
-                continue;
-            }
-            if (candidate.coneAddedLengthMm > bestCandidate.coneAddedLengthMm + eps) {
-                continue;
-            }
-            if (candidate.conePenaltyScore < bestCandidate.conePenaltyScore - eps) {
-                bestCandidate = candidate;
-                continue;
-            }
-            if (candidate.conePenaltyScore > bestCandidate.conePenaltyScore + eps) {
-                continue;
-            }
-            if (candidate.socketShiftMm < bestCandidate.socketShiftMm - eps) {
-                bestCandidate = candidate;
-                continue;
-            }
-            if (candidate.socketShiftMm > bestCandidate.socketShiftMm + eps) {
-                continue;
-            }
-            if ((candidate.base.inboundLateralMm ?? 0) < (bestCandidate.base.inboundLateralMm ?? 0) - eps) {
-                bestCandidate = candidate;
-                continue;
-            }
-            if (candidate.base.snapDistance < bestCandidate.base.snapDistance - eps) {
-                bestCandidate = candidate;
-            }
+        if (foundClearAtRadius) {
+            break;
         }
     }
 
