@@ -94,9 +94,19 @@ export function solveDeterministicFieldPath(
             vz = -1;
         }
 
-        const nextX = current.x + vx * stepMm;
-        const nextY = current.y + vy * stepMm;
-        const nextZ = current.z + vz * stepMm;
+        let nextX = current.x + vx * stepMm;
+        let nextY = current.y + vy * stepMm;
+        let nextZ = current.z + vz * stepMm;
+
+        // Collision projection check: if next step is inside clearance, push out along the gradient
+        const nextDist = sdf.distanceAtTrilinear(nextX, nextY, nextZ);
+        if (nextDist < dSafety) {
+            const { gradient: nextGrad } = sdf.distanceAndGradientAt(nextX, nextY, nextZ, dClearance);
+            const pushMag = dSafety - nextDist;
+            nextX += nextGrad.x * pushMag;
+            nextY += nextGrad.y * pushMag;
+            nextZ += nextGrad.z * pushMag;
+        }
 
         const dx = nextX - startPos.x;
         const dy = nextY - startPos.y;

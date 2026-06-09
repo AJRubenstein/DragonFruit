@@ -1099,22 +1099,29 @@ export function SupportSidebar() {
                                     />
 
                                     {/* TEMPORARY: Switch between A* Swim-Walk and Potential Gradient modes */}
-                                    <div className="flex items-center justify-between p-2 bg-neutral-750 rounded-md border border-neutral-700 my-1 gap-2">
-                                        <div className="flex flex-col min-w-0">
-                                            <span className="text-xs font-semibold text-neutral-300 truncate">Solver Mode (Temporary)</span>
-                                            <span className="text-[9px] text-neutral-400 truncate">Switch path solver algorithm</span>
-                                        </div>
-                                        <SelectDropdown
-                                            value={settings.shaft.routingAlgorithm ?? 'potential'}
-                                            onChange={(value) => updateShaftProfile({ routingAlgorithm: value as 'astar' | 'potential' })}
-                                            options={[
-                                                { value: 'potential', label: 'Potential Gradient' },
-                                                { value: 'astar', label: 'A* Swim-Walk' },
-                                            ]}
-                                            className="w-[140px] space-y-0"
-                                            selectClassName="w-full h-8 px-2 pr-8 text-xs truncate"
-                                            menuClassName="!min-w-[140px]"
-                                        />
+                                    <div className="flex items-center justify-between p-1.5 bg-neutral-750 rounded-md border border-neutral-700 my-1 gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => updateShaftProfile({ routingAlgorithm: 'potential' })}
+                                            className={`flex-1 py-1 px-1 rounded text-[10px] font-semibold transition-all text-center ${
+                                                settings.shaft.routingAlgorithm === 'potential'
+                                                    ? 'bg-blue-600 text-white shadow-sm'
+                                                    : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 border border-neutral-700 hover:text-neutral-300'
+                                            }`}
+                                        >
+                                            Potential Gradient
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => updateShaftProfile({ routingAlgorithm: 'astar' })}
+                                            className={`flex-1 py-1 px-1 rounded text-[10px] font-semibold transition-all text-center ${
+                                                settings.shaft.routingAlgorithm === 'astar'
+                                                    ? 'bg-blue-600 text-white shadow-sm'
+                                                    : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 border border-neutral-700 hover:text-neutral-300'
+                                            }`}
+                                        >
+                                            A* Swim-Walk
+                                        </button>
                                     </div>
 
                                     {activeKind === 'raft' ? (

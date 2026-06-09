@@ -1767,6 +1767,9 @@ export function calculateSmartPlacementV2(
 ): TrunkPlacementResult {
     const { mesh, modelId } = input;
     const settings = getSettings();
+    const routingAlgorithm = settings.devToolsEnabled && settings.devTools
+        ? settings.devTools.routingAlgorithm
+        : (settings.shaft.routingAlgorithm ?? 'potential');
     const shaftRadius = settings.shaft.diameterMm / 2;
     const debugEnabled = getSupportPathfindingDebugEnabled();
     const debugTuningEnabled = getSupportPathfindingDebugTuningEnabled();
@@ -2186,7 +2189,8 @@ export function calculateSmartPlacementV2(
 
     let activeConeClear = coneClear;
     if (!coneClear) {
-        const mixedSocketRescue = getJointedMixedSocketRescueFallback();
+        const skipDiscreteRescues = routingAlgorithm === 'potential';
+        const mixedSocketRescue = skipDiscreteRescues ? null : getJointedMixedSocketRescueFallback();
         if (mixedSocketRescue) {
             setDebugOutcome('fallback', 'cone-blocked jointed rescue');
             if (debugEnabled) {
@@ -2251,7 +2255,7 @@ export function calculateSmartPlacementV2(
             // region.  Only fail if A* also can't find a path (caught below).
             // Click-time placement still tries the expensive straight/mixed
             // rescue fallbacks since it has the full expansion budget.
-            if (!isPreview) {
+            if (!isPreview && !skipDiscreteRescues) {
                 const straightRescueFallback = buildStraightRescueFallback();
                 if (straightRescueFallback) {
                     return straightRescueFallback;
@@ -2415,9 +2419,6 @@ export function calculateSmartPlacementV2(
     };
 
     let result;
-    const routingAlgorithm = settings.devToolsEnabled && settings.devTools
-        ? settings.devTools.routingAlgorithm
-        : (settings.shaft.routingAlgorithm ?? 'potential');
     const fieldDeterministic = settings.devToolsEnabled && settings.devTools
         ? settings.devTools.fieldDeterministic
         : (routingAlgorithm === 'potential');

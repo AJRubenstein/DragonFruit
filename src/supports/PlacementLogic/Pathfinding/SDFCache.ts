@@ -480,7 +480,7 @@ export class SDFCache {
      * surface than `clearance` mm (i.e. would collide for the given radius).
      */
     isBlocked(wx: number, wy: number, wz: number, clearance: number): boolean {
-        return this.distanceAt(wx, wy, wz) < clearance;
+        return this.distanceAtTrilinear(wx, wy, wz) < clearance;
     }
 
     /**

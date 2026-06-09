@@ -260,6 +260,10 @@ export function loadSettingsFromLocalStorage(): boolean {
         // Force reset dev tools on load
         parsed.devToolsEnabled = false;
         parsed.devTools = createDefaultSettings().devTools;
+        // Force reset routingAlgorithm to potential on launch
+        if (parsed.shaft) {
+            parsed.shaft.routingAlgorithm = 'potential';
+        }
         currentSettings = mergeWithDefaults(parsed);
         notify();
         console.log('[SettingsStore] Loaded from localStorage (DevTools reset)');
