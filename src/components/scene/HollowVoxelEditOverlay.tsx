@@ -1,5 +1,4 @@
 import React from 'react';
-import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
 type HollowVoxelEditOverlayProps = {
@@ -11,99 +10,130 @@ type HollowVoxelEditOverlayProps = {
   onToggleVoxel?: (voxelIndex: number) => void;
 };
 
-const YELLOW = '#ffd928';
-const BLUE = '#3f8fff';
-const YELLOW_COLOR = new THREE.Color(YELLOW);
-const BLUE_COLOR = new THREE.Color(BLUE);
+const UNBLOCKED = new THREE.Color('#66ecff');
+const BLOCKED = new THREE.Color('#ffd928');
+const EDGE_COLOR = '#1a3340';
 
-const VOXEL_POINTS_VERTEX_SHADER = `
-attribute vec3 color;
+/** 12 edges of a unit cube centred at origin, as 24 vertex positions. */
+const CUBE_EDGE_VERTICES = new Float32Array([
+  -0.5, -0.5, -0.5,  0.5, -0.5, -0.5,
+   0.5, -0.5, -0.5,  0.5,  0.5, -0.5,
+   0.5,  0.5, -0.5, -0.5,  0.5, -0.5,
+  -0.5,  0.5, -0.5, -0.5, -0.5, -0.5,
+  -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,
+   0.5, -0.5,  0.5,  0.5,  0.5,  0.5,
+   0.5,  0.5,  0.5, -0.5,  0.5,  0.5,
+  -0.5,  0.5,  0.5, -0.5, -0.5,  0.5,
+  -0.5, -0.5, -0.5, -0.5, -0.5,  0.5,
+   0.5, -0.5, -0.5,  0.5, -0.5,  0.5,
+   0.5,  0.5, -0.5,  0.5,  0.5,  0.5,
+  -0.5,  0.5, -0.5, -0.5,  0.5,  0.5,
+]);
 
-uniform float uRadius;
-uniform float uViewportHeight;
-uniform float uPixelRatio;
-uniform float uIsPerspective;
-
-varying vec3 vColor;
-varying vec3 vViewCenter;
-varying float vViewRadius;
-
-void main() {
-  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-  float scaleX = length(modelMatrix[0].xyz);
-  float scaleY = length(modelMatrix[1].xyz);
-  float scaleZ = length(modelMatrix[2].xyz);
-  float scaledRadius = uRadius * max(max(scaleX, scaleY), scaleZ);
-
-  float pointSize = scaledRadius * uViewportHeight * uPixelRatio * projectionMatrix[1][1];
-  if (uIsPerspective > 0.5) {
-    pointSize /= max(1e-6, -mvPosition.z);
-  }
-
-  gl_PointSize = max(pointSize, 1.0);
-  gl_Position = projectionMatrix * mvPosition;
-
-  vColor = color;
-  vViewCenter = mvPosition.xyz;
-  vViewRadius = scaledRadius;
-}
-`;
-
-const VOXEL_POINTS_FRAGMENT_SHADER = `
-uniform float uOpacity;
-uniform mat4 uProjectionMatrix;
-
-varying vec3 vColor;
-varying vec3 vViewCenter;
-varying float vViewRadius;
-
-void main() {
-  vec2 uv = gl_PointCoord * 2.0 - 1.0;
-  float radiusSq = dot(uv, uv);
-  if (radiusSq > 1.0) {
-    discard;
-  }
-
-  float sphereZ = sqrt(max(0.0, 1.0 - radiusSq));
-  vec3 normal = normalize(vec3(uv.x, -uv.y, sphereZ));
-
-  // Soft front lighting: light from upper-right with gentle contrast.
-  vec3 lightDir = normalize(vec3(-0.35, 0.50, 0.79));
-  float diffuse = 0.40 + max(dot(normal, lightDir), 0.0) * 0.60;
-  // Gentle rim to separate overlapping spheres.
-  float rim = pow(1.0 - max(normal.z, 0.0), 2.5) * 0.12;
-
-  vec3 shaded = vColor * (diffuse + rim);
-
-  gl_FragColor = vec4(shaded, uOpacity);
-}
-`;
-
-function buildVoxelPositions(
+function buildEdgePositions(
   voxelCenters: Float32Array,
+  blockedVoxelCenters: Float32Array | undefined,
+  voxelSizeMm: number,
   offsetX: number,
   offsetY: number,
   offsetZ: number,
 ): Float32Array {
-  const positions = new Float32Array(voxelCenters.length);
-  for (let offset = 0; offset < voxelCenters.length; offset += 3) {
-    positions[offset] = voxelCenters[offset] + offsetX;
-    positions[offset + 1] = voxelCenters[offset + 1] + offsetY;
-    positions[offset + 2] = voxelCenters[offset + 2] + offsetZ;
+  const removedCount = Math.floor(voxelCenters.length / 3);
+  const blockedCount = blockedVoxelCenters
+    ? Math.floor(blockedVoxelCenters.length / 3)
+    : 0;
+  const total = removedCount + blockedCount;
+  const out = new Float32Array(total * 72);
+
+  const writeEdges = (i: number, cx: number, cy: number, cz: number) => {
+    const vo = i * 72;
+    for (let v = 0; v < 72; v += 3) {
+      out[vo + v]     = cx + CUBE_EDGE_VERTICES[v]     * voxelSizeMm;
+      out[vo + v + 1] = cy + CUBE_EDGE_VERTICES[v + 1] * voxelSizeMm;
+      out[vo + v + 2] = cz + CUBE_EDGE_VERTICES[v + 2] * voxelSizeMm;
+    }
+  };
+
+  for (let i = 0; i < removedCount; i += 1) {
+    const base = i * 3;
+    writeEdges(i, voxelCenters[base] + offsetX, voxelCenters[base + 1] + offsetY, voxelCenters[base + 2] + offsetZ);
   }
-  return positions;
+  if (blockedVoxelCenters) {
+    for (let i = 0; i < blockedCount; i += 1) {
+      const base = i * 3;
+      writeEdges(removedCount + i, blockedVoxelCenters[base] + offsetX, blockedVoxelCenters[base + 1] + offsetY, blockedVoxelCenters[base + 2] + offsetZ);
+    }
+  }
+  return out;
 }
 
-function buildVoxelColors(count: number, blockedVoxelIndexSet: Set<number>): Float32Array {
-  const colors = new Float32Array(count * 3);
-  for (let index = 0; index < count; index += 1) {
-    const base = index * 3;
-    const color = blockedVoxelIndexSet.has(index) ? BLUE_COLOR : YELLOW_COLOR;
-    colors[base] = color.r;
-    colors[base + 1] = color.g;
-    colors[base + 2] = color.b;
+function buildInstanceData(
+  voxelCenters: Float32Array,
+  blockedVoxelCenters: Float32Array | undefined,
+  voxelSizeMm: number,
+  offsetX: number,
+  offsetY: number,
+  offsetZ: number,
+  blockedVoxelIndexSet: Set<number>,
+): { matrices: Float32Array; colors: Float32Array } {
+  const removedCount = Math.floor(voxelCenters.length / 3);
+  const blockedCount = blockedVoxelCenters
+    ? Math.floor(blockedVoxelCenters.length / 3)
+    : 0;
+  const total = removedCount + blockedCount;
+  const matrices = new Float32Array(total * 16);
+  const colors = new Float32Array(total * 3);
+  const scale = voxelSizeMm;
+
+  const writeInstance = (i: number, cx: number, cy: number, cz: number, isBlocked: boolean) => {
+    const m = i * 16;
+    matrices[m] = scale;
+    matrices[m + 1] = 0;
+    matrices[m + 2] = 0;
+    matrices[m + 3] = 0;
+    matrices[m + 4] = 0;
+    matrices[m + 5] = scale;
+    matrices[m + 6] = 0;
+    matrices[m + 7] = 0;
+    matrices[m + 8] = 0;
+    matrices[m + 9] = 0;
+    matrices[m + 10] = scale;
+    matrices[m + 11] = 0;
+    matrices[m + 12] = cx;
+    matrices[m + 13] = cy;
+    matrices[m + 14] = cz;
+    matrices[m + 15] = 1;
+    const c = isBlocked ? BLOCKED : UNBLOCKED;
+    const cb = i * 3;
+    colors[cb] = c.r;
+    colors[cb + 1] = c.g;
+    colors[cb + 2] = c.b;
+  };
+
+  for (let i = 0; i < removedCount; i += 1) {
+    const base = i * 3;
+    writeInstance(
+      i,
+      voxelCenters[base] + offsetX,
+      voxelCenters[base + 1] + offsetY,
+      voxelCenters[base + 2] + offsetZ,
+      blockedVoxelIndexSet.has(i),
+    );
   }
-  return colors;
+  if (blockedVoxelCenters) {
+    for (let i = 0; i < blockedCount; i += 1) {
+      const base = i * 3;
+      const idx = removedCount + i;
+      writeInstance(
+        idx,
+        blockedVoxelCenters[base] + offsetX,
+        blockedVoxelCenters[base + 1] + offsetY,
+        blockedVoxelCenters[base + 2] + offsetZ,
+        true,
+      );
+    }
+  }
+  return { matrices, colors };
 }
 
 export function HollowVoxelEditOverlay({
@@ -114,106 +144,93 @@ export function HollowVoxelEditOverlay({
   meshOffset,
   onToggleVoxel,
 }: HollowVoxelEditOverlayProps) {
-  const { camera, gl, size } = useThree();
-  const pointsRef = React.useRef<THREE.Points>(null);
+  const meshRef = React.useRef<THREE.InstancedMesh>(null);
   const removedCount = Math.floor(voxelCenters.length / 3);
   const blockedCount = blockedVoxelCenters
     ? Math.floor(blockedVoxelCenters.length / 3)
     : 0;
   const totalCount = removedCount + blockedCount;
 
-  // Merge removed + blocked positions into one buffer.
-  const mergedPositions = React.useMemo(() => {
-    const merged = new Float32Array(totalCount * 3);
-    const base = buildVoxelPositions(voxelCenters, meshOffset.x, meshOffset.y, meshOffset.z);
-    merged.set(base, 0);
-    if (blockedVoxelCenters && blockedCount > 0) {
-      const blockedPos = buildVoxelPositions(blockedVoxelCenters, meshOffset.x, meshOffset.y, meshOffset.z);
-      merged.set(blockedPos, removedCount * 3);
-    }
-    return merged;
-  }, [blockedCount, blockedVoxelCenters, meshOffset.x, meshOffset.y, meshOffset.z, removedCount, voxelCenters]);
-
-  // blockedVoxelIndexSet includes instance indices for both removed and
-  // blocked-only voxels (mapped by the parent via the editing set).
-  const colors = React.useMemo(
-    () => buildVoxelColors(totalCount, blockedVoxelIndexSet),
-    [blockedVoxelIndexSet, totalCount],
+  const { matrices, colors } = React.useMemo(
+    () => buildInstanceData(
+      voxelCenters,
+      blockedVoxelCenters,
+      voxelRadiusMm,
+      meshOffset.x,
+      meshOffset.y,
+      meshOffset.z,
+      blockedVoxelIndexSet,
+    ),
+    [voxelCenters, blockedVoxelCenters, voxelRadiusMm, meshOffset.x, meshOffset.y, meshOffset.z, blockedVoxelIndexSet],
   );
 
-  const geometry = React.useMemo(() => {
-    const next = new THREE.BufferGeometry();
-    next.setAttribute('position', new THREE.BufferAttribute(mergedPositions, 3));
-    next.setAttribute('color', new THREE.BufferAttribute(colors.slice(), 3));
-    return next;
-  }, [colors, mergedPositions]);
-
-  const material = React.useMemo(() => (
-    new THREE.ShaderMaterial({
-      uniforms: {
-        uRadius: { value: Math.max(voxelRadiusMm, 0.05) },
-        uViewportHeight: { value: 1 },
-        uPixelRatio: { value: gl.getPixelRatio() },
-        uIsPerspective: { value: 1 },
-        uOpacity: { value: 0.999 },
-        uProjectionMatrix: { value: new THREE.Matrix4() },
-      },
-      vertexShader: VOXEL_POINTS_VERTEX_SHADER,
-      fragmentShader: VOXEL_POINTS_FRAGMENT_SHADER,
-      transparent: true,
-      depthTest: true,
-      depthWrite: true,
-      toneMapped: false,
-    })
-  ), [gl, voxelRadiusMm]);
-
-  React.useEffect(() => () => {
-    geometry.dispose();
-    material.dispose();
-  }, [geometry, material]);
+  const edgeGeometry = React.useMemo(() => {
+    const edgePos = buildEdgePositions(
+      voxelCenters,
+      blockedVoxelCenters,
+      voxelRadiusMm,
+      meshOffset.x,
+      meshOffset.y,
+      meshOffset.z,
+    );
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(edgePos, 3));
+    return geom;
+  }, [voxelCenters, blockedVoxelCenters, voxelRadiusMm, meshOffset.x, meshOffset.y, meshOffset.z]);
 
   React.useEffect(() => {
-    const colorAttr = geometry.getAttribute('color');
-    if (!(colorAttr instanceof THREE.BufferAttribute)) return;
-    (colorAttr.array as Float32Array).set(colors);
-    colorAttr.needsUpdate = true;
-  }, [colors, geometry]);
-
-  React.useEffect(() => {
-    material.uniforms.uRadius.value = Math.max(voxelRadiusMm, 0.05);
-    material.uniforms.uViewportHeight.value = size.height;
-    material.uniforms.uPixelRatio.value = gl.getPixelRatio();
-    material.uniforms.uIsPerspective.value = camera instanceof THREE.PerspectiveCamera ? 1 : 0;
-    material.uniforms.uProjectionMatrix.value.copy(camera.projectionMatrix);
-  }, [camera, gl, material, size.height, voxelRadiusMm]);
-
-  const handlePointsRaycast = React.useCallback((raycaster: THREE.Raycaster, intersects: THREE.Intersection[]) => {
-    const points = pointsRef.current;
-    if (!points) return;
-
-    const previousThreshold = raycaster.params.Points.threshold;
-    raycaster.params.Points.threshold = Math.max(0.05, voxelRadiusMm * 1.15);
-    try {
-      THREE.Points.prototype.raycast.call(points, raycaster, intersects);
-    } finally {
-      raycaster.params.Points.threshold = previousThreshold;
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < totalCount; i += 1) {
+      const base = i * 16;
+      dummy.position.set(matrices[base + 12], matrices[base + 13], matrices[base + 14]);
+      dummy.scale.set(matrices[base], matrices[base + 5], matrices[base + 10]);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+      const cb = i * 3;
+      mesh.setColorAt(i, new THREE.Color(colors[cb], colors[cb + 1], colors[cb + 2]));
     }
-  }, [voxelRadiusMm]);
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [matrices, colors, totalCount]);
+
+  if (totalCount === 0) return null;
 
   return (
-    <points
-      ref={pointsRef}
-      geometry={geometry}
-      raycast={handlePointsRaycast}
-      renderOrder={30001}
-      frustumCulled={false}
-      onClick={(event) => {
-        if (typeof event.index !== 'number') return;
-        event.stopPropagation();
-        onToggleVoxel?.(event.index);
-      }}
-    >
-      <primitive object={material} attach="material" />
-    </points>
+    <group>
+      <instancedMesh
+        ref={meshRef}
+        args={[undefined, undefined, totalCount]}
+        renderOrder={30001}
+        frustumCulled={false}
+        onClick={onToggleVoxel ? (event) => {
+          if (event.instanceId == null) return;
+          event.stopPropagation();
+          onToggleVoxel(event.instanceId);
+        } : undefined}
+      >
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial
+          transparent
+          opacity={0.99}
+          depthTest
+          depthWrite={true}
+        />
+      </instancedMesh>
+      <lineSegments
+        geometry={edgeGeometry}
+        renderOrder={30002}
+        raycast={() => null}
+      >
+        <lineBasicMaterial
+          color={EDGE_COLOR}
+          transparent
+          opacity={0.45}
+          depthTest
+          depthWrite={false}
+        />
+      </lineSegments>
+    </group>
   );
 }

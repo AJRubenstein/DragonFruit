@@ -532,7 +532,8 @@ export function SceneCanvas({
         projectWorldPoint: (point: THREE.Vector3) => { x: number; y: number; z: number } | null;
       },
     ) => string[];
-    onSelectionChange: (ids: string[]) => void;
+    /** altKey is true when the Alt modifier was held at pointer-up. */
+    onSelectionChange: (ids: string[], altKey?: boolean) => void;
   };
   duplicatePreviewModel?: LoadedModel | null;
   duplicatePreviewTransforms?: Array<{
@@ -2814,6 +2815,7 @@ export function SceneCanvas({
       customPrepareLassoSelection.resolveSelection(path, {
         projectWorldPoint: projectPointToCanvas,
       }),
+      e.altKey,
     );
 
     suppressNextCanvasClickRef.current = true;

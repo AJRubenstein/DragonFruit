@@ -17053,13 +17053,23 @@ export default function Home() {
     return selected;
   }, [hollowPreview, scene.activeModel, blockedHollowVoxelIndices]);
 
-  const handleBlockedHollowVoxelMarqueeSelection = React.useCallback((ids: string[]) => {
+  const handleBlockedHollowVoxelMarqueeSelection = React.useCallback((ids: string[], altKey?: boolean) => {
     if (ids.length === 0) return;
     const next = new Set(editingBlockedHollowVoxelIndicesRef.current);
-    for (const id of ids) {
-      const voxelIndex = Number(id);
-      if (!Number.isFinite(voxelIndex)) continue;
-      next.add(voxelIndex);
+    if (altKey) {
+      // Alt + lasso: un-block (remove from the blocked set).
+      for (const id of ids) {
+        const voxelIndex = Number(id);
+        if (!Number.isFinite(voxelIndex)) continue;
+        next.delete(voxelIndex);
+      }
+    } else {
+      // Plain lasso: block (add to the blocked set).
+      for (const id of ids) {
+        const voxelIndex = Number(id);
+        if (!Number.isFinite(voxelIndex)) continue;
+        next.add(voxelIndex);
+      }
     }
     applyEditingBlockedHollowVoxelIndices(next);
   }, [applyEditingBlockedHollowVoxelIndices]);
@@ -18703,7 +18713,7 @@ export default function Home() {
                       <HollowVoxelEditOverlay
                         voxelCenters={hollowPreview.removedVoxelCenters}
                         blockedVoxelCenters={hollowPreview.blockedVoxelCenters}
-                        voxelRadiusMm={Math.max(hollowPreview.report.voxelSizeMm * 0.38, 0.08)}
+                        voxelRadiusMm={Math.max(hollowPreview.report.voxelSizeMm, 0.2)}
                         blockedVoxelIndexSet={blockedPreviewVoxelInstanceIdSet}
                         meshOffset={new THREE.Vector3(
                           -previewModel.geometry.center.x,

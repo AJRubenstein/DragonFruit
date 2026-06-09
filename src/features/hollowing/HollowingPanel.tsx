@@ -156,7 +156,7 @@ export function HollowingPanel({
               <div className="ui-meta font-semibold" style={{ color: 'var(--accent-secondary-action-color)' }}>Voxel Editing Mode</div>
               <div className="flex items-start justify-center min-h-8">
                 <p className="text-[10px] leading-snug line-clamp-2" style={{ color: 'var(--text-muted)' }}>
-                  Lasso to set hollowing blockers.<br /><span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Clear</span> to reset blockers, <span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Done</span> to apply edits.
+                  Lasso to set blockers, <span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Alt+Lasso</span> to clear.<br /><span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Clear</span> to reset all, <span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Done</span> to apply.
                 </p>
               </div>
             </div>
