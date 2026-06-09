@@ -1042,24 +1042,24 @@ export function SupportSidebar() {
 
     return (
         <>
-        <div className="flex gap-2 items-start relative">
-            {settings.devToolsEnabled && devToolsOpen && (
-                <DevToolsPanel />
-            )}
-
-            {settings.devToolsEnabled && (
+        {settings.devToolsEnabled && (
+            <div className="fixed left-4 top-[calc(var(--topbar-height)+24px)] z-[100] flex items-start">
+                {devToolsOpen && <DevToolsPanel />}
                 <button
                     onClick={() => setDevToolsOpen(!devToolsOpen)}
-                    className="absolute left-[-26px] top-6 w-6 h-20 bg-neutral-800 border border-neutral-700 border-r-0 rounded-l flex items-center justify-center cursor-pointer hover:bg-neutral-750 transition-colors z-50 text-[9px] font-bold text-neutral-300 uppercase tracking-widest"
+                    className={`w-6 h-20 bg-neutral-800 border border-neutral-700 flex items-center justify-center cursor-pointer hover:bg-neutral-750 transition-colors text-[9px] font-bold text-neutral-300 uppercase tracking-widest shadow-md ${
+                        devToolsOpen ? 'border-l-0 rounded-r' : 'rounded'
+                    }`}
                     style={{ writingMode: 'vertical-lr', textOrientation: 'mixed' }}
                     title={devToolsOpen ? "Collapse Dev Tools" : "Expand Dev Tools"}
                 >
                     Dev Tools
                 </button>
-            )}
+            </div>
+        )}
 
-            <div ref={supportSidebarAnchorRef}>
-            <Card className={expanded ? 'max-h-[calc(100dvh-var(--topbar-height)-24px)] overflow-hidden flex flex-col' : undefined}>
+        <div ref={supportSidebarAnchorRef}>
+        <Card className={expanded ? 'max-h-[calc(100dvh-var(--topbar-height)-24px)] overflow-hidden flex flex-col' : undefined}>
             <CardHeader
                 left={(
                     <>
@@ -1298,7 +1298,6 @@ export function SupportSidebar() {
                 </div>
             )}
         </Card>
-        </div>
         </div>
 
         {shouldShowFloatingTrunkPreview && floatingTrunkPreviewPlacement && typeof document !== 'undefined' && ReactDOM.createPortal(
