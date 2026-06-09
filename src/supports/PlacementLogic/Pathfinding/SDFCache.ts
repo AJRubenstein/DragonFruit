@@ -160,13 +160,29 @@ export class SDFCache {
         return dist;
     }
 
-    private _getOrCreateQuantizedDistance(qx: number, qy: number, qz: number): number {
+    private _getOrCreateQuantizedDistance(qx: number, qy: number, qz: number, maxDistance = Infinity): number {
         const key = cellKey(qx, qy, qz);
         const cached = this.cache.get(key);
         if (cached !== undefined) return cached;
 
-        const dist = this._computeSignedDistanceAtQuantizedCell(qx, qy, qz);
-        this.cache.set(key, dist);
+        const cs = this.cellSize;
+        const cX = qx * cs;
+        const cY = qy * cs;
+        const cZ = qz * cs;
+        if (maxDistance !== Infinity && !this._expandedWorldBoundsContains(cX, cY, cZ, maxDistance)) {
+            return Infinity;
+        }
+
+        const canBeInterior = this._expandedWorldBoundsContains(cX, cY, cZ, 0);
+        const dist = this._computeSignedDistanceAtQuantizedCell(
+            qx,
+            qy,
+            qz,
+            canBeInterior ? Infinity : maxDistance,
+        );
+        if (canBeInterior || dist !== Infinity) {
+            this.cache.set(key, dist);
+        }
         return dist;
     }
 
@@ -214,8 +230,12 @@ export class SDFCache {
         return d0 * (1 - tz) + d1 * tz;
     }
 
-    distanceAndGradientAt(wx: number, wy: number, wz: number): { distance: number; gradient: { x: number; y: number; z: number } } {
+    distanceAndGradientAt(wx: number, wy: number, wz: number, maxDistance = Infinity): { distance: number; gradient: { x: number; y: number; z: number } } {
         const cs = this.cellSize;
+        if (maxDistance !== Infinity && !this._expandedWorldBoundsContains(wx, wy, wz, maxDistance + cs * 2)) {
+            return { distance: Infinity, gradient: { x: 0, y: 0, z: 0 } };
+        }
+
         const fx = wx / cs;
         const fy = wy / cs;
         const fz = wz / cs;
@@ -228,27 +248,27 @@ export class SDFCache {
         const ty = fy - y0;
         const tz = fz - z0;
 
-        const d000 = this._getOrCreateQuantizedDistance(x0, y0, z0);
-        const d100 = this._getOrCreateQuantizedDistance(x0 + 1, y0, z0);
-        const d010 = this._getOrCreateQuantizedDistance(x0, y0 + 1, z0);
-        const d110 = this._getOrCreateQuantizedDistance(x0 + 1, y0 + 1, z0);
-        const d001 = this._getOrCreateQuantizedDistance(x0, y0, z0 + 1);
-        const d101 = this._getOrCreateQuantizedDistance(x0 + 1, y0, z0 + 1);
-        const d011 = this._getOrCreateQuantizedDistance(x0, y0 + 1, z0 + 1);
-        const d111 = this._getOrCreateQuantizedDistance(x0 + 1, y0 + 1, z0 + 1);
+        const d000 = this._getOrCreateQuantizedDistance(x0, y0, z0, maxDistance);
+        const d100 = this._getOrCreateQuantizedDistance(x0 + 1, y0, z0, maxDistance);
+        const d010 = this._getOrCreateQuantizedDistance(x0, y0 + 1, z0, maxDistance);
+        const d110 = this._getOrCreateQuantizedDistance(x0 + 1, y0 + 1, z0, maxDistance);
+        const d001 = this._getOrCreateQuantizedDistance(x0, y0, z0 + 1, maxDistance);
+        const d101 = this._getOrCreateQuantizedDistance(x0 + 1, y0, z0 + 1, maxDistance);
+        const d011 = this._getOrCreateQuantizedDistance(x0, y0 + 1, z0 + 1, maxDistance);
+        const d111 = this._getOrCreateQuantizedDistance(x0 + 1, y0 + 1, z0 + 1, maxDistance);
 
         if (
             d000 === Infinity || d100 === Infinity || d010 === Infinity || d110 === Infinity ||
             d001 === Infinity || d101 === Infinity || d011 === Infinity || d111 === Infinity
         ) {
-            const distance = this.distanceAt(wx, wy, wz);
+            const distance = this.distanceAtWithin(wx, wy, wz, maxDistance);
             const h = 0.1;
-            const dXPlus = this.distanceAt(wx + h, wy, wz);
-            const dXMinus = this.distanceAt(wx - h, wy, wz);
-            const dYPlus = this.distanceAt(wx, wy + h, wz);
-            const dYMinus = this.distanceAt(wx, wy - h, wz);
-            const dZPlus = this.distanceAt(wx, wy, wz + h);
-            const dZMinus = this.distanceAt(wx, wy, wz - h);
+            const dXPlus = this.distanceAtWithin(wx + h, wy, wz, maxDistance);
+            const dXMinus = this.distanceAtWithin(wx - h, wy, wz, maxDistance);
+            const dYPlus = this.distanceAtWithin(wx, wy + h, wz, maxDistance);
+            const dYMinus = this.distanceAtWithin(wx, wy - h, wz, maxDistance);
+            const dZPlus = this.distanceAtWithin(wx, wy, wz + h, maxDistance);
+            const dZMinus = this.distanceAtWithin(wx, wy, wz - h, maxDistance);
 
             let gx = 0, gy = 0, gz = 0;
             if (dXPlus !== Infinity && dXMinus !== Infinity) gx = (dXPlus - dXMinus) / (2 * h);

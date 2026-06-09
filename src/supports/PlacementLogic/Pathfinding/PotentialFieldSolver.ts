@@ -93,10 +93,9 @@ export function solvePotentialField(
     let stagnated = false;
     let stagnationPos: Vec3 | undefined;
 
-    let bestZ = startPos.z;
-    let bestLateral = 0;
-    let stepsWithoutProgress = 0;
-    const STAGNATION_STEPS_LIMIT = 40;
+    const history: Vec3[] = [];
+    const HISTORY_WINDOW = 15;
+    const STAGNATION_DISPLACEMENT_THRESHOLD = 1.5 * stepMm;
 
     while (iterations < maxSteps) {
         iterations++;
@@ -108,7 +107,8 @@ export function solvePotentialField(
             break;
         }
 
-        let { distance: d, gradient: grad } = sdf.distanceAndGradientAt(current.x, current.y, current.z);
+        const maxDistance = clearance + margin;
+        let { distance: d, gradient: grad } = sdf.distanceAndGradientAt(current.x, current.y, current.z, maxDistance);
 
         // If we are inside/close to an obstacle but the gradient is zero (e.g. flat mock SDF or local minimum),
         // default the gradient to point straight UP (0, 0, 1) to repel against gravity.
@@ -172,22 +172,15 @@ export function solvePotentialField(
         current = { x: nextX, y: nextY, z: nextZ };
         path.push({ ...current });
 
-        // Progress check: Z progress or lateral escape progress
-        let madeProgress = false;
-        if (current.z < bestZ - 0.05 * stepMm) {
-            bestZ = current.z;
-            madeProgress = true;
-        }
-        if (lateralDist > bestLateral + 0.1 * stepMm) {
-            bestLateral = lateralDist;
-            madeProgress = true;
-        }
-
-        if (madeProgress) {
-            stepsWithoutProgress = 0;
-        } else {
-            stepsWithoutProgress++;
-            if (stepsWithoutProgress > STAGNATION_STEPS_LIMIT) {
+        history.push({ ...current });
+        if (history.length > HISTORY_WINDOW) {
+            history.shift();
+            const oldPos = history[0];
+            const hdx = current.x - oldPos.x;
+            const hdy = current.y - oldPos.y;
+            const hdz = current.z - oldPos.z;
+            const distSq = hdx * hdx + hdy * hdy + hdz * hdz;
+            if (distSq < STAGNATION_DISPLACEMENT_THRESHOLD * STAGNATION_DISPLACEMENT_THRESHOLD) {
                 stagnated = true;
                 stagnationPos = { ...current };
                 break;
