@@ -17139,11 +17139,20 @@ export default function Home() {
 
   const handleDoneHollowVoxelEditing = React.useCallback(() => {
     const nextIndices = [...editingBlockedHollowVoxelIndices].sort((a, b) => a - b);
+    const prevIndices = [...blockedHollowVoxelIndices].sort((a, b) => a - b);
+    const hasChanges = nextIndices.length !== prevIndices.length
+      || nextIndices.some((v, i) => v !== prevIndices[i]);
+
+    if (!hasChanges) {
+      setHollowingEditMode(false);
+      return;
+    }
+
     commitBlockedHollowVoxelIndices(nextIndices);
     clearHollowPreview();
     setHollowingEditMode(false);
     setIsApplyingBlockersHollowing(true);
-  }, [clearHollowPreview, commitBlockedHollowVoxelIndices, editingBlockedHollowVoxelIndices]);
+  }, [blockedHollowVoxelIndices, clearHollowPreview, commitBlockedHollowVoxelIndices, editingBlockedHollowVoxelIndices]);
 
   React.useEffect(() => {
     if (canUseAutoHolePunchDepth || holePunchState.depthMode !== 'auto') {
