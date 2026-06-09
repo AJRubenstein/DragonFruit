@@ -369,6 +369,7 @@ export function SceneCanvas({
   jointPlacementPreview,
   gpuPickingTest,
   selectionHighlightMode,
+  higherContrastModelEdges = false,
   blockSupportPlacement,
   supportsRef,
   supportDragGroupRef,
@@ -503,6 +504,7 @@ export function SceneCanvas({
   jointPlacementPreview?: { pos: { x: number; y: number; z: number }; diameter: number } | null;
   gpuPickingTest?: boolean;
   selectionHighlightMode?: SelectionHighlightMode;
+  higherContrastModelEdges?: boolean;
   blockSupportPlacement?: boolean;
   supportsRef?: React.RefObject<THREE.Group | null>;
   supportDragGroupRef?: React.RefObject<THREE.Group | null>;
@@ -5375,6 +5377,8 @@ export function SceneCanvas({
                       heatmapColors={heatmapColors ?? emptyHeatmapColors}
                       interiorView={interiorView}
                       cavityGeometry={cavityGeometryByModelId?.get(model.id) ?? null}
+                      higherContrastModelEdges={higherContrastModelEdges}
+                      edgeGeometry={model.geometry.edgeGeometry}
                       transform={animatedTransform}
                       mode={mode}
                       transformMode={transformMode}

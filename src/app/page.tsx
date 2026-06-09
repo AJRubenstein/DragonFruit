@@ -18650,6 +18650,7 @@ export default function Home() {
             leafHoverPosition={supports.leafPlacement.hoverPosition}
             gpuPickingTest={false}
             selectionHighlightMode={effectiveSelectionHighlightMode}
+            higherContrastModelEdges={workspaceCameraSettings.higherContrastModelEdges}
             selectionColor={scene.selectionColor}
             hoverColor={scene.hoverColor}
             hoverTintStrength={effectiveHoverTintStrengthForScene}

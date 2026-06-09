@@ -178,6 +178,8 @@ function StlMeshComponent({
   isExternallyHovered,
   deferExternalTransformUpdates,
   supportSectionGeometry,
+  higherContrastModelEdges = false,
+  edgeGeometry,
   interiorView = false,
   cavityGeometry,
   children,
@@ -199,6 +201,10 @@ function StlMeshComponent({
   heatmapBlend?: number;
   heatmapContrast?: number;
   heatmapColors?: string[];
+  /** When true, overlays black edge lines on model geometry for better shape definition. */
+  higherContrastModelEdges?: boolean;
+  /** Pre-computed hard-edge geometry for Higher Contrast Model Edges overlay. */
+  edgeGeometry?: THREE.EdgesGeometry | null;
   interiorView?: boolean;
   /** Interior cavity mesh to render as solid in Interior View Mode. */
   cavityGeometry?: THREE.BufferGeometry | null;
@@ -331,6 +337,10 @@ function StlMeshComponent({
     const colorAttr = geometry.getAttribute('color');
     return !!colorAttr && colorAttr.count > 0;
   }, [geometry]);
+
+  // Edges geometry for Higher Contrast Model Edges overlay.
+  // Pre-computed during geometry import — no render-time cost.
+  const edgeLinesGeometry = edgeGeometry ?? null;
 
   // Internal ref for the mesh element to control raycasting
   const internalMeshRef = React.useRef<THREE.Mesh>(null);
@@ -1294,6 +1304,12 @@ if (uDitherAmount > 0.0) {
         <mesh geometry={geometry} position={meshLocalOffset} renderOrder={1} raycast={() => null}>
           <OpaqueWireOverlayMaterial clippingPlanes={planes} />
         </mesh>
+      )}
+
+      {!interiorView && higherContrastModelEdges && !showOpaqueWireOverlay && baseShaderType !== 'wireframe' && edgeLinesGeometry && (
+        <lineSegments geometry={edgeLinesGeometry} position={meshLocalOffset} renderOrder={2} raycast={() => null}>
+          <lineBasicMaterial color="#000000" transparent opacity={0.55} depthTest polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} clippingPlanes={planes} />
+        </lineSegments>
       )}
 
       {outOfBoundsMaterial && (
