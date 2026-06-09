@@ -78,8 +78,8 @@ export function solvePotentialField(
     opts: PotentialFieldSolverOptions
 ): PotentialFieldSolverResult {
     const clearance = opts.clearanceMm;
-    const margin = opts.marginMm ?? 2.0;
-    const repulsionStrength = opts.repulsionStrength ?? 5.0;
+    const margin = opts.marginMm ?? 2.5;
+    const repulsionStrength = opts.repulsionStrength ?? 8.0;
     const stepMm = opts.stepMm ?? 1.0;
     const maxSteps = opts.maxSteps ?? 300;
     const maxLateral = opts.maxLateralMm ?? 30;
@@ -107,6 +107,9 @@ export function solvePotentialField(
             break;
         }
 
+        const dx = current.x - startPos.x;
+        const dy = current.y - startPos.y;
+
         const maxDistance = clearance + margin;
         let { distance: d, gradient: grad } = sdf.distanceAndGradientAt(current.x, current.y, current.z, maxDistance);
 
@@ -118,8 +121,13 @@ export function solvePotentialField(
 
         let wRepulsion = 0;
         if (d < clearance + margin) {
-            const penetration = (clearance + margin) - d;
-            wRepulsion = repulsionStrength * Math.pow(penetration / margin, 2);
+            const safeDistance = d - clearance;
+            if (safeDistance > 0.05) {
+                wRepulsion = repulsionStrength * (margin / safeDistance - 1.0);
+            } else {
+                // Inside or extremely close to clearance zone: scale up repulsion aggressively
+                wRepulsion = repulsionStrength * (margin / 0.05 - 1.0) * (1.0 + Math.max(0, 0.05 - safeDistance) * 10.0);
+            }
         }
 
         // Calculate lateral escape direction (normalized XY gradient).
@@ -132,16 +140,41 @@ export function solvePotentialField(
             escapeX = grad.x / hLen;
             escapeY = grad.y / hLen;
         } else {
-            // Break symmetry if the gradient is purely vertical
-            escapeX = 1;
-            escapeY = 0;
+            // Use current displacement direction to break symmetry if available
+            const distFromStart = Math.sqrt(dx * dx + dy * dy);
+            if (distFromStart > 1e-4) {
+                escapeX = dx / distFromStart;
+                escapeY = dy / distFromStart;
+            } else {
+                escapeX = 1;
+                escapeY = 0;
+            }
+        }
+
+        // Calculate tangential slide force around the obstacle (swirling)
+        let tx = 0;
+        let ty = 0;
+        if (hLen > 1e-4) {
+            // Two possible tangents: (grad.y, -grad.x) and (-grad.y, grad.x)
+            // Choose the one that points outward (positive dot product with displacement from startPos)
+            const rawTx = grad.y / hLen;
+            const rawTy = -grad.x / hLen;
+            const dot = rawTx * dx + rawTy * dy;
+            if (dot >= 0) {
+                tx = rawTx;
+                ty = rawTy;
+            } else {
+                tx = -rawTx;
+                ty = -rawTy;
+            }
         }
 
         // Transfer vertical repulsion to lateral escape force to slide out under overhangs.
-        const lateralSlideWeight = grad.z > 0 ? grad.z * 0.75 : 0;
+        const lateralSlideWeight = grad.z > 0 ? grad.z * 0.90 : 0;
+        const tangentWeight = 0.5; // Swirl around obstacles to escape pockets and slide along walls
 
-        let vx = 0 + wRepulsion * (grad.x + escapeX * lateralSlideWeight);
-        let vy = 0 + wRepulsion * (grad.y + escapeY * lateralSlideWeight);
+        let vx = 0 + wRepulsion * (grad.x + escapeX * lateralSlideWeight + tx * tangentWeight);
+        let vy = 0 + wRepulsion * (grad.y + escapeY * lateralSlideWeight + ty * tangentWeight);
         let vz = -1.0 + wRepulsion * grad.z * (1 - lateralSlideWeight * 0.5);
 
         const vLen = Math.sqrt(vx * vx + vy * vy + vz * vz);
@@ -159,9 +192,9 @@ export function solvePotentialField(
         const nextY = current.y + vy * stepMm;
         const nextZ = current.z + vz * stepMm;
 
-        const dx = nextX - startPos.x;
-        const dy = nextY - startPos.y;
-        const lateralDist = Math.sqrt(dx * dx + dy * dy);
+        const nextDx = nextX - startPos.x;
+        const nextDy = nextY - startPos.y;
+        const lateralDist = Math.sqrt(nextDx * nextDx + nextDy * nextDy);
 
         if (lateralDist > maxLateral) {
             stagnated = true;
