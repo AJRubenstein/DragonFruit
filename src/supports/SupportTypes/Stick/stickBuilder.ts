@@ -5,7 +5,7 @@ import { getSocketPosition } from '../../SupportPrimitives/ContactCone/contactCo
 import { calculateDiskThickness } from '../../SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getSettings } from '../../Settings';
 import { getJointDiameter } from '../../constants';
-import { checkShaftCollision } from '../../PlacementLogic/CollisionUtils';
+import { isShaftBlocked, isCollisionFrustumBlocked } from '../../PlacementLogic/CollisionAvoidance';
 
 function uuid() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -126,24 +126,21 @@ export function buildStick(input: StickBuildInput): StickBuildResult {
     let error: LimitationCode | undefined = undefined;
     if (mesh) {
         const shaftRadius = shaftDiameter / 2;
-        const avgConeRadius = (tipProfile.contactDiameterMm + tipProfile.bodyDiameterMm) / 4;
-        
-        // 1. Check segment
-        const segmentBlocked = checkShaftCollision(socketA, socketB, shaftRadius, mesh).hit;
-        
-        // 2. Check contact cones with tip-ignore offset
-        const normalA = new THREE.Vector3(aNormal.x, aNormal.y, aNormal.z).normalize();
-        const distA = new THREE.Vector3(socketA.x - aPos.x, socketA.y - aPos.y, socketA.z - aPos.z).length();
-        const offsetA = Math.min(0.25, distA * 0.5);
-        const startA = new THREE.Vector3(aPos.x, aPos.y, aPos.z).add(normalA.multiplyScalar(offsetA));
-        const coneABlocked = checkShaftCollision(startA, socketA, avgConeRadius, mesh).hit;
+        const contactRadius = tipProfile.contactDiameterMm / 2;
+        const bodyRadius = tipProfile.bodyDiameterMm / 2;
 
-        const normalB = new THREE.Vector3(bNormal.x, bNormal.y, bNormal.z).normalize();
-        const distB = new THREE.Vector3(socketB.x - bPos.x, socketB.y - bPos.y, socketB.z - bPos.z).length();
-        const offsetB = Math.min(0.25, distB * 0.5);
-        const startB = new THREE.Vector3(bPos.x, bPos.y, bPos.z).add(normalB.multiplyScalar(offsetB));
-        const coneBBlocked = checkShaftCollision(startB, socketB, avgConeRadius, mesh).hit;
-        
+        // 1. Check shaft segment (SDF adaptive sphere tracing — zero BVH
+        //    overhead when precomputed SDF grid is loaded)
+        const segmentBlocked = isShaftBlocked(socketA, socketB, shaftRadius, mesh);
+
+        // 2. Check both contact cones as tapered frustums
+        const coneABlocked = isCollisionFrustumBlocked(
+            aPos, socketA, contactRadius, bodyRadius, mesh,
+        );
+        const coneBBlocked = isCollisionFrustumBlocked(
+            bPos, socketB, contactRadius, bodyRadius, mesh,
+        );
+
         if (segmentBlocked || coneABlocked || coneBBlocked) {
             error = 'COLLISION_WITH_MODEL';
         }

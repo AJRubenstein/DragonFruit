@@ -6,7 +6,7 @@ import { twigDiskJointStandoff } from './twigJointStandoff';
 import { twigJointDiameterForLocalDiameter } from './twigTaper';
 // DEBUG: temporary per-twig disk B diameter override. Remove with src/supports/__debug__/.
 import { getTwigDiskBOverrideMm } from '../../__debug__/twigDiameterOverride';
-import { checkShaftCollision } from '../../PlacementLogic/CollisionUtils';
+import { isShaftBlocked, isCollisionFrustumBlocked } from '../../PlacementLogic/CollisionAvoidance';
 
 // Twig-local sizing: a joint at a disk-end is 10% larger than that disk's
 // contact diameter. SSOT for the 10% rule lives in ./twigTaper.ts.
@@ -155,25 +155,22 @@ export function buildTwig(input: TwigBuildInput): TwigBuildResult {
     let error: LimitationCode | undefined = undefined;
     if (mesh) {
         const shaftRadius = shaftDiameter / 2;
-        
-        // 1. Check segment
-        const segmentBlocked = checkShaftCollision(socketJointA.pos, socketJointB.pos, shaftRadius, mesh).hit;
-        
-        // 2. Check contact disks with tip-ignore offset
-        const normalA = new THREE.Vector3(aNormal.x, aNormal.y, aNormal.z).normalize();
-        const distA = new THREE.Vector3(socketJointA.pos.x - aPos.x, socketJointA.pos.y - aPos.y, socketJointA.pos.z - aPos.z).length();
-        const offsetA = Math.min(0.25, distA * 0.5);
-        const startA = new THREE.Vector3(aPos.x, aPos.y, aPos.z).add(normalA.multiplyScalar(offsetA));
-        const avgRadiusA = (diskAContactDiameter + jointDiameterA) / 4;
-        const diskABlocked = checkShaftCollision(startA, socketJointA.pos, avgRadiusA, mesh).hit;
 
-        const normalB = new THREE.Vector3(bNormal.x, bNormal.y, bNormal.z).normalize();
-        const distB = new THREE.Vector3(socketJointB.pos.x - bPos.x, socketJointB.pos.y - bPos.y, socketJointB.pos.z - bPos.z).length();
-        const offsetB = Math.min(0.25, distB * 0.5);
-        const startB = new THREE.Vector3(bPos.x, bPos.y, bPos.z).add(normalB.multiplyScalar(offsetB));
-        const avgRadiusB = (diskBContactDiameter + jointDiameterB) / 4;
-        const diskBBlocked = checkShaftCollision(startB, socketJointB.pos, avgRadiusB, mesh).hit;
-        
+        // 1. Check shaft segment (SDF adaptive sphere tracing)
+        const segmentBlocked = isShaftBlocked(
+            socketJointA.pos, socketJointB.pos, shaftRadius, mesh,
+        );
+
+        // 2. Check contact disks as tapered frustums (disk surface → joint)
+        const diskABlocked = isCollisionFrustumBlocked(
+            aPos, socketJointA.pos,
+            diskAContactDiameter / 2, jointDiameterA / 2, mesh,
+        );
+        const diskBBlocked = isCollisionFrustumBlocked(
+            bPos, socketJointB.pos,
+            diskBContactDiameter / 2, jointDiameterB / 2, mesh,
+        );
+
         if (segmentBlocked || diskABlocked || diskBBlocked) {
             error = 'COLLISION_WITH_MODEL';
         }

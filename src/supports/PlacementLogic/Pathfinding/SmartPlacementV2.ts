@@ -27,7 +27,6 @@ import { SDFCache } from './SDFCache';
 import { gridAStar, type GridAStarDebugSnapshot, type WarmStartState } from './GridAStar';
 import { solvePotentialField } from './PotentialFieldSolver';
 import { solveDeterministicFieldPath } from './FieldDeterministicSolver';
-import { checkShaftCollision } from '../CollisionUtils';
 import type { SupportOccupancy } from './SupportOccupancy';
 import {
     getSupportPathfindingDebugEnabled,
@@ -2012,9 +2011,9 @@ export function calculateSmartPlacementV2(
         shaftRadius,
     });
     const segmentBlockedBetween = createSegmentBlockedMemo({ sdf, clearance });
-    const raycastSegmentBlockedBetween = (start: Vec3, end: Vec3): boolean => {
-        return segmentBlockedBetween(start, end) || checkShaftCollision(start, end, clearance, mesh).hit;
-    };
+    const raycastSegmentBlockedBetween = segmentBlockedBetween;
+    // (Previously OR'd with checkShaftCollision as a redundant BVH double-check.
+    //  The SDF's adaptive sphere tracing is more accurate than 9 whisker rays.)
     const contactConeBlockedAt = createContactConeBlockedMemo({
         sdf,
         tipPos: input.tipPos,
