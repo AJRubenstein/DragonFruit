@@ -574,6 +574,8 @@ export function gridAStar(
         const cwz = current.z * step;
 
         // Swim-Walk: Check if we are in the running medium and can drop straight down
+        const currentDist = getNodeDistance(current.key, cwx, cwy, cwz);
+
         if (current.z <= gqz) {
             const parentKey = currentState.cameFrom;
             const parentPos = parentKey === undefined
@@ -590,31 +592,33 @@ export function gridAStar(
                 goalEntry = current;
                 break;
             }
-        } else {
-            const currentDist = getNodeDistance(current.key, cwx, cwy, cwz);
-            if (currentDist >= clearance) {
-                const dropBlocked = sdf.segmentBlocked(cwx, cwy, cwz, cwx, cwy, goalZ, clearance);
-                if (!dropBlocked) {
-                    const parentKey = currentState.cameFrom;
-                    const parentPos = parentKey === undefined
-                        ? null
-                        : (() => {
-                            const parent = decodeKey(parentKey);
-                            return {
-                                x: parent.x * step,
-                                y: parent.y * step,
-                                z: parent.z * step,
-                            };
-                        })();
-                    if (!goalValidator || goalValidator(cwx, cwy, goalZ, parentPos)) {
-                        goalEntry = current;
-                        break;
-                    }
+        } else if (currentDist >= clearance) {
+            const dropBlocked = sdf.segmentBlocked(cwx, cwy, cwz, cwx, cwy, goalZ, clearance);
+            if (!dropBlocked) {
+                const parentKey = currentState.cameFrom;
+                const parentPos = parentKey === undefined
+                    ? null
+                    : (() => {
+                        const parent = decodeKey(parentKey);
+                        return {
+                            x: parent.x * step,
+                            y: parent.y * step,
+                            z: parent.z * step,
+                        };
+                    })();
+                if (!goalValidator || goalValidator(cwx, cwy, goalZ, parentPos)) {
+                    goalEntry = current;
+                    break;
                 }
             }
         }
 
-        const straightDescentOnlyIndex = chooseStraightDescentIndex(current, cwx, cwy, cwz);
+        // Skip straight-descent scan when the current cell is too close to the
+        // model surface (swimming): all directly-downward neighbours will also
+        // be blocked, so the scan would waste up to 4 segment checks per expansion.
+        const straightDescentOnlyIndex = currentDist >= clearance
+            ? chooseStraightDescentIndex(current, cwx, cwy, cwz)
+            : -1;
 
         for (let ni = 0; ni < NEIGHBOR_RUNTIME.length; ni++) {
             if (straightDescentOnlyIndex >= 0 && ni !== straightDescentOnlyIndex) continue;

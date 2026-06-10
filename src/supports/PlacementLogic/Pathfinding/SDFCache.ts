@@ -478,9 +478,13 @@ export class SDFCache {
     /**
      * Returns true if the cell at `(wx,wy,wz)` is closer to the mesh
      * surface than `clearance` mm (i.e. would collide for the given radius).
+     *
+     * Uses single-cell `distanceAt` (1 BVH query, cached) rather than
+     * `distanceAtTrilinear` (8 BVH queries) — this is on the hot path for
+     * A* neighbor expansion and must remain cheap.
      */
     isBlocked(wx: number, wy: number, wz: number, clearance: number): boolean {
-        return this.distanceAtTrilinear(wx, wy, wz) < clearance;
+        return this.distanceAt(wx, wy, wz) < clearance;
     }
 
     /**
@@ -492,11 +496,13 @@ export class SDFCache {
      * up to `(d - clearance)` along the ray — no point within that radius
      * can be closer than `clearance` to the surface.
      *
-     * Accuracy is equivalent to fixed cellSize sampling (both use the same
-     * cell-quantized cache), while open-space traversals that used to cost
-     * ~50 queries for a 25mm segment now cost ~3–5. In tight regions the
-     * adaptive step degrades gracefully to the cellSize floor, matching the
-     * previous fixed-step accuracy.
+     * Uses single-cell `distanceAt` (1 BVH query, cached per cell) rather
+     * than `distanceAtTrilinear` (8 BVH queries) — this is on the hot path
+     * for A* neighbor edge validation and path simplification.  Accuracy is
+     * equivalent to fixed cellSize sampling (both use the same cell-quantized
+     * cache), while open-space traversals that used to cost ~50 queries for
+     * a 25mm segment now cost ~3–5. In tight regions the adaptive step
+     * degrades gracefully to the cellSize floor.
      */
     segmentBlocked(
         ax: number, ay: number, az: number,
@@ -507,7 +513,7 @@ export class SDFCache {
         const dy = by - ay;
         const dz = bz - az;
         const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (len < 0.01) return this.distanceAtTrilinear(ax, ay, az) < clearance;
+        if (len < 0.01) return this.distanceAt(ax, ay, az) < clearance;
         if (!this._segmentIntersectsExpandedWorldBounds(ax, ay, az, bx, by, bz, clearance)) {
             return false;
         }
@@ -531,7 +537,7 @@ export class SDFCache {
             const px = ax + ux * t;
             const py = ay + uy * t;
             const pz = az + uz * t;
-            const d = this.distanceAtTrilinear(px, py, pz);
+            const d = this.distanceAt(px, py, pz);
             if (d < clearance) return true;
             const safeAdvance = d - clearance;
             const step = safeAdvance > minStep ? safeAdvance : minStep;
@@ -540,7 +546,7 @@ export class SDFCache {
         }
         // Always check the exact endpoint — the adaptive loop may exit with
         // t > len before sampling the terminal cell.
-        return this.distanceAtTrilinear(bx, by, bz) < clearance;
+        return this.distanceAt(bx, by, bz) < clearance;
     }
 
     /** Number of cached cells (for diagnostics). */
