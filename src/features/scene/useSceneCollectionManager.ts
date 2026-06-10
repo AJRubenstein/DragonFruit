@@ -648,6 +648,7 @@ type PluginSceneImportPayload = {
   };
   modelId?: string;
   supportData?: DragonfruitImportFormat | null;
+  meshModifiers?: ModelMeshModifiers;
 };
 
 function toFiniteNumber(value: unknown): number | null {
@@ -714,6 +715,7 @@ function normalizePluginSceneImportPayload(payload: unknown): PluginSceneImportP
     transform?: unknown;
     modelId?: unknown;
     supportData?: unknown;
+    meshModifiers?: unknown;
   };
 
   if (!(source.geometry instanceof THREE.BufferGeometry)) return null;
@@ -731,6 +733,12 @@ function normalizePluginSceneImportPayload(payload: unknown): PluginSceneImportP
 
   if (!position || !rotation || !scale) return null;
 
+  let meshModifiers: ModelMeshModifiers | undefined;
+  if (source.meshModifiers && typeof source.meshModifiers === 'object') {
+    // Accept the modifiers as-is — they are plain objects that match the interface.
+    meshModifiers = source.meshModifiers as ModelMeshModifiers;
+  }
+
   return {
     geometry: source.geometry,
     transform: {
@@ -742,6 +750,7 @@ function normalizePluginSceneImportPayload(payload: unknown): PluginSceneImportP
       ? source.modelId
       : undefined,
     supportData: asDragonfruitImportFormat(source.supportData),
+    meshModifiers,
   };
 }
 
@@ -3504,7 +3513,7 @@ export function useSceneCollectionManager() {
 
       for (let i = 0; i < processedItems.length; i++) {
         const { normalized, processed } = processedItems[i];
-        const { transform: importedTransform, modelId: importedModelId, supportData } = normalized;
+        const { transform: importedTransform, modelId: importedModelId, supportData, meshModifiers } = normalized;
 
         const originalPosition = importedTransform.position.clone();
         const sourceTransform: ModelTransform = {
@@ -3539,6 +3548,7 @@ export function useSceneCollectionManager() {
           color: '#a3a3a3',
           polygonCount: processed.geometry.getAttribute('position').count / 3,
           ignoreAutoLift: true,
+          meshModifiers: meshModifiers ? clonePlainObject(meshModifiers) : undefined,
           manualZMoveOverride: true,
         };
 
