@@ -21,7 +21,7 @@ interface HolePunchPreviewCylinderProps {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
-const PUNCH_PREVIEW_OUTSIDE_PROTRUSION_MM = 0.25;
+const PUNCH_PREVIEW_OUTSIDE_PROTRUSION_MM = 0.65;
 const APPLIED_PREVIEW_RADIUS_INSET_MM = 0.01;
 // Interaction mesh stays high-priority for reliable hover/click targeting.
 const PUNCH_PREVIEW_RENDER_ORDER_INTERACTION = 10021;
