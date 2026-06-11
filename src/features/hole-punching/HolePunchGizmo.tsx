@@ -233,6 +233,7 @@ export function HolePunchGizmo({
       showCenter={false}
       handleScale={1.5}
       moveHandleThicknessScale={1}
+      axisVisualFlip={{ y: -1 }}
       onMoveStart={handleMoveStart}
       onMove={handleMove}
       onMoveEnd={handleMoveEnd}

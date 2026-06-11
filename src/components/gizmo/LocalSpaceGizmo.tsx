@@ -28,6 +28,7 @@ export function LocalSpaceGizmo({
   enableRotate = false,
   enableScale = false,
   showCenter = false,
+  axisVisualFlip,
   handleScale = 1.0,
   moveHandleThicknessScale = 1.0,
   moveHandleLengthScale = 1.0,
@@ -51,6 +52,7 @@ export function LocalSpaceGizmo({
       disableArrowFlip
       disableRingBillboard
       disableViewCull
+      axisVisualFlip={axisVisualFlip}
       handleScale={handleScale}
       moveHandleThicknessScale={moveHandleThicknessScale}
       moveHandleLengthScale={moveHandleLengthScale}

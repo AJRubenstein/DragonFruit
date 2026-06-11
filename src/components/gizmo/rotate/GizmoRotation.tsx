@@ -36,6 +36,13 @@ interface GizmoRotationProps {
    * Pass the world-space direction so flip detection is correct.
    */
   worldAxisDir?: THREE.Vector3;
+  /**
+   * Optional override for the visual animation sign.
+   * Set to -1 to invert the ring handle animation direction relative to the
+   * object rotation (e.g. when the gizmo local frame has an inverted axis
+   * convention like displayY = -cutterY in HolePunchGizmo).
+   */
+  axisVisualFlip?: number;
   onDragStart: () => boolean | void;
   onDrag: (angle: number) => void;
   onDragEnd: () => void;
@@ -76,6 +83,7 @@ export function GizmoRotation({
   disableRingBillboard = false,
   handleScale = 1.0,
   worldAxisDir,
+  axisVisualFlip = 1,
   onDragStart,
   onDrag,
   onDragEnd,
@@ -374,7 +382,10 @@ export function GizmoRotation({
       }
 
       // Visual delta = objectDelta * axisSign (x/z axes invert visual relative to object)
-      const visualDelta = emittedObjectDelta * axisSign;
+      // axisVisualFlip allows the parent to invert the visual animation direction
+      // (e.g. when the gizmo's local frame has an inverted axis convention such
+      // as displayY = -cutterY in HolePunchGizmo).
+      const visualDelta = emittedObjectDelta * axisSign * axisVisualFlip;
 
       // Update handle angle for visual feedback (ref-based)
       handleAngleRef.current += visualDelta;

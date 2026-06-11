@@ -17477,7 +17477,24 @@ export default function Home() {
       activeModel,
       activeModel.meshModifiers?.holePunches ?? [],
     );
-    setHolePunchPlacements(persistedPlacements);
+
+    // Preserve worldFrame from current draft placements when the id matches
+    // and the normal is unchanged. This prevents the persist round-trip from
+    // dropping X/Z-axis rotation (around the cylinder's own axis) applied via
+    // the gizmo — without this the gizmo rotation snaps back on release.
+    setHolePunchPlacements((previous) => {
+      const prevById = new Map(previous.map((p) => [p.id, p]));
+      return persistedPlacements.map((placement) => {
+        const prev = prevById.get(placement.id);
+        if (
+          prev?.worldFrame
+          && placement.worldNormal.distanceToSquared(prev.worldNormal) < 1e-8
+        ) {
+          return { ...placement, worldFrame: prev.worldFrame };
+        }
+        return placement;
+      });
+    });
     setHoveredHolePunchPlacementId((previous) => (
       previous && persistedPlacements.some((placement) => placement.id === previous)
         ? previous
