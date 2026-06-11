@@ -2,7 +2,7 @@
 
 import React, { useCallback, useRef } from 'react';
 import * as THREE from 'three';
-import { LocalSpaceGizmo } from '@/components/gizmo/LocalSpaceGizmo';
+import { ScreenSpaceGizmo } from '@/components/gizmo/ScreenSpaceGizmo';
 import type { GizmoAxis } from '@/components/gizmo/types';
 
 const WORLD_X = new THREE.Vector3(1, 0, 0);
@@ -224,15 +224,19 @@ export function HolePunchGizmo({
   }, [onRotateEnd]);
 
   return (
-    <LocalSpaceGizmo
+    <ScreenSpaceGizmo
       position={[placement.worldPoint.x, placement.worldPoint.y, placement.worldPoint.z]}
       rotation={gizmoEuler}
-      size={1.0}
       enableMove
       enableRotate
       showCenter={false}
       handleScale={1.5}
       moveHandleThicknessScale={1}
+      scaleFactor={0.04}
+      followMeshRef={false}
+      disableArrowFlip
+      disableRingBillboard
+      disableViewCull
       axisVisualFlip={{ y: -1 }}
       onMoveStart={handleMoveStart}
       onMove={handleMove}
