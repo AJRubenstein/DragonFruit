@@ -59,7 +59,7 @@ export function StructuredDialogModal({
   maxWidthClassName = 'max-w-lg',
   panelClassName = '',
   bodyClassName = 'space-y-4 p-5',
-  actionsClassName = 'grid grid-flow-col gap-2 pt-1',
+  actionsClassName = 'grid grid-flow-col auto-cols-fr gap-2 pt-1',
   closeAriaLabel = 'Close dialog',
   closeDisabled = false,
   onClose,
