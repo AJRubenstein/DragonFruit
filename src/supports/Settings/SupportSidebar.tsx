@@ -16,6 +16,7 @@ import {
     updateRootsProfile,
     updateGridSettings,
     updateAutoBracingSettings,
+    updateDevToolsEnabled,
 } from './state';
 import {
     subscribe as subscribeToSupportState,
@@ -173,6 +174,7 @@ export function SupportSidebar() {
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
     const [autoBraceStatus, setAutoBraceStatus] = useState<{ kind: 'success' | 'warning' | 'error'; message: string } | null>(null);
     const [expanded, setExpanded] = React.useState(true);
+    const [devToolsOpen, setDevToolsOpen] = useState(false);
     const saveStatusTimeoutRef = React.useRef<number | null>(null);
     const autoBraceStatusTimeoutRef = React.useRef<number | null>(null);
     const isAdaptiveConeAngle = (settings.tip.coneAngleMode ?? 'normal') === 'adaptive';
@@ -1039,6 +1041,8 @@ export function SupportSidebar() {
 
     return (
         <>
+
+
         <div ref={supportSidebarAnchorRef}>
         <Card className={expanded ? 'max-h-[calc(100dvh-var(--topbar-height)-24px)] overflow-hidden flex flex-col' : undefined}>
             <CardHeader
