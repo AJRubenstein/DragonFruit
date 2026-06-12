@@ -1122,7 +1122,6 @@ export default function Home() {
   const [isPrepareDragUnsupported, setIsPrepareDragUnsupported] = React.useState(false);
   const [isSupportSpotlightHoldActive, setIsSupportSpotlightHoldActive] = React.useState(false);
   const [allowPrepareWithoutPrinter, setAllowPrepareWithoutPrinter] = React.useState(false);
-  const [prepareSmoothingSettingsExpanded, setPrepareSmoothingSettingsExpanded] = React.useState(true);
   const [debugPrimitivesPanelVisible, setDebugPrimitivesPanelVisible] = React.useState<boolean>(false);
   const [editorContextMenuPos, setEditorContextMenuPos] = React.useState<{ x: number; y: number } | null>(null);
   const [editorContextMenuSupportTarget, setEditorContextMenuSupportTarget] = React.useState<{
@@ -14710,43 +14709,7 @@ export default function Home() {
             )}
 
             {scene.geom && transformMgr.transformMode === 'smoothing' && (
-              <div
-                key="prepare-smoothing-settings"
-                className="ui-panel rounded-lg border shadow-lg overflow-hidden"
-                style={{ borderColor: 'var(--border-subtle)' }}
-              >
-                <div
-                  className="px-2.5 py-2.5 flex items-center gap-2.5"
-                >
-                  <IconButton
-                    onClick={() => setPrepareSmoothingSettingsExpanded((prev) => !prev)}
-                    className="!p-0.5"
-                    title={prepareSmoothingSettingsExpanded ? 'Collapse card' : 'Expand card'}
-                  >
-                    <svg
-                      className="w-3 h-3 transform transition-transform"
-                      style={{ color: prepareSmoothingSettingsExpanded ? 'var(--accent)' : 'var(--text-muted)' }}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      {prepareSmoothingSettingsExpanded ? (
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      ) : (
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      )}
-                    </svg>
-                  </IconButton>
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                    Mesh Smoothing
-                  </h3>
-                </div>
-                {prepareSmoothingSettingsExpanded && (
-                  <div className="max-h-[calc(100vh-var(--topbar-height)-88px)] overflow-hidden">
-                    <MeshSmoothingSettingsPanel />
-                  </div>
-                )}
-              </div>
+              <MeshSmoothingSettingsPanel key="prepare-smoothing-settings" />
             )}
 
             {scene.models.length > 0 && transformMgr.transformMode === 'arrange' && (
