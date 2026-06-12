@@ -177,16 +177,6 @@ export function TopBar({
     innerWidth: 0,
     innerHeight: 0,
   }));
-  const MIN_GOOD_WIDTH = 1920;
-  const MIN_GOOD_HEIGHT = 1080;
-  const showLayoutWarning =
-    windowMetrics.innerWidth > 0
-    && (windowMetrics.innerWidth < MIN_GOOD_WIDTH || windowMetrics.innerHeight < MIN_GOOD_HEIGHT);
-  const layoutMetricsLabel =
-    windowMetrics.innerWidth > 0
-      ? `${windowMetrics.innerWidth}×${windowMetrics.innerHeight}`
-      : 'detecting…';
-  const layoutWarningTitle = `Layout tip: Current window ${layoutMetricsLabel}. For full panel comfort use ≥ ${MIN_GOOD_WIDTH}×${MIN_GOOD_HEIGHT} and maximize the app window.`;
   const topbarActionsDisabled = isSlicingBusy;
   const [isAppMenuOpen, setIsAppMenuOpen] = useState(false);
   const [appMenuPosition, setAppMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -1069,41 +1059,6 @@ export function TopBar({
 
       <div className="ml-auto flex w-[320px] items-center justify-end gap-2 pr-2">
         <div className={`flex items-center gap-2 transition-opacity ${topbarActionsDisabled ? 'opacity-45 pointer-events-none' : ''}`}>
-          {showLayoutWarning && (
-            <div className="relative group" data-no-window-drag="true">
-              <Button
-                type="button"
-                variant="secondary"
-                className="!p-2"
-                aria-label="Layout tip"
-                data-no-window-drag="true"
-              >
-                <AlertTriangle
-                  className="w-4 h-4"
-                  style={{ color: 'color-mix(in srgb, #f59e0b, var(--text-strong) 20%)' }}
-                />
-              </Button>
-
-              <div
-                className="pointer-events-none absolute right-0 top-full mt-2 z-[70] w-[300px] rounded-md border px-2.5 py-2 text-[10px] leading-tight opacity-0 -translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0"
-                style={{
-                  borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 35%)',
-                  background: 'color-mix(in srgb, var(--surface-0), black 10%)',
-                  color: 'var(--text-muted)',
-                  boxShadow: '0 10px 24px rgba(0,0,0,0.28)',
-                }}
-                role="tooltip"
-                aria-hidden="true"
-              >
-                <div className="font-semibold mb-0.5" style={{ color: 'var(--text-strong)' }}>
-                  Layout tip
-                </div>
-                <div>
-                  Current window: {layoutMetricsLabel}. For full panel comfort use ≥ {MIN_GOOD_WIDTH}×{MIN_GOOD_HEIGHT} and maximize the app window.
-                </div>
-              </div>
-            </div>
-          )}
           <ViewTypeDropdown
             value={viewTypeOverride}
             onChange={onViewTypeOverrideChange}
