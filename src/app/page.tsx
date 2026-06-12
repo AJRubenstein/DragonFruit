@@ -16142,15 +16142,21 @@ export default function Home() {
           <>
             <button
               type="button"
-              className="ui-button ui-button-danger !h-9 px-3 text-xs"
+              className="ui-button !h-9 w-full px-3 text-xs inline-flex items-center justify-center gap-1.5"
+              style={{
+                borderColor: 'color-mix(in srgb, #ef4444, var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, #ef4444, var(--surface-1) 86%)',
+                color: 'var(--danger)',
+              }}
               disabled={closeUnsavedChangesBusy !== 'none'}
               onClick={handleDiscardAndCloseProgram}
             >
-              Close Without Saving
+              <Trash2 className="w-3.5 h-3.5" />
+              Discard Changes
             </button>
             <button
               type="button"
-              className="ui-button ui-button-accent !h-9 px-3 text-xs"
+              className="ui-button ui-button-secondary !h-9 w-full px-3 text-xs"
               disabled={closeUnsavedChangesBusy !== 'none'}
               onClick={handleSaveAndCloseProgram}
             >
@@ -16165,7 +16171,7 @@ export default function Home() {
             : 'Close DragonFruit now?'}
         </p>
         <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          <strong>Save &amp; Close</strong> keeps your latest edits. <strong>Close Without Saving</strong> discards them.
+          <strong>Please ensure you have saved any important work.</strong>
         </p>
       </StructuredDialogModal>
 
