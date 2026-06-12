@@ -1118,9 +1118,7 @@ export function SupportSidebar() {
                                     {activeKind === 'raft' ? (
                                         <>
                                             {!shouldUseOverflowCompactMode ? (
-                                                <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
-                                                    {renderPreviewBox('h-[220px]')}
-                                                </div>
+                                                renderPreviewBox('h-[220px]')
                                             ) : null}
                                             <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
                                                 <RaftSettingsCard
@@ -1132,9 +1130,7 @@ export function SupportSidebar() {
                                     ) : activeKind === 'grid' ? (
                                         <>
                                             {!shouldUseOverflowCompactMode ? (
-                                                <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
-                                                    {renderPreviewBox('h-[220px]')}
-                                                </div>
+                                                renderPreviewBox('h-[220px]')
                                             ) : null}
                                             <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
                                                 <GridSettingsCard
@@ -1146,9 +1142,7 @@ export function SupportSidebar() {
                                     ) : activeKind === 'stick' ? (
                                         <>
                                             {!shouldUseOverflowCompactMode ? (
-                                                <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
-                                                    {renderPreviewBox('h-[220px]')}
-                                                </div>
+                                                renderPreviewBox('h-[220px]')
                                             ) : null}
                                             <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
                                                 <AutoBracingSettingsCard
@@ -1167,7 +1161,7 @@ export function SupportSidebar() {
                                                 </div>
                                             ) : (
                                                 <div className="flex gap-2 items-stretch">
-                                                    <div className="flex-1 min-w-0 rounded-md border p-2 flex flex-col" style={SECTION_CARD_STYLE}>
+                                                    <div className="flex-1 min-w-0 flex flex-col">
                                                         {renderPreviewBox('flex-1 min-h-[340px]')}
                                                     </div>
 
@@ -1223,15 +1217,11 @@ export function SupportSidebar() {
                                         </>
                                     ) : (
                                         <>
-                                            <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
-                                                {renderPreviewBox('h-[250px]')}
-                                            </div>
+                                            {renderPreviewBox('h-[250px]')}
 
                                             <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
                                                 {supportGeometryFields}
                                             </div>
-
-                                            {/* Placement notes removed per design request */}
                                         </>
                                     )}
                                 </>

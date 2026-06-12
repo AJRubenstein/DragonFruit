@@ -327,6 +327,7 @@ export function PresetSelector({
         }
 
         setContextMenu({ x, y, presetId: preset.id });
+        setPinSubmenuOpen(false);
     };
 
     const handleCreateNewClick = () => {
@@ -607,40 +608,43 @@ export function PresetSelector({
                         Rename
                     </button>
 
-                    <button
-                        type="button"
-                        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors"
-                        style={{ color: 'var(--text-strong)' }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                        onClick={() => {
-                            const preset = presets.find((p) => p.id === contextMenu.presetId);
-                            if (!preset) return;
-                            setContextMenu(null);
-                            handlePresetSelect(preset.id);
-                            handleSaveRequest();
-                        }}
-                    >
-                        <Save className="h-3.5 w-3.5" />
-                        Save to Preset
-                    </button>
+                    {(() => {
+                        const menuPreset = presets.find((p) => p.id === contextMenu.presetId);
+                        if (!menuPreset) return null;
+                        const isDirty = isPresetDirtyForSettings(menuPreset.id, settings);
+                        if (!isDirty) return null;
+                        return (
+                            <button
+                                type="button"
+                                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors"
+                                style={{ color: 'var(--text-strong)' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                                onClick={() => {
+                                    setContextMenu(null);
+                                    handlePresetSelect(menuPreset.id);
+                                    handleSaveRequest();
+                                }}
+                            >
+                                <Save className="h-3.5 w-3.5" />
+                                Save Changes
+                            </button>
+                        );
+                    })()}
 
                     {(() => {
                         const menuPreset = presets.find((p) => p.id === contextMenu.presetId);
                         if (!menuPreset) return null;
                         const isDirty = isPresetDirtyForSettings(menuPreset.id, settings);
+                        if (!isDirty) return null;
                         return (
                             <button
                                 type="button"
                                 className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors"
-                                style={{ color: isDirty ? 'var(--text-strong)' : 'color-mix(in srgb, var(--text-muted), transparent 40%)' }}
-                                onMouseEnter={(e) => {
-                                    if (isDirty) e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)';
-                                }}
+                                style={{ color: 'var(--text-strong)' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                                disabled={!isDirty}
                                 onClick={() => {
-                                    if (!isDirty) return;
                                     setContextMenu(null);
                                     handlePresetSelect(menuPreset.id);
                                 }}
@@ -700,7 +704,7 @@ export function PresetSelector({
                                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                                     >
                                         <Pin className="h-3.5 w-3.5" />
-                                        <span className="flex-1">Pin to Slot</span>
+                                        <span className="flex-1">{isPinned ? 'Move Slot' : 'Pin to Slot'}</span>
                                         <span className="text-[10px] opacity-50">{openLeft ? '◂' : '▸'}</span>
                                     </button>
                                     {pinSubmenuOpen ? (
