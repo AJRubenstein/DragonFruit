@@ -8,7 +8,7 @@ import type { SupportMode } from '@/supports/types';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
 import type { SelectionHighlightMode } from '@/components/selection';
 import { Button } from '@/components/ui/primitives';
-import { Activity, AlertTriangle, ChevronDown, FolderOpen, Lock, Maximize2, Minimize2, Power, Printer, Save, Square, X } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronDown, FolderInput, FolderOpen, Lock, Maximize2, Minimize2, Power, Printer, Save, Square, Upload, X } from 'lucide-react';
 import {
   applyThemeCustomColors,
   getSavedThemeCustomColors,
@@ -83,6 +83,8 @@ interface TopBarProps {
   isSlicingBusy?: boolean;
   onSaveScene?: () => void;
   onOpenScene?: () => void;
+  onLoadMeshChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onImportSceneChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onCloseProgram?: () => void;
   showMonitorButton?: boolean;
   monitorButtonActive?: boolean;
@@ -141,6 +143,8 @@ export function TopBar({
   heatmapColors,
   onHeatmapColorChange,
   isSlicingBusy = false,
+  onLoadMeshChange,
+  onImportSceneChange,
   onSaveScene,
   onOpenScene,
   onCloseProgram,
@@ -801,6 +805,50 @@ export function TopBar({
               type="button"
               onClick={() => {
                 closeAppMenu();
+                if (typeof document === 'undefined') return;
+                const input = document.getElementById('topbar-mesh-input') as HTMLInputElement | null;
+                input?.click();
+              }}
+              disabled={topbarActionsDisabled || !onLoadMeshChange}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium transition-colors"
+              style={{
+                color: (topbarActionsDisabled || !onLoadMeshChange) ? 'var(--text-muted)' : 'var(--text-strong)',
+                opacity: (topbarActionsDisabled || !onLoadMeshChange) ? 0.55 : 1,
+              }}
+              role="menuitem"
+            >
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
+                <Upload className="h-3.5 w-3.5" />
+              </span>
+              <span>Import Mesh…</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                closeAppMenu();
+                if (typeof document === 'undefined') return;
+                const input = document.getElementById('topbar-scene-input') as HTMLInputElement | null;
+                input?.click();
+              }}
+              disabled={topbarActionsDisabled || !onImportSceneChange}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium transition-colors"
+              style={{
+                color: (topbarActionsDisabled || !onImportSceneChange) ? 'var(--text-muted)' : 'var(--text-strong)',
+                opacity: (topbarActionsDisabled || !onImportSceneChange) ? 0.55 : 1,
+              }}
+              role="menuitem"
+            >
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
+                <FolderInput className="h-3.5 w-3.5" />
+              </span>
+              <span>Import Scene…</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                closeAppMenu();
                 void handleCloseProgram();
               }}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium transition-colors"
@@ -815,6 +863,22 @@ export function TopBar({
           </div>
         </div>
       )}
+
+      <input
+        id="topbar-mesh-input"
+        type="file"
+        accept=".stl,.obj,.3mf,.zip"
+        multiple
+        onChange={onLoadMeshChange}
+        className="hidden"
+      />
+      <input
+        id="topbar-scene-input"
+        type="file"
+        accept=".voxl,.lys,.zip"
+        onChange={onImportSceneChange}
+        className="hidden"
+      />
 
       {isPrinterQuickMenuOpen && printerQuickMenuPosition && hasTopbarFleetUnits && activePrinterProfile && (
         <div

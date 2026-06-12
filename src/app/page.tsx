@@ -14593,6 +14593,8 @@ export default function Home() {
         heatmapColors={scene.heatmapColors}
         onHeatmapColorChange={scene.onHeatmapColorChange}
         isSlicingBusy={isSlicingBusy}
+        onLoadMeshChange={handleLoadMeshChangeWithZip}
+        onImportSceneChange={handleImportSceneChangeWithZip}
         onSaveScene={() => { void handleTopBarSaveScene(); }}
         onOpenScene={handleTopBarOpenScene}
         onCloseProgram={handleRequestProgramClose}
@@ -14627,10 +14629,6 @@ export default function Home() {
               onOpenSupportsInfo={handleOpenModelSupportsInfo}
               onDelete={scene.deleteModel}
               onVisibilityChange={scene.setModelVisibility}
-              onLoadMeshClick={() => { void handleOpenMeshDialog(); }}
-              onLoadMeshChange={handleLoadMeshChangeWithZip}
-              onImportSceneClick={() => { void handleOpenSceneDialog(); }}
-              onImportSceneChange={handleImportSceneChangeWithZip}
               dimmed={showEmptySceneDialog || importOverlayState.active}
               bottomClearancePx={modelStatsBottomClearancePx}
             />

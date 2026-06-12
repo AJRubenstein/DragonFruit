@@ -618,6 +618,7 @@ function FloatingPanelItem({
   return (
     <div
       ref={itemRef}
+      data-panel-id={id}
       className="absolute pointer-events-auto"
       style={{
         left: position.x,
@@ -1344,7 +1345,18 @@ export function FloatingPanelStack({ children }: { children: React.ReactNode }) 
 
       return next;
     });
-  }, [closeWindowContextMenu, seededPositions]);
+
+    // Reset any manual width set by a resize handle — directly set the correct default
+    if (typeof document !== 'undefined') {
+      const panelEl = document.querySelector(`[data-panel-id="${panelId}"]`) as HTMLElement | null;
+      if (panelEl) {
+        const base = PANEL_WIDTH_OVERRIDES[panelId] ?? DEFAULT_PANEL_WIDTH;
+        const scale = panelWidthScale;
+        const defaultWidth = Math.max(72, Math.round(base * scale));
+        panelEl.style.width = `${defaultWidth}px`;
+      }
+    }
+  }, [closeWindowContextMenu, seededPositions, panelWidthScale]);
 
   const resetAllWindows = React.useCallback(() => {
     closeWindowContextMenu();
