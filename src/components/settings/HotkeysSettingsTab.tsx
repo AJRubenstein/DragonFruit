@@ -4,15 +4,14 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Keyboard, Lock, RotateCcw } from 'lucide-react';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { HotkeyBinding, UNIVERSAL_HOTKEYS } from '@/hotkeys/hotkeyConfig';
-import { getPresetList, subscribeToPresets } from '@/supports/Settings/presets';
 
-const PRESET_ACTION_TO_ID: Record<string, string> = {
-  APPLY_DETAIL: 'detail',
-  APPLY_STRUCTURE: 'structure',
-  APPLY_ANCHOR: 'anchor',
-  APPLY_CUSTOM_1: 'custom1',
-  APPLY_CUSTOM_2: 'custom2',
-  APPLY_CUSTOM_3: 'custom3',
+const PINNED_SLOT_LABELS: Record<string, string> = {
+  SLOT_1: 'Slot 1',
+  SLOT_2: 'Slot 2',
+  SLOT_3: 'Slot 3',
+  SLOT_4: 'Slot 4',
+  SLOT_5: 'Slot 5',
+  SLOT_6: 'Slot 6',
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -91,20 +90,6 @@ function getBindingTokens(binding: HotkeyBinding): string[] {
 export function HotkeysSettingsTab() {
   const { config, updateHotkey, resetToDefaults } = useHotkeyConfig();
   const [recordingKey, setRecordingKey] = useState<{ category: string, action: string } | null>(null);
-  const [presetNames, setPresetNames] = useState<Record<string, string>>({});
-
-  // Subscribe to preset changes to keep labels in sync
-  useEffect(() => {
-    const updateNames = () => {
-      const list = getPresetList();
-      const map: Record<string, string> = {};
-      list.forEach(p => map[p.id] = p.name);
-      setPresetNames(map);
-    };
-
-    updateNames();
-    return subscribeToPresets(updateNames);
-  }, []);
 
   // Effect to handle key recording
   useEffect(() => {
@@ -158,11 +143,10 @@ export function HotkeysSettingsTab() {
               return { action, label: binding.description, binding };
             }
 
-            const presetId = PRESET_ACTION_TO_ID[action];
-            const presetName = presetId ? presetNames[presetId] : null;
+            const slotLabel = PINNED_SLOT_LABELS[action] ?? action;
             return {
               action,
-              label: presetName ? `Apply \"${presetName}\" Preset` : binding.description,
+              label: slotLabel,
               binding,
             };
           });
@@ -180,7 +164,7 @@ export function HotkeysSettingsTab() {
         categories,
       };
     }).filter((section) => section.categories.some((category) => category.entries.length > 0));
-  }, [config, presetNames]);
+  }, [config]);
 
   const universalRows = useMemo(() => {
     return Object.entries(UNIVERSAL_HOTKEYS).map(([action, binding]) => {

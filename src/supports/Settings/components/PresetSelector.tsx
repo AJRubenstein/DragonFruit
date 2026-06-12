@@ -2,19 +2,22 @@
 
 import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import ReactDOM from 'react-dom';
-import { PenLine, Pencil, Trash2, Save } from 'lucide-react';
+import { PenLine, Pencil, Trash2, Save, Pin, PinOff } from 'lucide-react';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
-import { Button } from '@/components/ui/primitives';
 import {
     getPresetList,
     getActivePreset,
+    getPinnedPresets,
+    getUnpinnedPresets,
     setActivePreset,
     subscribeToPresets,
     savePreset,
     updateCustomPresetMetadata,
     createPreset,
     deletePreset,
+    setPresetPinnedSlot,
     isPresetDirtyForSettings,
+    restoreFactoryDefaults,
 } from '../presets';
 import { getSettings, subscribeToSettings } from '../state';
 import { setAnatomyPreviewHoveredPresetSettings } from '../AnatomyPreview/previewState';
@@ -37,11 +40,17 @@ export function PresetSelector({
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [hoveredPresetId, setHoveredPresetId] = useState<string | null>(null);
     const [isEditingName, setIsEditingName] = useState(false);
+    const [renamingPresetId, setRenamingPresetId] = useState<string | null>(null);
+    const [renameValue, setRenameValue] = useState('');
+    const renameInputRef = useRef<HTMLInputElement | null>(null);
     const [tempName, setTempName] = useState('');
     const [tempDescription, setTempDescription] = useState('');
     const [newPresetName, setNewPresetName] = useState('My Preset');
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; presetId: string } | null>(null);
+    const [pinSubmenuOpen, setPinSubmenuOpen] = useState(false);
+    const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
     const contextMenuRef = useRef<HTMLDivElement | null>(null);
+    const pinSubmenuTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Global click listener to dismiss the context menu
     useEffect(() => {
@@ -64,8 +73,9 @@ export function PresetSelector({
         return unsubscribe;
     }, []);
 
-    const builtInPresets = presets.filter((preset) => preset.isBuiltIn);
-    const customPresets = presets.filter((preset) => !preset.isBuiltIn);
+    const pinnedPresets = getPinnedPresets();
+    const unpinnedPresets = getUnpinnedPresets();
+    const availableSlots = [1, 2, 3, 4, 5, 6].filter((slot) => !pinnedPresets.some((p) => p.pinnedSlot === slot));
 
     const effectiveSelectedPresetId = selectedPresetIdOverride === undefined
         ? activePreset?.id ?? null
@@ -129,14 +139,6 @@ export function PresetSelector({
                 onClick={() => {
                     handlePresetSelect(preset.id);
                 }}
-                onContextMenu={(e) => {
-                    if (preset.isBuiltIn) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    // Dismiss any other open context menus (e.g. the floating panel's "Reset this window" menu)
-                    window.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
-                    setContextMenu({ x: e.clientX, y: e.clientY, presetId: preset.id });
-                }}
                 onMouseEnter={() => {
                     setHoveredPresetId(preset.id);
                     setAnatomyPreviewHoveredPresetSettings(preset.settings);
@@ -155,14 +157,18 @@ export function PresetSelector({
                 }}
                 style={{
                     background: isSelected
-                        ? 'color-mix(in srgb, var(--primary-button-surface), var(--surface-0) 90%)'
+                        ? preset.pinnedSlot != null
+                            ? 'color-mix(in srgb, var(--accent-secondary), var(--surface-0) 88%)'
+                            : 'color-mix(in srgb, var(--primary-button-surface), var(--surface-0) 90%)'
                         : 'var(--surface-0)',
                     borderColor: isSelected
-                        ? 'color-mix(in srgb, var(--primary-button-surface), var(--border-subtle) 30%)'
+                        ? preset.pinnedSlot != null
+                            ? 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 25%)'
+                            : 'color-mix(in srgb, var(--primary-button-surface), var(--border-subtle) 30%)'
                         : 'var(--border-subtle)',
                 }}
             >
-                {isSelected ? (
+                {isSelected && preset.pinnedSlot == null ? (
                     <span
                         aria-hidden="true"
                         className="pointer-events-none absolute left-2 top-1/2 inline-block h-2 w-2 -translate-y-1/2 rounded-full border"
@@ -182,20 +188,51 @@ export function PresetSelector({
                         <PenLine className="h-3 w-3" />
                     </span>
                 ) : null}
-                <div className="w-full">
-                    <div className="flex items-center justify-center text-center">
-                        <div className="flex-1 truncate" style={{ color: isSelected ? 'var(--text-strong)' : undefined }}>
-                            {preset.name}
-                        </div>
+                <div className="w-full min-w-0">
+                    <div className="relative flex items-center justify-center text-center">
+                        {preset.pinnedSlot != null ? (
+                            <span
+                                className="absolute left-0 inline-flex h-4 w-4 items-center justify-center rounded-[3px] text-[11px] font-bold tabular-nums leading-none"
+                                style={{
+                                    background: 'color-mix(in srgb, var(--accent), transparent 78%)',
+                                    color: 'var(--accent)',
+                                }}
+                            >
+                                {preset.pinnedSlot}
+                            </span>
+                        ) : null}
+                        {renamingPresetId === preset.id ? (
+                            <input
+                                ref={renameInputRef}
+                                type="text"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onBlur={() => commitInlineRename()}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.stopPropagation();
+                                        commitInlineRename();
+                                    } else if (e.key === 'Escape') {
+                                        e.stopPropagation();
+                                        cancelInlineRename();
+                                    }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full bg-transparent text-center text-sm outline-none border-b"
+                                style={{
+                                    color: 'var(--text-strong)',
+                                    borderColor: 'var(--accent)',
+                                }}
+                            />
+                        ) : (
+                            <div className="flex-1 truncate" style={{ color: isSelected ? 'var(--text-strong)' : undefined }}>
+                                {preset.name}
+                            </div>
+                        )}
                     </div>
                 </div>
             </button>
         );
-    }
-
-    function rowSpanClass(index: number, total: number): string {
-        // If a row has only one tile (odd trailing item), let it fill the full row
-        return total % 2 === 1 && index === total - 1 ? 'col-span-2' : '';
     }
 
     const handlePresetSelect = (presetId: string) => {
@@ -216,6 +253,33 @@ export function PresetSelector({
     const handleSaveRequest = () => {
         if (!selectedPreset || selectedPresetIsBuiltIn) return;
         setConfirmId(selectedPreset.id);
+    };
+
+    const startInlineRename = (presetId: string) => {
+        const preset = presets.find((p) => p.id === presetId);
+        if (!preset) return;
+        setRenamingPresetId(presetId);
+        setRenameValue(preset.name);
+        // Auto-focus after render
+        requestAnimationFrame(() => {
+            renameInputRef.current?.focus();
+            renameInputRef.current?.select();
+        });
+    };
+
+    const commitInlineRename = () => {
+        if (!renamingPresetId) return;
+        const trimmed = renameValue.trim();
+        if (trimmed.length > 0) {
+            updateCustomPresetMetadata(renamingPresetId, trimmed, '');
+        }
+        setRenamingPresetId(null);
+        setRenameValue('');
+    };
+
+    const cancelInlineRename = () => {
+        setRenamingPresetId(null);
+        setRenameValue('');
     };
 
     const handleEditClick = () => {
@@ -242,70 +306,119 @@ export function PresetSelector({
         setIsEditingName(true);
     };
 
+    const handleContextMenu = (e: React.MouseEvent, presetId: string) => {
+        const preset = presets.find((p) => p.id === presetId);
+        if (!preset || preset.isBuiltIn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        // Dismiss any other open context menus (e.g. the floating panel's "Reset this window" menu)
+        window.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+
+        const menuWidth = 192; // w-48
+        const menuEstimatedHeight = 300;
+        const margin = 10;
+        let x = e.clientX;
+        let y = e.clientY;
+        if (x + menuWidth + margin > window.innerWidth) {
+            x = window.innerWidth - menuWidth - margin;
+        }
+        if (y + menuEstimatedHeight + margin > window.innerHeight) {
+            y = window.innerHeight - menuEstimatedHeight - margin;
+        }
+
+        setContextMenu({ x, y, presetId: preset.id });
+    };
+
     const handleCreateNewClick = () => {
         const created = createPreset(newPresetName);
         setActivePreset(created.id);
         setConfirmId(null);
         setIsEditingName(false);
+        // Auto-enter inline rename for the new preset
+        setRenamingPresetId(created.id);
+        setRenameValue(created.name);
+        setNewPresetName('My Preset');
+        requestAnimationFrame(() => {
+            renameInputRef.current?.focus();
+            renameInputRef.current?.select();
+        });
     };
 
     return (
         <div className="space-y-2">
             <div className="space-y-1">
                 <div ref={wrapperRef}>
-                    <div className="overflow-y-auto custom-scrollbar py-1 transition-[max-height] duration-200" style={{ maxHeight: computedMaxHeight }}>
-                        <div className="grid grid-cols-2 gap-1">
-                            {builtInPresets.map((preset, index) => (
-                                <div key={preset.id} className={rowSpanClass(index, builtInPresets.length)}>
+                    <div
+                        className="overflow-y-auto custom-scrollbar py-1 transition-[max-height] duration-200"
+                        style={{ maxHeight: computedMaxHeight }}
+                        onContextMenu={(e) => {
+                            // Only handle clicks on the background/empty space, not on preset cells
+                            if ((e.target as HTMLElement).closest('[data-preset-cell]')) return;
+                            if (!effectiveSelectedPresetId) return;
+                            handleContextMenu(e, effectiveSelectedPresetId);
+                        }}
+                    >
+                        <div className="grid grid-cols-2 gap-1 px-1">
+                            {[1, 2, 3, 4, 5, 6].map((slot) => {
+                                const preset = pinnedPresets.find((p) => p.pinnedSlot === slot);
+                                return preset ? (
+                                    <div key={preset.id} data-preset-cell onContextMenu={(e) => handleContextMenu(e, preset.id)}>
+                                        {renderPresetRow(preset)}
+                                    </div>
+                                ) : (
+                                    <button
+                                        key={`empty-slot-${slot}`}
+                                        type="button"
+                                        disabled
+                                        className="w-full rounded-[5px] border border-dashed px-3 py-2 text-sm relative"
+                                        style={{
+                                            color: 'color-mix(in srgb, var(--text-muted), transparent 40%)',
+                                            borderColor: 'color-mix(in srgb, var(--border-subtle), transparent 40%)',
+                                        }}
+                                    >
+                                        <div className="w-full min-w-0">
+                                            <div className="relative flex items-center justify-center text-center">
+                                                <span
+                                                    className="absolute left-0 inline-flex h-4 w-4 items-center justify-center rounded-[3px] text-[11px] font-bold tabular-nums leading-none"
+                                                    style={{
+                                                        background: 'color-mix(in srgb, var(--text-muted), transparent 84%)',
+                                                        color: 'color-mix(in srgb, var(--text-muted), transparent 40%)',
+                                                    }}
+                                                >
+                                                    {slot}
+                                                </span>
+                                                <div className="flex-1 truncate">Slot {slot}</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="mx-3 mt-4 mb-3 border-t" style={{ borderColor: 'var(--border-subtle)' }} />
+                        <div className="grid grid-cols-2 gap-1 px-1">
+                            {unpinnedPresets.map((preset) => (
+                                <div key={preset.id} data-preset-cell onContextMenu={(e) => handleContextMenu(e, preset.id)}>
                                     {renderPresetRow(preset)}
                                 </div>
                             ))}
-                        </div>
-
-                        {customPresets.length > 0 ? (
-                            <>
-                                <div className="mx-3 my-2 border-t" style={{ borderColor: 'var(--border-subtle)' }} />
-                                <div className="grid grid-cols-2 gap-1 px-1">
-                                    {customPresets.map((preset, index) => (
-                                        <div key={preset.id} className={rowSpanClass(index, customPresets.length)}>
-                                            {renderPresetRow(preset)}
-                                        </div>
-                                    ))}
+                            <button
+                                type="button"
+                                onClick={() => handleCreateNewClick()}
+                                className="w-full rounded-[5px] border border-dashed px-3 py-2 text-sm transition-colors"
+                                style={{
+                                    color: 'var(--text-muted)',
+                                    borderColor: 'color-mix(in srgb, var(--border-subtle), transparent 20%)',
+                                }}
+                            >
+                                <div className="flex items-center justify-center gap-1.5">
+                                    <Save className="h-3.5 w-3.5" />
+                                    <span>New Preset</span>
                                 </div>
-                            </>
-                        ) : null}
+                            </button>
+                        </div>
                     </div>
                 </div>
-                {previewDescription ? (
-                    <div className="text-[11px] text-center" style={{ color: 'var(--text-muted)' }}>
-                        {previewDescription}
-                    </div>
-                ) : null}
-            </div>
-
-            {/* Action row */}
-            <div className="grid grid-cols-2 gap-1.5">
-                <Button
-                    type="button"
-                    variant="accent"
-                    size="md"
-                    className="h-9 text-[12px] font-semibold"
-                    onClick={handleCreateNewClick}
-                    title="Create a new preset from current settings"
-                >
-                    New
-                </Button>
-                <Button
-                    type="button"
-                    variant="primary"
-                    size="md"
-                    className="h-9 text-[12px] font-semibold"
-                    onClick={handleSaveRequest}
-                    disabled={!selectedPreset || selectedPresetIsBuiltIn}
-                    title={selectedPresetIsBuiltIn ? 'Built-in presets cannot be saved' : 'Save current settings to this preset'}
-                >
-                    Save
-                </Button>
             </div>
 
             {/* ── Overwrite Preset Modal ─────────────────────────────────── */}
@@ -396,98 +509,56 @@ export function PresetSelector({
                 </p>
             </StructuredDialogModal>
 
-            {/* ── Edit Preset Modal ──────────────────────────────────────── */}
+            {/* ── Restore Defaults Modal ──────────────────────────────────── */}
             <StructuredDialogModal
-                open={isEditingName && selectedPreset !== null && !selectedPresetIsBuiltIn}
-                ariaLabel="Edit preset"
-                title="Edit Preset"
-                subtitle={`Update name and description for "${selectedPreset?.name ?? ''}"`}
-                icon={<Pencil className="h-4 w-4" />}
-                iconTone="accent"
+                open={restoreConfirmOpen}
+                ariaLabel="Restore factory defaults"
+                title="Restore Factory Defaults?"
+                subtitle="Factory presets will be reset and user presets will be unpinned."
+                icon={
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                        <path d="M3 3v5h5" />
+                    </svg>
+                }
+                iconTone="warning"
                 zIndexClassName="z-[300]"
-                closeAriaLabel="Cancel editing"
-                onClose={() => {
-                    if (selectedPreset) {
-                        setTempName(selectedPreset.name);
-                        setTempDescription(selectedPreset.description ?? '');
-                    }
-                    setIsEditingName(false);
-                }}
+                closeAriaLabel="Cancel restore"
+                onClose={() => setRestoreConfirmOpen(false)}
                 actions={(
                     <>
                         <button
                             type="button"
                             className="ui-button ui-button-secondary !h-9 w-full px-3 text-xs"
-                            onClick={() => {
-                                if (selectedPreset) {
-                                    setTempName(selectedPreset.name);
-                                    setTempDescription(selectedPreset.description ?? '');
-                                }
-                                setIsEditingName(false);
-                            }}
+                            onClick={() => setRestoreConfirmOpen(false)}
                         >
                             Cancel
                         </button>
                         <button
                             type="button"
-                            className="ui-button ui-button-primary !h-9 w-full px-3 text-xs inline-flex items-center justify-center gap-1.5"
-                            disabled={tempName.trim().length === 0}
-                            onClick={handleEditClick}
+                            className="ui-button !h-9 w-full px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                            style={{
+                                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 25%)',
+                                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                                color: 'var(--accent)',
+                            }}
+                            onClick={() => {
+                                restoreFactoryDefaults();
+                                setRestoreConfirmOpen(false);
+                            }}
                         >
-                            <Save className="h-3.5 w-3.5" />
-                            Apply
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                <path d="M3 3v5h5" />
+                            </svg>
+                            Restore
                         </button>
                     </>
                 )}
             >
-                <div className="space-y-3">
-                    <div>
-                        <div className="text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                            Preset Name
-                        </div>
-                        <input
-                            type="text"
-                            value={tempName}
-                            onChange={(event) => setTempName(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter' && tempName.trim().length > 0) {
-                                    handleEditClick();
-                                } else if (event.key === 'Escape') {
-                                    if (selectedPreset) {
-                                        setTempName(selectedPreset.name);
-                                    }
-                                    setIsEditingName(false);
-                                }
-                            }}
-                            className="ui-input h-9 w-full px-3 text-sm"
-                            placeholder="Preset name"
-                            autoFocus
-                        />
-                    </div>
-                    <div>
-                        <div className="text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                            Description
-                        </div>
-                        <input
-                            type="text"
-                            value={tempDescription}
-                            onChange={(event) => setTempDescription(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter' && tempName.trim().length > 0) {
-                                    handleEditClick();
-                                } else if (event.key === 'Escape') {
-                                    if (selectedPreset) {
-                                        setTempName(selectedPreset.name);
-                                        setTempDescription(selectedPreset.description ?? '');
-                                    }
-                                    setIsEditingName(false);
-                                }
-                            }}
-                            className="ui-input h-9 w-full px-3 text-sm"
-                            placeholder="Preset description"
-                        />
-                    </div>
-                </div>
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    This will reset <strong style={{ color: 'var(--text-strong)' }}>Detail</strong>, <strong style={{ color: 'var(--text-strong)' }}>Structure</strong>, and <strong style={{ color: 'var(--text-strong)' }}>Anchor</strong> to their factory settings and unpin all user presets. Your user presets will <strong style={{ color: 'var(--text-strong)' }}>not</strong> be deleted.
+                </p>
             </StructuredDialogModal>
 
             {/* ── Right-click Context Menu ──────────────────────────────── */}
@@ -510,18 +581,176 @@ export function PresetSelector({
                         onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                         onClick={() => {
-                            const preset = presets.find((p) => p.id === contextMenu.presetId);
-                            if (!preset || preset.isBuiltIn) return;
-                            handlePresetSelect(preset.id);
-                            setTempName(preset.name);
-                            setTempDescription(preset.description ?? '');
-                            setIsEditingName(true);
                             setContextMenu(null);
+                            handleCreateNewClick();
+                        }}
+                    >
+                        <Save className="h-3.5 w-3.5" />
+                        New Preset
+                    </button>
+
+                    <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors"
+                        style={{ color: 'var(--text-strong)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                        onClick={() => {
+                            const preset = presets.find((p) => p.id === contextMenu.presetId);
+                            if (!preset) return;
+                            handlePresetSelect(preset.id);
+                            setContextMenu(null);
+                            startInlineRename(preset.id);
                         }}
                     >
                         <Pencil className="h-3.5 w-3.5" />
                         Rename
                     </button>
+
+                    <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors"
+                        style={{ color: 'var(--text-strong)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                        onClick={() => {
+                            const preset = presets.find((p) => p.id === contextMenu.presetId);
+                            if (!preset) return;
+                            setContextMenu(null);
+                            handlePresetSelect(preset.id);
+                            handleSaveRequest();
+                        }}
+                    >
+                        <Save className="h-3.5 w-3.5" />
+                        Save to Preset
+                    </button>
+
+                    <div className="my-1 border-t" style={{ borderColor: 'var(--border-subtle)' }} />
+
+                    {(() => {
+                        const menuPreset = presets.find((p) => p.id === contextMenu.presetId);
+                        if (!menuPreset) return null;
+                        const isPinned = menuPreset.pinnedSlot != null;
+                        const submenuWidth = 160; // w-40 = 10rem ≈ 160px
+                        const contextMenuWidth = 192; // w-48 = 12rem ≈ 192px
+                        const rightEdge = contextMenu.x + contextMenuWidth + submenuWidth + 12;
+                        const openLeft = rightEdge > window.innerWidth;
+                        return (
+                            <>
+                                {isPinned ? (
+                                    <button
+                                        type="button"
+                                        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors"
+                                        style={{ color: 'var(--text-strong)' }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                                        onClick={() => {
+                                            setPresetPinnedSlot(menuPreset.id, null);
+                                            setContextMenu(null);
+                                        }}
+                                    >
+                                        <PinOff className="h-3.5 w-3.5" />
+                                        Unpin
+                                    </button>
+                                ) : null}
+                                <div
+                                    className="relative"
+                                    onMouseEnter={() => {
+                                        if (pinSubmenuTimerRef.current) clearTimeout(pinSubmenuTimerRef.current);
+                                        setPinSubmenuOpen(true);
+                                    }}
+                                    onMouseLeave={() => {
+                                        pinSubmenuTimerRef.current = setTimeout(() => setPinSubmenuOpen(false), 100);
+                                    }}
+                                >
+                                    <button
+                                        type="button"
+                                        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors"
+                                        style={{ color: 'var(--text-strong)' }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                                    >
+                                        <Pin className="h-3.5 w-3.5" />
+                                        <span className="flex-1">Pin to Slot</span>
+                                        <span className="text-[10px] opacity-50">{openLeft ? '◂' : '▸'}</span>
+                                    </button>
+                                    {pinSubmenuOpen ? (
+                                        <div
+                                            className={`absolute top-0 z-[141] w-40 rounded-lg border p-1.5 shadow-xl ${openLeft ? 'right-full mr-1' : 'left-full ml-1'}`}
+                                            style={{
+                                                borderColor: 'var(--border-subtle)',
+                                                background: 'color-mix(in srgb, var(--surface-0), #000 10%)',
+                                            }}
+                                            onMouseEnter={() => {
+                                                if (pinSubmenuTimerRef.current) clearTimeout(pinSubmenuTimerRef.current);
+                                                setPinSubmenuOpen(true);
+                                            }}
+                                            onMouseLeave={() => {
+                                                pinSubmenuTimerRef.current = setTimeout(() => setPinSubmenuOpen(false), 100);
+                                            }}
+                                        >
+                                            {[1, 2, 3, 4, 5, 6].map((slot) => {
+                                                const alreadyPinned = pinnedPresets.some((p) => p.pinnedSlot === slot);
+                                                if (isPinned && menuPreset.pinnedSlot === slot) return null;
+                                                return (
+                                                    <button
+                                                        key={slot}
+                                                        type="button"
+                                                        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors"
+                                                        style={{ color: 'var(--text-strong)' }}
+                                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)'; }}
+                                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                                                        onClick={() => {
+                                                            setPresetPinnedSlot(menuPreset.id, slot);
+                                                            setContextMenu(null);
+                                                        }}
+                                                    >
+                                                        <span className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] text-[10px] font-bold tabular-nums leading-none"
+                                                            style={{
+                                                                background: alreadyPinned
+                                                                    ? 'color-mix(in srgb, var(--text-muted), transparent 80%)'
+                                                                    : 'color-mix(in srgb, var(--accent), transparent 78%)',
+                                                                color: alreadyPinned ? 'var(--text-muted)' : 'var(--accent)',
+                                                            }}
+                                                        >
+                                                            {slot}
+                                                        </span>
+                                                        <span className="flex-1">Slot {slot}</span>
+                                                        {alreadyPinned ? (
+                                                            <span className="text-[10px] opacity-40">occupied</span>
+                                                        ) : null}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : null}
+                                </div>
+                            </>
+                        );
+                    })()}
+
+                    <div className="my-1 border-t" style={{ borderColor: 'var(--border-subtle)' }} />
+
+                    <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors"
+                        style={{ color: 'var(--text-strong)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                        onClick={() => {
+                            setContextMenu(null);
+                            setRestoreConfirmOpen(true);
+                        }}
+                    >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                            <path d="M3 3v5h5" />
+                        </svg>
+                        Restore Defaults
+                    </button>
+
+                    <div className="my-1 border-t" style={{ borderColor: 'var(--border-subtle)' }} />
+
                     <button
                         type="button"
                         className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors"
@@ -530,7 +759,7 @@ export function PresetSelector({
                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                         onClick={() => {
                             const preset = presets.find((p) => p.id === contextMenu.presetId);
-                            if (!preset || preset.isBuiltIn) return;
+                            if (!preset) return;
                             handlePresetSelect(preset.id);
                             setDeleteConfirmId(preset.id);
                             setContextMenu(null);
