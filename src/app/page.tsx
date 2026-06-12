@@ -15787,17 +15787,17 @@ export default function Home() {
                 </span>
               </p>
 
-              <div className="flex items-center justify-end gap-2 pt-1">
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"
-                  className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+                  className="ui-button ui-button-secondary !h-9 w-full px-3 text-xs"
                   onClick={() => scene.resolveSceneImportPlacementPrompt('load_as_is')}
                 >
                   Load As-Is
                 </button>
                 <button
                   type="button"
-                  className="ui-button ui-button-accent !h-9 px-3 text-xs"
+                  className="ui-button ui-button-accent !h-9 w-full px-3 text-xs"
                   onClick={() => scene.resolveSceneImportPlacementPrompt('auto_arrange')}
                 >
                   Auto-Arrange
@@ -15914,10 +15914,10 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-1">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
                     type="button"
-                    className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+                    className="ui-button ui-button-secondary !h-9 w-full px-3 text-xs"
                     disabled={isManualRepairing}
                     onClick={() => setManualRepairModelId(null)}
                   >
@@ -15925,7 +15925,7 @@ export default function Home() {
                   </button>
                   <button
                     type="button"
-                    className="ui-button ui-button-accent !h-9 px-3 text-xs flex items-center gap-1.5 disabled:opacity-60"
+                    className="ui-button ui-button-accent !h-9 w-full px-3 text-xs flex items-center justify-center gap-1.5 disabled:opacity-60"
                     disabled={isManualRepairing}
                     onClick={() => {
                       const id = manualRepairModelId;
@@ -16339,17 +16339,17 @@ export default function Home() {
                   )}
               </p>
 
-              <div className="flex items-center justify-end gap-2 pt-1">
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"
-                  className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+                  className="ui-button ui-button-secondary !h-9 w-full px-3 text-xs"
                   onClick={() => setPrintingMonitorPendingConfirmation(null)}
                 >
                   {printingMonitorPendingConfirmation.kind === 'plate' ? 'Keep File' : 'Keep Printing'}
                 </button>
                 <button
                   type="button"
-                  className="ui-button !h-9 px-3 text-xs"
+                  className="ui-button !h-9 w-full px-3 text-xs"
                   style={
                     printingMonitorPendingConfirmation.kind === 'plate'
                       ? (

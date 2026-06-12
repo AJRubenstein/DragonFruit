@@ -1251,17 +1251,17 @@ export function TopBar({
                 You can continue to adjust profiles, but you’ll be prompted to re-slice before printing with the updated settings.
               </p>
 
-              <div className="flex items-center justify-end gap-2 pt-1">
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"
-                  className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+                  className="ui-button ui-button-secondary !h-9 w-full px-3 text-xs"
                   onClick={() => setShowProfileChangeWarning(false)}
                 >
                   Keep Current Profiles
                 </button>
                 <button
                   type="button"
-                  className="ui-button !h-9 px-3 text-xs"
+                  className="ui-button !h-9 w-full px-3 text-xs"
                   style={{
                     borderColor: 'color-mix(in srgb, #f59e0b, var(--border-subtle) 45%)',
                     background: 'color-mix(in srgb, #f59e0b, var(--surface-1) 86%)',
