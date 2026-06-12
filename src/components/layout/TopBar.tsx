@@ -78,6 +78,9 @@ interface TopBarProps {
   hasPrintingData: boolean;
   viewTypeOverride: MeshShaderType | null;
   onViewTypeOverrideChange: (value: MeshShaderType | null) => void;
+  interiorView: boolean;
+  onInteriorViewChange: (value: boolean) => void;
+  interiorViewAvailable?: boolean;
   heatmapColors: string[];
   onHeatmapColorChange: (index: number, color: string) => void;
   isSlicingBusy?: boolean;
@@ -140,6 +143,9 @@ export function TopBar({
   hasPrintingData,
   viewTypeOverride,
   onViewTypeOverrideChange,
+  interiorView,
+  onInteriorViewChange,
+  interiorViewAvailable = true,
   heatmapColors,
   onHeatmapColorChange,
   isSlicingBusy = false,
@@ -1066,6 +1072,23 @@ export function TopBar({
             title="View mode"
             className="[&>button]:!h-8 [&>button]:!w-8 [&>button]:!p-0"
           />
+          <Button
+            type="button"
+            variant={interiorView ? 'primary' : 'secondary'}
+            className="!p-2"
+            onClick={() => onInteriorViewChange(!interiorView)}
+            disabled={topbarActionsDisabled || !interiorViewAvailable}
+            title={interiorView ? 'Interior View: On' : interiorViewAvailable ? 'Interior View: Off' : 'Interior View: Unavailable (apply hollowing first)'}
+            aria-label={interiorView ? 'Interior View: On' : interiorViewAvailable ? 'Interior View: Off' : 'Interior View: Unavailable'}
+            data-no-window-drag="true"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+              {/* Cube with inward-facing arrow to symbolize inner/backface viewing */}
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v18M3.6 9l16.8 0M3.6 15l16.8 0" opacity="0.3" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 11l-2 2m2-2l2 2m-2-2v3" />
+            </svg>
+          </Button>
             <Button
               type="button"
               variant="secondary"

@@ -23,6 +23,15 @@ interface GizmoMoveProps {
   moveHandleBidirectional?: boolean;
   moveHandleLengthScale?: number;
   moveHandleThicknessScale?: number;
+  /**
+   * World-space direction for this axis. When the gizmo parent group is
+   * rotated, the hardcoded local-axis direction no longer matches the
+   * visual arrow. Pass the world-space direction computed from the
+   * gizmo's rotation to keep the drag axis aligned with the visual arrow.
+   * Falls back to world X/Y/Z when not provided (existing behavior).
+   */
+  worldAxisDir?: THREE.Vector3;
+  disableArrowFlip?: boolean;
   onDragStart: () => boolean | void;
   onDrag: (delta: THREE.Vector3) => void;
   onDragEnd: () => void;
@@ -48,6 +57,8 @@ export function GizmoMove({
   moveHandleBidirectional = false,
   moveHandleLengthScale = 1.0,
   moveHandleThicknessScale = 1.0,
+  worldAxisDir,
+  disableArrowFlip = false,
   onDragStart,
   onDrag,
   onDragEnd,
@@ -100,15 +111,21 @@ export function GizmoMove({
   const headRadius = Math.max(0.03, GIZMO_SIZES.arrowHeadRadius * moveHandleThicknessScale);
   const headLength = Math.max(0.08, GIZMO_SIZES.arrowHeadLength * moveHandleLengthScale);
 
-  const shouldFlipX = axis === 'x' && (camera.position.x - gizmoPosition.x > 0);
-  const shouldFlipY = axis === 'y' && (camera.position.y - gizmoPosition.y > 0);
-  const shouldFlipZ = axis === 'z' && (camera.position.z - gizmoPosition.z > 0);
+  const shouldFlipX = axis === 'x' && !disableArrowFlip && (camera.position.x - gizmoPosition.x > 0);
+  const shouldFlipY = axis === 'y' && !disableArrowFlip && (camera.position.y - gizmoPosition.y > 0);
+  const shouldFlipZ = axis === 'z' && !disableArrowFlip && (camera.position.z - gizmoPosition.z > 0);
 
-  const rotation: [number, number, number] =
-    axis === 'x' ? [0, 0, shouldFlipX ? -Math.PI / 2 : Math.PI / 2]
-    : axis === 'y' ? [0, 0, shouldFlipY ? 0 : Math.PI]
-    : axis === 'z' ? (shouldFlipZ ? [Math.PI / 2, 0, 0] : [-Math.PI / 2, 0, 0])
-    : [0, 0, 0];
+  const positiveAxisRotation: [number, number, number] =
+    axis === 'x' ? [0, 0, -Math.PI / 2]
+    : axis === 'y' ? [0, 0, 0]
+    : [Math.PI / 2, 0, 0];
+
+  const rotation: [number, number, number] = disableArrowFlip
+    ? positiveAxisRotation
+    : axis === 'x' ? [0, 0, shouldFlipX ? -Math.PI / 2 : Math.PI / 2]
+      : axis === 'y' ? [0, 0, shouldFlipY ? 0 : Math.PI]
+        : axis === 'z' ? (shouldFlipZ ? [Math.PI / 2, 0, 0] : [-Math.PI / 2, 0, 0])
+          : [0, 0, 0];
 
   const getAxisParamFromMouse = useCallback((clientX: number, clientY: number): number | null => {
     const rect = gl.domElement.getBoundingClientRect();
@@ -123,10 +140,18 @@ export function GizmoMove({
     const raycaster = raycasterRef.current;
     raycaster.setFromCamera(ndc, camera);
 
+    // Use the world-space axis direction if provided (rotated gizmo),
+    // otherwise fall back to the hardcoded world axis (existing behavior).
     const axisDir = scratchAxisDirRef.current;
-    if (axis === 'x') axisDir.set(1, 0, 0);
-    else if (axis === 'y') axisDir.set(0, 1, 0);
-    else axisDir.set(0, 0, 1);
+    if (worldAxisDir) {
+      axisDir.copy(worldAxisDir);
+    } else if (axis === 'x') {
+      axisDir.set(1, 0, 0);
+    } else if (axis === 'y') {
+      axisDir.set(0, 1, 0);
+    } else {
+      axisDir.set(0, 0, 1);
+    }
 
     // Closest points between the infinite drag axis line and pointer ray.
     // Uses the FIXED drag origin (captured at pointer-down) as the axis reference
@@ -147,8 +172,7 @@ export function GizmoMove({
 
     return ((axisDotRay * rayDotAxisToRay) - axisDotAxisToRay) / denom;
   // gizmoPosition intentionally excluded — we use dragAxisOriginRef (stable).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [axis, camera, gl]);
+  }, [axis, camera, gl, worldAxisDir]);
 
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
     if (e.button === 2) return;
@@ -184,11 +208,14 @@ export function GizmoMove({
     onPointerLeave();
   };
 
+  // World-space axis direction. Falls back to hardcoded world axis when
+  // worldAxisDir prop is not provided (existing behavior with no rotation).
   const axisDirection = useMemo(() => {
+    if (worldAxisDir) return worldAxisDir.clone();
     if (axis === 'x') return new THREE.Vector3(1, 0, 0);
     if (axis === 'y') return new THREE.Vector3(0, 1, 0);
     return new THREE.Vector3(0, 0, 1);
-  }, [axis]);
+  }, [axis, worldAxisDir]);
 
   useEffect(() => {
     if (!isDragging) return;

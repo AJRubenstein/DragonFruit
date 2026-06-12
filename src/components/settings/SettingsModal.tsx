@@ -250,6 +250,7 @@ export function SettingsModal({
   const [draftCameraTrackpadOrbitAcceleration, setDraftCameraTrackpadOrbitAcceleration] = useState<number>(() => getSavedCameraTrackpadSettings().orbitAcceleration);
   const [draftCameraTrackpadZoomAcceleration, setDraftCameraTrackpadZoomAcceleration] = useState<number>(() => getSavedCameraTrackpadSettings().zoomAcceleration);
   const [draftCameraScope, setDraftCameraScope] = useState<CameraScopeMode>(() => getSavedWorkspaceCameraSettings().scope);
+  const [draftHigherContrastModelEdges, setDraftHigherContrastModelEdges] = useState<boolean>(() => getSavedWorkspaceCameraSettings().higherContrastModelEdges);
   const [draftThemePreference, setDraftThemePreference] = useState(getSavedThemePreference());
   const [draftThemePreset, setDraftThemePreset] = useState<ThemePreset>(getSavedThemePreset());
   const [draftThemeColors, setDraftThemeColors] = useState<ThemeCustomColors>(getSavedThemeCustomColors());
@@ -340,6 +341,7 @@ export function SettingsModal({
     setDraftCameraTrackpadOrbitAcceleration(getSavedCameraTrackpadSettings().orbitAcceleration);
     setDraftCameraTrackpadZoomAcceleration(getSavedCameraTrackpadSettings().zoomAcceleration);
     setDraftCameraScope(getSavedWorkspaceCameraSettings().scope);
+    setDraftHigherContrastModelEdges(getSavedWorkspaceCameraSettings().higherContrastModelEdges);
     setDraftThemePreference(getSavedThemePreference());
     setDraftThemePreset(savedThemePreset);
     setDraftThemeColors(getSavedThemeCustomColors());
@@ -674,6 +676,7 @@ export function SettingsModal({
     setDraftCameraTrackpadOrbitAcceleration(DEFAULT_CAMERA_TRACKPAD_SETTINGS.orbitAcceleration);
     setDraftCameraTrackpadZoomAcceleration(DEFAULT_CAMERA_TRACKPAD_SETTINGS.zoomAcceleration);
     setDraftCameraScope(DEFAULT_WORKSPACE_CAMERA_SETTINGS.scope);
+    setDraftHigherContrastModelEdges(DEFAULT_WORKSPACE_CAMERA_SETTINGS.higherContrastModelEdges);
     setDraftThemePreference('dark');
     setDraftThemePreset('dragonfruit-dark');
     setDraftThemeColors(DEFAULT_THEME_CUSTOM_COLORS);
@@ -766,6 +769,7 @@ export function SettingsModal({
       scope: draftCameraScope,
       defaults: draftWorkspaceCameraDefaults,
       selectionHighlightDefaults: getSavedWorkspaceCameraSettings().selectionHighlightDefaults,
+      higherContrastModelEdges: draftHigherContrastModelEdges,
     });
     saveSlicingPerformanceSettings(draftSlicingPerformanceSettings);
     onSlicingThumbnailRenderSettingsChange(draftSlicingThumbnailRenderSettings);
@@ -795,6 +799,7 @@ export function SettingsModal({
     draftSelectedTintStrength,
     draftSelectionHighlightMode,
     draftCameraScope,
+    draftHigherContrastModelEdges,
     draftThemePreset,
     draftShaderType,
     draftToonSteps,
@@ -1311,6 +1316,8 @@ export function SettingsModal({
                   onCameraTrackpadZoomAccelerationChange={setDraftCameraTrackpadZoomAcceleration}
                   workspaceCameraDefaults={draftWorkspaceCameraDefaults}
                   onWorkspaceCameraModeChange={handleWorkspaceCameraModeChange}
+                  higherContrastModelEdges={draftHigherContrastModelEdges}
+                  onHigherContrastModelEdgesChange={setDraftHigherContrastModelEdges}
                 />
               )}
               {activeTab === 'workspaces' && (

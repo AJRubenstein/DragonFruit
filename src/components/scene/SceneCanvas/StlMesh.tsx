@@ -145,6 +145,8 @@ function StlMeshComponent({
   isActiveModel,
   onSmoothingGeometryActivate,
   onSupportClick,
+  onHolePunchClick,
+  onHolePunchHover,
   onSupportHover,
   onActiveModelChange,
   disableRaycast,
@@ -176,6 +178,11 @@ function StlMeshComponent({
   isExternallyHovered,
   deferExternalTransformUpdates,
   supportSectionGeometry,
+  higherContrastModelEdges = false,
+  edgeGeometry,
+  blockerEditMode = false,
+  interiorView = false,
+  cavityGeometry,
   children,
 }: {
   geometry: THREE.BufferGeometry;
@@ -195,12 +202,23 @@ function StlMeshComponent({
   heatmapBlend?: number;
   heatmapContrast?: number;
   heatmapColors?: string[];
+  /** When true, overlays black edge lines on model geometry for better shape definition. */
+  higherContrastModelEdges?: boolean;
+  /** Pre-computed hard-edge geometry for Higher Contrast Model Edges overlay. */
+  edgeGeometry?: THREE.EdgesGeometry | null;
+  /** When true, suppresses the edge overlay (e.g. during voxel blocker editing). */
+  blockerEditMode?: boolean;
+  interiorView?: boolean;
+  /** Interior cavity mesh to render as solid in Interior View Mode. */
+  cavityGeometry?: THREE.BufferGeometry | null;
   transform?: ModelTransform | null;
   mode?: SupportMode;
   transformMode?: TransformMode;
   isActiveModel?: boolean;
   onSmoothingGeometryActivate?: (geometry: THREE.BufferGeometry | null) => void;
   onSupportClick?: (hit: THREE.Intersection) => void;
+  onHolePunchClick?: (hit: THREE.Intersection) => void;
+  onHolePunchHover?: (hit: THREE.Intersection | null) => void;
   onSupportHover?: (hit: THREE.Intersection | null) => void;
   onActiveModelChange?: (id: string | null, options?: { selectionMode?: 'single' | 'toggle' | 'add' }) => void;
   disableRaycast?: boolean;
@@ -248,6 +266,7 @@ function StlMeshComponent({
   const { hit } = usePicking(); // Import usePicking at top if not already used inside StlMesh
   const [isPointerHovered, setIsPointerHovered] = React.useState(false);
   const { camera } = useThree();
+  const suppressNextHolePunchClickRef = React.useRef(false);
 
   const smoothingScratchLocalPointRef = React.useRef(new THREE.Vector3());
   const supportDimCameraLocalPointRef = React.useRef(new THREE.Vector3());
@@ -321,6 +340,10 @@ function StlMeshComponent({
     const colorAttr = geometry.getAttribute('color');
     return !!colorAttr && colorAttr.count > 0;
   }, [geometry]);
+
+  // Edges geometry for Higher Contrast Model Edges overlay.
+  // Pre-computed during geometry import — no render-time cost.
+  const edgeLinesGeometry = edgeGeometry ?? null;
 
   // Internal ref for the mesh element to control raycasting
   const internalMeshRef = React.useRef<THREE.Mesh>(null);
@@ -808,7 +831,7 @@ if (uDitherAmount > 0.0) {
         userData={{ modelId, thumbnailTintTarget: 'modelMesh' }}
         geometry={geometry}
         position={meshLocalOffset}
-        renderOrder={baseShaderType === 'xray' || isSupportDimmed ? 2 : 0}
+        renderOrder={baseShaderType === 'xray' ? 10010 : isSupportDimmed ? 2 : 0}
         onClick={(e) => {
           if (isSupportShiftGesture(e)) {
             // In support mode, Shift+click on an inactive ghost should explicitly
@@ -827,6 +850,47 @@ if (uDitherAmount > 0.0) {
 
           if (shouldSuppressModelInteraction) {
             e.stopPropagation();
+            return;
+          }
+
+          if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchClick) {
+            const shouldOnlySelect = suppressNextHolePunchClickRef.current || !isActiveModel;
+            suppressNextHolePunchClickRef.current = false;
+            if (shouldOnlySelect) {
+              e.stopPropagation();
+              if (onActiveModelChange) {
+                onActiveModelChange(modelId, { selectionMode: 'single' });
+              }
+              return;
+            }
+
+            const firstIsGizmo = e.intersections[0]?.object.userData?.isGizmoHandle === true;
+            if (isGizmoHoverCategory || firstIsGizmo) {
+              return;
+            }
+
+            // In interior view, if a non-model object (placed hole punch) is behind
+            // the X-Ray front face, let the click propagate to it for selection.
+            if ((interiorView && cavityGeometry) && hasVisibleNonModelIntersection(e.intersections, e.object, null, null)) {
+              return;
+            }
+
+            let clickHit: THREE.Intersection = e as unknown as THREE.Intersection;
+            const isClippedHit =
+              (clipUpper != null && e.point.z > clipUpper) ||
+              (clipLower != null && e.point.z < clipLower);
+            if (isClippedHit || (interiorView && cavityGeometry)) {
+              const fallback = findClipAwareHit(
+                e.ray, e.object,
+                interiorView && cavityGeometry ? null : clipLower,
+                interiorView && cavityGeometry ? null : clipUpper,
+                e.distance,
+              );
+              if (!fallback) return;
+              clickHit = fallback;
+            }
+            if (!isClippedHit && !(interiorView && cavityGeometry)) e.stopPropagation();
+            onHolePunchClick(clickHit);
             return;
           }
 
@@ -851,7 +915,7 @@ if (uDitherAmount > 0.0) {
           }
 
           if (mode === 'support' && onActiveModelChange && !isActiveModel) {
-            e.stopPropagation();
+            if (!(interiorView && cavityGeometry)) e.stopPropagation();
             onActiveModelChange(modelId);
 
             // In support mode, first click should select the model only.
@@ -871,23 +935,36 @@ if (uDitherAmount > 0.0) {
               return; // Don't stop propagation — support will handle the click.
             }
 
+            // In interior view, if a non-model object (placed support, hole punch)
+            // is behind the X-Ray front face, let the click propagate to it instead
+            // of placing a new support on the interior surface.
+            if ((interiorView && cavityGeometry) && hasVisibleNonModelIntersection(e.intersections, e.object, null, null)) {
+              return;
+            }
+
             let clickHit: THREE.Intersection = e as unknown as THREE.Intersection;
-            if (
+            const isClippedHit =
               (clipUpper != null && e.point.z > clipUpper) ||
-              (clipLower != null && e.point.z < clipLower)
-            ) {
-              // Primary hit is in the clipped (hidden) zone. Cast directly
-              // against this mesh to find the nearest visible-zone hit.
-              const fallback = findClipAwareHit(e.ray, e.object, clipLower, clipUpper, e.distance);
+              (clipLower != null && e.point.z < clipLower);
+            if (isClippedHit || (interiorView && cavityGeometry)) {
+              const fallback = findClipAwareHit(
+                e.ray, e.object,
+                interiorView && cavityGeometry ? null : clipLower,
+                interiorView && cavityGeometry ? null : clipUpper,
+                e.distance,
+              );
               if (!fallback) return;
               clickHit = fallback;
             }
-            e.stopPropagation();
+            if (!(interiorView && cavityGeometry)) e.stopPropagation();
             onSupportClick(clickHit);
           }
         }}
         onPointerMove={(e) => {
           if (isSupportShiftGesture(e)) {
+            if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+              onHolePunchHover(null);
+            }
             if (!hasExternalHoverSource) schedulePointerHover(false);
             onModelHoverPointChange?.(null);
             onModelHoverModelChange?.(null);
@@ -904,6 +981,9 @@ if (uDitherAmount > 0.0) {
           // the model in the ray should not suppress model hover.
           const firstIsGizmo = e.intersections[0]?.object.userData?.isGizmoHandle === true;
           if (shouldSuppressModelInteraction || isGizmoHoverCategory || firstIsGizmo) {
+            if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+              onHolePunchHover(null);
+            }
             if (!hasExternalHoverSource) schedulePointerHover(false);
             onModelHoverPointChange?.(null);
             onModelHoverModelChange?.(null);
@@ -913,6 +993,9 @@ if (uDitherAmount > 0.0) {
 
           const isTopMostIntersection = e.intersections[0]?.object === e.object;
           if (!isTopMostIntersection) {
+            if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+              onHolePunchHover(null);
+            }
             if (!hasExternalHoverSource) schedulePointerHover(false);
             return;
           }
@@ -939,6 +1022,9 @@ if (uDitherAmount > 0.0) {
           if (propagateForNonModel && !primaryInClippedZone) {
             // Non-model is visible but model hit is in visible zone — suppress
             // model hover and don't consume the event.
+            if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+              onHolePunchHover(null);
+            }
             if (!hasExternalHoverSource) schedulePointerHover(false);
             onModelHoverPointChange?.(null);
             onModelHoverModelChange?.(null);
@@ -951,10 +1037,13 @@ if (uDitherAmount > 0.0) {
 
           // For clipped-zone hits, don't stop propagation but fall through
           // to the placement-preview section so inner-wall hover still works.
-          if (!primaryInClippedZone) {
+          // In interior view, always let events propagate so placed supports
+          // and hole punches behind the X-Ray front face can receive hover.
+          if (!primaryInClippedZone && !(interiorView && cavityGeometry)) {
             e.stopPropagation();
           }
 
+          const interiorViewRedirect = interiorView && cavityGeometry;
           if (primaryInClippedZone) {
             // Primary hit is invisible — suppress model hover highlight but
             // continue to the placement-preview section below.
@@ -962,11 +1051,29 @@ if (uDitherAmount > 0.0) {
             onModelHoverPointChange?.(null);
             onModelHoverModelChange?.(null);
             emitImmediateModelHover(null);
+          } else if (interiorViewRedirect) {
+            // Interior View: redirect hover to the cavity surface behind the X-Ray front face
+            if (!hasExternalHoverSource) schedulePointerHover(true);
+            onModelHoverModelChange?.(modelId);
+            emitImmediateModelHover(modelId);
+            const interiorHit = findClipAwareHit(e.ray, e.object, null, null, e.distance);
+            onModelHoverPointChange?.(interiorHit?.point.clone() ?? e.point.clone());
           } else {
             if (!hasExternalHoverSource) schedulePointerHover(true);
             onModelHoverPointChange?.(e.point.clone());
             onModelHoverModelChange?.(modelId);
             emitImmediateModelHover(modelId);
+          }
+
+          if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+            let hoverHit: THREE.Intersection | null = e as unknown as THREE.Intersection;
+            if (primaryInClippedZone) {
+              const fallback = findClipAwareHit(e.ray, e.object, clipLower, clipUpper, e.distance);
+              hoverHit = fallback ?? null;
+            } else if (interiorViewRedirect) {
+              hoverHit = findClipAwareHit(e.ray, e.object, null, null, e.distance) ?? null;
+            }
+            onHolePunchHover(hoverHit);
           }
 
           if (mode === 'prepare' && transformMode === 'smoothing' && isActiveModel) {
@@ -1009,15 +1116,17 @@ if (uDitherAmount > 0.0) {
             }
 
             let hoverHit: THREE.Intersection = e as unknown as THREE.Intersection;
-            if (
+            const isClippedHit =
               (clipUpper != null && e.point.z > clipUpper) ||
-              (clipLower != null && e.point.z < clipLower)
-            ) {
-              // Primary hit is in the clipped (hidden) zone. Cast directly
-              // against this mesh to find the nearest visible-zone hit.
-              // (R3F + BVH may only provide one intersection per mesh via
-              // firstHitOnly, so we cannot rely on e.intersections here.)
-              const fallback = findClipAwareHit(e.ray, e.object, clipLower, clipUpper, e.distance);
+              (clipLower != null && e.point.z < clipLower);
+            if (isClippedHit || (interiorView && cavityGeometry)) {
+              // Redirect to interior surface (cross-section clip zone or interior view)
+              const fallback = findClipAwareHit(
+                e.ray, e.object,
+                interiorView && cavityGeometry ? null : clipLower,
+                interiorView && cavityGeometry ? null : clipUpper,
+                e.distance,
+              );
               if (!fallback) {
                 onSupportHover(null);
                 return;
@@ -1041,6 +1150,10 @@ if (uDitherAmount > 0.0) {
           onModelHoverModelChange?.(null);
           emitImmediateModelHover(null);
 
+          if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+            onHolePunchHover(null);
+          }
+
           if (mode === 'prepare' && transformMode === 'smoothing' && isActiveModel) {
             setMeshSmoothingHover(null, null);
           }
@@ -1061,6 +1174,12 @@ if (uDitherAmount > 0.0) {
               return;
             }
 
+            if (transformMode === 'hollowing' && onHolePunchClick) {
+              suppressNextHolePunchClickRef.current = !isActiveModel;
+            } else {
+              suppressNextHolePunchClickRef.current = false;
+            }
+
             // If the pointer is over a gizmo handle, do not consume the event at
             // the model layer; let gizmo drag interactions win.
             // GPU pick (isGizmoHoverCategory) handles the visual-overlap case.
@@ -1071,7 +1190,7 @@ if (uDitherAmount > 0.0) {
               return;
             }
 
-            e.stopPropagation();
+            if (!(interiorView && cavityGeometry)) e.stopPropagation();
             window.__modelClickGuardUntil = performance.now() + 48;
             window.__modelClickedThisFrame = true;
             window.setTimeout(() => {
@@ -1108,7 +1227,19 @@ if (uDitherAmount > 0.0) {
           }
         }}
       >
-        {typeof revealGhostOpacity === 'number' ? (
+        {interiorView && cavityGeometry ? (
+          <meshStandardMaterial
+            color={meshColor ?? '#c8c8ce'}
+            transparent
+            opacity={0.12}
+            roughness={0.55}
+            metalness={0.02}
+            clippingPlanes={planes}
+            side={THREE.FrontSide}
+            depthWrite={false}
+            depthTest={true}
+          />
+        ) : typeof revealGhostOpacity === 'number' ? (
           <meshStandardMaterial
             color={meshColor ?? '#c8c8ce'}
             transparent
@@ -1144,10 +1275,44 @@ if (uDitherAmount > 0.0) {
         )}
       </mesh>
 
-      {showOpaqueWireOverlay && (
+      {/* ── Interior View Mode: cavity shell visual-only ── */}
+      {interiorView && cavityGeometry && (
+        <>
+          {/* Cavity interior rendered with user's shader — visual-only, main mesh handles interaction */}
+          <mesh geometry={cavityGeometry} position={meshLocalOffset} renderOrder={1} raycast={() => null}>
+            <MeshShaderMaterial
+              shaderType={baseShaderType}
+              isSelected={!!isSelected}
+              isHovered={isHoveredModel || isMarqueeHovered}
+              useVertexColors={false}
+              hoverTintColor={hoverTintColor}
+              selectedTintColor={selectedTintColor}
+              hoverTintStrength={hoverTintStrength}
+              selectedTintStrength={selectedTintStrength}
+              meshColor={meshColor}
+              matcapVariant={matcapVariant}
+              flatUseVertexColors={flatUseVertexColors}
+              toonSteps={toonSteps}
+              materialRoughness={materialRoughness}
+              clippingPlanes={planes}
+              xrayOpacity={xrayOpacity}
+              heatmapContrast={heatmapContrast}
+              heatmapColors={heatmapColors}
+            />
+          </mesh>
+        </>
+      )}
+
+      {!interiorView && showOpaqueWireOverlay && (
         <mesh geometry={geometry} position={meshLocalOffset} renderOrder={1} raycast={() => null}>
           <OpaqueWireOverlayMaterial clippingPlanes={planes} />
         </mesh>
+      )}
+
+      {!interiorView && higherContrastModelEdges && !showOpaqueWireOverlay && baseShaderType !== 'wireframe' && !blockerEditMode && edgeLinesGeometry && (
+        <lineSegments geometry={edgeLinesGeometry} position={meshLocalOffset} renderOrder={2} raycast={() => null}>
+          <lineBasicMaterial color="#000000" transparent opacity={0.55} depthTest polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} clippingPlanes={planes} />
+        </lineSegments>
       )}
 
       {outOfBoundsMaterial && (

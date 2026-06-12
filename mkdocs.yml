@@ -54,6 +54,7 @@ nav:
       - Interface Tour: getting-started/interface-tour.md
   - Workflows:
       - Model Preparation: workflows/model-preparation.md
+      - Hollowing and Hole Punch: workflows/hollowing.md
       - Transform and Positioning: workflows/transform-and-positioning.md
       - Place On-Face and Mirror: workflows/place-on-face-and-mirror.md
       - Mesh Smoothing: workflows/mesh-smoothing.md

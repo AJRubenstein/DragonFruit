@@ -76,6 +76,10 @@ export const DEFAULT_KEYBINDINGS: HotkeyConfig = {
         TOGGLE_PROJECTION: {
             key: 'o',
             description: 'Toggle camera projection (Orthographic / Perspective)'
+        },
+        INTERIOR_VIEW: {
+            key: 'x',
+            description: 'Toggle Interior View Mode'
         }
     },
     CANVAS: {

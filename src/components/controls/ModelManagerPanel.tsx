@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Eye,
   EyeOff,
-  Trash2,
   Box,
   AlertTriangle,
 
@@ -99,7 +98,7 @@ export function ModelManagerPanel({
   onModelContextMenu,
   onRepairModel,
   onOpenSupportsInfo,
-  onDelete,
+  onDelete: _onDelete,
   onVisibilityChange,
   dimmed = false,
   bottomClearancePx = 220,
@@ -112,6 +111,7 @@ export function ModelManagerPanel({
   const [renamingModelName, setRenamingModelName] = useState('');
   const [renamingModelSuffix, setRenamingModelSuffix] = useState('');
   const [contextMenu, setContextMenu] = useState<PanelContextMenuState | null>(null);
+  void _onDelete;
   const cardRef = useRef<HTMLDivElement | null>(null);
   const resizeDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -327,6 +327,7 @@ export function ModelManagerPanel({
     };
   }, [contextMenu]);
 
+
   return (
     <Card
       className={panelClassName}
@@ -380,7 +381,7 @@ export function ModelManagerPanel({
 
       {expanded && (
         <div className="px-2.5 pt-1 pb-2.5 space-y-2 flex flex-col flex-1 min-h-0">
-<div className="space-y-1 overflow-y-auto custom-scrollbar pr-0.5 flex-1 min-h-0">
+          <div className="space-y-1 overflow-y-auto custom-scrollbar pr-0.5 flex-1 min-h-0">
             {models.length === 0 ? (
               <div className="text-xs text-center py-2 italic" style={{ color: 'var(--text-muted)' }}>
                 No models loaded
