@@ -182,7 +182,7 @@ export function MeshSmoothingSettingsPanel() {
                   type="text"
                   value={clampedColorInput}
                   onChange={(e) => updateMeshSmoothingSettings({ highlightColor: e.target.value })}
-                  className="ui-input flex-1 h-8 text-xs uppercase"
+                  className="ui-input flex-1 min-w-0 h-8 text-xs uppercase"
                   placeholder="#269EFF"
                 />
               </div>
