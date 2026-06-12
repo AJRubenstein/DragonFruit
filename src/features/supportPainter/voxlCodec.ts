@@ -12,7 +12,7 @@ import { type SupportPreset } from '../../supports/Settings/types';
 
 const KNOWN_BRUSH_TYPES = new Set<string>([
   'MacroFace', 'TexturedFace', 'Ridge', 'Point', 'RoughEdge', 'SoftRidge', 'Ring',
-  'ManualCircle', 'ManualSquare', 'Marker', 'PointPath', 'MinimaIslands',
+  'ManualCircle', 'ManualSquare', 'Marker', 'PointPath', 'PointPerimeter', 'SharpCorner', 'MinimaIslands',
   'Unk Legacy Brush'
 ]);
 
@@ -92,6 +92,7 @@ export function serializeROIsForVoxl(
         attemptedCount: r.attemptedCount,
         customBrush: r.customBrush, // Safely serialized V3 field
         placementScriptId: r.placementScriptId,
+        vectorPath: r.vectorPath,
       });
 
       // Find referenced custom scripts
@@ -263,6 +264,7 @@ export function deserializeROIsFromVoxl(
       attemptedCount: r.attemptedCount,
       customBrush,
       placementScriptId: resolvedScriptId,
+      vectorPath: r.vectorPath,
     });
   }
   return result;

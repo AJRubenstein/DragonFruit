@@ -161,6 +161,13 @@ const presets: Record<BrushType, Partial<CustomBrushTemplate['selection']>> = {
     pointPathWidthMm: 0.2,
     pointPathMode: 'line',
   },
+  PointPerimeter: {
+    pointPathWidthMm: 0.2,
+    pointPathMode: 'polygon',
+  },
+  SharpCorner: {
+    pointPathWidthMm: 0.2,
+  },
   MinimaIslands: {},
   'Unk Legacy Brush': {},
 };

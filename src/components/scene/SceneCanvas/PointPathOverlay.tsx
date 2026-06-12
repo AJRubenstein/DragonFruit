@@ -1,16 +1,17 @@
 import React, { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
+import { Line } from '@react-three/drei';
 import { useSupportPainterState } from '@/features/supportPainter/supportPainterStore';
 import { PointPathMarker } from './PointPathMarker';
 
 /**
- * High-Performance Viewport Overlay for Point Path drawing mode.
+ * High-Performance Viewport Overlay for Point Path and Point Perimeter drawing mode.
  * Renders interactive 3D control point handles (0.2mm radius) with a
  * custom pulsating glow-fade shader that changes colors dynamically
  * when loop closure is within connecting range.
  */
-export default function PointPathOverlay() {
+export default function PointPathOverlay({ matrixWorld }: { matrixWorld?: THREE.Matrix4 }) {
   const { activeBrush, pointPathPoints, pointPathMode, hoveredWorldPoint } = useSupportPainterState();
 
   // Reference lists of shader materials to animate uniforms
@@ -30,15 +31,18 @@ export default function PointPathOverlay() {
     });
   });
 
-  // Calculate if the mouse is in range of closing the polygon loop (within 0.3mm)
+  // Calculate if the mouse is in range of closing the polygon loop (within 15px in screen space / 0.3mm local)
   const isInClosingRange = useMemo(() => {
-    if (pointPathPoints.length < 3 || pointPathMode !== 'polygon' || !hoveredWorldPoint) {
+    if (pointPathPoints.length < 3 || (pointPathMode !== 'polygon' && activeBrush !== 'PointPerimeter') || !hoveredWorldPoint) {
       return false;
     }
     const firstPos = new THREE.Vector3(...pointPathPoints[0].point);
+    if (matrixWorld) {
+      firstPos.applyMatrix4(matrixWorld);
+    }
     const hoverPos = new THREE.Vector3(...hoveredWorldPoint);
     return firstPos.distanceTo(hoverPos) < 0.3;
-  }, [pointPathPoints, pointPathMode, hoveredWorldPoint]);
+  }, [pointPathPoints, pointPathMode, activeBrush, hoveredWorldPoint, matrixWorld]);
 
   // Color assignments
   const firstPointColor = useMemo(() => {
@@ -53,30 +57,11 @@ export default function PointPathOverlay() {
   // Line segment path rendering setup
   const linePoints = useMemo(() => {
     const pts = pointPathPoints.map((pt) => new THREE.Vector3(...pt.point));
-    if (pointPathMode === 'polygon' && pts.length >= 3) {
+    if ((pointPathMode === 'polygon' || activeBrush === 'PointPerimeter') && pts.length >= 3) {
       pts.push(pts[0].clone());
     }
     return pts;
-  }, [pointPathPoints, pointPathMode]);
-
-  const lineGeometry = useMemo(() => {
-    return new THREE.BufferGeometry().setFromPoints(linePoints);
-  }, [linePoints]);
-
-  const lineMaterial = useMemo(() => {
-    return new THREE.LineBasicMaterial({
-      color: 0x00FF66,
-      depthTest: false,
-      depthWrite: false,
-      transparent: true,
-      opacity: 0.9,
-    });
-  }, []);
-
-  const lineObject = useMemo(() => {
-    if (linePoints.length < 2) return null;
-    return new THREE.Line(lineGeometry, lineMaterial);
-  }, [linePoints, lineGeometry, lineMaterial]);
+  }, [pointPathPoints, pointPathMode, activeBrush]);
 
   // Handle other points shader refs array allocations
   const registerOtherShaderRef = (index: number) => (el: THREE.ShaderMaterial | null) => {
@@ -85,15 +70,38 @@ export default function PointPathOverlay() {
     }
   };
 
-  // Only render when PointPath brush is active
-  if (activeBrush !== 'PointPath' || pointPathPoints.length === 0) {
+  // Only render when PointPath or PointPerimeter brush is active
+  if ((activeBrush !== 'PointPath' && activeBrush !== 'PointPerimeter') || pointPathPoints.length === 0) {
     return null;
   }
 
   return (
     <group renderOrder={9999}>
       {/* 1. Connecting path lines */}
-      {lineObject && <primitive object={lineObject} />}
+      {linePoints.length >= 2 && (
+        <>
+          {/* Outline Line (Thicker, Dark) */}
+          <Line
+            points={linePoints}
+            color="#1a1a1a"
+            lineWidth={4.5}
+            transparent
+            opacity={0.7}
+            depthTest={false}
+            depthWrite={false}
+          />
+          {/* Core Line (Thinner, Colored) */}
+          <Line
+            points={linePoints}
+            color={isInClosingRange ? '#00FF66' : '#10B981'}
+            lineWidth={2.2}
+            transparent
+            opacity={0.95}
+            depthTest={false}
+            depthWrite={false}
+          />
+        </>
+      )}
 
       {/* 2. Control Point Pulsating Glow Handles */}
       {pointPathPoints.map((pt, index) => {
@@ -114,3 +122,4 @@ export default function PointPathOverlay() {
     </group>
   );
 }
+

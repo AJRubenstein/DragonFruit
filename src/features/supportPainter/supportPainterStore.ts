@@ -31,7 +31,7 @@ import { getShaftProfile } from '@/supports/Settings';
 
 const KNOWN_BRUSH_TYPES = new Set<string>([
   'MacroFace', 'TexturedFace', 'Ridge', 'Point', 'RoughEdge', 'SoftRidge', 'Ring',
-  'ManualCircle', 'ManualSquare', 'Marker', 'PointPath', 'MinimaIslands',
+  'ManualCircle', 'ManualSquare', 'Marker', 'PointPath', 'PointPerimeter', 'SharpCorner', 'MinimaIslands',
   'Unk Legacy Brush'
 ]);
 
@@ -99,18 +99,19 @@ let brushDefaultScripts = new Map<string, string>();
 
 const BRUSH_TYPES_LIST: BrushType[] = [
   'Marker', 'MacroFace', 'TexturedFace', 'Ridge', 'Point', 'RoughEdge', 'SoftRidge', 'Ring',
-  'ManualCircle', 'ManualSquare', 'PointPath', 'MinimaIslands'
+  'ManualCircle', 'ManualSquare', 'PointPath', 'PointPerimeter', 'SharpCorner', 'MinimaIslands'
 ];
 
 function getDefaultOperationsForBrush(brushType: BrushType, defaultSpacing = 4.0): CustomSupportOperation[] {
-  const isPointPathOrMarker = brushType === 'PointPath' || brushType === 'Marker';
-  const isLineBrush = brushType === 'Ridge' || brushType === 'SoftRidge' || brushType === 'PointPath';
   const isMinimaIslands = brushType === 'MinimaIslands';
+  const isLineBrush = brushType === 'Ridge' || brushType === 'SoftRidge' || brushType === 'PointPath' || brushType === 'SharpCorner';
+  const isPointPerimeter = brushType === 'PointPerimeter';
+  const isMarkerOrPointPath = brushType === 'PointPath' || brushType === 'Marker' || brushType === 'SharpCorner';
 
   return [
     {
       type: 'minima' as const,
-      enabled: isMinimaIslands || (!isPointPathOrMarker && !isLineBrush),
+      enabled: isMinimaIslands || (!isMarkerOrPointPath && !isPointPerimeter && !isLineBrush),
       suppression: {
         enabled: true,
         distanceMm: 0.8,
@@ -124,7 +125,7 @@ function getDefaultOperationsForBrush(brushType: BrushType, defaultSpacing = 4.0
     },
     {
       type: 'perimeter' as const,
-      enabled: !isMinimaIslands && !isPointPathOrMarker && !isLineBrush,
+      enabled: isPointPerimeter || (!isMinimaIslands && !isMarkerOrPointPath && !isLineBrush),
       suppression: {
         enabled: false,
         distanceMm: defaultSpacing,
@@ -138,7 +139,7 @@ function getDefaultOperationsForBrush(brushType: BrushType, defaultSpacing = 4.0
     },
     {
       type: 'infill' as const,
-      enabled: !isMinimaIslands && !isLineBrush,
+      enabled: isPointPerimeter || (!isMinimaIslands && !isLineBrush),
       suppression: {
         enabled: true,
         distanceMm: defaultSpacing,
@@ -199,6 +200,7 @@ function _getDefaultScriptIdForBrush(brush: BrushType, pathMode?: 'line' | 'poly
     case 'Point':
     case 'ManualCircle':
     case 'ManualSquare':
+    case 'PointPerimeter':
       return 'default-perimeter-infill-structure';
     case 'Marker':
     case 'Ring':
@@ -206,7 +208,7 @@ function _getDefaultScriptIdForBrush(brush: BrushType, pathMode?: 'line' | 'poly
     case 'Unk Legacy Brush':
       return 'default-infill-only-structure';
     case 'PointPath':
-      return pathMode === 'polygon' ? 'default-infill-only-structure' : 'default-centerline-detail';
+    case 'SharpCorner':
     case 'Ridge':
     case 'SoftRidge':
       return 'default-centerline-detail';
@@ -605,6 +607,10 @@ let pointPathWidthMm = 0.2;
 let pointPathMode: 'line' | 'polygon' = 'line';
 let pointPathClosed = false;
 
+// ─── Sharp Corner Brush State ───
+let sharpCornerDihedralThresholdDeg = 35;
+let sharpCornerWrapCurves = true;
+
 // ─── Phase III Active Brush Pipeline Override State ───
 let activeBrushPipeline: CustomSupportOperation[] | null = null;
 let conflictState: { conflicts: ConflictItem[]; pendingRoiExt: VoxlROIExtension } | null = null;
@@ -704,6 +710,8 @@ let storeSnapshot: SupportPainterState = {
   pointPathWidthMm,
   pointPathMode,
   pointPathClosed,
+  sharpCornerDihedralThresholdDeg,
+  sharpCornerWrapCurves,
   activeBrushPipeline: null,
   conflictState: null,
   failedCandidates: [],
@@ -759,6 +767,8 @@ function updateSnapshot() {
     pointPathWidthMm,
     pointPathMode,
     pointPathClosed,
+    sharpCornerDihedralThresholdDeg,
+    sharpCornerWrapCurves,
     activeBrushPipeline: activeBrushPipeline ? [...activeBrushPipeline] : null,
     conflictState: conflictState ? { ...conflictState } : null,
     failedCandidates: [...failedCandidates],
@@ -975,7 +985,7 @@ export const supportPainterStore = {
     if (smartBrushesDisplayMode === mode) return;
     smartBrushesDisplayMode = mode;
     if (mode === 'std') {
-      const hiddenBrushes = new Set<BrushType>(['Point', 'RoughEdge', 'SoftRidge', 'Ring', 'PointPath']);
+      const hiddenBrushes = new Set<BrushType>(['Point', 'RoughEdge', 'SoftRidge', 'Ring', 'PointPath', 'PointPerimeter', 'SharpCorner']);
       if (hiddenBrushes.has(activeBrush)) {
         this.setActiveBrush('MacroFace');
         return;
@@ -2072,6 +2082,20 @@ export const supportPainterStore = {
     notify();
   },
 
+  setSharpCornerDihedralThresholdDeg(val: number) {
+    if (sharpCornerDihedralThresholdDeg === val) return;
+    sharpCornerDihedralThresholdDeg = val;
+    updateSnapshot();
+    notify();
+  },
+
+  setSharpCornerWrapCurves(val: boolean) {
+    if (sharpCornerWrapCurves === val) return;
+    sharpCornerWrapCurves = val;
+    updateSnapshot();
+    notify();
+  },
+
   setPointPathMode(mode: 'line' | 'polygon') {
     if (pointPathMode === mode) return;
     pointPathMode = mode;
@@ -2095,20 +2119,24 @@ export const supportPainterStore = {
     notify();
   },
 
-  commitPointPathRegion(payload: { seedTriangleId: number }): string {
-    if (proposedTriangleIds.size === 0) return '';
+  commitPointPathRegion(payload: { seedTriangleId: number; brushType?: BrushType }): string {
+    const brush = payload.brushType || activeBrush;
+    const isVectorBrush = brush === 'PointPath' || brush === 'PointPerimeter' || brush === 'SharpCorner';
+
+    if (!isVectorBrush && proposedTriangleIds.size === 0) return '';
+    if (isVectorBrush && pointPathPoints.length === 0) return '';
 
     const id = crypto.randomUUID?.() || Math.random().toString(36).substring(2);
-    const color = BRUSH_COLORS.PointPath;
+    const color = BRUSH_COLORS[brush] || BRUSH_COLORS.PointPath;
 
     const trunkWidth = getShaftProfile()?.diameterMm ?? 1.5;
     const defaultSpacing = trunkWidth * 4.0;
-    const resolvedOps = activeBrushPipeline || getDefaultOperationsForBrush('PointPath', defaultSpacing);
+    const resolvedOps = activeBrushPipeline || getDefaultOperationsForBrush(brush, defaultSpacing);
     const customBrushOverride = {
       id: `temp-pipeline-${Date.now()}`,
-      name: `Temp PointPath Config`,
+      name: `Temp ${brush} Config`,
       color,
-      baseBrush: 'PointPath' as BrushType,
+      baseBrush: brush,
       selection: {
         normalConeAngleMinDeg: 0,
         normalConeAngleMaxDeg: 90,
@@ -2121,10 +2149,10 @@ export const supportPainterStore = {
       operations: JSON.parse(JSON.stringify(resolvedOps)),
     };
 
-    const scriptId = activePlacementScriptId || _getDefaultScriptIdForBrush('PointPath', pointPathMode);
+    const scriptId = activePlacementScriptId || _getDefaultScriptIdForBrush(brush);
     const newRegion: ROIRegion = {
       id,
-      brushType: 'PointPath',
+      brushType: brush,
       seedTriangleId: payload.seedTriangleId,
       triangleIds: new Set(proposedTriangleIds),
       color,
@@ -2132,6 +2160,9 @@ export const supportPainterStore = {
       createdAt: Date.now(),
       customBrush: customBrushOverride,
       placementScriptId: scriptId,
+      vectorPath: isVectorBrush
+        ? pointPathPoints.map(p => ({ point: [...p.point] as [number, number, number], faceIndex: p.faceIndex }))
+        : undefined,
     };
 
     regions.set(id, newRegion);

@@ -107,7 +107,17 @@ const BRUSH_DETAILS: Record<
   },
   PointPath: {
     label: 'Point Path',
-    desc: 'Select points to draw paths or closed loops',
+    desc: 'Select points to draw centerline paths',
+    icon: GitCommit,
+  },
+  PointPerimeter: {
+    label: 'Point Perimeter',
+    desc: 'Draw an enclosed perimeter boundary loop',
+    icon: Circle,
+  },
+  SharpCorner: {
+    label: 'Sharp Corner',
+    desc: 'Propagate along sharp crease edges',
     icon: GitCommit,
   },
   MinimaIslands: {
@@ -321,8 +331,8 @@ export function SupportPainterPanel({
       if (!region) return undefined;
       
       if (region.support) {
-        const isPointPathOrMarker = region.brushType === 'PointPath' || region.brushType === 'Marker';
-        const isLineBrush = region.brushType === 'Ridge' || region.brushType === 'SoftRidge' || (
+        const isPointPathOrMarker = region.brushType === 'PointPath' || region.brushType === 'Marker' || region.brushType === 'SharpCorner';
+        const isLineBrush = region.brushType === 'Ridge' || region.brushType === 'SoftRidge' || region.brushType === 'SharpCorner' || (
           region.brushType === 'PointPath' && region.brush?.parameters?.pointPathMode === 'line'
         );
         const isMinimaIslands = region.brushType === 'MinimaIslands';
@@ -1013,7 +1023,7 @@ export function SupportPainterPanel({
                 .filter((brush) => brush !== 'ManualCircle' && brush !== 'ManualSquare' && brush !== 'MinimaIslands' && brush !== 'Unk Legacy Brush')
                 .filter((brush) => {
                   if (state.smartBrushesDisplayMode === 'std') {
-                    const hiddenBrushes = new Set<BrushType>(['Point', 'RoughEdge', 'SoftRidge', 'Ring', 'PointPath']);
+                    const hiddenBrushes = new Set<BrushType>(['Point', 'RoughEdge', 'SoftRidge', 'Ring', 'PointPath', 'PointPerimeter', 'SharpCorner']);
                     return !hiddenBrushes.has(brush);
                   }
                   return true;
@@ -1390,101 +1400,70 @@ export function SupportPainterPanel({
                 Point Path settings
               </div>
 
-              {/* Path Mode Selector */}
-              <div className="flex flex-col gap-1">
-                <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>
-                  Drawing mode
-                </span>
-                <div className="flex gap-1.5 mt-1">
-                  <Button
-                    className="flex-1 text-xs py-1"
-                    style={{
-                      background: state.pointPathMode === 'line' ? 'var(--accent)' : 'var(--surface-1)',
-                      color: state.pointPathMode === 'line' ? '#fff' : 'var(--text-strong)',
-                    }}
-                    onClick={() => supportPainterStore.setPointPathMode('line')}
-                  >
-                    Segment path
-                  </Button>
-                  <Button
-                    className="flex-1 text-xs py-1"
-                    style={{
-                      background: state.pointPathMode === 'polygon' ? 'var(--accent)' : 'var(--surface-1)',
-                      color: state.pointPathMode === 'polygon' ? '#fff' : 'var(--text-strong)',
-                    }}
-                    onClick={() => supportPainterStore.setPointPathMode('polygon')}
-                  >
-                    Closed loop
-                  </Button>
-                </div>
-              </div>
-
-              {/* Bar Width Slider (Only show for line mode) */}
-              {state.pointPathMode === 'line' && (
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>
-                      Path stroke width
-                    </span>
-                    {isEditingPathWidth ? (
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.1"
-                        max="20"
-                        className="w-20 px-1.5 py-0.5 rounded text-right font-bold text-xs"
-                        style={{
-                          background: 'var(--surface-1)',
-                          borderColor: 'var(--border-subtle)',
-                          color: 'var(--accent)',
-                        }}
-                        autoFocus
-                        value={tempPathWidth}
-                        onChange={(e) => setTempPathWidth(e.target.value)}
-                        onBlur={() => {
+              {/* Bar Width Slider */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>
+                    Path stroke width
+                  </span>
+                  {isEditingPathWidth ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.1"
+                      max="20"
+                      className="w-20 px-1.5 py-0.5 rounded text-right font-bold text-xs"
+                      style={{
+                        background: 'var(--surface-1)',
+                        borderColor: 'var(--border-subtle)',
+                        color: 'var(--accent)',
+                      }}
+                      autoFocus
+                      value={tempPathWidth}
+                      onChange={(e) => setTempPathWidth(e.target.value)}
+                      onBlur={() => {
+                        const val = parseFloat(tempPathWidth);
+                        if (!isNaN(val) && val >= 0.1 && val <= 20) {
+                          supportPainterStore.setPointPathWidthMm(val);
+                        }
+                        setIsEditingPathWidth(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
                           const val = parseFloat(tempPathWidth);
                           if (!isNaN(val) && val >= 0.1 && val <= 20) {
                             supportPainterStore.setPointPathWidthMm(val);
                           }
                           setIsEditingPathWidth(false);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            const val = parseFloat(tempPathWidth);
-                            if (!isNaN(val) && val >= 0.1 && val <= 20) {
-                              supportPainterStore.setPointPathWidthMm(val);
-                            }
-                            setIsEditingPathWidth(false);
-                          } else if (e.key === 'Escape') {
-                            setIsEditingPathWidth(false);
-                          }
-                        }}
-                      />
-                    ) : (
-                      <span
-                        className="font-bold cursor-pointer hover:underline"
-                        style={{ color: 'var(--accent)' }}
-                        title="Click to edit numerically"
-                        onClick={() => {
-                          setTempPathWidth(state.pointPathWidthMm.toString());
-                          setIsEditingPathWidth(true);
-                        }}
-                      >
-                        {state.pointPathWidthMm.toFixed(2)} mm
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max={Math.max(6.0, state.pointPathWidthMm)}
-                    step="0.1"
-                    value={state.pointPathWidthMm}
-                    onChange={(e) => supportPainterStore.setPointPathWidthMm(parseFloat(e.target.value))}
-                    className="w-full accent-accent cursor-pointer"
-                  />
+                        } else if (e.key === 'Escape') {
+                          setIsEditingPathWidth(false);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span
+                      className="font-bold cursor-pointer hover:underline"
+                      style={{ color: 'var(--accent)' }}
+                      title="Click to edit numerically"
+                      onClick={() => {
+                        setTempPathWidth(state.pointPathWidthMm.toString());
+                        setIsEditingPathWidth(true);
+                      }}
+                    >
+                      {state.pointPathWidthMm.toFixed(2)} mm
+                    </span>
+                  )}
                 </div>
-              )}
+                <input
+                  type="range"
+                  min="0.1"
+                  max={Math.max(6.0, state.pointPathWidthMm)}
+                  step="0.1"
+                  value={state.pointPathWidthMm}
+                  onChange={(e) => supportPainterStore.setPointPathWidthMm(parseFloat(e.target.value))}
+                  className="w-full accent-accent cursor-pointer"
+                />
+              </div>
 
               {/* Control Points counter and actions */}
               <div className="flex flex-col gap-2 border-t pt-2 mt-1" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -1501,62 +1480,203 @@ export function SupportPainterPanel({
                   >
                     Clear points
                   </Button>
-                  
-                  {state.pointPathMode === 'line' ? (
-                    <Button
-                      className="flex-1 text-[11px] py-1 bg-green-600 hover:bg-green-700 text-white font-semibold"
-                      disabled={state.pointPathPoints.length < 2}
-                      onClick={() => {
-                        const firstPt = state.pointPathPoints[0];
-                        if (firstPt) {
-                          const newId = supportPainterStore.commitPointPathRegion({
-                            seedTriangleId: firstPt.faceIndex
+                  <Button
+                    className="flex-1 text-[11px] py-1 bg-green-600 hover:bg-green-700 text-white font-semibold"
+                    disabled={state.pointPathPoints.length < 2}
+                    onClick={() => {
+                      const firstPt = state.pointPathPoints[0];
+                      if (firstPt) {
+                        const newId = supportPainterStore.commitPointPathRegion({
+                          seedTriangleId: firstPt.faceIndex
+                        });
+                        const nextSnap = supportPainterStore.getSnapshot();
+                        const addedRegion = nextSnap.regions.get(newId);
+                        if (addedRegion) {
+                          pushHistory({
+                            type: PAINT_ROI_ADD,
+                            description: 'Paint line path region of interest',
+                            payload: { region: addedRegion },
                           });
-                          const nextSnap = supportPainterStore.getSnapshot();
-                          const addedRegion = nextSnap.regions.get(newId);
-                          if (addedRegion) {
-                            pushHistory({
-                              type: PAINT_ROI_ADD,
-                              description: 'Paint line path region of interest',
-                              payload: { region: addedRegion },
-                            });
-                          }
                         }
-                      }}
-                    >
-                      Commit path
-                    </Button>
-                  ) : (
-                    <Button
-                      className="flex-1 text-[11px] py-1 bg-green-600 hover:bg-green-700 text-white font-semibold"
-                      disabled={state.pointPathPoints.length < 3}
-                      onClick={() => {
-                        const firstPt = state.pointPathPoints[0];
-                        if (firstPt) {
-                          const newId = supportPainterStore.commitPointPathRegion({
-                            seedTriangleId: firstPt.faceIndex
-                          });
-                          const nextSnap = supportPainterStore.getSnapshot();
-                          const addedRegion = nextSnap.regions.get(newId);
-                          if (addedRegion) {
-                            pushHistory({
-                              type: PAINT_ROI_ADD,
-                              description: 'Paint polygon region of interest',
-                              payload: { region: addedRegion },
-                            });
-                          }
-                        }
-                      }}
-                    >
-                      Close & Commit
-                    </Button>
-                  )}
+                      }
+                    }}
+                  >
+                    Commit path
+                  </Button>
                 </div>
               </div>
             </div>
           )}
 
+          {/* Point Perimeter Brush Controls */}
+          {state.activeBrush === 'PointPerimeter' && (
+            <div
+              className="flex flex-col gap-3 p-2.5 rounded-lg border text-xs text-left"
+              style={{
+                background: 'var(--surface-2)',
+                borderColor: 'var(--border-subtle)',
+              }}
+            >
+              <div className="font-bold uppercase tracking-wider text-[10px] text-gray-400 border-b pb-1">
+                Point Perimeter settings
+              </div>
 
+              {/* Stroke Width Slider */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>
+                    Boundary stroke width
+                  </span>
+                  {isEditingPathWidth ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.1"
+                      max="20"
+                      className="w-20 px-1.5 py-0.5 rounded text-right font-bold text-xs"
+                      style={{
+                        background: 'var(--surface-1)',
+                        borderColor: 'var(--border-subtle)',
+                        color: 'var(--accent)',
+                      }}
+                      autoFocus
+                      value={tempPathWidth}
+                      onChange={(e) => setTempPathWidth(e.target.value)}
+                      onBlur={() => {
+                        const val = parseFloat(tempPathWidth);
+                        if (!isNaN(val) && val >= 0.1 && val <= 20) {
+                          supportPainterStore.setPointPathWidthMm(val);
+                        }
+                        setIsEditingPathWidth(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = parseFloat(tempPathWidth);
+                          if (!isNaN(val) && val >= 0.1 && val <= 20) {
+                            supportPainterStore.setPointPathWidthMm(val);
+                          }
+                          setIsEditingPathWidth(false);
+                        } else if (e.key === 'Escape') {
+                          setIsEditingPathWidth(false);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span
+                      className="font-bold cursor-pointer hover:underline"
+                      style={{ color: 'var(--accent)' }}
+                      title="Click to edit numerically"
+                      onClick={() => {
+                        setTempPathWidth(state.pointPathWidthMm.toString());
+                        setIsEditingPathWidth(true);
+                      }}
+                    >
+                      {state.pointPathWidthMm.toFixed(2)} mm
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="range"
+                  min="0.1"
+                  max={Math.max(6.0, state.pointPathWidthMm)}
+                  step="0.1"
+                  value={state.pointPathWidthMm}
+                  onChange={(e) => supportPainterStore.setPointPathWidthMm(parseFloat(e.target.value))}
+                  className="w-full accent-accent cursor-pointer"
+                />
+              </div>
+
+              {/* Control Points counter and actions */}
+              <div className="flex flex-col gap-2 border-t pt-2 mt-1" style={{ borderColor: 'var(--border-subtle)' }}>
+                <div className="flex justify-between text-[11px] text-gray-400">
+                  <span>Placed control points:</span>
+                  <span className="font-bold text-white">{state.pointPathPoints.length}</span>
+                </div>
+
+                <div className="flex gap-1.5 mt-1">
+                  <Button
+                    className="flex-1 text-[11px] py-1 bg-red-600 hover:bg-red-700 text-white font-semibold"
+                    disabled={state.pointPathPoints.length === 0}
+                    onClick={() => supportPainterStore.clearPointPathPoints()}
+                  >
+                    Clear points
+                  </Button>
+                  <Button
+                    className="flex-1 text-[11px] py-1 bg-green-600 hover:bg-green-700 text-white font-semibold"
+                    disabled={state.pointPathPoints.length < 3}
+                    onClick={() => {
+                      const firstPt = state.pointPathPoints[0];
+                      if (firstPt) {
+                        supportPainterStore.setPointPathClosed(true);
+                        const newId = supportPainterStore.commitPointPathRegion({
+                          seedTriangleId: firstPt.faceIndex,
+                          brushType: 'PointPerimeter',
+                        });
+                        const nextSnap = supportPainterStore.getSnapshot();
+                        const addedRegion = nextSnap.regions.get(newId);
+                        if (addedRegion) {
+                          pushHistory({
+                            type: PAINT_ROI_ADD,
+                            description: 'Paint point perimeter region',
+                            payload: { region: addedRegion },
+                          });
+                        }
+                      }
+                    }}
+                  >
+                    Commit loop
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Sharp Corner Brush Controls */}
+          {state.activeBrush === 'SharpCorner' && (
+            <div
+              className="flex flex-col gap-3 p-2.5 rounded-lg border text-xs text-left"
+              style={{
+                background: 'var(--surface-2)',
+                borderColor: 'var(--border-subtle)',
+              }}
+            >
+              <div className="font-bold uppercase tracking-wider text-[10px] text-gray-400 border-b pb-1">
+                Sharp Corner settings
+              </div>
+
+              {/* Dihedral angle tolerance slider */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center font-semibold text-text-strong">
+                  <span>Dihedral angle threshold</span>
+                  <span className="font-bold text-accent">
+                    {state.sharpCornerDihedralThresholdDeg}°
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="15"
+                  max="90"
+                  step="1"
+                  value={state.sharpCornerDihedralThresholdDeg}
+                  onChange={(e) => supportPainterStore.setSharpCornerDihedralThresholdDeg(parseInt(e.target.value))}
+                  className="w-full accent-accent cursor-pointer"
+                />
+              </div>
+
+              {/* Wrap curves toggle */}
+              <div className="flex justify-between items-center mt-1 border-t pt-2" style={{ borderColor: 'var(--border-subtle)' }}>
+                <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>
+                  Wrap curves
+                </span>
+                <input
+                  type="checkbox"
+                  checked={state.sharpCornerWrapCurves}
+                  onChange={(e) => supportPainterStore.setSharpCornerWrapCurves(e.target.checked)}
+                  className="w-4 h-4 accent-accent cursor-pointer"
+                />
+              </div>
+            </div>
+          )}
 
               {/* 4. Select Custom Brush */}
           {/* Custom Brushes Selection Section */}
@@ -1778,11 +1898,21 @@ export function SupportPainterPanel({
                       {!matchedScript && (
                         <option value="unsaved">(Unsaved)</option>
                       )}
-                      {Array.from(state.placementScripts.values()).map(script => (
-                        <option key={script.id} value={script.id}>
-                          {script.name}
-                        </option>
-                      ))}
+                      {Array.from(state.placementScripts.values())
+                        .filter(script => {
+                          const isCenterlineOnlyBrush = state.activeBrush === 'PointPath' || state.activeBrush === 'SharpCorner';
+                          const isScriptCenterline = script.id === 'default-centerline-detail' || script.operations.some(op => op.type === 'centerline' && op.enabled);
+                          if (isCenterlineOnlyBrush) {
+                            return isScriptCenterline;
+                          } else {
+                            return !isScriptCenterline || script.id !== 'default-centerline-detail';
+                          }
+                        })
+                        .map(script => (
+                          <option key={script.id} value={script.id}>
+                            {script.name}
+                          </option>
+                        ))}
                     </select>
                   )}
                   

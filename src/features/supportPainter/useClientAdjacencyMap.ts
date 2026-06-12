@@ -1560,3 +1560,271 @@ function getOrComputeMacroNormals(
   map.macroNormalsCache.set(iterations, normals);
   return normals;
 }
+
+export function walkSharpCorner(
+  map: ClientAdjacencyMap,
+  geometry: THREE.BufferGeometry,
+  seedFaceIndex: number,
+  seedPointWorld: THREE.Vector3,
+  matrixWorld: THREE.Matrix4,
+  dihedralThresholdDeg: number,
+  wrapCurves: boolean
+): { point: [number, number, number]; normal?: [number, number, number]; faceIndex?: number }[] {
+  const invMatrixWorld = new THREE.Matrix4().copy(matrixWorld).invert();
+  const seedPointLocal = seedPointWorld.clone().applyMatrix4(invMatrixWorld);
+
+  const positionAttr = geometry.getAttribute('position') as THREE.BufferAttribute;
+  if (!positionAttr) return [];
+  const positions = positionAttr.array;
+  const faceCount = positionAttr.count / 3;
+
+  const vertexMap = new Map<string, number>();
+  const vertexPositions: THREE.Vector3[] = [];
+
+  const getVertexId = (x: number, y: number, z: number): number => {
+    const key = `${Math.round(x * 100000)},${Math.round(y * 100000)},${Math.round(z * 100000)}`;
+    let id = vertexMap.get(key);
+    if (id === undefined) {
+      id = vertexPositions.length;
+      vertexMap.set(key, id);
+      vertexPositions.push(new THREE.Vector3(x, y, z));
+    }
+    return id;
+  };
+
+  const faceVertices: [number, number, number][] = [];
+  for (let f = 0; f < faceCount; f++) {
+    const o = f * 9;
+    const v0 = getVertexId(positions[o], positions[o + 1], positions[o + 2]);
+    const v1 = getVertexId(positions[o + 3], positions[o + 4], positions[o + 5]);
+    const v2 = getVertexId(positions[o + 6], positions[o + 7], positions[o + 8]);
+    faceVertices.push([v0, v1, v2]);
+  }
+
+  interface EdgeInfo {
+    id: string;
+    v0: number;
+    v1: number;
+    faces: number[];
+  }
+  const edgeMap = new Map<string, EdgeInfo>();
+  const vertexEdges = Array.from({ length: vertexPositions.length }, () => new Set<string>());
+
+  const addFaceEdge = (v0: number, v1: number, faceIdx: number) => {
+    const minV = Math.min(v0, v1);
+    const maxV = Math.max(v0, v1);
+    const key = `${minV}_${maxV}`;
+    let edge = edgeMap.get(key);
+    if (!edge) {
+      edge = { id: key, v0: minV, v1: maxV, faces: [] };
+      edgeMap.set(key, edge);
+      vertexEdges[minV].add(key);
+      vertexEdges[maxV].add(key);
+    }
+    if (!edge.faces.includes(faceIdx)) {
+      edge.faces.push(faceIdx);
+    }
+  };
+
+  for (let f = 0; f < faceCount; f++) {
+    const [v0, v1, v2] = faceVertices[f];
+    addFaceEdge(v0, v1, f);
+    addFaceEdge(v1, v2, f);
+    addFaceEdge(v2, v0, f);
+  }
+
+  const getEdgeDihedral = (edge: EdgeInfo): number => {
+    if (edge.faces.length === 0) return 0;
+    if (edge.faces.length === 1) {
+      return Math.PI;
+    }
+    let maxAngle = 0;
+    for (let i = 0; i < edge.faces.length; i++) {
+      for (let j = i + 1; j < edge.faces.length; j++) {
+        const n1 = map.faceNormals[edge.faces[i]];
+        const n2 = map.faceNormals[edge.faces[j]];
+        if (n1 && n2) {
+          const angle = n1.angleTo(n2);
+          if (angle > maxAngle) maxAngle = angle;
+        }
+      }
+    }
+    return maxAngle;
+  };
+
+  const dihedralThresholdRad = dihedralThresholdDeg * Math.PI / 180;
+  const minorThresholdRad = 25 * Math.PI / 180;
+
+  const isCreaseEdge = (edge: EdgeInfo): boolean => {
+    return getEdgeDihedral(edge) >= dihedralThresholdRad;
+  };
+
+  if (seedFaceIndex < 0 || seedFaceIndex >= faceCount) return [];
+  const seedFace = faceVertices[seedFaceIndex];
+  const seedFaceEdges = [
+    `${Math.min(seedFace[0], seedFace[1])}_${Math.max(seedFace[0], seedFace[1])}`,
+    `${Math.min(seedFace[1], seedFace[2])}_${Math.max(seedFace[1], seedFace[2])}`,
+    `${Math.min(seedFace[2], seedFace[0])}_${Math.max(seedFace[2], seedFace[0])}`,
+  ];
+
+  let bestEdgeKey: string | null = null;
+  let bestDist = Infinity;
+
+  const getDistanceToSegment = (p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number => {
+    const ab = new THREE.Vector3().subVectors(b, a);
+    const ap = new THREE.Vector3().subVectors(p, a);
+    const abLenSq = ab.lengthSq();
+    if (abLenSq < 1e-8) return p.distanceTo(a);
+    let t = ap.dot(ab) / abLenSq;
+    t = Math.max(0, Math.min(1, t));
+    const proj = a.clone().addScaledVector(ab, t);
+    return p.distanceTo(proj);
+  };
+
+  for (const ek of seedFaceEdges) {
+    const edge = edgeMap.get(ek);
+    if (edge) {
+      const dist = getDistanceToSegment(seedPointLocal, vertexPositions[edge.v0], vertexPositions[edge.v1]);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestEdgeKey = ek;
+      }
+    }
+  }
+
+  if (bestEdgeKey) {
+    const edge = edgeMap.get(bestEdgeKey)!;
+    if (!isCreaseEdge(edge)) {
+      let maxD = -1;
+      let chosenKey = bestEdgeKey;
+      for (const ek of seedFaceEdges) {
+        const eInfo = edgeMap.get(ek);
+        if (eInfo) {
+          const d = getEdgeDihedral(eInfo);
+          if (d > maxD) {
+            maxD = d;
+            chosenKey = ek;
+          }
+        }
+      }
+      bestEdgeKey = chosenKey;
+    }
+  }
+
+  if (!bestEdgeKey) return [];
+  const startEdge = edgeMap.get(bestEdgeKey)!;
+  if (!isCreaseEdge(startEdge)) {
+    return [];
+  }
+
+  const pathA: number[] = [startEdge.v0];
+  const pathB: number[] = [startEdge.v1];
+  const visitedVertices = new Set<number>([startEdge.v0, startEdge.v1]);
+
+  const propagate = (path: number[], initialPrev: number) => {
+    let curr = path[path.length - 1];
+    let prev = initialPrev;
+
+    while (true) {
+      const connectedEdges = Array.from(vertexEdges[curr]).map(ek => edgeMap.get(ek)!).filter(Boolean);
+      const candidates = connectedEdges.filter(e => !(e.v0 === curr && e.v1 === prev) && !(e.v0 === prev && e.v1 === curr));
+
+      const creaseCandidates = candidates.filter(e => isCreaseEdge(e));
+      if (creaseCandidates.length === 0) break;
+
+      let filtered = creaseCandidates;
+      if (creaseCandidates.length > 1) {
+        filtered = creaseCandidates.filter(e => getEdgeDihedral(e) >= minorThresholdRad);
+        if (filtered.length === 0) {
+          filtered = creaseCandidates;
+        }
+      }
+
+      let nextEdge: EdgeInfo | null = null;
+
+      if (filtered.length === 1) {
+        nextEdge = filtered[0];
+      } else if (filtered.length > 1) {
+        if (wrapCurves) {
+          const dirCurr = new THREE.Vector3().subVectors(vertexPositions[curr], vertexPositions[prev]).normalize();
+          let bestAlign = -Infinity;
+          let bestCandidate: EdgeInfo | null = null;
+          for (const e of filtered) {
+            const nextV = e.v0 === curr ? e.v1 : e.v0;
+            const dirNext = new THREE.Vector3().subVectors(vertexPositions[nextV], vertexPositions[curr]).normalize();
+            const align = dirNext.dot(dirCurr);
+            if (align > bestAlign) {
+              bestAlign = align;
+              bestCandidate = e;
+            }
+          }
+          if (bestCandidate && bestAlign >= 0.5) {
+            nextEdge = bestCandidate;
+          }
+        }
+      }
+
+      if (!nextEdge) break;
+
+      const nextV = nextEdge.v0 === curr ? nextEdge.v1 : nextEdge.v0;
+      if (visitedVertices.has(nextV)) {
+        path.push(nextV);
+        break;
+      }
+
+      path.push(nextV);
+      visitedVertices.add(nextV);
+      prev = curr;
+      curr = nextV;
+    }
+  };
+
+  propagate(pathA, startEdge.v1);
+  propagate(pathB, startEdge.v0);
+
+  const combinedPath = [...pathA].reverse().concat(pathB);
+  const result: { point: [number, number, number]; normal?: [number, number, number]; faceIndex?: number }[] = [];
+
+  for (let i = 0; i < combinedPath.length; i++) {
+    const vIdx = combinedPath[i];
+    const pt = vertexPositions[vIdx];
+
+    const connectedEdges = Array.from(vertexEdges[vIdx]).map(ek => edgeMap.get(ek)!).filter(Boolean);
+    const creaseEdges = connectedEdges.filter(e => isCreaseEdge(e));
+    
+    const faceIndices = new Set<number>();
+    for (const ce of creaseEdges) {
+      for (const f of ce.faces) {
+        faceIndices.add(f);
+      }
+    }
+    if (faceIndices.size === 0) {
+      for (const ce of connectedEdges) {
+        for (const f of ce.faces) {
+          faceIndices.add(f);
+        }
+      }
+    }
+
+    const avgNormal = new THREE.Vector3();
+    for (const f of faceIndices) {
+      const fNorm = map.faceNormals[f];
+      if (fNorm) avgNormal.add(fNorm);
+    }
+    if (faceIndices.size > 0) {
+      avgNormal.normalize();
+    } else {
+      avgNormal.set(0, 0, 1);
+    }
+
+    const firstFaceIndex = faceIndices.size > 0 ? Array.from(faceIndices)[0] : seedFaceIndex;
+
+    result.push({
+      point: [pt.x, pt.y, pt.z],
+      normal: [avgNormal.x, avgNormal.y, avgNormal.z],
+      faceIndex: firstFaceIndex
+    });
+  }
+
+  return result;
+}

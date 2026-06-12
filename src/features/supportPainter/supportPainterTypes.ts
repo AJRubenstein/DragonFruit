@@ -4,7 +4,7 @@ import type { ClientAdjacencyMap } from './useClientAdjacencyMap';
 
 // ─── Brush Identity ─────────────────────────────────────────────────────────
 
-export type BrushType = 'MacroFace' | 'TexturedFace' | 'Ridge' | 'Point' | 'RoughEdge' | 'SoftRidge' | 'Ring' | 'ManualCircle' | 'ManualSquare' | 'Marker' | 'PointPath' | 'MinimaIslands' | 'Unk Legacy Brush';
+export type BrushType = 'MacroFace' | 'TexturedFace' | 'Ridge' | 'Point' | 'RoughEdge' | 'SoftRidge' | 'Ring' | 'ManualCircle' | 'ManualSquare' | 'Marker' | 'PointPath' | 'PointPerimeter' | 'SharpCorner' | 'MinimaIslands' | 'Unk Legacy Brush';
 
 export type CustomSupportOperationType = 'minima' | 'perimeter' | 'infill' | 'centerline';
 
@@ -145,6 +145,8 @@ export const BRUSH_COLORS: Record<BrushType, string> = {
   ManualSquare:   '#F59E0B',   // amber/gold
   Marker:         '#E11D48',   // premium rose/red
   PointPath:      '#10B981',   // emerald/mint green
+  PointPerimeter: '#059669',   // dark emerald/green for perimeter
+  SharpCorner:    '#D97706',   // dark amber/orange for sharp corner
   MinimaIslands:  '#7ED321',   // bright neon green of Point Geodesic
   'Unk Legacy Brush': '#E11D48', // same red as Marker
 };
@@ -188,6 +190,13 @@ export interface ROIRegion {
   // ─── Version 3 Custom Support Brushes ───
   customBrush?:    CustomBrushTemplate;
   placementScriptId?: string | null;
+
+  // ─── Direct Coordinate Binding (Option 1B) ───
+  vectorPath?: {
+    point: [number, number, number]; // Local coordinates
+    normal?: [number, number, number];
+    faceIndex?: number;
+  }[];
 }
 
 // ─── Stage-Based Suppression Configurations [STAGE_SUPPRESSION] ───────────────
@@ -290,6 +299,10 @@ export interface SupportPainterState {
   pointPathWidthMm:       number;
   pointPathMode:          'line' | 'polygon';
   pointPathClosed:        boolean;
+
+  // ─── Sharp Corner Brush State ───
+  sharpCornerDihedralThresholdDeg: number;
+  sharpCornerWrapCurves:           boolean;
 
   // ─── Phase III Active Brush Pipeline Override State ───
   activeBrushPipeline:    CustomSupportOperation[] | null;
@@ -405,6 +418,13 @@ export interface VoxlROIRegion {
   // ─── Version 3 Custom Support Brushes Serialization ───
   customBrush?:    CustomBrushTemplate;
   placementScriptId?: string | null;
+
+  // ─── Direct Coordinate Binding ───
+  vectorPath?: {
+    point: [number, number, number];
+    normal?: [number, number, number];
+    faceIndex?: number;
+  }[];
 }
 
 export interface VoxlROIExtension {

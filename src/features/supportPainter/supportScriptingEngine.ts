@@ -57,6 +57,8 @@ const BRUSH_DETAILS: Record<BrushType, { label: string }> = {
   ManualSquare:   { label: 'Manual Square' },
   Marker:         { label: 'Marker Brush' },
   PointPath:      { label: 'Point Path' },
+  PointPerimeter: { label: 'Point Perimeter' },
+  SharpCorner:    { label: 'Sharp Corner' },
   MinimaIslands:  { label: 'Minima Islands' },
   'Unk Legacy Brush': { label: 'Unk Legacy Brush' },
 };
@@ -1225,6 +1227,18 @@ function getResolvedOperations(region: ROIRegion, defaultSpacing: number): Custo
   return upgradePipeline(undefined, region.brushType, defaultSpacing);
 }
 
+function pointInPolygon2D(x: number, y: number, loop: THREE.Vector3[]): boolean {
+  let inside = false;
+  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+    const xi = loop[i].x, yi = loop[i].y;
+    const xj = loop[j].x, yj = loop[j].y;
+    const intersect = ((yi > y) !== (yj > y))
+        && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 /**
  * High-performance support generator that parses painted regions and outputs physical columns.
  */
@@ -1337,8 +1351,23 @@ export async function generateSupportsFromPainter(
 
   // A. Precompute topological structures and metadata for each region
   for (const region of regions) {
-    const triangleIds = region.triangleIds;
-    if (triangleIds.size === 0) continue;
+    const isVectorBrush = region.vectorPath && region.vectorPath.length > 0;
+    if (!isVectorBrush && region.triangleIds.size === 0) continue;
+
+    const triangleIds = new Set<number>();
+    if (isVectorBrush && region.brushType === 'PointPerimeter') {
+      const worldPts = region.vectorPath!.map(p => new THREE.Vector3(...p.point).applyMatrix4(mesh.matrixWorld));
+      for (let i = 0; i < triangles.length; i++) {
+        const tri = triangles[i];
+        if (pointInPolygon2D(tri.centroid.x, tri.centroid.y, worldPts)) {
+          triangleIds.add(i);
+        }
+      }
+    } else {
+      for (const id of region.triangleIds) {
+        triangleIds.add(id);
+      }
+    }
 
     const regionLoops: VoxlROIBoundaryLoop[] = [];
 
@@ -1378,7 +1407,46 @@ export async function generateSupportsFromPainter(
       (region.brush === undefined && state.pointPathMode === 'line' && !state.pointPathClosed)
     );
 
-    if (region.brushType === 'MinimaIslands') {
+    if (isVectorBrush) {
+      const worldPts = region.vectorPath!.map(p => new THREE.Vector3(...p.point).applyMatrix4(mesh.matrixWorld));
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+      const worldNorms = region.vectorPath!.map(p => {
+        const n = p.normal ? new THREE.Vector3(...p.normal) : new THREE.Vector3(0, 0, 1);
+        return n.applyMatrix3(normalMatrix).normalize();
+      });
+
+      if (region.brushType === 'PointPerimeter') {
+        const loopIndices: number[] = [];
+        for (let j = 0; j < worldPts.length; j++) {
+          const idx = uniqueVertices.length;
+          uniqueVertices.push(worldPts[j]);
+          vertexNormals.set(idx, worldNorms[j]);
+          loopIndices.push(idx);
+        }
+        if (loopIndices.length > 1) {
+          loopIndices.push(loopIndices[0]);
+        }
+        regionLoops.push({
+          type: 'outer',
+          vertexIds: loopIndices,
+        });
+      } else {
+        spineData = { points: worldPts, normals: worldNorms };
+        regionSpines.set(region.id, spineData);
+
+        const pathIndices: number[] = [];
+        for (let j = 0; j < worldPts.length; j++) {
+          const idx = uniqueVertices.length;
+          uniqueVertices.push(worldPts[j]);
+          vertexNormals.set(idx, worldNorms[j]);
+          pathIndices.push(idx);
+        }
+        regionLoops.push({
+          type: 'outer',
+          vertexIds: pathIndices,
+        });
+      }
+    } else if (region.brushType === 'MinimaIslands') {
       // MinimaIslands does not need boundary loops or spines
     } else if (region.brushType === 'SoftRidge' || region.brushType === 'Ridge' || isPointPathLine) {
       // 1D Topological Graph Diameter BFS crease/spine solver
@@ -1819,7 +1887,13 @@ export async function generateSupportsFromPainter(
     // Scan all vertices of the region's triangles to find absolute ROI Z span boundaries once per region
     let regionMinZ = Infinity;
     let regionMaxZ = -Infinity;
-    if (region.triangleIds && region.triangleIds.size > 0) {
+    if (region.vectorPath && region.vectorPath.length > 0) {
+      for (const p of region.vectorPath) {
+        const worldPos = new THREE.Vector3(...p.point).applyMatrix4(mesh.matrixWorld);
+        regionMinZ = Math.min(regionMinZ, worldPos.z);
+        regionMaxZ = Math.max(regionMaxZ, worldPos.z);
+      }
+    } else if (region.triangleIds && region.triangleIds.size > 0) {
       for (const triId of region.triangleIds) {
         const tri = triangles[triId];
         if (!tri) continue;

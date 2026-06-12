@@ -7,10 +7,12 @@ import { usePicking } from '@/components/picking';
 import { MeshShaderMaterial, type MeshShaderType } from '@/features/shaders/mesh';
 import { OpaqueWireOverlayMaterial } from '@/features/shaders/mesh/opaqueWireMesh';
 import { supportPainterStore, useSupportPainterState } from '@/features/supportPainter/supportPainterStore';
-import { proposeRegionOnClient, walkPointPathPolygon } from '@/features/supportPainter/useClientAdjacencyMap';
+import { proposeRegionOnClient, walkPointPathPolygon, walkSharpCorner } from '@/features/supportPainter/useClientAdjacencyMap';
 import { PAINT_ROI_ADD, PAINT_ROI_REMOVE } from '@/features/supportPainter/supportPainterHistoryTypes';
 import { pushHistory } from '@/history/historyStore';
 import { useRoiHighlightMaterial } from '@/features/supportPainter/shaders/roiHighlight';
+import PointPathOverlay from './PointPathOverlay';
+import VectorPathOverlay from './VectorPathOverlay';
 import { generateSupportsFromPainter } from '@/features/supportPainter/supportScriptingEngine';
 import { type ROIRegion, BRUSH_COLORS } from '@/features/supportPainter/supportPainterTypes';
 import {
@@ -34,6 +36,56 @@ import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { SupportMode } from '@/supports/types';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { emitImmediateModelHover } from '@/supports/interaction/pointerOcclusion';
+
+const getSnappedWorldPoint = (
+  clickPoint: THREE.Vector3,
+  faceIndex: number | undefined | null,
+  mesh: THREE.Mesh,
+  camera: THREE.Camera,
+  size: { width: number; height: number },
+  pointer: { x: number; y: number }
+): THREE.Vector3 => {
+  if (faceIndex === undefined || faceIndex === null) return clickPoint;
+  const geom = mesh.geometry;
+  const positionAttr = geom.getAttribute('position') as THREE.BufferAttribute;
+  const indexAttr = geom.index;
+
+  if (!positionAttr) return clickPoint;
+
+  let i0 = faceIndex * 3;
+  let i1 = faceIndex * 3 + 1;
+  let i2 = faceIndex * 3 + 2;
+
+  if (indexAttr) {
+    i0 = indexAttr.getX(faceIndex * 3);
+    i1 = indexAttr.getX(faceIndex * 3 + 1);
+    i2 = indexAttr.getX(faceIndex * 3 + 2);
+  }
+
+  const v0 = new THREE.Vector3().fromBufferAttribute(positionAttr, i0).applyMatrix4(mesh.matrixWorld);
+  const v1 = new THREE.Vector3().fromBufferAttribute(positionAttr, i1).applyMatrix4(mesh.matrixWorld);
+  const v2 = new THREE.Vector3().fromBufferAttribute(positionAttr, i2).applyMatrix4(mesh.matrixWorld);
+
+  const mouseX = ((pointer.x + 1) * size.width) / 2;
+  const mouseY = (-(pointer.y - 1) * size.height) / 2;
+
+  let bestPoint = clickPoint;
+  let minDist = 12; // 12px snap radius
+
+  const vertices = [v0, v1, v2];
+  for (const v of vertices) {
+    const proj = v.clone().project(camera);
+    const projX = ((proj.x + 1) * size.width) / 2;
+    const projY = (-(proj.y - 1) * size.height) / 2;
+    const d = Math.sqrt((projX - mouseX) ** 2 + (projY - mouseY) ** 2);
+    if (d < minDist) {
+      minDist = d;
+      bestPoint = v;
+    }
+  }
+
+  return bestPoint;
+};
 
 // Scratch raycaster reused for clip-zone fallback raycasts.
 const _clipFallbackRaycaster = new THREE.Raycaster();
@@ -262,7 +314,7 @@ function StlMeshComponent({
   // Note: This works because StlMesh is rendered inside PickingProvider
   const { hit } = usePicking(); // Import usePicking at top if not already used inside StlMesh
   const [isPointerHovered, setIsPointerHovered] = React.useState(false);
-  const { camera } = useThree();
+  const { camera, size, pointer } = useThree();
 
   // Build clipping planes directly from current props so clipping never lags
   // by one frame when layer slider updates.
@@ -335,6 +387,24 @@ function StlMeshComponent({
     () => new THREE.Vector3(-centerOffset.x, -centerOffset.y, -centerOffset.z),
     [centerOffset.x, centerOffset.y, centerOffset.z],
   );
+
+  const calculatedMatrixWorld = React.useMemo(() => {
+    const m = new THREE.Matrix4();
+    if (transform) {
+      m.compose(
+        transform.position,
+        quaternionFromGlobalEuler(transform.rotation),
+        transform.scale,
+      );
+    }
+    const translation = new THREE.Matrix4().makeTranslation(
+      meshLocalOffset.x,
+      meshLocalOffset.y,
+      meshLocalOffset.z,
+    );
+    m.multiply(translation);
+    return m;
+  }, [transform, meshLocalOffset]);
 
   const localGeometryBounds = React.useMemo(() => {
     return (
@@ -1221,44 +1291,103 @@ if (uDitherAmount > 0.0) {
             const faceIndex = e.faceIndex;
             if (faceIndex !== undefined && faceIndex !== null) {
               const snap = supportPainterStore.getSnapshot();
-              if (snap.activeBrush === 'PointPath') {
-                const clickPoint = e.point.clone();
-                if (snap.pointPathMode === 'polygon' && snap.pointPathPoints.length >= 3) {
-                  const firstPos = new THREE.Vector3(...snap.pointPathPoints[0].point);
-                  const distToFirst = clickPoint.distanceTo(firstPos);
-                  if (distToFirst < 0.3) {
+              if (snap.activeBrush === 'PointPath' || snap.activeBrush === 'PointPerimeter') {
+                const snappedWorldPoint = getSnappedWorldPoint(
+                  e.point.clone(),
+                  faceIndex,
+                  e.object as THREE.Mesh,
+                  camera,
+                  size,
+                  pointer
+                );
+
+                const mesh = e.object as THREE.Mesh;
+                const matrixWorld = mesh.matrixWorld || new THREE.Matrix4();
+                const invMatrixWorld = new THREE.Matrix4().copy(matrixWorld).invert();
+                const localPoint = snappedWorldPoint.clone().applyMatrix4(invMatrixWorld);
+
+                if (snap.activeBrush === 'PointPerimeter' && snap.pointPathPoints.length >= 3) {
+                  const firstLocalPos = new THREE.Vector3(...snap.pointPathPoints[0].point);
+                  const firstWorldPos = firstLocalPos.clone().applyMatrix4(matrixWorld);
+                  const proj = firstWorldPos.clone().project(camera);
+                  const projX = ((proj.x + 1) * size.width) / 2;
+                  const projY = (-(proj.y - 1) * size.height) / 2;
+
+                  const mouseX = ((pointer.x + 1) * size.width) / 2;
+                  const mouseY = (-(pointer.y - 1) * size.height) / 2;
+                  const distPx = Math.sqrt((projX - mouseX) ** 2 + (projY - mouseY) ** 2);
+
+                  if (distPx < 15) {
                     supportPainterStore.setPointPathClosed(true);
-                    const map = supportPainterStore.getClientAdjacencyMap();
-                    if (map) {
-                      const mesh = e.object as THREE.Mesh;
-                      const matrixWorld = mesh.matrixWorld || new THREE.Matrix4();
-                      const inv = new THREE.Matrix4().copy(matrixWorld).invert();
-                      const localUp = new THREE.Vector3(0, 0, 1).transformDirection(inv);
-                      const scale = new THREE.Vector3();
-                      matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
-                      const worldScale = (scale.x + scale.y + scale.z) / 3;
+                    const newId = supportPainterStore.commitPointPathRegion({
+                      seedTriangleId: snap.pointPathPoints[0].faceIndex,
+                      brushType: 'PointPerimeter',
+                    });
 
-                      const pts = snap.pointPathPoints.map((p) => p.faceIndex);
-                      const finalIds = walkPointPathPolygon(map, pts, localUp, worldScale);
-                      supportPainterStore.setProposedTriangleIds(finalIds);
-                      const newId = supportPainterStore.commitPointPathRegion({
-                        seedTriangleId: snap.pointPathPoints[0].faceIndex,
+                    const nextSnap = supportPainterStore.getSnapshot();
+                    const addedRegion = nextSnap.regions.get(newId);
+                    if (addedRegion) {
+                      pushHistory({
+                        type: PAINT_ROI_ADD,
+                        description: 'Paint point perimeter region',
+                        payload: { region: addedRegion },
                       });
-
-                      const nextSnap = supportPainterStore.getSnapshot();
-                      const addedRegion = nextSnap.regions.get(newId);
-                      if (addedRegion) {
-                        pushHistory({
-                          type: PAINT_ROI_ADD,
-                          description: 'Paint polygon region of interest',
-                          payload: { region: addedRegion },
-                        });
-                      }
                     }
                     return;
                   }
                 }
-                supportPainterStore.addPointPathPoint([clickPoint.x, clickPoint.y, clickPoint.z], faceIndex);
+
+                supportPainterStore.addPointPathPoint([localPoint.x, localPoint.y, localPoint.z], faceIndex);
+                return;
+              }
+
+              if (snap.activeBrush === 'SharpCorner') {
+                const map = supportPainterStore.getClientAdjacencyMap();
+                if (map) {
+                  const snappedWorldPoint = getSnappedWorldPoint(
+                    e.point.clone(),
+                    faceIndex,
+                    e.object as THREE.Mesh,
+                    camera,
+                    size,
+                    pointer
+                  );
+
+                  const mesh = e.object as THREE.Mesh;
+                  const matrixWorld = mesh.matrixWorld || new THREE.Matrix4();
+
+                  const walkedPath = walkSharpCorner(
+                    map,
+                    geometry,
+                    faceIndex,
+                    snappedWorldPoint,
+                    matrixWorld,
+                    snap.sharpCornerDihedralThresholdDeg,
+                    snap.sharpCornerWrapCurves
+                  );
+
+                  if (walkedPath && walkedPath.length > 0) {
+                    supportPainterStore.clearPointPathPoints();
+                    for (const pt of walkedPath) {
+                      supportPainterStore.addPointPathPoint(pt.point, pt.faceIndex ?? faceIndex);
+                    }
+
+                    const newId = supportPainterStore.commitPointPathRegion({
+                      seedTriangleId: faceIndex,
+                      brushType: 'SharpCorner',
+                    });
+
+                    const nextSnap = supportPainterStore.getSnapshot();
+                    const addedRegion = nextSnap.regions.get(newId);
+                    if (addedRegion) {
+                      pushHistory({
+                        type: PAINT_ROI_ADD,
+                        description: 'Paint sharp corner region',
+                        payload: { region: addedRegion },
+                      });
+                    }
+                  }
+                }
                 return;
               }
 
@@ -1495,6 +1624,13 @@ if (uDitherAmount > 0.0) {
             polygonOffsetUnits={-1}
           />
         </mesh>
+      )}
+
+      {isActiveModel && mode === 'supportPainter' && (
+        <group position={meshLocalOffset}>
+          <PointPathOverlay matrixWorld={calculatedMatrixWorld} />
+          <VectorPathOverlay modelId={modelId} />
+        </group>
       )}
 
       {children}
