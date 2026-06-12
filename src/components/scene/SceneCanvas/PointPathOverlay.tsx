@@ -77,8 +77,13 @@ export default function PointPathOverlay({ matrixWorld }: { matrixWorld?: THREE.
     }
   };
 
-  // Only render when PointPath or PointPerimeter brush is active
-  if ((activeBrush !== 'PointPath' && activeBrush !== 'PointPerimeter') || pointPathPoints.length === 0) {
+  // Only render when PointPath, PointPerimeter or SharpCorner brush is active
+  if (
+    (activeBrush !== 'PointPath' &&
+     activeBrush !== 'PointPerimeter' &&
+     activeBrush !== 'SharpCorner') ||
+    pointPathPoints.length === 0
+  ) {
     return null;
   }
 
@@ -94,7 +99,7 @@ export default function PointPathOverlay({ matrixWorld }: { matrixWorld?: THREE.
             lineWidth={4.5}
             transparent
             opacity={0.7}
-            depthTest={false}
+            depthTest={true}
             depthWrite={false}
           />
           {/* Core Line (Thinner, Colored) */}
@@ -104,14 +109,14 @@ export default function PointPathOverlay({ matrixWorld }: { matrixWorld?: THREE.
             lineWidth={2.2}
             transparent
             opacity={0.95}
-            depthTest={false}
+            depthTest={true}
             depthWrite={false}
           />
         </>
       )}
 
       {/* 2. Control Point Pulsating Glow Handles */}
-      {pointPathPoints.map((pt, index) => {
+      {activeBrush !== 'SharpCorner' && pointPathPoints.map((pt, index) => {
         const isFirst = index === 0;
         const color = isFirst ? firstPointColor : standardOrangeColor;
 

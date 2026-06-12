@@ -1363,7 +1363,7 @@ export async function generateSupportsFromPainter(
       const worldPts = region.vectorPath!.map(p => new THREE.Vector3(...p.point).applyMatrix4(mesh.matrixWorld));
       for (let i = 0; i < triangles.length; i++) {
         const tri = triangles[i];
-        if (pointInPolygon2D(tri.centroid.x, tri.centroid.y, worldPts)) {
+        if (tri.normal.z <= 0.1 && pointInPolygon2D(tri.centroid.x, tri.centroid.y, worldPts)) {
           triangleIds.add(i);
         }
       }

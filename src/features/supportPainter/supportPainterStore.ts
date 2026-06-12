@@ -1015,6 +1015,9 @@ export const supportPainterStore = {
     if (activeBrush === brush) return;
     activeBrush = brush;
     
+    pointPathPoints = [];
+    pointPathClosed = false;
+    
     const isMarker = brush === 'Marker' || (activeCustomBrushId !== null && customBrushes.get(activeCustomBrushId)?.baseBrush === 'Marker');
     if (isMarker && directGenEnabled) {
       directGenEnabled = false;
@@ -1067,6 +1070,9 @@ export const supportPainterStore = {
     }
     
     if (changed) {
+      if (id === null && activeBrush === 'SharpCorner') {
+        pointPathPoints = [];
+      }
       const isVectorBrush = activeBrush === 'PointPath' || activeBrush === 'PointPerimeter' || activeBrush === 'SharpCorner';
       if (faceChanged && !isVectorBrush) {
         proposedTriangleIds.clear();
@@ -2084,6 +2090,12 @@ export const supportPainterStore = {
     pointPathClosed = false;
     proposedTriangleIds.clear();
     triangleColorMap = _recomputeTriangleColorMap();
+    updateSnapshot();
+    notify();
+  },
+
+  setPointPathPoints(points: { point: [number, number, number]; faceIndex: number; normal?: [number, number, number] }[]) {
+    pointPathPoints = points;
     updateSnapshot();
     notify();
   },

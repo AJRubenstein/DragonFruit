@@ -347,6 +347,8 @@ function StlMeshComponent({
   const finalMaterialOverride = materialOverride;
 
   const smoothingScratchLocalPointRef = React.useRef(new THREE.Vector3());
+  const lastSharpCornerFaceRef = React.useRef<number | null>(null);
+  const lastSharpCornerPointRef = React.useRef<THREE.Vector3 | null>(null);
   const supportDimCameraLocalPointRef = React.useRef(new THREE.Vector3());
   const supportDimWorldScaleRef = React.useRef(new THREE.Vector3());
   const supportDimMaterialRef = React.useRef<THREE.MeshStandardMaterial | null>(null);
@@ -1108,6 +1110,55 @@ if (uDitherAmount > 0.0) {
                   // Continuous drag painting/erasing when click-and-dragging
                   const snap = supportPainterStore.getSnapshot();
                   const isVectorBrush = snap.activeBrush === 'PointPath' || snap.activeBrush === 'PointPerimeter' || snap.activeBrush === 'SharpCorner';
+
+                  if (snap.activeBrush === 'SharpCorner') {
+                    const map = supportPainterStore.getClientAdjacencyMap();
+                    if (map) {
+                      const snappedWorldPoint = getSnappedWorldPoint(
+                        e.point.clone(),
+                        faceIndex,
+                        e.object as THREE.Mesh,
+                        camera,
+                        size,
+                        pointer
+                      );
+
+                      const mesh = e.object as THREE.Mesh;
+                      const matrixWorld = mesh.matrixWorld || new THREE.Matrix4();
+
+                      const isNewFace = lastSharpCornerFaceRef.current !== faceIndex;
+                      const dist = lastSharpCornerPointRef.current ? snappedWorldPoint.distanceTo(lastSharpCornerPointRef.current) : Infinity;
+                      const isEmpty = snap.pointPathPoints.length === 0;
+
+                      if (isNewFace || dist > 0.01 || isEmpty) {
+                        lastSharpCornerFaceRef.current = faceIndex;
+                        lastSharpCornerPointRef.current = snappedWorldPoint.clone();
+
+                        const walkedPath = walkSharpCorner(
+                          map,
+                          geometry,
+                          faceIndex,
+                          snappedWorldPoint,
+                          matrixWorld,
+                          snap.sharpCornerDihedralThresholdDeg,
+                          snap.sharpCornerWrapCurves
+                        );
+
+                        if (walkedPath && walkedPath.length > 0) {
+                          const formattedPoints = walkedPath.map(pt => ({
+                            point: pt.point,
+                            faceIndex: pt.faceIndex ?? faceIndex,
+                            normal: pt.normal,
+                          }));
+                          supportPainterStore.setPointPathPoints(formattedPoints);
+                        } else {
+                          supportPainterStore.setPointPathPoints([]);
+                        }
+                      }
+                    } else {
+                      supportPainterStore.setPointPathPoints([]);
+                    }
+                  }
                   if (!isVectorBrush && (e.buttons & 1) === 1 && (snap.interactionPhase === 'Expand' || snap.interactionPhase === 'Subtract')) {
                     const map = supportPainterStore.getClientAdjacencyMap();
                     if (map) {
@@ -1239,6 +1290,9 @@ if (uDitherAmount > 0.0) {
           }
 
           if (mode === 'supportPainter') {
+            lastSharpCornerFaceRef.current = null;
+            lastSharpCornerPointRef.current = null;
+            supportPainterStore.setPointPathPoints([]);
             supportPainterStore.setHoveredTriangle(null);
             supportPainterStore.setInteractionPhase('Idle');
           }

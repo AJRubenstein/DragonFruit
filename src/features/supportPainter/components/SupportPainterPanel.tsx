@@ -232,8 +232,6 @@ export function SupportPainterPanel({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isEditingMarkerRadius, setIsEditingMarkerRadius] = useState(false);
   const [tempMarkerRadius, setTempMarkerRadius] = useState('');
-  const [isEditingPathWidth, setIsEditingPathWidth] = useState(false);
-  const [tempPathWidth, setTempPathWidth] = useState('');
   const [showCustomBrushModal, setShowCustomBrushModal] = useState(false);
   const [editingCustomBrush, setEditingCustomBrush] = useState<CustomBrushTemplate | null>(null);
   const [expanded, setExpanded] = useState(false);  // collapsed = support mode, expanded = painter mode
@@ -1400,70 +1398,7 @@ export function SupportPainterPanel({
                 Point Path settings
               </div>
 
-              {/* Bar Width Slider */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>
-                    Path stroke width
-                  </span>
-                  {isEditingPathWidth ? (
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.1"
-                      max="20"
-                      className="w-20 px-1.5 py-0.5 rounded text-right font-bold text-xs"
-                      style={{
-                        background: 'var(--surface-1)',
-                        borderColor: 'var(--border-subtle)',
-                        color: 'var(--accent)',
-                      }}
-                      autoFocus
-                      value={tempPathWidth}
-                      onChange={(e) => setTempPathWidth(e.target.value)}
-                      onBlur={() => {
-                        const val = parseFloat(tempPathWidth);
-                        if (!isNaN(val) && val >= 0.1 && val <= 20) {
-                          supportPainterStore.setPointPathWidthMm(val);
-                        }
-                        setIsEditingPathWidth(false);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const val = parseFloat(tempPathWidth);
-                          if (!isNaN(val) && val >= 0.1 && val <= 20) {
-                            supportPainterStore.setPointPathWidthMm(val);
-                          }
-                          setIsEditingPathWidth(false);
-                        } else if (e.key === 'Escape') {
-                          setIsEditingPathWidth(false);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <span
-                      className="font-bold cursor-pointer hover:underline"
-                      style={{ color: 'var(--accent)' }}
-                      title="Click to edit numerically"
-                      onClick={() => {
-                        setTempPathWidth(state.pointPathWidthMm.toString());
-                        setIsEditingPathWidth(true);
-                      }}
-                    >
-                      {state.pointPathWidthMm.toFixed(2)} mm
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="range"
-                  min="0.1"
-                  max={Math.max(6.0, state.pointPathWidthMm)}
-                  step="0.1"
-                  value={state.pointPathWidthMm}
-                  onChange={(e) => supportPainterStore.setPointPathWidthMm(parseFloat(e.target.value))}
-                  className="w-full accent-accent cursor-pointer"
-                />
-              </div>
+
 
               {/* Control Points counter and actions */}
               <div className="flex flex-col gap-2 border-t pt-2 mt-1" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -1521,70 +1456,7 @@ export function SupportPainterPanel({
                 Point Perimeter settings
               </div>
 
-              {/* Stroke Width Slider */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>
-                    Boundary stroke width
-                  </span>
-                  {isEditingPathWidth ? (
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.1"
-                      max="20"
-                      className="w-20 px-1.5 py-0.5 rounded text-right font-bold text-xs"
-                      style={{
-                        background: 'var(--surface-1)',
-                        borderColor: 'var(--border-subtle)',
-                        color: 'var(--accent)',
-                      }}
-                      autoFocus
-                      value={tempPathWidth}
-                      onChange={(e) => setTempPathWidth(e.target.value)}
-                      onBlur={() => {
-                        const val = parseFloat(tempPathWidth);
-                        if (!isNaN(val) && val >= 0.1 && val <= 20) {
-                          supportPainterStore.setPointPathWidthMm(val);
-                        }
-                        setIsEditingPathWidth(false);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const val = parseFloat(tempPathWidth);
-                          if (!isNaN(val) && val >= 0.1 && val <= 20) {
-                            supportPainterStore.setPointPathWidthMm(val);
-                          }
-                          setIsEditingPathWidth(false);
-                        } else if (e.key === 'Escape') {
-                          setIsEditingPathWidth(false);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <span
-                      className="font-bold cursor-pointer hover:underline"
-                      style={{ color: 'var(--accent)' }}
-                      title="Click to edit numerically"
-                      onClick={() => {
-                        setTempPathWidth(state.pointPathWidthMm.toString());
-                        setIsEditingPathWidth(true);
-                      }}
-                    >
-                      {state.pointPathWidthMm.toFixed(2)} mm
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="range"
-                  min="0.1"
-                  max={Math.max(6.0, state.pointPathWidthMm)}
-                  step="0.1"
-                  value={state.pointPathWidthMm}
-                  onChange={(e) => supportPainterStore.setPointPathWidthMm(parseFloat(e.target.value))}
-                  className="w-full accent-accent cursor-pointer"
-                />
-              </div>
+
 
               {/* Control Points counter and actions */}
               <div className="flex flex-col gap-2 border-t pt-2 mt-1" style={{ borderColor: 'var(--border-subtle)' }}>

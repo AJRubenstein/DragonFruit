@@ -50,7 +50,7 @@ export default function VectorPathOverlay({ modelId }: VectorPathOverlayProps) {
               lineWidth={4.5}
               transparent
               opacity={0.7}
-              depthTest={false}
+              depthTest={true}
               depthWrite={false}
             />
             {/* Core Line (Thinner, Colored) */}
@@ -60,7 +60,7 @@ export default function VectorPathOverlay({ modelId }: VectorPathOverlayProps) {
               lineWidth={2.2}
               transparent
               opacity={0.95}
-              depthTest={false}
+              depthTest={true}
               depthWrite={false}
             />
           </group>

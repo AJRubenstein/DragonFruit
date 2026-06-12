@@ -88,7 +88,7 @@ export function PointPathMarker({
         vertexShader={vertexShader}
         fragmentShader={fragmentShader}
         transparent={true}
-        depthTest={false}
+        depthTest={true}
         depthWrite={false}
         uniforms={uniforms}
       />
