@@ -20,7 +20,10 @@ interface AutoBracingSettingsCardProps {
     } | null;
 }
 
-const compactInputClass = 'ui-input w-full h-[36px] px-3 py-2 text-base no-spinners';
+const unitHint = (unit: string) => (
+    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{unit}</span>
+);
+const compactInputClass = 'ui-input w-full h-[36px] px-3 py-2 text-base text-center no-spinners';
 const compactFieldLabelClass = 'text-[11px] font-medium leading-tight';
 
 export function AutoBracingSettingsCard({
@@ -93,44 +96,60 @@ export function AutoBracingSettingsCard({
             {/* Row 1: Brace Diameter | Max Brace Distance */}
             <div className="grid grid-cols-2 gap-1.5 items-start">
                 <label className="space-y-1 min-w-0">
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Brace Diameter (mm)</div>
-                    <NumberInput
-                        value={settings.braceDiameterMm}
-                        onChange={(value) => onChange({ braceDiameterMm: value })}
-                        step={0.1}
-                        className={compactInputClass}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Brace Diameter</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.braceDiameterMm}
+                            onChange={(value) => onChange({ braceDiameterMm: value })}
+                            step={0.1}
+                            showStepper={false}
+                            className={compactInputClass}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </label>
                 <label className="space-y-1 min-w-0">
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Max Brace Distance (mm)</div>
-                    <NumberInput
-                        value={settings.maxBraceLengthMm}
-                        onChange={(value) => onChange({ maxBraceLengthMm: value })}
-                        step={0.1}
-                        className={compactInputClass}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Max Brace Distance</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.maxBraceLengthMm}
+                            onChange={(value) => onChange({ maxBraceLengthMm: value })}
+                            step={0.1}
+                            showStepper={false}
+                            className={compactInputClass}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </label>
             </div>
 
             {/* Row 2: Initial Distance | Repeat Interval */}
             <div className="grid grid-cols-2 gap-1.5 items-start">
                 <label className="space-y-1 min-w-0">
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Initial Distance (mm)</div>
-                    <NumberInput
-                        value={settings.initialDistanceMm}
-                        onChange={(value) => onChange({ initialDistanceMm: value })}
-                        step={0.1}
-                        className={compactInputClass}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Initial Distance</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.initialDistanceMm}
+                            onChange={(value) => onChange({ initialDistanceMm: value })}
+                            step={0.1}
+                            showStepper={false}
+                            className={compactInputClass}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </label>
                 <label className="space-y-1 min-w-0">
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Repeat Interval (mm)</div>
-                    <NumberInput
-                        value={settings.patternIntervalMm}
-                        onChange={(value) => onChange({ patternIntervalMm: value })}
-                        step={0.1}
-                        className={compactInputClass}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Repeat Interval</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.patternIntervalMm}
+                            onChange={(value) => onChange({ patternIntervalMm: value })}
+                            step={0.1}
+                            showStepper={false}
+                            className={compactInputClass}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </label>
             </div>
 

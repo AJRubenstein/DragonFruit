@@ -60,7 +60,7 @@ import {
 import { DEFAULT_RAFT_SETTINGS } from '../Rafts/Crenelated/RaftDefaults';
 import type { SupportKind } from './supportKindState';
 
-const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm no-spinners';
+const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm text-center no-spinners';
 const SECTION_CARD_STYLE: React.CSSProperties = {
     borderColor: 'var(--border-subtle)',
     background: 'var(--surface-1)',
@@ -786,27 +786,39 @@ export function SupportSidebar() {
         : 'text-[11px] font-medium leading-tight';
     const compactTrunkPairClass = 'grid grid-cols-2 gap-1.5 items-start';
 
+    const unitHint = (unit: string) => (
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{unit}</span>
+    );
+
     const supportGeometryFieldsDefault = (
         <div className="space-y-2.5">
             <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('tip.contactDiameterMm')}>
-                <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Contact Diameter (mm)">Contact Diameter (mm)</div>
-                <NumberInput
-                    value={settings.tip.contactDiameterMm}
-                    onChange={(val) => updateTipProfile({ contactDiameterMm: val })}
-                    step={0.1}
-                    {...getInputProps('tip.contactDiameterMm', compactInputClass)}
-                />
+                <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Contact Diameter">Contact Diameter</div>
+                <div className="relative">
+                    <NumberInput
+                        value={settings.tip.contactDiameterMm}
+                        onChange={(val) => updateTipProfile({ contactDiameterMm: val })}
+                        step={0.1}
+                        showStepper={false}
+                        {...getInputProps('tip.contactDiameterMm', compactInputClass)}
+                    />
+                    {unitHint('mm')}
+                </div>
             </div>
 
             {(activeKind === 'trunk' || activeKind === 'branch' || activeKind === 'leaf') && (
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('tip.lengthMm')}>
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Contact Cone Length (mm)">Contact Cone Length (mm)</div>
-                    <NumberInput
-                        value={settings.tip.lengthMm}
-                        onChange={(val) => updateTipProfile({ lengthMm: val })}
-                        step={0.1}
-                        {...getInputProps('tip.lengthMm', compactInputClass)}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Contact Cone Length">Contact Cone Length</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.tip.lengthMm}
+                            onChange={(val) => updateTipProfile({ lengthMm: val })}
+                            step={0.1}
+                            showStepper={false}
+                            {...getInputProps('tip.lengthMm', compactInputClass)}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </div>
             )}
 
@@ -817,15 +829,15 @@ export function SupportSidebar() {
                     setAnatomyPreviewActiveSettingKey(null);
                 })}>
                     <div
-                        className={isAdaptiveConeAngle ? 'grid grid-cols-[1fr_82px] gap-1 items-center' : 'flex items-center'}
+                        className={isAdaptiveConeAngle ? 'grid grid-cols-2 gap-1.5 items-center' : 'flex items-center'}
                     >
-                        <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Cone Angle">Cone Angle</div>
+                        <div className={`${compactFieldLabelClass} text-center`} style={{ color: 'var(--text-muted)' }} title="Cone Angle">Cone Angle</div>
                         {isAdaptiveConeAngle && (
-                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Offset">Offset</div>
+                            <div className={`${compactFieldLabelClass} text-center`} style={{ color: 'var(--text-muted)' }} title="Offset">Offset</div>
                         )}
                     </div>
                     <div
-                        className={isAdaptiveConeAngle ? 'grid grid-cols-[1fr_82px] gap-1 items-center' : 'flex items-center gap-1'}
+                        className={isAdaptiveConeAngle ? 'grid grid-cols-2 gap-1.5 items-center' : 'flex items-center gap-1'}
                     >
                         <SelectDropdown
                             value={settings.tip.coneAngleMode ?? 'normal'}
@@ -835,7 +847,7 @@ export function SupportSidebar() {
                                 { value: 'locked', label: 'Locked' },
                                 { value: 'adaptive', label: 'Adaptive' },
                             ]}
-                            className={`${isAdaptiveConeAngle ? 'w-full' : 'flex-1'} min-w-0 space-y-0`}
+                            className={`${isAdaptiveConeAngle ? 'w-full' : 'flex-1'} min-w-0 space-y-0 h-8`}
                             selectClassName={`${isAdaptiveConeAngle ? 'w-full' : 'flex-1'} min-w-0 h-8 px-2.5 pr-10 text-xs sm:text-sm truncate`}
                             menuClassName="!min-w-[9.5rem]"
                             selectedDisplay={useAdaptiveIconCompactDisplay ? <WandSparkles className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} aria-label="Adaptive mode" /> : undefined}
@@ -848,16 +860,21 @@ export function SupportSidebar() {
                                     boxShadow: '0 0 0 1px color-mix(in srgb, var(--accent), white 8%) inset, 0 0 0 2px color-mix(in srgb, var(--accent), transparent 72%)',
                                 }
                                 : undefined}
+
                         />
 
                         {isAdaptiveConeAngle && (
-                            <NumberInput
-                                value={settings.tip.adaptiveConeAngleOffsetDeg ?? 30}
-                                onChange={(val) => updateTipProfile({ adaptiveConeAngleOffsetDeg: val })}
-                                aria-label="Adaptive offset (deg)"
-                                title="Adaptive offset (deg)"
-                                {...getInputProps('tip.adaptiveConeAngleOffsetDeg', compactInputClass)}
-                            />
+                            <div className="relative h-8">
+                                <NumberInput
+                                    value={settings.tip.adaptiveConeAngleOffsetDeg ?? 30}
+                                    onChange={(val) => updateTipProfile({ adaptiveConeAngleOffsetDeg: val })}
+                                    aria-label="Adaptive offset"
+                                    title="Adaptive offset"
+                                    showStepper={false}
+                                    {...getInputProps('tip.adaptiveConeAngleOffsetDeg', compactInputClass)}
+                                />
+                                {unitHint('°')}
+                            </div>
                         )}
                     </div>
                 </div>
@@ -865,50 +882,65 @@ export function SupportSidebar() {
 
             {(activeKind === 'trunk' || activeKind === 'branch') && (
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('shaft.diameterMm')}>
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Trunk Diameter (mm)">Trunk Diameter (mm)</div>
-                    <NumberInput
-                        value={settings.shaft.diameterMm}
-                        onChange={(val) => updateShaftProfile({ diameterMm: val })}
-                        step={0.1}
-                        {...getInputProps('shaft.diameterMm', compactInputClass)}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Trunk Diameter">Trunk Diameter</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.shaft.diameterMm}
+                            onChange={(val) => updateShaftProfile({ diameterMm: val })}
+                            step={0.1}
+                            showStepper={false}
+                            {...getInputProps('shaft.diameterMm', compactInputClass)}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </div>
             )}
 
             {activeKind === 'trunk' && (
                 <>
                     <div className="h-px" style={{ background: 'var(--border-subtle)' }} />
-                    <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Roots</div>
 
                     <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.diameterMm')}>
-                        <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Roots Diameter (mm)">Roots Diameter (mm)</div>
-                        <NumberInput
-                            value={settings.roots.diameterMm}
-                            onChange={(val) => updateRootsProfile({ diameterMm: val })}
-                            step={0.1}
-                            {...getInputProps('roots.diameterMm', compactInputClass)}
-                        />
+                        <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Roots Diameter">Roots Diameter</div>
+                        <div className="relative">
+                            <NumberInput
+                                value={settings.roots.diameterMm}
+                                onChange={(val) => updateRootsProfile({ diameterMm: val })}
+                                step={0.1}
+                                showStepper={false}
+                                {...getInputProps('roots.diameterMm', compactInputClass)}
+                            />
+                            {unitHint('mm')}
+                        </div>
                     </div>
 
                     <div className="space-y-2">
                         <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.diskHeightMm')}>
-                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Disk Height (mm)</div>
-                            <NumberInput
-                                value={settings.roots.diskHeightMm}
-                                onChange={(val) => updateRootsProfile({ diskHeightMm: val })}
-                                step={0.1}
-                                {...getInputProps('roots.diskHeightMm', compactInputClass)}
-                            />
+                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Disk Height</div>
+                            <div className="relative">
+                                <NumberInput
+                                    value={settings.roots.diskHeightMm}
+                                    onChange={(val) => updateRootsProfile({ diskHeightMm: val })}
+                                    step={0.1}
+                                    showStepper={false}
+                                    {...getInputProps('roots.diskHeightMm', compactInputClass)}
+                                />
+                                {unitHint('mm')}
+                            </div>
                         </div>
 
                         <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.coneHeightMm')}>
-                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Cone Height (mm)</div>
-                            <NumberInput
-                                value={settings.roots.coneHeightMm}
-                                onChange={(val) => updateRootsProfile({ coneHeightMm: val })}
-                                step={0.1}
-                                {...getInputProps('roots.coneHeightMm', compactInputClass)}
-                            />
+                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Cone Height</div>
+                            <div className="relative">
+                                <NumberInput
+                                    value={settings.roots.coneHeightMm}
+                                    onChange={(val) => updateRootsProfile({ coneHeightMm: val })}
+                                    step={0.1}
+                                    showStepper={false}
+                                    {...getInputProps('roots.coneHeightMm', compactInputClass)}
+                                />
+                                {unitHint('mm')}
+                            </div>
                         </div>
                     </div>
                 </>
@@ -920,23 +952,31 @@ export function SupportSidebar() {
         <div className="space-y-2.5">
             <div className={compactTrunkPairClass}>
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('tip.contactDiameterMm')}>
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Contact Diameter (mm)">Contact Diameter (mm)</div>
-                    <NumberInput
-                        value={settings.tip.contactDiameterMm}
-                        onChange={(val) => updateTipProfile({ contactDiameterMm: val })}
-                        step={0.1}
-                        {...getInputProps('tip.contactDiameterMm', compactInputClass)}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Contact Diameter">Contact Diameter</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.tip.contactDiameterMm}
+                            onChange={(val) => updateTipProfile({ contactDiameterMm: val })}
+                            step={0.1}
+                            showStepper={false}
+                            {...getInputProps('tip.contactDiameterMm', compactInputClass)}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </div>
 
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('tip.lengthMm')}>
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Contact Cone Length (mm)">Contact Cone Length (mm)</div>
-                    <NumberInput
-                        value={settings.tip.lengthMm}
-                        onChange={(val) => updateTipProfile({ lengthMm: val })}
-                        step={0.1}
-                        {...getInputProps('tip.lengthMm', compactInputClass)}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Contact Cone Length">Contact Cone Length</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.tip.lengthMm}
+                            onChange={(val) => updateTipProfile({ lengthMm: val })}
+                            step={0.1}
+                            showStepper={false}
+                            {...getInputProps('tip.lengthMm', compactInputClass)}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </div>
             </div>
 
@@ -948,9 +988,9 @@ export function SupportSidebar() {
                 <div
                     className={isAdaptiveConeAngle ? 'grid grid-cols-2 gap-1.5 items-center' : 'flex items-center'}
                 >
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Cone Angle">Cone Angle</div>
+                    <div className={`${compactFieldLabelClass} text-center`} style={{ color: 'var(--text-muted)' }} title="Cone Angle">Cone Angle</div>
                     {isAdaptiveConeAngle && (
-                        <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Offset">Offset</div>
+                        <div className={`${compactFieldLabelClass} text-center`} style={{ color: 'var(--text-muted)' }} title="Offset">Offset</div>
                     )}
                 </div>
                 <div
@@ -980,58 +1020,78 @@ export function SupportSidebar() {
                     />
 
                     {isAdaptiveConeAngle && (
-                        <NumberInput
-                            value={settings.tip.adaptiveConeAngleOffsetDeg ?? 30}
-                            onChange={(val) => updateTipProfile({ adaptiveConeAngleOffsetDeg: val })}
-                            aria-label="Adaptive offset (deg)"
-                            title="Adaptive offset (deg)"
-                            {...getInputProps('tip.adaptiveConeAngleOffsetDeg', compactInputClass)}
-                        />
+                        <div className="relative">
+                            <NumberInput
+                                value={settings.tip.adaptiveConeAngleOffsetDeg ?? 30}
+                                onChange={(val) => updateTipProfile({ adaptiveConeAngleOffsetDeg: val })}
+                                aria-label="Adaptive offset"
+                                title="Adaptive offset"
+                                showStepper={false}
+                                {...getInputProps('tip.adaptiveConeAngleOffsetDeg', compactInputClass)}
+                            />
+                            {unitHint('°')}
+                        </div>
                     )}
                 </div>
             </div>
 
             <div className={compactTrunkPairClass}>
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('shaft.diameterMm')}>
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Trunk Diameter (mm)">Trunk Diameter (mm)</div>
-                    <NumberInput
-                        value={settings.shaft.diameterMm}
-                        onChange={(val) => updateShaftProfile({ diameterMm: val })}
-                        step={0.1}
-                        {...getInputProps('shaft.diameterMm', compactInputClass)}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Trunk Diameter">Trunk Diameter</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.shaft.diameterMm}
+                            onChange={(val) => updateShaftProfile({ diameterMm: val })}
+                            step={0.1}
+                            showStepper={false}
+                            {...getInputProps('shaft.diameterMm', compactInputClass)}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </div>
 
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.diameterMm')}>
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Roots Diameter (mm)">Roots Diameter (mm)</div>
-                    <NumberInput
-                        value={settings.roots.diameterMm}
-                        onChange={(val) => updateRootsProfile({ diameterMm: val })}
-                        step={0.1}
-                        {...getInputProps('roots.diameterMm', compactInputClass)}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Roots Diameter">Roots Diameter</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.roots.diameterMm}
+                            onChange={(val) => updateRootsProfile({ diameterMm: val })}
+                            step={0.1}
+                            showStepper={false}
+                            {...getInputProps('roots.diameterMm', compactInputClass)}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </div>
             </div>
 
             <div className={compactTrunkPairClass}>
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.diskHeightMm')}>
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Disk Height (mm)">Disk Height (mm)</div>
-                    <NumberInput
-                        value={settings.roots.diskHeightMm}
-                        onChange={(val) => updateRootsProfile({ diskHeightMm: val })}
-                        step={0.1}
-                        {...getInputProps('roots.diskHeightMm', compactInputClass)}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Disk Height">Disk Height</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.roots.diskHeightMm}
+                            onChange={(val) => updateRootsProfile({ diskHeightMm: val })}
+                            step={0.1}
+                            showStepper={false}
+                            {...getInputProps('roots.diskHeightMm', compactInputClass)}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </div>
 
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.coneHeightMm')}>
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Cone Height (mm)">Cone Height (mm)</div>
-                    <NumberInput
-                        value={settings.roots.coneHeightMm}
-                        onChange={(val) => updateRootsProfile({ coneHeightMm: val })}
-                        step={0.1}
-                        {...getInputProps('roots.coneHeightMm', compactInputClass)}
-                    />
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Cone Height">Cone Height</div>
+                    <div className="relative">
+                        <NumberInput
+                            value={settings.roots.coneHeightMm}
+                            onChange={(val) => updateRootsProfile({ coneHeightMm: val })}
+                            step={0.1}
+                            showStepper={false}
+                            {...getInputProps('roots.coneHeightMm', compactInputClass)}
+                        />
+                        {unitHint('mm')}
+                    </div>
                 </div>
             </div>
         </div>
