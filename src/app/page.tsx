@@ -29,9 +29,10 @@ import { DuplicatePanel, type DuplicateLayoutMode } from '../components/controls
 import { VisualSettingsPanel } from '@/components/controls/VisualSettingsPanel';
 import { LayerSlider } from '@/components/controls/LayerSlider';
 import { PrintingLayerGpuPreview } from '@/components/controls/PrintingLayerGpuPreview';
-import { SupportSidebar } from '@/supports/Settings';
 import { SupportPainterTooltipCard } from '@/features/supportPainter/components/SupportPainterTooltipCard';
 import { SupportPainterPanel } from '@/features/supportPainter/components/SupportPainterPanel';
+import { useSupportPainterState } from '@/features/supportPainter/supportPainterStore';
+
 import { ExportPanel } from '@/features/export/components/ExportPanel';
 import { ExportManager } from '@/features/export/logic/ExportManager';
 import { resolveEntirePlateExportBaseName } from '@/features/export/logic/exportFileNaming';
@@ -832,6 +833,8 @@ function readNumberField(payload: JsonObject, key: string): number | null {
 export default function Home() {
   // 1. Scene & Geometry (Multi-Model)
   const scene = useSceneCollectionManager();
+  const painterState = useSupportPainterState();
+
   const importSceneFile = scene.importSceneFile;
   const importSceneFiles = scene.importSceneFiles;
   const recentOpenedFiles = scene.recentOpenedFiles;
@@ -18346,7 +18349,39 @@ export default function Home() {
               </div>
             )}
 
+      {painterState.isBuildingAdjacencyMap && (
+        <div className="absolute inset-0 z-[120] flex items-center justify-center bg-black/45 backdrop-blur-[1px]">
+          <div
+            className="w-[min(420px,92vw)] rounded-xl border px-5 py-4 shadow-xl"
+            style={{
+              background: 'color-mix(in srgb, var(--surface-0), black 10%)',
+              borderColor: 'var(--border-subtle)',
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-live="polite"
+          >
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+              Initializing Support Painter…
+            </div>
+            <div className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              Analyzing mesh geometry and building face adjacency map
+            </div>
+            <div
+              className="ui-loading-track mt-3 h-2.5 w-full rounded-full"
+              style={{ background: 'color-mix(in srgb, var(--surface-2), black 20%)' }}
+            >
+              <div
+                className="ui-loading-indicator"
+                style={{ background: 'linear-gradient(90deg, var(--accent), #ff79c6)' }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {showArrangeBlockingOverlay && (
+
         <div className="absolute inset-0 z-[120] flex items-center justify-center bg-black/45 backdrop-blur-[1px]">
           <div
             className="w-[min(520px,92vw)] rounded-xl border px-5 py-4 shadow-xl"

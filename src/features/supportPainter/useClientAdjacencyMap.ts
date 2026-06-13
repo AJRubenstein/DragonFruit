@@ -9,6 +9,7 @@ export interface ClientAdjacencyMap {
   faceZBounds: { min: number; max: number }[];
   macroNormalsCache?: Map<number, THREE.Vector3[]>;
   positions?: Float32Array | ArrayLike<number>;
+  indices?: Uint16Array | Uint32Array | Int32Array | ArrayLike<number> | null;
   _topology?: {
     vertexPositions: THREE.Vector3[];
     faceVertices: [number, number, number][];
@@ -28,7 +29,8 @@ export function wrapFlatAdjacencyMap(
   faceNormalsFlat: Float32Array,
   faceCentroidsFlat: Float32Array,
   faceZBoundsFlat: Float32Array,
-  positions: Float32Array | ArrayLike<number>
+  positions: Float32Array | ArrayLike<number>,
+  indices?: Uint16Array | Uint32Array | Int32Array | ArrayLike<number> | null
 ): ClientAdjacencyMap {
   const cachedFaceToFaces = new Array(faceCount);
   const cachedFaceNormals = new Array(faceCount);
@@ -119,6 +121,7 @@ export function wrapFlatAdjacencyMap(
     faceCentroids,
     faceZBounds,
     positions,
+    indices,
   };
 }
 
@@ -148,6 +151,7 @@ export function buildClientAdjacencyMap(geometry: THREE.BufferGeometry): ClientA
   // Weld vertices using a numeric hash grid to avoid string allocations
   const vertexHash = new Map<number, number[]>();
   const vertexCoords: number[] = [];
+  const vertexRoundCoords: number[] = []; // rx, ry, rz
   let nextVertexId = 0;
 
   const getVertexId = (x: number, y: number, z: number): number => {
@@ -163,16 +167,17 @@ export function buildClientAdjacencyMap(geometry: THREE.BufferGeometry): ClientA
     }
 
     for (const id of list) {
-      const vx = vertexCoords[id * 3];
-      const vy = vertexCoords[id * 3 + 1];
-      const vz = vertexCoords[id * 3 + 2];
-      if (Math.abs(vx - x) < 1e-5 && Math.abs(vy - y) < 1e-5 && Math.abs(vz - z) < 1e-5) {
+      const vrx = vertexRoundCoords[id * 3];
+      const vry = vertexRoundCoords[id * 3 + 1];
+      const vrz = vertexRoundCoords[id * 3 + 2];
+      if (vrx === rx && vry === ry && vrz === rz) {
         return id;
       }
     }
 
     const id = nextVertexId++;
     list.push(id);
+    vertexRoundCoords.push(rx, ry, rz);
     vertexCoords.push(x, y, z);
     return id;
   };
@@ -283,13 +288,15 @@ export function buildClientAdjacencyMap(geometry: THREE.BufferGeometry): ClientA
     faceNormalsFlat,
     faceCentroidsFlat,
     faceZBoundsFlat,
-    positions
+    positions,
+    indices
   );
 
   map.faceToFacesFlat = faceToFacesFlat;
   map.faceNormalsFlat = faceNormalsFlat;
   map.faceCentroidsFlat = faceCentroidsFlat;
   map.faceZBoundsFlat = faceZBoundsFlat;
+  map.indices = indices;
 
   return map;
 }
@@ -1740,6 +1747,7 @@ export function walkPointPathPolygon(
   }
 
   const finalFaces: number[] = [];
+  const indices = map.indices;
   for (const face of candidateFaces) {
     // Project the 3 vertices of the face
     const positions = map.positions;
@@ -1748,10 +1756,17 @@ export function walkPointPathPolygon(
       continue;
     }
     
+    let i0 = face * 3, i1 = face * 3 + 1, i2 = face * 3 + 2;
+    if (indices) {
+      i0 = indices[face * 3];
+      i1 = indices[face * 3 + 1];
+      i2 = indices[face * 3 + 2];
+    }
+    
     // Retrieve vertices in local space
-    const v0 = new THREE.Vector3(positions[face * 9], positions[face * 9 + 1], positions[face * 9 + 2]);
-    const v1 = new THREE.Vector3(positions[face * 9 + 3], positions[face * 9 + 4], positions[face * 9 + 5]);
-    const v2 = new THREE.Vector3(positions[face * 9 + 6], positions[face * 9 + 7], positions[face * 9 + 8]);
+    const v0 = new THREE.Vector3(positions[i0 * 3], positions[i0 * 3 + 1], positions[i0 * 3 + 2]);
+    const v1 = new THREE.Vector3(positions[i1 * 3], positions[i1 * 3 + 1], positions[i1 * 3 + 2]);
+    const v2 = new THREE.Vector3(positions[i2 * 3], positions[i2 * 3 + 1], positions[i2 * 3 + 2]);
 
     const rel0 = new THREE.Vector3().subVectors(v0, seedCentroid);
     const rel1 = new THREE.Vector3().subVectors(v1, seedCentroid);
@@ -1951,12 +1966,20 @@ export function walkSharpCorner(
       return id;
     };
 
+    const indexAttr = geometry.index;
+    const indices = indexAttr ? indexAttr.array : null;
+
     const faceVertices: [number, number, number][] = [];
     for (let f = 0; f < faceCount; f++) {
-      const o = f * 9;
-      const v0 = getVertexId(positions[o], positions[o + 1], positions[o + 2]);
-      const v1 = getVertexId(positions[o + 3], positions[o + 4], positions[o + 5]);
-      const v2 = getVertexId(positions[o + 6], positions[o + 7], positions[o + 8]);
+      let i0 = f * 3, i1 = f * 3 + 1, i2 = f * 3 + 2;
+      if (indices) {
+        i0 = indices[f * 3];
+        i1 = indices[f * 3 + 1];
+        i2 = indices[f * 3 + 2];
+      }
+      const v0 = getVertexId(positions[i0 * 3], positions[i0 * 3 + 1], positions[i0 * 3 + 2]);
+      const v1 = getVertexId(positions[i1 * 3], positions[i1 * 3 + 1], positions[i1 * 3 + 2]);
+      const v2 = getVertexId(positions[i2 * 3], positions[i2 * 3 + 1], positions[i2 * 3 + 2]);
       faceVertices.push([v0, v1, v2]);
     }
 
@@ -2205,6 +2228,7 @@ function projectPointToFacePath(
   let bestDistSq = Infinity;
   const tempPt = new THREE.Vector3();
   const positions = map.positions;
+  const indices = map.indices;
 
   for (const faceIdx of facePath) {
     if (!positions) {
@@ -2220,10 +2244,16 @@ function projectPointToFacePath(
       continue;
     }
 
-    const o = faceIdx * 9;
-    tri.a.set(positions[o], positions[o+1], positions[o+2]);
-    tri.b.set(positions[o+3], positions[o+4], positions[o+5]);
-    tri.c.set(positions[o+6], positions[o+7], positions[o+8]);
+    let i0 = faceIdx * 3, i1 = faceIdx * 3 + 1, i2 = faceIdx * 3 + 2;
+    if (indices) {
+      i0 = indices[faceIdx * 3];
+      i1 = indices[faceIdx * 3 + 1];
+      i2 = indices[faceIdx * 3 + 2];
+    }
+
+    tri.a.set(positions[i0 * 3], positions[i0 * 3 + 1], positions[i0 * 3 + 2]);
+    tri.b.set(positions[i1 * 3], positions[i1 * 3 + 1], positions[i1 * 3 + 2]);
+    tri.c.set(positions[i2 * 3], positions[i2 * 3 + 1], positions[i2 * 3 + 2]);
 
     tri.closestPointToPoint(q, tempPt);
     const distSq = q.distanceToSquared(tempPt);

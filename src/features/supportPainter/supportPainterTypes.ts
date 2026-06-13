@@ -283,6 +283,7 @@ export interface SupportPainterState {
 
   // ─── Client Adjacency Map ───
   clientAdjacencyMap:     ClientAdjacencyMap | null;
+  isBuildingAdjacencyMap: boolean;
 
 
   // ─── Version 4 Manual Geodesic Brushes State ───

@@ -223,19 +223,39 @@ export function useSupportPainterManager(
       return;
     }
 
-    try {
-      console.log(`[SupportPainterManager] Indexing client-side face adjacency map (local space) for model ${activeModelId}`);
-      const newMap = buildClientAdjacencyMap(geometry);
-      
-      supportPainterStore.setClientAdjacencyMap(newMap);
-      setInitializedModelId(activeModelId);
-      console.log(`[SupportPainterManager] Indexing complete! ${newMap.faceCount} faces cached in JavaScript.`);
-    } catch (err) {
-      console.error('[SupportPainterManager] Adjacency map construction failed', err);
-      supportPainterStore.setClientAdjacencyMap(null);
-      setInitializedModelId(null);
-    }
+    let active = true;
+    supportPainterStore.setIsBuildingAdjacencyMap(true);
+
+    const timer = setTimeout(() => {
+      try {
+        console.log(`[SupportPainterManager] Indexing client-side face adjacency map (local space) for model ${activeModelId}`);
+        const newMap = buildClientAdjacencyMap(geometry);
+        
+        if (active) {
+          supportPainterStore.setClientAdjacencyMap(newMap);
+          setInitializedModelId(activeModelId);
+          console.log(`[SupportPainterManager] Indexing complete! ${newMap.faceCount} faces cached in JavaScript.`);
+        }
+      } catch (err) {
+        console.error('[SupportPainterManager] Adjacency map construction failed', err);
+        if (active) {
+          supportPainterStore.setClientAdjacencyMap(null);
+          setInitializedModelId(null);
+        }
+      } finally {
+        if (active) {
+          supportPainterStore.setIsBuildingAdjacencyMap(false);
+        }
+      }
+    }, 50);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      supportPainterStore.setIsBuildingAdjacencyMap(false);
+    };
   }, [isActive, activeModelId, geometry, initializedModelId]);
+
 
   // 4. Synchronous, Low-Latency Client-Side Region Proposal (runs in <1ms!)
   const activeCustomBrush = activeCustomBrushId ? customBrushes.get(activeCustomBrushId) : undefined;

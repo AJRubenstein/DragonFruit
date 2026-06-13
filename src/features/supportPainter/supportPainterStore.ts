@@ -53,6 +53,8 @@ let selectedRegionId: string | null = null;
 let selectedRegionIds = new Set<string>();
 let lastSelectedIndex: number | null = null;
 let clientAdjacencyMap: ClientAdjacencyMap | null = null;
+let isBuildingAdjacencyMap = false;
+
 
 // ─── Extended Spacing & Suppression Parameters [STORE_STATE] ───
 // [AGENT_NOTE] Stored in local module variables and exposed via the store snapshot.
@@ -717,6 +719,8 @@ let storeSnapshot: SupportPainterState = {
   failedCandidates: [],
   activeFailureIndex: null,
   clientAdjacencyMap: null,
+  isBuildingAdjacencyMap: false,
+
   smartBrushesDisplayMode,
   modelStatsCardCollapsed,
 };
@@ -775,6 +779,8 @@ function updateSnapshot() {
     failedCandidates: [...failedCandidates],
     activeFailureIndex,
     clientAdjacencyMap,
+    isBuildingAdjacencyMap,
+
     smartBrushesDisplayMode,
     modelStatsCardCollapsed,
   };
@@ -1063,6 +1069,15 @@ export const supportPainterStore = {
       notify();
     }
   },
+
+  setIsBuildingAdjacencyMap(building: boolean) {
+    if (isBuildingAdjacencyMap !== building) {
+      isBuildingAdjacencyMap = building;
+      updateSnapshot();
+      notify();
+    }
+  },
+
 
   setHoveredTriangle(id: number | null, worldPoint?: [number, number, number] | null) {
     let changed = false;

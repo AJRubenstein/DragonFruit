@@ -381,11 +381,32 @@ export function useRoiHighlightMaterial(
     const handleUpdate = () => {
       const snap = supportPainterStore.getSnapshot();
       
-      console.log(`[ROIHighlight] Re-instantiating fresh DataTexture for WebGL2 compatibility. Hovered: ${snap.hoveredTriangleId}, proposed: ${snap.proposedTriangleIds.size}`);
+      let texture = textureRef.current;
+      const bufferSize = texWidth * texHeight * 4;
 
-      // Allocate a fresh Uint8Array buffer
-      const size = texWidth * texHeight * 4;
-      const data = new Uint8Array(size);
+      if (!texture) {
+        console.log('[ROIHighlight] Instantiating reusable DataTexture.');
+        const data = new Uint8Array(bufferSize);
+        texture = new THREE.DataTexture(
+          data,
+          texWidth,
+          texHeight,
+          THREE.RGBAFormat,
+          THREE.UnsignedByteType
+        );
+        texture.minFilter = THREE.NearestFilter;
+        texture.magFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        texture.flipY = false;
+        
+        material.uniforms.uRoiMap.value = texture;
+        textureRef.current = texture;
+      } else {
+        // Clear previous colors (reset all to 0 / transparent)
+        (texture.image.data as Uint8Array).fill(0);
+      }
+
+      const data = texture.image.data as Uint8Array;
 
       // Write committed regions & hover previews into texture data
       let writeCount = 0;
@@ -400,34 +421,10 @@ export function useRoiHighlightMaterial(
         }
       }
 
-      // Instantiate a completely new DataTexture.
-      // This is mathematically guaranteed to work under WebGL2 because it is treated
-      // as a new texture allocation (never violates immutable texture limits).
-      const newTexture = new THREE.DataTexture(
-        data,
-        texWidth,
-        texHeight,
-        THREE.RGBAFormat,
-        THREE.UnsignedByteType
-      );
-      newTexture.minFilter = THREE.NearestFilter;
-      newTexture.magFilter = THREE.NearestFilter;
-      newTexture.generateMipmaps = false;
-      newTexture.flipY = false;
-      newTexture.needsUpdate = true;
-
-      // Dispose of the previous texture to prevent GPU memory leaks
-      const prevTexture = material.uniforms.uRoiMap.value;
-      if (prevTexture && prevTexture !== newTexture) {
-        console.log('[ROIHighlight] Disposing previous DataTexture.');
-        prevTexture.dispose();
-      }
-
-      // Bind the fresh texture instance to the material uniform
-      material.uniforms.uRoiMap.value = newTexture;
-      textureRef.current = newTexture;
-      console.log(`[ROIHighlight] Successfully bound new DataTexture with ${writeCount} triangles. needsUpdate flagged.`);
+      texture.needsUpdate = true;
+      console.log(`[ROIHighlight] Updated reusable DataTexture with ${writeCount} triangles.`);
     };
+
 
     // Initialize with current state
     handleUpdate();
