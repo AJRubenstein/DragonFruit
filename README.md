@@ -17,6 +17,7 @@ Unless a subdirectory or submodule states otherwise, DragonFruit content in this
   - [Variant 1: Frontend Development (Next.js)](#variant-1-frontend-development-nextjs)
   - [Variant 2: Desktop Development (Tauri + Rust)](#variant-2-desktop-development-tauri--rust)
   - [Variant 3: Production Build & Bundling](#variant-3-production-build--bundling)
+- [Localization (i18n)](LOCALE.md)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
 - [License](#license)
@@ -85,16 +86,22 @@ For release-style builds and bundles:
      shortcuts for fast local dev only (these do **not** embed the QuickLook
      extension and are not suitable for release).
 
+## Localization (i18n)
+
+See [LOCALE.md](LOCALE.md) for details on DragonFruit's internationalization
+setup, including supported locales, catalog structure, workflow commands, and
+runtime language selection.
+
 ## Project Structure
 
 High-level layout of key project areas:
 
-- `src/` — Next.js app, React components, scene controls, support systems, hooks, and utilities.
-- `src-tauri/` — Tauri desktop host and native integration points.
-- `rust/dragonfruit-slicing-engine/` — Rust slicer backend workspace.
-- `plugins/` — Plugin architecture and ecosystem integrations.
+- `docs/` — Architecture notes, implementation guides, and domain documentation.
+- `plugins/` — Plugin architecture and ecosystem integrations (see LICENSE).
 - `profiles/` — Printer and material profile definitions.
-- `docs/` and `1_Documentation/` — Architecture notes, implementation guides, and domain documentation.
+- `rust/dragonfruit-slicing-engine/` — Rust slicer backend workspace.
+- `src/` — Next.js app, React components, scene controls, support systems, hooks, i18n catalogs, and utilities.
+- `src-tauri/` — Tauri desktop host and native integration points.
 
 ## Contributing
 
