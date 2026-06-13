@@ -1945,6 +1945,7 @@ export function useSceneCollectionManager() {
           console.log(`[SceneCollection] Loading ${file.name}...`);
           const geom = await loadMeshGeometry(url, file.name, {
             nativeProcessingMode: getSavedImportDefaultsSettings().autoRepair ? 'auto' : 'none',
+            center: true,
             onNativeProcessingStage: (stage) => {
               if (stage === 'repairing') {
                 setImportProgress({
@@ -3716,7 +3717,8 @@ export function useSceneCollectionManager() {
           url = URL.createObjectURL(blob);
 
           const geometry = await loadMeshGeometry(url, embeddedName, {
-            nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
+            nativeProcessingMode: 'none',
+            center: true,
             onNativeProcessingStage: (stage) => {
               if (stage === 'repairing') {
                 setImportProgress({

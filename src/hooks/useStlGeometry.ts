@@ -184,7 +184,8 @@ function stripEmbeddedColorAttributes(geometry: THREE.BufferGeometry): void {
   }
 }
 
-export async function processGeometry(bufferGeometry: THREE.BufferGeometry, options: ProcessGeometryOptions = { center: true }): Promise<GeometryWithBounds> {
+export async function processGeometry(bufferGeometry: THREE.BufferGeometry, options: ProcessGeometryOptions = {}): Promise<GeometryWithBounds> {
+  const shouldCenter = options.center ?? true;
   console.log(`[${new Date().toISOString()}] [processGeometry] Starting Geometry Prep`);
   const startPrep = performance.now();
   const sourcePosition = bufferGeometry.getAttribute('position') as THREE.BufferAttribute | null;
@@ -409,7 +410,7 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   const preCenter = preBBox.getCenter(new THREE.Vector3());
 
   // Normalize: center X/Z at 0 and set bottom (minY) to 0 in local space
-  if (options.center) {
+  if (shouldCenter) {
     geometry.translate(-preCenter.x, -preBBox.min.y, -preCenter.z);
   }
   geometry.computeBoundingBox();
