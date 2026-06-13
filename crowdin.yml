@@ -12,4 +12,4 @@ preserve_hierarchy: true
 
 files:
   - source: /src/locales/en/messages.po
-    translation: /src/locales/%two_letters_code%/messages.po
+    translation: /src/locales/%locale%/messages.po
