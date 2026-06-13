@@ -8,6 +8,7 @@ export interface ClientAdjacencyMap {
   faceCentroids: THREE.Vector3[];
   faceZBounds: { min: number; max: number }[];
   macroNormalsCache?: Map<number, THREE.Vector3[]>;
+  positions?: Float32Array | ArrayLike<number>;
   _topology?: {
     vertexPositions: THREE.Vector3[];
     faceVertices: [number, number, number][];
@@ -140,6 +141,7 @@ export function buildClientAdjacencyMap(geometry: THREE.BufferGeometry): ClientA
     faceNormals,
     faceCentroids,
     faceZBounds,
+    positions,
   };
 }
 
@@ -1849,6 +1851,51 @@ export function walkSharpCorner(
   return result;
 }
 
+function projectPointToFacePath(
+  map: ClientAdjacencyMap,
+  facePath: number[],
+  q: THREE.Vector3,
+  tri: THREE.Triangle,
+  outPoint: THREE.Vector3,
+  outNormal: THREE.Vector3
+): number {
+  let bestFace = facePath[0];
+  let bestDistSq = Infinity;
+  const tempPt = new THREE.Vector3();
+  const positions = map.positions;
+
+  for (const faceIdx of facePath) {
+    if (!positions) {
+      const centroid = map.faceCentroids[faceIdx];
+      const distSq = q.distanceToSquared(centroid);
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        outPoint.copy(centroid);
+        const normal = map.faceNormals[faceIdx];
+        if (normal) outNormal.copy(normal);
+        bestFace = faceIdx;
+      }
+      continue;
+    }
+
+    const o = faceIdx * 9;
+    tri.a.set(positions[o], positions[o+1], positions[o+2]);
+    tri.b.set(positions[o+3], positions[o+4], positions[o+5]);
+    tri.c.set(positions[o+6], positions[o+7], positions[o+8]);
+
+    tri.closestPointToPoint(q, tempPt);
+    const distSq = q.distanceToSquared(tempPt);
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq;
+      outPoint.copy(tempPt);
+      const normal = map.faceNormals[faceIdx];
+      if (normal) outNormal.copy(normal);
+      bestFace = faceIdx;
+    }
+  }
+  return bestFace;
+}
+
 export function expandPathWithDijkstra(
   map: ClientAdjacencyMap,
   controlPoints: { point: [number, number, number]; faceIndex: number; normal?: [number, number, number] }[],
@@ -1865,59 +1912,47 @@ export function expandPathWithDijkstra(
   }
 
   const expanded: { point: [number, number, number]; faceIndex: number; normal: [number, number, number] | undefined }[] = [];
+  const tri = new THREE.Triangle();
+  const outPt = new THREE.Vector3();
+  const outNorm = new THREE.Vector3();
 
-  for (let i = 0; i < controlPoints.length - 1; i++) {
+  const numSegments = isClosed && controlPoints.length >= 3 ? controlPoints.length : controlPoints.length - 1;
+
+  for (let i = 0; i < numSegments; i++) {
     const cp0 = controlPoints[i];
-    const cp1 = controlPoints[i + 1];
+    const cp1 = controlPoints[(i + 1) % controlPoints.length];
 
     const facePath = findDijkstraFacePath(map, cp0.faceIndex, cp1.faceIndex, 1.0);
     
-    for (let j = 0; j < facePath.length; j++) {
-      const faceIdx = facePath[j];
-      let pt: [number, number, number];
-      let norm: [number, number, number];
+    const p0 = new THREE.Vector3(...cp0.point);
+    const p1 = new THREE.Vector3(...cp1.point);
+    const distance = p0.distanceTo(p1);
+    
+    // sample points along segment every 0.25mm
+    const numSamples = Math.max(2, Math.ceil(distance / 0.25));
 
-      if (j === 0) {
-        pt = cp0.point;
-        norm = cp0.normal || [map.faceNormals[faceIdx].x, map.faceNormals[faceIdx].y, map.faceNormals[faceIdx].z];
-      } else if (j === facePath.length - 1) {
-        continue;
-      } else {
-        const centroid = map.faceCentroids[faceIdx];
-        const normal = map.faceNormals[faceIdx];
-        pt = [centroid.x, centroid.y, centroid.z];
-        norm = [normal.x, normal.y, normal.z];
-      }
-
+    for (let s = 0; s < numSamples; s++) {
+      const t = s / numSamples;
+      const q = new THREE.Vector3().lerpVectors(p0, p1, t);
+      
+      const faceIdx = projectPointToFacePath(map, facePath, q, tri, outPt, outNorm);
+      
       expanded.push({
-        point: pt,
+        point: [outPt.x, outPt.y, outPt.z],
         faceIndex: faceIdx,
-        normal: norm
+        normal: [outNorm.x, outNorm.y, outNorm.z]
       });
     }
   }
 
-  const lastCp = controlPoints[controlPoints.length - 1];
-  expanded.push({
-    point: lastCp.point,
-    faceIndex: lastCp.faceIndex,
-    normal: lastCp.normal || [map.faceNormals[lastCp.faceIndex].x, map.faceNormals[lastCp.faceIndex].y, map.faceNormals[lastCp.faceIndex].z]
-  });
-
-  if (isClosed && controlPoints.length >= 3) {
-    const cp0 = controlPoints[0];
-    const facePath = findDijkstraFacePath(map, lastCp.faceIndex, cp0.faceIndex, 1.0);
-
-    for (let j = 1; j < facePath.length - 1; j++) {
-      const faceIdx = facePath[j];
-      const centroid = map.faceCentroids[faceIdx];
-      const normal = map.faceNormals[faceIdx];
-      expanded.push({
-        point: [centroid.x, centroid.y, centroid.z],
-        faceIndex: faceIdx,
-        normal: [normal.x, normal.y, normal.z]
-      });
-    }
+  // If not closed, append the last control point exactly
+  if (!isClosed) {
+    const lastCp = controlPoints[controlPoints.length - 1];
+    expanded.push({
+      point: lastCp.point,
+      faceIndex: lastCp.faceIndex,
+      normal: lastCp.normal || [map.faceNormals[lastCp.faceIndex].x, map.faceNormals[lastCp.faceIndex].y, map.faceNormals[lastCp.faceIndex].z]
+    });
   }
 
   return expanded;

@@ -2669,8 +2669,14 @@ export function useSceneCollectionManager() {
       }
     }
 
+    // Clean up support painter data for deleted models
+    ids.forEach((id) => {
+      supportPainterStore.stripRoiData(id);
+    });
+
     if (activeModelIdRef.current && ids.has(activeModelIdRef.current)) {
       supportPainterStore.clearAll();
+      supportPainterStore.clearPointPathPoints();
     }
 
     const after = captureSceneSnapshot(nextModels, nextActiveModelId, nextSelectedModelIds, { includeSupportState: includeSupportHistory });

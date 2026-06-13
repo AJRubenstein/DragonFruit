@@ -365,12 +365,18 @@ export function SupportPainterInteractionController({
   geometry: THREE.BufferGeometry | null;
   meshResolver: () => THREE.Mesh | null;
 }) {
-  const { camera, raycaster, gl, size } = useThree();
+  const { camera, gl, size } = useThree();
   const state = useSupportPainterState();
   const { isActive } = state;
 
   const lastHoveredFaceRef = useRef<number | null>(null);
   const lastHoveredPointRef = useRef<THREE.Vector3>(new THREE.Vector3());
+
+  const lastSharpCornerFaceRef = useRef<number | null>(null);
+  const lastSharpCornerPointRef = useRef<THREE.Vector3 | null>(null);
+
+  // Manual cursor coordinates to bypass R3F state freeze from capture stopPropagation
+  const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
 
   // Helper function for face validation (clipping and camera relative backface rejection)
   const getFirstValidIntersection = useCallback((
@@ -389,8 +395,9 @@ export function SupportPainterInteractionController({
           new THREE.Matrix3().getNormalMatrix(matrixWorld)
         ).normalize();
 
-        // Front-facing hits must point towards the camera (dot product < 0)
-        if (normalWorld.dot(rayDirection) < 0) {
+        // Front-facing hits must point towards the camera (taking determinant sign into account for mirrored scaling)
+        const determinant = matrixWorld.determinant();
+        if (normalWorld.dot(rayDirection) * Math.sign(determinant) < 0) {
           return hit;
         }
       }
@@ -408,15 +415,74 @@ export function SupportPainterInteractionController({
       return;
     }
 
+    const snap = supportPainterStore.getSnapshot();
+
+    // Reset sharp corner cache if brush changes
+    if (snap.activeBrush !== 'SharpCorner') {
+      lastSharpCornerFaceRef.current = null;
+      lastSharpCornerPointRef.current = null;
+    }
+
     const mesh = meshResolver?.();
     if (!mesh) return;
 
-    const intersections = raycaster.intersectObject(mesh);
-    const validHit = getFirstValidIntersection(intersections, raycaster.ray.direction, mesh.matrixWorld);
+    // Use our manually updated mouseRef to construct a fresh raycast
+    const customRaycaster = new THREE.Raycaster();
+    customRaycaster.setFromCamera(mouseRef.current, camera);
+
+    const intersections = customRaycaster.intersectObject(mesh);
+    const validHit = getFirstValidIntersection(intersections, customRaycaster.ray.direction, mesh.matrixWorld);
 
     if (validHit && typeof validHit.faceIndex === 'number') {
       const faceIndex = validHit.faceIndex;
       const hitPoint = validHit.point;
+
+      // Handle SharpCorner walk preview on hover
+      if (snap.activeBrush === 'SharpCorner') {
+        const map = supportPainterStore.getClientAdjacencyMap();
+        if (map && geometry) {
+          const snappedWorldPoint = getSnappedWorldPoint(
+            hitPoint,
+            faceIndex,
+            mesh,
+            camera,
+            size,
+            mouseRef.current
+          );
+
+          const isNewFace = lastSharpCornerFaceRef.current !== faceIndex;
+          const dist = lastSharpCornerPointRef.current ? snappedWorldPoint.distanceTo(lastSharpCornerPointRef.current) : Infinity;
+          const isEmpty = snap.pointPathPoints.length === 0;
+
+          if (isNewFace || dist > 0.01 || isEmpty) {
+            lastSharpCornerFaceRef.current = faceIndex;
+            lastSharpCornerPointRef.current = snappedWorldPoint.clone();
+
+            const walkedPath = walkSharpCorner(
+              map,
+              geometry,
+              faceIndex,
+              snappedWorldPoint,
+              mesh.matrixWorld,
+              snap.sharpCornerDihedralThresholdDeg,
+              snap.sharpCornerWrapCurves
+            );
+
+            if (walkedPath && walkedPath.length > 0) {
+              const formattedPoints = walkedPath.map(pt => ({
+                point: pt.point,
+                faceIndex: pt.faceIndex ?? faceIndex,
+                normal: pt.normal,
+              }));
+              supportPainterStore.setPointPathPoints(formattedPoints);
+            } else {
+              supportPainterStore.setPointPathPoints([]);
+            }
+          }
+        } else {
+          supportPainterStore.setPointPathPoints([]);
+        }
+      }
 
       const faceChanged = faceIndex !== lastHoveredFaceRef.current;
       const distSq = hitPoint.distanceToSquared(lastHoveredPointRef.current);
@@ -428,7 +494,6 @@ export function SupportPainterInteractionController({
         supportPainterStore.setHoveredTriangle(faceIndex, [hitPoint.x, hitPoint.y, hitPoint.z]);
 
         // Drag-to-paint / Drag-to-erase
-        const snap = supportPainterStore.getSnapshot();
         const isDragging = (snap.interactionPhase === 'Expand' || snap.interactionPhase === 'Subtract');
         
         if (isDragging && snap.activeBrush !== 'PointPath' && snap.activeBrush !== 'PointPerimeter' && snap.activeBrush !== 'SharpCorner') {
@@ -484,6 +549,11 @@ export function SupportPainterInteractionController({
         lastHoveredFaceRef.current = null;
         supportPainterStore.setHoveredTriangle(null);
       }
+      if (snap.activeBrush === 'SharpCorner' && snap.pointPathPoints.length > 0) {
+        supportPainterStore.setPointPathPoints([]);
+        lastSharpCornerFaceRef.current = null;
+        lastSharpCornerPointRef.current = null;
+      }
     }
   });
 
@@ -505,6 +575,8 @@ export function SupportPainterInteractionController({
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
         -((e.clientY - rect.top) / rect.height) * 2 + 1
       );
+
+      mouseRef.current.copy(mouse);
 
       const tempRaycaster = new THREE.Raycaster();
       tempRaycaster.setFromCamera(mouse, camera);
@@ -747,6 +819,8 @@ export function SupportPainterInteractionController({
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
         -((e.clientY - rect.top) / rect.height) * 2 + 1
       );
+
+      mouseRef.current.copy(mouse);
 
       const tempRaycaster = new THREE.Raycaster();
       tempRaycaster.setFromCamera(mouse, camera);

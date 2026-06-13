@@ -1360,11 +1360,10 @@ export async function generateSupportsFromPainter(
 
     const triangleIds = new Set<number>();
     if (isVectorBrush && region.brushType === 'PointPerimeter') {
-      const worldPts = region.vectorPath!.map(p => new THREE.Vector3(...p.point).applyMatrix4(mesh.matrixWorld));
-      for (let i = 0; i < triangles.length; i++) {
-        const tri = triangles[i];
-        if (tri.normal.z <= 0.1 && pointInPolygon2D(tri.centroid.x, tri.centroid.y, worldPts)) {
-          triangleIds.add(i);
+      for (const id of region.triangleIds) {
+        const tri = triangles[id];
+        if (tri && tri.normal.z <= 0.1) {
+          triangleIds.add(id);
         }
       }
     } else {
