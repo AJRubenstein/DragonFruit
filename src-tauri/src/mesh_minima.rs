@@ -319,6 +319,127 @@ pub async fn scan_voxel_islands_from_path(
 
         let scan_result = run_island_scan_streaming(&job, &triangles, bbox.min.z as f64, false, None);
 
+        // 5a. Build Z-bucket index for projection raycasting
+        let z_min = bbox.min.z;
+        let z_max = bbox.max.z;
+        let z_range = (z_max - z_min) as f32;
+        let num_buckets = 128;
+        let mut z_buckets = vec![Vec::new(); num_buckets];
+        let tri_count = mesh.triangle_count();
+        for fi in 0..tri_count {
+            let [v0, v1, v2] = mesh.tri_positions(fi as u32);
+            let t_min_z = v0.z.min(v1.z).min(v2.z);
+            let t_max_z = v0.z.max(v1.z).max(v2.z);
+            if z_range > 1e-5 {
+                let b_start = (((t_min_z - z_min) / z_range) * (num_buckets as f32 - 1.0)).floor().max(0.0) as usize;
+                let b_end = (((t_max_z - z_min) / z_range) * (num_buckets as f32 - 1.0)).ceil().min(num_buckets as f32 - 1.0) as usize;
+                for b in b_start..=b_end {
+                    z_buckets[b].push(fi as u32);
+                }
+            } else {
+                z_buckets[0].push(fi as u32);
+            }
+        }
+
+        // Define a helper closure to snap a raw world contact coordinate to the mesh surface
+        let snap_to_mesh = |raw_x: f32, raw_y: f32, raw_z: f32| -> Vec3 {
+            let epsilon = (layer_height_mm * 1.5) as f32;
+            let mut best_hit: Option<(Vec3, f32)> = None;
+            let mut best_hit_normal: Option<Vec3> = None;
+
+            let search_min_z = (raw_z - epsilon) as f64;
+            let search_max_z = (raw_z + epsilon) as f64;
+
+            let mut candidates = HashSet::new();
+            if z_range > 1e-5 {
+                let b_start = (((search_min_z - z_min as f64) / z_range as f64) * (num_buckets as f64 - 1.0)).floor().max(0.0) as usize;
+                let b_end = (((search_max_z - z_min as f64) / z_range as f64) * (num_buckets as f64 - 1.0)).ceil().min(num_buckets as f64 - 1.0) as usize;
+                for b in b_start..=b_end {
+                    for &fi in &z_buckets[b] {
+                        candidates.insert(fi);
+                    }
+                }
+            } else {
+                candidates.extend(z_buckets[0].iter().cloned());
+            }
+
+            let ray_down_orig = Vec3::new(raw_x, raw_y, raw_z + epsilon);
+            let ray_down_dir = Vec3::new(0.0, 0.0, -1.0);
+
+            let ray_up_orig = Vec3::new(raw_x, raw_y, raw_z - epsilon);
+            let ray_up_dir = Vec3::new(0.0, 0.0, 1.0);
+
+            for fi in candidates {
+                let [v0, v1, v2] = mesh.tri_positions(fi);
+                
+                // Ray down test
+                if let Some(t) = ray_triangle_intersect(&ray_down_orig, &ray_down_dir, &v0, &v1, &v2) {
+                    if t <= 2.0 * epsilon {
+                        let hit_z = ray_down_orig.z - t;
+                        let normal = mesh.tri_normal(fi);
+                        let is_downward = normal.z < 0.0;
+                        let dist_z = (hit_z - raw_z).abs();
+                        
+                        let replace = match best_hit {
+                            None => true,
+                            Some((_, best_dist)) => {
+                                let best_normal = best_hit_normal.unwrap_or(Vec3::ZERO);
+                                let best_was_downward = best_normal.z < 0.0;
+                                if is_downward && !best_was_downward {
+                                    true
+                                } else if !is_downward && best_was_downward {
+                                    false
+                                } else {
+                                    dist_z < best_dist
+                                }
+                            }
+                        };
+
+                        if replace {
+                            best_hit = Some((Vec3::new(raw_x, raw_y, hit_z), dist_z));
+                            best_hit_normal = Some(normal);
+                        }
+                    }
+                }
+
+                // Ray up test
+                if let Some(t) = ray_triangle_intersect(&ray_up_orig, &ray_up_dir, &v0, &v1, &v2) {
+                    if t <= 2.0 * epsilon {
+                        let hit_z = ray_up_orig.z + t;
+                        let normal = mesh.tri_normal(fi);
+                        let is_downward = normal.z < 0.0;
+                        let dist_z = (hit_z - raw_z).abs();
+
+                        let replace = match best_hit {
+                            None => true,
+                            Some((_, best_dist)) => {
+                                let best_normal = best_hit_normal.unwrap_or(Vec3::ZERO);
+                                let best_was_downward = best_normal.z < 0.0;
+                                if is_downward && !best_was_downward {
+                                    true
+                                } else if !is_downward && best_was_downward {
+                                    false
+                                } else {
+                                    dist_z < best_dist
+                                }
+                            }
+                        };
+
+                        if replace {
+                            best_hit = Some((Vec3::new(raw_x, raw_y, hit_z), dist_z));
+                            best_hit_normal = Some(normal);
+                        }
+                    }
+                }
+            }
+
+            if let Some((hit_pt, _)) = best_hit {
+                hit_pt
+            } else {
+                Vec3::new(raw_x, raw_y, raw_z)
+            }
+        };
+
         // 6. Convert tracking result back to VoxelIslands
         let mut voxel_islands = Vec::new();
         for (idx, island) in scan_result.islands.iter().enumerate() {
@@ -328,12 +449,13 @@ pub async fn scan_voxel_islands_from_path(
                 let contact_x = ox + seed.x * px_mm + px_mm * 0.5;
                 let contact_y = -(oz + seed.y * px_mm);
                 let contact_z = bbox.min.z as f64 + island.first_layer as f64 * layer_height_mm;
+                let contact = snap_to_mesh(contact_x as f32, contact_y as f32, contact_z as f32);
 
                 voxel_islands.push(VoxelIsland {
                     id: format!("v{}", idx),
                     source: "voxel".to_string(),
-                    contact: Vec3::new(contact_x as f32, contact_y as f32, contact_z as f32),
-                    base_z: contact_z,
+                    contact,
+                    base_z: contact.z as f64,
                     area_mm2: island.total_area_mm2 as f32,
                     layer_span: [island.first_layer, island.last_layer],
                 });
@@ -343,11 +465,13 @@ pub async fn scan_voxel_islands_from_path(
                     let contact_x = ox + c.x * px_mm + px_mm * 0.5;
                     let contact_y = -(oz + c.y * px_mm);
                     let contact_z = bbox.min.z as f64 + island.first_layer as f64 * layer_height_mm;
+                    let contact = snap_to_mesh(contact_x as f32, contact_y as f32, contact_z as f32);
+
                     voxel_islands.push(VoxelIsland {
                         id: format!("v{}", idx),
                         source: "voxel".to_string(),
-                        contact: Vec3::new(contact_x as f32, contact_y as f32, contact_z as f32),
-                        base_z: contact_z,
+                        contact,
+                        base_z: contact.z as f64,
                         area_mm2: island.total_area_mm2 as f32,
                         layer_span: [island.first_layer, island.last_layer],
                     });

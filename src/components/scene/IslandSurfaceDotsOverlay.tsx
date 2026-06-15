@@ -1,14 +1,19 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { generateDecalGrid } from '@/volumeAnalysis/IslandScan/decalGridHelper';
 import type { IslandMarker } from '@/volumeAnalysis/IslandScan/islandOverlayLogic';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 
+export interface ExtendedIslandMarker extends IslandMarker {
+  radius?: number;
+  type?: number;
+  islandId?: number;
+}
+
 interface IslandSurfaceDotsOverlayProps {
   geometry: THREE.BufferGeometry;
-  islandMarkers: IslandMarker[];
+  islandMarkers: ExtendedIslandMarker[];
   scanBBox: THREE.Box3 | null;
   selectedIslandId?: number | null;
   clipLower?: number | null;
@@ -85,6 +90,7 @@ export default function IslandSurfaceDotsOverlay({
       matrix.identity();
     }
     const invMatrix = matrix.clone().invert();
+    const scaleFactor = transform ? transform.scale.x : 1.0;
 
     return islandMarkers.map(m => {
       const worldCenter = new THREE.Vector3(m.centerX, m.centerY, m.baseZ);
@@ -94,6 +100,7 @@ export default function IslandSurfaceDotsOverlay({
         centerX: localCenter.x,
         centerY: localCenter.y,
         baseZ: localCenter.z,
+        radius: (m.radius ?? 0.1) / scaleFactor,
       };
     });
   }, [islandMarkers, transform, centerOffset]);
@@ -153,6 +160,8 @@ export default function IslandSurfaceDotsOverlay({
           vLocalPos = position.xyz;
           vec4 worldPos = modelMatrix * vec4(position, 1.0);
           vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          // Apply a 0.05 mm physical offset along normal in world space to clear Z-fighting.
+          worldPos.xyz += vWorldNormal * 0.05;
           gl_Position = projectionMatrix * viewMatrix * worldPos;
         }
       `,
@@ -266,25 +275,13 @@ export default function IslandSurfaceDotsOverlay({
     };
   }, [material]);
 
-  const groupRef = useRef<THREE.Group>(null);
-
-  // Sync group transformation in frame loop to eliminate 1-frame latency/wobbling
-  useFrame(() => {
-    if (!groupRef.current) return;
-    const pos = transform?.position ?? defaultPosition;
-    const zOffset = dropOffsetZ ?? 0;
-    groupRef.current.position.set(pos.x, pos.y, pos.z + zOffset);
-    groupRef.current.quaternion.copy(transform ? quaternionFromGlobalEuler(transform.rotation) : defaultQuaternion);
-    groupRef.current.scale.copy(transform?.scale ?? defaultScale);
-  });
-
   return (
-    <group ref={groupRef}>
+    <>
       {gridTexture && markerTexture && markerMetaTexture && (
         <mesh geometry={geometry} position={meshLocalOffset} renderOrder={8} raycast={() => null}>
           <primitive object={material} attach="material" />
         </mesh>
       )}
-    </group>
+    </>
   );
 }

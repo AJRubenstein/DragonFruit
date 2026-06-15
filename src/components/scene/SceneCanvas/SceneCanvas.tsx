@@ -5495,21 +5495,20 @@ export function SceneCanvas({
                           />
                         </group>
                       )}
-                    </StlMesh>
 
-                    {isActive && (mode === 'support' || mode === 'analysis') && islandMarkers && islandMarkers.length > 0 && (
-                      <IslandSurfaceDotsOverlay
-                        geometry={model.geometry.geometry}
-                        islandMarkers={islandMarkers}
-                        scanBBox={scanBBox || null}
-                        selectedIslandId={overlaySelectedIslandId}
-                        clipLower={clipLower}
-                        clipUpper={clipUpper}
-                        opacity={overlayOpacity ?? 0.9}
-                        transform={transformToUse}
-                        dropOffsetZ={dropOffsetZ}
-                      />
-                    )}
+                      {isActive && (mode === 'support' || mode === 'analysis') && islandMarkers && islandMarkers.length > 0 && (
+                        <IslandSurfaceDotsOverlay
+                          geometry={model.geometry.geometry}
+                          islandMarkers={islandMarkers}
+                          scanBBox={scanBBox || null}
+                          selectedIslandId={overlaySelectedIslandId}
+                          clipLower={clipLower}
+                          clipUpper={clipUpper}
+                          opacity={overlayOpacity ?? 0.9}
+                          transform={transformToUse}
+                        />
+                      )}
+                    </StlMesh>
                   </React.Fragment>
                 );
               })}
