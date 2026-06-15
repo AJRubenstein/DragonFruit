@@ -108,23 +108,19 @@ const fragmentShader = `
 
       float radius = marker.w;
 
-      // 1. Static Vertical Cylindrical Decal Projection (eliminates normal-dependent smearing)
-      float radialDist = distance(vWorldPos.xy, marker.xy);
-      float thickness = abs(vWorldPos.z - marker.z);
+      // 1. 3D Spherical Decal Projection (guarantees no smearing on vertical walls)
+      float dist = distance(vWorldPos, marker.xyz);
 
-      // 2. Downward-Facing Guard (smooth transition to prevent jagged edges on vertical boundaries)
-      float downwardFactor = smoothstep(-0.05, 0.20, 0.15 - vWorldNormal.z);
+      // 2. Downward-Facing Guard (prevents bleeding to top-sides and vertical side walls)
+      float downwardFactor = 1.0 - smoothstep(-0.45, -0.15, vWorldNormal.z);
 
-      // 3. Parallel Surface Snap, clamped locally to the marker XY neighborhood (stops horizontal offshoots)
+      // 3. Parallel Surface Snap (restricted to flat surfaces within a 3D sphere)
       float flatFactor = smoothstep(0.93, 0.97, abs(vWorldNormal.z));
-      float zFactor = 1.0 - smoothstep(0.04, 0.12, thickness);
-      bool inSnapRange = (radialDist < radius * 2.5);
-      float snapFactor = flatFactor * zFactor * (inSnapRange ? 1.0 : 0.0);
+      float snapFactor = flatFactor * (1.0 - smoothstep(radius * 1.5, radius * 2.5, dist));
 
-      // 4. Decal dot factor with crisp, sharp edges
-      float thicknessFactor = 1.0 - smoothstep(0.12, 0.35, thickness);
-      float radialFactor = 1.0 - smoothstep(radius - 0.01, radius + 0.01, radialDist);
-      float dotFactor = radialFactor * thicknessFactor;
+      // 4. Decal dot factor with crisp, sharp edges (0.015mm anti-aliasing feather)
+      float radialFactor = 1.0 - smoothstep(radius - 0.015, radius + 0.015, dist);
+      float dotFactor = radialFactor;
 
       float factor = max(dotFactor, snapFactor) * downwardFactor;
       if (factor > 0.001) {
