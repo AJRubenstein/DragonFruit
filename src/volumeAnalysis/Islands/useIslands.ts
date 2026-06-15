@@ -491,8 +491,7 @@ function consolidateVoxelIslands(islands: DetectedIsland[], epsilonMm: number): 
         maxLastLayer = Math.max(maxLastLayer, m.layerSpan[1]);
       }
     }
-    const count = members.length;
-    const contact = new THREE.Vector3(sumX / count, sumY / count, lowest.contact.z);
+    const contact = lowest.contact.clone();
 
     consolidated.push({
       ...lowest,

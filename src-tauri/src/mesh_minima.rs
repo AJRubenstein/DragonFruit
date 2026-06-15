@@ -455,7 +455,7 @@ pub async fn scan_voxel_islands_from_path(
                     id: format!("v{}", idx),
                     source: "voxel".to_string(),
                     contact,
-                    base_z: contact.z as f64,
+                    base_z: contact_z,
                     area_mm2: island.total_area_mm2 as f32,
                     layer_span: [island.first_layer, island.last_layer],
                 });
@@ -471,7 +471,7 @@ pub async fn scan_voxel_islands_from_path(
                         id: format!("v{}", idx),
                         source: "voxel".to_string(),
                         contact,
-                        base_z: contact.z as f64,
+                        base_z: contact_z,
                         area_mm2: island.total_area_mm2 as f32,
                         layer_span: [island.first_layer, island.last_layer],
                     });

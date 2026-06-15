@@ -62,7 +62,7 @@ export function classifyIntersection(
     for (let j = 0; j < m.length; j++) {
       if (minimaUsed[j]) continue;
       const mj = m[j];
-      const dz = vi.contact.z - mj.contact.z;
+      const dz = vi.baseZ - mj.baseZ;
       if (Math.abs(dz) > opts.zBandMm) continue;
       const dx = vi.contact.x - mj.contact.x;
       const dy = vi.contact.y - mj.contact.y;
@@ -82,6 +82,7 @@ export function classifyIntersection(
       mj.class = 'intersection';
       vi.matchedWith = mj.id;
       mj.matchedWith = vi.id;
+      vi.contact = mj.contact.clone(); // Snap voxel island contact to matched mesh minimum coordinate
       matched++;
       offsetSum += Math.sqrt(bestD2);
     } else {

@@ -19174,18 +19174,18 @@ export default function Home() {
                     ...islandsPoc.voxelOnlyPucks.markers.map(m => {
                       const island = islandsPoc.byMarkerId.get(m.id);
                       const area = island?.areaMm2 ?? 0;
-                      const radius = area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1;
+                      const radius = area > 0 ? Math.max(0.25, Math.sqrt(area / Math.PI)) : 0.25;
                       return { ...m, radius, type: islandsPoc.consolidateVoxel ? 3 : 0, islandId: m.id };
                     }),
                     ...islandsPoc.minimaOnlyPucks.markers.map(m => {
-                      return { ...m, radius: 0.1, type: 1, islandId: m.id };
+                      return { ...m, radius: 0.25, type: 1, islandId: m.id };
                     }),
                     ...islandsPoc.intersectionPucks.markers.flatMap(m => {
                       const island = islandsPoc.byMarkerId.get(m.id);
                       const area = island?.areaMm2 ?? 0;
-                      const radius = area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1;
+                      const radius = area > 0 ? Math.max(0.25, Math.sqrt(area / Math.PI)) : 0.25;
                       if (islandsPoc.reduceIntersection) {
-                        const redDot = { ...m, radius: 0.1, type: 2, islandId: m.id };
+                        const redDot = { ...m, radius: 0.25, type: 2, islandId: m.id };
                         if (area >= islandsPoc.intersectionThreshold) {
                           const underDot = { ...m, radius, type: 3, islandId: m.id };
                           return [redDot, underDot];
@@ -19199,7 +19199,7 @@ export default function Home() {
                 : (islands.overlayEnabled && islands.islandMarkers
                     ? islands.islandMarkers.map(m => {
                         const area = m.pixelCount * (islands.pxMm || 0.05) * (islands.pxMm || 0.05);
-                        const radius = area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1;
+                        const radius = area > 0 ? Math.max(0.25, Math.sqrt(area / Math.PI)) : 0.25;
                         return { ...m, radius, type: 0, islandId: m.id };
                       })
                     : [])
