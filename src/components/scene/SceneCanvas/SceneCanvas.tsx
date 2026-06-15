@@ -415,9 +415,11 @@ export function SceneCanvas({
   deferCameraIntro = false,
   freezeViewportActive = false,
   cavityGeometryByModelId,
+  onClearSelection,
 }: {
   models?: LoadedModel[];
   cavityGeometryByModelId?: Map<string, THREE.BufferGeometry>;
+  onClearSelection?: () => void;
   activeModelId?: string | null;
   visualActiveModelId?: string | null;
   selectedModelIds?: string[];
@@ -6630,7 +6632,7 @@ export function SceneCanvas({
           plateWidthMm={activeBuildVolumeSettings.widthMm}
           plateDepthMm={activeBuildVolumeSettings.depthMm}
         />
-        <CameraFocusController selectedIslandId={overlaySelectedIslandId ?? null} islandMarkers={islandMarkers ?? []} />
+        <CameraFocusController selectedIslandId={overlaySelectedIslandId ?? null} islandMarkers={islandMarkers ?? []} onClearSelection={onClearSelection} />
         {mode === 'support' && supportPathfindingDebugState.enabled && (
           <SupportPathfindingDebugOverlay snapshot={supportPathfindingDebugState.snapshot} />
         )}
