@@ -116,12 +116,15 @@ const fragmentShader = `
       #endif
 
       float radius = marker.w;
+      if (type == 3.0 || type == 0.0) {
+        radius = radius * 1.4;
+      }
       float dist = distance(vWorldPos, marker.xyz);
 
       // Quadratic falloff calculation
       float ratio = clamp(dist / radius, 0.0, 1.0);
       float intensity = 1.0 - ratio * ratio;
-      intensity = intensity * intensity * 1.3;
+      intensity = intensity * intensity * 1.5;
 
       if (intensity > 0.001) {
         int foundIdx = -1;

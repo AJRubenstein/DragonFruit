@@ -331,6 +331,12 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     return annotated;
   }, [allIslands, supportTips, plateZ, areaPerSupport]);
 
+  const contouredIds = useMemo(() => {
+    return enableContourRegions
+      ? determineContourThreshold(annotatedIslands, pxMm, maxContourRegions)
+      : new Set<string>();
+  }, [annotatedIslands, enableContourRegions, pxMm, maxContourRegions]);
+
   const filteredIslands = useMemo(() => {
     return applyFilter(annotatedIslands.map((i) => ({ ...i })), filterToggles);
   }, [annotatedIslands, filterToggles]);
@@ -364,15 +370,20 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const voxelOnlyPucks = useMemo(
     () => buildIslandPucks(
       showVoxelOnly 
-        ? annotatedIslands.filter((i) => 
-            i.source === 'voxel' && 
-            i.class === 'voxelOnly' && 
-            (!i.grounded || filterToggles.showPlateContact) &&
-            (!removeSupportedAreaClusters || !i.fullySupported)
-          ) 
+        ? annotatedIslands.filter((i) => {
+            if (i.source !== 'voxel' || i.class !== 'voxelOnly') return false;
+            if (i.grounded && !filterToggles.showPlateContact) return false;
+            
+            const isContoured = contouredIds.has(i.id);
+            if (isContoured) {
+              return !removeSupportedAreaClusters || !i.fullySupported;
+            } else {
+              return !i.supported;
+            }
+          })
         : []
     ),
-    [annotatedIslands, showVoxelOnly, filterToggles.showPlateContact, removeSupportedAreaClusters],
+    [annotatedIslands, showVoxelOnly, filterToggles.showPlateContact, contouredIds, removeSupportedAreaClusters],
   );
   const minimaOnlyPucks = useMemo(
     () => buildIslandPucks(showMinimaOnly ? filteredIslands.filter((i) => i.source === 'minima' && i.class === 'minimaOnly') : []),
@@ -381,15 +392,20 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const intersectionPucks = useMemo(
     () => buildIslandPucks(
       showIntersection 
-        ? annotatedIslands.filter((i) => 
-            i.class === 'intersection' && 
-            i.source === 'voxel' && 
-            (!i.grounded || filterToggles.showPlateContact) &&
-            (!removeSupportedAreaClusters || !i.fullySupported)
-          ) 
+        ? annotatedIslands.filter((i) => {
+            if (i.class !== 'intersection' || i.source !== 'voxel') return false;
+            if (i.grounded && !filterToggles.showPlateContact) return false;
+            
+            const isContoured = contouredIds.has(i.id);
+            if (isContoured) {
+              return !removeSupportedAreaClusters || !i.fullySupported;
+            } else {
+              return !i.supported;
+            }
+          })
         : []
     ),
-    [annotatedIslands, showIntersection, filterToggles.showPlateContact, removeSupportedAreaClusters],
+    [annotatedIslands, showIntersection, filterToggles.showPlateContact, contouredIds, removeSupportedAreaClusters],
   );
 
   const byMarkerId = useMemo(() => {
@@ -408,10 +424,6 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
 
   const islandMarkers = useMemo(() => {
     const markers: any[] = [];
-
-    const contouredIds = enableContourRegions
-      ? determineContourThreshold(annotatedIslands, pxMm, maxContourRegions)
-      : new Set<string>();
 
     voxelOnlyPucks.markers.forEach(m => {
       const island = voxelOnlyPucks.byMarkerId.get(m.id);
@@ -456,9 +468,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     intersectionPucks,
     consolidateVoxel,
     scaleMarkersWithArea,
-    enableContourRegions,
-    maxContourRegions,
-    annotatedIslands,
+    contouredIds,
     filterToggles,
     pxMm,
   ]);
