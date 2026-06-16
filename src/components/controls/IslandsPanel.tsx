@@ -73,17 +73,48 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 220 }: 
     applyingSettings,
     enableVolumeGlow,
     setEnableVolumeGlow,
+    hasPendingChanges,
   } = islands;
 
   const [settingsExpanded, setSettingsExpanded] = React.useState(false);
 
-  const voxelOnlyShown = filteredIslands.filter((i) => i.source === 'voxel' && i.class === 'voxelOnly').length;
-  const minimaOnlyShown = filteredIslands.filter((i) => i.source === 'minima' && i.class === 'minimaOnly').length;
-  const intersectionShown = filteredIslands.filter((i) => i.class === 'intersection' && i.source === 'voxel').length;
+  const { voxelOnlyShown, minimaOnlyShown, intersectionShown } = React.useMemo(() => {
+    let voxel = 0;
+    let minima = 0;
+    let intersection = 0;
+    for (const i of filteredIslands) {
+      if (i.source === 'voxel' && i.class === 'voxelOnly') voxel++;
+      else if (i.source === 'minima' && i.class === 'minimaOnly') minima++;
+      else if (i.class === 'intersection' && i.source === 'voxel') intersection++;
+    }
+    return { voxelOnlyShown: voxel, minimaOnlyShown: minima, intersectionShown: intersection };
+  }, [filteredIslands]);
 
   const totalScannedPucks = (stats?.voxelTotal ?? 0) + (stats?.minimaTotal ?? 0) - (stats?.matched ?? 0);
   const totalShownPucks = voxelOnlyShown + minimaOnlyShown + intersectionShown;
   const hiddenPucksCount = totalScannedPucks - totalShownPucks;
+
+  const selectedIndex = React.useMemo(() => {
+    if (selectedMarkerId === null) return -1;
+    return orderedIslands.findIndex((i) => markerIdFor(i) === selectedMarkerId);
+  }, [orderedIslands, selectedMarkerId]);
+
+  const { visibleIslands, startIdx, totalCount } = React.useMemo(() => {
+    const total = orderedIslands.length;
+    if (total <= 100) {
+      return { visibleIslands: orderedIslands, startIdx: 0, totalCount: total };
+    }
+    const activeIdx = selectedIndex >= 0 ? selectedIndex : 0;
+    let start = activeIdx - 50;
+    if (start < 0) start = 0;
+    if (start + 100 > total) start = total - 100;
+    const end = start + 100;
+    return {
+      visibleIslands: orderedIslands.slice(start, end),
+      startIdx: start,
+      totalCount: total
+    };
+  }, [orderedIslands, selectedIndex]);
 
   return (
     <Card
@@ -192,59 +223,66 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 220 }: 
                 </button>
               </div>
 
-              {orderedIslands.length > 0 ? (
-                <div
-                  className="border rounded divide-y overflow-y-auto flex-grow min-h-[120px] max-h-none"
-                  style={{
-                    borderColor: 'var(--border-subtle)',
-                    background: 'var(--surface-0)',
-                  }}
-                >
-                  {orderedIslands.map((island) => {
-                    const id = markerIdFor(island);
-                    const isSelected = selectedMarkerId === id;
-                    let color: string = ISLAND_LAYER_COLORS.voxel;
-                    if (island.class === 'minimaOnly') {
-                      color = ISLAND_LAYER_COLORS.minima;
-                    } else if (island.class === 'intersection') {
-                      color = ISLAND_LAYER_COLORS.intersection;
-                    }
+              {totalCount > 0 ? (
+                <div className="flex flex-col flex-grow min-h-[120px] max-h-none">
+                  {totalCount > 100 && (
+                    <div className="text-[9px] text-center pb-1 font-semibold" style={{ color: 'var(--text-muted)' }}>
+                      Showing {startIdx + 1} - {startIdx + visibleIslands.length} of {totalCount} islands
+                    </div>
+                  )}
+                  <div
+                    className="border rounded divide-y overflow-y-auto flex-grow"
+                    style={{
+                      borderColor: 'var(--border-subtle)',
+                      background: 'var(--surface-0)',
+                    }}
+                  >
+                    {visibleIslands.map((island) => {
+                      const id = markerIdFor(island);
+                      const isSelected = selectedMarkerId === id;
+                      let color: string = ISLAND_LAYER_COLORS.voxel;
+                      if (island.class === 'minimaOnly') {
+                        color = ISLAND_LAYER_COLORS.minima;
+                      } else if (island.class === 'intersection') {
+                        color = ISLAND_LAYER_COLORS.intersection;
+                      }
 
-                    const label = island.id;
-                    const zHeight = island.contact.z.toFixed(2);
-                    const layerHeight = layerHeightMm || 0.05;
-                    const layerIdx = Math.floor(island.contact.z / layerHeight);
+                      const label = island.id;
+                      const zHeight = island.contact.z.toFixed(2);
+                      const layerHeight = layerHeightMm || 0.05;
+                      const layerIdx = Math.floor(island.contact.z / layerHeight);
 
-                    return (
-                      <div
-                        key={id}
-                        onClick={() => setSelectedMarkerId(id)}
-                        className="flex items-center justify-between px-2 py-1 text-[10px] cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--accent),transparent_92%)]"
-                        style={{
-                          background: isSelected
-                            ? 'color-mix(in srgb, var(--accent), transparent 88%)'
-                            : 'transparent',
-                        }}
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span
-                            className="w-2 h-2 rounded-full shrink-0"
-                            style={{ background: color }}
-                          />
-                          <span
-                            className="font-medium truncate"
-                            style={{ color: isSelected ? 'var(--accent)' : 'var(--text-strong)' }}
-                          >
-                            {label}
-                          </span>
+                      return (
+                        <div
+                          key={id}
+                          onClick={() => setSelectedMarkerId(id)}
+                          className="flex items-center justify-between px-2 py-1 text-[10px] cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--accent),transparent_92%)]"
+                          style={{
+                            background: isSelected
+                              ? 'color-mix(in srgb, var(--accent), transparent 88%)'
+                              : 'transparent',
+                          }}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ background: color }}
+                            />
+                            <span
+                              className="font-medium truncate"
+                              style={{ color: isSelected ? 'var(--accent)' : 'var(--text-strong)' }}
+                            >
+                              {label}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                            <span>Z: {zHeight} mm</span>
+                            <span className="font-semibold">L{layerIdx}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
-                          <span>Z: {zHeight} mm</span>
-                          <span className="font-semibold">L{layerIdx}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
                 <div
@@ -609,12 +647,23 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 220 }: 
                   <button
                     type="button"
                     onClick={applySettings}
-                    className="h-7 flex-1 rounded border px-2 text-[10px] font-semibold transition-colors uppercase tracking-wider"
-                    style={{
-                      borderColor: 'color-mix(in srgb, var(--accent), white 10%)',
-                      background: 'color-mix(in srgb, var(--accent), var(--surface-0) 76%)',
-                      color: 'var(--accent-contrast)',
-                    }}
+                    disabled={!hasPendingChanges || scanning}
+                    className="h-7 flex-1 rounded border px-2 text-[10px] font-semibold transition-colors uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={
+                      hasPendingChanges
+                        ? {
+                            borderColor: 'color-mix(in srgb, var(--accent), white 10%)',
+                            background: 'color-mix(in srgb, var(--accent), var(--surface-0) 76%)',
+                            color: 'var(--accent-contrast)',
+                            cursor: 'pointer',
+                          }
+                        : {
+                            borderColor: 'var(--border-subtle)',
+                            background: 'var(--surface-1)',
+                            color: 'var(--text-muted)',
+                            cursor: 'not-allowed',
+                          }
+                    }
                   >
                     Apply
                   </button>

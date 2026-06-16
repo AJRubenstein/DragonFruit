@@ -81,7 +81,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const [pxMm, setPxMm] = useState(0.05);
   const [supportBufMm, setSupportBufMm] = useState(0.25);
   const [connectivity, setConnectivity] = useState<4 | 8>(4);
-  const [consolidateVoxel, setConsolidateVoxel] = useState<boolean>(true);
+  const [consolidateVoxel, setConsolidateVoxel] = useState<boolean>(false);
   const [consolidationDistance, setConsolidationDistance] = useState<number>(0.2);
   const [reduceIntersection, setReduceIntersection] = useState<boolean>(false);
   const [intersectionThreshold, setIntersectionThreshold] = useState<number>(0.5);
@@ -96,7 +96,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const [draftPxMm, setDraftPxMm] = useState(0.05);
   const [draftSupportBufMm, setDraftSupportBufMm] = useState(0.25);
   const [draftConnectivity, setDraftConnectivity] = useState<4 | 8>(4);
-  const [draftConsolidateVoxel, setDraftConsolidateVoxel] = useState<boolean>(true);
+  const [draftConsolidateVoxel, setDraftConsolidateVoxel] = useState<boolean>(false);
   const [draftConsolidationDistance, setDraftConsolidationDistance] = useState<number>(0.2);
   const [draftReduceIntersection, setDraftReduceIntersection] = useState<boolean>(false);
   const [draftIntersectionThreshold, setDraftIntersectionThreshold] = useState<number>(0.5);
@@ -269,16 +269,12 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     });
   }, [proposedConsolidated, minimaIslands, layerHeightMm]);
 
-  const proposedAnnotated = useMemo(() => {
-    return annotateAndCountSupports(proposedClassified.islands, supportTips, plateZ, areaPerSupport);
-  }, [proposedClassified.islands, supportTips, plateZ, areaPerSupport]);
-
   // Determine contoured IDs based on proposed list
   const contouredIds = useMemo(() => {
     return enableContourRegions
-      ? determineContourThreshold(proposedAnnotated, pxMm, maxContourRegions)
+      ? determineContourThreshold(proposedClassified.islands, pxMm, maxContourRegions)
       : new Set<string>();
-  }, [proposedAnnotated, enableContourRegions, pxMm, maxContourRegions]);
+  }, [proposedClassified.islands, enableContourRegions, pxMm, maxContourRegions]);
 
   // Pass 2: Revert non-contoured consolidated islands back to single voxel islands
   const finalVoxelIslands = useMemo(() => {
@@ -354,11 +350,16 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   }, [filteredIslands, showVoxelOnly, showMinimaOnly, showIntersection]);
 
   // Cluster-walk ordering for the list / ←/→ navigation (Euclidean only).
-  const orderedIslands = useMemo(() => {
-    return clusterWalkOrder(displayedIslands.map((i) => ({ ...i })), {
+  const baseOrderedIslands = useMemo(() => {
+    return clusterWalkOrder(allIslands.map((i) => ({ ...i })), {
       epsilonMm: Math.max(8, pxMm * 40),
     });
-  }, [displayedIslands, pxMm]);
+  }, [allIslands, pxMm]);
+
+  const orderedIslands = useMemo(() => {
+    const displayedSet = new Set(displayedIslands.map((i) => i.id));
+    return baseOrderedIslands.filter((i) => displayedSet.has(i.id));
+  }, [baseOrderedIslands, displayedIslands]);
 
   // Per-source pucks for the IslandOverlay layers (blue voxel-only / green minima-only / red intersection).
   // Retain supported voxel area blobs: keep them in the puck list so they remain visible in 3D,
@@ -565,6 +566,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
       setMaxContourRegions(draftMaxContourRegions);
       setRemoveSupportedAreaClusters(draftRemoveSupportedAreaClusters);
       setAreaPerSupport(draftAreaPerSupport);
+      setApplyingSettings(false);
     }, 50);
   }, [
     draftPxMm,
@@ -586,7 +588,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setDraftPxMm(0.05);
     setDraftSupportBufMm(0.25);
     setDraftConnectivity(4);
-    setDraftConsolidateVoxel(true);
+    setDraftConsolidateVoxel(false);
     setDraftConsolidationDistance(0.2);
     setDraftReduceIntersection(false);
     setDraftIntersectionThreshold(0.5);
@@ -598,24 +600,36 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setDraftAreaPerSupport(4.0);
   }, []);
 
-  useEffect(() => {
-    if (applyingSettings) {
-      setApplyingSettings(false);
-    }
+  const hasPendingChanges = useMemo(() => {
+    return (
+      pxMm !== draftPxMm ||
+      supportBufMm !== draftSupportBufMm ||
+      connectivity !== draftConnectivity ||
+      consolidateVoxel !== draftConsolidateVoxel ||
+      consolidationDistance !== draftConsolidationDistance ||
+      reduceIntersection !== draftReduceIntersection ||
+      intersectionThreshold !== draftIntersectionThreshold ||
+      enableVolumeGlow !== draftEnableVolumeGlow ||
+      scaleMarkersWithArea !== draftScaleMarkersWithArea ||
+      enableContourRegions !== draftEnableContourRegions ||
+      maxContourRegions !== draftMaxContourRegions ||
+      removeSupportedAreaClusters !== draftRemoveSupportedAreaClusters ||
+      areaPerSupport !== draftAreaPerSupport
+    );
   }, [
-    pxMm,
-    supportBufMm,
-    connectivity,
-    consolidateVoxel,
-    consolidationDistance,
-    reduceIntersection,
-    intersectionThreshold,
-    enableVolumeGlow,
-    scaleMarkersWithArea,
-    enableContourRegions,
-    maxContourRegions,
-    removeSupportedAreaClusters,
-    areaPerSupport,
+    pxMm, draftPxMm,
+    supportBufMm, draftSupportBufMm,
+    connectivity, draftConnectivity,
+    consolidateVoxel, draftConsolidateVoxel,
+    consolidationDistance, draftConsolidationDistance,
+    reduceIntersection, draftReduceIntersection,
+    intersectionThreshold, draftIntersectionThreshold,
+    enableVolumeGlow, draftEnableVolumeGlow,
+    scaleMarkersWithArea, draftScaleMarkersWithArea,
+    enableContourRegions, draftEnableContourRegions,
+    maxContourRegions, draftMaxContourRegions,
+    removeSupportedAreaClusters, draftRemoveSupportedAreaClusters,
+    areaPerSupport, draftAreaPerSupport,
   ]);
 
   return {
@@ -705,6 +719,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     applySettings,
     resetSettings,
     applyingSettings,
+    hasPendingChanges,
   };
 }
 
@@ -965,17 +980,17 @@ export function generateContourMarkers(
   const R_large2 = R_large * R_large;
 
   // Map voxels to a coordinate lookup Set for classification
-  const voxelSet = new Set(voxels.map((v) => `${v.x.toFixed(3)},${v.y.toFixed(3)}`));
+  const voxelSet = new Set(voxels.map((v) => `${Math.round(v.x / pxMm)},${Math.round(v.y / pxMm)}`));
 
   // Classify into interior vs boundary
   const classified = voxels.map((v) => {
+    const gx = Math.round(v.x / pxMm);
+    const gy = Math.round(v.y / pxMm);
     let isInterior = true;
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         if (dx === 0 && dy === 0) continue;
-        const nx = v.x + dx * pxMm;
-        const ny = v.y + dy * pxMm;
-        if (!voxelSet.has(`${nx.toFixed(3)},${ny.toFixed(3)}`)) {
+        if (!voxelSet.has(`${gx + dx},${gy + dy}`)) {
           isInterior = false;
           break;
         }
@@ -985,125 +1000,184 @@ export function generateContourMarkers(
     return { x: v.x, y: v.y, isInterior, covered: false };
   });
 
+  // Build spatial grid with cell size = R_small for O(1) coverage marking
+  const cellSize = R_small;
+  const grid = new Map<string, typeof classified[number][]>();
+  for (const v of classified) {
+    const cx = Math.floor(v.x / cellSize);
+    const cy = Math.floor(v.y / cellSize);
+    const key = `${cx},${cy}`;
+    let list = grid.get(key);
+    if (!list) {
+      list = [];
+      grid.set(key, list);
+    }
+    list.push(v);
+  }
+
+  // Helper to mark voxels as covered within a radius in O(1) time
+  function markCovered(centerX: number, centerY: number, radius: number): number {
+    const r2 = radius * radius;
+    const cxStart = Math.floor((centerX - radius) / cellSize);
+    const cxEnd = Math.floor((centerX + radius) / cellSize);
+    const cyStart = Math.floor((centerY - radius) / cellSize);
+    const cyEnd = Math.floor((centerY + radius) / cellSize);
+
+    let newlyCovered = 0;
+    for (let cx = cxStart; cx <= cxEnd; cx++) {
+      for (let cy = cyStart; cy <= cyEnd; cy++) {
+        const key = `${cx},${cy}`;
+        const list = grid.get(key);
+        if (!list) continue;
+        for (const v of list) {
+          if (v.covered) continue;
+          const dx = v.x - centerX;
+          const dy = v.y - centerY;
+          if (dx * dx + dy * dy <= r2) {
+            v.covered = true;
+            newlyCovered++;
+          }
+        }
+      }
+    }
+    return newlyCovered;
+  }
+
   let uncoveredCount = classified.length;
   let subId = 0;
   const maxTotalMarkers = 30;
   const maxLargeMarkers = 15;
 
-  // Pass 1: Place large circles centered on uncovered interior voxels
-  while (uncoveredCount > 0 && markers.length < maxLargeMarkers) {
-    let bestIdx = -1;
-    let bestCoveredCount = -1;
+  // Pass 1: Place large circles centered on uncovered interior voxels using large cells
+  const largeGrid = new Map<string, typeof classified[number][]>();
+  for (const v of classified) {
+    if (!v.isInterior) continue;
+    const cx = Math.floor(v.x / R_large);
+    const cy = Math.floor(v.y / R_large);
+    const key = `${cx},${cy}`;
+    let list = largeGrid.get(key);
+    if (!list) {
+      list = [];
+      largeGrid.set(key, list);
+    }
+    list.push(v);
+  }
 
-    for (let i = 0; i < classified.length; i++) {
-      const vi = classified[i];
-      if (!vi.isInterior || vi.covered) continue;
+  for (let step = 0; step < maxLargeMarkers; step++) {
+    let bestKey = '';
+    let bestCount = 0;
 
+    for (const [key, list] of largeGrid.entries()) {
       let count = 0;
-      for (let j = 0; j < classified.length; j++) {
-        const vj = classified[j];
-        if (vj.covered) continue;
-        const dx = vi.x - vj.x;
-        const dy = vi.y - vj.y;
-        if (dx * dx + dy * dy <= R_large2) {
-          count++;
-        }
+      for (const v of list) {
+        if (!v.covered) count++;
       }
-
-      if (count > bestCoveredCount) {
-        bestCoveredCount = count;
-        bestIdx = i;
+      if (count > bestCount) {
+        bestCount = count;
+        bestKey = key;
       }
     }
 
-    if (bestIdx === -1 || bestCoveredCount === 0) {
+    if (bestCount === 0 || bestKey === '') {
       break;
     }
 
-    const centerV = classified[bestIdx];
-
-    // Mark covered
-    for (let j = 0; j < classified.length; j++) {
-      const vj = classified[j];
-      if (vj.covered) continue;
-      const dx = centerV.x - vj.x;
-      const dy = centerV.y - vj.y;
-      if (dx * dx + dy * dy <= R_large2) {
-        classified[j].covered = true;
-        uncoveredCount--;
+    const list = largeGrid.get(bestKey)!;
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    for (const v of list) {
+      if (!v.covered) {
+        sumX += v.x;
+        sumY += v.y;
+        count++;
       }
     }
 
+    const centerX = sumX / count;
+    const centerY = sumY / count;
+
     markers.push({
       id: islandId + subId / 10000.0,
-      centerX: centerV.x,
-      centerY: centerV.y,
+      centerX,
+      centerY,
       baseZ,
       pixelCount: 1,
       radius: R_large,
       type,
       islandId,
     });
-
     subId++;
+
+    const coveredNum = markCovered(centerX, centerY, R_large);
+    uncoveredCount -= coveredNum;
+    if (uncoveredCount <= 0) break;
   }
 
-  // Pass 2: Place small circles centered on any uncovered voxels
-  while (uncoveredCount > 0 && markers.length < maxTotalMarkers) {
-    let bestIdx = -1;
-    let bestCoveredCount = -1;
+  // Pass 2: Place small circles centered on uncovered voxels using small cells
+  const smallGrid = new Map<string, typeof classified[number][]>();
+  for (const v of classified) {
+    const cx = Math.floor(v.x / R_small);
+    const cy = Math.floor(v.y / R_small);
+    const key = `${cx},${cy}`;
+    let list = smallGrid.get(key);
+    if (!list) {
+      list = [];
+      smallGrid.set(key, list);
+    }
+    list.push(v);
+  }
 
-    for (let i = 0; i < classified.length; i++) {
-      const vi = classified[i];
-      if (vi.covered) continue;
+  const maxSmallSteps = maxTotalMarkers - markers.length;
+  for (let step = 0; step < maxSmallSteps; step++) {
+    let bestKey = '';
+    let bestCount = 0;
 
+    for (const [key, list] of smallGrid.entries()) {
       let count = 0;
-      for (let j = 0; j < classified.length; j++) {
-        const vj = classified[j];
-        if (vj.covered) continue;
-        const dx = vi.x - vj.x;
-        const dy = vi.y - vj.y;
-        if (dx * dx + dy * dy <= R_small2) {
-          count++;
-        }
+      for (const v of list) {
+        if (!v.covered) count++;
       }
-
-      if (count > bestCoveredCount) {
-        bestCoveredCount = count;
-        bestIdx = i;
+      if (count > bestCount) {
+        bestCount = count;
+        bestKey = key;
       }
     }
 
-    if (bestIdx === -1 || bestCoveredCount === 0) {
+    if (bestCount === 0 || bestKey === '') {
       break;
     }
 
-    const centerV = classified[bestIdx];
-
-    // Mark covered
-    for (let j = 0; j < classified.length; j++) {
-      const vj = classified[j];
-      if (vj.covered) continue;
-      const dx = centerV.x - vj.x;
-      const dy = centerV.y - vj.y;
-      if (dx * dx + dy * dy <= R_small2) {
-        classified[j].covered = true;
-        uncoveredCount--;
+    const list = smallGrid.get(bestKey)!;
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    for (const v of list) {
+      if (!v.covered) {
+        sumX += v.x;
+        sumY += v.y;
+        count++;
       }
     }
 
+    const centerX = sumX / count;
+    const centerY = sumY / count;
+
     markers.push({
       id: islandId + subId / 10000.0,
-      centerX: centerV.x,
-      centerY: centerV.y,
+      centerX,
+      centerY,
       baseZ,
       pixelCount: 1,
       radius: R_small,
       type,
       islandId,
     });
-
     subId++;
+
+    const coveredNum = markCovered(centerX, centerY, R_small);
+    uncoveredCount -= coveredNum;
+    if (uncoveredCount <= 0) break;
   }
 
   return markers;
