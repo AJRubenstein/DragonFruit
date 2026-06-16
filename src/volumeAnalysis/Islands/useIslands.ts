@@ -88,6 +88,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const [reduceIntersection, setReduceIntersection] = useState<boolean>(false);
   const [intersectionThreshold, setIntersectionThreshold] = useState<number>(0.5);
   const [enableVolumeGlow, setEnableVolumeGlow] = useState<boolean>(true);
+  const [scaleMarkersWithArea, setScaleMarkersWithArea] = useState<boolean>(false);
 
   // Filter toggles — default ON ⇒ supported/grounded islands hidden (and skipped by ←/→).
   const [filterToggles, setFilterToggles] = useState<IslandFilterToggles>(DEFAULT_FILTER_TOGGLES);
@@ -317,7 +318,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     voxelOnlyPucks.markers.forEach(m => {
       const island = voxelOnlyPucks.byMarkerId.get(m.id);
       const area = island?.areaMm2 ?? 0;
-      const radius = area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1;
+      const radius = scaleMarkersWithArea && area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1;
       markers.push({ ...m, radius, type: consolidateVoxel ? 3 : 0, islandId: m.id });
     });
 
@@ -328,7 +329,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     intersectionPucks.markers.forEach(m => {
       const island = intersectionPucks.byMarkerId.get(m.id);
       const area = island?.areaMm2 ?? 0;
-      const radius = area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1;
+      const radius = scaleMarkersWithArea && area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1;
       if (reduceIntersection) {
         markers.push({ ...m, radius: 0.1, type: 2, islandId: m.id });
         if (area >= intersectionThreshold) {
@@ -340,7 +341,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     });
 
     return markers;
-  }, [voxelOnlyPucks, minimaOnlyPucks, intersectionPucks, consolidateVoxel, reduceIntersection, intersectionThreshold]);
+  }, [voxelOnlyPucks, minimaOnlyPucks, intersectionPucks, consolidateVoxel, reduceIntersection, intersectionThreshold, scaleMarkersWithArea]);
 
   const clear = useCallback(() => {
     setVoxelIslands([]);
@@ -464,6 +465,8 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setIntersectionThreshold,
     enableVolumeGlow,
     setEnableVolumeGlow,
+    scaleMarkersWithArea,
+    setScaleMarkersWithArea,
   };
 }
 

@@ -54,6 +54,8 @@ export function IslandsPanel({ islands, hasGeometry }: IslandsPanelProps) {
     setIntersectionThreshold,
     enableVolumeGlow,
     setEnableVolumeGlow,
+    scaleMarkersWithArea,
+    setScaleMarkersWithArea,
   } = islands;
 
   const [settingsExpanded, setSettingsExpanded] = React.useState(false);
@@ -65,7 +67,8 @@ export function IslandsPanel({ islands, hasGeometry }: IslandsPanelProps) {
     setConsolidationDistance(0.5);
     setReduceIntersection(false);
     setIntersectionThreshold(0.5);
-  }, [setPxMm, setSupportBufMm, setConsolidateVoxel, setConsolidationDistance, setReduceIntersection, setIntersectionThreshold]);
+    setScaleMarkersWithArea(false);
+  }, [setPxMm, setSupportBufMm, setConsolidateVoxel, setConsolidationDistance, setReduceIntersection, setIntersectionThreshold, setScaleMarkersWithArea]);
 
   const voxelOnlyShown = filteredIslands.filter((i) => i.source === 'voxel' && i.class === 'voxelOnly').length;
   const minimaOnlyShown = filteredIslands.filter((i) => i.source === 'minima' && i.class === 'minimaOnly').length;
@@ -409,18 +412,32 @@ export function IslandsPanel({ islands, hasGeometry }: IslandsPanelProps) {
                   Lower buffer flags shallower overhangs. Changes apply on the next scan.
                 </p>
 
-                {/* Consolidate Voxels */}
+                {/* Scale markers with area */}
                 <div className="space-y-2 pt-1.5 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="checkbox"
+                      checked={scaleMarkersWithArea}
+                      onChange={(e) => setScaleMarkersWithArea(e.target.checked)}
+                      className="ui-checkbox !w-4 !h-4"
+                    />
+                    <span className="ui-meta">Scale suspension and consolidated markers with suspension area</span>
+                  </label>
+                </div>
+
+                {/* Consolidate Voxels */}
+                <div className="space-y-2 pt-1.5 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                  <label className={`flex items-center gap-1.5 ${!scaleMarkersWithArea ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                    <input
+                      type="checkbox"
                       checked={consolidateVoxel}
                       onChange={(e) => setConsolidateVoxel(e.target.checked)}
+                      disabled={!scaleMarkersWithArea}
                       className="ui-checkbox !w-4 !h-4"
                     />
                     <span className="ui-meta">Consolidate voxels</span>
                   </label>
-                  {consolidateVoxel && (
+                  {scaleMarkersWithArea && consolidateVoxel && (
                     <div className="flex flex-col gap-1 pl-5">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Consolidation distance</span>
