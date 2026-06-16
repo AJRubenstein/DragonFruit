@@ -4,6 +4,8 @@ mod astar;
 mod mesh_repair;
 mod network;
 mod sdf;
+mod updater_channel;
+
 fn default_minimum_aa_alpha_percent() -> f32 {
     35.0
 }
@@ -3153,6 +3155,11 @@ fn main() {
             .level_for("rustls", log::LevelFilter::Warn)
             .level_for("h2", log::LevelFilter::Warn)
             .level_for("tokio_tungstenite", log::LevelFilter::Warn)
+            // Updater plugin logs ERROR for non-2XX endpoint responses (expected
+            // during dev when no release exists yet). The frontend handles
+            // surfacing real update failures to the user, so suppress the
+            // Rust-side noise here.
+            .level_for("tauri_plugin_updater", log::LevelFilter::Off)
             .max_file_size(5_000_000)
             .rotation_strategy(RotationStrategy::KeepOne)
             .build()
@@ -3238,6 +3245,12 @@ fn main() {
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_plugin_macos_fps::init());
 
+    // Updater plugin — checks GitHub releases for new versions and handles
+    // download + install across all platforms.
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    // Process plugin — needed for app relaunch after update installs.
+    let builder = builder.plugin(tauri_plugin_process::init());
+
     builder
         .invoke_handler(tauri::generate_handler![
             slice_solid_native,
@@ -3314,7 +3327,11 @@ fn main() {
             sdf::compute_sdf_from_staged,
             sdf::compute_heightmap_from_staged,
             sdf::invalidate_sdf_cache,
-            astar::run_astar_pathfinding
+            astar::run_astar_pathfinding,
+            updater_channel::check_updates,
+            updater_channel::perform_update,
+            updater_channel::get_saved_update_channel,
+            updater_channel::save_update_channel
         ])
         .run(tauri::generate_context!())
         .expect("error while running DragonFruit desktop app");
