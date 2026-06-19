@@ -10228,6 +10228,10 @@ export default function Home() {
     scene.ungroupGroup(groupId);
   }, [scene]);
 
+  const handleSplitImportGroup = React.useCallback((modelId: string) => {
+    scene.splitImportGroup(modelId);
+  }, [scene]);
+
   const handleRenameFolder = React.useCallback((groupId: string, nextName: string) => {
     scene.renameGroup(groupId, nextName);
   }, [scene]);
@@ -18546,6 +18550,7 @@ export default function Home() {
               onGroupModels={handleGroupSelectedModels}
               onUngroupModels={handleUngroupSelectedModels}
               onUngroupGroup={handleUngroupFolder}
+              onSplitImportGroup={handleSplitImportGroup}
               onRenameGroup={handleRenameFolder}
               onRenameModel={handleRenameModel}
               onModelContextMenu={handleModelListContextMenu}

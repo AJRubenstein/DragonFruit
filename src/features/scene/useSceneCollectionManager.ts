@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { loadMeshGeometry, load3mfGeometryMulti, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
+import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
 import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
 import { isVoxlBinaryV2, parseVoxlBinaryV2, parseVoxlDocument, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
@@ -768,6 +768,10 @@ export interface LoadedModel {
   visible: boolean;
   color: string;
   polygonCount: number;
+  /** Pre-processed individual body geometries for multi-body 3MF imports.
+   *  When set, "Split to Bodies" replaces this single model with separate
+   *  models for each entry — instant, no reprocessing needed. */
+  splitBodies?: GeometryWithBounds[];
   meshModifiers?: ModelMeshModifiers;
   ignoreAutoLift?: boolean;
   manualZMoveOverride?: boolean;
@@ -2025,48 +2029,36 @@ export function useSceneCollectionManager() {
           // Determine if this is a 3MF file for multi-body import
           const is3mf = file.name.toLowerCase().endsWith('.3mf');
 
-          // Load geometries — single for most formats, multi-body for 3MF
-          const geoms: GeometryWithBounds[] = is3mf
-            ? await load3mfGeometryMulti(url, loadOptions)
-            : [await loadMeshGeometry(url, file.name, loadOptions)];
-
-          if (geoms.length === 0) {
-            throw new Error(`No geometry loaded from ${file.name}.`);
-          }
-
           const color = preferredMeshColor;
-          const modelIdsForGroup: string[] = [];
 
-          for (let bodyIndex = 0; bodyIndex < geoms.length; bodyIndex++) {
-            const geom = geoms[bodyIndex];
+          if (is3mf) {
+            // Use the merged+split loader: returns a single merged geometry
+            // (preserving body positions) and pre-processed individual bodies
+            // for instant "Split to Bodies".
+            const { merged, splitBodies } = await load3mfGeometryMergedWithSplitData(url, loadOptions);
 
-            // Calculate initial transform with auto-lift (same logic as single import)
-            const bbox = geom.bbox;
-            const center = geom.center;
+            const bbox = merged.bbox;
+            const center = merged.center;
             const heightOffset = center.z - bbox.min.z;
             const initialZ = autoLift ? heightOffset + liftDistance : heightOffset;
 
-            // Number body names for multi-body 3MF imports
-            const modelName = geoms.length > 1
-              ? `${file.name.replace(/\.3mf$/i, '')} (${bodyIndex + 1})`
-              : file.name;
-
             const model: LoadedModel = {
               id: generateId(),
-              name: modelName,
+              name: file.name,
               fileUrl: url,
               fileSizeBytes: file.size,
               sourcePath: (file as File & { filePath?: string }).filePath,
-              geometry: geom,
+              geometry: merged,
+              splitBodies: splitBodies.length > 1 ? splitBodies : undefined,
               transform: {
                 position: new THREE.Vector3(defaultImportCenterXY.x, defaultImportCenterXY.y, initialZ),
                 rotation: new THREE.Euler(0, 0, 0),
-                scale: new THREE.Vector3(1, 1, 1)
+                scale: new THREE.Vector3(1, 1, 1),
               },
               visible: true,
               color,
-              polygonCount: geom.nativePreview?.originalTriangleCount
-                ?? geom.geometry.getAttribute('position').count / 3
+              polygonCount: merged.nativePreview?.originalTriangleCount
+                ?? merged.geometry.getAttribute('position').count / 3,
             };
 
             const assignedCenter = findFreeSpotCentersForModels([...stagedNewModels, model], 5).at(-1);
@@ -2075,25 +2067,57 @@ export function useSceneCollectionManager() {
             }
 
             stagedNewModels.push(model);
-            modelIdsForGroup.push(model.id);
-            if (!firstLoadedModelId) {
-              firstLoadedModelId = model.id;
+            if (!firstLoadedModelId) firstLoadedModelId = model.id;
+            setModels((prev) => [...prev, model]);
+
+            if (merged.meshDefects?.nativeRepairReport) {
+              repairReports.push({
+                id: model.id,
+                modelName: file.name,
+                report: merged.meshDefects.nativeRepairReport,
+              });
+            }
+          } else {
+            const geom = await loadMeshGeometry(url, file.name, loadOptions);
+            const bbox = geom.bbox;
+            const center = geom.center;
+            const heightOffset = center.z - bbox.min.z;
+            const initialZ = autoLift ? heightOffset + liftDistance : heightOffset;
+
+            const model: LoadedModel = {
+              id: generateId(),
+              name: file.name,
+              fileUrl: url,
+              fileSizeBytes: file.size,
+              sourcePath: (file as File & { filePath?: string }).filePath,
+              geometry: geom,
+              transform: {
+                position: new THREE.Vector3(defaultImportCenterXY.x, defaultImportCenterXY.y, initialZ),
+                rotation: new THREE.Euler(0, 0, 0),
+                scale: new THREE.Vector3(1, 1, 1),
+              },
+              visible: true,
+              color,
+              polygonCount: geom.nativePreview?.originalTriangleCount
+                ?? geom.geometry.getAttribute('position').count / 3,
+            };
+
+            const assignedCenter = findFreeSpotCentersForModels([...stagedNewModels, model], 5).at(-1);
+            if (assignedCenter) {
+              model.transform.position.set(assignedCenter.x, assignedCenter.y, model.transform.position.z);
             }
 
+            stagedNewModels.push(model);
+            if (!firstLoadedModelId) firstLoadedModelId = model.id;
             setModels((prev) => [...prev, model]);
 
             if (geom.meshDefects?.nativeRepairReport) {
               repairReports.push({
                 id: model.id,
-                modelName,
+                modelName: file.name,
                 report: geom.meshDefects.nativeRepairReport,
               });
             }
-          }
-
-          // Auto-group multi-body 3MF imports
-          if (is3mf && modelIdsForGroup.length > 1) {
-            groupModels(modelIdsForGroup);
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -2122,10 +2146,8 @@ export function useSceneCollectionManager() {
         const importedIds = stagedNewModels.map((model) => model.id);
 
         if (importedIds.length > 1) {
-          // For multi-file mesh imports, auto-group all imported models (same
-          // treatment as multi-body 3MF) and select them so tinting/transform
-          // actions apply uniformly.
-          groupModels(importedIds);
+          // For multi-file mesh imports, select all imported models so tinting and
+          // immediate transform actions apply uniformly.
           setActiveModelId(importedIds[0]);
           setSelectedModelIds(importedIds);
         } else if (!hadActiveModelAtStart) {
@@ -2570,6 +2592,42 @@ export function useSceneCollectionManager() {
         ? { ...model, groupId: undefined, groupName: undefined }
         : model
     )));
+  }, []);
+
+  /** Splits a multi-body 3MF model into independent models using the
+   *  pre-processed `splitBodies` geometries. Instant — no reprocessing. */
+  const splitImportGroup = useCallback((modelId: string) => {
+    const source = modelsRef.current.find((m) => m.id === modelId);
+    if (!source?.splitBodies || source.splitBodies.length < 2) return;
+
+    const newModels: LoadedModel[] = source.splitBodies.map((bodyGeom, i) => ({
+      id: generateId(),
+      name: `${source.name.replace(/\.3mf$/i, '')} (${i + 1})`,
+      fileUrl: source.fileUrl,
+      fileSizeBytes: source.fileSizeBytes,
+      sourcePath: source.sourcePath,
+      geometry: bodyGeom,
+      transform: {
+        position: source.transform.position.clone(),
+        rotation: source.transform.rotation.clone(),
+        scale: source.transform.scale.clone(),
+      },
+      visible: source.visible,
+      color: source.color,
+      polygonCount: bodyGeom.nativePreview?.originalTriangleCount
+        ?? bodyGeom.geometry.getAttribute('position').count / 3,
+    }));
+
+    // Remove the merged source, add individual models
+    setModels((prev) => [
+      ...prev.filter((m) => m.id !== modelId),
+      ...newModels,
+    ]);
+
+    // Select all new bodies
+    const newIds = newModels.map((m) => m.id);
+    setActiveModelId(newIds[0]);
+    setSelectedModelIds(newIds);
   }, []);
 
   const renameGroup = useCallback((groupId: string, nextName: string) => {
@@ -4367,6 +4425,7 @@ export function useSceneCollectionManager() {
     groupModels,
     ungroupModels,
     ungroupGroup,
+    splitImportGroup,
     renameGroup,
     selectGroup,
     deleteModels,

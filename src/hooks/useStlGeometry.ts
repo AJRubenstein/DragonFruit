@@ -1015,6 +1015,102 @@ export async function load3mfGeometryMulti(fileUrl: string, options?: ProcessGeo
   });
 }
 
+/**
+ * Loads a 3MF file and returns both a single merged geometry (all bodies
+ * combined, preserving their relative positions) and individually-processed
+ * body geometries for instant splitting.
+ *
+ * The merged result is used for the initial single-model import. The
+ * `splitBodies` array stores each body independently centered (as if
+ * imported separately) so "Split to Bodies" is instantaneous.
+ */
+export async function load3mfGeometryMergedWithSplitData(
+  fileUrl: string,
+  options?: ProcessGeometryOptions,
+): Promise<{ merged: GeometryWithBounds; splitBodies: GeometryWithBounds[] }> {
+  // Get raw individual geometries with their world transforms applied
+  const getRawGeometries = async (group: THREE.Group): Promise<THREE.BufferGeometry[]> => {
+    group.updateMatrixWorld(true);
+    const geoms: THREE.BufferGeometry[] = [];
+    group.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if (!(mesh.geometry instanceof THREE.BufferGeometry)) return;
+      const cloned = mesh.geometry.clone();
+      if (cloned.getAttribute('color')) cloned.deleteAttribute('color');
+      cloned.applyMatrix4(mesh.matrixWorld);
+      geoms.push(cloned);
+    });
+    return geoms;
+  };
+
+  // Try fast loader first
+  const fastGroup = await tryLoadFast3mf(fileUrl);
+  if (fastGroup) {
+    console.log(`[${new Date().toISOString()}] [load3mfGeometryMerged] fast-3mf-loader succeeded.`);
+    try {
+      const rawGeoms = await getRawGeometries(fastGroup);
+      if (rawGeoms.length === 0) throw new Error('3MF contains no mesh geometry.');
+
+      // Merge raw geometries (preserving relative positions) → single model
+      const mergedBuf = rawGeoms.length === 1
+        ? rawGeoms[0]
+        : mergeGeometries(rawGeoms, false);
+      if (!mergedBuf) throw new Error('Failed to merge 3MF bodies.');
+      const merged = await processGeometry(mergedBuf, options);
+
+      // Process each body independently (with centering) → split bodies
+      const splitBodies: GeometryWithBounds[] = [];
+      for (const raw of rawGeoms) {
+        splitBodies.push(await processGeometry(raw, options));
+      }
+
+      return { merged, splitBodies };
+    } catch (error) {
+      console.warn('[load3mfGeometryMerged] fast-3mf-loader failed; falling back to ThreeMFLoader.', error);
+    }
+  }
+
+  // Fall back to ThreeMFLoader
+  return new Promise((resolve, reject) => {
+    const loader = new ThreeMFLoader();
+    console.log(`[${new Date().toISOString()}] [load3mfGeometryMerged] ThreeMFLoader fallback for ${fileUrl}`);
+
+    loader.load(
+      fileUrl,
+      async (object) => {
+        try {
+          const rawGeoms = await getRawGeometries(object);
+          if (rawGeoms.length === 0) {
+            reject(new Error('3MF contains no mesh geometry.'));
+            return;
+          }
+
+          const mergedBuf = rawGeoms.length === 1
+            ? rawGeoms[0]
+            : mergeGeometries(rawGeoms, false);
+          if (!mergedBuf) {
+            reject(new Error('Failed to merge 3MF bodies.'));
+            return;
+          }
+          const merged = await processGeometry(mergedBuf, options);
+
+          const splitBodies: GeometryWithBounds[] = [];
+          for (const raw of rawGeoms) {
+            splitBodies.push(await processGeometry(raw, options));
+          }
+
+          resolve({ merged, splitBodies });
+        } catch (error) {
+          reject(error);
+        }
+      },
+      undefined,
+      reject,
+    );
+  });
+}
+
 export async function loadObjGeometry(fileUrl: string, options?: ProcessGeometryOptions): Promise<GeometryWithBounds> {
   return new Promise((resolve, reject) => {
     const loader = new OBJLoader();
