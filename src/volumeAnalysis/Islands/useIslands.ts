@@ -128,21 +128,30 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const prepareWorldGeom = useCallback((): { positions: Float32Array; bbox: THREE.Box3 } | null => {
     if (!geom) return null;
     const g = geom.geometry.clone();
-    const bb =
-      g.boundingBox ??
-      new THREE.Box3().setFromBufferAttribute(g.getAttribute('position') as THREE.BufferAttribute);
-    const center = bb.getCenter(new THREE.Vector3());
-    g.translate(-center.x, -center.y, -center.z);
-    const matrix = new THREE.Matrix4().compose(
-      transform.position.clone(),
-      quaternionFromGlobalEuler(transform.rotation),
-      transform.scale.clone(),
-    );
-    g.applyMatrix4(matrix);
-    const soup = g.index ? g.toNonIndexed() : g;
-    soup.computeBoundingBox();
-    const positions = soup.getAttribute('position').array as Float32Array;
-    return { positions, bbox: soup.boundingBox! };
+    try {
+      const bb = g.boundingBox ?? new THREE.Box3().setFromBufferAttribute(g.getAttribute('position') as THREE.BufferAttribute);
+      const center = bb.getCenter(new THREE.Vector3());
+      g.translate(-center.x, -center.y, -center.z);
+      const matrix = new THREE.Matrix4().compose(
+        transform.position.clone(),
+        quaternionFromGlobalEuler(transform.rotation),
+        transform.scale.clone(),
+      );
+      g.applyMatrix4(matrix);
+      const soup = g.index ? g.toNonIndexed() : g;
+      try {
+        soup.computeBoundingBox();
+        const positions = (soup.getAttribute('position').array as Float32Array).slice();
+        const bbox = soup.boundingBox!.clone();
+        return { positions, bbox };
+      } finally {
+        if (soup !== g) {
+          soup.dispose();
+        }
+      }
+    } finally {
+      g.dispose();
+    }
   }, [geom, transform]);
 
   /**
