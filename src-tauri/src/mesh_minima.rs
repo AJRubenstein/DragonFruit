@@ -15,6 +15,8 @@ use dragonfruit_islands::{
     model::{Connectivity, IslandScanJob, GridRef},
     stream::run_island_scan_streaming,
 };
+use std::cell::RefCell;
+use rayon::prelude::*;
 
 /// A detected local vertical minimum: a vertex whose Z is strictly below all its
 /// graph neighbours, surviving the down-facing / even-odd interior filter.
@@ -26,27 +28,224 @@ pub struct LocalMinimum {
     pub seed_triangle_id: u32,
 }
 
-fn get_k_ring_neighbors(vi: usize, k: usize, adj_vertices: &[HashSet<u32>]) -> HashSet<u32> {
-    let mut visited = HashSet::new();
-    let mut current_ring = HashSet::new();
-    current_ring.insert(vi as u32);
-    visited.insert(vi as u32);
-    for _ in 0..k {
-        let mut next_ring = HashSet::new();
-        for &v in &current_ring {
-            if let Some(neighbors) = adj_vertices.get(v as usize) {
+pub struct AdjacencyList {
+    pub offsets: Vec<usize>,
+    pub targets: Vec<u32>,
+}
+
+impl AdjacencyList {
+    /// Builds CSR adjacency list from watertight indexed mesh.
+    /// Incurs exactly 4 heap allocations total.
+    pub fn build(mesh: &IndexedMesh) -> Self {
+        let tri_count = mesh.triangle_count();
+        let vert_count = mesh.vertex_count();
+
+        // 1. Collect all half-edges (6 per triangle)
+        let mut edges = Vec::with_capacity(tri_count * 6);
+        for fi in 0..tri_count {
+            let tri = mesh.triangles[fi];
+            let u = tri[0];
+            let v = tri[1];
+            let w = tri[2];
+            edges.push((u, v));
+            edges.push((u, w));
+            edges.push((v, u));
+            edges.push((v, w));
+            edges.push((w, u));
+            edges.push((w, v));
+        }
+
+        // 2. Sort and deduplicate to get unique undirected graph edges
+        edges.sort_unstable();
+        edges.dedup();
+
+        // 3. Populate CSR offset and target vectors
+        let mut offsets = vec![0; vert_count + 1];
+        let mut targets = Vec::with_capacity(edges.len());
+
+        let mut current_v = 0;
+        for &(u, v) in &edges {
+            while current_v < u as usize {
+                current_v += 1;
+                offsets[current_v] = targets.len();
+            }
+            targets.push(v);
+        }
+        while current_v < vert_count {
+            current_v += 1;
+            offsets[current_v] = targets.len();
+        }
+
+        Self { offsets, targets }
+    }
+
+    /// Retrieve neighbor slice for a given vertex. Zero allocations.
+    #[inline]
+    pub fn neighbors(&self, u: usize) -> &[u32] {
+        let start = self.offsets[u];
+        let end = self.offsets[u + 1];
+        &self.targets[start..end]
+    }
+}
+
+pub struct ThreadLocalScanContext {
+    visited_generation: Vec<u32>, // matches size: vert_count
+    current_generation: u32,
+    queue: Vec<u32>,
+    next_ring: Vec<u32>,
+    result_neighbors: Vec<u32>,
+}
+
+impl ThreadLocalScanContext {
+    pub fn new(vert_count: usize) -> Self {
+        Self {
+            visited_generation: vec![0; vert_count],
+            current_generation: 0,
+            queue: Vec::with_capacity(32),
+            next_ring: Vec::with_capacity(32),
+            result_neighbors: Vec::with_capacity(64),
+        }
+    }
+
+    /// Reset generation counters if overflow is reached
+    fn reset_if_needed(&mut self) {
+        if self.current_generation == u32::MAX {
+            self.visited_generation.fill(0);
+            self.current_generation = 0;
+        }
+    }
+
+    pub fn ensure_capacity(&mut self, vert_count: usize) {
+        if self.visited_generation.len() < vert_count {
+            self.visited_generation.resize(vert_count, 0);
+        }
+    }
+
+    /// Traverse and extract k-ring neighbors without heap allocation
+    pub fn get_k_ring_neighbors(
+        &mut self,
+        vi: usize,
+        k: usize,
+        adj: &AdjacencyList,
+    ) -> &[u32] {
+        self.reset_if_needed();
+        self.current_generation += 1;
+        let gen = self.current_generation;
+
+        self.queue.clear();
+        self.next_ring.clear();
+        self.result_neighbors.clear();
+
+        self.queue.push(vi as u32);
+        self.visited_generation[vi] = gen;
+
+        for _ in 0..k {
+            self.next_ring.clear();
+            for &u in &self.queue {
+                let neighbors = adj.neighbors(u as usize);
                 for &neighbor in neighbors {
-                    if visited.insert(neighbor) {
-                        next_ring.insert(neighbor);
+                    let n_idx = neighbor as usize;
+                    if self.visited_generation[n_idx] != gen {
+                        self.visited_generation[n_idx] = gen;
+                        self.next_ring.push(neighbor);
+                        self.result_neighbors.push(neighbor);
                     }
                 }
             }
+            if self.next_ring.is_empty() {
+                break;
+            }
+            std::mem::swap(&mut self.queue, &mut self.next_ring);
         }
-        if next_ring.is_empty() { break; }
-        current_ring = next_ring;
+
+        &self.result_neighbors
     }
-    visited.remove(&(vi as u32));
-    visited
+}
+
+thread_local! {
+    static SCAN_CONTEXT: RefCell<Option<ThreadLocalScanContext>> = RefCell::new(None);
+}
+
+fn scan_minima_internal(
+    mesh: &IndexedMesh,
+    k: Option<usize>,
+) -> Vec<LocalMinimum> {
+    let tri_count = mesh.triangle_count();
+    let vert_count = mesh.vertex_count();
+
+    let mut normals = Vec::with_capacity(tri_count);
+    for fi in 0..tri_count {
+        normals.push(mesh.tri_normal(fi as u32));
+    }
+
+    let adj = AdjacencyList::build(mesh);
+    let mut vert_to_face = vec![u32::MAX; vert_count];
+    let mut vert_to_faces = vec![Vec::new(); vert_count];
+    for fi in 0..tri_count {
+        let tri = mesh.triangles[fi];
+        let face_id = fi as u32;
+        for &u in &tri {
+            vert_to_face[u as usize] = face_id;
+            vert_to_faces[u as usize].push(face_id);
+        }
+    }
+
+    let bvh = dragonfruit_mesh_repair::core::bvh::Bvh::build(mesh);
+    let k_val = k.unwrap_or(2);
+
+    (0..vert_count)
+        .into_par_iter()
+        .filter_map(|vi| {
+            SCAN_CONTEXT.with(|cell| {
+                let mut borrow = cell.borrow_mut();
+                let ctx = borrow.get_or_insert_with(|| ThreadLocalScanContext::new(vert_count));
+                ctx.ensure_capacity(vert_count);
+
+                let z_i = mesh.positions[vi].z;
+                let neighbors = ctx.get_k_ring_neighbors(vi, k_val, &adj);
+                if neighbors.is_empty() {
+                    return None;
+                }
+
+                for &neighbor in neighbors {
+                    if mesh.positions[neighbor as usize].z <= z_i {
+                        return None;
+                    }
+                }
+
+                let mut v_normal = Vec3::ZERO;
+                for &fi in &vert_to_faces[vi] {
+                    v_normal = v_normal.add(normals[fi as usize]);
+                }
+                let len = v_normal.length();
+                let nz = if len > 0.0 { v_normal.z / len } else { 0.0 };
+
+                let mut keep = true;
+                if nz >= -0.05 {
+                    let test_pt = Vec3::new(
+                        mesh.positions[vi].x,
+                        mesh.positions[vi].y,
+                        mesh.positions[vi].z - 1e-4,
+                    );
+                    let perturbed_orig = Vec3::new(test_pt.x + 1.123e-5, test_pt.y + 2.456e-5, test_pt.z);
+                    let hits = bvh.ray_hit_count(mesh, perturbed_orig, Vec3::new(0.0, 0.0, -1.0));
+                    if hits % 2 == 1 {
+                        keep = false;
+                    }
+                }
+
+                if keep {
+                    Some(LocalMinimum {
+                        vertex_index: vi as u32,
+                        position: mesh.positions[vi],
+                        seed_triangle_id: vert_to_face[vi],
+                    })
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
 }
 
 /// Tauri IPC command: weld a world-space triangle soup (9 floats per triangle)
@@ -55,81 +254,11 @@ fn get_k_ring_neighbors(vi: usize, k: usize, adj_vertices: &[HashSet<u32>]) -> H
 #[tauri::command]
 pub async fn scan_mesh_minima(positions: Vec<f32>, k: Option<usize>) -> Result<Vec<LocalMinimum>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        // 1. Weld coincident vertices → indexed (watertight) mesh.
         let mesh = IndexedMesh::from_triangle_soup(&positions, 1e-5);
         let tri_count = mesh.triangle_count();
         let vert_count = mesh.vertex_count();
 
-        // 2. Per-face normals (for the down-facing heuristic).
-        let mut normals = Vec::with_capacity(tri_count);
-        for fi in 0..tri_count {
-            normals.push(mesh.tri_normal(fi as u32));
-        }
-
-        // 3. Vertex→vertex adjacency, vertex→seed-face, vertex→incident-faces.
-        let mut adj_vertices = vec![HashSet::new(); vert_count];
-        let mut vert_to_face = vec![u32::MAX; vert_count];
-        let mut vert_to_faces = vec![Vec::new(); vert_count];
-        for fi in 0..tri_count {
-            let tri = mesh.triangles[fi];
-            let face_id = fi as u32;
-            for &(u, v, w) in &[(tri[0], tri[1], tri[2]), (tri[1], tri[2], tri[0]), (tri[2], tri[0], tri[1])] {
-                adj_vertices[u as usize].insert(v);
-                adj_vertices[u as usize].insert(w);
-                vert_to_face[u as usize] = face_id;
-                vert_to_faces[u as usize].push(face_id);
-            }
-        }
-
-        // 4. Scan for local vertical minima + hybrid down-facing / even-odd filter.
-        let mut local_minima = Vec::new();
-        for vi in 0..vert_count {
-            let z_i = mesh.positions[vi].z;
-            let neighbors = get_k_ring_neighbors(vi, k.unwrap_or(2), &adj_vertices);
-            if neighbors.is_empty() {
-                continue;
-            }
-            let mut is_minimum = true;
-            for &neighbor in &neighbors {
-                if mesh.positions[neighbor as usize].z <= z_i {
-                    is_minimum = false;
-                    break;
-                }
-            }
-            if !is_minimum {
-                continue;
-            }
-
-            // Vertex normal Z as a fast down-facing heuristic.
-            let mut v_normal = Vec3::ZERO;
-            for &fi in &vert_to_faces[vi] {
-                v_normal = v_normal.add(normals[fi as usize]);
-            }
-            let len = v_normal.length();
-            let nz = if len > 0.0 { v_normal.z / len } else { 0.0 };
-
-            // Clear downward overhang (nz < -0.05) → keep. Flat / up-facing → run
-            // the robust even-odd raycast to reject interior concavity tips.
-            let mut keep = true;
-            if nz >= -0.05 {
-                let test_pt = Vec3::new(
-                    mesh.positions[vi].x,
-                    mesh.positions[vi].y,
-                    mesh.positions[vi].z - 1e-4,
-                );
-                if is_point_inside_mesh(&test_pt, &mesh) {
-                    keep = false;
-                }
-            }
-
-            if keep {
-                local_minima.push(LocalMinimum {
-                    vertex_index: vi as u32,
-                    position: mesh.positions[vi],
-                    seed_triangle_id: vert_to_face[vi],
-                });
-            }
-        }
+        let local_minima = scan_minima_internal(&mesh, k);
 
         log::info!(
             "[mesh-minima] scan complete: {} minima from {} vertices / {} triangles",
@@ -187,81 +316,11 @@ pub async fn scan_mesh_minima_from_path(
     k: Option<usize>,
 ) -> Result<Vec<LocalMinimum>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        // 1. Load and transform mesh
         let mesh = load_and_transform_mesh(&file_path, matrix, center)?;
         let tri_count = mesh.triangle_count();
         let vert_count = mesh.vertex_count();
 
-        // 2. Per-face normals (for the down-facing heuristic).
-        let mut normals = Vec::with_capacity(tri_count);
-        for fi in 0..tri_count {
-            normals.push(mesh.tri_normal(fi as u32));
-        }
-
-        // 3. Vertex→vertex adjacency, vertex→seed-face, vertex→incident-faces.
-        let mut adj_vertices = vec![HashSet::new(); vert_count];
-        let mut vert_to_face = vec![u32::MAX; vert_count];
-        let mut vert_to_faces = vec![Vec::new(); vert_count];
-        for fi in 0..tri_count {
-            let tri = mesh.triangles[fi];
-            let face_id = fi as u32;
-            for &(u, v, w) in &[(tri[0], tri[1], tri[2]), (tri[1], tri[2], tri[0]), (tri[2], tri[0], tri[1])] {
-                adj_vertices[u as usize].insert(v);
-                adj_vertices[u as usize].insert(w);
-                vert_to_face[u as usize] = face_id;
-                vert_to_faces[u as usize].push(face_id);
-            }
-        }
-
-        // 4. Scan for local vertical minima + hybrid down-facing / even-odd filter.
-        let mut local_minima = Vec::new();
-        for vi in 0..vert_count {
-            let z_i = mesh.positions[vi].z;
-            let neighbors = get_k_ring_neighbors(vi, k.unwrap_or(2), &adj_vertices);
-            if neighbors.is_empty() {
-                continue;
-            }
-            let mut is_minimum = true;
-            for &neighbor in &neighbors {
-                if mesh.positions[neighbor as usize].z <= z_i {
-                    is_minimum = false;
-                    break;
-                }
-            }
-            if !is_minimum {
-                continue;
-            }
-
-            // Vertex normal Z as a fast down-facing heuristic.
-            let mut v_normal = Vec3::ZERO;
-            for &fi in &vert_to_faces[vi] {
-                v_normal = v_normal.add(normals[fi as usize]);
-            }
-            let len = v_normal.length();
-            let nz = if len > 0.0 { v_normal.z / len } else { 0.0 };
-
-            // Clear downward overhang (nz < -0.05) → keep. Flat / up-facing → run
-            // the robust even-odd raycast to reject interior concavity tips.
-            let mut keep = true;
-            if nz >= -0.05 {
-                let test_pt = Vec3::new(
-                    mesh.positions[vi].x,
-                    mesh.positions[vi].y,
-                    mesh.positions[vi].z - 1e-4,
-                );
-                if is_point_inside_mesh(&test_pt, &mesh) {
-                    keep = false;
-                }
-            }
-
-            if keep {
-                local_minima.push(LocalMinimum {
-                    vertex_index: vi as u32,
-                    position: mesh.positions[vi],
-                    seed_triangle_id: vert_to_face[vi],
-                });
-            }
-        }
+        let local_minima = scan_minima_internal(&mesh, k);
 
         log::info!(
             "[mesh-minima-path] scan complete: {} minima from {} vertices / {} triangles",
@@ -555,20 +614,12 @@ fn ray_triangle_intersect(orig: &Vec3, dir: &Vec3, v0: &Vec3, v1: &Vec3, v2: &Ve
 }
 
 /// Even-odd solidness test: cast a ray in -Z from a slightly perturbed origin and
-/// count triangle hits. Odd count ⇒ the point lies inside the watertight volume.
+/// count triangle hits using BVH. Odd count ⇒ the point lies inside the watertight volume.
+#[allow(dead_code)]
 fn is_point_inside_mesh(orig: &Vec3, mesh: &IndexedMesh) -> bool {
-    let mut hits = 0;
-    let dir = Vec3::new(0.0, 0.0, -1.0);
-    // Perturb in X/Y to avoid exact vertex/edge alignment artefacts.
+    let bvh = dragonfruit_mesh_repair::core::bvh::Bvh::build(mesh);
     let perturbed_orig = Vec3::new(orig.x + 1.123e-5, orig.y + 2.456e-5, orig.z);
-
-    let tri_count = mesh.triangle_count();
-    for fi in 0..tri_count {
-        let [v0, v1, v2] = mesh.tri_positions(fi as u32);
-        if ray_triangle_intersect(&perturbed_orig, &dir, &v0, &v1, &v2).is_some() {
-            hits += 1;
-        }
-    }
+    let hits = bvh.ray_hit_count(mesh, perturbed_orig, Vec3::new(0.0, 0.0, -1.0));
     hits % 2 == 1
 }
 
