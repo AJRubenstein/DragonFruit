@@ -2,18 +2,22 @@
 
 import React, { useEffect, useState } from 'react';
 import { GeneralSettingsTab } from '@/components/settings/GeneralSettingsTab';
+import { useLocale } from '@/components/I18nClientProvider';
 import { CameraSettingsTab } from '@/components/settings/CameraSettingsTab';
 import { HotkeysSettingsTab } from '@/components/settings/HotkeysSettingsTab';
 import { MeshSettingsTab } from '@/components/settings/MeshSettingsTab';
 import { PluginsSettingsTab } from '@/components/settings/PluginsSettingsTab';
 import { LocalBackupsSettingsTab } from '@/components/settings/LocalBackupsSettingsTab';
 import { SceneAutosaveSettingsTab } from '@/components/settings/SceneAutosaveSettingsTab';
+import { UvToolsSettingsTab } from '@/components/settings/UvToolsSettingsTab';
 import { LoggingSettingsTab, getSavedLogLevel, saveLogLevel, type LogLevelFilter } from '@/components/settings/LoggingSettingsTab';
 import { SpaceMouseSettingsTab } from '@/components/settings/SpaceMouseSettingsTab';
 import { UISettingsTab } from './UISettingsTab';
+import { UpdatesSettingsTab } from '@/features/updater/UpdatesSettingsTab';
+import { getUpdateChannel, type UpdateChannel } from '@/features/updater/updateBridge';
 import { WorkspacesSettingsTab } from '@/components/settings/WorkspacesSettingsTab';
 import { PerformanceSettingsTab, type SlicingThumbnailRenderSettings } from '@/components/settings/PerformanceSettingsTab';
-import { AlertTriangle, Check, Edit3, ExternalLink, Gamepad2, Github, HardDrive, Info, Keyboard, MonitorCog, Palette, Plug, RotateCcw, Save, Settings2, Trash2, X, Camera, Grid3x3, ArchiveRestore, ScrollText } from 'lucide-react';
+import { AlertTriangle, Check, CloudDownload, Edit3, ExternalLink, Gamepad2, Github, HardDrive, Info, Keyboard, MonitorCog, Palette, Plug, RotateCcw, Save, Settings2, Trash2, X, Camera, Grid3x3, ArchiveRestore, ScrollText } from 'lucide-react';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
 import {
   applyThemeCustomColors,
@@ -92,6 +96,12 @@ import {
   saveSlicingPerformanceSettings,
   type SlicingPerformanceSettings,
 } from '@/components/settings/performancePreferences';
+import {
+  DEFAULT_UVTOOLS_SETTINGS,
+  getSavedUvToolsSettings,
+  saveUvToolsSettings,
+  type UvToolsSettings,
+} from '@/components/settings/uvToolsPreferences';
 import { outputFormatUsesPngLayers } from '@/features/slicing/formats/registry';
 import type { SelectionHighlightMode } from '@/components/selection';
 import {
@@ -173,9 +183,11 @@ type SettingsModalProps = {
   slicingThumbnailRenderSettings: SlicingThumbnailRenderSettings;
   onSlicingThumbnailRenderSettingsChange: (settings: SlicingThumbnailRenderSettings) => void;
   activeOutputFormat?: string | null;
+  /** Optional: open to a specific tab on mount */
+  initialTab?: SettingsTabKey;
 };
 
-type SettingsTabKey = 'general' | 'camera' | 'workspaces' | 'mesh' | 'performance' | 'spacemouse' | 'plugins' | 'sceneAutosave' | 'backups' | 'ui' | 'hotkeys' | 'logging' | 'about';
+export type SettingsTabKey = 'general' | 'camera' | 'workspaces' | 'mesh' | 'performance' | 'spacemouse' | 'plugins' | 'sceneAutosave' | 'backups' | 'uvtools' | 'ui' | 'hotkeys' | 'logging' | 'updates' | 'about';
 type SettingsTabTone = 'primary' | 'secondary';
 
 export function SettingsModal({
@@ -222,8 +234,14 @@ export function SettingsModal({
   slicingThumbnailRenderSettings,
   onSlicingThumbnailRenderSettingsChange,
   activeOutputFormat,
+  initialTab,
 }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTabKey>('general');
+  const [activeTab, setActiveTab] = useState<SettingsTabKey>(initialTab ?? 'general');
+
+  // Language is a draft like every other setting: changing the switcher only
+  // updates draftLocale; the actual loadLocale happens in handleApply.
+  const { locale: activeLocale, setLocale: applyLocale } = useLocale();
+  const [draftLocale, setDraftLocale] = useState(activeLocale);
 
   const [draftMeshColor, setDraftMeshColor] = useState(meshColor);
   const [draftShaderType, setDraftShaderType] = useState(shaderType);
@@ -268,7 +286,9 @@ export function SettingsModal({
   const [draftView3dSettings, setDraftView3dSettings] = useState<View3DSettings>(() => view3dSettings ?? getSavedView3DSettings());
   const [draftSlicingPerformanceSettings, setDraftSlicingPerformanceSettings] = useState<SlicingPerformanceSettings>(() => getSavedSlicingPerformanceSettings());
   const [draftSlicingThumbnailRenderSettings, setDraftSlicingThumbnailRenderSettings] = useState<SlicingThumbnailRenderSettings>(() => slicingThumbnailRenderSettings ?? DEFAULT_SLICING_THUMBNAIL_RENDER_SETTINGS);
+  const [draftUvToolsSettings, setDraftUvToolsSettings] = useState<UvToolsSettings>(() => getSavedUvToolsSettings());
   const [draftLogLevel, setDraftLogLevel] = useState<LogLevelFilter>(() => getSavedLogLevel());
+  const [updateChannel, setUpdateChannel] = useState<UpdateChannel>('stable');
   const [showRestoreDefaultsConfirm, setShowRestoreDefaultsConfirm] = useState(false);
   const [showThemeSaveConfirm, setShowThemeSaveConfirm] = useState(false);
   const [showThemeRenameDialog, setShowThemeRenameDialog] = useState(false);
@@ -287,6 +307,11 @@ export function SettingsModal({
   const [isLightTheme, setIsLightTheme] = useState(false);
   const didCommitThemeDraftRef = React.useRef(false);
   const showPngCompressionControls = outputFormatUsesPngLayers(activeOutputFormat ?? undefined);
+
+  // Load saved update channel preference.
+  React.useEffect(() => {
+    getUpdateChannel().then(setUpdateChannel);
+  }, []);
 
   const accentSecondaryActionColor = isLightTheme
     ? 'color-mix(in srgb, #4f8a08, var(--text-strong) 30%)'
@@ -355,8 +380,11 @@ export function SettingsModal({
     setDraftView3dSettings(view3dSettings ?? getSavedView3DSettings());
     setDraftSlicingPerformanceSettings(getSavedSlicingPerformanceSettings());
     setDraftSlicingThumbnailRenderSettings(slicingThumbnailRenderSettings ?? DEFAULT_SLICING_THUMBNAIL_RENDER_SETTINGS);
+    setDraftUvToolsSettings(getSavedUvToolsSettings());
     setDraftLogLevel(getSavedLogLevel());
+    setDraftLocale(activeLocale);
   }, [
+    activeLocale,
     ambientIntensity,
     directionalIntensity,
     flatUseVertexColors,
@@ -689,6 +717,7 @@ export function SettingsModal({
     setDraftView3dSettings(DEFAULT_VIEW3D_SETTINGS);
     setDraftSlicingPerformanceSettings(DEFAULT_SLICING_PERFORMANCE_SETTINGS);
     setDraftSlicingThumbnailRenderSettings(DEFAULT_SLICING_THUMBNAIL_RENDER_SETTINGS);
+    setDraftUvToolsSettings(DEFAULT_UVTOOLS_SETTINGS);
   }, []);
 
   const handleRestoreDefaults = React.useCallback(() => {
@@ -732,6 +761,7 @@ export function SettingsModal({
   }, []);
 
   const handleApply = React.useCallback(() => {
+    applyLocale(draftLocale);
     onMeshColorChange(draftMeshColor);
     onShaderTypeChange(draftShaderType);
     onMatcapVariantChange(draftMatcapVariant);
@@ -772,6 +802,7 @@ export function SettingsModal({
       higherContrastModelEdges: draftHigherContrastModelEdges,
     });
     saveSlicingPerformanceSettings(draftSlicingPerformanceSettings);
+    saveUvToolsSettings(draftUvToolsSettings);
     onSlicingThumbnailRenderSettingsChange(draftSlicingThumbnailRenderSettings);
     const normalized3dView = normalizeView3DSettings(draftView3dSettings);
     saveView3DSettings(normalized3dView);
@@ -789,6 +820,8 @@ export function SettingsModal({
     didCommitThemeDraftRef.current = true;
     onClose();
   }, [
+    applyLocale,
+    draftLocale,
     draftAmbientIntensity,
     draftDirectionalIntensity,
     draftFlatUseVertexColors,
@@ -820,6 +853,7 @@ export function SettingsModal({
     draftWorkspaceCameraDefaults,
     draftSlicingPerformanceSettings,
     draftSlicingThumbnailRenderSettings,
+    draftUvToolsSettings,
     draftView3dSettings,
     draftXrayOpacity,
     draftHeatmapBlend,
@@ -1065,10 +1099,22 @@ export function SettingsModal({
       icon: ArchiveRestore,
       tone: 'secondary',
     },
+    uvtools: {
+      label: 'UVTools',
+      description: 'Send sliced files to UVTools for analysis',
+      icon: ExternalLink,
+      tone: 'secondary',
+    },
     logging: {
       label: 'Logging',
       description: 'Log file location and verbosity',
       icon: ScrollText,
+      tone: 'secondary',
+    },
+    updates: {
+      label: 'Updates',
+      description: 'Check for new versions and manage channels',
+      icon: CloudDownload,
       tone: 'secondary',
     },
     about: {
@@ -1080,12 +1126,13 @@ export function SettingsModal({
   };
 
   const sidebarTopTabs: SettingsTabKey[] = ['general', 'camera', 'workspaces', 'mesh', 'performance', 'spacemouse', 'ui', 'hotkeys'];
-  const sidebarBottomTabs: SettingsTabKey[] = ['plugins', 'sceneAutosave', 'backups', 'logging', 'about'];
+  const sidebarBottomTabs: SettingsTabKey[] = ['plugins', 'sceneAutosave', 'backups', 'uvtools', 'logging', 'updates', 'about'];
+
 
   const ActiveTabIcon = tabMeta[activeTab].icon;
   const activeTabColor = tabMeta[activeTab].tone === 'secondary' ? 'var(--accent-secondary)' : 'var(--accent)';
   const isAboutTab = activeTab === 'about';
-  const usesInternalTabScrollLayout = isAboutTab || activeTab === 'hotkeys';
+  const usesInternalTabScrollLayout = isAboutTab || activeTab === 'hotkeys' || activeTab === 'updates';
   const isBetaBuildChannel = DRAGONFRUIT_BUILD_CHANNEL.includes('beta');
   const buildStatusLabel = isBetaBuildChannel
     ? 'BETA VERSION'
@@ -1274,7 +1321,7 @@ export function SettingsModal({
           </div>
 
           <div className={usesInternalTabScrollLayout ? 'flex-1 min-h-0 flex flex-col p-4' : 'flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4'}>
-            {activeTab !== 'about' && (
+            {activeTab !== 'about' && activeTab !== 'updates' && (
               <div className="mb-3 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), transparent 8%)' }}>
                 <div className="flex items-center gap-2">
                   <ActiveTabIcon className="h-4 w-4" style={{ color: activeTabColor }} />
@@ -1294,6 +1341,8 @@ export function SettingsModal({
                   onDebugPrimitivesPanelVisibleChange={setDraftDebugPrimitivesPanelVisible}
                   importDefaults={draftImportDefaults}
                   onImportDefaultsChange={setDraftImportDefaults}
+                  language={draftLocale}
+                  onLanguageChange={setDraftLocale}
                 />
               )}
               {activeTab === 'camera' && (
@@ -1408,10 +1457,22 @@ export function SettingsModal({
               {activeTab === 'plugins' && <PluginsSettingsTab />}
               {activeTab === 'sceneAutosave' && <SceneAutosaveSettingsTab />}
               {activeTab === 'backups' && <LocalBackupsSettingsTab />}
+              {activeTab === 'uvtools' && (
+                <UvToolsSettingsTab
+                  uvToolsSettings={draftUvToolsSettings}
+                  onUvToolsSettingsChange={setDraftUvToolsSettings}
+                />
+              )}
               {activeTab === 'logging' && (
                 <LoggingSettingsTab
                   logLevel={draftLogLevel}
                   onLogLevelChange={setDraftLogLevel}
+                />
+              )}
+              {activeTab === 'updates' && (
+                <UpdatesSettingsTab
+                  channel={updateChannel}
+                  onChannelChange={setUpdateChannel}
                 />
               )}
               {activeTab === 'about' && (

@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState } from 'react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { ViewTypeDropdown } from '@/components/controls/ViewTypeDropdown';
-import { SettingsModal } from '@/components/settings/SettingsModal';
+import { SettingsModal, type SettingsTabKey } from '@/components/settings/SettingsModal';
 import { ProfileSettingsModal } from '@/components/settings/ProfileSettingsModal';
 import type { SupportMode } from '@/supports/types';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
@@ -20,6 +22,7 @@ import {
   dispatchProfileSettingsModalOpenChange,
   type ProfileSettingsTab,
 } from '@/components/settings/profileModalEvents';
+import { OPEN_SETTINGS_ABOUT_EVENT } from '@/features/updater/updateNotificationEvents';
 import {
   getActivePrinterProfile,
   getProfileStoreSnapshot,
@@ -162,7 +165,9 @@ export function TopBar({
   onOpenMonitor,
   warnBeforeProfileSettingsOpen = false,
 }: TopBarProps) {
+  const { _ } = useLingui();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabKey>('general');
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileModalTab, setProfileModalTab] = useState<'printer' | 'material'>('printer');
   const [profileModalOpenPrinterLibraryToken, setProfileModalOpenPrinterLibraryToken] = useState(0);
@@ -483,6 +488,21 @@ export function TopBar({
     };
   }, []);
 
+  // Listen for event to open Settings → About tab (from update notification).
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleOpenSettingsAbout = () => {
+      setSettingsInitialTab('about');
+      setIsSettingsOpen(true);
+    };
+
+    window.addEventListener(OPEN_SETTINGS_ABOUT_EVENT, handleOpenSettingsAbout);
+    return () => {
+      window.removeEventListener(OPEN_SETTINGS_ABOUT_EVENT, handleOpenSettingsAbout);
+    };
+  }, []);
+
   const profileState = React.useSyncExternalStore(subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot);
   const activePrinterProfile = React.useMemo(() => getActivePrinterProfile(profileState), [profileState]);
 
@@ -585,30 +605,30 @@ export function TopBar({
   }> = [
     {
       mode: 'prepare',
-      label: 'Prepare',
+      label: _(msg`Prepare`),
       step: 1,
-      hint: 'Arrange model and transforms',
+      hint: _(msg`Arrange model and transforms`),
       locked: false,
     },
     {
       mode: 'support',
-      label: 'Support',
+      label: _(msg`Support`),
       step: 2,
-      hint: 'Build and tune supports',
+      hint: _(msg`Build and tune supports`),
       locked: !hasModels,
     },
     {
       mode: 'export',
-      label: 'Export',
+      label: _(msg`Export`),
       step: 3,
-      hint: 'Finalize and export output',
+      hint: _(msg`Finalize and export output`),
       locked: !hasModels,
     },
     {
       mode: 'printing',
-      label: 'Printing',
+      label: _(msg`Printing`),
       step: 4,
-      hint: 'Inspect sliced layers before printing',
+      hint: _(msg`Inspect sliced layers before printing`),
       locked: !hasModels || !hasPrintingData,
     },
   ];
@@ -1260,7 +1280,8 @@ export function TopBar({
 
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => { setIsSettingsOpen(false); setSettingsInitialTab('general'); }}
+        initialTab={settingsInitialTab}
         meshColor={meshColor}
         onMeshColorChange={onMeshColorChange}
         selectionColor={selectionColor}
