@@ -2635,6 +2635,16 @@ export function useSceneCollectionManager() {
    *  one for the model body and one for the support geometry.
    *  Requires `model_triangle_count` in the native repair report. */
   const splitSupports = useCallback(async (modelId: string) => {
+    setImportProgress({
+      active: true,
+      type: 'mesh',
+      label: 'Splitting Supports…',
+      detail: 'Separating model and support geometry…',
+      progress: null,
+    });
+    await waitForUiYield();
+
+    try {
     const source = modelsRef.current.find((m) => m.id === modelId);
     if (!source) return;
 
@@ -2692,9 +2702,13 @@ export function useSceneCollectionManager() {
       return { geometry: geo, bbox, center, size, flatteningPlanes, edgeGeometry };
     };
 
-    // Process each piece — yield between them so React can keep the UI alive
+    // Process model geometry first, yield, then support geometry.
+    setImportProgress((p) => ({ ...p, detail: 'Processing model geometry…' }));
+    await waitForUiYield();
     const modelGeom = buildGeometryWithBounds(modelPositions, modelTriCount);
-    await new Promise<void>(r => setTimeout(r, 0));
+
+    setImportProgress((p) => ({ ...p, detail: 'Processing support geometry…' }));
+    await waitForUiYield();
     const supportGeom = buildGeometryWithBounds(supportPositions, supportTriCount);
 
     // Compute the world-space position adjustment needed to compensate for
@@ -2708,6 +2722,9 @@ export function useSceneCollectionManager() {
 
     const modelPosition = source.transform.position.clone().add(modelPosAdjust);
     const supportPosition = source.transform.position.clone().add(supportPosAdjust);
+
+    setImportProgress((p) => ({ ...p, detail: 'Finalizing…' }));
+    await waitForUiYield();
 
     // Tag the support geometry so the renderer uses orange hover/select tints
     // (the `likely_support_geometry` flag drives tint color in SceneCanvas).
@@ -2824,7 +2841,10 @@ export function useSceneCollectionManager() {
       { includeSupportState: true },
     );
     pushSceneSnapshotHistory(before, after, `Split Supports from ${source.name}`);
-  }, []);
+    } finally {
+      setImportProgress({ active: false, type: null, label: '', detail: '', progress: null });
+    }
+  }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield]);
 
   const renameGroup = useCallback((groupId: string, nextName: string) => {
     const trimmed = nextName.trim();
