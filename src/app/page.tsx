@@ -9,6 +9,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, Download, LayoutGrid, Loader2
 import { SceneCanvas } from '@/components/scene/SceneCanvas';
 import { FloatingPanelStack } from '@/components/layout/FloatingPanelStack';
 import { TopBar } from '@/components/layout/TopBar';
+import { GlobalUpdateIndicator } from '@/features/updater/GlobalUpdateIndicator';
 import { EmptySceneState } from '@/components/layout/EmptySceneState';
 import { IslandScanCard } from '@/components/controls/IslandScanCard';
 import { IslandOverlayControls } from '@/components/controls/IslandOverlayControls';
@@ -61,6 +62,7 @@ import { ModelSupportsModal } from '@/components/modals/ModelSupportsModal';
 import { DestructiveTransformModal } from '@/components/modals/DestructiveTransformModal';
 import { PrintingResliceModal } from '@/components/modals/PrintingResliceModal';
 import { SliceCompletedModal } from '@/components/modals/SliceCompletedModal';
+import { UvToolsLaunchingModal } from '@/components/modals/UvToolsLaunchingModal';
 import { ZipFilePickerModal } from '@/components/modals/ZipFilePickerModal';
 import { extractFilesFromZip, getFileExtensionLower } from '@/utils/zipImport';
 import {
@@ -156,6 +158,7 @@ import type { SliceExportArtifact, SliceExportResult } from '@/features/slicing/
 import {
   cleanupStalePrintTempArtifacts,
   deletePrintTempArtifactPath,
+  launchExternalProcess,
   pickSavePathWithNativeDialog,
   pickOpenFilesWithNativeDialog,
   readPrintLayerPreviewPngFromPath,
@@ -164,6 +167,10 @@ import {
   savePrintArtifactWithNativeDialog,
   writeBytesToNativePath,
 } from '@/features/slicing/tauri/nativeSlicerBridge';
+import {
+  getSavedUvToolsSettings,
+  resolveUvToolsExecutablePath,
+} from '@/components/settings/uvToolsPreferences';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot, toggleSegmentCurve, transformSupportsForModel, updateTrunk, updateBranch, updateTwig, updateStick } from '@/supports/state';
 import {
   getKickstandSnapshot,
@@ -293,6 +300,106 @@ type HomeSupportCollectionsSnapshot = Pick<
   HomeSupportSnapshot,
   'trunks' | 'branches' | 'leaves' | 'twigs' | 'sticks' | 'braces' | 'roots' | 'knots'
 >;
+
+/**
+ * Transforms Float32Array voxel centers from model-local to world space
+ * by applying `(center - geometryCenter) * scale * quaternion + position`.
+ * Used to render voxel cubes outside the model's rotated group.
+ */
+function transformVoxelCentersToWorld(
+  voxelCenters: Float32Array,
+  geometryCenter: THREE.Vector3,
+  scale: THREE.Vector3,
+  quaternion: THREE.Quaternion,
+  position: THREE.Vector3,
+): Float32Array {
+  const count = Math.floor(voxelCenters.length / 3);
+  const out = new Float32Array(voxelCenters.length);
+  const tmp = new THREE.Vector3();
+  for (let i = 0; i < count; i += 1) {
+    const base = i * 3;
+    tmp.set(voxelCenters[base], voxelCenters[base + 1], voxelCenters[base + 2]);
+    tmp.sub(geometryCenter);
+    tmp.multiply(scale);
+    tmp.applyQuaternion(quaternion);
+    tmp.add(position);
+    out[base] = tmp.x;
+    out[base + 1] = tmp.y;
+    out[base + 2] = tmp.z;
+  }
+  return out;
+}
+
+/**
+ * Renders HollowVoxelPreview in world space by pre-transforming the voxel
+ * centers using the model's position/rotation/scale, then passing meshOffset
+ * as zero since positions are already in world coordinates.
+ */
+function WorldSpaceVoxelPreview({
+  voxelCenters,
+  voxelSizeMm,
+  modelTransform: { position, quaternion, scale },
+  geometryCenter,
+}: {
+  voxelCenters: Float32Array;
+  voxelSizeMm: number;
+  modelTransform: { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 };
+  geometryCenter: THREE.Vector3;
+}) {
+  const worldCenters = React.useMemo(
+    () => transformVoxelCentersToWorld(voxelCenters, geometryCenter, scale, quaternion, position),
+    [voxelCenters, geometryCenter, scale, quaternion, position],
+  );
+  return (
+    <HollowVoxelPreview
+      voxelCenters={worldCenters}
+      voxelSizeMm={voxelSizeMm}
+      meshOffset={new THREE.Vector3(0, 0, 0)}
+    />
+  );
+}
+
+/**
+ * Renders HollowVoxelEditOverlay in world space (same transform logic).
+ */
+function WorldSpaceVoxelEditOverlay({
+  voxelCenters,
+  blockedVoxelCenters,
+  voxelRadiusMm,
+  blockedVoxelIndexSet,
+  modelTransform: { position, quaternion, scale },
+  geometryCenter,
+  onToggleVoxel,
+}: {
+  voxelCenters: Float32Array;
+  blockedVoxelCenters?: Float32Array;
+  voxelRadiusMm: number;
+  blockedVoxelIndexSet: Set<number>;
+  modelTransform: { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 };
+  geometryCenter: THREE.Vector3;
+  onToggleVoxel?: (voxelIndex: number) => void;
+}) {
+  const worldCenters = React.useMemo(
+    () => transformVoxelCentersToWorld(voxelCenters, geometryCenter, scale, quaternion, position),
+    [voxelCenters, geometryCenter, scale, quaternion, position],
+  );
+  const worldBlockedCenters = React.useMemo(
+    () => blockedVoxelCenters
+      ? transformVoxelCentersToWorld(blockedVoxelCenters, geometryCenter, scale, quaternion, position)
+      : undefined,
+    [blockedVoxelCenters, geometryCenter, scale, quaternion, position],
+  );
+  return (
+    <HollowVoxelEditOverlay
+      voxelCenters={worldCenters}
+      blockedVoxelCenters={worldBlockedCenters}
+      voxelRadiusMm={voxelRadiusMm}
+      blockedVoxelIndexSet={blockedVoxelIndexSet}
+      meshOffset={new THREE.Vector3(0, 0, 0)}
+      onToggleVoxel={onToggleVoxel}
+    />
+  );
+}
 
 function countRecordEntries(record: Record<string, unknown>): number {
   let count = 0;
@@ -1899,6 +2006,7 @@ export default function Home() {
     filePath: string | null;
     slicingTimeMs: number | null;
   }>({ filePath: null, slicingTimeMs: null });
+  const [uvToolsLaunchingPath, setUvToolsLaunchingPath] = React.useState<string | null>(null);
   const [shouldAutoSliceOnExportEntry, setShouldAutoSliceOnExportEntry] = React.useState(false);
   const [printingSendBusy, setPrintingSendBusy] = React.useState(false);
   const [printingSendStatusText, setPrintingSendStatusText] = React.useState<string | null>(null);
@@ -4015,7 +4123,7 @@ export default function Home() {
       setShouldAutoSliceOnExportEntry(false);
       scene.setMode('printing');
     } else {
-      // 'file': write to pre-selected destination, then navigate to printing workspace.
+      // 'file' or 'uvtools': write to pre-selected destination, then navigate to printing workspace.
       const destinationPath = preSliceFileDestinationPathRef.current?.trim() || '';
       preSliceFileDestinationPathRef.current = null;
 
@@ -4027,6 +4135,22 @@ export default function Home() {
         && normalizePathForCompare(destinationPath) === normalizePathForCompare(nativePathForIntent)
       ) {
         setCompletedSaveDestinationPath(destinationPath);
+
+        // If intent is 'uvtools', show launching modal and fire UVTools
+        if (intent === 'uvtools') {
+          setUvToolsLaunchingPath(destinationPath);
+          const uvToolsSettings = getSavedUvToolsSettings();
+          const exePath = resolveUvToolsExecutablePath(uvToolsSettings);
+          launchExternalProcess(exePath, destinationPath)
+            .then(() => {
+              setTimeout(() => setUvToolsLaunchingPath(null), 5000);
+            })
+            .catch((err) => {
+              console.warn('[UVTools] Failed to launch UVTools:', err);
+              setTimeout(() => setUvToolsLaunchingPath(null), 5000);
+            });
+        }
+
         setShouldAutoSliceOnExportEntry(false);
         scene.setMode('printing');
         return;
@@ -4086,7 +4210,24 @@ export default function Home() {
           }
         }
 
-        if (savedPath) setCompletedSaveDestinationPath(savedPath);
+        if (savedPath) {
+          setCompletedSaveDestinationPath(savedPath);
+
+          // If intent is 'uvtools', show launching modal and fire UVTools
+          if (intent === 'uvtools') {
+            setUvToolsLaunchingPath(savedPath);
+            const uvToolsSettings = getSavedUvToolsSettings();
+            const exePath = resolveUvToolsExecutablePath(uvToolsSettings);
+            launchExternalProcess(exePath, savedPath)
+              .then(() => {
+                setTimeout(() => setUvToolsLaunchingPath(null), 5000);
+              })
+              .catch((err) => {
+                console.warn('[UVTools] Failed to launch UVTools:', err);
+                setTimeout(() => setUvToolsLaunchingPath(null), 5000);
+              });
+          }
+        }
         setShouldAutoSliceOnExportEntry(false);
         scene.setMode('printing');
       };
@@ -5197,7 +5338,7 @@ export default function Home() {
       return true;
     }
 
-    if (intent === 'file') {
+    if (intent === 'file' || intent === 'uvtools') {
       try {
         const destinationPath = await pickSavePathWithNativeDialog(suggestedSliceOutputFilename);
         if (!destinationPath || destinationPath.trim().length === 0) {
@@ -15196,6 +15337,7 @@ export default function Home() {
         );
         const bboxSize = bbox.getSize(new THREE.Vector3());
         const maxExtent = Math.max(bboxSize.x, bboxSize.y, bboxSize.z);
+        const applyQuat = new THREE.Quaternion().setFromEuler(activeModel.transform.rotation);
         const options: HollowOptions = {
           mode: effectiveHollowMode,
           voxelResolution: computeVoxelResolution(worldMmToLocalMm(hollowingState.voxelSizeMm, shellScaleFactor), maxExtent),
@@ -15209,6 +15351,7 @@ export default function Home() {
           previewCavityOnly: false,
           smoothInternalSurfaces: true,
           internalChamferPasses: 2,
+          rotationQuat: [applyQuat.x, applyQuat.y, applyQuat.z, applyQuat.w],
         };
         const sourceGeometryKey = buildGeometryVersionKey(sourceGeometry);
         const staged = await stageHollowPreviewSource(
@@ -17114,6 +17257,7 @@ export default function Home() {
     );
     const bboxSize = bbox.getSize(new THREE.Vector3());
     const maxExtent = Math.max(bboxSize.x, bboxSize.y, bboxSize.z);
+    const previewQuat = new THREE.Quaternion().setFromEuler(activeModel.transform.rotation);
     const options: HollowOptions = {
       ...buildHollowingOptions(activeModel.transform.scale, maxExtent, {
         preview: true,
@@ -17122,6 +17266,7 @@ export default function Home() {
       drainHoles: [],
       previewCavityOnly: true,
       previewVoxelSpheres: true,
+      rotationQuat: [previewQuat.x, previewQuat.y, previewQuat.z, previewQuat.w],
     };
     const optionsKey = JSON.stringify(options);
     const previewKey = `${activeModel.id}::${sourceGeometryKey}::${optionsKey}`;
@@ -17875,12 +18020,14 @@ export default function Home() {
     const bboxSize = bbox.getSize(new THREE.Vector3());
     const maxExtent = Math.max(bboxSize.x, bboxSize.y, bboxSize.z);
 
+    const debounceQuat = new THREE.Quaternion().setFromEuler(activeModel.transform.rotation);
     const options: HollowOptions = {
       ...buildHollowingOptions(activeModel.transform.scale, maxExtent, {
         preview: true,
         previewShellThicknessMm,
       }),
       previewCavityOnly: true,
+      rotationQuat: [debounceQuat.x, debounceQuat.y, debounceQuat.z, debounceQuat.w],
     };
     const optionsKey = JSON.stringify(options);
     const previewKey = `${activeModel.id}::${sourceGeometryKey}::${optionsKey}`;
@@ -18366,6 +18513,8 @@ export default function Home() {
         onOpenMonitor={() => setPrintingMonitorModalOpen(true)}
       />
 
+      <GlobalUpdateIndicator />
+
       <FloatingPanelStack>
         {scene.mode === 'prepare' ? (
           <>
@@ -18708,7 +18857,7 @@ export default function Home() {
               onBeforeSliceStart={handleBeforeSliceStart}
               onBeforeSlicingRun={handlePreSliceSceneSave}
               resolveOutputPathForIntent={(intent) => (
-                intent === 'file'
+                intent === 'file' || intent === 'uvtools'
                   ? (preSliceFileDestinationPathRef.current?.trim() || null)
                   : null
               )}
@@ -18742,6 +18891,15 @@ export default function Home() {
               onDownload={handleDownloadPrintArtifact}
               onSendToPrinter={handleSendToPrinter}
               onCancelSendToPrinter={handleCancelSendToPrinter}
+              canSendToUvTools={getSavedUvToolsSettings().enabled}
+              onSendToUvTools={() => {
+                const fp = completedSaveDestinationPath;
+                if (!fp) return;
+                const s = getSavedUvToolsSettings();
+                launchExternalProcess(resolveUvToolsExecutablePath(s), fp).catch((err) =>
+                  console.warn('[UVTools] Failed to launch from printing panel:', err),
+                );
+              }}
               sliceIntent={completedSliceIntent}
               savedFilePath={completedSaveDestinationPath}
             />
@@ -19281,72 +19439,70 @@ export default function Home() {
                   })()}
 
                   {hollowPreview && previewModel && hollowingEditMode && !(isHollowingApplied && !isHollowingDirty) && (
-                    <group
-                      position={previewModel.transform.position}
-                      quaternion={quaternionFromGlobalEuler(previewModel.transform.rotation)}
-                      scale={previewModel.transform.scale}
-                    >
-                      <HollowVoxelEditOverlay
-                        voxelCenters={hollowPreview.removedVoxelCenters}
-                        blockedVoxelCenters={hollowPreview.blockedVoxelCenters}
-                        voxelRadiusMm={Math.max(hollowPreview.report.voxelSizeMm, 0.2)}
-                        blockedVoxelIndexSet={blockedPreviewVoxelInstanceIdSet}
-                        meshOffset={new THREE.Vector3(
-                          -previewModel.geometry.center.x,
-                          -previewModel.geometry.center.y,
-                          -previewModel.geometry.center.z,
-                        )}
-                        onToggleVoxel={toggleBlockedHollowVoxelIndex}
-                      />
-                    </group>
+                    <WorldSpaceVoxelEditOverlay
+                      voxelCenters={hollowPreview.removedVoxelCenters}
+                      blockedVoxelCenters={hollowPreview.blockedVoxelCenters}
+                      voxelRadiusMm={Math.max(hollowPreview.report.voxelSizeMm, 0.2)}
+                      blockedVoxelIndexSet={blockedPreviewVoxelInstanceIdSet}
+                      modelTransform={{
+                        position: previewModel.transform.position,
+                        quaternion: quaternionFromGlobalEuler(previewModel.transform.rotation),
+                        scale: previewModel.transform.scale,
+                      }}
+                      geometryCenter={previewModel.geometry.center}
+                      onToggleVoxel={toggleBlockedHollowVoxelIndex}
+                    />
                   )}
 
                   {hollowPreview && previewModel && !hollowingEditMode && !(isHollowingApplied && !isHollowingDirty) && (
-                    <group
-                      position={previewModel.transform.position}
-                      quaternion={quaternionFromGlobalEuler(previewModel.transform.rotation)}
-                      scale={previewModel.transform.scale}
-                    >
-                      {hollowPreview.previewVoxelSpheres ? (
-                        <HollowVoxelPreview
+                    <>
+                      {hollowPreview.previewVoxelSpheres && (
+                        <WorldSpaceVoxelPreview
                           voxelCenters={hollowPreview.removedVoxelCenters}
                           voxelSizeMm={hollowPreview.report.voxelSizeMm}
-                          meshOffset={new THREE.Vector3(
-                            -previewModel.geometry.center.x,
-                            -previewModel.geometry.center.y,
-                            -previewModel.geometry.center.z,
-                          )}
+                          modelTransform={{
+                            position: previewModel.transform.position,
+                            quaternion: quaternionFromGlobalEuler(previewModel.transform.rotation),
+                            scale: previewModel.transform.scale,
+                          }}
+                          geometryCenter={previewModel.geometry.center}
                         />
-                      ) : (
-                        <mesh
-                          geometry={hollowPreview.geometry}
-                          position={new THREE.Vector3(
-                            -previewModel.geometry.center.x,
-                            -previewModel.geometry.center.y,
-                            -previewModel.geometry.center.z,
-                          )}
-                          raycast={() => null}
-                          renderOrder={6}
-                        >
-                          <meshStandardMaterial
-                            color={'#66ecff'}
-                            emissive={'#3be6f2'}
-                            emissiveIntensity={0.18}
-                            transparent
-                            opacity={0.62}
-                            depthTest
-                            depthWrite={false}
-                            side={THREE.DoubleSide}
-                            roughness={0.65}
-                            metalness={0.0}
-                          />
-                        </mesh>
                       )}
-                      {hollowPreview.infillGeometry && (
-                        <mesh
-                          geometry={hollowPreview.infillGeometry}
-                          position={new THREE.Vector3(
-                            -previewModel.geometry.center.x,
+                      <group
+                        position={previewModel.transform.position}
+                        quaternion={quaternionFromGlobalEuler(previewModel.transform.rotation)}
+                        scale={previewModel.transform.scale}
+                      >
+                        {!hollowPreview.previewVoxelSpheres && (
+                          <mesh
+                            geometry={hollowPreview.geometry}
+                            position={new THREE.Vector3(
+                              -previewModel.geometry.center.x,
+                              -previewModel.geometry.center.y,
+                              -previewModel.geometry.center.z,
+                            )}
+                            raycast={() => null}
+                            renderOrder={6}
+                          >
+                            <meshStandardMaterial
+                              color={'#66ecff'}
+                              emissive={'#3be6f2'}
+                              emissiveIntensity={0.18}
+                              transparent
+                              opacity={0.62}
+                              depthTest
+                              depthWrite={false}
+                              side={THREE.DoubleSide}
+                              roughness={0.65}
+                              metalness={0.0}
+                            />
+                          </mesh>
+                        )}
+                        {hollowPreview.infillGeometry && (
+                          <mesh
+                            geometry={hollowPreview.infillGeometry}
+                            position={new THREE.Vector3(
+                              -previewModel.geometry.center.x,
                             -previewModel.geometry.center.y,
                             -previewModel.geometry.center.z,
                           )}
@@ -19368,7 +19524,8 @@ export default function Home() {
                         </mesh>
                       )}
                     </group>
-                  )}
+                  </>
+                )}
                 </>
               );
             }}
@@ -19711,6 +19868,18 @@ export default function Home() {
         onClose={() => setShowSliceCompletedModal(false)}
         filePath={sliceCompletedModalData.filePath}
         slicingTimeMs={sliceCompletedModalData.slicingTimeMs}
+        onOpenInUvTools={getSavedUvToolsSettings().enabled ? (fp) => {
+          const s = getSavedUvToolsSettings();
+          launchExternalProcess(resolveUvToolsExecutablePath(s), fp).catch((err) =>
+            console.warn('[UVTools] Failed to launch from completed dialog:', err),
+          );
+        } : undefined}
+      />
+
+      <UvToolsLaunchingModal
+        isOpen={uvToolsLaunchingPath !== null}
+        filePath={uvToolsLaunchingPath}
+        onLaunchComplete={() => setUvToolsLaunchingPath(null)}
       />
 
       <ModelSupportsModal
