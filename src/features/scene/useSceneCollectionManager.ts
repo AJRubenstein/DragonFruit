@@ -803,6 +803,7 @@ import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/c
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { beginKickstandStoreBatch, endKickstandStoreBatch } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { getImportDefaultsRaftPatch, getSavedImportDefaultsSettings } from '@/features/scene/importDefaultsPreferences';
+import { readNativeFileSize } from '@/utils/pluginNetworkBridge';
 
 type ImportProgressState = {
   active: boolean;
@@ -1782,7 +1783,7 @@ export function useSceneCollectionManager() {
   const trackRecentOpenedFiles = useCallback((
     files: File[],
     kind: RecentOpenedFileKind,
-    options?: { sourcePaths?: Array<string | null | undefined> },
+    options?: { sourcePaths?: Array<string | null | undefined>; fileSizes?: Array<number | undefined> },
   ) => {
     if (files.length === 0) return;
 
@@ -1795,18 +1796,19 @@ export function useSceneCollectionManager() {
         const name = file.name?.trim();
         if (!name) return;
 
-        const sourcePath = kind === 'scene'
-          ? (typeof options?.sourcePaths?.[index] === 'string' && options.sourcePaths[index]!.trim().length > 0
-              ? options.sourcePaths[index]!.trim()
-              : undefined)
-          : undefined;
+        const sourcePath = (typeof options?.sourcePaths?.[index] === 'string' && options.sourcePaths[index]!.trim().length > 0
+          ? options.sourcePaths[index]!.trim()
+          : undefined);
 
-        const sizeBytes = Number.isFinite(file.size) ? file.size : undefined;
+        // Use the resolved on-disk file size (for path-backed files whose
+        // File.size is 0) when available, falling back to the File API size.
+        const sizeBytes = options?.fileSizes?.[index] ?? (Number.isFinite(file.size) && file.size > 0 ? file.size : undefined);
 
         // When a concrete sourcePath is known, use it as the primary dedup key,
         // ignoring sizeBytes. This prevents duplicates when Ctrl+S re-saves the
-        // file with an updated thumbnail (changing its size).
-        const matchBySourcePath = kind === 'scene' && sourcePath != null;
+        // file with an updated thumbnail (changing its size), and ensures mesh
+        // files backed by a disk path can be re-opened via the Rust sideload.
+        const matchBySourcePath = sourcePath != null;
 
         const isMatchingEntry = (entry: RecentOpenedFileEntry): boolean => {
           if (entry.kind !== kind || entry.name !== name) return false;
@@ -1920,7 +1922,24 @@ export function useSceneCollectionManager() {
 
     await waitForUiYield();
 
-    trackRecentOpenedFiles(files, 'mesh');
+    // Collect on-disk file paths so recent-file entries can re-open via the
+    // Rust sideload (which reads directly from disk) instead of restoring from
+    // the empty IndexedDB blob created by createPathBackedStlFile. Also resolve
+    // the real file size for path-backed files (file.size is 0 for those).
+    const meshSourcePaths: Array<string | undefined> = [];
+    const meshFileSizes: Array<number | undefined> = [];
+    for (const f of files) {
+      const fp = (f as File & { filePath?: string }).filePath;
+      meshSourcePaths.push(fp);
+      if (fp && f.size === 0) {
+        // Path-backed STL — read the actual file size from disk.
+        const realSize = await readNativeFileSize(fp).catch(() => null);
+        meshFileSizes.push(realSize ?? undefined);
+      } else {
+        meshFileSizes.push(f.size > 0 ? f.size : undefined);
+      }
+    }
+    trackRecentOpenedFiles(files, 'mesh', { sourcePaths: meshSourcePaths, fileSizes: meshFileSizes });
 
     // Read auto-lift settings from storage (mirroring useTransformManager logic)
     let autoLift = false;
@@ -4235,20 +4254,39 @@ export function useSceneCollectionManager() {
     const entry = recentOpenedFiles.find((item) => item.id === entryId);
     if (!entry) return false;
 
+    // If this is a mesh with a known on-disk path, skip IndexedDB entirely and
+    // create a path-backed file so the Rust sideload reads from disk directly.
+    // IndexedDB blobs for these files were stored empty (0 bytes) because
+    // createPathBackedStlFile builds the File object with an empty blob.
+    if (entry.kind === 'mesh' && entry.sourcePath) {
+      const pathFile = new File([], entry.name, {
+        type: 'application/octet-stream',
+        lastModified: Date.now(),
+      });
+      (pathFile as File & { filePath?: string }).filePath = entry.sourcePath;
+      await loadFiles([pathFile]);
+      return true;
+    }
+
     const file = await readRecentOpenedFileBlob(entry);
     if (!file) {
       console.warn('[SceneCollection] Unable to restore recent file from local cache.');
       return false;
     }
 
+    // Recovered file is empty and there is no disk path to fall back to — the
+    // entry is broken (e.g. created before sourcePath was tracked for meshes).
+    if (entry.kind === 'mesh' && file.size === 0) {
+      console.warn(
+        '[SceneCollection] Recent mesh file blob is empty and no on-disk path is available. ' +
+        'The file may need to be re-imported from the original location.',
+      );
+      return false;
+    }
+
     if (entry.kind === 'scene') {
       await importSceneFile(file);
       return true;
-    }
-
-    // Pass the on-disk file path through to enable Rust-side STL loading.
-    if (entry.sourcePath) {
-      (file as File & { filePath?: string }).filePath = entry.sourcePath;
     }
 
     await loadFiles([file]);
