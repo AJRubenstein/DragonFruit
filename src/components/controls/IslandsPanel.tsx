@@ -78,7 +78,7 @@ export function IslandsPanel({ islands, hasGeometry }: IslandsPanelProps) {
     selectedMarkerId,
     selectPrev,
     selectNext,
-    stats,
+    tableStats,
     enableVolumeGlow,
     setEnableVolumeGlow,
     draftPxMm,
@@ -109,7 +109,7 @@ export function IslandsPanel({ islands, hasGeometry }: IslandsPanelProps) {
     hasPendingChanges,
   } = islands;
 
-  const totalDetected = (stats?.voxelTotal ?? 0) + (stats?.minimaTotal ?? 0) - (stats?.matched ?? 0);
+  const totalDetected = tableStats?.allTotal ?? 0;
   const selectedIndex = React.useMemo(() => {
     if (selectedMarkerId === null) return -1;
     return orderedIslands.findIndex((i) => markerIdFor(i) === selectedMarkerId);
@@ -213,13 +213,13 @@ export function IslandsPanel({ islands, hasGeometry }: IslandsPanelProps) {
             {/* --- Post-scan content --- */}
             {hasData && !scanning && (
               <>
-                {/* Stats row */}
+                {/* Breakdown by type */}
                 <div className="rounded-md border p-2" style={SECTION_CARD}>
                   <div className="grid grid-cols-3 gap-2">
                     {([
-                      { label: 'Voxel', key: 'voxel', color: ISLAND_LAYER_COLORS.voxel, unsupported: stats?.voxelUnsupported ?? 0, total: stats?.voxelTotal ?? 0 },
-                      { label: 'Minima', key: 'geom', color: ISLAND_LAYER_COLORS.minima, unsupported: stats?.geomUnsupported ?? 0, total: stats?.geomTotal ?? 0 },
-                      { label: 'Coincident', key: 'coincident', color: ISLAND_LAYER_COLORS.intersection, unsupported: stats?.coincidentUnsupported ?? 0, total: stats?.coincidentTotal ?? 0 },
+                      { label: 'Voxels', key: 'voxel', color: ISLAND_LAYER_COLORS.voxel, count: tableStats?.voxelTotal ?? 0 },
+                      { label: 'Minima', key: 'geom', color: ISLAND_LAYER_COLORS.minima, count: tableStats?.geomTotal ?? 0 },
+                      { label: 'Coincident', key: 'coincident', color: ISLAND_LAYER_COLORS.intersection, count: tableStats?.coincidentTotal ?? 0 },
                     ] as const).map(s => (
                       <div key={s.key} className="text-center min-w-0">
                         <div className="flex items-center justify-center gap-1 mb-0.5">
@@ -227,8 +227,7 @@ export function IslandsPanel({ islands, hasGeometry }: IslandsPanelProps) {
                           <span className="text-[9px] font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--text-muted)' }}>{s.label}</span>
                         </div>
                         <div className="text-[13px] font-bold tabular-nums" style={{ color: 'var(--text-strong)' }}>
-                          {s.unsupported}
-                          <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>/{s.total}</span>
+                          {s.count}
                         </div>
                       </div>
                     ))}
