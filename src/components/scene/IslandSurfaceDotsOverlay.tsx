@@ -63,7 +63,7 @@ const fragmentShader = `
     int low = 0;
     int high = count - 1;
     int result = 0;
-    for (int step = 0; step < 11; step++) {
+    for (int step = 0; step < 15; step++) {
       if (low > high) break;
       int mid = (low + high) / 2;
       vec4 m = texelFetch(uMarkerTexture, ivec2(mid, 0), 0);
@@ -82,8 +82,8 @@ const fragmentShader = `
 
     if (uMarkerCount == 0) discard;
 
-    // Search range: [vWorldPos.z - 5.0, vWorldPos.z + 5.0]
-    int startIdx = findStartIndex(vWorldPos.z - 5.0, uMarkerCount);
+    // Search range: [vWorldPos.z - 3.0, vWorldPos.z + 3.0]
+    int startIdx = findStartIndex(vWorldPos.z - 3.0, uMarkerCount);
 
     struct IslandOccupancy {
       float id;
@@ -98,14 +98,14 @@ const fragmentShader = `
       localIslands[k].val = 0.0;
     }
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 200; i++) {
       int idx = startIdx + i;
       if (idx >= uMarkerCount) break;
 
       vec4 marker = texelFetch(uMarkerTexture, ivec2(idx, 0), 0);
 
       // Early break since sorted by Z
-      if (marker.z > vWorldPos.z + 5.0) break;
+      if (marker.z > vWorldPos.z + 3.0) break;
 
       vec4 meta = texelFetch(uMarkerMetaTexture, ivec2(idx, 0), 0);
       float islandId = meta.r;
@@ -234,13 +234,16 @@ const fragmentShader = `
           }
         }
 
-        // Border outline band thresholding (width 0.02 to 0.15)
-        float borderStrength = smoothstep(0.02, 0.06, val) * (1.0 - smoothstep(0.11, 0.15, val));
+        // Black outline at outer edge of marker for max contrast
+        float outlineStrength = smoothstep(0.01, 0.035, val) * (1.0 - smoothstep(0.06, 0.10, val));
+        // Inner fill with border color (mid-intensity band for visual depth)
+        float borderStrength = smoothstep(0.06, 0.12, val) * (1.0 - smoothstep(0.15, 0.25, val));
         if (isHoveredMarker && !isSelectedMarker) {
-          borderStrength = smoothstep(0.01, 0.04, val) * (1.0 - smoothstep(0.13, 0.18, val));
+          borderStrength = smoothstep(0.04, 0.10, val) * (1.0 - smoothstep(0.20, 0.30, val));
         }
-        paintColor = mix(fillCol, borderCol, borderStrength);
-        paintAlpha = smoothstep(0.02, 0.06, val) * uOpacity;
+        vec3 outlineMix = mix(fillCol, borderCol, borderStrength);
+        paintColor = mix(outlineMix, vec3(0.0, 0.0, 0.0), outlineStrength);
+        paintAlpha = smoothstep(0.01, 0.06, val) * uOpacity;
         painted = true;
       }
     }
