@@ -168,6 +168,9 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
    */
   const onRunScan = useCallback(async () => {
     setScanning(true);
+    // Yield immediately so React can flush the "scanning" state and show
+    // the progress modal before we start expensive synchronous work.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     let usedSideload = false;
 
     if (sourcePath && geom) {
