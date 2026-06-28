@@ -143,7 +143,8 @@ function cloneLoadedModel(model: LoadedModel): LoadedModel {
   return {
     ...model,
     transform: cloneTransform(model.transform),
-    meshModifiers: model.meshModifiers ? cloneMeshModifiersShallow(model.meshModifiers) : undefined,
+    // meshModifiers are stored externally in meshModifierStoreRef — never on the model object.
+    meshModifiers: undefined,
   };
 }
 
@@ -151,6 +152,11 @@ function cloneLoadedModel(model: LoadedModel): LoadedModel {
  * Lightweight shallow clone — avoids JSON round-trip through MB-scale
  * base64 strings (cavityPositionsBase64, holePunchSourcePositionsBase64)
  * that LYS imports carry in meshModifiers.
+ *
+ * NOTE: Since meshModifiers are now stored externally in
+ * meshModifierStoreRef and stripped from model objects, this function is
+ * only used during import to sanitize the payload before storing it in
+ * the external store.
  */
 function cloneMeshModifiersShallow(modifiers: ModelMeshModifiers): ModelMeshModifiers {
   return {
@@ -162,6 +168,35 @@ function cloneMeshModifiersShallow(modifiers: ModelMeshModifiers): ModelMeshModi
       : undefined,
   };
 }
+
+// ── External Mesh Modifier Store ─────────────────────────────────────────
+//
+// Model mesh modifiers (especially the MB-scale cavityPositionsBase64 /
+// sourcePositionsBase64 from LYS imports) are kept in this module-level Map
+// instead of on model objects. This prevents React's state reconciliation
+// from churning on large payloads during selection, copy, paste, and
+// duplicate operations.
+const meshModifierStoreRef: { current: Map<string, ModelMeshModifiers> } = {
+  current: new Map(),
+};
+
+function storeModelMeshModifiers(modelId: string, modifiers: ModelMeshModifiers | undefined | null): void {
+  if (modifiers) {
+    meshModifierStoreRef.current.set(modelId, modifiers);
+  } else {
+    meshModifierStoreRef.current.delete(modelId);
+  }
+}
+
+function getStoredMeshModifiers(modelId: string): ModelMeshModifiers | undefined {
+  return meshModifierStoreRef.current.get(modelId);
+}
+
+function deleteStoredMeshModifiers(modelId: string): void {
+  meshModifierStoreRef.current.delete(modelId);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 
 function clonePlainObject<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -1883,10 +1918,15 @@ export function useSceneCollectionManager() {
     });
   }, []);
 
-  // Active model derived state
-  const activeModel = useMemo(() =>
-    models.find(m => m.id === activeModelId) || null
-    , [models, activeModelId]);
+  // Active model derived state — meshModifiers are hydrated from the
+  // external store so model objects never carry the heavy base64 payloads.
+  const activeModel = useMemo(() => {
+    const model = models.find(m => m.id === activeModelId) || null;
+    if (!model) return null;
+    const storedModifiers = getStoredMeshModifiers(model.id);
+    if (!storedModifiers) return model;
+    return { ...model, meshModifiers: storedModifiers };
+  }, [models, activeModelId]);
 
   useEffect(() => {
     const modelIdSet = new Set(models.map((m) => m.id));
@@ -2544,9 +2584,13 @@ export function useSceneCollectionManager() {
   }, []);
 
   const setModelMeshModifiers = useCallback((id: string, meshModifiers: ModelMeshModifiers | undefined) => {
+    // Store externally — model objects never carry meshModifiers directly.
+    storeModelMeshModifiers(id, meshModifiers);
+    // Still trigger a shallow React update so consumers that derive from
+    // the store can re-render.
     setModels(prev => prev.map((model) => (
       model.id === id
-        ? { ...model, meshModifiers }
+        ? { ...model }
         : model
     )));
   }, []);
@@ -2928,6 +2972,9 @@ export function useSceneCollectionManager() {
     setActiveModelId(nextActiveModelId);
     setSelectedModelIds(nextSelectedModelIds);
 
+    // Clean up external mesh modifier store
+    ids.forEach((id) => deleteStoredMeshModifiers(id));
+
     // Clean up associated supports before capturing the "after" snapshot so undo/redo remains atomic.
     const supportState = getSnapshot();
     let totalRemovedSupports = 0;
@@ -3039,7 +3086,7 @@ export function useSceneCollectionManager() {
         },
         color: source.color,
         polygonCount: source.polygonCount,
-        meshModifiers: source.meshModifiers ? cloneMeshModifiersShallow(source.meshModifiers) : undefined,
+        meshModifiers: undefined,
         supportClipboard,
       },
     ]);
@@ -3068,7 +3115,7 @@ export function useSceneCollectionManager() {
         },
         color: source.color,
         polygonCount: source.polygonCount,
-        meshModifiers: source.meshModifiers ? cloneMeshModifiersShallow(source.meshModifiers) : undefined,
+        meshModifiers: undefined,
         supportClipboard,
       };
     }));
@@ -3107,7 +3154,7 @@ export function useSceneCollectionManager() {
       visible: true,
       color: first.color,
       polygonCount: first.polygonCount,
-      meshModifiers: first.meshModifiers ? cloneMeshModifiersShallow(first.meshModifiers) : undefined,
+      meshModifiers: undefined,
     };
 
     const nextModels = [...models, pastedModel];
@@ -3481,7 +3528,7 @@ export function useSceneCollectionManager() {
         visible: true,
         color: entry.color,
         polygonCount: entry.polygonCount,
-        meshModifiers: entry.meshModifiers ? cloneMeshModifiersShallow(entry.meshModifiers) : undefined,
+        meshModifiers: undefined,
       };
     });
 
@@ -3554,7 +3601,7 @@ export function useSceneCollectionManager() {
         visible: source.visible,
         color: source.color,
         polygonCount: source.polygonCount,
-        meshModifiers: source.meshModifiers ? cloneMeshModifiersShallow(source.meshModifiers) : undefined,
+        meshModifiers: undefined,
       };
     });
 
@@ -3825,9 +3872,14 @@ export function useSceneCollectionManager() {
           color: '#a3a3a3',
           polygonCount: processed.geometry.getAttribute('position').count / 3,
           ignoreAutoLift: true,
-          meshModifiers: meshModifiers ? cloneMeshModifiersShallow(meshModifiers) : undefined,
+          meshModifiers: undefined,
           manualZMoveOverride: true,
         };
+
+        // Store meshModifiers externally so model objects stay lightweight
+        if (meshModifiers) {
+          storeModelMeshModifiers(model.id, cloneMeshModifiersShallow(meshModifiers));
+        }
 
         newModels.push(model);
         supportEntries.push({ model, sourceTransform, supportData });
@@ -4061,10 +4113,15 @@ export function useSceneCollectionManager() {
             visible: model.visible,
             color,
             polygonCount,
-            meshModifiers: model.meshModifiers ? cloneMeshModifiersShallow(model.meshModifiers) : undefined,
+            meshModifiers: undefined,
             ignoreAutoLift: true,
             manualZMoveOverride: true,
           });
+
+          // Store meshModifiers externally so model objects stay lightweight
+          if (model.meshModifiers) {
+            storeModelMeshModifiers(resolvedId, cloneMeshModifiersShallow(model.meshModifiers));
+          }
         } catch (error) {
           console.error(`[SceneCollection] Failed importing embedded VOXL mesh for model "${model.name}"`, error);
           skippedModels += 1;
@@ -4634,6 +4691,7 @@ export function useSceneCollectionManager() {
     setModelManualZMoveOverride,
     setModelVisibility,
     setModelMeshModifiers,
+    getModelMeshModifiers: useCallback((id: string) => getStoredMeshModifiers(id), []),
     renameModel,
     groupModels,
     ungroupModels,

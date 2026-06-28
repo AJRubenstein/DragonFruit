@@ -13821,8 +13821,9 @@ export default function Home() {
 
     // Check for unapplied hole punches and warn the user.
     const hasUnapplied = scene.models.some((model) => {
-      const p = model.meshModifiers?.holePunches;
-      return p && p.length > 0 && !model.meshModifiers?.holePunchesBakedIntoGeometry;
+      const mm = scene.getModelMeshModifiers(model.id);
+      const p = mm?.holePunches;
+      return p && p.length > 0 && !mm?.holePunchesBakedIntoGeometry;
     });
     if (hasUnapplied && unappliedHolePunchResolveRef.current === null) {
       setShowUnappliedHolePunchModal(true);
@@ -16326,8 +16327,8 @@ export default function Home() {
     ) ? hollowPreview.geometry : null;
 
     const shouldUseActiveGeometry = Boolean(
-      activeModel.meshModifiers?.hollowing?.enabled
-      && activeModel.meshModifiers?.hollowing?.bakedIntoGeometry,
+      scene.getModelMeshModifiers(modelId)?.hollowing?.enabled
+      && scene.getModelMeshModifiers(modelId)?.hollowing?.bakedIntoGeometry,
     );
 
     const targetGeometry = previewGeometry ?? (shouldUseActiveGeometry ? activeModel.geometry.geometry : null);
@@ -17720,7 +17721,7 @@ export default function Home() {
   // Restore cavity geometry from persisted data for models with baked hollowing.
   React.useEffect(() => {
     for (const model of scene.models) {
-      const hollowing = model.meshModifiers?.hollowing;
+      const hollowing = scene.getModelMeshModifiers(model.id)?.hollowing;
       if (!hollowing?.enabled || !hollowing.cavityPositionsBase64 || !hollowing.cavityPositionCount) {
         continue;
       }
