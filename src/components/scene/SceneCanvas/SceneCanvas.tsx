@@ -134,6 +134,13 @@ import {
   toggleSupportPathfindingDebugEnabled,
   toggleSupportPathfindingDebugTuningEnabled,
 } from '@/supports/PlacementLogic/Pathfinding/pathfindingDebugState';
+import { SupportInspectorHud, SupportInspectorTreeOverlay } from '@/components/scene/SupportInspectorOverlay';
+import {
+  getSupportInspectorState,
+  subscribeToSupportInspectorState,
+  toggleSupportInspectorEnabled,
+  toggleSupportInspectorTreeTypes,
+} from '@/supports/SupportInspector/supportInspectorState';
 
 const Canvas = dynamic(() => import('@react-three/fiber').then(m => m.Canvas), { ssr: false });
 
@@ -629,6 +636,12 @@ export function SceneCanvas({
   );
   const supportPathfindingDebugLastTapMsRef = React.useRef<number>(0);
   const [showSupportPathfindingTuningSuggestions, setShowSupportPathfindingTuningSuggestions] = React.useState(false);
+
+  const supportInspectorState = React.useSyncExternalStore(
+    subscribeToSupportInspectorState,
+    getSupportInspectorState,
+    getSupportInspectorState,
+  );
 
   const [isLightTheme, setIsLightTheme] = React.useState(() => {
     if (typeof window === 'undefined') return false;
@@ -3935,6 +3948,22 @@ export function SceneCanvas({
         return;
       }
 
+      const isIHotkey = event.code === 'KeyI' || event.key.toLowerCase() === 'i';
+      if (isIHotkey) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleSupportInspectorEnabled();
+        return;
+      }
+
+      const isTHotkey = event.code === 'KeyT' || event.key.toLowerCase() === 't';
+      if (isTHotkey && supportInspectorState.enabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleSupportInspectorTreeTypes();
+        return;
+      }
+
       const isJHotkey = event.code === 'KeyJ' || event.key.toLowerCase() === 'j';
       if (!isJHotkey) return;
 
@@ -3954,7 +3983,7 @@ export function SceneCanvas({
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [mode, supportPathfindingDebugState.enabled]);
+  }, [mode, supportPathfindingDebugState.enabled, supportInspectorState.enabled]);
 
   React.useEffect(() => {
     if (supportPathfindingDebugState.enabled) return;
@@ -6655,6 +6684,9 @@ export function SceneCanvas({
         {mode === 'support' && supportPathfindingDebugState.enabled && (
           <SupportPathfindingDebugOverlay snapshot={supportPathfindingDebugState.snapshot} />
         )}
+        {mode === 'support' && supportInspectorState.enabled && supportInspectorState.treeTypesEnabled && (
+          <SupportInspectorTreeOverlay supportState={supportStateForBounds} />
+        )}
         {/* Selection outline effect - rendered by SelectionOutlineRenderer inside SelectionProvider */}
         {children}
       </Canvas>
@@ -6664,6 +6696,12 @@ export function SceneCanvas({
           snapshot={supportPathfindingDebugState.snapshot}
           showTuningSuggestions={showSupportPathfindingTuningSuggestions}
           tuningApplied={supportPathfindingDebugState.tuningEnabled}
+        />
+      )}
+      {mode === 'support' && supportInspectorState.enabled && (
+        <SupportInspectorHud
+          supportState={supportStateForBounds}
+          treeTypesEnabled={supportInspectorState.treeTypesEnabled}
         />
       )}
 

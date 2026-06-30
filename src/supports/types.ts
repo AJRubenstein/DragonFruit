@@ -47,6 +47,12 @@ export interface SupportEntity {
     id: string;
     modelId: string; // The model this support belongs to
     settingsCodeHex?: string;
+    /**
+     * Original per-support identifier from the source import file (e.g. LYS "s652",
+     * or "cbx-sub-142" for a Chitubox record index). Diagnostic-only — lets the
+     * support inspector trace a DragonFruit entity back to its source record.
+     */
+    importSourceLabel?: string;
 }
 
 /**
