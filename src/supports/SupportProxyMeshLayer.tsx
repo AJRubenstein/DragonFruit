@@ -1118,21 +1118,30 @@ export function SupportProxyMeshLayer({
       // Mirror SupportRenderer: derive visual diameter from host knot diameters (= trunk segment
       // diameter + 0.1mm offset). Using profile.diameter alone produces the thin brace setting
       // value and loses the dynamic sizing that matches the attached trunk thickness.
+      // diameterOverrideMm bypasses this and sets an explicit fixed diameter.
       const profileDiameter = Math.max(0.001, brace.profile?.diameter ?? 1);
-      const startHostDiameter = Math.min(
-        profileDiameter,
-        Math.max(
-          0.001,
-          (startKnot.diameter ?? (profileDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
-        ),
-      );
-      const endHostDiameter = Math.min(
-        profileDiameter,
-        Math.max(
-          0.001,
-          (endKnot.diameter ?? (profileDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
-        ),
-      );
+      let startHostDiameter: number;
+      let endHostDiameter: number;
+      if (brace.diameterOverrideMm != null) {
+        const overrideDia = Math.max(0.001, brace.diameterOverrideMm);
+        startHostDiameter = overrideDia;
+        endHostDiameter = overrideDia;
+      } else {
+        startHostDiameter = Math.min(
+          profileDiameter,
+          Math.max(
+            0.001,
+            (startKnot.diameter ?? (profileDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
+          ),
+        );
+        endHostDiameter = Math.min(
+          profileDiameter,
+          Math.max(
+            0.001,
+            (endKnot.diameter ?? (profileDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
+          ),
+        );
+      }
 
       const segmentId = `braceSegment:${brace.id}`;
       const bezier = brace.curve?.type === 'bezier' ? brace.curve : null;

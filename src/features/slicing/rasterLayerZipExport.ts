@@ -946,10 +946,16 @@ function buildSupportAndRaftWorldTriangles(
     const endKnot = supportState.knots[brace.endKnotId];
     if (!startKnot || !endKnot) continue;
     // Mirror renderer: derive visual diameter from host knot diameters, not raw profile.diameter.
+    // diameterOverrideMm bypasses this and sets an explicit fixed diameter.
     const profileDiameter = Math.max(0.001, brace.profile?.diameter ?? 1);
-    const startHostDia = Math.max(0.05, (startKnot.diameter ?? (profileDiameter + 0.1)) - 0.1);
-    const endHostDia = Math.max(0.05, (endKnot.diameter ?? (profileDiameter + 0.1)) - 0.1);
-    const braceDiameter = (startHostDia + endHostDia) * 0.5;
+    let braceDiameter: number;
+    if (brace.diameterOverrideMm != null) {
+      braceDiameter = Math.max(0.05, brace.diameterOverrideMm);
+    } else {
+      const startHostDia = Math.max(0.05, (startKnot.diameter ?? (profileDiameter + 0.1)) - 0.1);
+      const endHostDia = Math.max(0.05, (endKnot.diameter ?? (profileDiameter + 0.1)) - 0.1);
+      braceDiameter = (startHostDia + endHostDia) * 0.5;
+    }
     appendSegmentPrimitive(
       sink,
       new THREE.Vector3(startKnot.pos.x, startKnot.pos.y, startKnot.pos.z),

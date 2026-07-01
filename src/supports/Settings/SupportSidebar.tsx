@@ -26,6 +26,7 @@ import {
     applySettingsToSupportTarget,
     beginSupportStateBatch,
     endSupportStateBatch,
+    updateBrace,
     type EditableSupportTarget,
 } from '../state';
 import { getSelectedSupportIds } from '../interaction/supportMultiSelection';
@@ -38,6 +39,9 @@ import {
     RaftSettingsCard,
     GridSettingsCard,
     SupportKindTabs,
+    BraceSettingsCard,
+    StickSettingsCard,
+    TwigSettingsCard,
 } from './components';
 import { Card, CardHeader, IconButton } from '@/components/ui/primitives';
 import { NumberInput } from '@/components/ui/NumberInput';
@@ -81,13 +85,14 @@ const KIND_META: Record<SupportKind, { label: string; icon: typeof Pickaxe }> = 
     raft: { label: 'Raft', icon: Sailboat },
     grid: { label: 'Grid', icon: Grid3X3 },
     stick: { label: 'Bracing', icon: WandSparkles },
+    brace: { label: 'Brace', icon: Wrench },
 };
 
 const OVERFLOW_COMPACT_KIND_SET = new Set<SupportKind>(['trunk', 'raft', 'grid', 'stick']);
 const POPUP_PREVIEW_KIND_SET = new Set<SupportKind>(['trunk']);
 
 function normalizeTabKind(kind: SupportKind): SupportKind {
-    if (kind === 'branch' || kind === 'leaf' || kind === 'twig') {
+    if (kind === 'branch' || kind === 'leaf' || kind === 'twig' || kind === 'brace') {
         return 'trunk';
     }
     return kind;
@@ -522,6 +527,27 @@ export function SupportSidebar() {
 
         lastEditableTargetKeyRef.current = targetKey;
     }, [editableTarget, selectedSupportSettings, settings, activeKind]);
+
+    React.useEffect(() => {
+        if (!editableTarget || editableTarget.kind !== 'brace') return;
+        if (activeKind !== 'brace') {
+            setActiveSupportKind('brace');
+        }
+    }, [editableTarget, activeKind]);
+
+    React.useEffect(() => {
+        if (!editableTarget || editableTarget.kind !== 'stick') return;
+        if (activeKind !== 'stick') {
+            setActiveSupportKind('stick');
+        }
+    }, [editableTarget, activeKind]);
+
+    React.useEffect(() => {
+        if (!editableTarget || editableTarget.kind !== 'twig') return;
+        if (activeKind !== 'twig') {
+            setActiveSupportKind('twig');
+        }
+    }, [editableTarget, activeKind]);
 
     React.useEffect(() => {
         if (!editableTarget) return;
@@ -1242,12 +1268,42 @@ export function SupportSidebar() {
                                                 renderPreviewBox('h-[220px]')
                                             ) : null}
                                             <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
-                                                <AutoBracingSettingsCard
-                                                    settings={settings.autoBracing}
-                                                    onChange={(partial) => updateAutoBracingSettings(partial)}
-                                                    onAutoBrace={handleAutoBrace}
-                                                    status={autoBraceStatus}
-                                                />
+                                                {editableTarget?.kind === 'stick' && supportState.sticks[editableTarget.id] ? (
+                                                    <StickSettingsCard stick={supportState.sticks[editableTarget.id]!} />
+                                                ) : (
+                                                    <AutoBracingSettingsCard
+                                                        settings={settings.autoBracing}
+                                                        onChange={(partial) => updateAutoBracingSettings(partial)}
+                                                        onAutoBrace={handleAutoBrace}
+                                                        status={autoBraceStatus}
+                                                    />
+                                                )}
+                                            </div>
+                                        </>
+                                    ) : activeKind === 'twig' ? (
+                                        <>
+                                            {!shouldUseOverflowCompactMode ? (
+                                                renderPreviewBox('h-[220px]')
+                                            ) : null}
+                                            <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
+                                                {editableTarget?.kind === 'twig' && supportState.twigs[editableTarget.id] ? (
+                                                    <TwigSettingsCard twig={supportState.twigs[editableTarget.id]!} />
+                                                ) : (
+                                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Select a twig to view settings.</div>
+                                                )}
+                                            </div>
+                                        </>
+                                    ) : activeKind === 'brace' ? (
+                                        <>
+                                            {!shouldUseOverflowCompactMode ? (
+                                                renderPreviewBox('h-[220px]')
+                                            ) : null}
+                                            <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>
+                                                {editableTarget?.kind === 'brace' && supportState.braces[editableTarget.id] ? (
+                                                    <BraceSettingsCard brace={supportState.braces[editableTarget.id]!} />
+                                                ) : (
+                                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Select a brace to view settings.</div>
+                                                )}
                                             </div>
                                         </>
                                     ) : activeKind === 'trunk' ? (

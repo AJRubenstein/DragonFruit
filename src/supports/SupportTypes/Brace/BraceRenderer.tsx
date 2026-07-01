@@ -94,20 +94,28 @@ export const BraceRenderer = React.memo(function BraceRenderer({
     const endVec = useMemo(() => new THREE.Vector3(endKnot.pos.x, endKnot.pos.y, endKnot.pos.z), [endKnot.pos.x, endKnot.pos.y, endKnot.pos.z]);
 
     const uniformBraceDiameter = Math.max(0.001, brace.profile?.diameter ?? 1.0);
-    const startHostDiameter = Math.min(
-        uniformBraceDiameter,
-        Math.max(
-            0.001,
-            (startKnot.diameter ?? (uniformBraceDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
-        ),
-    );
-    const endHostDiameter = Math.min(
-        uniformBraceDiameter,
-        Math.max(
-            0.001,
-            (endKnot.diameter ?? (uniformBraceDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
-        ),
-    );
+    let startHostDiameter: number;
+    let endHostDiameter: number;
+    if (brace.diameterOverrideMm != null) {
+        const overrideDia = Math.max(0.001, brace.diameterOverrideMm);
+        startHostDiameter = overrideDia;
+        endHostDiameter = overrideDia;
+    } else {
+        startHostDiameter = Math.min(
+            uniformBraceDiameter,
+            Math.max(
+                0.001,
+                (startKnot.diameter ?? (uniformBraceDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
+            ),
+        );
+        endHostDiameter = Math.min(
+            uniformBraceDiameter,
+            Math.max(
+                0.001,
+                (endKnot.diameter ?? (uniformBraceDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
+            ),
+        );
+    }
     const bezierCurve = brace.curve?.type === 'bezier' ? brace.curve : null;
     const isBezierBrace = !!bezierCurve;
     const isTaperedBrace = Math.abs(startHostDiameter - endHostDiameter) > 1e-4;
@@ -118,9 +126,9 @@ export const BraceRenderer = React.memo(function BraceRenderer({
             id: segmentId,
             start: startKnot.pos,
             end: endKnot.pos,
-            diameter: uniformBraceDiameter,
+            diameter: startHostDiameter,
         }];
-    }, [isSelected, isBezierBrace, deferStraightShaftToSceneBatch, isTaperedBrace, segmentId, startKnot.pos, endKnot.pos, uniformBraceDiameter]);
+    }, [isSelected, isBezierBrace, deferStraightShaftToSceneBatch, isTaperedBrace, segmentId, startKnot.pos, endKnot.pos, startHostDiameter]);
 
     const shouldRenderDetailedBezier = isBezierBrace && (isSelected || !deferStraightShaftToSceneBatch);
     const shouldRenderDetailedStraight = !isBezierBrace && (isSelected || (!deferStraightShaftToSceneBatch && batchedStraightShafts.length === 0));

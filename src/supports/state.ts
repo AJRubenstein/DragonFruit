@@ -3018,11 +3018,23 @@ export function updateTrunk(trunk: Trunk, options?: { skipDependentGeometry?: bo
 
             const seg = nextTrunk.segments[segIndex];
             const endpoints = getTrunkSegmentEndpoints(nextTrunk, seg, segIndex, root);
+            // Imported knots flagged 'preserve'/'braceImported' carry an authored
+            // position (e.g. a Chitubox brace landing point) that load-time
+            // normalization deliberately keeps off the shaft's literal centerline.
+            // A live edit to the host shaft must not silently snap that back onto
+            // the centerline the way a freshly-placed knot would be reprojected.
+            // NOTE: only position is frozen here, not diameter — the renderer (see
+            // SupportProxyMeshLayer's brace pass) deliberately derives a brace's
+            // visual thickness from its host knots' diameter so it dynamically
+            // tracks the attached trunk/branch; freezing diameter too would make
+            // imported braces stop responding to shaft diameter edits.
+            const effectiveNormalizationHint = knot.normalizationHint ?? knot._importHint;
+            const preservePos = effectiveNormalizationHint === 'preserve' || effectiveNormalizationHint === 'braceImported';
             const nextDiameter = seg.diameter + 0.1;
 
             let nextPos = knot.pos;
             let posChanged = false;
-            if (endpoints && knot.t !== undefined) {
+            if (!preservePos && endpoints && knot.t !== undefined) {
                 const computed = calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, seg, knot.t);
                 if (computed.x !== knot.pos.x || computed.y !== knot.pos.y || computed.z !== knot.pos.z) {
                     nextPos = computed;
@@ -3183,14 +3195,28 @@ export function updateTwig(twig: Twig) {
         if (segIndex === -1) continue;
 
         const seg = twig.segments[segIndex];
-        if (!seg.bottomJoint || !seg.topJoint || knot.t === undefined) continue;
+        let nextKnot: Knot = knot;
 
-        const newPos = calculateKnotPositionOnSegmentFromT(seg.bottomJoint.pos, seg.topJoint.pos, seg, knot.t);
-        if (newPos.x === knot.pos.x && newPos.y === knot.pos.y && newPos.z === knot.pos.z) continue;
+        // Keep knot diameter in sync with the segment's shaft diameter.
+        const newDiameter = seg.diameter + JOINT_DIAMETER_OFFSET_MM;
+        if (nextKnot.diameter == null || Math.abs(nextKnot.diameter - newDiameter) > 1e-6) {
+            nextKnot = { ...nextKnot, diameter: newDiameter };
+            knotsChanged = true;
+        }
 
-        updatedKnots[knot.id] = { ...knot, pos: newPos };
-        updatedKnotPosById[knot.id] = newPos;
-        knotsChanged = true;
+        // Update world position for knots that have a parametric t value.
+        if (seg.bottomJoint && seg.topJoint && knot.t !== undefined) {
+            const newPos = calculateKnotPositionOnSegmentFromT(seg.bottomJoint.pos, seg.topJoint.pos, seg, knot.t);
+            if (newPos.x !== nextKnot.pos.x || newPos.y !== nextKnot.pos.y || newPos.z !== nextKnot.pos.z) {
+                nextKnot = { ...nextKnot, pos: newPos };
+                updatedKnotPosById[knot.id] = newPos;
+                knotsChanged = true;
+            }
+        }
+
+        if (nextKnot !== knot) {
+            updatedKnots[knot.id] = nextKnot;
+        }
     }
 
     if (knotsChanged) {
@@ -3664,6 +3690,12 @@ export function updateBranch(branch: Branch, options?: { skipDependentGeometry?:
         for (const knot of Object.values(state.knots)) {
             const segIndex = nextBranch.segments.findIndex(s => s.id === knot.parentShaftId);
             if (segIndex === -1) continue;
+
+            // See the matching guard in updateTrunk: 'preserve'/'braceImported' knots
+            // carry a deliberately off-centerline authored position that must survive
+            // live edits to the host shaft, not just the initial load.
+            const effectiveNormalizationHint = knot.normalizationHint ?? knot._importHint;
+            if (effectiveNormalizationHint === 'preserve' || effectiveNormalizationHint === 'braceImported') continue;
 
             const seg = nextBranch.segments[segIndex];
             const endpoints = getBranchSegmentEndpoints(nextBranch, seg, segIndex, parentKnot);
@@ -4304,7 +4336,7 @@ export function getStickById(stickId: string) {
     return state.sticks[stickId] ?? null;
 }
 
-export type EditableSupportKind = 'trunk' | 'branch' | 'leaf';
+export type EditableSupportKind = 'trunk' | 'branch' | 'leaf' | 'brace' | 'stick' | 'twig';
 
 export type EditableSupportTarget = {
     kind: EditableSupportKind;
@@ -4447,6 +4479,21 @@ function updateSegmentDiametersAndJoints(
 export function resolveEditableSupportTarget(selectedId: string | null, selectedCategory: SelectionCategory | undefined): EditableSupportTarget | null {
     if (!selectedId) return null;
 
+    if (selectedCategory === 'brace') {
+        if (state.braces[selectedId]) return { kind: 'brace', id: selectedId };
+        return null;
+    }
+
+    if (selectedCategory === 'stick') {
+        if (state.sticks[selectedId]) return { kind: 'stick', id: selectedId };
+        return null;
+    }
+
+    if (selectedCategory === 'twig') {
+        if (state.twigs[selectedId]) return { kind: 'twig', id: selectedId };
+        return null;
+    }
+
     if (selectedCategory === 'trunk' || selectedCategory === 'branch' || selectedCategory === 'leaf') {
         return { kind: selectedCategory, id: selectedId };
     }
@@ -4458,6 +4505,11 @@ export function resolveEditableSupportTarget(selectedId: string | null, selected
     }
 
     if (selectedCategory === 'segment' || selectedCategory === 'joint') {
+        if (selectedCategory === 'segment' && selectedId.startsWith('braceSegment:')) {
+            const braceId = selectedId.slice('braceSegment:'.length);
+            if (state.braces[braceId]) return { kind: 'brace', id: braceId };
+        }
+
         for (const trunk of Object.values(state.trunks)) {
             const owns = trunk.segments.some((segment) => {
                 if (selectedCategory === 'segment') return segment.id === selectedId;
@@ -4472,6 +4524,22 @@ export function resolveEditableSupportTarget(selectedId: string | null, selected
                 return segment.topJoint?.id === selectedId || segment.bottomJoint?.id === selectedId || branch.contactCone?.socketJointId === selectedId;
             });
             if (owns) return { kind: 'branch', id: branch.id };
+        }
+
+        for (const stick of Object.values(state.sticks)) {
+            const owns = stick.segments.some((segment) => {
+                if (selectedCategory === 'segment') return segment.id === selectedId;
+                return segment.topJoint?.id === selectedId || segment.bottomJoint?.id === selectedId;
+            });
+            if (owns) return { kind: 'stick', id: stick.id };
+        }
+
+        for (const twig of Object.values(state.twigs)) {
+            const owns = twig.segments.some((segment) => {
+                if (selectedCategory === 'segment') return segment.id === selectedId;
+                return segment.topJoint?.id === selectedId || segment.bottomJoint?.id === selectedId;
+            });
+            if (owns) return { kind: 'twig', id: twig.id };
         }
     }
 
@@ -4491,6 +4559,12 @@ export function resolveEditableSupportTarget(selectedId: string | null, selected
         for (const leaf of Object.values(state.leaves)) {
             if (leaf.contactCone?.id === selectedId) {
                 return { kind: 'leaf', id: leaf.id };
+            }
+        }
+
+        for (const twig of Object.values(state.twigs)) {
+            if (twig.contactDiskA.id === selectedId || twig.contactDiskB.id === selectedId) {
+                return { kind: 'twig', id: twig.id };
             }
         }
     }
@@ -4767,6 +4841,10 @@ export function applySettingsToSupportTarget(target: EditableSupportTarget, sett
 
         updateBranch(nextBranch);
         logSupportSettingsDebug('apply done', target);
+        return true;
+    }
+
+    if (target.kind === 'brace' || target.kind === 'stick' || target.kind === 'twig') {
         return true;
     }
 

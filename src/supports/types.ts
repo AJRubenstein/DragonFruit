@@ -217,6 +217,7 @@ export interface Brace extends SupportEntity {
     profile: {
         diameter: number;
     };
+    diameterOverrideMm?: number;
     debugSection?: 'initial' | 'repeating';
 }
 
