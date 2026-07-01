@@ -64,7 +64,7 @@ export function fmtV3(v: Vec3 | undefined): string {
     return `(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
 }
 
-interface ShaftOwner {
+export interface ShaftOwner {
     type: 'trunk' | 'branch' | 'twig' | 'stick' | 'anchor';
     id: string;
     sourceLabel?: string;
@@ -73,7 +73,7 @@ interface ShaftOwner {
 /** Finds the entity (trunk/branch/twig/stick/anchor) whose segment list
  * contains `segmentId` — used to attribute a knot problem back to a labeled
  * support, since Knot itself carries no import source label. */
-function findShaftOwner(segmentId: string, state: SupportState): ShaftOwner | null {
+export function findShaftOwner(segmentId: string, state: SupportState): ShaftOwner | null {
     for (const trunk of Object.values(state.trunks)) {
         if (trunk.segments.some((s) => s.id === segmentId)) {
             return { type: 'trunk', id: trunk.id, sourceLabel: trunk.importSourceLabel };

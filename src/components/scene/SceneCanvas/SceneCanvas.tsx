@@ -148,6 +148,12 @@ import {
   setSupportProblemScanResults,
 } from '@/supports/SupportInspector/supportProblemScanState';
 import { scanForSupportProblems } from '@/supports/SupportInspector/supportProblemScan';
+import { SupportChangeMonitorHud } from '@/components/scene/SupportChangeMonitorOverlay';
+import {
+  getSupportChangeMonitorState,
+  subscribeToSupportChangeMonitorState,
+  armSupportChangeMonitor,
+} from '@/supports/SupportInspector/supportChangeMonitorState';
 
 const Canvas = dynamic(() => import('@react-three/fiber').then(m => m.Canvas), { ssr: false });
 
@@ -294,6 +300,7 @@ const CROSS_SECTION_CAP_DEBUG_STORAGE_KEY = 'df:cross-section-cap-debug:v4';
 const CROSS_SECTION_CAP_DEBUG_HOTKEY_ENABLED = false;
 const SUPPORT_PATHFINDING_DEBUG_DOUBLE_TAP_WINDOW_MS = 420;
 const SUPPORT_PROBLEM_SCAN_TRIPLE_TAP_WINDOW_MS = 600;
+const SUPPORT_CHANGE_MONITOR_TRIPLE_TAP_WINDOW_MS = 600;
 
 const DEFAULT_CROSS_SECTION_CAP_DEBUG_STATE: CrossSectionCapDebugPanelState = {
   enabled: false,
@@ -657,6 +664,13 @@ export function SceneCanvas({
     getSupportProblemScanState,
   );
   const supportProblemScanTapTimestampsRef = React.useRef<number[]>([]);
+
+  const supportChangeMonitorState = React.useSyncExternalStore(
+    subscribeToSupportChangeMonitorState,
+    getSupportChangeMonitorState,
+    getSupportChangeMonitorState,
+  );
+  const supportChangeMonitorTapTimestampsRef = React.useRef<number[]>([]);
 
   const [isLightTheme, setIsLightTheme] = React.useState(() => {
     if (typeof window === 'undefined') return false;
@@ -3938,6 +3952,7 @@ export function SceneCanvas({
     if (mode !== 'support') {
       supportPathfindingDebugLastTapMsRef.current = 0;
       supportProblemScanTapTimestampsRef.current = [];
+      supportChangeMonitorTapTimestampsRef.current = [];
       setShowSupportPathfindingTuningSuggestions(false);
       return;
     }
@@ -3995,6 +4010,23 @@ export function SceneCanvas({
           event.stopPropagation();
           timestamps.length = 0;
           setSupportProblemScanResults(scanForSupportProblems(supportStateForBoundsRef.current));
+        }
+        return;
+      }
+
+      const isCHotkey = event.code === 'KeyC' || event.key.toLowerCase() === 'c';
+      if (isCHotkey) {
+        const nowMs = performance.now();
+        const timestamps = supportChangeMonitorTapTimestampsRef.current;
+        timestamps.push(nowMs);
+        while (timestamps.length > 0 && nowMs - timestamps[0] > SUPPORT_CHANGE_MONITOR_TRIPLE_TAP_WINDOW_MS) {
+          timestamps.shift();
+        }
+        if (timestamps.length >= 3) {
+          event.preventDefault();
+          event.stopPropagation();
+          timestamps.length = 0;
+          armSupportChangeMonitor();
         }
         return;
       }
@@ -6743,6 +6775,14 @@ export function SceneCanvas({
         <SupportProblemScanHud
           problems={supportProblemScanState.problems}
           scannedAtMs={supportProblemScanState.scannedAtMs}
+        />
+      )}
+
+      {mode === 'support' && supportChangeMonitorState.open && (
+        <SupportChangeMonitorHud
+          changes={supportChangeMonitorState.changes}
+          armedAtMs={supportChangeMonitorState.armedAtMs}
+          lastDiffAtMs={supportChangeMonitorState.lastDiffAtMs}
         />
       )}
 
