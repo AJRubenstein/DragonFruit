@@ -341,6 +341,8 @@ test('scoped twig export contains disk tip geometry for the requested model', ()
 
   // One shaft cylinder + two disk-tip cylinders (disk A and disk B).
   assert.ok(diskShaftCylinders >= 3, `expected >= 3 cylinders (shaft + 2 disk tips), got ${diskShaftCylinders}`);
+});
+
 test('curved (bezier) segments export as piecewise cylinders that follow the curve', () => {
   const chordEnd = { x: 0, y: 0, z: 10 };
   const group = SupportGeometryGenerator.generateSupportGroup({
