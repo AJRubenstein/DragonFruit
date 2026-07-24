@@ -402,8 +402,7 @@ function formatProcessingElapsedLabel(translate: (descriptor: MessageDescriptor)
   const total = Math.max(0, elapsedSec);
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
-  const paddedSeconds = seconds.toString().padStart(2, '0');
-  return translate(msg`${minutes} min ${paddedSeconds} s`);
+  return translate(msg`${minutes} min ${seconds} s`);
 }
 
 function formatEstimatedPrintTimeLabel(translate: (descriptor: MessageDescriptor) => string, totalSec: number): string {
@@ -411,9 +410,8 @@ function formatEstimatedPrintTimeLabel(translate: (descriptor: MessageDescriptor
   const hours = Math.floor(wholeSeconds / 3600);
   const minutes = Math.floor((wholeSeconds % 3600) / 60);
   const seconds = wholeSeconds % 60;
-  const paddedSeconds = seconds.toString().padStart(2, '0');
   if (hours > 0) return translate(msg`${hours} h ${minutes} min`);
-  return translate(msg`${minutes} min ${paddedSeconds} s`);
+  return translate(msg`${minutes} min ${seconds} s`);
 }
 
 const HOLE_PUNCH_OUTSIDE_PROTRUSION_MM = 3;
@@ -2025,12 +2023,12 @@ export default function Home() {
     return [
       {
         id: 'supports-toggle-curve' as const,
-        label: msg`Toggle Curve`,
+        label: msg`Toggle curve`,
         icon: RefreshCw,
       },
       {
         id: 'supports-add-joint' as const,
-        label: msg`Add Joint`,
+        label: msg`Add joint`,
         icon: Plus,
       },
     ];
