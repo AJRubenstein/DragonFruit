@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { registerHistoryHandler } from '@/history/historyStore';
 import {
   SUPPORT_ADD_TRUNK,
   SUPPORT_ADD_LEAF,
@@ -22,22 +21,9 @@ import {
   SUPPORT_REPLACE_TRUNK,
   SUPPORT_EDIT_REPLACE,
   SUPPORT_AUTO_BRACE_REPLACE,
-  SupportLeafPayload,
-  SupportBranchPayload,
-  SupportTwigPayload,
-  SupportTwigRemovePayload,
-  SupportStickPayload,
-  SupportBranchRemovePayload,
-  BraceLinkPayload,
-  SupportTrunkPayload,
-  SupportTrunkUpdatePayload,
-  SupportBranchUpdatePayload,
-  SupportReplaceTrunkPayload,
   SupportReplaceStatePayload,
-  SupportAnchorPayload,
-  SupportKickstandPayload,
-  SupportKickstandRemovePayload,
 } from './actionTypes';
+import { registerSupportHistoryHandler } from './supportHistory';
 import { addAnchor, addKnot, addLeaf, addRoot, addTrunk, addBranch, addTwig, addStick, addBrace, removeAnchor, removeLeaf, removeTrunk, removeBranch, removeTwig, removeStick, removeBrace, removeKickstandCascade, updateTrunk, updateBranch, updateKnot, setSnapshot } from '../state';
 import { addKickstand, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
@@ -66,8 +52,7 @@ function applySnapshotHistory(payload: SupportReplaceStatePayload, direction: 'u
  */
 export function registerSupportHistoryHandlers(): () => void {
   const unregisters = [
-    registerHistoryHandler(SUPPORT_ADD_TRUNK, (action, direction) => {
-      const payload = action.payload as SupportTrunkPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_ADD_TRUNK, (payload, direction) => {
       if (!payload?.trunk) return false;
       if (direction === 'undo') {
         removeTrunk(payload.trunk.id);
@@ -77,8 +62,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_ADD_LEAF, (action, direction) => {
-      const payload = action.payload as SupportLeafPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_ADD_LEAF, (payload, direction) => {
       if (!payload?.leaf) return false;
       if (direction === 'undo') {
         removeLeaf(payload.leaf.id);
@@ -88,8 +72,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_ADD_BRANCH, (action, direction) => {
-      const payload = action.payload as SupportBranchPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_ADD_BRANCH, (payload, direction) => {
       if (!payload?.branch) return false;
       if (direction === 'undo') {
         removeBranch(payload.branch.id);
@@ -111,8 +94,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_ADD_TWIG, (action, direction) => {
-      const payload = action.payload as SupportTwigPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_ADD_TWIG, (payload, direction) => {
       if (!payload?.twig) return false;
       if (direction === 'undo') {
         removeTwig(payload.twig.id);
@@ -121,8 +103,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_ADD_STICK, (action, direction) => {
-      const payload = action.payload as SupportStickPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_ADD_STICK, (payload, direction) => {
       if (!payload?.stick) return false;
       if (direction === 'undo') {
         removeStick(payload.stick.id);
@@ -131,8 +112,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_ADD_BRACE, (action, direction) => {
-      const payload = action.payload as BraceLinkPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_ADD_BRACE, (payload, direction) => {
       if (!payload?.brace) return false;
       if (direction === 'undo') {
         removeBrace(payload.brace.id);
@@ -143,8 +123,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_ADD_ANCHOR, (action, direction) => {
-      const payload = action.payload as SupportAnchorPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_ADD_ANCHOR, (payload, direction) => {
       if (!payload?.anchor) return false;
       if (direction === 'undo') {
         removeAnchor(payload.anchor.id);
@@ -153,8 +132,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_REMOVE_ANCHOR, (action, direction) => {
-      const payload = action.payload as SupportAnchorPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_REMOVE_ANCHOR, (payload, direction) => {
       if (!payload?.anchor) return false;
       if (direction === 'undo') {
         addAnchor(payload.anchor);
@@ -163,8 +141,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_REMOVE_TRUNK, (action, direction) => {
-      const payload = action.payload as SupportTrunkPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_REMOVE_TRUNK, (payload, direction) => {
       if (!payload?.trunk) return false;
       if (direction === 'undo') {
         if (payload.root) addRoot(payload.root);
@@ -183,8 +160,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_REMOVE_LEAF, (action, direction) => {
-      const payload = action.payload as SupportLeafPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_REMOVE_LEAF, (payload, direction) => {
       if (!payload?.leaf) return false;
       if (direction === 'undo') {
         if (payload.knot) addKnot(payload.knot);
@@ -194,8 +170,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_REMOVE_BRANCH, (action, direction) => {
-      const payload = action.payload as SupportBranchRemovePayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_REMOVE_BRANCH, (payload, direction) => {
       if (!payload?.branches || payload.branches.length === 0) return false;
       if (direction === 'undo') {
         for (const knot of payload.knots ?? []) addKnot(knot);
@@ -225,8 +200,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_REMOVE_TWIG, (action, direction) => {
-      const payload = action.payload as SupportTwigRemovePayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_REMOVE_TWIG, (payload, direction) => {
       if (!payload?.twig) return false;
       if (direction === 'undo') {
         addTwig(payload.twig);
@@ -241,8 +215,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_REMOVE_STICK, (action, direction) => {
-      const payload = action.payload as SupportStickPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_REMOVE_STICK, (payload, direction) => {
       if (!payload?.stick) return false;
       if (direction === 'undo') {
         addStick(payload.stick);
@@ -251,8 +224,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_REMOVE_BRACE, (action, direction) => {
-      const payload = action.payload as BraceLinkPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_REMOVE_BRACE, (payload, direction) => {
       if (!payload?.brace) return false;
       if (direction === 'undo') {
         if (payload.startKnot) addKnot(payload.startKnot);
@@ -263,8 +235,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_ADD_KICKSTAND, (action, direction) => {
-      const payload = action.payload as SupportKickstandPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_ADD_KICKSTAND, (payload, direction) => {
       if (!payload?.build) return false;
       if (direction === 'undo') {
         removeKickstandCascade(payload.build.kickstand.id);
@@ -275,8 +246,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_REMOVE_KICKSTAND, (action, direction) => {
-      const payload = action.payload as SupportKickstandRemovePayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_REMOVE_KICKSTAND, (payload, direction) => {
       if (!payload?.build) return false;
       if (direction === 'undo') {
         addRoot(payload.build.root);
@@ -296,8 +266,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_UPDATE_TRUNK, (action, direction) => {
-      const payload = action.payload as SupportTrunkUpdatePayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_UPDATE_TRUNK, (payload, direction) => {
       if (!payload?.before || !payload?.after) return false;
       clearSupportSelection();
       if (direction === 'undo') {
@@ -307,8 +276,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_UPDATE_BRANCH, (action, direction) => {
-      const payload = action.payload as SupportBranchUpdatePayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_UPDATE_BRANCH, (payload, direction) => {
       if (!payload?.before || !payload?.after) return false;
       clearSupportSelection();
       if (direction === 'undo') {
@@ -318,8 +286,7 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_REPLACE_TRUNK, (action, direction) => {
-      const payload = action.payload as SupportReplaceTrunkPayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_REPLACE_TRUNK, (payload, direction) => {
       if (!payload?.before || !payload?.after) return false;
       clearSupportSelection();
       if (direction === 'undo') {
@@ -329,14 +296,12 @@ export function registerSupportHistoryHandlers(): () => void {
       }
       return true;
     }),
-    registerHistoryHandler(SUPPORT_EDIT_REPLACE, (action, direction) => {
-      const payload = action.payload as SupportReplaceStatePayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_EDIT_REPLACE, (payload, direction) => {
       if (!payload?.before || !payload?.after) return false;
       applySnapshotHistory(payload, direction);
       return true;
     }),
-    registerHistoryHandler(SUPPORT_AUTO_BRACE_REPLACE, (action, direction) => {
-      const payload = action.payload as SupportReplaceStatePayload | undefined;
+    registerSupportHistoryHandler(SUPPORT_AUTO_BRACE_REPLACE, (payload, direction) => {
       if (!payload?.before || !payload?.after) return false;
       applySnapshotHistory(payload, direction);
       return true;
