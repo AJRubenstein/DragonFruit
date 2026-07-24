@@ -207,6 +207,7 @@ import {
 
 // Domain Features
 import { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
+import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import { useTransformManager } from '@/features/transform/useTransformManager';
 import { useIslandManager } from '@/volumeAnalysis/IslandScan/useIslandManager';
@@ -521,6 +522,10 @@ function createModelTransformKey(modelId: string, transform: ModelTransform): st
 export default function Home() {
   const { _ } = useLingui();
   const { stage, sproutParentingLockHeld } = useLeafPlacementState();
+  // Supports undo/redo handlers register for the lifetime of the app root, not
+  // for the lifetime of a scene renderer. Otherwise Ctrl+Z depends on which
+  // render branch happens to be mounted.
+  useSupportHistoryHandlers();
   // 1. Scene & Geometry (Multi-Model)
   const scene = useSceneCollectionManager();
 
