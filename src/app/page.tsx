@@ -206,7 +206,7 @@ import {
 } from '@/features/scene/arrange/highPrecisionArrangeWorkerClient';
 
 // Domain Features
-import { useSceneCollectionManager, SCENE_SLICED } from '@/features/scene/useSceneCollectionManager';
+import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker } from '@/features/scene/useSceneCollectionManager';
 import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import { useTransformManager } from '@/features/transform/useTransformManager';
@@ -232,7 +232,6 @@ import {
   getHistoryDebugEvents,
   getRedoCount,
   getUndoCount,
-  pushHistory,
   redo,
   subscribeHistory,
   subscribeHistoryDebug,
@@ -2226,11 +2225,7 @@ export default function Home() {
     setPrintingArtifactIsInvalid(false);
     setShowPrintingResliceModal(false);
     // Push a "Sliced Scene" marker to history so we can detect changes after this point
-    pushHistory({
-      type: SCENE_SLICED,
-      description: 'Scene sliced for printing',
-      payload: {},
-    });
+    pushSceneSlicedMarker();
     setPrintingSendStatusText(null);
     setPrintingSendProgress(0);
     setPrintingSendStageText(null);

@@ -113,6 +113,11 @@ type SceneHistoryPayloadMap = {
 };
 const sceneHistory = createTypedHistory<SceneHistoryPayloadMap>();
 
+/** Push the post-slice marker used to detect edits made after a slice. */
+export function pushSceneSlicedMarker(): void {
+  sceneHistory.push({ type: SCENE_SLICED, description: 'Scene sliced for printing', payload: {} });
+}
+
 type SceneSnapshot = {
   models: LoadedModel[];
   activeModelId: string | null;
