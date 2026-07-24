@@ -206,7 +206,7 @@ import {
 } from '@/features/scene/arrange/highPrecisionArrangeWorkerClient';
 
 // Domain Features
-import { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
+import { useSceneCollectionManager, SCENE_SLICED } from '@/features/scene/useSceneCollectionManager';
 import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import { useTransformManager } from '@/features/transform/useTransformManager';
@@ -2227,7 +2227,7 @@ export default function Home() {
     setShowPrintingResliceModal(false);
     // Push a "Sliced Scene" marker to history so we can detect changes after this point
     pushHistory({
-      type: 'SCENE_SLICED',
+      type: SCENE_SLICED,
       description: 'Scene sliced for printing',
       payload: {},
     });
@@ -6474,7 +6474,7 @@ export default function Home() {
     // Find the most recent "SCENE_SLICED" marker
     let sliceMarkerIndex = -1;
     for (let i = historyEvents.length - 1; i >= 0; i--) {
-      if (historyEvents[i].actionType === 'SCENE_SLICED') {
+      if (historyEvents[i].actionType === SCENE_SLICED) {
         sliceMarkerIndex = i;
         break;
       }
@@ -6484,7 +6484,7 @@ export default function Home() {
       // Check if there are any OTHER events (non-undo/redo) after the slice marker
       const eventsAfterSlice = historyEvents.slice(sliceMarkerIndex + 1);
       const hasModifications = eventsAfterSlice.some(
-        (e) => e.kind === 'push' && e.actionType !== 'SCENE_SLICED'
+        (e) => e.kind === 'push' && e.actionType !== SCENE_SLICED
       );
       
       if (hasModifications) {
@@ -6504,7 +6504,7 @@ export default function Home() {
       // Find the most recent "SCENE_SLICED" marker
       let sliceMarkerIndex = -1;
       for (let i = historyEvents.length - 1; i >= 0; i--) {
-        if (historyEvents[i].actionType === 'SCENE_SLICED') {
+        if (historyEvents[i].actionType === SCENE_SLICED) {
           sliceMarkerIndex = i;
           break;
         }
@@ -6514,7 +6514,7 @@ export default function Home() {
         // Check if there are any OTHER events (non-undo/redo) after the slice marker
         const eventsAfterSlice = historyEvents.slice(sliceMarkerIndex + 1);
         const hasModifications = eventsAfterSlice.some(
-          (e) => e.kind === 'push' && e.actionType !== 'SCENE_SLICED'
+          (e) => e.kind === 'push' && e.actionType !== SCENE_SLICED
         );
         
         if (hasModifications) {
