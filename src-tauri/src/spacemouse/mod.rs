@@ -847,6 +847,9 @@ mod nav {
                     affine: cam.affine,
                     seq: 0,
                     motion: false,
+                    ortho_min: cam.ortho_min,
+                    ortho_max: cam.ortho_max,
+                    extents_seq: 0,
                 }
             }
         };
