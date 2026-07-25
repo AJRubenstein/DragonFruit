@@ -544,6 +544,19 @@ export default function Home() {
     for (const model of flagged) warnedManifoldModelIdsRef.current.add(model.id);
     setShowManifoldWarning(true);
   }, [scene.models]);
+  // TEMPORARY (spacemouse Phase 0a spike): probe navlib once on mount. Prints the
+  // NavlibProbe to devtools + `eprintln!` to the tauri:dev terminal. Remove after.
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const result = await invoke('spacemouse_native_probe');
+        console.log('[navlib probe]', result);
+      } catch (err) {
+        console.warn('[navlib probe] not running under Tauri / failed:', err);
+      }
+    })();
+  }, []);
   const importSceneFile = scene.importSceneFile;
   const importSceneFiles = scene.importSceneFiles;
   const recentOpenedFiles = scene.recentOpenedFiles;
