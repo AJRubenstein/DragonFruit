@@ -58,7 +58,11 @@ import { useCurveInteractionState } from '@/supports/Curves/curveInteractionStat
 import { getSettings, subscribeToSettings } from '@/supports/Settings';
 import { DEFAULT_TIP_CONTACT_DIAMETER_MM } from '@/supports/Settings/defaults';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
-import { CameraFocusHotkeyController, CameraHomeResetController, CameraIntroController, SpaceMouseController, useStlLoadCameraIntro } from '@/components/scene/camera';
+import { CameraFocusHotkeyController, CameraHomeResetController, CameraIntroController, NativeSpaceMouseController, SpaceMouseController, useStlLoadCameraIntro } from '@/components/scene/camera';
+import {
+  getNativeSpaceMouseActive,
+  subscribeNativeSpaceMouseActive,
+} from '@/components/scene/camera/nativeSpaceMouseBridge';
 import { CameraFocusController } from '@/components/scene/CameraFocusController';
 
 import { PickingStateSyncer } from '../PickingStateSyncer';
@@ -1211,6 +1215,14 @@ export function SceneCanvas({
     }, []);
 
   const [mouseOrbitDragRunId, setMouseOrbitDragRunId] = React.useState(0);
+  // When the native 3DxWare/navlib bridge is driving the camera, the Gamepad-API
+  // SpaceMouseController is unmounted entirely so the two never fight over the
+  // same physical puck.
+  const nativeSpaceMouseActive = React.useSyncExternalStore(
+    subscribeNativeSpaceMouseActive,
+    getNativeSpaceMouseActive,
+    getNativeSpaceMouseActive,
+  );
   const activeBuildVolumeSettings = view3dSettings ?? DEFAULT_VIEW3D_SETTINGS;
 
   const buildVolumeCenterTarget = React.useMemo(() => {
@@ -6710,6 +6722,14 @@ export function SceneCanvas({
         )}
         <OrbitPivotIndicator visible={!thumbnailCaptureActive && isOrbitInteracting && isOrbitRotating} />
         {cameraInteractionCycleEnabled && (
+          <NativeSpaceMouseController
+            pivotPoint={selectedSpaceMousePivotPoint}
+            fallbackPivot={buildVolumeCenterTarget}
+            onNavigationActiveChange={setSpaceMouseNavigationActive}
+            onNavigationFrame={handleSpaceMouseNavigationFrame}
+          />
+        )}
+        {cameraInteractionCycleEnabled && !nativeSpaceMouseActive && (
           <SpaceMouseController
             pivotPoint={selectedSpaceMousePivotPoint}
             pivotCandidates={spaceMousePivotCandidates}
