@@ -3197,6 +3197,34 @@ export function calculateSmartPlacementV2(
                 }
             }
 
+            // Terminal joint cleanup: when the last joint sits directly above the
+            // base (same XY within 0.6mm), try removing it — it's often just an
+            // A* grid artifact.  Use relaxed clearance on retry since base-adjacent
+            // segments tolerate closer model proximity than socket-adjacent ones.
+            if (_finalJoints.length >= 1) {
+                const _tlj = _finalJoints[_finalJoints.length - 1];
+                const _tldxy = distanceXY(_tlj, _finalBase.rootTopTarget);
+                if (_tldxy < 0.6) {
+                    const _tprev = _finalJoints.length >= 2
+                        ? _finalJoints[_finalJoints.length - 2]
+                        : socketPos;
+                    const _tdirect = _finalBase.rootTopTarget;
+                    if (segmentSatisfiesLengthAwareMaxAngleFromVertical(_tprev, _tdirect, maxSegmentAngleFromVerticalDeg)) {
+                        let _tcan = !segmentBlockedBetween(_tprev, _tdirect);
+                        if (!_tcan) {
+                            _tcan = !sdf.segmentBlocked(
+                                _tprev.x, _tprev.y, _tprev.z,
+                                _tdirect.x, _tdirect.y, _tdirect.z,
+                                clearance * 0.4,
+                            );
+                        }
+                        if (_tcan) {
+                            _finalJoints = _finalJoints.slice(0, -1);
+                        }
+                    }
+                }
+            }
+
             // Quality gate: if still 2+ joints and they're all crammed into a
             // tight Z band (< MIN_ROUTING_Z_SPAN_MM), the path is squeezing
             // through a model crack — reject it rather than embed the support.
@@ -3699,6 +3727,36 @@ export function calculateSmartPlacementV2(
         }
         if (_bestZ < _jOrig.z) {
             finalJoints = [{ x: finalBase.basePos.x, y: finalBase.basePos.y, z: _bestZ }];
+        }
+    }
+
+    // Terminal joint cleanup: when the last joint sits directly above the
+    // base (same XY), it's often just an A* grid artifact — the path reached
+    // the base column early and added a vertical drop segment.  Try removing
+    // it with progressively relaxed clearance since base-adjacent segments
+    // are less sensitive to resin overexposure than socket-adjacent ones.
+    if (finalJoints.length >= 1) {
+        const _lastJ = finalJoints[finalJoints.length - 1];
+        const _lastDxy = distanceXY(_lastJ, finalBase.rootTopTarget);
+        if (_lastDxy < 0.6) {
+            const _prevPt = finalJoints.length >= 2
+                ? finalJoints[finalJoints.length - 2]
+                : socketPos;
+            const _directTarget = finalBase.rootTopTarget;
+            if (segmentSatisfiesLengthAwareMaxAngleFromVertical(_prevPt, _directTarget, maxSegmentAngleFromVerticalDeg)) {
+                // Try full clearance first, then half clearance
+                let _canRemove = !segmentBlockedBetween(_prevPt, _directTarget);
+                if (!_canRemove) {
+                    _canRemove = !sdf.segmentBlocked(
+                        _prevPt.x, _prevPt.y, _prevPt.z,
+                        _directTarget.x, _directTarget.y, _directTarget.z,
+                        clearance * 0.4,
+                    );
+                }
+                if (_canRemove) {
+                    finalJoints = finalJoints.slice(0, -1);
+                }
+            }
         }
     }
 
