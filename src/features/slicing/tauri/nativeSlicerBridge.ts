@@ -17,9 +17,7 @@ export type NativeSolidSliceJobEnvelope = {
   widthPx: number;
   heightPx: number;
   xPackingMode: 'none' | 'rgb8_div3' | 'gray3_div2';
-  computeBackend?: 'auto' | 'cpu' | 'gpu';
   pngCompressionStrategy: 'fastest' | 'balanced' | 'smallest' | 'optimal';
-  bvhAccelerationEnabled: boolean;
   antiAliasingLevel: AntiAliasingLevel;
   antiAliasingMode: 'Blur' | '3DAA' | 'Vertical2' | 'Coverage';
   blurBrushRadiusPx: number;

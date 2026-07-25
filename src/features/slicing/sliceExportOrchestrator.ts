@@ -253,10 +253,8 @@ export type SliceExportResult = {
             widthPx: number;
             heightPx: number;
             xPackingMode: 'none' | 'rgb8_div3' | 'gray3_div2';
-            computeBackend: 'auto' | 'cpu' | 'gpu';
             pngCompressionStrategy: 'fastest' | 'balanced' | 'smallest' | 'optimal';
             containerCompressionLevel: number;
-            bvhAccelerationEnabled: boolean;
             antiAliasingLevel: AntiAliasingLevel;
             antiAliasingMode: 'Blur' | '3DAA' | 'Vertical2' | 'Coverage';
             blurBrushRadiusPx: number;
@@ -749,9 +747,7 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
         widthPx: solidMesh.widthPx,
         heightPx: solidMesh.heightPx,
         xPackingMode: solidMesh.xPackingMode,
-        computeBackend: solidMesh.computeBackend,
         pngCompressionStrategy: resolvedPngStrategy,
-        bvhAccelerationEnabled: solidMesh.bvhAccelerationEnabled,
         antiAliasingLevel: options.antiAliasingLevel ?? 'Off',
         antiAliasingMode: options.antiAliasingMode ?? 'Blur',
         blurBrushRadiusPx: Math.max(1, Math.round(options.blurBrushRadiusPx ?? 1)),
@@ -895,10 +891,8 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
                 widthPx: nativeJob.widthPx,
                 heightPx: nativeJob.heightPx,
                 xPackingMode: nativeJob.xPackingMode,
-                computeBackend: nativeJob.computeBackend,
                 pngCompressionStrategy: nativeJob.pngCompressionStrategy,
                 containerCompressionLevel: nativeJob.containerCompressionLevel,
-                bvhAccelerationEnabled: nativeJob.bvhAccelerationEnabled,
                 antiAliasingLevel: nativeJob.antiAliasingLevel,
                 antiAliasingMode: nativeJob.antiAliasingMode,
                 blurBrushRadiusPx: nativeJob.blurBrushRadiusPx,
