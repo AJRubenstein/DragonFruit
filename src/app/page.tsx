@@ -206,7 +206,8 @@ import {
 } from '@/features/scene/arrange/highPrecisionArrangeWorkerClient';
 
 // Domain Features
-import { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
+import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker } from '@/features/scene/useSceneCollectionManager';
+import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import { useTransformManager } from '@/features/transform/useTransformManager';
 import { useIslandManager } from '@/volumeAnalysis/IslandScan/useIslandManager';
@@ -231,7 +232,6 @@ import {
   getHistoryDebugEvents,
   getRedoCount,
   getUndoCount,
-  pushHistory,
   redo,
   subscribeHistory,
   subscribeHistoryDebug,
@@ -521,6 +521,10 @@ function createModelTransformKey(modelId: string, transform: ModelTransform): st
 export default function Home() {
   const { _ } = useLingui();
   const { stage, sproutParentingLockHeld } = useLeafPlacementState();
+  // Supports undo/redo handlers register for the lifetime of the app root, not
+  // for the lifetime of a scene renderer. Otherwise Ctrl+Z depends on which
+  // render branch happens to be mounted.
+  useSupportHistoryHandlers();
   // 1. Scene & Geometry (Multi-Model)
   const scene = useSceneCollectionManager();
 
@@ -2221,11 +2225,7 @@ export default function Home() {
     setPrintingArtifactIsInvalid(false);
     setShowPrintingResliceModal(false);
     // Push a "Sliced Scene" marker to history so we can detect changes after this point
-    pushHistory({
-      type: 'SCENE_SLICED',
-      description: 'Scene sliced for printing',
-      payload: {},
-    });
+    pushSceneSlicedMarker();
     setPrintingSendStatusText(null);
     setPrintingSendProgress(0);
     setPrintingSendStageText(null);
@@ -6469,7 +6469,7 @@ export default function Home() {
     // Find the most recent "SCENE_SLICED" marker
     let sliceMarkerIndex = -1;
     for (let i = historyEvents.length - 1; i >= 0; i--) {
-      if (historyEvents[i].actionType === 'SCENE_SLICED') {
+      if (historyEvents[i].actionType === SCENE_SLICED) {
         sliceMarkerIndex = i;
         break;
       }
@@ -6479,7 +6479,7 @@ export default function Home() {
       // Check if there are any OTHER events (non-undo/redo) after the slice marker
       const eventsAfterSlice = historyEvents.slice(sliceMarkerIndex + 1);
       const hasModifications = eventsAfterSlice.some(
-        (e) => e.kind === 'push' && e.actionType !== 'SCENE_SLICED'
+        (e) => e.kind === 'push' && e.actionType !== SCENE_SLICED
       );
       
       if (hasModifications) {
@@ -6499,7 +6499,7 @@ export default function Home() {
       // Find the most recent "SCENE_SLICED" marker
       let sliceMarkerIndex = -1;
       for (let i = historyEvents.length - 1; i >= 0; i--) {
-        if (historyEvents[i].actionType === 'SCENE_SLICED') {
+        if (historyEvents[i].actionType === SCENE_SLICED) {
           sliceMarkerIndex = i;
           break;
         }
@@ -6509,7 +6509,7 @@ export default function Home() {
         // Check if there are any OTHER events (non-undo/redo) after the slice marker
         const eventsAfterSlice = historyEvents.slice(sliceMarkerIndex + 1);
         const hasModifications = eventsAfterSlice.some(
-          (e) => e.kind === 'push' && e.actionType !== 'SCENE_SLICED'
+          (e) => e.kind === 'push' && e.actionType !== SCENE_SLICED
         );
         
         if (hasModifications) {
