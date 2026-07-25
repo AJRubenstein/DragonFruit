@@ -35,8 +35,6 @@ export type NativeSolidSliceJobEnvelope = {
   mirrorX: boolean;
   mirrorY: boolean;
   zBlendLookBack?: number;
-  zBlendFadePx?: number;
-  zBlendAutoFade?: boolean;
   zBlendMinimumAlphaPercent?: number;
   zBlendMaxAlphaPercent?: number;
   zBlendCustomLut?: number[];
@@ -91,8 +89,6 @@ type NativeSolidSliceMetadataPayload = {
   mirror_x: boolean;
   mirror_y: boolean;
   z_blend_look_back?: number;
-  z_blend_fade_px?: number;
-  z_blend_auto_fade?: boolean;
   z_blend_minimum_alpha_percent?: number;
   z_blend_max_alpha_percent?: number;
   z_blend_custom_lut?: number[];
@@ -199,8 +195,6 @@ export function toNativeMetadataPayload(job: NativeSolidSliceJobEnvelope): Nativ
     mirror_x: job.mirrorX,
     mirror_y: job.mirrorY,
     z_blend_look_back: clampSliceJobNumber('zBlendLookBack', job.zBlendLookBack),
-    z_blend_fade_px: clampSliceJobNumber('zBlendFadePx', job.zBlendFadePx),
-    z_blend_auto_fade: job.zBlendAutoFade !== false,
     z_blend_minimum_alpha_percent: clampSliceJobNumber('zBlendMinimumAlphaPercent', job.zBlendMinimumAlphaPercent),
     z_blend_max_alpha_percent: clampSliceJobNumber('zBlendMaxAlphaPercent', job.zBlendMaxAlphaPercent),
     z_blend_custom_lut: job.zBlendCustomLut,

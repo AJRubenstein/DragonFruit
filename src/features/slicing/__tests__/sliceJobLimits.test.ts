@@ -26,8 +26,8 @@ test('leaves unsnapped fields fractional', () => {
 });
 
 test('substitutes the fallback for a missing or non-numeric input', () => {
-  assert.equal(clampSliceJobNumber('zBlendFadePx', undefined), 20);
-  assert.equal(clampSliceJobNumber('zBlendFadePx', null), 20);
+  assert.equal(clampSliceJobNumber('zBlendLookBack', undefined), 2);
+  assert.equal(clampSliceJobNumber('zBlurSigma', null), 0.5);
   assert.equal(clampSliceJobNumber('zBlendLookBack', 'not a number'), 2);
   assert.equal(clampSliceJobNumber('zBlendMaxAlphaPercent', Number.NaN), 90);
 });

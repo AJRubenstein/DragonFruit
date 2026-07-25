@@ -27,7 +27,6 @@ export const SLICE_JOB_LIMITS = {
   zBlurRadiusLayers: { min: 0, max: 8, snap: 'round', fallback: 0 },
   zBlurSigma: { min: 0.05, max: 16, fallback: 0.5 },
   zBlendLookBack: { min: 1, snap: 'round', fallback: 2 },
-  zBlendFadePx: { min: 1, snap: 'round', fallback: 20 },
   zBlendMinimumAlphaPercent: { min: 0, max: 100, fallback: 0 },
   zBlendMaxAlphaPercent: { min: 0, max: 100, fallback: 90 },
   minimumAaAlphaPercent: { min: 0, max: 100, fallback: 0 },

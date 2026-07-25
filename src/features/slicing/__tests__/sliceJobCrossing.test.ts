@@ -89,8 +89,6 @@ function completeEnvelope(): NativeSolidSliceJobEnvelope {
     mirrorX: false,
     mirrorY: true,
     zBlendLookBack: 4,
-    zBlendFadePx: 20,
-    zBlendAutoFade: true,
     zBlendMinimumAlphaPercent: 0,
     zBlendMaxAlphaPercent: 90,
     zBlendCustomLut: Array.from({ length: 256 }, (_, i) => i),

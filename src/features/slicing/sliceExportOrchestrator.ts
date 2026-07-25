@@ -175,8 +175,6 @@ export type SliceExportOrchestratorOptions = {
     zBlurKernel?: 'box' | 'gaussian';
     zBlurSigma?: number;
     zBlendLookBack?: number;
-    zBlendFadePx?: number;
-    zBlendAutoFade?: boolean;
     zBlendMinimumAlphaPercent?: number;
     zBlendMaxAlphaPercent?: number;
     zBlendCustomLut?: number[];
@@ -759,8 +757,6 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
         zBlurKernel: options.zBlurKernel ?? 'box',
         zBlurSigma: clampSliceJobNumber('zBlurSigma', options.zBlurSigma),
         zBlendLookBack: clampSliceJobNumber('zBlendLookBack', options.zBlendLookBack),
-        zBlendFadePx: clampSliceJobNumber('zBlendFadePx', options.zBlendFadePx),
-        zBlendAutoFade: options.zBlendAutoFade !== false,
         zBlendMinimumAlphaPercent: clampSliceJobNumber('zBlendMinimumAlphaPercent', options.zBlendMinimumAlphaPercent),
         zBlendMaxAlphaPercent: clampSliceJobNumber('zBlendMaxAlphaPercent', options.zBlendMaxAlphaPercent),
         zBlendCustomLut: options.zBlendCustomLut,
