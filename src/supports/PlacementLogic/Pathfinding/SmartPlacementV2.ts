@@ -2860,8 +2860,13 @@ export function calculateSmartPlacementV2(
                 // Run when: (a) zero-joint sweep failed and we still have 2+ joints, OR
                 // (b) zero-joint sweep found a path but the base is laterally far from
                 // the socket — a one-joint path with a closer base may be better.
+                // (c) single joint is too shallow — try to find a deeper alternative.
                 const _zeroLateral = distanceXY(socketPos, { x: _finalBase.basePos.x, y: _finalBase.basePos.y, z: socketPos.z });
-                const _needOneJointSearch = _finalJoints.length >= 2 || (_finalJoints.length === 0 && _zeroLateral > 1.5);
+                const _firstJointDrop = _finalJoints.length >= 1 ? (socketPos.z - _finalJoints[0].z) : Infinity;
+                const _oneJointMinFirstDropMm = 4.0;
+                const _needOneJointSearch = _finalJoints.length >= 2
+                    || (_finalJoints.length === 0 && _zeroLateral > 1.5)
+                    || (_finalJoints.length === 1 && _firstJointDrop < _oneJointMinFirstDropMm);
                 if (!isPreview && _needOneJointSearch) {
                     const _baseCandidates: Array<{ x: number; y: number }> = [];
                     _baseCandidates.push({ x: _finalBase.basePos.x, y: _finalBase.basePos.y });
@@ -2920,7 +2925,6 @@ export function calculateSmartPlacementV2(
                     let _skipSeg1 = 0;
                     let _skipSeg2 = 0;
                     let _skipAngle = 0;
-                    const _oneJointMinFirstDropMm = 4.0;
                     const _oneJointEarlyBendPenaltyPerMm = 12.0;
 
                     const _rootsFitCache = new Map<string, boolean>();
@@ -3156,6 +3160,57 @@ export function calculateSmartPlacementV2(
                             _oneJointStats += ` twoJointTried=${_twoJointTried ? 'yes' : 'no'} twoJointFound=${_twoJointFound ? 'yes' : 'no'}`;
                         }
                     }
+                }
+            }
+
+            // Deepen shallow single joints: when the final result has exactly one
+            // joint with very little Z drop (< 4mm), try to push it down so the
+            // first segment is more vertical.  A near-horizontal kick right at the
+            // socket is hard to print; a deeper joint produces a gentler angle.
+            // Search includes small XY perturbations at each Z step in case the
+            // exact-same-XY path is blocked by thin geometry.
+            const _deepeningMinFirstDropMm = 4.0;
+            if (_finalJoints.length === 1 && (socketPos.z - _finalJoints[0].z) < _deepeningMinFirstDropMm) {
+                const _jOrig = _finalJoints[0];
+                const _crt: Vec3 = { x: _finalBase.basePos.x, y: _finalBase.basePos.y, z: rootTopZ };
+                const _deepenStep = 0.5;
+                let _bestZ = _jOrig.z;
+                // XY perturbations to try when exact-same-XY is blocked
+                const _xyOffsets = [0, 0.3, 0.6];
+                for (let _zTry = _jOrig.z - _deepenStep; _zTry > rootTopZ + 1; _zTry -= _deepenStep) {
+                    let _foundAtZ = false;
+                    for (const _offR of _xyOffsets) {
+                        const _angles = _offR === 0 ? [0] : [0, Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4, Math.PI, 5 * Math.PI / 4, 3 * Math.PI / 2, 7 * Math.PI / 4];
+                        for (const _ang of _angles) {
+                            const _jx = _jOrig.x + Math.cos(_ang) * _offR;
+                            const _jy = _jOrig.y + Math.sin(_ang) * _offR;
+                            const _jTry: Vec3 = { x: _jx, y: _jy, z: _zTry };
+                            // socket → deepened joint
+                            if (segmentBlockedBetween(socketPos, _jTry)) continue;
+                            if (!segmentSatisfiesLengthAwareMaxAngleFromVertical(socketPos, _jTry, maxSegmentAngleFromVerticalDeg)) continue;
+                            // deepened joint → rootTop
+                            const _crtJ: Vec3 = { x: _jx, y: _jy, z: rootTopZ };
+                            if (!rootsDiskBlockedAt(_jx, _jy) && !segmentBlockedBetween(_jTry, _crtJ)
+                                && segmentSatisfiesLengthAwareMaxAngleFromVertical(_jTry, _crtJ, maxSegmentAngleFromVerticalDeg)) {
+                                _bestZ = _zTry;
+                                // Update base XY too so seg2 stays straight-down
+                                _finalBase = {
+                                    basePos: { x: _jx, y: _jy, z: 0 },
+                                    rootTopTarget: _crtJ,
+                                    snapDistance: 0,
+                                    nodeKey: null,
+                                };
+                                _finalRootTop = _crtJ;
+                                _foundAtZ = true;
+                                break;
+                            }
+                        }
+                        if (_foundAtZ) break;
+                    }
+                    if (!_foundAtZ) break; // this Z has no viable XY; deeper won't help
+                }
+                if (_bestZ < _jOrig.z) {
+                    _finalJoints = [{ x: _finalBase.basePos.x, y: _finalBase.basePos.y, z: _bestZ }];
                 }
             }
 
@@ -3560,7 +3615,33 @@ export function calculateSmartPlacementV2(
                 if (!seg2Ok) continue;
                 if (!currentChainIsBetterThan([oc.joint], candRootTop)) continue;
 
-                finalJoints = [oc.joint];
+                // Deepen shallow joints: walk the joint down at the same XY
+                // so the first segment is more vertical and printable.
+                let _fineJoint = oc.joint;
+                {
+                    const _fineMinFirstDropMm = 4.0;
+                    const _fineFirstDrop = socketPos.z - _fineJoint.z;
+                    if (_fineFirstDrop < _fineMinFirstDropMm) {
+                        const _deepenStep = 0.5;
+                        const _deepened: Vec3 = { x: _fineJoint.x, y: _fineJoint.y, z: _fineJoint.z };
+                        for (let _zTry = _fineJoint.z - _deepenStep; _zTry > rootTopZ + 1; _zTry -= _deepenStep) {
+                            const _jTry: Vec3 = { x: _deepened.x, y: _deepened.y, z: _zTry };
+                            // seg1: socket → deepened joint
+                            if (segmentBlockedBetween(socketPos, _jTry)) break;
+                            if (!firstSegmentSatisfiesSocketElbowMaxAngle(socketPos, _jTry, maxSegmentAngleFromVerticalDeg)) continue;
+                            // seg2: deepened joint → rootTop
+                            const _crt: Vec3 = { x: oc.baseXY.x, y: oc.baseXY.y, z: rootTopZ };
+                            if (segmentBlockedBetween(_jTry, _crt)) continue;
+                            if (!segmentSatisfiesLengthAwareMaxAngleFromVertical(_jTry, _crt, maxSegmentAngleFromVerticalDeg)) continue;
+                            _deepened.z = _zTry;
+                        }
+                        if (_deepened.z < _fineJoint.z) {
+                            _fineJoint = _deepened;
+                        }
+                    }
+                }
+
+                finalJoints = [_fineJoint];
                 finalBase = {
                     basePos: { x: oc.baseXY.x, y: oc.baseXY.y, z: 0 },
                     rootTopTarget: candRootTop,
@@ -3569,6 +3650,50 @@ export function calculateSmartPlacementV2(
                 };
                 break;
             }
+        }
+    }
+
+    // Deepen shallow single joints: when the final result has exactly one
+    // joint with very little Z drop, push it down so the first segment is
+    // more vertical and printable.  Same logic as the wide-step deepening.
+    if (finalJoints.length === 1 && (socketPos.z - finalJoints[0].z) < 4.0) {
+        const _jOrig = finalJoints[0];
+        const _crtB: Vec3 = { x: finalBase.basePos.x, y: finalBase.basePos.y, z: rootTopZ };
+        const _deepenStep = 0.5;
+        let _bestZ = _jOrig.z;
+        const _xyOffsets = [0, 0.3, 0.6];
+        for (let _zTry = _jOrig.z - _deepenStep; _zTry > rootTopZ + 1; _zTry -= _deepenStep) {
+            let _foundAtZ = false;
+            for (const _offR of _xyOffsets) {
+                const _angles = _offR === 0 ? [0] : [0, Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4, Math.PI, 5 * Math.PI / 4, 3 * Math.PI / 2, 7 * Math.PI / 4];
+                for (const _ang of _angles) {
+                    const _jx = _jOrig.x + Math.cos(_ang) * _offR;
+                    const _jy = _jOrig.y + Math.sin(_ang) * _offR;
+                    const _jTry: Vec3 = { x: _jx, y: _jy, z: _zTry };
+                    // seg1: socket → deepened joint
+                    if (segmentBlockedBetween(socketPos, _jTry)) continue;
+                    if (!firstSegmentSatisfiesSocketElbowMaxAngle(socketPos, _jTry, maxSegmentAngleFromVerticalDeg)) continue;
+                    // seg2: deepened joint → rootTop
+                    const _crtJ: Vec3 = { x: _jx, y: _jy, z: rootTopZ };
+                    if (!rootsDiskBlockedAt(_jx, _jy) && !segmentBlockedBetween(_jTry, _crtJ)
+                        && segmentSatisfiesLengthAwareMaxAngleFromVertical(_jTry, _crtJ, maxSegmentAngleFromVerticalDeg)) {
+                        _bestZ = _zTry;
+                        finalBase = {
+                            basePos: { x: _jx, y: _jy, z: 0 },
+                            rootTopTarget: _crtJ,
+                            snapDistance: distanceXY({ x: _jx, y: _jy, z: 0 }, unsnappedBottomPos),
+                            nodeKey: null,
+                        };
+                        _foundAtZ = true;
+                        break;
+                    }
+                }
+                if (_foundAtZ) break;
+            }
+            if (!_foundAtZ) break;
+        }
+        if (_bestZ < _jOrig.z) {
+            finalJoints = [{ x: finalBase.basePos.x, y: finalBase.basePos.y, z: _bestZ }];
         }
     }
 
