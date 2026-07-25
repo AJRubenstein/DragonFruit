@@ -167,7 +167,14 @@ async function loadTauriEvent(): Promise<TauriEventModule | null> {
   return tauriEventPromise;
 }
 
-function toNativeMetadataPayload(job: NativeSolidSliceJobEnvelope): NativeSolidSliceMetadataPayload {
+/**
+ * Build the snake_case payload the Rust `SliceJobMetadata` command deserializes.
+ *
+ * Exported for the crossing contract test: this mapper, not the type above, is
+ * what decides which fields actually reach the engine. A field can be declared
+ * on both sides and still be dropped here.
+ */
+export function toNativeMetadataPayload(job: NativeSolidSliceJobEnvelope): NativeSolidSliceMetadataPayload {
   return {
     output_format: job.outputFormat,
     format_version: job.formatVersion ?? null,
