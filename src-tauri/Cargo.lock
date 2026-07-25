@@ -1381,6 +1381,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "if-addrs",
+ "libloading 0.8.9",
  "log",
  "meshopt",
  "rayon",

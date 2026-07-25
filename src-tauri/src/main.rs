@@ -5,6 +5,7 @@ mod mesh_minima;
 mod mesh_repair;
 mod network;
 mod sdf;
+mod spacemouse;
 mod updater_channel;
 
 fn default_minimum_aa_alpha_percent() -> f32 {
@@ -3381,6 +3382,7 @@ fn main() {
             read_log_tail,
             open_log_file,
             delete_log_file,
+            spacemouse::spacemouse_native_probe,
             network::plugin_network_request,
             network::ensure_rtsp_relay,
             mesh_repair::mesh_analyze_from_path,
