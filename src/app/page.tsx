@@ -534,6 +534,7 @@ export default function Home() {
   // flagged, every currently-flagged model is marked as warned so the rest of
   // the batch does not pop additional modals.
   const warnedManifoldModelIdsRef = React.useRef<Set<string>>(new Set());
+  const spaceMouseSpikeStartedRef = React.useRef(false); // TEMPORARY: Phase 0 spike guard
   const [showManifoldWarning, setShowManifoldWarning] = React.useState(false);
   React.useEffect(() => {
     const flagged = scene.models.filter(
@@ -544,16 +545,22 @@ export default function Home() {
     for (const model of flagged) warnedManifoldModelIdsRef.current.add(model.id);
     setShowManifoldWarning(true);
   }, [scene.models]);
-  // TEMPORARY (spacemouse Phase 0a spike): probe navlib once on mount. Prints the
-  // NavlibProbe to devtools + `eprintln!` to the tauri:dev terminal. Remove after.
+  // TEMPORARY (spacemouse Phase 0 spike): probe navlib and start the NlCreate
+  // round-trip once on mount. Watch the tauri:dev log for `motion` / `view.affine`
+  // lines while moving the puck. Remove after Phase 0. Uses a module-level guard
+  // so React StrictMode / HMR double-invoke doesn't create two navlib instances.
   React.useEffect(() => {
+    if (spaceMouseSpikeStartedRef.current) return;
+    spaceMouseSpikeStartedRef.current = true;
     (async () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const result = await invoke('spacemouse_native_probe');
-        console.log('[navlib probe]', result);
+        const probe = await invoke('spacemouse_native_probe');
+        console.log('[navlib probe]', probe);
+        const started = await invoke('spacemouse_native_spike_start');
+        console.log('[navlib spike]', started);
       } catch (err) {
-        console.warn('[navlib probe] not running under Tauri / failed:', err);
+        console.warn('[navlib] not running under Tauri / failed:', err);
       }
     })();
   }, []);

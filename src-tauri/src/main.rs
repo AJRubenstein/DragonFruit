@@ -3383,6 +3383,8 @@ fn main() {
             open_log_file,
             delete_log_file,
             spacemouse::spacemouse_native_probe,
+            spacemouse::spacemouse_native_spike_start,
+            spacemouse::spacemouse_native_spike_stop,
             network::plugin_network_request,
             network::ensure_rtsp_relay,
             mesh_repair::mesh_analyze_from_path,
