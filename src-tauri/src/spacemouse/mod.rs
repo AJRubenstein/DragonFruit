@@ -37,6 +37,11 @@ pub struct CameraInput {
     /// Model bounding box in world space.
     pub model_min: [f64; 3],
     pub model_max: [f64; 3],
+    /// Orthographic view extents in camera/eye space (min/max of the view box).
+    /// navlib uses these to scale pan and to drive zoom when `perspective` is
+    /// false; ignored in perspective mode. Sent as the current camera frustum.
+    pub ortho_min: [f64; 3],
+    pub ortho_max: [f64; 3],
 }
 
 /// navlib's latest camera output, returned to JS each frame.
@@ -49,6 +54,12 @@ pub struct NavOutput {
     pub seq: u64,
     /// navlib exclusive-control signal — true while the driver is navigating.
     pub motion: bool,
+    /// Current orthographic view extents (camera space). In ortho mode navlib
+    /// writes these to zoom; JS maps the box width back onto `camera.zoom`.
+    pub ortho_min: [f64; 3],
+    pub ortho_max: [f64; 3],
+    /// Bumped whenever navlib writes new extents; JS applies zoom when it advances.
+    pub extents_seq: u64,
 }
 
 // ─────────────────────────────── Phase 0a: probe ───────────────────────────────
@@ -504,6 +515,12 @@ mod nav {
         focus_distance: f32,
         perspective: bool,
         target: PointT,
+        /// Orthographic view extents in camera/eye space. Used by navlib to scale
+        /// pan and to drive zoom while `perspective` is false.
+        ortho_min: PointT,
+        ortho_max: PointT,
+        /// Bumped on every navlib extents write (ortho zoom).
+        extents_seq: u64,
         /// navlib exclusive-control signal.
         motion: bool,
     }
@@ -519,6 +536,9 @@ mod nav {
                 focus_distance: 50.0,
                 perspective: true,
                 target: PointT { x: 0.0, y: 0.0, z: 0.0 },
+                ortho_min: PointT { x: -10.0, y: -10.0, z: -1000.0 },
+                ortho_max: PointT { x: 10.0, y: 10.0, z: 1000.0 },
+                extents_seq: 0,
                 motion: false,
             }
         }
@@ -540,6 +560,7 @@ mod nav {
     const P_TRANSACTION: &[u8] = b"transaction\0";
     const P_ACTIVE: &[u8] = b"active\0";
     const P_FOCUS: &[u8] = b"focus\0";
+    const P_VIEW_EXTENTS: &[u8] = b"view.extents\0";
 
     /// navlib reads a property value from the shadow.
     unsafe extern "C" fn nav_get(param: ParamT, name: PropertyT, value: *mut ValueT) -> c_long {
@@ -583,6 +604,13 @@ mod nav {
                 v.type_ = POINT_TYPE;
                 v.value.point = s.target;
             }
+            b"view.extents" => {
+                v.type_ = BOX_TYPE;
+                v.value.box_ = BoxT {
+                    min: s.ortho_min,
+                    max: s.ortho_max,
+                };
+            }
             b"model.extents" => {
                 v.type_ = BOX_TYPE;
                 v.value.box_ = BoxT {
@@ -621,9 +649,36 @@ mod nav {
             b"view.affine" => {
                 s.affine = v.value.matrix.m;
                 s.seq = s.seq.wrapping_add(1);
+                if s.seq % 30 == 1 {
+                    log::info!(
+                        "[spacemouse] affine #{} pos≈({:.2}, {:.2}, {:.2})",
+                        s.seq, s.affine[12], s.affine[13], s.affine[14],
+                    );
+                }
+            }
+            b"view.extents" => {
+                let b = v.value.box_;
+                s.ortho_min = b.min;
+                s.ortho_max = b.max;
+                s.extents_seq = s.extents_seq.wrapping_add(1);
+                if s.extents_seq % 15 == 1 {
+                    log::info!(
+                        "[spacemouse] extents #{} width≈{:.2}",
+                        s.extents_seq, b.max.x - b.min.x,
+                    );
+                }
             }
             b"motion" => {
-                s.motion = v.value.b != 0;
+                let m = v.value.b != 0;
+                if m != s.motion {
+                    s.motion = m;
+                    log::info!(
+                        "[spacemouse] motion -> {m} (perspective={}, focusDistance={:.2}, extentsWidth≈{:.2})",
+                        s.perspective,
+                        s.focus_distance,
+                        s.ortho_max.x - s.ortho_min.x,
+                    );
+                }
             }
             b"view.fov" => {
                 s.fov = v.value.f;
@@ -650,6 +705,7 @@ mod nav {
             entry(P_VIEW_FOV, true, true),
             entry(P_VIEW_TARGET, true, true),
             entry(P_VIEW_FOCUS_DISTANCE, true, false),
+            entry(P_VIEW_EXTENTS, true, true),
             entry(P_MODEL_EXTENTS, true, false),
             entry(P_SELECTION_EMPTY, true, false),
             entry(P_PIVOT_POSITION, true, true),
@@ -803,15 +859,21 @@ mod nav {
         s.focus_distance = cam.focus_distance;
         s.perspective = cam.perspective;
 
-        // Camera pose: JS owns it only while navlib is not navigating.
+        // Camera pose + ortho extents: JS owns them only while navlib is idle;
+        // during motion navlib owns them (pan/orient via affine, zoom via extents).
         if !s.motion {
             s.affine = cam.affine;
+            s.ortho_min = PointT { x: cam.ortho_min[0], y: cam.ortho_min[1], z: cam.ortho_min[2] };
+            s.ortho_max = PointT { x: cam.ortho_max[0], y: cam.ortho_max[1], z: cam.ortho_max[2] };
         }
 
         NavOutput {
             affine: s.affine,
             seq: s.seq,
             motion: s.motion,
+            ortho_min: [s.ortho_min.x, s.ortho_min.y, s.ortho_min.z],
+            ortho_max: [s.ortho_max.x, s.ortho_max.y, s.ortho_max.z],
+            extents_seq: s.extents_seq,
         }
     }
 }
@@ -889,6 +951,9 @@ pub fn spacemouse_native_sync(cam: CameraInput) -> NavOutput {
             affine: cam.affine,
             seq: 0,
             motion: false,
+            ortho_min: cam.ortho_min,
+            ortho_max: cam.ortho_max,
+            extents_seq: 0,
         }
     }
 }

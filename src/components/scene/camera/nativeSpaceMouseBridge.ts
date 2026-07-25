@@ -49,6 +49,10 @@ export type NativeCameraInput = {
   target: [number, number, number];
   modelMin: [number, number, number];
   modelMax: [number, number, number];
+  /** Orthographic view extents in camera/eye space (min/max of the view box).
+   *  navlib uses these to scale pan and drive zoom while `perspective` is false. */
+  orthoMin: [number, number, number];
+  orthoMax: [number, number, number];
 };
 
 /** navlib's latest camera output. Matches the Rust `NavOutput`. */
@@ -59,6 +63,11 @@ export type NativeNavOutput = {
   seq: number;
   /** True while the driver is actively navigating (exclusive control). */
   motion: boolean;
+  /** Orthographic view extents navlib produced; map the width onto `camera.zoom`. */
+  orthoMin: [number, number, number];
+  orthoMax: [number, number, number];
+  /** Advances on every navlib extents write (ortho zoom). */
+  extentsSeq: number;
 };
 
 async function rawStart(): Promise<string | null> {
