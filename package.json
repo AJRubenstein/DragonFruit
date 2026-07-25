@@ -41,9 +41,9 @@
     "test": "node --import tsx --test src/**/__tests__/*.test.ts",
     "test:watch": "node --import tsx --test --watch src/**/__tests__/*.test.ts",
     "bench:support-drag": "node --import tsx scripts/support-drag-perf.ts",
-    "i18n:extract": "lingui extract",
+    "i18n:extract": "lingui extract --clean",
     "i18n:compile": "lingui compile",
-    "i18n:update": "lingui extract && lingui compile"
+    "i18n:update": "lingui extract --clean && lingui compile"
   },
   "dependencies": {
     "@lingui/core": "^6.3.0",
