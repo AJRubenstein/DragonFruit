@@ -5,7 +5,7 @@ import { matchesConfiguredHotkeyDown } from '@/hotkeys/hotkeyConfig';
 
 // `Delete` is always available as a fixed, non-configurable secondary delete key.
 // The primary delete key is user-configurable via GLOBAL.DELETE (defaults to Backspace).
-const SECONDARY_DELETE_KEY = 'Delete';
+export const SECONDARY_DELETE_KEY = 'Delete';
 
 export function useDeleteHotkey() {
   const { getHotkey } = useHotkeyConfig();
