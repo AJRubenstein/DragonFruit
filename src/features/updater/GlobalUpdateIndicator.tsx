@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { CloudDownload, Download, Loader2, RotateCcw, ScrollText, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { fetchUpdateInfo, downloadAndInstall, getUpdateChannel, type UpdateInfo, type DownloadProgress, type UpdateChannel } from '@/features/updater/updateBridge';
-import { dispatchOpenSettingsAbout } from '@/features/updater/updateNotificationEvents';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 
 // ---------------------------------------------------------------------------
@@ -25,16 +24,6 @@ type IndicatorState =
 const STARTUP_CHECK_DELAY_MS = 5_000;
 const RE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const STORAGE_KEY_SUPPRESSED = 'dragonfruit-update-suppressed-version';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 // ---------------------------------------------------------------------------
 // Component
