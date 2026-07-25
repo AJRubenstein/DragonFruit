@@ -4,6 +4,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Keyboard, RotateCcw } from 'lucide-react';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { HotkeyBinding } from '@/hotkeys/hotkeyConfig';
+import { resumeHotkeyDispatch, suspendHotkeyDispatch } from '@/hotkeys/HotkeyRegistryManager';
 import { SECONDARY_DELETE_KEY } from '@/features/delete/useDeleteHotkey';
 
 const PINNED_SLOT_LABELS: Record<string, string> = {
@@ -91,6 +92,10 @@ export function HotkeysSettingsTab() {
   useEffect(() => {
     if (!recordingKey) return;
 
+    // Silence the app while recording: otherwise the key being captured also reaches
+    // its normal handlers — Escape would close Settings instead of cancelling here.
+    suspendHotkeyDispatch();
+
     let pressedNonModifier = false;
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -168,6 +173,7 @@ export function HotkeysSettingsTab() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('keyup', handleKeyUp, true);
+      resumeHotkeyDispatch();
     };
   }, [recordingKey, config, updateHotkey]);
 
