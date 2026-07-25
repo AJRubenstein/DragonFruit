@@ -4,7 +4,9 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Keyboard, RotateCcw } from 'lucide-react';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { HotkeyBinding } from '@/hotkeys/hotkeyConfig';
+import { getBindingTokens, toKeyLabel } from '@/hotkeys/hotkeyLabels';
 import { resumeHotkeyDispatch, suspendHotkeyDispatch } from '@/hotkeys/HotkeyRegistryManager';
+import { usePlatformModifier } from '@/hooks/usePlatformModifier';
 import { SECONDARY_DELETE_KEY } from '@/features/delete/useDeleteHotkey';
 
 const PINNED_SLOT_LABELS: Record<string, string> = {
@@ -57,32 +59,11 @@ const SECTION_GROUPS: Array<{
   },
 ];
 
-function toModifierLabel(modifier: string): string {
-  const normalized = modifier.trim().toLowerCase();
-  if (normalized === 'ctrl') return 'Ctrl';
-  if (normalized === 'shift') return 'Shift';
-  if (normalized === 'alt') return 'Alt';
-  if (normalized === 'meta') return 'Meta';
-  return modifier;
-}
-
-function toKeyLabel(key: string): string {
-  if (key.length === 1) return key.toUpperCase();
-  if (key.toLowerCase() === ' ') return 'Space';
-  return key;
-}
-
 function normalizeRecordedKey(rawKey: string): string {
   if (rawKey === ' ') return 'Space';
   return rawKey.length === 1 ? rawKey.toLowerCase() : rawKey;
 }
 
-function getBindingTokens(binding: HotkeyBinding): string[] {
-  const modifierTokens = binding.modifier
-    ? binding.modifier.split('+').map(toModifierLabel)
-    : [];
-  return [...modifierTokens, toKeyLabel(binding.key)];
-}
 
 export function HotkeysSettingsTab() {
   const { config, updateHotkey, resetCategories } = useHotkeyConfig();
@@ -375,7 +356,8 @@ function HotkeyRow({ label, binding, isRecording, onRecord, onCancel, secondaryT
   onCancel: () => void,
   secondaryToken?: string,
 }) {
-  const tokens = getBindingTokens(binding);
+  const primaryModifierLabel = usePlatformModifier();
+  const tokens = getBindingTokens(binding, primaryModifierLabel);
 
   return (
     <div
