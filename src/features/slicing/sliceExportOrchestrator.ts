@@ -1,6 +1,7 @@
 import type { MaterialProfile, PrinterProfile } from '@/features/profiles/profileStore';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { buildSolidSliceMeshForWasm } from './rasterLayerZipExport';
+import { clampSliceJobNumber } from './sliceJobLimits';
 import { prepareLoadedModelsForOutput } from '@/features/mesh-modifiers/prepareModelGeometry';
 import { resolveOutputFileExtension, resolveOutputFormatVersion, resolveOutputSettingsMode, resolveSlicingFormatDefinition } from './formats/registry';
 import { getSavedSlicingPerformanceSettings, type PngCompressionStrategy } from '@/components/settings/performancePreferences';
@@ -750,31 +751,28 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
         pngCompressionStrategy: resolvedPngStrategy,
         antiAliasingLevel: options.antiAliasingLevel ?? 'Off',
         antiAliasingMode: options.antiAliasingMode ?? 'Blur',
-        blurBrushRadiusPx: Math.max(1, Math.round(options.blurBrushRadiusPx ?? 1)),
+        blurBrushRadiusPx: clampSliceJobNumber('blurBrushRadiusPx', options.blurBrushRadiusPx),
         blurBrushKernel: options.blurBrushKernel ?? 'gaussian',
-        blurBrushSigmaX: Math.max(0.05, Math.min(16, Number(options.blurBrushSigmaX ?? options.blurBrushSigma ?? 0.5))),
-        blurBrushSigmaY: Math.max(0.05, Math.min(16, Number(options.blurBrushSigmaY ?? options.blurBrushSigma ?? 0.5))),
-        zBlurRadiusLayers: Math.max(0, Math.min(8, Math.round(options.zBlurRadiusLayers ?? 0))),
+        blurBrushSigmaX: clampSliceJobNumber('blurBrushSigmaX', options.blurBrushSigmaX ?? options.blurBrushSigma),
+        blurBrushSigmaY: clampSliceJobNumber('blurBrushSigmaY', options.blurBrushSigmaY ?? options.blurBrushSigma),
+        zBlurRadiusLayers: clampSliceJobNumber('zBlurRadiusLayers', options.zBlurRadiusLayers),
         zBlurKernel: options.zBlurKernel ?? 'box',
-        zBlurSigma: Math.max(0.05, Math.min(16, Number(options.zBlurSigma ?? 0.5))),
-        zBlendLookBack: Math.max(1, Math.round(options.zBlendLookBack ?? 2)),
-        zBlendFadePx: Math.max(1, Math.round(options.zBlendFadePx ?? 20)),
+        zBlurSigma: clampSliceJobNumber('zBlurSigma', options.zBlurSigma),
+        zBlendLookBack: clampSliceJobNumber('zBlendLookBack', options.zBlendLookBack),
+        zBlendFadePx: clampSliceJobNumber('zBlendFadePx', options.zBlendFadePx),
         zBlendAutoFade: options.zBlendAutoFade !== false,
-        zBlendMinimumAlphaPercent: Math.max(0, Math.min(100, options.zBlendMinimumAlphaPercent ?? 0)),
-        zBlendMaxAlphaPercent: Math.max(0, Math.min(100, options.zBlendMaxAlphaPercent ?? 90)),
+        zBlendMinimumAlphaPercent: clampSliceJobNumber('zBlendMinimumAlphaPercent', options.zBlendMinimumAlphaPercent),
+        zBlendMaxAlphaPercent: clampSliceJobNumber('zBlendMaxAlphaPercent', options.zBlendMaxAlphaPercent),
         zBlendCustomLut: options.zBlendCustomLut,
         zaaKernel: options.zaaKernel,
         zaaPattern: options.zaaPattern,
         zaaDuplicateZ: options.zaaDuplicateZ,
         aaOnSupports: options.aaOnSupports ?? (perfSettings.aaOnSupportsExperimental === true),
-        minimumAaAlphaPercent: Math.max(
-            0,
-            Math.min(
-                100,
-                options.minimumAaAlphaPercentOverride
-                ?? options.materialProfile.minimumAaAlphaPercent
-                ?? 50,
-            ),
+        minimumAaAlphaPercent: clampSliceJobNumber(
+            'minimumAaAlphaPercent',
+            options.minimumAaAlphaPercentOverride
+            ?? options.materialProfile.minimumAaAlphaPercent
+            ?? 50,
         ),
         mirrorX: solidMesh.mirrorX,
         mirrorY: solidMesh.mirrorY,
