@@ -45,6 +45,16 @@ if (typeof global.window === 'undefined') {
     };
 }
 
+// Node populates `navigator.platform` from the host OS (e.g. 'MacIntel' on a
+// macOS runner), which flips the primary modifier to Meta and breaks the tests
+// below that press Control. Pin a Ctrl-primary platform so these platform-
+// agnostic tests are deterministic on any host; the macOS-specific test near the
+// end overrides and restores `navigator` itself.
+Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { platform: 'Win32' },
+});
+
 function dispatchWindowEvent(event: string, detail: any) {
     listeners.get(event)?.forEach(cb => cb(detail));
 }
