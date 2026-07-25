@@ -47,10 +47,6 @@ fn default_z_blend_look_back() -> u32 {
     2
 }
 
-fn default_z_blend_fade_px() -> u32 {
-    20
-}
-
 fn default_z_blend_max_alpha_percent() -> f32 {
     90.0
 }
@@ -422,10 +418,6 @@ struct SliceJobMetadata {
     mirror_y: bool,
     #[serde(default = "default_z_blend_look_back")]
     z_blend_look_back: u32,
-    #[serde(default = "default_z_blend_fade_px")]
-    z_blend_fade_px: u32,
-    #[serde(default)]
-    z_blend_auto_fade: bool,
     #[serde(default)]
     z_blend_minimum_alpha_percent: f32,
     /// Maximum gray level (0–100 %) for z-blend gradient pixels at the inner boundary.
@@ -1350,8 +1342,6 @@ async fn slice_solid_native_to_temp_path(
             mirror_x: meta.mirror_x,
             mirror_y: meta.mirror_y,
             z_blend_look_back: meta.z_blend_look_back,
-            z_blend_fade_px: meta.z_blend_fade_px,
-            z_blend_auto_fade: meta.z_blend_auto_fade,
             z_blend_minimum_alpha_percent: meta.z_blend_minimum_alpha_percent,
             z_blend_max_alpha_percent: meta.z_blend_max_alpha_percent,
             z_blend_custom_lut: meta.z_blend_custom_lut,
