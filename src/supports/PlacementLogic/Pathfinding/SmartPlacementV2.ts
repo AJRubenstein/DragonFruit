@@ -1357,37 +1357,20 @@ export function isResolvedChainReplacementBetter(
     candidate: ResolvedChainMetrics,
     current: ResolvedChainMetrics,
 ): boolean {
-    const eps = 0.000001;
+    // Weighted scoring: lower = better.
+    // Joint count gets an exponential penalty so the pathfinder strongly
+    // prefers fewer joints — each additional joint roughly doubles the
+    // penalty, making 3+ joint "maze" paths extremely expensive.
+    const JOINT_BASE = 2.5;
+    const JOINT_WEIGHT = 20;
+    const score = (m: ResolvedChainMetrics) =>
+        m.firstSegmentAngleFromVerticalDeg * 3
+        + m.firstSegmentLateral * 3
+        + Math.pow(JOINT_BASE, m.jointCount) * JOINT_WEIGHT
+        + m.totalLateral * 0.5
+        + m.totalLength * 0.2;
 
-    if (candidate.firstSegmentAngleFromVerticalDeg < current.firstSegmentAngleFromVerticalDeg - eps) {
-        return true;
-    }
-    if (candidate.firstSegmentAngleFromVerticalDeg > current.firstSegmentAngleFromVerticalDeg + eps) {
-        return false;
-    }
-
-    if (candidate.firstSegmentLateral < current.firstSegmentLateral - eps) {
-        return true;
-    }
-    if (candidate.firstSegmentLateral > current.firstSegmentLateral + eps) {
-        return false;
-    }
-
-    if (candidate.totalLateral < current.totalLateral - eps) {
-        return true;
-    }
-    if (candidate.totalLateral > current.totalLateral + eps) {
-        return false;
-    }
-
-    if (candidate.totalLength < current.totalLength - eps) {
-        return true;
-    }
-    if (candidate.totalLength > current.totalLength + eps) {
-        return false;
-    }
-
-    return candidate.jointCount < current.jointCount;
+    return score(candidate) < score(current) - 0.0001;
 }
 
 // ---------- Roots cone volume check ----------
@@ -2925,7 +2908,7 @@ export function calculateSmartPlacementV2(
                     let _skipSeg1 = 0;
                     let _skipSeg2 = 0;
                     let _skipAngle = 0;
-                    const _oneJointEarlyBendPenaltyPerMm = 12.0;
+                    const _oneJointEarlyBendPenaltyPerMm = 30.0;
 
                     const _rootsFitCache = new Map<string, boolean>();
                     const _rootsFitAt = (x: number, y: number): boolean => {
@@ -3245,6 +3228,28 @@ export function calculateSmartPlacementV2(
                 }
             }
             if (_angleOk) {
+                // Quality gate: reject excessively complex routed paths.
+                // A "maze" of 3+ joints or a multi-joint path starting with a
+                // near-horizontal kick are fragile to print.  Fall back to a
+                // rescue placement (different socket or straight support) when
+                // one is available.
+                const _firstDrop = _finalJoints.length > 0 ? (socketPos.z - _finalJoints[0].z) : Infinity;
+                const _isExcessive =
+                    _finalJoints.length >= 3
+                    || (_finalJoints.length >= 2 && _firstDrop < 2.0)
+                    || (_finalJoints.length >= 1 && _firstDrop < 0.5);
+                if (!isPreview && _isExcessive) {
+                    const _rescue = buildStraightRescueFallback();
+                    if (_rescue) {
+                        if (!isPreview) {
+                            console.log(
+                                `[SmartPlacementV2] WIDE-STEP rejected — excessive complexity (joints=${_finalJoints.length} firstDrop=${_firstDrop.toFixed(2)}mm), falling back to rescue`,
+                            );
+                        }
+                        publishPathfindingDebugSnapshot();
+                        return _rescue;
+                    }
+                }
                 if (!isPreview) {
                     const _wideChain = [socketPos, ..._finalJoints, _finalRootTop];
                     const _wideSegs = _wideChain.slice(0,-1).map((p,i) => {
@@ -3831,6 +3836,28 @@ export function calculateSmartPlacementV2(
         );
     }
 
+    // Quality gate: reject excessively complex routed paths in the fine-step
+    // path too (same criteria as the wide-step quality gate).
+    {
+        const _firstDrop = finalJoints.length > 0 ? (socketPos.z - finalJoints[0].z) : Infinity;
+        const _isExcessive =
+            finalJoints.length >= 3
+            || (finalJoints.length >= 2 && _firstDrop < 2.0)
+            || (finalJoints.length >= 1 && _firstDrop < 0.5);
+        if (!isPreview && _isExcessive) {
+            const _rescue = buildStraightRescueFallback();
+            if (_rescue) {
+                if (!isPreview) {
+                    console.log(
+                        `[SmartPlacementV2] PLACED support rejected — excessive complexity (joints=${finalJoints.length} firstDrop=${_firstDrop.toFixed(2)}mm), falling back to rescue`,
+                    );
+                }
+                publishPathfindingDebugSnapshot();
+                return _rescue;
+            }
+        }
+    }
+
     publishPathfindingDebugSnapshot();
     return finalResult;
 }
@@ -3979,13 +4006,13 @@ function jointsAreNearCollinear(a: Vec3, b: Vec3, c: Vec3): boolean {
 function jointAddsNegligibleLateralDetour(a: Vec3, b: Vec3, c: Vec3): boolean {
     const splitLateral = distanceXY(a, b) + distanceXY(b, c);
     const directLateral = distanceXY(a, c);
-    return splitLateral - directLateral <= 0.75;
+    return splitLateral - directLateral <= 1.5;
 }
 
 function jointAddsNegligibleLengthDetour(a: Vec3, b: Vec3, c: Vec3): boolean {
     const splitLength = distance3D(a, b) + distance3D(b, c);
     const directLength = distance3D(a, c);
-    return splitLength - directLength <= 1.0;
+    return splitLength - directLength <= 2.0;
 }
 
 /**
