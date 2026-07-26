@@ -55,7 +55,7 @@ test('Runtime monkey-patch logs error for forbidden paths', () => {
 
         assert.equal(loggedArgs.length, 1, 'Should log one error');
         assert.ok(loggedArgs[0].includes('Forbidden keydown/keyup event listener registered on window'), 'Should mention window');
-        assert.ok(loggedArgs[0].includes('/DragonFruit/docs/hotkeys/README.md'), 'Should link to README');
+        assert.ok(loggedArgs[0].includes('docs/reference/hotkeys.md'), 'Should link to README');
 
         (global as any).window = originalWindow;
     } finally {

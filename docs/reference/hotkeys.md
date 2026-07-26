@@ -4,9 +4,9 @@ Centralized Zustand state store controls all key bindings.
 
 ## Architecture
 
-- **Store**: `DragonFruit/src/hotkeys/hotkeyStore.ts`
-- **Config**: `DragonFruit/src/hotkeys/hotkeyConfig.ts`
-- **Listener Manager**: `DragonFruit/src/hotkeys/HotkeyRegistryManager.tsx`
+- **Store**: `src/hotkeys/hotkeyStore.ts`
+- **Config**: `src/hotkeys/hotkeyConfig.ts`
+- **Listener Manager**: `src/hotkeys/HotkeyRegistryManager.tsx`
 
 ## Developer Rules
 
