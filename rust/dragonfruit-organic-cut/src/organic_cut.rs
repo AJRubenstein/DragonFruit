@@ -67,6 +67,8 @@ pub struct LoopKeySpec {
     pub key_shape: String,
     #[serde(default)]
     pub key_fillet_mm: f32,
+    #[serde(default = "default_key_tolerance")]
+    pub key_tolerance_mm: f32,
     #[serde(default)]
     pub key_swap_sides: bool,
     #[serde(default)]
@@ -147,6 +149,11 @@ pub struct OrganicCutSpec {
     /// 0 = sharp box. Ignored by the dome. Defaults to 0.
     #[serde(default)]
     pub key_fillet_mm: f32,
+    /// Peg/socket fit tolerance in mm: the socket is carved this much larger than
+    /// the peg on every face, so the halves slide together instead of jamming.
+    /// 0 = press fit. Defaults to 0.1 mm (a print-scale slide fit).
+    #[serde(default = "default_key_tolerance")]
+    pub key_tolerance_mm: f32,
     /// Flip which half gets the peg vs the socket. Default false: peg on `part_a`
     /// (the membrane's +normal side), socket carved from `part_b`. True swaps them.
     #[serde(default)]
@@ -177,6 +184,12 @@ fn default_key_depth() -> f32 {
 }
 fn default_key_shape() -> String {
     "frustum".to_string()
+}
+/// serde default for the peg/socket fit tolerance (mm). A literal for the same
+/// reason as the sizes above; kept in sync with `key::DEFAULT_KEY_TOLERANCE_MM`.
+/// Note this is NOT `#[serde(default)]` (0 would mean a press fit, not "unset").
+fn default_key_tolerance() -> f32 {
+    0.1
 }
 
 /// serde default for the 0..1 smoothing fields (0.5 = original behavior).
@@ -452,6 +465,7 @@ struct ResolvedKey {
     depth: f32,
     shape: crate::key::KeyShape,
     fillet: f32,
+    tolerance: f32,
     swap: bool,
     tilt: crate::key::KeyTilt,
 }
@@ -466,6 +480,7 @@ fn resolve_loop_key(spec: &OrganicCutSpec, i: usize) -> ResolvedKey {
             depth: k.key_depth_mm,
             shape: crate::key::KeyShape::from_str_or_default(&k.key_shape),
             fillet: k.key_fillet_mm,
+            tolerance: k.key_tolerance_mm,
             swap: k.key_swap_sides,
             tilt: crate::key::KeyTilt::new(k.key_tilt_rad, k.key_tilt_azimuth_rad, k.key_roll_rad),
         },
@@ -475,6 +490,7 @@ fn resolve_loop_key(spec: &OrganicCutSpec, i: usize) -> ResolvedKey {
             depth: spec.key_depth_mm,
             shape: crate::key::KeyShape::from_str_or_default(&spec.key_shape),
             fillet: spec.key_fillet_mm,
+            tolerance: spec.key_tolerance_mm,
             swap: spec.key_swap_sides,
             tilt: crate::key::KeyTilt::new(
                 spec.key_tilt_rad,
@@ -581,7 +597,8 @@ fn organic_cut_contour(
                     rk.width,
                     rk.depth,
                     rk.fillet,
-                    crate::key::DEFAULT_KEY_TOLERANCE_MM,
+                    rk.tolerance,
+                    thickness,
                 );
                 // Map the (+normal, −normal) result back to (body, freed) = (a, b).
                 if a_on_plus {
@@ -675,7 +692,8 @@ fn organic_cut_contour(
             rk.width,
             rk.depth,
             rk.fillet,
-            crate::key::DEFAULT_KEY_TOLERANCE_MM,
+            rk.tolerance,
+            thickness,
         );
         part_a = keyed.part_a;
         part_b = keyed.part_b;
@@ -1084,6 +1102,7 @@ mod tests {
             key_depth_mm: 3.0,
             key_shape: "frustum".to_string(),
             key_fillet_mm: 0.0,
+            key_tolerance_mm: 0.1,
             key_swap_sides: false,
             key_tilt_rad: 0.0,
             key_tilt_azimuth_rad: 0.0,

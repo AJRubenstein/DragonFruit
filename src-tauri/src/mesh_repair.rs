@@ -297,6 +297,10 @@ struct GeodesicRequestDto {
     /// Edge fillet radius in mm (rounds the frustum corners + tip). Default 0.
     #[serde(default)]
     key_fillet_mm: f32,
+    /// Peg/socket fit tolerance in mm — how much larger the socket is carved on
+    /// every face. 0 = press fit. Default 0.1 (slide fit).
+    #[serde(default = "default_key_tolerance")]
+    key_tolerance_mm: f32,
     /// Flip which half gets the peg vs the socket (preview reflects the direction).
     #[serde(default)]
     key_swap_sides: bool,
@@ -332,6 +336,10 @@ fn default_key_shape() -> String {
     "frustum".to_string()
 }
 
+fn default_key_tolerance() -> f32 {
+    0.1
+}
+
 impl Default for GeodesicRequestDto {
     fn default() -> Self {
         Self {
@@ -346,6 +354,7 @@ impl Default for GeodesicRequestDto {
             key_depth_mm: 2.5,
             key_shape: "frustum".to_string(),
             key_fillet_mm: 0.0,
+            key_tolerance_mm: 0.1,
             key_swap_sides: false,
             key_tilt_rad: 0.0,
             key_tilt_azimuth_rad: 0.0,
@@ -1202,12 +1211,20 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         .collect();
     let membrane_smoothing = req.membrane_smoothing;
     let density = req.density;
-    let thickness_mm = req.thickness_mm;
+    // Resolve the kerf the way the CUT does (<=0 → the crate default), so the
+    // previewed cutter and key are built on the thickness that will actually be
+    // removed instead of a razor-thin stand-in.
+    let thickness_mm = if req.thickness_mm > 0.0 {
+        req.thickness_mm
+    } else {
+        dragonfruit_organic_cut::membrane::DEFAULT_CUTTER_THICKNESS_MM
+    };
     let generate_key = req.generate_key;
     let key_width_mm = req.key_width_mm;
     let key_depth_mm = req.key_depth_mm;
     let key_shape = dragonfruit_organic_cut::KeyShape::from_str_or_default(&req.key_shape);
     let key_fillet_mm = req.key_fillet_mm;
+    let key_tolerance_mm = req.key_tolerance_mm;
     let key_swap_sides = req.key_swap_sides;
     let key_tilt = dragonfruit_organic_cut::KeyTilt::new(
         req.key_tilt_rad,
@@ -1249,7 +1266,11 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
                         key_width_mm,
                         key_depth_mm,
                         key_fillet_mm,
-                        dragonfruit_organic_cut::DEFAULT_KEY_TOLERANCE_MM,
+                        key_tolerance_mm,
+                        // The kerf the cut will remove: the key has to span it, so
+                        // the preview must be built with it too or it lies about
+                        // where the peg's base sits.
+                        thickness_mm,
                     )
                 {
                     key_soup = ks;

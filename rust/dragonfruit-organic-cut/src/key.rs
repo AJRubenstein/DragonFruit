@@ -26,6 +26,23 @@ use crate::membrane::{to_manifold, Membrane};
 /// the peg slides in instead of jamming (a print-scale slide fit).
 pub const DEFAULT_KEY_TOLERANCE_MM: f32 = 0.1;
 
+/// Bounds on a caller-chosen fit tolerance (mm). 0 is legal — a zero-clearance
+/// press fit, for printers that undersize anyway — and the upper bound keeps a
+/// stray value from eating the whole key: every extra 0.1 mm of socket is 0.1 mm
+/// less wall the fit ladder has to play with.
+pub const KEY_TOLERANCE_MIN_MM: f32 = 0.0;
+pub const KEY_TOLERANCE_MAX_MM: f32 = 1.0;
+
+/// Bring a caller's tolerance into range; a NaN/absent value falls back to the
+/// default slide fit rather than poisoning every clamp downstream.
+fn sanitize_tolerance(tolerance: f32) -> f32 {
+    if tolerance.is_finite() {
+        tolerance.clamp(KEY_TOLERANCE_MIN_MM, KEY_TOLERANCE_MAX_MM)
+    } else {
+        DEFAULT_KEY_TOLERANCE_MM
+    }
+}
+
 /// Minimum solid material that must remain between the key and ANY mesh wall, on
 /// BOTH halves. The fit ladder (frustum → dome → none) exists to honor this.
 pub const KEY_WALL_MARGIN_MM: f32 = 1.0;
@@ -278,6 +295,27 @@ fn orthonormal_basis(axis: Vec3) -> (Vec3, Vec3) {
 /// face into part_b. Negating `axis` alone would flip the `(u, v, axis)`
 /// handedness and invert the frustum winding (manifold would reject it); swapping
 /// `u` and `v` restores right-handedness so the outward winding is preserved.
+/// Sink a BUILD frame's base `half_kerf` deeper into part_a.
+///
+/// The cutter is a slab centred on the membrane, so each half's cut face ends up
+/// `kerf/2` away from it — while the key is built on the membrane itself, with
+/// only `KEY_BASE_OVERLAP_MM` (0.3 mm) of base reaching back for the union. At the
+/// default 0.1 mm kerf that overlap still bites solid material, but at a 1 mm kerf
+/// the base stops 0.2 mm short of part_a's face: the union welds nothing and the
+/// peg comes out as a loose island inside the same mesh (exactly what a 1 mm cut
+/// produced). Sinking the base by half the kerf puts it back inside the material;
+/// the caller lengthens the peg by the whole kerf so the tip still stands the
+/// requested depth proud of part_b's face.
+fn sink_frame_into_part_a(build_frame: &KeyFrame, half_kerf: f32) -> KeyFrame {
+    if half_kerf <= 0.0 {
+        return *build_frame;
+    }
+    KeyFrame {
+        anchor: build_frame.anchor.sub(build_frame.axis.scale(half_kerf)),
+        ..*build_frame
+    }
+}
+
 fn frame_extruding_toward_part_b(frame: &KeyFrame) -> KeyFrame {
     KeyFrame {
         anchor: frame.anchor,
@@ -727,10 +765,12 @@ fn decide_key(
     nominal: FrustumDims,
     nominal_dome: DomeDims,
     shape: KeyShape,
+    tolerance: f32,
+    half_kerf: f32,
 ) -> KeyPlan {
     if shape == KeyShape::Frustum {
         // Rung 1: tapered frustum at the requested size, shrunk only if needed.
-        if let Some(dims) = clearance.fit_frustum(nominal) {
+        if let Some(dims) = clearance.fit_frustum(nominal, tolerance, half_kerf) {
             let shrunk = dims.width < nominal.width - 1e-4 || dims.depth < nominal.depth - 1e-4;
             let detail = if shrunk {
                 format!(
@@ -746,7 +786,7 @@ fn decide_key(
         // hemisphere sized from the frustum width (not the oblong request) so the
         // safety-net key fits where the frustum couldn't.
         let fallback = DomeDims::from_width_depth(nominal.width, nominal.width);
-        if let Some(dims) = clearance.fit_dome(fallback) {
+        if let Some(dims) = clearance.fit_dome(fallback, tolerance, half_kerf) {
             return KeyPlan::Dome {
                 dims,
                 detail: format!(
@@ -758,7 +798,7 @@ fn decide_key(
     } else {
         // Dome chosen explicitly: place the oblong half-ellipsoid (shrunk to fit).
         // No frustum fallback — the dome is the deliberately smaller, round option.
-        if let Some(dims) = clearance.fit_dome(nominal_dome) {
+        if let Some(dims) = clearance.fit_dome(nominal_dome, tolerance, half_kerf) {
             let shrunk = dims.half_w < nominal_dome.half_w - 1e-4
                 || dims.depth < nominal_dome.depth - 1e-4;
             let detail = if shrunk {
@@ -776,6 +816,29 @@ fn decide_key(
     // Final rung: no key fits.
     KeyPlan::None {
         detail: "No key placed — the part is too thin for any key.".to_string(),
+    }
+}
+
+/// Lengthen a fitted plan by the whole kerf, to be spent on the two ends the
+/// cutter's void swallows: half sinks the base into part_a (see
+/// [`sink_frame_into_part_a`]), half puts the tip back where the user asked for it,
+/// `depth` proud of part_b's cut face. Applied AFTER [`decide_key`] so the fit
+/// ladder and its "shrunk to fit" message still speak in the user's numbers.
+fn grow_plan_for_kerf(plan: KeyPlan, half_kerf: f32) -> KeyPlan {
+    if half_kerf <= 0.0 {
+        return plan;
+    }
+    let extra = 2.0 * half_kerf;
+    match plan {
+        KeyPlan::Frustum { dims, detail } => KeyPlan::Frustum {
+            dims: FrustumDims { depth: dims.depth + extra, ..dims },
+            detail,
+        },
+        KeyPlan::Dome { dims, detail } => KeyPlan::Dome {
+            dims: DomeDims { depth: dims.depth + extra, ..dims },
+            detail,
+        },
+        none => none,
     }
 }
 
@@ -798,7 +861,12 @@ pub fn apply_key(
     depth_mm: f32,
     fillet_mm: f32,
     tolerance: f32,
+    kerf_mm: f32,
 ) -> KeyOutcome {
+    let tolerance = sanitize_tolerance(tolerance);
+    // Half the cutter thickness — how far each half's cut face sits from the
+    // membrane the key is framed on. See `sink_frame_into_part_a`.
+    let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
     let frame0 = match frame_from_membrane(membrane) {
         Some(f) => f,
         None => {
@@ -839,7 +907,10 @@ pub fn apply_key(
     let clearance = Clearance::probe(&frame, model, model);
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
-    let plan = decide_key(&clearance, nominal, nominal_dome, shape);
+    let plan = grow_plan_for_kerf(
+        decide_key(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf),
+        half_kerf,
+    );
 
     // The KeyOutcome from apply_frustum/apply_dome holds (peg-half, socket-half) in
     // (part_a, part_b). When we swapped roles above, swap them back so the returned
@@ -853,7 +924,7 @@ pub fn apply_key(
 
     match plan {
         KeyPlan::Frustum { dims, detail } => {
-            let out = unswap(apply_frustum(part_a, part_b, &frame, &orig_for_lean, tilt, dims, fillet_mm, tolerance));
+            let out = unswap(apply_frustum(part_a, part_b, &frame, &orig_for_lean, tilt, dims, fillet_mm, tolerance, half_kerf));
             if out.kind == KeyKind::Frustum {
                 KeyOutcome { detail, ..out }
             } else {
@@ -866,7 +937,7 @@ pub fn apply_key(
             }
         }
         KeyPlan::Dome { dims, detail } => {
-            let out = unswap(apply_dome(part_a, part_b, &frame, &orig_for_lean, tilt, dims, tolerance));
+            let out = unswap(apply_dome(part_a, part_b, &frame, &orig_for_lean, tilt, dims, tolerance, half_kerf));
             if out.kind == KeyKind::Dome {
                 KeyOutcome { detail, ..out }
             } else {
@@ -909,8 +980,12 @@ pub fn build_key_preview_soup(
     depth_mm: f32,
     fillet_mm: f32,
     tolerance: f32,
+    kerf_mm: f32,
 ) -> Option<(Vec<f32>, KeyKind, String, Option<KeyFrameInfo>)> {
     use crate::membrane::{build_membrane_full, CONTOUR_SUBDIVISIONS, DEFAULT_GRID_DIVISIONS};
+
+    let tolerance = sanitize_tolerance(tolerance);
+    let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
 
     let grid = DEFAULT_GRID_DIVISIONS * (density.clamp(1.0, 4.0) as f64);
     let membrane =
@@ -936,10 +1011,13 @@ pub fn build_key_preview_soup(
     let clearance = Clearance::probe(&placed, model, model);
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
-    let plan = decide_key(&clearance, nominal, nominal_dome, shape);
+    let plan = grow_plan_for_kerf(
+        decide_key(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf),
+        half_kerf,
+    );
     // The build frame must MATCH what `apply_key` uses so the preview is exactly
     // what cuts: extrude the peg toward part_b, with the rigid lean about the base.
-    let build_frame = frame_extruding_toward_part_b(&placed);
+    let build_frame = sink_frame_into_part_a(&frame_extruding_toward_part_b(&placed), half_kerf);
     // Sink uses the base half-diagonal so the tilted base stays buried (matches
     // apply_frustum/apply_dome; the socket footprint is a hair larger).
     let half_diag = match &plan {
@@ -1055,8 +1133,11 @@ fn apply_frustum(
     dims: FrustumDims,
     fillet: f32,
     tolerance: f32,
+    half_kerf: f32,
 ) -> KeyOutcome {
-    let build_frame = frame_extruding_toward_part_b(frame);
+    // Base sunk half a kerf into part_a's material (`dims` already carries the
+    // matching extra length — see `grow_plan_for_kerf`).
+    let build_frame = sink_frame_into_part_a(&frame_extruding_toward_part_b(frame), half_kerf);
     // Rigid lean rotation about the base (identity when tilt == 0 && roll == 0): the
     // body keeps its shape, a thin collar at the base stays glued flat on the cut
     // face. Peg and socket share the SAME lean so the socket follows the peg exactly.
@@ -1161,16 +1242,19 @@ impl Clearance {
     /// Clamp the nominal frustum so the SOCKET (peg + tolerance, plus the 1 mm
     /// margin) fits: cap depth against part_b, and the base half-extents against
     /// the lateral walls. Returns `None` if nothing useful fits (→ try the dome).
-    fn fit_frustum(&self, nominal: FrustumDims) -> Option<FrustumDims> {
+    fn fit_frustum(&self, nominal: FrustumDims, tolerance: f32, half_kerf: f32) -> Option<FrustumDims> {
         let m = KEY_WALL_MARGIN_MM;
         // The socket extends `tolerance` past the peg; fold a small allowance in
         // by reserving the full margin against the SOCKET extent. We size the peg
         // (nominal) and let the margin absorb the tolerance: cap so peg + tol + m
-        // stays inside the wall. Use DEFAULT tolerance as the reservation.
-        let tol = DEFAULT_KEY_TOLERANCE_MM;
+        // stays inside the wall. The reservation is the tolerance this cut will
+        // actually build with — a looser fit eats into the wall it must clear.
+        let tol = tolerance.max(0.0);
 
         // Depth: socket tip at depth+tol must stay m short of part_b's far wall.
-        let max_depth = (self.depth_b - m - tol).max(0.0);
+        // `depth_b` is measured from the membrane, and the peg is lengthened by the
+        // kerf to cross the cutter's void, so half of that eats into the room here.
+        let max_depth = (self.depth_b - m - tol - half_kerf.max(0.0)).max(0.0);
         // Lateral: base half-extent + tol + m must stay inside the side walls.
         let max_half_w = (self.half_room_u() - m - tol).max(0.0);
         let max_half_l = (self.half_room_v() - m - tol).max(0.0);
@@ -1201,10 +1285,10 @@ impl Clearance {
     /// the lateral walls. Each axis is capped independently (the oblong proportions
     /// are preserved where they fit, only over-large axes shrink). Returns `None`
     /// if the result is smaller than the minimum useful dome on any axis.
-    fn fit_dome(&self, nominal: DomeDims) -> Option<DomeDims> {
+    fn fit_dome(&self, nominal: DomeDims, tolerance: f32, half_kerf: f32) -> Option<DomeDims> {
         let m = KEY_WALL_MARGIN_MM;
-        let tol = DEFAULT_KEY_TOLERANCE_MM;
-        let cap_depth = (self.depth_b - m - tol).max(0.0);
+        let tol = tolerance.max(0.0);
+        let cap_depth = (self.depth_b - m - tol - half_kerf.max(0.0)).max(0.0);
         let cap_w = (self.half_room_u() - m - tol).max(0.0);
         let cap_l = (self.half_room_v() - m - tol).max(0.0);
         let half_w = nominal.half_w.min(cap_w);
@@ -1377,8 +1461,11 @@ fn apply_dome(
     tilt: KeyTilt,
     dims: DomeDims,
     tolerance: f32,
+    half_kerf: f32,
 ) -> KeyOutcome {
-    let build_frame = frame_extruding_toward_part_b(frame);
+    // Same kerf correction as the frustum: the mouth sinks into part_a and `dims`
+    // arrives already grown (see `grow_plan_for_kerf`).
+    let build_frame = sink_frame_into_part_a(&frame_extruding_toward_part_b(frame), half_kerf);
     // Rigid lean rotation about the base (identity when tilt == 0 && roll == 0): the
     // bulge keeps its shape and is sunk so the tilted mouth disk stays buried. Peg +
     // socket share the SAME rigid lean, so the dilated socket contains the leaned peg.
@@ -1664,7 +1751,7 @@ mod tests {
         let mem = flat_membrane(10.0);
 
         let a_tris_before = part_a.triangle_count();
-        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1);
+        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
 
         assert_eq!(out.kind, KeyKind::Frustum, "frustum key placed: {}", out.detail);
         assert!(
@@ -1687,7 +1774,7 @@ mod tests {
 
         let b_tris_before = part_b.triangle_count();
         // swap_sides = true → peg unions onto part_b, socket carves part_a.
-        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, true, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1);
+        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, true, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
 
         assert_eq!(out.kind, KeyKind::Frustum, "swapped frustum key placed: {}", out.detail);
         assert!(
@@ -1741,7 +1828,7 @@ mod tests {
         let key_d = 5.0;
         assert!(key_d > 4.0, "test premise: requested depth exceeds the part");
 
-        let out = apply_key(&model, part_a, part_b.clone(), &mem, KeyShape::Frustum, false, KeyTilt::default(), key_w, key_d, 0.0, 0.1);
+        let out = apply_key(&model, part_a, part_b.clone(), &mem, KeyShape::Frustum, false, KeyTilt::default(), key_w, key_d, 0.0, 0.1, 0.0);
 
         assert_eq!(out.kind, KeyKind::Frustum, "still a frustum, just smaller: {}", out.detail);
         assert!(out.detail.contains("shrunk"), "reports the shrink: {:?}", out.detail);
@@ -1774,7 +1861,7 @@ mod tests {
         // ~2.0 mm deep part_b: below the frustum's depth floor (1 mm key + 1 mm
         // wall + 0.1 mm tol = 2.1 mm needed) but the shallower dome still fits.
         let (model1, pa, pb) = split_halves(20.0, 2.0);
-        let dome_out = apply_key(&model1, pa, pb, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1);
+        let dome_out = apply_key(&model1, pa, pb, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
         assert_eq!(dome_out.kind, KeyKind::Dome, "dome fallback: {}", dome_out.detail);
         assert!(
             dome_out.detail.contains("half-sphere"),
@@ -1786,7 +1873,7 @@ mod tests {
         // the parts come back UNCHANGED.
         let (model2, pa2, pb2) = split_halves(20.0, 0.5);
         let pb2_tris = pb2.triangle_count();
-        let none_out = apply_key(&model2, pa2, pb2, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1);
+        let none_out = apply_key(&model2, pa2, pb2, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
         assert_eq!(none_out.kind, KeyKind::None, "no key: {}", none_out.detail);
         assert!(none_out.detail.contains("too thin"), "no-key reason: {:?}", none_out.detail);
         assert_eq!(
@@ -1803,7 +1890,7 @@ mod tests {
         let mem = flat_membrane(10.0);
         // Plenty thick for a frustum — but we ask for a dome explicitly.
         let (model, pa, pb) = split_halves(20.0, 20.0);
-        let out = apply_key(&model, pa, pb, &mem, KeyShape::Dome, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1);
+        let out = apply_key(&model, pa, pb, &mem, KeyShape::Dome, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
         assert_eq!(
             out.kind,
             KeyKind::Dome,
@@ -1827,12 +1914,62 @@ mod tests {
             Vec3::new(-5.0, 5.0, 0.0),
         ];
         let (soup, kind, _detail, _frame) =
-            build_key_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1)
+            build_key_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0)
                 .expect("preview builds");
         assert_eq!(kind, KeyKind::Frustum, "healthy box → frustum key preview");
         assert!(!soup.is_empty(), "preview soup non-empty");
         assert_eq!(soup.len() % 9, 0, "whole triangles");
         assert!(soup.iter().all(|f| f.is_finite()), "all coords finite");
+    }
+
+    // A thick kerf must not leave the peg floating. The cutter is a slab centred on
+    // the membrane, so part_a's cut face ends up kerf/2 away from it; the key's base
+    // reaches back only KEY_BASE_OVERLAP_MM. At a 1 mm kerf that is 0.2 mm short, and
+    // the union welded nothing — the peg came out as a separate island in the same
+    // mesh. The base must clear part_a's face at any kerf, and the tip must still
+    // stand the requested depth proud of part_b's face.
+    #[test]
+    fn key_spans_the_kerf_at_any_cutter_thickness() {
+        let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
+        let loop_pts = vec![
+            Vec3::new(-5.0, -5.0, 0.0),
+            Vec3::new(5.0, -5.0, 0.0),
+            Vec3::new(5.0, 5.0, 0.0),
+            Vec3::new(-5.0, 5.0, 0.0),
+        ];
+        let depth = 5.0;
+        for kerf in [0.0, crate::membrane::DEFAULT_CUTTER_THICKNESS_MM, 1.0, 2.0] {
+            let (soup, kind, detail, _frame) = build_key_preview_soup(
+                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum,
+                false, KeyTilt::default(), 5.0, depth, 0.0, 0.1, kerf,
+            )
+            .expect("preview builds");
+            assert_eq!(kind, KeyKind::Frustum, "kerf {kerf}: frustum placed ({detail})");
+
+            // The cut is at z=0 and the key extrudes along ±z; take the extent on the
+            // side the base sinks into and the side the tip reaches.
+            let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
+            for c in soup.chunks_exact(3) {
+                lo = lo.min(c[2]);
+                hi = hi.max(c[2]);
+            }
+            let half = kerf * 0.5;
+            // Base: past part_a's face (at ∓half) by the whole overlap, so the union
+            // has real material to bond to.
+            let base_depth = lo.abs().min(hi.abs());
+            assert!(
+                base_depth >= half + KEY_BASE_OVERLAP_MM - 1e-3,
+                "kerf {kerf}: base reaches {base_depth} behind the cut, needs {} (half kerf + overlap)",
+                half + KEY_BASE_OVERLAP_MM,
+            );
+            // Tip: the requested depth clear of part_b's face, not of the membrane.
+            let tip = lo.abs().max(hi.abs());
+            assert!(
+                tip >= half + depth - 1e-3,
+                "kerf {kerf}: tip reaches {tip}, needs {} (half kerf + depth)",
+                half + depth,
+            );
+        }
     }
 
     // Test 6b: the swap flag visibly flips the preview — the key's body extends to
@@ -1850,7 +1987,7 @@ mod tests {
         // on each side of the cut for unswapped vs swapped.
         let z_extent = |swap: bool| -> (f32, f32) {
             let (soup, _, _, _) = build_key_preview_soup(
-                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, swap, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1,
+                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, swap, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0,
             )
             .expect("preview builds");
             let mut lo = f32::INFINITY;
@@ -2035,7 +2172,7 @@ mod tests {
         let mem = flat_membrane(10.0);
         let a_before = part_a.triangle_count();
         let tilt = KeyTilt::new(40.0_f32.to_radians(), 0.7, 0.3);
-        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1);
+        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, 0.0);
         assert_eq!(out.kind, KeyKind::Frustum, "tilted key placed: {}", out.detail);
         assert!(out.part_a.triangle_count() > a_before, "peg bonded to part_a");
         assert!(to_manifold(&out.part_a).is_ok(), "tilted part_a watertight");
@@ -2087,7 +2224,7 @@ mod tests {
         let b_before = split.part_b.triangle_count();
 
         // Now key the REAL parts — clearance probes against the original `model`.
-        let out = apply_key(&model, split.part_a, split.part_b, &split.membrane, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1);
+        let out = apply_key(&model, split.part_a, split.part_b, &split.membrane, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, DEFAULT_CUTTER_THICKNESS_MM);
 
         assert_eq!(
             out.kind,
