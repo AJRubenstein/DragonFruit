@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RotateCcw } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 import type { OrganicCutDrawMode, OrganicCutMode, OrganicCutSessionStatus } from './types';
@@ -512,9 +512,10 @@ export function OrganicCutPanel({
               Contour-only (the flat plane cut has no key support yet). */}
           {isContour && (
             <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
+              <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                className="flex w-full items-center justify-between gap-2 text-left"
+                className="flex flex-1 items-center justify-between gap-2 text-left"
                 onClick={() => setState({ generateKey: !state.generateKey })}
                 disabled={disabled || isApplying}
                 title="Add a peg to one half and a matching socket to the other so the parts align when reassembled."
@@ -536,6 +537,31 @@ export function OrganicCutPanel({
                   />
                 </span>
               </button>
+              {/* Card reset, top-right: puts every key setting back to default but
+                  leaves the Generate Key toggle alone (resetting the settings
+                  shouldn't switch the feature off under the user). */}
+              {(() => {
+                const dirty = (Object.keys(DEFAULT_KEY_SETTINGS) as (keyof typeof DEFAULT_KEY_SETTINGS)[])
+                  .some((k) => k !== 'generateKey' && state[k] !== DEFAULT_KEY_SETTINGS[k]);
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setState({ ...DEFAULT_KEY_SETTINGS, generateKey: state.generateKey })}
+                    disabled={disabled || isApplying || !dirty}
+                    title="Put every key setting back to its default: shape, width, depth, fillet, fit tolerance, uniform scale, side and aim."
+                    aria-label="Reset key settings to defaults"
+                    className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors hover:brightness-125 disabled:cursor-default disabled:opacity-40"
+                    style={{
+                      borderColor: 'color-mix(in srgb, var(--success), transparent 55%)',
+                      background: 'color-mix(in srgb, var(--success), transparent 88%)',
+                      color: 'var(--success)',
+                    }}
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                  </button>
+                );
+              })()}
+              </div>
 
               {/* Key shape + size. Shape picks frustum (tapered box, locks
                   rotation) vs dome (half-sphere, locates only). Width drives the
@@ -603,22 +629,6 @@ export function OrganicCutPanel({
                       <span>{state.keySwapSides ? 'Peg on Side B' : 'Peg on Side A'}</span>
                     </span>
                   </button>
-                  {(() => {
-                    const dirty = (Object.keys(DEFAULT_KEY_SETTINGS) as (keyof typeof DEFAULT_KEY_SETTINGS)[])
-                      .some((k) => k !== 'generateKey' && state[k] !== DEFAULT_KEY_SETTINGS[k]);
-                    return (
-                      <button
-                        type="button"
-                        className="ui-button ui-button-secondary w-full !min-h-7 px-1.5 text-[10px] disabled:opacity-40"
-                        onClick={() => setState({ ...DEFAULT_KEY_SETTINGS, generateKey: state.generateKey })}
-                        disabled={disabled || isApplying || !dirty}
-                        title="Put every key setting back to its default: shape, width, depth, fillet, uniform scale, side and aim."
-                      >
-                        Reset key settings
-                      </button>
-                    );
-                  })()}
-
                   {/* Aim readout + a Reset that zeroes the tilt/roll. The aim is set
                       with the rotate gizmo at the key's base in the 3D view, so there
                       is nothing to say here until the key actually leans. */}
