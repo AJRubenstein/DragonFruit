@@ -492,6 +492,8 @@ export function ProfileSettingsModal({
 
   const groupedFilteredPrinterPresets = React.useMemo(() => {
     const grouped = new Map<string, typeof filteredPrinterPresets>();
+    // Track first-appearance order so families display in manifest order.
+    const familyOrder = new Map<string, number>();
     filteredPrinterPresets.forEach((preset) => {
       const family = (preset.family ?? '').trim() || 'Other';
       const current = grouped.get(family);
@@ -499,11 +501,12 @@ export function ProfileSettingsModal({
         current.push(preset);
       } else {
         grouped.set(family, [preset]);
+        familyOrder.set(family, familyOrder.size);
       }
     });
 
     return Array.from(grouped.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a], [b]) => (familyOrder.get(a) ?? 999) - (familyOrder.get(b) ?? 999))
       .map(([family, presets]) => ({ family, presets }));
   }, [filteredPrinterPresets, selectedPresetManufacturer]);
 
@@ -1778,21 +1781,20 @@ export function ProfileSettingsModal({
       return false;
     };
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      if (event.defaultPrevented) return;
+    const onKeyDown = (event: CustomEvent) => {
+      if (event.detail.key !== 'Escape') return;
 
       if (handleTopMostDialogEscape()) {
-        event.preventDefault();
-        event.stopPropagation();
+        event.preventDefault?.();
+        event.stopPropagation?.();
         return;
       }
 
       onClose();
     };
 
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('app-hotkey-keydown', onKeyDown as EventListener);
+    return () => window.removeEventListener('app-hotkey-keydown', onKeyDown as EventListener);
   }, [
     deleteConfirmTarget,
     isCreateMaterialOpen,
@@ -3379,7 +3381,7 @@ export function ProfileSettingsModal({
             </span>
           )}
         </div>
-        <div className="mt-1.5 min-w-0">
+        <div className="mt-2.5 min-w-0">
           <div className="truncate text-[12px] font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
             {preset.name}
           </div>
@@ -4322,7 +4324,7 @@ export function ProfileSettingsModal({
                                 {isOfficial && <Lock className="w-3.5 h-3.5 shrink-0" />}
                                 <span className="truncate">{material.name}</span>
                               </span>
-                              <span className="tabular-nums">{Math.round(material.layerHeightMm * 1000)}μm</span>
+                              <span className="tabular-nums">{Math.round(material.layerHeightMm * 1000)} μm</span>
                             </div>
                           </button>
                         );
@@ -4545,7 +4547,7 @@ export function ProfileSettingsModal({
               style={{
                 borderColor: 'var(--border-strong)',
                 background: 'var(--surface-0)',
-                height: 'min(90vh, 820px)',
+                height: 'min(90vh, 1066px)',
                 maxHeight: 'calc(100vh - 2rem)',
               }}
             >
@@ -5175,7 +5177,7 @@ export function ProfileSettingsModal({
               style={{
                 borderColor: 'var(--border-strong)',
                 background: 'var(--surface-0)',
-                height: 'min(90vh, 820px)',
+                height: 'min(90vh, 1066px)',
                 maxHeight: 'calc(100vh - 2rem)',
               }}
             >

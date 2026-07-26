@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import * as THREE from 'three';
 import { NumberInput } from '@/components/ui/NumberInput';
-import { Card, CardHeader, IconButton } from '@/components/ui/primitives';
+import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { SNAP_STORAGE_KEY } from '@/components/gizmo/rotate/snapRotation';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 
@@ -35,6 +35,8 @@ interface TransformControlsProps {
   scale: THREE.Vector3;
   onScaleChange: (x: number, y: number, z: number) => void;
   onResetScale: () => void;
+  uniformScaling: boolean;
+  onUniformScalingChange: (value: boolean) => void;
   
   // Shared
   modelBBox: THREE.Box3 | null;
@@ -61,6 +63,8 @@ export function TransformControls({
   scale,
   onScaleChange,
   onResetScale,
+  uniformScaling,
+  onUniformScalingChange,
   modelBBox,
   autoLift,
   onAutoLiftChange,
@@ -71,7 +75,6 @@ export function TransformControls({
   onTransformCommit,
 }: TransformControlsProps) {
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
-  const [uniformScaling, setUniformScaling] = useState(true);
   const [snapEnabled, setSnapEnabled] = useState(() => {
     try { return localStorage.getItem(SNAP_STORAGE_KEY) === 'true'; } catch { return false; }
   });
@@ -407,7 +410,7 @@ export function TransformControls({
               <div className="flex-1 flex justify-end">
                 <button
                 type="button"
-                onClick={() => setUniformScaling(!uniformScaling)}
+                onClick={() => onUniformScalingChange(!uniformScaling)}
                 className="h-7 min-w-[64px] rounded-md border px-2 text-[10px] font-semibold uppercase tracking-wide transition-colors"
                 style={uniformScaling
                   ? {
@@ -455,9 +458,8 @@ export function TransformControls({
                           if (uniformScaling) onScaleChange(newScale, newScale, newScale);
                           else onScaleChange(scale.x, newScale, scale.z);
                         }}
-                        disabled={uniformScaling}
                         onBlur={() => onTransformCommit?.()}
-                        className={`${valueInputClass} disabled:opacity-50`}
+                        className={valueInputClass}
                         showStepper={false}
                       />
                       <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>%</span>
@@ -473,9 +475,8 @@ export function TransformControls({
                           if (uniformScaling) onScaleChange(newScale, newScale, newScale);
                           else onScaleChange(scale.x, scale.y, newScale);
                         }}
-                        disabled={uniformScaling}
                         onBlur={() => onTransformCommit?.()}
-                        className={`${valueInputClass} disabled:opacity-50`}
+                        className={valueInputClass}
                         showStepper={false}
                       />
                       <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>%</span>
@@ -511,9 +512,8 @@ export function TransformControls({
                           if (uniformScaling) onScaleChange(newScale, newScale, newScale);
                           else onScaleChange(scale.x, newScale, scale.z);
                         }}
-                        disabled={uniformScaling}
                         onBlur={() => onTransformCommit?.()}
-                        className={`${valueInputClass} disabled:opacity-50`}
+                        className={valueInputClass}
                         showStepper={false}
                       />
                       <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>mm</span>
@@ -529,9 +529,8 @@ export function TransformControls({
                           if (uniformScaling) onScaleChange(newScale, newScale, newScale);
                           else onScaleChange(scale.x, scale.y, newScale);
                         }}
-                        disabled={uniformScaling}
                         onBlur={() => onTransformCommit?.()}
-                        className={`${valueInputClass} disabled:opacity-50`}
+                        className={valueInputClass}
                         showStepper={false}
                       />
                       <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>mm</span>

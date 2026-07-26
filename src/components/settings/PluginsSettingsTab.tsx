@@ -357,9 +357,11 @@ export function PluginsSettingsTab() {
             </p>
           </div>
         </div>
-        <p className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          Debug URLs: <code>df://debug_plugin_official</code> and <code>df://debug_plugin_3rd</code>
-        </p>
+        {isDevRuntime && (
+          <p className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            Debug URLs: <code>df://debug_plugin_official</code> and <code>df://debug_plugin_3rd</code>
+          </p>
+        )}
 
         <div className="mt-2.5 grid grid-cols-[1fr_auto] gap-2">
           <input
@@ -682,16 +684,22 @@ export function PluginsSettingsTab() {
                         <div className="flex items-center gap-1.5">
                           <Github className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
                           <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>Repository:</span>
-                          <a
-                            href={repositoryUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={async () => {
+                              const url = repositoryUrl;
+                              try {
+                                const { invoke } = await import('@tauri-apps/api/core');
+                                await invoke('open_external_url', { url });
+                              } catch {
+                                window.open(url, '_blank');
+                              }
+                            }}
                             className="inline-flex items-center gap-1 underline underline-offset-2"
-                            style={{ color: 'var(--accent)' }}
+                            style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                           >
                             {truncateRepositoryUrl(repositoryUrl)}
                             <ExternalLink className="h-3 w-3" />
-                          </a>
+                          </button>
                         </div>
                       </div>
                     )}

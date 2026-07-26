@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod astar;
+mod mesh_minima;
 mod mesh_repair;
 mod network;
 mod sdf;
@@ -46,10 +47,6 @@ fn default_z_blend_look_back() -> u32 {
     2
 }
 
-fn default_z_blend_fade_px() -> u32 {
-    20
-}
-
 fn default_z_blend_max_alpha_percent() -> f32 {
     90.0
 }
@@ -59,6 +56,7 @@ fn default_dither_device_gamma() -> f64 {
 }
 
 mod plugin_registry;
+mod window_state;
 
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use serde::Deserialize;
@@ -420,10 +418,6 @@ struct SliceJobMetadata {
     mirror_y: bool,
     #[serde(default = "default_z_blend_look_back")]
     z_blend_look_back: u32,
-    #[serde(default = "default_z_blend_fade_px")]
-    z_blend_fade_px: u32,
-    #[serde(default)]
-    z_blend_auto_fade: bool,
     #[serde(default)]
     z_blend_minimum_alpha_percent: f32,
     /// Maximum gray level (0–100 %) for z-blend gradient pixels at the inner boundary.
@@ -950,37 +944,6 @@ async fn export_mesh_file(
     Ok(dest_path)
 }
 
-#[tauri::command]
-async fn slice_solid_native(
-    window: DragonFruitWindow,
-    job_json: String,
-) -> Result<Response, String> {
-    let flag = cancel_flag().clone();
-    flag.store(false, Ordering::SeqCst);
-
-    let win = window.clone();
-    let bytes = tauri::async_runtime::spawn_blocking(move || {
-        let job: dragonfruit_slicing_engine::types::SliceJobV3 = serde_json::from_str(&job_json)
-            .map_err(|err| format!("Invalid SliceJobV3 JSON: {err}"))?;
-
-        let progress_cb = make_throttled_progress_cb(win);
-
-        slicer_pool().install(|| -> Result<Vec<u8>, String> {
-            let artifact = dragonfruit_slicing_engine::slice_with_progress_v3(
-                &job,
-                Some(progress_cb),
-                Some(flag.as_ref()),
-            )
-            .map_err(|err| format!("V3 slicing failed: {err}"))?;
-            Ok(artifact.bytes)
-        })
-    })
-    .await
-    .map_err(|err| format!("Native slicer task failed to join: {err}"))??;
-
-    Ok(Response::new(bytes))
-}
-
 /// Receive raw mesh bytes from the frontend via efficient binary IPC in chunks.
 /// The bytes are stored in a pre-allocated memory vector and consumed by the next `slice_solid_native_to_temp_path` call.
 #[tauri::command]
@@ -1379,8 +1342,6 @@ async fn slice_solid_native_to_temp_path(
             mirror_x: meta.mirror_x,
             mirror_y: meta.mirror_y,
             z_blend_look_back: meta.z_blend_look_back,
-            z_blend_fade_px: meta.z_blend_fade_px,
-            z_blend_auto_fade: meta.z_blend_auto_fade,
             z_blend_minimum_alpha_percent: meta.z_blend_minimum_alpha_percent,
             z_blend_max_alpha_percent: meta.z_blend_max_alpha_percent,
             z_blend_custom_lut: meta.z_blend_custom_lut,
@@ -1399,6 +1360,49 @@ async fn slice_solid_native_to_temp_path(
             triangles_xyz,
             metadata_json: meta.metadata_json,
         };
+
+        eprintln!(
+            "[SupportAA] native job decoded: model_triangles={} support_triangles={} total_triangles={} aa_on_supports={} mode={} level={} mesh_encoding={}",
+            job.model_triangle_count,
+            (job.triangles_xyz.len() / 9).saturating_sub(job.model_triangle_count as usize),
+            job.triangles_xyz.len() / 9,
+            job.aa_on_supports,
+            job.anti_aliasing_mode,
+            job.anti_aliasing_level,
+            meta.mesh_encoding.as_deref().unwrap_or("raw_f32"),
+        );
+        let fingerprint = |start: usize, end: usize| {
+            let mut hash = 0x811c9dc5u32;
+            for value in &job.triangles_xyz[start.min(job.triangles_xyz.len())
+                ..end.min(job.triangles_xyz.len())]
+            {
+                hash ^= value.to_bits();
+                hash = hash.wrapping_mul(0x01000193);
+            }
+            format!("{hash:08x}")
+        };
+        let multiset_fingerprint = |start: usize, end: usize| {
+            let mut xor = 0u32;
+            let mut sum = 0u32;
+            for value in &job.triangles_xyz[start.min(job.triangles_xyz.len())
+                ..end.min(job.triangles_xyz.len())]
+            {
+                let bits = value.to_bits();
+                xor ^= bits;
+                sum = sum.wrapping_add(bits);
+            }
+            format!("{xor:08x}:{sum:08x}")
+        };
+        let model_float_end = (job.model_triangle_count as usize)
+            .saturating_mul(9)
+            .min(job.triangles_xyz.len());
+        eprintln!(
+            "[SupportAA] native geometry fingerprints: model={} support={} model_multiset={} support_multiset={}",
+            fingerprint(0, model_float_end),
+            fingerprint(model_float_end, job.triangles_xyz.len()),
+            multiset_fingerprint(0, model_float_end),
+            multiset_fingerprint(model_float_end, job.triangles_xyz.len()),
+        );
 
         let progress_cb = make_throttled_progress_cb(win);
         let requested_output_path = requested_output_path.clone();
@@ -1641,36 +1645,18 @@ async fn run_island_scan_native(
         );
         log::debug!("[island-scan-native] debug dump: {}", dump_dir.display());
 
-        // Phase A: Rasterize all layers using shared module (same code as bench)
-        let total_layers;
-        let grid_width;
-        let grid_height;
-        let origin_x;
-        let origin_z;
-        let w;
-        let h;
+        // Phase A: Calculate grid dimensions and bounds
+        let origin_x = params.bbox_min_x;
+        let origin_z = -params.bbox_max_y; // mask Y = -world Y
+        let grid_width = ((params.bbox_max_x - params.bbox_min_x) / params.px_mm).ceil().max(1.0) as i32;
+        let grid_height = ((params.bbox_max_y - params.bbox_min_y) / params.px_mm).ceil().max(1.0) as i32;
+        let model_height = params.bbox_max_z - params.bbox_min_z;
+        let num_layers = (model_height / params.layer_height_mm).ceil().max(0.0) as usize;
 
-        let t_raster = std::time::Instant::now();
-        let (masks, gw, gh, num_layers, ox, oz) = slicer_pool().install(|| {
-            dragonfruit_islands::rasterize::rasterize_for_island_scan(
-                &triangles,
-                params.bbox_min_x, params.bbox_max_x,
-                params.bbox_min_y, params.bbox_max_y,
-                params.bbox_min_z, params.bbox_max_z,
-                params.px_mm,
-                params.layer_height_mm,
-            )
-        });
-        grid_width = gw;
-        grid_height = gh;
-        origin_x = ox;
-        origin_z = oz;
-        w = grid_width as usize;
-        h = grid_height as usize;
-        total_layers = num_layers as u32;
-        let rasterize_ms = t_raster.elapsed().as_secs_f64() * 1000.0;
+        let w = grid_width as usize;
+        let h = grid_height as usize;
 
-        // Phase B: Island scan pipeline (sequential tracking — progress per layer)
+        // Phase B: Island scan pipeline (sequential tracking using streaming)
         let t_scan = std::time::Instant::now();
         let connectivity = if params.connectivity == 8 {
             dragonfruit_islands::model::Connectivity::Eight
@@ -1694,33 +1680,45 @@ async fn run_island_scan_native(
             num_layers: num_layers as u32,
             min_overlap_px: params.min_overlap_px,
             overlap_neighborhood_px: params.overlap_neighborhood_px,
+            candidate_only: false,
         };
 
         let win_scan = win.clone();
         let scan_result = slicer_pool().install(|| {
-            dragonfruit_islands::pipeline::run_island_scan(
+            dragonfruit_islands::stream::run_island_scan_streaming(
                 &job,
-                &masks,
+                &triangles,
+                params.bbox_min_z,
+                true, // store_labels = true for Volume Analysis
                 Some(&move |done: u32, total: u32| {
-                    // Map pipeline progress (0..total) to layer count (0..total_layers)
-                    // — same convention as TS ScanOrchestrator onProgress(done, numLayers)
-                    let layer = (done as u64 * total_layers as u64 / total.max(1) as u64) as u32;
                     let _ = win_scan.emit("islandscan://progress", SliceProgressPayload {
-                        done: layer.min(total_layers),
-                        total: total_layers,
+                        done,
+                        total,
                         phase: "Scanning".to_string(),
                     });
                 }),
             )
         });
         let scan_ms = t_scan.elapsed().as_secs_f64() * 1000.0;
-        let total_ms = rasterize_ms + scan_ms;
+        let rasterize_ms = 0.0;
+        let total_ms = scan_ms;
 
-        let total_solid_px: u64 = masks.iter().map(|m| m.pixel_count()).sum();
+        let total_solid_px: u64 = scan_result
+            .island_labels_per_layer
+            .iter()
+            .map(|labels| {
+                labels
+                    .rows
+                    .iter()
+                    .map(|row| row.iter().map(|run| run.length as u64).sum::<u64>())
+                    .sum::<u64>()
+            })
+            .sum();
+
         log::info!(
-            "[island-scan-native] grid={}x{} layers={} solid_px={} islands={} raster={:.0}ms scan={:.0}ms",
+            "[island-scan-native] grid={}x{} layers={} solid_px={} islands={} scan={:.0}ms",
             grid_width, grid_height, num_layers, total_solid_px,
-            scan_result.islands.len(), rasterize_ms, scan_ms,
+            scan_result.islands.len(), scan_ms,
         );
 
         // Phase C: Build frontend-compatible result
@@ -2684,12 +2682,11 @@ async fn focus_main_window_command(app: DragonFruitAppHandle) -> Result<(), Stri
 async fn reveal_main_window_command(app: DragonFruitAppHandle) -> Result<(), String> {
     // Show the main window first so there is no gap between splash close and
     // main window appearance (which would expose the desktop for a frame).
-    // Maximize before show so the window is already at full size when it
-    // becomes visible — avoids a two-step resize flash on Windows.
+    // Geometry (restored session state or first-launch maximize) was already
+    // applied at window creation, so showing here causes no resize flash.
     if let Some(window) = app.get_webview_window("main") {
         let is_visible = window.is_visible().unwrap_or(true);
         if !is_visible {
-            let _ = window.maximize();
             // Re-enable taskbar entry just before we make the window visible.
             #[cfg(target_os = "windows")]
             let _ = window.set_skip_taskbar(false);
@@ -2906,7 +2903,32 @@ async fn discover_uvtools_path(candidates: Vec<String>) -> Result<Option<String>
     Ok(None)
 }
 
+/// Open a URL in the default system browser (cross-platform).
 #[tauri::command]
+async fn open_external_url(url: String) -> Result<(), String> {
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        return Err("URL is empty".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("cmd")
+        .args(["/c", "start", &url])
+        .spawn();
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open")
+        .arg(&url)
+        .spawn();
+    #[cfg(target_os = "linux")]
+    let result = std::process::Command::new("xdg-open")
+        .arg(&url)
+        .spawn();
+
+    result.map_err(|e| format!("Failed to open URL in browser: {e}"))?;
+    Ok(())
+}
+
+        #[tauri::command]
 async fn launch_external_process(exe_path: String, file_arg: String) -> Result<(), String> {
     let exe_path = exe_path.trim().to_string();
     let file_arg = file_arg.trim().to_string();
@@ -3171,6 +3193,8 @@ fn main() {
     let builder = builder.setup(|app| {
         let app_handle = app.handle().clone();
 
+        app.manage(window_state::WindowStateTracker::default());
+
         // Defer main window creation to an async task so the splashscreen's
         // WebView2 instance fully initialises before the main window's does.
         // On Windows, simultaneous WebView2 init produces a brief window flash
@@ -3209,12 +3233,22 @@ fn main() {
             let builder = builder.skip_taskbar(true);
 
             match builder.build() {
-                Ok(_window) => {
+                Ok(window) => {
+                    // Restore the previous session's geometry while the window
+                    // is still hidden; first launch keeps the maximized default.
+                    match window_state::load(&app_handle) {
+                        Some(state) => window_state::restore(&window, &state),
+                        None => {
+                            let _ = window.maximize();
+                        }
+                    }
+                    window_state::track(&window);
+
                     // On macOS, reveal immediately so a frontend startup hiccup
                     // can't leave the app invisible when created as hidden.
                     #[cfg(target_os = "macos")]
                     {
-                        if let Err(error) = _window.show() {
+                        if let Err(error) = window.show() {
                             log::warn!("Failed to show main window during setup: {error}");
                         }
                     }
@@ -3253,7 +3287,6 @@ fn main() {
 
     builder
         .invoke_handler(tauri::generate_handler![
-            slice_solid_native,
             stage_mesh_binary_start,
             allocate_mesh_stage_path,
             append_mesh_stage_chunk,
@@ -3264,6 +3297,10 @@ fn main() {
             slice_solid_native_to_temp_path,
             cancel_slicing,
             run_island_scan_native,
+            mesh_minima::scan_mesh_minima,
+            mesh_minima::scan_mesh_minima_from_path,
+            mesh_minima::scan_voxel_islands_from_path,
+            mesh_minima::scan_islands_from_path,
             export_mesh_file,
             save_print_file,
             save_print_file_from_path,
@@ -3295,6 +3332,7 @@ fn main() {
             scene_autosave_read_manifest,
             scene_autosave_read_voxl_bytes,
             reveal_in_file_manager,
+            open_external_url,
             launch_external_process,
             discover_uvtools_path,
             set_log_level_pref,
@@ -3317,6 +3355,8 @@ fn main() {
             mesh_repair::mesh_hollow_preview_read_removed_voxel_centers,
             mesh_repair::mesh_hollow_preview_read_removed_voxel_indices,
             mesh_repair::mesh_hollow_preview_read_blocked_voxel_centers,
+            mesh_repair::mesh_hollow_preview_read_blocked_voxel_indices,
+            mesh_repair::mesh_hollow_preview_select_removed_voxels_in_polygon,
             mesh_repair::mesh_hollow_preview_read_cavity_positions,
             mesh_repair::mesh_hollow_staged_read_cavity_positions,
             mesh_repair::mesh_punch_staged,
@@ -3344,6 +3384,16 @@ fn main() {
             updater_channel::get_saved_update_channel,
             updater_channel::save_update_channel
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running DragonFruit desktop app");
+        .build(tauri::generate_context!())
+        .expect("error while running DragonFruit desktop app")
+        .run(|app_handle, event| {
+            // CloseRequested does not fire on macOS Cmd+Q, so also flush the
+            // tracked window state when the app itself is quitting.
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                window_state::save(app_handle);
+            }
+        });
 }

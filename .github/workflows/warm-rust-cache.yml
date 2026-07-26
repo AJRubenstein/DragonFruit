@@ -1,0 +1,69 @@
+name: Warm Rust cache
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - src-tauri/**
+      - rust/**
+      - rust-toolchain.toml
+  workflow_dispatch:
+
+concurrency:
+  group: warm-rust-cache-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  warm-macos:
+    name: Warm macOS Rust cache
+    runs-on: macos-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ./src-tauri -> target
+            ./rust/dragonfruit-voxl-thumbnail -> target
+          shared-key: tauri
+          # If a late compile step fails, still save everything built so far —
+          # the whole point of this workflow is warming the dependency cache.
+          cache-on-failure: true
+
+      - name: Generate plugin registry
+        run: node scripts/generate-plugin-registry.mjs
+
+      # tauri::generate_context!() embeds frontendDist assets when compiling
+      # dragonfruit-desktop and fails if the directory is missing. A stub is
+      # enough: desktop-crate artifacts are branch-specific and recompiled on
+      # every PR anyway; this workflow only warms the dependency cache.
+      - name: Stub frontend dist
+        run: |
+          mkdir -p src-tauri/frontend-dist
+          [ -f src-tauri/frontend-dist/index.html ] || echo '<!doctype html><title>warm-cache stub</title>' > src-tauri/frontend-dist/index.html
+
+      - name: Build thumbnail provider sidecars
+        env:
+          DF_BUILD_TARGET_TRIPLE: universal-apple-darwin
+        run: node scripts/build-thumbnail-providers.mjs
+
+      - name: Compile Rust dependencies
+        working-directory: src-tauri
+        env:
+          CMAKE_OSX_ARCHITECTURES: "arm64;x86_64"
+          DF_BUILD_TARGET_TRIPLE: universal-apple-darwin
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin

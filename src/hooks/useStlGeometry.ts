@@ -35,6 +35,10 @@ export type MeshDefects = {
   /** When the repaired mesh has a model/support split (model_triangle_count in the report),
    *  this geometry holds only the support-section triangles for separate orange rendering. */
   supportSectionGeometry?: THREE.BufferGeometry;
+  /** When the repaired mesh has a model/support split, this geometry holds only the
+   *  model-section (part) triangles, so overlays such as the non-manifold red flag can
+   *  be scoped to the part alone and never stripe the supports. */
+  modelSectionGeometry?: THREE.BufferGeometry;
 };
 
 export type GeometryWithBounds = {
@@ -272,20 +276,23 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   // unless the user explicitly requests manual repair.
   // In the browser we fall back to the legacy Manifold WASM path (which only
   // activates when NaN defects were detected).
+  let nativeModifiedGeometry = false;
   if (isTauriRuntime()) {
     const nativeMode = options.nativeProcessingMode ?? 'auto';
     const skipAutoNativeProcessingForSize = nativeMode === 'auto'
       && sourceTriangleEstimate >= AUTO_NATIVE_PROCESSING_TRIANGLE_THRESHOLD;
 
     if (nativeMode === 'none') {
-      console.log('[processGeometry] Native processing skipped (mode=none)');
-    } else if (skipAutoNativeProcessingForSize) {
+      console.log('[processGeometry] Native repair skipped (mode=none) — running classification for support geometry detection');
+    }
+
+    if (skipAutoNativeProcessingForSize) {
       console.warn(
         `[processGeometry] Skipping native auto repair/classification for gigantic mesh (` +
         `${sourceTriangleEstimate.toLocaleString()} triangles). Use manual Repair to force.`
       );
     } else try {
-      let classifyOnly = nativeMode === 'classify-only';
+      let classifyOnly = nativeMode === 'classify-only' || nativeMode === 'none';
       const forceRepair = nativeMode === 'repair';
 
       // If a confirmation callback is wired up, run a quick pre-repair analysis
@@ -371,6 +378,7 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
 
         if (shouldApplyPositions) {
           applyRepairedPositions(geometry, effectiveResult.positions);
+          nativeModifiedGeometry = true;
         }
 
         const { report } = effectiveResult;
@@ -401,7 +409,20 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
             const supportGeo = new THREE.BufferGeometry();
             supportGeo.setAttribute('position', new THREE.BufferAttribute(supportPositions, 3));
             supportGeo.computeVertexNormals();
-            meshDefects = { ...meshDefects, supportSectionGeometry: supportGeo };
+
+            // Model-section (part) geometry: the first model_triangle_count triangles.
+            // Used to scope the non-manifold red overlay to the part alone so it never
+            // stripes the supports. Normals are unnecessary — the overlay shader only
+            // reads world-space position.
+            const modelPositions = allPos.slice(0, modelFloatEnd);
+            const modelGeo = new THREE.BufferGeometry();
+            modelGeo.setAttribute('position', new THREE.BufferAttribute(modelPositions, 3));
+
+            meshDefects = {
+              ...meshDefects,
+              supportSectionGeometry: supportGeo,
+              modelSectionGeometry: modelGeo,
+            };
           }
         }
       }
@@ -438,8 +459,8 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   // Yield to let the loading indicator repaint before each heavy synchronous op
   await new Promise<void>(r => setTimeout(r, 0));
 
-  if (!options._skipComputeNormals) {
-    console.log(`[${new Date().toISOString()}] [processGeometry] Computing Normals`);
+  if (!options._skipComputeNormals || nativeModifiedGeometry) {
+    console.log(`[${new Date().toISOString()}] [processGeometry] Computing Normals${nativeModifiedGeometry ? ' (geometry modified by native processing)' : ''}`);
     geometry.computeVertexNormals();
   } else {
     console.log(`[${new Date().toISOString()}] [processGeometry] Normals already present — skipping computeVertexNormals`);

@@ -1,23 +1,5 @@
 // Centralized configuration for application hotkeys
 
-// Universal hotkeys are hardcoded system standards and are not intended to be customizable.
-export const UNIVERSAL_HOTKEYS = {
-    DELETE: {
-        keys: ['Delete', 'Backspace'],
-        description: 'Delete selected item'
-    },
-    UNDO: {
-        key: 'z',
-        modifier: 'ctrl', // or meta
-        description: 'Undo last action'
-    },
-    REDO: {
-        key: 'z',
-        modifier: 'ctrl+shift',
-        description: 'Redo last action'
-    }
-} as const;
-
 // Default keybindings for application features.
 // These are intended to be customizable by the user in the future.
 export interface HotkeyBinding {
@@ -66,6 +48,18 @@ export const DEFAULT_KEYBINDINGS: HotkeyConfig = {
         FORCE_PLACE_SUPPORT: {
             key: 'q',
             description: 'Hold to force placing support'
+        },
+        AUTO_BRACING: {
+            key: 'g',
+            description: 'Generate auto bracing while the Bracing settings page is open'
+        },
+        SPROUTED_PARENTING_LOCK: {
+            key: 'w',
+            description: 'Hold to enter Sprouted Leaf Fanning Mode'
+        },
+        TOGGLE_CONE_KNOT_SELECTION: {
+            key: 'e',
+            description: 'Press to toggle selection between support cone and parent base knot'
         }
     },
     CAMERA: {
@@ -102,6 +96,21 @@ export const DEFAULT_KEYBINDINGS: HotkeyConfig = {
         TOOL_DUPLICATE: {
             key: 'd',
             description: 'Switch canvas tool to Duplicate'
+        },
+        SELECT_ALL: {
+            key: 'a',
+            modifier: 'ctrl',
+            description: 'Select all visible models'
+        },
+        COPY: {
+            key: 'c',
+            modifier: 'ctrl',
+            description: 'Copy selected model(s)'
+        },
+        PASTE: {
+            key: 'v',
+            modifier: 'ctrl',
+            description: 'Paste copied model(s)'
         }
     },
     PRESETS: {
@@ -134,12 +143,106 @@ export const DEFAULT_KEYBINDINGS: HotkeyConfig = {
         SNAP_COARSE: {
             key: 'drag',
             modifier: 'meta',
-            description: 'Snap rotation to 45° increments (Cmd/Ctrl + drag)'
+            description: 'Rotation Snap (45°)'
         },
         SNAP_FINE: {
             key: 'drag',
             modifier: 'meta+shift',
-            description: 'Snap rotation to 15° increments (Cmd/Ctrl + Shift + drag)'
+            description: 'Rotation Snap (15°)'
+        }
+    },
+    GLOBAL: {
+        DELETE: {
+            // `Delete` is always available as a fixed secondary delete key (see
+            // useDeleteHotkey); this configurable binding defaults to `Backspace`.
+            key: 'Backspace',
+            description: 'Delete selected item'
+        },
+        UNDO: {
+            key: 'z',
+            modifier: 'ctrl',
+            description: 'Undo last action'
+        },
+        REDO: {
+            key: 'z',
+            modifier: 'ctrl+shift',
+            description: 'Redo last action'
+        },
+        SAVE: {
+            key: 's',
+            modifier: 'ctrl',
+            description: 'Save active scene'
+        },
+        SAVE_AS: {
+            key: 's',
+            modifier: 'ctrl+shift',
+            description: 'Save active scene as…'
+        }
+    },
+    DEBUG: {
+        DIAGNOSTICS: {
+            key: 'd',
+            modifier: 'ctrl+shift',
+            description: 'Toggle diagnostics modal'
+        },
+        FORCE_UPDATE: {
+            key: 'u',
+            modifier: 'ctrl+shift',
+            description: 'Force mock update notification'
+        },
+        HISTORY: {
+            key: 'c',
+            modifier: 'ctrl+shift',
+            description: 'Toggle history debug'
+        },
+        TRANSFORM: {
+            key: 'x',
+            modifier: 'ctrl+shift',
+            description: 'Toggle transform debug overlay'
+        },
+        SLICE_METRICS: {
+            key: 'a',
+            modifier: 'ctrl+shift',
+            description: 'Toggle slice metrics debug'
+        },
+        PRINT_MONITOR: {
+            key: 'n',
+            modifier: 'ctrl+shift',
+            description: 'Toggle printing monitor debug'
+        },
+        PRINT_RTSP: {
+            key: 'm',
+            modifier: 'ctrl+shift',
+            description: 'Toggle printing monitor RTSP debug'
+        },
+        TOGGLE_CAPS: {
+            key: 'k',
+            modifier: 'ctrl+shift',
+            description: 'Toggle cross section caps debug panel'
+        }
+    },
+    MESH: {
+        INVERT_NORMALS: {
+            key: 'n',
+            modifier: 'alt',
+            description: 'Invert selected model normals'
+        }
+    },
+    NAVIGATION: {
+        LAYER_UP: {
+            key: 'arrowup',
+            description: 'Navigate layer up'
+        },
+        LAYER_DOWN: {
+            key: 'arrowdown',
+            description: 'Navigate layer down'
+        }
+    },
+    HOLE_PUNCH: {
+        SELECT_ALL: {
+            key: 'a',
+            modifier: 'ctrl',
+            description: 'Select all hole punches / items'
         }
     }
 } as const;

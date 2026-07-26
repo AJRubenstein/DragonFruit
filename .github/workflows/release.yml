@@ -1,0 +1,532 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - package.json
+      - package-lock.json
+      - src-tauri/**
+      - scripts/**
+      - flatpak/**
+      - .github/workflows/release.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  detect-version-bump:
+    name: Detect version bump
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.version.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      release_name: ${{ steps.version.outputs.release_name }}
+      release_body: ${{ steps.version.outputs.release_body }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      has_prerelease_suffix: ${{ steps.version.outputs.has_prerelease_suffix }}
+      updater_json: ${{ steps.version.outputs.updater_json }}
+      publish_updater_json: ${{ steps.version.outputs.publish_updater_json }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Detect package version bump
+        id: version
+        shell: bash
+        run: |
+          current_version="$(node -p "require('./package.json').version")"
+          branch="${{ github.ref_name }}"
+          tag_name="v${current_version}"
+
+          # A version carries a prerelease identifier (-rc.1, -beta, ...) when
+          # it has a hyphen, per SemVer grammar (MAJOR.MINOR.PATCH-prerelease).
+          if [[ "${current_version}" == *-* ]]; then
+            has_prerelease_suffix="true"
+          else
+            has_prerelease_suffix="false"
+          fi
+
+          # GitHub's prerelease flag means "not the stable/production channel",
+          # not "not yet finished". Only a final (no prerelease id) version on
+          # main is the stable channel — every dev-branch build (final or
+          # RC/beta of the dev line) and every RC/beta on main is a
+          # GitHub prerelease.
+          if [[ "$branch" == "main" && "$has_prerelease_suffix" == "false" ]]; then
+            is_prerelease="false"
+          else
+            is_prerelease="true"
+          fi
+
+          # Updater feed selection: dev only updates the dev feed on final releases
+          # (but it's very unlikely that we ever make those). main only updates the
+          # stable feed for a final release — an RC on main is downloadable for
+          # testing but never wired to the auto-updater, so stable users can't land on it.
+          if [[ "$branch" == "dev" && "$has_prerelease_suffix" == "false" ]]; then
+            updater_json="latest-dev.json"
+            publish_updater_json="true"
+          elif [[ "$branch" == "main" && "$has_prerelease_suffix" == "false" ]]; then
+            updater_json="latest.json"
+            publish_updater_json="true"
+          else
+            updater_json=""
+            publish_updater_json="false"
+          fi
+
+          if [[ "$branch" == "main" ]]; then
+            if [[ "$has_prerelease_suffix" == "true" ]]; then
+              release_label="Release candidate ${tag_name}"
+            else
+              release_label="DragonFruit ${tag_name}"
+            fi
+          else
+            release_label="Dev build ${tag_name}"
+          fi
+
+          echo "has_prerelease_suffix=${has_prerelease_suffix}" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=${is_prerelease}" >> "$GITHUB_OUTPUT"
+          echo "updater_json=${updater_json}" >> "$GITHUB_OUTPUT"
+          echo "publish_updater_json=${publish_updater_json}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=${current_version}" >> "$GITHUB_OUTPUT"
+            echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
+            echo "release_name=${release_label}" >> "$GITHUB_OUTPUT"
+            {
+              echo "release_body<<EOF"
+              echo "Manually triggered release for version ${current_version} from the ${branch} branch."
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git cat-file -e "${{ github.event.before }}:package.json" 2>/dev/null; then
+            previous_version="$(git show "${{ github.event.before }}:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
+          else
+            previous_version=""
+          fi
+
+          if [[ -n "$previous_version" && "$previous_version" == "${current_version}" ]]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "version=${current_version}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${release_label}" >> "$GITHUB_OUTPUT"
+          {
+            echo "release_body<<EOF"
+            echo "Automated release for version ${current_version} from the ${branch} branch."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  build-tauri:
+    name: Build ${{ matrix.artifact_name }}
+    needs:
+      - detect-version-bump
+    if: needs.detect-version-bump.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            build_kind: tauri
+            args: --target universal-apple-darwin --bundles app,dmg
+            artifact_name: dragonfruit-macos-universal
+            cmake_archs: "arm64;x86_64"
+            df_build_triple: universal-apple-darwin
+          - platform: windows-latest
+            build_kind: tauri
+            args: --target x86_64-pc-windows-msvc --bundles nsis,msi
+            artifact_name: dragonfruit-windows-x64
+          - platform: ubuntu-22.04
+            build_kind: flatpak
+            artifact_name: dragonfruit-linux-flatpak-x64
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libappindicator3-dev librsvg2-dev patchelf libfuse2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.23.1"
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install Apple Certificate
+        if: matrix.platform == 'macos-latest'
+        uses: apple-actions/import-codesign-certs@v7
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASS }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          shared-key: tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Enable Windows long paths
+        if: runner.os == 'Windows'
+        run: |
+          git config --system core.longpaths true
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
+
+      - name: Build Tauri bundle
+        if: matrix.build_kind == 'tauri'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: ${{ matrix.platform == 'ubuntu-22.04' && '1' || '' }}
+          CMAKE_OSX_ARCHITECTURES: ${{ matrix.cmake_archs || '' }}
+          DF_BUILD_TARGET_TRIPLE: ${{ matrix.df_build_triple || '' }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: MHNF3GA2MM
+        with:
+          tauriScript: npx tauri
+          args: ${{ matrix.args }}
+
+      - name: Embed QuickLook extension + verify universal bundle
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: MHNF3GA2MM
+        run: |
+          node scripts/macos-embed-appex.mjs --target ${{ matrix.df_build_triple }}
+          node scripts/verify-universal-bundle.mjs
+
+      - name: Install AppStream + desktop-file validators
+        if: matrix.build_kind == 'flatpak'
+        run: sudo apt-get install -y appstream desktop-file-utils
+
+      - name: Install Flatpak build tooling
+        if: matrix.build_kind == 'flatpak'
+        run: sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Prepare XDG runtime directory
+        if: matrix.build_kind == 'flatpak'
+        run: |
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+
+      - name: Configure Flathub remote
+        if: matrix.build_kind == 'flatpak'
+        run: |
+          flatpak remote-add --user --if-not-exists \
+            flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Install Flatpak runtime dependencies (user)
+        if: matrix.build_kind == 'flatpak'
+        run: |
+          flatpak --user install -y --noninteractive flathub \
+            org.freedesktop.Sdk//24.08 \
+            org.freedesktop.Platform//24.08
+
+      - name: Build Tauri app (CEF variant on Linux)
+        if: matrix.build_kind == 'flatpak'
+        run: node scripts/tauri-build.mjs --target x86_64-unknown-linux-gnu --no-bundle
+
+      - name: Upload macOS installer + updater artifacts
+        if: matrix.build_kind == 'tauri' && matrix.platform == 'macos-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            src-tauri/target/*/release/bundle/dmg/*.dmg
+            src-tauri/target/*/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/*/release/bundle/macos/*.app.tar.gz.sig
+          if-no-files-found: error
+
+      - name: Upload Windows installer + updater artifacts
+        if: matrix.build_kind == 'tauri' && matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: src-tauri/target/*/release/bundle/nsis/*
+          if-no-files-found: error
+
+      - name: Upload flatpak artifact
+        if: matrix.build_kind == 'flatpak'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: src-tauri/target/release/bundle/flatpak/*.flatpak
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish release
+    needs:
+      - detect-version-bump
+      - build-tauri
+    if: needs.detect-version-bump.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+
+      - name: Generate updater JSON
+        if: needs.detect-version-bump.outputs.publish_updater_json == 'true'
+        uses: actions/github-script@v9
+        env:
+          VERSION: ${{ needs.detect-version-bump.outputs.version }}
+          TAG_NAME: ${{ needs.detect-version-bump.outputs.tag_name }}
+          UPDATER_JSON: ${{ needs.detect-version-bump.outputs.updater_json }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const { execSync } = require('child_process');
+
+            const version = process.env.VERSION;
+            const tag = process.env.TAG_NAME;
+            const jsonFile = process.env.UPDATER_JSON;
+            const baseUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${tag}`;
+
+            function findOne(pattern) {
+              const results = execSync(`find release-assets -name "${pattern}"`).toString().trim().split('\n').filter(Boolean);
+              if (results.length === 0) throw new Error(`No file matching ${pattern} in release-assets`);
+              if (results.length > 1) throw new Error(`Multiple files matching ${pattern}: ${results.join(', ')}`);
+              return results[0];
+            }
+
+            const darwinTgz = findOne('*.app.tar.gz');
+            const darwinSig = findOne('*.app.tar.gz.sig');
+            const windowsZip = findOne('*.exe');
+            const windowsSig = findOne('*.exe.sig');
+
+            const json = {
+              version,
+              pub_date: new Date().toISOString(),
+              platforms: {
+                'darwin-universal': {
+                  url: `${baseUrl}/${path.basename(darwinTgz)}`,
+                  signature: fs.readFileSync(darwinSig, 'utf8').trim(),
+                },
+                'windows-x86_64': {
+                  url: `${baseUrl}/${path.basename(windowsZip)}`,
+                  signature: fs.readFileSync(windowsSig, 'utf8').trim(),
+                },
+              },
+            };
+
+            fs.writeFileSync(jsonFile, JSON.stringify(json, null, 2));
+            core.info(`Generated ${jsonFile}:\n${JSON.stringify(json, null, 2)}`);
+
+      - name: Create tag if needed
+        uses: actions/github-script@v9
+        env:
+          TAG_NAME: ${{ needs.detect-version-bump.outputs.tag_name }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tag = process.env.TAG_NAME;
+            const ref = `refs/tags/${tag}`;
+
+            try {
+              await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.git.createRef({ owner, repo, ref, sha: context.sha });
+            }
+
+      - name: Resolve release notes from matching prerelease
+        id: release_notes
+        if: needs.detect-version-bump.outputs.has_prerelease_suffix == 'false'
+        uses: actions/github-script@v9
+        env:
+          VERSION: ${{ needs.detect-version-bump.outputs.version }}
+          FALLBACK_BODY: ${{ needs.detect-version-bump.outputs.release_body }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const version = process.env.VERSION;
+            // Same X.Y.Z, any prerelease identifier: v0.2.0-rc.1, v0.2.0-rc.2, v0.2.0-beta...
+            const prefix = `v${version}-`;
+            let body = process.env.FALLBACK_BODY || "";
+
+            try {
+              const releases = await github.paginate(github.rest.repos.listReleases, { owner, repo, per_page: 100 });
+              const candidates = releases
+                .filter((r) => r.tag_name.startsWith(prefix) && r.body?.trim())
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+              if (candidates.length > 0) {
+                body = candidates[0].body;
+                core.info(`Using hand-written notes from prerelease ${candidates[0].tag_name}`);
+              } else {
+                core.warning(`No prerelease found matching ${prefix}*; using fallback notes.`);
+              }
+            } catch (error) {
+              core.warning(`Failed listing releases: ${error.message}; using fallback notes.`);
+            }
+
+            core.setOutput("body", body);
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.detect-version-bump.outputs.tag_name }}
+          name: ${{ needs.detect-version-bump.outputs.release_name }}
+          body: ${{ steps.release_notes.outputs.body || needs.detect-version-bump.outputs.release_body }}
+          prerelease: ${{ needs.detect-version-bump.outputs.is_prerelease }}
+          draft: false
+          target_commitish: ${{ github.sha }}
+          files: |
+            release-assets/**/*
+            ${{ needs.detect-version-bump.outputs.publish_updater_json == 'true' && needs.detect-version-bump.outputs.updater_json || '' }}
+
+  label-dev-fixes:
+    name: Label issues fixed in dev
+    needs:
+      - detect-version-bump
+      - publish-release
+    # A final (no -suffix) version on dev is the "train" passing a station:
+    # every issue closed by a commit since the last final dev release gets
+    # labeled instead of closed, since dev isn't the default branch and
+    # GitHub only auto-closes issues for commits that land on that one.
+    if: |
+      needs.detect-version-bump.outputs.should_release == 'true' &&
+      github.ref_name == 'dev' &&
+      needs.detect-version-bump.outputs.has_prerelease_suffix == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Find previous dev release tag
+        id: prev_tag
+        run: |
+          current_tag="${{ needs.detect-version-bump.outputs.tag_name }}"
+          prev_tag="$(git tag --list 'v*' --merged HEAD | grep -v "^${current_tag}\$" | sort -V | tail -n1)"
+          echo "prev_tag=${prev_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Label issues closed since previous dev release
+        uses: actions/github-script@v9
+        env:
+          PREV_TAG: ${{ steps.prev_tag.outputs.prev_tag }}
+          LABEL_NAME: "fixed in dev"
+          VERSION: ${{ needs.detect-version-bump.outputs.version }}
+          TAG_NAME: ${{ needs.detect-version-bump.outputs.tag_name }}
+        with:
+          script: |
+            const { execSync } = require('child_process');
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const label = process.env.LABEL_NAME;
+            const version = process.env.VERSION;
+            const tag = process.env.TAG_NAME;
+            const range = process.env.PREV_TAG ? `${process.env.PREV_TAG}..HEAD` : 'HEAD';
+
+            const releaseUrl = `https://github.com/${owner}/${repo}/releases/tag/${tag}`;
+            // dev only ships odd MINORs (see docs/dev/releases.md); the next
+            // stable is the following even MINOR, .0 patch — a naming guess,
+            // not a promise, since the actual promotion date isn't known yet.
+            const [major, minor] = version.split('.').map(Number);
+            const nextStable = `${major}.${minor + 1}.0`;
+            const commentBody = [
+              `A fix for this issue has been included in development version \`v${version}\`, ` +
+                `available for download here: ${releaseUrl} — this is a \`dev\`-line build, offered without any guarantees.`,
+              '',
+              `It should ship as part of a stable release (tentatively \`v${nextStable}\`, naming not final) ` +
+                'within the next few days to weeks, depending on the release cadence.',
+            ].join('\n');
+
+            const log = execSync(`git log ${range} --pretty=format:%B%x00`, { maxBuffer: 1024 * 1024 * 32 }).toString();
+
+            // Same closing-keyword grammar GitHub uses: a keyword followed by
+            // one or more #NNN references (comma/"and"-separated).
+            const closingRe = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b((?:\s*,?\s*(?:and\s+)?#\d+)+)/gi;
+            const issueRe = /#(\d+)/g;
+
+            const issueNumbers = new Set();
+            let match;
+            while ((match = closingRe.exec(log)) !== null) {
+              let issueMatch;
+              while ((issueMatch = issueRe.exec(match[1])) !== null) {
+                issueNumbers.add(Number(issueMatch[1]));
+              }
+            }
+
+            if (issueNumbers.size === 0) {
+              core.info('No closing references found in this range; nothing to label.');
+              return;
+            }
+
+            core.info(`Found closing references to: ${[...issueNumbers].join(', ')}`);
+
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              core.info(`Label "${label}" does not exist yet; creating it.`);
+              await github.rest.issues.createLabel({ owner, repo, name: label, color: '5319e7' });
+            }
+
+            for (const issueNumber of issueNumbers) {
+              let issue;
+              try {
+                issue = await github.rest.issues.get({ owner, repo, issue_number: issueNumber });
+              } catch (error) {
+                core.warning(`#${issueNumber}: could not fetch (${error.message}); skipping.`);
+                continue;
+              }
+
+              if (issue.data.pull_request) {
+                core.info(`#${issueNumber} is a pull request, not an issue; skipping.`);
+                continue;
+              }
+
+              if (issue.data.labels.some((l) => (typeof l === 'string' ? l : l.name) === label)) {
+                core.info(`#${issueNumber}: already labeled "${label}"; skipping (no duplicate comment).`);
+                continue;
+              }
+
+              await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: [label] });
+              await github.rest.issues.createComment({ owner, repo, issue_number: issueNumber, body: commentBody });
+              core.info(`#${issueNumber}: labeled "${label}" and commented.`);
+            }

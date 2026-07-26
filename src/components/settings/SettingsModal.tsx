@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { GeneralSettingsTab } from '@/components/settings/GeneralSettingsTab';
+import { useLocale } from '@/components/I18nClientProvider';
 import { CameraSettingsTab } from '@/components/settings/CameraSettingsTab';
 import { HotkeysSettingsTab } from '@/components/settings/HotkeysSettingsTab';
 import { MeshSettingsTab } from '@/components/settings/MeshSettingsTab';
@@ -44,6 +45,7 @@ import {
   type SavedCustomThemeProfile,
 } from '@/components/settings/themeCustomizations';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
+import { Tooltip } from '@/components/ui/Tooltip';
 import {
   DEFAULT_SPACEMOUSE_SETTINGS,
   getSavedSpaceMouseSettings,
@@ -130,6 +132,19 @@ const DEFAULT_HOVER_TINT_STRENGTH = 0.5;
 const DEFAULT_SELECTED_TINT_STRENGTH = 0.75;
 const DRAGONFRUIT_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0';
 const DRAGONFRUIT_BUILD_CHANNEL = (process.env.NEXT_PUBLIC_BUILD_CHANNEL ?? 'mainline').trim().toLowerCase();
+const DRAGONFRUIT_GIT_COMMIT = process.env.NEXT_PUBLIC_GIT_COMMIT ?? '';
+const DRAGONFRUIT_GIT_REF = process.env.NEXT_PUBLIC_GIT_REF ?? '';
+const BUILD_OS_LABELS: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
+const DRAGONFRUIT_BUILD_OS = process.env.NEXT_PUBLIC_BUILD_OS ?? '';
+const DRAGONFRUIT_BUILD_ARCH = process.env.NEXT_PUBLIC_BUILD_ARCH ?? '';
+// e.g. "macOS/arm64" — platform the binary was built for.
+const DRAGONFRUIT_BUILD_PLATFORM = DRAGONFRUIT_BUILD_OS
+  ? `${BUILD_OS_LABELS[DRAGONFRUIT_BUILD_OS] ?? DRAGONFRUIT_BUILD_OS}${DRAGONFRUIT_BUILD_ARCH ? `/${DRAGONFRUIT_BUILD_ARCH}` : ''}`
+  : '';
+// e.g. "dev @ 62e80c79b · macOS/arm64" — identifies the exact build behind a version number.
+const DRAGONFRUIT_GIT_BUILD_LABEL = DRAGONFRUIT_GIT_COMMIT
+  ? `${DRAGONFRUIT_GIT_REF ? `${DRAGONFRUIT_GIT_REF} @ ` : ''}${DRAGONFRUIT_GIT_COMMIT}${DRAGONFRUIT_BUILD_PLATFORM ? ` · ${DRAGONFRUIT_BUILD_PLATFORM}` : ''}`
+  : '';
 const ORA_LOGO_DARK_URL = '/dragonfruit_assets/branding/open_resin_alliance_logo_darkmode.png';
 const DRAGONFRUIT_REPO_URL = 'https://github.com/Open-Resin-Alliance/DragonFruit';
 const DEFAULT_SLICING_THUMBNAIL_RENDER_SETTINGS: SlicingThumbnailRenderSettings = {
@@ -236,6 +251,22 @@ export function SettingsModal({
   initialTab,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabKey>(initialTab ?? 'general');
+
+  const [copied, setCopied] = useState(false);
+  const handleCopyBuildInfo = React.useCallback(async () => {
+    // Full build identity in one string — what a bug report needs.
+    const buildInfo = `DragonFruit ${DRAGONFRUIT_VERSION} (${DRAGONFRUIT_BUILD_CHANNEL})${DRAGONFRUIT_GIT_BUILD_LABEL ? ` — ${DRAGONFRUIT_GIT_BUILD_LABEL}` : ''}`;
+    try {
+      await navigator.clipboard.writeText(buildInfo);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
+  }, []);
+
+  // Language is a draft like every other setting: changing the switcher only
+  // updates draftLocale; the actual loadLocale happens in handleApply.
+  const { locale: activeLocale, setLocale: applyLocale } = useLocale();
+  const [draftLocale, setDraftLocale] = useState(activeLocale);
 
   const [draftMeshColor, setDraftMeshColor] = useState(meshColor);
   const [draftShaderType, setDraftShaderType] = useState(shaderType);
@@ -376,7 +407,9 @@ export function SettingsModal({
     setDraftSlicingThumbnailRenderSettings(slicingThumbnailRenderSettings ?? DEFAULT_SLICING_THUMBNAIL_RENDER_SETTINGS);
     setDraftUvToolsSettings(getSavedUvToolsSettings());
     setDraftLogLevel(getSavedLogLevel());
+    setDraftLocale(activeLocale);
   }, [
+    activeLocale,
     ambientIntensity,
     directionalIntensity,
     flatUseVertexColors,
@@ -753,6 +786,7 @@ export function SettingsModal({
   }, []);
 
   const handleApply = React.useCallback(() => {
+    applyLocale(draftLocale);
     onMeshColorChange(draftMeshColor);
     onShaderTypeChange(draftShaderType);
     onMatcapVariantChange(draftMatcapVariant);
@@ -811,6 +845,8 @@ export function SettingsModal({
     didCommitThemeDraftRef.current = true;
     onClose();
   }, [
+    applyLocale,
+    draftLocale,
     draftAmbientIntensity,
     draftDirectionalIntensity,
     draftFlatUseVertexColors,
@@ -950,8 +986,8 @@ export function SettingsModal({
   useEffect(() => {
     if (!isOpen) return;
 
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+    const onKeyDown = (e: CustomEvent) => {
+      if (e.detail.key !== 'Escape') return;
       if (showThemeDeleteConfirm) {
         handleCancelThemeDeleteConfirm();
         return;
@@ -971,8 +1007,8 @@ export function SettingsModal({
       handleCancel();
     };
 
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('app-hotkey-keydown', onKeyDown as EventListener);
+    return () => window.removeEventListener('app-hotkey-keydown', onKeyDown as EventListener);
   }, [
     isOpen,
     handleCancel,
@@ -1042,7 +1078,7 @@ export function SettingsModal({
     },
     performance: {
       label: 'Slicing',
-      description: 'PNG compression, spatial acceleration, and engine metadata',
+      description: 'PNG compression and engine metadata',
       icon: MonitorCog,
       tone: 'primary',
     },
@@ -1200,7 +1236,7 @@ export function SettingsModal({
             }}
           >
             <div className="h-full min-h-0 overflow-y-auto custom-scrollbar pr-1 flex flex-col">
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {sidebarTopTabs.map((tab) => {
                   const meta = tabMeta[tab];
                   const Icon = meta.icon;
@@ -1212,7 +1248,7 @@ export function SettingsModal({
                       key={tab}
                       type="button"
                       onClick={() => setActiveTab(tab)}
-                      className="w-full rounded-lg border px-3 py-2.5 text-left transition-all duration-150"
+                      className="w-full rounded-lg border px-3 py-2 text-left transition-all duration-150"
                       style={active
                         ? {
                           borderColor: `color-mix(in srgb, ${tabColor}, var(--border-subtle) 35%)`,
@@ -1224,9 +1260,9 @@ export function SettingsModal({
                           background: 'var(--surface-1)',
                         }}
                     >
-                      <div className="flex items-start gap-2.5">
+                      <div className="flex items-center gap-2">
                         <span
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border"
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border"
                           style={{
                             borderColor: active
                               ? `color-mix(in srgb, ${tabColor}, var(--border-subtle) 30%)`
@@ -1252,7 +1288,7 @@ export function SettingsModal({
                 })}
               </div>
 
-              <div className="mt-auto space-y-1.5 pt-3">
+              <div className="mt-auto space-y-1 pt-3">
                 {sidebarBottomTabs.map((tab) => {
                   const meta = tabMeta[tab];
                   const Icon = meta.icon;
@@ -1265,7 +1301,7 @@ export function SettingsModal({
                       type="button"
                       aria-disabled={false}
                       onClick={() => setActiveTab(tab)}
-                      className="w-full rounded-lg border px-3 py-2.5 text-left transition-all duration-150"
+                      className="w-full rounded-lg border px-3 py-2 text-left transition-all duration-150"
                       style={{
                         ...(active
                           ? {
@@ -1279,9 +1315,9 @@ export function SettingsModal({
                           }),
                       }}
                     >
-                      <div className="flex items-start gap-2.5">
+                      <div className="flex items-center gap-2">
                         <span
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border"
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border"
                           style={{
                             borderColor: active
                               ? `color-mix(in srgb, ${tabColor}, var(--border-subtle) 30%)`
@@ -1310,15 +1346,6 @@ export function SettingsModal({
           </div>
 
           <div className={usesInternalTabScrollLayout ? 'flex-1 min-h-0 flex flex-col p-4' : 'flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4'}>
-            {activeTab !== 'about' && activeTab !== 'updates' && (
-              <div className="mb-3 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), transparent 8%)' }}>
-                <div className="flex items-center gap-2">
-                  <ActiveTabIcon className="h-4 w-4" style={{ color: activeTabColor }} />
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>{tabMeta[activeTab].label}</h3>
-                </div>
-                <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>{tabMeta[activeTab].description}</p>
-              </div>
-            )}
 
             <div key={activeTab} className={usesInternalTabScrollLayout ? 'animate-[settingsTabIn_180ms_ease-out] flex-1 min-h-0 flex flex-col' : 'animate-[settingsTabIn_180ms_ease-out]'}>
               {activeTab === 'general' && (
@@ -1330,6 +1357,8 @@ export function SettingsModal({
                   onDebugPrimitivesPanelVisibleChange={setDraftDebugPrimitivesPanelVisible}
                   importDefaults={draftImportDefaults}
                   onImportDefaultsChange={setDraftImportDefaults}
+                  language={draftLocale}
+                  onLanguageChange={setDraftLocale}
                 />
               )}
               {activeTab === 'camera' && (
@@ -1491,23 +1520,39 @@ export function SettingsModal({
                           </span>
                         </div>
 
-                        <div className="mt-3 flex flex-wrap items-center justify-center gap-2.5">
-                          <span
-                            className="inline-flex rounded-full border px-2.5 py-0.5 text-[12px] font-semibold tabular-nums"
-                            style={{
-                              color: 'var(--text-strong)',
-                              borderColor: 'color-mix(in srgb, var(--border-subtle), white 8%)',
-                              background: 'color-mix(in srgb, var(--surface-1), transparent 8%)',
-                            }}
-                          >
-                            Version {DRAGONFRUIT_VERSION}
-                          </span>
-                          <span
-                            className="inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold"
-                            style={buildStatusStyle}
-                          >
-                            {buildStatusLabel}
-                          </span>
+                        <div className="mt-3 flex flex-col items-center gap-2">
+                          <div className="flex flex-wrap items-center justify-center gap-2.5">
+                            <Tooltip
+                              content={
+                                <span className="whitespace-pre-line">
+                                  Click to copy build info{DRAGONFRUIT_GIT_BUILD_LABEL ? `\n${DRAGONFRUIT_GIT_BUILD_LABEL}` : ''}
+                                </span>
+                              }
+                            >
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={handleCopyBuildInfo}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCopyBuildInfo(); } }}
+                                className="inline-flex cursor-pointer items-center rounded-full border px-2.5 py-0.5 text-[12px] font-semibold tabular-nums transition-colors"
+                                style={{
+                                  color: copied ? '#2d8a4e' : 'var(--text-strong)',
+                                  borderColor: copied ? '#2d8a4e' : 'color-mix(in srgb, var(--border-subtle), white 8%)',
+                                  background: copied
+                                    ? 'rgba(45,138,78,0.1)'
+                                    : 'color-mix(in srgb, var(--surface-1), transparent 8%)',
+                                }}
+                              >
+                                {copied ? '✓ Copied!' : `Version ${DRAGONFRUIT_VERSION}`}
+                              </span>
+                            </Tooltip>
+                            <span
+                              className="inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold"
+                              style={buildStatusStyle}
+                            >
+                              {buildStatusLabel}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -1797,16 +1842,22 @@ export function SettingsModal({
                       <div className="min-w-0 flex-1 space-y-2 text-center">
                         <div className="flex items-center justify-center gap-2 text-[12px]">
                           <Github className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
-                          <a
-                            href={DRAGONFRUIT_REPO_URL}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={async () => {
+                              const url = DRAGONFRUIT_REPO_URL;
+                              try {
+                                const { invoke } = await import('@tauri-apps/api/core');
+                                await invoke('open_external_url', { url });
+                              } catch {
+                                window.open(url, '_blank');
+                              }
+                            }}
                             className="inline-flex items-center gap-1 underline underline-offset-2 font-mono tracking-tighter"
-                            style={{ color: 'var(--accent)' }}
+                            style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                           >
                             Open-Resin-Alliance/DragonFruit
                             <ExternalLink className="h-3 w-3" />
-                          </a>
+                          </button>
                         </div>
 
                         <div className="flex items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-strong)' }}>

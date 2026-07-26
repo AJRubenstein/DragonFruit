@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-// Use drei's bundled three-mesh-bvh to avoid version conflicts
+// Pinned to three-mesh-bvh@0.8.3 (same version drei bundles) to avoid version conflicts
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 
 /**

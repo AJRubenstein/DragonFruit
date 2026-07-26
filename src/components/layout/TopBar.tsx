@@ -1,14 +1,16 @@
 "use client";
 
 import React, { useState } from 'react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { ViewTypeDropdown } from '@/components/controls/ViewTypeDropdown';
 import { SettingsModal, type SettingsTabKey } from '@/components/settings/SettingsModal';
 import { ProfileSettingsModal } from '@/components/settings/ProfileSettingsModal';
 import type { SupportMode } from '@/supports/types';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
 import type { SelectionHighlightMode } from '@/components/selection';
-import { Button } from '@/components/ui/primitives';
-import { Activity, AlertTriangle, ChevronDown, FolderInput, FolderOpen, Lock, Maximize2, Minimize2, Power, Printer, Save, Square, Upload, X } from 'lucide-react';
+import { Button } from '@/components/atoms';
+import { Activity, AlertTriangle, Anchor, ChevronDown, FolderInput, FolderOpen, Lock, Maximize2, Minimize2, Power, Printer, Save, SaveAll, Square, Upload, X } from 'lucide-react';
 import {
   applyThemeCustomColors,
   getSavedThemeCustomColors,
@@ -20,7 +22,7 @@ import {
   dispatchProfileSettingsModalOpenChange,
   type ProfileSettingsTab,
 } from '@/components/settings/profileModalEvents';
-import { OPEN_SETTINGS_ABOUT_EVENT } from '@/features/updater/updateNotificationEvents';
+import { OPEN_SETTINGS_MODAL_EVENT } from '@/components/settings/settingsModalEvents';
 import {
   getActivePrinterProfile,
   getProfileStoreSnapshot,
@@ -86,6 +88,7 @@ interface TopBarProps {
   onHeatmapColorChange: (index: number, color: string) => void;
   isSlicingBusy?: boolean;
   onSaveScene?: () => void;
+  onSaveSceneAs?: () => void;
   onOpenScene?: () => void;
   onLoadMeshChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onImportSceneChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -153,6 +156,7 @@ export function TopBar({
   onLoadMeshChange,
   onImportSceneChange,
   onSaveScene,
+  onSaveSceneAs,
   onOpenScene,
   onCloseProgram,
   showMonitorButton = false,
@@ -163,6 +167,7 @@ export function TopBar({
   onOpenMonitor,
   warnBeforeProfileSettingsOpen = false,
 }: TopBarProps) {
+  const { _ } = useLingui();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabKey>('general');
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -358,17 +363,17 @@ export function TopBar({
       closeAppMenu();
     };
 
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+    const handleEscape = (event: CustomEvent) => {
+      if (event.detail.key === 'Escape') {
         closeAppMenu();
       }
     };
 
     window.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('keydown', handleEscape);
+    window.addEventListener('app-hotkey-keydown', handleEscape as EventListener);
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('app-hotkey-keydown', handleEscape as EventListener);
     };
   }, [closeAppMenu, isAppMenuOpen]);
 
@@ -387,17 +392,17 @@ export function TopBar({
       closePrinterQuickMenu();
     };
 
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+    const handleEscape = (event: CustomEvent) => {
+      if (event.detail.key === 'Escape') {
         closePrinterQuickMenu();
       }
     };
 
     window.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('keydown', handleEscape);
+    window.addEventListener('app-hotkey-keydown', handleEscape as EventListener);
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('app-hotkey-keydown', handleEscape as EventListener);
     };
   }, [closePrinterQuickMenu, isPrinterQuickMenuOpen]);
 
@@ -485,18 +490,17 @@ export function TopBar({
     };
   }, []);
 
-  // Listen for event to open Settings → About tab (from update notification).
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const handleOpenSettingsAbout = () => {
-      setSettingsInitialTab('about');
+    const handleOpenSettings = () => {
+      setSettingsInitialTab('general');
       setIsSettingsOpen(true);
     };
 
-    window.addEventListener(OPEN_SETTINGS_ABOUT_EVENT, handleOpenSettingsAbout);
+    window.addEventListener(OPEN_SETTINGS_MODAL_EVENT, handleOpenSettings);
     return () => {
-      window.removeEventListener(OPEN_SETTINGS_ABOUT_EVENT, handleOpenSettingsAbout);
+      window.removeEventListener(OPEN_SETTINGS_MODAL_EVENT, handleOpenSettings);
     };
   }, []);
 
@@ -526,36 +530,36 @@ export function TopBar({
   }, [activePrinterProfile?.networkFleet]);
   const topbarPrinterLabelTop = React.useMemo(() => {
     if (topbarUsesFleetLabelOrder) {
-      return activePrinterProfile?.name ?? 'Select Profile';
+      return activePrinterProfile?.name ?? _(msg`Select profile`);
     }
-    return 'Printer';
-  }, [activePrinterProfile?.name, topbarUsesFleetLabelOrder]);
+    return _(msg({ message: 'Printer', comment: 'Static field-label shown above the printer name in the topbar badge (like "Printer: <name>"), not an instruction. Only shown when a profile has a single printer, so there is no fleet to pick from.' }));
+  }, [_, activePrinterProfile?.name, topbarUsesFleetLabelOrder]);
   const topbarPrinterLabelBottom = React.useMemo(() => {
     if (topbarUsesFleetLabelOrder) {
-      return topbarFleetPrinterName ?? 'No active printer';
+      return topbarFleetPrinterName ?? _(msg`No active printer`);
     }
-    return activePrinterProfile?.name ?? 'Select Printer';
-  }, [activePrinterProfile?.name, topbarFleetPrinterName, topbarUsesFleetLabelOrder]);
+    return activePrinterProfile?.name ?? _(msg`Select printer`);
+  }, [_, activePrinterProfile?.name, topbarFleetPrinterName, topbarUsesFleetLabelOrder]);
   const topbarPrinterButtonTitle = React.useMemo(() => {
     if (topbarUsesFleetLabelOrder) {
-      const profileName = activePrinterProfile?.name ?? 'Select Profile';
-      const printerName = topbarFleetPrinterName ?? 'No active printer';
-      return `Printer profile: ${profileName} • Active printer: ${printerName}`;
+      const profileName = activePrinterProfile?.name ?? _(msg`Select profile`);
+      const printerName = topbarFleetPrinterName ?? _(msg`No active printer`);
+      return _(msg({ message: `Printer profile: ${profileName} • Active printer: ${printerName}`, comment: '"Printer profile" is the saved configuration (material, output format, etc.); "Active printer" is the physical network device currently connected under that profile. The two are distinct concepts that happen to both contain the word "printer".' }));
     }
-    return activePrinterProfile ? `Printer profile: ${activePrinterProfile.name}` : 'Select printer profile';
-  }, [activePrinterProfile, topbarFleetPrinterName, topbarUsesFleetLabelOrder]);
+    return activePrinterProfile ? _(msg`Printer profile: ${activePrinterProfile.name}`) : _(msg`Select printer profile`);
+  }, [_, activePrinterProfile, topbarFleetPrinterName, topbarUsesFleetLabelOrder]);
   const topbarPrinterButtonAriaLabel = React.useMemo(() => {
     if (topbarUsesFleetLabelOrder) {
-      const profileName = activePrinterProfile?.name ?? 'Select profile';
-      const printerName = topbarFleetPrinterName ?? 'No active printer';
-      return `Printer profile ${profileName}, active printer ${printerName}`;
+      const profileName = activePrinterProfile?.name ?? _(msg`Select profile`);
+      const printerName = topbarFleetPrinterName ?? _(msg`No active printer`);
+      return _(msg({ message: `Printer profile ${profileName}, active printer ${printerName}`, comment: 'Same distinction as the title tooltip above (profile = saved configuration, printer = connected physical device), phrased for screen readers without the bullet separator.' }));
     }
-    return activePrinterProfile ? `Printer profile ${activePrinterProfile.name}` : 'Select printer profile';
-  }, [activePrinterProfile, topbarFleetPrinterName, topbarUsesFleetLabelOrder]);
+    return activePrinterProfile ? _(msg`Printer profile ${activePrinterProfile.name}`) : _(msg`Select printer profile`);
+  }, [_, activePrinterProfile, topbarFleetPrinterName, topbarUsesFleetLabelOrder]);
   const monitorButtonAnimationClass = monitorButtonPaused
     ? 'ui-topbar-monitor-paused'
     : (monitorButtonActive ? 'ui-topbar-monitor-active' : '');
-  const monitorButtonLabel = monitorButtonOffline ? 'Offline' : 'Monitor';
+  const monitorButtonLabel = monitorButtonOffline ? _(msg`Offline`) : _(msg({ message: 'Monitor', comment: 'Topbar button that opens the live print-progress monitoring view for the active printer. Refers to the monitoring feature, not a display screen.' }));
   const monitorButtonTone = monitorButtonOffline
     ? '#f87171'
     : 'var(--text-strong)';
@@ -593,39 +597,62 @@ export function TopBar({
     closePrinterQuickMenu();
   }, [activePrinterProfile?.id, closePrinterQuickMenu]);
 
+  const stepsContainerRef = React.useRef<HTMLDivElement>(null);
+  const [hideBadges, setHideBadges] = React.useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 800;
+  });
+
+  React.useEffect(() => {
+    const el = stepsContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const gapPx = 4;
+      const perButton = (entry.contentRect.width - 3 * gapPx) / 4;
+      setHideBadges(perButton < 120);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const steps: Array<{
     mode: SupportMode;
     label: string;
     step: number;
+    icon: React.ReactNode;
     hint: string;
     locked: boolean;
   }> = [
     {
       mode: 'prepare',
-      label: 'Prepare',
+      label: _(msg`Prepare`),
       step: 1,
-      hint: 'Arrange model and transforms',
+      icon: <FolderOpen className="h-3 w-3" strokeWidth={2.5} />,
+      hint: _(msg`Arrange model and transforms`),
       locked: false,
     },
     {
       mode: 'support',
-      label: 'Support',
+      label: _(msg`Support`),
       step: 2,
-      hint: 'Build and tune supports',
+      icon: <Anchor className="h-3 w-3" strokeWidth={2.5} />,
+      hint: _(msg`Build and tune supports`),
       locked: !hasModels,
     },
     {
       mode: 'export',
-      label: 'Export',
+      label: _(msg`Export`),
       step: 3,
-      hint: 'Finalize and export output',
+      icon: <Upload className="h-3 w-3" strokeWidth={2.5} />,
+      hint: _(msg`Finalize and export output`),
       locked: !hasModels,
     },
     {
       mode: 'printing',
-      label: 'Printing',
+      label: _(msg`Printing`),
       step: 4,
-      hint: 'Inspect sliced layers before printing',
+      icon: <Printer className="h-3 w-3" strokeWidth={2.5} />,
+      hint: _(msg`Inspect sliced layers before printing`),
       locked: !hasModels || !hasPrintingData,
     },
   ];
@@ -636,7 +663,7 @@ export function TopBar({
       onMouseDownCapture={handleTopBarPointerDown}
     >
       <div
-        className={`flex w-[430px] items-center gap-2.5 pl-0 pr-4 py-1.5 transition-opacity ${topbarActionsDisabled ? 'opacity-45 pointer-events-none' : ''}`}
+        className={`flex flex-1 max-w-[430px] items-center gap-2.5 pl-0 pr-4 py-1.5 transition-opacity ${topbarActionsDisabled ? 'opacity-45 pointer-events-none' : ''}`}
         data-no-window-drag="false"
         aria-disabled={topbarActionsDisabled}
       >
@@ -657,8 +684,8 @@ export function TopBar({
               ? 'color-mix(in srgb, var(--accent), transparent 80%)'
               : 'transparent',
           }}
-          title="DragonFruit menu"
-          aria-label="Open DragonFruit menu"
+          title={_(msg({ message: 'DragonFruit menu', comment: '"DragonFruit" is the product name and should stay untranslated/unchanged; only "menu" needs translating.' }))}
+          aria-label={_(msg({ message: 'Open DragonFruit menu', comment: '"DragonFruit" is the product name and should stay untranslated/unchanged.' }))}
           data-no-window-drag="true"
         >
           <img
@@ -699,7 +726,7 @@ export function TopBar({
           aria-label={topbarPrinterButtonAriaLabel}
           data-no-window-drag="true"
         >
-          <div className="inline-flex h-8 w-8 items-center justify-center overflow-hidden rounded-sm shrink-0" style={{ background: 'color-mix(in srgb, var(--surface-1), transparent 6%)' }}>
+          <div className="inline-flex h-8 w-8 items-center justify-center overflow-hidden rounded-sm shrink-0" style={{ background: 'color-mix(in srgb, var(--surface-1), transparent 6%)', ...(hideBadges ? { display: 'none' } : {}) }}>
             {activePrinterThumbnailSrc ? (
               <img
                 src={activePrinterThumbnailSrc}
@@ -739,8 +766,8 @@ export function TopBar({
               background: 'transparent',
               color: monitorButtonTone,
             }}
-            title={monitorButtonOffline ? 'Selected printer is offline' : 'Open printer monitor'}
-            aria-label={monitorButtonOffline ? 'Selected printer is offline' : 'Open printer monitor'}
+            title={monitorButtonOffline ? _(msg`Selected printer is offline`) : _(msg`Open printer monitor`)}
+            aria-label={monitorButtonOffline ? _(msg`Selected printer is offline`) : _(msg`Open printer monitor`)}
             data-no-window-drag="true"
           >
             <Activity
@@ -768,7 +795,7 @@ export function TopBar({
             background: 'color-mix(in srgb, var(--surface-0), #000 10%)',
           }}
           role="menu"
-          aria-label="DragonFruit app menu"
+          aria-label={_(msg({ message: 'DragonFruit app menu', comment: '"DragonFruit" is the product name and should stay untranslated/unchanged.' }))}
         >
           <div className="mb-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
             DragonFruit
@@ -791,7 +818,27 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <Save className="h-3.5 w-3.5" />
               </span>
-              <span>Save Scene</span>
+              <span>{_(msg`Save scene`)}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                closeAppMenu();
+                onSaveSceneAs?.();
+              }}
+              disabled={topbarActionsDisabled || !onSaveSceneAs}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium transition-colors"
+              style={{
+                color: (topbarActionsDisabled || !onSaveSceneAs) ? 'var(--text-muted)' : 'var(--text-strong)',
+                opacity: (topbarActionsDisabled || !onSaveSceneAs) ? 0.55 : 1,
+              }}
+              role="menuitem"
+            >
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
+                <SaveAll className="h-3.5 w-3.5" />
+              </span>
+              <span>{_(msg`Save scene as…`)}</span>
             </button>
 
             <button
@@ -811,7 +858,7 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <FolderOpen className="h-3.5 w-3.5" />
               </span>
-              <span>Open Scene…</span>
+              <span>{_(msg`Open scene…`)}</span>
             </button>
 
             <button
@@ -833,7 +880,7 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <Upload className="h-3.5 w-3.5" />
               </span>
-              <span>Import Mesh…</span>
+              <span>{_(msg`Import mesh…`)}</span>
             </button>
 
             <button
@@ -855,7 +902,7 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <FolderInput className="h-3.5 w-3.5" />
               </span>
-              <span>Import Scene…</span>
+              <span>{_(msg`Import scene…`)}</span>
             </button>
 
             <button
@@ -871,7 +918,7 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <Power className="h-3.5 w-3.5" />
               </span>
-              <span>Close Program</span>
+              <span>{_(msg`Close program`)}</span>
             </button>
           </div>
         </div>
@@ -904,16 +951,16 @@ export function TopBar({
             background: 'color-mix(in srgb, var(--surface-0), #000 10%)',
           }}
           role="menu"
-          aria-label="Fleet quick switch"
+          aria-label={_(msg({ message: 'Fleet quick switch', comment: '"Fleet" means the set of physical network printers discovered under the current printer profile, not a literal fleet of vehicles.' }))}
         >
           <div className="mb-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-            Fleet Units
+            {_(msg({ message: 'Fleet units', comment: 'Section heading above the list of network printers belonging to the current profile. "Units" = individual printers.' }))}
           </div>
 
           <div className="max-h-[260px] overflow-y-auto custom-scrollbar space-y-0.5">
             {topbarFleetUnits.map((device) => {
               const active = device.id === activePrinterProfile.activeNetworkDeviceId;
-              const deviceName = device.displayName || device.hostName || device.ipAddress || `Printer ${device.id}`;
+              const deviceName = device.displayName || device.hostName || device.ipAddress || _(msg({ message: `Printer ${device.id}`, comment: 'Fallback shown only when a network printer has no display name, host name, or IP address yet. {0} is an internal device identifier, not a human-friendly value.' }));
               const isOffline = printerReachabilityByDeviceId?.[device.id] === false;
               return (
                 <button
@@ -961,12 +1008,12 @@ export function TopBar({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-semibold">{deviceName}</span>
                     <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      {device.ipAddress || 'No IP'} • {isOffline ? 'Offline' : 'Online'}
+                      {device.ipAddress || _(msg`No IP`)} • {isOffline ? _(msg`Offline`) : _(msg`Online`)}
                     </span>
                   </span>
                   {active && (
                     <span className="text-[10px] rounded-full border px-1.5 py-0.5" style={{ borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)', color: 'var(--accent-secondary)', background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 92%)' }}>
-                      Active
+                      {_(msg({ message: 'Active', comment: 'Badge next to the currently-selected printer in the fleet list (adjective describing the device, e.g. "the active one").' }))}
                     </span>
                   )}
                 </button>
@@ -983,23 +1030,18 @@ export function TopBar({
               role="menuitem"
             >
               <ChevronDown className="h-3.5 w-3.5 rotate-[-90deg]" />
-              Show Manager
+              {_(msg({ message: 'Show manager', comment: 'Opens the printer manager screen (printer profile settings), reached from this quick-switch popover. "Manager" refers to that screen.' }))}
             </button>
           </div>
         </div>
       )}
 
-      <div className="pointer-events-none absolute inset-x-0 flex justify-center px-2">
+      <div className="flex min-w-0 flex-1 justify-center px-2">
         <div
-          className={`relative w-full max-w-[760px] transition-opacity ${topbarActionsDisabled ? 'opacity-45' : ''}`}
+          className={`relative w-full transition-opacity ${topbarActionsDisabled ? 'opacity-45' : ''}`}
           aria-disabled={topbarActionsDisabled}
         >
-          <div
-            className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-px"
-            style={{ background: 'color-mix(in srgb, var(--border-subtle), transparent 10%)' }}
-          />
-
-          <div className={`relative grid grid-cols-4 gap-2 ${topbarActionsDisabled ? 'pointer-events-none' : 'pointer-events-auto'}`}>
+          <div ref={stepsContainerRef} className="flex items-center justify-center gap-1">
             {steps.map((item) => {
               const active = mode === item.mode;
               const locked = item.locked;
@@ -1018,7 +1060,7 @@ export function TopBar({
                   }}
                   disabled={nativeDisabled}
                   aria-disabled={disabled}
-                  className={`group relative flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 transition-all duration-180 ${
+                  className={`group relative flex cursor-pointer items-center gap-1.5 rounded-lg border px-1.5 py-2 transition-all duration-200 flex-1 min-w-[90px] max-w-[190px] h-[36px] ${
                     active
                       ? 'shadow-[0_6px_16px_rgba(0,0,0,0.25)]'
                       : 'hover:-translate-y-[1px] hover:shadow-[0_6px_14px_rgba(0,0,0,0.18)]'
@@ -1038,38 +1080,40 @@ export function TopBar({
                       }
                   }
                   title={topbarActionsDisabled
-                    ? 'Slicing in progress. Topbar actions are temporarily disabled.'
+                    ? _(msg`Slicing in progress. Topbar actions are temporarily disabled.`)
                     : locked
                     ? (item.mode === 'printing'
-                      ? 'Run slicing in Export to unlock Printing preview'
-                      : 'Load a model in Prepare to unlock this stage')
+                      ? _(msg`Run slicing in Export to unlock Printing preview`)
+                      : _(msg`Load a model in Prepare to unlock this stage`))
                     : item.hint}
                 >
                   <span
                     className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold"
-                    style={active
-                      ? {
-                        color: 'var(--text-strong)',
-                        background: 'color-mix(in srgb, var(--accent), white 10%)',
-                      }
-                      : {
-                        color: 'var(--text-muted)',
-                        background: 'var(--surface-2)',
-                      }
-                    }
+                    style={{
+                      ...(active
+                        ? {
+                          color: 'var(--accent)',
+                          background: 'transparent',
+                        }
+                        : {
+                          color: 'var(--text-muted)',
+                          background: 'var(--surface-2)',
+                        }),
+                      ...(hideBadges ? { display: 'none' } : {}),
+                    }}
                   >
-                    {item.step}
+                    {item.icon}
                   </span>
 
                   <span
-                    className="text-xs font-bold leading-none tracking-[0.01em]"
+                    className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center text-xs font-bold leading-none tracking-[0.01em]"
                     style={{ color: active ? 'var(--text-strong)' : 'var(--text-strong)' }}
                   >
                     {item.label}
                   </span>
 
-                  {printingLocked && (
-                    <Lock className="h-3 w-3 ml-auto" style={{ color: 'var(--text-muted)' }} />
+                  {printingLocked && !hideBadges && (
+                    <Lock className="h-3 w-3 ml-auto flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                   )}
 
 
@@ -1080,13 +1124,13 @@ export function TopBar({
         </div>
       </div>
 
-      <div className="ml-auto flex w-[320px] items-center justify-end gap-2 pr-2">
+      <div className="flex flex-1 max-w-[430px] items-center justify-end gap-2 pr-2">
         <div className={`flex items-center gap-2 transition-opacity ${topbarActionsDisabled ? 'opacity-45 pointer-events-none' : ''}`}>
           <ViewTypeDropdown
             value={viewTypeOverride}
             onChange={onViewTypeOverrideChange}
             iconOnly
-            title="View mode"
+            title={_(msg`View mode`)}
             className="[&>button]:!h-8 [&>button]:!w-8 [&>button]:!p-0"
           />
           <Button
@@ -1095,8 +1139,8 @@ export function TopBar({
             className="!p-2"
             onClick={() => onInteriorViewChange(!interiorView)}
             disabled={topbarActionsDisabled || !interiorViewAvailable}
-            title={interiorView ? 'Interior View: On' : interiorViewAvailable ? 'Interior View: Off' : 'Interior View: Unavailable (apply hollowing first)'}
-            aria-label={interiorView ? 'Interior View: On' : interiorViewAvailable ? 'Interior View: Off' : 'Interior View: Unavailable'}
+            title={interiorView ? _(msg({ message: 'Interior view: On', comment: 'Tooltip for a toggle button showing its current state, format "Feature name: state". Interior view is a 3D viewport mode that renders the inside of a hollowed model.' })) : interiorViewAvailable ? _(msg`Interior view: Off`) : _(msg`Interior view: Unavailable (apply hollowing first)`)}
+            aria-label={interiorView ? _(msg`Interior view: On`) : interiorViewAvailable ? _(msg`Interior view: Off`) : _(msg`Interior view: Unavailable`)}
             data-no-window-drag="true"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
@@ -1112,8 +1156,8 @@ export function TopBar({
               className="!p-2"
             onClick={() => setIsSettingsOpen(true)}
             disabled={topbarActionsDisabled}
-            title="Settings"
-            aria-label="Settings"
+            title={_(msg`Settings`)}
+            aria-label={_(msg`Settings`)}
               data-no-window-drag="true"
             >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1128,7 +1172,7 @@ export function TopBar({
             </Button>
         </div>
         {isDesktopWindow && (
-          <div className="ml-1 flex items-center gap-1" aria-label="Window controls">
+          <div className="ml-1 flex items-center gap-1" aria-label={_(msg`Window controls`)}>
             <button
               type="button"
               onClick={handleDesktopWindowMinimize}
@@ -1142,8 +1186,8 @@ export function TopBar({
                 background: 'color-mix(in srgb, #f4bf4f, var(--surface-1) 86%)',
                 color: 'color-mix(in srgb, #f4bf4f, var(--text-strong) 16%)',
               }}
-              title="Minimize"
-              aria-label="Minimize window"
+              title={_(msg`Minimize`)}
+              aria-label={_(msg`Minimize window`)}
             >
               <Minimize2 className="h-3.5 w-3.5" />
             </button>
@@ -1160,8 +1204,8 @@ export function TopBar({
                 background: 'color-mix(in srgb, #40c463, var(--surface-1) 86%)',
                 color: 'color-mix(in srgb, #40c463, var(--text-strong) 16%)',
               }}
-              title={isDesktopWindowMaximized ? 'Restore' : 'Maximize'}
-              aria-label={isDesktopWindowMaximized ? 'Restore window' : 'Maximize window'}
+              title={isDesktopWindowMaximized ? _(msg`Restore`) : _(msg`Maximize`)}
+              aria-label={isDesktopWindowMaximized ? _(msg`Restore window`) : _(msg`Maximize window`)}
             >
               {isDesktopWindowMaximized ? (
                 <Square className="h-3.5 w-3.5" />
@@ -1182,8 +1226,8 @@ export function TopBar({
                 background: 'color-mix(in srgb, #ff6b6b, var(--surface-1) 88%)',
                 color: 'color-mix(in srgb, #ff6b6b, var(--text-strong) 18%)',
               }}
-              title="Close"
-              aria-label="Close window"
+              title={_(msg`Close`)}
+              aria-label={_(msg`Close window`)}
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -1202,7 +1246,7 @@ export function TopBar({
             }}
             role="dialog"
             aria-modal="true"
-            aria-label="Changing printer profile requires re-slice"
+            aria-label={_(msg`Changing printer profile requires re-slice`)}
           >
             <div className="flex items-start justify-between gap-3 border-b px-4 py-3" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="flex min-w-0 items-start gap-2.5 pr-2">
@@ -1218,10 +1262,10 @@ export function TopBar({
                 </span>
                 <div className="min-w-0 pr-2">
                   <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-                    Re-slice required after profile change
+                    {_(msg({ message: 'Re-slice required after profile change', comment: '"Slice"/"re-slice" is the 3D-printing step that converts a model into printer instructions (G-code). This dialog warns that switching printer profile invalidates the already-sliced file.' }))}
                   </h2>
                   <p className="mt-1 max-w-[40ch] text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                    Changing print settings invalidates the current sliced file.
+                    {_(msg`Changing print settings invalidates the current sliced file.`)}
                   </p>
                 </div>
               </div>
@@ -1234,7 +1278,7 @@ export function TopBar({
                   background: 'var(--surface-1)',
                   color: 'var(--text-muted)',
                 }}
-                aria-label="Close warning"
+                aria-label={_(msg`Close warning`)}
                 onClick={() => setShowProfileChangeWarning(false)}
               >
                 <X className="w-4 h-4" />
@@ -1243,7 +1287,7 @@ export function TopBar({
 
             <div className="p-4 space-y-3">
               <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                You can continue to adjust profiles, but you’ll be prompted to re-slice before printing with the updated settings.
+                {_(msg`You can continue to adjust profiles, but you’ll be prompted to re-slice before printing with the updated settings.`)}
               </p>
 
               <div className="grid grid-cols-2 gap-2 pt-1">
@@ -1252,7 +1296,7 @@ export function TopBar({
                   className="ui-button ui-button-secondary !h-9 w-full px-3 text-xs"
                   onClick={() => setShowProfileChangeWarning(false)}
                 >
-                  Keep Current Profiles
+                  {_(msg({ message: 'Keep current profiles', comment: 'Cancels the pending profile change and closes this warning dialog, leaving the previous profile selection untouched. Paired with the "Continue" button below.' }))}
                 </button>
                 <button
                   type="button"
@@ -1267,7 +1311,7 @@ export function TopBar({
                     openProfileSettings(profileModalTab);
                   }}
                 >
-                  Continue
+                  {_(msg({ message: 'Continue', comment: 'Confirms proceeding with the profile change despite the re-slice warning above (paired with "Keep current profiles", which cancels).' }))}
                 </button>
               </div>
             </div>

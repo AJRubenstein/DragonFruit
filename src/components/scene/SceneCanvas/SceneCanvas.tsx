@@ -1,6 +1,9 @@
-﻿"use client";
+"use client";
 
 import React, { useEffect } from 'react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import { hotkeyStore, useActionActive } from '@/hotkeys/hotkeyStore';
 import dynamic from 'next/dynamic';
 import * as THREE from 'three';
 import { AlertTriangle } from 'lucide-react';
@@ -13,6 +16,7 @@ import {
   type CrossSectionStencilCapEntry,
 } from '@/components/scene/CrossSectionStencilCap';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
+import IslandSurfaceDotsOverlay from '@/components/scene/IslandSurfaceDotsOverlay';
 import { IslandVoxelVisualization } from '@/components/scene/IslandVoxelVisualization';
 import { IslandExpansionVisualization } from '@/components/scene/IslandExpansionVisualization';
 import { MeshClassificationRenderer } from '@/components/scene/MeshClassificationRenderer';
@@ -20,8 +24,6 @@ import { IslandIdLabels } from '@/components/scene/IslandIdLabels';
 import { ScreenSpaceGizmo as UnifiedGizmo } from '@/components/gizmo';
 import { warmTransformGizmoGeometryCache } from '@/components/gizmo/gizmoGeometryCache';
 import { PickingDebugOverlay } from '@/components/picking';
-// DEBUG: temporary twig disk B diameter override — see src/supports/__debug__/
-import { TwigDebugOverrideCard } from '@/supports/__debug__/TwigDebugOverrideCard';
 import { SelectionProvider, SelectionManager, SelectionOutlineRenderer, SelectionSpotlight } from '@/components/selection';
 import type { SelectionHighlightMode } from '@/components/selection';
 import type { IslandMarker } from '@/volumeAnalysis/IslandScan/islandOverlayLogic';
@@ -41,6 +43,7 @@ import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFo
 import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/computeRaftOuterBoundary';
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { JointPlacementPreview } from '@/supports/SupportPrimitives/Joint/JointPlacementPreview';
+import { useJointCreationState } from '@/supports/SupportPrimitives/Joint/jointCreationState';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone/contactConeUtils';
 import { isContactDiskHudInteractionActive } from '@/supports/SupportPrimitives/ContactDisk/contactDiskHudInteraction';
 import { BranchPlacementController } from '@/supports/SupportTypes/Branch/BranchPlacementController';
@@ -134,6 +137,7 @@ import {
   toggleSupportPathfindingDebugEnabled,
   toggleSupportPathfindingDebugTuningEnabled,
 } from '@/supports/PlacementLogic/Pathfinding/pathfindingDebugState';
+import { applyScaleFactor } from '@/components/gizmo/scale/applyScaleFactor';
 
 const Canvas = dynamic(() => import('@react-three/fiber').then(m => m.Canvas), { ssr: false });
 
@@ -331,6 +335,7 @@ export function SceneCanvas({
   overlayColor,
   overlayOpacity,
   overlaySelectedIslandId,
+  enableVolumeGlow = true,
   materialRoughness,
   scanResults,
   layerHeightMm,
@@ -343,6 +348,7 @@ export function SceneCanvas({
   voxelOpacity,
   transformMode,
   transform,
+  uniformScaling = true,
   autoLift = false,
   liftDistance = 5,
   autoSnapEnabled = true,
@@ -350,10 +356,7 @@ export function SceneCanvas({
   onTransformStart,
   onGizmoTransformCommit,
   onGizmoTransformGroupCommit,
-  onTransformChangeEnd, // Was onTransformEnd in previous code, checking usage
   onTransformEnd,
-  crossSectionMode,
-  pxMm,
   showIslandIdLabels,
   mode,
   onSupportClick,
@@ -419,9 +422,12 @@ export function SceneCanvas({
   deferCameraIntro = false,
   freezeViewportActive = false,
   cavityGeometryByModelId,
+  onClearSelection,
+  onNewDeviceDetected,
 }: {
   models?: LoadedModel[];
   cavityGeometryByModelId?: Map<string, THREE.BufferGeometry>;
+  onClearSelection?: () => void;
   activeModelId?: string | null;
   visualActiveModelId?: string | null;
   selectedModelIds?: string[];
@@ -448,6 +454,7 @@ export function SceneCanvas({
   overlayColor?: string;
   overlayOpacity?: number;
   overlaySelectedIslandId?: number | null;
+  enableVolumeGlow?: boolean;
   ambientIntensity?: number;
   directionalIntensity?: number;
   headlightIntensity?: number;
@@ -463,6 +470,7 @@ export function SceneCanvas({
   voxelOpacity?: number;
   transformMode?: TransformMode;
   transform?: ModelTransform;
+  uniformScaling?: boolean;
   autoLift?: boolean;
   liftDistance?: number;
   autoSnapEnabled?: boolean;
@@ -485,14 +493,11 @@ export function SceneCanvas({
       after: ModelTransform;
     }>;
   }) => void;
-  onTransformChangeEnd?: (position: THREE.Vector3, rotation: THREE.Euler, scale: THREE.Vector3) => void;
   onTransformEnd?: (
     operation: 'move' | 'rotate' | 'scale',
     finalTransform?: ModelTransform,
     options?: { skipStoreCommit?: boolean },
   ) => void;
-  crossSectionMode?: 'smooth' | 'rasterized';
-  pxMm?: number;
   showIslandIdLabels?: boolean;
   mode?: SupportMode;
   onSupportClick?: (hit: THREE.Intersection) => void;
@@ -547,8 +552,15 @@ export function SceneCanvas({
       polygon: Array<{ x: number; y: number }>,
       helpers: {
         projectWorldPoint: (point: THREE.Vector3) => { x: number; y: number; z: number } | null;
+        /** Snapshot of the camera projection + container size at pointer-up,
+         *  so a resolver can hand projection off to a backend (e.g. Rust-side
+         *  voxel selection) instead of projecting per-voxel on the client.
+         *  viewProj is column-major projectionMatrix * matrixWorldInverse. */
+        getCameraProjection: () =>
+          | { viewProj: number[]; rectWidth: number; rectHeight: number }
+          | null;
       },
-    ) => string[];
+    ) => string[] | Promise<string[]>;
     /** altKey is true when the Alt modifier was held at pointer-up. */
     onSelectionChange: (ids: string[], altKey?: boolean) => void;
   };
@@ -606,8 +618,14 @@ export function SceneCanvas({
   indicatorPlaneColor?: string;
   deferCameraIntro?: boolean;
   freezeViewportActive?: boolean;
+  onNewDeviceDetected?: (deviceId: string) => void;
 }) {
+  const { _ } = useLingui();
   const DROP_ANIMATION_DURATION_MS = 760;
+  const selectedMarker = React.useMemo(() => {
+    if (overlaySelectedIslandId == null || !islandMarkers) return null;
+    return islandMarkers.find(m => m.id === overlaySelectedIslandId);
+  }, [islandMarkers, overlaySelectedIslandId]);
   const LARGE_MODEL_BOUNCE_THRESHOLD_POLYS = 900_000;
   const LARGE_MODEL_DROP_DEFER_THRESHOLD_POLYS = 1_200_000;
   const BUILD_VOLUME_BOUNDS_EPS_MM = 0.01;
@@ -704,6 +722,22 @@ export function SceneCanvas({
   );
 
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const { isActive: isJointCreationActive } = useJointCreationState();
+  const isPlacementActive = React.useMemo(() => {
+    return !!(
+      isBranchPlacementActive ||
+      isLeafPlacementActive ||
+      isBracePlacementActive ||
+      isKickstandPlacementActive ||
+      isJointCreationActive
+    );
+  }, [
+    isBranchPlacementActive,
+    isLeafPlacementActive,
+    isBracePlacementActive,
+    isKickstandPlacementActive,
+    isJointCreationActive
+  ]);
   const [viewportSizeForUiAnchors, setViewportSizeForUiAnchors] = React.useState({ width: 0, height: 0 });
 
   React.useEffect(() => {
@@ -1015,13 +1049,24 @@ export function SceneCanvas({
     }, 180);
   }, [cancelPendingSupportDragResets, resetSupportDragGroupNow]);
 
+  // Live transforms consumed per-frame by the cross-section stencil caps so
+  // the cut surface follows the mesh during gizmo drags instead of snapping
+  // into place on release. Mirrors liveDragTransformRef (active model) plus
+  // the multi-selection preview transforms.
+  const crossSectionLiveTransformsRef = React.useRef<Map<string, ModelTransform>>(new Map());
+
   const queueLiveDragTransform = React.useCallback((next: ModelTransform | null) => {
     liveDragTransformRef.current = next;
+    if (next && activeModelId) {
+      crossSectionLiveTransformsRef.current.set(activeModelId, next);
+    } else if (!next) {
+      crossSectionLiveTransformsRef.current.clear();
+    }
     // During active drag, avoid per-frame React rerenders; scene objects are
     // moved imperatively and this ref remains the source of truth.
     if (isGizmoDragging) return;
     setLiveDragTransformVersion((value) => value + 1);
-  }, [isGizmoDragging]);
+  }, [activeModelId, isGizmoDragging]);
 
   const {
     effectiveHoldSupportDragDelta,
@@ -1067,6 +1112,7 @@ export function SceneCanvas({
     // This prevents stale live transforms from the previous model from being
     // reused after delete/import/undo flows.
     liveDragTransformRef.current = null;
+    crossSectionLiveTransformsRef.current.clear();
     setLiveDragTransformVersion((value) => value + 1);
     setIsGizmoDragging(false);
     setIsGizmoRetargeting(false);
@@ -1082,6 +1128,7 @@ export function SceneCanvas({
     // Clear all transient gizmo/live state so rendering falls back to store data.
     cancelPendingSupportDragResets();
     liveDragTransformRef.current = null;
+    crossSectionLiveTransformsRef.current.clear();
     setLiveDragTransformVersion((value) => value + 1);
     gizmoTransformStartSnapshotRef.current = null;
     setActiveGizmoDragDescriptor(null);
@@ -1096,8 +1143,10 @@ export function SceneCanvas({
   ]);
 
   React.useEffect(() => {
+    const liveTransforms = crossSectionLiveTransformsRef.current;
     return () => {
       liveDragTransformRef.current = null;
+      liveTransforms.clear();
     };
   }, []);
 
@@ -1391,6 +1440,20 @@ export function SceneCanvas({
     text: '#f8fafc',
     accent: '#baf72e',
   });
+  // Orientation labels are resolved out here, in the React tree, and handed to
+  // the 3D helpers as props — those live inside the r3f reconciler, where the
+  // i18n provider is not in scope. "Front" is shared with the build plate's
+  // front-edge marker so both always read the same word.
+  const frontFaceLabel = _(msg({ message: 'Front', comment: 'Orientation label, rendered uppercase on the view cube and on the build plate\'s front edge. Keep it as short as possible — long words are auto-shrunk to fit and become hard to read.' }));
+  // Face order is fixed by the box geometry: +X, -X, +Y, -Y, +Z, -Z.
+  const gizmoFaceLabels = React.useMemo(() => ([
+    frontFaceLabel,
+    _(msg({ message: 'Back', comment: 'View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.' })),
+    _(msg({ message: 'Right', comment: 'View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.' })),
+    _(msg({ message: 'Left', comment: 'View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.' })),
+    _(msg({ message: 'Top', comment: 'View cube face (seen from above), rendered uppercase inside a small 3D cube. Keep it as short as possible.' })),
+    _(msg({ message: 'Bottom', comment: 'View cube face (seen from below), rendered uppercase inside a small 3D cube. Keep it as short as possible.' })),
+  ]), [_, frontFaceLabel]);
   const hoverTintColor = hoverColor ?? '#ec2a77';
   const selectedTintColor = selectionColor ?? '#ec2a77';
   const likelySupportGeometryTintColor = '#c8752a';
@@ -2461,6 +2524,9 @@ export function SceneCanvas({
     for (const [modelId, preview] of Object.entries(previewByModelId)) {
       if (modelId === snapshot.activeModelId) continue;
 
+      // Keep the cross-section caps following the previewed models too.
+      crossSectionLiveTransformsRef.current.set(modelId, preview);
+
       const meshGroup = meshRefs.current[modelId];
       if (meshGroup) {
         meshGroup.position.copy(preview.position);
@@ -2867,12 +2933,38 @@ export function SceneCanvas({
       // ignore release failures
     }
 
-    customPrepareLassoSelection.onSelectionChange(
+    // Snapshot altKey now — the resolver may be async (Rust round-trip on
+    // release) and the pointer event must not be read after it settles.
+    const altKey = e.altKey;
+    const getCameraProjection = () => {
+      const projectionRect = containerRef.current?.getBoundingClientRect();
+      const projectionCamera = cameraRef.current;
+      if (!projectionRect || !projectionCamera) return null;
+      projectionCamera.updateMatrixWorld();
+      const viewProj = projectionCamera.projectionMatrix
+        .clone()
+        .multiply(projectionCamera.matrixWorldInverse)
+        .toArray();
+      return {
+        viewProj,
+        rectWidth: projectionRect.width,
+        rectHeight: projectionRect.height,
+      };
+    };
+
+    Promise.resolve(
       customPrepareLassoSelection.resolveSelection(path, {
         projectWorldPoint: projectPointToCanvas,
+        getCameraProjection,
       }),
-      e.altKey,
-    );
+    )
+      .then((ids) => {
+        customPrepareLassoSelection.onSelectionChange(ids, altKey);
+      })
+      .catch(() => {
+        // Selection resolution failed (e.g. backend unavailable); leave the
+        // blocked set unchanged rather than throwing from a pointer handler.
+      });
 
     suppressNextCanvasClickRef.current = true;
     e.preventDefault();
@@ -3888,32 +3980,30 @@ export function SceneCanvas({
   }, []);
 
   React.useEffect(() => {
-    const handleEscapeDeselect = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      if (event.defaultPrevented) return;
-      if (mode !== 'prepare') return;
-      if (!onActiveModelChange) return;
+    if (mode !== 'prepare') return;
+    if (!onActiveModelChange) return;
 
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName;
-      const isTypingContext = !!target && (
-        target.isContentEditable
-        || tag === 'INPUT'
-        || tag === 'TEXTAREA'
-        || tag === 'SELECT'
-      );
-      if (isTypingContext) return;
+    let wasEscapePressed = false;
 
-      if (!activeModelId && (!selectedModelIds || selectedModelIds.length === 0)) return;
+    const unsubscribe = hotkeyStore.subscribe((state) => {
+      const active = state.activeKeys;
+      const isEscapePressed = active.has('escape');
+      const isEscapeJustPressed = isEscapePressed && !wasEscapePressed;
 
-      onActiveModelChange(null);
-      window.dispatchEvent(new CustomEvent('model-deselected'));
-    };
+      if (isEscapeJustPressed) {
+        if (!activeModelId && (!selectedModelIds || selectedModelIds.length === 0)) {
+          wasEscapePressed = isEscapePressed;
+          return;
+        }
 
-    window.addEventListener('keydown', handleEscapeDeselect);
-    return () => {
-      window.removeEventListener('keydown', handleEscapeDeselect);
-    };
+        onActiveModelChange(null);
+        window.dispatchEvent(new CustomEvent('model-deselected'));
+      }
+
+      wasEscapePressed = isEscapePressed;
+    });
+
+    return unsubscribe;
   }, [activeModelId, mode, onActiveModelChange, selectedModelIds]);
 
   React.useEffect(() => {
@@ -3923,49 +4013,38 @@ export function SceneCanvas({
       return;
     }
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (event.repeat) return;
-      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    let wasJPressed = false;
+    let wasMPressed = false;
 
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName;
-      const isTypingContext = !!target && (
-        target.isContentEditable
-        || tag === 'INPUT'
-        || tag === 'TEXTAREA'
-        || tag === 'SELECT'
-      );
-      if (isTypingContext) return;
+    const unsubscribe = hotkeyStore.subscribe((state) => {
+      const active = state.activeKeys;
+      const isJPressed = active.has('j');
+      const isMPressed = active.has('m');
 
-      const isMHotkey = event.code === 'KeyM' || event.key.toLowerCase() === 'm';
-      if (isMHotkey && supportPathfindingDebugState.enabled) {
-        event.preventDefault();
-        event.stopPropagation();
+      const isJJustPressed = isJPressed && !wasJPressed;
+      const isMJustPressed = isMPressed && !wasMPressed;
+
+      if (isMJustPressed && supportPathfindingDebugState.enabled) {
         toggleSupportPathfindingDebugTuningEnabled();
         setShowSupportPathfindingTuningSuggestions((prev) => !prev);
-        return;
       }
 
-      const isJHotkey = event.code === 'KeyJ' || event.key.toLowerCase() === 'j';
-      if (!isJHotkey) return;
+      if (isJJustPressed) {
+        const nowMs = performance.now();
+        const elapsedMs = nowMs - supportPathfindingDebugLastTapMsRef.current;
+        supportPathfindingDebugLastTapMsRef.current = nowMs;
 
-      const nowMs = performance.now();
-      const elapsedMs = nowMs - supportPathfindingDebugLastTapMsRef.current;
-      supportPathfindingDebugLastTapMsRef.current = nowMs;
+        if (elapsedMs <= SUPPORT_PATHFINDING_DEBUG_DOUBLE_TAP_WINDOW_MS) {
+          toggleSupportPathfindingDebugEnabled();
+          supportPathfindingDebugLastTapMsRef.current = 0;
+        }
+      }
 
-      if (elapsedMs > SUPPORT_PATHFINDING_DEBUG_DOUBLE_TAP_WINDOW_MS) return;
+      wasJPressed = isJPressed;
+      wasMPressed = isMPressed;
+    });
 
-      event.preventDefault();
-      event.stopPropagation();
-      toggleSupportPathfindingDebugEnabled();
-      supportPathfindingDebugLastTapMsRef.current = 0;
-    };
-
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, true);
-    };
+    return unsubscribe;
   }, [mode, supportPathfindingDebugState.enabled]);
 
   React.useEffect(() => {
@@ -4011,6 +4090,7 @@ export function SceneCanvas({
   const handleScenePointerMissed = React.useCallback(() => {
     if (!cameraInteractionCycleEnabled) return;
     if (isMarqueeSelecting) return;
+    if (isPlacementActive) return;
     if (window.__modelClickedThisFrame) return;
     if (orbitInteractionActiveRef.current || spaceMouseNavigationActive) return;
 
@@ -4032,7 +4112,7 @@ export function SceneCanvas({
       if (supportStateForBounds.hoveredCategory === 'contactDisk') return;
       clearSupportSelection();
     }
-  }, [cameraInteractionCycleEnabled, isMarqueeSelecting, mode, onActiveModelChange, spaceMouseNavigationActive, supportStateForBounds.hoveredCategory]);
+  }, [cameraInteractionCycleEnabled, isMarqueeSelecting, mode, onActiveModelChange, spaceMouseNavigationActive, supportStateForBounds.hoveredCategory, isPlacementActive]);
 
   React.useEffect(() => {
     updateCameraBelowBuildPlate();
@@ -4464,7 +4544,7 @@ export function SceneCanvas({
       }
 
       benchmarkRunIdRef.current = requestId;
-      dispatchProgress({ requestId, status: 'started', message: `Preparing ${stressProfile} 3D orbit sweepsΓÇª` });
+      dispatchProgress({ requestId, status: 'started', message: `Preparing ${stressProfile} 3D orbit sweeps…` });
 
       const startedAt = performance.now();
       const startedAtIso = new Date().toISOString();
@@ -5089,7 +5169,8 @@ export function SceneCanvas({
     };
 
     const suppressContextMenuDuringOrbit = (event: Event) => {
-      if (orbitInteractionActiveRef.current) {
+      const container = containerRef.current;
+      if (orbitInteractionActiveRef.current && container && container.contains(event.target as Node)) {
         event.preventDefault();
       }
       forceOrbitEndIfActive();
@@ -5233,24 +5314,16 @@ export function SceneCanvas({
     }
   }, [crossSectionCapDebugState]);
 
+  const isCapsDebugActive = useActionActive('DEBUG', 'TOGGLE_CAPS');
+  const wasCapsDebugActive = React.useRef(false);
+
   React.useEffect(() => {
     if (!CROSS_SECTION_CAP_DEBUG_HOTKEY_ENABLED) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      const isToggle = event.ctrlKey
-        && event.shiftKey
-        && (event.code === 'KeyK' || event.key.toLowerCase() === 'k');
-      if (!isToggle) return;
-      event.preventDefault();
-      event.stopPropagation();
+    if (isCapsDebugActive && !wasCapsDebugActive.current) {
       setShowCrossSectionCapDebugPanel((prev) => !prev);
-    };
-
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, true);
-    };
-  }, []);
+    }
+    wasCapsDebugActive.current = isCapsDebugActive;
+  }, [isCapsDebugActive]);
 
   const topCapDebugOverrides = crossSectionCapDebugState.enabled
     ? crossSectionCapDebugState.top
@@ -5313,6 +5386,7 @@ export function SceneCanvas({
           showGrid={(!thumbnailCaptureActive || includeHelpersGridDuringCapture) && !hideGridHelpers}
           showBuildPlate={!thumbnailCaptureActive || includeBuildPlateDuringCapture}
           safetyMarginMm={activeBuildVolumeSettings.safetyMarginMm}
+          frontLabel={frontFaceLabel}
         />
         <EnableLocalClipping enabled={clipLower != null || clipUpper != null || indicatorPlaneZ != null || !!organicCutKeyGizmo} />
         <CameraProvider cameraRef={cameraRef} />
@@ -5410,6 +5484,13 @@ export function SceneCanvas({
                 if (shouldHideDuplicateSourceModel) return null;
                 if (arrangeArraySourceModelIdSet.has(model.id)) return null;
 
+                // The native repair/classify routines end with a manifold_csg
+                // status check on the model section. When the CSG backend reports
+                // any non-manifold status, overlay a red stripe pattern on
+                // the model to flag it.
+                const modelIsNonManifold =
+                  model.geometry.meshDefects?.nativeRepairReport?.model_is_manifold === false;
+
                 return (
                   <React.Fragment key={model.id}>
                     <StlMesh
@@ -5418,6 +5499,7 @@ export function SceneCanvas({
                       clipLower={clipLower}
                       clipUpper={clipUpper}
                       meshColor={model.color || meshColor} // Use model color
+                      nonManifold={modelIsNonManifold} // Red checkerboard overlay when the model fails the manifold status check
                       meshRef={meshGroupRefCallback}
                       actualMeshRef={actualMeshRefCallback}
                       materialRoughness={materialRoughness}
@@ -5482,6 +5564,7 @@ export function SceneCanvas({
                         && (isGizmoDragging || isPostGizmoInteractionGuardActive)
                       }
                       supportSectionGeometry={model.geometry.meshDefects?.supportSectionGeometry ?? null}
+                      modelSectionGeometry={model.geometry.meshDefects?.modelSectionGeometry ?? null}
                       onHolePunchClick={onHolePunchClick}
                       onHolePunchHover={onHolePunchHover}
                       onOrganicCutClick={onOrganicCutClick}
@@ -5490,6 +5573,7 @@ export function SceneCanvas({
                         <group
                           matrix={activeModelAttachedSupportLocalMatrix ?? undefined}
                           matrixAutoUpdate={false}
+                          renderOrder={100000}
                         >
                           <ModelAttachedSupportLayer
                             mode={mode}
@@ -5522,8 +5606,20 @@ export function SceneCanvas({
                           />
                         </group>
                       )}
-                    </StlMesh>
 
+                      {isActive && (mode === 'support' || mode === 'analysis') && islandMarkers && islandMarkers.length > 0 && (
+                        <IslandSurfaceDotsOverlay
+                          geometry={model.geometry.geometry}
+                          islandMarkers={islandMarkers}
+                          scanBBox={scanBBox || null}
+                          selectedIslandId={overlaySelectedIslandId}
+                          clipLower={clipLower}
+                          clipUpper={clipUpper}
+                          opacity={overlayOpacity ?? 0.9}
+                          transform={transformToUse}
+                        />
+                      )}
+                    </StlMesh>
                   </React.Fragment>
                 );
               })}
@@ -5785,7 +5881,7 @@ export function SceneCanvas({
 
               {/* Raft system (Crenelated) - uses supports roots + active model footprint */}
               {/* Wrap all support/raft geometry in a drag group so they move as one during gizmo drags */}
-              <group ref={supportDragGroupRef ?? undefined}>
+              <group ref={supportDragGroupRef ?? undefined} renderOrder={100000}>
               {!useActiveModelAttachedSupportProxy && (
                 <ModelAttachedSupportLayer
                   mode={mode}
@@ -5831,6 +5927,7 @@ export function SceneCanvas({
                 <CrossSectionStencilCap
                   key="cross-section-cap-top"
                   entries={crossSectionCapEntries}
+                  liveTransformsRef={crossSectionLiveTransformsRef}
                   sourceObject={supportDragGroupRef?.current ?? null}
                   sourceObjectVersion={clipUpper != null ? crossSectionStencilSourceVersion : undefined}
                   // During slider scrubbing, avoid expensive source z-bound
@@ -5856,6 +5953,7 @@ export function SceneCanvas({
                 <CrossSectionStencilCap
                   key="cross-section-cap-bottom"
                   entries={crossSectionCapEntries}
+                  liveTransformsRef={crossSectionLiveTransformsRef}
                   sourceObject={supportDragGroupRef?.current ?? null}
                   sourceObjectVersion={crossSectionStencilSourceVersion}
                   skipSourceZBounds={isLayerScrubbing}
@@ -5908,6 +6006,7 @@ export function SceneCanvas({
 
               {/* During active-model proxy drag, keep other models' supports/rafts visible in world space. */}
               {useActiveModelAttachedSupportProxy && activeModelId && (
+                <group renderOrder={100000}>
                 <ModelAttachedSupportLayer
                   mode={mode}
                   excludeModelId={activeModelId}
@@ -5934,6 +6033,7 @@ export function SceneCanvas({
                   cavityGeometryByModelId={cavityGeometryByModelId}
                   modelWorldInverseById={modelWorldInverseById}
                 />
+                </group>
               )}
 
               {multiGizmoSupportPreviewDeltas.length > 0
@@ -5945,6 +6045,7 @@ export function SceneCanvas({
                       }}
                       matrix={delta}
                       matrixAutoUpdate={false}
+                      renderOrder={100000}
                       raycast={() => null}
                     >
                       <ModelAttachedSupportLayer
@@ -5997,6 +6098,7 @@ export function SceneCanvas({
                   enableMove
                   enableRotate={!isMultiGizmoSelection}
                   enableScale
+                  uniformScaling={uniformScaling}
                   enableLighting
                   onDragStateChange={setIsGizmoDragging}
                   onRetargetingChange={setIsGizmoRetargeting}
@@ -6330,11 +6432,10 @@ export function SceneCanvas({
                     }
                     return true;
                   }}
-                  onScale={(_axis, value) => {
+                  onScale={(axis, value) => {
                     if (activeGroupRef.current) {
-                      const scalarValue = Number(value);
-                      const safeScalar = Number.isFinite(scalarValue) ? scalarValue : 1;
-                      const nextScale = initialScaleRef.current.clone().multiplyScalar(Math.max(0.0001, safeScalar));
+                      const safeScalar = Number.isFinite(Number(value)) ? Number(value) : 1;
+                      const nextScale = applyScaleFactor(initialScaleRef.current, axis, safeScalar);
                       activeGroupRef.current.scale.copy(nextScale);
                       applySupportGroupDelta();
                       const live = captureActiveGroupTransform();
@@ -6446,17 +6547,18 @@ export function SceneCanvas({
                   via the GPU picking system. Supplied by the host (page.tsx). */}
               {organicCutKeyGizmo}
 
-              <IslandOverlay
-                markers={islandMarkers ?? []}
-                meshRef={activeActualMeshRef.current}
-                brushRadiusMm={overlayBrushRadius ?? 2}
-                color={overlayColor ?? '#FF0000'}
-                opacity={overlayOpacity ?? 0.5}
-                transform={transform}
-                selectedIslandId={overlaySelectedIslandId}
-                clipLower={clipLower}
-                clipUpper={clipUpper}
-              />
+              {selectedMarker && enableVolumeGlow && (
+                <IslandOverlay
+                  markers={[selectedMarker]}
+                  brushRadiusMm={overlayBrushRadius ?? 2}
+                  color={overlayColor ?? '#FF0000'}
+                  opacity={overlayOpacity ?? 0.5}
+                  transform={transform}
+                  selectedIslandId={overlaySelectedIslandId}
+                  clipLower={clipLower}
+                  clipUpper={clipUpper}
+                />
+              )}
 
               <IslandVoxelVisualization
                 scanResults={scanResults ?? null}
@@ -6549,7 +6651,7 @@ export function SceneCanvas({
               {mode === 'support' && <BranchPlacementController />}
 
               {/* Leaf Placement Controller - handles snapping logic */}
-              {mode === 'support' && <LeafPlacementController />}
+              {mode === 'support' && <LeafPlacementController activeModelId={activeModelId} />}
 
               {/* Brace Placement Controller - handles snapping logic */}
               {mode === 'support' && <BracePlacementController />}
@@ -6600,7 +6702,7 @@ export function SceneCanvas({
             && !(mode === 'prepare' && transformMode === 'smoothing' && smoothingBrushState.isStrokeActive)
             && !isGizmoDragging
             && !isMarqueeSelecting
-            && !customPrepareMarqueeSelection?.enabled
+            && !isPlacementActive
             && !organicCutDragging
           }
           onStart={handleOrbitStart}
@@ -6616,6 +6718,7 @@ export function SceneCanvas({
           >
             <ZUpGizmoViewcube
               font="600 24px Inter, system-ui, sans-serif"
+              faces={gizmoFaceLabels}
               color={gizmoColors.face}
               textColor={gizmoColors.text}
               strokeColor={gizmoColors.accent}
@@ -6633,6 +6736,7 @@ export function SceneCanvas({
             mouseOrbitDragRunId={mouseOrbitDragRunId}
             onNavigationActiveChange={setSpaceMouseNavigationActive}
             onNavigationFrame={handleSpaceMouseNavigationFrame}
+            onNewDeviceDetected={onNewDeviceDetected}
           />
         )}
         {cameraInteractionCycleEnabled && (
@@ -6670,7 +6774,7 @@ export function SceneCanvas({
           plateWidthMm={activeBuildVolumeSettings.widthMm}
           plateDepthMm={activeBuildVolumeSettings.depthMm}
         />
-        <CameraFocusController selectedIslandId={overlaySelectedIslandId ?? null} islandMarkers={islandMarkers ?? []} />
+        <CameraFocusController selectedIslandId={overlaySelectedIslandId ?? null} islandMarkers={islandMarkers ?? []} onClearSelection={onClearSelection} />
         {mode === 'support' && supportPathfindingDebugState.enabled && (
           <SupportPathfindingDebugOverlay snapshot={supportPathfindingDebugState.snapshot} />
         )}
@@ -6726,7 +6830,7 @@ export function SceneCanvas({
           }}
         >
           <div className="rounded border border-neutral-700 bg-neutral-900/70 px-3 py-2 text-sm text-neutral-100">
-            Loading brushΓÇª
+            Loading brush…
           </div>
         </div>
       )}
@@ -6743,7 +6847,7 @@ export function SceneCanvas({
           }}
         >
           <div className="rounded border border-neutral-700 bg-neutral-900/70 px-3 py-2 text-sm text-neutral-100">
-            SmoothingΓÇª {Math.round((smoothingProcessing.progress ?? 0) * 100)}%
+            Smoothing… {Math.round((smoothingProcessing.progress ?? 0) * 100)}%
           </div>
         </div>
       )}
@@ -6766,14 +6870,6 @@ export function SceneCanvas({
 
       {/* GPU Picking Debug Overlay - shows what's under cursor */}
       {gpuPickingTest && <PickingDebugOverlay position="top-right" />}
-
-      {/* DEBUG: twig disk B diameter override. Hidden in normal builds — the
-          default twig is the tapered-twig code path with disk B forced equal
-          to disk A (achieved by leaving the override null). Lychee importer
-          bypasses buildTwig and can still produce asymmetric A/B. Re-mount
-          this card to expose the override for dev testing. */}
-      {false && <TwigDebugOverrideCard />}
-
 
       {showCrossSectionCapDebugPanel && (
         <div

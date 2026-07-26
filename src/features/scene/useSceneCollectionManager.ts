@@ -3,14 +3,13 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
-import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
+import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
 import { isVoxlBinaryV2, parseVoxlBinaryV2, parseVoxlDocument, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import type { SelectionHighlightMode } from '@/components/selection';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
-import { pushHistory, registerHistoryHandler } from '@/history/historyStore';
-import type { HistoryAction, HistoryDirection } from '@/history/types';
+import { createTypedHistory } from '@/history/typedHistory';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 import type { DragonfruitImportFormat, SupportMode, SupportState } from '@/supports/types';
 import { GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS } from '@/features/plugins/generatedBuiltinComplexPlugins';
@@ -38,6 +37,12 @@ import {
   subscribeToProfileStore,
 } from '@/features/profiles/profileStore';
 import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
+import {
+  deleteStoredMeshModifiers,
+  getStoredMeshModifiers,
+  storeModelMeshModifiers,
+} from '@/features/mesh-modifiers/meshModifierStore';
+import { splitClassifiedSupportGeometry } from '@/features/scene/splitClassifiedSupports';
 
 type PersistedMeshAppearance = {
   v: 1;
@@ -86,10 +91,32 @@ const RECENT_OPENED_FILES_LIMIT = 10;
 const RECENT_FILES_DB_NAME = 'dragonfruit-recent-files';
 const RECENT_FILES_DB_VERSION = 1;
 const RECENT_FILES_STORE_NAME = 'files';
-const SCENE_MODELS_SNAPSHOT_APPLY = 'scene_models_snapshot_apply';
+const SCENE_MODELS_SNAPSHOT_APPLY = 'scene_models_snapshot_apply' as const;
+// A marker pushed after a slice so change-detection can tell whether the scene
+// was edited since. It carries no undo behaviour, but it still lands on the undo
+// stack, so it must have a (pass-through) handler — otherwise undoing onto it
+// would strand the stack. Exported so the push site keys off the same constant.
+export const SCENE_SLICED = 'SCENE_SLICED' as const;
 const SCENE_HISTORY_MAX_SNAPSHOTS = 200;
+// Belt-and-suspenders alongside the count cap above: a handful of
+// full-resolution geometry swaps (e.g. repeated hollowing on a large model)
+// can retain far more memory per snapshot than typical small edits, so the
+// flat count cap alone can leave a lot of stale geometry pinned alive.
+const SCENE_HISTORY_MAX_ESTIMATED_GEOMETRY_BYTES = 300 * 1024 * 1024;
 
 type SceneSnapshotPayload = { key: string };
+
+/** Action→payload map for the scene history domain. */
+type SceneHistoryPayloadMap = {
+  [SCENE_MODELS_SNAPSHOT_APPLY]: SceneSnapshotPayload;
+  [SCENE_SLICED]: Record<string, never>;
+};
+const sceneHistory = createTypedHistory<SceneHistoryPayloadMap>();
+
+/** Push the post-slice marker used to detect edits made after a slice. */
+export function pushSceneSlicedMarker(): void {
+  sceneHistory.push({ type: SCENE_SLICED, description: 'Scene sliced for printing', payload: {} });
+}
 
 type SceneSnapshot = {
   models: LoadedModel[];
@@ -142,11 +169,57 @@ function cloneLoadedModel(model: LoadedModel): LoadedModel {
   return {
     ...model,
     transform: cloneTransform(model.transform),
-    meshModifiers: model.meshModifiers ? clonePlainObject(model.meshModifiers) : undefined,
+    // meshModifiers are stored externally in meshModifierStoreRef — never on the model object.
+    meshModifiers: undefined,
   };
 }
 
+/**
+ * Lightweight shallow clone — avoids JSON round-trip through MB-scale
+ * base64 strings (cavityPositionsBase64, holePunchSourcePositionsBase64)
+ * that LYS imports carry in meshModifiers.
+ *
+ * NOTE: Since meshModifiers are now stored externally in
+ * meshModifierStoreRef and stripped from model objects, this function is
+ * only used during import to sanitize the payload before storing it in
+ * the external store.
+ */
+function cloneMeshModifiersShallow(modifiers: ModelMeshModifiers): ModelMeshModifiers {
+  return {
+    ...modifiers,
+    hollowing: modifiers.hollowing ? { ...modifiers.hollowing } : undefined,
+    holePunches: modifiers.holePunches ? modifiers.holePunches.map((p) => ({ ...p })) : undefined,
+    holePunchAppliedPlacements: modifiers.holePunchAppliedPlacements
+      ? modifiers.holePunchAppliedPlacements.map((p) => ({ ...p }))
+      : undefined,
+  };
+}
+
+// ── External Mesh Modifier Store ─────────────────────────────────────────
+//
+// Model mesh modifiers (especially the MB-scale cavityPositionsBase64 /
+// sourcePositionsBase64 from LYS imports) are kept in a module-level Map in
+// features/mesh-modifiers/meshModifierStore.ts instead of on model objects.
+// This prevents React's state reconciliation from churning on large payloads
+// during selection, copy, paste, and duplicate operations. Save/export/slice
+// boundaries must resolve modifiers through that store (see
+// resolveModelMeshModifiers) — model objects carry meshModifiers: undefined
+// by design.
+
+function schedulePostPaint(callback: () => void): void {
+  if (typeof window === 'undefined') {
+    setTimeout(callback, 0);
+    return;
+  }
+  window.setTimeout(callback, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+
 function clonePlainObject<T>(value: T): T {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value) as T;
+  }
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
@@ -191,12 +264,53 @@ function hasSupportsOrKickstandsForModel(
   return Object.values(kickstandState.kickstands).some((kickstand) => kickstand.modelId === modelId);
 }
 
+function estimateGeometryBytes(geometry: THREE.BufferGeometry): number {
+  let total = 0;
+  for (const key in geometry.attributes) {
+    const attribute = geometry.attributes[key];
+    if (attribute?.array) {
+      total += (attribute.array as ArrayBufferView).byteLength;
+    }
+  }
+  if (geometry.index?.array) {
+    total += (geometry.index.array as ArrayBufferView).byteLength;
+  }
+  return total;
+}
+
+// Deliberately not deduplicated across snapshots/models: many pairs will
+// reference the same unchanged geometry, so this over-counts rather than
+// under-counts. That's the right direction for a safety cap -- it can only
+// make eviction more eager than strictly necessary, never less.
+function estimateSceneSnapshotRegistryBytes(): number {
+  let total = 0;
+  for (const pair of sceneSnapshotRegistry.values()) {
+    for (const model of pair.before.models) {
+      total += estimateGeometryBytes(model.geometry.geometry);
+    }
+    for (const model of pair.after.models) {
+      total += estimateGeometryBytes(model.geometry.geometry);
+    }
+  }
+  return total;
+}
+
 function storeSceneSnapshotPair(pair: SceneSnapshotPair): string {
   const key = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   sceneSnapshotRegistry.set(key, pair);
   sceneSnapshotOrder.push(key);
 
   while (sceneSnapshotOrder.length > SCENE_HISTORY_MAX_SNAPSHOTS) {
+    const removed = sceneSnapshotOrder.shift();
+    if (removed) sceneSnapshotRegistry.delete(removed);
+  }
+
+  // Always keep at least one snapshot so undo of the most recent action
+  // still works, even if it alone exceeds the byte budget.
+  while (
+    sceneSnapshotOrder.length > 1
+    && estimateSceneSnapshotRegistryBytes() > SCENE_HISTORY_MAX_ESTIMATED_GEOMETRY_BYTES
+  ) {
     const removed = sceneSnapshotOrder.shift();
     if (removed) sceneSnapshotRegistry.delete(removed);
   }
@@ -760,9 +874,9 @@ export interface LoadedModel {
   groupId?: string;
   groupName?: string;
   fileUrl: string;
-  fileSizeBytes?: number;
   /** Original on-disk mesh retained when `geometry` is a reduced native preview. */
-  sourcePath?: string;
+  sourcePath?: string | null;
+  fileSizeBytes?: number;
   geometry: GeometryWithBounds;
   transform: ModelTransform;
   visible: boolean;
@@ -802,6 +916,7 @@ import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/c
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { beginKickstandStoreBatch, endKickstandStoreBatch } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { getImportDefaultsRaftPatch, getSavedImportDefaultsSettings } from '@/features/scene/importDefaultsPreferences';
+import { readNativeFileSize } from '@/utils/pluginNetworkBridge';
 
 type ImportProgressState = {
   active: boolean;
@@ -811,9 +926,9 @@ type ImportProgressState = {
   progress: number | null;
 };
 
-type SceneImportReportTone = 'success' | 'warning' | 'error';
+export type SceneImportReportTone = 'success' | 'warning' | 'error';
 
-type SceneImportReport = {
+export type SceneImportReport = {
   id: number;
   text: string;
   tone: SceneImportReportTone;
@@ -964,6 +1079,9 @@ export function useSceneCollectionManager() {
   const deferredAccelerationPausedRef = useRef(false);
   const deferredDisposalQueueRef = useRef<THREE.BufferGeometry[]>([]);
   const deferredDisposalProcessingRef = useRef(false);
+  // Count of scheduled-but-unfinished flattening-plane computations (idle
+  // callbacks after geometry swaps). Part of hasPendingBackgroundGeometryWork.
+  const pendingFlatteningPlanesRef = useRef(0);
   const trackedGeometriesRef = useRef<Set<THREE.BufferGeometry>>(new Set());
 
   const tryRevokeObjectUrl = useCallback((url: string) => {
@@ -1589,10 +1707,9 @@ export function useSceneCollectionManager() {
   }, []);
 
   useEffect(() => {
-    const unregisterSceneModelsHistory = registerHistoryHandler(
+    const unregisterSceneModelsHistory = sceneHistory.register(
       SCENE_MODELS_SNAPSHOT_APPLY,
-      (action: HistoryAction, direction: HistoryDirection) => {
-        const payload = action.payload as SceneSnapshotPayload | undefined;
+      (payload, direction) => {
         if (!payload?.key) return false;
 
         const pair = sceneSnapshotRegistry.get(payload.key);
@@ -1603,17 +1720,23 @@ export function useSceneCollectionManager() {
       },
     );
 
+    // Pass-through: the slice marker carries no undo behaviour, but registering
+    // it keeps undo/redo moving it between stacks instead of stranding an entry
+    // with no handler.
+    const unregisterSceneSliced = sceneHistory.register(SCENE_SLICED, () => true);
+
     return () => {
       unregisterSceneModelsHistory();
+      unregisterSceneSliced();
     };
   }, [applySceneSnapshot]);
 
   const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: string) => {
     const key = storeSceneSnapshotPair({ before, after });
-    pushHistory({
+    sceneHistory.push({
       type: SCENE_MODELS_SNAPSHOT_APPLY,
       description,
-      payload: { key } satisfies SceneSnapshotPayload,
+      payload: { key },
     });
   }, []);
 
@@ -1728,6 +1851,21 @@ export function useSceneCollectionManager() {
     }
   }, [processDeferredAccelerationQueue]);
 
+  /**
+   * True while deferred post-swap geometry work (BVH acceleration builds,
+   * deferred geometry disposals, flattening-plane computation) is queued or
+   * running. Lets the UI keep a blocking "finalizing" indicator visible
+   * until the app is genuinely responsive again after a large geometry swap
+   * — the swap itself resolves long before this work drains.
+   */
+  const hasPendingBackgroundGeometryWork = useCallback(() => (
+    deferredAccelerationQueueRef.current.length > 0
+    || deferredAccelerationProcessingRef.current
+    || deferredDisposalQueueRef.current.length > 0
+    || deferredDisposalProcessingRef.current
+    || pendingFlatteningPlanesRef.current > 0
+  ), []);
+
   const processDeferredDisposalQueue = useCallback(() => {
     if (deferredDisposalProcessingRef.current) return;
     if (deferredDisposalQueueRef.current.length === 0) return;
@@ -1781,7 +1919,7 @@ export function useSceneCollectionManager() {
   const trackRecentOpenedFiles = useCallback((
     files: File[],
     kind: RecentOpenedFileKind,
-    options?: { sourcePaths?: Array<string | null | undefined> },
+    options?: { sourcePaths?: Array<string | null | undefined>; fileSizes?: Array<number | undefined> },
   ) => {
     if (files.length === 0) return;
 
@@ -1794,18 +1932,19 @@ export function useSceneCollectionManager() {
         const name = file.name?.trim();
         if (!name) return;
 
-        const sourcePath = kind === 'scene'
-          ? (typeof options?.sourcePaths?.[index] === 'string' && options.sourcePaths[index]!.trim().length > 0
-              ? options.sourcePaths[index]!.trim()
-              : undefined)
-          : undefined;
+        const sourcePath = (typeof options?.sourcePaths?.[index] === 'string' && options.sourcePaths[index]!.trim().length > 0
+          ? options.sourcePaths[index]!.trim()
+          : undefined);
 
-        const sizeBytes = Number.isFinite(file.size) ? file.size : undefined;
+        // Use the resolved on-disk file size (for path-backed files whose
+        // File.size is 0) when available, falling back to the File API size.
+        const sizeBytes = options?.fileSizes?.[index] ?? (Number.isFinite(file.size) && file.size > 0 ? file.size : undefined);
 
         // When a concrete sourcePath is known, use it as the primary dedup key,
         // ignoring sizeBytes. This prevents duplicates when Ctrl+S re-saves the
-        // file with an updated thumbnail (changing its size).
-        const matchBySourcePath = kind === 'scene' && sourcePath != null;
+        // file with an updated thumbnail (changing its size), and ensures mesh
+        // files backed by a disk path can be re-opened via the Rust sideload.
+        const matchBySourcePath = sourcePath != null;
 
         const isMatchingEntry = (entry: RecentOpenedFileEntry): boolean => {
           if (entry.kind !== kind || entry.name !== name) return false;
@@ -1864,10 +2003,15 @@ export function useSceneCollectionManager() {
     });
   }, []);
 
-  // Active model derived state
-  const activeModel = useMemo(() =>
-    models.find(m => m.id === activeModelId) || null
-    , [models, activeModelId]);
+  // Active model derived state — meshModifiers are hydrated from the
+  // external store so model objects never carry the heavy base64 payloads.
+  const activeModel = useMemo(() => {
+    const model = models.find(m => m.id === activeModelId) || null;
+    if (!model) return null;
+    const storedModifiers = getStoredMeshModifiers(model.id);
+    if (!storedModifiers) return model;
+    return { ...model, meshModifiers: storedModifiers };
+  }, [models, activeModelId]);
 
   useEffect(() => {
     const modelIdSet = new Set(models.map((m) => m.id));
@@ -1919,7 +2063,24 @@ export function useSceneCollectionManager() {
 
     await waitForUiYield();
 
-    trackRecentOpenedFiles(files, 'mesh');
+    // Collect on-disk file paths so recent-file entries can re-open via the
+    // Rust sideload (which reads directly from disk) instead of restoring from
+    // the empty IndexedDB blob created by createPathBackedStlFile. Also resolve
+    // the real file size for path-backed files (file.size is 0 for those).
+    const meshSourcePaths: Array<string | undefined> = [];
+    const meshFileSizes: Array<number | undefined> = [];
+    for (const f of files) {
+      const fp = (f as File & { filePath?: string }).filePath;
+      meshSourcePaths.push(fp);
+      if (fp && f.size === 0) {
+        // Path-backed STL — read the actual file size from disk.
+        const realSize = await readNativeFileSize(fp).catch(() => null);
+        meshFileSizes.push(realSize ?? undefined);
+      } else {
+        meshFileSizes.push(f.size > 0 ? f.size : undefined);
+      }
+    }
+    trackRecentOpenedFiles(files, 'mesh', { sourcePaths: meshSourcePaths, fileSizes: meshFileSizes });
 
     // Read auto-lift settings from storage (mirroring useTransformManager logic)
     let autoLift = false;
@@ -2437,14 +2598,19 @@ export function useSceneCollectionManager() {
           setTimeout(cb, 16);
         }
       };
+      pendingFlatteningPlanesRef.current += 1;
       scheduleIdle(() => {
-        const planes = computeFlatteningPlanes(nextBufferGeometry);
-        nextGeometry.flatteningPlanes = planes;
-        setModels((prev) => prev.map((m) => (
-          m.id === id && m.geometry.geometry === nextBufferGeometry
-            ? { ...m, geometry: { ...m.geometry, flatteningPlanes: planes } }
-            : m
-        )));
+        try {
+          const planes = computeFlatteningPlanes(nextBufferGeometry);
+          nextGeometry.flatteningPlanes = planes;
+          setModels((prev) => prev.map((m) => (
+            m.id === id && m.geometry.geometry === nextBufferGeometry
+              ? { ...m, geometry: { ...m.geometry, flatteningPlanes: planes } }
+              : m
+          )));
+        } finally {
+          pendingFlatteningPlanesRef.current = Math.max(0, pendingFlatteningPlanesRef.current - 1);
+        }
       });
     }
 
@@ -2721,13 +2887,18 @@ export function useSceneCollectionManager() {
         setTimeout(cb, 16);
       }
     };
+    pendingFlatteningPlanesRef.current += 1;
     scheduleIdle(() => {
-      const planes = computeFlatteningPlanes(geom);
-      setModels((prev) => prev.map((m) => (
-        m.id === id && m.geometry.geometry === geom
-          ? { ...m, geometry: { ...m.geometry, flatteningPlanes: planes } }
-          : m
-      )));
+      try {
+        const planes = computeFlatteningPlanes(geom);
+        setModels((prev) => prev.map((m) => (
+          m.id === id && m.geometry.geometry === geom
+            ? { ...m, geometry: { ...m.geometry, flatteningPlanes: planes } }
+            : m
+        )));
+      } finally {
+        pendingFlatteningPlanesRef.current = Math.max(0, pendingFlatteningPlanesRef.current - 1);
+      }
     });
   }, [deferAccelerateGeometry]);
 
@@ -2738,9 +2909,13 @@ export function useSceneCollectionManager() {
   }, []);
 
   const setModelMeshModifiers = useCallback((id: string, meshModifiers: ModelMeshModifiers | undefined) => {
+    // Store externally — model objects never carry meshModifiers directly.
+    storeModelMeshModifiers(id, meshModifiers);
+    // Still trigger a shallow React update so consumers that derive from
+    // the store can re-render.
     setModels(prev => prev.map((model) => (
       model.id === id
-        ? { ...model, meshModifiers }
+        ? { ...model }
         : model
     )));
   }, []);
@@ -2860,6 +3035,163 @@ export function useSceneCollectionManager() {
     setSelectedModelIds(newIds);
   }, []);
 
+  /** Splits a model that has a classified model/support triangle split
+   *  (from the native repair engine) into two independent models:
+   *  one for the model body and one for the support geometry.
+   *  Requires `model_triangle_count` in the native repair report. */
+  const splitSupports = useCallback(async (modelId: string) => {
+    setImportProgress({
+      active: true,
+      type: 'mesh',
+      label: 'Splitting Supports…',
+      detail: 'Separating model and support geometry…',
+      progress: null,
+    });
+    await waitForUiYield();
+
+    try {
+    const source = modelsRef.current.find((m) => m.id === modelId);
+    if (!source) return;
+
+    const split = splitClassifiedSupportGeometry(source, { interactive: true });
+    if (!split) return;
+    const {
+      modelGeometry: modelGeom,
+      supportGeometry: supportGeom,
+      modelPosition,
+      supportPosition,
+      modelTriangleCount: modelTriCount,
+      supportTriangleCount: supportTriCount,
+      totalTriangleCount: totalTris,
+    } = split;
+
+    setImportProgress((p) => ({ ...p, detail: 'Finalizing…' }));
+    await waitForUiYield();
+
+    // Tag the support geometry so the renderer uses orange hover/select tints
+    // (the `likely_support_geometry` flag drives tint color in SceneCanvas).
+    supportGeom.meshDefects = {
+      hasDefects: false,
+      repairedFloats: 0,
+      totalVertices: supportTriCount * 3,
+      nativeRepairReport: {
+        version: 1,
+        source_path: null,
+        pre: {
+          triangle_count: supportTriCount,
+          vertex_count: supportTriCount * 3,
+          non_manifold_edges: 0,
+          non_manifold_vertices: 0,
+          boundary_edges: 0,
+          boundary_loops: 0,
+          inconsistent_edges: 0,
+          degenerate_triangles: 0,
+          duplicate_triangles: 0,
+          component_count: 0,
+          self_intersections: 0,
+          signed_volume: 0,
+          is_watertight: false,
+          timings_ms: { topology_ms: 0, self_intersections_ms: 0, components_ms: 0, total_ms: 0 },
+        },
+        post: {
+          triangle_count: supportTriCount,
+          vertex_count: supportTriCount * 3,
+          non_manifold_edges: 0,
+          non_manifold_vertices: 0,
+          boundary_edges: 0,
+          boundary_loops: 0,
+          inconsistent_edges: 0,
+          degenerate_triangles: 0,
+          duplicate_triangles: 0,
+          component_count: 0,
+          self_intersections: 0,
+          signed_volume: 0,
+          is_watertight: false,
+          timings_ms: { topology_ms: 0, self_intersections_ms: 0, components_ms: 0, total_ms: 0 },
+        },
+        steps: [],
+        likely_support_geometry: true,
+        residual_issues: [],
+        fully_repaired: true,
+        total_ms: 0,
+      },
+    };
+
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+
+    const before = captureSceneSnapshot(
+      modelsRef.current,
+      currentActiveModelId,
+      currentSelectedModelIds,
+      { includeSupportState: true },
+    );
+
+    const baseName = source.name.replace(/\.(stl|obj|3mf)$/i, '');
+    const modelModel: LoadedModel = {
+      id: generateId(),
+      name: `${baseName} (Model)`,
+      fileUrl: source.fileUrl,
+      fileSizeBytes: source.fileSizeBytes ? Math.round(source.fileSizeBytes * (modelTriCount / totalTris)) : undefined,
+      // The split geometry no longer matches the original file on disk, so
+      // clear sourcePath to prevent downstream consumers (e.g. island scanner)
+      // from sideloading stale data from the original file.
+      sourcePath: null,
+      geometry: modelGeom,
+      transform: {
+        position: modelPosition,
+        rotation: source.transform.rotation.clone(),
+        scale: source.transform.scale.clone(),
+      },
+      visible: source.visible,
+      color: source.color,
+      polygonCount: modelTriCount,
+      ignoreAutoLift: source.ignoreAutoLift,
+      manualZMoveOverride: source.manualZMoveOverride,
+    };
+
+    const supportModel: LoadedModel = {
+      id: generateId(),
+      name: `${baseName} (Supports)`,
+      fileUrl: source.fileUrl,
+      fileSizeBytes: source.fileSizeBytes ? Math.round(source.fileSizeBytes * (supportTriCount / totalTris)) : undefined,
+      // The split geometry no longer matches the original file on disk.
+      sourcePath: null,
+      geometry: supportGeom,
+      transform: {
+        position: supportPosition,
+        rotation: source.transform.rotation.clone(),
+        scale: source.transform.scale.clone(),
+      },
+      visible: source.visible,
+      color: source.color,
+      polygonCount: supportTriCount,
+      ignoreAutoLift: source.ignoreAutoLift,
+      manualZMoveOverride: source.manualZMoveOverride,
+    };
+
+    const nextModels = [
+      ...modelsRef.current.filter((m) => m.id !== modelId),
+      modelModel,
+      supportModel,
+    ];
+
+    setModels(nextModels);
+    setActiveModelId(modelModel.id);
+    setSelectedModelIds([modelModel.id, supportModel.id]);
+
+    const after = captureSceneSnapshot(
+      nextModels,
+      modelModel.id,
+      [modelModel.id, supportModel.id],
+      { includeSupportState: true },
+    );
+    pushSceneSnapshotHistory(before, after, `Split Supports from ${source.name}`);
+    } finally {
+      setImportProgress({ active: false, type: null, label: '', detail: '', progress: null });
+    }
+  }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield]);
+
   const renameGroup = useCallback((groupId: string, nextName: string) => {
     const trimmed = nextName.trim();
     if (!trimmed) return;
@@ -2964,6 +3296,9 @@ export function useSceneCollectionManager() {
     setModels(nextModels);
     setActiveModelId(nextActiveModelId);
     setSelectedModelIds(nextSelectedModelIds);
+
+    // Clean up external mesh modifier store
+    ids.forEach((id) => deleteStoredMeshModifiers(id));
 
     // Clean up associated supports before capturing the "after" snapshot so undo/redo remains atomic.
     const supportState = getSnapshot();
@@ -3076,7 +3411,7 @@ export function useSceneCollectionManager() {
         },
         color: source.color,
         polygonCount: source.polygonCount,
-        meshModifiers: source.meshModifiers ? clonePlainObject(source.meshModifiers) : undefined,
+        meshModifiers: undefined,
         supportClipboard,
       },
     ]);
@@ -3105,7 +3440,7 @@ export function useSceneCollectionManager() {
         },
         color: source.color,
         polygonCount: source.polygonCount,
-        meshModifiers: source.meshModifiers ? clonePlainObject(source.meshModifiers) : undefined,
+        meshModifiers: undefined,
         supportClipboard,
       };
     }));
@@ -3123,7 +3458,11 @@ export function useSceneCollectionManager() {
   const pasteModel = useCallback(() => {
     if (modelClipboard.length === 0) return null;
 
-    const before = captureSceneSnapshot(models, activeModelId, selectedModelIds, { includeSupportState: true });
+    const beforeModels = models;
+    const beforeActiveModelId = activeModelId;
+    const beforeSelectedModelIds = selectedModelIds;
+    const supportStateBefore = getSnapshot();
+    const kickstandStateBefore = getKickstandSnapshot();
 
     const first = modelClipboard[0];
 
@@ -3144,7 +3483,7 @@ export function useSceneCollectionManager() {
       visible: true,
       color: first.color,
       polygonCount: first.polygonCount,
-      meshModifiers: first.meshModifiers ? clonePlainObject(first.meshModifiers) : undefined,
+      meshModifiers: undefined,
     };
 
     const nextModels = [...models, pastedModel];
@@ -3152,16 +3491,30 @@ export function useSceneCollectionManager() {
     setActiveModelId(id);
     setSelectedModelIds([id]);
 
-    pasteModelSupportsFromClipboard(
-      first.supportClipboard,
-      id,
-      first.transform,
-      pastedModel.transform,
-      { recordHistory: false },
-    );
+    schedulePostPaint(() => {
+      beginSupportStateBatch();
+      beginKickstandStoreBatch();
+      try {
+        pasteModelSupportsFromClipboard(
+          first.supportClipboard,
+          id,
+          first.transform,
+          pastedModel.transform,
+          { recordHistory: false },
+        );
+      } finally {
+        endKickstandStoreBatch();
+        endSupportStateBatch();
+      }
 
-    const after = captureSceneSnapshot(nextModels, id, [id], { includeSupportState: true });
-    pushSceneSnapshotHistory(before, after, `Paste Model ${first.name}`);
+      const before = captureSceneSnapshot(beforeModels, beforeActiveModelId, beforeSelectedModelIds, {
+        includeSupportState: true,
+        supportStateOverride: supportStateBefore,
+        kickstandStateOverride: kickstandStateBefore,
+      });
+      const after = captureSceneSnapshot(nextModels, id, [id], { includeSupportState: true });
+      pushSceneSnapshotHistory(before, after, `Paste Model ${first.name}`);
+    });
 
     return id;
   }, [activeModelId, cloneGeometryWithBounds, generateId, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds]);
@@ -3169,7 +3522,11 @@ export function useSceneCollectionManager() {
   const pasteCopiedModelsAutoArrange = useCallback((spacingMm = 5) => {
     if (modelClipboard.length === 0) return [] as string[];
 
-    const before = captureSceneSnapshot(models, activeModelId, selectedModelIds, { includeSupportState: true });
+    const beforeModels = models;
+    const beforeActiveModelId = activeModelId;
+    const beforeSelectedModelIds = selectedModelIds;
+    const supportStateBefore = getSnapshot();
+    const kickstandStateBefore = getKickstandSnapshot();
 
     const entries = modelClipboard;
 
@@ -3518,38 +3875,45 @@ export function useSceneCollectionManager() {
         visible: true,
         color: entry.color,
         polygonCount: entry.polygonCount,
-        meshModifiers: entry.meshModifiers ? clonePlainObject(entry.meshModifiers) : undefined,
+        meshModifiers: undefined,
       };
     });
 
     const nextModels = [...models, ...pastedModels];
     setModels(nextModels);
 
-    beginSupportStateBatch();
-    beginKickstandStoreBatch();
-    try {
-      pastedModels.forEach((pastedModel, index) => {
-        const sourceEntry = entries[index];
-        if (!sourceEntry) return;
-        pasteModelSupportsFromClipboard(
-          sourceEntry.supportClipboard,
-          pastedModel.id,
-          sourceEntry.transform,
-          pastedModel.transform,
-          { recordHistory: false },
-        );
-      });
-    } finally {
-      endKickstandStoreBatch();
-      endSupportStateBatch();
-    }
-
     if (createdIds.length > 0) {
       setActiveModelId(createdIds[0]);
       setSelectedModelIds(createdIds);
 
-      const after = captureSceneSnapshot(nextModels, createdIds[0], createdIds, { includeSupportState: true });
-      pushSceneSnapshotHistory(before, after, createdIds.length === 1 ? 'Paste Model' : `Paste ${createdIds.length} Models`);
+      schedulePostPaint(() => {
+        beginSupportStateBatch();
+        beginKickstandStoreBatch();
+        try {
+          pastedModels.forEach((pastedModel, index) => {
+            const sourceEntry = entries[index];
+            if (!sourceEntry) return;
+            pasteModelSupportsFromClipboard(
+              sourceEntry.supportClipboard,
+              pastedModel.id,
+              sourceEntry.transform,
+              pastedModel.transform,
+              { recordHistory: false },
+            );
+          });
+        } finally {
+          endKickstandStoreBatch();
+          endSupportStateBatch();
+        }
+
+        const before = captureSceneSnapshot(beforeModels, beforeActiveModelId, beforeSelectedModelIds, {
+          includeSupportState: true,
+          supportStateOverride: supportStateBefore,
+          kickstandStateOverride: kickstandStateBefore,
+        });
+        const after = captureSceneSnapshot(nextModels, createdIds[0], createdIds, { includeSupportState: true });
+        pushSceneSnapshotHistory(before, after, createdIds.length === 1 ? 'Paste Model' : `Paste ${createdIds.length} Models`);
+      });
     }
 
     return createdIds;
@@ -3579,7 +3943,8 @@ export function useSceneCollectionManager() {
         name: `${source.name} Copy ${index + 1}`,
         groupId: resolvedGroupId,
         groupName: resolvedGroupName,
-        fileUrl: '',
+        fileUrl: source.fileUrl,
+        sourcePath: source.sourcePath,
         fileSizeBytes: source.fileSizeBytes,
         geometry,
         transform: {
@@ -3590,7 +3955,7 @@ export function useSceneCollectionManager() {
         visible: source.visible,
         color: source.color,
         polygonCount: source.polygonCount,
-        meshModifiers: source.meshModifiers ? clonePlainObject(source.meshModifiers) : undefined,
+        meshModifiers: undefined,
       };
     });
 
@@ -3861,9 +4226,14 @@ export function useSceneCollectionManager() {
           color: '#a3a3a3',
           polygonCount: processed.geometry.getAttribute('position').count / 3,
           ignoreAutoLift: true,
-          meshModifiers: meshModifiers ? clonePlainObject(meshModifiers) : undefined,
+          meshModifiers: undefined,
           manualZMoveOverride: true,
         };
+
+        // Store meshModifiers externally so model objects stay lightweight
+        if (meshModifiers) {
+          storeModelMeshModifiers(model.id, cloneMeshModifiersShallow(meshModifiers));
+        }
 
         newModels.push(model);
         supportEntries.push({ model, sourceTransform, supportData });
@@ -3981,6 +4351,15 @@ export function useSceneCollectionManager() {
       const importedModels: LoadedModel[] = [];
       let skippedModels = 0;
 
+      // Identical-geometry dedup: a scene with N copies of one mesh (e.g. a
+      // Fill-Plate bed) stores N identical payloads, and decode + SHA-256 +
+      // native repair per copy dominates load time. Build each UNIQUE mesh
+      // once (keyed by its content SHA) and share the result for duplicates
+      // via the existing cloneGeometryWithBounds({ shared: true }) — the same
+      // path duplicate/paste already use.
+      const builtGeometryByHash = new Map<string, GeometryWithBounds>();
+      let dedupHits = 0;
+
       for (let i = 0; i < document.models.length; i += 1) {
         const model = document.models[i];
         const meshRef = model.mesh;
@@ -4021,22 +4400,41 @@ export function useSceneCollectionManager() {
         try {
           const bytes = meshDataBytes;
 
-          if (typeof meshRef.sha256 === 'string' && meshRef.sha256.trim().length > 0) {
-            const expected = meshRef.sha256.trim().toLowerCase();
-            const actual = await sha256Hex(bytes);
-            if (actual !== expected) {
-              throw new Error('VOXL integrity check failed (SHA-256 mismatch).');
+          // Dedup key: the file's own SHA when present, else the content hash
+          // (also the integrity value). Compute once; reused as the cache key.
+          const declaredSha =
+            typeof meshRef.sha256 === 'string' && meshRef.sha256.trim().length > 0
+              ? meshRef.sha256.trim().toLowerCase()
+              : undefined;
+          const contentHash = declaredSha ?? (await sha256Hex(bytes));
+
+          const cached = builtGeometryByHash.get(contentHash);
+          let geometry: GeometryWithBounds;
+          if (cached) {
+            // Identical mesh already built — clone, skipping decode + native
+            // repair entirely (the expensive part). Integrity was verified on
+            // the first occurrence.
+            dedupHits += 1;
+            console.log(
+              `[SceneCollection] Geometry with hash ${contentHash} already processed — cloning it.`,
+            );
+            geometry = cloneGeometryWithBounds(cached, { shared: true });
+          } else {
+            if (declaredSha) {
+              const actual = await sha256Hex(bytes);
+              if (actual !== declaredSha) {
+                throw new Error('VOXL integrity check failed (SHA-256 mismatch).');
+              }
             }
-          }
 
-          const embeddedName = meshRef.fileName?.trim() || `${model.name || 'model'}.stl`;
-          const mimeType = meshRef.mimeType?.trim() || 'model/stl';
-          // Create a clean copy with explicit ArrayBuffer for Blob compatibility
-          const blobData = new Uint8Array(bytes);
-          const blob = new Blob([blobData], { type: mimeType });
-          url = URL.createObjectURL(blob);
+            const embeddedName = meshRef.fileName?.trim() || `${model.name || 'model'}.stl`;
+            const mimeType = meshRef.mimeType?.trim() || 'model/stl';
+            // Create a clean copy with explicit ArrayBuffer for Blob compatibility
+            const blobData = new Uint8Array(bytes);
+            const blob = new Blob([blobData], { type: mimeType });
+            url = URL.createObjectURL(blob);
 
-          const geometry = await loadMeshGeometry(url, embeddedName, {
+            geometry = await loadMeshGeometry(url, embeddedName, {
             nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
             onNativeProcessingStage: (stage) => {
               if (stage === 'repairing') {
@@ -4071,7 +4469,10 @@ export function useSceneCollectionManager() {
                 });
               }
             },
-          });
+            });
+            // Cache the freshly-built mesh so identical copies clone it.
+            builtGeometryByHash.set(contentHash, geometry);
+          }
 
           let resolvedId = model.id;
           if (!resolvedId || existingIds.has(resolvedId)) {
@@ -4097,10 +4498,15 @@ export function useSceneCollectionManager() {
             visible: model.visible,
             color,
             polygonCount,
-            meshModifiers: model.meshModifiers ? clonePlainObject(model.meshModifiers) : undefined,
+            meshModifiers: undefined,
             ignoreAutoLift: true,
             manualZMoveOverride: true,
           });
+
+          // Store meshModifiers externally so model objects stay lightweight
+          if (model.meshModifiers) {
+            storeModelMeshModifiers(resolvedId, cloneMeshModifiersShallow(model.meshModifiers));
+          }
         } catch (error) {
           console.error(`[SceneCollection] Failed importing embedded VOXL mesh for model "${model.name}"`, error);
           skippedModels += 1;
@@ -4109,6 +4515,13 @@ export function useSceneCollectionManager() {
             URL.revokeObjectURL(url);
           }
         }
+      }
+
+      if (dedupHits > 0) {
+        console.log(
+          `[SceneCollection] VOXL load: ${builtGeometryByHash.size} unique mesh(es) built, ` +
+          `${dedupHits} duplicate(s) reused (skipped decode + native repair).`,
+        );
       }
 
       const sourceTransformsByModelId = new Map<string, ModelTransform>();
@@ -4218,7 +4631,7 @@ export function useSceneCollectionManager() {
         });
       }
     }
-  }, [emitSceneImportReport, findFreeSpotCentersForModels, generateId, isModelFootprintInsidePlate, requestSceneImportPlacementChoice, shouldAutoRepairSceneImports, trackRecentOpenedFiles, waitForUiYield]);
+  }, [cloneGeometryWithBounds, emitSceneImportReport, findFreeSpotCentersForModels, generateId, isModelFootprintInsidePlate, requestSceneImportPlacementChoice, shouldAutoRepairSceneImports, trackRecentOpenedFiles, waitForUiYield]);
 
   const importSceneFile = useCallback(async (file: File, options?: SceneImportRunOptions): Promise<boolean> => {
     const extension = getSceneExtension(file.name);
@@ -4311,20 +4724,39 @@ export function useSceneCollectionManager() {
     const entry = recentOpenedFiles.find((item) => item.id === entryId);
     if (!entry) return false;
 
+    // If this is a mesh with a known on-disk path, skip IndexedDB entirely and
+    // create a path-backed file so the Rust sideload reads from disk directly.
+    // IndexedDB blobs for these files were stored empty (0 bytes) because
+    // createPathBackedStlFile builds the File object with an empty blob.
+    if (entry.kind === 'mesh' && entry.sourcePath) {
+      const pathFile = new File([], entry.name, {
+        type: 'application/octet-stream',
+        lastModified: Date.now(),
+      });
+      (pathFile as File & { filePath?: string }).filePath = entry.sourcePath;
+      await loadFiles([pathFile]);
+      return true;
+    }
+
     const file = await readRecentOpenedFileBlob(entry);
     if (!file) {
       console.warn('[SceneCollection] Unable to restore recent file from local cache.');
       return false;
     }
 
+    // Recovered file is empty and there is no disk path to fall back to — the
+    // entry is broken (e.g. created before sourcePath was tracked for meshes).
+    if (entry.kind === 'mesh' && file.size === 0) {
+      console.warn(
+        '[SceneCollection] Recent mesh file blob is empty and no on-disk path is available. ' +
+        'The file may need to be re-imported from the original location.',
+      );
+      return false;
+    }
+
     if (entry.kind === 'scene') {
       await importSceneFile(file);
       return true;
-    }
-
-    // Pass the on-disk file path through to enable Rust-side STL loading.
-    if (entry.sourcePath) {
-      (file as File & { filePath?: string }).filePath = entry.sourcePath;
     }
 
     await loadFiles([file]);
@@ -4653,11 +5085,13 @@ export function useSceneCollectionManager() {
     setModelManualZMoveOverride,
     setModelVisibility,
     setModelMeshModifiers,
+    getModelMeshModifiers: useCallback((id: string) => getStoredMeshModifiers(id), []),
     renameModel,
     groupModels,
     ungroupModels,
     ungroupGroup,
     splitImportGroup,
+    splitSupports,
     renameGroup,
     selectGroup,
     deleteModels,
@@ -4670,6 +5104,7 @@ export function useSceneCollectionManager() {
     pasteCopiedModelsAutoArrange,
     duplicateModelWithTransforms,
     setBackgroundGeometryWorkPaused,
+    hasPendingBackgroundGeometryWork,
     canPasteModel: modelClipboard.length > 0,
 
     // Scene settings

@@ -1,41 +1,31 @@
 import { useEffect } from 'react';
 import { redo, undo } from '@/history/historyStore';
-import { UNIVERSAL_HOTKEYS } from './hotkeyConfig';
+import { hotkeyStore, isActionActiveSync } from './hotkeyStore';
 
-function isTextInput(element: EventTarget | null): boolean {
-  if (!element || !(element instanceof HTMLElement)) return false;
-  const tag = element.tagName.toLowerCase();
-  if (tag === 'input' || tag === 'textarea') return true;
-  if (element.isContentEditable) return true;
-  return false;
-}
-
-export function useUndoRedoHotkeys() {
+export function useUndoRedoHotkeys({ disabled = false }: { disabled?: boolean } = {}) {
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (isTextInput(event.target)) return;
-      const isMeta = event.metaKey || event.ctrlKey;
-      if (!isMeta) return;
-      const key = event.key.toLowerCase();
+    if (disabled) return;
 
-      // Windows/Linux-friendly redo shortcut.
-      if (key === 'y') {
-        event.preventDefault();
+    let wasUndoActive = false;
+    let wasRedoActive = false;
+
+    const unsubscribe = hotkeyStore.subscribe(() => {
+      // Undo/Redo are user-configurable via GLOBAL.UNDO / GLOBAL.REDO. Redo is a
+      // strict superset of Undo (adds Shift by default), so it is checked first;
+      // isActionActiveSync also suppresses Undo whenever Redo is the active match.
+      const isUndoActive = isActionActiveSync('GLOBAL', 'UNDO');
+      const isRedoActive = isActionActiveSync('GLOBAL', 'REDO');
+
+      if (isRedoActive && !wasRedoActive) {
         redo();
-        return;
-      }
-
-      if (key !== UNIVERSAL_HOTKEYS.UNDO.key) return;
-
-      event.preventDefault();
-      if (event.shiftKey) {
-        redo();
-      } else {
+      } else if (isUndoActive && !wasUndoActive) {
         undo();
       }
-    };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+      wasUndoActive = isUndoActive;
+      wasRedoActive = isRedoActive;
+    });
+
+    return unsubscribe;
+  }, [disabled]);
 }

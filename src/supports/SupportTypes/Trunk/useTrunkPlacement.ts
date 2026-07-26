@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { addAnchor, addBranch, addKnot, addLeaf, addRoot, addStick, addTrunk, addTwig, getSnapshot, setSnapshot, updateKnot, updateTrunk } from '../../state';
-import { pushHistory } from '@/history/historyStore';
+import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_ADD_ANCHOR, SUPPORT_ADD_BRANCH, SUPPORT_ADD_LEAF, SUPPORT_ADD_STICK, SUPPORT_ADD_TRUNK, SUPPORT_ADD_TWIG } from '../../history/actionTypes';
 import { useInteractionStatus } from '../../interaction/useInteractionStatus';
 import { buildTrunkData } from './trunkBuilder';
@@ -17,8 +17,7 @@ import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacemen
 import { perfMark, perfMeasureWithSpike, perfEndFrame } from '../../PlacementLogic/Pathfinding/pathfindingPerf';
 import { buildStick } from '../Stick/stickBuilder';
 import { buildTwig } from '../Twig/twigBuilder';
-import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
-import { matchesConfiguredHotkeyDown, matchesConfiguredHotkeyUp } from '@/hotkeys/hotkeyConfig';
+import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { getSupportPathfindingDebugEnabled, setSupportPathfindingDebugSnapshot } from '../../PlacementLogic/Pathfinding/pathfindingDebugState';
 
 // ---------------------------------------------------------------------------
@@ -217,8 +216,7 @@ export function useTrunkPlacementV2() {
     const HOVER_MIN_INTERVAL_MS = 12;
     const HOVER_POS_EPSILON_MM = 0.5;
     const HOVER_NORMAL_DOT_MIN = 0.995;
-    const { getHotkey } = useHotkeyConfig();
-    const forcePlaceBinding = getHotkey('SUPPORTS', 'FORCE_PLACE_SUPPORT');
+    const forcePlaceActive = useActionActive('SUPPORTS', 'FORCE_PLACE_SUPPORT');
 
     const [previewData, setPreviewData] = useState<SupportData | null>(null);
     const [previewError, setPreviewError] = useState<LimitationCode | null>(null);
@@ -259,7 +257,7 @@ export function useTrunkPlacementV2() {
         const markedBuild = markTrunkBuildPlacementSurface(trunkBuild, placementSurface);
         addRoot(markedBuild.root);
         addTrunk(markedBuild.trunk);
-        pushHistory({
+        pushSupportHistory({
             type: SUPPORT_ADD_TRUNK,
             payload: {
                 trunk: markedBuild.trunk,
@@ -411,7 +409,7 @@ export function useTrunkPlacementV2() {
         // to a stick or twig for this error.
         const cavityStickEligible = result.stagnated || result.exhaustedBudget
             || (result.error && result.error !== 'ANGLE_TOO_STEEP');
-        if (!isGridMode && cavityStickEligible) {
+        if (cavityStickEligible) {
             if (mesh) {
                 perfMark('hover:cavity-stick');
                 const cavityStick = resolveCavityStickPreview(hit, tipPos, tipNormal, modelId, mesh);
@@ -512,6 +510,19 @@ export function useTrunkPlacementV2() {
         }
 
         // reject
+        if (decision.kind === 'reject' && decision.reason === 'COLLISION_WITH_MODEL' && mesh) {
+            perfMark('hover:cavity-stick');
+            const cavityStick = resolveCavityStickPreview(hit, tipPos, tipNormal, modelId, mesh);
+            perfMeasureWithSpike('hover:cavity-stick', 'branch:cavity-stick');
+            if (cavityStick) {
+                setPreviewData(cavityStick.supportData);
+                setPreviewError(null);
+                setPreviewWarning(null);
+                perfEndFrame();
+                return;
+            }
+        }
+
         if (decision.trunkBuild) {
             setPreviewData(decision.trunkBuild.supportData);
             setPreviewError(forcePlaceOverrideRef.current ? null : (decision.trunkBuild.error || null));
@@ -534,37 +545,14 @@ export function useTrunkPlacementV2() {
     }, [HOVER_MIN_INTERVAL_MS, HOVER_NORMAL_DOT_MIN, HOVER_POS_EPSILON_MM, clearPreview, isPlacementHardDisabled, resolveCavityStickPreview]);
 
     useEffect(() => {
-        const refreshCurrentHover = () => {
-            if (hoverFrameRef.current !== null) return;
+        forcePlaceOverrideRef.current = forcePlaceActive;
+        if (hoverFrameRef.current === null) {
             hoverFrameRef.current = requestAnimationFrame(() => {
                 hoverFrameRef.current = null;
                 processSupportHover(latestHoverRef.current);
             });
-        };
-
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (!matchesConfiguredHotkeyDown(event, forcePlaceBinding) || forcePlaceOverrideRef.current) return;
-            event.preventDefault();
-            forcePlaceOverrideRef.current = true;
-            refreshCurrentHover();
-        };
-
-        const handleKeyUp = (event: KeyboardEvent) => {
-            if (!matchesConfiguredHotkeyUp(event, forcePlaceBinding) || !forcePlaceOverrideRef.current) return;
-            event.preventDefault();
-            forcePlaceOverrideRef.current = false;
-            refreshCurrentHover();
-        };
-
-        window.addEventListener('keydown', handleKeyDown, true);
-        window.addEventListener('keyup', handleKeyUp, true);
-        document.addEventListener('keyup', handleKeyUp, true);
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown, true);
-            window.removeEventListener('keyup', handleKeyUp, true);
-            document.removeEventListener('keyup', handleKeyUp, true);
-        };
-    }, [forcePlaceBinding, processSupportHover]);
+        }
+    }, [forcePlaceActive, processSupportHover]);
 
     const onSupportHover = useCallback((hit: THREE.Intersection | null) => {
         latestHoverRef.current = hit;
@@ -607,21 +595,21 @@ export function useTrunkPlacementV2() {
         // to a stick or twig for this error.
         const cavityStickEligible = result.stagnated || result.exhaustedBudget
             || (result.error && result.error !== 'ANGLE_TOO_STEEP');
-        if (!isGridMode && cavityStickEligible) {
+        if (cavityStickEligible) {
             if (mesh) {
                 const cavityStick = buildCavityStick(tipPos, tipNormal, modelId, mesh);
                 if (cavityStick) {
                     if (cavityStick.kind === 'twig') {
                         const twig = markTwigPlacementSurface(cavityStick.twig, placementSurface);
                         addTwig(twig);
-                        pushHistory({
+                        pushSupportHistory({
                             type: SUPPORT_ADD_TWIG,
                             payload: { twig },
                         });
                     } else {
                         const stick = markStickPlacementSurface(cavityStick.stick, placementSurface);
                         addStick(stick);
-                        pushHistory({
+                        pushSupportHistory({
                             type: SUPPORT_ADD_STICK,
                             payload: { stick },
                         });
@@ -673,7 +661,7 @@ export function useTrunkPlacementV2() {
         if (decision.kind === 'place_anchor') {
             const anchor = markAnchorPlacementSurface(decision.anchor, placementSurface);
             addAnchor(anchor);
-            pushHistory({
+            pushSupportHistory({
                 type: SUPPORT_ADD_ANCHOR,
                 payload: { anchor },
             });
@@ -702,7 +690,7 @@ export function useTrunkPlacementV2() {
                 })()
                 : null;
 
-            pushHistory({
+            pushSupportHistory({
                 type: SUPPORT_ADD_BRANCH,
                 payload: {
                     branch,
@@ -720,7 +708,7 @@ export function useTrunkPlacementV2() {
             addKnot(decision.knot);
             addLeaf(leaf);
 
-            pushHistory({
+            pushSupportHistory({
                 type: SUPPORT_ADD_LEAF,
                 payload: {
                     leaf,
@@ -771,6 +759,28 @@ export function useTrunkPlacementV2() {
         }
 
         if (decision.kind === 'reject') {
+            if (decision.reason === 'COLLISION_WITH_MODEL' && mesh) {
+                const cavityStick = buildCavityStick(tipPos, tipNormal, modelId, mesh);
+                if (cavityStick) {
+                    if (cavityStick.kind === 'twig') {
+                        const twig = markTwigPlacementSurface(cavityStick.twig, placementSurface);
+                        addTwig(twig);
+                        pushSupportHistory({
+                            type: SUPPORT_ADD_TWIG,
+                            payload: { twig },
+                        });
+                    } else {
+                        const stick = markStickPlacementSurface(cavityStick.stick, placementSurface);
+                        addStick(stick);
+                        pushSupportHistory({
+                            type: SUPPORT_ADD_STICK,
+                            payload: { stick },
+                        });
+                    }
+                    clearSupportSelection();
+                    return;
+                }
+            }
             if (forcePlaceOverrideRef.current && decision.trunkBuild) {
                 commitTrunkBuild(decision.trunkBuild, placementSurface);
             }

@@ -332,15 +332,15 @@ export function DiagnosticsModal({
 
     rafId = requestAnimationFrame(tick);
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+    const onKeyDown = (event: CustomEvent) => {
+      if (event.detail.key === 'Escape') onClose();
     };
 
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('app-hotkey-keydown', onKeyDown as EventListener);
 
     return () => {
       cancelAnimationFrame(rafId);
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('app-hotkey-keydown', onKeyDown as EventListener);
     };
   }, [isOpen, onClose]);
 
@@ -649,8 +649,8 @@ export function DiagnosticsModal({
                 <div>Models: <span style={{ color: 'var(--text-strong)' }}>{modelCount}</span></div>
                 <div>Visible Models: <span style={{ color: 'var(--text-strong)' }}>{visibleModelCount}</span></div>
                 <div>Selected Models: <span style={{ color: 'var(--text-strong)' }}>{selectedModelCount}</span></div>
-                <div>Total Polygons: <span style={{ color: 'var(--text-strong)' }}>{totalPolygons.toLocaleString()}</span></div>
-                <div>Selected Polygons: <span style={{ color: 'var(--text-strong)' }}>{selectedPolygons.toLocaleString()}</span></div>
+                <div>Total Triangles: <span style={{ color: 'var(--text-strong)' }}>{totalPolygons.toLocaleString()}</span></div>
+                <div>Selected Triangles: <span style={{ color: 'var(--text-strong)' }}>{selectedPolygons.toLocaleString()}</span></div>
               </div>
             </div>
 

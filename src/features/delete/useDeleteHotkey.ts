@@ -1,34 +1,32 @@
 import { useEffect } from 'react';
 import { triggerDelete } from './deleteRegistry';
-import { UNIVERSAL_HOTKEYS } from '@/hotkeys/hotkeyConfig';
+import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
+import { matchesConfiguredHotkeyDown } from '@/hotkeys/hotkeyConfig';
 
-function isTextInput(element: EventTarget | null): boolean {
-  if (!element || !(element instanceof HTMLElement)) return false;
-  const tag = element.tagName.toLowerCase();
-  if (tag === 'input' || tag === 'textarea') return true;
-  if (element.isContentEditable) return true;
-  return false;
-}
+// `Delete` is always available as a fixed, non-configurable secondary delete key.
+// The primary delete key is user-configurable via GLOBAL.DELETE (defaults to Backspace).
+export const SECONDARY_DELETE_KEY = 'Delete';
 
 export function useDeleteHotkey() {
+  const { getHotkey } = useHotkeyConfig();
+
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) return;
-      if (event.metaKey || event.ctrlKey) return;
-      const key = event.key;
-      // Check against universal delete keys (Delete, Backspace)
-      // Type assertion needed because config keys are readonly
-      if (!(UNIVERSAL_HOTKEYS.DELETE.keys as readonly string[]).includes(key)) return;
-      if (isTextInput(event.target)) return;
+    const handleKeyDown = (event: CustomEvent) => {
+      const detail = event.detail;
+      if (detail.repeat) return;
 
-      const handled = triggerDelete();
-      if (!handled) return;
+      const isSecondaryDelete =
+        detail.key === SECONDARY_DELETE_KEY &&
+        !detail.ctrlKey && !detail.metaKey && !detail.altKey && !detail.shiftKey;
 
-      event.preventDefault();
-      event.stopPropagation();
+      if (!isSecondaryDelete && !matchesConfiguredHotkeyDown(detail, getHotkey('GLOBAL', 'DELETE'))) {
+        return;
+      }
+
+      triggerDelete();
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    window.addEventListener('app-hotkey-keydown', handleKeyDown as EventListener);
+    return () => window.removeEventListener('app-hotkey-keydown', handleKeyDown as EventListener);
+  }, [getHotkey]);
 }

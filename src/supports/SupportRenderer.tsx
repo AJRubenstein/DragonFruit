@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useSyncExternalStore, forwardRef, useImperativeHandle, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
@@ -16,6 +16,7 @@ import { InstancedJointGroup, type InstancedJoint } from './SupportPrimitives/Jo
 import { InstancedRootsGroup, type InstancedRoot } from './SupportPrimitives/Roots/InstancedRootsGroup';
 import { InstancedContactConeGroup, type InstancedContactCone } from './SupportPrimitives/ContactCone/InstancedContactConeGroup';
 import { useBracePlacementState } from './SupportTypes/Brace/bracePlacementState';
+import { useLeafPlacementState } from './SupportTypes/Leaf/leafPlacementState';
 import { useKickstandStoreState } from './SupportTypes/Kickstand/kickstandStore';
 import { useKickstandPlacementState } from './SupportTypes/Kickstand/kickstandPlacementState';
 import { useJointInteraction } from './SupportPrimitives/Joint/useJointInteraction';
@@ -34,7 +35,6 @@ import { bezierToLineSegments, calculateAdaptiveBezierResolution } from './Curve
 import type { SupportData } from './rendering';
 import type { BracePreviewData } from './SupportTypes/Brace/bracePlacementState';
 import { useJointCreationState } from './SupportPrimitives/Joint/jointCreationState';
-import { useSupportHistoryHandlers } from './history/useSupportHistoryHandlers';
 import { subscribeToSettings, getSettingsSnapshot } from './Settings/state';
 import { emitSupportModelPointerHover, emitSupportModelPointerSelect, handleSupportClick } from './interaction/clickHandlers';
 import { useResolvedSelectionState } from './interaction/shared/selection/resolvedSelectionStore';
@@ -720,6 +720,7 @@ export function SupportPlacementPreviewLayer({
     kickstandPlacementPreview = null,
 }: SupportPlacementPreviewLayerProps) {
     const raftSettings = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
+    const { sproutParentingLockHeld, stage: leafStage } = useLeafPlacementState();
 
     const placementPreviewBatches = useMemo(() => {
         if (mode !== 'support') return [] as PlacementPreviewBatch[];
@@ -838,11 +839,27 @@ export function SupportPlacementPreviewLayer({
                     {batch.joints.length > 0 && (
                         <InstancedJointGroup
                             joints={batch.joints}
-                            color={batch.color}
-                            emissive={batch.color}
-                            emissiveIntensity={0.08}
+                            color={
+                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                    ? '#00ff00'
+                                    : batch.color
+                            }
+                            emissive={
+                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                    ? '#00ff00'
+                                    : batch.color
+                            }
+                            emissiveIntensity={
+                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                    ? 0.5
+                                    : 0.08
+                            }
                             transparent
-                            opacity={batch.opacity}
+                            opacity={
+                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                    ? 0.70
+                                    : batch.opacity
+                            }
                             widthSegments={BATCHED_JOINT_WIDTH_SEGMENTS}
                             heightSegments={BATCHED_JOINT_HEIGHT_SEGMENTS}
                         />
@@ -873,7 +890,7 @@ export function SupportPlacementPreviewLayer({
     );
 }
 
-export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 0, trunkPlacementPreview = null, branchPlacementPreview = null, leafPlacementPreview = null, bracePlacementPreview = null, kickstandPlacementPreview = null, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
+export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, trunkPlacementPreview = null, branchPlacementPreview = null, leafPlacementPreview = null, bracePlacementPreview = null, kickstandPlacementPreview = null, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
     const state = useSyncExternalStore(subscribe, getSnapshot);
     const resolvedSelection = useResolvedSelectionState();
     const settings = useSyncExternalStore(subscribeToSettings, getSettingsSnapshot, getSettingsSnapshot);
@@ -883,6 +900,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const { isActive: isJointCreationActive } = useJointCreationState();
     const { altActive: braceAltActive } = useBracePlacementState();
     const { hotkeyActive: kickstandHotkeyActive } = useKickstandPlacementState();
+    const { hotkeyActive: leafHotkeyActive, stage: leafStage, sproutParentingLockHeld } = useLeafPlacementState();
     useEffect(() => {
         const active = interiorView && mode === 'support' && !passive;
         if (!active) return;
@@ -1644,8 +1662,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         hoveredIdForVisual,
     ]);
 
-    useSupportHistoryHandlers(interactionHooksEnabled);
-
     // Backfill Kickstand root/knot into global support state so raft + knot tools include them.
     useEffect(() => {
         if (!interactionHooksEnabled) return;
@@ -2131,6 +2147,11 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             for (const id in twigKnots) merged[id] = twigKnots[id];
         }
         if (knotPreview) merged[knotPreview.id] = knotPreview;
+        if (activeKnotDragPreview?.coincidentKnots) {
+            for (const coincKnot of activeKnotDragPreview.coincidentKnots) {
+                merged[coincKnot.id] = coincKnot;
+            }
+        }
         return merged;
     }, [basePreviewKnotOverrides, activeKnotDragPreview, activeTwigDragPreview]);
 
@@ -3879,17 +3900,49 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     ]);
 
     const handleSceneBatchedShaftClick = React.useCallback((shaft: InstancedShaft, event: { nativeEvent?: Event }) => {
+        const e = event as any;
+        const altDown = !!(e?.nativeEvent?.altKey || e?.altKey);
+        const ctrlDown = !!(e?.nativeEvent?.ctrlKey || e?.ctrlKey);
+        const shiftDown = !!(e?.nativeEvent?.shiftKey || e?.shiftKey);
+
+        console.log('[DEBUG SupportRenderer handleSceneBatchedShaftClick]', {
+            shaft,
+            isPointerInteractable,
+            isPreparePointerInteractable,
+            supportSelectionAndHoverSuppressed,
+            braceAltActive,
+            kickstandHotkeyActive,
+            leafHotkeyActive,
+            leafStage,
+            sproutParentingLockHeld,
+            altDown,
+            ctrlDown,
+            shiftDown,
+            event,
+        });
+
         if (!isPointerInteractable) return;
         if (isPreparePointerInteractable) {
             emitSupportModelPointerSelect(shaft.modelId ?? null);
             return;
         }
 
-        if (supportSelectionAndHoverSuppressed || braceAltActive || kickstandHotkeyActive) {
-            const e = event as unknown as { point?: THREE.Vector3 | { x: number; y: number; z: number } };
-            const point = e.point
-                ? { x: (e.point as any).x, y: (e.point as any).y, z: (e.point as any).z }
+        if (supportSelectionAndHoverSuppressed || braceAltActive || kickstandHotkeyActive || leafHotkeyActive || leafStage === 'awaitingBase' || sproutParentingLockHeld) {
+            if (typeof e?.stopPropagation === 'function') {
+                e.stopPropagation();
+            }
+            if (typeof e?.nativeEvent?.stopPropagation === 'function') {
+                e.nativeEvent.stopPropagation();
+            }
+
+            const point = e?.point
+                ? { x: e.point.x, y: e.point.y, z: e.point.z }
                 : null;
+
+            console.log('[DEBUG SupportRenderer handleSceneBatchedShaftClick] Emitting shaft-click event:', {
+                segmentId: shaft.id,
+                point,
+            });
 
             window.dispatchEvent(new CustomEvent('shaft-click', {
                 detail: {
@@ -3903,14 +3956,14 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
         if (!shaft.supportId) return;
         handleSupportClick(event, shaft.supportId, isInteractable);
-    }, [isPointerInteractable, isPreparePointerInteractable, isInteractable, supportSelectionAndHoverSuppressed, braceAltActive, kickstandHotkeyActive]);
+    }, [isPointerInteractable, isPreparePointerInteractable, isInteractable, supportSelectionAndHoverSuppressed, braceAltActive, kickstandHotkeyActive, leafHotkeyActive, leafStage, sproutParentingLockHeld]);
 
     const handleSceneBatchedShaftPointerMove = React.useCallback((shaft: InstancedShaft, event: { point?: { x: number; y: number; z: number } | THREE.Vector3 } | null) => {
         if (!isPointerInteractable) return;
         if (orbitInteractionActiveRef.current) return;
 
         const jointDragInteractionActive = typeof window !== 'undefined' && !!(window as any).__jointGizmoDragging;
-        const allowSuppressedShaftHoverForPlacementPreview = (braceAltActive || kickstandHotkeyActive) && mode === 'support' && !jointDragInteractionActive;
+        const allowSuppressedShaftHoverForPlacementPreview = (braceAltActive || kickstandHotkeyActive || leafHotkeyActive || leafStage === 'awaitingBase' || sproutParentingLockHeld) && mode === 'support' && !jointDragInteractionActive;
 
         const sceneHoverWriteDecision = resolveSceneBatchedShaftHoverWriteDecision({
             supportId: shaft.supportId,
@@ -3987,7 +4040,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             setSceneHoveredSupportId,
             emitSupportModelPointerHover,
         );
-    }, [isPointerInteractable, mode, braceAltActive, kickstandHotkeyActive, primitiveHoverOnSelectedSupport, primitiveHoverSuppressesSceneShaftHover, selectedCategory, selectedPrimitiveSupportId, selectedPrimitiveHoverActive, selectedSupportIdSet, supportSelectionAndHoverSuppressed]);
+    }, [isPointerInteractable, mode, braceAltActive, kickstandHotkeyActive, leafHotkeyActive, leafStage, sproutParentingLockHeld, primitiveHoverOnSelectedSupport, primitiveHoverSuppressesSceneShaftHover, selectedCategory, selectedPrimitiveSupportId, selectedPrimitiveHoverActive, selectedSupportIdSet, supportSelectionAndHoverSuppressed]);
 
     const handleSceneBatchedShaftPointerOut = React.useCallback((entity: { id: string } | null) => {
         if (!isPointerInteractable) return;
@@ -4433,11 +4486,27 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                     {batch.joints.length > 0 && (
                         <InstancedJointGroup
                             joints={batch.joints}
-                            color={batch.color}
-                            emissive={batch.color}
-                            emissiveIntensity={0.08}
+                            color={
+                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                    ? '#00ff00'
+                                    : batch.color
+                            }
+                            emissive={
+                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                    ? '#00ff00'
+                                    : batch.color
+                            }
+                            emissiveIntensity={
+                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                    ? 0.5
+                                    : 0.08
+                            }
                             transparent
-                            opacity={batch.opacity}
+                            opacity={
+                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                    ? 0.70
+                                    : batch.opacity
+                            }
                             widthSegments={BATCHED_JOINT_WIDTH_SEGMENTS}
                             heightSegments={BATCHED_JOINT_HEIGHT_SEGMENTS}
                         />

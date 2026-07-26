@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { HotkeyProvider } from "@/hotkeys/HotkeyContext";
+import { HotkeyRegistryManager } from "@/hotkeys/HotkeyRegistryManager";
 import { RendererCrashDiagnostics } from "@/components/debug/RendererCrashDiagnostics";
+import { DevIndicatorPosition } from "@/components/debug/DevIndicatorPosition";
 import { AppLogger } from "@/components/AppLogger";
 import { I18nClientProvider } from "@/components/I18nClientProvider";
 
@@ -45,8 +47,10 @@ export default function RootLayout({
       >
         <I18nClientProvider>
           <HotkeyProvider>
+            <HotkeyRegistryManager />
             <AppLogger />
             <RendererCrashDiagnostics />
+            <DevIndicatorPosition />
             {children}
           </HotkeyProvider>
         </I18nClientProvider>
