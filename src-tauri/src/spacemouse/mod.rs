@@ -502,6 +502,27 @@ mod nav {
         m
     }
 
+    /// navlib `coordinateSystem`: maps navlib's canonical frame (X-right, Y-up,
+    /// Z-toward-viewer) onto DragonFruit's **Z-up** world. Columns are the images
+    /// of navlib's basis vectors in world space:
+    ///   navlib X (right)         → world  X   (1, 0, 0)
+    ///   navlib Y (up)            → world  Z   (0, 0, 1)
+    ///   navlib Z (toward viewer) → world −Y   (0,−1, 0)
+    /// Column-major (m[col*4 + row]), determinant +1 (proper rotation, no flip).
+    ///
+    /// Without this navlib assumes a Y-up world and mis-decodes our Z-up
+    /// `view.affine`, swapping the pan/zoom axes and jumping the camera when it
+    /// takes over from another control. If orbit ends up mirrored, flip the sign
+    /// of the navlib-Z column (col2 → world +Y).
+    fn coordinate_system() -> [f64; 16] {
+        [
+            1.0, 0.0, 0.0, 0.0, // col0: navlib X → world X
+            0.0, 0.0, 1.0, 0.0, // col1: navlib Y → world Z (up)
+            0.0, -1.0, 0.0, 0.0, // col2: navlib Z → world -Y
+            0.0, 0.0, 0.0, 1.0, // col3: origin
+        ]
+    }
+
     /// Shadow of the live scene. JS keeps the app-authoritative fields fresh each
     /// frame; navlib's callbacks read them and write `affine`/`motion` back.
     struct NavState {
@@ -575,10 +596,11 @@ mod nav {
         let key = CStr::from_ptr(name).to_bytes();
         let v = &mut *value;
         match key {
-            // Identity for now: the Z-up<->Y-up mapping is Phase 1 step 3.
+            // Z-up world mapping (see `coordinate_system`): navlib assumes Y-up, so
+            // this tells it how to decode our Z-up `view.affine`.
             b"coordinateSystem" => {
                 v.type_ = MATRIX_TYPE;
-                v.value.matrix = MatrixT { m: identity() };
+                v.value.matrix = MatrixT { m: coordinate_system() };
             }
             b"view.affine" => {
                 v.type_ = MATRIX_TYPE;
