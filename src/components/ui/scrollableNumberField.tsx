@@ -49,6 +49,7 @@ export function ScrollableNumberField({
 
   const [draftValue, setDraftValue] = useState<string>(() => formatValue(clampValue(value)));
   const isEditingRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (isEditingRef.current) return;
@@ -76,6 +77,23 @@ export function ScrollableNumberField({
     onChange(next);
     setDraftValue(formatValue(next));
   }, [clampValue, disabled, draftValue, formatValue, normalizeStep, onChange, value]);
+
+  // React attaches its `wheel` listener at the root as PASSIVE, so
+  // preventDefault() inside an onWheel handler is silently ignored and the wheel
+  // both steps the value AND scrolls whatever container the field sits in. A
+  // native non-passive listener is the only way to consume the event.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      if (disabled) return;
+      event.preventDefault();
+      event.stopPropagation();
+      stepBy(event.deltaY < 0 ? 1 : -1);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [disabled, stepBy]);
 
   const handleBlur = () => {
     isEditingRef.current = false;
@@ -120,6 +138,7 @@ export function ScrollableNumberField({
 
       <div className="relative w-0 min-w-0 flex-1">
         <input
+          ref={inputRef}
           type="number"
           min={min}
           max={max}
@@ -153,11 +172,6 @@ export function ScrollableNumberField({
               setDraftValue(formatValue(clampValue(value)));
               event.currentTarget.blur();
             }
-          }}
-          onWheel={(event) => {
-            if (disabled) return;
-            event.preventDefault();
-            stepBy(event.deltaY < 0 ? 1 : -1);
           }}
           className={cn(
             'ui-input h-8 w-full px-1.5 text-xs sm:text-sm text-center tabular-nums font-semibold no-spinners !bg-[var(--surface-0)]',
