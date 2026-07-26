@@ -416,6 +416,12 @@ export function useOrganicCutSession({
   // retained for the model it was drawn on, so deselecting (clicking away) and
   // reselecting that model — or leaving and returning to the Cut tool — restores
   // the in-progress loops instead of losing them. Keyed by the model id.
+  //
+  // SESSION-ONLY: this Map dies with the page. Cut paths are NOT written to the
+  // scene file — `ModelMeshModifiers` (src/features/mesh-modifiers/types.ts)
+  // persists hollowing and hole punches but has no organic-cut field, so a
+  // half-drawn seam is lost on save/reload. Persisting it means adding a field
+  // there and serializing SessionLoop (points + per-loop key settings).
   const savedLoopsRef = React.useRef<Map<string, { loops: SessionLoop[]; activeIndex: number }>>(new Map());
 
   // Undo-restore: when a cut commits we remember the model id, ALL the loops, and
@@ -478,6 +484,21 @@ export function useOrganicCutSession({
     });
   }, []);
 
+  // Everything derived from the ACTIVE model's geometry. These are all computed
+  // asynchronously, so leaving any of them set across a model change paints the
+  // previous model's seam/membrane/key onto the new one until the recompute lands
+  // — which is what made two identical models show the key facing opposite ways
+  // for a moment. Clear them together, from one place.
+  const clearModelDerivedPreviews = React.useCallback(() => {
+    setGeodesicPolyline(null);
+    setPlaneCurves(null);
+    setMembranePreview(null);
+    setKeyPreview(null);
+    setKeyKind('none');
+    setKeyDetail('');
+    setKeyFrame(null);
+  }, []);
+
   // When the tool is deactivated, stash the current loops under their model so
   // they can be restored on re-entry, then clear the live view. We DON'T drop the
   // saved copy — re-entering the tool (or reselecting the model) brings it back.
@@ -495,8 +516,9 @@ export function useOrganicCutSession({
       setStatus('idle');
       setLastResult(null);
       setSelectedIndex(null);
+      clearModelDerivedPreviews();
     }
-  }, [toolActive]);
+  }, [toolActive, clearModelDerivedPreviews]);
 
   // On model change: stash the OUTGOING model's loops, then restore the INCOMING
   // model's saved loops (if any). Clicking away sets the key to null and stashes;
@@ -525,11 +547,11 @@ export function useOrganicCutSession({
     setPanelState((ps) => withKey(ps, restoredLoops[nextActive]?.key ?? DEFAULT_LOOP_KEY));
     setStatus(restoredLoops.some((l) => l.points.length > 0) ? 'drawing' : 'idle');
     setLastResult(null);
-    setGeodesicPolyline(null);
+    clearModelDerivedPreviews();
     // Redo history + selection don't carry across models.
     setRedoStack([]);
     setSelectedIndex(null);
-  }, [activeGeometryKey]);
+  }, [activeGeometryKey, clearModelDerivedPreviews]);
 
   // Undo-restore: when the active model's geometry REVERTS to the exact pre-cut
   // reference we stashed at cut time (scene-history undo restores geometry by
