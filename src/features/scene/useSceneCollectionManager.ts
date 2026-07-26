@@ -278,19 +278,28 @@ function estimateGeometryBytes(geometry: THREE.BufferGeometry): number {
   return total;
 }
 
-// Deliberately not deduplicated across snapshots/models: many pairs will
-// reference the same unchanged geometry, so this over-counts rather than
-// under-counts. That's the right direction for a safety cap -- it can only
-// make eviction more eager than strictly necessary, never less.
+// Counts each distinct BufferGeometry ONCE, because that is what the process
+// actually holds: cloneLoadedModel is a shallow clone, so every snapshot that
+// didn't change the mesh shares the same geometry object. A move stores two
+// snapshots and allocates no mesh memory at all.
+//
+// Counting per snapshot instead treated that shared mesh as a fresh allocation
+// each time, so the budget was exhausted after a handful of moves and eviction
+// threw away undo entries that cost nothing -- their scene snapshots went with
+// them, and undoing those actions was silently declined and discarded. Only
+// geometry a step genuinely creates (a cut, a hollow) adds to the total now.
 function estimateSceneSnapshotRegistryBytes(): number {
+  const counted = new Set<THREE.BufferGeometry>();
   let total = 0;
+  const add = (model: LoadedModel) => {
+    const geometry = model.geometry.geometry;
+    if (counted.has(geometry)) return;
+    counted.add(geometry);
+    total += estimateGeometryBytes(geometry);
+  };
   for (const pair of sceneSnapshotRegistry.values()) {
-    for (const model of pair.before.models) {
-      total += estimateGeometryBytes(model.geometry.geometry);
-    }
-    for (const model of pair.after.models) {
-      total += estimateGeometryBytes(model.geometry.geometry);
-    }
+    pair.before.models.forEach(add);
+    pair.after.models.forEach(add);
   }
   return total;
 }
