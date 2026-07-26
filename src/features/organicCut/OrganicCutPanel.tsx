@@ -293,13 +293,14 @@ export function OrganicCutPanel({
               >
                 Waypoint
               </button>
+              {/* Free-draw is not wired up: nothing outside this panel reads
+                  `drawMode === 'freeDraw'`, so picking it changed no behaviour.
+                  Disabled until the freehand seam painting actually exists. */}
               <button
                 type="button"
-                className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
-                onClick={() => setState({ drawMode: 'freeDraw' })}
-                disabled={disabled || isApplying}
-                style={state.drawMode === 'freeDraw' ? activeModeStyle : undefined}
-                title="Drag across the surface to paint the seam freehand."
+                className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px] disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled
+                title="Free-draw isn't available yet — we're still working on it. Use Waypoint mode to place the seam."
               >
                 Free-draw
               </button>
