@@ -674,26 +674,53 @@ mod nav {
                 let (dx, dy, dz) = (m[12] - s.affine[12], m[13] - s.affine[13], m[14] - s.affine[14]);
                 s.affine = m;
                 s.seq = s.seq.wrapping_add(1);
-                if s.seq % 6 == 1 {
+                // Log the throttled heartbeat AND any large jump (catches the
+                // snap-back navlib may write at transaction end / motion release).
+                let jump = (dx * dx + dy * dy + dz * dz).sqrt();
+                if s.seq % 6 == 1 || jump > 1.0 {
                     log::info!(
-                        "[spacemouse] affine #{} pos≈({:.2}, {:.2}, {:.2}) Δ≈({:.3}, {:.3}, {:.3})",
-                        s.seq, m[12], m[13], m[14], dx, dy, dz,
+                        "[spacemouse] affine #{} pos≈({:.2}, {:.2}, {:.2}) Δ≈({:.3}, {:.3}, {:.3}) |Δ|≈{:.3}",
+                        s.seq, m[12], m[13], m[14], dx, dy, dz, jump,
                     );
                 }
             }
             b"view.extents" => {
                 let b = v.value.box_;
+                // Defensive: reject non-finite or degenerate boxes. navlib's
+                // ortho zoom can shrink the width toward 0; a 0/NaN box poisons
+                // the camera.
+                let finite = [b.min.x, b.min.y, b.max.x, b.max.y]
+                    .iter()
+                    .all(|v| v.is_finite());
+                if !finite || (b.max.x - b.min.x).abs() < 1e-3 {
+                    log::info!(
+                        "[spacemouse] extents REJECTED (finite={finite}) \
+                         min=({:.3},{:.3}) max=({:.3},{:.3})",
+                        b.min.x, b.min.y, b.max.x, b.max.y,
+                    );
+                    return 0;
+                }
+                // DIAGNOSTIC: log the full box so we can see whether an isolated
+                // pan shifts the box CENTER (real pan) or changes its WIDTH/HEIGHT
+                // (navlib mis-routing pan onto the zoom DOF).
+                let (dcx, dcy) = (
+                    (b.min.x + b.max.x) * 0.5 - (s.ortho_min.x + s.ortho_max.x) * 0.5,
+                    (b.min.y + b.max.y) * 0.5 - (s.ortho_min.y + s.ortho_max.y) * 0.5,
+                );
+                let dw = (b.max.x - b.min.x) - (s.ortho_max.x - s.ortho_min.x);
                 s.ortho_min = b.min;
                 s.ortho_max = b.max;
                 s.extents_seq = s.extents_seq.wrapping_add(1);
-                if s.extents_seq % 10 == 1 {
-                    // center encodes ortho pan, width encodes ortho zoom.
+                if s.extents_seq % 3 == 1 {
                     log::info!(
-                        "[spacemouse] extents #{} center≈({:.2}, {:.2}) width≈{:.2}",
+                        "[spacemouse] extents #{} center≈({:.2},{:.2}) w≈{:.2} h≈{:.2} \
+                         Δcenter≈({:.3},{:.3}) Δw≈{:.3}",
                         s.extents_seq,
                         (b.min.x + b.max.x) * 0.5,
                         (b.min.y + b.max.y) * 0.5,
                         b.max.x - b.min.x,
+                        b.max.y - b.min.y,
+                        dcx, dcy, dw,
                     );
                 }
             }
@@ -740,6 +767,10 @@ mod nav {
             entry(P_VIEW_FOV, true, true),
             entry(P_VIEW_TARGET, true, true),
             entry(P_VIEW_FOCUS_DISTANCE, true, false),
+            // Writable again (with a hard finite/floor guard in nav_set) so we
+            // can observe what navlib does with the ortho frustum: Camera-mode
+            // routes pan onto the box WIDTH (a zoom) while Object-mode pans via
+            // view.affine. The guard prevents the width→0→NaN runaway.
             entry(P_VIEW_EXTENTS, true, true),
             entry(P_MODEL_EXTENTS, true, false),
             entry(P_SELECTION_EMPTY, true, false),

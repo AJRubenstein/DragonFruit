@@ -181,9 +181,11 @@ export function NativeSpaceMouseController({
       if (ortho.isOrthographicCamera !== true) return;
 
       // ── Zoom: box width vs the base frustum ──
+      // Guard non-finite / degenerate navlib boxes (its ortho zoom can collapse
+      // the width to 0 → NaN); never let that reach camera.zoom.
       const navWidth = max[0] - min[0];
       const baseWidth = ortho.right - ortho.left;
-      if (navWidth > 1e-9 && baseWidth > 1e-9) {
+      if (Number.isFinite(navWidth) && navWidth > 1e-3 && baseWidth > 1e-9) {
         ortho.zoom = THREE.MathUtils.clamp(baseWidth / navWidth, 0.0001, 2000);
         ortho.updateProjectionMatrix();
       }
