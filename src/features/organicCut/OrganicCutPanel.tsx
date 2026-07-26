@@ -791,8 +791,9 @@ export function OrganicCutPanel({
               className="ui-button ui-button-secondary flex-1 !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
               onClick={onClearLoop}
               disabled={disabled || isApplying || !loopSummaries.some((s) => s.pointCount > 0)}
+              title="Discard every loop in this cut, not just the active one."
             >
-              Clear
+              Clear all
             </button>
             <button
               type="button"
