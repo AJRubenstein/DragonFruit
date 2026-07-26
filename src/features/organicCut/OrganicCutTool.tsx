@@ -6,6 +6,7 @@ import type { ModelTransform } from '@/hooks/useModelTransform';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutMode } from './types';
 import { cutPlaneFromPoints } from './cutPlane';
+import type { PlaneMeshCurve } from './planeMeshIntersection';
 
 interface OrganicCutToolProps {
   models: LoadedModel[];
@@ -65,6 +66,12 @@ interface OrganicCutToolProps {
    * the surface. Null until ≥2 points / outside Tauri.
    */
   geodesicPolyline?: Float32Array | null;
+  /**
+   * PLANE mode only: the curves where the cutting plane meets the mesh. This is
+   * the seam the flat cut actually produces, so it is drawn as the real result
+   * while the waypoint chords above only show what the user placed.
+   */
+  planeCurves?: PlaneMeshCurve[] | null;
   /**
    * Seam polylines (flat xyz, model-local) of the INACTIVE loops in a multi-loop
    * cut. Drawn dimmed so the user sees every loop the Cut will sever, alongside the
@@ -148,6 +155,7 @@ export function OrganicCutTool({
   onToggleLockPoint,
   onMarkerHoverChange,
   geodesicPolyline,
+  planeCurves,
   inactiveLoopPolylines,
   cutMode = 'plane',
   membranePreview,
@@ -223,6 +231,35 @@ export function OrganicCutTool({
     }
     return positions && positions.length >= 6 ? positions : null;
   }, [loop, geodesicPolyline]);
+
+  // PLANE mode: the plane ∩ mesh curves — where the flat cut really lands. Drawn
+  // in amber so they read as "the result" against the green waypoint chords, and
+  // without depth testing so they stay visible through the model.
+  const planeCurveLines = useMemo(() => {
+    if (cutMode !== 'plane' || !planeCurves || planeCurves.length === 0) return [];
+    return planeCurves
+      .map((curve) => {
+        if (curve.points.length < 6) return null;
+        const positions = Array.from(curve.points);
+        // A closed curve omits the repeat of its first point; append it so the
+        // loop draws shut instead of showing a gap.
+        if (curve.closed) {
+          positions.push(positions[0], positions[1], positions[2]);
+        }
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        const material = new THREE.LineBasicMaterial({
+          color: 0xff9500,
+          depthTest: false,
+          transparent: true,
+          opacity: 0.95,
+        });
+        const line = new THREE.Line(geom, material);
+        line.renderOrder = 998;
+        return line;
+      })
+      .filter((l) => l !== null);
+  }, [cutMode, planeCurves]);
 
   const loopLine = useMemo(() => {
     const positions = loopPositions;
@@ -914,6 +951,11 @@ export function OrganicCutTool({
 
         {/* Connecting polyline through the points (and closing segment). */}
         {loopLine && <primitive object={loopLine} />}
+
+        {/* Plane-mode seam: the real plane ∩ mesh intersection curve(s). */}
+        {planeCurveLines.map((line, i) => (
+          <primitive key={`plane-curve-${i}`} object={line} />
+        ))}
       </group>
     </group>
   );

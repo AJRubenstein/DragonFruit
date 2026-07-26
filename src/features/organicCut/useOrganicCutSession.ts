@@ -28,6 +28,7 @@ import {
 import type { KeyPreviewKind } from './meshOrganicCut';
 import { cutPlaneFromPoints } from './cutPlane';
 import { snapPointsToFeatureEdges } from './snapToEdges';
+import { planeMeshIntersection, type PlaneMeshCurve } from './planeMeshIntersection';
 import type * as THREE from 'three';
 
 /** Minimum points before a cut is possible. 2 = the simplest flat plane cut. */
@@ -262,6 +263,13 @@ export interface OrganicCutSession {
    */
   geodesicPolyline: Float32Array | null;
   /**
+   * PLANE mode seam: every curve where the cutting plane meets the mesh (flat
+   * xyz, model-local). This IS the seam a flat cut produces, so it replaces the
+   * geodesic in that mode. Several curves when the plane crosses several bodies.
+   * Null in contour mode.
+   */
+  planeCurves: PlaneMeshCurve[] | null;
+  /**
    * Contour-cut membrane preview (flat triangle soup, model-local). The exact
    * curved cutter surface the contour cut will use. Null unless in contour mode
    * with ≥3 points / outside Tauri.
@@ -345,6 +353,9 @@ export function useOrganicCutSession({
   const [isApplying, setIsApplying] = React.useState(false);
   const [lastResult, setLastResult] = React.useState<OrganicCutResult | null>(null);
   const [geodesicPolyline, setGeodesicPolyline] = React.useState<Float32Array | null>(null);
+  // Plane-mode seam: every curve where the cutting plane meets the mesh — the
+  // exact seam a flat cut produces. Null in contour mode.
+  const [planeCurves, setPlaneCurves] = React.useState<PlaneMeshCurve[] | null>(null);
   // Contour-cut membrane preview (flat triangle soup, model-local). Shows the
   // exact cutter surface so the user sees where the curved cut will land.
   const [membranePreview, setMembranePreview] = React.useState<Float32Array | null>(null);
@@ -561,8 +572,22 @@ export function useOrganicCutSession({
   React.useEffect(() => {
     if (!toolActive || loop.length < 2 || !activeGeometry || !activeGeometryKey) {
       setGeodesicPolyline(null);
+      setPlaneCurves(null);
       return;
     }
+    // PLANE MODE: the cut follows the plane the points define, not the points
+    // themselves, so a surface-following geodesic through them says nothing about
+    // where the cut lands. The honest preview is the plane ∩ mesh curve — which is
+    // literally the seam the cut produces. Computed locally (no Rust round-trip):
+    // it's a single pass over the triangles and the plane only moves when a point
+    // does.
+    if (cutMode === 'plane') {
+      setGeodesicPolyline(null);
+      const plane = cutPlaneFromPoints(loop);
+      setPlaneCurves(plane ? planeMeshIntersection(activeGeometry, plane) : null);
+      return;
+    }
+    setPlaneCurves(null);
     let cancelled = false;
     void (async () => {
       // Skip the staging await on the hot path: if the source is already staged
@@ -593,7 +618,7 @@ export function useOrganicCutSession({
     return () => {
       cancelled = true;
     };
-  }, [toolActive, loop, activeGeometry, activeGeometryKey, panelState.smoothing]);
+  }, [toolActive, loop, activeGeometry, activeGeometryKey, panelState.smoothing, cutMode]);
 
   // Membrane preview (contour mode) for the ACTIVE loop. The membrane build is the
   // heavy Rust round-trip, so it is SUPPRESSED while a waypoint is being dragged
@@ -1102,6 +1127,7 @@ export function useOrganicCutSession({
     canApply,
     pointCount,
     geodesicPolyline,
+    planeCurves,
     membranePreview,
     keyPreview,
     keyKind,

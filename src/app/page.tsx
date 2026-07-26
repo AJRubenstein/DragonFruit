@@ -9780,6 +9780,7 @@ export default function Home() {
                 onToggleLockPoint={organicCut.toggleLockPoint}
                 onMarkerHoverChange={handleOrganicCutMarkerHoverChange}
                 geodesicPolyline={organicCut.geodesicPolyline}
+                planeCurves={organicCut.planeCurves}
                 inactiveLoopPolylines={organicCut.inactiveLoopPolylines}
                 cutMode={organicCut.panelState.cutMode}
                 membranePreview={organicCut.membranePreview}

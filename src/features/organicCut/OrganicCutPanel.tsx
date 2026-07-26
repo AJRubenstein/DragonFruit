@@ -335,7 +335,10 @@ export function OrganicCutPanel({
             </button>
           </div>
 
-          {/* Seam-line smoothing (how much the cut line rounds through waypoints) */}
+          {/* Seam-line smoothing: rounds the GEODESIC through the waypoints, so it
+              means nothing for a flat cut — that seam is the plane ∩ mesh curve,
+              which the waypoints only position. Contour mode only. */}
+          {isContour && (
           <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
             <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Seam Smoothing</label>
             <ScrollableNumberField
@@ -350,6 +353,7 @@ export function OrganicCutPanel({
               className="mt-1"
             />
           </div>
+          )}
 
           {/* Cut thickness (the kerf the cut removes). */}
           <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
