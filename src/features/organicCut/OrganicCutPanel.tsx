@@ -234,8 +234,17 @@ export function OrganicCutPanel({
         ? '1 point — click one more on the other side'
         : `${pointCount} points — ready to cut (flat plane)`;
 
+  // Bound the expanded panel to the viewport so its body can scroll. Collapsed it
+  // stays unbounded, which keeps it the height of its header.
+  const cardShellStyle: React.CSSProperties = {
+    ...disabledStyle,
+    ...(expanded
+      ? { maxHeight: 'calc(100vh - var(--topbar-height) - 140px)' }
+      : {}),
+  };
+
   return (
-    <Card style={disabledStyle}>
+    <Card className="flex flex-col" style={cardShellStyle}>
       <CardHeader
         left={(
           <>
@@ -267,7 +276,10 @@ export function OrganicCutPanel({
       />
 
       {expanded && (
-        <div className="px-2 pb-2 space-y-2 sm:px-2.5 sm:pb-2.5">
+        <>
+        {/* Scrollable body. The panel has more controls than a 1200px-tall screen
+            can show, so it scrolls instead of running off the bottom. */}
+        <div className="px-2 space-y-2 sm:px-2.5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
           {/* Live session status */}
           <div
             className="rounded-md border p-2 text-center text-[11px]"
@@ -765,7 +777,14 @@ export function OrganicCutPanel({
             </div>
           )}
 
-          {/* Actions */}
+        </div>
+
+        {/* Actions stay pinned below the scroll area: Cut must be reachable
+            without scrolling to the bottom of a long panel. */}
+        <div
+          className="px-2 pb-2 pt-2 sm:px-2.5 sm:pb-2.5 border-t"
+          style={{ borderColor: 'var(--border-subtle)' }}
+        >
           <div className="flex gap-2">
             <button
               type="button"
@@ -796,6 +815,7 @@ export function OrganicCutPanel({
             </button>
           </div>
         </div>
+        </>
       )}
     </Card>
   );
