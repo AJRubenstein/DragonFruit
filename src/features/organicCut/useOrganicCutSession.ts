@@ -39,6 +39,14 @@ import type * as THREE from 'three';
 
 const organicCutHistory = createTypedHistory<OrganicCutHistoryPayloadMap>();
 
+/**
+ * Consecutive edits of the SAME kind within this window collapse into one undo
+ * step. A number field steps once per wheel notch and the aim gizmo fires per
+ * frame, so without this a few seconds of tweaking buries the stack under
+ * hundreds of entries and undo crawls back one notch at a time.
+ */
+const EDIT_COALESCE_WINDOW_MS = 500;
+
 /** Drop the derived polyline: it is recomputed from the points on restore. */
 function toSnapshot(loops: SessionLoop[]): OrganicCutLoopSnapshot[] {
   return loops.map((l) => ({ points: l.points.slice(), key: { ...l.key } }));
@@ -497,6 +505,41 @@ export function useOrganicCutSession({
     [],
   );
 
+  // An open coalescing run: the loops as they were when this burst of same-kind
+  // edits began. Closed by the window expiring, by a different edit, or by the
+  // tool/model going away — whichever comes first.
+  const pendingRunRef = React.useRef<{
+    description: string;
+    modelId: string;
+    before: OrganicCutLoopSnapshot[];
+    beforeActive: number;
+    timer: number;
+  } | null>(null);
+
+  const flushEditRun = React.useCallback(() => {
+    const run = pendingRunRef.current;
+    if (!run) return;
+    window.clearTimeout(run.timer);
+    pendingRunRef.current = null;
+
+    const after = toSnapshot(loopsRef.current);
+    const afterActive = activeLoopIndexRef.current;
+    organicCutHistory.push({
+      type: ORGANIC_CUT_EDIT,
+      description: run.description,
+      payload: {
+        modelId: run.modelId,
+        before: run.before,
+        beforeActive: run.beforeActive,
+        after,
+        afterActive,
+      },
+    });
+  }, []);
+
+  // Never leave a run open: an unflushed burst would be missing from undo.
+  React.useEffect(() => () => flushEditRun(), [flushEditRun]);
+
   // Drag coalescing: the loops at the moment a drag began, so the whole gesture
   // (waypoint drag or key gizmo) collapses into a single undo step.
   const isDraggingRef = React.useRef(isDraggingPoint);
@@ -507,6 +550,7 @@ export function useOrganicCutSession({
     isDraggingRef.current = isDraggingPoint;
 
     if (!wasDragging && isDraggingPoint) {
+      flushEditRun();
       dragBaselineRef.current = { loops: loopsRef.current, active: activeLoopIndexRef.current };
       return;
     }
@@ -531,7 +575,7 @@ export function useOrganicCutSession({
         afterActive,
       },
     });
-  }, [isDraggingPoint]);
+  }, [isDraggingPoint, flushEditRun]);
 
   /**
    * The ONE path every user edit to the loops takes: apply it and record it on the
@@ -544,6 +588,7 @@ export function useOrganicCutSession({
       description: string,
       updater: (prev: SessionLoop[]) => SessionLoop[],
       nextActiveIndex?: number,
+      coalesce = false,
     ) => {
       const before = loopsRef.current;
       const beforeActive = activeLoopIndexRef.current;
@@ -561,6 +606,28 @@ export function useOrganicCutSession({
 
       const modelId = activeGeometryKeyRef.current;
       if (!modelId) return; // nothing to attribute the edit to
+
+      if (coalesce) {
+        const run = pendingRunRef.current;
+        // Same kind of edit, same model, still inside the window → keep extending
+        // the open run instead of opening a second entry.
+        if (run && run.description === description && run.modelId === modelId) {
+          window.clearTimeout(run.timer);
+          run.timer = window.setTimeout(flushEditRun, EDIT_COALESCE_WINDOW_MS);
+          return;
+        }
+        flushEditRun(); // a different edit ends the previous run
+        pendingRunRef.current = {
+          description,
+          modelId,
+          before: toSnapshot(before),
+          beforeActive,
+          timer: window.setTimeout(flushEditRun, EDIT_COALESCE_WINDOW_MS),
+        };
+        return;
+      }
+
+      flushEditRun(); // a discrete edit ends any open run before recording itself
       organicCutHistory.push({
         type: ORGANIC_CUT_EDIT,
         description,
@@ -573,7 +640,7 @@ export function useOrganicCutSession({
         },
       });
     },
-    [],
+    [flushEditRun],
   );
 
   const setActiveLoopPoints = React.useCallback(
@@ -609,7 +676,7 @@ export function useOrganicCutSession({
       const nextLoops = prev.slice();
       nextLoops[idx] = { ...nextLoops[idx], key };
       return nextLoops;
-    });
+    }, undefined, true);
   }, [commitLoops]);
 
   // Everything derived from the ACTIVE model's geometry. These are all computed
@@ -676,9 +743,10 @@ export function useOrganicCutSession({
     setStatus(restoredLoops.some((l) => l.points.length > 0) ? 'drawing' : 'idle');
     setLastResult(null);
     clearModelDerivedPreviews();
+    flushEditRun();
     // Redo history + selection don't carry across models.
     setSelectedIndex(null);
-  }, [activeGeometryKey, clearModelDerivedPreviews]);
+  }, [activeGeometryKey, clearModelDerivedPreviews, flushEditRun]);
 
   // Undo-restore: when the active model's geometry REVERTS to the exact pre-cut
   // reference we stashed at cut time (scene-history undo restores geometry by
