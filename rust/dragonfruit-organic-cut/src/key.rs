@@ -195,18 +195,50 @@ pub fn frame_from_membrane(membrane: &Membrane) -> Option<KeyFrame> {
         return None;
     }
 
-    // Anchor = centroid of the membrane vertices.
-    let mut anchor = Vec3::ZERO;
-    for &p in &membrane.vertices {
-        anchor = anchor.add(p);
+    let cut_area = membrane.area();
+    if !(cut_area > 1e-9) {
+        return None;
     }
-    anchor = anchor.scale(1.0 / membrane.vertices.len() as f32);
 
-    // Axis = area-weighted average of triangle normals (consistent winding across
-    // the patch → a coherent +normal, the same convention `signed_side_distance`
-    // signs against). Area weighting damps tiny sliver triangles.
+    // Seed from the vertex centroid, then SNAP IT ONTO the membrane and take the
+    // surface normal THERE.
+    //
+    // Averaging the whole patch (centroid + area-weighted mean of every triangle
+    // normal) describes a curved membrane by a single plane, which no point on a
+    // saddle-shaped seam actually lies on: the key was built with a flat base on
+    // that mean plane, so one corner punched through to the far side of the cut
+    // while the opposite corner floated clear of it. On a flat membrane the two
+    // agree, which is why it only showed up on curved seams.
+    let mut centroid = Vec3::ZERO;
+    for &p in &membrane.vertices {
+        centroid = centroid.add(p);
+    }
+    centroid = centroid.scale(1.0 / membrane.vertices.len() as f32);
+
+    let mut anchor = centroid;
+    let mut best_d2 = f32::INFINITY;
+    let mut best_tri = 0usize;
+    for (i, t) in membrane.triangles.iter().enumerate() {
+        let a = membrane.vertices[t[0] as usize];
+        let b = membrane.vertices[t[1] as usize];
+        let c = membrane.vertices[t[2] as usize];
+        let (cp, d2) = crate::membrane::closest_on_tri(centroid, a, b, c);
+        if d2 < best_d2 {
+            best_d2 = d2;
+            anchor = cp;
+            best_tri = i;
+        }
+    }
+
+    // Local normal: area-weight only the triangles touching the anchor's triangle
+    // vertices, so the axis follows the seam where the key actually sits while
+    // staying steadier than a single triangle's normal on a coarse mesh.
+    let seed = membrane.triangles[best_tri];
     let mut nsum = Vec3::ZERO;
     for t in &membrane.triangles {
+        if !t.iter().any(|v| seed.contains(v)) {
+            continue;
+        }
         let a = membrane.vertices[t[0] as usize];
         let b = membrane.vertices[t[1] as usize];
         let c = membrane.vertices[t[2] as usize];
@@ -218,11 +250,6 @@ pub fn frame_from_membrane(membrane: &Membrane) -> Option<KeyFrame> {
         return None; // normals cancelled — no coherent axis
     }
     let axis = nsum.scale(1.0 / nlen);
-
-    let cut_area = membrane.area();
-    if !(cut_area > 1e-9) {
-        return None;
-    }
 
     let (u, v) = orthonormal_basis(axis);
     Some(KeyFrame { anchor, axis, u, v, cut_area })
@@ -1412,6 +1439,112 @@ mod tests {
         ];
         build_membrane_full(&loop_pts, CONTOUR_SUBDIVISIONS, DEFAULT_MEMBRANE_SMOOTHING, 24.0)
             .expect("flat membrane builds")
+    }
+
+    /// A strongly warped membrane: a tight ring whose height swings by more than
+    /// its own radius, the regime a cut around a waist lands in.
+    ///
+    /// Asymmetric and tight on purpose. On a gentle or symmetric patch the vertex
+    /// centroid happens to land on the surface and the patch-wide mean normal
+    /// happens to match the local one, so such a fixture cannot tell the old
+    /// mean-plane frame from a local one. Measured here: centroid ~1.6mm off the
+    /// surface, mean normal ~82° from the local normal.
+    fn warped_membrane() -> Membrane {
+        const N: usize = 8;
+        let amps = [0.0f32, 12.0, -3.0, 11.0, -13.0, 4.0, -9.0, 6.0];
+        let loop_pts: Vec<Vec3> = (0..N)
+            .map(|i| {
+                let th = std::f32::consts::TAU * i as f32 / N as f32;
+                Vec3::new(6.0 * th.cos(), 6.0 * th.sin(), amps[i])
+            })
+            .collect();
+        build_membrane_full(&loop_pts, CONTOUR_SUBDIVISIONS, DEFAULT_MEMBRANE_SMOOTHING, 24.0)
+            .expect("warped membrane builds")
+    }
+
+    /// Distance from `p` to the membrane surface.
+    fn distance_to_membrane(mem: &Membrane, p: Vec3) -> f32 {
+        let mut best = f32::INFINITY;
+        for t in &mem.triangles {
+            let a = mem.vertices[t[0] as usize];
+            let b = mem.vertices[t[1] as usize];
+            let c = mem.vertices[t[2] as usize];
+            let (_, d2) = crate::membrane::closest_on_tri(p, a, b, c);
+            best = best.min(d2);
+        }
+        best.sqrt()
+    }
+
+    #[test]
+    fn frame_anchor_sits_on_a_curved_membrane() {
+        let mem = warped_membrane();
+
+        // Premise: on this membrane the vertex centroid — what the frame used to
+        // anchor to — is genuinely off the surface. Without this the test could
+        // pass against the old mean-plane frame and prove nothing.
+        let mut centroid = Vec3::ZERO;
+        for &p in &mem.vertices {
+            centroid = centroid.add(p);
+        }
+        centroid = centroid.scale(1.0 / mem.vertices.len() as f32);
+        let centroid_gap = distance_to_membrane(&mem, centroid);
+        assert!(
+            centroid_gap > 0.1,
+            "fixture is too flat to be meaningful (centroid only {centroid_gap:.4}mm off)"
+        );
+
+        let frame = frame_from_membrane(&mem).expect("frame");
+        let anchor_gap = distance_to_membrane(&mem, frame.anchor);
+        assert!(
+            anchor_gap < 1e-3,
+            "anchor is {anchor_gap:.4}mm off the membrane (centroid was {centroid_gap:.4}mm)"
+        );
+    }
+
+    #[test]
+    fn frame_axis_follows_the_surface_where_the_key_sits() {
+        let mem = warped_membrane();
+        let frame = frame_from_membrane(&mem).expect("frame");
+
+        // Local normal at the anchor's triangle.
+        let mut best_d2 = f32::INFINITY;
+        let mut local = Vec3::ZERO;
+        for t in &mem.triangles {
+            let a = mem.vertices[t[0] as usize];
+            let b = mem.vertices[t[1] as usize];
+            let c = mem.vertices[t[2] as usize];
+            let (_, d2) = crate::membrane::closest_on_tri(frame.anchor, a, b, c);
+            if d2 < best_d2 {
+                best_d2 = d2;
+                let n = b.sub(a).cross(c.sub(a));
+                let l = n.length();
+                if l > 1e-12 {
+                    local = n.scale(1.0 / l);
+                }
+            }
+        }
+
+        // Premise: the patch-wide mean normal genuinely disagrees with the local
+        // one here, so this distinguishes the two.
+        let mut nsum = Vec3::ZERO;
+        for t in &mem.triangles {
+            let a = mem.vertices[t[0] as usize];
+            let b = mem.vertices[t[1] as usize];
+            let c = mem.vertices[t[2] as usize];
+            nsum = nsum.add(b.sub(a).cross(c.sub(a)));
+        }
+        let mean = nsum.scale(1.0 / nsum.length());
+        assert!(
+            mean.dot(local).abs() < 0.98,
+            "fixture too flat: mean and local normals already agree"
+        );
+
+        let alignment = frame.axis.dot(local).abs();
+        assert!(
+            alignment > 0.98,
+            "axis is {:.1}° off the local surface normal",
+            alignment.clamp(-1.0, 1.0).acos().to_degrees()
+        );
     }
 
     /// Axis-aligned bbox of a mesh's vertices.

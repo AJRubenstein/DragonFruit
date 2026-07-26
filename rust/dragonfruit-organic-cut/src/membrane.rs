@@ -1139,7 +1139,7 @@ fn signed_side_distance(m: &Membrane, p: Vec3) -> f32 {
 
 /// Closest point on triangle (a,b,c) to p, returning (point, squared distance).
 /// Ericson's barycentric region test (same family as geodesic::closest_point_on_tri).
-fn closest_on_tri(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> (Vec3, f32) {
+pub fn closest_on_tri(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> (Vec3, f32) {
     let ab = b.sub(a);
     let ac = c.sub(a);
     let ap = p.sub(a);
