@@ -583,6 +583,16 @@ mod nav {
     const P_FOCUS: &[u8] = b"focus\0";
     const P_VIEW_EXTENTS: &[u8] = b"view.extents\0";
 
+    /// During navlib motion we log the FIRST read of each property, so a single
+    /// gesture reveals exactly which getters navlib consults while computing the
+    /// camera delta. Cleared on each `motion -> true` edge. This is how we find
+    /// out WHY Camera mode computes a zero delta (empty transactions) where
+    /// Object mode writes a real `view.affine`.
+    fn getter_census() -> &'static Mutex<std::collections::HashSet<Vec<u8>>> {
+        static C: OnceLock<Mutex<std::collections::HashSet<Vec<u8>>>> = OnceLock::new();
+        C.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+    }
+
     /// navlib reads a property value from the shadow.
     unsafe extern "C" fn nav_get(param: ParamT, name: PropertyT, value: *mut ValueT) -> c_long {
         if name.is_null() || value.is_null() {
@@ -594,6 +604,16 @@ mod nav {
             Err(_) => return NAVLIB_INVALID_FUNCTION,
         };
         let key = CStr::from_ptr(name).to_bytes();
+        if s.motion {
+            if let Ok(mut seen) = getter_census().lock() {
+                if seen.insert(key.to_vec()) {
+                    log::info!(
+                        "[spacemouse] GET {} during motion",
+                        String::from_utf8_lossy(key)
+                    );
+                }
+            }
+        }
         let v = &mut *value;
         match key {
             // Z-up world mapping (see `coordinate_system`): navlib assumes Y-up, so
@@ -728,6 +748,12 @@ mod nav {
                 let m = v.value.b != 0;
                 if m != s.motion {
                     s.motion = m;
+                    // Fresh getter census for each new gesture.
+                    if m {
+                        if let Ok(mut seen) = getter_census().lock() {
+                            seen.clear();
+                        }
+                    }
                     let a = &s.affine;
                     log::info!(
                         "[spacemouse] motion -> {m} (perspective={}, focusDistance={:.2}, extentsWidth≈{:.2})\n  \
@@ -775,7 +801,11 @@ mod nav {
                 }
             }
             b"transaction" => {
-                log::info!("[spacemouse] transaction = {}", v.value.l);
+                // navlib brackets every motion frame with begin(N)/end(0), which
+                // floods the log. Log sparsely just to confirm frames are running.
+                if v.value.l != 0 && v.value.l % 30 == 1 {
+                    log::info!("[spacemouse] transaction = {} (frames running)", v.value.l);
+                }
             }
             b"pivot.visible" => {}
             _ => return NAVLIB_PROPERTY_NOT_FOUND,
