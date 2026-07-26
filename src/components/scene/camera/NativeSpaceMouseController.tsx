@@ -31,6 +31,19 @@ function isOrbitLikeControls(value: unknown): value is OrbitLikeControls {
 // navlib's speed/zoom scaling, so it doesn't need to be exact every frame.
 const MODEL_EXTENTS_REFRESH_FRAMES = 30;
 
+// navlib's Camera / Target-Camera / Fly / Walk modes are PERSPECTIVE-ONLY by
+// design — in an orthographic view the driver produces zero motion (it expects
+// a perspective projection to translate the eye). Our scene is usually ortho, so
+// to let those modes drive an ortho camera we deliberately report
+// `view.perspective = true` to navlib even when the live camera is orthographic.
+// navlib then drives everything through `view.affine`: lateral eye translation =
+// pan and eye rotation = orbit (both correct for ortho as-is), while its "zoom"
+// dollies the eye forward — which is a no-op for an ortho projection. `applyAffine`
+// intercepts that forward dolly and converts it into `camera.zoom` instead.
+// Object mode still works in ortho with this on (navlib treats it as perspective
+// object mode). Flip to `false` to restore the native extents-based ortho path.
+const FORCE_PERSPECTIVE_IN_ORTHO = true;
+
 /**
  * Native 3DxWare / navlib SpaceMouse driver (Windows/macOS).
  *
@@ -85,6 +98,9 @@ export function NativeSpaceMouseController({
   const tmpRight = React.useRef(new THREE.Vector3());
   const tmpUp = React.useRef(new THREE.Vector3());
   const tmpPan = React.useRef(new THREE.Vector3());
+  const tmpPos = React.useRef(new THREE.Vector3());
+  const tmpDir = React.useRef(new THREE.Vector3());
+  const tmpQuat = React.useRef(new THREE.Quaternion());
 
   // ── Request the bridge on/off with the SpaceMouse enabled setting ──
   // The reconciler in the bridge owns the async lifecycle (StrictMode-safe);
@@ -128,10 +144,42 @@ export function NativeSpaceMouseController({
     (affine: number[]) => {
       if (affine.length < 16) return;
       const m = tmpMatrix.current.fromArray(affine);
-      m.decompose(camera.position, camera.quaternion, tmpScale.current);
-      // Preserve roll: take the camera up-vector straight from the matrix rather
-      // than re-deriving it via lookAt.
+
+      const lie =
+        FORCE_PERSPECTIVE_IN_ORTHO &&
+        (camera as THREE.OrthographicCamera).isOrthographicCamera === true;
+
+      if (!lie) {
+        m.decompose(camera.position, camera.quaternion, tmpScale.current);
+        // Preserve roll: take the camera up-vector straight from the matrix rather
+        // than re-deriving it via lookAt.
+        camera.up.set(affine[4], affine[5], affine[6]).normalize();
+        camera.updateMatrixWorld();
+        return;
+      }
+
+      // ── Ortho + forced-perspective lie ──
+      // navlib thinks it's driving a perspective camera, so its "zoom" dollies the
+      // eye FORWARD (a no-op for ortho). Split navlib's new eye position into the
+      // in-plane part (pan/orbit — apply as-is) and the forward-dolly part (convert
+      // to camera.zoom, and suppress the eye motion itself so it doesn't drift).
+      m.decompose(tmpPos.current, tmpQuat.current, tmpScale.current);
+      const fwd = tmpDir.current.set(0, 0, -1).applyQuaternion(tmpQuat.current).normalize();
+      const dolly = tmpPan.current.copy(tmpPos.current).sub(camera.position).dot(fwd);
+      // Strip the forward component so the eye stays on its focus plane.
+      tmpPos.current.addScaledVector(fwd, -dolly);
+      camera.position.copy(tmpPos.current);
+      camera.quaternion.copy(tmpQuat.current);
       camera.up.set(affine[4], affine[5], affine[6]).normalize();
+
+      // Dolly toward the focus plane at distance D scales apparent size by D/(D−dolly).
+      const ortho = camera as THREE.OrthographicCamera;
+      const D = Math.max(1e-3, focusDistRef.current);
+      const denom = D - dolly;
+      if (Math.abs(dolly) > 1e-6 && denom > 1e-3) {
+        ortho.zoom = THREE.MathUtils.clamp(ortho.zoom * (D / denom), 0.0001, 2000);
+        ortho.updateProjectionMatrix();
+      }
       camera.updateMatrixWorld();
     },
     [camera],
@@ -229,6 +277,10 @@ export function NativeSpaceMouseController({
     const target = getTarget(tmpTarget.current);
     const focusDistance = Math.max(0.1, camera.position.distanceTo(target));
     const isPerspective = (camera as THREE.PerspectiveCamera).isPerspectiveCamera === true;
+    const isOrtho = (camera as THREE.OrthographicCamera).isOrthographicCamera === true;
+    // Report perspective to navlib when the camera really is perspective, OR when
+    // we're forcing the lie on an ortho camera so its camera-family modes engage.
+    const reportPerspective = isPerspective || (FORCE_PERSPECTIVE_IN_ORTHO && isOrtho);
     const fov = isPerspective
       ? THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov)
       : 0.8;
@@ -245,7 +297,7 @@ export function NativeSpaceMouseController({
       affine: Array.from(camera.matrixWorld.elements),
       fov,
       focusDistance,
-      perspective: isPerspective,
+      perspective: reportPerspective,
       target: [target.x, target.y, target.z],
       modelMin: [box.min.x, box.min.y, box.min.z],
       modelMax: [box.max.x, box.max.y, box.max.z],
