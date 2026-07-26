@@ -86,6 +86,11 @@ export function NativeSpaceMouseController({
   // Camera→target distance captured when navlib takes over, so handback can
   // re-seat the orbit pivot in front of the camera at the same radius.
   const focusDistRef = React.useRef(50);
+  // The focus distance we last REPORTED to navlib. In the ortho lie this is a
+  // synthetic value (sized so navlib's perspective frustum matches the ortho
+  // view), so the dolly→zoom conversion must divide by the same number navlib
+  // used to size its dolly — not the real eye→target distance.
+  const navFocusRef = React.useRef(50);
 
   // Cached model extents + refresh counter.
   const modelBoxRef = React.useRef(new THREE.Box3());
@@ -173,8 +178,10 @@ export function NativeSpaceMouseController({
       camera.up.set(affine[4], affine[5], affine[6]).normalize();
 
       // Dolly toward the focus plane at distance D scales apparent size by D/(D−dolly).
+      // D must be the distance navlib itself used to size the dolly (the synthetic
+      // value we reported), not the real eye→target distance.
       const ortho = camera as THREE.OrthographicCamera;
-      const D = Math.max(1e-3, focusDistRef.current);
+      const D = Math.max(1e-3, navFocusRef.current);
       const denom = D - dolly;
       if (Math.abs(dolly) > 1e-6 && denom > 1e-3) {
         ortho.zoom = THREE.MathUtils.clamp(ortho.zoom * (D / denom), 0.0001, 2000);
@@ -285,6 +292,20 @@ export function NativeSpaceMouseController({
       ? THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov)
       : 0.8;
 
+    // In the ortho lie, size the reported focus distance so navlib's perspective
+    // view half-height at the focus plane (focusDistance·tan(fov/2)) equals the
+    // ortho view's half-height. Otherwise navlib pans/zooms at the wrong world
+    // scale (the real eye→target distance makes pan feel far too slow).
+    let focusDistanceForNav = focusDistance;
+    if (FORCE_PERSPECTIVE_IN_ORTHO && isOrtho) {
+      const oc = camera as THREE.OrthographicCamera;
+      const zoom = oc.zoom || 1;
+      const halfH = (oc.top - oc.bottom) / (2 * zoom);
+      const t = Math.tan(fov / 2);
+      if (halfH > 1e-6 && t > 1e-6) focusDistanceForNav = halfH / t;
+    }
+    navFocusRef.current = focusDistanceForNav;
+
     if (modelBoxAgeRef.current >= MODEL_EXTENTS_REFRESH_FRAMES) {
       refreshModelExtents();
       modelBoxAgeRef.current = 0;
@@ -296,7 +317,7 @@ export function NativeSpaceMouseController({
     return {
       affine: Array.from(camera.matrixWorld.elements),
       fov,
-      focusDistance,
+      focusDistance: focusDistanceForNav,
       perspective: reportPerspective,
       target: [target.x, target.y, target.z],
       modelMin: [box.min.x, box.min.y, box.min.z],
