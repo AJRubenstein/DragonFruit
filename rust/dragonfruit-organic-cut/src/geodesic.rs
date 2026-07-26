@@ -424,7 +424,7 @@ fn project_to_faces(mesh: &IndexedMesh, p: Vec3, faces: &[u32]) -> (Vec3, u32) {
 /// incident to its three vertices (one ring). Keeps projection local + fast.
 fn local_faces(mesh: &IndexedMesh, topo: &Topology, seed_face: u32) -> Vec<u32> {
     let mut set: smallvec::SmallVec<[u32; 32]> = smallvec::SmallVec::new();
-    let mut push = |f: u32, set: &mut smallvec::SmallVec<[u32; 32]>| {
+    let push = |f: u32, set: &mut smallvec::SmallVec<[u32; 32]>| {
         if !set.contains(&f) {
             set.push(f);
         }

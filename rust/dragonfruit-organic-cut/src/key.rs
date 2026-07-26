@@ -529,7 +529,7 @@ fn build_frustum_leaned(
 
     let mut positions: Vec<Vec3> = Vec::new();
     let mut ring_starts: Vec<u32> = Vec::new();
-    let mut push_ring = |pts: Vec<Vec3>, positions: &mut Vec<Vec3>, starts: &mut Vec<u32>| {
+    let push_ring = |pts: Vec<Vec3>, positions: &mut Vec<Vec3>, starts: &mut Vec<u32>| {
         starts.push(positions.len() as u32);
         positions.extend(pts);
     };
@@ -1243,20 +1243,9 @@ fn nearest_hit(mesh: &IndexedMesh, origin: Vec3, dir: Vec3) -> Option<f32> {
 /// dilation of the peg (no coincident faces) so the boolean is robust.
 ///
 /// `segments` = longitude steps; the surface uses a fixed number of latitude rings.
-fn build_dome(
-    frame: &KeyFrame,
-    half_w: f32,
-    half_l: f32,
-    depth: f32,
-    grow: f32,
-    segments: usize,
-) -> IndexedMesh {
-    build_dome_leaned(frame, half_w, half_l, depth, grow, segments, LeanXform::IDENTITY)
-}
-
-/// [`build_dome`] with an explicit [`LeanXform`] for a rotated dome. The bulge is
-/// rigid-rotated; the lower rings blend to keep the flat mouth disk glued in the
-/// cut plane (the dome's many latitude rings make the collar blend smooth).
+/// `lean` rigid-rotates the bulge; the lower rings blend to keep the flat mouth
+/// disk glued in the cut plane (the dome's many latitude rings make the collar
+/// blend smooth). Pass [`LeanXform::IDENTITY`] for an upright dome.
 fn build_dome_leaned(
     frame: &KeyFrame,
     half_w: f32,
@@ -1759,8 +1748,9 @@ mod tests {
         let frame = frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
         // (half_w, half_l, depth) cases: a round hemisphere and two oblong ones.
         for (hw, hl, d) in [(3.0, 3.0, 3.0), (4.0, 2.0, 3.0), (2.0, 2.5, 5.0)] {
-            let peg = build_dome(&frame, hw, hl, d, 0.0, DOME_SEGMENTS);
-            let socket = build_dome(&frame, hw, hl, d, 0.1, DOME_SEGMENTS);
+            let peg = build_dome_leaned(&frame, hw, hl, d, 0.0, DOME_SEGMENTS, LeanXform::IDENTITY);
+            let socket =
+                build_dome_leaned(&frame, hw, hl, d, 0.1, DOME_SEGMENTS, LeanXform::IDENTITY);
             let peg_m = to_manifold(&peg)
                 .unwrap_or_else(|e| panic!("dome peg ({hw},{hl},{d}) watertight: {e}"));
             let socket_m = to_manifold(&socket)

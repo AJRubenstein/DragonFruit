@@ -236,13 +236,13 @@ fn seed_fan(loop_pts: &[Vec3]) -> Option<Membrane> {
     Some(Membrane { vertices, triangles, boundary })
 }
 
-/// An orthonormal frame for the loop's best-fit plane: `origin` + axes `u`,`v`
-/// (in-plane) and `n` (normal). Projects 3D → 2D `(u,v)` and back.
+/// An orthonormal frame for the loop's best-fit plane: `origin` + in-plane axes
+/// `u`,`v`. Projects 3D → 2D `(u,v)` and back. (The plane normal is used only
+/// while building the frame, so it isn't stored.)
 struct PlaneFrame {
     origin: Vec3,
     u: Vec3,
     v: Vec3,
-    n: Vec3,
 }
 
 impl PlaneFrame {
@@ -301,7 +301,7 @@ impl PlaneFrame {
         }
         u = u.scale(1.0 / ulen);
         let v = n.cross(u);
-        Some(Self { origin, u, v, n })
+        Some(Self { origin, u, v })
     }
 
     #[inline]
