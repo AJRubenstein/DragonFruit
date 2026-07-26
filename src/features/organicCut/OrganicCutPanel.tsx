@@ -480,29 +480,28 @@ export function OrganicCutPanel({
                       <span>{state.keySwapSides ? 'Peg on Side B' : 'Peg on Side A'}</span>
                     </span>
                   </button>
-                  {/* Aim: a hint + a Reset that zeroes the tilt/roll. The tilt is set
-                      by dragging the key's tip in the 3D view (and the ring to roll);
-                      Reset snaps it back to straight-out. Shown only once tilted. */}
+                  {/* Aim readout + a Reset that zeroes the tilt/roll. The aim is set
+                      with the rotate gizmo at the key's base in the 3D view, so there
+                      is nothing to say here until the key actually leans. */}
                   {(() => {
                     const tilted =
                       Math.abs(state.keyTiltRad) > 1e-3 || Math.abs(state.keyRollRad) > 1e-3;
+                    if (!tilted) return null;
                     const tiltDeg = Math.round((state.keyTiltRad * 180) / Math.PI);
                     return (
                       <div className="flex items-center justify-between gap-2">
                         <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>
-                          {tilted ? `Aim: ${tiltDeg}° lean` : 'Aim: drag the key tip in 3D'}
+                          {`Aim: ${tiltDeg}° lean`}
                         </span>
-                        {tilted && (
-                          <button
-                            type="button"
-                            className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
-                            onClick={() => setState({ keyTiltRad: 0, keyTiltAzimuthRad: 0, keyRollRad: 0 })}
-                            disabled={disabled || isApplying}
-                            title="Reset the key to point straight out of the cut (no lean / roll)."
-                          >
-                            Reset Aim
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
+                          onClick={() => setState({ keyTiltRad: 0, keyTiltAzimuthRad: 0, keyRollRad: 0 })}
+                          disabled={disabled || isApplying}
+                          title="Reset the key to point straight out of the cut (no lean / roll)."
+                        >
+                          Reset Aim
+                        </button>
                       </div>
                     );
                   })()}
