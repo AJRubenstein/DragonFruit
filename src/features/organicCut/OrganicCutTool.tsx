@@ -119,12 +119,17 @@ interface OrganicCutToolProps {
 /** Max key tilt (radians) — mirrors the Rust `KEY_MAX_TILT_RAD` (~60°). */
 const KEY_MAX_TILT_RAD = Math.PI / 3;
 
+/**
+ * Plane-mode seam colour: a dark brown that stays legible against the pale and
+ * mid-tone model surfaces the bright greens washed out on.
+ */
+const PLANE_SEAM_COLOR = 0x8b4513;
+
 /** Marker radius as a fraction of the model's bbox diagonal (small = precise). */
 const MARKER_RADIUS_FRACTION = 0.00075;
 /** Clamp the marker radius (model-local units) so it's usable on any model size. */
 const MARKER_RADIUS_MIN = 0.005;
 const MARKER_RADIUS_MAX = 0.3;
-const LOOP_LINE_BIAS_MM = 0.2;
 
 /**
  * In-canvas visualization for the Cutting Mode loop.
@@ -218,16 +223,16 @@ export function OrganicCutTool({
         }
       }
     } else if (loop.length >= 2) {
+      // Straight chords through the waypoints EXACTLY where the markers are. The
+      // line renders with depthTest:false, so there is no z-fighting to bias
+      // away from — and biasing along each point's own normal pushed the line off
+      // the markers by a different direction at every vertex.
       positions = [];
-      const pushBiased = (p: OrganicCutLoopPoint) => {
-        positions!.push(
-          p.position[0] + p.normal[0] * LOOP_LINE_BIAS_MM,
-          p.position[1] + p.normal[1] * LOOP_LINE_BIAS_MM,
-          p.position[2] + p.normal[2] * LOOP_LINE_BIAS_MM,
-        );
+      const push = (p: OrganicCutLoopPoint) => {
+        positions!.push(p.position[0], p.position[1], p.position[2]);
       };
-      for (const p of loop) pushBiased(p);
-      if (loop.length >= 3) pushBiased(loop[0]);
+      for (const p of loop) push(p);
+      if (loop.length >= 3) push(loop[0]);
     }
     return positions && positions.length >= 6 ? positions : null;
   }, [loop, geodesicPolyline]);
@@ -249,7 +254,7 @@ export function OrganicCutTool({
         const geom = new THREE.BufferGeometry();
         geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         const material = new THREE.LineBasicMaterial({
-          color: 0xff9500,
+          color: PLANE_SEAM_COLOR,
           depthTest: false,
           transparent: true,
           opacity: 0.95,
