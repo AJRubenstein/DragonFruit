@@ -1,5 +1,5 @@
 import type { OrganicCutLoopPoint } from '../types';
-import type { LoopKeySettings } from '../useOrganicCutSession';
+import type { CutSettings, LoopKeySettings } from '../useOrganicCutSession';
 
 export const ORGANIC_CUT_EDIT = 'organic-cut:edit' as const;
 
@@ -32,6 +32,14 @@ export type OrganicCutEditPayload = {
   beforeActive: number;
   after: OrganicCutLoopSnapshot[];
   afterActive: number;
+  /**
+   * The cut-wide settings (mode, thickness, smoothing, resolution) as they were
+   * on each side of the edit. They live beside the loops for the same reason the
+   * loops are snapshotted whole: they shape the cut just as much as the seam
+   * does, and wiring them one at a time is what left thickness out of undo.
+   */
+  beforeSettings: CutSettings;
+  afterSettings: CutSettings;
 };
 
 /** Action→payload map for the organic-cut history domain. */

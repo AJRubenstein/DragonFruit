@@ -88,6 +88,39 @@ export type LoopKeySettings = Pick<
   | 'keyRollRad'
 >;
 
+/**
+ * The cut-wide settings — everything that shapes the cut but isn't per-loop and
+ * isn't per-key. Undo covers these too: changing the kerf is as much an edit as
+ * moving a waypoint. Pure-UI panel fields (`drawMode`, `showPreview`) are left
+ * out on purpose — hiding the preview is not an edit to undo.
+ */
+export type CutSettings = Pick<
+  OrganicCutPanelState,
+  'cutMode' | 'thicknessMm' | 'smoothing' | 'membraneSmoothing' | 'density'
+>;
+
+/** Pull the cut-wide settings out of the panel state. */
+function extractSettings(ps: OrganicCutPanelState): CutSettings {
+  return {
+    cutMode: ps.cutMode,
+    thicknessMm: ps.thicknessMm,
+    smoothing: ps.smoothing,
+    membraneSmoothing: ps.membraneSmoothing,
+    density: ps.density,
+  };
+}
+
+/** Value-equality of two cut-setting sets (to skip no-op history churn). */
+function settingsEqual(a: CutSettings, b: CutSettings): boolean {
+  return (
+    a.cutMode === b.cutMode &&
+    a.thicknessMm === b.thicknessMm &&
+    a.smoothing === b.smoothing &&
+    a.membraneSmoothing === b.membraneSmoothing &&
+    a.density === b.density
+  );
+}
+
 /** Pull the key fields out of the panel state. */
 function extractKey(ps: OrganicCutPanelState): LoopKeySettings {
   return {
@@ -423,6 +456,10 @@ export function useOrganicCutSession({
   React.useEffect(() => { activeLoopIndexRef.current = activeLoopIndex; }, [activeLoopIndex]);
   const loopRef = React.useRef(loop);
   React.useEffect(() => { loopRef.current = loop; }, [loop]);
+  // The cut-wide settings, mirrored for the same reason — and written SYNCHRONOUSLY
+  // by the panel setter before it records, since `setPanelState` hasn't landed yet
+  // at the moment the entry is pushed.
+  const settingsRef = React.useRef<CutSettings>(extractSettings(DEFAULT_PANEL_STATE));
 
   // Seam polylines for the INACTIVE loops, for the tool to render dimmed (the
   // active loop draws its own live seam + markers). Only loops that are real loops
@@ -503,10 +540,18 @@ export function useOrganicCutSession({
         // come back.
         savedLoopsRef.current.set(payload.modelId, { loops: restored, activeIndex: active });
 
+        // The cut-wide settings ride with the snapshot, so undo puts the kerf /
+        // smoothing / resolution back exactly as they were for this edit. Unlike
+        // the loops they are NOT stashed per model — they live in the panel, which
+        // shows one model at a time — so they only apply when this edit is the
+        // active model's; otherwise the ref would drift from what the panel shows.
+        const settings = direction === 'undo' ? payload.beforeSettings : payload.afterSettings;
+
         if (activeGeometryKeyRef.current === payload.modelId) {
+          settingsRef.current = settings;
           setLoops(restored);
           setActiveLoopIndex(active);
-          setPanelState((ps) => withKey(ps, restored[active]?.key ?? DEFAULT_LOOP_KEY));
+          setPanelState((ps) => ({ ...withKey(ps, restored[active]?.key ?? DEFAULT_LOOP_KEY), ...settings }));
           setSelectedIndex(null);
           setStatus(restored.some((l) => l.points.length > 0) ? 'drawing' : 'idle');
         }
@@ -523,6 +568,7 @@ export function useOrganicCutSession({
     modelId: string;
     before: OrganicCutLoopSnapshot[];
     beforeActive: number;
+    beforeSettings: CutSettings;
     timer: number;
   } | null>(null);
 
@@ -543,6 +589,8 @@ export function useOrganicCutSession({
         beforeActive: run.beforeActive,
         after,
         afterActive,
+        beforeSettings: run.beforeSettings,
+        afterSettings: settingsRef.current,
       },
     });
   }, []);
@@ -583,6 +631,9 @@ export function useOrganicCutSession({
         beforeActive: baseline.active,
         after: toSnapshot(after),
         afterActive,
+        // A drag never touches the cut-wide settings, so both sides are today's.
+        beforeSettings: settingsRef.current,
+        afterSettings: settingsRef.current,
       },
     });
   }, [isDraggingPoint, flushEditRun]);
@@ -599,12 +650,24 @@ export function useOrganicCutSession({
       updater: (prev: SessionLoop[]) => SessionLoop[],
       nextActiveIndex?: number,
       coalesce = false,
+      nextSettings?: CutSettings,
     ) => {
       const before = loopsRef.current;
       const beforeActive = activeLoopIndexRef.current;
+      const beforeSettings = settingsRef.current;
       const after = updater(before);
       const afterActive = nextActiveIndex ?? beforeActive;
-      if (loopsEqual(before, after) && afterActive === beforeActive) return;
+      // The cut-wide settings are applied by the caller (they live in panelState);
+      // this records them. Passing none means "unchanged by this edit".
+      const afterSettings = nextSettings ?? beforeSettings;
+      if (
+        loopsEqual(before, after)
+        && afterActive === beforeActive
+        && settingsEqual(beforeSettings, afterSettings)
+      ) {
+        return;
+      }
+      settingsRef.current = afterSettings;
 
       setLoops(after);
       if (afterActive !== beforeActive) setActiveLoopIndex(afterActive);
@@ -632,6 +695,7 @@ export function useOrganicCutSession({
           modelId,
           before: toSnapshot(before),
           beforeActive,
+          beforeSettings,
           timer: window.setTimeout(flushEditRun, EDIT_COALESCE_WINDOW_MS),
         };
         return;
@@ -647,6 +711,8 @@ export function useOrganicCutSession({
           beforeActive,
           after: toSnapshot(after),
           afterActive,
+          beforeSettings,
+          afterSettings,
         },
       });
     },
@@ -676,6 +742,14 @@ export function useOrganicCutSession({
   // changes (thickness, smoothing, …) leave the loops untouched (keysEqual guard).
   const handleSetPanelState = React.useCallback((next: OrganicCutPanelState) => {
     setPanelState(next);
+    // Cut-wide settings (kerf, smoothing, resolution, mode) are recorded too — they
+    // change the cut as much as the seam does. They aren't per-loop, so this rides
+    // on an entry whose loops are unchanged; coalesced, since these are number
+    // fields that step once per wheel notch.
+    const settings = extractSettings(next);
+    if (!settingsEqual(settingsRef.current, settings)) {
+      commitLoops('cut:settings', (prev) => prev, undefined, true, settings);
+    }
     const key = extractKey(next);
     // Key settings are part of the loop, so changing them — width, shape, or the
     // gizmo's aim — is an edit and goes through the same recorded path.
