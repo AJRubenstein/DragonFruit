@@ -1,8 +1,6 @@
 import { useEffect } from 'react';
 import type { RefObject } from 'react';
-import { redo, undo } from '@/history/historyStore';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
-import { hotkeyStore, isActionActiveSync } from './hotkeyStore';
 
 /**
  * Priority for the Cut tool's delete claim. Above the support-interaction
@@ -11,36 +9,23 @@ import { hotkeyStore, isActionActiveSync } from './hotkeyStore';
  */
 export const ORGANIC_CUT_DELETE_PRIORITY = 200;
 
-/**
- * The slice of Cut-tool session state these hotkeys read, passed as a ref so the
- * store subscription below never has to be torn down and rebuilt as the session
- * changes (waypoint edits change `canUndoPoint` on nearly every click).
- */
+/** The slice of Cut-tool session state Delete needs, read through a ref. */
 export type OrganicCutHotkeyState = {
   /** True while the Cut tool is the active transform mode. */
   active: boolean;
-  undoPoint: () => void;
-  redoPoint: () => void;
-  canUndoPoint: boolean;
-  canRedoPoint: boolean;
   removePoint: (index: number) => void;
   selectedIndex: number | null;
 };
 
 /**
- * Cut-tool keyboard handling, routed through the central hotkey system rather
- * than direct window listeners (see docs/reference/hotkeys.md).
+ * Delete handling for the Cut tool, claimed through the delete registry at
+ * [`ORGANIC_CUT_DELETE_PRIORITY`] so the configurable `GLOBAL.DELETE` binding
+ * removes the selected waypoint instead of the model. The claim covers the whole
+ * tool session — even with no waypoint selected — because a Delete that fell
+ * through to the model would be destructive.
  *
- * - **Delete**: claimed through the delete registry at
- *   [`ORGANIC_CUT_DELETE_PRIORITY`], so the configurable `GLOBAL.DELETE` binding
- *   removes the selected waypoint instead of the model. The claim is active for
- *   the whole tool session — even with no waypoint selected — because a Delete
- *   that silently fell through to the model would be destructive.
- * - **Undo / redo**: while the tool is active this hook owns the configurable
- *   `GLOBAL.UNDO` / `GLOBAL.REDO` bindings, stepping the waypoint history first
- *   and delegating to the global model history once the seam has nothing left to
- *   step. The caller must pass `disabled` to `useUndoRedoHotkeys` for the same
- *   condition so exactly one subscriber acts on a press.
+ * Undo/redo are NOT handled here: every Cut edit is pushed to the app history
+ * (see history/actionTypes.ts), so the normal global undo/redo inverts them.
  */
 export function useOrganicCutHotkeys(stateRef: RefObject<OrganicCutHotkeyState>) {
   useEffect(() => {
@@ -57,33 +42,5 @@ export function useOrganicCutHotkeys(stateRef: RefObject<OrganicCutHotkeyState>)
     return () => {
       unregister();
     };
-  }, [stateRef]);
-
-  useEffect(() => {
-    let wasUndoActive = false;
-    let wasRedoActive = false;
-
-    const unsubscribe = hotkeyStore.subscribe(() => {
-      // Redo is a strict superset of Undo (adds Shift by default) so it is
-      // checked first, matching useUndoRedoHotkeys.
-      const isRedoActive = isActionActiveSync('GLOBAL', 'REDO');
-      const isUndoActive = isActionActiveSync('GLOBAL', 'UNDO');
-      const s = stateRef.current;
-
-      if (s.active) {
-        if (isRedoActive && !wasRedoActive) {
-          if (s.canRedoPoint) s.redoPoint();
-          else redo();
-        } else if (isUndoActive && !wasUndoActive) {
-          if (s.canUndoPoint) s.undoPoint();
-          else undo();
-        }
-      }
-
-      wasUndoActive = isUndoActive;
-      wasRedoActive = isRedoActive;
-    });
-
-    return unsubscribe;
   }, [stateRef]);
 }

@@ -9060,10 +9060,7 @@ export default function Home() {
   // inside the feature hook; page.tsx only supplies the active geometry and
   // renders the two mounts below. See src/features/organicCut/.
   const organicCutToolActive = scene.mode === 'prepare' && transformMgr.transformMode === 'organicCut';
-  // The Cut tool takes over undo/redo while active (useOrganicCutHotkeys steps
-  // the waypoint history first, then delegates here), so exactly one
-  // subscriber acts on a press.
-  useUndoRedoHotkeys({ disabled: hollowingEditMode || organicCutToolActive });
+  useUndoRedoHotkeys({ disabled: hollowingEditMode });
   React.useEffect(() => { organicCutToolActiveRef.current = organicCutToolActive; }, [organicCutToolActive]);
   // True while a cut waypoint is being dragged, so OrbitControls stays disabled
   // for the duration of the drag (camera must not move while editing the seam).
@@ -9209,27 +9206,18 @@ export default function Home() {
   // hotkey subscription survives the per-click churn of waypoint editing.
   const organicCutHotkeyRef = React.useRef({
     active: organicCutToolActive,
-    undoPoint: organicCut.undoPoint,
-    redoPoint: organicCut.redoPoint,
-    canUndoPoint: organicCut.canUndoPoint,
-    canRedoPoint: organicCut.canRedoPoint,
     removePoint: organicCut.removePoint,
     selectedIndex: organicCut.selectedIndex,
   });
   React.useEffect(() => {
     organicCutHotkeyRef.current = {
       active: organicCutToolActive,
-      undoPoint: organicCut.undoPoint,
-      redoPoint: organicCut.redoPoint,
-      canUndoPoint: organicCut.canUndoPoint,
-      canRedoPoint: organicCut.canRedoPoint,
       removePoint: organicCut.removePoint,
       selectedIndex: organicCut.selectedIndex,
     };
-  }, [organicCutToolActive, organicCut.undoPoint, organicCut.redoPoint, organicCut.canUndoPoint, organicCut.canRedoPoint, organicCut.removePoint, organicCut.selectedIndex]);
-  // Delete + undo/redo for the Cut tool, routed through the central hotkey
-  // system (delete registry + GLOBAL.UNDO/REDO bindings) instead of a direct
-  // capture-phase key listener. See docs/reference/hotkeys.md.
+  }, [organicCutToolActive, organicCut.removePoint, organicCut.selectedIndex]);
+  // Delete for the Cut tool, claimed through the delete registry. Undo/redo are
+  // the app's own: every Cut edit is pushed to the history.
   useOrganicCutHotkeys(organicCutHotkeyRef);
 
   // Mirror session state: while the user is in Mirror mode we don't bake the
