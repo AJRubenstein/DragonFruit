@@ -4,6 +4,10 @@ import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 import type { OrganicCutDrawMode, OrganicCutMode, OrganicCutSessionStatus } from './types';
 
+/** Key width/depth bounds (mm) — shared by the fields and the uniform-scale lock. */
+const KEY_DIM_MIN_MM = 1;
+const KEY_DIM_MAX_MM = 20;
+
 export interface OrganicCutPanelState {
   drawMode: OrganicCutDrawMode;
   /** Flat planar cut vs curved contour ("wafer") cut along the drawn loop. */
@@ -154,7 +158,7 @@ export function OrganicCutPanel({
   // one slider scales the OTHER by the same factor so the current width:depth
   // proportion is preserved (resize as a unit). Unlocked → set just that axis.
   const setDomeDim = React.useCallback((axis: 'width' | 'depth', next: number) => {
-    const clamped = clampFloat(next, 1, 20, 1);
+    const clamped = clampFloat(next, KEY_DIM_MIN_MM, KEY_DIM_MAX_MM, 1);
     if (!state.keyUniformScale) {
       setState(axis === 'width' ? { keyWidthMm: clamped } : { keyDepthMm: clamped });
       return;
@@ -165,13 +169,23 @@ export function OrganicCutPanel({
       setState({ keyWidthMm: clamped, keyDepthMm: clamped });
       return;
     }
-    const factor = clamped / cur;
+    // Clamp the FACTOR, not each axis on its own. Clamping them separately lets
+    // the dragged axis keep moving after the other has hit 1mm or 20mm, which
+    // silently destroys the proportion the lock exists to preserve. Limiting the
+    // factor makes the pinned axis hold BOTH: they stop together and the ratio
+    // survives.
     const other = axis === 'width' ? state.keyDepthMm : state.keyWidthMm;
-    const scaledOther = clampFloat(other * factor, 1, 20, 1);
+    let factor = clamped / cur;
+    if (other > 0) {
+      factor = Math.min(factor, KEY_DIM_MAX_MM / other);
+      factor = Math.max(factor, KEY_DIM_MIN_MM / other);
+    }
+    const nextDriven = clampFloat(cur * factor, KEY_DIM_MIN_MM, KEY_DIM_MAX_MM, 1);
+    const nextOther = clampFloat(other * factor, KEY_DIM_MIN_MM, KEY_DIM_MAX_MM, 1);
     setState(
       axis === 'width'
-        ? { keyWidthMm: clamped, keyDepthMm: scaledOther }
-        : { keyDepthMm: clamped, keyWidthMm: scaledOther },
+        ? { keyWidthMm: nextDriven, keyDepthMm: nextOther }
+        : { keyDepthMm: nextDriven, keyWidthMm: nextOther },
     );
   }, [clampFloat, setState, state.keyUniformScale, state.keyWidthMm, state.keyDepthMm]);
 
