@@ -669,12 +669,15 @@ mod nav {
         let v = &*value;
         match key {
             b"view.affine" => {
-                s.affine = v.value.matrix.m;
+                let m = v.value.matrix.m;
+                // Log the translation DELTA so we can see which axis pan moves along.
+                let (dx, dy, dz) = (m[12] - s.affine[12], m[13] - s.affine[13], m[14] - s.affine[14]);
+                s.affine = m;
                 s.seq = s.seq.wrapping_add(1);
-                if s.seq % 30 == 1 {
+                if s.seq % 6 == 1 {
                     log::info!(
-                        "[spacemouse] affine #{} pos≈({:.2}, {:.2}, {:.2})",
-                        s.seq, s.affine[12], s.affine[13], s.affine[14],
+                        "[spacemouse] affine #{} pos≈({:.2}, {:.2}, {:.2}) Δ≈({:.3}, {:.3}, {:.3})",
+                        s.seq, m[12], m[13], m[14], dx, dy, dz,
                     );
                 }
             }
@@ -698,11 +701,17 @@ mod nav {
                 let m = v.value.b != 0;
                 if m != s.motion {
                     s.motion = m;
+                    let a = &s.affine;
                     log::info!(
-                        "[spacemouse] motion -> {m} (perspective={}, focusDistance={:.2}, extentsWidth≈{:.2})",
+                        "[spacemouse] motion -> {m} (perspective={}, focusDistance={:.2}, extentsWidth≈{:.2})\n  \
+                         right=({:.2},{:.2},{:.2}) up=({:.2},{:.2},{:.2}) fwd=({:.2},{:.2},{:.2}) pos=({:.2},{:.2},{:.2})",
                         s.perspective,
                         s.focus_distance,
                         s.ortho_max.x - s.ortho_min.x,
+                        a[0], a[1], a[2],    // col0 = camera right
+                        a[4], a[5], a[6],    // col1 = camera up
+                        a[8], a[9], a[10],   // col2 = camera backward (+Z, toward viewer)
+                        a[12], a[13], a[14], // col3 = position
                     );
                 }
             }
