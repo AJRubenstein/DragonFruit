@@ -745,8 +745,39 @@ mod nav {
             b"view.fov" => {
                 s.fov = v.value.f;
             }
-            // Accepted but currently unused by the bridge.
-            b"transaction" | b"view.target" | b"pivot.position" | b"pivot.visible" => {}
+            // DIAGNOSTIC: these are accepted-but-unused today. We instrument them
+            // to answer "does Camera mode drive a DIFFERENT interface than
+            // view.affine?" If a Camera-mode gesture lights up view.target or
+            // pivot.position while view.affine stays silent, THAT is the channel
+            // Camera mode pans/orbits through, and the bridge must apply it.
+            b"view.target" => {
+                let p = v.value.point;
+                let (dx, dy, dz) = (p.x - s.target.x, p.y - s.target.y, p.z - s.target.z);
+                let d = (dx * dx + dy * dy + dz * dz).sqrt();
+                static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if n % 6 == 0 || d > 0.25 {
+                    log::info!(
+                        "[spacemouse] view.target set #{n} ({:.2},{:.2},{:.2}) Δ≈({:.3},{:.3},{:.3}) |Δ|≈{:.3}",
+                        p.x, p.y, p.z, dx, dy, dz, d,
+                    );
+                }
+            }
+            b"pivot.position" => {
+                let p = v.value.point;
+                static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if n % 12 == 0 {
+                    log::info!(
+                        "[spacemouse] pivot.position set #{n} ({:.2},{:.2},{:.2})",
+                        p.x, p.y, p.z,
+                    );
+                }
+            }
+            b"transaction" => {
+                log::info!("[spacemouse] transaction = {}", v.value.l);
+            }
+            b"pivot.visible" => {}
             _ => return NAVLIB_PROPERTY_NOT_FOUND,
         }
         0
