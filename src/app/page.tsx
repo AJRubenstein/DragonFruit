@@ -237,10 +237,11 @@ import {
   redo,
   subscribeHistory,
   subscribeHistoryDebug,
+  setHistoryOriginProvider,
   subscribeHistoryOperations,
   undo,
 } from '@/history/historyStore';
-import type { HistoryDebugEvent } from '@/history/types';
+import type { HistoryDebugEvent, HistoryOrigin } from '@/history/types';
 import { formatHistoryLabel } from '@/history/formatHistoryLabel';
 import { getSavedCameraProjectionSettings, saveCameraProjectionSettings } from '@/components/settings/cameraProjectionPreferences';
 import {
@@ -318,6 +319,7 @@ import { resolveCompositeMaterialLabel } from '@/utils/materialLabel';
 
 import { type MeshShaderType } from '@/features/shaders/mesh';
 import type { ModelTransform, TransformMode } from '@/hooks/useModelTransform';
+import type { SupportMode } from '@/supports/types';
 import { useSceneAutosave, suppressSceneAutosave } from '@/hooks/useSceneAutosave';
 import { SceneAutosaveRecoveryModal } from '@/components/scene/SceneAutosaveRecoveryModal';
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
@@ -518,6 +520,26 @@ function createModelTransformKey(modelId: string, transform: ModelTransform): st
     transform.scale.y.toFixed(6),
     transform.scale.z.toFixed(6),
   ].join('|');
+}
+
+/**
+ * Modes a history entry may name as its origin. The history store carries the
+ * origin as plain strings (it must not depend on the app's unions), so these
+ * narrow it back on the way in — an entry recorded by an older build, or a mode
+ * that has since been renamed, is ignored rather than jamming the app into a
+ * mode that no longer exists.
+ */
+const HISTORY_APP_MODES: readonly SupportMode[] = ['prepare', 'analysis', 'support', 'export', 'printing'];
+const HISTORY_TRANSFORM_MODES: readonly TransformMode[] = [
+  'select', 'transform', 'smoothing', 'arrange', 'placeOnFace', 'mirror', 'hollowing', 'organicCut',
+];
+
+function isAppMode(value: string): value is SupportMode {
+  return (HISTORY_APP_MODES as readonly string[]).includes(value);
+}
+
+function isTransformMode(value: string): value is TransformMode {
+  return (HISTORY_TRANSFORM_MODES as readonly string[]).includes(value);
 }
 
 export default function Home() {
@@ -5216,6 +5238,15 @@ export default function Home() {
     run(Math.max(0, frameDelay));
   }, [commitPendingTransformHistory]);
 
+  // The tool the user is in, mirrored for `pushHistory` to stamp onto entries,
+  // and the inverse — switching back to an undone entry's tool. Both are refs
+  // because the history subscriber below is installed once, long before the mode
+  // setters exist further down this component.
+  const historyOriginRef = React.useRef<HistoryOrigin>({ appMode: 'prepare', transformMode: 'select' });
+  const restoreHistoryOriginRef = React.useRef<(origin: HistoryOrigin) => void>(() => {});
+
+  React.useEffect(() => setHistoryOriginProvider(() => historyOriginRef.current), []);
+
   React.useEffect(() => {
     const fallbackDescription = (type: string) => {
       if (type === 'scene_models_snapshot_apply') return 'Scene Change';
@@ -5225,6 +5256,11 @@ export default function Home() {
     const unsubscribe = subscribeHistoryOperations(({ direction, action }) => {
       const sourceDescription = action.description?.trim() || fallbackDescription(action.type);
       const description = formatHistoryLabel(sourceDescription);
+
+      // Follow the stack back to where the edit was made: undoing a cut while the
+      // Transform gizmo is up should put the Cut tool back, not silently reshape
+      // geometry the current tool can't even show.
+      if (action.origin) restoreHistoryOriginRef.current(action.origin);
 
       pendingHistoryTransformResyncRef.current = true;
       invalidatePendingTransformHistory();
@@ -7334,6 +7370,23 @@ export default function Home() {
     }
     transformMgr.setTransformMode(nextMode);
   }, [suppressTransformPersistenceCycles, transformMgr.transformMode, transformMgr.setTransformMode]);
+
+  // Keep the history origin mirror current, and wire the restore now that both
+  // setters exist. The restore is assigned on every render (no dep array) so it
+  // always closes over today's mode — a stale closure would switch to the tool
+  // that was current when the effect last ran.
+  React.useEffect(() => {
+    historyOriginRef.current = { appMode: scene.mode, transformMode: transformMgr.transformMode };
+  }, [scene.mode, transformMgr.transformMode]);
+
+  React.useEffect(() => {
+    restoreHistoryOriginRef.current = (origin: HistoryOrigin) => {
+      if (isAppMode(origin.appMode) && origin.appMode !== scene.mode) scene.setMode(origin.appMode);
+      if (isTransformMode(origin.transformMode) && origin.transformMode !== transformMgr.transformMode) {
+        setTransformModeWithMirrorFinalize(origin.transformMode);
+      }
+    };
+  });
 
   useDeleteHotkey();
   useCameraProjectionHotkey();

@@ -1,4 +1,4 @@
-import { HistoryAction, HistoryHandler, HistorySubscriber, HistoryDirection, HistoryDebugEvent, HistoryDebugEventKind } from './types';
+import { HistoryAction, HistoryHandler, HistoryOrigin, HistorySubscriber, HistoryDirection, HistoryDebugEvent, HistoryDebugEventKind } from './types';
 
 const undoStack: HistoryAction[] = [];
 const redoStack: HistoryAction[] = [];
@@ -58,7 +58,27 @@ function appendHistoryDebugEvent(kind: HistoryDebugEventKind, action?: HistoryAc
   notifyHistoryDebugSubscribers();
 }
 
+/**
+ * Supplies the tool the user is in right now. Installed once by the app shell;
+ * `pushHistory` uses it to stamp every entry, so no domain has to remember to
+ * pass its own origin (the ones that would forget are exactly the ones that
+ * need it). Absent (tests, early startup) → entries simply carry no origin.
+ */
+let originProvider: (() => HistoryOrigin) | null = null;
+
+export function setHistoryOriginProvider(provider: (() => HistoryOrigin) | null) {
+  originProvider = provider;
+  return () => {
+    if (originProvider === provider) originProvider = null;
+  };
+}
+
 export function pushHistory(action: HistoryAction) {
+  // An explicit origin wins — a domain that knows better than "wherever the user
+  // happens to be" can say so; everything else gets stamped here.
+  if (!action.origin && originProvider) {
+    action = { ...action, origin: originProvider() };
+  }
   undoStack.push(structuredClone(action));
   redoStack.length = 0;
   appendHistoryDebugEvent('push', action);
