@@ -522,6 +522,7 @@ export function useOrganicCutSession({
 
     organicCutHistory.push({
       type: ORGANIC_CUT_EDIT,
+      description: 'cut:drag',
       payload: {
         modelId,
         before: toSnapshot(baseline.loops),
@@ -539,7 +540,11 @@ export function useOrganicCutSession({
    * setLoops directly, or undo would step through machine-made changes.
    */
   const commitLoops = React.useCallback(
-    (updater: (prev: SessionLoop[]) => SessionLoop[], nextActiveIndex?: number) => {
+    (
+      description: string,
+      updater: (prev: SessionLoop[]) => SessionLoop[],
+      nextActiveIndex?: number,
+    ) => {
       const before = loopsRef.current;
       const beforeActive = activeLoopIndexRef.current;
       const after = updater(before);
@@ -558,6 +563,7 @@ export function useOrganicCutSession({
       if (!modelId) return; // nothing to attribute the edit to
       organicCutHistory.push({
         type: ORGANIC_CUT_EDIT,
+        description,
         payload: {
           modelId,
           before: toSnapshot(before),
@@ -571,8 +577,8 @@ export function useOrganicCutSession({
   );
 
   const setActiveLoopPoints = React.useCallback(
-    (updater: (prev: OrganicCutLoopPoint[]) => OrganicCutLoopPoint[]) => {
-      commitLoops((prev) => {
+    (description: string, updater: (prev: OrganicCutLoopPoint[]) => OrganicCutLoopPoint[]) => {
+      commitLoops(description, (prev) => {
         const idx = activeLoopIndexRef.current;
         if (idx < 0 || idx >= prev.length) return prev;
         const cur = prev[idx];
@@ -596,7 +602,7 @@ export function useOrganicCutSession({
     const key = extractKey(next);
     // Key settings are part of the loop, so changing them — width, shape, or the
     // gizmo's aim — is an edit and goes through the same recorded path.
-    commitLoops((prev) => {
+    commitLoops('cut:key settings', (prev) => {
       const idx = activeLoopIndexRef.current;
       if (idx < 0 || idx >= prev.length) return prev;
       if (keysEqual(prev[idx].key, key)) return prev;
@@ -838,13 +844,13 @@ export function useOrganicCutSession({
   }, [toolActive, loop, activeGeometry, activeGeometryKey, cutMode, geodesicPolyline, isDraggingPoint, panelState.membraneSmoothing, panelState.density, panelState.thicknessMm, panelState.generateKey, panelState.keyWidthMm, panelState.keyDepthMm, panelState.keyShape, panelState.keyFilletMm, panelState.keySwapSides]);
 
   const addPoint = React.useCallback((point: OrganicCutLoopPoint) => {
-    setActiveLoopPoints((prev) => [...prev, point]);
+    setActiveLoopPoints('cut:place point', (prev) => [...prev, point]);
     setStatus('drawing');
     // A freshly placed point invalidates any redo history.
   }, [setActiveLoopPoints]);
 
   const insertPoint = React.useCallback((afterIndex: number, point: OrganicCutLoopPoint) => {
-    setActiveLoopPoints((prev) => {
+    setActiveLoopPoints('cut:delete point', (prev) => {
       // Insert AFTER afterIndex → at array position afterIndex+1. Clamp so a bad
       // index can't throw; a negative index prepends, an over-large one appends.
       const at = Math.max(0, Math.min(prev.length, afterIndex + 1));
@@ -860,7 +866,7 @@ export function useOrganicCutSession({
   }, []);
 
   const removePoint = React.useCallback((index: number) => {
-    setActiveLoopPoints((prev) => {
+    setActiveLoopPoints('cut:move point', (prev) => {
       if (index < 0 || index >= prev.length) return prev;
       const next = prev.slice();
       next.splice(index, 1);
@@ -878,7 +884,7 @@ export function useOrganicCutSession({
   }, [setActiveLoopPoints]);
 
   const updatePoint = React.useCallback((index: number, point: OrganicCutLoopPoint) => {
-    setActiveLoopPoints((prev) => {
+    setActiveLoopPoints('cut:lock point', (prev) => {
       if (index < 0 || index >= prev.length) return prev;
       const prevPoint = prev[index];
       // Skip a state churn if the point didn't actually move (drag with no delta).
@@ -902,7 +908,7 @@ export function useOrganicCutSession({
   // would otherwise drag onto a nearby edge/corner. Double-click a marker to flip
   // it. A no-op if the index is out of range.
   const toggleLockPoint = React.useCallback((index: number) => {
-    setActiveLoopPoints((prev) => {
+    setActiveLoopPoints('cut:snap to edges', (prev) => {
       if (index < 0 || index >= prev.length) return prev;
       const next = prev.slice();
       next[index] = { ...next[index], locked: !next[index].locked };
@@ -916,7 +922,7 @@ export function useOrganicCutSession({
   const snapActiveLoopToEdges = React.useCallback(() => {
     const geometry = activeGeometryRef.current;
     if (!geometry) return;
-    setActiveLoopPoints((prev) => {
+    setActiveLoopPoints('cut:close loop', (prev) => {
       if (prev.length === 0) return prev;
       const { points, movedCount } = snapPointsToFeatureEdges(prev, geometry);
       // Nothing moved (no feature edges, or all points already on one) → keep the
@@ -931,7 +937,7 @@ export function useOrganicCutSession({
     const key = activeGeometryKeyRef.current;
     if (key) savedLoopsRef.current.delete(key);
     // Keep the panel's current key on the fresh loop (don't reset the user's prefs).
-    commitLoops(() => [emptyLoop(extractKey(panelStateRef.current))], 0);
+    commitLoops('cut:clear all', () => [emptyLoop(extractKey(panelStateRef.current))], 0);
     setStatus('idle');
     setLastResult(null);
     setSelectedIndex(null);
@@ -960,7 +966,7 @@ export function useOrganicCutSession({
     const all = loopsRef.current;
     const newIndex = all.length; // index of the appended loop
     const inheritKey = all[activeLoopIndexRef.current]?.key ?? extractKey(panelStateRef.current);
-    commitLoops((prev) => [...prev, emptyLoop(inheritKey)], newIndex);
+    commitLoops('cut:add loop', (prev) => [...prev, emptyLoop(inheritKey)], newIndex);
     setSelectedIndex(null);
     setGeodesicPolyline(null);
     setMembranePreview(null);
@@ -984,7 +990,7 @@ export function useOrganicCutSession({
         : index === curActive
           ? Math.max(0, Math.min(curActive, lastIndexAfter))
           : curActive;
-    commitLoops((prev) => {
+    commitLoops('cut:remove loop', (prev) => {
       if (prev.length <= 1 || index < 0 || index >= prev.length) return prev;
       const next = prev.slice();
       next.splice(index, 1);
@@ -999,7 +1005,7 @@ export function useOrganicCutSession({
   }, [commitLoops]);
 
   const closeLoop = React.useCallback(() => {
-    setActiveLoopPoints((prev) => {
+    setActiveLoopPoints('cut:close loop', (prev) => {
       if (prev.length < MIN_LOOP_POINTS) return prev;
       setStatus('closed');
       return prev;
