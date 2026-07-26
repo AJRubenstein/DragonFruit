@@ -16,8 +16,7 @@
 
 #![cfg(feature = "manifold")]
 
-use dragonfruit_mesh_core::bvh::Bvh;
-use dragonfruit_mesh_core::mesh::{Aabb, IndexedMesh, Vec3};
+use dragonfruit_mesh_core::mesh::{IndexedMesh, Vec3};
 
 /// Default cutter thickness in mm. This is an ABSOLUTE minimum, independent of
 /// model size — a bigger model must NOT lose a bigger chunk. It only needs to be
@@ -1385,104 +1384,6 @@ pub struct ContourSplit {
     pub membrane: Membrane,
 }
 
-/// How far the cut loop sits OFF the model's faces, in mm. Each loop point is
-/// moved this far along the model's outward surface normal there, so the membrane
-/// built on the loop sits just outside the body and the cut runs clean to the
-/// edge. One fixed distance — the only offset in the contour cut.
-pub const DEFAULT_LOOP_OFFSET_MM: f32 = 0.1;
-
-/// Number of ring-smoothing passes applied to the offset directions. Enough to
-/// take the jaggedness out of low-poly per-vertex normals without flattening the
-/// overall outward direction.
-const OFFSET_DIR_SMOOTH_PASSES: u32 = 12;
-
-/// Move each loop point `offset_mm` OFF the model's faces, along the model's
-/// outward surface normal there. The per-point surface normals are first SMOOTHED
-/// around the loop ring (Laplacian average with ring neighbours), because on a
-/// low-poly model the raw nearest-triangle normals jump wildly between adjacent
-/// loop points — offsetting along those raw directions shoots neighbouring points
-/// in scattered directions and makes a JAGGED, spiky boundary ring (and the
-/// membrane boundary is pinned, so relaxation can never smooth it out). Smoothing
-/// the directions first gives a smooth offset ring → a smooth membrane.
-///
-/// Returns the offset loop in the same order; an empty/degenerate model returns
-/// the loop unchanged.
-///
-/// Currently UNUSED: the cut builds the membrane on the raw seam loop so the
-/// wafer's top edge sits on the on-surface seam line. Kept (with its tests) in
-/// case a real model needs the off-surface offset back for robust severance.
-#[allow(dead_code)]
-fn offset_loop_off_faces(model: &IndexedMesh, loop_pts: &[Vec3], offset_mm: f32) -> Vec<Vec3> {
-    if loop_pts.is_empty() || model.triangles.is_empty() || offset_mm <= 0.0 {
-        return loop_pts.to_vec();
-    }
-    let bvh = Bvh::build(model);
-    let diag = model.bbox().diag().max(1e-3);
-    let base_r = (diag * 0.01).max(1e-4);
-
-    // 1. Raw outward surface normal at each loop point (nearest model triangle's
-    //    face normal). Fallback to +Z where nothing is found.
-    let mut normals: Vec<Vec3> = loop_pts
-        .iter()
-        .map(|&p| {
-            let mut best_d2 = f32::INFINITY;
-            let mut normal = Vec3::new(0.0, 0.0, 1.0);
-            let mut r = base_r;
-            for _ in 0..4 {
-                let query = Aabb {
-                    min: Vec3::new(p.x - r, p.y - r, p.z - r),
-                    max: Vec3::new(p.x + r, p.y + r, p.z + r),
-                };
-                let mut found = false;
-                bvh.query_aabb(&query, |face| {
-                    let [a, b, c] = model.tri_positions(face);
-                    let (_, d2) = closest_on_tri(p, a, b, c);
-                    if d2 < best_d2 {
-                        best_d2 = d2;
-                        let nrm = b.sub(a).cross(c.sub(a));
-                        let nl = nrm.length();
-                        if nl > 1e-12 {
-                            normal = nrm.scale(1.0 / nl);
-                        }
-                    }
-                    found = true;
-                });
-                if found {
-                    break;
-                }
-                r *= 3.0;
-            }
-            normal
-        })
-        .collect();
-
-    // 2. Smooth the directions around the loop ring so neighbours vary gently
-    //    (kills the low-poly zigzag that makes a spiky boundary). Each pass:
-    //    n[i] ← normalize(n[i-1] + 2·n[i] + n[i+1]) cyclically.
-    let n = normals.len();
-    if n >= 3 {
-        for _ in 0..OFFSET_DIR_SMOOTH_PASSES {
-            let mut next = normals.clone();
-            for i in 0..n {
-                let prev = normals[(i + n - 1) % n];
-                let here = normals[i];
-                let nxt = normals[(i + 1) % n];
-                let avg = prev.add(here.scale(2.0)).add(nxt);
-                let len = avg.length();
-                next[i] = if len > 1e-9 { avg.scale(1.0 / len) } else { here };
-            }
-            normals = next;
-        }
-    }
-
-    // 3. Offset each loop point along its smoothed direction.
-    loop_pts
-        .iter()
-        .zip(normals.iter())
-        .map(|(&p, &nrm)| p.add(nrm.scale(offset_mm)))
-        .collect()
-}
-
 /// How much WIDER than the seam the wafer's footprint is, in mm. The membrane's
 /// boundary ring is pushed outward (in the local membrane plane) by this — so the
 /// wafer is `0.1 mm` wider than the model's cross-section (poking just past the
@@ -2495,7 +2396,7 @@ mod tests {
 
     #[test]
     fn contour_split_severs_with_loop_offset_off_the_faces() {
-        // End-to-end: the loop is offset off the model faces (DEFAULT_LOOP_OFFSET_MM),
+        // End-to-end: the loop sits on the model faces,
         // the membrane is built on the offset loop, and the cube still severs at every
         // density — the cut sits just outside the surface and runs clean to the
         // edge with no border/lip.
@@ -2513,31 +2414,6 @@ mod tests {
             assert_eq!(split.component_count, 2, "density {density} should give 2 parts");
             assert!(split.part_a.triangle_count() > 0 && split.part_b.triangle_count() > 0);
         }
-    }
-
-    #[test]
-    fn offset_loop_off_faces_pushes_points_along_the_surface_normal() {
-        // A loop on the cube's z=5 side-face midlines must each move OUT along that
-        // face's outward normal by the offset amount (off the faces).
-        let model = cube(10.0);
-        let loop_pts = vec![
-            Vec3::new(5.0, 0.0, 5.0),  // face y=0  → normal -y
-            Vec3::new(10.0, 5.0, 5.0), // face x=10 → normal +x
-            Vec3::new(5.0, 10.0, 5.0), // face y=10 → normal +y
-            Vec3::new(0.0, 5.0, 5.0),  // face x=0  → normal -x
-        ];
-        let off = offset_loop_off_faces(&model, &loop_pts, 0.5);
-        assert!((off[0].y - (-0.5)).abs() < 1e-3, "y=0 point should move to y=-0.5, got {:?}", off[0]);
-        assert!((off[1].x - 10.5).abs() < 1e-3, "x=10 point should move to x=10.5, got {:?}", off[1]);
-        assert!((off[2].y - 10.5).abs() < 1e-3, "y=10 point should move to y=10.5, got {:?}", off[2]);
-        assert!((off[3].x - (-0.5)).abs() < 1e-3, "x=0 point should move to x=-0.5, got {:?}", off[3]);
-    }
-
-    #[test]
-    fn offset_loop_off_faces_is_a_noop_for_zero_offset() {
-        let model = cube(10.0);
-        let loop_pts = square_loop(10.0);
-        assert_eq!(offset_loop_off_faces(&model, &loop_pts, 0.0), loop_pts);
     }
 
     #[test]
