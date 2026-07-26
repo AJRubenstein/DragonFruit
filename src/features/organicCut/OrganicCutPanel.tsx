@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 import type { OrganicCutDrawMode, OrganicCutMode, OrganicCutSessionStatus } from './types';
+import { DEFAULT_KEY_SETTINGS } from './useOrganicCutSession';
 
 /** Key width/depth bounds (mm) — shared by the fields and the uniform-scale lock. */
 const KEY_DIM_MAX_MM = 20;
@@ -533,18 +534,42 @@ export function OrganicCutPanel({
                       <span>{state.keySwapSides ? 'Peg on Side B' : 'Peg on Side A'}</span>
                     </span>
                   </button>
+                  {(() => {
+                    const dirty = (Object.keys(DEFAULT_KEY_SETTINGS) as (keyof typeof DEFAULT_KEY_SETTINGS)[])
+                      .some((k) => k !== 'generateKey' && state[k] !== DEFAULT_KEY_SETTINGS[k]);
+                    return (
+                      <button
+                        type="button"
+                        className="ui-button ui-button-secondary w-full !min-h-7 px-1.5 text-[10px] disabled:opacity-40"
+                        onClick={() => setState({ ...DEFAULT_KEY_SETTINGS, generateKey: state.generateKey })}
+                        disabled={disabled || isApplying || !dirty}
+                        title="Put every key setting back to its default: shape, width, depth, fillet, uniform scale, side and aim."
+                      >
+                        Reset key settings
+                      </button>
+                    );
+                  })()}
+
                   {/* Aim readout + a Reset that zeroes the tilt/roll. The aim is set
                       with the rotate gizmo at the key's base in the 3D view, so there
                       is nothing to say here until the key actually leans. */}
                   {(() => {
-                    const tilted =
-                      Math.abs(state.keyTiltRad) > 1e-3 || Math.abs(state.keyRollRad) > 1e-3;
-                    if (!tilted) return null;
-                    const tiltDeg = Math.round((state.keyTiltRad * 180) / Math.PI);
+                    // Report at the precision shown. The old threshold was ~0.06°,
+                    // far finer than the whole degrees displayed, so a sliver of
+                    // lean rendered as "0°" that only Reset could clear. Roll was
+                    // never reported at all, so spinning the key also read 0°.
+                    const toDeg = (rad: number) => Math.round((rad * 180) / Math.PI * 10) / 10;
+                    const leanDeg = toDeg(state.keyTiltRad);
+                    const rollDeg = toDeg(state.keyRollRad);
+                    if (leanDeg === 0 && rollDeg === 0) return null;
+                    const parts = [
+                      leanDeg !== 0 ? `${leanDeg}° lean` : null,
+                      rollDeg !== 0 ? `${rollDeg}° roll` : null,
+                    ].filter(Boolean);
                     return (
                       <div className="flex items-center justify-between gap-2">
                         <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>
-                          {`Aim: ${tiltDeg}° lean`}
+                          {`Aim: ${parts.join(', ')}`}
                         </span>
                         <button
                           type="button"
