@@ -67,6 +67,7 @@ export interface OrganicCutSpec {
     keyDepthMm: number;
     keyShape: 'frustum' | 'dome';
     keyFilletMm: number;
+    keyToleranceMm: number;
     keySwapSides: boolean;
     keyTiltRad: number;
     keyTiltAzimuthRad: number;
@@ -116,6 +117,12 @@ export interface OrganicCutSpec {
   keyShape?: 'frustum' | 'dome';
   /** Edge fillet radius in mm (rounds frustum corners + tip). Serde: `keyFilletMm`. */
   keyFilletMm?: number;
+  /**
+   * Peg/socket fit tolerance in mm: the socket is carved this much larger than the
+   * peg on every face, so the halves slide together. 0 = press fit. Omitted → Rust
+   * uses 0.1. Serde field: `keyToleranceMm`.
+   */
+  keyToleranceMm?: number;
   /** Flip which half gets the peg vs the socket. Serde field: `keySwapSides`. */
   keySwapSides?: boolean;
   /**

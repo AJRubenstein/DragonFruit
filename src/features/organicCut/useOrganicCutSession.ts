@@ -80,6 +80,7 @@ export type LoopKeySettings = Pick<
   | 'keyDepthMm'
   | 'keyShape'
   | 'keyFilletMm'
+  | 'keyToleranceMm'
   | 'keyUniformScale'
   | 'keySwapSides'
   | 'keyTiltRad'
@@ -95,6 +96,7 @@ function extractKey(ps: OrganicCutPanelState): LoopKeySettings {
     keyDepthMm: ps.keyDepthMm,
     keyShape: ps.keyShape,
     keyFilletMm: ps.keyFilletMm,
+    keyToleranceMm: ps.keyToleranceMm,
     keyUniformScale: ps.keyUniformScale,
     keySwapSides: ps.keySwapSides,
     keyTiltRad: ps.keyTiltRad,
@@ -116,6 +118,7 @@ function keysEqual(a: LoopKeySettings, b: LoopKeySettings): boolean {
     a.keyDepthMm === b.keyDepthMm &&
     a.keyShape === b.keyShape &&
     a.keyFilletMm === b.keyFilletMm &&
+    a.keyToleranceMm === b.keyToleranceMm &&
     a.keyUniformScale === b.keyUniformScale &&
     a.keySwapSides === b.keySwapSides &&
     a.keyTiltRad === b.keyTiltRad &&
@@ -132,6 +135,7 @@ function keyToSpec(k: LoopKeySettings) {
     keyDepthMm: k.keyDepthMm,
     keyShape: k.keyShape,
     keyFilletMm: k.keyFilletMm,
+    keyToleranceMm: k.keyToleranceMm,
     keySwapSides: k.keySwapSides,
     keyTiltRad: k.keyTiltRad,
     keyTiltAzimuthRad: k.keyTiltAzimuthRad,
@@ -343,6 +347,9 @@ const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
   keyShape: 'frustum',
   // Edge fillet 0.2mm by default (lightly rounded corners + tip); user tunes live.
   keyFilletMm: 0.2,
+  // Peg/socket fit tolerance: the socket is carved this much larger than the peg
+  // on every face. 0.1mm is a print-scale slide fit; 0 is a press fit.
+  keyToleranceMm: 0.1,
   // Dome Uniform Scale on by default — width/depth move together (round dome)
   // until the user unlocks it for an oblong shape.
   keyUniformScale: true,
@@ -892,6 +899,7 @@ export function useOrganicCutSession({
           panelState.keyDepthMm,
           panelState.keyShape,
           panelState.keyFilletMm,
+          panelState.keyToleranceMm,
           panelState.keySwapSides,
           0,
           0,
@@ -912,7 +920,7 @@ export function useOrganicCutSession({
     // NOTE: keyTilt/azimuth/roll are intentionally NOT deps — tilt is applied live
     // on the client (see OrganicCutTool's keyTiltMatrix), so changing it must NOT
     // rebuild the soup. Keeping them out is what makes the aim gizmo smooth.
-  }, [toolActive, loop, activeGeometry, activeGeometryKey, cutMode, geodesicPolyline, isDraggingPoint, panelState.membraneSmoothing, panelState.density, panelState.thicknessMm, panelState.generateKey, panelState.keyWidthMm, panelState.keyDepthMm, panelState.keyShape, panelState.keyFilletMm, panelState.keySwapSides]);
+  }, [toolActive, loop, activeGeometry, activeGeometryKey, cutMode, geodesicPolyline, isDraggingPoint, panelState.membraneSmoothing, panelState.density, panelState.thicknessMm, panelState.generateKey, panelState.keyWidthMm, panelState.keyDepthMm, panelState.keyShape, panelState.keyFilletMm, panelState.keyToleranceMm, panelState.keySwapSides]);
 
   const addPoint = React.useCallback((point: OrganicCutLoopPoint) => {
     setActiveLoopPoints('cut:place point', (prev) => [...prev, point]);
@@ -1169,6 +1177,7 @@ export function useOrganicCutSession({
             keyDepthMm: ps.keyDepthMm,
             keyShape: ps.keyShape,
             keyFilletMm: ps.keyFilletMm,
+            keyToleranceMm: ps.keyToleranceMm,
             keySwapSides: ps.keySwapSides,
             // Aim/roll: the base-glued lean + spin set by the in-viewport gizmo. The
             // preview already showed exactly this key (same angles, same shear).

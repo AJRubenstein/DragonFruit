@@ -21,6 +21,42 @@ const FRUSTUM_MIN_WIDTH_MM = 1;
  */
 const DOME_MIN_WIDTH_MM = 1.5;
 
+/**
+ * Frustum taper (Rust's KEY_TOP_SCALE): the top face is half the base, so the
+ * narrowest half-extent a corner arc has to fit inside lives at the TOP.
+ */
+const KEY_TOP_SCALE = 0.5;
+/** Rust's KEY_BASE_OVERLAP_MM — the peg's base sinks this far past the cut plane. */
+const KEY_BASE_OVERLAP_MM = 0.3;
+/** Field step for the fillet, also the granularity its cap is rounded down to. */
+const KEY_FILLET_STEP_MM = 0.1;
+/**
+ * Fit-tolerance ceiling (mm), mirroring Rust's KEY_TOLERANCE_MAX_MM. Every extra
+ * 0.1mm of socket is 0.1mm less wall the fit ladder has to work with, so past
+ * this the key starts shrinking itself away on thin parts.
+ */
+const KEY_TOLERANCE_MAX_MM = 1;
+
+/**
+ * Largest fillet the frustum can actually take, given the current width/depth.
+ *
+ * `build_frustum` clamps the radius to the smallest half-extent (a corner arc
+ * can't be wider than the side it rounds) and to a third of the height (so the
+ * tip round-over fits under the tip). Offering the full 0–5mm regardless meant
+ * that on a 2mm-wide peg everything from 0.5mm up produced the SAME clamped
+ * geometry: the field looked dead in both directions. Cap it here so the range
+ * on screen is the range that does something. Width is the binding side
+ * (length = 1.25× width), and the top face is the narrowest ring.
+ */
+function maxKeyFilletMm(widthMm: number, depthMm: number): number {
+  const topHalfWidth = widthMm * KEY_TOP_SCALE * 0.5;
+  const height = depthMm + KEY_BASE_OVERLAP_MM;
+  const limit = Math.min(topHalfWidth * 0.999, height / 3);
+  // Down to the field's step, so every reachable value is a value that renders.
+  const stepped = Math.floor(limit / KEY_FILLET_STEP_MM) * KEY_FILLET_STEP_MM;
+  return Math.max(0, Number(stepped.toFixed(2)));
+}
+
 export interface OrganicCutPanelState {
   drawMode: OrganicCutDrawMode;
   /** Flat planar cut vs curved contour ("wafer") cut along the drawn loop. */
@@ -46,6 +82,13 @@ export interface OrganicCutPanelState {
   keyShape: 'frustum' | 'dome';
   /** Edge fillet radius (mm) — rounds the frustum's corners + tip. 0 = sharp. */
   keyFilletMm: number;
+  /**
+   * Fit tolerance (mm): how much larger than the peg the socket is carved, on
+   * every face. This is the print-fit knob — 0 is a press fit that needs force
+   * (or a printer that already runs small), 0.1 a slide fit, more for a loose one
+   * that a filed-down or elephant-footed peg still enters.
+   */
+  keyToleranceMm: number;
   /**
    * Dome only: when true, the Width/Depth sliders are ratio-locked — dragging one
    * scales the other to preserve the current proportions (resize as a unit). When
@@ -171,6 +214,21 @@ export function OrganicCutPanel({
   // one slider scales the OTHER by the same factor so the current width:depth
   // proportion is preserved (resize as a unit). Unlocked → set just that axis.
   const keyDimMinMm = state.keyShape === 'dome' ? DOME_MIN_WIDTH_MM : FRUSTUM_MIN_WIDTH_MM;
+  const keyFilletMaxMm = maxKeyFilletMm(state.keyWidthMm, state.keyDepthMm);
+
+  // Set the frustum's Width or Depth. Shrinking either lowers the fillet ceiling,
+  // so the stored radius comes down with it — otherwise it stays parked above the
+  // new limit and the field is dead until the user drags back under it.
+  const setFrustumDim = React.useCallback((axis: 'width' | 'depth', next: number) => {
+    const clamped = clampFloat(next, keyDimMinMm, KEY_DIM_MAX_MM, 1);
+    const widthMm = axis === 'width' ? clamped : state.keyWidthMm;
+    const depthMm = axis === 'depth' ? clamped : state.keyDepthMm;
+    setState({
+      keyWidthMm: widthMm,
+      keyDepthMm: depthMm,
+      keyFilletMm: Math.min(state.keyFilletMm, maxKeyFilletMm(widthMm, depthMm)),
+    });
+  }, [clampFloat, keyDimMinMm, setState, state.keyDepthMm, state.keyFilletMm, state.keyWidthMm]);
 
   const setDomeDim = React.useCallback((axis: 'width' | 'depth', next: number) => {
     const clamped = clampFloat(next, keyDimMinMm, KEY_DIM_MAX_MM, 1);
@@ -491,7 +549,18 @@ export function OrganicCutPanel({
                       <button
                         type="button"
                         className="ui-button ui-button-secondary !h-7 whitespace-nowrap px-1.5 text-[10px]"
-                        onClick={() => setState({ keyShape: 'frustum' })}
+                        onClick={() =>
+                          // Only the frustum is filleted, so the radius can be
+                          // stale (above what this width/depth allows) after a
+                          // detour through the dome. Bring it back in range.
+                          setState({
+                            keyShape: 'frustum',
+                            keyFilletMm: Math.min(
+                              state.keyFilletMm,
+                              maxKeyFilletMm(state.keyWidthMm, state.keyDepthMm),
+                            ),
+                          })
+                        }
                         disabled={disabled || isApplying}
                         style={state.keyShape === 'frustum' ? activeModeStyle : undefined}
                         title="Tapered rectangular peg — locks the parts against rotation."
@@ -592,7 +661,7 @@ export function OrganicCutPanel({
                       onChange={(value) =>
                         state.keyShape === 'dome'
                           ? setDomeDim('width', value)
-                          : setState({ keyWidthMm: clampFloat(value, keyDimMinMm, KEY_DIM_MAX_MM, 1) })
+                          : setFrustumDim('width', value)
                       }
                       min={keyDimMinMm}
                       max={KEY_DIM_MAX_MM}
@@ -612,7 +681,7 @@ export function OrganicCutPanel({
                       onChange={(value) =>
                         state.keyShape === 'dome'
                           ? setDomeDim('depth', value)
-                          : setState({ keyDepthMm: clampFloat(value, keyDimMinMm, KEY_DIM_MAX_MM, 1) })
+                          : setFrustumDim('depth', value)
                       }
                       min={keyDimMinMm}
                       max={KEY_DIM_MAX_MM}
@@ -626,13 +695,19 @@ export function OrganicCutPanel({
                   {/* Edge Fillet: frustum only (a dome is already fully round). */}
                   {state.keyShape === 'frustum' && (
                     <div>
-                      <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Edge Fillet</label>
+                      <label
+                        className="ui-meta block"
+                        style={{ color: 'var(--text-muted)' }}
+                        title={`Rounds the key's corners and tip. On this key the geometry accepts up to ${keyFilletMaxMm}mm — a wider or deeper key raises that ceiling.`}
+                      >
+                        Edge Fillet
+                      </label>
                       <ScrollableNumberField
                         value={state.keyFilletMm}
-                        onChange={(value) => setState({ keyFilletMm: clampFloat(value, 0, 5, 2) })}
+                        onChange={(value) => setState({ keyFilletMm: clampFloat(value, 0, keyFilletMaxMm, 2) })}
                         min={0}
-                        max={5}
-                        step={0.1}
+                        max={keyFilletMaxMm}
+                        step={KEY_FILLET_STEP_MM}
                         unit="mm"
                         ariaLabel="Key edge fillet radius in millimeters (0 = sharp)"
                         disabled={disabled || isApplying}
@@ -640,6 +715,32 @@ export function OrganicCutPanel({
                       />
                     </div>
                   )}
+                  {/* Fit tolerance: applies to BOTH shapes — the socket is carved
+                      this much larger than the peg on every face. The print-fit
+                      knob: the peg's own size is what the user drew, this is the
+                      slack around it. */}
+                  <div>
+                    <label
+                      className="ui-meta block"
+                      style={{ color: 'var(--text-muted)' }}
+                      title="Slack between peg and socket, on every face. 0 = press fit (needs force). 0.1mm is a slide fit on a well-calibrated printer; raise it if the halves won't go together."
+                    >
+                      Fit Tolerance
+                    </label>
+                    <ScrollableNumberField
+                      value={state.keyToleranceMm}
+                      onChange={(value) =>
+                        setState({ keyToleranceMm: clampFloat(value, 0, KEY_TOLERANCE_MAX_MM, 2) })
+                      }
+                      min={0}
+                      max={KEY_TOLERANCE_MAX_MM}
+                      step={0.05}
+                      unit="mm"
+                      ariaLabel="Peg to socket fit tolerance in millimeters (0 = press fit)"
+                      disabled={disabled || isApplying}
+                      className="mt-1"
+                    />
+                  </div>
                   {/* Uniform Scale: dome only — lock width:depth so the dome resizes
                       as a unit (keeps its shape), or unlock for free oblong control. */}
                   {state.keyShape === 'dome' && (
