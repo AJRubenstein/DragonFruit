@@ -79,6 +79,9 @@ export function NativeSpaceMouseController({
   const tmpMatrix = React.useRef(new THREE.Matrix4());
   const tmpScale = React.useRef(new THREE.Vector3());
   const tmpTarget = React.useRef(new THREE.Vector3());
+  const tmpRight = React.useRef(new THREE.Vector3());
+  const tmpUp = React.useRef(new THREE.Vector3());
+  const tmpPan = React.useRef(new THREE.Vector3());
 
   // ── Request the bridge on/off with the SpaceMouse enabled setting ──
   // The reconciler in the bridge owns the async lifecycle (StrictMode-safe);
@@ -164,19 +167,48 @@ export function NativeSpaceMouseController({
     };
   }, [camera]);
 
-  // Apply navlib's ortho extents back as a camera zoom (width ratio vs the base
-  // frustum). Pan is handled by the affine; here we only take the zoom.
+  // Apply navlib's ortho extents box. For an orthographic camera navlib does NOT
+  // move `view.affine` to pan — it drives BOTH pan and zoom through `view.extents`
+  // (the eye-space view box): its *width* is the zoom, and its *center* offset is
+  // the pan. We send a camera-centered box each frame (center ≈ 0), so navlib's
+  // returned center is the incremental pan in eye-space world units; we truck the
+  // camera + OrbitControls target along the camera's right/up by that offset
+  // (like the Gamepad controller) and let the width drive `camera.zoom`. Absorbing
+  // the pan into the camera re-centers the box we send next frame.
   const applyOrthoExtents = React.useCallback(
     (min: [number, number, number], max: [number, number, number]) => {
       const ortho = camera as THREE.OrthographicCamera;
       if (ortho.isOrthographicCamera !== true) return;
+
+      // ── Zoom: box width vs the base frustum ──
       const navWidth = max[0] - min[0];
       const baseWidth = ortho.right - ortho.left;
-      if (navWidth <= 1e-9 || baseWidth <= 1e-9) return;
-      ortho.zoom = THREE.MathUtils.clamp(baseWidth / navWidth, 0.0001, 2000);
-      ortho.updateProjectionMatrix();
+      if (navWidth > 1e-9 && baseWidth > 1e-9) {
+        ortho.zoom = THREE.MathUtils.clamp(baseWidth / navWidth, 0.0001, 2000);
+        ortho.updateProjectionMatrix();
+      }
+
+      // ── Pan: box center offset vs the (camera-centered) box we sent ──
+      const navCx = (min[0] + max[0]) / 2;
+      const navCy = (min[1] + max[1]) / 2;
+      const sentCx = (ortho.right + ortho.left) / 2;
+      const sentCy = (ortho.top + ortho.bottom) / 2;
+      const panX = navCx - sentCx;
+      const panY = navCy - sentCy;
+      if (Math.abs(panX) > 1e-9 || Math.abs(panY) > 1e-9) {
+        camera.updateMatrixWorld();
+        const right = tmpRight.current.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+        const up = tmpUp.current.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+        const pan = tmpPan.current
+          .set(0, 0, 0)
+          .addScaledVector(right, panX)
+          .addScaledVector(up, panY);
+        camera.position.add(pan);
+        if (isOrbitLikeControls(controls)) controls.target.add(pan);
+        camera.updateMatrixWorld();
+      }
     },
-    [camera],
+    [camera, controls],
   );
 
   const buildCameraInput = React.useCallback((): NativeCameraInput => {

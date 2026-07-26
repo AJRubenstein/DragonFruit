@@ -683,10 +683,14 @@ mod nav {
                 s.ortho_min = b.min;
                 s.ortho_max = b.max;
                 s.extents_seq = s.extents_seq.wrapping_add(1);
-                if s.extents_seq % 15 == 1 {
+                if s.extents_seq % 10 == 1 {
+                    // center encodes ortho pan, width encodes ortho zoom.
                     log::info!(
-                        "[spacemouse] extents #{} width≈{:.2}",
-                        s.extents_seq, b.max.x - b.min.x,
+                        "[spacemouse] extents #{} center≈({:.2}, {:.2}) width≈{:.2}",
+                        s.extents_seq,
+                        (b.min.x + b.max.x) * 0.5,
+                        (b.min.y + b.max.y) * 0.5,
+                        b.max.x - b.min.x,
                     );
                 }
             }
