@@ -582,6 +582,13 @@ mod nav {
     const P_ACTIVE: &[u8] = b"active\0";
     const P_FOCUS: &[u8] = b"focus\0";
     const P_VIEW_EXTENTS: &[u8] = b"view.extents\0";
+    // DIAGNOSTIC channels: pose targets Camera mode might drive that Object mode
+    // doesn't. Registered setter-only (log & ignore) to find WHICH interface
+    // Camera-mode pan writes to — navlib can only call a setter we registered.
+    const P_SELECTION_AFFINE: &[u8] = b"selection.affine\0";
+    const P_POINTER_POSITION: &[u8] = b"pointer.position\0";
+    const P_VIEW_FRUSTUM: &[u8] = b"view.frustum\0";
+    const P_VIEW_CONSTRUCTION_PLANE: &[u8] = b"view.constructionPlane\0";
 
     /// During navlib motion we log the FIRST read of each property, so a single
     /// gesture reveals exactly which getters navlib consults while computing the
@@ -807,6 +814,36 @@ mod nav {
                     log::info!("[spacemouse] transaction = {} (frames running)", v.value.l);
                 }
             }
+            // DIAGNOSTIC pose channels — if a Camera-mode gesture lights any of
+            // these up, THAT is the "different interface" Camera mode drives.
+            b"selection.affine" => {
+                let m = v.value.matrix.m;
+                log::info!(
+                    "[spacemouse] *** selection.affine written pos≈({:.2},{:.2},{:.2})",
+                    m[12], m[13], m[14],
+                );
+            }
+            b"view.frustum" => {
+                let f = v.value.frustum;
+                static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if n % 6 == 0 {
+                    log::info!(
+                        "[spacemouse] *** view.frustum written #{n} l={:.2} r={:.2} b={:.2} t={:.2} n={:.2} f={:.2}",
+                        f.left, f.right, f.bottom, f.top, f.near_val, f.far_val,
+                    );
+                }
+            }
+            b"view.constructionPlane" => {
+                log::info!("[spacemouse] *** view.constructionPlane written");
+            }
+            b"pointer.position" => {
+                static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if n % 60 == 0 {
+                    log::info!("[spacemouse] *** pointer.position written (#{n})");
+                }
+            }
             b"pivot.visible" => {}
             _ => return NAVLIB_PROPERTY_NOT_FOUND,
         }
@@ -839,6 +876,11 @@ mod nav {
             entry(P_PIVOT_VISIBLE, false, true),
             entry(P_MOTION, false, true),
             entry(P_TRANSACTION, false, true),
+            // DIAGNOSTIC: setter-only channels to catch what Camera mode drives.
+            entry(P_SELECTION_AFFINE, false, true),
+            entry(P_POINTER_POSITION, false, true),
+            entry(P_VIEW_FRUSTUM, false, true),
+            entry(P_VIEW_CONSTRUCTION_PLANE, false, true),
         ]
         .into_boxed_slice()
     }
