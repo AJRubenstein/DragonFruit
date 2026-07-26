@@ -27,16 +27,6 @@ function isOrbitLikeControls(value: unknown): value is OrbitLikeControls {
   return !!maybe.target && typeof maybe.update === 'function';
 }
 
-// Are two rotation matrices (compared column-by-column, upper-left 3×3 of a
-// column-major 4×4) equal within a small tolerance?
-const ROT_EPS = 1e-4;
-function rotationsMatch(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
-  for (const i of [0, 1, 2, 4, 5, 6, 8, 9, 10]) {
-    if (Math.abs(a[i] - b[i]) > ROT_EPS) return false;
-  }
-  return true;
-}
-
 // Recompute the model bounding box at most this often (frames) — it only feeds
 // navlib's speed/zoom scaling, so it doesn't need to be exact every frame.
 const MODEL_EXTENTS_REFRESH_FRAMES = 30;
@@ -80,6 +70,9 @@ export function NativeSpaceMouseController({
   const lastAppliedExtentsSeqRef = React.useRef(0);
   const prevMotionRef = React.useRef(false);
   const weDisabledOrbitRef = React.useRef(false);
+  // Camera→target distance captured when navlib takes over, so handback can
+  // re-seat the orbit pivot in front of the camera at the same radius.
+  const focusDistRef = React.useRef(50);
 
   // Cached model extents + refresh counter.
   const modelBoxRef = React.useRef(new THREE.Box3());
@@ -134,46 +127,33 @@ export function NativeSpaceMouseController({
   const applyAffine = React.useCallback(
     (affine: number[]) => {
       if (affine.length < 16) return;
-
-      // Decide up-front whether navlib rotated the camera or only translated it,
-      // by comparing the incoming rotation to the camera's current basis. A pure
-      // translation is a pan/dolly and must truck the OrbitControls target along
-      // with the camera; a rotation is an orbit that pivots about the (stationary)
-      // target. Without this the target lags the camera during a pan — the log
-      // shows focusDistance drifting 109→150 — and handback snaps to that stale
-      // pivot.
-      camera.updateMatrixWorld();
-      const translationOnly =
-        isOrbitLikeControls(controls) && rotationsMatch(affine, camera.matrixWorld.elements);
-      const prevX = camera.position.x;
-      const prevY = camera.position.y;
-      const prevZ = camera.position.z;
-
       const m = tmpMatrix.current.fromArray(affine);
       m.decompose(camera.position, camera.quaternion, tmpScale.current);
       // Preserve roll: take the camera up-vector straight from the matrix rather
       // than re-deriving it via lookAt.
       camera.up.set(affine[4], affine[5], affine[6]).normalize();
-
-      if (translationOnly && isOrbitLikeControls(controls)) {
-        controls.target.x += camera.position.x - prevX;
-        controls.target.y += camera.position.y - prevY;
-        controls.target.z += camera.position.z - prevZ;
-      }
       camera.updateMatrixWorld();
     },
-    [camera, controls],
+    [camera],
   );
 
   const handBackToOrbit = React.useCallback(() => {
     if (!weDisabledOrbitRef.current) return;
     if (isOrbitLikeControls(controls)) {
-      controls.target.copy(getTarget(tmpTarget.current));
+      // Re-seat the orbit pivot in FRONT of wherever navlib left the camera, at
+      // the radius it had when navigation began. navlib moves the camera freely
+      // (orbit sweeps it far from the old target); copying that stale pivot back
+      // is what snapped the camera on release after a rotation. A point along the
+      // current view direction keeps the pose OrbitControls resumes from.
+      const dir = camera.getWorldDirection(tmpPan.current); // into-screen, unit
+      controls.target
+        .copy(camera.position)
+        .addScaledVector(dir, focusDistRef.current);
       controls.enabled = true;
       controls.update();
     }
     weDisabledOrbitRef.current = false;
-  }, [controls, getTarget]);
+  }, [controls, camera]);
 
   // Current orthographic view extents in camera/eye space, matching three's
   // OrthographicCamera projection (frustum scaled by zoom). navlib needs these to
@@ -298,6 +278,8 @@ export function NativeSpaceMouseController({
         prevMotionRef.current = out.motion;
         if (out.motion) {
           if (!weDisabledOrbitRef.current) {
+            // Remember the orbit radius so handback can rebuild the pivot.
+            focusDistRef.current = Math.max(0.1, camera.position.distanceTo(controls.target));
             controls.enabled = false;
             weDisabledOrbitRef.current = true;
           }
