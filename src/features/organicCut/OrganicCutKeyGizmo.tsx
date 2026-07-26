@@ -33,6 +33,19 @@ export interface OrganicCutKeyGizmoProps {
 }
 
 /**
+ * Fold an angle into (−π, π]. Roll is the only unbounded one of the three (tilt is
+ * clamped, azimuth comes out of `atan2`), so without this it just keeps counting
+ * up as the user spins the ring.
+ */
+function wrapAngle(rad: number): number {
+  const TWO_PI = Math.PI * 2;
+  let wrapped = rad % TWO_PI;
+  if (wrapped > Math.PI) wrapped -= TWO_PI;
+  else if (wrapped <= -Math.PI) wrapped += TWO_PI;
+  return wrapped;
+}
+
+/**
  * The registration-key aim/roll gizmo — the app's standard ScreenSpaceGizmo
  * (rotate-only) mounted at the key's base center, oriented to the key's frame.
  *
@@ -142,7 +155,11 @@ export function OrganicCutKeyGizmo({
       // was rotating backwards), so flip it here.
       const d = -delta;
       if (axis === 'z') {
-        onKeyAimChange(keyTiltRad, keyTiltAzimuthRad, keyRollRad + d);
+        // Roll accumulates raw, so spinning the ring a few times used to report
+        // absurd angles ("6403.1° roll") for a key that is geometrically at 43°.
+        // Wrap every revolution away at the source: the rotation is the same one,
+        // and the readout, the Reset-aim check and Rust all see a sane number.
+        onKeyAimChange(keyTiltRad, keyTiltAzimuthRad, wrapAngle(keyRollRad + d));
         return;
       }
       // Current lean vector in (u, v). Rotating about +u (ring-x) tips the axis
