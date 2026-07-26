@@ -72,7 +72,7 @@ import { MeshSmoothingBrushCursor } from '@/features/mesh-smoothing/MeshSmoothin
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
-import { OrganicCutPanel, OrganicCutTool, OrganicCutKeyGizmo, useOrganicCutSession } from '@/features/organicCut';
+import { OrganicCutTool, OrganicCutKeyGizmo, useOrganicCutSession } from '@/features/organicCut';
 import { MirrorTool } from '@/features/mirror/MirrorTool';
 import { bakeWithFlips } from '@/features/mirror/logic/bakeWithFlips';
 import { buildMirrorSupportTransforms, reflectTransformAcrossWorldAxis } from '@/features/mirror/logic/buildMirrorSupportTransforms';
@@ -219,6 +219,7 @@ import { IslandsPanel } from '@/components/controls/IslandsPanel';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import { useSupportInteractionManager } from '@/features/supports/useSupportInteractionManager';
 import { useUndoRedoHotkeys } from '@/hotkeys/useUndoRedoHotkeys';
+import { useOrganicCutHotkeys } from '@/hotkeys/useOrganicCutHotkeys';
 import { hotkeyStore, useActionActive, isActionActiveSync, isPrimaryModifierPressed } from '@/hotkeys/hotkeyStore';
 import { useDeleteHotkey } from '@/features/delete/useDeleteHotkey';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
@@ -7334,7 +7335,6 @@ export default function Home() {
     transformMgr.setTransformMode(nextMode);
   }, [suppressTransformPersistenceCycles, transformMgr.transformMode, transformMgr.setTransformMode]);
 
-  useUndoRedoHotkeys({ disabled: hollowingEditMode });
   useDeleteHotkey();
   useCameraProjectionHotkey();
   const hasCavityGeometry = scene.activeModel
@@ -9060,6 +9060,10 @@ export default function Home() {
   // inside the feature hook; page.tsx only supplies the active geometry and
   // renders the two mounts below. See src/features/organicCut/.
   const organicCutToolActive = scene.mode === 'prepare' && transformMgr.transformMode === 'organicCut';
+  // The Cut tool takes over undo/redo while active (useOrganicCutHotkeys steps
+  // the waypoint history first, then delegates here), so exactly one
+  // subscriber acts on a press.
+  useUndoRedoHotkeys({ disabled: hollowingEditMode || organicCutToolActive });
   React.useEffect(() => { organicCutToolActiveRef.current = organicCutToolActive; }, [organicCutToolActive]);
   // True while a cut waypoint is being dragged, so OrbitControls stays disabled
   // for the duration of the drag (camera must not move while editing the seam).
@@ -9181,24 +9185,28 @@ export default function Home() {
   React.useEffect(() => {
     if (!organicCutLineMenu) return;
     const onDown = () => setOrganicCutLineMenu(null);
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOrganicCutLineMenu(null); };
+    // Escape comes from the central hotkey store (no direct key listeners —
+    // docs/reference/hotkeys.md); the rising edge is what dismisses the menu.
+    let wasEscapeActive = hotkeyStore.getState().activeKeys.has('escape');
+    let unsubscribeEscape: (() => void) | null = null;
     // Defer so the opening right-click doesn't immediately close it.
     const id = window.setTimeout(() => {
       window.addEventListener('pointerdown', onDown);
-      window.addEventListener('keydown', onKey);
+      unsubscribeEscape = hotkeyStore.subscribe(() => {
+        const isEscapeActive = hotkeyStore.getState().activeKeys.has('escape');
+        if (isEscapeActive && !wasEscapeActive) setOrganicCutLineMenu(null);
+        wasEscapeActive = isEscapeActive;
+      });
     }, 0);
     return () => {
       window.clearTimeout(id);
       window.removeEventListener('pointerdown', onDown);
-      window.removeEventListener('keydown', onKey);
+      unsubscribeEscape?.();
     };
   }, [organicCutLineMenu]);
 
-  // Cut-tool keyboard hotkeys (capture phase, so they win over the global
-  // model-history undo and model-delete handlers):
-  //  - Ctrl/Cmd+Z / Shift+Z / Ctrl+Y → undo/redo a waypoint (else fall through).
-  //  - Delete/Backspace → delete the SELECTED waypoint. While the Cut tool is
-  //    active we ALWAYS swallow Delete so it can never delete the whole model.
+  // Cut-tool session state read by useOrganicCutHotkeys, kept in a ref so the
+  // hotkey subscription survives the per-click churn of waypoint editing.
   const organicCutHotkeyRef = React.useRef({
     active: organicCutToolActive,
     undoPoint: organicCut.undoPoint,
@@ -9219,50 +9227,10 @@ export default function Home() {
       selectedIndex: organicCut.selectedIndex,
     };
   }, [organicCutToolActive, organicCut.undoPoint, organicCut.redoPoint, organicCut.canUndoPoint, organicCut.canRedoPoint, organicCut.removePoint, organicCut.selectedIndex]);
-  React.useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const s = organicCutHotkeyRef.current;
-      if (!s.active) return;
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName.toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || target.isContentEditable) return;
-      }
-
-      // Delete/Backspace: delete the selected waypoint; ALWAYS swallow in cut mode
-      // so the model is never deleted while cutting.
-      if (!event.metaKey && !event.ctrlKey && (event.key === 'Delete' || event.key === 'Backspace')) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        if (s.selectedIndex != null) {
-          s.removePoint(s.selectedIndex);
-        }
-        return;
-      }
-
-      const isMeta = event.metaKey || event.ctrlKey;
-      if (!isMeta) return;
-      const key = event.key.toLowerCase();
-      const isRedo = key === 'y' || (key === 'z' && event.shiftKey);
-      const isUndo = key === 'z' && !event.shiftKey;
-      if (!isUndo && !isRedo) return;
-
-      // Only consume the event if we actually have something to act on; otherwise
-      // let the global undo/redo handle it.
-      if (isRedo && s.canRedoPoint) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        s.redoPoint();
-      } else if (isUndo && s.canUndoPoint) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        s.undoPoint();
-      }
-    };
-    // Capture phase so we run before the global (bubble-phase) undo/redo hotkey.
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, []);
+  // Delete + undo/redo for the Cut tool, routed through the central hotkey
+  // system (delete registry + GLOBAL.UNDO/REDO bindings) instead of a direct
+  // capture-phase key listener. See docs/reference/hotkeys.md.
+  useOrganicCutHotkeys(organicCutHotkeyRef);
 
   // Mirror session state: while the user is in Mirror mode we don't bake the
   // geometry per-click (a 2.4M-vert bake is slow on big meshes). Instead, each
