@@ -5,8 +5,20 @@ import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 import type { OrganicCutDrawMode, OrganicCutMode, OrganicCutSessionStatus } from './types';
 
 /** Key width/depth bounds (mm) — shared by the fields and the uniform-scale lock. */
-const KEY_DIM_MIN_MM = 1;
 const KEY_DIM_MAX_MM = 20;
+/**
+ * Smallest width the FRUSTUM key accepts, mirroring Rust's KEY_MIN_FOOTPRINT_MM
+ * (0.99mm) rounded up to a round number.
+ */
+const FRUSTUM_MIN_WIDTH_MM = 1;
+/**
+ * Smallest width the DOME key accepts. Rust stores a dome as semi-axes — width
+ * becomes half_w = width/2 — and rejects any dome whose radius falls under
+ * KEY_MIN_DOME_RADIUS_MM (0.75mm). So a 1mm dome is a 0.5mm radius and is thrown
+ * out with "the part is too thin for any key", no matter how chunky the model is.
+ * 1.5mm is the first width that survives that floor.
+ */
+const DOME_MIN_WIDTH_MM = 1.5;
 
 export interface OrganicCutPanelState {
   drawMode: OrganicCutDrawMode;
@@ -157,8 +169,10 @@ export function OrganicCutPanel({
   // Set the dome's Width or Depth, honoring Uniform Scale: when locked, dragging
   // one slider scales the OTHER by the same factor so the current width:depth
   // proportion is preserved (resize as a unit). Unlocked → set just that axis.
+  const keyDimMinMm = state.keyShape === 'dome' ? DOME_MIN_WIDTH_MM : FRUSTUM_MIN_WIDTH_MM;
+
   const setDomeDim = React.useCallback((axis: 'width' | 'depth', next: number) => {
-    const clamped = clampFloat(next, KEY_DIM_MIN_MM, KEY_DIM_MAX_MM, 1);
+    const clamped = clampFloat(next, keyDimMinMm, KEY_DIM_MAX_MM, 1);
     if (!state.keyUniformScale) {
       setState(axis === 'width' ? { keyWidthMm: clamped } : { keyDepthMm: clamped });
       return;
@@ -178,16 +192,16 @@ export function OrganicCutPanel({
     let factor = clamped / cur;
     if (other > 0) {
       factor = Math.min(factor, KEY_DIM_MAX_MM / other);
-      factor = Math.max(factor, KEY_DIM_MIN_MM / other);
+      factor = Math.max(factor, keyDimMinMm / other);
     }
-    const nextDriven = clampFloat(cur * factor, KEY_DIM_MIN_MM, KEY_DIM_MAX_MM, 1);
-    const nextOther = clampFloat(other * factor, KEY_DIM_MIN_MM, KEY_DIM_MAX_MM, 1);
+    const nextDriven = clampFloat(cur * factor, keyDimMinMm, KEY_DIM_MAX_MM, 1);
+    const nextOther = clampFloat(other * factor, keyDimMinMm, KEY_DIM_MAX_MM, 1);
     setState(
       axis === 'width'
         ? { keyWidthMm: nextDriven, keyDepthMm: nextOther }
         : { keyDepthMm: nextDriven, keyWidthMm: nextOther },
     );
-  }, [clampFloat, setState, state.keyUniformScale, state.keyWidthMm, state.keyDepthMm]);
+  }, [clampFloat, setState, keyDimMinMm, state.keyUniformScale, state.keyWidthMm, state.keyDepthMm]);
 
   const cardStyle: React.CSSProperties = {
     borderColor: 'var(--border-subtle)',
@@ -474,7 +488,15 @@ export function OrganicCutPanel({
                       <button
                         type="button"
                         className="ui-button ui-button-secondary !h-7 whitespace-nowrap px-1.5 text-[10px]"
-                        onClick={() => setState({ keyShape: 'dome' })}
+                        onClick={() =>
+                          // A dome's floor is higher than a frustum's, so lift any
+                          // dimension that would be rejected outright on switch.
+                          setState({
+                            keyShape: 'dome',
+                            keyWidthMm: Math.max(state.keyWidthMm, DOME_MIN_WIDTH_MM),
+                            keyDepthMm: Math.max(state.keyDepthMm, DOME_MIN_WIDTH_MM),
+                          })
+                        }
                         disabled={disabled || isApplying}
                         style={state.keyShape === 'dome' ? activeModeStyle : undefined}
                         title="Half-sphere peg — locates the parts but allows rotation."
@@ -533,10 +555,10 @@ export function OrganicCutPanel({
                       onChange={(value) =>
                         state.keyShape === 'dome'
                           ? setDomeDim('width', value)
-                          : setState({ keyWidthMm: clampFloat(value, 1, 20, 1) })
+                          : setState({ keyWidthMm: clampFloat(value, keyDimMinMm, KEY_DIM_MAX_MM, 1) })
                       }
-                      min={1}
-                      max={20}
+                      min={keyDimMinMm}
+                      max={KEY_DIM_MAX_MM}
                       step={0.5}
                       unit="mm"
                       ariaLabel="Key width in millimeters"
@@ -553,10 +575,10 @@ export function OrganicCutPanel({
                       onChange={(value) =>
                         state.keyShape === 'dome'
                           ? setDomeDim('depth', value)
-                          : setState({ keyDepthMm: clampFloat(value, 1, 20, 1) })
+                          : setState({ keyDepthMm: clampFloat(value, keyDimMinMm, KEY_DIM_MAX_MM, 1) })
                       }
-                      min={1}
-                      max={20}
+                      min={keyDimMinMm}
+                      max={KEY_DIM_MAX_MM}
                       step={0.5}
                       unit="mm"
                       ariaLabel="Key depth in millimeters"
