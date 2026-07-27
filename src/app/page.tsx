@@ -219,7 +219,7 @@ import { IslandsPanel } from '@/components/controls/IslandsPanel';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import { useSupportInteractionManager } from '@/features/supports/useSupportInteractionManager';
 import { useUndoRedoHotkeys } from '@/hotkeys/useUndoRedoHotkeys';
-import { useOrganicCutHotkeys } from '@/hotkeys/useOrganicCutHotkeys';
+import { useOrganicCutHotkeys, useOrganicCutPreviewHotkey } from '@/hotkeys/useOrganicCutHotkeys';
 import { hotkeyStore, useActionActive, isActionActiveSync, isPrimaryModifierPressed } from '@/hotkeys/hotkeyStore';
 import { useDeleteHotkey } from '@/features/delete/useDeleteHotkey';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
@@ -9272,6 +9272,16 @@ export default function Home() {
   // Delete for the Cut tool, claimed through the delete registry. Undo/redo are
   // the app's own: every Cut edit is pushed to the history.
   useOrganicCutHotkeys(organicCutHotkeyRef);
+  // Show Preview, from the configurable CUT.TOGGLE_PREVIEW binding.
+  useOrganicCutPreviewHotkey(
+    React.useCallback(() => {
+      organicCut.setPanelState({
+        ...organicCut.panelState,
+        showPreview: !organicCut.panelState.showPreview,
+      });
+    }, [organicCut]),
+    organicCutToolActive,
+  );
 
   // Mirror session state: while the user is in Mirror mode we don't bake the
   // geometry per-click (a 2.4M-vert bake is slow on big meshes). Instead, each
