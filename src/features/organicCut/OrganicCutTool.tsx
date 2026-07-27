@@ -4,7 +4,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
-import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutMode } from './types';
+import { KEY_LEAN_AZIMUTH_RAD, type KeyPreviewFrame, type OrganicCutLoopPoint, type OrganicCutMode } from './types';
 import { cutPlaneFromPoints } from './cutPlane';
 import type { PlaneMeshCurve } from './planeMeshIntersection';
 import { useOrganicCutColorNumbers } from './useOrganicCutColors';
@@ -250,7 +250,7 @@ export function OrganicCutTool({
   keyOffsetVMm = 0,
   keyPreviewOffset,
   keyTiltRad = 0,
-  keyTiltAzimuthRad = 0,
+  keyTiltAzimuthRad = KEY_LEAN_AZIMUTH_RAD,
   keyRollRad = 0,
   showPreview = true,
 }: OrganicCutToolProps) {

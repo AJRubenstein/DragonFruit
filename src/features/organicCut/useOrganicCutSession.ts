@@ -15,7 +15,7 @@
  * way to free a part attached in several places (e.g. a tail joined at two posts).
  */
 import React from 'react';
-import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutResult } from './types';
+import { KEY_LEAN_AZIMUTH_RAD, type KeyPreviewFrame, type OrganicCutLoopPoint, type OrganicCutResult } from './types';
 import type { OrganicCutPanelState } from './OrganicCutPanel';
 import {
   computeGeodesicLoop,
@@ -406,7 +406,7 @@ const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
   // Key points straight out of the cut by default; the in-viewport aim gizmo
   // (drag the tip) leans it, the roll ring spins it. All measured in radians.
   keyTiltRad: 0,
-  keyTiltAzimuthRad: 0,
+  keyTiltAzimuthRad: KEY_LEAN_AZIMUTH_RAD,
   keyRollRad: 0,
   // Cut-plan preview on by default — the user sees where the cut lands; the
   // toggle hides it for an unobscured view of the model while drawing.

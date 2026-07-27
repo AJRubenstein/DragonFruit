@@ -2,7 +2,7 @@ import React from 'react';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
-import type { OrganicCutMode } from './types';
+import { KEY_LEAN_AZIMUTH_RAD, type OrganicCutMode } from './types';
 import { DEFAULT_CUT_SETTINGS, DEFAULT_KEY_SETTINGS } from './useOrganicCutSession';
 
 /** Key width/depth bounds (mm) — shared by the fields and the uniform-scale lock. */
@@ -664,7 +664,7 @@ export function OrganicCutPanel({
                         <button
                           type="button"
                           className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
-                          onClick={() => setState({ keyTiltRad: 0, keyTiltAzimuthRad: 0, keyRollRad: 0 })}
+                          onClick={() => setState({ keyTiltRad: 0, keyTiltAzimuthRad: KEY_LEAN_AZIMUTH_RAD, keyRollRad: 0 })}
                           disabled={disabled || isApplying}
                           title="Reset the key to point straight out of the cut (no lean / roll)."
                         >
