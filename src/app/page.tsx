@@ -9652,7 +9652,9 @@ export default function Home() {
             onOrganicCutClick={organicCutToolActive ? handleOrganicCutClick : undefined}
             organicCutDragging={organicCutDragging}
             organicCutKeyGizmo={
-              organicCutToolActive && organicCut.panelState.cutMode === 'contour' && organicCut.panelState.showPreview ? (
+              // Both cut modes place a key now, so the aim gizmo follows the key
+              // rather than the mode; it mounts whenever there is a frame to sit on.
+              organicCutToolActive && organicCut.keyFrame && organicCut.panelState.showPreview ? (
                 <OrganicCutKeyGizmo
                   models={scene.models}
                   activeModelId={displayActiveModelId}

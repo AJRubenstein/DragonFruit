@@ -301,6 +301,13 @@ struct GeodesicRequestDto {
     /// every face. 0 = press fit. Default 0.1 (slide fit).
     #[serde(default = "default_key_tolerance")]
     key_tolerance_mm: f32,
+    /// Flat-cut only: the plane the key is framed on, as `dot(normal, p) == offset`
+    /// in model-local space — the exact plane the frontend previewed. Absent for a
+    /// contour preview, which frames the key on the membrane instead.
+    #[serde(default)]
+    plane_normal: [f32; 3],
+    #[serde(default)]
+    plane_offset: f32,
     /// Flip which half gets the peg vs the socket (preview reflects the direction).
     #[serde(default)]
     key_swap_sides: bool,
@@ -355,6 +362,8 @@ impl Default for GeodesicRequestDto {
             key_shape: "frustum".to_string(),
             key_fillet_mm: 0.0,
             key_tolerance_mm: 0.1,
+            plane_normal: [0.0; 3],
+            plane_offset: 0.0,
             key_swap_sides: false,
             key_tilt_rad: 0.0,
             key_tilt_azimuth_rad: 0.0,
@@ -1332,6 +1341,99 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         "{{\"triangleCount\":{tri_count},\"keyTriangleCount\":{key_tris},\"keyKind\":\"{key_kind}\",\"keyDetail\":\"{key_detail_json}\",\"keyFrame\":{key_frame_json}}}"
     ))
 }
+
+/// Preview the registration key a FLAT cut would place, framed on the cut plane.
+///
+/// The contour preview builds a membrane from the loop and frames the key on it;
+/// a flat cut has no membrane, so this takes the plane the frontend previewed and
+/// frames the key on the cross-section it carves. Same ladder and same build as
+/// the cut, so the preview is what lands. Writes the soup where
+/// `mesh_organic_cut_read_key` picks it up, and reports the same JSON shape as the
+/// membrane preview (with no membrane of its own: `triangleCount` is 0).
+#[tauri::command]
+pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<String, String> {
+    let req = parse_geodesic_request(&request_json);
+    let normal = Vec3::new(req.plane_normal[0], req.plane_normal[1], req.plane_normal[2]);
+    let offset = req.plane_offset;
+    let generate_key = req.generate_key;
+    let key_shape = dragonfruit_organic_cut::KeyShape::from_str_or_default(&req.key_shape);
+    let key_tilt = dragonfruit_organic_cut::KeyTilt::new(
+        req.key_tilt_rad,
+        req.key_tilt_azimuth_rad,
+        req.key_roll_rad,
+    );
+    let (key_width_mm, key_depth_mm, key_fillet_mm, key_tolerance_mm, key_swap_sides) = (
+        req.key_width_mm,
+        req.key_depth_mm,
+        req.key_fillet_mm,
+        req.key_tolerance_mm,
+        req.key_swap_sides,
+    );
+
+    let source_bytes = organic_cut_source_bytes()
+        .lock()
+        .map_err(|e| format!("organic cut source lock poisoned: {e}"))?
+        .clone();
+    let Some(bytes) = source_bytes else {
+        return Ok(NO_KEY_PREVIEW_JSON.to_string());
+    };
+    if !generate_key || normal.length() < 1e-6 {
+        return Ok(NO_KEY_PREVIEW_JSON.to_string());
+    }
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
+        let Some(frame) = dragonfruit_organic_cut::frame_from_plane(&mesh, normal, offset) else {
+            return Ok::<_, String>(None);
+        };
+        // A flat split is zero-thickness — both halves meet ON the plane — so
+        // there is no kerf for the key to span.
+        let (soup, kind, detail, info) = dragonfruit_organic_cut::build_key_preview_at_frame(
+            &mesh,
+            frame,
+            key_shape,
+            key_swap_sides,
+            key_tilt,
+            key_width_mm,
+            key_depth_mm,
+            key_fillet_mm,
+            key_tolerance_mm,
+            0.0,
+        );
+        Ok(Some((soup, kind.as_str().to_string(), detail, info)))
+    })
+    .await
+    .map_err(|e| format!("plane key preview task panicked: {e}"))??;
+
+    let Some((key_soup, key_kind, key_detail, key_frame)) = result else {
+        return Ok(NO_KEY_PREVIEW_JSON.to_string());
+    };
+    let key_tris = key_soup.len() / 9;
+    *organic_cut_key_bytes()
+        .lock()
+        .map_err(|e| format!("key lock poisoned: {e}"))? =
+        Some(bytemuck::cast_slice::<f32, u8>(&key_soup).to_vec());
+    let key_detail_json = json_escape(&key_detail);
+    let key_frame_json = match key_frame {
+        Some(f) => format!(
+            "{{\"anchor\":[{},{},{}],\"axis\":[{},{},{}],\"u\":[{},{},{}],\"v\":[{},{},{}],\"tip\":[{},{},{}],\"depth\":{}}}",
+            f.anchor.x, f.anchor.y, f.anchor.z,
+            f.axis.x, f.axis.y, f.axis.z,
+            f.u.x, f.u.y, f.u.z,
+            f.v.x, f.v.y, f.v.z,
+            f.tip.x, f.tip.y, f.tip.z,
+            f.depth,
+        ),
+        None => "null".to_string(),
+    };
+    Ok(format!(
+        "{{\"triangleCount\":0,\"keyTriangleCount\":{key_tris},\"keyKind\":\"{key_kind}\",\"keyDetail\":\"{key_detail_json}\",\"keyFrame\":{key_frame_json}}}"
+    ))
+}
+
+/// The empty answer for a key preview: no key, no frame, no membrane.
+const NO_KEY_PREVIEW_JSON: &str =
+    "{\"triangleCount\":0,\"keyTriangleCount\":0,\"keyKind\":\"none\",\"keyDetail\":\"\",\"keyFrame\":null}";
 
 /// Returns the most recent registration-key preview as raw LE f32 triangle-soup
 /// bytes (peg followed by socket). Empty when no key was previewed.

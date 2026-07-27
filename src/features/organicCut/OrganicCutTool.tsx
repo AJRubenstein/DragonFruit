@@ -378,17 +378,19 @@ export function OrganicCutTool({
     return geom;
   }, [cutMode, membranePreview]);
 
-  // Registration-key preview (peg + socket) for contour mode. Built from the flat
-  // soup Rust returns, so it's EXACTLY the key the cut will place.
+  // Registration-key preview (peg + socket), in BOTH cut modes. Built from the
+  // flat soup Rust returns, so it's EXACTLY the key the cut will place — the flat
+  // cut's key is framed on the plane, the contour's on the membrane, but both
+  // arrive here the same way.
   const keyGeometry = useMemo(() => {
-    if (cutMode !== 'contour' || !keyPreview || keyPreview.length < 9) return null;
+    if (!keyPreview || keyPreview.length < 9) return null;
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(keyPreview, 3));
     geom.computeVertexNormals();
     geom.computeBoundingBox();
     geom.computeBoundingSphere();
     return geom;
-  }, [cutMode, keyPreview]);
+  }, [keyPreview]);
 
   // Edge outline of the key so its 3D form (the tapered box / dome) reads even as
   // a flat depth-test-off overlay. EdgesGeometry keeps only the sharp silhouette

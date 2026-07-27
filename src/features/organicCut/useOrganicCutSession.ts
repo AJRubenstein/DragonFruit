@@ -20,6 +20,7 @@ import type { OrganicCutPanelState } from './OrganicCutPanel';
 import {
   computeGeodesicLoop,
   computeMembranePreview,
+  computePlaneKeyPreview,
   cutFromCapturedSource,
   isCutSourceStaged,
   partToGeometry,
@@ -998,6 +999,55 @@ export function useOrganicCutSession({
     // rebuild the soup. Keeping them out is what makes the aim gizmo smooth.
   }, [toolActive, loop, activeGeometry, activeGeometryKey, cutMode, geodesicPolyline, isDraggingPoint, panelState.membraneSmoothing, panelState.density, panelState.thicknessMm, panelState.generateKey, panelState.keyWidthMm, panelState.keyDepthMm, panelState.keyShape, panelState.keyFilletMm, panelState.keyToleranceMm, panelState.keySwapSides]);
 
+  // PLANE MODE key preview. The membrane effect above is contour-only, so without
+  // this the flat cut placed a key the user never saw (and had no gizmo to aim).
+  // The seam itself is already drawn locally as the plane ∩ mesh curve; this only
+  // asks Rust for the key, framed on the same plane the cut will use.
+  React.useEffect(() => {
+    if (cutMode !== 'plane' || !toolActive || isDraggingPoint || !panelState.generateKey) {
+      if (cutMode === 'plane' && !isDraggingPoint) {
+        setKeyPreview(null);
+        setKeyKind('none');
+        setKeyDetail('');
+        setKeyFrame(null);
+      }
+      return;
+    }
+    if (loop.length < MIN_LOOP_POINTS || !activeGeometry || !activeGeometryKey) return;
+    const plane = cutPlaneFromPoints(loop);
+    if (!plane) return;
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        const staged = await stageCutSource(activeGeometry, activeGeometryKey);
+        if (cancelled || !staged) return;
+        // Tilt/roll are NOT sent for the same reason as the contour preview: they
+        // are applied client-side on the key mesh, so aiming never round-trips.
+        const result = await computePlaneKeyPreview(
+          [plane.normal.x, plane.normal.y, plane.normal.z],
+          plane.offset,
+          panelState.generateKey,
+          panelState.keyWidthMm,
+          panelState.keyDepthMm,
+          panelState.keyShape,
+          panelState.keyFilletMm,
+          panelState.keyToleranceMm,
+          panelState.keySwapSides,
+        );
+        if (cancelled) return;
+        setKeyPreview(result.keyPreview);
+        setKeyKind(result.keyKind);
+        setKeyDetail(result.keyDetail);
+        setKeyFrame(result.keyFrame);
+      })();
+    }, 80);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [toolActive, loop, activeGeometry, activeGeometryKey, cutMode, isDraggingPoint, panelState.generateKey, panelState.keyWidthMm, panelState.keyDepthMm, panelState.keyShape, panelState.keyFilletMm, panelState.keyToleranceMm, panelState.keySwapSides]);
+
   const addPoint = React.useCallback((point: OrganicCutLoopPoint) => {
     setActiveLoopPoints('cut:place point', (prev) => [...prev, point]);
     setStatus('drawing');
@@ -1273,6 +1323,19 @@ export function useOrganicCutSession({
             plane: plane
               ? { normal: [plane.normal.x, plane.normal.y, plane.normal.z] as [number, number, number], offset: plane.offset }
               : undefined,
+            // The key rides on the spec-level fields: a flat cut is single-loop, so
+            // there is no `loopKeys` array to align with. Rust frames it on the
+            // plane's own cross-section.
+            generateKey: ps.generateKey,
+            keyWidthMm: ps.keyWidthMm,
+            keyDepthMm: ps.keyDepthMm,
+            keyShape: ps.keyShape,
+            keyFilletMm: ps.keyFilletMm,
+            keyToleranceMm: ps.keyToleranceMm,
+            keySwapSides: ps.keySwapSides,
+            keyTiltRad: ps.keyTiltRad,
+            keyTiltAzimuthRad: ps.keyTiltAzimuthRad,
+            keyRollRad: ps.keyRollRad,
           };
         }
         const result = await cutFromCapturedSource({ cut: cutSpec });

@@ -272,6 +272,27 @@ pub fn frame_from_membrane(membrane: &Membrane) -> Option<KeyFrame> {
     Some(KeyFrame { anchor, axis, u, v, cut_area })
 }
 
+/// The key frame for a FLAT cut: the plane's own normal, anchored at the centroid
+/// of the cross-section the plane carves through the body.
+///
+/// The contour cut derives its frame from the membrane it built; a plane cut has
+/// no membrane, and the loop's waypoints only sample the surface where the user
+/// happened to click — their centroid is not the middle of the cut face. The real
+/// section is, so we measure it (see [`crate::membrane::plane_section`]).
+pub fn frame_from_plane(mesh: &IndexedMesh, normal: Vec3, offset: f32) -> Option<KeyFrame> {
+    let nlen = normal.length();
+    if nlen < 1e-9 {
+        return None;
+    }
+    let axis = normal.scale(1.0 / nlen);
+    let (u, v) = orthonormal_basis(axis);
+    let section = crate::membrane::plane_section(mesh, axis, offset / nlen, u, v)?;
+    if !(section.area > 1e-9) {
+        return None;
+    }
+    Some(KeyFrame { anchor: section.centroid, axis, u, v, cut_area: section.area })
+}
+
 /// Build an orthonormal `(u, v)` pair spanning the plane perpendicular to `axis`.
 /// Stable: seeds from whichever world axis is least aligned with `axis`. Purely
 /// cosmetic for the key (peg & socket share it), so any stable choice is fine.
@@ -863,10 +884,6 @@ pub fn apply_key(
     tolerance: f32,
     kerf_mm: f32,
 ) -> KeyOutcome {
-    let tolerance = sanitize_tolerance(tolerance);
-    // Half the cutter thickness — how far each half's cut face sits from the
-    // membrane the key is framed on. See `sink_frame_into_part_a`.
-    let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
     let frame0 = match frame_from_membrane(membrane) {
         Some(f) => f,
         None => {
@@ -879,6 +896,34 @@ pub fn apply_key(
             };
         }
     };
+    apply_key_at_frame(
+        model, part_a, part_b, frame0, shape, swap_sides, tilt, width_mm, depth_mm, fillet_mm,
+        tolerance, kerf_mm,
+    )
+}
+
+/// [`apply_key`] with the placement frame supplied directly, for cuts that have no
+/// membrane to derive it from — the flat plane cut, which frames the key on the
+/// plane itself (see [`frame_from_plane`]).
+#[allow(clippy::too_many_arguments)]
+pub fn apply_key_at_frame(
+    model: &IndexedMesh,
+    part_a: IndexedMesh,
+    part_b: IndexedMesh,
+    frame0: KeyFrame,
+    shape: KeyShape,
+    swap_sides: bool,
+    tilt: KeyTilt,
+    width_mm: f32,
+    depth_mm: f32,
+    fillet_mm: f32,
+    tolerance: f32,
+    kerf_mm: f32,
+) -> KeyOutcome {
+    let tolerance = sanitize_tolerance(tolerance);
+    // Half the cutter thickness — how far each half's cut face sits from the
+    // membrane the key is framed on. See `sink_frame_into_part_a`.
+    let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
 
     // Flip which half gets the peg vs the socket. By default the peg roots in
     // part_a (the membrane's +normal side) and protrudes into part_b's socket. To
@@ -984,9 +1029,6 @@ pub fn build_key_preview_soup(
 ) -> Option<(Vec<f32>, KeyKind, String, Option<KeyFrameInfo>)> {
     use crate::membrane::{build_membrane_full, CONTOUR_SUBDIVISIONS, DEFAULT_GRID_DIVISIONS};
 
-    let tolerance = sanitize_tolerance(tolerance);
-    let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
-
     let grid = DEFAULT_GRID_DIVISIONS * (density.clamp(1.0, 4.0) as f64);
     let membrane =
         build_membrane_full(loop_pts, CONTOUR_SUBDIVISIONS, membrane_smoothing, grid)?;
@@ -1001,6 +1043,29 @@ pub fn build_key_preview_soup(
             ))
         }
     };
+    Some(build_key_preview_at_frame(
+        model, frame, shape, swap_sides, tilt, width_mm, depth_mm, fillet_mm, tolerance, kerf_mm,
+    ))
+}
+
+/// [`build_key_preview_soup`] with the frame supplied, for the flat plane cut —
+/// which frames its key on the plane instead of on a membrane. Same ladder, same
+/// build, so the plane preview is as truthful as the contour one.
+#[allow(clippy::too_many_arguments)]
+pub fn build_key_preview_at_frame(
+    model: &IndexedMesh,
+    frame: KeyFrame,
+    shape: KeyShape,
+    swap_sides: bool,
+    tilt: KeyTilt,
+    width_mm: f32,
+    depth_mm: f32,
+    fillet_mm: f32,
+    tolerance: f32,
+    kerf_mm: f32,
+) -> (Vec<f32>, KeyKind, String, Option<KeyFrameInfo>) {
+    let tolerance = sanitize_tolerance(tolerance);
+    let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
 
     // At preview time the body isn't split yet; probe clearance against the whole
     // model on both sides (its walls are the same walls the halves will have).
@@ -1049,7 +1114,7 @@ pub fn build_key_preview_soup(
     // mounts the rotation gizmo at the anchor oriented to this frame, and converts
     // gizmo rotations into tilt/azimuth/roll. `tip` is the leaned apex (model-local).
     let info = build_key_frame_info(&placed, &build_frame, &plan, lean);
-    Some((soup, kind, detail, info))
+    (soup, kind, detail, info)
 }
 
 /// Placement-frame info handed to the frontend so the aim/roll gizmo sits exactly

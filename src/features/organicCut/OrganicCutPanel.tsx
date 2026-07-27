@@ -535,9 +535,9 @@ export function OrganicCutPanel({
           )}
 
           {/* Registration key: peg + socket so the two halves index together.
-              Contour-only (the flat plane cut has no key support yet). */}
-          {isContour && (
-            <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
+              Both cut modes: the contour cut frames it on the membrane, the flat
+              cut on the plane's own cross-section. */}
+          <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
               <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -820,8 +820,6 @@ export function OrganicCutPanel({
                 </div>
               )}
             </div>
-          )}
-
           {/* Multi-loop cut (contour only): a list of loops, each editable. Switch
               between them to adjust any one; Cut severs them all at once. This is
               how you free a part connected in several places — e.g. a tail joined

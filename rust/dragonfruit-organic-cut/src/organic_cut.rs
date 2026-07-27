@@ -779,6 +779,45 @@ fn organic_cut_plane(
         ));
     }
 
+    // Registration key, same as the contour cut — the frame comes from the plane
+    // and the section it carves instead of from a membrane, and there is no kerf
+    // to span (`split_by_plane` is a zero-thickness split, both halves meet ON the
+    // plane). A key that doesn't fit never fails the cut.
+    let rk = resolve_loop_key(&options.cut, 0);
+    let mut key_kind = crate::key::KeyKind::None;
+    let mut key_detail = String::new();
+    let (part_a, part_b) = if rk.generate {
+        match crate::key::frame_from_plane(mesh, plane.normal, plane.offset) {
+            Some(frame) => {
+                // `split_by_plane` hands back (+normal side, −normal side), and the
+                // key's frame axis IS that +normal — so `first` is part_a already.
+                let keyed = crate::key::apply_key_at_frame(
+                    mesh,
+                    part_a,
+                    part_b,
+                    frame,
+                    rk.shape,
+                    rk.swap,
+                    rk.tilt,
+                    rk.width,
+                    rk.depth,
+                    rk.fillet,
+                    rk.tolerance,
+                    0.0,
+                );
+                key_kind = keyed.kind;
+                key_detail = keyed.detail;
+                (keyed.part_a, keyed.part_b)
+            }
+            None => {
+                key_detail = "No key — the plane carves no usable cross-section.".to_string();
+                (part_a, part_b)
+            }
+        }
+    } else {
+        (part_a, part_b)
+    };
+
     let parts = vec![part_a, part_b];
     let report = OrganicCutReport {
         source_triangle_count,
@@ -786,8 +825,8 @@ fn organic_cut_plane(
         part_b_triangle_count: parts[1].triangle_count(),
         engine: "plane".to_string(),
         detail: String::new(),
-        key_kind: "none".to_string(),
-        key_detail: String::new(),
+        key_kind: key_kind.as_str().to_string(),
+        key_detail,
         part_count: parts.len(),
     };
     Ok(OrganicCutOutcome { parts, report })
@@ -994,6 +1033,72 @@ mod tests {
         assert_eq!(outcome.report.engine, "membrane", "should use the membrane engine");
         assert!(outcome.parts[0].triangle_count() > 0, "part A empty");
         assert!(outcome.parts[1].triangle_count() > 0, "part B empty");
+    }
+
+    // The plane section is what the flat cut anchors its key on, so it has to be
+    // right: through the middle of a cube it is the full square face, centred.
+    #[cfg(feature = "manifold")]
+    #[test]
+    fn plane_section_measures_the_cut_face() {
+        let size = 30.0_f32;
+        let mesh = IndexedMesh::from_triangle_soup(&cube_soup(size), 1e-6);
+        let section = crate::membrane::plane_section(
+            &mesh,
+            Vec3::new(0.0, 0.0, 1.0),
+            12.0,
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        )
+        .expect("the plane crosses the cube");
+        assert!(
+            (section.area - size * size).abs() < 1e-2,
+            "full square face: {} vs {}",
+            section.area,
+            size * size,
+        );
+        for (got, want) in [(section.centroid.x, 15.0), (section.centroid.y, 15.0), (section.centroid.z, 12.0)] {
+            assert!((got - want).abs() < 1e-3, "centroid on the plane's middle: {got} vs {want}");
+        }
+    }
+
+    // A flat cut used to return `key_kind: "none"` unconditionally — the key was
+    // wired to the contour path only. It now keys off the plane's own section.
+    #[cfg(feature = "manifold")]
+    #[test]
+    fn plane_cut_places_a_key() {
+        let size = 30.0_f32;
+        let mesh = IndexedMesh::from_triangle_soup(&cube_soup(size), 1e-6);
+        let options = OrganicCutOptions {
+            cut: OrganicCutSpec {
+                loop_points: loop_on_plane_z(size * 0.5, size),
+                mode: CutMode::Plane,
+                generate_key: true,
+                key_width_mm: 5.0,
+                key_depth_mm: 5.0,
+                key_tolerance_mm: 0.1,
+                ..Default::default()
+            },
+        };
+        let plain = organic_cut(mesh.clone(), &OrganicCutOptions {
+            cut: OrganicCutSpec {
+                loop_points: loop_on_plane_z(size * 0.5, size),
+                mode: CutMode::Plane,
+                ..Default::default()
+            },
+        });
+        let keyed = organic_cut(mesh, &options);
+        assert_eq!(keyed.report.engine, "plane", "still the plane engine");
+        assert_eq!(keyed.report.key_kind, "frustum", "key placed: {}", keyed.report.key_detail);
+        // The peg is union'd onto one half and carved out of the other, so both
+        // halves gain geometry over the same cut without a key.
+        assert!(
+            keyed.parts[0].triangle_count() > plain.parts[0].triangle_count(),
+            "part A gained the peg",
+        );
+        assert!(
+            keyed.parts[1].triangle_count() > plain.parts[1].triangle_count(),
+            "part B gained the socket",
+        );
     }
 
     #[cfg(feature = "manifold")]

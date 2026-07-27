@@ -1185,6 +1185,105 @@ pub fn closest_on_tri(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> (Vec3, f32) {
     (q, p.sub(q).dot(p.sub(q)))
 }
 
+/// Area and centroid of the cross-section a plane carves through a closed mesh.
+#[derive(Debug, Clone, Copy)]
+pub struct PlaneSection {
+    /// Total area of the section (mm²) — several disjoint faces are summed.
+    pub area: f32,
+    /// Area centroid of the section, ON the plane.
+    pub centroid: Vec3,
+}
+
+/// Measure the cross-section of `mesh` at the plane `dot(normal, p) == offset`.
+///
+/// Walks the triangles that straddle the plane and accumulates the shoelace terms
+/// of each crossing segment in the plane's own `(u, v)` basis. Chaining the
+/// segments into closed rings is deliberately skipped: on a closed mesh the
+/// segments already form those rings, and both area and centroid are sums over
+/// them, so the totals come out the same without the fragile chaining step (which
+/// is what breaks on a mesh with a T-vertex or a near-tangent triangle).
+///
+/// Segments are oriented by `normal × face_normal`, which is consistent across the
+/// whole section, so disjoint faces (a plane through both legs of a figure) add
+/// rather than cancel. Returns `None` when the plane misses the body or only
+/// grazes it.
+///
+/// Note the centroid is the section's AREA centroid, which on a non-convex section
+/// (a C, or two separate legs) can land in air. Callers that need a point inside
+/// the material must check — here, the key's clearance probe does it for free: it
+/// finds no material and the fit ladder reports the part too thin for a key.
+pub fn plane_section(mesh: &IndexedMesh, normal: Vec3, offset: f32, u: Vec3, v: Vec3) -> Option<PlaneSection> {
+    let nlen = normal.length();
+    if nlen < 1e-9 {
+        return None;
+    }
+    let n = normal.scale(1.0 / nlen);
+    let offset = offset / nlen;
+
+    // Shoelace accumulators, in plane coords: 2×signed area, and 6×area×centroid.
+    let (mut a2, mut cx6, mut cy6) = (0.0f64, 0.0f64, 0.0f64);
+    let mut crossed = false;
+
+    for t in &mesh.triangles {
+        let p = [
+            mesh.positions[t[0] as usize],
+            mesh.positions[t[1] as usize],
+            mesh.positions[t[2] as usize],
+        ];
+        let d = [
+            p[0].dot(n) - offset,
+            p[1].dot(n) - offset,
+            p[2].dot(n) - offset,
+        ];
+        // Collect where each edge crosses. A vertex exactly on the plane is taken
+        // as belonging to the positive side, so a shared edge is counted once.
+        let mut hits: Vec<Vec3> = Vec::with_capacity(2);
+        for i in 0..3 {
+            let j = (i + 1) % 3;
+            let (di, dj) = (d[i], d[j]);
+            if (di < 0.0) == (dj < 0.0) {
+                continue;
+            }
+            let denom = di - dj;
+            if denom.abs() < 1e-12 {
+                continue;
+            }
+            let s = di / denom;
+            hits.push(p[i].add(p[j].sub(p[i]).scale(s)));
+        }
+        if hits.len() != 2 {
+            continue;
+        }
+        crossed = true;
+
+        // Orient the segment consistently: along normal × face_normal.
+        let face_n = p[1].sub(p[0]).cross(p[2].sub(p[0]));
+        let dir = n.cross(face_n);
+        let (s0, s1) = if hits[1].sub(hits[0]).dot(dir) >= 0.0 {
+            (hits[0], hits[1])
+        } else {
+            (hits[1], hits[0])
+        };
+
+        let (x0, y0) = (s0.dot(u) as f64, s0.dot(v) as f64);
+        let (x1, y1) = (s1.dot(u) as f64, s1.dot(v) as f64);
+        let cross = x0 * y1 - x1 * y0;
+        a2 += cross;
+        cx6 += (x0 + x1) * cross;
+        cy6 += (y0 + y1) * cross;
+    }
+
+    if !crossed || a2.abs() < 1e-9 {
+        return None;
+    }
+    let area = (a2 * 0.5).abs() as f32;
+    let cx = (cx6 / (3.0 * a2)) as f32;
+    let cy = (cy6 / (3.0 * a2)) as f32;
+    // Back to model space: the in-plane point plus the plane's own offset.
+    let centroid = u.scale(cx).add(v.scale(cy)).add(n.scale(offset));
+    Some(PlaneSection { area, centroid })
+}
+
 /// Centroid of a mesh's vertices (cheap proxy for "where is this island").
 fn mesh_centroid(mesh: &IndexedMesh) -> Vec3 {
     if mesh.positions.is_empty() {

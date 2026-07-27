@@ -350,6 +350,71 @@ export async function computeMembranePreview(
   }
 }
 
+/**
+ * Preview the key a FLAT cut would place, framed on the cut plane.
+ *
+ * The membrane preview above is contour-only — it builds a membrane from the loop
+ * and frames the key on it. A flat cut has no membrane, so this hands Rust the
+ * plane the preview drew and lets it frame the key on the cross-section that plane
+ * carves. Returns the same shape, with a null membrane.
+ */
+export async function computePlaneKeyPreview(
+  planeNormal: [number, number, number],
+  planeOffset: number,
+  generateKey: boolean,
+  keyWidthMm = 2.0,
+  keyDepthMm = 2.5,
+  keyShape: 'frustum' | 'dome' = 'frustum',
+  keyFilletMm = 0.0,
+  keyToleranceMm = 0.1,
+  keySwapSides = false,
+): Promise<MembranePreviewResult> {
+  const empty: MembranePreviewResult = {
+    membrane: null,
+    keyPreview: null,
+    keyKind: 'none',
+    keyDetail: '',
+    keyFrame: null,
+  };
+  const core = await loadTauriCore();
+  if (!core) return empty;
+
+  const requestJson = JSON.stringify({
+    planeNormal,
+    planeOffset,
+    generateKey,
+    keyWidthMm,
+    keyDepthMm,
+    keyShape,
+    keyFilletMm,
+    keyToleranceMm,
+    keySwapSides,
+  });
+  try {
+    const reportJson = await core.invoke<string>('mesh_organic_cut_plane_key_preview', { requestJson });
+    const report = JSON.parse(reportJson) as {
+      keyTriangleCount?: number;
+      keyKind?: KeyPreviewKind;
+      keyDetail?: string;
+      keyFrame?: KeyPreviewFrame | null;
+    };
+    const keyPreview = report.keyTriangleCount
+      ? await readPositionsFromCommand(core.invoke, 'mesh_organic_cut_read_key')
+      : null;
+    return {
+      membrane: null,
+      keyPreview,
+      keyKind: report.keyKind ?? 'none',
+      keyDetail: report.keyDetail ?? '',
+      keyFrame: report.keyFrame ?? null,
+    };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[organicCut] plane key preview command failed', err);
+    return empty;
+  }
+}
+
 /** Builds a position-only BufferGeometry from a returned triangle-soup part. */
 export function partToGeometry(part: Float32Array): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();

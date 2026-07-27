@@ -3371,6 +3371,7 @@ fn main() {
             mesh_repair::mesh_organic_cut_geodesic_loop_bytes,
             mesh_repair::mesh_organic_cut_read_geodesic,
             mesh_repair::mesh_organic_cut_membrane_preview,
+            mesh_repair::mesh_organic_cut_plane_key_preview,
             mesh_repair::mesh_organic_cut_read_membrane,
             mesh_repair::mesh_organic_cut_read_key,
             mesh_repair::mesh_repair_read_positions,
