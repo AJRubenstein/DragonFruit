@@ -3,7 +3,7 @@ import { Loader2, RotateCcw } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 import type { OrganicCutMode, OrganicCutSessionStatus } from './types';
-import { DEFAULT_KEY_SETTINGS } from './useOrganicCutSession';
+import { DEFAULT_CUT_SETTINGS, DEFAULT_KEY_SETTINGS } from './useOrganicCutSession';
 
 /** Key width/depth bounds (mm) — shared by the fields and the uniform-scale lock. */
 const KEY_DIM_MAX_MM = 20;
@@ -117,6 +117,41 @@ export interface OrganicCutPanelState {
   showPreview: boolean;
 }
 
+/**
+ * The small square reset in a card's top-right corner — same affordance the
+ * Hotkeys tab uses per card, so "this card's settings, back to default" reads the
+ * same everywhere. Disabled (and dimmed) while nothing differs from the default.
+ */
+function CardResetButton({
+  onClick,
+  disabled,
+  title,
+  ariaLabel,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  title: string;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={ariaLabel}
+      className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors hover:brightness-125 disabled:cursor-default disabled:opacity-40"
+      style={{
+        borderColor: 'color-mix(in srgb, var(--success), transparent 55%)',
+        background: 'color-mix(in srgb, var(--success), transparent 88%)',
+        color: 'var(--success)',
+      }}
+    >
+      <RotateCcw className="h-3 w-3" />
+    </button>
+  );
+}
+
 interface OrganicCutPanelProps {
   state: OrganicCutPanelState;
   onStateChange: (next: OrganicCutPanelState) => void;
@@ -214,6 +249,13 @@ export function OrganicCutPanel({
   // proportion is preserved (resize as a unit). Unlocked → set just that axis.
   const keyDimMinMm = state.keyShape === 'dome' ? DOME_MIN_WIDTH_MM : FRUSTUM_MIN_WIDTH_MM;
   const keyFilletMaxMm = maxKeyFilletMm(state.keyWidthMm, state.keyDepthMm);
+
+  // Is there anything for each card's reset to undo? Derived from the defaults
+  // rather than listed by hand, so a setting added later is covered on its own.
+  const keySettingsDirty = (Object.keys(DEFAULT_KEY_SETTINGS) as (keyof typeof DEFAULT_KEY_SETTINGS)[])
+    .some((k) => k !== 'generateKey' && state[k] !== DEFAULT_KEY_SETTINGS[k]);
+  const cutSettingsDirty = (Object.keys(DEFAULT_CUT_SETTINGS) as (keyof typeof DEFAULT_CUT_SETTINGS)[])
+    .some((k) => state[k] !== DEFAULT_CUT_SETTINGS[k]);
 
   // Set the frustum's Width or Depth. Shrinking either lowers the fillet ceiling,
   // so the stored radius comes down with it — otherwise it stays parked above the
@@ -331,6 +373,19 @@ export function OrganicCutPanel({
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Cut Tool</h3>
           </>
         )}
+        right={expanded ? (
+          // The cut's OWN settings — mode, kerf, both smoothings, resolution. It
+          // sits in the tool header rather than on a card because those settings
+          // are spread over several cards; the drawn loops and the key are left
+          // alone (the key card has its own reset, and losing a seam to a stray
+          // click on a reset button would be a cruel way to find this button).
+          <CardResetButton
+            onClick={() => setState({ ...DEFAULT_CUT_SETTINGS })}
+            disabled={disabled || isApplying || !cutSettingsDirty}
+            title="Put the cut settings back to their defaults: cut mode, thickness, both smoothings and resolution. Your drawn loops and key settings are untouched."
+            ariaLabel="Reset cut settings to defaults"
+          />
+        ) : null}
       />
 
       {expanded && (
@@ -511,27 +566,12 @@ export function OrganicCutPanel({
               {/* Card reset, top-right: puts every key setting back to default but
                   leaves the Generate Key toggle alone (resetting the settings
                   shouldn't switch the feature off under the user). */}
-              {(() => {
-                const dirty = (Object.keys(DEFAULT_KEY_SETTINGS) as (keyof typeof DEFAULT_KEY_SETTINGS)[])
-                  .some((k) => k !== 'generateKey' && state[k] !== DEFAULT_KEY_SETTINGS[k]);
-                return (
-                  <button
-                    type="button"
-                    onClick={() => setState({ ...DEFAULT_KEY_SETTINGS, generateKey: state.generateKey })}
-                    disabled={disabled || isApplying || !dirty}
-                    title="Put every key setting back to its default: shape, width, depth, fillet, fit tolerance, uniform scale, side and aim."
-                    aria-label="Reset key settings to defaults"
-                    className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors hover:brightness-125 disabled:cursor-default disabled:opacity-40"
-                    style={{
-                      borderColor: 'color-mix(in srgb, var(--success), transparent 55%)',
-                      background: 'color-mix(in srgb, var(--success), transparent 88%)',
-                      color: 'var(--success)',
-                    }}
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                  </button>
-                );
-              })()}
+              <CardResetButton
+                onClick={() => setState({ ...DEFAULT_KEY_SETTINGS, generateKey: state.generateKey })}
+                disabled={disabled || isApplying || !keySettingsDirty}
+                title="Put every key setting back to its default: shape, width, depth, fillet, fit tolerance, uniform scale, side and aim."
+                ariaLabel="Reset key settings to defaults"
+              />
               </div>
 
               {/* Key shape + size. Shape picks frustum (tapered box, locks

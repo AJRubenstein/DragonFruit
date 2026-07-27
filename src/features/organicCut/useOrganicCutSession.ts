@@ -406,6 +406,9 @@ const DEFAULT_LOOP_KEY: LoopKeySettings = extractKey(DEFAULT_PANEL_STATE);
 /** The key's factory settings, so the panel's Reset doesn't restate them. */
 export const DEFAULT_KEY_SETTINGS: LoopKeySettings = DEFAULT_LOOP_KEY;
 
+/** The cut's factory settings (mode, kerf, smoothing, resolution) — same idea. */
+export const DEFAULT_CUT_SETTINGS: CutSettings = extractSettings(DEFAULT_PANEL_STATE);
+
 export function useOrganicCutSession({
   toolActive,
   activeGeometry,
