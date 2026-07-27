@@ -244,7 +244,7 @@ export function OrganicCutKeyGizmo({
       // The cap is the part's, not a constant: a key with a wall right next to it
       // stops leaning sooner, and one in open material goes the full 60°.
       const cap = Math.min(keyFrame?.maxTiltRad ?? KEY_MAX_TILT_RAD, KEY_MAX_TILT_RAD);
-      const tilt = Math.max(-cap, Math.min(cap, keyTiltRad + delta));
+      const tilt = Math.max(-cap, Math.min(cap, keyTiltRad - delta));
       onKeyAimChange(tilt, leanAzimuthFor(keyRollRad), keyRollRad);
     },
     [onKeyAimChange, keyTiltRad, keyRollRad, keyFrame],

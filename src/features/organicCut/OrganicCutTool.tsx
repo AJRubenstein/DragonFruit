@@ -519,6 +519,7 @@ export function OrganicCutTool({
       q.premultiply(new THREE.Quaternion().setFromAxisAngle(buildAxis, roll));
     }
     let sink = 0;
+    let lateral: THREE.Vector3 | null = null;
     if (Math.abs(tilt) >= 1e-6) {
       // leanWorld = cos(az)·uN + sin(az)·vN (in the ORIGINAL/natural tangent plane).
       const leanWorld = uN.clone().multiplyScalar(Math.cos(keyTiltAzimuthRad))
@@ -537,6 +538,13 @@ export function OrganicCutTool({
         // uses, with the real footprint it reports (the old `depth × 0.9` guess put
         // the previewed key at a different depth than the cut placed it).
         sink = (keyFrame.halfDiagMm ?? keyFrame.depth * 0.9) * Math.sin(Math.abs(tilt));
+        // Slide back in-plane so the axis still passes through the anchor, matching
+        // LeanXform's shift: this matrix pivots on the anchor (not on Rust's sunk
+        // build origin), so here it is the sink alone that walks the key sideways.
+        lateral = leanWorld
+          .clone()
+          .multiplyScalar((-sink * Math.tan(tilt)) / len)
+          .projectOnPlane(buildAxis);
       }
     }
 
@@ -562,6 +570,7 @@ export function OrganicCutTool({
       0, 0, 0, 1,
     );
     const sinkV = buildAxis.clone().multiplyScalar(-sink);
+    if (lateral) sinkV.add(lateral);
     const sinkM = new THREE.Matrix4().makeTranslation(sinkV.x, sinkV.y, sinkV.z);
     const back = new THREE.Matrix4().makeTranslation(anchor.x, anchor.y, anchor.z);
     return back.multiply(sinkM).multiply(rot).multiply(stretchM).multiply(toOrigin);

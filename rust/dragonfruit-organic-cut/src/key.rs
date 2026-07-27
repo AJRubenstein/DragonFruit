@@ -497,6 +497,11 @@ struct LeanXform {
     /// Axial sink (mm, along −z) applied AFTER the rotation so the tilted base stays
     /// buried below the cut plane. 0 when not leaning.
     sink: f32,
+    /// In-plane shift (mm, local u/v) that puts the key's axis back through the
+    /// ANCHOR — the point on the membrane where the crosshair sits. See
+    /// [`LeanXform::for_build`]. 0 when not leaning.
+    shift_u: f32,
+    shift_v: f32,
     identity: bool,
 }
 
@@ -507,6 +512,8 @@ impl LeanXform {
         k_u: 1.0,
         k_v: 0.0,
         sink: 0.0,
+        shift_u: 0.0,
+        shift_v: 0.0,
         identity: true,
     };
 
@@ -521,6 +528,7 @@ impl LeanXform {
         tilt: &KeyTilt,
         half_diag: f32,
         max_tilt: f32,
+        half_kerf: f32,
     ) -> LeanXform {
         let leaning = tilt.tilt.abs() >= 1e-6;
         let rolling = tilt.roll.abs() >= 1e-6;
@@ -552,12 +560,25 @@ impl LeanXform {
         // by that much (plus a hair) so even the highest base corner stays below the
         // cut plane → the union bonds along a fully embedded base.
         let sink = half_diag.max(0.0) * tilt_used.abs().sin();
+        // Put the axis back through the anchor.
+        //
+        // The key is built on a frame whose origin sits half a kerf BELOW the
+        // membrane, and the sink above pushes it deeper still — so rotating about
+        // that origin slid the key's cross-section at the membrane sideways by
+        // (half_kerf + sink)·tan(tilt), while the crosshair (which marks the
+        // anchor) stayed put. At a real lean the section walked out from under the
+        // crosshair and nearly off the key. Shifting back by that much makes the
+        // lean pivot where the user sees it pivot: on the membrane.
+        let along = if len > 1e-9 { (lu / len, lv / len) } else { (0.0, 0.0) };
+        let lat = (half_kerf.max(0.0) + sink) * tilt_used.tan();
         LeanXform {
             tilt: tilt_used,
             roll: tilt.roll,
             k_u,
             k_v,
             sink,
+            shift_u: -lat * along.0,
+            shift_v: -lat * along.1,
             identity: false,
         }
     }
@@ -604,8 +625,9 @@ impl LeanXform {
         } else {
             (px, py, z)
         };
-        // 3) Sink along −z so the tilted base stays buried.
-        (lx, ly, lz - self.sink)
+        // 3) Sink along −z so the tilted base stays buried, and slide in-plane so
+        // the axis still passes through the anchor.
+        (lx + self.shift_u, ly + self.shift_v, lz - self.sink)
     }
 }
 
@@ -1248,7 +1270,7 @@ pub fn build_key_preview_at_frame(
         KeyPlan::None { .. } => 0.0,
     };
     let max_tilt = max_tilt_for(&clearance, &plan, tolerance);
-    let lean = LeanXform::for_build(&orig_for_lean, &build_frame, &tilt, half_diag, max_tilt);
+    let lean = LeanXform::for_build(&orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
     // Leaning lengthens the trunk instead of eating it (see `stretch_depth`).
     let plan = stretch_plan_for_lean(plan, &lean);
 
@@ -1405,7 +1427,7 @@ fn apply_frustum(
     // The lean's sink depends on the base half-diagonal so the tilted base stays
     // buried. Use the SOCKET's footprint (slightly larger) so both share one sink.
     let half_diag = 0.5 * ((dims.width).hypot(dims.length)) + tolerance;
-    let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag, max_tilt);
+    let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
     // Leaning lengthens the trunk instead of eating it (see `stretch_depth`).
     let dims = FrustumDims { depth: lean.stretch_depth(dims.depth), ..dims };
     let peg_mesh = build_frustum_leaned(&build_frame, dims, 0.0, fillet, lean);
@@ -1741,7 +1763,7 @@ fn apply_dome(
     // bulge keeps its shape and is sunk so the tilted mouth disk stays buried. Peg +
     // socket share the SAME rigid lean, so the dilated socket contains the leaned peg.
     let half_diag = dims.half_w.max(dims.half_l) + tolerance;
-    let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag, max_tilt);
+    let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
     // Leaning lengthens the bulge instead of eating it (see `stretch_depth`).
     let dims = DomeDims { depth: lean.stretch_depth(dims.depth), ..dims };
     let peg_mesh =
@@ -2400,7 +2422,7 @@ mod tests {
         let half_diag = 0.5 * dims.width.hypot(dims.length);
         let tilt = KeyTilt::new(std::f32::consts::FRAC_PI_4, 0.0, 0.0); // 45° lean
         let orig = frame_from_membrane(&mem).expect("frame");
-        let lean = LeanXform::for_build(&orig, &frame, &tilt, half_diag, KEY_MAX_TILT_RAD);
+        let lean = LeanXform::for_build(&orig, &frame, &tilt, half_diag, KEY_MAX_TILT_RAD, 0.0);
 
         let _ = build_frustum_leaned(&frame, dims, 0.0, 0.0, lean); // builds watertight
         // The base footprint must stay buried below the cut plane: transform each base
@@ -2419,15 +2441,47 @@ mod tests {
             max_base_height <= 0.01,
             "tilted base stays buried below the cut plane (highest base z = {max_base_height})"
         );
-        // Tip: the apex leans laterally by a large fraction of depth.
+        // Tip: the apex leans over at the angle asked for. Measured from the ANCHOR
+        // (the point on the membrane the key pivots about), not from the sunk base
+        // — at 45° the tip stands as far sideways as it stands proud.
         let (tx, ty, tz) = lean.apply(0.0, 0.0, dims.depth);
         let lateral = (tx * tx + ty * ty).sqrt();
+        assert!(lateral > 0.1, "the tip actually leans (lateral {lateral} mm)");
         assert!(
-            lateral > dims.depth * 0.5,
-            "tip leans over (lateral {lateral} mm at 45°, depth {})",
-            dims.depth
+            (lateral - tz).abs() < 0.05,
+            "at 45° the tip leans one to one: lateral {lateral} mm vs height {tz} mm",
         );
-        let _ = tz;
+    }
+
+    // Test 11a1: the key's axis goes through the ANCHOR at any lean.
+    //
+    // It used to pivot about the build frame's origin, which sits half a kerf below
+    // the membrane and sinks further as the lean grows — so the key's section at the
+    // membrane slid out from under the crosshair that marks the anchor, nearly
+    // leaving the key at a big lean.
+    #[test]
+    fn the_lean_pivots_on_the_anchor_not_the_sunk_base() {
+        let mem = flat_membrane(10.0);
+        let frame =
+            frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
+        let orig = frame_from_membrane(&mem).expect("frame");
+        let half_kerf = 0.25;
+        for deg in [10.0f32, 30.0, 55.0, -40.0] {
+            let tilt = KeyTilt::new(deg.to_radians(), 0.7, 0.0);
+            let lean =
+                LeanXform::for_build(&orig, &frame, &tilt, 4.0, KEY_MAX_TILT_RAD, half_kerf);
+            // Two points on the un-leaned axis → the leaned axis. Where does it cross
+            // the membrane (local z = half_kerf above the build origin)?
+            let (ax, ay, az) = lean.apply(0.0, 0.0, 0.0);
+            let (bx, by, bz) = lean.apply(0.0, 0.0, 10.0);
+            let t = (half_kerf - az) / (bz - az);
+            let (cx, cy) = (ax + t * (bx - ax), ay + t * (by - ay));
+            let off = (cx * cx + cy * cy).sqrt();
+            assert!(
+                off < 1e-3,
+                "at {deg}° the axis still crosses the membrane on the anchor (off by {off} mm)",
+            );
+        }
     }
 
     // Test 11a2: the lean is a RIGID rotation — pairwise distances between any two
@@ -2440,7 +2494,7 @@ mod tests {
         let dims = FrustumDims::from_width_depth(5.0, 6.0);
         let orig = frame_from_membrane(&mem).expect("frame");
         let tilt = KeyTilt::new(40.0_f32.to_radians(), 0.9, 0.4);
-        let lean = LeanXform::for_build(&orig, &frame, &tilt, 4.0, KEY_MAX_TILT_RAD);
+        let lean = LeanXform::for_build(&orig, &frame, &tilt, 4.0, KEY_MAX_TILT_RAD, 0.0);
         // Any two points: their distance must be the same before and after the lean
         // (a rigid rotation + uniform sink preserves all lengths).
         let a = (2.0f32, 1.0f32, dims.depth * 0.3);
@@ -2474,7 +2528,7 @@ mod tests {
         ] {
             let tilt = KeyTilt::new(deg.to_radians(), az, roll);
             let dims = FrustumDims::from_width_depth(5.0, 5.0);
-            let lean = LeanXform::for_build(&orig, &frame, &tilt, dims.depth, KEY_MAX_TILT_RAD);
+            let lean = LeanXform::for_build(&orig, &frame, &tilt, dims.depth, KEY_MAX_TILT_RAD, 0.0);
             let peg = build_frustum_leaned(&frame, dims, 0.0, fillet, lean);
             // Match apply_frustum: when leaning, socket uses the SAME fillet as the
             // peg (dilated extents) so peg/socket share z-levels and nest per slab.
@@ -2502,7 +2556,7 @@ mod tests {
         let frame =
             frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
         let orig = frame_from_membrane(&mem).expect("frame");
-        let lean = LeanXform::for_build(&orig, &frame, &KeyTilt::default(), 5.0, KEY_MAX_TILT_RAD);
+        let lean = LeanXform::for_build(&orig, &frame, &KeyTilt::default(), 5.0, KEY_MAX_TILT_RAD, 0.0);
         assert!(lean.identity, "zero tilt + zero roll → identity lean");
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
         let plain = build_frustum(&frame, dims, 0.0, 0.4);
