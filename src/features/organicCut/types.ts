@@ -154,6 +154,13 @@ export interface OrganicCutSpec {
  * key roots against; `u`/`v` are the in-plane basis; `tip` is the leaned apex where
  * the aim handle is drawn; `depth` is the peg height (for handle scaling).
  */
+/**
+ * Hard ceiling on the key's lean (radians), mirroring Rust's `KEY_MAX_TILT_RAD`.
+ * Past ~60° the peg skims the cut face and can't realistically socket. The real
+ * cap is usually lower and comes from the part — see `KeyPreviewFrame.maxTiltRad`.
+ */
+export const KEY_MAX_TILT_RAD = Math.PI / 3;
+
 export interface KeyPreviewFrame {
   anchor: [number, number, number];
   axis: [number, number, number];

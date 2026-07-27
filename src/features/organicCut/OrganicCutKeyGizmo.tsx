@@ -7,10 +7,8 @@ import { ScreenSpaceGizmo } from '@/components/gizmo';
 import type { GizmoAxis } from '@/components/gizmo';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { KeyPreviewFrame } from './types';
+import { clampKeyTilt } from './keyLeanTransform';
 import { useOrganicCutColorNumbers } from './useOrganicCutColors';
-
-/** Max key tilt (radians) — mirrors the Rust `KEY_MAX_TILT_RAD` (~60°). */
-const KEY_MAX_TILT_RAD = Math.PI / 3;
 
 /** The key has two rotations, not three: the lean (green ring) and the roll. */
 const LEAN_AND_ROLL_RINGS: GizmoAxis[] = ['y', 'z'];
@@ -243,8 +241,7 @@ export function OrganicCutKeyGizmo({
       // touched here; it belongs to the roll.
       // The cap is the part's, not a constant: a key with a wall right next to it
       // stops leaning sooner, and one in open material goes the full 60°.
-      const cap = Math.min(keyFrame?.maxTiltRad ?? KEY_MAX_TILT_RAD, KEY_MAX_TILT_RAD);
-      const tilt = Math.max(-cap, Math.min(cap, keyTiltRad - delta));
+      const tilt = clampKeyTilt(keyTiltRad - delta, keyFrame);
       onKeyAimChange(tilt, leanAzimuthFor(keyRollRad), keyRollRad);
     },
     [onKeyAimChange, keyTiltRad, keyRollRad, keyFrame],

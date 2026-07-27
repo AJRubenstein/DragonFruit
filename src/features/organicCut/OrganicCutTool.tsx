@@ -6,6 +6,7 @@ import type { ModelTransform } from '@/hooks/useModelTransform';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutMode } from './types';
 import { cutPlaneFromPoints } from './cutPlane';
+import { keyLeanMatrix } from './keyLeanTransform';
 import type { PlaneMeshCurve } from './planeMeshIntersection';
 import { useOrganicCutColorNumbers } from './useOrganicCutColors';
 
@@ -132,9 +133,6 @@ interface OrganicCutToolProps {
    */
   showPreview?: boolean;
 }
-
-/** Max key tilt (radians) — mirrors the Rust `KEY_MAX_TILT_RAD` (~60°). */
-const KEY_MAX_TILT_RAD = Math.PI / 3;
 
 /** Marker radius as a fraction of the model's bbox diagonal (small = precise). */
 const MARKER_RADIUS_FRACTION = 0.00075;
@@ -482,99 +480,14 @@ export function OrganicCutTool({
     return edges;
   }, [socketGeometry]);
 
-  // LIVE key tilt matrix (model-local world space). The key SOUP is built straight
-  // (un-tilted) in Rust, so dragging the aim gizmo never triggers a Rust rebuild —
-  // instead we rotate the key mesh here, instantly. This MUST match the Rust
-  // `LeanXform` EXACTLY so the preview equals the cut.
-  //
-  // CRITICAL: the soup is built in the Rust BUILD frame (`frame_extruding_toward_
-  // part_b`), which is the reported natural frame with the axis NEGATED and u/v
-  // SWAPPED. The lean rotation is computed in that build frame. If we instead
-  // rotated in the natural frame, the lean would be MIRRORED (the build-frame swap
-  // flips handedness). So we reconstruct the build frame here and apply the lean the
-  // same way Rust's LeanXform::for_build does.
-  const keyTiltMatrix = useMemo(() => {
-    if (!keyFrame) return null;
-    const anchor = new THREE.Vector3(...keyFrame.anchor);
-    // Natural ("orig") frame as reported.
-    const axisN = new THREE.Vector3(...keyFrame.axis).normalize();
-    const uN = new THREE.Vector3(...keyFrame.u).normalize();
-    const vN = new THREE.Vector3(...keyFrame.v).normalize();
-    // Build frame = frame_extruding_toward_part_b(natural): negate axis, swap u/v.
-    const buildAxis = axisN.clone().multiplyScalar(-1);
-    const buildU = vN.clone();
-    const buildV = uN.clone();
-
-    // Clamp to what Rust will actually build (the room around the key), so the live
-    // preview can't lean further than the cut does.
-    const cap = Math.min(keyFrame.maxTiltRad ?? KEY_MAX_TILT_RAD, KEY_MAX_TILT_RAD);
-    const tilt = Math.min(Math.abs(keyTiltRad), cap) * Math.sign(keyTiltRad || 1);
-    const roll = keyRollRad;
-    if (Math.abs(tilt) < 1e-6 && Math.abs(roll) < 1e-6) return null;
-
-    // Apply order (matches LeanXform::apply): roll about build +axis, then lean about
-    // the in-plane axis k, composed as q = qLean · qRoll.
-    const q = new THREE.Quaternion();
-    if (Math.abs(roll) >= 1e-6) {
-      q.premultiply(new THREE.Quaternion().setFromAxisAngle(buildAxis, roll));
-    }
-    let sink = 0;
-    let lateral: THREE.Vector3 | null = null;
-    if (Math.abs(tilt) >= 1e-6) {
-      // leanWorld = cos(az)·uN + sin(az)·vN (in the ORIGINAL/natural tangent plane).
-      const leanWorld = uN.clone().multiplyScalar(Math.cos(keyTiltAzimuthRad))
-        .add(vN.clone().multiplyScalar(Math.sin(keyTiltAzimuthRad)));
-      // Project onto the BUILD basis: lu = leanWorld·buildU, lv = leanWorld·buildV.
-      const lu = leanWorld.dot(buildU);
-      const lv = leanWorld.dot(buildV);
-      const len = Math.hypot(lu, lv);
-      if (len > 1e-9) {
-        // k (build-local) = (−lv, lu, 0)/len → world vector via the build basis.
-        const k = buildU.clone().multiplyScalar(-lv / len)
-          .add(buildV.clone().multiplyScalar(lu / len))
-          .normalize();
-        q.premultiply(new THREE.Quaternion().setFromAxisAngle(k, tilt));
-        // Sink so the tilted base stays buried — the same half_diag·sin(tilt) Rust
-        // uses, with the real footprint it reports (the old `depth × 0.9` guess put
-        // the previewed key at a different depth than the cut placed it).
-        sink = (keyFrame.halfDiagMm ?? keyFrame.depth * 0.9) * Math.sin(Math.abs(tilt));
-        // Slide back in-plane so the axis still passes through the anchor, matching
-        // LeanXform's shift: this matrix pivots on the anchor (not on Rust's sunk
-        // build origin), so here it is the sink alone that walks the key sideways.
-        lateral = leanWorld
-          .clone()
-          .multiplyScalar((-sink * Math.tan(tilt)) / len)
-          .projectOnPlane(buildAxis);
-      }
-    }
-
-    // The soup was built STRAIGHT, so it is built to the un-leaned depth. Rust
-    // lengthens the trunk when it leans (LeanXform::stretch_depth) so the key keeps
-    // standing its full depth proud; stretch the preview along the build axis by the
-    // same factor or the previewed key comes out shorter than the one that cuts.
-    const depth = Math.max(keyFrame.depth, 1e-4);
-    const stretch =
-      Math.abs(tilt) < 1e-6 ? 1 : (depth + sink) / (depth * Math.max(Math.cos(Math.abs(tilt)), 0.2));
-
-    // Compose about the anchor: translate to origin, stretch along the axis, rotate,
-    // sink along −buildAxis, translate back. m = back · sink · rot · stretch · toOrigin.
-    const toOrigin = new THREE.Matrix4().makeTranslation(-anchor.x, -anchor.y, -anchor.z);
-    const rot = new THREE.Matrix4().makeRotationFromQuaternion(q);
-    // Scale along ONE direction: I + (f−1)·(a ⊗ a), with a the unit build axis.
-    const g = stretch - 1;
-    const { x: ax, y: ay, z: az } = buildAxis;
-    const stretchM = new THREE.Matrix4().set(
-      1 + g * ax * ax, g * ax * ay, g * ax * az, 0,
-      g * ay * ax, 1 + g * ay * ay, g * ay * az, 0,
-      g * az * ax, g * az * ay, 1 + g * az * az, 0,
-      0, 0, 0, 1,
-    );
-    const sinkV = buildAxis.clone().multiplyScalar(-sink);
-    if (lateral) sinkV.add(lateral);
-    const sinkM = new THREE.Matrix4().makeTranslation(sinkV.x, sinkV.y, sinkV.z);
-    const back = new THREE.Matrix4().makeTranslation(anchor.x, anchor.y, anchor.z);
-    return back.multiply(sinkM).multiply(rot).multiply(stretchM).multiply(toOrigin);
-  }, [keyFrame, keyTiltRad, keyTiltAzimuthRad, keyRollRad]);
+  // LIVE key lean/roll (model-local world space), applied to the straight soup so
+  // dragging the gizmo never round-trips to Rust. The maths is in
+  // `keyLeanTransform` — it has to mirror Rust's LeanXform sign for sign, so it
+  // lives where it can be tested.
+  const keyTiltMatrix = useMemo(
+    () => (keyFrame ? keyLeanMatrix(keyFrame, keyTiltRad, keyTiltAzimuthRad, keyRollRad) : null),
+    [keyFrame, keyTiltRad, keyTiltAzimuthRad, keyRollRad],
+  );
 
   /**
    * Translation that carries the built key (and its outline) to where the handle
