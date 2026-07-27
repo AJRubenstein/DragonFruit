@@ -295,14 +295,56 @@ export function OrganicCutKeyGizmo({
   }, []);
 
   /**
-   * Handle radius in WORLD units. The gizmo is screen-space sized but this is a
-   * scene object, so it is derived from the key's own depth — a key twice the size
-   * gets a handle twice the size, and it never dwarfs a 2mm peg.
+   * Crosshair radius in world units, from the key's own depth so it scales with
+   * the key — but small: this marks a point, it must not hide the peg it sits on.
    */
   const handleRadius = useMemo(() => {
     const depth = keyFrame?.depth ?? 2.5;
-    return Math.min(1.2, Math.max(0.25, depth * 0.16));
+    return Math.min(0.5, Math.max(0.08, depth * 0.06));
   }, [keyFrame]);
+
+  /** The four ticks of the crosshair, in the cut plane (local XY). */
+  const crosshairTicks = useMemo(() => {
+    const r = handleRadius;
+    const inner = r * 0.45;
+    const outer = r * 1.35;
+    const pts = [
+      inner, 0, 0, outer, 0, 0,
+      -inner, 0, 0, -outer, 0, 0,
+      0, inner, 0, 0, outer, 0,
+      0, -inner, 0, 0, -outer, 0,
+    ];
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    return geom;
+  }, [handleRadius]);
+
+  const crosshairRing = useMemo(
+    () => new THREE.RingGeometry(handleRadius * 0.78, handleRadius, 28),
+    [handleRadius],
+  );
+
+  /**
+   * Report this handle as the NEAREST hit, whatever its real depth.
+   *
+   * R3F sorts intersections by distance and runs the handlers nearest-first, and
+   * the key's anchor sits on the cut face — buried inside the body. The model
+   * surface in front therefore won every click and read it as "add a waypoint",
+   * both inside and outside the picking provider. Forcing the distance is the
+   * pointer-side twin of the `depthTest: false` this overlay already draws with:
+   * if the ray passes through the handle, the handle gets it.
+   */
+  const grabRaycast = useMemo(() => {
+    return function raycastAlwaysNearest(
+      this: THREE.Mesh,
+      raycaster: THREE.Raycaster,
+      intersects: THREE.Intersection[],
+    ) {
+      const own: THREE.Intersection[] = [];
+      THREE.Mesh.prototype.raycast.call(this, raycaster, own);
+      for (const hit of own) intersects.push({ ...hit, distance: 1e-6 });
+    };
+  }, []);
 
   const handleGizmoDragState = useCallback(
     (dragging: boolean) => {
@@ -316,9 +358,11 @@ export function OrganicCutKeyGizmo({
   return (
     <>
     {onKeyOffsetChange && (
-      <group position={worldKeyGizmo.position}>
-        {/* Generous invisible grab target over a small visible dot. */}
+      <group position={worldKeyGizmo.position} rotation={worldKeyGizmo.rotation}>
+        {/* Invisible grab volume. A sphere rather than a disc in the cut plane:
+            seen edge-on a disc is a line and there is nothing left to grab. */}
         <mesh
+          raycast={grabRaycast}
           renderOrder={1002}
           frustumCulled={false}
           onPointerDown={handlePointerDown}
@@ -328,18 +372,28 @@ export function OrganicCutKeyGizmo({
           onPointerOver={handlePointerOver}
           onPointerOut={handlePointerOut}
         >
-          <sphereGeometry args={[handleRadius * 2.2, 12, 12]} />
+          <sphereGeometry args={[handleRadius * 2.6, 12, 12]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
         </mesh>
-        <mesh renderOrder={1003} frustumCulled={false}>
-          <sphereGeometry args={[handleRadius, 16, 16]} />
+        {/* Crosshair, lying IN the cut plane so it also shows which plane the key
+            slides on. A filled dot hid the peg and read as a sticker on it. */}
+        <mesh geometry={crosshairRing} renderOrder={1003} frustumCulled={false}>
           <meshBasicMaterial
             color={colors.keyHandle}
             depthTest={false}
             transparent
-            opacity={draggingHandle ? 1 : 0.9}
+            opacity={draggingHandle ? 1 : 0.85}
+            side={THREE.DoubleSide}
           />
         </mesh>
+        <lineSegments geometry={crosshairTicks} renderOrder={1004} frustumCulled={false}>
+          <lineBasicMaterial
+            color={colors.keyHandle}
+            depthTest={false}
+            transparent
+            opacity={draggingHandle ? 1 : 0.85}
+          />
+        </lineSegments>
       </group>
     )}
     <ScreenSpaceGizmo
