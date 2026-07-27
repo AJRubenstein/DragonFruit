@@ -67,6 +67,13 @@ function wrapAngle(rad: number): number {
 /**
  * The lean's azimuth for a given roll — the key has TWO freedoms, not three.
  *
+ * MIND THE SIGN. The key is built in a frame whose axis is NEGATED against the cut
+ * frame (`frame_extruding_toward_part_b`), so a roll of +ρ there turns the body the
+ * other way round the cut normal. Deriving the azimuth as `roll + c` therefore did
+ * not weld the two together — it left the body turning at 2ρ against a lean plane
+ * turning at ρ, which is exactly the extra spin about its own axis that had no
+ * ring and no name. Subtracting cancels it: body and lean plane move as one.
+ *
  * The old gizmo had the lean (off the normal), the plane that lean happens in, and
  * the key's own spin about its axis, all independent. The third one is the one
  * nobody wants: the lean plane should simply BE the plane of one of the key's
@@ -80,7 +87,7 @@ function wrapAngle(rad: number): number {
  * tip it over a wide face instead.
  */
 function leanAzimuthFor(rollRad: number): number {
-  return wrapAngle(rollRad + Math.PI / 2);
+  return wrapAngle(Math.PI / 2 - rollRad);
 }
 
 /**
@@ -185,10 +192,12 @@ export function OrganicCutKeyGizmo({
     // The in-plane basis is ROLLED with the key: the lean plane turns with the roll
     // (that is what the roll ring is FOR), so the lean ring has to turn with it or
     // it would stop showing where the key is about to tip.
+    // Turned by −roll for the sign reason in `leanAzimuthFor`: this is the frame
+    // the body actually ends up in.
     const cr = Math.cos(keyRollRad);
     const sr = Math.sin(keyRollRad);
-    const uR = uW.clone().multiplyScalar(cr).add(vW.clone().multiplyScalar(sr)).normalize();
-    const vR = vW.clone().multiplyScalar(cr).sub(uW.clone().multiplyScalar(sr)).normalize();
+    const uR = uW.clone().multiplyScalar(cr).sub(vW.clone().multiplyScalar(sr)).normalize();
+    const vR = uW.clone().multiplyScalar(sr).add(vW.clone().multiplyScalar(cr)).normalize();
     // The gizmo's local Y is the key's rolled u — the axis the lean turns about —
     // so the GREEN ring is the lean. Right-handed with z = axis means x = y × z =
     // u × axis = −v.
