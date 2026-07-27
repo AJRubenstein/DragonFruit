@@ -209,6 +209,42 @@ function occludedLinePair(
 }
 
 /**
+ * Free a GPU resource once React has swapped in its replacement.
+ *
+ * Every seam edit rebuilds the membrane, the seam tubes and the key preview, and
+ * three.js keeps the old buffers on the GPU until something disposes them. Nothing
+ * did: an afternoon of dragging waypoints leaked every intermediate mesh. `useMemo`
+ * has no teardown, so the disposal rides an effect keyed on the value itself —
+ * which runs AFTER the new one is on screen, so the object being freed is never the
+ * one being drawn.
+ */
+function useDisposeWhenReplaced(value: { dispose: () => void } | null): void {
+  React.useEffect(() => {
+    if (!value) return;
+    return () => value.dispose();
+  }, [value]);
+}
+
+/** {@link useDisposeWhenReplaced} for a whole object graph (a Group, a Line). */
+function useDisposeTreeWhenReplaced(root: THREE.Object3D | THREE.Object3D[] | null): void {
+  React.useEffect(() => {
+    if (!root) return;
+    const roots = Array.isArray(root) ? root : [root];
+    return () => {
+      for (const r of roots) {
+        r.traverse((node) => {
+          const holder = node as Partial<THREE.Mesh>;
+          holder.geometry?.dispose();
+          const material = holder.material;
+          if (Array.isArray(material)) material.forEach((m) => m.dispose());
+          else material?.dispose();
+        });
+      }
+    };
+  }, [root]);
+}
+
+/**
  * In-canvas visualization for the Cutting Mode loop.
  *
  * IMPORTANT: surface picking does NOT happen here. Clicks are captured by the
@@ -425,6 +461,14 @@ export function OrganicCutTool({
 
   // Translucent membrane (curved cutter surface) for contour mode. Built from the
   // flat triangle soup Rust returns, so it's EXACTLY the surface the cut uses.
+  // Everything above is rebuilt on every seam edit; hand the old buffers back to
+  // the GPU once the new ones are on screen.
+  useDisposeTreeWhenReplaced(loopLine);
+  useDisposeTreeWhenReplaced(inactiveSeamLines);
+  useDisposeTreeWhenReplaced(planeCurveLines);
+  useDisposeWhenReplaced(seamTubes?.glow ?? null);
+  useDisposeWhenReplaced(seamTubes?.hit ?? null);
+
   const membraneGeometry = useMemo(() => {
     if (cutMode !== 'contour' || !membranePreview || membranePreview.length < 9) return null;
     const geom = new THREE.BufferGeometry();
@@ -559,6 +603,13 @@ export function OrganicCutTool({
     wire.computeBoundingSphere();
     return wire;
   }, [membraneGeometry]);
+
+  useDisposeWhenReplaced(membraneGeometry);
+  useDisposeWhenReplaced(membraneWireframe);
+  useDisposeWhenReplaced(keyGeometry);
+  useDisposeWhenReplaced(socketGeometry);
+  useDisposeWhenReplaced(keyWireframe);
+  useDisposeWhenReplaced(socketWireframe);
 
   // Marker radius proportional to the model so it's a small, precise dot on any
   // model size (a fixed mm value is wrong for small/large models). Also divided
