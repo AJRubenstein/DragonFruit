@@ -163,6 +163,7 @@ export function TransformGizmo({
   constrainToSurface = DEFAULT_GIZMO_CONFIG.constrainToSurface,
   constrainToPlane = DEFAULT_GIZMO_CONFIG.constrainToPlane,
   axisLock = DEFAULT_GIZMO_CONFIG.axisLock,
+  rotateAxes,
   handleScale = 1.0,
   moveHandleBidirectional = false,
   moveHandleLengthScale = 1.0,
@@ -425,6 +426,7 @@ export function TransformGizmo({
   };
 
   const isAxisAllowed = (axis: GizmoAxis) => !axisLock || axisLock === axis;
+  const isRingAllowed = (axis: GizmoAxis) => !rotateAxes || rotateAxes.includes(axis);
   const suppressHover = isGlobalDragging;
   const dragOpacityScale = isGlobalDragging ? 0.6 : 1;
 
@@ -600,7 +602,7 @@ export function TransformGizmo({
 
       {enableRotate && (
         <>
-          {shouldRenderPart('ring-x') && (
+          {isRingAllowed('x') && shouldRenderPart('ring-x') && (
             <GizmoRotation
               axis="x"
               worldAxisDir={worldAxisDirs.x}
@@ -623,7 +625,7 @@ export function TransformGizmo({
               onPointerLeave={handlePointerLeave}
             />
           )}
-          {shouldRenderPart('ring-y') && (
+          {isRingAllowed('y') && shouldRenderPart('ring-y') && (
             <GizmoRotation
               axis="y"
               worldAxisDir={worldAxisDirs.y}
@@ -646,7 +648,7 @@ export function TransformGizmo({
               onPointerLeave={handlePointerLeave}
             />
           )}
-          {shouldRenderPart('ring-z') && (
+          {isRingAllowed('z') && shouldRenderPart('ring-z') && (
             <GizmoRotation
               axis="z"
               worldAxisDir={worldAxisDirs.z}

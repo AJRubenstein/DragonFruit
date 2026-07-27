@@ -9697,7 +9697,6 @@ export default function Home() {
                   activeTransform={transformMgr.transform}
                   keyFrame={organicCut.keyFrame}
                   keyTiltRad={organicCut.panelState.keyTiltRad}
-                  keyTiltAzimuthRad={organicCut.panelState.keyTiltAzimuthRad}
                   keyRollRad={organicCut.panelState.keyRollRad}
                   keyOffsetUMm={organicCut.panelState.keyOffsetUMm}
                   keyOffsetVMm={organicCut.panelState.keyOffsetVMm}

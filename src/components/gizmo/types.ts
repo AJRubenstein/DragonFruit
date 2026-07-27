@@ -90,6 +90,13 @@ export interface GizmoConfig {
   constrainToSurface?: boolean;
   constrainToPlane?: boolean;
   axisLock?: GizmoAxis | null;
+  /**
+   * Which rotation rings to draw. Omitted (the default) draws all three. Give a
+   * subset for a gizmo whose object has fewer than three meaningful rotations —
+   * the organic cut's key, for instance, takes a roll and a lean and nothing
+   * else, and the third ring only invited a rotation with no meaning.
+   */
+  rotateAxes?: GizmoAxis[];
 
   // Per-axis visual animation flip for rotation rings.
   // Set a component to -1 to invert the ring handle animation direction
