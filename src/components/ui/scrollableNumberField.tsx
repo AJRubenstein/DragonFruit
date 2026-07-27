@@ -16,6 +16,13 @@ interface ScrollableNumberFieldProps {
   commitOnBlur?: boolean;
   className?: string;
   inputClassName?: string;
+  /**
+   * Shrink everything — 24px steppers, a shorter input, smaller type — for the
+   * side panels that put two of these on one row. At full size the pair doesn't
+   * fit: the steppers eat the width and the value ends up printed on top of the
+   * unit.
+   */
+  compact?: boolean;
 }
 
 export function ScrollableNumberField({
@@ -32,6 +39,7 @@ export function ScrollableNumberField({
   commitOnBlur = false,
   className,
   inputClassName,
+  compact = false,
 }: ScrollableNumberFieldProps) {
   const clampValue = useCallback((candidate: number): number => {
     const boundedMin = Number.isFinite(min) ? min : Number.NEGATIVE_INFINITY;
@@ -122,18 +130,24 @@ export function ScrollableNumberField({
     ? clampValue(parsedCurrent)
     : clampValue(value);
 
+  const stepperClass = cn(
+    compact ? '!h-6 !w-6' : '!h-8 !w-8',
+    'shrink-0 !p-0 !bg-[var(--surface-0)] hover:!bg-[color-mix(in_srgb,var(--surface-0),white_4%)] disabled:!bg-[color-mix(in_srgb,var(--surface-1),black_8%)]',
+  );
+  const stepperIconClass = compact ? 'h-3 w-3' : 'h-3.5 w-3.5';
+
   const disableDecrement = disabled || currentValue <= min;
   const disableIncrement = disabled || currentValue >= max;
 
   return (
-    <div className={cn('flex min-w-0 items-center gap-1', className)}>
+    <div className={cn('flex min-w-0 items-center', compact ? 'gap-0.5' : 'gap-1', className)}>
       <IconButton
-        className="!h-8 !w-8 shrink-0 !p-0 !bg-[var(--surface-0)] hover:!bg-[color-mix(in_srgb,var(--surface-0),white_4%)] disabled:!bg-[color-mix(in_srgb,var(--surface-1),black_8%)]"
+        className={stepperClass}
         onClick={() => stepBy(-1)}
         disabled={disableDecrement}
         title={decreaseTitle}
       >
-        <Minus className="h-3.5 w-3.5" />
+        <Minus className={stepperIconClass} />
       </IconButton>
 
       <div className="relative w-0 min-w-0 flex-1">
@@ -174,15 +188,19 @@ export function ScrollableNumberField({
             }
           }}
           className={cn(
-            'ui-input h-8 w-full px-1.5 text-xs sm:text-sm text-center tabular-nums font-semibold no-spinners !bg-[var(--surface-0)]',
-            unit ? 'pr-8' : undefined,
+            'ui-input w-full text-center tabular-nums font-semibold no-spinners !bg-[var(--surface-0)]',
+            compact ? 'h-7 px-1 text-[11px]' : 'h-8 px-1.5 text-xs sm:text-sm',
+            unit ? (compact ? 'pr-4' : 'pr-8') : undefined,
             inputClassName,
           )}
           aria-label={ariaLabel}
         />
         {unit && (
           <span
-            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-medium"
+            className={cn(
+              'pointer-events-none absolute top-1/2 -translate-y-1/2 font-medium',
+              compact ? 'right-1 text-[8px]' : 'right-2 text-[10px]',
+            )}
             style={{ color: 'var(--text-muted)' }}
           >
             {unit}
@@ -191,12 +209,12 @@ export function ScrollableNumberField({
       </div>
 
       <IconButton
-        className="!h-8 !w-8 shrink-0 !p-0 !bg-[var(--surface-0)] hover:!bg-[color-mix(in_srgb,var(--surface-0),white_4%)] disabled:!bg-[color-mix(in_srgb,var(--surface-1),black_8%)]"
+        className={stepperClass}
         onClick={() => stepBy(1)}
         disabled={disableIncrement}
         title={increaseTitle}
       >
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className={stepperIconClass} />
       </IconButton>
     </div>
   );

@@ -716,6 +716,7 @@ export function OrganicCutPanel({
                         step={0.5}
                         unit="mm"
                         ariaLabel="Key width in millimeters"
+                        compact
                         disabled={disabled || isApplying}
                         className="mt-1"
                       />
@@ -736,6 +737,7 @@ export function OrganicCutPanel({
                         step={0.5}
                         unit="mm"
                         ariaLabel="Key depth in millimeters"
+                        compact
                         disabled={disabled || isApplying}
                         className="mt-1"
                       />
@@ -758,6 +760,7 @@ export function OrganicCutPanel({
                           step={KEY_FILLET_STEP_MM}
                           unit="mm"
                           ariaLabel="Key edge fillet radius in millimeters (0 = sharp)"
+                          compact
                           disabled={disabled || isApplying}
                           className="mt-1"
                         />
@@ -785,6 +788,7 @@ export function OrganicCutPanel({
                         step={0.05}
                         unit="mm"
                         ariaLabel="Peg to socket fit tolerance in millimeters (0 = press fit)"
+                        compact
                         disabled={disabled || isApplying}
                         className="mt-1"
                       />
