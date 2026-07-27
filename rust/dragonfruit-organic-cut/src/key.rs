@@ -515,13 +515,22 @@ impl LeanXform {
     /// base extends from the axis). The lean direction is computed as a WORLD
     /// direction from the ORIGINAL (un-swapped) tangent basis and projected onto
     /// `build_frame.(u, v)` so it points the same world way through any swap.
-    fn for_build(orig: &KeyFrame, build_frame: &KeyFrame, tilt: &KeyTilt, half_diag: f32) -> LeanXform {
+    fn for_build(
+        orig: &KeyFrame,
+        build_frame: &KeyFrame,
+        tilt: &KeyTilt,
+        half_diag: f32,
+        max_tilt: f32,
+    ) -> LeanXform {
         let leaning = tilt.tilt.abs() >= 1e-6;
         let rolling = tilt.roll.abs() >= 1e-6;
         if !leaning && !rolling {
             return LeanXform::IDENTITY;
         }
-        let t = tilt.tilt.clamp(-KEY_MAX_TILT_RAD, KEY_MAX_TILT_RAD);
+        // Clamp to what this placement can actually take — the walls decide, not a
+        // fixed 60° (see `max_tilt_for`). KEY_MAX_TILT_RAD is only the hard ceiling.
+        let cap = max_tilt.clamp(0.0, KEY_MAX_TILT_RAD);
+        let t = tilt.tilt.clamp(-cap, cap);
         // World lean direction in the original tangent plane → local (u, v) coords.
         let lean_world = orig
             .u
@@ -551,6 +560,23 @@ impl LeanXform {
             sink,
             identity: false,
         }
+    }
+
+    /// Depth the body has to be BUILT to so that a leaned key still stands the
+    /// requested `depth` proud of the cut face.
+    ///
+    /// Leaning used to eat the peg: the body keeps its length, but what sticks out
+    /// past the cut plane is `depth·cos(tilt) − sink`, and the sink grows with the
+    /// lean — at 60° on a 2.5mm key that is nothing at all. So the trunk grows to
+    /// put both back, and the key the user asked for is the key they get at any
+    /// lean.
+    fn stretch_depth(&self, depth: f32) -> f32 {
+        if self.identity || self.tilt.abs() < 1e-6 {
+            return depth;
+        }
+        // Floored well past the tilt cap (~78°) so this can never blow up.
+        let cos = self.tilt.abs().cos().max(0.2);
+        (depth + self.sink) / cos
     }
 
     /// Transform a local point: rigid roll (about +z), then rigid lean (about the
@@ -931,6 +957,63 @@ fn grow_plan_for_kerf(plan: KeyPlan, half_kerf: f32) -> KeyPlan {
     }
 }
 
+/// Lengthen a decided plan so a leaned key still stands its requested depth proud
+/// of the cut face — the plan-level twin of [`LeanXform::stretch_depth`], used by
+/// the preview (which builds straight from the plan).
+fn stretch_plan_for_lean(plan: KeyPlan, lean: &LeanXform) -> KeyPlan {
+    match plan {
+        KeyPlan::Frustum { dims, detail } => KeyPlan::Frustum {
+            dims: FrustumDims { depth: lean.stretch_depth(dims.depth), ..dims },
+            detail,
+        },
+        KeyPlan::Dome { dims, detail } => KeyPlan::Dome {
+            dims: DomeDims { depth: lean.stretch_depth(dims.depth), ..dims },
+            detail,
+        },
+        none => none,
+    }
+}
+
+/// The largest lean this placement can take, in radians.
+///
+/// A fixed 60° cap knew nothing about the part: on a thin wall it let the key lean
+/// until the trunk came out the side, and on a solid block it stopped short for no
+/// reason. This walks the lean up in small steps and keeps the last angle where
+/// the key is still buried in material — both sideways (the leaned trunk swings
+/// toward a lateral wall) and backwards (the lean sinks the base into part_a).
+/// [`KEY_MAX_TILT_RAD`] stays the hard ceiling.
+///
+/// The lateral room is the TIGHTEST of the four probes, not the room in the lean's
+/// own direction: the user aims the lean with the roll ring, and a cap that moved
+/// while they turned it would be worse than one that is merely conservative.
+fn max_tilt_for(clearance: &Clearance, plan: &KeyPlan, tolerance: f32) -> f32 {
+    let (half_diag, depth) = match plan {
+        KeyPlan::Frustum { dims, .. } => {
+            (0.5 * dims.width.hypot(dims.length) + tolerance, dims.depth)
+        }
+        KeyPlan::Dome { dims, .. } => (dims.half_w.max(dims.half_l) + tolerance, dims.depth),
+        // No key to lean.
+        KeyPlan::None { .. } => return 0.0,
+    };
+    let room_lat = clearance.half_room_u().min(clearance.half_room_v()) - KEY_WALL_MARGIN_MM;
+    let room_back = clearance.depth_a - KEY_WALL_MARGIN_MM;
+    const STEPS: u32 = 60;
+    let mut best = 0.0;
+    for i in 1..=STEPS {
+        let t = KEY_MAX_TILT_RAD * (i as f32) / (STEPS as f32);
+        let sink = half_diag * t.sin();
+        let built = (depth + sink) / t.cos().max(0.2);
+        // How far the key reaches sideways: the leaned tip, plus the base still
+        // standing half a diagonal off the axis.
+        let reach = built * t.sin() + half_diag * t.cos();
+        if reach > room_lat || sink + KEY_BASE_OVERLAP_MM > room_back {
+            break;
+        }
+        best = t;
+    }
+    best
+}
+
 /// Place a key across the cut, honoring the fit ladder via [`decide_key`]. The
 /// chosen rung + reason ride back on the [`KeyOutcome`] so the report and the user
 /// alert agree with the preview.
@@ -1025,6 +1108,9 @@ pub fn apply_key_at_frame(
         decide_key(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf),
         half_kerf,
     );
+    // How far this placement can lean before the key leaves the material. The cut
+    // must agree with the preview, which caps the gizmo the same way.
+    let max_tilt = max_tilt_for(&clearance, &plan, tolerance);
 
     // The KeyOutcome from apply_frustum/apply_dome holds (peg-half, socket-half) in
     // (part_a, part_b). When we swapped roles above, swap them back so the returned
@@ -1038,7 +1124,7 @@ pub fn apply_key_at_frame(
 
     match plan {
         KeyPlan::Frustum { dims, detail } => {
-            let out = unswap(apply_frustum(part_a, part_b, &frame, &orig_for_lean, tilt, dims, fillet_mm, tolerance, half_kerf));
+            let out = unswap(apply_frustum(part_a, part_b, &frame, &orig_for_lean, tilt, dims, fillet_mm, tolerance, half_kerf, max_tilt));
             if out.kind == KeyKind::Frustum {
                 KeyOutcome { detail, ..out }
             } else {
@@ -1051,7 +1137,7 @@ pub fn apply_key_at_frame(
             }
         }
         KeyPlan::Dome { dims, detail } => {
-            let out = unswap(apply_dome(part_a, part_b, &frame, &orig_for_lean, tilt, dims, tolerance, half_kerf));
+            let out = unswap(apply_dome(part_a, part_b, &frame, &orig_for_lean, tilt, dims, tolerance, half_kerf, max_tilt));
             if out.kind == KeyKind::Dome {
                 KeyOutcome { detail, ..out }
             } else {
@@ -1161,7 +1247,10 @@ pub fn build_key_preview_at_frame(
         KeyPlan::Dome { dims, .. } => (dims.half_w.max(dims.half_l)) + tolerance,
         KeyPlan::None { .. } => 0.0,
     };
-    let lean = LeanXform::for_build(&orig_for_lean, &build_frame, &tilt, half_diag);
+    let max_tilt = max_tilt_for(&clearance, &plan, tolerance);
+    let lean = LeanXform::for_build(&orig_for_lean, &build_frame, &tilt, half_diag, max_tilt);
+    // Leaning lengthens the trunk instead of eating it (see `stretch_depth`).
+    let plan = stretch_plan_for_lean(plan, &lean);
 
     let mut soup: Vec<f32> = Vec::new();
     // Triangles [0, peg_triangles) are the peg, the rest the socket. The frontend
@@ -1190,7 +1279,7 @@ pub fn build_key_preview_at_frame(
     // roots against (toward the peg's half), and u/v the in-plane basis. The frontend
     // mounts the rotation gizmo at the anchor oriented to this frame, and converts
     // gizmo rotations into tilt/azimuth/roll. `tip` is the leaned apex (model-local).
-    let info = build_key_frame_info(&placed, &build_frame, &plan, lean);
+    let info = build_key_frame_info(&placed, &build_frame, &plan, lean, max_tilt);
     KeyPreview { soup, peg_triangles, kind, detail, frame: info }
 }
 
@@ -1227,6 +1316,10 @@ pub struct KeyFrameInfo {
     pub tip: Vec3,
     /// Peg height (depth along the build axis to the tip), for handle scaling.
     pub depth: f32,
+    /// The largest lean this placement takes (radians) — see [`max_tilt_for`]. The
+    /// gizmo clamps to it, so the ring stops where the geometry does instead of at
+    /// a constant that knows nothing about the part.
+    pub max_tilt: f32,
 }
 
 /// Compute the [`KeyFrameInfo`] for a decided plan: the tip is the apex of the peg
@@ -1236,6 +1329,7 @@ fn build_key_frame_info(
     build_frame: &KeyFrame,
     plan: &KeyPlan,
     lean: LeanXform,
+    max_tilt: f32,
 ) -> Option<KeyFrameInfo> {
     let depth = match plan {
         KeyPlan::Frustum { dims, .. } => dims.depth,
@@ -1258,6 +1352,7 @@ fn build_key_frame_info(
         v: natural.v,
         tip,
         depth,
+        max_tilt,
     })
 }
 
@@ -1292,6 +1387,7 @@ fn apply_frustum(
     fillet: f32,
     tolerance: f32,
     half_kerf: f32,
+    max_tilt: f32,
 ) -> KeyOutcome {
     // Base sunk half a kerf into part_a's material (`dims` already carries the
     // matching extra length — see `grow_plan_for_kerf`).
@@ -1302,7 +1398,9 @@ fn apply_frustum(
     // The lean's sink depends on the base half-diagonal so the tilted base stays
     // buried. Use the SOCKET's footprint (slightly larger) so both share one sink.
     let half_diag = 0.5 * ((dims.width).hypot(dims.length)) + tolerance;
-    let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag);
+    let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag, max_tilt);
+    // Leaning lengthens the trunk instead of eating it (see `stretch_depth`).
+    let dims = FrustumDims { depth: lean.stretch_depth(dims.depth), ..dims };
     let peg_mesh = build_frustum_leaned(&build_frame, dims, 0.0, fillet, lean);
     // The socket is the peg offset outward by `tolerance`; a uniform offset of a
     // rounded-rect grows the corner radius by the same amount, so the socket's fillet
@@ -1354,6 +1452,9 @@ fn apply_frustum(
 struct Clearance {
     /// Depth available into part_b along `−axis` (the socket's extrusion).
     depth_b: f32,
+    /// Material available BEHIND the base, into part_a along `+axis`. A leaned key
+    /// sinks into it (see [`LeanXform`]), so this is what bounds the lean.
+    depth_a: f32,
     /// Lateral room from the anchor to the nearest wall along ±u and ±v, taking
     /// the MIN over both parts (the tightest wall on either half governs).
     lat_u_neg: f32,
@@ -1371,6 +1472,9 @@ impl Clearance {
         let neg_axis = frame.axis.scale(-1.0);
         let origin_b = frame.anchor.add(neg_axis.scale(eps));
         let depth_b = nearest_hit(part_b, origin_b, neg_axis).map(|d| d + eps).unwrap_or(f32::INFINITY);
+        // Same, the other way: how much material backs the base.
+        let origin_a = frame.anchor.add(frame.axis.scale(eps));
+        let depth_a = nearest_hit(part_a, origin_a, frame.axis).map(|d| d + eps).unwrap_or(f32::INFINITY);
 
         // Lateral: probe both halves along ±u/±v from the anchor; the tightest
         // wall on EITHER part governs (the key footprint spans both at the seam).
@@ -1382,6 +1486,7 @@ impl Clearance {
         };
         Clearance {
             depth_b,
+            depth_a,
             lat_u_neg: lat(frame.u.scale(-1.0)),
             lat_u_pos: lat(frame.u),
             lat_v_neg: lat(frame.v.scale(-1.0)),
@@ -1620,6 +1725,7 @@ fn apply_dome(
     dims: DomeDims,
     tolerance: f32,
     half_kerf: f32,
+    max_tilt: f32,
 ) -> KeyOutcome {
     // Same kerf correction as the frustum: the mouth sinks into part_a and `dims`
     // arrives already grown (see `grow_plan_for_kerf`).
@@ -1628,7 +1734,9 @@ fn apply_dome(
     // bulge keeps its shape and is sunk so the tilted mouth disk stays buried. Peg +
     // socket share the SAME rigid lean, so the dilated socket contains the leaned peg.
     let half_diag = dims.half_w.max(dims.half_l) + tolerance;
-    let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag);
+    let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag, max_tilt);
+    // Leaning lengthens the bulge instead of eating it (see `stretch_depth`).
+    let dims = DomeDims { depth: lean.stretch_depth(dims.depth), ..dims };
     let peg_mesh =
         build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, 0.0, DOME_SEGMENTS, lean);
     let socket_mesh =
@@ -2059,6 +2167,77 @@ mod tests {
         assert!(to_manifold(&out.part_b).is_ok(), "domed part_b watertight");
     }
 
+    // Leaning must not eat the peg. It used to: the body kept its length but the
+    // sink that buries the tilted base ate what stuck out, so a 2.5mm key leaned
+    // over stood barely a millimetre proud — the user asked for a lean and got a
+    // shorter key. The trunk now grows to put it back.
+    #[test]
+    fn leaning_keeps_the_peg_standing_its_full_depth() {
+        let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
+        let loop_pts = vec![
+            Vec3::new(-5.0, -5.0, 0.0),
+            Vec3::new(5.0, -5.0, 0.0),
+            Vec3::new(5.0, 5.0, 0.0),
+            Vec3::new(-5.0, 5.0, 0.0),
+        ];
+        let depth = 2.5;
+        // Only the PEG's triangles: the socket is grown by the tolerance and would
+        // read a hair longer.
+        let tip_height = |tilt_deg: f32| -> f32 {
+            let preview = build_key_preview_soup(
+                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, false,
+                KeyTilt::new(tilt_deg.to_radians(), 0.0, 0.0), 2.0, depth, 0.0, 0.1, 0.0,
+                KeyOffset::default(),
+            )
+            .expect("preview builds");
+            let peg = &preview.soup[..preview.peg_triangles * 9];
+            // The cut is at z=0 and the peg extrudes along ±z.
+            peg.chunks_exact(3).map(|c| c[2].abs()).fold(0.0f32, f32::max)
+        };
+        let upright = tip_height(0.0);
+        assert!(
+            (upright - depth).abs() < 0.05,
+            "an upright key stands its requested depth, got {upright}",
+        );
+        let leaned = tip_height(30.0);
+        assert!(
+            leaned >= depth - 0.05,
+            "a leaned key still stands {depth}mm proud, got {leaned}",
+        );
+    }
+
+    // The lean cap comes from the part, not from a constant: room to spare means the
+    // full 60°, a tight wall means less, and a key that can't lean at all reports 0.
+    #[test]
+    fn the_lean_cap_follows_the_room_around_the_key() {
+        let dims = FrustumDims::from_width_depth(2.0, 2.5);
+        let plan = KeyPlan::Frustum { dims, detail: String::new() };
+        let roomy = Clearance {
+            depth_a: f32::INFINITY,
+            depth_b: f32::INFINITY,
+            lat_u_neg: f32::INFINITY,
+            lat_u_pos: f32::INFINITY,
+            lat_v_neg: f32::INFINITY,
+            lat_v_pos: f32::INFINITY,
+        };
+        assert_eq!(
+            max_tilt_for(&roomy, &plan, 0.1),
+            KEY_MAX_TILT_RAD,
+            "nothing in the way → the hard ceiling",
+        );
+
+        let walled = Clearance { lat_u_pos: 4.0, lat_u_neg: 4.0, ..roomy };
+        let capped = max_tilt_for(&walled, &plan, 0.1);
+        assert!(capped > 0.0 && capped < KEY_MAX_TILT_RAD, "a near wall caps the lean, got {capped}");
+
+        let cramped = Clearance { lat_v_pos: 1.2, lat_v_neg: 1.2, ..roomy };
+        assert_eq!(max_tilt_for(&cramped, &plan, 0.1), 0.0, "no room at all → no lean");
+
+        // Thin material behind the base bounds it too: the lean sinks the base in.
+        let shallow = Clearance { depth_a: 0.5, ..roomy };
+        assert_eq!(max_tilt_for(&shallow, &plan, 0.1), 0.0, "nothing to sink into → no lean");
+    }
+
     // Test 6: the preview soup is non-empty, finite, and a multiple of 9 floats
     // (peg + socket), and reports the frustum kind on a healthy part.
     #[test]
@@ -2214,7 +2393,7 @@ mod tests {
         let half_diag = 0.5 * dims.width.hypot(dims.length);
         let tilt = KeyTilt::new(std::f32::consts::FRAC_PI_4, 0.0, 0.0); // 45° lean
         let orig = frame_from_membrane(&mem).expect("frame");
-        let lean = LeanXform::for_build(&orig, &frame, &tilt, half_diag);
+        let lean = LeanXform::for_build(&orig, &frame, &tilt, half_diag, KEY_MAX_TILT_RAD);
 
         let _ = build_frustum_leaned(&frame, dims, 0.0, 0.0, lean); // builds watertight
         // The base footprint must stay buried below the cut plane: transform each base
@@ -2254,7 +2433,7 @@ mod tests {
         let dims = FrustumDims::from_width_depth(5.0, 6.0);
         let orig = frame_from_membrane(&mem).expect("frame");
         let tilt = KeyTilt::new(40.0_f32.to_radians(), 0.9, 0.4);
-        let lean = LeanXform::for_build(&orig, &frame, &tilt, 4.0);
+        let lean = LeanXform::for_build(&orig, &frame, &tilt, 4.0, KEY_MAX_TILT_RAD);
         // Any two points: their distance must be the same before and after the lean
         // (a rigid rotation + uniform sink preserves all lengths).
         let a = (2.0f32, 1.0f32, dims.depth * 0.3);
@@ -2288,7 +2467,7 @@ mod tests {
         ] {
             let tilt = KeyTilt::new(deg.to_radians(), az, roll);
             let dims = FrustumDims::from_width_depth(5.0, 5.0);
-            let lean = LeanXform::for_build(&orig, &frame, &tilt, dims.depth);
+            let lean = LeanXform::for_build(&orig, &frame, &tilt, dims.depth, KEY_MAX_TILT_RAD);
             let peg = build_frustum_leaned(&frame, dims, 0.0, fillet, lean);
             // Match apply_frustum: when leaning, socket uses the SAME fillet as the
             // peg (dilated extents) so peg/socket share z-levels and nest per slab.
@@ -2316,7 +2495,7 @@ mod tests {
         let frame =
             frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
         let orig = frame_from_membrane(&mem).expect("frame");
-        let lean = LeanXform::for_build(&orig, &frame, &KeyTilt::default(), 5.0);
+        let lean = LeanXform::for_build(&orig, &frame, &KeyTilt::default(), 5.0, KEY_MAX_TILT_RAD);
         assert!(lean.identity, "zero tilt + zero roll → identity lean");
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
         let plain = build_frustum(&frame, dims, 0.0, 0.4);

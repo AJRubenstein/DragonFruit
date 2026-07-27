@@ -505,7 +505,10 @@ export function OrganicCutTool({
     const buildU = vN.clone();
     const buildV = uN.clone();
 
-    const tilt = Math.min(Math.abs(keyTiltRad), KEY_MAX_TILT_RAD) * Math.sign(keyTiltRad || 1);
+    // Clamp to what Rust will actually build (the room around the key), so the live
+    // preview can't lean further than the cut does.
+    const cap = Math.min(keyFrame.maxTiltRad ?? KEY_MAX_TILT_RAD, KEY_MAX_TILT_RAD);
+    const tilt = Math.min(Math.abs(keyTiltRad), cap) * Math.sign(keyTiltRad || 1);
     const roll = keyRollRad;
     if (Math.abs(tilt) < 1e-6 && Math.abs(roll) < 1e-6) return null;
 

@@ -161,6 +161,12 @@ export interface KeyPreviewFrame {
   v: [number, number, number];
   tip: [number, number, number];
   depth: number;
+  /**
+   * Largest lean this placement can take (radians), from the room around the key
+   * rather than a constant. Absent from an older backend — fall back to the hard
+   * ceiling then.
+   */
+  maxTiltRad?: number;
 }
 
 export interface OrganicCutOptions {

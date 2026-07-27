@@ -223,10 +223,13 @@ export function OrganicCutKeyGizmo({
       // own +v — hence the quarter turn in `leanAzimuthFor`. Its magnitude is the
       // whole lean; a negative tilt leans the other way, which is why it is not
       // folded into the azimuth (the azimuth belongs to the roll now).
-      const tilt = Math.max(-KEY_MAX_TILT_RAD, Math.min(KEY_MAX_TILT_RAD, keyTiltRad - delta));
+      // The cap is the part's, not a constant: a key with a wall right next to it
+      // stops leaning sooner, and one in open material goes the full 60°.
+      const cap = Math.min(keyFrame?.maxTiltRad ?? KEY_MAX_TILT_RAD, KEY_MAX_TILT_RAD);
+      const tilt = Math.max(-cap, Math.min(cap, keyTiltRad - delta));
       onKeyAimChange(tilt, leanAzimuthFor(keyRollRad), keyRollRad);
     },
-    [onKeyAimChange, keyTiltRad, keyRollRad],
+    [onKeyAimChange, keyTiltRad, keyRollRad, keyFrame],
   );
 
   // --- The base handle: slide the key across the cut face --------------------
