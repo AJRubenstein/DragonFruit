@@ -59,7 +59,7 @@ export const DEFAULT_ORGANIC_CUT_COLORS: OrganicCutColors = {
   seamInactive: '#5e3418',
   seamGlow: '#ffe6cc',
   cutSurface: '#37ff7a',
-  keyFront: '#ffa630',
+  keyFront: '#001e57',
   keyBack: '#8a4a08',
   keyEdge: '#ff7a00',
   socketFront: '#c07bff',
