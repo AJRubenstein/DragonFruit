@@ -137,6 +137,74 @@ const MARKER_RADIUS_MIN = 0.005;
 const MARKER_RADIUS_MAX = 0.3;
 
 /**
+ * How much of its own opacity an overlay keeps where the model hides it.
+ *
+ * The seam and its waypoints used to draw with the depth test off entirely, so a
+ * point on the far side of the model looked exactly like one on this side — it
+ * read as reachable, and the cursor went straight through it to the surface
+ * behind. Everything on the surface is now drawn TWICE: solid where the camera
+ * can see it, and this faint underneath, so a buried point still says where it
+ * is without pretending to be in front.
+ */
+const OCCLUDED_OPACITY_FACTOR = 0.22;
+
+/**
+ * Depth nudge toward the camera, in NDC z, for overlays that sit exactly ON the
+ * surface (the seam line). With a plain depth test the triangles it lies on win
+ * roughly half its pixels and stipple the line into dashes. Biasing in clip
+ * space — rather than along each point's normal, which pushed the line off the
+ * markers in a different direction at every vertex — moves it toward the eye by
+ * the same amount from every angle.
+ */
+const SURFACE_DEPTH_BIAS = 2e-4;
+
+/** Patch a material's vertex shader to apply {@link SURFACE_DEPTH_BIAS}. */
+function biasTowardCamera(material: THREE.Material): void {
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+      gl_Position.z -= ${SURFACE_DEPTH_BIAS} * gl_Position.w;`,
+    );
+  };
+}
+
+/**
+ * A seam polyline as the depth-cue pair described at
+ * {@link OCCLUDED_OPACITY_FACTOR}: the ghost pass (no depth test) under a solid
+ * pass (depth-tested, biased off the surface). Both share one geometry.
+ */
+function occludedLinePair(
+  positions: number[],
+  color: number,
+  opacity: number,
+  renderOrder: number,
+): THREE.Group {
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const ghost = new THREE.Line(
+    geom,
+    new THREE.LineBasicMaterial({
+      color,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: opacity * OCCLUDED_OPACITY_FACTOR,
+    }),
+  );
+  ghost.renderOrder = renderOrder;
+  const solid = new THREE.Line(
+    geom,
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity }),
+  );
+  biasTowardCamera(solid.material);
+  solid.renderOrder = renderOrder;
+  const group = new THREE.Group();
+  group.add(ghost, solid);
+  return group;
+}
+
+/**
  * In-canvas visualization for the Cutting Mode loop.
  *
  * IMPORTANT: surface picking does NOT happen here. Clicks are captured by the
@@ -250,7 +318,7 @@ export function OrganicCutTool({
 
   // PLANE mode: the plane ∩ mesh curves — where the flat cut really lands. Drawn
   // in amber so they read as "the result" against the green waypoint chords, and
-  // without depth testing so they stay visible through the model.
+  // as an occluded pair so the far side of the curve stays visible but dim.
   const planeCurveLines = useMemo(() => {
     if (cutMode !== 'plane' || !planeCurves || planeCurves.length === 0) return [];
     return planeCurves
@@ -262,17 +330,7 @@ export function OrganicCutTool({
         if (curve.closed) {
           positions.push(positions[0], positions[1], positions[2]);
         }
-        const geom = new THREE.BufferGeometry();
-        geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        const material = new THREE.LineBasicMaterial({
-          color: colors.seam,
-          depthTest: false,
-          transparent: true,
-          opacity: 0.95,
-        });
-        const line = new THREE.Line(geom, material);
-        line.renderOrder = 998;
-        return line;
+        return occludedLinePair(positions, colors.seam, 0.95, 998);
       })
       .filter((l) => l !== null);
   }, [cutMode, planeCurves, colors]);
@@ -280,12 +338,7 @@ export function OrganicCutTool({
   const loopLine = useMemo(() => {
     const positions = loopPositions;
     if (!positions || positions.length < 6) return null;
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    const material = new THREE.LineBasicMaterial({ color: colors.seam, depthTest: false, transparent: true });
-    const line = new THREE.Line(geom, material);
-    line.renderOrder = 999;
-    return line;
+    return occludedLinePair(positions, colors.seam, 1, 999);
   }, [loopPositions, colors]);
 
   // Dimmed seam lines for the INACTIVE loops of a multi-loop cut. Each is drawn
@@ -306,19 +359,9 @@ export function OrganicCutTool({
             positions.push(positions[0], positions[1], positions[2]);
           }
         }
-        const geom = new THREE.BufferGeometry();
-        geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        const material = new THREE.LineBasicMaterial({
-          color: colors.seamInactive,
-          depthTest: false,
-          transparent: true,
-          opacity: 0.7,
-        });
-        const line = new THREE.Line(geom, material);
-        line.renderOrder = 994;
-        return line;
+        return occludedLinePair(positions, colors.seamInactive, 0.7, 994);
       })
-      .filter((l): l is THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> => l !== null);
+      .filter((l): l is THREE.Group => l !== null);
   }, [inactiveLoopPolylines, colors]);
 
   // Two tubes along the seam from a shared curve: a THIN visible `glow` tube (the
@@ -585,8 +628,11 @@ export function OrganicCutTool({
   // the colour so the user sees it's targetable for "Add waypoint here".
   React.useEffect(() => {
     if (!loopLine) return;
-    const mat = loopLine.material as THREE.LineBasicMaterial;
-    mat.color.set(lineHovered ? colors.seamHover : colors.seam);
+    // Both passes of the pair (ghost + solid) recolour together.
+    for (const pass of loopLine.children) {
+      const mat = (pass as THREE.Line).material as THREE.LineBasicMaterial;
+      mat.color.set(lineHovered ? colors.seamHover : colors.seam);
+    }
   }, [loopLine, lineHovered, colors]);
 
   const modelGeometry = activeModel?.geometry.geometry ?? null;
@@ -982,18 +1028,45 @@ export function OrganicCutTool({
                 <sphereGeometry args={[hitRadius, 12, 12]} />
                 <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} />
               </mesh>
-              {/* Visible dot. */}
+              {/* Visible dot, drawn as the occluded pair: the ghost carries
+                  through the model, the solid one only where the dot is really
+                  in front. The sphere straddles the surface, so its outer half
+                  clears the depth test with no bias needed. */}
               <mesh renderOrder={1002} scale={scale}>
                 <sphereGeometry args={[markerRadius, 16, 16]} />
-                <meshBasicMaterial color={color} depthTest={false} transparent opacity={0.95} />
+                <meshBasicMaterial
+                  color={color}
+                  depthTest={false}
+                  depthWrite={false}
+                  transparent
+                  opacity={0.95 * OCCLUDED_OPACITY_FACTOR}
+                />
+              </mesh>
+              <mesh renderOrder={1003} scale={scale}>
+                <sphereGeometry args={[markerRadius, 16, 16]} />
+                <meshBasicMaterial color={color} transparent opacity={0.95} />
               </mesh>
               {/* Locked (pinned) cage: a white wireframe sphere — orientation-free,
-                  so it reads as "pinned" from any angle — that Snap to Edges spares. */}
+                  so it reads as "pinned" from any angle — that Snap to Edges spares.
+                  Same two passes as the dot it wraps. */}
               {isLocked && (
-                <mesh renderOrder={1003} scale={scale}>
+                <>
+                <mesh renderOrder={1004} scale={scale}>
                   <sphereGeometry args={[markerRadius * 1.9, 10, 8]} />
-                  <meshBasicMaterial color={0xffffff} wireframe depthTest={false} transparent opacity={0.85} />
+                  <meshBasicMaterial
+                    color={0xffffff}
+                    wireframe
+                    depthTest={false}
+                    depthWrite={false}
+                    transparent
+                    opacity={0.85 * OCCLUDED_OPACITY_FACTOR}
+                  />
                 </mesh>
+                <mesh renderOrder={1005} scale={scale}>
+                  <sphereGeometry args={[markerRadius * 1.9, 10, 8]} />
+                  <meshBasicMaterial color={0xffffff} wireframe transparent opacity={0.85} />
+                </mesh>
+                </>
               )}
             </group>
           );
