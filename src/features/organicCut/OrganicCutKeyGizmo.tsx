@@ -155,11 +155,15 @@ export function OrganicCutKeyGizmo({
       // was rotating backwards), so flip it here.
       const d = -delta;
       if (axis === 'z') {
-        // Roll accumulates raw, so spinning the ring a few times used to report
+        // Roll takes the delta UNFLIPPED: the flip above is what the two lean rings
+        // need, but on the roll ring it drove the key the opposite way to the blue
+        // handle the user was dragging.
+        //
+        // It also accumulates, so spinning the ring a few times used to report
         // absurd angles ("6403.1° roll") for a key that is geometrically at 43°.
         // Wrap every revolution away at the source: the rotation is the same one,
         // and the readout, the Reset-aim check and Rust all see a sane number.
-        onKeyAimChange(keyTiltRad, keyTiltAzimuthRad, wrapAngle(keyRollRad + d));
+        onKeyAimChange(keyTiltRad, keyTiltAzimuthRad, wrapAngle(keyRollRad + delta));
         return;
       }
       // Current lean vector in (u, v). Rotating about +u (ring-x) tips the axis
