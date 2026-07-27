@@ -7,6 +7,7 @@ import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutMode } from './types';
 import { cutPlaneFromPoints } from './cutPlane';
 import type { PlaneMeshCurve } from './planeMeshIntersection';
+import { useOrganicCutColorNumbers } from './useOrganicCutColors';
 
 interface OrganicCutToolProps {
   models: LoadedModel[];
@@ -119,12 +120,6 @@ interface OrganicCutToolProps {
 /** Max key tilt (radians) — mirrors the Rust `KEY_MAX_TILT_RAD` (~60°). */
 const KEY_MAX_TILT_RAD = Math.PI / 3;
 
-/**
- * Plane-mode seam colour: a dark brown that stays legible against the pale and
- * mid-tone model surfaces the bright greens washed out on.
- */
-const PLANE_SEAM_COLOR = 0x8b4513;
-
 /** Marker radius as a fraction of the model's bbox diagonal (small = precise). */
 const MARKER_RADIUS_FRACTION = 0.00075;
 /** Clamp the marker radius (model-local units) so it's usable on any model size. */
@@ -171,6 +166,9 @@ export function OrganicCutTool({
   keyRollRad = 0,
   showPreview = true,
 }: OrganicCutToolProps) {
+  // Every colour this tool paints with, from the saved preference (see
+  // organicCutColors.ts). Changing one repaints without a reload.
+  const colors = useOrganicCutColorNumbers();
   const activeModel = useMemo(() => models.find((m) => m.id === activeModelId), [models, activeModelId]);
   const transform = activeTransform || activeModel?.transform;
 
@@ -254,7 +252,7 @@ export function OrganicCutTool({
         const geom = new THREE.BufferGeometry();
         geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         const material = new THREE.LineBasicMaterial({
-          color: PLANE_SEAM_COLOR,
+          color: colors.seam,
           depthTest: false,
           transparent: true,
           opacity: 0.95,
@@ -264,18 +262,18 @@ export function OrganicCutTool({
         return line;
       })
       .filter((l) => l !== null);
-  }, [cutMode, planeCurves]);
+  }, [cutMode, planeCurves, colors]);
 
   const loopLine = useMemo(() => {
     const positions = loopPositions;
     if (!positions || positions.length < 6) return null;
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    const material = new THREE.LineBasicMaterial({ color: 0x37ff7a, depthTest: false, transparent: true });
+    const material = new THREE.LineBasicMaterial({ color: colors.seam, depthTest: false, transparent: true });
     const line = new THREE.Line(geom, material);
     line.renderOrder = 999;
     return line;
-  }, [loopPositions]);
+  }, [loopPositions, colors]);
 
   // Dimmed seam lines for the INACTIVE loops of a multi-loop cut. Each is drawn
   // closed (the geodesic omits the repeated final point) in a muted green so it
@@ -298,7 +296,7 @@ export function OrganicCutTool({
         const geom = new THREE.BufferGeometry();
         geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         const material = new THREE.LineBasicMaterial({
-          color: 0x1f9e54,
+          color: colors.seamInactive,
           depthTest: false,
           transparent: true,
           opacity: 0.7,
@@ -308,7 +306,7 @@ export function OrganicCutTool({
         return line;
       })
       .filter((l): l is THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> => l !== null);
-  }, [inactiveLoopPolylines]);
+  }, [inactiveLoopPolylines, colors]);
 
   // Two tubes along the seam from a shared curve: a THIN visible `glow` tube (the
   // hover highlight) and a WIDER invisible `hit` tube (the pointer/right-click
@@ -560,8 +558,8 @@ export function OrganicCutTool({
   React.useEffect(() => {
     if (!loopLine) return;
     const mat = loopLine.material as THREE.LineBasicMaterial;
-    mat.color.set(lineHovered ? 0xc8ffd8 : 0x37ff7a);
-  }, [loopLine, lineHovered]);
+    mat.color.set(lineHovered ? colors.seamHover : colors.seam);
+  }, [loopLine, lineHovered, colors]);
 
   const modelGeometry = activeModel?.geometry.geometry ?? null;
 
@@ -791,7 +789,7 @@ export function OrganicCutTool({
             </mesh>
             <mesh geometry={seamTubes.glow} renderOrder={996} frustumCulled={false}>
               <meshBasicMaterial
-                color={0xeafff0}
+                color={colors.seamGlow}
                 transparent
                 opacity={lineHovered ? 0.85 : 0}
                 depthTest={false}
@@ -806,7 +804,7 @@ export function OrganicCutTool({
         {showPreview && membraneGeometry && (
           <mesh geometry={membraneGeometry} renderOrder={997} frustumCulled={false}>
             <meshBasicMaterial
-              color={0x37ff7a}
+              color={colors.cutSurface}
               transparent
               opacity={0.25}
               side={THREE.DoubleSide}
@@ -857,7 +855,7 @@ export function OrganicCutTool({
                 camera angle instead of depending on where the lights are. */}
             <mesh geometry={keyGeometry} renderOrder={999} frustumCulled={false}>
               <meshBasicMaterial
-                color={0x8a4a08}
+                color={colors.keyBack}
                 transparent
                 opacity={0.5}
                 side={THREE.BackSide}
@@ -868,7 +866,7 @@ export function OrganicCutTool({
             </mesh>
             <mesh geometry={keyGeometry} renderOrder={1000} frustumCulled={false}>
               <meshBasicMaterial
-                color={0xffa630}
+                color={colors.keyFront}
                 transparent
                 opacity={0.7}
                 side={THREE.FrontSide}
@@ -881,7 +879,7 @@ export function OrganicCutTool({
             {keyWireframe && (
               <lineSegments geometry={keyWireframe} renderOrder={1001} frustumCulled={false}>
                 <lineBasicMaterial
-                  color={0xff7a00}
+                  color={colors.keyEdge}
                   transparent
                   opacity={0.9}
                   depthTest={false}
@@ -902,7 +900,7 @@ export function OrganicCutTool({
           >
             <planeGeometry args={[planePreview.span, planePreview.span]} />
             <meshBasicMaterial
-              color={0x37ff7a}
+              color={colors.cutSurface}
               transparent
               opacity={0.22}
               side={THREE.DoubleSide}
@@ -922,12 +920,12 @@ export function OrganicCutTool({
           const isSelected = selectedIndex === idx;
           const isLocked = !!p.locked;
           const color = isSelected
-            ? 0x0091ff
+            ? colors.markerSelected
             : isDragging
-              ? 0x35e3ff
+              ? colors.markerDragging
               : idx === 0
-                ? 0x37ff7a
-                : 0xffd24a;
+                ? colors.markerFirst
+                : colors.markerPoint;
           const scale = isDragging ? 1.5 : 1;
           // A larger invisible hit-sphere makes the small dots easy to grab.
           const hitRadius = markerRadius * 4;
