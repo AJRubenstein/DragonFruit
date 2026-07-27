@@ -193,8 +193,5 @@ export interface OrganicCutResult {
   parts: Float32Array[];
 }
 
-/** Which drawing mode the Cutting Mode tool session is in. */
-export type OrganicCutDrawMode = 'waypoint' | 'freeDraw';
-
 /** Lifecycle of the persistent Cutting Mode tool session (frontend-only state). */
 export type OrganicCutSessionStatus = 'idle' | 'drawing' | 'closed';

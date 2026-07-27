@@ -91,8 +91,8 @@ export type LoopKeySettings = Pick<
 /**
  * The cut-wide settings — everything that shapes the cut but isn't per-loop and
  * isn't per-key. Undo covers these too: changing the kerf is as much an edit as
- * moving a waypoint. Pure-UI panel fields (`drawMode`, `showPreview`) are left
- * out on purpose — hiding the preview is not an edit to undo.
+ * moving a waypoint. The pure-UI `showPreview` is left out on purpose — hiding
+ * the preview is not an edit to undo.
  */
 export type CutSettings = Pick<
   OrganicCutPanelState,
@@ -358,7 +358,6 @@ export interface OrganicCutSession {
 }
 
 const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
-  drawMode: 'waypoint',
   cutMode: 'contour',
   // 0.1mm matches the Rust default kerf (the value the contour cut used before
   // the slider was wired up) — the proven-good out-of-box thickness.

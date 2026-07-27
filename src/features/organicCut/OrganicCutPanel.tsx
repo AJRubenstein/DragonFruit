@@ -2,7 +2,7 @@ import React from 'react';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
-import type { OrganicCutDrawMode, OrganicCutMode, OrganicCutSessionStatus } from './types';
+import type { OrganicCutMode, OrganicCutSessionStatus } from './types';
 import { DEFAULT_KEY_SETTINGS } from './useOrganicCutSession';
 
 /** Key width/depth bounds (mm) — shared by the fields and the uniform-scale lock. */
@@ -58,7 +58,6 @@ function maxKeyFilletMm(widthMm: number, depthMm: number): number {
 }
 
 export interface OrganicCutPanelState {
-  drawMode: OrganicCutDrawMode;
   /** Flat planar cut vs curved contour ("wafer") cut along the drawn loop. */
   cutMode: OrganicCutMode;
   thicknessMm: number;
@@ -374,34 +373,6 @@ export function OrganicCutPanel({
                 title="Slice along a single flat plane derived from your points."
               >
                 Flat
-              </button>
-            </div>
-          </div>
-
-          {/* Draw mode */}
-          <div className="rounded-md border p-2 space-y-1.5" style={accentCardStyle}>
-            <div className="ui-meta" style={{ color: 'var(--text-muted)' }}>Draw Mode</div>
-            <div className="grid grid-cols-2 gap-1">
-              <button
-                type="button"
-                className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
-                onClick={() => setState({ drawMode: 'waypoint' })}
-                disabled={disabled || isApplying}
-                style={state.drawMode === 'waypoint' ? activeModeStyle : undefined}
-                title="Click to place points; the tool connects them along the surface."
-              >
-                Waypoint
-              </button>
-              {/* Free-draw is not wired up: nothing outside this panel reads
-                  `drawMode === 'freeDraw'`, so picking it changed no behaviour.
-                  Disabled until the freehand seam painting actually exists. */}
-              <button
-                type="button"
-                className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px] disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled
-                title="Free-draw isn't available yet — we're still working on it. Use Waypoint mode to place the seam."
-              >
-                Free-draw
               </button>
             </div>
           </div>
@@ -893,25 +864,21 @@ export function OrganicCutPanel({
             </div>
           )}
 
-          {/* Snap to edges (waypoint mode): pull every waypoint onto the model's
+          {/* Snap to edges: pull every waypoint onto the model's
               nearest sharp crease/boundary, for tidying points placed roughly in
               a fold. No-op when the model has no sharp edges. */}
-          {state.drawMode === 'waypoint' && (
-            <button
-              type="button"
-              className="ui-button ui-button-secondary w-full !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
-              onClick={onSnapToEdges}
-              disabled={disabled || isApplying || !canSnapToEdges}
-              title="Nudge every waypoint onto the model's nearest sharp edge (crease or boundary), preferring a corner where several edges meet — for points placed roughly in a crease or corner. Does nothing on a smooth model with no sharp edges. Double-click a waypoint to lock it (white cage) so snap leaves it where it is."
-            >
-              Snap to edges
-            </button>
-          )}
-          {state.drawMode === 'waypoint' && (
-            <div className="text-[9px] sm:text-[10px] text-neutral-400 leading-tight text-center -mt-1">
-              Double-click a waypoint to lock it from snapping.
-            </div>
-          )}
+          <button
+            type="button"
+            className="ui-button ui-button-secondary w-full !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
+            onClick={onSnapToEdges}
+            disabled={disabled || isApplying || !canSnapToEdges}
+            title="Nudge every waypoint onto the model's nearest sharp edge (crease or boundary), preferring a corner where several edges meet — for points placed roughly in a crease or corner. Does nothing on a smooth model with no sharp edges. Double-click a waypoint to lock it (white cage) so snap leaves it where it is."
+          >
+            Snap to edges
+          </button>
+          <div className="text-[9px] sm:text-[10px] text-neutral-400 leading-tight text-center -mt-1">
+            Double-click a waypoint to lock it from snapping.
+          </div>
 
         </div>
 
