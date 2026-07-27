@@ -21,7 +21,8 @@ pub use crate::geodesic::{surface_loop_from_mesh, surface_loop_positions, Geodes
 #[cfg(feature = "manifold")]
 pub use crate::key::{
     apply_key, apply_key_at_frame, build_key_preview_at_frame, build_key_preview_soup,
-    frame_from_plane, KeyFrame, KeyFrameInfo, KeyKind, KeyOffset, KeyOutcome, KeyShape,
+    frame_from_plane, KeyFrame, KeyFrameInfo, KeyKind, KeyOffset, KeyOutcome, KeyPreview,
+    KeyShape,
     KeyTilt,
     DEFAULT_KEY_DEPTH_MM, DEFAULT_KEY_TOLERANCE_MM, DEFAULT_KEY_WIDTH_MM, KEY_MAX_TILT_RAD,
 };

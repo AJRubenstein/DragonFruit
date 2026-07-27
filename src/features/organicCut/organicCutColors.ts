@@ -21,10 +21,18 @@ export type OrganicCutColors = {
   seamGlow: string;
   /** The cutter surface: the contour membrane and the flat plane's quad. */
   cutSurface: string;
-  /** Registration key, lit face / far face / silhouette edges. */
+  /** The key's PEG, lit face / far face / silhouette edges. */
   keyFront: string;
   keyBack: string;
   keyEdge: string;
+  /**
+   * The key's SOCKET, same three. Drawn apart from the peg because they overlap
+   * almost exactly: the socket is the peg plus the fit tolerance, so a single
+   * colour made the tolerance knob look like it did nothing.
+   */
+  socketFront: string;
+  socketBack: string;
+  socketEdge: string;
   /** The handle that slides the key across the cut face. */
   keyHandle: string;
   /** Loop waypoints: the first one, the rest, the selected one, the dragged one. */
@@ -54,6 +62,9 @@ export const DEFAULT_ORGANIC_CUT_COLORS: OrganicCutColors = {
   keyFront: '#ffa630',
   keyBack: '#8a4a08',
   keyEdge: '#ff7a00',
+  socketFront: '#c07bff',
+  socketBack: '#4a2a7a',
+  socketEdge: '#a24bff',
   keyHandle: '#0091ff',
   markerFirst: '#37ff7a',
   markerPoint: '#ffd24a',

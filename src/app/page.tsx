@@ -9874,6 +9874,7 @@ export default function Home() {
                 cutMode={organicCut.panelState.cutMode}
                 membranePreview={organicCut.membranePreview}
                 keyPreview={organicCut.keyPreview}
+                keyPegTriangleCount={organicCut.keyPegTriangleCount}
                 keyFrame={organicCut.keyFrame}
                 keyOffsetUMm={organicCut.panelState.keyOffsetUMm}
                 keyOffsetVMm={organicCut.panelState.keyOffsetVMm}

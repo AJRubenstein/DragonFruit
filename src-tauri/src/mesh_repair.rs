@@ -1263,6 +1263,9 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         // it's only available once the source is captured. Returns (soup, kind,
         // detail) — empty soup when no key (too thin / degenerate / no source).
         let mut key_soup: Vec<f32> = Vec::new();
+        // How many of key_soup's triangles are the PEG (the rest are the socket),
+        // so the frontend can colour the two apart.
+        let mut key_peg_tris = 0usize;
         let mut key_kind = "none".to_string();
         let mut key_detail = String::new();
         // Placement frame for the aim/roll gizmo (anchor, axis, u, v, tip), in
@@ -1272,7 +1275,7 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         let soup = if let Some(bytes) = source_bytes {
             let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
             if generate_key {
-                if let Some((ks, kind, detail, frame)) =
+                if let Some(preview) =
                     dragonfruit_organic_cut::build_key_preview_soup(
                         &mesh,
                         &loop_pts,
@@ -1292,10 +1295,11 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
                         key_offset,
                     )
                 {
-                    key_soup = ks;
-                    key_kind = kind.as_str().to_string();
-                    key_detail = detail;
-                    key_frame = frame;
+                    key_peg_tris = preview.peg_triangles;
+                    key_soup = preview.soup;
+                    key_kind = preview.kind.as_str().to_string();
+                    key_detail = preview.detail;
+                    key_frame = preview.frame;
                 }
             }
             dragonfruit_organic_cut::membrane::build_cutter_preview_soup(
@@ -1319,12 +1323,12 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         let bytes: Vec<u8> = bytemuck::cast_slice::<f32, u8>(&soup).to_vec();
         let key_bytes: Vec<u8> = bytemuck::cast_slice::<f32, u8>(&key_soup).to_vec();
         let key_tris = key_soup.len() / 9;
-        Ok::<_, String>((bytes, tri_count, key_bytes, key_tris, key_kind, key_detail, key_frame))
+        Ok::<_, String>((bytes, tri_count, key_bytes, key_tris, key_peg_tris, key_kind, key_detail, key_frame))
     })
     .await
     .map_err(|e| format!("membrane preview task panicked: {e}"))??;
 
-    let (bytes, tri_count, key_bytes, key_tris, key_kind, key_detail, key_frame) = result;
+    let (bytes, tri_count, key_bytes, key_tris, key_peg_tris, key_kind, key_detail, key_frame) = result;
     *organic_cut_membrane_bytes()
         .lock()
         .map_err(|e| format!("membrane lock poisoned: {e}"))? = Some(bytes);
@@ -1348,7 +1352,7 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         None => "null".to_string(),
     };
     Ok(format!(
-        "{{\"triangleCount\":{tri_count},\"keyTriangleCount\":{key_tris},\"keyKind\":\"{key_kind}\",\"keyDetail\":\"{key_detail_json}\",\"keyFrame\":{key_frame_json}}}"
+        "{{\"triangleCount\":{tri_count},\"keyTriangleCount\":{key_tris},\"keyPegTriangleCount\":{key_peg_tris},\"keyKind\":\"{key_kind}\",\"keyDetail\":\"{key_detail_json}\",\"keyFrame\":{key_frame_json}}}"
     ))
 }
 
@@ -1400,7 +1404,7 @@ pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<
         };
         // A flat split is zero-thickness — both halves meet ON the plane — so
         // there is no kerf for the key to span.
-        let (soup, kind, detail, info) = dragonfruit_organic_cut::build_key_preview_at_frame(
+        let preview = dragonfruit_organic_cut::build_key_preview_at_frame(
             &mesh,
             frame,
             key_shape,
@@ -1412,12 +1416,18 @@ pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<
             key_tolerance_mm,
             0.0,
         );
-        Ok(Some((soup, kind.as_str().to_string(), detail, info)))
+        Ok(Some((
+            preview.soup,
+            preview.peg_triangles,
+            preview.kind.as_str().to_string(),
+            preview.detail,
+            preview.frame,
+        )))
     })
     .await
     .map_err(|e| format!("plane key preview task panicked: {e}"))??;
 
-    let Some((key_soup, key_kind, key_detail, key_frame)) = result else {
+    let Some((key_soup, key_peg_tris, key_kind, key_detail, key_frame)) = result else {
         return Ok(NO_KEY_PREVIEW_JSON.to_string());
     };
     let key_tris = key_soup.len() / 9;
@@ -1439,13 +1449,13 @@ pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<
         None => "null".to_string(),
     };
     Ok(format!(
-        "{{\"triangleCount\":0,\"keyTriangleCount\":{key_tris},\"keyKind\":\"{key_kind}\",\"keyDetail\":\"{key_detail_json}\",\"keyFrame\":{key_frame_json}}}"
+        "{{\"triangleCount\":0,\"keyTriangleCount\":{key_tris},\"keyPegTriangleCount\":{key_peg_tris},\"keyKind\":\"{key_kind}\",\"keyDetail\":\"{key_detail_json}\",\"keyFrame\":{key_frame_json}}}"
     ))
 }
 
 /// The empty answer for a key preview: no key, no frame, no membrane.
 const NO_KEY_PREVIEW_JSON: &str =
-    "{\"triangleCount\":0,\"keyTriangleCount\":0,\"keyKind\":\"none\",\"keyDetail\":\"\",\"keyFrame\":null}";
+    "{\"triangleCount\":0,\"keyTriangleCount\":0,\"keyPegTriangleCount\":0,\"keyKind\":\"none\",\"keyDetail\":\"\",\"keyFrame\":null}";
 
 /// Returns the most recent registration-key preview as raw LE f32 triangle-soup
 /// bytes (peg followed by socket). Empty when no key was previewed.

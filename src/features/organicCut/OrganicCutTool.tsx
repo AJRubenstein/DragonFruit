@@ -98,6 +98,12 @@ interface OrganicCutToolProps {
    */
   keyPreview?: Float32Array | null;
   /**
+   * How many of `keyPreview`'s triangles are the PEG. The soup is the peg
+   * followed by the socket, and they are drawn in different colours — without
+   * that the Fit Tolerance knob looks dead, since it only grows the socket.
+   */
+  keyPegTriangleCount?: number;
+  /**
    * Placement frame of the previewed key (model-local). The key SOUP is built
    * UN-tilted (straight); the tilt is applied LIVE as a rigid rotation of the key
    * mesh here, so dragging the aim gizmo moves the key instantly with no Rust
@@ -238,6 +244,7 @@ export function OrganicCutTool({
   cutMode = 'plane',
   membranePreview,
   keyPreview,
+  keyPegTriangleCount = 0,
   keyFrame,
   keyOffsetUMm = 0,
   keyOffsetVMm = 0,
@@ -432,29 +439,48 @@ export function OrganicCutTool({
     return geom;
   }, [cutMode, membranePreview]);
 
-  // Registration-key preview (the peg), in BOTH cut modes. Built from the
-  // flat soup Rust returns, so it's EXACTLY the key the cut will place — the flat
-  // cut's key is framed on the plane, the contour's on the membrane, but both
-  // arrive here the same way.
-  const keyGeometry = useMemo(() => {
-    if (!keyPreview || keyPreview.length < 9) return null;
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(keyPreview, 3));
-    geom.computeVertexNormals();
-    geom.computeBoundingBox();
-    geom.computeBoundingSphere();
-    return geom;
-  }, [keyPreview]);
+  // Registration-key preview, in BOTH cut modes. Built from the flat soup Rust
+  // returns, so it's EXACTLY the key the cut will place — the flat cut's key is
+  // framed on the plane, the contour's on the membrane, but both arrive here the
+  // same way.
+  //
+  // The soup holds the peg first and the socket after it, and they are drawn as
+  // two geometries in two colours. Together they sit almost on top of each other
+  // (the socket IS the peg plus the fit tolerance), so in one colour the Fit
+  // Tolerance field read as dead: the thing it grows is the socket, and the peg
+  // never budges.
+  const [keyGeometry, socketGeometry] = useMemo(() => {
+    if (!keyPreview || keyPreview.length < 9) return [null, null];
+    const build = (data: Float32Array) => {
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(data, 3));
+      geom.computeVertexNormals();
+      geom.computeBoundingBox();
+      geom.computeBoundingSphere();
+      return geom;
+    };
+    // No split reported (an older backend, or a soup that is peg-only) → draw it
+    // all as the peg rather than dropping half the key on the floor.
+    const split = Math.min(Math.max(keyPegTriangleCount, 0) * 9, keyPreview.length);
+    if (split === 0 || split === keyPreview.length) return [build(keyPreview), null];
+    return [build(keyPreview.subarray(0, split)), build(keyPreview.subarray(split))];
+  }, [keyPreview, keyPegTriangleCount]);
 
-  // Edge outline of the key so its 3D form (the tapered box / dome) reads even as
-  // a flat depth-test-off overlay. EdgesGeometry keeps only the sharp silhouette
-  // edges (not every triangle), so the peg/socket shape is clear, not a mess.
+  // Edge outlines so each 3D form (the tapered box / dome) reads even as a flat
+  // depth-test-off overlay. EdgesGeometry keeps only the sharp silhouette edges
+  // (not every triangle), so the shape is clear, not a mess.
   const keyWireframe = useMemo(() => {
     if (!keyGeometry) return null;
     const edges = new THREE.EdgesGeometry(keyGeometry, 20);
     edges.computeBoundingSphere();
     return edges;
   }, [keyGeometry]);
+  const socketWireframe = useMemo(() => {
+    if (!socketGeometry) return null;
+    const edges = new THREE.EdgesGeometry(socketGeometry, 20);
+    edges.computeBoundingSphere();
+    return edges;
+  }, [socketGeometry]);
 
   // LIVE key tilt matrix (model-local world space). The key SOUP is built straight
   // (un-tilted) in Rust, so dragging the aim gizmo never triggers a Rust rebuild —
@@ -952,7 +978,49 @@ export function OrganicCutTool({
                 clippingPlanes={keyClipPlanes}
               />
             </mesh>
-            {/* Key edge outline so the peg/socket 3D form reads through the model. */}
+            {/* The SOCKET, under the peg (lower renderOrder) and fainter: it
+                encloses the peg — it is the peg grown by the fit tolerance — so
+                drawn on top or at equal weight it would swallow it. Seeing the
+                gap between the two IS the Fit Tolerance readout. */}
+            {socketGeometry && (
+              <>
+                <mesh geometry={socketGeometry} renderOrder={990} frustumCulled={false}>
+                  <meshBasicMaterial
+                    color={colors.socketBack}
+                    transparent
+                    opacity={0.25}
+                    side={THREE.BackSide}
+                    depthTest={false}
+                    depthWrite={false}
+                    clippingPlanes={keyClipPlanes}
+                  />
+                </mesh>
+                <mesh geometry={socketGeometry} renderOrder={991} frustumCulled={false}>
+                  <meshBasicMaterial
+                    color={colors.socketFront}
+                    transparent
+                    opacity={0.35}
+                    side={THREE.FrontSide}
+                    depthTest={false}
+                    depthWrite={false}
+                    clippingPlanes={keyClipPlanes}
+                  />
+                </mesh>
+                {socketWireframe && (
+                  <lineSegments geometry={socketWireframe} renderOrder={992} frustumCulled={false}>
+                    <lineBasicMaterial
+                      color={colors.socketEdge}
+                      transparent
+                      opacity={0.6}
+                      depthTest={false}
+                      depthWrite={false}
+                      clippingPlanes={keyClipPlanes}
+                    />
+                  </lineSegments>
+                )}
+              </>
+            )}
+            {/* Peg edge outline so its 3D form reads through the model. */}
             {keyWireframe && (
               <lineSegments geometry={keyWireframe} renderOrder={1001} frustumCulled={false}>
                 <lineBasicMaterial

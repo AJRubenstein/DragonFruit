@@ -1096,7 +1096,7 @@ pub fn build_key_preview_soup(
     tolerance: f32,
     kerf_mm: f32,
     offset: KeyOffset,
-) -> Option<(Vec<f32>, KeyKind, String, Option<KeyFrameInfo>)> {
+) -> Option<KeyPreview> {
     use crate::membrane::{build_membrane_full, CONTOUR_SUBDIVISIONS, DEFAULT_GRID_DIVISIONS};
 
     let grid = DEFAULT_GRID_DIVISIONS * (density.clamp(1.0, 4.0) as f64);
@@ -1105,12 +1105,13 @@ pub fn build_key_preview_soup(
     let frame = match frame_from_membrane_at(&membrane, offset) {
         Some(f) => f,
         None => {
-            return Some((
-                Vec::new(),
-                KeyKind::None,
-                "No key — degenerate cut frame.".to_string(),
-                None,
-            ))
+            return Some(KeyPreview {
+                soup: Vec::new(),
+                peg_triangles: 0,
+                kind: KeyKind::None,
+                detail: "No key — degenerate cut frame.".to_string(),
+                frame: None,
+            })
         }
     };
     Some(build_key_preview_at_frame(
@@ -1133,7 +1134,7 @@ pub fn build_key_preview_at_frame(
     fillet_mm: f32,
     tolerance: f32,
     kerf_mm: f32,
-) -> (Vec<f32>, KeyKind, String, Option<KeyFrameInfo>) {
+) -> KeyPreview {
     let tolerance = sanitize_tolerance(tolerance);
     let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
 
@@ -1163,16 +1164,22 @@ pub fn build_key_preview_at_frame(
     let lean = LeanXform::for_build(&orig_for_lean, &build_frame, &tilt, half_diag);
 
     let mut soup: Vec<f32> = Vec::new();
+    // Triangles [0, peg_triangles) are the peg, the rest the socket. The frontend
+    // colours the two apart, which is the only way the Fit Tolerance knob is
+    // visible: it grows the socket and leaves the peg exactly where it was.
+    let mut peg_triangles = 0usize;
     let (kind, detail) = match &plan {
         KeyPlan::Frustum { dims, detail } => {
             // peg + socket — matching apply_frustum so the preview is exactly what
             // cuts (rigid lean applied identically, socket fillet = peg fillet + tol).
             append_soup(&mut soup, &build_frustum_leaned(&build_frame, *dims, 0.0, fillet_mm, lean));
+            peg_triangles = soup.len() / 9;
             append_soup(&mut soup, &build_frustum_leaned(&build_frame, *dims, tolerance, fillet_mm + tolerance, lean));
             (KeyKind::Frustum, detail.clone())
         }
         KeyPlan::Dome { dims, detail } => {
             append_soup(&mut soup, &build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, 0.0, DOME_SEGMENTS, lean));
+            peg_triangles = soup.len() / 9;
             append_soup(&mut soup, &build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, tolerance, DOME_SEGMENTS, lean));
             (KeyKind::Dome, detail.clone())
         }
@@ -1184,7 +1191,23 @@ pub fn build_key_preview_at_frame(
     // mounts the rotation gizmo at the anchor oriented to this frame, and converts
     // gizmo rotations into tilt/azimuth/roll. `tip` is the leaned apex (model-local).
     let info = build_key_frame_info(&placed, &build_frame, &plan, lean);
-    (soup, kind, detail, info)
+    KeyPreview { soup, peg_triangles, kind, detail, frame: info }
+}
+
+/// What the live preview hands the frontend: the key the cut WOULD place, as one
+/// flat triangle soup with the boundary between its two halves marked.
+#[derive(Debug, Clone)]
+pub struct KeyPreview {
+    /// Peg triangles first, then the socket's (9 f32 per triangle, model-local).
+    pub soup: Vec<f32>,
+    /// How many of `soup`'s triangles belong to the PEG.
+    pub peg_triangles: usize,
+    /// Which rung of the ladder was placed (frustum / dome / none).
+    pub kind: KeyKind,
+    /// Human-readable reason, for the panel's alert.
+    pub detail: String,
+    /// Placement frame for the aim gizmo. `None` when no key was placed.
+    pub frame: Option<KeyFrameInfo>,
 }
 
 /// Placement-frame info handed to the frontend so the aim/roll gizmo sits exactly
@@ -2048,13 +2071,21 @@ mod tests {
             Vec3::new(5.0, 5.0, 0.0),
             Vec3::new(-5.0, 5.0, 0.0),
         ];
-        let (soup, kind, _detail, _frame) =
+        let preview =
             build_key_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default())
                 .expect("preview builds");
-        assert_eq!(kind, KeyKind::Frustum, "healthy box → frustum key preview");
+        let soup = &preview.soup;
+        assert_eq!(preview.kind, KeyKind::Frustum, "healthy box → frustum key preview");
         assert!(!soup.is_empty(), "preview soup non-empty");
         assert_eq!(soup.len() % 9, 0, "whole triangles");
         assert!(soup.iter().all(|f| f.is_finite()), "all coords finite");
+        // The peg is the first half of the soup and the socket the rest, so the
+        // frontend can colour them apart.
+        assert!(preview.peg_triangles > 0, "peg triangles reported");
+        assert!(
+            preview.peg_triangles < soup.len() / 9,
+            "the socket's triangles come after the peg's",
+        );
     }
 
     // A thick kerf must not leave the peg floating. The cutter is a slab centred on
@@ -2074,11 +2105,12 @@ mod tests {
         ];
         let depth = 5.0;
         for kerf in [0.0, crate::membrane::DEFAULT_CUTTER_THICKNESS_MM, 1.0, 2.0] {
-            let (soup, kind, detail, _frame) = build_key_preview_soup(
+            let preview = build_key_preview_soup(
                 &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum,
                 false, KeyTilt::default(), 5.0, depth, 0.0, 0.1, kerf, KeyOffset::default(),
             )
             .expect("preview builds");
+            let (soup, kind, detail) = (&preview.soup, preview.kind, &preview.detail);
             assert_eq!(kind, KeyKind::Frustum, "kerf {kerf}: frustum placed ({detail})");
 
             // The cut is at z=0 and the key extrudes along ±z; take the extent on the
@@ -2121,10 +2153,11 @@ mod tests {
         // The cut is at z=0; the peg extrudes along ±z. Measure the soup's z-extent
         // on each side of the cut for unswapped vs swapped.
         let z_extent = |swap: bool| -> (f32, f32) {
-            let (soup, _, _, _) = build_key_preview_soup(
+            let soup = build_key_preview_soup(
                 &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, swap, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default(),
             )
-            .expect("preview builds");
+            .expect("preview builds")
+            .soup;
             let mut lo = f32::INFINITY;
             let mut hi = f32::NEG_INFINITY;
             for c in soup.chunks_exact(3) {

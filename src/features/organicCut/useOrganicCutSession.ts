@@ -352,6 +352,11 @@ export interface OrganicCutSession {
    * key. Render alongside the membrane.
    */
   keyPreview: Float32Array | null;
+  /**
+   * How many of `keyPreview`'s triangles are the peg — the soup is the peg
+   * followed by the socket, and the tool splits it here to colour them apart.
+   */
+  keyPegTriangleCount: number;
   /** Which key the preview placed: 'frustum', 'dome' (fallback), or 'none'. */
   keyKind: KeyPreviewKind;
   /** Reason the key shrank / fell back / was skipped (for the panel alert). */
@@ -446,6 +451,7 @@ export function useOrganicCutSession({
   // the scene can render the key and the panel can alert on a fallback. Built in
   // the same preview round-trip as the membrane, only when generateKey is on.
   const [keyPreview, setKeyPreview] = React.useState<Float32Array | null>(null);
+  const [keyPegTriangleCount, setKeyPegTriangleCount] = React.useState(0);
   const [keyKind, setKeyKind] = React.useState<KeyPreviewKind>('none');
   const [keyDetail, setKeyDetail] = React.useState<string>('');
   // Placement frame of the previewed key (anchor/axis/u/v/tip), for the aim+roll
@@ -791,6 +797,7 @@ export function useOrganicCutSession({
     setPlaneCurves(null);
     setMembranePreview(null);
     setKeyPreview(null);
+    setKeyPegTriangleCount(0);
     setKeyKind('none');
     setKeyDetail('');
     setKeyFrame(null);
@@ -951,6 +958,7 @@ export function useOrganicCutSession({
   React.useEffect(() => {
     setMembranePreview(null);
     setKeyPreview(null);
+    setKeyPegTriangleCount(0);
     setKeyKind('none');
     setKeyDetail('');
     setKeyFrame(null);
@@ -975,6 +983,7 @@ export function useOrganicCutSession({
       if (!isDraggingPoint) {
         setMembranePreview(null);
         setKeyPreview(null);
+        setKeyPegTriangleCount(0);
         setKeyKind('none');
         setKeyDetail('');
         setKeyFrame(null);
@@ -1015,6 +1024,7 @@ export function useOrganicCutSession({
         if (cancelled) return;
         setMembranePreview(result.membrane);
         setKeyPreview(result.keyPreview);
+        setKeyPegTriangleCount(result.keyPegTriangleCount);
         setKeyKind(result.keyKind);
         setKeyDetail(result.keyDetail);
         setKeyFrame(result.keyFrame);
@@ -1041,6 +1051,7 @@ export function useOrganicCutSession({
     if (!toolActive || isDraggingPoint || !panelState.generateKey) {
       if (!isDraggingPoint) {
         setKeyPreview(null);
+        setKeyPegTriangleCount(0);
         setKeyKind('none');
         setKeyDetail('');
         setKeyFrame(null);
@@ -1073,6 +1084,7 @@ export function useOrganicCutSession({
         );
         if (cancelled) return;
         setKeyPreview(result.keyPreview);
+        setKeyPegTriangleCount(result.keyPegTriangleCount);
         setKeyKind(result.keyKind);
         setKeyDetail(result.keyDetail);
         setKeyFrame(result.keyFrame);
@@ -1208,6 +1220,7 @@ export function useOrganicCutSession({
     setGeodesicPolyline(null);
     setMembranePreview(null);
     setKeyPreview(null);
+    setKeyPegTriangleCount(0);
     setKeyKind('none');
     setKeyDetail('');
     setKeyFrame(null);
@@ -1474,6 +1487,7 @@ export function useOrganicCutSession({
     planeCurves,
     membranePreview,
     keyPreview,
+    keyPegTriangleCount,
     keyKind,
     keyDetail,
     keyFrame,

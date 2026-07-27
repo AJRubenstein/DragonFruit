@@ -259,6 +259,12 @@ export interface MembranePreviewResult {
   membrane: Float32Array | null;
   /** The key (peg + socket) soup, or null when no key / not requested. */
   keyPreview: Float32Array | null;
+  /**
+   * How many of `keyPreview`'s triangles are the PEG — the soup is the peg
+   * followed by the socket. The two are drawn in different colours, which is what
+   * makes Fit Tolerance legible: it grows the socket and never moves the peg.
+   */
+  keyPegTriangleCount: number;
   /** Which key rung was chosen. 'none' when not requested or too thin. */
   keyKind: KeyPreviewKind;
   /** Reason the key shrank / fell back / was skipped. Empty when nominal/off. */
@@ -298,6 +304,7 @@ export async function computeMembranePreview(
   const empty: MembranePreviewResult = {
     membrane: null,
     keyPreview: null,
+    keyPegTriangleCount: 0,
     keyKind: 'none',
     keyDetail: '',
     keyFrame: null,
@@ -330,6 +337,7 @@ export async function computeMembranePreview(
     const report = JSON.parse(reportJson) as {
       triangleCount: number;
       keyTriangleCount?: number;
+      keyPegTriangleCount?: number;
       keyKind?: KeyPreviewKind;
       keyDetail?: string;
       keyFrame?: KeyPreviewFrame | null;
@@ -343,6 +351,7 @@ export async function computeMembranePreview(
     return {
       membrane,
       keyPreview,
+      keyPegTriangleCount: report.keyPegTriangleCount ?? 0,
       keyKind: report.keyKind ?? 'none',
       keyDetail: report.keyDetail ?? '',
       keyFrame: report.keyFrame ?? null,
@@ -378,6 +387,7 @@ export async function computePlaneKeyPreview(
   const empty: MembranePreviewResult = {
     membrane: null,
     keyPreview: null,
+    keyPegTriangleCount: 0,
     keyKind: 'none',
     keyDetail: '',
     keyFrame: null,
@@ -402,6 +412,7 @@ export async function computePlaneKeyPreview(
     const reportJson = await core.invoke<string>('mesh_organic_cut_plane_key_preview', { requestJson });
     const report = JSON.parse(reportJson) as {
       keyTriangleCount?: number;
+      keyPegTriangleCount?: number;
       keyKind?: KeyPreviewKind;
       keyDetail?: string;
       keyFrame?: KeyPreviewFrame | null;
@@ -412,6 +423,7 @@ export async function computePlaneKeyPreview(
     return {
       membrane: null,
       keyPreview,
+      keyPegTriangleCount: report.keyPegTriangleCount ?? 0,
       keyKind: report.keyKind ?? 'none',
       keyDetail: report.keyDetail ?? '',
       keyFrame: report.keyFrame ?? null,
