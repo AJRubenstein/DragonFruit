@@ -26,7 +26,7 @@ import {
   partToGeometry,
   stageCutSource,
 } from './meshOrganicCut';
-import type { KeyPreviewKind } from './meshOrganicCut';
+import type { KeyPreviewKind, MembranePreviewResult } from './meshOrganicCut';
 import { cutPlaneFromPoints } from './cutPlane';
 import { snapPointsToFeatureEdges } from './snapToEdges';
 import { planeMeshIntersection, type PlaneMeshCurve } from './planeMeshIntersection';
@@ -416,6 +416,15 @@ const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
 /** Minimum points before a CONTOUR cut is possible (a real loop needs ≥3). */
 const MIN_CONTOUR_POINTS = 3;
 
+/**
+ * How long the cut preview waits before asking Rust to rebuild (ms).
+ *
+ * Long enough for a just-finished drag's debounced geodesic to land, so the
+ * membrane is built from the final seam instead of a stale one and doesn't
+ * rebuild twice in a row.
+ */
+const PREVIEW_SETTLE_MS = 80;
+
 /** Default per-loop key settings — the panel defaults, used for fresh loops. */
 const DEFAULT_LOOP_KEY: LoopKeySettings = extractKey(DEFAULT_PANEL_STATE);
 
@@ -792,9 +801,8 @@ export function useOrganicCutSession({
   // previous model's seam/membrane/key onto the new one until the recompute lands
   // — which is what made two identical models show the key facing opposite ways
   // for a moment. Clear them together, from one place.
-  const clearModelDerivedPreviews = React.useCallback(() => {
-    setGeodesicPolyline(null);
-    setPlaneCurves(null);
+  /** Drop the cut preview: the membrane/cutter and everything about the key. */
+  const clearCutPreview = React.useCallback(() => {
     setMembranePreview(null);
     setKeyPreview(null);
     setKeyPegTriangleCount(0);
@@ -802,6 +810,12 @@ export function useOrganicCutSession({
     setKeyDetail('');
     setKeyFrame(null);
   }, []);
+
+  const clearModelDerivedPreviews = React.useCallback(() => {
+    setGeodesicPolyline(null);
+    setPlaneCurves(null);
+    clearCutPreview();
+  }, [clearCutPreview]);
 
   // When the tool is deactivated, stash the current loops under their model so
   // they can be restored on re-entry, then clear the live view. We DON'T drop the
@@ -942,86 +956,94 @@ export function useOrganicCutSession({
     };
   }, [toolActive, loop, activeGeometry, activeGeometryKey, panelState.smoothing, cutMode]);
 
-  // Membrane preview (contour mode) for the ACTIVE loop. The membrane build is the
-  // heavy Rust round-trip, so it is SUPPRESSED while a waypoint is being dragged
-  // and rebuilt once the user drops it (isDraggingPoint flips false) — the drop
-  // then costs a single build, not a backlog. It reads the already-computed
-  // geodesic from state (the same dense loop the cut uses) and renders translucent
-  // in the tool.
+  // THE cut preview: one effect for both modes.
   //
-  // A small settle timer (80ms) lets the just-finished drag's debounced geodesic
-  // land first, so the membrane is built from the final seam rather than a stale
-  // one (which would otherwise trigger a second rebuild a moment later).
-  // Switching modes is the ONE moment a preview from the other mode has to go:
-  // each preview effect below now leaves the other mode's state alone, so
-  // without this the outgoing mode's key would hang around under the new one.
+  // It used to be two, one per mode, structurally identical and sharing most of
+  // their dependencies — so every panel edit ran BOTH, and the one whose mode was
+  // idle cleared what the other had just drawn. That was the flicker (#38): the
+  // key blinked out and came back 80ms later, taking the gizmo with it because
+  // keyFrame passed through null. Two effects that must never both act is a
+  // shape that invites the bug back; one effect that picks a mode cannot have it.
+  //
+  // The build is a heavy Rust round-trip, so it is SUPPRESSED while a waypoint is
+  // being dragged and rebuilt once the user drops it. The settle timer lets the
+  // just-finished drag's debounced geodesic land first, so the membrane is built
+  // from the final seam rather than a stale one.
   React.useEffect(() => {
-    setMembranePreview(null);
-    setKeyPreview(null);
-    setKeyPegTriangleCount(0);
-    setKeyKind('none');
-    setKeyDetail('');
-    setKeyFrame(null);
-  }, [cutMode]);
-
-  React.useEffect(() => {
-    // Not our mode: leave every preview exactly as it is. Clearing here is what
-    // made the plane-mode key flicker on every panel edit — this effect shares
-    // its deps with the plane effect, so a width change ran it, it wiped the
-    // key, and the plane effect put it back 80ms later. The gizmo went with it,
-    // since keyFrame passed through null on the way.
-    if (cutMode !== 'contour') return;
-    if (
-      !toolActive ||
-      isDraggingPoint ||
-      loop.length < 3 ||
-      !activeGeometry ||
-      !activeGeometryKey
-    ) {
-      // Don't clear the preview just because a drag started — keep the last
-      // membrane visible during the drag; only clear when truly not previewable.
-      if (!isDraggingPoint) {
-        setMembranePreview(null);
-        setKeyPreview(null);
-        setKeyPegTriangleCount(0);
-        setKeyKind('none');
-        setKeyDetail('');
-        setKeyFrame(null);
+    // What this mode asks Rust for, or null when there is nothing to preview yet.
+    // Contour previews the cutter membrane with or without a key; the flat cut has
+    // no membrane of its own (the seam is drawn locally), so it only has something
+    // to ask for when a key is wanted.
+    const request = ((): (() => Promise<MembranePreviewResult>) | null => {
+      if (!toolActive || isDraggingPoint || !activeGeometry || !activeGeometryKey) return null;
+      const ps = panelState;
+      if (cutMode === 'contour') {
+        if (loop.length < MIN_CONTOUR_POINTS) return null;
+        // Prefer the surface-following geodesic — the same dense loop the cut uses.
+        const previewLoop =
+          geodesicPolyline && geodesicPolyline.length >= 9
+            ? geodesicPolylineToLoopPoints(geodesicPolyline)
+            : loop;
+        return () =>
+          computeMembranePreview(
+            previewLoop,
+            ps.membraneSmoothing,
+            ps.density,
+            ps.thicknessMm,
+            ps.generateKey,
+            ps.keyWidthMm,
+            ps.keyDepthMm,
+            ps.keyShape,
+            ps.keyFilletMm,
+            ps.keyToleranceMm,
+            ps.keySwapSides,
+            ps.keyOffsetUMm,
+            ps.keyOffsetVMm,
+            0,
+            0,
+            0,
+          );
       }
+      if (!ps.generateKey || loop.length < MIN_LOOP_POINTS) return null;
+      const plane = cutPlaneFromPoints(loop);
+      if (!plane) return null;
+      return () =>
+        computePlaneKeyPreview(
+          [plane.normal.x, plane.normal.y, plane.normal.z],
+          plane.offset,
+          ps.generateKey,
+          ps.keyWidthMm,
+          ps.keyDepthMm,
+          ps.keyShape,
+          ps.keyFilletMm,
+          ps.keyToleranceMm,
+          ps.keySwapSides,
+          ps.keyOffsetUMm,
+          ps.keyOffsetVMm,
+        );
+    })();
+
+    if (!request) {
+      // Don't clear just because a drag started — keep the last preview up for the
+      // duration of the drag; only clear when there is truly nothing to show.
+      if (!isDraggingPoint) clearCutPreview();
       return;
     }
+    // Both mode branches above already required these; naming them keeps the async
+    // body below free of nullable captures.
+    const geometry = activeGeometry;
+    const geometryKey = activeGeometryKey;
+    if (!geometry || !geometryKey) return;
+
     let cancelled = false;
     const timer = setTimeout(() => {
       void (async () => {
-        const staged = await stageCutSource(activeGeometry, activeGeometryKey);
+        const staged = await stageCutSource(geometry, geometryKey);
         if (cancelled || !staged) return;
-        const poly = geodesicPolyline;
-        const previewLoop =
-          poly && poly.length >= 9 ? geodesicPolylineToLoopPoints(poly) : loop;
-        // The key SOUP is built STRAIGHT (tilt = 0): the live tilt is applied as a
-        // client-side rigid rotation of the key mesh (OrganicCutTool), so dragging
-        // the aim gizmo never triggers this heavy Rust round-trip. Hence tilt is NOT
-        // passed here and NOT in the deps below — only width/depth/shape/etc. rebuild
-        // the soup. (The real cut still bakes the tilt in Rust via apply_key.)
-        const result = await computeMembranePreview(
-          previewLoop,
-          panelState.membraneSmoothing,
-          panelState.density,
-          panelState.thicknessMm,
-          panelState.generateKey,
-          panelState.keyWidthMm,
-          panelState.keyDepthMm,
-          panelState.keyShape,
-          panelState.keyFilletMm,
-          panelState.keyToleranceMm,
-          panelState.keySwapSides,
-          panelState.keyOffsetUMm,
-          panelState.keyOffsetVMm,
-          0,
-          0,
-          0,
-        );
+        const result = await request();
         if (cancelled) return;
+        // Every field, every time: the flat cut reports a null membrane, which is
+        // what clears the contour's membrane when the user switches modes.
         setMembranePreview(result.membrane);
         setKeyPreview(result.keyPreview);
         setKeyPegTriangleCount(result.keyPegTriangleCount);
@@ -1030,72 +1052,37 @@ export function useOrganicCutSession({
         setKeyFrame(result.keyFrame);
         setKeyPreviewOffset({ u: panelState.keyOffsetUMm, v: panelState.keyOffsetVMm });
       })();
-    }, 80);
+    }, PREVIEW_SETTLE_MS);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-    // NOTE: keyTilt/azimuth/roll are intentionally NOT deps — tilt is applied live
-    // on the client (see OrganicCutTool's keyTiltMatrix), so changing it must NOT
-    // rebuild the soup. Keeping them out is what makes the aim gizmo smooth.
-  }, [toolActive, loop, activeGeometry, activeGeometryKey, cutMode, geodesicPolyline, isDraggingPoint, panelState.membraneSmoothing, panelState.density, panelState.thicknessMm, panelState.generateKey, panelState.keyWidthMm, panelState.keyDepthMm, panelState.keyShape, panelState.keyFilletMm, panelState.keyToleranceMm, panelState.keySwapSides, panelState.keyOffsetUMm, panelState.keyOffsetVMm]);
-
-  // PLANE MODE key preview. The membrane effect above is contour-only, so without
-  // this the flat cut placed a key the user never saw (and had no gizmo to aim).
-  // The seam itself is already drawn locally as the plane ∩ mesh curve; this only
-  // asks Rust for the key, framed on the same plane the cut will use.
-  React.useEffect(() => {
-    // Symmetric to the membrane effect above: in contour mode this effect is a
-    // no-op, never a cleanup.
-    if (cutMode !== 'plane') return;
-    if (!toolActive || isDraggingPoint || !panelState.generateKey) {
-      if (!isDraggingPoint) {
-        setKeyPreview(null);
-        setKeyPegTriangleCount(0);
-        setKeyKind('none');
-        setKeyDetail('');
-        setKeyFrame(null);
-      }
-      return;
-    }
-    if (loop.length < MIN_LOOP_POINTS || !activeGeometry || !activeGeometryKey) return;
-    const plane = cutPlaneFromPoints(loop);
-    if (!plane) return;
-
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      void (async () => {
-        const staged = await stageCutSource(activeGeometry, activeGeometryKey);
-        if (cancelled || !staged) return;
-        // Tilt/roll are NOT sent for the same reason as the contour preview: they
-        // are applied client-side on the key mesh, so aiming never round-trips.
-        const result = await computePlaneKeyPreview(
-          [plane.normal.x, plane.normal.y, plane.normal.z],
-          plane.offset,
-          panelState.generateKey,
-          panelState.keyWidthMm,
-          panelState.keyDepthMm,
-          panelState.keyShape,
-          panelState.keyFilletMm,
-          panelState.keyToleranceMm,
-          panelState.keySwapSides,
-          panelState.keyOffsetUMm,
-          panelState.keyOffsetVMm,
-        );
-        if (cancelled) return;
-        setKeyPreview(result.keyPreview);
-        setKeyPegTriangleCount(result.keyPegTriangleCount);
-        setKeyKind(result.keyKind);
-        setKeyDetail(result.keyDetail);
-        setKeyFrame(result.keyFrame);
-        setKeyPreviewOffset({ u: panelState.keyOffsetUMm, v: panelState.keyOffsetVMm });
-      })();
-    }, 80);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [toolActive, loop, activeGeometry, activeGeometryKey, cutMode, isDraggingPoint, panelState.generateKey, panelState.keyWidthMm, panelState.keyDepthMm, panelState.keyShape, panelState.keyFilletMm, panelState.keyToleranceMm, panelState.keySwapSides, panelState.keyOffsetUMm, panelState.keyOffsetVMm]);
+    // NOTE: keyTilt/azimuth/roll are intentionally NOT deps — the aim is applied
+    // live on the client (see `keyLeanTransform`), so changing it must NOT rebuild
+    // the soup. Keeping them out is what makes the gizmo smooth.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    toolActive,
+    loop,
+    activeGeometry,
+    activeGeometryKey,
+    cutMode,
+    geodesicPolyline,
+    isDraggingPoint,
+    clearCutPreview,
+    panelState.membraneSmoothing,
+    panelState.density,
+    panelState.thicknessMm,
+    panelState.generateKey,
+    panelState.keyWidthMm,
+    panelState.keyDepthMm,
+    panelState.keyShape,
+    panelState.keyFilletMm,
+    panelState.keyToleranceMm,
+    panelState.keySwapSides,
+    panelState.keyOffsetUMm,
+    panelState.keyOffsetVMm,
+  ]);
 
   const addPoint = React.useCallback((point: OrganicCutLoopPoint) => {
     setActiveLoopPoints('cut:place point', (prev) => [...prev, point]);
