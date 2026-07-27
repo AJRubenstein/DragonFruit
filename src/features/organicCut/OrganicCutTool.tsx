@@ -104,6 +104,16 @@ interface OrganicCutToolProps {
    * round-trip. Null when no key. (The real cut bakes the tilt in Rust.)
    */
   keyFrame?: KeyPreviewFrame | null;
+  /**
+   * The key's offset on the cut face, and the offset the previewed soup was built
+   * with. While the base handle is dragged the soup is NOT rebuilt (a Rust
+   * round-trip per frame), so the difference between these two is applied here as
+   * a translation — that is what makes the key follow the handle instead of
+   * jumping when the drag ends.
+   */
+  keyOffsetUMm?: number;
+  keyOffsetVMm?: number;
+  keyPreviewOffset?: { u: number; v: number };
   /** Live key tilt / azimuth / roll (radians) for the client-side rotation. */
   keyTiltRad?: number;
   keyTiltAzimuthRad?: number;
@@ -161,6 +171,9 @@ export function OrganicCutTool({
   membranePreview,
   keyPreview,
   keyFrame,
+  keyOffsetUMm = 0,
+  keyOffsetVMm = 0,
+  keyPreviewOffset,
   keyTiltRad = 0,
   keyTiltAzimuthRad = 0,
   keyRollRad = 0,
@@ -376,7 +389,7 @@ export function OrganicCutTool({
     return geom;
   }, [cutMode, membranePreview]);
 
-  // Registration-key preview (peg + socket), in BOTH cut modes. Built from the
+  // Registration-key preview (the peg), in BOTH cut modes. Built from the
   // flat soup Rust returns, so it's EXACTLY the key the cut will place — the flat
   // cut's key is framed on the plane, the contour's on the membrane, but both
   // arrive here the same way.
@@ -465,6 +478,21 @@ export function OrganicCutTool({
     const back = new THREE.Matrix4().makeTranslation(anchor.x, anchor.y, anchor.z);
     return back.multiply(sinkM).multiply(rot).multiply(toOrigin);
   }, [keyFrame, keyTiltRad, keyTiltAzimuthRad, keyRollRad]);
+
+  /**
+   * Translation that carries the built key (and its outline) to where the handle
+   * has dragged it, until Rust catches up on release. Null when they agree.
+   */
+  const keyOffsetMatrix = useMemo(() => {
+    if (!keyFrame || !keyPreviewOffset) return null;
+    const du = keyOffsetUMm - keyPreviewOffset.u;
+    const dv = keyOffsetVMm - keyPreviewOffset.v;
+    if (Math.abs(du) < 1e-6 && Math.abs(dv) < 1e-6) return null;
+    const u = new THREE.Vector3(...keyFrame.u).normalize().multiplyScalar(du);
+    const v = new THREE.Vector3(...keyFrame.v).normalize().multiplyScalar(dv);
+    const d = u.add(v);
+    return new THREE.Matrix4().makeTranslation(d.x, d.y, d.z);
+  }, [keyFrame, keyOffsetUMm, keyOffsetVMm, keyPreviewOffset]);
 
   // Clip the key preview AT THE WAFER: hide everything on the part_a (+normal) side
   // of the cut plane, so the preview shows only the portion that actually goes into
@@ -826,7 +854,7 @@ export function OrganicCutTool({
           </lineSegments>
         )}
 
-        {/* Registration-key preview (peg + socket) — amber so it reads distinctly
+        {/* Registration-key preview (the peg) — amber so it reads distinctly
             from the green membrane. `depthTest={false}` so it always draws THROUGH
             the model (an X-ray overlay), like the membrane wireframe — the key is
             mostly buried inside the body, so without this it'd be hidden.
@@ -841,8 +869,11 @@ export function OrganicCutTool({
             matrixAutoUpdate={false}
             ref={(g) => {
               if (!g) return;
+              // Slide first, then lean: the lean pivots about the anchor, so
+              // applying the translation on the OUTSIDE keeps the aim unchanged.
               if (keyTiltMatrix) g.matrix.copy(keyTiltMatrix);
               else g.matrix.identity();
+              if (keyOffsetMatrix) g.matrix.premultiply(keyOffsetMatrix);
               g.matrixWorldNeedsUpdate = true;
             }}
           >

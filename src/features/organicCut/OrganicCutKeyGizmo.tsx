@@ -37,6 +37,10 @@ export interface OrganicCutKeyGizmoProps {
    */
   keyOffsetUMm?: number;
   keyOffsetVMm?: number;
+  /** The offset the previewed key was built with — see `keyOffsetMatrix` in the
+   *  tool. The crosshair rides the same difference so it stays under the cursor
+   *  instead of snapping back to the last frame Rust returned. */
+  keyPreviewOffset?: { u: number; v: number };
   onKeyOffsetChange?: (offsetUMm: number, offsetVMm: number) => void;
   /** Notifies the host that a gizmo drag started/ended (to pause OrbitControls). */
   onDragStateChange?: (dragging: boolean) => void;
@@ -84,6 +88,7 @@ export function OrganicCutKeyGizmo({
   onKeyAimChange,
   keyOffsetUMm = 0,
   keyOffsetVMm = 0,
+  keyPreviewOffset,
   onKeyOffsetChange,
   onDragStateChange,
 }: OrganicCutKeyGizmoProps) {
@@ -246,6 +251,9 @@ export function OrganicCutKeyGizmo({
       // Grab-relative, so the key follows the cursor from wherever it was picked
       // up instead of snapping its centre under the pointer.
       handleDragRef.current = { u: grab.u, v: grab.v, startU: keyOffsetUMm, startV: keyOffsetVMm };
+      // `grab` is measured from the anchor of the LAST built frame, and startU/V
+      // are the live offsets — the difference between them is exactly the pending
+      // slide, so the deltas below stay right even mid-rebuild.
       setDraggingHandle(true);
       onDragStateChange?.(true);
       document.body.style.cursor = 'grabbing';
@@ -346,6 +354,23 @@ export function OrganicCutKeyGizmo({
     };
   }, []);
 
+  /** The crosshair's world position, carrying the not-yet-rebuilt drag offset. */
+  const handlePosition = useMemo((): [number, number, number] | null => {
+    const g = worldKeyGizmo;
+    if (!g) return null;
+    const du = keyOffsetUMm - (keyPreviewOffset?.u ?? keyOffsetUMm);
+    const dv = keyOffsetVMm - (keyPreviewOffset?.v ?? keyOffsetVMm);
+    if (Math.abs(du) < 1e-6 && Math.abs(dv) < 1e-6) return g.position;
+    // The offsets are LOCAL mm, so shift in local space and go back out to world.
+    const localToWorld = new THREE.Matrix4().copy(g.worldToLocal).invert();
+    const p = g.anchorL
+      .clone()
+      .add(g.uL.clone().multiplyScalar(du))
+      .add(g.vL.clone().multiplyScalar(dv))
+      .applyMatrix4(localToWorld);
+    return [p.x, p.y, p.z];
+  }, [worldKeyGizmo, keyOffsetUMm, keyOffsetVMm, keyPreviewOffset]);
+
   const handleGizmoDragState = useCallback(
     (dragging: boolean) => {
       onDragStateChange?.(dragging);
@@ -358,7 +383,7 @@ export function OrganicCutKeyGizmo({
   return (
     <>
     {onKeyOffsetChange && (
-      <group position={worldKeyGizmo.position} rotation={worldKeyGizmo.rotation}>
+      <group position={handlePosition ?? worldKeyGizmo.position} rotation={worldKeyGizmo.rotation}>
         {/* Invisible grab volume. A sphere rather than a disc in the cut plane:
             seen edge-on a disc is a line and there is nothing left to grab. */}
         <mesh

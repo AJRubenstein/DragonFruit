@@ -350,7 +350,7 @@ export interface OrganicCutSession {
    */
   membranePreview: Float32Array | null;
   /**
-   * Registration-key preview (peg + socket triangle soup, model-local) — the
+   * Registration-key preview (peg triangle soup, model-local) — the
    * exact key the cut will place. Null unless generateKey is on with a fitting
    * key. Render alongside the membrane.
    */
@@ -364,6 +364,8 @@ export interface OrganicCutSession {
    * roll gizmo. Null when no key was placed. Drives where the tip/roll handles sit.
    */
   keyFrame: KeyPreviewFrame | null;
+  /** The key offset (mm along u/v) the current preview soup was built with. */
+  keyPreviewOffset: { u: number; v: number };
 }
 
 const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
@@ -444,7 +446,7 @@ export function useOrganicCutSession({
   // Contour-cut membrane preview (flat triangle soup, model-local). Shows the
   // exact cutter surface so the user sees where the curved cut will land.
   const [membranePreview, setMembranePreview] = React.useState<Float32Array | null>(null);
-  // Registration-key preview (peg + socket soup) + the chosen rung and reason, so
+  // Registration-key preview (peg soup) + the chosen rung and reason, so
   // the scene can render the key and the panel can alert on a fallback. Built in
   // the same preview round-trip as the membrane, only when generateKey is on.
   const [keyPreview, setKeyPreview] = React.useState<Float32Array | null>(null);
@@ -453,6 +455,13 @@ export function useOrganicCutSession({
   // Placement frame of the previewed key (anchor/axis/u/v/tip), for the aim+roll
   // gizmo. Null when no key is previewed.
   const [keyFrame, setKeyFrame] = React.useState<KeyPreviewFrame | null>(null);
+  /**
+   * The key offset the CURRENT preview soup was built with. Dragging the base
+   * handle is deliberately not round-tripped through Rust (same reason as the aim
+   * gizmo), so the view offsets the built key by the difference — without this
+   * reference the key would sit still until the drag ended, which is blind work.
+   */
+  const [keyPreviewOffset, setKeyPreviewOffset] = React.useState<{ u: number; v: number }>({ u: 0, v: 0 });
   // Selected waypoint index (click a marker to select; Delete removes it).
   const [selectedIndex, setSelectedIndex] = React.useState<number | null>(null);
 
@@ -1001,6 +1010,7 @@ export function useOrganicCutSession({
         setKeyKind(result.keyKind);
         setKeyDetail(result.keyDetail);
         setKeyFrame(result.keyFrame);
+        setKeyPreviewOffset({ u: panelState.keyOffsetUMm, v: panelState.keyOffsetVMm });
       })();
     }, 80);
     return () => {
@@ -1055,6 +1065,7 @@ export function useOrganicCutSession({
         setKeyKind(result.keyKind);
         setKeyDetail(result.keyDetail);
         setKeyFrame(result.keyFrame);
+        setKeyPreviewOffset({ u: panelState.keyOffsetUMm, v: panelState.keyOffsetVMm });
       })();
     }, 80);
     return () => {
@@ -1474,5 +1485,6 @@ export function useOrganicCutSession({
     keyKind,
     keyDetail,
     keyFrame,
+    keyPreviewOffset,
   };
 }
