@@ -9829,6 +9829,15 @@ export default function Home() {
                 membranePreview={organicCut.membranePreview}
                 keyPreview={organicCut.keyPreview}
                 keyFrame={organicCut.keyFrame}
+                keyOffsetUMm={organicCut.panelState.keyOffsetUMm}
+                keyOffsetVMm={organicCut.panelState.keyOffsetVMm}
+                onKeyOffsetChange={(offsetUMm, offsetVMm) =>
+                  organicCut.setPanelState({
+                    ...organicCut.panelState,
+                    keyOffsetUMm: offsetUMm,
+                    keyOffsetVMm: offsetVMm,
+                  })
+                }
                 keyTiltRad={organicCut.panelState.keyTiltRad}
                 keyTiltAzimuthRad={organicCut.panelState.keyTiltAzimuthRad}
                 keyRollRad={organicCut.panelState.keyRollRad}

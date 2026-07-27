@@ -70,6 +70,10 @@ pub struct LoopKeySpec {
     #[serde(default = "default_key_tolerance")]
     pub key_tolerance_mm: f32,
     #[serde(default)]
+    pub key_offset_u_mm: f32,
+    #[serde(default)]
+    pub key_offset_v_mm: f32,
+    #[serde(default)]
     pub key_swap_sides: bool,
     #[serde(default)]
     pub key_tilt_rad: f32,
@@ -154,6 +158,12 @@ pub struct OrganicCutSpec {
     /// 0 = press fit. Defaults to 0.1 mm (a print-scale slide fit).
     #[serde(default = "default_key_tolerance")]
     pub key_tolerance_mm: f32,
+    /// Where the key sits on the cut face, in mm along the cut frame's `u`/`v`
+    /// axes from the natural anchor (the centroid of the cut). Both 0 = centred.
+    #[serde(default)]
+    pub key_offset_u_mm: f32,
+    #[serde(default)]
+    pub key_offset_v_mm: f32,
     /// Flip which half gets the peg vs the socket. Default false: peg on `part_a`
     /// (the membrane's +normal side), socket carved from `part_b`. True swaps them.
     #[serde(default)]
@@ -466,6 +476,7 @@ struct ResolvedKey {
     shape: crate::key::KeyShape,
     fillet: f32,
     tolerance: f32,
+    offset: crate::key::KeyOffset,
     swap: bool,
     tilt: crate::key::KeyTilt,
 }
@@ -481,6 +492,7 @@ fn resolve_loop_key(spec: &OrganicCutSpec, i: usize) -> ResolvedKey {
             shape: crate::key::KeyShape::from_str_or_default(&k.key_shape),
             fillet: k.key_fillet_mm,
             tolerance: k.key_tolerance_mm,
+            offset: crate::key::KeyOffset::new(k.key_offset_u_mm, k.key_offset_v_mm),
             swap: k.key_swap_sides,
             tilt: crate::key::KeyTilt::new(k.key_tilt_rad, k.key_tilt_azimuth_rad, k.key_roll_rad),
         },
@@ -491,6 +503,7 @@ fn resolve_loop_key(spec: &OrganicCutSpec, i: usize) -> ResolvedKey {
             shape: crate::key::KeyShape::from_str_or_default(&spec.key_shape),
             fillet: spec.key_fillet_mm,
             tolerance: spec.key_tolerance_mm,
+            offset: crate::key::KeyOffset::new(spec.key_offset_u_mm, spec.key_offset_v_mm),
             swap: spec.key_swap_sides,
             tilt: crate::key::KeyTilt::new(
                 spec.key_tilt_rad,
@@ -599,6 +612,7 @@ fn organic_cut_contour(
                     rk.fillet,
                     rk.tolerance,
                     thickness,
+                    rk.offset,
                 );
                 // Map the (+normal, −normal) result back to (body, freed) = (a, b).
                 if a_on_plus {
@@ -694,6 +708,7 @@ fn organic_cut_contour(
             rk.fillet,
             rk.tolerance,
             thickness,
+            rk.offset,
         );
         part_a = keyed.part_a;
         part_b = keyed.part_b;
@@ -787,7 +802,7 @@ fn organic_cut_plane(
     let mut key_kind = crate::key::KeyKind::None;
     let mut key_detail = String::new();
     let (part_a, part_b) = if rk.generate {
-        match crate::key::frame_from_plane(mesh, plane.normal, plane.offset) {
+        match crate::key::frame_from_plane(mesh, plane.normal, plane.offset, rk.offset) {
             Some(frame) => {
                 // `split_by_plane` hands back (+normal side, −normal side), and the
                 // key's frame axis IS that +normal — so `first` is part_a already.
@@ -1076,6 +1091,8 @@ mod tests {
                 key_width_mm: 5.0,
                 key_depth_mm: 5.0,
                 key_tolerance_mm: 0.1,
+                key_offset_u_mm: 0.0,
+                key_offset_v_mm: 0.0,
                 ..Default::default()
             },
         };
@@ -1208,6 +1225,8 @@ mod tests {
             key_shape: "frustum".to_string(),
             key_fillet_mm: 0.0,
             key_tolerance_mm: 0.1,
+            key_offset_u_mm: 0.0,
+            key_offset_v_mm: 0.0,
             key_swap_sides: false,
             key_tilt_rad: 0.0,
             key_tilt_azimuth_rad: 0.0,

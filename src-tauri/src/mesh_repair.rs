@@ -301,6 +301,12 @@ struct GeodesicRequestDto {
     /// every face. 0 = press fit. Default 0.1 (slide fit).
     #[serde(default = "default_key_tolerance")]
     key_tolerance_mm: f32,
+    /// Where the key sits on the cut face: mm along the cut frame's `u`/`v` axes
+    /// from the natural anchor (the centroid). Both 0 = centred, the old behaviour.
+    #[serde(default)]
+    key_offset_u_mm: f32,
+    #[serde(default)]
+    key_offset_v_mm: f32,
     /// Flat-cut only: the plane the key is framed on, as `dot(normal, p) == offset`
     /// in model-local space — the exact plane the frontend previewed. Absent for a
     /// contour preview, which frames the key on the membrane instead.
@@ -362,6 +368,8 @@ impl Default for GeodesicRequestDto {
             key_shape: "frustum".to_string(),
             key_fillet_mm: 0.0,
             key_tolerance_mm: 0.1,
+            key_offset_u_mm: 0.0,
+            key_offset_v_mm: 0.0,
             plane_normal: [0.0; 3],
             plane_offset: 0.0,
             key_swap_sides: false,
@@ -1234,6 +1242,7 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
     let key_shape = dragonfruit_organic_cut::KeyShape::from_str_or_default(&req.key_shape);
     let key_fillet_mm = req.key_fillet_mm;
     let key_tolerance_mm = req.key_tolerance_mm;
+    let key_offset = dragonfruit_organic_cut::KeyOffset::new(req.key_offset_u_mm, req.key_offset_v_mm);
     let key_swap_sides = req.key_swap_sides;
     let key_tilt = dragonfruit_organic_cut::KeyTilt::new(
         req.key_tilt_rad,
@@ -1280,6 +1289,7 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
                         // the preview must be built with it too or it lies about
                         // where the peg's base sits.
                         thickness_mm,
+                        key_offset,
                     )
                 {
                     key_soup = ks;
@@ -1362,6 +1372,7 @@ pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<
         req.key_tilt_azimuth_rad,
         req.key_roll_rad,
     );
+    let key_offset = dragonfruit_organic_cut::KeyOffset::new(req.key_offset_u_mm, req.key_offset_v_mm);
     let (key_width_mm, key_depth_mm, key_fillet_mm, key_tolerance_mm, key_swap_sides) = (
         req.key_width_mm,
         req.key_depth_mm,
@@ -1383,7 +1394,8 @@ pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<
 
     let result = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
-        let Some(frame) = dragonfruit_organic_cut::frame_from_plane(&mesh, normal, offset) else {
+        let Some(frame) = dragonfruit_organic_cut::frame_from_plane(&mesh, normal, offset, key_offset)
+        else {
             return Ok::<_, String>(None);
         };
         // A flat split is zero-thickness — both halves meet ON the plane — so

@@ -16,6 +16,7 @@ const FIELDS: { key: keyof OrganicCutColors; label: string; hint: string }[] = [
   { key: 'keyFront', label: 'Key (near faces)', hint: 'The registration key’s faces turned toward you.' },
   { key: 'keyBack', label: 'Key (far faces)', hint: 'Its far faces, darker so the shape reads solid.' },
   { key: 'keyEdge', label: 'Key edges', hint: 'The key’s silhouette lines.' },
+  { key: 'keyHandle', label: 'Key handle', hint: 'The dot you drag to slide the key across the cut.' },
   { key: 'markerFirst', label: 'First waypoint', hint: 'The point the loop starts from.' },
   { key: 'markerPoint', label: 'Waypoint', hint: 'Every other point on the loop.' },
   { key: 'markerSelected', label: 'Waypoint (selected)', hint: 'The point you clicked.' },

@@ -289,6 +289,8 @@ export async function computeMembranePreview(
   keyFilletMm = 0.0,
   keyToleranceMm = 0.1,
   keySwapSides = false,
+  keyOffsetUMm = 0.0,
+  keyOffsetVMm = 0.0,
   keyTiltRad = 0.0,
   keyTiltAzimuthRad = 0.0,
   keyRollRad = 0.0,
@@ -317,6 +319,8 @@ export async function computeMembranePreview(
     keyFilletMm,
     keyToleranceMm,
     keySwapSides,
+    keyOffsetUMm,
+    keyOffsetVMm,
     keyTiltRad,
     keyTiltAzimuthRad,
     keyRollRad,
@@ -368,6 +372,8 @@ export async function computePlaneKeyPreview(
   keyFilletMm = 0.0,
   keyToleranceMm = 0.1,
   keySwapSides = false,
+  keyOffsetUMm = 0.0,
+  keyOffsetVMm = 0.0,
 ): Promise<MembranePreviewResult> {
   const empty: MembranePreviewResult = {
     membrane: null,
@@ -389,6 +395,8 @@ export async function computePlaneKeyPreview(
     keyFilletMm,
     keyToleranceMm,
     keySwapSides,
+    keyOffsetUMm,
+    keyOffsetVMm,
   });
   try {
     const reportJson = await core.invoke<string>('mesh_organic_cut_plane_key_preview', { requestJson });

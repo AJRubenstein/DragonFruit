@@ -68,6 +68,8 @@ export interface OrganicCutSpec {
     keyShape: 'frustum' | 'dome';
     keyFilletMm: number;
     keyToleranceMm: number;
+    keyOffsetUMm: number;
+    keyOffsetVMm: number;
     keySwapSides: boolean;
     keyTiltRad: number;
     keyTiltAzimuthRad: number;
@@ -123,6 +125,12 @@ export interface OrganicCutSpec {
    * uses 0.1. Serde field: `keyToleranceMm`.
    */
   keyToleranceMm?: number;
+  /**
+   * Where the key sits on the cut face: mm along the cut frame's `u`/`v` axes from
+   * the natural anchor. Both 0/omitted = centred. Serde: `keyOffsetUMm`/`VMm`.
+   */
+  keyOffsetUMm?: number;
+  keyOffsetVMm?: number;
   /** Flip which half gets the peg vs the socket. Serde field: `keySwapSides`. */
   keySwapSides?: boolean;
   /**

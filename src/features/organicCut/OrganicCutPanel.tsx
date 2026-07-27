@@ -89,6 +89,13 @@ export interface OrganicCutPanelState {
    */
   keyToleranceMm: number;
   /**
+   * Where the key sits on the cut face: mm along the cut frame's u/v axes from
+   * the natural anchor (the centroid of the cut). Driven by the blue handle at
+   * the key's base in the 3D view, not by a field — dragging it is the point.
+   */
+  keyOffsetUMm: number;
+  keyOffsetVMm: number;
+  /**
    * Dome only: when true, the Width/Depth sliders are ratio-locked — dragging one
    * scales the other to preserve the current proportions (resize as a unit). When
    * false, each is independent (free oblong control).
@@ -669,6 +676,30 @@ export function OrganicCutPanel({
                           title="Reset the key to point straight out of the cut (no lean / roll)."
                         >
                           Reset Aim
+                        </button>
+                      </div>
+                    );
+                  })()}
+                  {/* Offset readout + recentre. Like the aim above, the offset is
+                      set in the viewport (drag the blue dot at the key's base), so
+                      there is nothing to show until the key has actually moved. */}
+                  {(() => {
+                    const u = Math.round(state.keyOffsetUMm * 10) / 10;
+                    const v = Math.round(state.keyOffsetVMm * 10) / 10;
+                    if (u === 0 && v === 0) return null;
+                    return (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>
+                          {`Offset: ${u}, ${v} mm`}
+                        </span>
+                        <button
+                          type="button"
+                          className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
+                          onClick={() => setState({ keyOffsetUMm: 0, keyOffsetVMm: 0 })}
+                          disabled={disabled || isApplying}
+                          title="Put the key back in the middle of the cut."
+                        >
+                          Center
                         </button>
                       </div>
                     );

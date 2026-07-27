@@ -208,6 +208,15 @@ pub struct KeyOutcome {
 /// stable in-plane basis. Returns `None` if the membrane is degenerate (no area /
 /// cancelling normals) — the caller then skips the key.
 pub fn frame_from_membrane(membrane: &Membrane) -> Option<KeyFrame> {
+    frame_from_membrane_at(membrane, KeyOffset::default())
+}
+
+/// [`frame_from_membrane`] with the key slid `offset` millimetres across the cut
+/// face. The offset moves the SEED, not the finished anchor: the seed is then
+/// snapped onto the membrane and the normal taken there, exactly as for the
+/// centroid — so on a curved seam the moved key still sits ON the surface with the
+/// local normal, instead of floating off the tangent plane of where it started.
+pub fn frame_from_membrane_at(membrane: &Membrane, offset: KeyOffset) -> Option<KeyFrame> {
     if membrane.vertices.is_empty() || membrane.triangles.is_empty() {
         return None;
     }
@@ -231,6 +240,18 @@ pub fn frame_from_membrane(membrane: &Membrane) -> Option<KeyFrame> {
         centroid = centroid.add(p);
     }
     centroid = centroid.scale(1.0 / membrane.vertices.len() as f32);
+
+    // Slide the seed across the cut face before snapping. The in-plane basis for
+    // the slide is the one derived from the membrane's mean normal — the same
+    // basis the panel/gizmo report offsets in, so a drag of 1mm along `u` moves
+    // the key 1mm along the `u` the user saw.
+    let centroid = if offset.is_zero() {
+        centroid
+    } else {
+        let mean_axis = mean_membrane_normal(membrane);
+        let (su, sv) = orthonormal_basis(mean_axis);
+        centroid.add(su.scale(offset.u)).add(sv.scale(offset.v))
+    };
 
     let mut anchor = centroid;
     let mut best_d2 = f32::INFINITY;
@@ -279,18 +300,42 @@ pub fn frame_from_membrane(membrane: &Membrane) -> Option<KeyFrame> {
 /// no membrane, and the loop's waypoints only sample the surface where the user
 /// happened to click — their centroid is not the middle of the cut face. The real
 /// section is, so we measure it (see [`crate::membrane::plane_section`]).
-pub fn frame_from_plane(mesh: &IndexedMesh, normal: Vec3, offset: f32) -> Option<KeyFrame> {
+pub fn frame_from_plane(
+    mesh: &IndexedMesh,
+    normal: Vec3,
+    plane_offset: f32,
+    offset: KeyOffset,
+) -> Option<KeyFrame> {
     let nlen = normal.length();
     if nlen < 1e-9 {
         return None;
     }
     let axis = normal.scale(1.0 / nlen);
     let (u, v) = orthonormal_basis(axis);
-    let section = crate::membrane::plane_section(mesh, axis, offset / nlen, u, v)?;
+    let section = crate::membrane::plane_section(mesh, axis, plane_offset / nlen, u, v)?;
     if !(section.area > 1e-9) {
         return None;
     }
-    Some(KeyFrame { anchor: section.centroid, axis, u, v, cut_area: section.area })
+    // The plane is flat, so sliding the anchor keeps it on the cut face by
+    // construction. Sliding it off the material is the user's business: the
+    // clearance probe finds no walls and the ladder reports the part too thin.
+    let anchor = section.centroid.add(u.scale(offset.u)).add(v.scale(offset.v));
+    Some(KeyFrame { anchor, axis, u, v, cut_area: section.area })
+}
+
+/// Area-weighted mean normal of a whole membrane. Only used to pick the in-plane
+/// basis an offset is measured in: it must NOT depend on where the key currently
+/// sits, or sliding the key would rotate the very axes the slide is measured along.
+fn mean_membrane_normal(membrane: &Membrane) -> Vec3 {
+    let mut nsum = Vec3::ZERO;
+    for t in &membrane.triangles {
+        let a = membrane.vertices[t[0] as usize];
+        let b = membrane.vertices[t[1] as usize];
+        let c = membrane.vertices[t[2] as usize];
+        nsum = nsum.add(b.sub(a).cross(c.sub(a)));
+    }
+    let len = nsum.length();
+    if len > 1e-9 { nsum.scale(1.0 / len) } else { Vec3::new(0.0, 0.0, 1.0) }
 }
 
 /// Build an orthonormal `(u, v)` pair spanning the plane perpendicular to `axis`.
@@ -391,6 +436,29 @@ pub struct KeyTilt {
 impl KeyTilt {
     pub fn new(tilt: f32, azimuth: f32, roll: f32) -> Self {
         KeyTilt { tilt, azimuth, roll }
+    }
+}
+
+/// Where the key sits ON the cut face, as millimetres along the frame's own `u`
+/// and `v` axes from the natural anchor (the centroid of the cut).
+///
+/// The centroid is a fine default and a poor rule: on a bean-shaped section it can
+/// sit in the thinnest part, or in air. This lets the user slide the key to where
+/// there is material, without moving the cut itself.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct KeyOffset {
+    pub u: f32,
+    pub v: f32,
+}
+
+impl KeyOffset {
+    pub fn new(u: f32, v: f32) -> Self {
+        let finite = |x: f32| if x.is_finite() { x } else { 0.0 };
+        KeyOffset { u: finite(u), v: finite(v) }
+    }
+
+    fn is_zero(&self) -> bool {
+        self.u == 0.0 && self.v == 0.0
     }
 }
 
@@ -883,8 +951,9 @@ pub fn apply_key(
     fillet_mm: f32,
     tolerance: f32,
     kerf_mm: f32,
+    offset: KeyOffset,
 ) -> KeyOutcome {
-    let frame0 = match frame_from_membrane(membrane) {
+    let frame0 = match frame_from_membrane_at(membrane, offset) {
         Some(f) => f,
         None => {
             return KeyOutcome {
@@ -1026,13 +1095,14 @@ pub fn build_key_preview_soup(
     fillet_mm: f32,
     tolerance: f32,
     kerf_mm: f32,
+    offset: KeyOffset,
 ) -> Option<(Vec<f32>, KeyKind, String, Option<KeyFrameInfo>)> {
     use crate::membrane::{build_membrane_full, CONTOUR_SUBDIVISIONS, DEFAULT_GRID_DIVISIONS};
 
     let grid = DEFAULT_GRID_DIVISIONS * (density.clamp(1.0, 4.0) as f64);
     let membrane =
         build_membrane_full(loop_pts, CONTOUR_SUBDIVISIONS, membrane_smoothing, grid)?;
-    let frame = match frame_from_membrane(&membrane) {
+    let frame = match frame_from_membrane_at(&membrane, offset) {
         Some(f) => f,
         None => {
             return Some((
@@ -1816,7 +1886,7 @@ mod tests {
         let mem = flat_membrane(10.0);
 
         let a_tris_before = part_a.triangle_count();
-        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
+        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default());
 
         assert_eq!(out.kind, KeyKind::Frustum, "frustum key placed: {}", out.detail);
         assert!(
@@ -1839,7 +1909,7 @@ mod tests {
 
         let b_tris_before = part_b.triangle_count();
         // swap_sides = true → peg unions onto part_b, socket carves part_a.
-        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, true, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
+        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, true, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default());
 
         assert_eq!(out.kind, KeyKind::Frustum, "swapped frustum key placed: {}", out.detail);
         assert!(
@@ -1893,7 +1963,7 @@ mod tests {
         let key_d = 5.0;
         assert!(key_d > 4.0, "test premise: requested depth exceeds the part");
 
-        let out = apply_key(&model, part_a, part_b.clone(), &mem, KeyShape::Frustum, false, KeyTilt::default(), key_w, key_d, 0.0, 0.1, 0.0);
+        let out = apply_key(&model, part_a, part_b.clone(), &mem, KeyShape::Frustum, false, KeyTilt::default(), key_w, key_d, 0.0, 0.1, 0.0, KeyOffset::default());
 
         assert_eq!(out.kind, KeyKind::Frustum, "still a frustum, just smaller: {}", out.detail);
         assert!(out.detail.contains("shrunk"), "reports the shrink: {:?}", out.detail);
@@ -1926,7 +1996,7 @@ mod tests {
         // ~2.0 mm deep part_b: below the frustum's depth floor (1 mm key + 1 mm
         // wall + 0.1 mm tol = 2.1 mm needed) but the shallower dome still fits.
         let (model1, pa, pb) = split_halves(20.0, 2.0);
-        let dome_out = apply_key(&model1, pa, pb, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
+        let dome_out = apply_key(&model1, pa, pb, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default());
         assert_eq!(dome_out.kind, KeyKind::Dome, "dome fallback: {}", dome_out.detail);
         assert!(
             dome_out.detail.contains("half-sphere"),
@@ -1938,7 +2008,7 @@ mod tests {
         // the parts come back UNCHANGED.
         let (model2, pa2, pb2) = split_halves(20.0, 0.5);
         let pb2_tris = pb2.triangle_count();
-        let none_out = apply_key(&model2, pa2, pb2, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
+        let none_out = apply_key(&model2, pa2, pb2, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default());
         assert_eq!(none_out.kind, KeyKind::None, "no key: {}", none_out.detail);
         assert!(none_out.detail.contains("too thin"), "no-key reason: {:?}", none_out.detail);
         assert_eq!(
@@ -1955,7 +2025,7 @@ mod tests {
         let mem = flat_membrane(10.0);
         // Plenty thick for a frustum — but we ask for a dome explicitly.
         let (model, pa, pb) = split_halves(20.0, 20.0);
-        let out = apply_key(&model, pa, pb, &mem, KeyShape::Dome, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
+        let out = apply_key(&model, pa, pb, &mem, KeyShape::Dome, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default());
         assert_eq!(
             out.kind,
             KeyKind::Dome,
@@ -1979,7 +2049,7 @@ mod tests {
             Vec3::new(-5.0, 5.0, 0.0),
         ];
         let (soup, kind, _detail, _frame) =
-            build_key_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0)
+            build_key_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default())
                 .expect("preview builds");
         assert_eq!(kind, KeyKind::Frustum, "healthy box → frustum key preview");
         assert!(!soup.is_empty(), "preview soup non-empty");
@@ -2006,7 +2076,7 @@ mod tests {
         for kerf in [0.0, crate::membrane::DEFAULT_CUTTER_THICKNESS_MM, 1.0, 2.0] {
             let (soup, kind, detail, _frame) = build_key_preview_soup(
                 &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum,
-                false, KeyTilt::default(), 5.0, depth, 0.0, 0.1, kerf,
+                false, KeyTilt::default(), 5.0, depth, 0.0, 0.1, kerf, KeyOffset::default(),
             )
             .expect("preview builds");
             assert_eq!(kind, KeyKind::Frustum, "kerf {kerf}: frustum placed ({detail})");
@@ -2052,7 +2122,7 @@ mod tests {
         // on each side of the cut for unswapped vs swapped.
         let z_extent = |swap: bool| -> (f32, f32) {
             let (soup, _, _, _) = build_key_preview_soup(
-                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, swap, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0,
+                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, swap, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default(),
             )
             .expect("preview builds");
             let mut lo = f32::INFINITY;
@@ -2237,7 +2307,7 @@ mod tests {
         let mem = flat_membrane(10.0);
         let a_before = part_a.triangle_count();
         let tilt = KeyTilt::new(40.0_f32.to_radians(), 0.7, 0.3);
-        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, 0.0);
+        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, 0.0, KeyOffset::default());
         assert_eq!(out.kind, KeyKind::Frustum, "tilted key placed: {}", out.detail);
         assert!(out.part_a.triangle_count() > a_before, "peg bonded to part_a");
         assert!(to_manifold(&out.part_a).is_ok(), "tilted part_a watertight");
@@ -2289,7 +2359,7 @@ mod tests {
         let b_before = split.part_b.triangle_count();
 
         // Now key the REAL parts — clearance probes against the original `model`.
-        let out = apply_key(&model, split.part_a, split.part_b, &split.membrane, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, DEFAULT_CUTTER_THICKNESS_MM);
+        let out = apply_key(&model, split.part_a, split.part_b, &split.membrane, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, DEFAULT_CUTTER_THICKNESS_MM, KeyOffset::default());
 
         assert_eq!(
             out.kind,

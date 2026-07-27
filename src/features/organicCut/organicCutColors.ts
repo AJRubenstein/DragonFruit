@@ -25,6 +25,8 @@ export type OrganicCutColors = {
   keyFront: string;
   keyBack: string;
   keyEdge: string;
+  /** The handle that slides the key across the cut face. */
+  keyHandle: string;
   /** Loop waypoints: the first one, the rest, the selected one, the dragged one. */
   markerFirst: string;
   markerPoint: string;
@@ -52,6 +54,7 @@ export const DEFAULT_ORGANIC_CUT_COLORS: OrganicCutColors = {
   keyFront: '#ffa630',
   keyBack: '#8a4a08',
   keyEdge: '#ff7a00',
+  keyHandle: '#0091ff',
   markerFirst: '#37ff7a',
   markerPoint: '#ffd24a',
   markerSelected: '#0091ff',
