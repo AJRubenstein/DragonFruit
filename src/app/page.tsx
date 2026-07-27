@@ -9673,6 +9673,15 @@ export default function Home() {
                   keyTiltRad={organicCut.panelState.keyTiltRad}
                   keyTiltAzimuthRad={organicCut.panelState.keyTiltAzimuthRad}
                   keyRollRad={organicCut.panelState.keyRollRad}
+                  keyOffsetUMm={organicCut.panelState.keyOffsetUMm}
+                  keyOffsetVMm={organicCut.panelState.keyOffsetVMm}
+                  onKeyOffsetChange={(offsetUMm, offsetVMm) =>
+                    organicCut.setPanelState({
+                      ...organicCut.panelState,
+                      keyOffsetUMm: offsetUMm,
+                      keyOffsetVMm: offsetVMm,
+                    })
+                  }
                   onKeyAimChange={(tilt, azimuth, roll) =>
                     organicCut.setPanelState({
                       ...organicCut.panelState,
@@ -9839,15 +9848,6 @@ export default function Home() {
                 membranePreview={organicCut.membranePreview}
                 keyPreview={organicCut.keyPreview}
                 keyFrame={organicCut.keyFrame}
-                keyOffsetUMm={organicCut.panelState.keyOffsetUMm}
-                keyOffsetVMm={organicCut.panelState.keyOffsetVMm}
-                onKeyOffsetChange={(offsetUMm, offsetVMm) =>
-                  organicCut.setPanelState({
-                    ...organicCut.panelState,
-                    keyOffsetUMm: offsetUMm,
-                    keyOffsetVMm: offsetVMm,
-                  })
-                }
                 keyTiltRad={organicCut.panelState.keyTiltRad}
                 keyTiltAzimuthRad={organicCut.panelState.keyTiltAzimuthRad}
                 keyRollRad={organicCut.panelState.keyRollRad}

@@ -104,14 +104,6 @@ interface OrganicCutToolProps {
    * round-trip. Null when no key. (The real cut bakes the tilt in Rust.)
    */
   keyFrame?: KeyPreviewFrame | null;
-  /**
-   * Where the key currently sits on the cut face (mm along the frame's u/v), and
-   * the reporter for dragging it there. Without the setter the blue base handle
-   * is not drawn at all — the key stays pinned to the centroid.
-   */
-  keyOffsetUMm?: number;
-  keyOffsetVMm?: number;
-  onKeyOffsetChange?: (offsetUMm: number, offsetVMm: number) => void;
   /** Live key tilt / azimuth / roll (radians) for the client-side rotation. */
   keyTiltRad?: number;
   keyTiltAzimuthRad?: number;
@@ -169,9 +161,6 @@ export function OrganicCutTool({
   membranePreview,
   keyPreview,
   keyFrame,
-  keyOffsetUMm = 0,
-  keyOffsetVMm = 0,
-  onKeyOffsetChange,
   keyTiltRad = 0,
   keyTiltAzimuthRad = 0,
   keyRollRad = 0,
@@ -654,113 +643,6 @@ export function OrganicCutTool({
     [draggingIndex, onDragStateChange, onSelectPoint],
   );
 
-  // --- Drag the key across the cut face --------------------------------------
-  // The handle rides the key's own base anchor and slides in the cut frame's
-  // (u, v) plane. The pointer is intersected with the tangent plane AT the anchor
-  // rather than with the model: the key belongs on the cut face, not on the
-  // surface, and on a curved seam Rust re-snaps the slid anchor back onto the
-  // membrane — so the plane only has to be right locally, which it is.
-  const [draggingKey, setDraggingKey] = useState(false);
-  const keyDragRef = useRef<{ u: number; v: number; startU: number; startV: number } | null>(null);
-
-  // The anchor + basis in the SAME local space the handle is drawn in.
-  const keyHandleBasis = useMemo(() => {
-    if (!keyFrame) return null;
-    return {
-      anchor: new THREE.Vector3(...keyFrame.anchor),
-      axis: new THREE.Vector3(...keyFrame.axis).normalize(),
-      u: new THREE.Vector3(...keyFrame.u).normalize(),
-      v: new THREE.Vector3(...keyFrame.v).normalize(),
-    };
-  }, [keyFrame]);
-
-  /** Pointer ray → (u, v) millimetres on the key's cut-face plane, or null. */
-  const keyPlanePoint = useCallback(
-    (e: ThreeEvent<PointerEvent>): { u: number; v: number } | null => {
-      const basis = keyHandleBasis;
-      const mesh = raycastMeshRef.current;
-      if (!basis || !mesh) return null;
-      mesh.updateWorldMatrix(true, false);
-      // Both the ray and the plane must live in the same space; take the ray into
-      // the mesh's local space, where the key frame is expressed.
-      const inv = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
-      const origin = e.ray.origin.clone().applyMatrix4(inv);
-      const target = e.ray.origin.clone().add(e.ray.direction).applyMatrix4(inv);
-      const dir = target.sub(origin).normalize();
-      const denom = dir.dot(basis.axis);
-      if (Math.abs(denom) < 1e-6) return null; // ray parallel to the cut face
-      const t = basis.anchor.clone().sub(origin).dot(basis.axis) / denom;
-      if (!Number.isFinite(t)) return null;
-      const hit = origin.add(dir.multiplyScalar(t));
-      const d = hit.sub(basis.anchor);
-      return { u: d.dot(basis.u), v: d.dot(basis.v) };
-    },
-    [keyHandleBasis],
-  );
-
-  const handleKeyHandlePointerDown = useCallback(
-    (e: ThreeEvent<PointerEvent>) => {
-      if (e.button !== 0 || !onKeyOffsetChange) return;
-      e.stopPropagation();
-      const grab = keyPlanePoint(e);
-      if (!grab) return;
-      try {
-        (e.currentTarget as unknown as { setPointerCapture?: (id: number) => void })
-          .setPointerCapture?.(e.pointerId);
-      } catch {
-        /* capture is best-effort */
-      }
-      // Remember where on the plane the grab landed, so the key follows the
-      // cursor from wherever it was picked up instead of jumping under it.
-      keyDragRef.current = { u: grab.u, v: grab.v, startU: keyOffsetUMm, startV: keyOffsetVMm };
-      setDraggingKey(true);
-      onDragStateChange?.(true);
-      document.body.style.cursor = 'grabbing';
-    },
-    [keyPlanePoint, keyOffsetUMm, keyOffsetVMm, onDragStateChange, onKeyOffsetChange],
-  );
-
-  const handleKeyHandlePointerMove = useCallback(
-    (e: ThreeEvent<PointerEvent>) => {
-      const drag = keyDragRef.current;
-      if (!drag || !onKeyOffsetChange) return;
-      e.stopPropagation();
-      const now = keyPlanePoint(e);
-      if (!now) return;
-      onKeyOffsetChange(drag.startU + (now.u - drag.u), drag.startV + (now.v - drag.v));
-    },
-    [keyPlanePoint, onKeyOffsetChange],
-  );
-
-  const endKeyDrag = useCallback(
-    (e: ThreeEvent<PointerEvent>) => {
-      if (!keyDragRef.current) return;
-      e.stopPropagation();
-      try {
-        const target = e.currentTarget as unknown as {
-          hasPointerCapture?: (id: number) => boolean;
-          releasePointerCapture?: (id: number) => void;
-        };
-        if (target.hasPointerCapture?.(e.pointerId)) target.releasePointerCapture?.(e.pointerId);
-      } catch {
-        /* best-effort release */
-      }
-      keyDragRef.current = null;
-      setDraggingKey(false);
-      onDragStateChange?.(false);
-      document.body.style.cursor = '';
-    },
-    [onDragStateChange],
-  );
-
-  const handleKeyHandlePointerOver = useCallback((e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
-    if (!keyDragRef.current) document.body.style.cursor = 'grab';
-  }, []);
-  const handleKeyHandlePointerOut = useCallback(() => {
-    if (!keyDragRef.current) document.body.style.cursor = '';
-  }, []);
-
   // Hover affordance: a grab cursor over a marker, grabbing while dragging.
   const handleMarkerPointerOver = useCallback((e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
@@ -993,10 +875,6 @@ export function OrganicCutTool({
                 clippingPlanes={keyClipPlanes}
               />
             </mesh>
-            {/* Blue handle at the key's base: drag it to slide the key across the
-                cut face. Drawn OUTSIDE the tilt group (below) so it stays on the
-                anchor while the key leans; sized like a waypoint marker so it
-                reads as the same class of thing — a grabbable point. */}
             {/* Key edge outline so the peg/socket 3D form reads through the model. */}
             {keyWireframe && (
               <lineSegments geometry={keyWireframe} renderOrder={1001} frustumCulled={false}>
@@ -1013,35 +891,6 @@ export function OrganicCutTool({
           </group>
         )}
 
-        {/* The base handle itself. Outside the tilted group: leaning the key must
-            not carry its anchor away, and this is the anchor. */}
-        {showPreview && keyHandleBasis && onKeyOffsetChange && (
-          <group position={keyHandleBasis.anchor}>
-            {/* Generous invisible grab target, same trick as the waypoints. */}
-            <mesh
-              renderOrder={1002}
-              frustumCulled={false}
-              onPointerDown={handleKeyHandlePointerDown}
-              onPointerMove={handleKeyHandlePointerMove}
-              onPointerUp={endKeyDrag}
-              onPointerCancel={endKeyDrag}
-              onPointerOver={handleKeyHandlePointerOver}
-              onPointerOut={handleKeyHandlePointerOut}
-            >
-              <sphereGeometry args={[markerRadius * 4, 12, 12]} />
-              <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
-            </mesh>
-            <mesh renderOrder={1003} frustumCulled={false}>
-              <sphereGeometry args={[markerRadius * 1.6, 16, 16]} />
-              <meshBasicMaterial
-                color={colors.keyHandle}
-                depthTest={false}
-                transparent
-                opacity={draggingKey ? 1 : 0.9}
-              />
-            </mesh>
-          </group>
-        )}
 
         {/* Live translucent cut-plane preview (what the slice will look like). */}
         {showPreview && planePreview && (

@@ -1,11 +1,13 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { ScreenSpaceGizmo } from '@/components/gizmo';
 import type { GizmoAxis } from '@/components/gizmo';
+import type { ThreeEvent } from '@react-three/fiber';
 import type { KeyPreviewFrame } from './types';
+import { useOrganicCutColorNumbers } from './useOrganicCutColors';
 
 /** Max key tilt (radians) — mirrors the Rust `KEY_MAX_TILT_RAD` (~60°). */
 const KEY_MAX_TILT_RAD = Math.PI / 3;
@@ -28,6 +30,14 @@ export interface OrganicCutKeyGizmoProps {
   keyRollRad: number;
   /** Report a new aim/roll (radians); tilt is pre-clamped. */
   onKeyAimChange: (tiltRad: number, azimuthRad: number, rollRad: number) => void;
+  /**
+   * Where the key sits on the cut face (mm along the frame's u/v), and the
+   * reporter for the base handle that slides it. Omit the setter and no handle is
+   * drawn — the key stays on the centroid.
+   */
+  keyOffsetUMm?: number;
+  keyOffsetVMm?: number;
+  onKeyOffsetChange?: (offsetUMm: number, offsetVMm: number) => void;
   /** Notifies the host that a gizmo drag started/ended (to pause OrbitControls). */
   onDragStateChange?: (dragging: boolean) => void;
 }
@@ -72,6 +82,9 @@ export function OrganicCutKeyGizmo({
   keyTiltAzimuthRad,
   keyRollRad,
   onKeyAimChange,
+  keyOffsetUMm = 0,
+  keyOffsetVMm = 0,
+  onKeyOffsetChange,
   onDragStateChange,
 }: OrganicCutKeyGizmoProps) {
   const activeModel = useMemo(
@@ -144,6 +157,14 @@ export function OrganicCutKeyGizmo({
     return {
       position: [anchorW.x, anchorW.y, anchorW.z] as [number, number, number],
       rotation: [euler.x, euler.y, euler.z] as [number, number, number],
+      anchorW,
+      axisW,
+      // Kept for the base handle's drag: the pointer lands in WORLD space and the
+      // offsets are LOCAL millimetres, so the hit has to come back through this.
+      worldToLocal: new THREE.Matrix4().copy(localToWorld).invert(),
+      uL,
+      vL,
+      anchorL,
     };
     // Depend on primitive transform values (not the churning object) + keyFrame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,6 +201,109 @@ export function OrganicCutKeyGizmo({
     [onKeyAimChange, keyTiltRad, keyTiltAzimuthRad, keyRollRad],
   );
 
+  // --- The base handle: slide the key across the cut face --------------------
+  // It lives HERE, not in OrganicCutTool, for the reason in this file's header:
+  // the key's anchor sits ON the cut face, buried inside the body, so a handle
+  // mounted outside the picking provider loses every click to the model surface
+  // in front of it — which then read as "add a waypoint".
+  const colors = useOrganicCutColorNumbers();
+  const [draggingHandle, setDraggingHandle] = useState(false);
+  const handleDragRef = useRef<{ u: number; v: number; startU: number; startV: number } | null>(null);
+
+  /** Pointer ray → (u, v) millimetres on the key's cut-face plane, in LOCAL mm. */
+  const planePoint = useCallback(
+    (e: ThreeEvent<PointerEvent>): { u: number; v: number } | null => {
+      const g = worldKeyGizmo;
+      if (!g) return null;
+      const denom = e.ray.direction.dot(g.axisW);
+      if (Math.abs(denom) < 1e-6) return null; // ray parallel to the cut face
+      const t = g.anchorW.clone().sub(e.ray.origin).dot(g.axisW) / denom;
+      if (!Number.isFinite(t)) return null;
+      // Back to model-local space, where the offsets are measured: a scaled plate
+      // would otherwise turn a 1mm drag into 1mm of WORLD, not of model.
+      const hitLocal = e.ray.origin
+        .clone()
+        .add(e.ray.direction.clone().multiplyScalar(t))
+        .applyMatrix4(g.worldToLocal);
+      const d = hitLocal.sub(g.anchorL);
+      return { u: d.dot(g.uL), v: d.dot(g.vL) };
+    },
+    [worldKeyGizmo],
+  );
+
+  const handlePointerDown = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      if (e.button !== 0 || !onKeyOffsetChange) return;
+      e.stopPropagation();
+      const grab = planePoint(e);
+      if (!grab) return;
+      try {
+        (e.currentTarget as unknown as { setPointerCapture?: (id: number) => void })
+          .setPointerCapture?.(e.pointerId);
+      } catch {
+        /* capture is best-effort */
+      }
+      // Grab-relative, so the key follows the cursor from wherever it was picked
+      // up instead of snapping its centre under the pointer.
+      handleDragRef.current = { u: grab.u, v: grab.v, startU: keyOffsetUMm, startV: keyOffsetVMm };
+      setDraggingHandle(true);
+      onDragStateChange?.(true);
+      document.body.style.cursor = 'grabbing';
+    },
+    [planePoint, keyOffsetUMm, keyOffsetVMm, onDragStateChange, onKeyOffsetChange],
+  );
+
+  const handlePointerMove = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      const drag = handleDragRef.current;
+      if (!drag || !onKeyOffsetChange) return;
+      e.stopPropagation();
+      const now = planePoint(e);
+      if (!now) return;
+      onKeyOffsetChange(drag.startU + (now.u - drag.u), drag.startV + (now.v - drag.v));
+    },
+    [planePoint, onKeyOffsetChange],
+  );
+
+  const endHandleDrag = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      if (!handleDragRef.current) return;
+      e.stopPropagation();
+      try {
+        const target = e.currentTarget as unknown as {
+          hasPointerCapture?: (id: number) => boolean;
+          releasePointerCapture?: (id: number) => void;
+        };
+        if (target.hasPointerCapture?.(e.pointerId)) target.releasePointerCapture?.(e.pointerId);
+      } catch {
+        /* best-effort release */
+      }
+      handleDragRef.current = null;
+      setDraggingHandle(false);
+      onDragStateChange?.(false);
+      document.body.style.cursor = '';
+    },
+    [onDragStateChange],
+  );
+
+  const handlePointerOver = useCallback((e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    if (!handleDragRef.current) document.body.style.cursor = 'grab';
+  }, []);
+  const handlePointerOut = useCallback(() => {
+    if (!handleDragRef.current) document.body.style.cursor = '';
+  }, []);
+
+  /**
+   * Handle radius in WORLD units. The gizmo is screen-space sized but this is a
+   * scene object, so it is derived from the key's own depth — a key twice the size
+   * gets a handle twice the size, and it never dwarfs a 2mm peg.
+   */
+  const handleRadius = useMemo(() => {
+    const depth = keyFrame?.depth ?? 2.5;
+    return Math.min(1.2, Math.max(0.25, depth * 0.16));
+  }, [keyFrame]);
+
   const handleGizmoDragState = useCallback(
     (dragging: boolean) => {
       onDragStateChange?.(dragging);
@@ -190,6 +314,34 @@ export function OrganicCutKeyGizmo({
   if (!worldKeyGizmo) return null;
 
   return (
+    <>
+    {onKeyOffsetChange && (
+      <group position={worldKeyGizmo.position}>
+        {/* Generous invisible grab target over a small visible dot. */}
+        <mesh
+          renderOrder={1002}
+          frustumCulled={false}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={endHandleDrag}
+          onPointerCancel={endHandleDrag}
+          onPointerOver={handlePointerOver}
+          onPointerOut={handlePointerOut}
+        >
+          <sphereGeometry args={[handleRadius * 2.2, 12, 12]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+        </mesh>
+        <mesh renderOrder={1003} frustumCulled={false}>
+          <sphereGeometry args={[handleRadius, 16, 16]} />
+          <meshBasicMaterial
+            color={colors.keyHandle}
+            depthTest={false}
+            transparent
+            opacity={draggingHandle ? 1 : 0.9}
+          />
+        </mesh>
+      </group>
+    )}
     <ScreenSpaceGizmo
       position={worldKeyGizmo.position}
       rotation={worldKeyGizmo.rotation}
@@ -202,5 +354,6 @@ export function OrganicCutKeyGizmo({
       onRotate={handleGizmoRotate}
       onDragStateChange={handleGizmoDragState}
     />
+    </>
   );
 }
