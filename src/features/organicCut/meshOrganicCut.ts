@@ -9,7 +9,7 @@
  * each part is read back by index via `mesh_organic_cut_read_part`.
  */
 import * as THREE from 'three';
-import { KEY_LEAN_AZIMUTH_RAD, type KeyPreviewFrame, type OrganicCutLoopPoint, type OrganicCutOptions, type OrganicCutReport, type OrganicCutResult } from './types';
+import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutOptions, OrganicCutReport, OrganicCutResult } from './types';
 
 type TauriInvoke = <T>(
   cmd: string,
@@ -298,7 +298,7 @@ export async function computeMembranePreview(
   keyOffsetUMm = 0.0,
   keyOffsetVMm = 0.0,
   keyTiltRad = 0.0,
-  keyTiltAzimuthRad = KEY_LEAN_AZIMUTH_RAD,
+  keyTiltAzimuthRad = 0.0,
   keyRollRad = 0.0,
 ): Promise<MembranePreviewResult> {
   const empty: MembranePreviewResult = {

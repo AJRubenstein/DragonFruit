@@ -6,15 +6,14 @@ import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { ScreenSpaceGizmo } from '@/components/gizmo';
 import type { GizmoAxis } from '@/components/gizmo';
 import type { ThreeEvent } from '@react-three/fiber';
-import { KEY_LEAN_AZIMUTH_RAD, type KeyPreviewFrame } from './types';
+import type { KeyPreviewFrame } from './types';
 import { useOrganicCutColorNumbers } from './useOrganicCutColors';
 
 /** Max key tilt (radians) — mirrors the Rust `KEY_MAX_TILT_RAD` (~60°). */
 const KEY_MAX_TILT_RAD = Math.PI / 3;
 
-/** The key has two rotations, not three: lean (the green ring) and roll. */
+/** The key has two rotations, not three: the lean (green ring) and the roll. */
 const LEAN_AND_ROLL_RINGS: GizmoAxis[] = ['y', 'z'];
-
 
 export interface OrganicCutKeyGizmoProps {
   /** All loaded models (to find the active one for its geometry/offset). */
@@ -66,6 +65,25 @@ function wrapAngle(rad: number): number {
 }
 
 /**
+ * The lean's azimuth for a given roll — the key has TWO freedoms, not three.
+ *
+ * The old gizmo had the lean (off the normal), the plane that lean happens in, and
+ * the key's own spin about its axis, all independent. The third one is the one
+ * nobody wants: the lean plane should simply BE the plane of one of the key's
+ * narrow faces, at every roll. So the roll turns the lean plane and the key
+ * together, as one body, and the azimuth is derived here rather than free.
+ *
+ * The quarter turn is which face gets it. The key is built in a frame whose u/v
+ * are SWAPPED against the cut frame (`frame_extruding_toward_part_b` in key.rs),
+ * so its width — the narrow face — lies along the cut frame's v. Leaning toward v
+ * is therefore leaning in the plane of a narrow face; drop the quarter turn to
+ * tip it over a wide face instead.
+ */
+function leanAzimuthFor(rollRad: number): number {
+  return wrapAngle(rollRad + Math.PI / 2);
+}
+
+/**
  * The registration-key aim/roll gizmo — the app's standard ScreenSpaceGizmo
  * (rotate-only) mounted at the key's base center, oriented to the key's frame.
  *
@@ -79,13 +97,13 @@ function wrapAngle(rad: number): number {
  * (plate transform → meshLocalOffset) into a WORLD anchor + a WORLD orientation whose
  * local x/y/z map to the key's u/v/axis. The three rotation rings then spin about the
  * key's own basis, and we map the per-axis deltas to tilt/azimuth/roll:
- *   - ring about the normal (z) → roll: spins the key about its own axis, and
- *     nothing else moves
- *   - green ring about the key's u (y) → the lean, in the plane of the key's
- *     narrow face, signed and clamped to what the geometry allows
- * There is no third ring, and no free azimuth: the lean lives in one plane of the
- * key's body (see `KEY_LEAN_AZIMUTH_RAD`), which is what keeps the roll from swinging
- * the leaned axis around in a cone.
+ *   - ring about the normal (z) → roll: turns the key AND the plane it leans in,
+ *     as one body (see `leanAzimuthFor`)
+ *   - green ring about the key's rolled u (y) → the lean off the normal, signed
+ *     and clamped to what the geometry allows
+ * There is no third ring and no free azimuth. The key's spin about its own axis
+ * is not a freedom of its own: the lean plane is welded to one of the key's narrow
+ * faces, so rolling moves both together.
  */
 export function OrganicCutKeyGizmo({
   models,
@@ -164,10 +182,17 @@ export function OrganicCutKeyGizmo({
     const uW = uL.clone().applyMatrix3(normalMat).normalize();
     const vW = vL.clone().applyMatrix3(normalMat).normalize();
     const axisW = axisL.clone().applyMatrix3(normalMat).normalize();
-    // The gizmo's local Y is the key's u, so the GREEN ring turns about u and tips
-    // the key in the plane of its narrow face — the one plane the lean ever uses.
-    // Right-handed with z = axis means x = y × z = u × axis = −v.
-    const basis = new THREE.Matrix4().makeBasis(vW.clone().negate(), uW, axisW);
+    // The in-plane basis is ROLLED with the key: the lean plane turns with the roll
+    // (that is what the roll ring is FOR), so the lean ring has to turn with it or
+    // it would stop showing where the key is about to tip.
+    const cr = Math.cos(keyRollRad);
+    const sr = Math.sin(keyRollRad);
+    const uR = uW.clone().multiplyScalar(cr).add(vW.clone().multiplyScalar(sr)).normalize();
+    const vR = vW.clone().multiplyScalar(cr).sub(uW.clone().multiplyScalar(sr)).normalize();
+    // The gizmo's local Y is the key's rolled u — the axis the lean turns about —
+    // so the GREEN ring is the lean. Right-handed with z = axis means x = y × z =
+    // u × axis = −v.
+    const basis = new THREE.Matrix4().makeBasis(vR.clone().negate(), uR, axisW);
     const quat = new THREE.Quaternion().setFromRotationMatrix(basis);
     const euler = new THREE.Euler().setFromQuaternion(quat);
     return {
@@ -184,9 +209,7 @@ export function OrganicCutKeyGizmo({
     };
     // Depend on primitive transform values (not the churning object) + keyFrame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    // The frame does NOT turn with the roll: a gizmo that spun under the cursor is
-    // exactly the precession this design removes.
-  }, [keyFrame, meshLocalOffset, hasTransform, tpx, tpy, tpz, trx, try_, trz, tsx, tsy, tsz]);
+  }, [keyFrame, keyRollRad, meshLocalOffset, hasTransform, tpx, tpy, tpz, trx, try_, trz, tsx, tsy, tsz]);
 
   const handleGizmoRotate = useCallback(
     (axis: GizmoAxis, delta: number) => {
@@ -198,20 +221,22 @@ export function OrganicCutKeyGizmo({
         // absurd angles ("6403.1° roll") for a key that is geometrically at 43°.
         // Wrap every revolution away at the source: the rotation is the same one,
         // and the readout, the Reset-aim check and Rust all see a sane number.
-        // Roll spins the key about its own axis and NOTHING else: the lean plane
-        // is the key's own narrow face, so it comes along for the ride instead of
-        // being swung around the normal.
-        onKeyAimChange(keyTiltRad, KEY_LEAN_AZIMUTH_RAD, wrapAngle(keyRollRad + delta));
+        const roll = wrapAngle(keyRollRad + delta);
+        // Rolling turns the key AND the direction it leans, together — that is the
+        // whole point of aiming with the roll ring.
+        onKeyAimChange(keyTiltRad, leanAzimuthFor(roll), roll);
         return;
       }
-      // The green ring turns about the key's u, tipping it in the plane of its
-      // narrow face. The angle it reports IS the lean, signed: past 0 it keeps
-      // going to the other side of the normal rather than flipping the azimuth.
+      // The green ring turns about the key's own u, tipping it toward its own v —
+      // the plane of a narrow face. What it reports IS the lean, signed: past 0 it
+      // keeps going to the other side of the normal instead of flipping the
+      // azimuth, which is the −90° end of the user's sketch. The azimuth is never
+      // touched here; it belongs to the roll.
       // The cap is the part's, not a constant: a key with a wall right next to it
       // stops leaning sooner, and one in open material goes the full 60°.
       const cap = Math.min(keyFrame?.maxTiltRad ?? KEY_MAX_TILT_RAD, KEY_MAX_TILT_RAD);
-      const tilt = Math.max(-cap, Math.min(cap, keyTiltRad - delta));
-      onKeyAimChange(tilt, KEY_LEAN_AZIMUTH_RAD, keyRollRad);
+      const tilt = Math.max(-cap, Math.min(cap, keyTiltRad + delta));
+      onKeyAimChange(tilt, leanAzimuthFor(keyRollRad), keyRollRad);
     },
     [onKeyAimChange, keyTiltRad, keyRollRad, keyFrame],
   );

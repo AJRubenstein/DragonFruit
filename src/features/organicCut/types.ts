@@ -154,17 +154,6 @@ export interface OrganicCutSpec {
  * key roots against; `u`/`v` are the in-plane basis; `tip` is the leaned apex where
  * the aim handle is drawn; `depth` is the peg height (for handle scaling).
  */
-/**
- * Azimuth (radians) of the key's lean, in the cut's tangent frame.
- *
- * It is a CONSTANT, not a control: the key leans in one plane of its own body —
- * the plane of a narrow face — and the roll spins the key about its axis without
- * moving it. Handing the azimuth to the roll made the key precess (the leaned
- * axis swept a cone as the user turned the ring), and giving it a ring of its own
- * was the third axis the gizmo no longer has.
- */
-export const KEY_LEAN_AZIMUTH_RAD = Math.PI;
-
 export interface KeyPreviewFrame {
   anchor: [number, number, number];
   axis: [number, number, number];
