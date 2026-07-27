@@ -945,9 +945,25 @@ export function useOrganicCutSession({
   // A small settle timer (80ms) lets the just-finished drag's debounced geodesic
   // land first, so the membrane is built from the final seam rather than a stale
   // one (which would otherwise trigger a second rebuild a moment later).
+  // Switching modes is the ONE moment a preview from the other mode has to go:
+  // each preview effect below now leaves the other mode's state alone, so
+  // without this the outgoing mode's key would hang around under the new one.
   React.useEffect(() => {
+    setMembranePreview(null);
+    setKeyPreview(null);
+    setKeyKind('none');
+    setKeyDetail('');
+    setKeyFrame(null);
+  }, [cutMode]);
+
+  React.useEffect(() => {
+    // Not our mode: leave every preview exactly as it is. Clearing here is what
+    // made the plane-mode key flicker on every panel edit — this effect shares
+    // its deps with the plane effect, so a width change ran it, it wiped the
+    // key, and the plane effect put it back 80ms later. The gizmo went with it,
+    // since keyFrame passed through null on the way.
+    if (cutMode !== 'contour') return;
     if (
-      cutMode !== 'contour' ||
       !toolActive ||
       isDraggingPoint ||
       loop.length < 3 ||
@@ -1019,8 +1035,11 @@ export function useOrganicCutSession({
   // The seam itself is already drawn locally as the plane ∩ mesh curve; this only
   // asks Rust for the key, framed on the same plane the cut will use.
   React.useEffect(() => {
-    if (cutMode !== 'plane' || !toolActive || isDraggingPoint || !panelState.generateKey) {
-      if (cutMode === 'plane' && !isDraggingPoint) {
+    // Symmetric to the membrane effect above: in contour mode this effect is a
+    // no-op, never a cleanup.
+    if (cutMode !== 'plane') return;
+    if (!toolActive || isDraggingPoint || !panelState.generateKey) {
+      if (!isDraggingPoint) {
         setKeyPreview(null);
         setKeyKind('none');
         setKeyDetail('');
