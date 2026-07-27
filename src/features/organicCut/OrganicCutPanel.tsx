@@ -2,7 +2,7 @@ import React from 'react';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
-import type { OrganicCutMode, OrganicCutSessionStatus } from './types';
+import type { OrganicCutMode } from './types';
 import { DEFAULT_CUT_SETTINGS, DEFAULT_KEY_SETTINGS } from './useOrganicCutSession';
 
 /** Key width/depth bounds (mm) — shared by the fields and the uniform-scale lock. */
@@ -162,12 +162,9 @@ function CardResetButton({
 interface OrganicCutPanelProps {
   state: OrganicCutPanelState;
   onStateChange: (next: OrganicCutPanelState) => void;
-  /** Current tool-session lifecycle, drives which actions are enabled. */
-  sessionStatus: OrganicCutSessionStatus;
   /** Number of loop points placed so far (shown to the user). */
   pointCount: number;
   onClearLoop: () => void;
-  onCloseLoop: () => void;
   /**
    * Snap the active loop's waypoints onto the model's nearest sharp edges
    * (creases/boundaries) — for tidying points dropped roughly in a crease.
@@ -195,7 +192,6 @@ interface OrganicCutPanelProps {
   onApply: () => void;
   isApplying?: boolean;
   canApply?: boolean;
-  canCloseLoop?: boolean;
   disabled?: boolean;
   /**
    * Which key the live preview placed: 'frustum' (the full key), 'dome' (the
@@ -217,10 +213,8 @@ interface OrganicCutPanelProps {
 export function OrganicCutPanel({
   state,
   onStateChange,
-  sessionStatus,
   pointCount,
   onClearLoop,
-  onCloseLoop,
   onSnapToEdges,
   canSnapToEdges = false,
   loopCount = 1,
@@ -234,7 +228,6 @@ export function OrganicCutPanel({
   onApply,
   isApplying = false,
   canApply = false,
-  canCloseLoop = false,
   disabled = false,
   keyKind = 'none',
   keyDetail = '',
@@ -970,14 +963,6 @@ export function OrganicCutPanel({
               title="Discard every loop in this cut, not just the active one."
             >
               Clear all
-            </button>
-            <button
-              type="button"
-              className="ui-button ui-button-secondary flex-1 !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
-              onClick={onCloseLoop}
-              disabled={disabled || isApplying || !canCloseLoop}
-            >
-              Close Loop
             </button>
             <button
               type="button"

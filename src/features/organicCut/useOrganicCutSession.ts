@@ -15,7 +15,7 @@
  * way to free a part attached in several places (e.g. a tail joined at two posts).
  */
 import React from 'react';
-import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutResult, OrganicCutSessionStatus } from './types';
+import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutResult } from './types';
 import type { OrganicCutPanelState } from './OrganicCutPanel';
 import {
   computeGeodesicLoop,
@@ -258,7 +258,6 @@ export interface OrganicCutSession {
   setPanelState: (next: OrganicCutPanelState) => void;
   // Loop / session
   loop: OrganicCutLoopPoint[];
-  status: OrganicCutSessionStatus;
   addPoint: (point: OrganicCutLoopPoint) => void;
   /**
    * Reposition an already-placed waypoint (drag-to-edit). `index` is the loop
@@ -299,7 +298,6 @@ export interface OrganicCutSession {
   /** True when there is a waypoint to undo (for hotkey gating). */
   /** True when there is an undone waypoint to redo. */
   clearLoop: () => void;
-  closeLoop: () => void;
   // --- Multi-loop -----------------------------------------------------------
   /** Total loops in this cut (contour). 1 = the classic single-loop cut. */
   loopCount: number;
@@ -327,7 +325,6 @@ export interface OrganicCutSession {
   isApplying: boolean;
   lastResult: OrganicCutResult | null;
   // Derived gates for the panel
-  canCloseLoop: boolean;
   canApply: boolean;
   pointCount: number;
   /**
@@ -436,7 +433,6 @@ export function useOrganicCutSession({
   // seams the user can switch to and edit. There is always ≥1 loop.
   const [loops, setLoops] = React.useState<SessionLoop[]>([emptyLoop(DEFAULT_LOOP_KEY)]);
   const [activeLoopIndex, setActiveLoopIndex] = React.useState(0);
-  const [status, setStatus] = React.useState<OrganicCutSessionStatus>('idle');
   const [isApplying, setIsApplying] = React.useState(false);
   const [lastResult, setLastResult] = React.useState<OrganicCutResult | null>(null);
   const [geodesicPolyline, setGeodesicPolyline] = React.useState<Float32Array | null>(null);
@@ -576,7 +572,6 @@ export function useOrganicCutSession({
           setActiveLoopIndex(active);
           setPanelState((ps) => ({ ...withKey(ps, restored[active]?.key ?? DEFAULT_LOOP_KEY), ...settings }));
           setSelectedIndex(null);
-          setStatus(restored.some((l) => l.points.length > 0) ? 'drawing' : 'idle');
         }
         return true;
       }),
@@ -815,7 +810,6 @@ export function useOrganicCutSession({
       // the (now sole) active loop's key stay consistent.
       setLoops([emptyLoop(extractKey(panelStateRef.current))]);
       setActiveLoopIndex(0);
-      setStatus('idle');
       setLastResult(null);
       setSelectedIndex(null);
       clearModelDerivedPreviews();
@@ -847,7 +841,6 @@ export function useOrganicCutSession({
     setActiveLoopIndex(nextActive);
     // Sync the panel's key editor to the now-active loop's key.
     setPanelState((ps) => withKey(ps, restoredLoops[nextActive]?.key ?? DEFAULT_LOOP_KEY));
-    setStatus(restoredLoops.some((l) => l.points.length > 0) ? 'drawing' : 'idle');
     setLastResult(null);
     clearModelDerivedPreviews();
     flushEditRun();
@@ -877,7 +870,6 @@ export function useOrganicCutSession({
       setLoops(pending.loops);
       setActiveLoopIndex(nextActive);
       setPanelState((ps) => withKey(ps, pending.loops[nextActive]?.key ?? DEFAULT_LOOP_KEY));
-      setStatus('drawing');
       setSelectedIndex(null);
     }
   }, [toolActive, activeGeometry, activeGeometryKey]);
@@ -1076,7 +1068,6 @@ export function useOrganicCutSession({
 
   const addPoint = React.useCallback((point: OrganicCutLoopPoint) => {
     setActiveLoopPoints('cut:place point', (prev) => [...prev, point]);
-    setStatus('drawing');
     // A freshly placed point invalidates any redo history.
   }, [setActiveLoopPoints]);
 
@@ -1089,7 +1080,6 @@ export function useOrganicCutSession({
       next.splice(at, 0, point);
       return next;
     });
-    setStatus('drawing');
   }, [setActiveLoopPoints]);
 
   const selectPoint = React.useCallback((index: number | null) => {
@@ -1101,7 +1091,6 @@ export function useOrganicCutSession({
       if (index < 0 || index >= prev.length) return prev;
       const next = prev.slice();
       next.splice(index, 1);
-      setStatus(next.length > 0 ? 'drawing' : 'idle');
       return next;
     });
     // Clear/adjust the selection: deleting the selected point deselects; deleting
@@ -1169,7 +1158,6 @@ export function useOrganicCutSession({
     if (key) savedLoopsRef.current.delete(key);
     // Keep the panel's current key on the fresh loop (don't reset the user's prefs).
     commitLoops('cut:clear all', () => [emptyLoop(extractKey(panelStateRef.current))], 0);
-    setStatus('idle');
     setLastResult(null);
     setSelectedIndex(null);
     setGeodesicPolyline(null);
@@ -1185,7 +1173,6 @@ export function useOrganicCutSession({
     setSelectedIndex(null);
     setGeodesicPolyline(all[index].polyline ?? null);
     setPanelState((ps) => withKey(ps, all[index].key));
-    setStatus(all[index].points.length > 0 ? 'drawing' : 'idle');
   }, []);
 
   // Append a fresh empty loop and make it active (multi-loop cut). The new loop
@@ -1205,7 +1192,6 @@ export function useOrganicCutSession({
     setKeyKind('none');
     setKeyDetail('');
     setKeyFrame(null);
-    setStatus('drawing');
   }, [commitLoops]);
 
   // Remove a loop. Never removes the last remaining one (Clear does that). The
@@ -1234,14 +1220,6 @@ export function useOrganicCutSession({
     setSelectedIndex(null);
     setGeodesicPolyline(null);
   }, [commitLoops]);
-
-  const closeLoop = React.useCallback(() => {
-    setActiveLoopPoints('cut:close loop', (prev) => {
-      if (prev.length < MIN_LOOP_POINTS) return prev;
-      setStatus('closed');
-      return prev;
-    });
-  }, [setActiveLoopPoints]);
 
   const apply = React.useCallback(() => {
     // Read everything from refs so this callback is STABLE and never stale.
@@ -1410,7 +1388,6 @@ export function useOrganicCutSession({
           // Reset to one empty loop carrying the current panel key.
           setLoops([emptyLoop(extractKey(panelStateRef.current))]);
           setActiveLoopIndex(0);
-          setStatus('idle');
           setSelectedIndex(null);
         }
       } catch (err) {
@@ -1428,7 +1405,6 @@ export function useOrganicCutSession({
   const pointCount = loop.length;
   // Contour needs a real loop (≥3 points); flat works with 2.
   const minPointsForMode = panelState.cutMode === 'contour' ? MIN_CONTOUR_POINTS : MIN_LOOP_POINTS;
-  const canCloseLoop = status === 'drawing' && pointCount >= MIN_LOOP_POINTS;
   const isContourMode = panelState.cutMode === 'contour';
   const activeLoopReady = pointCount >= MIN_CONTOUR_POINTS;
   const loopCount = loops.length;
@@ -1451,7 +1427,6 @@ export function useOrganicCutSession({
     panelState,
     setPanelState: handleSetPanelState,
     loop,
-    status,
     addPoint,
     updatePoint,
     insertPoint,
@@ -1462,7 +1437,6 @@ export function useOrganicCutSession({
     selectedIndex,
     selectPoint,
     clearLoop,
-    closeLoop,
     loopCount,
     activeLoopIndex,
     loopSummaries,
@@ -1475,7 +1449,6 @@ export function useOrganicCutSession({
     apply,
     isApplying,
     lastResult,
-    canCloseLoop,
     canApply,
     pointCount,
     geodesicPolyline,

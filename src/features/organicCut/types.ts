@@ -201,5 +201,3 @@ export interface OrganicCutResult {
   parts: Float32Array[];
 }
 
-/** Lifecycle of the persistent Cutting Mode tool session (frontend-only state). */
-export type OrganicCutSessionStatus = 'idle' | 'drawing' | 'closed';
