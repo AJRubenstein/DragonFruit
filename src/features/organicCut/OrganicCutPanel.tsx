@@ -704,94 +704,98 @@ export function OrganicCutPanel({
                       </div>
                     );
                   })()}
-                  {/* Width — frustum: sets just width; dome: ratio-locks depth
-                      when Uniform Scale is on. */}
-                  <div>
-                    <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Key Width</label>
-                    <ScrollableNumberField
-                      value={state.keyWidthMm}
-                      onChange={(value) =>
-                        state.keyShape === 'dome'
-                          ? setDomeDim('width', value)
-                          : setFrustumDim('width', value)
-                      }
-                      min={keyDimMinMm}
-                      max={KEY_DIM_MAX_MM}
-                      step={0.5}
-                      unit="mm"
-                      ariaLabel="Key width in millimeters"
-                      disabled={disabled || isApplying}
-                      className="mt-1"
-                    />
-                  </div>
-                  {/* Depth — applies to BOTH shapes now (dome bulge into the body
-                      / frustum peg depth). Dome ratio-locks width when Uniform. */}
-                  <div>
-                    <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Key Depth</label>
-                    <ScrollableNumberField
-                      value={state.keyDepthMm}
-                      onChange={(value) =>
-                        state.keyShape === 'dome'
-                          ? setDomeDim('depth', value)
-                          : setFrustumDim('depth', value)
-                      }
-                      min={keyDimMinMm}
-                      max={KEY_DIM_MAX_MM}
-                      step={0.5}
-                      unit="mm"
-                      ariaLabel="Key depth in millimeters"
-                      disabled={disabled || isApplying}
-                      className="mt-1"
-                    />
-                  </div>
-                  {/* Edge Fillet: frustum only (a dome is already fully round). */}
-                  {state.keyShape === 'frustum' && (
+                  {/* The four size knobs sit two per row: they are short numeric
+                      fields and a single column wasted half the panel's width. */}
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                    {/* Width — frustum: sets just width; dome: ratio-locks depth
+                        when Uniform Scale is on. */}
                     <div>
-                      <label
-                        className="ui-meta block"
-                        style={{ color: 'var(--text-muted)' }}
-                        title={`Rounds the key's corners and tip. On this key the geometry accepts up to ${keyFilletMaxMm}mm — a wider or deeper key raises that ceiling.`}
-                      >
-                        Edge Fillet
-                      </label>
+                      <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Key Width</label>
                       <ScrollableNumberField
-                        value={state.keyFilletMm}
-                        onChange={(value) => setState({ keyFilletMm: clampFloat(value, 0, keyFilletMaxMm, 2) })}
-                        min={0}
-                        max={keyFilletMaxMm}
-                        step={KEY_FILLET_STEP_MM}
+                        value={state.keyWidthMm}
+                        onChange={(value) =>
+                          state.keyShape === 'dome'
+                            ? setDomeDim('width', value)
+                            : setFrustumDim('width', value)
+                        }
+                        min={keyDimMinMm}
+                        max={KEY_DIM_MAX_MM}
+                        step={0.5}
                         unit="mm"
-                        ariaLabel="Key edge fillet radius in millimeters (0 = sharp)"
+                        ariaLabel="Key width in millimeters"
                         disabled={disabled || isApplying}
                         className="mt-1"
                       />
                     </div>
-                  )}
-                  {/* Fit tolerance: applies to BOTH shapes — the socket is carved
-                      this much larger than the peg on every face. The print-fit
-                      knob: the peg's own size is what the user drew, this is the
-                      slack around it. */}
-                  <div>
-                    <label
-                      className="ui-meta block"
-                      style={{ color: 'var(--text-muted)' }}
-                      title="Slack between peg and socket, on every face. 0 = press fit (needs force). 0.1mm is a slide fit on a well-calibrated printer; raise it if the halves won't go together."
-                    >
-                      Fit Tolerance
-                    </label>
-                    <ScrollableNumberField
-                      value={state.keyToleranceMm}
-                      onChange={(value) =>
-                        setState({ keyToleranceMm: clampFloat(value, 0, KEY_TOLERANCE_MAX_MM, 2) })
-                      }
-                      min={0}
-                      max={KEY_TOLERANCE_MAX_MM}
-                      step={0.05}
-                      unit="mm"
-                      ariaLabel="Peg to socket fit tolerance in millimeters (0 = press fit)"
-                      disabled={disabled || isApplying}
-                      className="mt-1"
-                    />
+                    {/* Depth — applies to BOTH shapes now (dome bulge into the body
+                        / frustum peg depth). Dome ratio-locks width when Uniform. */}
+                    <div>
+                      <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Key Depth</label>
+                      <ScrollableNumberField
+                        value={state.keyDepthMm}
+                        onChange={(value) =>
+                          state.keyShape === 'dome'
+                            ? setDomeDim('depth', value)
+                            : setFrustumDim('depth', value)
+                        }
+                        min={keyDimMinMm}
+                        max={KEY_DIM_MAX_MM}
+                        step={0.5}
+                        unit="mm"
+                        ariaLabel="Key depth in millimeters"
+                        disabled={disabled || isApplying}
+                        className="mt-1"
+                      />
+                    </div>
+                    {/* Edge Fillet: frustum only (a dome is already fully round). */}
+                    {state.keyShape === 'frustum' && (
+                      <div>
+                        <label
+                          className="ui-meta block"
+                          style={{ color: 'var(--text-muted)' }}
+                          title={`Rounds the key's corners and tip. On this key the geometry accepts up to ${keyFilletMaxMm}mm — a wider or deeper key raises that ceiling.`}
+                        >
+                          Edge Fillet
+                        </label>
+                        <ScrollableNumberField
+                          value={state.keyFilletMm}
+                          onChange={(value) => setState({ keyFilletMm: clampFloat(value, 0, keyFilletMaxMm, 2) })}
+                          min={0}
+                          max={keyFilletMaxMm}
+                          step={KEY_FILLET_STEP_MM}
+                          unit="mm"
+                          ariaLabel="Key edge fillet radius in millimeters (0 = sharp)"
+                          disabled={disabled || isApplying}
+                          className="mt-1"
+                        />
+                      </div>
+                    )}
+                    {/* Fit tolerance: applies to BOTH shapes — the socket is carved
+                        this much larger than the peg on every face. The print-fit
+                        knob: the peg's own size is what the user drew, this is the
+                        slack around it. */}
+                    <div className={state.keyShape === 'frustum' ? undefined : 'col-span-2'}>
+                      <label
+                        className="ui-meta block"
+                        style={{ color: 'var(--text-muted)' }}
+                        title="Slack between peg and socket, on every face. 0 = press fit (needs force). 0.1mm is a slide fit on a well-calibrated printer; raise it if the halves won't go together."
+                      >
+                        Fit Tolerance
+                      </label>
+                      <ScrollableNumberField
+                        value={state.keyToleranceMm}
+                        onChange={(value) =>
+                          setState({ keyToleranceMm: clampFloat(value, 0, KEY_TOLERANCE_MAX_MM, 2) })
+                        }
+                        min={0}
+                        max={KEY_TOLERANCE_MAX_MM}
+                        step={0.05}
+                        unit="mm"
+                        ariaLabel="Peg to socket fit tolerance in millimeters (0 = press fit)"
+                        disabled={disabled || isApplying}
+                        className="mt-1"
+                      />
+                    </div>
                   </div>
                   {/* Uniform Scale: dome only — lock width:depth so the dome resizes
                       as a unit (keeps its shape), or unlock for free oblong control. */}
