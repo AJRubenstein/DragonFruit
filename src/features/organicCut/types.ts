@@ -167,6 +167,11 @@ export interface KeyPreviewFrame {
    * ceiling then.
    */
   maxTiltRad?: number;
+  /**
+   * Base half-diagonal (mm) Rust sank and lengthened the key by. The live lean is
+   * applied here on a soup built straight, so the preview reuses this to match.
+   */
+  halfDiagMm?: number;
 }
 
 export interface OrganicCutOptions {

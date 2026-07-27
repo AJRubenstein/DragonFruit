@@ -1279,7 +1279,7 @@ pub fn build_key_preview_at_frame(
     // roots against (toward the peg's half), and u/v the in-plane basis. The frontend
     // mounts the rotation gizmo at the anchor oriented to this frame, and converts
     // gizmo rotations into tilt/azimuth/roll. `tip` is the leaned apex (model-local).
-    let info = build_key_frame_info(&placed, &build_frame, &plan, lean, max_tilt);
+    let info = build_key_frame_info(&placed, &build_frame, &plan, lean, max_tilt, half_diag);
     KeyPreview { soup, peg_triangles, kind, detail, frame: info }
 }
 
@@ -1320,6 +1320,11 @@ pub struct KeyFrameInfo {
     /// gizmo clamps to it, so the ring stops where the geometry does instead of at
     /// a constant that knows nothing about the part.
     pub max_tilt: f32,
+    /// Base half-diagonal (mm, socket footprint). The frontend leans the key
+    /// client-side on a soup built straight, so it needs the same number Rust used
+    /// to sink and lengthen it — otherwise the preview and the cut disagree the
+    /// moment the user touches the lean ring.
+    pub half_diag: f32,
 }
 
 /// Compute the [`KeyFrameInfo`] for a decided plan: the tip is the apex of the peg
@@ -1330,6 +1335,7 @@ fn build_key_frame_info(
     plan: &KeyPlan,
     lean: LeanXform,
     max_tilt: f32,
+    half_diag: f32,
 ) -> Option<KeyFrameInfo> {
     let depth = match plan {
         KeyPlan::Frustum { dims, .. } => dims.depth,
@@ -1353,6 +1359,7 @@ fn build_key_frame_info(
         tip,
         depth,
         max_tilt,
+        half_diag,
     })
 }
 

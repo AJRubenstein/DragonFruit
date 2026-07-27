@@ -533,22 +533,38 @@ export function OrganicCutTool({
           .add(buildV.clone().multiplyScalar(lu / len))
           .normalize();
         q.premultiply(new THREE.Quaternion().setFromAxisAngle(k, tilt));
-        // Sink so the tilted base stays buried (matches the Rust half_diag·sin sink).
-        // half_diag ≈ the base footprint reach; depth is the closest proxy we have on
-        // the frontend, and the sink only affects how deep the base goes (not the
-        // visible orientation), so a small mismatch is harmless.
-        sink = keyFrame.depth * 0.9 * Math.sin(Math.abs(tilt));
+        // Sink so the tilted base stays buried — the same half_diag·sin(tilt) Rust
+        // uses, with the real footprint it reports (the old `depth × 0.9` guess put
+        // the previewed key at a different depth than the cut placed it).
+        sink = (keyFrame.halfDiagMm ?? keyFrame.depth * 0.9) * Math.sin(Math.abs(tilt));
       }
     }
 
-    // Compose about the anchor: translate to origin, rotate, sink along −buildAxis,
-    // translate back. m = back · sink · rot · toOrigin.
+    // The soup was built STRAIGHT, so it is built to the un-leaned depth. Rust
+    // lengthens the trunk when it leans (LeanXform::stretch_depth) so the key keeps
+    // standing its full depth proud; stretch the preview along the build axis by the
+    // same factor or the previewed key comes out shorter than the one that cuts.
+    const depth = Math.max(keyFrame.depth, 1e-4);
+    const stretch =
+      Math.abs(tilt) < 1e-6 ? 1 : (depth + sink) / (depth * Math.max(Math.cos(Math.abs(tilt)), 0.2));
+
+    // Compose about the anchor: translate to origin, stretch along the axis, rotate,
+    // sink along −buildAxis, translate back. m = back · sink · rot · stretch · toOrigin.
     const toOrigin = new THREE.Matrix4().makeTranslation(-anchor.x, -anchor.y, -anchor.z);
     const rot = new THREE.Matrix4().makeRotationFromQuaternion(q);
+    // Scale along ONE direction: I + (f−1)·(a ⊗ a), with a the unit build axis.
+    const g = stretch - 1;
+    const { x: ax, y: ay, z: az } = buildAxis;
+    const stretchM = new THREE.Matrix4().set(
+      1 + g * ax * ax, g * ax * ay, g * ax * az, 0,
+      g * ay * ax, 1 + g * ay * ay, g * ay * az, 0,
+      g * az * ax, g * az * ay, 1 + g * az * az, 0,
+      0, 0, 0, 1,
+    );
     const sinkV = buildAxis.clone().multiplyScalar(-sink);
     const sinkM = new THREE.Matrix4().makeTranslation(sinkV.x, sinkV.y, sinkV.z);
     const back = new THREE.Matrix4().makeTranslation(anchor.x, anchor.y, anchor.z);
-    return back.multiply(sinkM).multiply(rot).multiply(toOrigin);
+    return back.multiply(sinkM).multiply(rot).multiply(stretchM).multiply(toOrigin);
   }, [keyFrame, keyTiltRad, keyTiltAzimuthRad, keyRollRad]);
 
   /**

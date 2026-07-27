@@ -1341,7 +1341,7 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
     // the aim + roll handles exactly on the previewed key. `null` when no key.
     let key_frame_json = match key_frame {
         Some(f) => format!(
-            "{{\"anchor\":[{},{},{}],\"axis\":[{},{},{}],\"u\":[{},{},{}],\"v\":[{},{},{}],\"tip\":[{},{},{}],\"depth\":{},\"maxTiltRad\":{}}}",
+            "{{\"anchor\":[{},{},{}],\"axis\":[{},{},{}],\"u\":[{},{},{}],\"v\":[{},{},{}],\"tip\":[{},{},{}],\"depth\":{},\"maxTiltRad\":{},\"halfDiagMm\":{}}}",
             f.anchor.x, f.anchor.y, f.anchor.z,
             f.axis.x, f.axis.y, f.axis.z,
             f.u.x, f.u.y, f.u.z,
@@ -1349,6 +1349,7 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
             f.tip.x, f.tip.y, f.tip.z,
             f.depth,
             f.max_tilt,
+            f.half_diag,
         ),
         None => "null".to_string(),
     };
@@ -1439,7 +1440,7 @@ pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<
     let key_detail_json = json_escape(&key_detail);
     let key_frame_json = match key_frame {
         Some(f) => format!(
-            "{{\"anchor\":[{},{},{}],\"axis\":[{},{},{}],\"u\":[{},{},{}],\"v\":[{},{},{}],\"tip\":[{},{},{}],\"depth\":{},\"maxTiltRad\":{}}}",
+            "{{\"anchor\":[{},{},{}],\"axis\":[{},{},{}],\"u\":[{},{},{}],\"v\":[{},{},{}],\"tip\":[{},{},{}],\"depth\":{},\"maxTiltRad\":{},\"halfDiagMm\":{}}}",
             f.anchor.x, f.anchor.y, f.anchor.z,
             f.axis.x, f.axis.y, f.axis.z,
             f.u.x, f.u.y, f.u.z,
@@ -1447,6 +1448,7 @@ pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<
             f.tip.x, f.tip.y, f.tip.z,
             f.depth,
             f.max_tilt,
+            f.half_diag,
         ),
         None => "null".to_string(),
     };
