@@ -49,6 +49,9 @@ function appendHistoryDebugEvent(kind: HistoryDebugEventKind, action?: HistoryAc
     actionDescription: action?.description,
     undoCount: undoStack.length,
     redoCount: redoStack.length,
+    payloadBytes: action ? estimatePayloadBytes(action.payload) : undefined,
+    stackBytes: undoStack.reduce((sum, a) => sum + estimatePayloadBytes(a.payload), 0)
+      + redoStack.reduce((sum, a) => sum + estimatePayloadBytes(a.payload), 0),
   });
 
   while (historyDebugLog.length > HISTORY_DEBUG_LOG_LIMIT) {
@@ -185,6 +188,55 @@ export function subscribeHistoryOperations(listener: (payload: { direction: Hist
 export function subscribeHistoryDebug(listener: HistorySubscriber) {
   historyDebugSubscribers.add(listener);
   return () => historyDebugSubscribers.delete(listener);
+}
+
+/**
+ * Rough size of one entry's payload, in bytes.
+ *
+ * Rough on purpose: the exact retained size is a question only the engine can
+ * answer. This counts what actually dominates — typed arrays (mesh data) at their
+ * real byte length, strings at 2 bytes a character — and gives everything else a
+ * flat word. Shared objects are counted ONCE per payload (a payload that carries
+ * the same array twice is holding one array), which is the same rule the scene
+ * snapshot registry uses.
+ *
+ * NOTE what it does NOT see: a payload that stores a KEY into a side registry (as
+ * the scene snapshots do) reports only the key. That is honest for this number —
+ * dropping the entry frees only its payload — and the registry reports its own
+ * total separately.
+ */
+function estimatePayloadBytes(value: unknown): number {
+  const seen = new WeakSet<object>();
+
+  const walk = (v: unknown): number => {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === 'string') return v.length * 2;
+    if (typeof v === 'number' || typeof v === 'boolean') return 8;
+    if (typeof v !== 'object') return 8;
+
+    const obj = v as object;
+    if (seen.has(obj)) return 0;
+    seen.add(obj);
+
+    if (ArrayBuffer.isView(obj)) return (obj as ArrayBufferView).byteLength;
+    if (obj instanceof ArrayBuffer) return obj.byteLength;
+    if (Array.isArray(obj)) return obj.reduce<number>((sum, item) => sum + walk(item), 0);
+
+    let total = 0;
+    for (const [key, item] of Object.entries(obj)) {
+      total += key.length * 2 + walk(item);
+    }
+    return total;
+  };
+
+  return walk(value);
+}
+
+/** Payload bytes held by each stack, and their sum. */
+export function getHistoryStackBytes(): { undo: number; redo: number; total: number } {
+  const undo = undoStack.reduce((sum, a) => sum + estimatePayloadBytes(a.payload), 0);
+  const redo = redoStack.reduce((sum, a) => sum + estimatePayloadBytes(a.payload), 0);
+  return { undo, redo, total: undo + redo };
 }
 
 export function getUndoCount() {

@@ -207,7 +207,7 @@ import {
 } from '@/features/scene/arrange/highPrecisionArrangeWorkerClient';
 
 // Domain Features
-import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker } from '@/features/scene/useSceneCollectionManager';
+import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
 import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import { useTransformManager } from '@/features/transform/useTransformManager';
@@ -234,6 +234,7 @@ import {
   getHistoryDebugEvents,
   getRedoCount,
   getUndoCount,
+  getHistoryStackBytes,
   redo,
   subscribeHistory,
   subscribeHistoryDebug,
@@ -1099,6 +1100,16 @@ export default function Home() {
   const [printingDeviceProcessingElapsedSec, setPrintingDeviceProcessingElapsedSec] = React.useState(0);
   const lastOwnedPrintTempPathRef = React.useRef<string | null>(null);
   const [historyDebugEvents, setHistoryDebugEvents] = React.useState<HistoryDebugEvent[]>([]);
+  // Sizes for the history debug panel. Recomputed only while the panel is open —
+  // walking every payload on each push would tax the hot path for a readout
+  // nobody is looking at.
+  const [historyStackBytes, setHistoryStackBytes] = React.useState<{ undo: number; redo: number; total: number }>({
+    undo: 0,
+    redo: 0,
+    total: 0,
+  });
+  const [sceneSnapshotBytes, setSceneSnapshotBytes] = React.useState(0);
+  const isHistoryDebugOpenRef = React.useRef(false);
   const [historyStackCounts, setHistoryStackCounts] = React.useState<{ undo: number; redo: number }>({
     undo: 0,
     redo: 0,
@@ -5739,6 +5750,12 @@ export default function Home() {
     const refreshHistoryDebug = () => {
       setHistoryDebugEvents(getHistoryDebugEvents());
       setHistoryStackCounts({ undo: getUndoCount(), redo: getRedoCount() });
+      // Sizes only while the panel is open: both walk every entry, and the debug
+      // log updates on every push.
+      if (isHistoryDebugOpenRef.current) {
+        setHistoryStackBytes(getHistoryStackBytes());
+        setSceneSnapshotBytes(getSceneSnapshotRegistryBytes());
+      }
     };
 
     refreshHistoryDebug();
@@ -5751,6 +5768,15 @@ export default function Home() {
       unsubHistoryDebug();
     };
   }, []);
+
+  React.useEffect(() => {
+    isHistoryDebugOpenRef.current = isHistoryDebugOpen;
+    // Opening the panel must not wait for the next push to show a number.
+    if (isHistoryDebugOpen) {
+      setHistoryStackBytes(getHistoryStackBytes());
+      setSceneSnapshotBytes(getSceneSnapshotRegistryBytes());
+    }
+  }, [isHistoryDebugOpen]);
 
   React.useEffect(() => {
     if (isHistoryDebugOpen) {
@@ -9987,6 +10013,8 @@ export default function Home() {
         historyDebugEvents={historyDebugEvents}
         historyPreviewTargetEventId={historyPreviewTargetEventId}
         historyStackCounts={historyStackCounts}
+        historyStackBytes={historyStackBytes}
+        sceneSnapshotBytes={sceneSnapshotBytes}
         isDiagnosticsOpen={isDiagnosticsOpen}
         isHistoryDebugOpen={isHistoryDebugOpen}
         isHistoryPreviewActive={isHistoryPreviewActive}

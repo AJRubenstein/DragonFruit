@@ -54,4 +54,8 @@ export interface HistoryDebugEvent {
   actionDescription?: string;
   undoCount: number;
   redoCount: number;
+  /** Payload bytes of the entry this event is about (absent for stack-wide events). */
+  payloadBytes?: number;
+  /** Payload bytes held by both stacks together, right after this event. */
+  stackBytes?: number;
 }

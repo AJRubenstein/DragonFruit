@@ -304,6 +304,15 @@ function estimateSceneSnapshotRegistryBytes(): number {
   return total;
 }
 
+/**
+ * The registry's geometry total, for the history debug panel. Same dedup rule as
+ * the eviction budget above, so the panel reports the memory that is actually
+ * held rather than a per-snapshot sum that counts one shared mesh many times.
+ */
+export function getSceneSnapshotRegistryBytes(): number {
+  return estimateSceneSnapshotRegistryBytes();
+}
+
 function storeSceneSnapshotPair(pair: SceneSnapshotPair): string {
   const key = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   sceneSnapshotRegistry.set(key, pair);
