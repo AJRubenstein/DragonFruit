@@ -1128,7 +1128,7 @@ export function useOrganicCutSession({
   // would otherwise drag onto a nearby edge/corner. Double-click a marker to flip
   // it. A no-op if the index is out of range.
   const toggleLockPoint = React.useCallback((index: number) => {
-    setActiveLoopPoints('cut:snap to edges', (prev) => {
+    setActiveLoopPoints('cut:lock waypoint', (prev) => {
       if (index < 0 || index >= prev.length) return prev;
       const next = prev.slice();
       next[index] = { ...next[index], locked: !next[index].locked };
@@ -1142,7 +1142,7 @@ export function useOrganicCutSession({
   const snapActiveLoopToEdges = React.useCallback(() => {
     const geometry = activeGeometryRef.current;
     if (!geometry) return;
-    setActiveLoopPoints('cut:close loop', (prev) => {
+    setActiveLoopPoints('cut:snap to edges', (prev) => {
       if (prev.length === 0) return prev;
       const { points, movedCount } = snapPointsToFeatureEdges(prev, geometry);
       // Nothing moved (no feature edges, or all points already on one) → keep the
