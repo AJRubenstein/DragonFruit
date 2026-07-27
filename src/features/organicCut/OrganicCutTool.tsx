@@ -848,12 +848,30 @@ export function OrganicCutTool({
               g.matrixWorldNeedsUpdate = true;
             }}
           >
+            {/* Drawn in TWO passes, back faces then front, instead of one
+                double-sided one. A flat translucent solid with no depth testing is
+                a Necker cube: every face is the same colour, nothing says which is
+                nearer, and after a few seconds the peg reads inside-out. Shading
+                the far side darker gives the eye the cue the depth buffer isn't
+                providing — and since both passes are unlit, it holds from every
+                camera angle instead of depending on where the lights are. */}
+            <mesh geometry={keyGeometry} renderOrder={999} frustumCulled={false}>
+              <meshBasicMaterial
+                color={0x8a4a08}
+                transparent
+                opacity={0.5}
+                side={THREE.BackSide}
+                depthTest={false}
+                depthWrite={false}
+                clippingPlanes={keyClipPlanes}
+              />
+            </mesh>
             <mesh geometry={keyGeometry} renderOrder={1000} frustumCulled={false}>
               <meshBasicMaterial
                 color={0xffa630}
                 transparent
-                opacity={0.4}
-                side={THREE.DoubleSide}
+                opacity={0.7}
+                side={THREE.FrontSide}
                 depthTest={false}
                 depthWrite={false}
                 clippingPlanes={keyClipPlanes}
