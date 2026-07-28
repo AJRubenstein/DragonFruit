@@ -185,6 +185,8 @@ export async function serializeVoxlDocumentV2(
       },
       meshModifiers: m.meshModifiers,
       mesh: meshRef,
+      isSupportGeometry: m.isSupportGeometry,
+      linkGroupId: m.linkGroupId,
     };
   });
 

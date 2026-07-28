@@ -10,6 +10,8 @@ import {
   ClipboardPaste,
   Trash2,
   Split,
+  LifeBuoy,
+  Box,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -21,7 +23,9 @@ export type EditorMenuAction =
   | 'repair'
   | 'split-supports'
   | 'supports-toggle-curve'
-  | 'supports-add-joint';
+  | 'supports-add-joint'
+  | 'mark-as-support-geometry'
+  | 'mark-as-model-geometry';
 
 export type EditorContextMenuPosition = {
   x: number;
@@ -51,6 +55,8 @@ const MENU_ITEMS: MenuItemDef[] = [
   { id: 'paste',  label: msg`Paste`,  icon: ClipboardPaste },
   { id: 'repair', label: msg`Repair`, icon: Wrench },
   { id: 'split-supports', label: msg({ message: 'Split supports', comment: 'Context-menu command that detaches the generated support scaffolding at the clicked point. "Supports" = the temporary print scaffolding structures, not customer support.' }), icon: Split },
+  { id: 'mark-as-support-geometry', label: msg`Mark as Support Geometry`, icon: LifeBuoy },
+  { id: 'mark-as-model-geometry',   label: msg`Mark as Model Geometry`,   icon: Box },
 ];
 
 const MENU_WIDTH = 176;

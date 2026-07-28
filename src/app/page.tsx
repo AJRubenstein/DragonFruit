@@ -2053,12 +2053,15 @@ export default function Home() {
       : undefined;
     const canSplitSupports = !!activeModel?.geometry.meshDefects?.nativeRepairReport?.model_triangle_count;
 
+    const hasTargetModel = !!scene.activeModelId || scene.selectedModelIds.length > 0;
+
     return [
       ...(!scene.activeModelId ? (['delete', 'cut', 'copy', 'repair'] as const) : []),
+      ...(!hasTargetModel ? (['mark-as-support-geometry', 'mark-as-model-geometry'] as const) : []),
       ...(!scene.canPasteModel ? (['paste'] as const) : []),
       ...(!canSplitSupports ? (['split-supports'] as const) : []),
     ];
-  }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, supportsCanAddJoint, supportsCanToggleCurve]);
+  }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
   const clearPrintingLayerPreviewUrls = React.useCallback(() => {
     printingLayerPreviewLoadInFlightRef.current.clear();
@@ -5660,6 +5663,24 @@ export default function Home() {
           closeEditorContextMenu();
           setManualRepairModelId(targetId);
           return;
+        }
+        break;
+      }
+      case 'mark-as-support-geometry': {
+        const targetIds = scene.selectedModelIds.length > 0
+          ? scene.selectedModelIds
+          : (scene.activeModelId ? [scene.activeModelId] : []);
+        if (targetIds.length > 0) {
+          scene.toggleSupportDesignation(targetIds, true);
+        }
+        break;
+      }
+      case 'mark-as-model-geometry': {
+        const targetIds = scene.selectedModelIds.length > 0
+          ? scene.selectedModelIds
+          : (scene.activeModelId ? [scene.activeModelId] : []);
+        if (targetIds.length > 0) {
+          scene.toggleSupportDesignation(targetIds, false);
         }
         break;
       }

@@ -889,6 +889,8 @@ export interface LoadedModel {
   meshModifiers?: ModelMeshModifiers;
   ignoreAutoLift?: boolean;
   manualZMoveOverride?: boolean;
+  isSupportGeometry?: boolean;
+  linkGroupId?: string;
 }
 
 type DebugPrimitiveType =
@@ -4271,6 +4273,8 @@ export function useSceneCollectionManager() {
             meshModifiers: undefined,
             ignoreAutoLift: true,
             manualZMoveOverride: true,
+            isSupportGeometry: model.isSupportGeometry,
+            linkGroupId: model.linkGroupId,
           });
 
           // Store meshModifiers externally so model objects stay lightweight
@@ -4645,6 +4649,31 @@ export function useSceneCollectionManager() {
     }
   }, [activeModelId, setModelVisibility]);
 
+  const toggleSupportDesignation = useCallback((modelIds: string[], isSupport: boolean) => {
+    if (modelIds.length === 0) return;
+    const targetIds = new Set(modelIds);
+    const affectedModels = models.filter((m) => targetIds.has(m.id));
+    if (affectedModels.length === 0) return;
+    const needsChange = affectedModels.some((m) => Boolean(m.isSupportGeometry) !== isSupport);
+    if (!needsChange) return;
+
+    const before = captureSceneSnapshot(models, activeModelId, selectedModelIds);
+    const nextModels = models.map((m) => {
+      if (targetIds.has(m.id)) {
+        return { ...m, isSupportGeometry: isSupport };
+      }
+      return m;
+    });
+
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelId, selectedModelIds);
+    pushSceneSnapshotHistory(
+      before,
+      after,
+      isSupport ? 'Mark as Support Geometry' : 'Mark as Model Geometry',
+    );
+  }, [activeModelId, models, pushSceneSnapshotHistory, selectedModelIds]);
+
   /**
    * Re-runs the full native repair pipeline on an already-loaded model's
    * geometry and swaps the result back in-place.  Intended for the manual
@@ -4852,6 +4881,7 @@ export function useSceneCollectionManager() {
     finalizeModelGeometryPostProcessing,
     setModelManualZMoveOverride,
     setModelVisibility,
+    toggleSupportDesignation,
     setModelMeshModifiers,
     getModelMeshModifiers: useCallback((id: string) => getStoredMeshModifiers(id), []),
     renameModel,
