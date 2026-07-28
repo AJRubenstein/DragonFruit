@@ -384,6 +384,7 @@ async function prepareVoxlDocumentV2(
         ? { sourcePath: m.sourcePath }
         : {}),
       ...(m.nativePreview ? { nativePreview: m.nativePreview } : {}),
+      ...(m.originalRef ? { originalRef: m.originalRef } : {}),
       // Written only when true (Ph0.1 D2): a scene with nothing stale must
       // serialize to exactly the bytes it did before the flag existed.
       ...(m.geometryStale === true ? { geometryStale: true } : {}),
@@ -783,6 +784,11 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
   };
 }
 
+/**
+ * Alias for `parseVoxlBinaryV2` for V2 container documents.
+ */
+export const parseVoxlDocumentV2 = parseVoxlBinaryV2;
+
 // ─── Format Detection ─────────────────────────────────────────────────────────
 
 /**
@@ -794,3 +800,86 @@ export function isVoxlBinaryV2(data: Uint8Array): boolean {
   const version = data[4] | (data[5] << 8); // uint16 LE
   return version >= 2;
 }
+
+// ─── Sidecar Mesh Resolution ──────────────────────────────────────────────────
+
+/**
+ * Locate and resolve external original mesh files referenced by `originalRef`
+ * relative to the `.voxl` project path.
+ *
+ * If `originalRef` is missing or mode is not 'external-file' (or fileName is empty), returns null.
+ * If `originalRef.fileName` is an absolute path, returns it directly.
+ * If `originalRef.fileName` is relative and `projectPath` is provided, returns
+ * the resolved absolute path relative to the directory containing `projectPath`.
+ */
+export function resolveOriginalRefSidecar(
+  originalRef?: VoxlMeshRef,
+  projectPath?: string,
+): string | null {
+  if (!originalRef || originalRef.mode !== 'external-file' || !originalRef.fileName) {
+    return null;
+  }
+
+  const rawFileName = originalRef.fileName.trim();
+  if (!rawFileName) return null;
+
+  const isAbsolute = /^(?:[a-zA-Z]:[/\\]|\\\\|\/)/.test(rawFileName);
+  if (isAbsolute) {
+    return rawFileName.replace(/\\/g, '/');
+  }
+
+  if (!projectPath) {
+    return rawFileName.replace(/\\/g, '/');
+  }
+
+  const normalizedProject = projectPath.replace(/\\/g, '/');
+  const lastSlashIndex = normalizedProject.lastIndexOf('/');
+  const baseDir = lastSlashIndex >= 0 ? normalizedProject.slice(0, lastSlashIndex) : normalizedProject;
+
+  const normalizedRelative = rawFileName.replace(/\\/g, '/').replace(/^\.\//, '');
+  const resolved = baseDir ? `${baseDir}/${normalizedRelative}` : normalizedRelative;
+  return resolved;
+}
+
+/**
+ * Helper to read raw bytes from a sidecar file path across environments (Node/Tauri/Browser).
+ * Returns null if the file cannot be read or is missing.
+ */
+export async function readSidecarFileBytes(filePath: string): Promise<Uint8Array | null> {
+  try {
+    if (typeof process !== 'undefined' && process.versions?.node) {
+      try {
+        const fs = await import('fs');
+        if (fs.existsSync(filePath)) {
+          const buf = fs.readFileSync(filePath);
+          return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
+    if (typeof window !== 'undefined' && '__TAURI_IPC__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const ab = await invoke<ArrayBuffer>('read_print_file_bytes', { path: filePath });
+        if (ab) return new Uint8Array(ab);
+      } catch {
+        // Fall through
+      }
+    }
+
+    if (typeof fetch === 'function') {
+      const response = await fetch(filePath);
+      if (response.ok) {
+        const ab = await response.arrayBuffer();
+        return new Uint8Array(ab);
+      }
+    }
+  } catch {
+    // Ignore and return null
+  }
+
+  return null;
+}
+

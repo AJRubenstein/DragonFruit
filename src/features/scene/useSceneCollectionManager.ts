@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
-import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
+import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, readSidecarFileBytes, resolveOriginalRefSidecar, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import type { SelectionHighlightMode } from '@/components/selection';
@@ -876,6 +876,8 @@ export interface LoadedModel {
   fileUrl: string;
   /** Original on-disk mesh retained when `geometry` is a reduced native preview. */
   sourcePath?: string | null;
+  /** Original mesh sidecar reference when not embedded in ORIG chunk. */
+  originalRef?: VoxlMeshRef;
   fileSizeBytes?: number;
   geometry: GeometryWithBounds;
   transform: ModelTransform;
@@ -4369,6 +4371,32 @@ export function useSceneCollectionManager() {
               signature: `original:${resolvedId}`,
               encode: () => origMeshBytes,
             });
+          } else {
+            const voxlFilePath = (file as File & { path?: string; filePath?: string }).path
+              || (file as File & { filePath?: string }).filePath
+              || options?.sourcePath;
+            const origRefToResolve = model.originalRef ?? (
+              typeof model.sourcePath === 'string' && model.sourcePath.trim().length > 0
+                ? { mode: 'external-file' as const, fileName: model.sourcePath }
+                : undefined
+            );
+            const sidecarPath = resolveOriginalRefSidecar(origRefToResolve, voxlFilePath || undefined);
+
+            if (sidecarPath) {
+              try {
+                const sidecarBytes = await readSidecarFileBytes(sidecarPath);
+                if (sidecarBytes) {
+                  void meshChunkStore.bake({
+                    modelId: resolvedId,
+                    slot: 'original',
+                    signature: `original:${resolvedId}`,
+                    encode: () => sidecarBytes,
+                  });
+                }
+              } catch (err) {
+                console.warn(`[SceneCollection] Unreadable sidecar file at "${sidecarPath}", falling back to preview:`, err);
+              }
+            }
           }
 
           const polygonCount = geometry.geometry.getAttribute('position').count / 3;
@@ -4378,6 +4406,8 @@ export function useSceneCollectionManager() {
             id: resolvedId,
             name: sanitizeImportedModelDisplayName(model.name),
             fileUrl: '',
+            sourcePath: model.sourcePath ?? undefined,
+            originalRef: model.originalRef,
             fileSizeBytes: model.fileSizeBytes,
             geometry,
             transform: {

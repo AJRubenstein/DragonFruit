@@ -577,44 +577,86 @@ pub fn load_voxl_triangles(path: &Path) -> Result<(Vec<f32>, bool), String> {
     let orig_chunk_indices: Vec<u16> = entries.iter().filter(|e| &e.type_tag == b"ORIG").map(|e| e.index).collect();
     let mesh_chunk_indices: Vec<u16> = entries.iter().filter(|e| &e.type_tag == b"MESH").map(|e| e.index).collect();
 
-    let model_indices = if !orig_chunk_indices.is_empty() {
+    // 1. If embedded ORIG chunks are present, load them
+    if !orig_chunk_indices.is_empty() {
         let mut idxs = orig_chunk_indices;
         idxs.sort();
         idxs.dedup();
-        idxs
-    } else {
-        let mut idxs = mesh_chunk_indices;
-        idxs.sort();
-        idxs.dedup();
-        idxs
-    };
+        let mut all_positions = Vec::new();
+        for &idx in &idxs {
+            if let Some(entry) = entries.iter().find(|e| &e.type_tag == b"ORIG" && e.index == idx) {
+                let chunk_bytes = read_chunk_data(entry)?;
+                let pos = parse_binary_stl_bytes(&chunk_bytes)?;
+                all_positions.extend_from_slice(&pos);
+            }
+        }
+        return Ok((all_positions, true));
+    }
 
-    if model_indices.is_empty() {
+    // 2. Check for originalRef / sidecar file references in MODL chunk if no embedded ORIG chunk exists
+    if let Some(modl_entry) = entries.iter().find(|e| &e.type_tag == b"MODL") {
+        if let Ok(modl_bytes) = read_chunk_data(modl_entry) {
+            if let Ok(modl_str) = std::str::from_utf8(&modl_bytes) {
+                if let Ok(models) = serde_json::from_str::<serde_json::Value>(modl_str) {
+                    if let Some(model_list) = models.as_array() {
+                        let mut sidecar_positions = Vec::new();
+                        let mut loaded_sidecars = 0;
+
+                        for model in model_list {
+                            let file_name = model.get("originalRef")
+                                .and_then(|r| r.get("fileName"))
+                                .and_then(|v| v.as_str())
+                                .or_else(|| model.get("sourcePath").and_then(|v| v.as_str()));
+
+                            if let Some(fname) = file_name {
+                                let fname_trimmed = fname.trim();
+                                if !fname_trimmed.is_empty() {
+                                    let rel_path = Path::new(fname_trimmed);
+                                    let sidecar_path = if rel_path.is_absolute() {
+                                        rel_path.to_path_buf()
+                                    } else {
+                                        path.parent().unwrap_or_else(|| Path::new("")).join(rel_path)
+                                    };
+
+                                    if sidecar_path.exists() {
+                                        if let Ok(pos) = load_binary_stl(&sidecar_path) {
+                                            sidecar_positions.extend_from_slice(&pos);
+                                            loaded_sidecars += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if loaded_sidecars > 0 && !sidecar_positions.is_empty() {
+                            return Ok((sidecar_positions, true));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback: load MESH chunks (decimated preview)
+    let mut idxs = mesh_chunk_indices;
+    idxs.sort();
+    idxs.dedup();
+
+    if idxs.is_empty() {
         return Err("No MESH or ORIG geometry chunks found in VOXL file".into());
     }
 
-    let mut used_orig = false;
     let mut all_positions = Vec::new();
 
-    for &idx in &model_indices {
-        let (entry, is_orig) = if let Some(e) = entries.iter().find(|e| &e.type_tag == b"ORIG" && e.index == idx) {
-            (e, true)
-        } else if let Some(e) = entries.iter().find(|e| &e.type_tag == b"MESH" && e.index == idx) {
-            (e, false)
-        } else {
-            continue;
-        };
-
-        if is_orig {
-            used_orig = true;
+    for &idx in &idxs {
+        if let Some(entry) = entries.iter().find(|e| &e.type_tag == b"MESH" && e.index == idx) {
+            let chunk_bytes = read_chunk_data(entry)?;
+            let pos = parse_binary_stl_bytes(&chunk_bytes)?;
+            all_positions.extend_from_slice(&pos);
         }
-
-        let chunk_bytes = read_chunk_data(entry)?;
-        let pos = parse_binary_stl_bytes(&chunk_bytes)?;
-        all_positions.extend_from_slice(&pos);
     }
 
-    Ok((all_positions, used_orig))
+    Ok((all_positions, false))
 }
 
 // ---------------------------------------------------------------------------

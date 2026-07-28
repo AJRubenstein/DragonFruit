@@ -71,6 +71,8 @@ export type VoxlModelEntry = {
   /** Absolute on-disk path of the original import (native-preview models). */
   sourcePath?: string;
   nativePreview?: VoxlNativePreviewRef;
+  /** Reference to original full-resolution sidecar mesh file when not embedded directly in ORIG chunk. */
+  originalRef?: VoxlMeshRef;
   /**
    * Set when the writer had to fall back to this model's last committed mesh
    * chunk because a geometry bake was still in flight when the tick's bounded
@@ -135,6 +137,7 @@ export type VoxlModelRuntimeLike = {
   fileSizeBytes?: number;
   sourcePath?: string;
   nativePreview?: VoxlNativePreviewRef;
+  originalRef?: VoxlMeshRef;
   /** See `VoxlModelEntry.geometryStale` (Ph0.1 sub-phase D2). */
   geometryStale?: boolean;
   transform: {
