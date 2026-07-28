@@ -1404,10 +1404,19 @@ export function useOrganicCutSession({
               activeIndex: activeIdx,
             };
           }
+          // A cut retires EVERY seam in the session, not just the live one. The
+          // parts that come back are new bodies, and the stash is keyed by model
+          // id — so a half-drawn seam left on another model (or on this one, from
+          // before the tool was last closed) would spring back the moment the
+          // user selected it, drawing geodesics and a key onto a body that no
+          // longer has that surface. Wipe the whole stash; the undo entry above
+          // is what puts this model's loops back if the cut is undone.
+          savedLoopsRef.current.clear();
           // Reset to one empty loop carrying the current panel key.
           setLoops([emptyLoop(extractKey(panelStateRef.current))]);
           setActiveLoopIndex(0);
           setSelectedIndex(null);
+          clearModelDerivedPreviews();
         }
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -1419,7 +1428,9 @@ export function useOrganicCutSession({
     return () => {
       cancelled = true;
     };
-  }, []); // stable: all inputs read from refs
+    // Stable: every input is read from a ref, and `clearModelDerivedPreviews` is
+    // itself a []-dep callback.
+  }, [clearModelDerivedPreviews]);
 
   const pointCount = loop.length;
   // Contour needs a real loop (≥3 points); flat works with 2.
