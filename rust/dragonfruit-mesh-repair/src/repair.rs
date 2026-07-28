@@ -2411,7 +2411,10 @@ fn classify_and_reorder_model_support_triangles(
     assume_support_geometry: Option<bool>,
 ) -> Option<(usize, bool, usize)> {
     if assume_support_geometry == Some(true) {
-        return None;
+        return Some((0, true, 1));
+    }
+    if assume_support_geometry == Some(false) {
+        return Some((mesh.triangles.len(), false, 1));
     }
     if mesh.triangles.len() < 8 || mesh.positions.is_empty() {
         return None;

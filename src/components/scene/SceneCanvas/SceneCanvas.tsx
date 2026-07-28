@@ -5426,7 +5426,7 @@ export function SceneCanvas({
                   && duplicatePreviewModel
                   && model.id === duplicatePreviewModel.id,
                 );
-                const likelySupportGeometry = !!model.geometry.meshDefects?.nativeRepairReport?.likely_support_geometry;
+                const likelySupportGeometry = Boolean(model.isSupportGeometry) || !!model.geometry.meshDefects?.nativeRepairReport?.likely_support_geometry;
                 const modelHoverTintColor = likelySupportGeometry ? likelySupportGeometryTintColor : hoverTintColor;
                 const modelSelectedTintColor = likelySupportGeometry ? likelySupportGeometryTintColor : selectedTintColor;
                 // Use live drag transform only during active/guarded gizmo interaction.
