@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
-import { isVoxlBinaryV2, parseVoxlBinaryV2, parseVoxlDocument, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
+import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import type { SelectionHighlightMode } from '@/components/selection';
@@ -4214,11 +4214,13 @@ export function useSceneCollectionManager() {
 
       let document: VoxlDocumentV1;
       let resolvedMeshBytes: Map<string, Uint8Array>;
+      let resolvedOriginalMeshBytes: Map<string, Uint8Array> | undefined;
 
       if (isV2) {
         const r = parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
         document = r.document;
         resolvedMeshBytes = r.meshBytes;
+        resolvedOriginalMeshBytes = r.originalMeshBytes;
       } else {
         document = parseVoxlDocument(await file.text());
         resolvedMeshBytes = new Map();
@@ -4358,6 +4360,16 @@ export function useSceneCollectionManager() {
           }
           existingIds.add(resolvedId);
           idMap.set(model.id, resolvedId);
+
+          const origMeshBytes = resolvedOriginalMeshBytes?.get(model.id);
+          if (origMeshBytes) {
+            void meshChunkStore.bake({
+              modelId: resolvedId,
+              slot: 'original',
+              signature: `original:${resolvedId}`,
+              encode: () => origMeshBytes,
+            });
+          }
 
           const polygonCount = geometry.geometry.getAttribute('position').count / 3;
           const color = clampHexColor(model.color, DEFAULT_MESH_COLOR);

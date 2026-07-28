@@ -123,6 +123,7 @@ export type VoxlCompressedDocumentEnvelopeV1 = {
 
 export type SerializeVoxlOptions = {
   compression?: 'none' | 'auto' | 'rle-u8' | 'zlib';
+  embedOriginalMesh?: boolean;
 };
 
 export type VoxlModelRuntimeLike = {
@@ -165,6 +166,8 @@ export type ParsedVoxlResult = {
   document: VoxlDocumentV1;
   /** Pre-decoded mesh bytes keyed by model ID (populated for V2 files). */
   meshBytes: Map<string, Uint8Array>;
+  /** Pre-decoded original full-res mesh bytes keyed by model ID (if ORIG chunk present). */
+  originalMeshBytes?: Map<string, Uint8Array>;
   /** The VOXL format version that was read (e.g. 1, 2.1). */
   sourceVersion: number;
 };

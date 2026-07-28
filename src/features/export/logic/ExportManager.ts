@@ -28,6 +28,7 @@ export interface ExportOptions {
   includeRaft: boolean;
   includeSupports: boolean;
   includeModel: boolean;
+  embedOriginalMesh?: boolean;
 }
 
 export interface ExportSceneContext {
@@ -1206,6 +1207,7 @@ export class ExportManager {
     const meshBytesMap = new Map<number, Uint8Array>();
     const sha256Map = new Map<number, string>();
     const precompressedMap = new Map<number, PrecompressedChunk>();
+    const precompressedOriginalMap = new Map<number, PrecompressedChunk>();
     const staleModelIds = new Set<string>();
 
     const models = options.includeModel
@@ -1254,6 +1256,15 @@ export class ExportManager {
                 uncompressedSize: resolvedChunk.chunk.uncompressedSize,
               });
               if (resolvedChunk.stale) staleModelIds.add(model.id);
+            }
+
+            const origChunk = meshChunkStore.lastCommitted(model.id, 'original');
+            if (origChunk) {
+              precompressedOriginalMap.set(index, {
+                data: origChunk.data,
+                compression: origChunk.compression,
+                uncompressedSize: origChunk.uncompressedSize,
+              });
             }
 
             exportedModels.push({
@@ -1334,7 +1345,11 @@ export class ExportManager {
       },
       extensions: voxlExtensions,
     };
-    const serializeOptions = { precompressed: precompressedMap };
+    const serializeOptions = {
+      precompressed: precompressedMap,
+      precompressedOriginal: precompressedOriginalMap,
+      embedOriginalMesh: options.embedOriginalMesh ?? true,
+    };
 
     // Native path: stream straight into the atomic writer's temp file, so the
     // 172–515 MiB contiguous document buffer never exists (Ph0.1 sub-phase E).

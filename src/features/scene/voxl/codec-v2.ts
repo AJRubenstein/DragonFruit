@@ -75,6 +75,7 @@ const CHUNK_META = 'META';
 const CHUNK_SCNE = 'SCNE';
 const CHUNK_MODL = 'MODL';
 const CHUNK_MESH = 'MESH';
+export const CHUNK_ORIG = 'ORIG';
 const CHUNK_SUPP = 'SUPP';
 const CHUNK_EXTD = 'EXTD';
 
@@ -256,6 +257,11 @@ export interface PrecompressedChunk {
 export interface VoxlSerializeOptions {
   /** Model index → already-compressed MESH payload. */
   precompressed?: Map<number, PrecompressedChunk>;
+  /** Model index → already-compressed ORIG payload. */
+  precompressedOriginal?: Map<number, PrecompressedChunk>;
+  /** Model index → raw uncompressed ORIG payload. */
+  originalMeshBytes?: Map<number, Uint8Array>;
+  embedOriginalMesh?: boolean;
 }
 
 interface ResolvedChunk {
@@ -286,6 +292,9 @@ async function prepareVoxlDocumentV2(
   options?: VoxlSerializeOptions,
 ): Promise<PreparedDocument> {
   const precompressed = options?.precompressed;
+  const precompressedOriginal = options?.precompressedOriginal;
+  const originalMeshBytes = options?.originalMeshBytes;
+  const embedOriginalMesh = options?.embedOriginalMesh ?? true;
   const nowIso = new Date().toISOString();
 
   // ── Build chunk payloads ──────────────────────────────────────────────
@@ -410,7 +419,23 @@ async function prepareVoxlDocumentV2(
     if (pre) {
       pending.push({ type: CHUNK_MESH, index: modelIndex, pre, compress: true });
     } else {
-      pending.push({ type: CHUNK_MESH, index: modelIndex, raw: meshBytes.get(modelIndex)!, compress: true });
+      const raw = meshBytes.get(modelIndex);
+      if (raw) {
+        pending.push({ type: CHUNK_MESH, index: modelIndex, raw, compress: true });
+      }
+    }
+  }
+
+  // Additive ORIG chunks for full-res original mesh embedding
+  if (embedOriginalMesh) {
+    for (const modelIndex of [...dedupedChunkIndices].sort((a, b) => a - b)) {
+      const preOrig = precompressedOriginal?.get(modelIndex);
+      const rawOrig = originalMeshBytes?.get(modelIndex);
+      if (preOrig) {
+        pending.push({ type: CHUNK_ORIG, index: modelIndex, pre: preOrig, compress: true });
+      } else if (rawOrig) {
+        pending.push({ type: CHUNK_ORIG, index: modelIndex, raw: rawOrig, compress: true });
+      }
     }
   }
 
@@ -721,6 +746,27 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
     }
   }
 
+  // ── Resolve ORIG chunks (additive full-res mesh) ──────────────────────
+
+  const originalMeshBytesMap = new Map<string, Uint8Array>();
+  const origBytesByIndex = new Map<number, Uint8Array>();
+
+  for (let i = 0; i < models.length; i += 1) {
+    const model = models[i];
+    const chunkIdx = typeof model.mesh?.chunkIndex === 'number' ? model.mesh.chunkIndex : i;
+    let bytes = origBytesByIndex.get(chunkIdx);
+    if (!bytes) {
+      const origEntry = entries.find((e) => e.type === CHUNK_ORIG && e.index === chunkIdx);
+      if (origEntry) {
+        bytes = readChunk(origEntry);
+        origBytesByIndex.set(chunkIdx, bytes);
+      }
+    }
+    if (bytes) {
+      originalMeshBytesMap.set(model.id, bytes);
+    }
+  }
+
   return {
     document: {
       magic: VOXL_MAGIC,
@@ -732,6 +778,7 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
       extensions,
     },
     meshBytes: meshBytesMap,
+    ...(originalMeshBytesMap.size > 0 ? { originalMeshBytes: originalMeshBytesMap } : {}),
     sourceVersion: VOXL_V2_SEMANTIC_REVISION,
   };
 }
