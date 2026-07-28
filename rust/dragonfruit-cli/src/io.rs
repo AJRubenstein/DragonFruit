@@ -7,8 +7,10 @@ use std::path::Path;
 
 use serde::{de::DeserializeOwned, Serialize};
 
-use dragonfruit_slicing_engine::geometry::{parse_triangles, Triangle};
-use dragonfruit_islands::model::{ComponentInfo, RleLabels, RleMask};
+use dragonfruit_slicing_engine::geometry::Triangle;
+#[cfg(test)]
+use dragonfruit_slicing_engine::geometry::parse_triangles;
+use dragonfruit_islands::model::{RleLabels, RleMask};
 
 // ---------------------------------------------------------------------------
 // STL Loading

@@ -1075,16 +1075,17 @@ fn cmd_slice_run(
         .unwrap_or(false);
     let is_voxl = is_voxl_file(input);
 
-    let flat = if is_positions_bin {
-        read_positions_bin(input)?
+    let (flat, mesh_encoding) = if is_positions_bin {
+        (read_positions_bin(input)?, "positions_bin".to_string())
     } else if is_voxl {
         let (positions, used_orig) = load_voxl_triangles(input)?;
         if !json_output {
             eprintln!("slice: read VOXL file with {} triangles (used_orig_chunk={})", positions.len() / 9, used_orig);
         }
-        positions
+        let encoding = if used_orig { "voxl_orig" } else { "voxl_mesh" };
+        (positions, encoding.to_string())
     } else {
-        load_binary_stl(input)?
+        (load_binary_stl(input)?, "stl".to_string())
     };
     if flat.len() % 9 != 0 {
         return Err(format!("Invalid triangle buffer length: {}", flat.len()));
@@ -1161,6 +1162,8 @@ fn cmd_slice_run(
         "build_width_mm": build_width_mm,
         "build_depth_mm": build_depth_mm,
         "resolution_px": [source_width_px, source_height_px],
+        "model_triangle_count": job.model_triangle_count,
+        "mesh_encoding": mesh_encoding,
         "total_s": perf.total_s(),
         "wall_s": wall_s,
         "layers_per_second": perf.layers_per_second(),
