@@ -127,6 +127,7 @@ export interface ProcessGeometryOptions {
    * @internal
    */
   _skipComputeNormals?: boolean;
+  assumeSupportGeometry?: boolean;
   /** Skip nonessential analysis for a native reduced-detail preview. @internal */
   _isNativePreview?: boolean;
 }
@@ -325,9 +326,12 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
       options.onNativeProcessingStage?.(classifyOnly ? 'classifying' : 'repairing');
       console.log(`[${new Date().toISOString()}] [processGeometry] Running native ${classifyOnly ? 'classification' : 'repair/classification'}`);
       const nativeStart = performance.now();
+      const repairOpts = options.assumeSupportGeometry != null
+        ? { assumeSupportGeometry: options.assumeSupportGeometry }
+        : {};
       const result = classifyOnly
         ? await classifyFromGeometry(geometry)
-        : await repairFromGeometry(geometry);
+        : await repairFromGeometry(geometry, repairOpts);
       if (result) {
         let effectiveResult = result;
         let usedFallbackClassification = false;

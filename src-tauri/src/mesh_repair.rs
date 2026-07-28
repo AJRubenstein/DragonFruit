@@ -144,6 +144,8 @@ struct RepairOptionsDto {
     solidify_fragmented_components: Option<bool>,
     solidify_component_threshold: Option<usize>,
     solidify_self_intersection_threshold: Option<usize>,
+    #[serde(alias = "assume_support_geometry")]
+    assume_support_geometry: Option<bool>,
 }
 
 impl From<RepairOptionsDto> for RepairOptions {
@@ -172,6 +174,9 @@ impl From<RepairOptionsDto> for RepairOptions {
             solidify_self_intersection_threshold: dto
                 .solidify_self_intersection_threshold
                 .unwrap_or(defaults.solidify_self_intersection_threshold),
+            assume_support_geometry: dto
+                .assume_support_geometry
+                .or(defaults.assume_support_geometry),
         }
     }
 }

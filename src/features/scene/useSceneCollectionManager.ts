@@ -4207,7 +4207,8 @@ export function useSceneCollectionManager() {
             url = URL.createObjectURL(blob);
 
             geometry = await loadMeshGeometry(url, embeddedName, {
-            nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
+              nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
+              assumeSupportGeometry: model.isSupportGeometry,
             onNativeProcessingStage: (stage) => {
               if (stage === 'repairing') {
                 setImportProgress({
@@ -4686,6 +4687,7 @@ export function useSceneCollectionManager() {
       const processed = await processGeometry(model.geometry.geometry, {
         center: false,
         nativeProcessingMode: 'repair',
+        assumeSupportGeometry: model.isSupportGeometry,
       });
       const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
       const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
