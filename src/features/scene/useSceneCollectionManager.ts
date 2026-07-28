@@ -2632,7 +2632,13 @@ export function useSceneCollectionManager() {
 
     const nextModels = currentModels.map((m) => (
       m.id === id
-        ? { ...m, geometry: nextGeometry, polygonCount }
+        ? {
+            ...m,
+            geometry: nextGeometry,
+            polygonCount,
+            isSupportGeometry: target.isSupportGeometry,
+            linkGroupId: target.linkGroupId,
+          }
         : m
     ));
     setModels(nextModels);
