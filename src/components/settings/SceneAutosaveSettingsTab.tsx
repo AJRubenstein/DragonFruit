@@ -24,6 +24,7 @@ type AutosaveManifest = {
   origin?: string | null;
   projectPath?: string | null;
   fallbackReason?: string | null;
+  lastError?: string | null;
 };
 
 function isDesktopRuntime(): boolean {
@@ -326,6 +327,13 @@ export function SceneAutosaveSettingsTab() {
                   {manifest?.savedAt ? new Date(manifest.savedAt).toLocaleString() : 'Unknown'}
                 </div>
               </div>
+
+              {manifest?.lastError && (
+                <div className="rounded-md border px-2.5 py-2 sm:col-span-2 border-amber-500/40 bg-amber-500/10">
+                  <div className="text-[10px] uppercase tracking-wide font-semibold text-amber-400">Standing Autosave Error</div>
+                  <div className="mt-1 text-xs text-amber-200">{manifest.lastError}</div>
+                </div>
+              )}
 
               <div className="rounded-md border px-2.5 py-2 sm:col-span-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Autosave scene file</div>
