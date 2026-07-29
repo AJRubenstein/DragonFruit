@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import type { ModelTransform } from '@/hooks/useModelTransform';
@@ -445,8 +445,10 @@ export function OrganicCutTenonGizmo({
           <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
         </mesh>
         {/* Crosshair, lying IN the cut plane so it also shows which plane the tenon
-            slides on. A filled dot hid the tenon and read as a sticker on it. */}
-        <mesh geometry={crosshairRing} renderOrder={1003} frustumCulled={false}>
+            slides on. A filled dot hid the tenon and read as a sticker on it.
+            Drawn above the seam's solid pass (which now clears the tenon) so the
+            handle you grab is never the thing hidden. */}
+        <mesh geometry={crosshairRing} renderOrder={1010} frustumCulled={false}>
           <meshBasicMaterial
             color={colors.tenonHandle}
             depthTest={false}
@@ -455,7 +457,7 @@ export function OrganicCutTenonGizmo({
             side={THREE.DoubleSide}
           />
         </mesh>
-        <lineSegments geometry={crosshairTicks} renderOrder={1004} frustumCulled={false}>
+        <lineSegments geometry={crosshairTicks} renderOrder={1011} frustumCulled={false}>
           <lineBasicMaterial
             color={colors.tenonHandle}
             depthTest={false}

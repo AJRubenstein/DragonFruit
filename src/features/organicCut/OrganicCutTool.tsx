@@ -178,6 +178,19 @@ function biasTowardCamera(material: THREE.Material): void {
 }
 
 /**
+ * How far ABOVE its own render order the seam's solid pass is drawn, so it lands
+ * above the tenon and mortise previews (990-1001).
+ *
+ * Those previews draw with the depth test off, so nothing they cover can win on
+ * depth — whatever draws first loses, and the seam drew first. The stretch of
+ * seam the camera can actually see was painted over by the tenon crossing in
+ * front of it. Lifting only the SOLID pass keeps the depth cue intact: the near
+ * side of the seam draws over the tenon, while the faint ghost pass — the "this
+ * bit is round the back" cue — stays underneath it, where it belongs.
+ */
+const SEAM_SOLID_ABOVE_TENON = 8;
+
+/**
  * A seam polyline as the depth-cue pair described at
  * {@link OCCLUDED_OPACITY_FACTOR}: the ghost pass (no depth test) under a solid
  * pass (depth-tested, biased off the surface). Both share one geometry.
@@ -206,7 +219,7 @@ function occludedLinePair(
     new THREE.LineBasicMaterial({ color, transparent: true, opacity }),
   );
   biasTowardCamera(solid.material);
-  solid.renderOrder = renderOrder;
+  solid.renderOrder = renderOrder + SEAM_SOLID_ABOVE_TENON;
   const group = new THREE.Group();
   group.add(ghost, solid);
   return group;
