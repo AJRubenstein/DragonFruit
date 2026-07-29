@@ -18,7 +18,7 @@ import type { PluginFileTypeDefinition } from '@/features/plugins/complexPluginC
 import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBridge';
 import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
 import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
-import { generateUuid } from '@/utils/uuid';
+import { v4 as uuidv4 } from 'uuid';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
 import { getKickstandSnapshot, setKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import type { KickstandState } from '@/supports/SupportTypes/Kickstand/types';
@@ -589,10 +589,6 @@ function writeRecentOpenedFilesToLocalStorage(entries: RecentOpenedFileEntry[]):
   } catch {
     // ignore
   }
-}
-
-function generateRecentEntryId(): string {
-  return generateUuid();
 }
 
 function decodeBase64ToUint8Array(base64: string): Uint8Array {
@@ -1345,7 +1341,7 @@ export function useSceneCollectionManager() {
     const heightOffset = geom.center.z - geom.bbox.min.z;
     const initialZ = heightOffset;
 
-    const id = generateId();
+    const id = uuidv4();
     const model: LoadedModel = {
       id,
       name: `[Debug] ${typeLabelMap[type]}`,
@@ -1740,9 +1736,6 @@ export function useSceneCollectionManager() {
     });
   }, []);
 
-  // Helper to generate IDs
-  const generateId = () => generateUuid();
-
   const cloneGeometryWithBounds = useCallback((source: GeometryWithBounds, options?: { accelerate?: boolean; shared?: boolean }): GeometryWithBounds => {
     if (options?.shared) {
       const sharedSourceKey = String(source.geometry.userData?.resinVolumeSourceKey ?? source.geometry.uuid);
@@ -1957,7 +1950,7 @@ export function useSceneCollectionManager() {
 
         const matches = next.filter(isMatchingEntry);
 
-        const existingId = matches.length > 0 ? matches[matches.length - 1].id : generateRecentEntryId();
+        const existingId = matches.length > 0 ? matches[matches.length - 1].id : uuidv4();
         const duplicateIds = matches.slice(0, -1).map((entry) => entry.id);
 
         if (matches.length > 0) {
@@ -2204,7 +2197,7 @@ export function useSceneCollectionManager() {
             const initialZ = autoLift ? heightOffset + liftDistance : heightOffset;
 
             const model: LoadedModel = {
-              id: generateId(),
+              id: uuidv4(),
               name: file.name,
               fileUrl: url,
               fileSizeBytes: file.size,
@@ -2246,7 +2239,7 @@ export function useSceneCollectionManager() {
             const initialZ = autoLift ? heightOffset + liftDistance : heightOffset;
 
             const model: LoadedModel = {
-              id: generateId(),
+              id: uuidv4(),
               name: file.name,
               fileUrl: url,
               fileSizeBytes: file.size,
@@ -2723,7 +2716,7 @@ export function useSceneCollectionManager() {
         ? (selected[0].groupId ?? null)
         : null;
 
-      resolvedGroupId = commonGroupId ?? `group-${generateId()}`;
+      resolvedGroupId = commonGroupId ?? `group-${uuidv4()}`;
       const rawName = groupName?.trim();
       resolvedGroupName = rawName && rawName.length > 0
         ? rawName
@@ -2776,7 +2769,7 @@ export function useSceneCollectionManager() {
     if (!source?.splitBodies || source.splitBodies.length < 2) return;
 
     const newModels: LoadedModel[] = source.splitBodies.map((bodyGeom, i) => ({
-      id: generateId(),
+      id: uuidv4(),
       name: `${source.name.replace(/\.3mf$/i, '')} (${i + 1})`,
       fileUrl: source.fileUrl,
       fileSizeBytes: source.fileSizeBytes,
@@ -2899,7 +2892,7 @@ export function useSceneCollectionManager() {
 
     const baseName = source.name.replace(/\.(stl|obj|3mf)$/i, '');
     const modelModel: LoadedModel = {
-      id: generateId(),
+      id: uuidv4(),
       name: `${baseName} (Model)`,
       fileUrl: source.fileUrl,
       fileSizeBytes: source.fileSizeBytes ? Math.round(source.fileSizeBytes * (modelTriCount / totalTris)) : undefined,
@@ -2921,7 +2914,7 @@ export function useSceneCollectionManager() {
     };
 
     const supportModel: LoadedModel = {
-      id: generateId(),
+      id: uuidv4(),
       name: `${baseName} (Supports)`,
       fileUrl: source.fileUrl,
       fileSizeBytes: source.fileSizeBytes ? Math.round(source.fileSizeBytes * (supportTriCount / totalTris)) : undefined,
@@ -3238,7 +3231,7 @@ export function useSceneCollectionManager() {
 
     const pastedGeometry = cloneGeometryWithBounds(first.geometry, { shared: true });
 
-    const id = generateId();
+    const id = uuidv4();
     const pastedModel: LoadedModel = {
       id,
       name: `${first.name} Copy`,
@@ -3287,7 +3280,7 @@ export function useSceneCollectionManager() {
     });
 
     return id;
-  }, [activeModelId, cloneGeometryWithBounds, generateId, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds]);
+  }, [activeModelId, cloneGeometryWithBounds, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds]);
 
   const pasteCopiedModelsAutoArrange = useCallback((spacingMm = 5) => {
     if (modelClipboard.length === 0) return [] as string[];
@@ -3624,7 +3617,7 @@ export function useSceneCollectionManager() {
 
     const createdIds: string[] = [];
     const pastedModels: LoadedModel[] = entries.map((entry, index) => {
-      const id = generateId();
+      const id = uuidv4();
       createdIds.push(id);
 
       const geometry = cloneGeometryWithBounds(entry.geometry, { shared: true });
@@ -3687,7 +3680,7 @@ export function useSceneCollectionManager() {
     }
 
     return createdIds;
-  }, [activeModelId, cloneGeometryWithBounds, defaultImportCenterXY.x, defaultImportCenterXY.y, generateId, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
+  }, [activeModelId, cloneGeometryWithBounds, defaultImportCenterXY.x, defaultImportCenterXY.y, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
 
   const duplicateModelWithTransforms = useCallback((sourceId: string, transforms: ModelTransform[], sourceTransform?: ModelTransform | null) => {
     if (transforms.length === 0) return [] as string[];
@@ -3698,12 +3691,12 @@ export function useSceneCollectionManager() {
 
     const before = captureSceneSnapshot(models, activeModelId, selectedModelIds, { includeSupportState: true });
 
-    const resolvedGroupId = source.groupId ?? `group-${generateId()}`;
+    const resolvedGroupId = source.groupId ?? `group-${uuidv4()}`;
     const resolvedGroupName = source.groupName ?? source.name;
 
     const createdIds: string[] = [];
     const newModels: LoadedModel[] = transforms.map((nextTransform, index) => {
-      const id = generateId();
+      const id = uuidv4();
       createdIds.push(id);
 
       const geometry = cloneGeometryWithBounds(source.geometry, { shared: true });
@@ -3790,7 +3783,7 @@ export function useSceneCollectionManager() {
     }
 
     return createdIds;
-  }, [activeModelId, cloneGeometryWithBounds, generateId, models, pushSceneSnapshotHistory, selectedModelIds]);
+  }, [activeModelId, cloneGeometryWithBounds, models, pushSceneSnapshotHistory, selectedModelIds]);
 
   // LYS Import (1-step) — dispatched via plugin registry
 
@@ -3982,7 +3975,7 @@ export function useSceneCollectionManager() {
           : `${sanitizeImportedModelDisplayName(file.name)} (${i + 1})`;
 
         const model: LoadedModel = {
-          id: importedModelId || generateId(),
+          id: importedModelId || uuidv4(),
           name: modelName,
           fileUrl: '',
           fileSizeBytes: file.size,
@@ -4074,7 +4067,7 @@ export function useSceneCollectionManager() {
         });
       }
     }
-  }, [emitSceneImportReport, findFreeSpotCentersForModels, generateId, getSceneExtension, isModelFootprintInsidePlate, processGeometry, requestSceneImportPlacementChoice, scenePluginImportHandlersByExtension, setActiveModelId, setModels, setSelectedModelIds, shouldAutoRepairSceneImports, trackRecentOpenedFiles, waitForUiYield]);
+  }, [emitSceneImportReport, findFreeSpotCentersForModels, getSceneExtension, isModelFootprintInsidePlate, processGeometry, requestSceneImportPlacementChoice, scenePluginImportHandlersByExtension, setActiveModelId, setModels, setSelectedModelIds, shouldAutoRepairSceneImports, trackRecentOpenedFiles, waitForUiYield]);
 
   const handleImportVoxlFile = useCallback(async (file: File, options?: SceneImportRunOptions): Promise<boolean> => {
     if (!options?.suppressRecentTracking) {
@@ -4246,7 +4239,7 @@ export function useSceneCollectionManager() {
 
           let resolvedId = model.id;
           if (!resolvedId || existingIds.has(resolvedId)) {
-            resolvedId = generateId();
+            resolvedId = uuidv4();
           }
           existingIds.add(resolvedId);
           idMap.set(model.id, resolvedId);
@@ -4401,7 +4394,7 @@ export function useSceneCollectionManager() {
         });
       }
     }
-  }, [cloneGeometryWithBounds, emitSceneImportReport, findFreeSpotCentersForModels, generateId, isModelFootprintInsidePlate, requestSceneImportPlacementChoice, shouldAutoRepairSceneImports, trackRecentOpenedFiles, waitForUiYield]);
+  }, [cloneGeometryWithBounds, emitSceneImportReport, findFreeSpotCentersForModels, isModelFootprintInsidePlate, requestSceneImportPlacementChoice, shouldAutoRepairSceneImports, trackRecentOpenedFiles, waitForUiYield]);
 
   const importSceneFile = useCallback(async (file: File, options?: SceneImportRunOptions): Promise<boolean> => {
     const extension = getSceneExtension(file.name);
