@@ -2535,13 +2535,16 @@ fn classify_and_reorder_model_support_triangles(
         && model_avg_tris > 0
         && support_avg_tris.saturating_mul(3) < model_avg_tris;
 
-    // Remaining guards are sanity bounds; density_ok does the heavy lifting.
+    // Remaining guards: keep density_ok and support_input_triangles as-is.
+    // Comment out overly aggressive component floor & bed-touch bounds.
     if !density_ok
+        || support_input_triangles < 2_000
+        /*
         || support_comp_count < model_comp_count.saturating_mul(2).max(4)
         || n_comps < 12
-        || support_input_triangles < 2_000
         || support_base_touch_components < support_comp_count.saturating_div(4).max(3)
         || support_base_touch_triangles < 500
+        */
     {
         return None;
     }
