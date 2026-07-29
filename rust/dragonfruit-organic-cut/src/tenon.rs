@@ -535,8 +535,8 @@ impl LeanXform {
         if !leaning && !rolling {
             return LeanXform::IDENTITY;
         }
-        // Clamp to what this placement can actually take — the walls decide, not a
-        // fixed 60° (see `max_tilt_for`). TENON_MAX_TILT_RAD is only the hard ceiling.
+        // Clamp to the hard ceiling. Whether the lean still FITS is `check_lean`'s
+        // verdict, reported to the user — not something enforced by refusing to turn.
         let cap = max_tilt.clamp(0.0, TENON_MAX_TILT_RAD);
         let t = tilt.tilt.clamp(-cap, cap);
         // World lean direction in the original tangent plane → local (u, v) coords.
@@ -977,6 +977,7 @@ fn decide_tenon(
     shape: TenonShape,
     tolerance: f32,
     half_kerf: f32,
+    tilt: f32,
 ) -> TenonPlan {
     let (body, fit) = if shape == TenonShape::Frustum {
         (
@@ -989,11 +990,17 @@ fn decide_tenon(
             clearance.check_dome(nominal_dome, tolerance, half_kerf),
         )
     };
+    // Standing straight is only half the question: a tenon that fits upright can
+    // still swing out through a wall once it leans.
+    let plan = TenonPlan { body, verdict: TenonVerdict::Fits };
+    let fit = fit.and_then(|()| {
+        check_lean(clearance, plan.half_diag(tolerance), plan.depth(), tilt)
+    });
     let verdict = match fit {
         Ok(()) => TenonVerdict::Fits,
         Err(problem) => TenonVerdict::DoesNotFit(problem),
     };
-    TenonPlan { body, verdict }
+    TenonPlan { verdict, ..plan }
 }
 
 /// Lengthen a fitted plan by the whole kerf, to be spent on the two ends the
@@ -1030,37 +1037,54 @@ fn stretch_plan_for_lean(plan: TenonPlan, lean: &LeanXform) -> TenonPlan {
     TenonPlan { body, ..plan }
 }
 
-/// The largest lean this placement can take, in radians.
+/// Does this placement survive being LEANED by `tilt`?
 ///
-/// A fixed 60° cap knew nothing about the part: on a thin wall it let the tenon lean
-/// until the trunk came out the side, and on a solid block it stopped short for no
-/// reason. This walks the lean up in small steps and keeps the last angle where
-/// the tenon is still buried in material — both sideways (the leaned trunk swings
-/// toward a lateral wall) and backwards (the lean sinks the base into part_a).
-/// [`TENON_MAX_TILT_RAD`] stays the hard ceiling.
+/// This used to be `max_tilt_for`, which walked the angle up against the material
+/// and handed back a cap the gizmo then clamped to. On a tenon near an edge the cap
+/// came out 0, so the lean ring turned and nothing moved — the tool silently
+/// refusing instead of saying no. Fit is a verdict now, not a limit: lean it as far
+/// as you like (up to [`TENON_MAX_TILT_RAD`]) and this reports whether the leaned
+/// tenon still has material around it.
 ///
-/// The lateral room is the TIGHTEST of the four probes, not the room in the lean's
-/// own direction: the user aims the lean with the roll ring, and a cap that moved
-/// while they turned it would be worse than one that is merely conservative.
-fn max_tilt_for(clearance: &Clearance, plan: &TenonPlan, tolerance: f32) -> f32 {
-    let (half_diag, depth) = (plan.half_diag(tolerance), plan.depth());
-    let room_lat = clearance.half_room_u().min(clearance.half_room_v()) - TENON_WALL_MARGIN_MM;
-    let room_back = clearance.depth_a - TENON_WALL_MARGIN_MM;
-    const STEPS: u32 = 60;
-    let mut best = 0.0;
-    for i in 1..=STEPS {
-        let t = TENON_MAX_TILT_RAD * (i as f32) / (STEPS as f32);
-        let sink = half_diag * t.sin();
-        let built = (depth + sink) / t.cos().max(0.2);
-        // How far the tenon reaches sideways: the leaned tip, plus the base still
-        // standing half a diagonal off the axis.
-        let reach = built * t.sin() + half_diag * t.cos();
-        if reach > room_lat || sink + TENON_BASE_OVERLAP_MM > room_back {
-            break;
-        }
-        best = t;
+/// A lean costs room three ways: the trunk swings SIDEWAYS toward a lateral wall,
+/// its base sinks BACKWARDS into the tenon's own half, and — because the trunk is
+/// lengthened to keep standing its full depth proud (see `stretch_depth`) — the
+/// swing is measured on the longer body, not the nominal one.
+fn check_lean(
+    clearance: &Clearance,
+    half_diag: f32,
+    depth: f32,
+    tilt: f32,
+) -> Result<(), TenonProblem> {
+    let t = tilt.abs().min(TENON_MAX_TILT_RAD);
+    if t < 1e-6 {
+        return Ok(());
     }
-    best
+    let m = TENON_WALL_MARGIN_MM;
+    let sink = half_diag * t.sin();
+    let built = (depth + sink) / t.cos().max(0.2);
+    // Sideways: the leaned tip, plus the base still standing half a diagonal off
+    // the axis. Measured against the TIGHTEST of the four probes rather than the
+    // room in the lean's own direction — the roll ring aims the lean, and a verdict
+    // that flickered as the user turned it would be worse than a conservative one.
+    let reach = built * t.sin() + half_diag * t.cos();
+    let room_lat = clearance.half_room_u().min(clearance.half_room_v());
+    if reach + m > room_lat {
+        return Err(TenonProblem::TooNarrow {
+            room_mm: room_lat * 2.0,
+            needed_mm: (reach + m) * 2.0,
+        });
+    }
+    // Backwards: the sink has to stay inside the material behind the base, or the
+    // tenon's own half opens up around its root.
+    let needed_back = sink + TENON_BASE_OVERLAP_MM + m;
+    if needed_back > clearance.depth_a {
+        return Err(TenonProblem::TooShallow {
+            room_mm: clearance.depth_a,
+            needed_mm: needed_back,
+        });
+    }
+    Ok(())
 }
 
 /// Place a tenon across the cut, honoring the fit ladder via [`decide_tenon`]. The
@@ -1154,12 +1178,15 @@ pub fn apply_tenon_at_frame(
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
     let plan = grow_plan_for_kerf(
-        decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf),
+        decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf, tilt.tilt),
         half_kerf,
     );
     // How far this placement can lean before the tenon leaves the material. The cut
     // must agree with the preview, which caps the gizmo the same way.
-    let max_tilt = max_tilt_for(&clearance, &plan, tolerance);
+    // The lean is no longer capped by the room around the tenon — leaning it too
+    // far is a thing the fit VERDICT reports (see `check_lean`), not a thing the
+    // gizmo silently refuses to do. Only the hard ceiling remains.
+    let max_tilt = TENON_MAX_TILT_RAD;
 
     // The TenonOutcome from apply_frustum/apply_dome holds (tenon-half, mortise-half) in
     // (part_a, part_b). When we swapped roles above, swap them back so the returned
@@ -1293,7 +1320,7 @@ pub fn build_tenon_preview_at_frame(
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
     let plan = grow_plan_for_kerf(
-        decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf),
+        decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf, tilt.tilt),
         half_kerf,
     );
     // The build frame must MATCH what `apply_tenon` uses so the preview is exactly
@@ -1302,7 +1329,10 @@ pub fn build_tenon_preview_at_frame(
     // Sink uses the base half-diagonal so the tilted base stays buried (matches
     // apply_frustum/apply_dome; the mortise footprint is a hair larger).
     let half_diag = plan.half_diag(tolerance);
-    let max_tilt = max_tilt_for(&clearance, &plan, tolerance);
+    // The lean is no longer capped by the room around the tenon — leaning it too
+    // far is a thing the fit VERDICT reports (see `check_lean`), not a thing the
+    // gizmo silently refuses to do. Only the hard ceiling remains.
+    let max_tilt = TENON_MAX_TILT_RAD;
     let lean = LeanXform::for_build(&orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
     // Leaning lengthens the trunk instead of eating it (see `stretch_depth`).
     let plan = stretch_plan_for_lean(plan, &lean);
@@ -1380,9 +1410,10 @@ pub struct TenonFrameInfo {
     pub tip: Vec3,
     /// Tenon height (depth along the build axis to the tip), for handle scaling.
     pub depth: f32,
-    /// The largest lean this placement takes (radians) — see [`max_tilt_for`]. The
-    /// gizmo clamps to it, so the ring stops where the geometry does instead of at
-    /// a constant that knows nothing about the part.
+    /// The hard ceiling on the lean (radians). It is a CONSTANT: how far a tenon may
+    /// lean before it leaves the material is reported as a won't-fit verdict, not
+    /// enforced by freezing the ring — which, on a tenon near an edge, meant the
+    /// ring turned and nothing happened.
     pub max_tilt: f32,
     /// Base half-diagonal (mm, mortise footprint). The frontend leans the tenon
     /// client-side on a soup built straight, so it needs the same number Rust used
@@ -2288,12 +2319,15 @@ mod tests {
         );
     }
 
-    // The lean cap comes from the part, not from a constant: room to spare means the
-    // full 60°, a tight wall means less, and a tenon that can't lean at all reports 0.
+    // Leaning is never silently refused. Room to spare and it fits; a near wall and
+    // it does not — but the ANGLE is always the user's to set. The old cap froze the
+    // ring at 0 on a cramped placement, which read as a broken gizmo.
     #[test]
-    fn the_lean_cap_follows_the_room_around_the_tenon() {
+    fn the_lean_is_reported_as_a_fit_not_enforced_as_a_cap() {
         let dims = FrustumDims::from_width_depth(2.0, 2.5);
         let plan = TenonPlan { body: TenonBody::Frustum(dims), verdict: TenonVerdict::Fits };
+        let (half_diag, depth) = (plan.half_diag(0.1), plan.depth());
+        let lean = std::f32::consts::FRAC_PI_6; // 30°
         let roomy = Clearance {
             depth_a: f32::INFINITY,
             depth_b: f32::INFINITY,
@@ -2302,22 +2336,34 @@ mod tests {
             lat_v_neg: f32::INFINITY,
             lat_v_pos: f32::INFINITY,
         };
-        assert_eq!(
-            max_tilt_for(&roomy, &plan, 0.1),
-            TENON_MAX_TILT_RAD,
-            "nothing in the way → the hard ceiling",
+        assert!(
+            check_lean(&roomy, half_diag, depth, lean).is_ok(),
+            "nothing in the way → a 30° lean fits",
         );
 
-        let walled = Clearance { lat_u_pos: 4.0, lat_u_neg: 4.0, ..roomy };
-        let capped = max_tilt_for(&walled, &plan, 0.1);
-        assert!(capped > 0.0 && capped < TENON_MAX_TILT_RAD, "a near wall caps the lean, got {capped}");
-
+        // A wall right up against it: the leaned trunk swings into it, so the tenon
+        // does not fit — and says which way it doesn't.
         let cramped = Clearance { lat_v_pos: 1.2, lat_v_neg: 1.2, ..roomy };
-        assert_eq!(max_tilt_for(&cramped, &plan, 0.1), 0.0, "no room at all → no lean");
+        assert!(
+            matches!(
+                check_lean(&cramped, half_diag, depth, lean),
+                Err(TenonProblem::TooNarrow { .. })
+            ),
+            "a wall against the swing is reported as too narrow",
+        );
 
         // Thin material behind the base bounds it too: the lean sinks the base in.
         let shallow = Clearance { depth_a: 0.5, ..roomy };
-        assert_eq!(max_tilt_for(&shallow, &plan, 0.1), 0.0, "nothing to sink into → no lean");
+        assert!(
+            matches!(
+                check_lean(&shallow, half_diag, depth, lean),
+                Err(TenonProblem::TooShallow { .. })
+            ),
+            "nothing to sink the base into is reported as too shallow",
+        );
+
+        // And standing straight is unaffected either way.
+        assert!(check_lean(&cramped, half_diag, depth, 0.0).is_ok(), "no lean, no swing");
     }
 
     // Test 6: the preview soup is non-empty, finite, and a multiple of 9 floats
@@ -2627,10 +2673,14 @@ mod tests {
     // still bonds the tenon (part_a gains tris) — end-to-end, not just the builder.
     #[test]
     fn apply_tenon_with_tilt_is_watertight() {
-        let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
-        let part_a = axis_aligned_slab(Vec3::new(-5.0, -5.0, 0.0), Vec3::new(5.0, 5.0, 10.0));
-        let part_b = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 0.0));
-        let mem = flat_membrane(10.0);
+        // Roomy on purpose: this test is about the BOOLEANS surviving a lean, not
+        // about the fit. A 40° lean swings the trunk well off the axis, and on a
+        // 10mm slab that is a tenon which genuinely doesn't fit — `check_lean` would
+        // (rightly) refuse it before any boolean ran.
+        let model = axis_aligned_slab(Vec3::new(-30.0, -30.0, -10.0), Vec3::new(30.0, 30.0, 10.0));
+        let part_a = axis_aligned_slab(Vec3::new(-30.0, -30.0, 0.0), Vec3::new(30.0, 30.0, 10.0));
+        let part_b = axis_aligned_slab(Vec3::new(-30.0, -30.0, -10.0), Vec3::new(30.0, 30.0, 0.0));
+        let mem = flat_membrane(60.0);
         let a_before = part_a.triangle_count();
         let tilt = TenonTilt::new(40.0_f32.to_radians(), 0.7, 0.3);
         let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, 0.0, TenonOffset::default());
