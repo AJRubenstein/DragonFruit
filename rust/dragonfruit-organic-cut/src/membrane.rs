@@ -2285,26 +2285,67 @@ pub fn contour_split_multi(
              at least one loop must wrap all the way through the material it encircles"
         ));
     }
-    let (part_a, part_b) = group_largest_vs_rest(islands)
-        .ok_or_else(|| "multi-loop cut produced only one usable component".to_string())?;
+    let (part_a, part_b) = group_largest_vs_rest(&membranes, islands, thickness_mm).ok_or_else(
+        || {
+            "The cut broke the model into pieces, but none of them came off a seam — nothing \
+             the loops encircle came free. Move the waypoints so each loop wraps right round \
+             what you want to separate."
+                .to_string()
+        },
+    )?;
 
     Ok(ContourSplitMulti { part_a, part_b, component_count, membrane_tris, membranes })
 }
 
 /// Group severed islands into two parts: the LARGEST component (the body) as
-/// `part_a`, and ALL the others concatenated (the freed piece(s)) as `part_b`.
-/// Used by the multi-loop cut, where there's no single membrane normal to classify
-/// sides by. [`split_by_cutter`] already returns islands sorted largest-first, so
-/// `part_a` is the body and `part_b` is the tail (plus any tiny kerf slivers, which
-/// ride along with the freed piece). Returns `None` if fewer than two components.
-fn group_largest_vs_rest(islands: Vec<IndexedMesh>) -> Option<(IndexedMesh, IndexedMesh)> {
+/// `part_a`, and the pieces the cut actually freed as `part_b`. Used by the
+/// multi-loop cut, where there is no single membrane normal to classify sides by,
+/// so size decides which one is the body.
+///
+/// An island only counts as freed if it SITS ON one of the cut faces. Without that
+/// test a shell the model already carried — the 548-triangle flake inside the
+/// user's tower — comes out of `decompose` looking exactly like a freed piece, and
+/// being neither the largest nor on any seam it was handed over as the result of
+/// the cut. Orphans now ride along with the body. Returns `None` when the cut freed
+/// nothing.
+fn group_largest_vs_rest(
+    membranes: &[Membrane],
+    islands: Vec<IndexedMesh>,
+    thickness: f32,
+) -> Option<(IndexedMesh, IndexedMesh)> {
     if islands.len() < 2 {
         return None;
     }
+    let band = (thickness * CUT_FACE_BAND_FACTOR).max(1e-3);
+    let faces: Vec<(IndexedMesh, dragonfruit_mesh_core::bvh::Bvh)> = membranes
+        .iter()
+        .map(|m| {
+            let mesh = IndexedMesh {
+                positions: m.vertices.clone(),
+                triangles: m.triangles.clone(),
+            };
+            let bvh = dragonfruit_mesh_core::bvh::Bvh::build(&mesh);
+            (mesh, bvh)
+        })
+        .collect();
+    let on_a_cut_face = |island: &IndexedMesh| {
+        island.positions.iter().any(|&v| {
+            faces
+                .iter()
+                .any(|(mesh, bvh)| signed_side_on_cut_face(bvh, mesh, v, band).is_some())
+        })
+    };
+
     let mut it = islands.into_iter();
     let largest = it.next()?; // sorted largest-first by split_by_cutter
-    let rest: Vec<IndexedMesh> = it.collect();
-    Some((largest, concat_meshes(rest)))
+    let (freed, orphans): (Vec<IndexedMesh>, Vec<IndexedMesh>) =
+        it.partition(|island| on_a_cut_face(island));
+    if freed.is_empty() {
+        return None;
+    }
+    let mut body = vec![largest];
+    body.extend(orphans);
+    Some((concat_meshes(body), concat_meshes(freed)))
 }
 
 /// Convert a `manifold` solid back to an `IndexedMesh`. Returns `None` only on a
