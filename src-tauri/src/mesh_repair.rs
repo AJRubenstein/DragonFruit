@@ -985,6 +985,37 @@ pub async fn mesh_punch_read_positions() -> Result<Response, String> {
 
 // --- organic cut ---------------------------------------------------------
 
+/// Writes the EXACT inputs of an organic cut to disk when `DF_CUT_DUMP` names a
+/// directory: the staged mesh as raw LE f32 soup (`cut-<n>.bin`) and the options
+/// JSON (`cut-<n>.json`), numbered so a session keeps every attempt. The pair is
+/// a complete, lossless replay of the cut — feed it to the `cut_replay` binary in
+/// `dragonfruit-organic-cut` to reproduce a bad cut outside the app. Off unless
+/// the variable is set; a write failure only warns (never breaks the cut).
+fn dump_organic_cut_inputs(bytes: &[u8], options_json: &str) {
+    let Some(dir) = std::env::var_os("DF_CUT_DUMP") else {
+        return;
+    };
+    let dir = PathBuf::from(dir);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("[cut] dump dir {}: {e}", dir.display());
+        return;
+    }
+    let n = (0u32..)
+        .find(|n| !dir.join(format!("cut-{n}.bin")).exists())
+        .unwrap_or(0);
+    if let Err(e) = std::fs::write(dir.join(format!("cut-{n}.bin")), bytes)
+        .and_then(|()| std::fs::write(dir.join(format!("cut-{n}.json")), options_json))
+    {
+        eprintln!("[cut] dump cut-{n}: {e}");
+        return;
+    }
+    eprintln!(
+        "[cut] dumped inputs to {}/cut-{n}.{{bin,json}} ({} bytes of mesh)",
+        dir.display(),
+        bytes.len()
+    );
+}
+
 /// Applies an organic cut to the current staged mesh, replacing the staged buffer
 /// with the first part and stashing ALL parts for read-back (via
 /// `mesh_organic_cut_read_part`). A multi-loop cut can produce more than two parts.
@@ -992,6 +1023,7 @@ pub async fn mesh_punch_read_positions() -> Result<Response, String> {
 pub async fn mesh_organic_cut_staged(options_json: String) -> Result<String, String> {
     let options = parse_organic_cut_options(&options_json);
     let bytes = read_staging_bytes()?;
+    dump_organic_cut_inputs(&bytes, &options_json);
     let (parts, report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
         let outcome = organic_cut(mesh, &options);
@@ -1050,6 +1082,7 @@ pub async fn mesh_organic_cut_from_captured_source(options_json: String) -> Resu
             "No captured organic cut source — call mesh_organic_cut_capture_staged_source first"
                 .to_string()
         })?;
+    dump_organic_cut_inputs(&source_bytes, &options_json);
 
     let (parts_soup, report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&source_bytes).map_err(|e| e.to_string())?;

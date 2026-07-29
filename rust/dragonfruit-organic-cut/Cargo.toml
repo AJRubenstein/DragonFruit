@@ -8,6 +8,12 @@ license = "MIT"
 name = "dragonfruit_organic_cut"
 path = "src/lib.rs"
 
+# Replays a cut captured with DF_CUT_DUMP, outside the app. Debug tool only.
+[[bin]]
+name = "cut_replay"
+path = "src/bin/cut_replay.rs"
+required-features = ["manifold"]
+
 [features]
 # Enable the manifold-csg boolean backend, required by the contour (membrane)
 # cut. Without it, only the geodesic seam + flat plane-cut fallback are available.
