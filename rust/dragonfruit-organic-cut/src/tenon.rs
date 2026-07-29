@@ -828,6 +828,8 @@ pub enum TenonProblem {
     /// The cut face itself is unusable (no area, or normals that cancel), so there
     /// is nowhere to root a tenon and no frame to aim one with.
     DegenerateFace,
+    /// Leaned so far that the tenon comes out through the skin.
+    EscapesTheBody,
 }
 
 impl TenonProblem {
@@ -843,6 +845,9 @@ impl TenonProblem {
             ),
             TenonProblem::DegenerateFace => {
                 "No tenon — this cut leaves no usable face to root one on.".to_string()
+            }
+            TenonProblem::EscapesTheBody => {
+                "This tenon doesn't fit here — leaned this far it comes out through the surface. Stand it up more, or move it into thicker material.".to_string()
             }
         }
     }
@@ -1089,6 +1094,14 @@ pub fn apply_tenon_at_frame(
         decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf, tilt.tilt),
         half_kerf,
     );
+    // The same containment check the preview runs, on the same frame, so what the
+    // user saw refused in red is what the cut refuses.
+    let plan = {
+        let build_frame =
+            sink_frame_into_part_a(&frame_extruding_toward_part_b(&frame), half_kerf);
+        let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, half_kerf);
+        confirm_tenon_stays_inside(plan, model, &build_frame, lean)
+    };
     // How far this placement can lean before the tenon leaves the material. The cut
     // must agree with the preview, which caps the gizmo the same way.
     // The lean is no longer capped by the room around the tenon — leaning it too
@@ -1242,6 +1255,9 @@ pub fn build_tenon_preview_at_frame(
     // gizmo silently refuses to do. Only the hard ceiling remains.
     let max_tilt = TENON_MAX_TILT_RAD;
     let lean = LeanXform::for_build(&tilt, max_tilt, half_kerf);
+    // Where the leaned tenon ACTUALLY ended up — the probes only ever measured
+    // where it started. See `confirm_tenon_stays_inside`.
+    let plan = confirm_tenon_stays_inside(plan, model, &build_frame, lean);
 
     let mut soup: Vec<f32> = Vec::new();
     // Triangles [0, tenon_triangles) are the tenon, the rest the mortise. The frontend
@@ -1602,6 +1618,77 @@ fn nearest_hit(mesh: &IndexedMesh, origin: Vec3, dir: Vec3) -> Option<f32> {
         }
     }
     best
+}
+
+/// Confirm the leaned tenon is still INSIDE the body, and say so if it isn't.
+///
+/// The clearance probes measure room along ±u/±v from the anchor and read a ray
+/// that hits nothing as infinite room, so on any convex or tapering surface they
+/// wave through a lean that walks the tenon out into the air. This looks where the
+/// tenon actually ended up: the cap's centre and its four corners, the points that
+/// swing furthest when it leans.
+///
+/// Only the CAP. The base is buried in material by construction, and every extra
+/// point costs a pass over the model's triangles on every preview frame.
+fn confirm_tenon_stays_inside(
+    plan: TenonPlan,
+    model: &IndexedMesh,
+    build_frame: &TenonFrame,
+    lean: LeanXform,
+) -> TenonPlan {
+    if !plan.fits() {
+        return plan; // already refused, for a reason that is more use than this one
+    }
+    let depth = plan.depth();
+    let (hw, hl) = match plan.body {
+        TenonBody::Frustum(d) => (0.5 * d.width * TENON_TOP_SCALE, 0.5 * d.length * TENON_TOP_SCALE),
+        // A dome's cap is a point, so its corners are the point too.
+        TenonBody::Dome(_) => (0.0, 0.0),
+    };
+    let cap = [(0.0, 0.0), (hw, hl), (-hw, hl), (hw, -hl), (-hw, -hl)];
+    for (dx, dy) in cap {
+        let (x, y, z) = lean.apply(dx, dy, depth);
+        let p = build_frame
+            .anchor
+            .add(build_frame.u.scale(x))
+            .add(build_frame.v.scale(y))
+            .add(build_frame.axis.scale(z));
+        if !is_inside(model, p) {
+            return TenonPlan {
+                verdict: TenonVerdict::DoesNotFit(TenonProblem::EscapesTheBody),
+                ..plan
+            };
+        }
+    }
+    plan
+}
+
+/// Is `p` inside the closed mesh? Ray parity: a ray from an interior point crosses
+/// the skin an odd number of times, an exterior one an even number.
+///
+/// This is the question the lateral ray probes could not answer. They measure "how
+/// far to the nearest wall along ±u/±v FROM THE ANCHOR", and when a probe finds no
+/// wall it reports infinite room — which on a tapering body (a spire, a tower, any
+/// convex outside) is most directions. So a tenon could be leaned until its tip was
+/// out in the air and nothing objected, because nothing had looked where the tip
+/// actually went.
+fn is_inside(mesh: &IndexedMesh, p: Vec3) -> bool {
+    use dragonfruit_mesh_core::bvh::ray_tri;
+    // An arbitrary but irrational-ish direction, so the ray is unlikely to graze an
+    // edge or a vertex — the one case parity counting gets wrong.
+    let dir = Vec3::new(0.577_35, 0.577_36, 0.577_34);
+    let mut crossings = 0usize;
+    for t in &mesh.triangles {
+        let a = mesh.positions[t[0] as usize];
+        let b = mesh.positions[t[1] as usize];
+        let c = mesh.positions[t[2] as usize];
+        if let Some(d) = ray_tri(p, dir, a, b, c) {
+            if d > 1e-6 {
+                crossings += 1;
+            }
+        }
+    }
+    crossings % 2 == 1
 }
 
 // ---------------------------------------------------------------------------
@@ -2274,6 +2361,63 @@ mod tests {
                  corner lift ({corner_lift}), got {leaned}",
             );
         }
+    }
+
+    // Leaned far enough, the tenon comes out through the skin — and the ray probes
+    // never noticed, because a probe that hits nothing reads as infinite room and on
+    // a tapering body most directions hit nothing. Pinned on a CONE for that reason:
+    // a slab has walls for the probes to find, so it cannot show this at all.
+    #[test]
+    fn a_lean_that_takes_the_tenon_out_through_the_skin_is_refused() {
+        // A cone standing on z=0, apex at z=20: the surface falls away in every
+        // lateral direction, so a probe from a point on the axis escapes.
+        const N: usize = 48;
+        // 0 = apex, 1 = centre of the base disk, 2.. = the rim.
+        let mut positions = vec![Vec3::new(0.0, 0.0, 20.0), Vec3::new(0.0, 0.0, 0.0)];
+        for i in 0..N {
+            let th = std::f32::consts::TAU * i as f32 / N as f32;
+            positions.push(Vec3::new(8.0 * th.cos(), 8.0 * th.sin(), 0.0));
+        }
+        let mut triangles = Vec::new();
+        for i in 0..N {
+            let a = 2 + i as u32;
+            let b = 2 + ((i + 1) % N) as u32;
+            triangles.push([0u32, a, b]); // side
+            triangles.push([1u32, b, a]); // base disk, wound the other way
+        }
+        let cone = IndexedMesh { positions, triangles };
+
+        // A point up the axis is inside; one out to the side at the same height is
+        // not — the premise the probes miss.
+        assert!(is_inside(&cone, Vec3::new(0.0, 0.0, 10.0)), "premise: axis is inside");
+        assert!(!is_inside(&cone, Vec3::new(7.0, 0.0, 10.0)), "premise: out to the side is not");
+
+        // A tenon rooted on the axis, leaned hard, reaches out past the sloping skin.
+        let frame = TenonFrame {
+            anchor: Vec3::new(0.0, 0.0, 10.0),
+            axis: Vec3::new(0.0, 0.0, 1.0),
+            u: Vec3::new(1.0, 0.0, 0.0),
+            v: Vec3::new(0.0, 1.0, 0.0),
+            cut_area: 100.0,
+        };
+        let plan = TenonPlan {
+            // Short enough that standing straight it is comfortably inside the cone
+            // (tip at z=14, where the radius is 2.4mm), so the refusal below can only
+            // be about the LEAN.
+            body: TenonBody::Frustum(FrustumDims::from_width_depth(2.0, 4.0)),
+            verdict: TenonVerdict::Fits,
+        };
+        let hard = LeanXform::for_build(&TenonTilt::new(TENON_MAX_TILT_RAD, 0.0), TENON_MAX_TILT_RAD, 0.0);
+        let leaned = confirm_tenon_stays_inside(plan.clone(), &cone, &frame, hard);
+        assert_eq!(
+            leaned.verdict,
+            TenonVerdict::DoesNotFit(TenonProblem::EscapesTheBody),
+            "a tenon leaned out through the skin is refused",
+        );
+
+        // Standing straight in the same spot, it is fine.
+        let upright = confirm_tenon_stays_inside(plan, &cone, &frame, LeanXform::IDENTITY);
+        assert!(upright.fits(), "and upright it is fine: {}", upright.detail());
     }
 
     // Leaning is never silently refused. Room to spare and it fits; a near wall and
