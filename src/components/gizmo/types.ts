@@ -93,7 +93,7 @@ export interface GizmoConfig {
   /**
    * Which rotation rings to draw. Omitted (the default) draws all three. Give a
    * subset for a gizmo whose object has fewer than three meaningful rotations —
-   * the organic cut's key, for instance, takes a roll and a lean and nothing
+   * the organic cut's tenon, for instance, takes a roll and a lean and nothing
    * else, and the third ring only invited a rotation with no meaning.
    */
   rotateAxes?: GizmoAxis[];

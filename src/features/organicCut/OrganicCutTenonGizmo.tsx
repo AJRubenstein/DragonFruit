@@ -6,14 +6,14 @@ import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { ScreenSpaceGizmo } from '@/components/gizmo';
 import type { GizmoAxis } from '@/components/gizmo';
 import type { ThreeEvent } from '@react-three/fiber';
-import type { KeyPreviewFrame } from './types';
-import { clampKeyTilt } from './keyLeanTransform';
+import type { TenonPreviewFrame } from './types';
+import { clampTenonTilt } from './tenonLeanTransform';
 import { useOrganicCutColorNumbers } from './useOrganicCutColors';
 
-/** The key has two rotations, not three: the lean (green ring) and the roll. */
+/** The tenon has two rotations, not three: the lean (green ring) and the roll. */
 const LEAN_AND_ROLL_RINGS: GizmoAxis[] = ['y', 'z'];
 
-export interface OrganicCutKeyGizmoProps {
+export interface OrganicCutTenonGizmoProps {
   /** All loaded models (to find the active one for its geometry/offset). */
   models: LoadedModel[];
   /** The active model's id. */
@@ -21,30 +21,30 @@ export interface OrganicCutKeyGizmoProps {
   /** The active model's transform (plate position/rotation/scale). */
   activeTransform?: ModelTransform;
   /**
-   * The previewed key's placement frame in MODEL-LOCAL space (anchor = base center,
+   * The previewed tenon's placement frame in MODEL-LOCAL space (anchor = base center,
    * axis = un-tilted cut normal, u/v = in-plane basis). Null → no gizmo.
    */
-  keyFrame: KeyPreviewFrame | null;
+  tenonFrame: TenonPreviewFrame | null;
   /**
-   * Current key lean / roll (radians). The lean's azimuth is not an input: it
+   * Current tenon lean / roll (radians). The lean's azimuth is not an input: it
    * follows the roll (see `leanAzimuthFor`), so the gizmo derives it.
    */
-  keyTiltRad: number;
-  keyRollRad: number;
+  tenonTiltRad: number;
+  tenonRollRad: number;
   /** Report a new aim/roll (radians); tilt is pre-clamped. */
-  onKeyAimChange: (tiltRad: number, azimuthRad: number, rollRad: number) => void;
+  onTenonAimChange: (tiltRad: number, azimuthRad: number, rollRad: number) => void;
   /**
-   * Where the key sits on the cut face (mm along the frame's u/v), and the
+   * Where the tenon sits on the cut face (mm along the frame's u/v), and the
    * reporter for the base handle that slides it. Omit the setter and no handle is
-   * drawn — the key stays on the centroid.
+   * drawn — the tenon stays on the centroid.
    */
-  keyOffsetUMm?: number;
-  keyOffsetVMm?: number;
-  /** The offset the previewed key was built with — see `keyOffsetMatrix` in the
+  tenonOffsetUMm?: number;
+  tenonOffsetVMm?: number;
+  /** The offset the previewed tenon was built with — see `keyOffsetMatrix` in the
    *  tool. The crosshair rides the same difference so it stays under the cursor
    *  instead of snapping back to the last frame Rust returned. */
-  keyPreviewOffset?: { u: number; v: number };
-  onKeyOffsetChange?: (offsetUMm: number, offsetVMm: number) => void;
+  tenonPreviewOffset?: { u: number; v: number };
+  onTenonOffsetChange?: (offsetUMm: number, offsetVMm: number) => void;
   /** Notifies the host that a gizmo drag started/ended (to pause OrbitControls). */
   onDragStateChange?: (dragging: boolean) => void;
 }
@@ -63,9 +63,9 @@ function wrapAngle(rad: number): number {
 }
 
 /**
- * The lean's azimuth for a given roll — the key has TWO freedoms, not three.
+ * The lean's azimuth for a given roll — the tenon has TWO freedoms, not three.
  *
- * MIND THE SIGN. The key is built in a frame whose axis is NEGATED against the cut
+ * MIND THE SIGN. The tenon is built in a frame whose axis is NEGATED against the cut
  * frame (`frame_extruding_toward_part_b`), so a roll of +ρ there turns the body the
  * other way round the cut normal. Deriving the azimuth as `roll + c` therefore did
  * not weld the two together — it left the body turning at 2ρ against a lean plane
@@ -73,13 +73,13 @@ function wrapAngle(rad: number): number {
  * ring and no name. Subtracting cancels it: body and lean plane move as one.
  *
  * The old gizmo had the lean (off the normal), the plane that lean happens in, and
- * the key's own spin about its axis, all independent. The third one is the one
- * nobody wants: the lean plane should simply BE the plane of one of the key's
- * narrow faces, at every roll. So the roll turns the lean plane and the key
+ * the tenon's own spin about its axis, all independent. The third one is the one
+ * nobody wants: the lean plane should simply BE the plane of one of the tenon's
+ * narrow faces, at every roll. So the roll turns the lean plane and the tenon
  * together, as one body, and the azimuth is derived here rather than free.
  *
- * The quarter turn is which face gets it. The key is built in a frame whose u/v
- * are SWAPPED against the cut frame (`frame_extruding_toward_part_b` in key.rs),
+ * The quarter turn is which face gets it. The tenon is built in a frame whose u/v
+ * are SWAPPED against the cut frame (`frame_extruding_toward_part_b` in tenon.rs),
  * so its width — the narrow face — lies along the cut frame's v. Leaning toward v
  * is therefore leaning in the plane of a narrow face; drop the quarter turn to
  * tip it over a wide face instead.
@@ -89,8 +89,8 @@ function leanAzimuthFor(rollRad: number): number {
 }
 
 /**
- * The registration-key aim/roll gizmo — the app's standard ScreenSpaceGizmo
- * (rotate-only) mounted at the key's base center, oriented to the key's frame.
+ * The registration-tenon aim/roll gizmo — the app's standard ScreenSpaceGizmo
+ * (rotate-only) mounted at the tenon's base center, oriented to the tenon's frame.
  *
  * IMPORTANT: this MUST be mounted INSIDE the scene's PickingProviderWrapper (the
  * same subtree as the main transform gizmo). The gizmo's handle hit-testing flows
@@ -98,32 +98,32 @@ function leanAzimuthFor(rollRad: number): number {
  * grabbed (the model mesh in front swallows the pointer). So it's rendered via a
  * SceneCanvas in-provider slot, NOT inside OrganicCutTool (which sits outside it).
  *
- * The key frame is reported in MODEL-LOCAL space; we compose the model's group chain
+ * The tenon frame is reported in MODEL-LOCAL space; we compose the model's group chain
  * (plate transform → meshLocalOffset) into a WORLD anchor + a WORLD orientation whose
- * local x/y/z map to the key's u/v/axis. The three rotation rings then spin about the
- * key's own basis, and we map the per-axis deltas to tilt/azimuth/roll:
- *   - ring about the normal (z) → roll: turns the key AND the plane it leans in,
+ * local x/y/z map to the tenon's u/v/axis. The three rotation rings then spin about the
+ * tenon's own basis, and we map the per-axis deltas to tilt/azimuth/roll:
+ *   - ring about the normal (z) → roll: turns the tenon AND the plane it leans in,
  *     as one body (see `leanAzimuthFor`)
- *   - green ring about the key's rolled u (y) → the lean off the normal, signed
+ *   - green ring about the tenon's rolled u (y) → the lean off the normal, signed
  *     and clamped to what the geometry allows
- * There is no third ring and no free azimuth. The key's spin about its own axis
- * is not a freedom of its own: the lean plane is welded to one of the key's narrow
+ * There is no third ring and no free azimuth. The tenon's spin about its own axis
+ * is not a freedom of its own: the lean plane is welded to one of the tenon's narrow
  * faces, so rolling moves both together.
  */
-export function OrganicCutKeyGizmo({
+export function OrganicCutTenonGizmo({
   models,
   activeModelId,
   activeTransform,
-  keyFrame,
-  keyTiltRad,
-  keyRollRad,
-  onKeyAimChange,
-  keyOffsetUMm = 0,
-  keyOffsetVMm = 0,
-  keyPreviewOffset,
-  onKeyOffsetChange,
+  tenonFrame,
+  tenonTiltRad,
+  tenonRollRad,
+  onTenonAimChange,
+  tenonOffsetUMm = 0,
+  tenonOffsetVMm = 0,
+  tenonPreviewOffset,
+  onTenonOffsetChange,
   onDragStateChange,
-}: OrganicCutKeyGizmoProps) {
+}: OrganicCutTenonGizmoProps) {
   const activeModel = useMemo(
     () => models.find((m) => m.id === activeModelId),
     [models, activeModelId],
@@ -131,7 +131,7 @@ export function OrganicCutKeyGizmo({
   const transform = activeTransform ?? activeModel?.transform;
 
   // The model's inner mesh offset (= −bboxCenter): the same nested offset StlMesh
-  // applies, so local key-frame coords map to world correctly.
+  // applies, so local tenon-frame coords map to world correctly.
   const meshLocalOffset = useMemo(() => {
     if (!activeModel) return new THREE.Vector3();
     const geometry = activeModel.geometry.geometry;
@@ -159,13 +159,13 @@ export function OrganicCutKeyGizmo({
   const tsz = transform?.scale.z ?? 1;
   const hasTransform = !!transform;
 
-  const worldKeyGizmo = useMemo(() => {
-    if (!keyFrame || !transform) return null;
+  const worldTenonGizmo = useMemo(() => {
+    if (!tenonFrame || !transform) return null;
     // Local frame vectors.
-    const anchorL = new THREE.Vector3(...keyFrame.anchor);
-    const uL = new THREE.Vector3(...keyFrame.u).normalize();
-    const vL = new THREE.Vector3(...keyFrame.v).normalize();
-    const axisL = new THREE.Vector3(...keyFrame.axis).normalize();
+    const anchorL = new THREE.Vector3(...tenonFrame.anchor);
+    const uL = new THREE.Vector3(...tenonFrame.u).normalize();
+    const vL = new THREE.Vector3(...tenonFrame.v).normalize();
+    const axisL = new THREE.Vector3(...tenonFrame.axis).normalize();
     // The model's local→world matrix = plate(position,quat,scale) ∘ meshLocalOffset.
     const modelQuat = quaternionFromGlobalEuler(transform.rotation);
     const outer = new THREE.Matrix4().compose(
@@ -187,16 +187,16 @@ export function OrganicCutKeyGizmo({
     const uW = uL.clone().applyMatrix3(normalMat).normalize();
     const vW = vL.clone().applyMatrix3(normalMat).normalize();
     const axisW = axisL.clone().applyMatrix3(normalMat).normalize();
-    // The in-plane basis is ROLLED with the key: the lean plane turns with the roll
+    // The in-plane basis is ROLLED with the tenon: the lean plane turns with the roll
     // (that is what the roll ring is FOR), so the lean ring has to turn with it or
-    // it would stop showing where the key is about to tip.
+    // it would stop showing where the tenon is about to tip.
     // Turned by −roll for the sign reason in `leanAzimuthFor`: this is the frame
     // the body actually ends up in.
-    const cr = Math.cos(keyRollRad);
-    const sr = Math.sin(keyRollRad);
+    const cr = Math.cos(tenonRollRad);
+    const sr = Math.sin(tenonRollRad);
     const uR = uW.clone().multiplyScalar(cr).sub(vW.clone().multiplyScalar(sr)).normalize();
     const vR = uW.clone().multiplyScalar(sr).add(vW.clone().multiplyScalar(cr)).normalize();
-    // The gizmo's local Y is the key's rolled u — the axis the lean turns about —
+    // The gizmo's local Y is the tenon's rolled u — the axis the lean turns about —
     // so the GREEN ring is the lean. Right-handed with z = axis means x = y × z =
     // u × axis = −v.
     const basis = new THREE.Matrix4().makeBasis(vR.clone().negate(), uR, axisW);
@@ -214,52 +214,52 @@ export function OrganicCutKeyGizmo({
       vL,
       anchorL,
     };
-    // Depend on primitive transform values (not the churning object) + keyFrame.
+    // Depend on primitive transform values (not the churning object) + tenonFrame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyFrame, keyRollRad, meshLocalOffset, hasTransform, tpx, tpy, tpz, trx, try_, trz, tsx, tsy, tsz]);
+  }, [tenonFrame, tenonRollRad, meshLocalOffset, hasTransform, tpx, tpy, tpz, trx, try_, trz, tsx, tsy, tsz]);
 
   const handleGizmoRotate = useCallback(
     (axis: GizmoAxis, delta: number) => {
       if (axis === 'z') {
         // Roll takes the delta UNFLIPPED: the flip the lean ring needs drove the
-        // key the opposite way to the handle the user was dragging on this one.
+        // tenon the opposite way to the handle the user was dragging on this one.
         //
         // It also accumulates, so spinning the ring a few times used to report
-        // absurd angles ("6403.1° roll") for a key that is geometrically at 43°.
+        // absurd angles ("6403.1° roll") for a tenon that is geometrically at 43°.
         // Wrap every revolution away at the source: the rotation is the same one,
         // and the readout, the Reset-aim check and Rust all see a sane number.
-        const roll = wrapAngle(keyRollRad + delta);
-        // Rolling turns the key AND the direction it leans, together — that is the
+        const roll = wrapAngle(tenonRollRad + delta);
+        // Rolling turns the tenon AND the direction it leans, together — that is the
         // whole point of aiming with the roll ring.
-        onKeyAimChange(keyTiltRad, leanAzimuthFor(roll), roll);
+        onTenonAimChange(tenonTiltRad, leanAzimuthFor(roll), roll);
         return;
       }
-      // The green ring turns about the key's own u, tipping it toward its own v —
+      // The green ring turns about the tenon's own u, tipping it toward its own v —
       // the plane of a narrow face. What it reports IS the lean, signed: past 0 it
       // keeps going to the other side of the normal instead of flipping the
       // azimuth, which is the −90° end of the user's sketch. The azimuth is never
       // touched here; it belongs to the roll.
-      // The cap is the part's, not a constant: a key with a wall right next to it
+      // The cap is the part's, not a constant: a tenon with a wall right next to it
       // stops leaning sooner, and one in open material goes the full 60°.
-      const tilt = clampKeyTilt(keyTiltRad - delta, keyFrame);
-      onKeyAimChange(tilt, leanAzimuthFor(keyRollRad), keyRollRad);
+      const tilt = clampTenonTilt(tenonTiltRad - delta, tenonFrame);
+      onTenonAimChange(tilt, leanAzimuthFor(tenonRollRad), tenonRollRad);
     },
-    [onKeyAimChange, keyTiltRad, keyRollRad, keyFrame],
+    [onTenonAimChange, tenonTiltRad, tenonRollRad, tenonFrame],
   );
 
-  // --- The base handle: slide the key across the cut face --------------------
+  // --- The base handle: slide the tenon across the cut face --------------------
   // It lives HERE, not in OrganicCutTool, for the reason in this file's header:
-  // the key's anchor sits ON the cut face, buried inside the body, so a handle
+  // the tenon's anchor sits ON the cut face, buried inside the body, so a handle
   // mounted outside the picking provider loses every click to the model surface
   // in front of it — which then read as "add a waypoint".
   const colors = useOrganicCutColorNumbers();
   const [draggingHandle, setDraggingHandle] = useState(false);
   const handleDragRef = useRef<{ u: number; v: number; startU: number; startV: number } | null>(null);
 
-  /** Pointer ray → (u, v) millimetres on the key's cut-face plane, in LOCAL mm. */
+  /** Pointer ray → (u, v) millimetres on the tenon's cut-face plane, in LOCAL mm. */
   const planePoint = useCallback(
     (e: ThreeEvent<PointerEvent>): { u: number; v: number } | null => {
-      const g = worldKeyGizmo;
+      const g = worldTenonGizmo;
       if (!g) return null;
       const denom = e.ray.direction.dot(g.axisW);
       if (Math.abs(denom) < 1e-6) return null; // ray parallel to the cut face
@@ -274,12 +274,12 @@ export function OrganicCutKeyGizmo({
       const d = hitLocal.sub(g.anchorL);
       return { u: d.dot(g.uL), v: d.dot(g.vL) };
     },
-    [worldKeyGizmo],
+    [worldTenonGizmo],
   );
 
   const handlePointerDown = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
-      if (e.button !== 0 || !onKeyOffsetChange) return;
+      if (e.button !== 0 || !onTenonOffsetChange) return;
       e.stopPropagation();
       const grab = planePoint(e);
       if (!grab) return;
@@ -289,9 +289,9 @@ export function OrganicCutKeyGizmo({
       } catch {
         /* capture is best-effort */
       }
-      // Grab-relative, so the key follows the cursor from wherever it was picked
+      // Grab-relative, so the tenon follows the cursor from wherever it was picked
       // up instead of snapping its centre under the pointer.
-      handleDragRef.current = { u: grab.u, v: grab.v, startU: keyOffsetUMm, startV: keyOffsetVMm };
+      handleDragRef.current = { u: grab.u, v: grab.v, startU: tenonOffsetUMm, startV: tenonOffsetVMm };
       // `grab` is measured from the anchor of the LAST built frame, and startU/V
       // are the live offsets — the difference between them is exactly the pending
       // slide, so the deltas below stay right even mid-rebuild.
@@ -299,19 +299,19 @@ export function OrganicCutKeyGizmo({
       onDragStateChange?.(true);
       document.body.style.cursor = 'grabbing';
     },
-    [planePoint, keyOffsetUMm, keyOffsetVMm, onDragStateChange, onKeyOffsetChange],
+    [planePoint, tenonOffsetUMm, tenonOffsetVMm, onDragStateChange, onTenonOffsetChange],
   );
 
   const handlePointerMove = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
       const drag = handleDragRef.current;
-      if (!drag || !onKeyOffsetChange) return;
+      if (!drag || !onTenonOffsetChange) return;
       e.stopPropagation();
       const now = planePoint(e);
       if (!now) return;
-      onKeyOffsetChange(drag.startU + (now.u - drag.u), drag.startV + (now.v - drag.v));
+      onTenonOffsetChange(drag.startU + (now.u - drag.u), drag.startV + (now.v - drag.v));
     },
-    [planePoint, onKeyOffsetChange],
+    [planePoint, onTenonOffsetChange],
   );
 
   const endHandleDrag = useCallback(
@@ -344,13 +344,13 @@ export function OrganicCutKeyGizmo({
   }, []);
 
   /**
-   * Crosshair radius in world units, from the key's own depth so it scales with
-   * the key — but small: this marks a point, it must not hide the peg it sits on.
+   * Crosshair radius in world units, from the tenon's own depth so it scales with
+   * the tenon — but small: this marks a point, it must not hide the tenon it sits on.
    */
   const handleRadius = useMemo(() => {
-    const depth = keyFrame?.depth ?? 2.5;
+    const depth = tenonFrame?.depth ?? 2.5;
     return Math.min(0.5, Math.max(0.08, depth * 0.06));
-  }, [keyFrame]);
+  }, [tenonFrame]);
 
   /** The four ticks of the crosshair, in the cut plane (local XY). */
   const crosshairTicks = useMemo(() => {
@@ -377,7 +377,7 @@ export function OrganicCutKeyGizmo({
    * Report this handle as the NEAREST hit, whatever its real depth.
    *
    * R3F sorts intersections by distance and runs the handlers nearest-first, and
-   * the key's anchor sits on the cut face — buried inside the body. The model
+   * the tenon's anchor sits on the cut face — buried inside the body. The model
    * surface in front therefore won every click and read it as "add a waypoint",
    * both inside and outside the picking provider. Forcing the distance is the
    * pointer-side twin of the `depthTest: false` this overlay already draws with:
@@ -397,10 +397,10 @@ export function OrganicCutKeyGizmo({
 
   /** The crosshair's world position, carrying the not-yet-rebuilt drag offset. */
   const handlePosition = useMemo((): [number, number, number] | null => {
-    const g = worldKeyGizmo;
+    const g = worldTenonGizmo;
     if (!g) return null;
-    const du = keyOffsetUMm - (keyPreviewOffset?.u ?? keyOffsetUMm);
-    const dv = keyOffsetVMm - (keyPreviewOffset?.v ?? keyOffsetVMm);
+    const du = tenonOffsetUMm - (tenonPreviewOffset?.u ?? tenonOffsetUMm);
+    const dv = tenonOffsetVMm - (tenonPreviewOffset?.v ?? tenonOffsetVMm);
     if (Math.abs(du) < 1e-6 && Math.abs(dv) < 1e-6) return g.position;
     // The offsets are LOCAL mm, so shift in local space and go back out to world.
     const localToWorld = new THREE.Matrix4().copy(g.worldToLocal).invert();
@@ -410,7 +410,7 @@ export function OrganicCutKeyGizmo({
       .add(g.vL.clone().multiplyScalar(dv))
       .applyMatrix4(localToWorld);
     return [p.x, p.y, p.z];
-  }, [worldKeyGizmo, keyOffsetUMm, keyOffsetVMm, keyPreviewOffset]);
+  }, [worldTenonGizmo, tenonOffsetUMm, tenonOffsetVMm, tenonPreviewOffset]);
 
   const handleGizmoDragState = useCallback(
     (dragging: boolean) => {
@@ -419,12 +419,12 @@ export function OrganicCutKeyGizmo({
     [onDragStateChange],
   );
 
-  if (!worldKeyGizmo) return null;
+  if (!worldTenonGizmo) return null;
 
   return (
     <>
-    {onKeyOffsetChange && (
-      <group position={handlePosition ?? worldKeyGizmo.position} rotation={worldKeyGizmo.rotation}>
+    {onTenonOffsetChange && (
+      <group position={handlePosition ?? worldTenonGizmo.position} rotation={worldTenonGizmo.rotation}>
         {/* Invisible grab volume. A sphere rather than a disc in the cut plane:
             seen edge-on a disc is a line and there is nothing left to grab. */}
         <mesh
@@ -441,11 +441,11 @@ export function OrganicCutKeyGizmo({
           <sphereGeometry args={[handleRadius * 2.6, 12, 12]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
         </mesh>
-        {/* Crosshair, lying IN the cut plane so it also shows which plane the key
-            slides on. A filled dot hid the peg and read as a sticker on it. */}
+        {/* Crosshair, lying IN the cut plane so it also shows which plane the tenon
+            slides on. A filled dot hid the tenon and read as a sticker on it. */}
         <mesh geometry={crosshairRing} renderOrder={1003} frustumCulled={false}>
           <meshBasicMaterial
-            color={colors.keyHandle}
+            color={colors.tenonHandle}
             depthTest={false}
             transparent
             opacity={draggingHandle ? 1 : 0.85}
@@ -454,7 +454,7 @@ export function OrganicCutKeyGizmo({
         </mesh>
         <lineSegments geometry={crosshairTicks} renderOrder={1004} frustumCulled={false}>
           <lineBasicMaterial
-            color={colors.keyHandle}
+            color={colors.tenonHandle}
             depthTest={false}
             transparent
             opacity={draggingHandle ? 1 : 0.85}
@@ -463,8 +463,8 @@ export function OrganicCutKeyGizmo({
       </group>
     )}
     <ScreenSpaceGizmo
-      position={worldKeyGizmo.position}
-      rotation={worldKeyGizmo.rotation}
+      position={worldTenonGizmo.position}
+      rotation={worldTenonGizmo.rotation}
       followMeshRef={false}
       enableMove={false}
       enableScale={false}

@@ -21,20 +21,20 @@ export type OrganicCutColors = {
   seamGlow: string;
   /** The cutter surface: the contour membrane and the flat plane's quad. */
   cutSurface: string;
-  /** The key's PEG, lit face / far face / silhouette edges. */
-  keyFront: string;
-  keyBack: string;
-  keyEdge: string;
+  /** The tenon's TENON, lit face / far face / silhouette edges. */
+  tenonFront: string;
+  tenonBack: string;
+  tenonEdge: string;
   /**
-   * The key's SOCKET, same three. Drawn apart from the peg because they overlap
-   * almost exactly: the socket is the peg plus the fit tolerance, so a single
+   * The tenon's MORTISE, same three. Drawn apart from the tenon because they overlap
+   * almost exactly: the mortise is the tenon plus the fit tolerance, so a single
    * colour made the tolerance knob look like it did nothing.
    */
-  socketFront: string;
-  socketBack: string;
-  socketEdge: string;
-  /** The handle that slides the key across the cut face. */
-  keyHandle: string;
+  mortiseFront: string;
+  mortiseBack: string;
+  mortiseEdge: string;
+  /** The handle that slides the tenon across the cut face. */
+  tenonHandle: string;
   /** Loop waypoints: the first one, the rest, the selected one, the dragged one. */
   markerFirst: string;
   markerPoint: string;
@@ -59,13 +59,13 @@ export const DEFAULT_ORGANIC_CUT_COLORS: OrganicCutColors = {
   seamInactive: '#5e3418',
   seamGlow: '#ffe6cc',
   cutSurface: '#37ff7a',
-  keyFront: '#001e57',
-  keyBack: '#8a4a08',
-  keyEdge: '#ff7a00',
-  socketFront: '#c07bff',
-  socketBack: '#4a2a7a',
-  socketEdge: '#a24bff',
-  keyHandle: '#0091ff',
+  tenonFront: '#001e57',
+  tenonBack: '#8a4a08',
+  tenonEdge: '#ff7a00',
+  mortiseFront: '#c07bff',
+  mortiseBack: '#4a2a7a',
+  mortiseEdge: '#a24bff',
+  tenonHandle: '#0091ff',
   markerFirst: '#37ff7a',
   markerPoint: '#ffd24a',
   markerSelected: '#0091ff',

@@ -1501,7 +1501,7 @@ async fn cancel_slicing() -> Result<(), String> {
 // Native Island Scan
 // ---------------------------------------------------------------------------
 
-/// Parameters for native island scan. Field names match the JSON keys sent by
+/// Parameters for native island scan. Field names match the JSON tenons sent by
 /// nativeIslandScan.ts (snake_case).
 #[derive(Deserialize)]
 struct IslandScanParams {
@@ -3371,9 +3371,9 @@ fn main() {
             mesh_repair::mesh_organic_cut_geodesic_loop_bytes,
             mesh_repair::mesh_organic_cut_read_geodesic,
             mesh_repair::mesh_organic_cut_membrane_preview,
-            mesh_repair::mesh_organic_cut_plane_key_preview,
+            mesh_repair::mesh_organic_cut_plane_tenon_preview,
             mesh_repair::mesh_organic_cut_read_membrane,
-            mesh_repair::mesh_organic_cut_read_key,
+            mesh_repair::mesh_organic_cut_read_tenon,
             mesh_repair::mesh_repair_read_positions,
             mesh_repair::load_stl_file,
             sdf::compute_sdf_from_staged,

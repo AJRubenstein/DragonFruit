@@ -1,6 +1,6 @@
 export { OrganicCutPanel, type OrganicCutPanelState } from './OrganicCutPanel';
 export { OrganicCutTool } from './OrganicCutTool';
-export { OrganicCutKeyGizmo, type OrganicCutKeyGizmoProps } from './OrganicCutKeyGizmo';
+export { OrganicCutTenonGizmo, type OrganicCutTenonGizmoProps } from './OrganicCutTenonGizmo';
 export { useOrganicCutSession, type OrganicCutSession } from './useOrganicCutSession';
 export { OrganicCutColorsSection } from './OrganicCutColorsSection';
 export {

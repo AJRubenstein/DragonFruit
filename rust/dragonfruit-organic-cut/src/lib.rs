@@ -12,19 +12,19 @@
 
 pub mod geodesic;
 #[cfg(feature = "manifold")]
-pub mod key;
+pub mod tenon;
 #[cfg(feature = "manifold")]
 pub mod membrane;
 pub mod organic_cut;
 
 pub use crate::geodesic::{surface_loop_from_mesh, surface_loop_positions, GeodesicSolver};
 #[cfg(feature = "manifold")]
-pub use crate::key::{
-    apply_key, apply_key_at_frame, build_key_preview_at_frame, build_key_preview_soup,
-    frame_from_plane, KeyFrame, KeyFrameInfo, KeyKind, KeyOffset, KeyOutcome, KeyPreview,
-    KeyShape,
-    KeyTilt,
-    DEFAULT_KEY_DEPTH_MM, DEFAULT_KEY_TOLERANCE_MM, DEFAULT_KEY_WIDTH_MM, KEY_MAX_TILT_RAD,
+pub use crate::tenon::{
+    apply_tenon, apply_tenon_at_frame, build_tenon_preview_at_frame, build_tenon_preview_soup,
+    frame_from_plane, TenonFrame, TenonFrameInfo, TenonKind, TenonOffset, TenonOutcome, TenonPreview,
+    TenonShape,
+    TenonTilt,
+    DEFAULT_TENON_DEPTH_MM, DEFAULT_TENON_TOLERANCE_MM, DEFAULT_TENON_WIDTH_MM, TENON_MAX_TILT_RAD,
 };
 pub use crate::organic_cut::{
     organic_cut, OrganicCutLoopPoint, OrganicCutOptions, OrganicCutOutcome, OrganicCutReport,

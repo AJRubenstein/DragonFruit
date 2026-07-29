@@ -3,39 +3,39 @@ import { Loader2, RotateCcw } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 import type { OrganicCutMode } from './types';
-import { DEFAULT_CUT_SETTINGS, DEFAULT_KEY_SETTINGS } from './useOrganicCutSession';
+import { DEFAULT_CUT_SETTINGS, DEFAULT_TENON_SETTINGS } from './useOrganicCutSession';
 
-/** Key width/depth bounds (mm) — shared by the fields and the uniform-scale lock. */
-const KEY_DIM_MAX_MM = 20;
+/** Tenon width/depth bounds (mm) — shared by the fields and the uniform-scale lock. */
+const TENON_DIM_MAX_MM = 20;
 /**
- * Smallest width the FRUSTUM key accepts, mirroring Rust's KEY_MIN_FOOTPRINT_MM
+ * Smallest width the FRUSTUM tenon accepts, mirroring Rust's TENON_MIN_FOOTPRINT_MM
  * (0.99mm) rounded up to a round number.
  */
 const FRUSTUM_MIN_WIDTH_MM = 1;
 /**
- * Smallest width the DOME key accepts. Rust stores a dome as semi-axes — width
+ * Smallest width the DOME tenon accepts. Rust stores a dome as semi-axes — width
  * becomes half_w = width/2 — and rejects any dome whose radius falls under
- * KEY_MIN_DOME_RADIUS_MM (0.75mm). So a 1mm dome is a 0.5mm radius and is thrown
- * out with "the part is too thin for any key", no matter how chunky the model is.
+ * TENON_MIN_DOME_RADIUS_MM (0.75mm). So a 1mm dome is a 0.5mm radius and is thrown
+ * out with "the part is too thin for any tenon", no matter how chunky the model is.
  * 1.5mm is the first width that survives that floor.
  */
 const DOME_MIN_WIDTH_MM = 1.5;
 
 /**
- * Frustum taper (Rust's KEY_TOP_SCALE): the top face is half the base, so the
+ * Frustum taper (Rust's TENON_TOP_SCALE): the top face is half the base, so the
  * narrowest half-extent a corner arc has to fit inside lives at the TOP.
  */
-const KEY_TOP_SCALE = 0.5;
-/** Rust's KEY_BASE_OVERLAP_MM — the peg's base sinks this far past the cut plane. */
-const KEY_BASE_OVERLAP_MM = 0.3;
+const TENON_TOP_SCALE = 0.5;
+/** Rust's TENON_BASE_OVERLAP_MM — the tenon's base sinks this far past the cut plane. */
+const TENON_BASE_OVERLAP_MM = 0.3;
 /** Field step for the fillet, also the granularity its cap is rounded down to. */
-const KEY_FILLET_STEP_MM = 0.1;
+const TENON_FILLET_STEP_MM = 0.1;
 /**
- * Fit-tolerance ceiling (mm), mirroring Rust's KEY_TOLERANCE_MAX_MM. Every extra
- * 0.1mm of socket is 0.1mm less wall the fit ladder has to work with, so past
- * this the key starts shrinking itself away on thin parts.
+ * Fit-tolerance ceiling (mm), mirroring Rust's TENON_TOLERANCE_MAX_MM. Every extra
+ * 0.1mm of mortise is 0.1mm less wall the fit ladder has to work with, so past
+ * this the tenon starts shrinking itself away on thin parts.
  */
-const KEY_TOLERANCE_MAX_MM = 1;
+const TENON_TOLERANCE_MAX_MM = 1;
 
 /**
  * Largest fillet the frustum can actually take, given the current width/depth.
@@ -43,17 +43,17 @@ const KEY_TOLERANCE_MAX_MM = 1;
  * `build_frustum` clamps the radius to the smallest half-extent (a corner arc
  * can't be wider than the side it rounds) and to a third of the height (so the
  * tip round-over fits under the tip). Offering the full 0–5mm regardless meant
- * that on a 2mm-wide peg everything from 0.5mm up produced the SAME clamped
+ * that on a 2mm-wide tenon everything from 0.5mm up produced the SAME clamped
  * geometry: the field looked dead in both directions. Cap it here so the range
  * on screen is the range that does something. Width is the binding side
  * (length = 1.25× width), and the top face is the narrowest ring.
  */
-function maxKeyFilletMm(widthMm: number, depthMm: number): number {
-  const topHalfWidth = widthMm * KEY_TOP_SCALE * 0.5;
-  const height = depthMm + KEY_BASE_OVERLAP_MM;
+function maxTenonFilletMm(widthMm: number, depthMm: number): number {
+  const topHalfWidth = widthMm * TENON_TOP_SCALE * 0.5;
+  const height = depthMm + TENON_BASE_OVERLAP_MM;
   const limit = Math.min(topHalfWidth * 0.999, height / 3);
   // Down to the field's step, so every reachable value is a value that renders.
-  const stepped = Math.floor(limit / KEY_FILLET_STEP_MM) * KEY_FILLET_STEP_MM;
+  const stepped = Math.floor(limit / TENON_FILLET_STEP_MM) * TENON_FILLET_STEP_MM;
   return Math.max(0, Number(stepped.toFixed(2)));
 }
 
@@ -68,57 +68,57 @@ export interface OrganicCutPanelState {
   /** Wafer density multiplier (1..4) — cutter poly count, applied only at cut. */
   density: number;
   /**
-   * When true (contour mode), the cut also generates a registration key: a peg
-   * union'd onto one half and a matching socket carved from the other, so the
-   * halves socket together in one alignment. Off by default.
+   * When true (contour mode), the cut also generates a registration tenon: a tenon
+   * union'd onto one half and a matching mortise carved from the other, so the
+   * halves mortise together in one alignment. Off by default.
    */
-  generateKey: boolean;
-  /** Key base width in mm (model units are mm). The length follows a 1.25× ratio. */
-  keyWidthMm: number;
-  /** Key depth in mm — how far the peg pokes into the body. */
-  keyDepthMm: number;
-  /** Key shape: 'frustum' (tapered box, rotation-locking) or 'dome' (half-sphere). */
-  keyShape: 'frustum' | 'dome';
+  generateTenon: boolean;
+  /** Tenon base width in mm (model units are mm). The length follows a 1.25× ratio. */
+  tenonWidthMm: number;
+  /** Tenon depth in mm — how far the tenon pokes into the body. */
+  tenonDepthMm: number;
+  /** Tenon shape: 'frustum' (tapered box, rotation-locking) or 'dome' (half-sphere). */
+  tenonShape: 'frustum' | 'dome';
   /** Edge fillet radius (mm) — rounds the frustum's corners + tip. 0 = sharp. */
-  keyFilletMm: number;
+  tenonFilletMm: number;
   /**
-   * Fit tolerance (mm): how much larger than the peg the socket is carved, on
+   * Fit tolerance (mm): how much larger than the tenon the mortise is carved, on
    * every face. This is the print-fit knob — 0 is a press fit that needs force
    * (or a printer that already runs small), 0.1 a slide fit, more for a loose one
-   * that a filed-down or elephant-footed peg still enters.
+   * that a filed-down or elephant-footed tenon still enters.
    */
-  keyToleranceMm: number;
+  tenonToleranceMm: number;
   /**
-   * Where the key sits on the cut face: mm along the cut frame's u/v axes from
+   * Where the tenon sits on the cut face: mm along the cut frame's u/v axes from
    * the natural anchor (the centroid of the cut). Driven by the blue handle at
-   * the key's base in the 3D view, not by a field — dragging it is the point.
+   * the tenon's base in the 3D view, not by a field — dragging it is the point.
    */
-  keyOffsetUMm: number;
-  keyOffsetVMm: number;
+  tenonOffsetUMm: number;
+  tenonOffsetVMm: number;
   /**
    * Dome only: when true, the Width/Depth sliders are ratio-locked — dragging one
    * scales the other to preserve the current proportions (resize as a unit). When
    * false, each is independent (free oblong control).
    */
-  keyUniformScale: boolean;
+  tenonUniformScale: boolean;
   /**
-   * Flip which cut half gets the peg vs the socket. False (default): peg on the
-   * +normal side. True: swap them. Lets the user choose which part keeps the peg.
+   * Flip which cut half gets the tenon vs the mortise. False (default): tenon on the
+   * +normal side. True: swap them. Lets the user choose which part keeps the tenon.
    */
-  keySwapSides: boolean;
+  tenonSwapSides: boolean;
   /**
-   * Key tilt (radians): how far the key leans off the cut normal. Driven by the
-   * in-viewport aim gizmo (drag the key's tip). The base stays glued flat to the
+   * Tenon tilt (radians): how far the tenon leans off the cut normal. Driven by the
+   * in-viewport aim gizmo (drag the tenon's tip). The base stays glued flat to the
    * cut face; the body shears to lean. 0 = straight out.
    */
-  keyTiltRad: number;
-  /** Key tilt azimuth (radians): which in-plane direction the lean points toward. */
-  keyTiltAzimuthRad: number;
-  /** Key roll (radians): spin about the key's own axis. Driven by the roll gizmo. */
-  keyRollRad: number;
+  tenonTiltRad: number;
+  /** Tenon tilt azimuth (radians): which in-plane direction the lean points toward. */
+  tenonTiltAzimuthRad: number;
+  /** Tenon roll (radians): spin about the tenon's own axis. Driven by the roll gizmo. */
+  tenonRollRad: number;
   /**
    * Render the translucent cut-plan preview (flat plane quad / contour membrane +
-   * registration key) in the 3D view. When off, only the seam line + loop markers
+   * registration tenon) in the 3D view. When off, only the seam line + loop markers
    * draw, so the model is unobscured while drawing. On by default.
    */
   showPreview: boolean;
@@ -177,8 +177,8 @@ interface OrganicCutPanelProps {
   loopCount?: number;
   /** Index of the loop currently being edited. */
   activeLoopIndex?: number;
-  /** Per-loop summaries (index + waypoint count + whether it has a key) for chips. */
-  loopSummaries?: { index: number; pointCount: number; hasKey: boolean }[];
+  /** Per-loop summaries (index + waypoint count + whether it has a tenon) for chips. */
+  loopSummaries?: { index: number; pointCount: number; hasTenon: boolean }[];
   /** Switch which loop is active (editable). */
   onSelectLoop?: (index: number) => void;
   /** Append a new loop and make it active. */
@@ -194,13 +194,13 @@ interface OrganicCutPanelProps {
   canApply?: boolean;
   disabled?: boolean;
   /**
-   * Which key the live preview placed: 'frustum' (the full key), 'dome' (the
+   * Which tenon the live preview placed: 'frustum' (the full tenon), 'dome' (the
    * half-sphere fallback for a thin part), or 'none'. Drives the alert below the
    * toggle so the user knows when the cut fell back.
    */
-  keyKind?: 'frustum' | 'dome' | 'none';
-  /** Reason the key shrank / fell back / was skipped (shown as an alert). */
-  keyDetail?: string;
+  tenonKind?: 'frustum' | 'dome' | 'none';
+  /** Reason the tenon shrank / fell back / was skipped (shown as an alert). */
+  tenonDetail?: string;
 }
 
 /**
@@ -229,8 +229,8 @@ export function OrganicCutPanel({
   isApplying = false,
   canApply = false,
   disabled = false,
-  keyKind = 'none',
-  keyDetail = '',
+  tenonKind = 'none',
+  tenonDetail = '',
 }: OrganicCutPanelProps) {
   const [expanded, setExpanded] = React.useState(true);
 
@@ -247,13 +247,13 @@ export function OrganicCutPanel({
   // Set the dome's Width or Depth, honoring Uniform Scale: when locked, dragging
   // one slider scales the OTHER by the same factor so the current width:depth
   // proportion is preserved (resize as a unit). Unlocked → set just that axis.
-  const keyDimMinMm = state.keyShape === 'dome' ? DOME_MIN_WIDTH_MM : FRUSTUM_MIN_WIDTH_MM;
-  const keyFilletMaxMm = maxKeyFilletMm(state.keyWidthMm, state.keyDepthMm);
+  const tenonDimMinMm = state.tenonShape === 'dome' ? DOME_MIN_WIDTH_MM : FRUSTUM_MIN_WIDTH_MM;
+  const tenonFilletMaxMm = maxTenonFilletMm(state.tenonWidthMm, state.tenonDepthMm);
 
   // Is there anything for each card's reset to undo? Derived from the defaults
   // rather than listed by hand, so a setting added later is covered on its own.
-  const keySettingsDirty = (Object.keys(DEFAULT_KEY_SETTINGS) as (keyof typeof DEFAULT_KEY_SETTINGS)[])
-    .some((k) => k !== 'generateKey' && state[k] !== DEFAULT_KEY_SETTINGS[k]);
+  const tenonSettingsDirty = (Object.keys(DEFAULT_TENON_SETTINGS) as (keyof typeof DEFAULT_TENON_SETTINGS)[])
+    .some((k) => k !== 'generateTenon' && state[k] !== DEFAULT_TENON_SETTINGS[k]);
   const cutSettingsDirty = (Object.keys(DEFAULT_CUT_SETTINGS) as (keyof typeof DEFAULT_CUT_SETTINGS)[])
     .some((k) => state[k] !== DEFAULT_CUT_SETTINGS[k]);
 
@@ -261,26 +261,26 @@ export function OrganicCutPanel({
   // so the stored radius comes down with it — otherwise it stays parked above the
   // new limit and the field is dead until the user drags back under it.
   const setFrustumDim = React.useCallback((axis: 'width' | 'depth', next: number) => {
-    const clamped = clampFloat(next, keyDimMinMm, KEY_DIM_MAX_MM, 1);
-    const widthMm = axis === 'width' ? clamped : state.keyWidthMm;
-    const depthMm = axis === 'depth' ? clamped : state.keyDepthMm;
+    const clamped = clampFloat(next, tenonDimMinMm, TENON_DIM_MAX_MM, 1);
+    const widthMm = axis === 'width' ? clamped : state.tenonWidthMm;
+    const depthMm = axis === 'depth' ? clamped : state.tenonDepthMm;
     setState({
-      keyWidthMm: widthMm,
-      keyDepthMm: depthMm,
-      keyFilletMm: Math.min(state.keyFilletMm, maxKeyFilletMm(widthMm, depthMm)),
+      tenonWidthMm: widthMm,
+      tenonDepthMm: depthMm,
+      tenonFilletMm: Math.min(state.tenonFilletMm, maxTenonFilletMm(widthMm, depthMm)),
     });
-  }, [clampFloat, keyDimMinMm, setState, state.keyDepthMm, state.keyFilletMm, state.keyWidthMm]);
+  }, [clampFloat, tenonDimMinMm, setState, state.tenonDepthMm, state.tenonFilletMm, state.tenonWidthMm]);
 
   const setDomeDim = React.useCallback((axis: 'width' | 'depth', next: number) => {
-    const clamped = clampFloat(next, keyDimMinMm, KEY_DIM_MAX_MM, 1);
-    if (!state.keyUniformScale) {
-      setState(axis === 'width' ? { keyWidthMm: clamped } : { keyDepthMm: clamped });
+    const clamped = clampFloat(next, tenonDimMinMm, TENON_DIM_MAX_MM, 1);
+    if (!state.tenonUniformScale) {
+      setState(axis === 'width' ? { tenonWidthMm: clamped } : { tenonDepthMm: clamped });
       return;
     }
-    const cur = axis === 'width' ? state.keyWidthMm : state.keyDepthMm;
+    const cur = axis === 'width' ? state.tenonWidthMm : state.tenonDepthMm;
     if (cur <= 0) {
       // Degenerate current value — just set both to the new value (round).
-      setState({ keyWidthMm: clamped, keyDepthMm: clamped });
+      setState({ tenonWidthMm: clamped, tenonDepthMm: clamped });
       return;
     }
     // Clamp the FACTOR, not each axis on its own. Clamping them separately lets
@@ -288,20 +288,20 @@ export function OrganicCutPanel({
     // silently destroys the proportion the lock exists to preserve. Limiting the
     // factor makes the pinned axis hold BOTH: they stop together and the ratio
     // survives.
-    const other = axis === 'width' ? state.keyDepthMm : state.keyWidthMm;
+    const other = axis === 'width' ? state.tenonDepthMm : state.tenonWidthMm;
     let factor = clamped / cur;
     if (other > 0) {
-      factor = Math.min(factor, KEY_DIM_MAX_MM / other);
-      factor = Math.max(factor, keyDimMinMm / other);
+      factor = Math.min(factor, TENON_DIM_MAX_MM / other);
+      factor = Math.max(factor, tenonDimMinMm / other);
     }
-    const nextDriven = clampFloat(cur * factor, keyDimMinMm, KEY_DIM_MAX_MM, 1);
-    const nextOther = clampFloat(other * factor, keyDimMinMm, KEY_DIM_MAX_MM, 1);
+    const nextDriven = clampFloat(cur * factor, tenonDimMinMm, TENON_DIM_MAX_MM, 1);
+    const nextOther = clampFloat(other * factor, tenonDimMinMm, TENON_DIM_MAX_MM, 1);
     setState(
       axis === 'width'
-        ? { keyWidthMm: nextDriven, keyDepthMm: nextOther }
-        : { keyDepthMm: nextDriven, keyWidthMm: nextOther },
+        ? { tenonWidthMm: nextDriven, tenonDepthMm: nextOther }
+        : { tenonDepthMm: nextDriven, tenonWidthMm: nextOther },
     );
-  }, [clampFloat, setState, keyDimMinMm, state.keyUniformScale, state.keyWidthMm, state.keyDepthMm]);
+  }, [clampFloat, setState, tenonDimMinMm, state.tenonUniformScale, state.tenonWidthMm, state.tenonDepthMm]);
 
   const cardStyle: React.CSSProperties = {
     borderColor: 'var(--border-subtle)',
@@ -376,13 +376,13 @@ export function OrganicCutPanel({
         right={expanded ? (
           // The cut's OWN settings — mode, kerf, both smoothings, resolution. It
           // sits in the tool header rather than on a card because those settings
-          // are spread over several cards; the drawn loops and the key are left
-          // alone (the key card has its own reset, and losing a seam to a stray
+          // are spread over several cards; the drawn loops and the tenon are left
+          // alone (the tenon card has its own reset, and losing a seam to a stray
           // click on a reset button would be a cruel way to find this button).
           <CardResetButton
             onClick={() => setState({ ...DEFAULT_CUT_SETTINGS })}
             disabled={disabled || isApplying || !cutSettingsDirty}
-            title="Put the cut settings back to their defaults: cut mode, thickness, both smoothings and resolution. Your drawn loops and key settings are untouched."
+            title="Put the cut settings back to their defaults: cut mode, thickness, both smoothings and resolution. Your drawn loops and tenon settings are untouched."
             ariaLabel="Reset cut settings to defaults"
           />
         ) : null}
@@ -433,7 +433,7 @@ export function OrganicCutPanel({
           </div>
 
           {/* Show Preview: render the translucent cut-plan surfaces (plane quad /
-              membrane + key) on or off. Off → only the seam line + markers draw,
+              membrane + tenon) on or off. Off → only the seam line + markers draw,
               so the model is unobscured while drawing. */}
           <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
             <button
@@ -534,7 +534,7 @@ export function OrganicCutPanel({
             </div>
           )}
 
-          {/* Registration key: peg + socket so the two halves index together.
+          {/* Registration tenon: tenon + mortise so the two halves index together.
               Both cut modes: the contour cut frames it on the membrane, the flat
               cut on the plane's own cross-section. */}
           <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
@@ -542,46 +542,46 @@ export function OrganicCutPanel({
               <button
                 type="button"
                 className="flex flex-1 items-center justify-between gap-2 text-left"
-                onClick={() => setState({ generateKey: !state.generateKey })}
+                onClick={() => setState({ generateTenon: !state.generateTenon })}
                 disabled={disabled || isApplying}
-                title="Add a peg to one half and a matching socket to the other so the parts align when reassembled."
+                title="Add a tenon to one half and a matching mortise to the other so the parts align when reassembled."
               >
                 <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>
-                  Generate Key{loopCount > 1 ? ` · Loop ${activeLoopIndex + 1}` : ''}
+                  Generate Tenon{loopCount > 1 ? ` · Loop ${activeLoopIndex + 1}` : ''}
                 </span>
                 <span
                   className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors"
                   style={{
-                    background: state.generateKey
+                    background: state.generateTenon
                       ? 'var(--accent)'
                       : 'color-mix(in srgb, var(--text-muted), transparent 60%)',
                   }}
                 >
                   <span
                     className="inline-block h-3 w-3 transform rounded-full bg-white transition-transform"
-                    style={{ transform: state.generateKey ? 'translateX(14px)' : 'translateX(2px)' }}
+                    style={{ transform: state.generateTenon ? 'translateX(14px)' : 'translateX(2px)' }}
                   />
                 </span>
               </button>
-              {/* Card reset, top-right: puts every key setting back to default but
-                  leaves the Generate Key toggle alone (resetting the settings
+              {/* Card reset, top-right: puts every tenon setting back to default but
+                  leaves the Generate Tenon toggle alone (resetting the settings
                   shouldn't switch the feature off under the user). */}
               <CardResetButton
-                onClick={() => setState({ ...DEFAULT_KEY_SETTINGS, generateKey: state.generateKey })}
-                disabled={disabled || isApplying || !keySettingsDirty}
-                title="Put every key setting back to its default: shape, width, depth, fillet, fit tolerance, uniform scale, side and aim."
-                ariaLabel="Reset key settings to defaults"
+                onClick={() => setState({ ...DEFAULT_TENON_SETTINGS, generateTenon: state.generateTenon })}
+                disabled={disabled || isApplying || !tenonSettingsDirty}
+                title="Put every tenon setting back to its default: shape, width, depth, fillet, fit tolerance, uniform scale, side and aim."
+                ariaLabel="Reset tenon settings to defaults"
               />
               </div>
 
-              {/* Key shape + size. Shape picks frustum (tapered box, locks
+              {/* Tenon shape + size. Shape picks frustum (tapered box, locks
                   rotation) vs dome (half-sphere, locates only). Width drives the
-                  base; depth (frustum only) is how far the peg pokes in. The
+                  base; depth (frustum only) is how far the tenon pokes in. The
                   1 mm-wall fit rule still shrinks below these on thin parts. */}
-              {state.generateKey && (
+              {state.generateTenon && (
                 <div className="space-y-1.5 pt-0.5">
                   <div>
-                    <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Key Shape</label>
+                    <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Tenon Shape</label>
                     <div className="mt-1 grid grid-cols-2 gap-1">
                       <button
                         type="button"
@@ -591,16 +591,16 @@ export function OrganicCutPanel({
                           // stale (above what this width/depth allows) after a
                           // detour through the dome. Bring it back in range.
                           setState({
-                            keyShape: 'frustum',
-                            keyFilletMm: Math.min(
-                              state.keyFilletMm,
-                              maxKeyFilletMm(state.keyWidthMm, state.keyDepthMm),
+                            tenonShape: 'frustum',
+                            tenonFilletMm: Math.min(
+                              state.tenonFilletMm,
+                              maxTenonFilletMm(state.tenonWidthMm, state.tenonDepthMm),
                             ),
                           })
                         }
                         disabled={disabled || isApplying}
-                        style={state.keyShape === 'frustum' ? activeModeStyle : undefined}
-                        title="Tapered rectangular peg — locks the parts against rotation."
+                        style={state.tenonShape === 'frustum' ? activeModeStyle : undefined}
+                        title="Tapered rectangular tenon — locks the parts against rotation."
                       >
                         Frustum
                       </button>
@@ -611,46 +611,46 @@ export function OrganicCutPanel({
                           // A dome's floor is higher than a frustum's, so lift any
                           // dimension that would be rejected outright on switch.
                           setState({
-                            keyShape: 'dome',
-                            keyWidthMm: Math.max(state.keyWidthMm, DOME_MIN_WIDTH_MM),
-                            keyDepthMm: Math.max(state.keyDepthMm, DOME_MIN_WIDTH_MM),
+                            tenonShape: 'dome',
+                            tenonWidthMm: Math.max(state.tenonWidthMm, DOME_MIN_WIDTH_MM),
+                            tenonDepthMm: Math.max(state.tenonDepthMm, DOME_MIN_WIDTH_MM),
                           })
                         }
                         disabled={disabled || isApplying}
-                        style={state.keyShape === 'dome' ? activeModeStyle : undefined}
-                        title="Half-sphere peg — locates the parts but allows rotation."
+                        style={state.tenonShape === 'dome' ? activeModeStyle : undefined}
+                        title="Half-sphere tenon — locates the parts but allows rotation."
                       >
                         Dome
                       </button>
                     </div>
                   </div>
-                  {/* Flip which half gets the peg vs the socket. Affects the cut
+                  {/* Flip which half gets the tenon vs the mortise. Affects the cut
                       (not the preview shape, which is identical either way). */}
                   <button
                     type="button"
                     className="ui-button ui-button-secondary !h-7 w-full whitespace-nowrap px-1.5 text-[10px]"
-                    onClick={() => setState({ keySwapSides: !state.keySwapSides })}
+                    onClick={() => setState({ tenonSwapSides: !state.tenonSwapSides })}
                     disabled={disabled || isApplying}
-                    title="Swap which cut half receives the peg and which receives the socket."
+                    title="Swap which cut half receives the tenon and which receives the mortise."
                   >
                     <span className="inline-flex items-center justify-center gap-1.5">
                       <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4M16 17H4m0 0l4 4m-4-4l4-4" />
                       </svg>
-                      <span>{state.keySwapSides ? 'Peg on Side B' : 'Peg on Side A'}</span>
+                      <span>{state.tenonSwapSides ? 'Tenon on Side B' : 'Tenon on Side A'}</span>
                     </span>
                   </button>
                   {/* Aim readout + a Reset that zeroes the tilt/roll. The aim is set
-                      with the rotate gizmo at the key's base in the 3D view, so there
-                      is nothing to say here until the key actually leans. */}
+                      with the rotate gizmo at the tenon's base in the 3D view, so there
+                      is nothing to say here until the tenon actually leans. */}
                   {(() => {
                     // Report at the precision shown. The old threshold was ~0.06°,
                     // far finer than the whole degrees displayed, so a sliver of
                     // lean rendered as "0°" that only Reset could clear. Roll was
-                    // never reported at all, so spinning the key also read 0°.
+                    // never reported at all, so spinning the tenon also read 0°.
                     const toDeg = (rad: number) => Math.round((rad * 180) / Math.PI * 10) / 10;
-                    const leanDeg = toDeg(state.keyTiltRad);
-                    const rollDeg = toDeg(state.keyRollRad);
+                    const leanDeg = toDeg(state.tenonTiltRad);
+                    const rollDeg = toDeg(state.tenonRollRad);
                     if (leanDeg === 0 && rollDeg === 0) return null;
                     const parts = [
                       leanDeg !== 0 ? `${leanDeg}° lean` : null,
@@ -664,9 +664,9 @@ export function OrganicCutPanel({
                         <button
                           type="button"
                           className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
-                          onClick={() => setState({ keyTiltRad: 0, keyTiltAzimuthRad: 0, keyRollRad: 0 })}
+                          onClick={() => setState({ tenonTiltRad: 0, tenonTiltAzimuthRad: 0, tenonRollRad: 0 })}
                           disabled={disabled || isApplying}
-                          title="Reset the key to point straight out of the cut (no lean / roll)."
+                          title="Reset the tenon to point straight out of the cut (no lean / roll)."
                         >
                           Reset Aim
                         </button>
@@ -674,11 +674,11 @@ export function OrganicCutPanel({
                     );
                   })()}
                   {/* Offset readout + recentre. Like the aim above, the offset is
-                      set in the viewport (drag the blue dot at the key's base), so
-                      there is nothing to show until the key has actually moved. */}
+                      set in the viewport (drag the blue dot at the tenon's base), so
+                      there is nothing to show until the tenon has actually moved. */}
                   {(() => {
-                    const u = Math.round(state.keyOffsetUMm * 10) / 10;
-                    const v = Math.round(state.keyOffsetVMm * 10) / 10;
+                    const u = Math.round(state.tenonOffsetUMm * 10) / 10;
+                    const v = Math.round(state.tenonOffsetVMm * 10) / 10;
                     if (u === 0 && v === 0) return null;
                     return (
                       <div className="flex items-center justify-between gap-2">
@@ -688,9 +688,9 @@ export function OrganicCutPanel({
                         <button
                           type="button"
                           className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
-                          onClick={() => setState({ keyOffsetUMm: 0, keyOffsetVMm: 0 })}
+                          onClick={() => setState({ tenonOffsetUMm: 0, tenonOffsetVMm: 0 })}
                           disabled={disabled || isApplying}
-                          title="Put the key back in the middle of the cut."
+                          title="Put the tenon back in the middle of the cut."
                         >
                           Center
                         </button>
@@ -703,91 +703,91 @@ export function OrganicCutPanel({
                     {/* Width — frustum: sets just width; dome: ratio-locks depth
                         when Uniform Scale is on. */}
                     <div>
-                      <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Key Width</label>
+                      <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Tenon Width</label>
                       <ScrollableNumberField
-                        value={state.keyWidthMm}
+                        value={state.tenonWidthMm}
                         onChange={(value) =>
-                          state.keyShape === 'dome'
+                          state.tenonShape === 'dome'
                             ? setDomeDim('width', value)
                             : setFrustumDim('width', value)
                         }
-                        min={keyDimMinMm}
-                        max={KEY_DIM_MAX_MM}
+                        min={tenonDimMinMm}
+                        max={TENON_DIM_MAX_MM}
                         step={0.5}
                         unit="mm"
-                        ariaLabel="Key width in millimeters"
+                        ariaLabel="Tenon width in millimeters"
                         compact
                         disabled={disabled || isApplying}
                         className="mt-1"
                       />
                     </div>
                     {/* Depth — applies to BOTH shapes now (dome bulge into the body
-                        / frustum peg depth). Dome ratio-locks width when Uniform. */}
+                        / frustum tenon depth). Dome ratio-locks width when Uniform. */}
                     <div>
-                      <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Key Depth</label>
+                      <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Tenon Depth</label>
                       <ScrollableNumberField
-                        value={state.keyDepthMm}
+                        value={state.tenonDepthMm}
                         onChange={(value) =>
-                          state.keyShape === 'dome'
+                          state.tenonShape === 'dome'
                             ? setDomeDim('depth', value)
                             : setFrustumDim('depth', value)
                         }
-                        min={keyDimMinMm}
-                        max={KEY_DIM_MAX_MM}
+                        min={tenonDimMinMm}
+                        max={TENON_DIM_MAX_MM}
                         step={0.5}
                         unit="mm"
-                        ariaLabel="Key depth in millimeters"
+                        ariaLabel="Tenon depth in millimeters"
                         compact
                         disabled={disabled || isApplying}
                         className="mt-1"
                       />
                     </div>
                     {/* Edge Fillet: frustum only (a dome is already fully round). */}
-                    {state.keyShape === 'frustum' && (
+                    {state.tenonShape === 'frustum' && (
                       <div>
                         <label
                           className="ui-meta block"
                           style={{ color: 'var(--text-muted)' }}
-                          title={`Rounds the key's corners and tip. On this key the geometry accepts up to ${keyFilletMaxMm}mm — a wider or deeper key raises that ceiling.`}
+                          title={`Rounds the tenon's corners and tip. On this tenon the geometry accepts up to ${tenonFilletMaxMm}mm — a wider or deeper tenon raises that ceiling.`}
                         >
                           Edge Fillet
                         </label>
                         <ScrollableNumberField
-                          value={state.keyFilletMm}
-                          onChange={(value) => setState({ keyFilletMm: clampFloat(value, 0, keyFilletMaxMm, 2) })}
+                          value={state.tenonFilletMm}
+                          onChange={(value) => setState({ tenonFilletMm: clampFloat(value, 0, tenonFilletMaxMm, 2) })}
                           min={0}
-                          max={keyFilletMaxMm}
-                          step={KEY_FILLET_STEP_MM}
+                          max={tenonFilletMaxMm}
+                          step={TENON_FILLET_STEP_MM}
                           unit="mm"
-                          ariaLabel="Key edge fillet radius in millimeters (0 = sharp)"
+                          ariaLabel="Tenon edge fillet radius in millimeters (0 = sharp)"
                           compact
                           disabled={disabled || isApplying}
                           className="mt-1"
                         />
                       </div>
                     )}
-                    {/* Fit tolerance: applies to BOTH shapes — the socket is carved
-                        this much larger than the peg on every face. The print-fit
-                        knob: the peg's own size is what the user drew, this is the
+                    {/* Fit tolerance: applies to BOTH shapes — the mortise is carved
+                        this much larger than the tenon on every face. The print-fit
+                        knob: the tenon's own size is what the user drew, this is the
                         slack around it. */}
-                    <div className={state.keyShape === 'frustum' ? undefined : 'col-span-2'}>
+                    <div className={state.tenonShape === 'frustum' ? undefined : 'col-span-2'}>
                       <label
                         className="ui-meta block"
                         style={{ color: 'var(--text-muted)' }}
-                        title="Slack between peg and socket, on every face. 0 = press fit (needs force). 0.1mm is a slide fit on a well-calibrated printer; raise it if the halves won't go together."
+                        title="Slack between tenon and mortise, on every face. 0 = press fit (needs force). 0.1mm is a slide fit on a well-calibrated printer; raise it if the halves won't go together."
                       >
                         Fit Tolerance
                       </label>
                       <ScrollableNumberField
-                        value={state.keyToleranceMm}
+                        value={state.tenonToleranceMm}
                         onChange={(value) =>
-                          setState({ keyToleranceMm: clampFloat(value, 0, KEY_TOLERANCE_MAX_MM, 2) })
+                          setState({ tenonToleranceMm: clampFloat(value, 0, TENON_TOLERANCE_MAX_MM, 2) })
                         }
                         min={0}
-                        max={KEY_TOLERANCE_MAX_MM}
+                        max={TENON_TOLERANCE_MAX_MM}
                         step={0.05}
                         unit="mm"
-                        ariaLabel="Peg to socket fit tolerance in millimeters (0 = press fit)"
+                        ariaLabel="Tenon to mortise fit tolerance in millimeters (0 = press fit)"
                         compact
                         disabled={disabled || isApplying}
                         className="mt-1"
@@ -796,11 +796,11 @@ export function OrganicCutPanel({
                   </div>
                   {/* Uniform Scale: dome only — lock width:depth so the dome resizes
                       as a unit (keeps its shape), or unlock for free oblong control. */}
-                  {state.keyShape === 'dome' && (
+                  {state.tenonShape === 'dome' && (
                     <button
                       type="button"
                       className="flex w-full items-center justify-between gap-2 text-left"
-                      onClick={() => setState({ keyUniformScale: !state.keyUniformScale })}
+                      onClick={() => setState({ tenonUniformScale: !state.tenonUniformScale })}
                       disabled={disabled || isApplying}
                       title="Lock width and depth together so the dome keeps its shape when resized. Unlock for an oblong dome."
                     >
@@ -808,14 +808,14 @@ export function OrganicCutPanel({
                       <span
                         className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors"
                         style={{
-                          background: state.keyUniformScale
+                          background: state.tenonUniformScale
                             ? 'var(--accent)'
                             : 'color-mix(in srgb, var(--text-muted), transparent 60%)',
                         }}
                       >
                         <span
                           className="inline-block h-3 w-3 transform rounded-full bg-white transition-transform"
-                          style={{ transform: state.keyUniformScale ? 'translateX(14px)' : 'translateX(2px)' }}
+                          style={{ transform: state.tenonUniformScale ? 'translateX(14px)' : 'translateX(2px)' }}
                         />
                       </span>
                     </button>
@@ -823,19 +823,19 @@ export function OrganicCutPanel({
                 </div>
               )}
 
-              {/* Fell-back / no-key alert. Only when the key is ON and the preview
-                  reported a non-nominal outcome (dome fallback, no key, or shrink). */}
-              {state.generateKey && keyDetail && (
+              {/* Fell-back / no-tenon alert. Only when the tenon is ON and the preview
+                  reported a non-nominal outcome (dome fallback, no tenon, or shrink). */}
+              {state.generateTenon && tenonDetail && (
                 <div
                   className="rounded border px-2 py-1.5 text-[10px] leading-snug"
                   style={
-                    keyKind === 'none'
+                    tenonKind === 'none'
                       ? {
                           borderColor: 'color-mix(in srgb, #f59e0b, var(--border-subtle) 40%)',
                           background: 'color-mix(in srgb, #f59e0b, var(--surface-1) 88%)',
                           color: 'var(--text-strong)',
                         }
-                      : keyKind === 'dome'
+                      : tenonKind === 'dome'
                         ? {
                             borderColor: 'color-mix(in srgb, #eab308, var(--border-subtle) 50%)',
                             background: 'color-mix(in srgb, #eab308, var(--surface-1) 90%)',
@@ -848,7 +848,7 @@ export function OrganicCutPanel({
                           }
                   }
                 >
-                  {keyDetail}
+                  {tenonDetail}
                 </div>
               )}
             </div>
@@ -895,19 +895,19 @@ export function OrganicCutPanel({
                       }
                       title={
                         `Loop ${s.index + 1} — ${s.pointCount} point${s.pointCount === 1 ? '' : 's'}` +
-                        (s.hasKey ? ', keyed' : '') +
+                        (s.hasTenon ? ', tenoned' : '') +
                         (incomplete ? ' (needs 3+ to cut)' : '') +
                         (isActive ? ' — editing' : ' — click to edit')
                       }
                     >
                       <span className="inline-flex items-center gap-0.5">
                         {s.index + 1}
-                        {s.hasKey && (
+                        {s.hasTenon && (
                           <span
                             aria-hidden
                             className="inline-block h-1.5 w-1.5 rounded-full"
                             style={{ background: isActive ? 'currentColor' : 'var(--accent)' }}
-                            title="This loop has a registration key"
+                            title="This loop has a registration tenon"
                           />
                         )}
                       </span>
@@ -927,8 +927,8 @@ export function OrganicCutPanel({
               {loopCount > 1 && (
                 <div className="ui-meta leading-snug" style={{ color: 'var(--text-muted)' }}>
                   Cut severs all loops at once. Click a number to edit that loop —
-                  its key settings (below) and waypoints are its own. A dot marks a
-                  loop that has a key.
+                  its tenon settings (below) and waypoints are its own. A dot marks a
+                  loop that has a tenon.
                 </div>
               )}
             </div>

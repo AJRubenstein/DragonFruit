@@ -72,7 +72,7 @@ import { MeshSmoothingBrushCursor } from '@/features/mesh-smoothing/MeshSmoothin
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
-import { OrganicCutTool, OrganicCutKeyGizmo, useOrganicCutSession } from '@/features/organicCut';
+import { OrganicCutTool, OrganicCutTenonGizmo, useOrganicCutSession } from '@/features/organicCut';
 import { MirrorTool } from '@/features/mirror/MirrorTool';
 import { bakeWithFlips } from '@/features/mirror/logic/bakeWithFlips';
 import { buildMirrorSupportTransforms, reflectTransformAcrossWorldAxis } from '@/features/mirror/logic/buildMirrorSupportTransforms';
@@ -9688,32 +9688,32 @@ export default function Home() {
             onOrganicCutClick={organicCutToolActive ? handleOrganicCutClick : undefined}
             organicCutDragging={organicCutDragging}
             organicCutKeyGizmo={
-              // Both cut modes place a key now, so the aim gizmo follows the key
+              // Both cut modes place a tenon now, so the aim gizmo follows the tenon
               // rather than the mode; it mounts whenever there is a frame to sit on.
-              organicCutToolActive && organicCut.keyFrame && organicCut.panelState.showPreview ? (
-                <OrganicCutKeyGizmo
+              organicCutToolActive && organicCut.tenonFrame && organicCut.panelState.showPreview ? (
+                <OrganicCutTenonGizmo
                   models={scene.models}
                   activeModelId={displayActiveModelId}
                   activeTransform={transformMgr.transform}
-                  keyFrame={organicCut.keyFrame}
-                  keyTiltRad={organicCut.panelState.keyTiltRad}
-                  keyRollRad={organicCut.panelState.keyRollRad}
-                  keyOffsetUMm={organicCut.panelState.keyOffsetUMm}
-                  keyOffsetVMm={organicCut.panelState.keyOffsetVMm}
-                  keyPreviewOffset={organicCut.keyPreviewOffset}
-                  onKeyOffsetChange={(offsetUMm, offsetVMm) =>
+                  tenonFrame={organicCut.tenonFrame}
+                  tenonTiltRad={organicCut.panelState.tenonTiltRad}
+                  tenonRollRad={organicCut.panelState.tenonRollRad}
+                  tenonOffsetUMm={organicCut.panelState.tenonOffsetUMm}
+                  tenonOffsetVMm={organicCut.panelState.tenonOffsetVMm}
+                  tenonPreviewOffset={organicCut.tenonPreviewOffset}
+                  onTenonOffsetChange={(offsetUMm, offsetVMm) =>
                     organicCut.setPanelState({
                       ...organicCut.panelState,
-                      keyOffsetUMm: offsetUMm,
-                      keyOffsetVMm: offsetVMm,
+                      tenonOffsetUMm: offsetUMm,
+                      tenonOffsetVMm: offsetVMm,
                     })
                   }
-                  onKeyAimChange={(tilt, azimuth, roll) =>
+                  onTenonAimChange={(tilt, azimuth, roll) =>
                     organicCut.setPanelState({
                       ...organicCut.panelState,
-                      keyTiltRad: tilt,
-                      keyTiltAzimuthRad: azimuth,
-                      keyRollRad: roll,
+                      tenonTiltRad: tilt,
+                      tenonTiltAzimuthRad: azimuth,
+                      tenonRollRad: roll,
                     })
                   }
                   onDragStateChange={handleOrganicCutDragStateChange}
@@ -9872,15 +9872,15 @@ export default function Home() {
                 inactiveLoopPolylines={organicCut.inactiveLoopPolylines}
                 cutMode={organicCut.panelState.cutMode}
                 membranePreview={organicCut.membranePreview}
-                keyPreview={organicCut.keyPreview}
-                keyPegTriangleCount={organicCut.keyPegTriangleCount}
-                keyFrame={organicCut.keyFrame}
-                keyOffsetUMm={organicCut.panelState.keyOffsetUMm}
-                keyOffsetVMm={organicCut.panelState.keyOffsetVMm}
-                keyPreviewOffset={organicCut.keyPreviewOffset}
-                keyTiltRad={organicCut.panelState.keyTiltRad}
-                keyTiltAzimuthRad={organicCut.panelState.keyTiltAzimuthRad}
-                keyRollRad={organicCut.panelState.keyRollRad}
+                tenonPreview={organicCut.tenonPreview}
+                tenonTriangleCount={organicCut.tenonTriangleCount}
+                tenonFrame={organicCut.tenonFrame}
+                tenonOffsetUMm={organicCut.panelState.tenonOffsetUMm}
+                tenonOffsetVMm={organicCut.panelState.tenonOffsetVMm}
+                tenonPreviewOffset={organicCut.tenonPreviewOffset}
+                tenonTiltRad={organicCut.panelState.tenonTiltRad}
+                tenonTiltAzimuthRad={organicCut.panelState.tenonTiltAzimuthRad}
+                tenonRollRad={organicCut.panelState.tenonRollRad}
                 showPreview={organicCut.panelState.showPreview}
               />
             )}

@@ -16,7 +16,7 @@
  * Sharp edges are found with THREE.EdgesGeometry, which emits an edge wherever
  * the two faces sharing it differ in orientation by more than a threshold angle
  * (a crease), plus every boundary (single-face) edge. The same primitive is
- * already used in this feature for the key-preview silhouette.
+ * already used in this feature for the tenon-preview silhouette.
  */
 import * as THREE from 'three';
 import type { OrganicCutLoopPoint } from './types';

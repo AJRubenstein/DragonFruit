@@ -49,38 +49,38 @@ pub enum CutMode {
     Contour,
 }
 
-/// Per-loop registration-key settings for a multi-loop cut. Each field mirrors the
-/// spec-level `key_*` fields; an entry in [`OrganicCutSpec::loop_keys`] overrides
-/// them for ONE loop, so every cut can have its own peg/socket (shape, size, tilt,
-/// swap) — or no key at all (`generate_key = false`). Defaults match the spec-level
+/// Per-loop registration-tenon settings for a multi-loop cut. Each field mirrors the
+/// spec-level `tenon_*` fields; an entry in [`OrganicCutSpec::loop_tenons`] overrides
+/// them for ONE loop, so every cut can have its own tenon/mortise (shape, size, tilt,
+/// swap) — or no tenon at all (`generate_tenon = false`). Defaults match the spec-level
 /// defaults so a partial JSON object is safe.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LoopKeySpec {
+pub struct LoopTenonSpec {
     #[serde(default)]
-    pub generate_key: bool,
-    #[serde(default = "default_key_width")]
-    pub key_width_mm: f32,
-    #[serde(default = "default_key_depth")]
-    pub key_depth_mm: f32,
-    #[serde(default = "default_key_shape")]
-    pub key_shape: String,
+    pub generate_tenon: bool,
+    #[serde(default = "default_tenon_width")]
+    pub tenon_width_mm: f32,
+    #[serde(default = "default_tenon_depth")]
+    pub tenon_depth_mm: f32,
+    #[serde(default = "default_tenon_shape")]
+    pub tenon_shape: String,
     #[serde(default)]
-    pub key_fillet_mm: f32,
-    #[serde(default = "default_key_tolerance")]
-    pub key_tolerance_mm: f32,
+    pub tenon_fillet_mm: f32,
+    #[serde(default = "default_tenon_tolerance")]
+    pub tenon_tolerance_mm: f32,
     #[serde(default)]
-    pub key_offset_u_mm: f32,
+    pub tenon_offset_u_mm: f32,
     #[serde(default)]
-    pub key_offset_v_mm: f32,
+    pub tenon_offset_v_mm: f32,
     #[serde(default)]
-    pub key_swap_sides: bool,
+    pub tenon_swap_sides: bool,
     #[serde(default)]
-    pub key_tilt_rad: f32,
+    pub tenon_tilt_rad: f32,
     #[serde(default)]
-    pub key_tilt_azimuth_rad: f32,
+    pub tenon_tilt_azimuth_rad: f32,
     #[serde(default)]
-    pub key_roll_rad: f32,
+    pub tenon_roll_rad: f32,
 }
 
 /// One organic cut: a closed loop plus the wafer parameters.
@@ -99,13 +99,13 @@ pub struct OrganicCutSpec {
     /// geometry with one big loop). Empty (default) = the classic single-loop cut.
     #[serde(default)]
     pub extra_loops: Vec<Vec<OrganicCutLoopPoint>>,
-    /// Per-loop key settings, aligned with the cut's loops in order (`loop_points`
+    /// Per-loop tenon settings, aligned with the cut's loops in order (`loop_points`
     /// is index 0, then `extra_loops` in order). When an entry is present it
-    /// OVERRIDES the spec-level `key_*` fields for that loop — so each cut gets its
-    /// own peg/socket (or none). A missing entry falls back to the spec-level
-    /// `key_*` fields, so a single-loop cut without `loop_keys` is unchanged.
+    /// OVERRIDES the spec-level `tenon_*` fields for that loop — so each cut gets its
+    /// own tenon/mortise (or none). A missing entry falls back to the spec-level
+    /// `tenon_*` fields, so a single-loop cut without `loop_tenons` is unchanged.
     #[serde(default)]
-    pub loop_keys: Vec<LoopKeySpec>,
+    pub loop_tenons: Vec<LoopTenonSpec>,
     /// Wafer thickness in mm. Unused by the M2 planar cut.
     #[serde(default)]
     pub thickness_mm: f32,
@@ -133,72 +133,72 @@ pub struct OrganicCutSpec {
     /// CUT. 1.0 = default resolution. Clamped to 4 in `contour_split`.
     #[serde(default = "default_one")]
     pub density: f32,
-    /// When true (and mode is `Contour`), generate a registration key: a tapered
-    /// peg union'd onto `part_a` and a matching socket differenced from `part_b`,
-    /// so the halves socket together in one alignment. Defaults off (back-compat).
+    /// When true (and mode is `Contour`), generate a registration tenon: a tapered
+    /// tenon union'd onto `part_a` and a matching mortise differenced from `part_b`,
+    /// so the halves mortise together in one alignment. Defaults off (back-compat).
     #[serde(default)]
-    pub generate_key: bool,
-    /// Key base width in mm (model units are mm). The base length follows the fixed
+    pub generate_tenon: bool,
+    /// Tenon base width in mm (model units are mm). The base length follows the fixed
     /// 1.25× proportion. Defaults to 5 mm when unset/<=0.
-    #[serde(default = "default_key_width")]
-    pub key_width_mm: f32,
-    /// Key depth in mm — how far the peg pokes into the body. Defaults to 5 mm.
-    #[serde(default = "default_key_depth")]
-    pub key_depth_mm: f32,
-    /// Requested key shape: `"frustum"` (default, rotation-locking) or `"dome"`
+    #[serde(default = "default_tenon_width")]
+    pub tenon_width_mm: f32,
+    /// Tenon depth in mm — how far the tenon pokes into the body. Defaults to 5 mm.
+    #[serde(default = "default_tenon_depth")]
+    pub tenon_depth_mm: f32,
+    /// Requested tenon shape: `"frustum"` (default, rotation-locking) or `"dome"`
     /// (round half-sphere). Unknown / absent → frustum.
-    #[serde(default = "default_key_shape")]
-    pub key_shape: String,
+    #[serde(default = "default_tenon_shape")]
+    pub tenon_shape: String,
     /// Edge fillet radius in mm — rounds the frustum's vertical corners + tip.
     /// 0 = sharp box. Ignored by the dome. Defaults to 0.
     #[serde(default)]
-    pub key_fillet_mm: f32,
-    /// Peg/socket fit tolerance in mm: the socket is carved this much larger than
-    /// the peg on every face, so the halves slide together instead of jamming.
+    pub tenon_fillet_mm: f32,
+    /// Tenon/mortise fit tolerance in mm: the mortise is carved this much larger than
+    /// the tenon on every face, so the halves slide together instead of jamming.
     /// 0 = press fit. Defaults to 0.1 mm (a print-scale slide fit).
-    #[serde(default = "default_key_tolerance")]
-    pub key_tolerance_mm: f32,
-    /// Where the key sits on the cut face, in mm along the cut frame's `u`/`v`
+    #[serde(default = "default_tenon_tolerance")]
+    pub tenon_tolerance_mm: f32,
+    /// Where the tenon sits on the cut face, in mm along the cut frame's `u`/`v`
     /// axes from the natural anchor (the centroid of the cut). Both 0 = centred.
     #[serde(default)]
-    pub key_offset_u_mm: f32,
+    pub tenon_offset_u_mm: f32,
     #[serde(default)]
-    pub key_offset_v_mm: f32,
-    /// Flip which half gets the peg vs the socket. Default false: peg on `part_a`
-    /// (the membrane's +normal side), socket carved from `part_b`. True swaps them.
+    pub tenon_offset_v_mm: f32,
+    /// Flip which half gets the tenon vs the mortise. Default false: tenon on `part_a`
+    /// (the membrane's +normal side), mortise carved from `part_b`. True swaps them.
     #[serde(default)]
-    pub key_swap_sides: bool,
-    /// Key tilt (radians): polar angle the key leans OFF the cut normal. 0 = straight
+    pub tenon_swap_sides: bool,
+    /// Tenon tilt (radians): polar angle the tenon leans OFF the cut normal. 0 = straight
     /// out (default). The base stays glued flat to the cut face — the body shears to
     /// lean (it does not rigidly rotate). Clamped to ~60°.
     #[serde(default)]
-    pub key_tilt_rad: f32,
-    /// Key tilt azimuth (radians): which in-plane direction the lean points toward,
-    /// measured in the cut's tangent frame. Irrelevant when `key_tilt_rad == 0`.
+    pub tenon_tilt_rad: f32,
+    /// Tenon tilt azimuth (radians): which in-plane direction the lean points toward,
+    /// measured in the cut's tangent frame. Irrelevant when `tenon_tilt_rad == 0`.
     #[serde(default)]
-    pub key_tilt_azimuth_rad: f32,
-    /// Key roll (radians): spin of the key about its own axis — orients the
+    pub tenon_tilt_azimuth_rad: f32,
+    /// Tenon roll (radians): spin of the tenon about its own axis — orients the
     /// rectangle / oblong dome footprint. Default 0.
     #[serde(default)]
-    pub key_roll_rad: f32,
+    pub tenon_roll_rad: f32,
 }
 
-/// serde defaults for the key size (mm). Literals (not `crate::key::` constants)
-/// so this compiles with the `manifold` feature OFF too — the key module is gated,
-/// but the spec field isn't. Kept in sync with `key::DEFAULT_KEY_*_MM`.
-fn default_key_width() -> f32 {
+/// serde defaults for the tenon size (mm). Literals (not `crate::tenon::` constants)
+/// so this compiles with the `manifold` feature OFF too — the tenon module is gated,
+/// but the spec field isn't. Kept in sync with `tenon::DEFAULT_TENON_*_MM`.
+fn default_tenon_width() -> f32 {
     2.0
 }
-fn default_key_depth() -> f32 {
+fn default_tenon_depth() -> f32 {
     2.5
 }
-fn default_key_shape() -> String {
+fn default_tenon_shape() -> String {
     "frustum".to_string()
 }
-/// serde default for the peg/socket fit tolerance (mm). A literal for the same
-/// reason as the sizes above; kept in sync with `key::DEFAULT_KEY_TOLERANCE_MM`.
+/// serde default for the tenon/mortise fit tolerance (mm). A literal for the same
+/// reason as the sizes above; kept in sync with `tenon::DEFAULT_TENON_TOLERANCE_MM`.
 /// Note this is NOT `#[serde(default)]` (0 would mean a press fit, not "unset").
-fn default_key_tolerance() -> f32 {
+fn default_tenon_tolerance() -> f32 {
     0.1
 }
 
@@ -230,15 +230,15 @@ pub struct OrganicCutReport {
     /// Human-readable detail of WHY we fell back (for diagnostics). Empty on success.
     #[serde(default)]
     pub detail: String,
-    /// Which kind of registration key was placed: `"frustum"`, `"dome"`, or
-    /// `"none"`. `"none"` both when no key was requested AND when the part was too
-    /// thin for any key (distinguish via `key_detail`). Always present.
+    /// Which kind of registration tenon was placed: `"frustum"`, `"dome"`, or
+    /// `"none"`. `"none"` both when no tenon was requested AND when the part was too
+    /// thin for any tenon (distinguish via `tenon_detail`). Always present.
     #[serde(default)]
-    pub key_kind: String,
-    /// Human-readable reason the key fell back / was skipped (for the user alert).
-    /// Empty when a nominal key was placed or no key was requested.
+    pub tenon_kind: String,
+    /// Human-readable reason the tenon fell back / was skipped (for the user alert).
+    /// Empty when a nominal tenon was placed or no tenon was requested.
     #[serde(default)]
-    pub key_detail: String,
+    pub tenon_detail: String,
     /// How many separate parts the cut produced (= `OrganicCutOutcome::parts.len()`).
     /// A multi-loop cut that frees several pieces (e.g. both of Squirtle's arms) is
     /// >2; a plane/single-loop cut is 2; a no-op is 0/1. The frontend reads exactly
@@ -398,8 +398,8 @@ fn noop_outcome(mesh: IndexedMesh, detail: String) -> OrganicCutOutcome {
         part_b_triangle_count: source_triangle_count,
         engine: "noop".to_string(),
         detail,
-        key_kind: "none".to_string(),
-        key_detail: String::new(),
+        tenon_kind: "none".to_string(),
+        tenon_detail: String::new(),
         // A no-op didn't split anything — no parts to commit (the frontend skips
         // committing on engine == "noop" anyway).
         part_count: 0,
@@ -465,50 +465,50 @@ pub fn organic_cut(mesh: IndexedMesh, options: &OrganicCutOptions) -> OrganicCut
     }
 }
 
-/// A loop's registration-key settings, resolved from either the per-loop override
-/// ([`OrganicCutSpec::loop_keys`]) or the spec-level `key_*` fallback — already
-/// parsed into the `key` module's types so the cut path can use them directly.
+/// A loop's registration-tenon settings, resolved from either the per-loop override
+/// ([`OrganicCutSpec::loop_tenons`]) or the spec-level `tenon_*` fallback — already
+/// parsed into the `tenon` module's types so the cut path can use them directly.
 #[cfg(feature = "manifold")]
-struct ResolvedKey {
+struct ResolvedTenon {
     generate: bool,
     width: f32,
     depth: f32,
-    shape: crate::key::KeyShape,
+    shape: crate::tenon::TenonShape,
     fillet: f32,
     tolerance: f32,
-    offset: crate::key::KeyOffset,
+    offset: crate::tenon::TenonOffset,
     swap: bool,
-    tilt: crate::key::KeyTilt,
+    tilt: crate::tenon::TenonTilt,
 }
 
-/// Resolve loop `i`'s key: prefer its `loop_keys` entry, else the spec-level fields.
+/// Resolve loop `i`'s tenon: prefer its `loop_tenons` entry, else the spec-level fields.
 #[cfg(feature = "manifold")]
-fn resolve_loop_key(spec: &OrganicCutSpec, i: usize) -> ResolvedKey {
-    match spec.loop_keys.get(i) {
-        Some(k) => ResolvedKey {
-            generate: k.generate_key,
-            width: k.key_width_mm,
-            depth: k.key_depth_mm,
-            shape: crate::key::KeyShape::from_str_or_default(&k.key_shape),
-            fillet: k.key_fillet_mm,
-            tolerance: k.key_tolerance_mm,
-            offset: crate::key::KeyOffset::new(k.key_offset_u_mm, k.key_offset_v_mm),
-            swap: k.key_swap_sides,
-            tilt: crate::key::KeyTilt::new(k.key_tilt_rad, k.key_tilt_azimuth_rad, k.key_roll_rad),
+fn resolve_loop_tenon(spec: &OrganicCutSpec, i: usize) -> ResolvedTenon {
+    match spec.loop_tenons.get(i) {
+        Some(k) => ResolvedTenon {
+            generate: k.generate_tenon,
+            width: k.tenon_width_mm,
+            depth: k.tenon_depth_mm,
+            shape: crate::tenon::TenonShape::from_str_or_default(&k.tenon_shape),
+            fillet: k.tenon_fillet_mm,
+            tolerance: k.tenon_tolerance_mm,
+            offset: crate::tenon::TenonOffset::new(k.tenon_offset_u_mm, k.tenon_offset_v_mm),
+            swap: k.tenon_swap_sides,
+            tilt: crate::tenon::TenonTilt::new(k.tenon_tilt_rad, k.tenon_tilt_azimuth_rad, k.tenon_roll_rad),
         },
-        None => ResolvedKey {
-            generate: spec.generate_key,
-            width: spec.key_width_mm,
-            depth: spec.key_depth_mm,
-            shape: crate::key::KeyShape::from_str_or_default(&spec.key_shape),
-            fillet: spec.key_fillet_mm,
-            tolerance: spec.key_tolerance_mm,
-            offset: crate::key::KeyOffset::new(spec.key_offset_u_mm, spec.key_offset_v_mm),
-            swap: spec.key_swap_sides,
-            tilt: crate::key::KeyTilt::new(
-                spec.key_tilt_rad,
-                spec.key_tilt_azimuth_rad,
-                spec.key_roll_rad,
+        None => ResolvedTenon {
+            generate: spec.generate_tenon,
+            width: spec.tenon_width_mm,
+            depth: spec.tenon_depth_mm,
+            shape: crate::tenon::TenonShape::from_str_or_default(&spec.tenon_shape),
+            fillet: spec.tenon_fillet_mm,
+            tolerance: spec.tenon_tolerance_mm,
+            offset: crate::tenon::TenonOffset::new(spec.tenon_offset_u_mm, spec.tenon_offset_v_mm),
+            swap: spec.tenon_swap_sides,
+            tilt: crate::tenon::TenonTilt::new(
+                spec.tenon_tilt_rad,
+                spec.tenon_tilt_azimuth_rad,
+                spec.tenon_roll_rad,
             ),
         },
     }
@@ -533,22 +533,22 @@ fn organic_cut_contour(
             .map(|p| Vec3::new(p.position[0], p.position[1], p.position[2]))
             .collect()
     };
-    // Each kept loop carries its resolved key, kept aligned: `loop_points` is key
+    // Each kept loop carries its resolved tenon, kept aligned: `loop_points` is tenon
     // index 0, then `extra_loops` in order. Degenerate loops (<3 points) are dropped
-    // along with their key, so `loops[i]` ↔ `loop_keys[i]` stays 1:1.
+    // along with their tenon, so `loops[i]` ↔ `loop_tenons[i]` stays 1:1.
     let mut loops: Vec<Vec<Vec3>> = Vec::new();
-    let mut loop_keys: Vec<ResolvedKey> = Vec::new();
+    let mut loop_tenons: Vec<ResolvedTenon> = Vec::new();
     {
         let primary = to_vec3(&options.cut.loop_points);
         if primary.len() >= 3 {
             loops.push(primary);
-            loop_keys.push(resolve_loop_key(&options.cut, 0));
+            loop_tenons.push(resolve_loop_tenon(&options.cut, 0));
         }
         for (j, extra) in options.cut.extra_loops.iter().enumerate() {
             let v = to_vec3(extra);
             if v.len() >= 3 {
                 loops.push(v);
-                loop_keys.push(resolve_loop_key(&options.cut, j + 1));
+                loop_tenons.push(resolve_loop_tenon(&options.cut, j + 1));
             }
         }
     }
@@ -579,27 +579,27 @@ fn organic_cut_contour(
         let membrane_tris = split.membrane_tris;
         let mut part_a = split.part_a;
         let mut part_b = split.part_b;
-        let (mut key_kind, mut key_detail) = (crate::key::KeyKind::None, String::new());
+        let (mut tenon_kind, mut tenon_detail) = (crate::tenon::TenonKind::None, String::new());
 
-        // One registration key PER cut, using each loop's OWN key settings
-        // (`loop_keys[i]`). A loop with `generate = false` gets no key. `apply_key`
+        // One registration tenon PER cut, using each loop's OWN tenon settings
+        // (`loop_tenons[i]`). A loop with `generate = false` gets no tenon. `apply_tenon`
         // wants the seam's +normal side as `part_a`; in a multi-loop cut the
         // body/tail aren't grouped by side, so classify each membrane and pass the
-        // parts in the right order, then map the result back. A failed/too-thin key
-        // at one seam never affects the others (apply_key returns parts unchanged).
-        let requested = loop_keys.iter().filter(|k| k.generate).count();
+        // parts in the right order, then map the result back. A failed/too-thin tenon
+        // at one seam never affects the others (apply_tenon returns parts unchanged).
+        let requested = loop_tenons.iter().filter(|k| k.generate).count();
         if requested > 0 {
             let mut placed = 0usize;
             let mut skipped: Vec<String> = Vec::new();
             for (i, membrane) in split.membranes.iter().enumerate() {
-                let rk = &loop_keys[i];
+                let rk = &loop_tenons[i];
                 if !rk.generate {
                     continue;
                 }
                 // Whichever part is on this membrane's +normal side is `part_a`.
                 let a_on_plus = crate::membrane::side_of_mesh(membrane, &part_a) >= 0.0;
                 let (pa, pb) = if a_on_plus { (part_a, part_b) } else { (part_b, part_a) };
-                let keyed = crate::key::apply_key(
+                let tenoned = crate::tenon::apply_tenon(
                     mesh,
                     pa,
                     pb,
@@ -616,32 +616,32 @@ fn organic_cut_contour(
                 );
                 // Map the (+normal, −normal) result back to (body, freed) = (a, b).
                 if a_on_plus {
-                    part_a = keyed.part_a;
-                    part_b = keyed.part_b;
+                    part_a = tenoned.part_a;
+                    part_b = tenoned.part_b;
                 } else {
-                    part_a = keyed.part_b;
-                    part_b = keyed.part_a;
+                    part_a = tenoned.part_b;
+                    part_b = tenoned.part_a;
                 }
-                if keyed.kind != crate::key::KeyKind::None {
+                if tenoned.kind != crate::tenon::TenonKind::None {
                     placed += 1;
-                    key_kind = keyed.kind;
-                } else if !keyed.detail.is_empty() {
-                    skipped.push(format!("loop {}: {}", i + 1, keyed.detail));
+                    tenon_kind = tenoned.kind;
+                } else if !tenoned.detail.is_empty() {
+                    skipped.push(format!("loop {}: {}", i + 1, tenoned.detail));
                 }
             }
-            key_detail = if placed == requested {
+            tenon_detail = if placed == requested {
                 String::new()
             } else if placed == 0 {
-                key_kind = crate::key::KeyKind::None;
-                format!("no keys placed ({})", skipped.join("; "))
+                tenon_kind = crate::tenon::TenonKind::None;
+                format!("no tenons placed ({})", skipped.join("; "))
             } else {
-                format!("{placed}/{requested} keys placed ({})", skipped.join("; "))
+                format!("{placed}/{requested} tenons placed ({})", skipped.join("; "))
             };
         }
 
         // Split into the FINAL separate solids: the body is one component, and each
         // freed piece (e.g. each arm) is its own. `part_b` held them merged so the
-        // per-seam key booleans could run locally; now decompose it so every piece
+        // per-seam tenon booleans could run locally; now decompose it so every piece
         // becomes its own part. The body (`part_a`) is one component but decompose
         // it too in case a cut split it further. Largest first → body leads.
         let mut parts: Vec<IndexedMesh> = Vec::new();
@@ -665,14 +665,14 @@ fn organic_cut_contour(
                 parts.len(),
                 membrane_tris
             ),
-            key_kind: key_kind.as_str().to_string(),
-            key_detail,
+            tenon_kind: tenon_kind.as_str().to_string(),
+            tenon_detail,
             part_count: parts.len(),
         };
         return Ok(OrganicCutOutcome { parts, report });
     }
 
-    // SINGLE-LOOP: the classic curved cut, which also supports the registration key
+    // SINGLE-LOOP: the classic curved cut, which also supports the registration tenon
     // (anchored on the one membrane) and the clean +/- side grouping.
     let loop_pts = &loops[0];
     let split =
@@ -687,15 +687,15 @@ fn organic_cut_contour(
     let membrane_tris = split.membrane_tris;
     let mut part_a = split.part_a;
     let mut part_b = split.part_b;
-    let (mut key_kind, mut key_detail) = (crate::key::KeyKind::None, String::new());
+    let (mut tenon_kind, mut tenon_detail) = (crate::tenon::TenonKind::None, String::new());
 
-    // Optional registration key: peg union'd onto part_a, socket carved from
-    // part_b. Uses this loop's resolved key (`loop_keys[0]` — the per-loop override
-    // or the spec-level fallback). A failed/skipped key NEVER fails the cut —
-    // `apply_key` returns the parts unchanged with `KeyKind::None` + a reason.
-    let rk = &loop_keys[0];
+    // Optional registration tenon: tenon union'd onto part_a, mortise carved from
+    // part_b. Uses this loop's resolved tenon (`loop_tenons[0]` — the per-loop override
+    // or the spec-level fallback). A failed/skipped tenon NEVER fails the cut —
+    // `apply_tenon` returns the parts unchanged with `TenonKind::None` + a reason.
+    let rk = &loop_tenons[0];
     if rk.generate {
-        let keyed = crate::key::apply_key(
+        let tenoned = crate::tenon::apply_tenon(
             mesh,
             part_a,
             part_b,
@@ -710,10 +710,10 @@ fn organic_cut_contour(
             thickness,
             rk.offset,
         );
-        part_a = keyed.part_a;
-        part_b = keyed.part_b;
-        key_kind = keyed.kind;
-        key_detail = keyed.detail;
+        part_a = tenoned.part_a;
+        part_b = tenoned.part_b;
+        tenon_kind = tenoned.kind;
+        tenon_detail = tenoned.detail;
     }
 
     // A single-loop cut is exactly two parts.
@@ -724,8 +724,8 @@ fn organic_cut_contour(
         part_b_triangle_count: parts[1].triangle_count(),
         engine: "membrane".to_string(),
         detail: format!("membrane tris={membrane_tris}"),
-        key_kind: key_kind.as_str().to_string(),
-        key_detail,
+        tenon_kind: tenon_kind.as_str().to_string(),
+        tenon_detail,
         part_count: parts.len(),
     };
     Ok(OrganicCutOutcome { parts, report })
@@ -794,19 +794,19 @@ fn organic_cut_plane(
         ));
     }
 
-    // Registration key, same as the contour cut — the frame comes from the plane
+    // Registration tenon, same as the contour cut — the frame comes from the plane
     // and the section it carves instead of from a membrane, and there is no kerf
     // to span (`split_by_plane` is a zero-thickness split, both halves meet ON the
-    // plane). A key that doesn't fit never fails the cut.
-    let rk = resolve_loop_key(&options.cut, 0);
-    let mut key_kind = crate::key::KeyKind::None;
-    let mut key_detail = String::new();
+    // plane). A tenon that doesn't fit never fails the cut.
+    let rk = resolve_loop_tenon(&options.cut, 0);
+    let mut tenon_kind = crate::tenon::TenonKind::None;
+    let mut tenon_detail = String::new();
     let (part_a, part_b) = if rk.generate {
-        match crate::key::frame_from_plane(mesh, plane.normal, plane.offset, rk.offset) {
+        match crate::tenon::frame_from_plane(mesh, plane.normal, plane.offset, rk.offset) {
             Some(frame) => {
                 // `split_by_plane` hands back (+normal side, −normal side), and the
-                // key's frame axis IS that +normal — so `first` is part_a already.
-                let keyed = crate::key::apply_key_at_frame(
+                // tenon's frame axis IS that +normal — so `first` is part_a already.
+                let tenoned = crate::tenon::apply_tenon_at_frame(
                     mesh,
                     part_a,
                     part_b,
@@ -820,12 +820,12 @@ fn organic_cut_plane(
                     rk.tolerance,
                     0.0,
                 );
-                key_kind = keyed.kind;
-                key_detail = keyed.detail;
-                (keyed.part_a, keyed.part_b)
+                tenon_kind = tenoned.kind;
+                tenon_detail = tenoned.detail;
+                (tenoned.part_a, tenoned.part_b)
             }
             None => {
-                key_detail = "No key — the plane carves no usable cross-section.".to_string();
+                tenon_detail = "No tenon — the plane carves no usable cross-section.".to_string();
                 (part_a, part_b)
             }
         }
@@ -840,8 +840,8 @@ fn organic_cut_plane(
         part_b_triangle_count: parts[1].triangle_count(),
         engine: "plane".to_string(),
         detail: String::new(),
-        key_kind: key_kind.as_str().to_string(),
-        key_detail,
+        tenon_kind: tenon_kind.as_str().to_string(),
+        tenon_detail,
         part_count: parts.len(),
     };
     Ok(OrganicCutOutcome { parts, report })
@@ -1050,7 +1050,7 @@ mod tests {
         assert!(outcome.parts[1].triangle_count() > 0, "part B empty");
     }
 
-    // The plane section is what the flat cut anchors its key on, so it has to be
+    // The plane section is what the flat cut anchors its tenon on, so it has to be
     // right: through the middle of a cube it is the full square face, centred.
     #[cfg(feature = "manifold")]
     #[test]
@@ -1076,23 +1076,23 @@ mod tests {
         }
     }
 
-    // A flat cut used to return `key_kind: "none"` unconditionally — the key was
-    // wired to the contour path only. It now keys off the plane's own section.
+    // A flat cut used to return `tenon_kind: "none"` unconditionally — the tenon was
+    // wired to the contour path only. It now tenons off the plane's own section.
     #[cfg(feature = "manifold")]
     #[test]
-    fn plane_cut_places_a_key() {
+    fn plane_cut_places_a_tenon() {
         let size = 30.0_f32;
         let mesh = IndexedMesh::from_triangle_soup(&cube_soup(size), 1e-6);
         let options = OrganicCutOptions {
             cut: OrganicCutSpec {
                 loop_points: loop_on_plane_z(size * 0.5, size),
                 mode: CutMode::Plane,
-                generate_key: true,
-                key_width_mm: 5.0,
-                key_depth_mm: 5.0,
-                key_tolerance_mm: 0.1,
-                key_offset_u_mm: 0.0,
-                key_offset_v_mm: 0.0,
+                generate_tenon: true,
+                tenon_width_mm: 5.0,
+                tenon_depth_mm: 5.0,
+                tenon_tolerance_mm: 0.1,
+                tenon_offset_u_mm: 0.0,
+                tenon_offset_v_mm: 0.0,
                 ..Default::default()
             },
         };
@@ -1103,27 +1103,27 @@ mod tests {
                 ..Default::default()
             },
         });
-        let keyed = organic_cut(mesh, &options);
-        assert_eq!(keyed.report.engine, "plane", "still the plane engine");
-        assert_eq!(keyed.report.key_kind, "frustum", "key placed: {}", keyed.report.key_detail);
-        // The peg is union'd onto one half and carved out of the other, so both
-        // halves gain geometry over the same cut without a key.
+        let tenoned = organic_cut(mesh, &options);
+        assert_eq!(tenoned.report.engine, "plane", "still the plane engine");
+        assert_eq!(tenoned.report.tenon_kind, "frustum", "tenon placed: {}", tenoned.report.tenon_detail);
+        // The tenon is union'd onto one half and carved out of the other, so both
+        // halves gain geometry over the same cut without a tenon.
         assert!(
-            keyed.parts[0].triangle_count() > plain.parts[0].triangle_count(),
-            "part A gained the peg",
+            tenoned.parts[0].triangle_count() > plain.parts[0].triangle_count(),
+            "part A gained the tenon",
         );
         assert!(
-            keyed.parts[1].triangle_count() > plain.parts[1].triangle_count(),
-            "part B gained the socket",
+            tenoned.parts[1].triangle_count() > plain.parts[1].triangle_count(),
+            "part B gained the mortise",
         );
     }
 
     #[cfg(feature = "manifold")]
     #[test]
-    fn multi_loop_cut_places_a_key_per_seam() {
-        // Two band loops through a tall bar, contour mode, generate_key on. Each
-        // seam should get its own registration key (peg + socket), so the report
-        // records a placed key and both parts gain geometry from the booleans.
+    fn multi_loop_cut_places_a_tenon_per_seam() {
+        // Two band loops through a tall bar, contour mode, generate_tenon on. Each
+        // seam should get its own registration tenon (tenon + mortise), so the report
+        // records a placed tenon and both parts gain geometry from the booleans.
         let size = 30.0_f32;
         let mesh = IndexedMesh::from_triangle_soup(&cube_soup(size), 1e-6);
         let band = |z: f32| -> Vec<OrganicCutLoopPoint> {
@@ -1141,19 +1141,19 @@ mod tests {
                 loop_points: band(10.0),
                 extra_loops: vec![band(20.0)],
                 mode: CutMode::Contour,
-                generate_key: true,
-                key_width_mm: 3.0,
-                key_depth_mm: 3.0,
-                key_shape: "frustum".to_string(),
+                generate_tenon: true,
+                tenon_width_mm: 3.0,
+                tenon_depth_mm: 3.0,
+                tenon_shape: "frustum".to_string(),
                 ..Default::default()
             },
         };
         let outcome = organic_cut(mesh, &options);
         assert_eq!(outcome.report.engine, "membrane", "should use the membrane engine");
         assert_ne!(
-            outcome.report.key_kind, "none",
-            "expected a key placed per seam, key_detail={}",
-            outcome.report.key_detail
+            outcome.report.tenon_kind, "none",
+            "expected a tenon placed per seam, tenon_detail={}",
+            outcome.report.tenon_detail
         );
         assert!(outcome.parts[0].triangle_count() > 0, "part A empty");
         assert!(outcome.parts[1].triangle_count() > 0, "part B empty");
@@ -1165,7 +1165,7 @@ mod tests {
         // The bug fix: two band cuts through a bar free THREE pieces (bottom /
         // middle / top). They must come back as three SEPARATE parts — not the body
         // plus one merged "everything else" mesh (which is what made Squirtle's two
-        // arms a single part). No key, so geometry isn't perturbed.
+        // arms a single part). No tenon, so geometry isn't perturbed.
         let size = 30.0_f32;
         let mesh = IndexedMesh::from_triangle_soup(&cube_soup(size), 1e-6);
         let band = |z: f32| -> Vec<OrganicCutLoopPoint> {
@@ -1203,10 +1203,10 @@ mod tests {
 
     #[cfg(feature = "manifold")]
     #[test]
-    fn per_loop_keys_override_and_respect_generate_flag() {
-        // Per-loop `loop_keys`: prove (a) the override is read and (b) a loop with
-        // generate=false really gets NO key. Keying only loop 0 must add less
-        // geometry than keying BOTH loops (one fewer peg+socket boolean).
+    fn per_loop_tenons_override_and_respect_generate_flag() {
+        // Per-loop `loop_tenons`: prove (a) the override is read and (b) a loop with
+        // generate=false really gets NO tenon. Tenoning only loop 0 must add less
+        // geometry than tenoning BOTH loops (one fewer tenon+mortise boolean).
         let size = 30.0_f32;
         let band = |z: f32| -> Vec<OrganicCutLoopPoint> {
             let steps = 8usize;
@@ -1218,29 +1218,29 @@ mod tests {
             for i in 0..steps { pts.push(OrganicCutLoopPoint { position: [0.0, size - f(i), z], normal: [0.0; 3] }); }
             pts
         };
-        let mk_key = |generate: bool| LoopKeySpec {
-            generate_key: generate,
-            key_width_mm: 3.0,
-            key_depth_mm: 3.0,
-            key_shape: "frustum".to_string(),
-            key_fillet_mm: 0.0,
-            key_tolerance_mm: 0.1,
-            key_offset_u_mm: 0.0,
-            key_offset_v_mm: 0.0,
-            key_swap_sides: false,
-            key_tilt_rad: 0.0,
-            key_tilt_azimuth_rad: 0.0,
-            key_roll_rad: 0.0,
+        let mk_tenon = |generate: bool| LoopTenonSpec {
+            generate_tenon: generate,
+            tenon_width_mm: 3.0,
+            tenon_depth_mm: 3.0,
+            tenon_shape: "frustum".to_string(),
+            tenon_fillet_mm: 0.0,
+            tenon_tolerance_mm: 0.1,
+            tenon_offset_u_mm: 0.0,
+            tenon_offset_v_mm: 0.0,
+            tenon_swap_sides: false,
+            tenon_tilt_rad: 0.0,
+            tenon_tilt_azimuth_rad: 0.0,
+            tenon_roll_rad: 0.0,
         };
-        let run = |loop_keys: Vec<LoopKeySpec>| {
+        let run = |loop_tenons: Vec<LoopTenonSpec>| {
             let mesh = IndexedMesh::from_triangle_soup(&cube_soup(size), 1e-6);
             let options = OrganicCutOptions {
                 cut: OrganicCutSpec {
                     loop_points: band(10.0),
                     extra_loops: vec![band(20.0)],
-                    loop_keys,
+                    loop_tenons,
                     mode: CutMode::Contour,
-                    // Spec-level generate_key stays OFF — only `loop_keys` drive keys
+                    // Spec-level generate_tenon stays OFF — only `loop_tenons` drive tenons
                     // here, proving the per-loop override is what's read.
                     ..Default::default()
                 },
@@ -1248,19 +1248,19 @@ mod tests {
             organic_cut(mesh, &options)
         };
 
-        // Only loop 0 keyed; loop 1 explicitly NOT keyed.
-        let one = run(vec![mk_key(true), mk_key(false)]);
+        // Only loop 0 tenoned; loop 1 explicitly NOT tenoned.
+        let one = run(vec![mk_tenon(true), mk_tenon(false)]);
         assert_eq!(one.report.engine, "membrane");
-        assert_ne!(one.report.key_kind, "none", "loop 0 should be keyed: {}", one.report.key_detail);
-        // Both loops keyed.
-        let two = run(vec![mk_key(true), mk_key(true)]);
-        assert_ne!(two.report.key_kind, "none");
+        assert_ne!(one.report.tenon_kind, "none", "loop 0 should be tenoned: {}", one.report.tenon_detail);
+        // Both loops tenoned.
+        let two = run(vec![mk_tenon(true), mk_tenon(true)]);
+        assert_ne!(two.report.tenon_kind, "none");
 
         let one_tris: usize = one.parts.iter().map(|p| p.triangle_count()).sum();
         let two_tris: usize = two.parts.iter().map(|p| p.triangle_count()).sum();
         assert!(
             two_tris > one_tris,
-            "keying both loops ({two_tris} tris) should add more geometry than keying one ({one_tris}) \
+            "tenoning both loops ({two_tris} tris) should add more geometry than tenoning one ({one_tris}) \
              — loop 1's generate=false must be respected"
         );
     }

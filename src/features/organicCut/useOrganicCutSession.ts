@@ -15,18 +15,18 @@
  * way to free a part attached in several places (e.g. a tail joined at two posts).
  */
 import React from 'react';
-import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutResult } from './types';
+import type { TenonPreviewFrame, OrganicCutLoopPoint, OrganicCutResult } from './types';
 import type { OrganicCutPanelState } from './OrganicCutPanel';
 import {
   computeGeodesicLoop,
   computeMembranePreview,
-  computePlaneKeyPreview,
+  computePlaneTenonPreview,
   cutFromCapturedSource,
   isCutSourceStaged,
   partToGeometry,
   stageCutSource,
 } from './meshOrganicCut';
-import type { KeyPreviewKind, MembranePreviewResult } from './meshOrganicCut';
+import type { TenonPreviewKind, MembranePreviewResult } from './meshOrganicCut';
 import { cutPlaneFromPoints } from './cutPlane';
 import { snapPointsToFeatureEdges } from './snapToEdges';
 import { planeMeshIntersection, type PlaneMeshCurve } from './planeMeshIntersection';
@@ -50,50 +50,50 @@ const EDIT_COALESCE_WINDOW_MS = 500;
 
 /** Drop the derived polyline: it is recomputed from the points on restore. */
 function toSnapshot(loops: SessionLoop[]): OrganicCutLoopSnapshot[] {
-  return loops.map((l) => ({ points: l.points.slice(), key: { ...l.key } }));
+  return loops.map((l) => ({ points: l.points.slice(), tenon: { ...l.tenon } }));
 }
 
 /** Rebuild session loops from a snapshot; the seam recomputes from the points. */
 function fromSnapshot(snapshot: OrganicCutLoopSnapshot[]): SessionLoop[] {
-  return snapshot.map((l) => ({ points: l.points.slice(), polyline: null, key: { ...l.key } }));
+  return snapshot.map((l) => ({ points: l.points.slice(), polyline: null, tenon: { ...l.tenon } }));
 }
 
 /** Value-equality of two loop sets, to skip pushing a no-op edit. */
 function loopsEqual(a: SessionLoop[], b: SessionLoop[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
-  return a.every((l, i) => l.points === b[i].points && keysEqual(l.key, b[i].key));
+  return a.every((l, i) => l.points === b[i].points && tenonsEqual(l.tenon, b[i].tenon));
 }
 
 /** Minimum points before a cut is possible. 2 = the simplest flat plane cut. */
 const MIN_LOOP_POINTS = 2;
 
 /**
- * Per-loop registration-key settings — a multi-loop cut keys each loop
- * independently. Mirrors the key fields of OrganicCutPanelState: the panel's key
+ * Per-loop registration-tenon settings — a multi-loop cut tenons each loop
+ * independently. Mirrors the tenon fields of OrganicCutPanelState: the panel's tenon
  * controls edit the ACTIVE loop's copy through `panelState`, which is kept in sync
  * with the active loop (the panel/gizmo stay bound to `panelState` as before).
  */
-export type LoopKeySettings = Pick<
+export type LoopTenonSettings = Pick<
   OrganicCutPanelState,
-  | 'generateKey'
-  | 'keyWidthMm'
-  | 'keyDepthMm'
-  | 'keyShape'
-  | 'keyFilletMm'
-  | 'keyToleranceMm'
-  | 'keyOffsetUMm'
-  | 'keyOffsetVMm'
-  | 'keyUniformScale'
-  | 'keySwapSides'
-  | 'keyTiltRad'
-  | 'keyTiltAzimuthRad'
-  | 'keyRollRad'
+  | 'generateTenon'
+  | 'tenonWidthMm'
+  | 'tenonDepthMm'
+  | 'tenonShape'
+  | 'tenonFilletMm'
+  | 'tenonToleranceMm'
+  | 'tenonOffsetUMm'
+  | 'tenonOffsetVMm'
+  | 'tenonUniformScale'
+  | 'tenonSwapSides'
+  | 'tenonTiltRad'
+  | 'tenonTiltAzimuthRad'
+  | 'tenonRollRad'
 >;
 
 /**
  * The cut-wide settings — everything that shapes the cut but isn't per-loop and
- * isn't per-key. Undo covers these too: changing the kerf is as much an edit as
+ * isn't per-tenon. Undo covers these too: changing the kerf is as much an edit as
  * moving a waypoint. The pure-UI `showPreview` is left out on purpose — hiding
  * the preview is not an edit to undo.
  */
@@ -124,64 +124,64 @@ function settingsEqual(a: CutSettings, b: CutSettings): boolean {
   );
 }
 
-/** Pull the key fields out of the panel state. */
-function extractKey(ps: OrganicCutPanelState): LoopKeySettings {
+/** Pull the tenon fields out of the panel state. */
+function extractTenon(ps: OrganicCutPanelState): LoopTenonSettings {
   return {
-    generateKey: ps.generateKey,
-    keyWidthMm: ps.keyWidthMm,
-    keyDepthMm: ps.keyDepthMm,
-    keyShape: ps.keyShape,
-    keyFilletMm: ps.keyFilletMm,
-    keyToleranceMm: ps.keyToleranceMm,
-    keyOffsetUMm: ps.keyOffsetUMm,
-    keyOffsetVMm: ps.keyOffsetVMm,
-    keyUniformScale: ps.keyUniformScale,
-    keySwapSides: ps.keySwapSides,
-    keyTiltRad: ps.keyTiltRad,
-    keyTiltAzimuthRad: ps.keyTiltAzimuthRad,
-    keyRollRad: ps.keyRollRad,
+    generateTenon: ps.generateTenon,
+    tenonWidthMm: ps.tenonWidthMm,
+    tenonDepthMm: ps.tenonDepthMm,
+    tenonShape: ps.tenonShape,
+    tenonFilletMm: ps.tenonFilletMm,
+    tenonToleranceMm: ps.tenonToleranceMm,
+    tenonOffsetUMm: ps.tenonOffsetUMm,
+    tenonOffsetVMm: ps.tenonOffsetVMm,
+    tenonUniformScale: ps.tenonUniformScale,
+    tenonSwapSides: ps.tenonSwapSides,
+    tenonTiltRad: ps.tenonTiltRad,
+    tenonTiltAzimuthRad: ps.tenonTiltAzimuthRad,
+    tenonRollRad: ps.tenonRollRad,
   };
 }
 
-/** Overlay a loop's key settings onto the panel state (the editor buffer). */
-function withKey(ps: OrganicCutPanelState, key: LoopKeySettings): OrganicCutPanelState {
-  return { ...ps, ...key };
+/** Overlay a loop's tenon settings onto the panel state (the editor buffer). */
+function withTenon(ps: OrganicCutPanelState, tenon: LoopTenonSettings): OrganicCutPanelState {
+  return { ...ps, ...tenon };
 }
 
-/** Value-equality of two key settings (to skip no-op state churn). */
-function keysEqual(a: LoopKeySettings, b: LoopKeySettings): boolean {
+/** Value-equality of two tenon settings (to skip no-op state churn). */
+function tenonsEqual(a: LoopTenonSettings, b: LoopTenonSettings): boolean {
   return (
-    a.generateKey === b.generateKey &&
-    a.keyWidthMm === b.keyWidthMm &&
-    a.keyDepthMm === b.keyDepthMm &&
-    a.keyShape === b.keyShape &&
-    a.keyFilletMm === b.keyFilletMm &&
-    a.keyToleranceMm === b.keyToleranceMm &&
-    a.keyOffsetUMm === b.keyOffsetUMm &&
-    a.keyOffsetVMm === b.keyOffsetVMm &&
-    a.keyUniformScale === b.keyUniformScale &&
-    a.keySwapSides === b.keySwapSides &&
-    a.keyTiltRad === b.keyTiltRad &&
-    a.keyTiltAzimuthRad === b.keyTiltAzimuthRad &&
-    a.keyRollRad === b.keyRollRad
+    a.generateTenon === b.generateTenon &&
+    a.tenonWidthMm === b.tenonWidthMm &&
+    a.tenonDepthMm === b.tenonDepthMm &&
+    a.tenonShape === b.tenonShape &&
+    a.tenonFilletMm === b.tenonFilletMm &&
+    a.tenonToleranceMm === b.tenonToleranceMm &&
+    a.tenonOffsetUMm === b.tenonOffsetUMm &&
+    a.tenonOffsetVMm === b.tenonOffsetVMm &&
+    a.tenonUniformScale === b.tenonUniformScale &&
+    a.tenonSwapSides === b.tenonSwapSides &&
+    a.tenonTiltRad === b.tenonTiltRad &&
+    a.tenonTiltAzimuthRad === b.tenonTiltAzimuthRad &&
+    a.tenonRollRad === b.tenonRollRad
   );
 }
 
-/** Wire form of a loop's key for the Rust `loopKeys` array (drops UI-only fields). */
-function keyToSpec(k: LoopKeySettings) {
+/** Wire form of a loop's tenon for the Rust `loopTenons` array (drops UI-only fields). */
+function tenonToSpec(k: LoopTenonSettings) {
   return {
-    generateKey: k.generateKey,
-    keyWidthMm: k.keyWidthMm,
-    keyDepthMm: k.keyDepthMm,
-    keyShape: k.keyShape,
-    keyFilletMm: k.keyFilletMm,
-    keyToleranceMm: k.keyToleranceMm,
-    keyOffsetUMm: k.keyOffsetUMm,
-    keyOffsetVMm: k.keyOffsetVMm,
-    keySwapSides: k.keySwapSides,
-    keyTiltRad: k.keyTiltRad,
-    keyTiltAzimuthRad: k.keyTiltAzimuthRad,
-    keyRollRad: k.keyRollRad,
+    generateTenon: k.generateTenon,
+    tenonWidthMm: k.tenonWidthMm,
+    tenonDepthMm: k.tenonDepthMm,
+    tenonShape: k.tenonShape,
+    tenonFilletMm: k.tenonFilletMm,
+    tenonToleranceMm: k.tenonToleranceMm,
+    tenonOffsetUMm: k.tenonOffsetUMm,
+    tenonOffsetVMm: k.tenonOffsetVMm,
+    tenonSwapSides: k.tenonSwapSides,
+    tenonTiltRad: k.tenonTiltRad,
+    tenonTiltAzimuthRad: k.tenonTiltAzimuthRad,
+    tenonRollRad: k.tenonRollRad,
   };
 }
 
@@ -189,19 +189,19 @@ function keyToSpec(k: LoopKeySettings) {
  * One loop in a (possibly multi-loop) cut. `points` are the editable user
  * waypoints; `polyline` is the cached DENSE on-surface geodesic for that loop —
  * kept so an INACTIVE loop can still render its seam, and so the cut traces the
- * real surface. `key` is this loop's own registration-key settings. The active
+ * real surface. `tenon` is this loop's own registration-tenon settings. The active
  * loop's polyline is refreshed live by the geodesic effect; an edit leaves the
  * stale polyline in place until that recompute lands.
  */
 interface SessionLoop {
   points: OrganicCutLoopPoint[];
   polyline: Float32Array | null;
-  key: LoopKeySettings;
+  tenon: LoopTenonSettings;
 }
 
-/** A fresh empty loop slot carrying the given key settings. */
-function emptyLoop(key: LoopKeySettings): SessionLoop {
-  return { points: [], polyline: null, key };
+/** A fresh empty loop slot carrying the given tenon settings. */
+function emptyLoop(tenon: LoopTenonSettings): SessionLoop {
+  return { points: [], polyline: null, tenon };
 }
 
 /**
@@ -304,7 +304,7 @@ export interface OrganicCutSession {
   /** Index of the loop currently being edited (gets markers + membrane preview). */
   activeLoopIndex: number;
   /** Per-loop summaries for the panel's loop chips (index + waypoint count). */
-  loopSummaries: { index: number; pointCount: number; hasKey: boolean }[];
+  loopSummaries: { index: number; pointCount: number; hasTenon: boolean }[];
   /** Make loop `index` the active (editable) one. Out-of-range is a no-op. */
   selectLoop: (index: number) => void;
   /**
@@ -347,27 +347,27 @@ export interface OrganicCutSession {
    */
   membranePreview: Float32Array | null;
   /**
-   * Registration-key preview (peg triangle soup, model-local) — the
-   * exact key the cut will place. Null unless generateKey is on with a fitting
-   * key. Render alongside the membrane.
+   * Registration-tenon preview (tenon triangle soup, model-local) — the
+   * exact tenon the cut will place. Null unless generateTenon is on with a fitting
+   * tenon. Render alongside the membrane.
    */
-  keyPreview: Float32Array | null;
+  tenonPreview: Float32Array | null;
   /**
-   * How many of `keyPreview`'s triangles are the peg — the soup is the peg
-   * followed by the socket, and the tool splits it here to colour them apart.
+   * How many of `tenonPreview`'s triangles are the tenon — the soup is the tenon
+   * followed by the mortise, and the tool splits it here to colour them apart.
    */
-  keyPegTriangleCount: number;
-  /** Which key the preview placed: 'frustum', 'dome' (fallback), or 'none'. */
-  keyKind: KeyPreviewKind;
-  /** Reason the key shrank / fell back / was skipped (for the panel alert). */
-  keyDetail: string;
+  tenonTriangleCount: number;
+  /** Which tenon the preview placed: 'frustum', 'dome' (fallback), or 'none'. */
+  tenonKind: TenonPreviewKind;
+  /** Reason the tenon shrank / fell back / was skipped (for the panel alert). */
+  tenonDetail: string;
   /**
-   * Placement frame of the previewed key (model-local), for the in-viewport aim+
-   * roll gizmo. Null when no key was placed. Drives where the tip/roll handles sit.
+   * Placement frame of the previewed tenon (model-local), for the in-viewport aim+
+   * roll gizmo. Null when no tenon was placed. Drives where the tip/roll handles sit.
    */
-  keyFrame: KeyPreviewFrame | null;
-  /** The key offset (mm along u/v) the current preview soup was built with. */
-  keyPreviewOffset: { u: number; v: number };
+  tenonFrame: TenonPreviewFrame | null;
+  /** The tenon offset (mm along u/v) the current preview soup was built with. */
+  tenonPreviewOffset: { u: number; v: number };
 }
 
 const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
@@ -382,32 +382,32 @@ const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
   // 4× = densest cutter + finest seam-band model refinement by default, for the
   // cleanest cut edge out of the box.
   density: 4.0,
-  // Registration key off by default — the user opts in per cut.
-  generateKey: false,
-  // Default key size (mm) — model units are mm. Width 2 → length auto = 2.5mm
+  // Registration tenon off by default — the user opts in per cut.
+  generateTenon: false,
+  // Default tenon size (mm) — model units are mm. Width 2 → length auto = 2.5mm
   // (1.25× ratio); depth 2.5mm. The user tunes these live.
-  keyWidthMm: 2.0,
-  keyDepthMm: 2.5,
-  // Default key shape — the rotation-locking tapered frustum.
-  keyShape: 'frustum',
+  tenonWidthMm: 2.0,
+  tenonDepthMm: 2.5,
+  // Default tenon shape — the rotation-locking tapered frustum.
+  tenonShape: 'frustum',
   // Edge fillet 0.2mm by default (lightly rounded corners + tip); user tunes live.
-  keyFilletMm: 0.2,
-  // Peg/socket fit tolerance: the socket is carved this much larger than the peg
+  tenonFilletMm: 0.2,
+  // Tenon/mortise fit tolerance: the mortise is carved this much larger than the tenon
   // on every face. 0.1mm is a print-scale slide fit; 0 is a press fit.
-  keyToleranceMm: 0.1,
-  // Key centred on the cut by default; the blue base handle slides it.
-  keyOffsetUMm: 0,
-  keyOffsetVMm: 0,
+  tenonToleranceMm: 0.1,
+  // Tenon centred on the cut by default; the blue base handle slides it.
+  tenonOffsetUMm: 0,
+  tenonOffsetVMm: 0,
   // Dome Uniform Scale on by default — width/depth move together (round dome)
   // until the user unlocks it for an oblong shape.
-  keyUniformScale: true,
-  // Peg on the +normal side (part A) by default; the Flip button swaps it.
-  keySwapSides: false,
-  // Key points straight out of the cut by default; the in-viewport aim gizmo
+  tenonUniformScale: true,
+  // Tenon on the +normal side (part A) by default; the Flip button swaps it.
+  tenonSwapSides: false,
+  // Tenon points straight out of the cut by default; the in-viewport aim gizmo
   // (drag the tip) leans it, the roll ring spins it. All measured in radians.
-  keyTiltRad: 0,
-  keyTiltAzimuthRad: 0,
-  keyRollRad: 0,
+  tenonTiltRad: 0,
+  tenonTiltAzimuthRad: 0,
+  tenonRollRad: 0,
   // Cut-plan preview on by default — the user sees where the cut lands; the
   // toggle hides it for an unobscured view of the model while drawing.
   showPreview: true,
@@ -425,11 +425,11 @@ const MIN_CONTOUR_POINTS = 3;
  */
 const PREVIEW_SETTLE_MS = 80;
 
-/** Default per-loop key settings — the panel defaults, used for fresh loops. */
-const DEFAULT_LOOP_KEY: LoopKeySettings = extractKey(DEFAULT_PANEL_STATE);
+/** Default per-loop tenon settings — the panel defaults, used for fresh loops. */
+const DEFAULT_LOOP_TENON: LoopTenonSettings = extractTenon(DEFAULT_PANEL_STATE);
 
-/** The key's factory settings, so the panel's Reset doesn't restate them. */
-export const DEFAULT_KEY_SETTINGS: LoopKeySettings = DEFAULT_LOOP_KEY;
+/** The tenon's factory settings, so the panel's Reset doesn't restate them. */
+export const DEFAULT_TENON_SETTINGS: LoopTenonSettings = DEFAULT_LOOP_TENON;
 
 /** The cut's factory settings (mode, kerf, smoothing, resolution) — same idea. */
 export const DEFAULT_CUT_SETTINGS: CutSettings = extractSettings(DEFAULT_PANEL_STATE);
@@ -445,7 +445,7 @@ export function useOrganicCutSession({
   // All loops of the current cut, plus which one is active (editable). The active
   // loop gets the full waypoint UI + membrane preview; the rest render as dimmed
   // seams the user can switch to and edit. There is always ≥1 loop.
-  const [loops, setLoops] = React.useState<SessionLoop[]>([emptyLoop(DEFAULT_LOOP_KEY)]);
+  const [loops, setLoops] = React.useState<SessionLoop[]>([emptyLoop(DEFAULT_LOOP_TENON)]);
   const [activeLoopIndex, setActiveLoopIndex] = React.useState(0);
   const [isApplying, setIsApplying] = React.useState(false);
   const [lastResult, setLastResult] = React.useState<OrganicCutResult | null>(null);
@@ -456,30 +456,30 @@ export function useOrganicCutSession({
   // Contour-cut membrane preview (flat triangle soup, model-local). Shows the
   // exact cutter surface so the user sees where the curved cut will land.
   const [membranePreview, setMembranePreview] = React.useState<Float32Array | null>(null);
-  // Registration-key preview (peg soup) + the chosen rung and reason, so
-  // the scene can render the key and the panel can alert on a fallback. Built in
-  // the same preview round-trip as the membrane, only when generateKey is on.
-  const [keyPreview, setKeyPreview] = React.useState<Float32Array | null>(null);
-  const [keyPegTriangleCount, setKeyPegTriangleCount] = React.useState(0);
-  const [keyKind, setKeyKind] = React.useState<KeyPreviewKind>('none');
-  const [keyDetail, setKeyDetail] = React.useState<string>('');
-  // Placement frame of the previewed key (anchor/axis/u/v/tip), for the aim+roll
-  // gizmo. Null when no key is previewed.
-  const [keyFrame, setKeyFrame] = React.useState<KeyPreviewFrame | null>(null);
+  // Registration-tenon preview (tenon soup) + the chosen rung and reason, so
+  // the scene can render the tenon and the panel can alert on a fallback. Built in
+  // the same preview round-trip as the membrane, only when generateTenon is on.
+  const [tenonPreview, setTenonPreview] = React.useState<Float32Array | null>(null);
+  const [tenonTriangleCount, setTenonTriangleCount] = React.useState(0);
+  const [tenonKind, setTenonKind] = React.useState<TenonPreviewKind>('none');
+  const [tenonDetail, setTenonDetail] = React.useState<string>('');
+  // Placement frame of the previewed tenon (anchor/axis/u/v/tip), for the aim+roll
+  // gizmo. Null when no tenon is previewed.
+  const [tenonFrame, setTenonFrame] = React.useState<TenonPreviewFrame | null>(null);
   /**
-   * The key offset the CURRENT preview soup was built with. Dragging the base
+   * The tenon offset the CURRENT preview soup was built with. Dragging the base
    * handle is deliberately not round-tripped through Rust (same reason as the aim
-   * gizmo), so the view offsets the built key by the difference — without this
-   * reference the key would sit still until the drag ended, which is blind work.
+   * gizmo), so the view offsets the built tenon by the difference — without this
+   * reference the tenon would sit still until the drag ended, which is blind work.
    */
-  const [keyPreviewOffset, setKeyPreviewOffset] = React.useState<{ u: number; v: number }>({ u: 0, v: 0 });
+  const [tenonPreviewOffset, setTenonPreviewOffset] = React.useState<{ u: number; v: number }>({ u: 0, v: 0 });
   // Selected waypoint index (click a marker to select; Delete removes it).
   const [selectedIndex, setSelectedIndex] = React.useState<number | null>(null);
 
   // The active loop's points (the "loop" the rest of the tool edits/renders). A
   // stable reference until that slot's points actually change, so it's safe in
   // effect deps (caching a polyline into the slot keeps this reference intact).
-  const loop = (loops[activeLoopIndex] ?? loops[0] ?? emptyLoop(DEFAULT_LOOP_KEY)).points;
+  const loop = (loops[activeLoopIndex] ?? loops[0] ?? emptyLoop(DEFAULT_LOOP_TENON)).points;
 
   // Mirror loops + active index in refs so the stable `apply` / callbacks read the
   // CURRENT values regardless of any stale memoized closures (this is the fix for
@@ -524,13 +524,13 @@ export function useOrganicCutSession({
   // Per-model loop persistence. The cut path (all loops + which is active) is
   // retained for the model it was drawn on, so deselecting (clicking away) and
   // reselecting that model — or leaving and returning to the Cut tool — restores
-  // the in-progress loops instead of losing them. Keyed by the model id.
+  // the in-progress loops instead of losing them. Tenoned by the model id.
   //
   // SESSION-ONLY: this Map dies with the page. Cut paths are NOT written to the
   // scene file — `ModelMeshModifiers` (src/features/mesh-modifiers/types.ts)
   // persists hollowing and hole punches but has no organic-cut field, so a
   // half-drawn seam is lost on save/reload. Persisting it means adding a field
-  // there and serializing SessionLoop (points + per-loop key settings).
+  // there and serializing SessionLoop (points + per-loop tenon settings).
   const savedLoopsRef = React.useRef<Map<string, { loops: SessionLoop[]; activeIndex: number }>>(new Map());
 
   // Undo-restore: when a cut commits we remember the model id, ALL the loops, and
@@ -585,7 +585,7 @@ export function useOrganicCutSession({
           settingsRef.current = settings;
           setLoops(restored);
           setActiveLoopIndex(active);
-          setPanelState((ps) => ({ ...withKey(ps, restored[active]?.key ?? DEFAULT_LOOP_KEY), ...settings }));
+          setPanelState((ps) => ({ ...withTenon(ps, restored[active]?.tenon ?? DEFAULT_LOOP_TENON), ...settings }));
           setSelectedIndex(null);
         }
         return true;
@@ -632,7 +632,7 @@ export function useOrganicCutSession({
   React.useEffect(() => () => flushEditRun(), [flushEditRun]);
 
   // Drag coalescing: the loops at the moment a drag began, so the whole gesture
-  // (waypoint drag or key gizmo) collapses into a single undo step.
+  // (waypoint drag or tenon gizmo) collapses into a single undo step.
   const isDraggingRef = React.useRef(isDraggingPoint);
   const dragBaselineRef = React.useRef<{ loops: SessionLoop[]; active: number } | null>(null);
 
@@ -761,7 +761,7 @@ export function useOrganicCutSession({
         const nextPoints = updater(cur.points);
         if (nextPoints === cur.points) return prev;
         const next = prev.slice();
-        next[idx] = { points: nextPoints, polyline: cur.polyline, key: cur.key };
+        next[idx] = { points: nextPoints, polyline: cur.polyline, tenon: cur.tenon };
         return next;
       });
     },
@@ -769,10 +769,10 @@ export function useOrganicCutSession({
   );
 
   // Panel state setter exposed to the UI. Besides updating `panelState`, it mirrors
-  // the panel's key fields into the ACTIVE loop, so each loop keeps its OWN key
+  // the panel's tenon fields into the ACTIVE loop, so each loop keeps its OWN tenon
   // settings. The panel + gizmo stay bound to `panelState` (no change there); this
-  // wrapper is what makes those edits land on the active loop. Non-key panel
-  // changes (thickness, smoothing, …) leave the loops untouched (keysEqual guard).
+  // wrapper is what makes those edits land on the active loop. Non-tenon panel
+  // changes (thickness, smoothing, …) leave the loops untouched (tenonsEqual guard).
   const handleSetPanelState = React.useCallback((next: OrganicCutPanelState) => {
     setPanelState(next);
     // Cut-wide settings (kerf, smoothing, resolution, mode) are recorded too — they
@@ -783,32 +783,32 @@ export function useOrganicCutSession({
     if (!settingsEqual(settingsRef.current, settings)) {
       commitLoops('cut:settings', (prev) => prev, undefined, true, settings);
     }
-    const key = extractKey(next);
-    // Key settings are part of the loop, so changing them — width, shape, or the
+    const tenon = extractTenon(next);
+    // Tenon settings are part of the loop, so changing them — width, shape, or the
     // gizmo's aim — is an edit and goes through the same recorded path.
-    commitLoops('cut:key settings', (prev) => {
+    commitLoops('cut:tenon settings', (prev) => {
       const idx = activeLoopIndexRef.current;
       if (idx < 0 || idx >= prev.length) return prev;
-      if (keysEqual(prev[idx].key, key)) return prev;
+      if (tenonsEqual(prev[idx].tenon, tenon)) return prev;
       const nextLoops = prev.slice();
-      nextLoops[idx] = { ...nextLoops[idx], key };
+      nextLoops[idx] = { ...nextLoops[idx], tenon };
       return nextLoops;
     }, undefined, true);
   }, [commitLoops]);
 
   // Everything derived from the ACTIVE model's geometry. These are all computed
   // asynchronously, so leaving any of them set across a model change paints the
-  // previous model's seam/membrane/key onto the new one until the recompute lands
-  // — which is what made two identical models show the key facing opposite ways
+  // previous model's seam/membrane/tenon onto the new one until the recompute lands
+  // — which is what made two identical models show the tenon facing opposite ways
   // for a moment. Clear them together, from one place.
-  /** Drop the cut preview: the membrane/cutter and everything about the key. */
+  /** Drop the cut preview: the membrane/cutter and everything about the tenon. */
   const clearCutPreview = React.useCallback(() => {
     setMembranePreview(null);
-    setKeyPreview(null);
-    setKeyPegTriangleCount(0);
-    setKeyKind('none');
-    setKeyDetail('');
-    setKeyFrame(null);
+    setTenonPreview(null);
+    setTenonTriangleCount(0);
+    setTenonKind('none');
+    setTenonDetail('');
+    setTenonFrame(null);
   }, []);
 
   const clearModelDerivedPreviews = React.useCallback(() => {
@@ -827,9 +827,9 @@ export function useOrganicCutSession({
       if (key && current.some((l) => l.points.length > 0)) {
         savedLoopsRef.current.set(key, { loops: current, activeIndex: activeLoopIndexRef.current });
       }
-      // Reset to one empty loop carrying the current panel key, so panelState and
-      // the (now sole) active loop's key stay consistent.
-      setLoops([emptyLoop(extractKey(panelStateRef.current))]);
+      // Reset to one empty loop carrying the current panel tenon, so panelState and
+      // the (now sole) active loop's tenon stay consistent.
+      setLoops([emptyLoop(extractTenon(panelStateRef.current))]);
       setActiveLoopIndex(0);
       setLastResult(null);
       setSelectedIndex(null);
@@ -838,7 +838,7 @@ export function useOrganicCutSession({
   }, [toolActive, clearModelDerivedPreviews]);
 
   // On model change: stash the OUTGOING model's loops, then restore the INCOMING
-  // model's saved loops (if any). Clicking away sets the key to null and stashes;
+  // model's saved loops (if any). Clicking away sets the tenon to null and stashes;
   // reselecting restores. Switching to a different model loads ITS path, not a
   // bleed-over from the previous one.
   const prevGeometryKeyRef = React.useRef<string | null>(activeGeometryKey);
@@ -854,14 +854,14 @@ export function useOrganicCutSession({
     prevGeometryKeyRef.current = activeGeometryKey;
 
     // Restore the incoming model's saved loops, or start with one empty loop
-    // carrying the current panel key.
+    // carrying the current panel tenon.
     const restored = activeGeometryKey ? savedLoopsRef.current.get(activeGeometryKey) : undefined;
-    const restoredLoops = restored?.loops ?? [emptyLoop(extractKey(panelStateRef.current))];
+    const restoredLoops = restored?.loops ?? [emptyLoop(extractTenon(panelStateRef.current))];
     const nextActive = restored ? Math.min(restored.activeIndex, restoredLoops.length - 1) : 0;
     setLoops(restoredLoops);
     setActiveLoopIndex(nextActive);
-    // Sync the panel's key editor to the now-active loop's key.
-    setPanelState((ps) => withKey(ps, restoredLoops[nextActive]?.key ?? DEFAULT_LOOP_KEY));
+    // Sync the panel's tenon editor to the now-active loop's tenon.
+    setPanelState((ps) => withTenon(ps, restoredLoops[nextActive]?.tenon ?? DEFAULT_LOOP_TENON));
     setLastResult(null);
     clearModelDerivedPreviews();
     flushEditRun();
@@ -872,7 +872,7 @@ export function useOrganicCutSession({
   // Undo-restore: when the active model's geometry REVERTS to the exact pre-cut
   // reference we stashed at cut time (scene-history undo restores geometry by
   // reference), bring the loops/membrane back so the user can tweak and re-cut.
-  // Keyed on the geometry REFERENCE (not the id) because a cut+undo keeps the
+  // Tenoned on the geometry REFERENCE (not the id) because a cut+undo keeps the
   // same model id — only the geometry object changes.
   React.useEffect(() => {
     if (!toolActive) return;
@@ -890,7 +890,7 @@ export function useOrganicCutSession({
       const nextActive = Math.min(pending.activeIndex, pending.loops.length - 1);
       setLoops(pending.loops);
       setActiveLoopIndex(nextActive);
-      setPanelState((ps) => withKey(ps, pending.loops[nextActive]?.key ?? DEFAULT_LOOP_KEY));
+      setPanelState((ps) => withTenon(ps, pending.loops[nextActive]?.tenon ?? DEFAULT_LOOP_TENON));
       setSelectedIndex(null);
     }
   }, [toolActive, activeGeometry, activeGeometryKey]);
@@ -961,8 +961,8 @@ export function useOrganicCutSession({
   // It used to be two, one per mode, structurally identical and sharing most of
   // their dependencies — so every panel edit ran BOTH, and the one whose mode was
   // idle cleared what the other had just drawn. That was the flicker (#38): the
-  // key blinked out and came back 80ms later, taking the gizmo with it because
-  // keyFrame passed through null. Two effects that must never both act is a
+  // tenon blinked out and came back 80ms later, taking the gizmo with it because
+  // tenonFrame passed through null. Two effects that must never both act is a
   // shape that invites the bug back; one effect that picks a mode cannot have it.
   //
   // The build is a heavy Rust round-trip, so it is SUPPRESSED while a waypoint is
@@ -971,9 +971,9 @@ export function useOrganicCutSession({
   // from the final seam rather than a stale one.
   React.useEffect(() => {
     // What this mode asks Rust for, or null when there is nothing to preview yet.
-    // Contour previews the cutter membrane with or without a key; the flat cut has
+    // Contour previews the cutter membrane with or without a tenon; the flat cut has
     // no membrane of its own (the seam is drawn locally), so it only has something
-    // to ask for when a key is wanted.
+    // to ask for when a tenon is wanted.
     const request = ((): (() => Promise<MembranePreviewResult>) | null => {
       if (!toolActive || isDraggingPoint || !activeGeometry || !activeGeometryKey) return null;
       const ps = panelState;
@@ -990,36 +990,36 @@ export function useOrganicCutSession({
             ps.membraneSmoothing,
             ps.density,
             ps.thicknessMm,
-            ps.generateKey,
-            ps.keyWidthMm,
-            ps.keyDepthMm,
-            ps.keyShape,
-            ps.keyFilletMm,
-            ps.keyToleranceMm,
-            ps.keySwapSides,
-            ps.keyOffsetUMm,
-            ps.keyOffsetVMm,
+            ps.generateTenon,
+            ps.tenonWidthMm,
+            ps.tenonDepthMm,
+            ps.tenonShape,
+            ps.tenonFilletMm,
+            ps.tenonToleranceMm,
+            ps.tenonSwapSides,
+            ps.tenonOffsetUMm,
+            ps.tenonOffsetVMm,
             0,
             0,
             0,
           );
       }
-      if (!ps.generateKey || loop.length < MIN_LOOP_POINTS) return null;
+      if (!ps.generateTenon || loop.length < MIN_LOOP_POINTS) return null;
       const plane = cutPlaneFromPoints(loop);
       if (!plane) return null;
       return () =>
-        computePlaneKeyPreview(
+        computePlaneTenonPreview(
           [plane.normal.x, plane.normal.y, plane.normal.z],
           plane.offset,
-          ps.generateKey,
-          ps.keyWidthMm,
-          ps.keyDepthMm,
-          ps.keyShape,
-          ps.keyFilletMm,
-          ps.keyToleranceMm,
-          ps.keySwapSides,
-          ps.keyOffsetUMm,
-          ps.keyOffsetVMm,
+          ps.generateTenon,
+          ps.tenonWidthMm,
+          ps.tenonDepthMm,
+          ps.tenonShape,
+          ps.tenonFilletMm,
+          ps.tenonToleranceMm,
+          ps.tenonSwapSides,
+          ps.tenonOffsetUMm,
+          ps.tenonOffsetVMm,
         );
     })();
 
@@ -1045,20 +1045,20 @@ export function useOrganicCutSession({
         // Every field, every time: the flat cut reports a null membrane, which is
         // what clears the contour's membrane when the user switches modes.
         setMembranePreview(result.membrane);
-        setKeyPreview(result.keyPreview);
-        setKeyPegTriangleCount(result.keyPegTriangleCount);
-        setKeyKind(result.keyKind);
-        setKeyDetail(result.keyDetail);
-        setKeyFrame(result.keyFrame);
-        setKeyPreviewOffset({ u: panelState.keyOffsetUMm, v: panelState.keyOffsetVMm });
+        setTenonPreview(result.tenonPreview);
+        setTenonTriangleCount(result.tenonTriangleCount);
+        setTenonKind(result.tenonKind);
+        setTenonDetail(result.tenonDetail);
+        setTenonFrame(result.tenonFrame);
+        setTenonPreviewOffset({ u: panelState.tenonOffsetUMm, v: panelState.tenonOffsetVMm });
       })();
     }, PREVIEW_SETTLE_MS);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-    // NOTE: keyTilt/azimuth/roll are intentionally NOT deps — the aim is applied
-    // live on the client (see `keyLeanTransform`), so changing it must NOT rebuild
+    // NOTE: tenonTilt/azimuth/roll are intentionally NOT deps — the aim is applied
+    // live on the client (see `tenonLeanTransform`), so changing it must NOT rebuild
     // the soup. Keeping them out is what makes the gizmo smooth.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -1073,15 +1073,15 @@ export function useOrganicCutSession({
     panelState.membraneSmoothing,
     panelState.density,
     panelState.thicknessMm,
-    panelState.generateKey,
-    panelState.keyWidthMm,
-    panelState.keyDepthMm,
-    panelState.keyShape,
-    panelState.keyFilletMm,
-    panelState.keyToleranceMm,
-    panelState.keySwapSides,
-    panelState.keyOffsetUMm,
-    panelState.keyOffsetVMm,
+    panelState.generateTenon,
+    panelState.tenonWidthMm,
+    panelState.tenonDepthMm,
+    panelState.tenonShape,
+    panelState.tenonFilletMm,
+    panelState.tenonToleranceMm,
+    panelState.tenonSwapSides,
+    panelState.tenonOffsetUMm,
+    panelState.tenonOffsetVMm,
   ]);
 
   const addPoint = React.useCallback((point: OrganicCutLoopPoint) => {
@@ -1174,8 +1174,8 @@ export function useOrganicCutSession({
     // on deselect/reselect, and discard ALL loops (multi-loop included).
     const key = activeGeometryKeyRef.current;
     if (key) savedLoopsRef.current.delete(key);
-    // Keep the panel's current key on the fresh loop (don't reset the user's prefs).
-    commitLoops('cut:clear all', () => [emptyLoop(extractKey(panelStateRef.current))], 0);
+    // Keep the panel's current tenon on the fresh loop (don't reset the user's prefs).
+    commitLoops('cut:clear all', () => [emptyLoop(extractTenon(panelStateRef.current))], 0);
     setLastResult(null);
     setSelectedIndex(null);
     setGeodesicPolyline(null);
@@ -1183,34 +1183,34 @@ export function useOrganicCutSession({
 
   // Switch the active (editable) loop. The geodesic + membrane effects recompute
   // for the new active loop; we show its cached seam immediately for snappiness,
-  // and load that loop's key into the panel editor so the key controls follow it.
+  // and load that loop's tenon into the panel editor so the tenon controls follow it.
   const selectLoop = React.useCallback((index: number) => {
     const all = loopsRef.current;
     if (index < 0 || index >= all.length) return;
     setActiveLoopIndex(index);
     setSelectedIndex(null);
     setGeodesicPolyline(all[index].polyline ?? null);
-    setPanelState((ps) => withKey(ps, all[index].key));
+    setPanelState((ps) => withTenon(ps, all[index].tenon));
   }, []);
 
   // Append a fresh empty loop and make it active (multi-loop cut). The new loop
-  // inherits the current loop's key as a starting point (the panel already shows
+  // inherits the current loop's tenon as a starting point (the panel already shows
   // it, so no panel change needed). On Apply, every loop's cutter is union'd
   // together. Gated by `canAddLoop` so we don't stack empty loops; a stray empty
   // loop is pruned at cut time regardless.
   const addLoop = React.useCallback(() => {
     const all = loopsRef.current;
     const newIndex = all.length; // index of the appended loop
-    const inheritKey = all[activeLoopIndexRef.current]?.key ?? extractKey(panelStateRef.current);
-    commitLoops('cut:add loop', (prev) => [...prev, emptyLoop(inheritKey)], newIndex);
+    const inheritTenon = all[activeLoopIndexRef.current]?.tenon ?? extractTenon(panelStateRef.current);
+    commitLoops('cut:add loop', (prev) => [...prev, emptyLoop(inheritTenon)], newIndex);
     setSelectedIndex(null);
     setGeodesicPolyline(null);
     setMembranePreview(null);
-    setKeyPreview(null);
-    setKeyPegTriangleCount(0);
-    setKeyKind('none');
-    setKeyDetail('');
-    setKeyFrame(null);
+    setTenonPreview(null);
+    setTenonTriangleCount(0);
+    setTenonKind('none');
+    setTenonDetail('');
+    setTenonFrame(null);
   }, [commitLoops]);
 
   // Remove a loop. Never removes the last remaining one (Clear does that). The
@@ -1232,10 +1232,10 @@ export function useOrganicCutSession({
       next.splice(index, 1);
       return next;
     }, newActive);
-    // Load the new active loop's key into the panel editor (compute from the
+    // Load the new active loop's tenon into the panel editor (compute from the
     // pre-removal snapshot minus the removed loop).
     const remaining = before.filter((_, i) => i !== index);
-    setPanelState((ps) => withKey(ps, remaining[newActive]?.key ?? DEFAULT_LOOP_KEY));
+    setPanelState((ps) => withTenon(ps, remaining[newActive]?.tenon ?? DEFAULT_LOOP_TENON));
     setSelectedIndex(null);
     setGeodesicPolyline(null);
   }, [commitLoops]);
@@ -1260,7 +1260,7 @@ export function useOrganicCutSession({
     const loopsSnapshot: SessionLoop[] = allLoopsState.map((l) => ({
       points: l.points.slice(),
       polyline: l.polyline,
-      key: l.key,
+      tenon: l.tenon,
     }));
     const geodesic = geodesicPolylineRef.current;
     let cancelled = false;
@@ -1281,9 +1281,9 @@ export function useOrganicCutSession({
         // Flat: send the waypoints + the exact plane the preview showed.
         let cutSpec;
         if (isContour) {
-          // Each kept loop carries its OWN key, kept aligned with its points so the
-          // backend places per-loop keys (loopKeys[i] ↔ the i-th loop).
-          const kept: { points: OrganicCutLoopPoint[]; key: LoopKeySettings }[] = [];
+          // Each kept loop carries its OWN tenon, kept aligned with its points so the
+          // backend places per-loop tenons (loopTenons[i] ↔ the i-th loop).
+          const kept: { points: OrganicCutLoopPoint[]; tenon: LoopTenonSettings }[] = [];
           allLoopsState.forEach((l, i) => {
             let pts: OrganicCutLoopPoint[] | null = null;
             if (i === activeIdx && geodesic && geodesic.length >= MIN_CONTOUR_POINTS * 3) {
@@ -1291,16 +1291,16 @@ export function useOrganicCutSession({
             } else {
               pts = loopCutPoints(l);
             }
-            if (pts) kept.push({ points: pts, key: l.key });
+            if (pts) kept.push({ points: pts, tenon: l.tenon });
           });
           if (kept.length === 0) return; // nothing to cut
           const allLoops = kept.map((k) => k.points);
           cutSpec = {
             loopPoints: allLoops[0],
             extraLoops: allLoops.length > 1 ? allLoops.slice(1) : undefined,
-            // Per-loop key settings, aligned with the loops above (loopPoints +
-            // extraLoops). The backend keys each seam with its own peg/socket.
-            loopKeys: kept.map((k) => keyToSpec(k.key)),
+            // Per-loop tenon settings, aligned with the loops above (loopPoints +
+            // extraLoops). The backend tenons each seam with its own tenon/mortise.
+            loopTenons: kept.map((k) => tenonToSpec(k.tenon)),
             thicknessMm: ps.thicknessMm,
             // `smoothing` = seam-line smoothing (the geodesic was already computed
             // with it, but send it so the cut's loop matches). `membraneSmoothing`
@@ -1316,25 +1316,25 @@ export function useOrganicCutSession({
             // Cut resolution multiplier — raises the cutter poly count. The live
             // preview reflects this too (so what you see is what gets cut).
             density: ps.density,
-            // When on, the cut builds a registration key (peg union'd onto one
-            // half, socket carved from the other) at EVERY loop's seam — one key
-            // per cut. The preview shows the active loop's key; the others use the
-            // same width/depth/shape/tilt. A key too thin to fit at one seam is
+            // When on, the cut builds a registration tenon (tenon union'd onto one
+            // half, mortise carved from the other) at EVERY loop's seam — one tenon
+            // per cut. The preview shows the active loop's tenon; the others use the
+            // same width/depth/shape/tilt. A tenon too thin to fit at one seam is
             // skipped there without affecting the rest.
-            generateKey: ps.generateKey,
-            keyWidthMm: ps.keyWidthMm,
-            keyDepthMm: ps.keyDepthMm,
-            keyShape: ps.keyShape,
-            keyFilletMm: ps.keyFilletMm,
-            keyToleranceMm: ps.keyToleranceMm,
-            keyOffsetUMm: ps.keyOffsetUMm,
-            keyOffsetVMm: ps.keyOffsetVMm,
-            keySwapSides: ps.keySwapSides,
+            generateTenon: ps.generateTenon,
+            tenonWidthMm: ps.tenonWidthMm,
+            tenonDepthMm: ps.tenonDepthMm,
+            tenonShape: ps.tenonShape,
+            tenonFilletMm: ps.tenonFilletMm,
+            tenonToleranceMm: ps.tenonToleranceMm,
+            tenonOffsetUMm: ps.tenonOffsetUMm,
+            tenonOffsetVMm: ps.tenonOffsetVMm,
+            tenonSwapSides: ps.tenonSwapSides,
             // Aim/roll: the base-glued lean + spin set by the in-viewport gizmo. The
-            // preview already showed exactly this key (same angles, same shear).
-            keyTiltRad: ps.keyTiltRad,
-            keyTiltAzimuthRad: ps.keyTiltAzimuthRad,
-            keyRollRad: ps.keyRollRad,
+            // preview already showed exactly this tenon (same angles, same shear).
+            tenonTiltRad: ps.tenonTiltRad,
+            tenonTiltAzimuthRad: ps.tenonTiltAzimuthRad,
+            tenonRollRad: ps.tenonRollRad,
           };
         } else {
           // Compute the plane from the SAME helper the preview uses, so the cut
@@ -1348,19 +1348,19 @@ export function useOrganicCutSession({
             plane: plane
               ? { normal: [plane.normal.x, plane.normal.y, plane.normal.z] as [number, number, number], offset: plane.offset }
               : undefined,
-            // The key rides on the spec-level fields: a flat cut is single-loop, so
-            // there is no `loopKeys` array to align with. Rust frames it on the
+            // The tenon rides on the spec-level fields: a flat cut is single-loop, so
+            // there is no `loopTenons` array to align with. Rust frames it on the
             // plane's own cross-section.
-            generateKey: ps.generateKey,
-            keyWidthMm: ps.keyWidthMm,
-            keyDepthMm: ps.keyDepthMm,
-            keyShape: ps.keyShape,
-            keyFilletMm: ps.keyFilletMm,
-            keyToleranceMm: ps.keyToleranceMm,
-            keySwapSides: ps.keySwapSides,
-            keyTiltRad: ps.keyTiltRad,
-            keyTiltAzimuthRad: ps.keyTiltAzimuthRad,
-            keyRollRad: ps.keyRollRad,
+            generateTenon: ps.generateTenon,
+            tenonWidthMm: ps.tenonWidthMm,
+            tenonDepthMm: ps.tenonDepthMm,
+            tenonShape: ps.tenonShape,
+            tenonFilletMm: ps.tenonFilletMm,
+            tenonToleranceMm: ps.tenonToleranceMm,
+            tenonSwapSides: ps.tenonSwapSides,
+            tenonTiltRad: ps.tenonTiltRad,
+            tenonTiltAzimuthRad: ps.tenonTiltAzimuthRad,
+            tenonRollRad: ps.tenonRollRad,
           };
         }
         const result = await cutFromCapturedSource({ cut: cutSpec });
@@ -1384,8 +1384,8 @@ export function useOrganicCutSession({
           ` committed=${committed}` +
           ` parts=${result.parts.length}` +
           ` detail="${result.report.detail ?? ''}"` +
-          ` keyKind=${result.report.keyKind ?? 'n/a'}` +
-          ` keyDetail="${result.report.keyDetail ?? ''}"` +
+          ` tenonKind=${result.report.tenonKind ?? 'n/a'}` +
+          ` tenonDetail="${result.report.tenonDetail ?? ''}"` +
           ` source=${result.report.sourceTriangleCount}` +
           ` partA=${result.report.partATriangleCount}` +
           ` partB=${result.report.partBTriangleCount}`,
@@ -1405,15 +1405,15 @@ export function useOrganicCutSession({
             };
           }
           // A cut retires EVERY seam in the session, not just the live one. The
-          // parts that come back are new bodies, and the stash is keyed by model
+          // parts that come back are new bodies, and the stash is tenoned by model
           // id — so a half-drawn seam left on another model (or on this one, from
           // before the tool was last closed) would spring back the moment the
-          // user selected it, drawing geodesics and a key onto a body that no
+          // user selected it, drawing geodesics and a tenon onto a body that no
           // longer has that surface. Wipe the whole stash; the undo entry above
           // is what puts this model's loops back if the cut is undone.
           savedLoopsRef.current.clear();
-          // Reset to one empty loop carrying the current panel key.
-          setLoops([emptyLoop(extractKey(panelStateRef.current))]);
+          // Reset to one empty loop carrying the current panel tenon.
+          setLoops([emptyLoop(extractTenon(panelStateRef.current))]);
           setActiveLoopIndex(0);
           setSelectedIndex(null);
           clearModelDerivedPreviews();
@@ -1439,7 +1439,7 @@ export function useOrganicCutSession({
   const activeLoopReady = pointCount >= MIN_CONTOUR_POINTS;
   const loopCount = loops.length;
   const loopSummaries = React.useMemo(
-    () => loops.map((l, i) => ({ index: i, pointCount: l.points.length, hasKey: l.key.generateKey })),
+    () => loops.map((l, i) => ({ index: i, pointCount: l.points.length, hasTenon: l.tenon.generateTenon })),
     [loops],
   );
   // How many loops are real loops (would actually cut), for the Cut gate.
@@ -1484,11 +1484,11 @@ export function useOrganicCutSession({
     geodesicPolyline,
     planeCurves,
     membranePreview,
-    keyPreview,
-    keyPegTriangleCount,
-    keyKind,
-    keyDetail,
-    keyFrame,
-    keyPreviewOffset,
+    tenonPreview,
+    tenonTriangleCount,
+    tenonKind,
+    tenonDetail,
+    tenonFrame,
+    tenonPreviewOffset,
   };
 }

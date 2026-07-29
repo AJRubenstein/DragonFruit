@@ -4,9 +4,9 @@ import type { ThreeEvent } from '@react-three/fiber';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
-import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutMode } from './types';
+import type { TenonPreviewFrame, OrganicCutLoopPoint, OrganicCutMode } from './types';
 import { cutPlaneFromPoints } from './cutPlane';
-import { keyLeanMatrix } from './keyLeanTransform';
+import { tenonLeanMatrix } from './tenonLeanTransform';
 import type { PlaneMeshCurve } from './planeMeshIntersection';
 import { useOrganicCutColorNumbers } from './useOrganicCutColors';
 
@@ -93,41 +93,41 @@ interface OrganicCutToolProps {
    */
   membranePreview?: Float32Array | null;
   /**
-   * Registration-key preview as a flat triangle soup (model-local): the peg AND
-   * socket the cut will place. Rendered translucent in a distinct color so the
-   * user sees the key straddling the cut before committing.
+   * Registration-tenon preview as a flat triangle soup (model-local): the tenon AND
+   * mortise the cut will place. Rendered translucent in a distinct color so the
+   * user sees the tenon straddling the cut before committing.
    */
-  keyPreview?: Float32Array | null;
+  tenonPreview?: Float32Array | null;
   /**
-   * How many of `keyPreview`'s triangles are the PEG. The soup is the peg
-   * followed by the socket, and they are drawn in different colours — without
-   * that the Fit Tolerance knob looks dead, since it only grows the socket.
+   * How many of `tenonPreview`'s triangles are the TENON. The soup is the tenon
+   * followed by the mortise, and they are drawn in different colours — without
+   * that the Fit Tolerance knob looks dead, since it only grows the mortise.
    */
-  keyPegTriangleCount?: number;
+  tenonTriangleCount?: number;
   /**
-   * Placement frame of the previewed key (model-local). The key SOUP is built
-   * UN-tilted (straight); the tilt is applied LIVE as a rigid rotation of the key
-   * mesh here, so dragging the aim gizmo moves the key instantly with no Rust
-   * round-trip. Null when no key. (The real cut bakes the tilt in Rust.)
+   * Placement frame of the previewed tenon (model-local). The tenon SOUP is built
+   * UN-tilted (straight); the tilt is applied LIVE as a rigid rotation of the tenon
+   * mesh here, so dragging the aim gizmo moves the tenon instantly with no Rust
+   * round-trip. Null when no tenon. (The real cut bakes the tilt in Rust.)
    */
-  keyFrame?: KeyPreviewFrame | null;
+  tenonFrame?: TenonPreviewFrame | null;
   /**
-   * The key's offset on the cut face, and the offset the previewed soup was built
+   * The tenon's offset on the cut face, and the offset the previewed soup was built
    * with. While the base handle is dragged the soup is NOT rebuilt (a Rust
    * round-trip per frame), so the difference between these two is applied here as
-   * a translation — that is what makes the key follow the handle instead of
+   * a translation — that is what makes the tenon follow the handle instead of
    * jumping when the drag ends.
    */
-  keyOffsetUMm?: number;
-  keyOffsetVMm?: number;
-  keyPreviewOffset?: { u: number; v: number };
-  /** Live key tilt / azimuth / roll (radians) for the client-side rotation. */
-  keyTiltRad?: number;
-  keyTiltAzimuthRad?: number;
-  keyRollRad?: number;
+  tenonOffsetUMm?: number;
+  tenonOffsetVMm?: number;
+  tenonPreviewOffset?: { u: number; v: number };
+  /** Live tenon tilt / azimuth / roll (radians) for the client-side rotation. */
+  tenonTiltRad?: number;
+  tenonTiltAzimuthRad?: number;
+  tenonRollRad?: number;
   /**
    * Show the translucent cut-plan preview surfaces (the flat plane quad, the
-   * contour membrane + its wireframe, and the registration key). When false,
+   * contour membrane + its wireframe, and the registration tenon). When false,
    * only the seam line + loop markers (the editable handles) draw, so the model
    * is unobscured. Default true.
    */
@@ -211,10 +211,10 @@ function occludedLinePair(
 /**
  * Free a GPU resource once React has swapped in its replacement.
  *
- * Every seam edit rebuilds the membrane, the seam tubes and the key preview, and
+ * Every seam edit rebuilds the membrane, the seam tubes and the tenon preview, and
  * three.js keeps the old buffers on the GPU until something disposes them. Nothing
  * did: an afternoon of dragging waypoints leaked every intermediate mesh. `useMemo`
- * has no teardown, so the disposal rides an effect keyed on the value itself —
+ * has no teardown, so the disposal rides an effect tenoned on the value itself —
  * which runs AFTER the new one is on screen, so the object being freed is never the
  * one being drawn.
  */
@@ -277,15 +277,15 @@ export function OrganicCutTool({
   inactiveLoopPolylines,
   cutMode = 'plane',
   membranePreview,
-  keyPreview,
-  keyPegTriangleCount = 0,
-  keyFrame,
-  keyOffsetUMm = 0,
-  keyOffsetVMm = 0,
-  keyPreviewOffset,
-  keyTiltRad = 0,
-  keyTiltAzimuthRad = 0,
-  keyRollRad = 0,
+  tenonPreview,
+  tenonTriangleCount = 0,
+  tenonFrame,
+  tenonOffsetUMm = 0,
+  tenonOffsetVMm = 0,
+  tenonPreviewOffset,
+  tenonTiltRad = 0,
+  tenonTiltAzimuthRad = 0,
+  tenonRollRad = 0,
   showPreview = true,
 }: OrganicCutToolProps) {
   // Every colour this tool paints with, from the saved preference (see
@@ -481,18 +481,18 @@ export function OrganicCutTool({
     return geom;
   }, [cutMode, membranePreview]);
 
-  // Registration-key preview, in BOTH cut modes. Built from the flat soup Rust
-  // returns, so it's EXACTLY the key the cut will place — the flat cut's key is
+  // Registration-tenon preview, in BOTH cut modes. Built from the flat soup Rust
+  // returns, so it's EXACTLY the tenon the cut will place — the flat cut's tenon is
   // framed on the plane, the contour's on the membrane, but both arrive here the
   // same way.
   //
-  // The soup holds the peg first and the socket after it, and they are drawn as
+  // The soup holds the tenon first and the mortise after it, and they are drawn as
   // two geometries in two colours. Together they sit almost on top of each other
-  // (the socket IS the peg plus the fit tolerance), so in one colour the Fit
-  // Tolerance field read as dead: the thing it grows is the socket, and the peg
+  // (the mortise IS the tenon plus the fit tolerance), so in one colour the Fit
+  // Tolerance field read as dead: the thing it grows is the mortise, and the tenon
   // never budges.
-  const [keyGeometry, socketGeometry] = useMemo(() => {
-    if (!keyPreview || keyPreview.length < 9) return [null, null];
+  const [tenonGeometry, mortiseGeometry] = useMemo(() => {
+    if (!tenonPreview || tenonPreview.length < 9) return [null, null];
     const build = (data: Float32Array) => {
       const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.BufferAttribute(data, 3));
@@ -501,59 +501,59 @@ export function OrganicCutTool({
       geom.computeBoundingSphere();
       return geom;
     };
-    // No split reported (an older backend, or a soup that is peg-only) → draw it
-    // all as the peg rather than dropping half the key on the floor.
-    const split = Math.min(Math.max(keyPegTriangleCount, 0) * 9, keyPreview.length);
-    if (split === 0 || split === keyPreview.length) return [build(keyPreview), null];
-    return [build(keyPreview.subarray(0, split)), build(keyPreview.subarray(split))];
-  }, [keyPreview, keyPegTriangleCount]);
+    // No split reported (an older backend, or a soup that is tenon-only) → draw it
+    // all as the tenon rather than dropping half the tenon on the floor.
+    const split = Math.min(Math.max(tenonTriangleCount, 0) * 9, tenonPreview.length);
+    if (split === 0 || split === tenonPreview.length) return [build(tenonPreview), null];
+    return [build(tenonPreview.subarray(0, split)), build(tenonPreview.subarray(split))];
+  }, [tenonPreview, tenonTriangleCount]);
 
   // Edge outlines so each 3D form (the tapered box / dome) reads even as a flat
   // depth-test-off overlay. EdgesGeometry keeps only the sharp silhouette edges
   // (not every triangle), so the shape is clear, not a mess.
-  const keyWireframe = useMemo(() => {
-    if (!keyGeometry) return null;
-    const edges = new THREE.EdgesGeometry(keyGeometry, 20);
+  const tenonWireframe = useMemo(() => {
+    if (!tenonGeometry) return null;
+    const edges = new THREE.EdgesGeometry(tenonGeometry, 20);
     edges.computeBoundingSphere();
     return edges;
-  }, [keyGeometry]);
-  const socketWireframe = useMemo(() => {
-    if (!socketGeometry) return null;
-    const edges = new THREE.EdgesGeometry(socketGeometry, 20);
+  }, [tenonGeometry]);
+  const mortiseWireframe = useMemo(() => {
+    if (!mortiseGeometry) return null;
+    const edges = new THREE.EdgesGeometry(mortiseGeometry, 20);
     edges.computeBoundingSphere();
     return edges;
-  }, [socketGeometry]);
+  }, [mortiseGeometry]);
 
-  // LIVE key lean/roll (model-local world space), applied to the straight soup so
+  // LIVE tenon lean/roll (model-local world space), applied to the straight soup so
   // dragging the gizmo never round-trips to Rust. The maths is in
-  // `keyLeanTransform` — it has to mirror Rust's LeanXform sign for sign, so it
+  // `tenonLeanTransform` — it has to mirror Rust's LeanXform sign for sign, so it
   // lives where it can be tested.
-  const keyTiltMatrix = useMemo(
-    () => (keyFrame ? keyLeanMatrix(keyFrame, keyTiltRad, keyTiltAzimuthRad, keyRollRad) : null),
-    [keyFrame, keyTiltRad, keyTiltAzimuthRad, keyRollRad],
+  const tenonTiltMatrix = useMemo(
+    () => (tenonFrame ? tenonLeanMatrix(tenonFrame, tenonTiltRad, tenonTiltAzimuthRad, tenonRollRad) : null),
+    [tenonFrame, tenonTiltRad, tenonTiltAzimuthRad, tenonRollRad],
   );
 
   /**
-   * Translation that carries the built key (and its outline) to where the handle
+   * Translation that carries the built tenon (and its outline) to where the handle
    * has dragged it, until Rust catches up on release. Null when they agree.
    */
   const keyOffsetMatrix = useMemo(() => {
-    if (!keyFrame || !keyPreviewOffset) return null;
-    const du = keyOffsetUMm - keyPreviewOffset.u;
-    const dv = keyOffsetVMm - keyPreviewOffset.v;
+    if (!tenonFrame || !tenonPreviewOffset) return null;
+    const du = tenonOffsetUMm - tenonPreviewOffset.u;
+    const dv = tenonOffsetVMm - tenonPreviewOffset.v;
     if (Math.abs(du) < 1e-6 && Math.abs(dv) < 1e-6) return null;
-    const u = new THREE.Vector3(...keyFrame.u).normalize().multiplyScalar(du);
-    const v = new THREE.Vector3(...keyFrame.v).normalize().multiplyScalar(dv);
+    const u = new THREE.Vector3(...tenonFrame.u).normalize().multiplyScalar(du);
+    const v = new THREE.Vector3(...tenonFrame.v).normalize().multiplyScalar(dv);
     const d = u.add(v);
     return new THREE.Matrix4().makeTranslation(d.x, d.y, d.z);
-  }, [keyFrame, keyOffsetUMm, keyOffsetVMm, keyPreviewOffset]);
+  }, [tenonFrame, tenonOffsetUMm, tenonOffsetVMm, tenonPreviewOffset]);
 
-  // Clip the key preview AT THE WAFER: hide everything on the part_a (+normal) side
+  // Clip the tenon preview AT THE WAFER: hide everything on the part_a (+normal) side
   // of the cut plane, so the preview shows only the portion that actually goes into
-  // the body (below the wafer) — not the full peg poking up above it. The wafer plane
-  // is FIXED (it doesn't tilt with the key); as the key leans, its part_a-side
+  // the body (below the wafer) — not the full tenon poking up above it. The wafer plane
+  // is FIXED (it doesn't tilt with the tenon); as the tenon leans, its part_a-side
   // overhang is clipped by this stationary plane. The plane is in WORLD space (where
-  // three.js clipping planes operate), so we transform the local key frame to world.
+  // three.js clipping planes operate), so we transform the local tenon frame to world.
   // Stable primitive snapshots of the transform so the plane memo only recomputes
   // when values actually change (not on every render — `transform` is a fresh object
   // each render). A new Plane object each render churns the material's clippingPlanes.
@@ -567,10 +567,10 @@ export function OrganicCutTool({
   const ctsy = transform?.scale.y ?? 1;
   const ctsz = transform?.scale.z ?? 1;
   const cHasTransform = !!transform;
-  const keyClipPlane = useMemo(() => {
-    if (!keyFrame || !cHasTransform) return null;
-    const anchorL = new THREE.Vector3(...keyFrame.anchor);
-    const axisL = new THREE.Vector3(...keyFrame.axis).normalize();
+  const tenonClipPlane = useMemo(() => {
+    if (!tenonFrame || !cHasTransform) return null;
+    const anchorL = new THREE.Vector3(...tenonFrame.anchor);
+    const axisL = new THREE.Vector3(...tenonFrame.axis).normalize();
     // local→world = plate(position, quat, scale) ∘ meshLocalOffset. Build the quat
     // here from the rotation primitives (not the churning currentQuaternion) so this
     // only recomputes when values actually change.
@@ -584,16 +584,16 @@ export function OrganicCutTool({
     const localToWorld = outer.multiply(inner);
     const anchorW = anchorL.clone().applyMatrix4(localToWorld);
     const normalMat = new THREE.Matrix3().getNormalMatrix(localToWorld);
-    // Keep the part_b side (where the peg extrudes into the body): a clipping plane
+    // Keep the part_b side (where the tenon extrudes into the body): a clipping plane
     // keeps the half-space its normal points INTO (normal·p + constant ≥ 0), so the
     // kept normal is −axis (toward part_b). Everything on the part_a (+normal) side of
     // the wafer is hidden. No bias — clip exactly at the wafer plane.
     const keepNormalW = axisL.clone().applyMatrix3(normalMat).normalize().multiplyScalar(-1);
     return new THREE.Plane().setFromNormalAndCoplanarPoint(keepNormalW, anchorW);
-  }, [keyFrame, cHasTransform, meshLocalOffset, ctpx, ctpy, ctpz, ctrx, ctry, ctrz, ctsx, ctsy, ctsz]);
+  }, [tenonFrame, cHasTransform, meshLocalOffset, ctpx, ctpy, ctpz, ctrx, ctry, ctrz, ctsx, ctsy, ctsz]);
   // Stable array for the material `clippingPlanes` prop (a new array each render
   // would churn the material every frame).
-  const keyClipPlanes = useMemo(() => (keyClipPlane ? [keyClipPlane] : null), [keyClipPlane]);
+  const tenonClipPlanes = useMemo(() => (tenonClipPlane ? [tenonClipPlane] : null), [tenonClipPlane]);
 
   // Wireframe of the membrane so we can SEE the triangulation (verify the grid
   // remesh / spot slivers). Edges-only overlay on the translucent surface.
@@ -606,10 +606,10 @@ export function OrganicCutTool({
 
   useDisposeWhenReplaced(membraneGeometry);
   useDisposeWhenReplaced(membraneWireframe);
-  useDisposeWhenReplaced(keyGeometry);
-  useDisposeWhenReplaced(socketGeometry);
-  useDisposeWhenReplaced(keyWireframe);
-  useDisposeWhenReplaced(socketWireframe);
+  useDisposeWhenReplaced(tenonGeometry);
+  useDisposeWhenReplaced(mortiseGeometry);
+  useDisposeWhenReplaced(tenonWireframe);
+  useDisposeWhenReplaced(mortiseWireframe);
 
   // Marker radius proportional to the model so it's a small, precise dot on any
   // model size (a fixed mm value is wrong for small/large models). Also divided
@@ -918,24 +918,24 @@ export function OrganicCutTool({
           </lineSegments>
         )}
 
-        {/* Registration-key preview (the peg) — amber so it reads distinctly
+        {/* Registration-tenon preview (the tenon) — amber so it reads distinctly
             from the green membrane. `depthTest={false}` so it always draws THROUGH
-            the model (an X-ray overlay), like the membrane wireframe — the key is
+            the model (an X-ray overlay), like the membrane wireframe — the tenon is
             mostly buried inside the body, so without this it'd be hidden.
 
             The soup is built STRAIGHT (un-tilted) in Rust; the live tilt is applied
             here as a rigid rotation matrix about the base, so the aim gizmo moves the
-            key instantly with no Rust round-trip. Wrapped in a group carrying that
+            tenon instantly with no Rust round-trip. Wrapped in a group carrying that
             matrix (identity when un-tilted). It's CLIPPED at the wafer so only the
             portion going into the body (part_b side) shows — not the overhang above. */}
-        {showPreview && keyGeometry && (
+        {showPreview && tenonGeometry && (
           <group
             matrixAutoUpdate={false}
             ref={(g) => {
               if (!g) return;
               // Slide first, then lean: the lean pivots about the anchor, so
               // applying the translation on the OUTSIDE keeps the aim unchanged.
-              if (keyTiltMatrix) g.matrix.copy(keyTiltMatrix);
+              if (tenonTiltMatrix) g.matrix.copy(tenonTiltMatrix);
               else g.matrix.identity();
               if (keyOffsetMatrix) g.matrix.premultiply(keyOffsetMatrix);
               g.matrixWorldNeedsUpdate = true;
@@ -944,84 +944,84 @@ export function OrganicCutTool({
             {/* Drawn in TWO passes, back faces then front, instead of one
                 double-sided one. A flat translucent solid with no depth testing is
                 a Necker cube: every face is the same colour, nothing says which is
-                nearer, and after a few seconds the peg reads inside-out. Shading
+                nearer, and after a few seconds the tenon reads inside-out. Shading
                 the far side darker gives the eye the cue the depth buffer isn't
                 providing — and since both passes are unlit, it holds from every
                 camera angle instead of depending on where the lights are. */}
-            <mesh geometry={keyGeometry} renderOrder={999} frustumCulled={false}>
+            <mesh geometry={tenonGeometry} renderOrder={999} frustumCulled={false}>
               <meshBasicMaterial
-                color={colors.keyBack}
+                color={colors.tenonBack}
                 transparent
                 opacity={0.5}
                 side={THREE.BackSide}
                 depthTest={false}
                 depthWrite={false}
-                clippingPlanes={keyClipPlanes}
+                clippingPlanes={tenonClipPlanes}
               />
             </mesh>
-            <mesh geometry={keyGeometry} renderOrder={1000} frustumCulled={false}>
+            <mesh geometry={tenonGeometry} renderOrder={1000} frustumCulled={false}>
               <meshBasicMaterial
-                color={colors.keyFront}
+                color={colors.tenonFront}
                 transparent
                 opacity={0.7}
                 side={THREE.FrontSide}
                 depthTest={false}
                 depthWrite={false}
-                clippingPlanes={keyClipPlanes}
+                clippingPlanes={tenonClipPlanes}
               />
             </mesh>
-            {/* The SOCKET, under the peg (lower renderOrder) and fainter: it
-                encloses the peg — it is the peg grown by the fit tolerance — so
+            {/* The MORTISE, under the tenon (lower renderOrder) and fainter: it
+                encloses the tenon — it is the tenon grown by the fit tolerance — so
                 drawn on top or at equal weight it would swallow it. Seeing the
                 gap between the two IS the Fit Tolerance readout. */}
-            {socketGeometry && (
+            {mortiseGeometry && (
               <>
-                <mesh geometry={socketGeometry} renderOrder={990} frustumCulled={false}>
+                <mesh geometry={mortiseGeometry} renderOrder={990} frustumCulled={false}>
                   <meshBasicMaterial
-                    color={colors.socketBack}
+                    color={colors.mortiseBack}
                     transparent
                     opacity={0.25}
                     side={THREE.BackSide}
                     depthTest={false}
                     depthWrite={false}
-                    clippingPlanes={keyClipPlanes}
+                    clippingPlanes={tenonClipPlanes}
                   />
                 </mesh>
-                <mesh geometry={socketGeometry} renderOrder={991} frustumCulled={false}>
+                <mesh geometry={mortiseGeometry} renderOrder={991} frustumCulled={false}>
                   <meshBasicMaterial
-                    color={colors.socketFront}
+                    color={colors.mortiseFront}
                     transparent
                     opacity={0.35}
                     side={THREE.FrontSide}
                     depthTest={false}
                     depthWrite={false}
-                    clippingPlanes={keyClipPlanes}
+                    clippingPlanes={tenonClipPlanes}
                   />
                 </mesh>
-                {socketWireframe && (
-                  <lineSegments geometry={socketWireframe} renderOrder={992} frustumCulled={false}>
+                {mortiseWireframe && (
+                  <lineSegments geometry={mortiseWireframe} renderOrder={992} frustumCulled={false}>
                     <lineBasicMaterial
-                      color={colors.socketEdge}
+                      color={colors.mortiseEdge}
                       transparent
                       opacity={0.6}
                       depthTest={false}
                       depthWrite={false}
-                      clippingPlanes={keyClipPlanes}
+                      clippingPlanes={tenonClipPlanes}
                     />
                   </lineSegments>
                 )}
               </>
             )}
-            {/* Peg edge outline so its 3D form reads through the model. */}
-            {keyWireframe && (
-              <lineSegments geometry={keyWireframe} renderOrder={1001} frustumCulled={false}>
+            {/* Tenon edge outline so its 3D form reads through the model. */}
+            {tenonWireframe && (
+              <lineSegments geometry={tenonWireframe} renderOrder={1001} frustumCulled={false}>
                 <lineBasicMaterial
-                  color={colors.keyEdge}
+                  color={colors.tenonEdge}
                   transparent
                   opacity={0.9}
                   depthTest={false}
                   depthWrite={false}
-                  clippingPlanes={keyClipPlanes}
+                  clippingPlanes={tenonClipPlanes}
                 />
               </lineSegments>
             )}

@@ -342,8 +342,8 @@ export function PreparePanelStack({
           onApply={organicCut.apply}
           isApplying={organicCut.isApplying}
           canApply={organicCut.canApply}
-          keyKind={organicCut.keyKind}
-          keyDetail={organicCut.keyDetail}
+          tenonKind={organicCut.tenonKind}
+          tenonDetail={organicCut.tenonDetail}
         />
       )}
 

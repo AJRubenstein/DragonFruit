@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import { KEY_MAX_TILT_RAD, type KeyPreviewFrame } from './types';
+import { TENON_MAX_TILT_RAD, type TenonPreviewFrame } from './types';
 
 /**
- * The live lean/roll of the registration key, as a matrix.
+ * The live lean/roll of the registration tenon, as a matrix.
  *
- * The key SOUP is built STRAIGHT in Rust and the aim is applied here, so dragging
+ * The tenon SOUP is built STRAIGHT in Rust and the aim is applied here, so dragging
  * the gizmo never costs a Rust round-trip. The price is that this has to match
- * `LeanXform` in `key.rs` exactly — every sign in it has a twin over there — which
+ * `LeanXform` in `tenon.rs` exactly — every sign in it has a twin over there — which
  * is why it lives in its own module with its own tests instead of inside a
  * component: the mismatches are invisible on screen until they are gross, and the
  * only ones we ever shipped were sign errors.
@@ -18,8 +18,8 @@ import { KEY_MAX_TILT_RAD, type KeyPreviewFrame } from './types';
  *
  * Returns null when there is nothing to apply (no lean, no roll).
  */
-export function keyLeanMatrix(
-  frame: KeyPreviewFrame,
+export function tenonLeanMatrix(
+  frame: TenonPreviewFrame,
   tiltRad: number,
   azimuthRad: number,
   rollRad: number,
@@ -34,7 +34,7 @@ export function keyLeanMatrix(
   const buildU = vN.clone();
   const buildV = uN.clone();
 
-  const tilt = clampKeyTilt(tiltRad, frame);
+  const tilt = clampTenonTilt(tiltRad, frame);
   const roll = rollRad;
   if (Math.abs(tilt) < 1e-6 && Math.abs(roll) < 1e-6) return null;
 
@@ -69,7 +69,7 @@ export function keyLeanMatrix(
       sink = (frame.halfDiagMm ?? frame.depth * 0.9) * Math.sin(Math.abs(tilt));
       // Slide back in-plane so the axis still passes through the anchor, matching
       // LeanXform's shift. This matrix pivots ON the anchor (not on Rust's sunk
-      // build origin), so here it is the sink alone that walks the key sideways.
+      // build origin), so here it is the sink alone that walks the tenon sideways.
       lateral = leanWorld
         .clone()
         .multiplyScalar((-sink * Math.tan(tilt)) / len)
@@ -78,9 +78,9 @@ export function keyLeanMatrix(
   }
 
   // The soup was built STRAIGHT, so it is built to the un-leaned depth. Rust
-  // lengthens the trunk when it leans (LeanXform::stretch_depth) so the key keeps
+  // lengthens the trunk when it leans (LeanXform::stretch_depth) so the tenon keeps
   // standing its full depth proud; stretch by the same factor along the build axis
-  // or the previewed key comes out shorter than the one that cuts.
+  // or the previewed tenon comes out shorter than the one that cuts.
   const depth = Math.max(frame.depth, 1e-4);
   const stretch =
     Math.abs(tilt) < 1e-6
@@ -109,10 +109,10 @@ export function keyLeanMatrix(
 
 /**
  * The lean, clamped to what this placement can take: the room the part leaves
- * around the key (`maxTiltRad`, measured in Rust), never past the hard ceiling.
+ * around the tenon (`maxTiltRad`, measured in Rust), never past the hard ceiling.
  * Keeps its sign — a negative lean tips the other way in the same plane.
  */
-export function clampKeyTilt(tiltRad: number, frame: KeyPreviewFrame | null): number {
-  const cap = Math.min(frame?.maxTiltRad ?? KEY_MAX_TILT_RAD, KEY_MAX_TILT_RAD);
+export function clampTenonTilt(tiltRad: number, frame: TenonPreviewFrame | null): number {
+  const cap = Math.min(frame?.maxTiltRad ?? TENON_MAX_TILT_RAD, TENON_MAX_TILT_RAD);
   return Math.max(-cap, Math.min(cap, tiltRad));
 }

@@ -61,8 +61,8 @@ static ORGANIC_CUT_GEODESIC_BYTES: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::
 static ORGANIC_CUT_GEODESIC_SOLVER: OnceLock<Mutex<Option<Arc<GeodesicSolver>>>> = OnceLock::new();
 /// Most recent contour-cut membrane preview (LE f32 triangle soup, 9 per tri).
 static ORGANIC_CUT_MEMBRANE_BYTES: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
-/// Most recent registration-key preview (LE f32 triangle soup, peg + socket).
-static ORGANIC_CUT_KEY_BYTES: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
+/// Most recent registration-tenon preview (LE f32 triangle soup, tenon + mortise).
+static ORGANIC_CUT_TENON_BYTES: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
 
 fn hollow_preview_source_mesh() -> &'static Mutex<Option<Arc<IndexedMesh>>> {
     HOLLOW_PREVIEW_SOURCE_MESH.get_or_init(|| Mutex::new(None))
@@ -132,8 +132,8 @@ fn organic_cut_membrane_bytes() -> &'static Mutex<Option<Vec<u8>>> {
     ORGANIC_CUT_MEMBRANE_BYTES.get_or_init(|| Mutex::new(None))
 }
 
-fn organic_cut_key_bytes() -> &'static Mutex<Option<Vec<u8>>> {
-    ORGANIC_CUT_KEY_BYTES.get_or_init(|| Mutex::new(None))
+fn organic_cut_tenon_bytes() -> &'static Mutex<Option<Vec<u8>>> {
+    ORGANIC_CUT_TENON_BYTES.get_or_init(|| Mutex::new(None))
 }
 
 /// Clears every hollow-preview buffer derived from the captured source mesh
@@ -281,52 +281,52 @@ struct GeodesicRequestDto {
     /// cutter preview show the REAL slab thickness, not a zero-width sheet.
     #[serde(default = "default_thickness_tenth")]
     thickness_mm: f32,
-    /// When true, the preview also builds the registration key (peg + socket) the
+    /// When true, the preview also builds the registration tenon (tenon + mortise) the
     /// cut would place, so the user sees it before cutting. Default off.
     #[serde(default)]
-    generate_key: bool,
-    /// Key base width in mm (model units are mm). Default 2.
-    #[serde(default = "default_key_width")]
-    key_width_mm: f32,
-    /// Key depth in mm — how far the peg pokes in. Default 2.5.
-    #[serde(default = "default_key_depth")]
-    key_depth_mm: f32,
-    /// Requested key shape: "frustum" (default) or "dome". Default "frustum".
-    #[serde(default = "default_key_shape")]
-    key_shape: String,
+    generate_tenon: bool,
+    /// Tenon base width in mm (model units are mm). Default 2.
+    #[serde(default = "default_tenon_width")]
+    tenon_width_mm: f32,
+    /// Tenon depth in mm — how far the tenon pokes in. Default 2.5.
+    #[serde(default = "default_tenon_depth")]
+    tenon_depth_mm: f32,
+    /// Requested tenon shape: "frustum" (default) or "dome". Default "frustum".
+    #[serde(default = "default_tenon_shape")]
+    tenon_shape: String,
     /// Edge fillet radius in mm (rounds the frustum corners + tip). Default 0.
     #[serde(default)]
-    key_fillet_mm: f32,
-    /// Peg/socket fit tolerance in mm — how much larger the socket is carved on
+    tenon_fillet_mm: f32,
+    /// Tenon/mortise fit tolerance in mm — how much larger the mortise is carved on
     /// every face. 0 = press fit. Default 0.1 (slide fit).
-    #[serde(default = "default_key_tolerance")]
-    key_tolerance_mm: f32,
-    /// Where the key sits on the cut face: mm along the cut frame's `u`/`v` axes
+    #[serde(default = "default_tenon_tolerance")]
+    tenon_tolerance_mm: f32,
+    /// Where the tenon sits on the cut face: mm along the cut frame's `u`/`v` axes
     /// from the natural anchor (the centroid). Both 0 = centred, the old behaviour.
     #[serde(default)]
-    key_offset_u_mm: f32,
+    tenon_offset_u_mm: f32,
     #[serde(default)]
-    key_offset_v_mm: f32,
-    /// Flat-cut only: the plane the key is framed on, as `dot(normal, p) == offset`
+    tenon_offset_v_mm: f32,
+    /// Flat-cut only: the plane the tenon is framed on, as `dot(normal, p) == offset`
     /// in model-local space — the exact plane the frontend previewed. Absent for a
-    /// contour preview, which frames the key on the membrane instead.
+    /// contour preview, which frames the tenon on the membrane instead.
     #[serde(default)]
     plane_normal: [f32; 3],
     #[serde(default)]
     plane_offset: f32,
-    /// Flip which half gets the peg vs the socket (preview reflects the direction).
+    /// Flip which half gets the tenon vs the mortise (preview reflects the direction).
     #[serde(default)]
-    key_swap_sides: bool,
-    /// Key tilt (radians) — polar lean off the cut normal. Base stays glued; the
+    tenon_swap_sides: bool,
+    /// Tenon tilt (radians) — polar lean off the cut normal. Base stays glued; the
     /// body shears to lean. Default 0.
     #[serde(default)]
-    key_tilt_rad: f32,
-    /// Key tilt azimuth (radians) — which in-plane direction the lean points.
+    tenon_tilt_rad: f32,
+    /// Tenon tilt azimuth (radians) — which in-plane direction the lean points.
     #[serde(default)]
-    key_tilt_azimuth_rad: f32,
-    /// Key roll (radians) — spin about the key's own axis. Default 0.
+    tenon_tilt_azimuth_rad: f32,
+    /// Tenon roll (radians) — spin about the tenon's own axis. Default 0.
     #[serde(default)]
-    key_roll_rad: f32,
+    tenon_roll_rad: f32,
 }
 
 fn default_density_one() -> f32 {
@@ -337,19 +337,19 @@ fn default_thickness_tenth() -> f32 {
     0.1
 }
 
-fn default_key_width() -> f32 {
+fn default_tenon_width() -> f32 {
     2.0
 }
 
-fn default_key_depth() -> f32 {
+fn default_tenon_depth() -> f32 {
     2.5
 }
 
-fn default_key_shape() -> String {
+fn default_tenon_shape() -> String {
     "frustum".to_string()
 }
 
-fn default_key_tolerance() -> f32 {
+fn default_tenon_tolerance() -> f32 {
     0.1
 }
 
@@ -362,20 +362,20 @@ impl Default for GeodesicRequestDto {
             membrane_smoothing: 0.5,
             density: 1.0,
             thickness_mm: 0.1,
-            generate_key: false,
-            key_width_mm: 2.0,
-            key_depth_mm: 2.5,
-            key_shape: "frustum".to_string(),
-            key_fillet_mm: 0.0,
-            key_tolerance_mm: 0.1,
-            key_offset_u_mm: 0.0,
-            key_offset_v_mm: 0.0,
+            generate_tenon: false,
+            tenon_width_mm: 2.0,
+            tenon_depth_mm: 2.5,
+            tenon_shape: "frustum".to_string(),
+            tenon_fillet_mm: 0.0,
+            tenon_tolerance_mm: 0.1,
+            tenon_offset_u_mm: 0.0,
+            tenon_offset_v_mm: 0.0,
             plane_normal: [0.0; 3],
             plane_offset: 0.0,
-            key_swap_sides: false,
-            key_tilt_rad: 0.0,
-            key_tilt_azimuth_rad: 0.0,
-            key_roll_rad: 0.0,
+            tenon_swap_sides: false,
+            tenon_tilt_rad: 0.0,
+            tenon_tilt_azimuth_rad: 0.0,
+            tenon_roll_rad: 0.0,
         }
     }
 }
@@ -1229,25 +1229,25 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
     let membrane_smoothing = req.membrane_smoothing;
     let density = req.density;
     // Resolve the kerf the way the CUT does (<=0 → the crate default), so the
-    // previewed cutter and key are built on the thickness that will actually be
+    // previewed cutter and tenon are built on the thickness that will actually be
     // removed instead of a razor-thin stand-in.
     let thickness_mm = if req.thickness_mm > 0.0 {
         req.thickness_mm
     } else {
         dragonfruit_organic_cut::membrane::DEFAULT_CUTTER_THICKNESS_MM
     };
-    let generate_key = req.generate_key;
-    let key_width_mm = req.key_width_mm;
-    let key_depth_mm = req.key_depth_mm;
-    let key_shape = dragonfruit_organic_cut::KeyShape::from_str_or_default(&req.key_shape);
-    let key_fillet_mm = req.key_fillet_mm;
-    let key_tolerance_mm = req.key_tolerance_mm;
-    let key_offset = dragonfruit_organic_cut::KeyOffset::new(req.key_offset_u_mm, req.key_offset_v_mm);
-    let key_swap_sides = req.key_swap_sides;
-    let key_tilt = dragonfruit_organic_cut::KeyTilt::new(
-        req.key_tilt_rad,
-        req.key_tilt_azimuth_rad,
-        req.key_roll_rad,
+    let generate_tenon = req.generate_tenon;
+    let tenon_width_mm = req.tenon_width_mm;
+    let tenon_depth_mm = req.tenon_depth_mm;
+    let tenon_shape = dragonfruit_organic_cut::TenonShape::from_str_or_default(&req.tenon_shape);
+    let tenon_fillet_mm = req.tenon_fillet_mm;
+    let tenon_tolerance_mm = req.tenon_tolerance_mm;
+    let tenon_offset = dragonfruit_organic_cut::TenonOffset::new(req.tenon_offset_u_mm, req.tenon_offset_v_mm);
+    let tenon_swap_sides = req.tenon_swap_sides;
+    let tenon_tilt = dragonfruit_organic_cut::TenonTilt::new(
+        req.tenon_tilt_rad,
+        req.tenon_tilt_azimuth_rad,
+        req.tenon_roll_rad,
     );
 
     // Use the captured cut SOURCE mesh so the preview can apply the real loop
@@ -1259,47 +1259,47 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         .clone();
 
     let result = tauri::async_runtime::spawn_blocking(move || {
-        // The key preview needs the real source mesh (to probe wall clearance);
+        // The tenon preview needs the real source mesh (to probe wall clearance);
         // it's only available once the source is captured. Returns (soup, kind,
-        // detail) — empty soup when no key (too thin / degenerate / no source).
-        let mut key_soup: Vec<f32> = Vec::new();
-        // How many of key_soup's triangles are the PEG (the rest are the socket),
+        // detail) — empty soup when no tenon (too thin / degenerate / no source).
+        let mut tenon_soup: Vec<f32> = Vec::new();
+        // How many of tenon_soup's triangles are the TENON (the rest are the mortise),
         // so the frontend can colour the two apart.
-        let mut key_peg_tris = 0usize;
-        let mut key_kind = "none".to_string();
-        let mut key_detail = String::new();
+        let mut tenon_tris = 0usize;
+        let mut tenon_kind = "none".to_string();
+        let mut tenon_detail = String::new();
         // Placement frame for the aim/roll gizmo (anchor, axis, u, v, tip), in
-        // model-local coords. None when no key is previewed.
-        let mut key_frame: Option<dragonfruit_organic_cut::KeyFrameInfo> = None;
+        // model-local coords. None when no tenon is previewed.
+        let mut tenon_frame: Option<dragonfruit_organic_cut::TenonFrameInfo> = None;
 
         let soup = if let Some(bytes) = source_bytes {
             let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
-            if generate_key {
+            if generate_tenon {
                 if let Some(preview) =
-                    dragonfruit_organic_cut::build_key_preview_soup(
+                    dragonfruit_organic_cut::build_tenon_preview_soup(
                         &mesh,
                         &loop_pts,
                         membrane_smoothing,
                         density,
-                        key_shape,
-                        key_swap_sides,
-                        key_tilt,
-                        key_width_mm,
-                        key_depth_mm,
-                        key_fillet_mm,
-                        key_tolerance_mm,
-                        // The kerf the cut will remove: the key has to span it, so
+                        tenon_shape,
+                        tenon_swap_sides,
+                        tenon_tilt,
+                        tenon_width_mm,
+                        tenon_depth_mm,
+                        tenon_fillet_mm,
+                        tenon_tolerance_mm,
+                        // The kerf the cut will remove: the tenon has to span it, so
                         // the preview must be built with it too or it lies about
-                        // where the peg's base sits.
+                        // where the tenon's base sits.
                         thickness_mm,
-                        key_offset,
+                        tenon_offset,
                     )
                 {
-                    key_peg_tris = preview.peg_triangles;
-                    key_soup = preview.soup;
-                    key_kind = preview.kind.as_str().to_string();
-                    key_detail = preview.detail;
-                    key_frame = preview.frame;
+                    tenon_tris = preview.tenon_triangles;
+                    tenon_soup = preview.soup;
+                    tenon_kind = preview.kind.as_str().to_string();
+                    tenon_detail = preview.detail;
+                    tenon_frame = preview.frame;
                 }
             }
             dragonfruit_organic_cut::membrane::build_cutter_preview_soup(
@@ -1321,25 +1321,25 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         };
         let tri_count = soup.len() / 9;
         let bytes: Vec<u8> = bytemuck::cast_slice::<f32, u8>(&soup).to_vec();
-        let key_bytes: Vec<u8> = bytemuck::cast_slice::<f32, u8>(&key_soup).to_vec();
-        let key_tris = key_soup.len() / 9;
-        Ok::<_, String>((bytes, tri_count, key_bytes, key_tris, key_peg_tris, key_kind, key_detail, key_frame))
+        let tenon_bytes: Vec<u8> = bytemuck::cast_slice::<f32, u8>(&tenon_soup).to_vec();
+        let joint_tris = tenon_soup.len() / 9;
+        Ok::<_, String>((bytes, tri_count, tenon_bytes, joint_tris, tenon_tris, tenon_kind, tenon_detail, tenon_frame))
     })
     .await
     .map_err(|e| format!("membrane preview task panicked: {e}"))??;
 
-    let (bytes, tri_count, key_bytes, key_tris, key_peg_tris, key_kind, key_detail, key_frame) = result;
+    let (bytes, tri_count, tenon_bytes, joint_tris, tenon_tris, tenon_kind, tenon_detail, tenon_frame) = result;
     *organic_cut_membrane_bytes()
         .lock()
         .map_err(|e| format!("membrane lock poisoned: {e}"))? = Some(bytes);
-    *organic_cut_key_bytes()
+    *organic_cut_tenon_bytes()
         .lock()
-        .map_err(|e| format!("key lock poisoned: {e}"))? = Some(key_bytes);
-    // key_detail is plain ASCII status text; escape quotes/backslashes for JSON.
-    let key_detail_json = json_escape(&key_detail);
+        .map_err(|e| format!("tenon lock poisoned: {e}"))? = Some(tenon_bytes);
+    // tenon_detail is plain ASCII status text; escape quotes/backslashes for JSON.
+    let tenon_detail_json = json_escape(&tenon_detail);
     // The gizmo frame (anchor/axis/u/v/tip, model-local) so the frontend can place
-    // the aim + roll handles exactly on the previewed key. `null` when no key.
-    let key_frame_json = match key_frame {
+    // the aim + roll handles exactly on the previewed tenon. `null` when no tenon.
+    let tenon_frame_json = match tenon_frame {
         Some(f) => format!(
             "{{\"anchor\":[{},{},{}],\"axis\":[{},{},{}],\"u\":[{},{},{}],\"v\":[{},{},{}],\"tip\":[{},{},{}],\"depth\":{},\"maxTiltRad\":{},\"halfDiagMm\":{}}}",
             f.anchor.x, f.anchor.y, f.anchor.z,
@@ -1354,37 +1354,37 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         None => "null".to_string(),
     };
     Ok(format!(
-        "{{\"triangleCount\":{tri_count},\"keyTriangleCount\":{key_tris},\"keyPegTriangleCount\":{key_peg_tris},\"keyKind\":\"{key_kind}\",\"keyDetail\":\"{key_detail_json}\",\"keyFrame\":{key_frame_json}}}"
+        "{{\"triangleCount\":{tri_count},\"jointTriangleCount\":{joint_tris},\"tenonTriangleCount\":{tenon_tris},\"tenonKind\":\"{tenon_kind}\",\"tenonDetail\":\"{tenon_detail_json}\",\"tenonFrame\":{tenon_frame_json}}}"
     ))
 }
 
-/// Preview the registration key a FLAT cut would place, framed on the cut plane.
+/// Preview the registration tenon a FLAT cut would place, framed on the cut plane.
 ///
-/// The contour preview builds a membrane from the loop and frames the key on it;
+/// The contour preview builds a membrane from the loop and frames the tenon on it;
 /// a flat cut has no membrane, so this takes the plane the frontend previewed and
-/// frames the key on the cross-section it carves. Same ladder and same build as
+/// frames the tenon on the cross-section it carves. Same ladder and same build as
 /// the cut, so the preview is what lands. Writes the soup where
-/// `mesh_organic_cut_read_key` picks it up, and reports the same JSON shape as the
+/// `mesh_organic_cut_read_tenon` picks it up, and reports the same JSON shape as the
 /// membrane preview (with no membrane of its own: `triangleCount` is 0).
 #[tauri::command]
-pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<String, String> {
+pub async fn mesh_organic_cut_plane_tenon_preview(request_json: String) -> Result<String, String> {
     let req = parse_geodesic_request(&request_json);
     let normal = Vec3::new(req.plane_normal[0], req.plane_normal[1], req.plane_normal[2]);
     let offset = req.plane_offset;
-    let generate_key = req.generate_key;
-    let key_shape = dragonfruit_organic_cut::KeyShape::from_str_or_default(&req.key_shape);
-    let key_tilt = dragonfruit_organic_cut::KeyTilt::new(
-        req.key_tilt_rad,
-        req.key_tilt_azimuth_rad,
-        req.key_roll_rad,
+    let generate_tenon = req.generate_tenon;
+    let tenon_shape = dragonfruit_organic_cut::TenonShape::from_str_or_default(&req.tenon_shape);
+    let tenon_tilt = dragonfruit_organic_cut::TenonTilt::new(
+        req.tenon_tilt_rad,
+        req.tenon_tilt_azimuth_rad,
+        req.tenon_roll_rad,
     );
-    let key_offset = dragonfruit_organic_cut::KeyOffset::new(req.key_offset_u_mm, req.key_offset_v_mm);
-    let (key_width_mm, key_depth_mm, key_fillet_mm, key_tolerance_mm, key_swap_sides) = (
-        req.key_width_mm,
-        req.key_depth_mm,
-        req.key_fillet_mm,
-        req.key_tolerance_mm,
-        req.key_swap_sides,
+    let tenon_offset = dragonfruit_organic_cut::TenonOffset::new(req.tenon_offset_u_mm, req.tenon_offset_v_mm);
+    let (tenon_width_mm, tenon_depth_mm, tenon_fillet_mm, tenon_tolerance_mm, tenon_swap_sides) = (
+        req.tenon_width_mm,
+        req.tenon_depth_mm,
+        req.tenon_fillet_mm,
+        req.tenon_tolerance_mm,
+        req.tenon_swap_sides,
     );
 
     let source_bytes = organic_cut_source_bytes()
@@ -1392,53 +1392,53 @@ pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<
         .map_err(|e| format!("organic cut source lock poisoned: {e}"))?
         .clone();
     let Some(bytes) = source_bytes else {
-        return Ok(NO_KEY_PREVIEW_JSON.to_string());
+        return Ok(NO_TENON_PREVIEW_JSON.to_string());
     };
-    if !generate_key || normal.length() < 1e-6 {
-        return Ok(NO_KEY_PREVIEW_JSON.to_string());
+    if !generate_tenon || normal.length() < 1e-6 {
+        return Ok(NO_TENON_PREVIEW_JSON.to_string());
     }
 
     let result = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
-        let Some(frame) = dragonfruit_organic_cut::frame_from_plane(&mesh, normal, offset, key_offset)
+        let Some(frame) = dragonfruit_organic_cut::frame_from_plane(&mesh, normal, offset, tenon_offset)
         else {
             return Ok::<_, String>(None);
         };
         // A flat split is zero-thickness — both halves meet ON the plane — so
-        // there is no kerf for the key to span.
-        let preview = dragonfruit_organic_cut::build_key_preview_at_frame(
+        // there is no kerf for the tenon to span.
+        let preview = dragonfruit_organic_cut::build_tenon_preview_at_frame(
             &mesh,
             frame,
-            key_shape,
-            key_swap_sides,
-            key_tilt,
-            key_width_mm,
-            key_depth_mm,
-            key_fillet_mm,
-            key_tolerance_mm,
+            tenon_shape,
+            tenon_swap_sides,
+            tenon_tilt,
+            tenon_width_mm,
+            tenon_depth_mm,
+            tenon_fillet_mm,
+            tenon_tolerance_mm,
             0.0,
         );
         Ok(Some((
             preview.soup,
-            preview.peg_triangles,
+            preview.tenon_triangles,
             preview.kind.as_str().to_string(),
             preview.detail,
             preview.frame,
         )))
     })
     .await
-    .map_err(|e| format!("plane key preview task panicked: {e}"))??;
+    .map_err(|e| format!("plane tenon preview task panicked: {e}"))??;
 
-    let Some((key_soup, key_peg_tris, key_kind, key_detail, key_frame)) = result else {
-        return Ok(NO_KEY_PREVIEW_JSON.to_string());
+    let Some((tenon_soup, tenon_tris, tenon_kind, tenon_detail, tenon_frame)) = result else {
+        return Ok(NO_TENON_PREVIEW_JSON.to_string());
     };
-    let key_tris = key_soup.len() / 9;
-    *organic_cut_key_bytes()
+    let joint_tris = tenon_soup.len() / 9;
+    *organic_cut_tenon_bytes()
         .lock()
-        .map_err(|e| format!("key lock poisoned: {e}"))? =
-        Some(bytemuck::cast_slice::<f32, u8>(&key_soup).to_vec());
-    let key_detail_json = json_escape(&key_detail);
-    let key_frame_json = match key_frame {
+        .map_err(|e| format!("tenon lock poisoned: {e}"))? =
+        Some(bytemuck::cast_slice::<f32, u8>(&tenon_soup).to_vec());
+    let tenon_detail_json = json_escape(&tenon_detail);
+    let tenon_frame_json = match tenon_frame {
         Some(f) => format!(
             "{{\"anchor\":[{},{},{}],\"axis\":[{},{},{}],\"u\":[{},{},{}],\"v\":[{},{},{}],\"tip\":[{},{},{}],\"depth\":{},\"maxTiltRad\":{},\"halfDiagMm\":{}}}",
             f.anchor.x, f.anchor.y, f.anchor.z,
@@ -1453,21 +1453,21 @@ pub async fn mesh_organic_cut_plane_key_preview(request_json: String) -> Result<
         None => "null".to_string(),
     };
     Ok(format!(
-        "{{\"triangleCount\":0,\"keyTriangleCount\":{key_tris},\"keyPegTriangleCount\":{key_peg_tris},\"keyKind\":\"{key_kind}\",\"keyDetail\":\"{key_detail_json}\",\"keyFrame\":{key_frame_json}}}"
+        "{{\"triangleCount\":0,\"jointTriangleCount\":{joint_tris},\"tenonTriangleCount\":{tenon_tris},\"tenonKind\":\"{tenon_kind}\",\"tenonDetail\":\"{tenon_detail_json}\",\"tenonFrame\":{tenon_frame_json}}}"
     ))
 }
 
-/// The empty answer for a key preview: no key, no frame, no membrane.
-const NO_KEY_PREVIEW_JSON: &str =
-    "{\"triangleCount\":0,\"keyTriangleCount\":0,\"keyPegTriangleCount\":0,\"keyKind\":\"none\",\"keyDetail\":\"\",\"keyFrame\":null}";
+/// The empty answer for a tenon preview: no tenon, no frame, no membrane.
+const NO_TENON_PREVIEW_JSON: &str =
+    "{\"triangleCount\":0,\"jointTriangleCount\":0,\"tenonTriangleCount\":0,\"tenonKind\":\"none\",\"tenonDetail\":\"\",\"tenonFrame\":null}";
 
-/// Returns the most recent registration-key preview as raw LE f32 triangle-soup
-/// bytes (peg followed by socket). Empty when no key was previewed.
+/// Returns the most recent registration-tenon preview as raw LE f32 triangle-soup
+/// bytes (tenon followed by mortise). Empty when no tenon was previewed.
 #[tauri::command]
-pub async fn mesh_organic_cut_read_key() -> Result<Response, String> {
-    let bytes = organic_cut_key_bytes()
+pub async fn mesh_organic_cut_read_tenon() -> Result<Response, String> {
+    let bytes = organic_cut_tenon_bytes()
         .lock()
-        .map_err(|e| format!("key lock poisoned: {e}"))?
+        .map_err(|e| format!("tenon lock poisoned: {e}"))?
         .clone()
         .unwrap_or_default();
     Ok(Response::new(bytes))

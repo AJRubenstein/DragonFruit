@@ -3,7 +3,7 @@
  *
  * This feature lets the user draw one or more closed loops on a model's surface,
  * from which the Rust backend builds a contour "wafer" cutter (optionally with a
- * registration key per loop) and splits the model into its separate parts — two
+ * registration tenon per loop) and splits the model into its separate parts — two
  * for a single loop, more when a multi-loop cut frees several pieces at once.
  *
  * Everything in src/features/organicCut/ is self-contained.
@@ -55,25 +55,25 @@ export interface OrganicCutSpec {
    */
   extraLoops?: OrganicCutLoopPoint[][];
   /**
-   * Per-loop registration-key settings, aligned with the cut's loops in order
+   * Per-loop registration-tenon settings, aligned with the cut's loops in order
    * (`loopPoints` is index 0, then `extraLoops`). When present, each entry
-   * OVERRIDES the spec-level `key*` fields for that loop — so every cut gets its
-   * own peg/socket (shape, size, tilt, swap) or none (`generateKey: false`).
-   * Serde field: `loopKeys`.
+   * OVERRIDES the spec-level `tenon*` fields for that loop — so every cut gets its
+   * own tenon/mortise (shape, size, tilt, swap) or none (`generateTenon: false`).
+   * Serde field: `loopTenons`.
    */
-  loopKeys?: {
-    generateKey: boolean;
-    keyWidthMm: number;
-    keyDepthMm: number;
-    keyShape: 'frustum' | 'dome';
-    keyFilletMm: number;
-    keyToleranceMm: number;
-    keyOffsetUMm: number;
-    keyOffsetVMm: number;
-    keySwapSides: boolean;
-    keyTiltRad: number;
-    keyTiltAzimuthRad: number;
-    keyRollRad: number;
+  loopTenons?: {
+    generateTenon: boolean;
+    tenonWidthMm: number;
+    tenonDepthMm: number;
+    tenonShape: 'frustum' | 'dome';
+    tenonFilletMm: number;
+    tenonToleranceMm: number;
+    tenonOffsetUMm: number;
+    tenonOffsetVMm: number;
+    tenonSwapSides: boolean;
+    tenonTiltRad: number;
+    tenonTiltAzimuthRad: number;
+    tenonRollRad: number;
   }[];
   /** Wafer thickness in mm ("consistent thickness") — the kerf the cut removes. */
   thicknessMm: number;
@@ -106,62 +106,62 @@ export interface OrganicCutSpec {
    */
   cutterThicknessMm?: number;
   /**
-   * When true (contour mode), the cut also generates a registration key: a peg
-   * union'd onto one half and a matching socket carved from the other. Omitted/
-   * false → no key. Serde field: `generateKey`.
+   * When true (contour mode), the cut also generates a registration tenon: a tenon
+   * union'd onto one half and a matching mortise carved from the other. Omitted/
+   * false → no tenon. Serde field: `generateTenon`.
    */
-  generateKey?: boolean;
-  /** Key base width in mm (model units are mm). Serde field: `keyWidthMm`. */
-  keyWidthMm?: number;
-  /** Key depth in mm (how far the peg pokes in). Serde field: `keyDepthMm`. */
-  keyDepthMm?: number;
-  /** Key shape: 'frustum' (default) or 'dome'. Serde field: `keyShape`. */
-  keyShape?: 'frustum' | 'dome';
-  /** Edge fillet radius in mm (rounds frustum corners + tip). Serde: `keyFilletMm`. */
-  keyFilletMm?: number;
+  generateTenon?: boolean;
+  /** Tenon base width in mm (model units are mm). Serde field: `tenonWidthMm`. */
+  tenonWidthMm?: number;
+  /** Tenon depth in mm (how far the tenon pokes in). Serde field: `tenonDepthMm`. */
+  tenonDepthMm?: number;
+  /** Tenon shape: 'frustum' (default) or 'dome'. Serde field: `tenonShape`. */
+  tenonShape?: 'frustum' | 'dome';
+  /** Edge fillet radius in mm (rounds frustum corners + tip). Serde: `tenonFilletMm`. */
+  tenonFilletMm?: number;
   /**
-   * Peg/socket fit tolerance in mm: the socket is carved this much larger than the
-   * peg on every face, so the halves slide together. 0 = press fit. Omitted → Rust
-   * uses 0.1. Serde field: `keyToleranceMm`.
+   * Tenon/mortise fit tolerance in mm: the mortise is carved this much larger than the
+   * tenon on every face, so the halves slide together. 0 = press fit. Omitted → Rust
+   * uses 0.1. Serde field: `tenonToleranceMm`.
    */
-  keyToleranceMm?: number;
+  tenonToleranceMm?: number;
   /**
-   * Where the key sits on the cut face: mm along the cut frame's `u`/`v` axes from
-   * the natural anchor. Both 0/omitted = centred. Serde: `keyOffsetUMm`/`VMm`.
+   * Where the tenon sits on the cut face: mm along the cut frame's `u`/`v` axes from
+   * the natural anchor. Both 0/omitted = centred. Serde: `tenonOffsetUMm`/`VMm`.
    */
-  keyOffsetUMm?: number;
-  keyOffsetVMm?: number;
-  /** Flip which half gets the peg vs the socket. Serde field: `keySwapSides`. */
-  keySwapSides?: boolean;
+  tenonOffsetUMm?: number;
+  tenonOffsetVMm?: number;
+  /** Flip which half gets the tenon vs the mortise. Serde field: `tenonSwapSides`. */
+  tenonSwapSides?: boolean;
   /**
-   * Key tilt (radians): polar lean off the cut normal. The base stays glued flat to
-   * the cut face; the body shears to lean. 0 = straight out. Serde: `keyTiltRad`.
+   * Tenon tilt (radians): polar lean off the cut normal. The base stays glued flat to
+   * the cut face; the body shears to lean. 0 = straight out. Serde: `tenonTiltRad`.
    */
-  keyTiltRad?: number;
+  tenonTiltRad?: number;
   /**
-   * Key tilt azimuth (radians): which in-plane direction the lean points toward.
-   * Irrelevant when keyTiltRad === 0. Serde: `keyTiltAzimuthRad`.
+   * Tenon tilt azimuth (radians): which in-plane direction the lean points toward.
+   * Irrelevant when tenonTiltRad === 0. Serde: `tenonTiltAzimuthRad`.
    */
-  keyTiltAzimuthRad?: number;
-  /** Key roll (radians): spin about the key's own axis. Serde: `keyRollRad`. */
-  keyRollRad?: number;
+  tenonTiltAzimuthRad?: number;
+  /** Tenon roll (radians): spin about the tenon's own axis. Serde: `tenonRollRad`. */
+  tenonRollRad?: number;
 }
 
 /**
- * Placement frame of the previewed key (model-local coords), returned by the
- * membrane/key preview so the aim+roll gizmo can sit exactly on the key. `anchor`
+ * Placement frame of the previewed tenon (model-local coords), returned by the
+ * membrane/tenon preview so the aim+roll gizmo can sit exactly on the tenon. `anchor`
  * is the base center (the tilt/roll pivot); `axis` is the un-tilted cut normal the
- * key roots against; `u`/`v` are the in-plane basis; `tip` is the leaned apex where
- * the aim handle is drawn; `depth` is the peg height (for handle scaling).
+ * tenon roots against; `u`/`v` are the in-plane basis; `tip` is the leaned apex where
+ * the aim handle is drawn; `depth` is the tenon height (for handle scaling).
  */
 /**
- * Hard ceiling on the key's lean (radians), mirroring Rust's `KEY_MAX_TILT_RAD`.
- * Past ~60° the peg skims the cut face and can't realistically socket. The real
- * cap is usually lower and comes from the part — see `KeyPreviewFrame.maxTiltRad`.
+ * Hard ceiling on the tenon's lean (radians), mirroring Rust's `TENON_MAX_TILT_RAD`.
+ * Past ~60° the tenon skims the cut face and can't realistically mortise. The real
+ * cap is usually lower and comes from the part — see `TenonPreviewFrame.maxTiltRad`.
  */
-export const KEY_MAX_TILT_RAD = Math.PI / 3;
+export const TENON_MAX_TILT_RAD = Math.PI / 3;
 
-export interface KeyPreviewFrame {
+export interface TenonPreviewFrame {
   anchor: [number, number, number];
   axis: [number, number, number];
   u: [number, number, number];
@@ -169,13 +169,13 @@ export interface KeyPreviewFrame {
   tip: [number, number, number];
   depth: number;
   /**
-   * Largest lean this placement can take (radians), from the room around the key
+   * Largest lean this placement can take (radians), from the room around the tenon
    * rather than a constant. Absent from an older backend — fall back to the hard
    * ceiling then.
    */
   maxTiltRad?: number;
   /**
-   * Base half-diagonal (mm) Rust sank and lengthened the key by. The live lean is
+   * Base half-diagonal (mm) Rust sank and lengthened the tenon by. The live lean is
    * applied here on a soup built straight, so the preview reuses this to match.
    */
   halfDiagMm?: number;
@@ -194,13 +194,13 @@ export interface OrganicCutReport {
   /** Why we fell back to no-op, if we did (diagnostics). Empty on success. */
   detail?: string;
   /**
-   * Which registration key the cut placed: 'frustum', 'dome' (thin-part
+   * Which registration tenon the cut placed: 'frustum', 'dome' (thin-part
    * fallback), or 'none' (not requested / too thin). Always present on a
    * contour cut.
    */
-  keyKind?: 'frustum' | 'dome' | 'none';
-  /** Reason the key shrank / fell back / was skipped (for an after-cut alert). */
-  keyDetail?: string;
+  tenonKind?: 'frustum' | 'dome' | 'none';
+  /** Reason the tenon shrank / fell back / was skipped (for an after-cut alert). */
+  tenonDetail?: string;
   /**
    * How many separate parts the cut produced. 2 for a plane/single-loop cut; more
    * when a multi-loop cut frees several pieces (e.g. both of Squirtle's arms); 0 on

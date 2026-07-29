@@ -1,17 +1,17 @@
 import type { OrganicCutLoopPoint } from '../types';
-import type { CutSettings, LoopKeySettings } from '../useOrganicCutSession';
+import type { CutSettings, LoopTenonSettings } from '../useOrganicCutSession';
 
 export const ORGANIC_CUT_EDIT = 'organic-cut:edit' as const;
 
 /**
- * One loop as the history stores it: the editable waypoints plus that loop's key
+ * One loop as the history stores it: the editable waypoints plus that loop's tenon
  * settings. The cached dense seam polyline is deliberately NOT kept — it is
  * derived from the points and recomputed on restore, so storing it would bloat
  * every entry with a Float32Array for no gain.
  */
 export type OrganicCutLoopSnapshot = {
   points: OrganicCutLoopPoint[];
-  key: LoopKeySettings;
+  tenon: LoopTenonSettings;
 };
 
 /**
@@ -20,7 +20,7 @@ export type OrganicCutLoopSnapshot = {
  *
  * A snapshot rather than a per-action delta because the tool has many small
  * mutations — place, move, delete, lock, snap-to-edges, add/remove loop, retarget
- * the key — and each one needs its own inverse. Wiring them individually is how
+ * the tenon — and each one needs its own inverse. Wiring them individually is how
  * they came to be missing from undo one at a time. With a snapshot the inverse is
  * the same code for all of them, and an edit added later is covered by
  * construction rather than by remembering.

@@ -1,19 +1,19 @@
-//! Registration key — a peg + matching socket straddling an organic cut, so the
-//! two severed halves socket together in exactly one alignment.
+//! Registration tenon — a tenon + matching mortise straddling an organic cut, so the
+//! two severed halves mortise together in exactly one alignment.
 //!
-//! The geometric idea (see `.scratch/organic-cut-key-dev-plan.md`):
+//! The geometric idea (see `.scratch/organic-cut-tenon-dev-plan.md`):
 //!   1. Derive a **frame** from the membrane: anchor = its centroid, axis = its
 //!      average normal (the same +normal direction the part-grouping uses), and
 //!      `cut_area` = the membrane surface area.
 //!   2. Build a **tapered rectangular frustum** (wide base on the cut, narrow tip)
-//!      sized from `cut_area`. The **peg** (nominal) is union'd onto `part_a`
-//!      (the +normal side); the **socket** (peg dilated by the fit tolerance) is
+//!      sized from `cut_area`. The **tenon** (nominal) is union'd onto `part_a`
+//!      (the +normal side); the **mortise** (tenon dilated by the fit tolerance) is
 //!      differenced from `part_b`.
-//!   3. Enforce **≥1 mm of solid material between key and wall on both halves**:
+//!   3. Enforce **≥1 mm of solid material between tenon and wall on both halves**:
 //!      shrink the frustum to fit; if it can't fit, fall back to a **half-sphere
-//!      dome**; if even that can't fit, place **no key**. Each rung records WHY.
+//!      dome**; if even that can't fit, place **no tenon**. Each rung records WHY.
 //!
-//! Everything key-related lives in THIS module — nothing leaks into mesh-repair.
+//! Everything tenon-related lives in THIS module — nothing leaks into mesh-repair.
 //! Requires the `manifold` feature (the boolean backend); gated at the crate root.
 
 #![cfg(feature = "manifold")]
@@ -22,41 +22,41 @@ use dragonfruit_mesh_core::mesh::{IndexedMesh, Vec3};
 
 use crate::membrane::{to_manifold, Membrane};
 
-/// Fit tolerance: the socket is this much larger than the peg on every face, so
-/// the peg slides in instead of jamming (a print-scale slide fit).
-pub const DEFAULT_KEY_TOLERANCE_MM: f32 = 0.1;
+/// Fit tolerance: the mortise is this much larger than the tenon on every face, so
+/// the tenon slides in instead of jamming (a print-scale slide fit).
+pub const DEFAULT_TENON_TOLERANCE_MM: f32 = 0.1;
 
 /// Bounds on a caller-chosen fit tolerance (mm). 0 is legal — a zero-clearance
 /// press fit, for printers that undersize anyway — and the upper bound keeps a
-/// stray value from eating the whole key: every extra 0.1 mm of socket is 0.1 mm
+/// stray value from eating the whole tenon: every extra 0.1 mm of mortise is 0.1 mm
 /// less wall the fit ladder has to play with.
-pub const KEY_TOLERANCE_MIN_MM: f32 = 0.0;
-pub const KEY_TOLERANCE_MAX_MM: f32 = 1.0;
+pub const TENON_TOLERANCE_MIN_MM: f32 = 0.0;
+pub const TENON_TOLERANCE_MAX_MM: f32 = 1.0;
 
 /// Bring a caller's tolerance into range; a NaN/absent value falls back to the
 /// default slide fit rather than poisoning every clamp downstream.
 fn sanitize_tolerance(tolerance: f32) -> f32 {
     if tolerance.is_finite() {
-        tolerance.clamp(KEY_TOLERANCE_MIN_MM, KEY_TOLERANCE_MAX_MM)
+        tolerance.clamp(TENON_TOLERANCE_MIN_MM, TENON_TOLERANCE_MAX_MM)
     } else {
-        DEFAULT_KEY_TOLERANCE_MM
+        DEFAULT_TENON_TOLERANCE_MM
     }
 }
 
-/// Minimum solid material that must remain between the key and ANY mesh wall, on
+/// Minimum solid material that must remain between the tenon and ANY mesh wall, on
 /// BOTH halves. The fit ladder (frustum → dome → none) exists to honor this.
-pub const KEY_WALL_MARGIN_MM: f32 = 1.0;
+pub const TENON_WALL_MARGIN_MM: f32 = 1.0;
 
 /// Base rectangle proportion: length = this × width.
-const KEY_LENGTH_TO_WIDTH: f32 = 1.25;
+const TENON_LENGTH_TO_WIDTH: f32 = 1.25;
 
 /// Top face linear scale relative to the base (taper): top is 50% of the base.
-const KEY_TOP_SCALE: f32 = 0.5;
+const TENON_TOP_SCALE: f32 = 0.5;
 
-/// How far the key's base extends PAST the cut plane into the other half (mm), so
-/// the peg overlaps part_a's solid for a clean boolean union (not a fragile flush
-/// butt-joint) and the socket mouth fully breaches part_b's cut face.
-const KEY_BASE_OVERLAP_MM: f32 = 0.3;
+/// How far the tenon's base extends PAST the cut plane into the other half (mm), so
+/// the tenon overlaps part_a's solid for a clean boolean union (not a fragile flush
+/// butt-joint) and the mortise mouth fully breaches part_b's cut face.
+const TENON_BASE_OVERLAP_MM: f32 = 0.3;
 
 /// Points used to sample EACH rounded corner of the frustum's rounded-rectangle
 /// cross-section. 4 corners × this = the per-ring point count of the side wall.
@@ -67,31 +67,31 @@ const FILLET_TIP_RINGS: usize = 4;
 
 /// Dome tessellation: longitude segments (around the axis) and latitude rings
 /// (equator → pole). High enough that the half-ellipsoid reads as a smooth dome,
-/// not a faceted bullet — the key is a small, low-tri solid so this is cheap.
+/// not a faceted bullet — the tenon is a small, low-tri solid so this is cheap.
 /// Extra rings near the pole matter most: that's where curvature is highest, so
 /// the tip is the first place facets show.
 const DOME_SEGMENTS: usize = 64;
 const DOME_RINGS: usize = 18;
 
-/// Sane mm clamps on the user-chosen key width + depth (model units are mm). The
+/// Sane mm clamps on the user-chosen tenon width + depth (model units are mm). The
 /// sliders enforce their own ranges; these are a backstop against a stray 0/huge
-/// value producing a degenerate or absurd key. The 1 mm-wall fit ladder shrinks
+/// value producing a degenerate or absurd tenon. The 1 mm-wall fit ladder shrinks
 /// below these on thin parts.
-const KEY_WIDTH_MIN_MM: f32 = 0.5;
-const KEY_WIDTH_MAX_MM: f32 = 50.0;
-const KEY_DEPTH_MIN_MM: f32 = 0.5;
-const KEY_DEPTH_MAX_MM: f32 = 50.0;
+const TENON_WIDTH_MIN_MM: f32 = 0.5;
+const TENON_WIDTH_MAX_MM: f32 = 50.0;
+const TENON_DEPTH_MIN_MM: f32 = 0.5;
+const TENON_DEPTH_MAX_MM: f32 = 50.0;
 
-/// Default key width + depth (mm) when the caller doesn't specify (e.g. the cut
+/// Default tenon width + depth (mm) when the caller doesn't specify (e.g. the cut
 /// runs without explicit slider values). Matches the panel defaults: width 2 mm
 /// (→ length auto = 2.5 mm via the 1.25× ratio), depth 2.5 mm.
-pub const DEFAULT_KEY_WIDTH_MM: f32 = 2.0;
-pub const DEFAULT_KEY_DEPTH_MM: f32 = 2.5;
+pub const DEFAULT_TENON_WIDTH_MM: f32 = 2.0;
+pub const DEFAULT_TENON_DEPTH_MM: f32 = 2.5;
 
-/// The key SHAPE the user requested. Drives which rung the fit ladder starts on.
-/// (Distinct from [`KeyKind`], which is what actually got PLACED after the ladder.)
+/// The tenon SHAPE the user requested. Drives which rung the fit ladder starts on.
+/// (Distinct from [`TenonKind`], which is what actually got PLACED after the ladder.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum KeyShape {
+pub enum TenonShape {
     /// Tapered rectangular frustum (the default — rotation-locking).
     #[default]
     Frustum,
@@ -99,43 +99,43 @@ pub enum KeyShape {
     Dome,
 }
 
-impl KeyShape {
+impl TenonShape {
     /// Parse the camelCase string the frontend sends; unknown → Frustum.
     pub fn from_str_or_default(s: &str) -> Self {
         match s {
-            "dome" => KeyShape::Dome,
-            _ => KeyShape::Frustum,
+            "dome" => TenonShape::Dome,
+            _ => TenonShape::Frustum,
         }
     }
 }
 
-/// Which kind of key actually got placed — drives the preview and the user alert.
+/// Which kind of tenon actually got placed — drives the preview and the user alert.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeyKind {
+pub enum TenonKind {
     /// The primary tapered frustum (possibly shrunk to fit).
     Frustum,
     /// Half-sphere dome (chosen explicitly, OR the thin-part frustum fallback).
     Dome,
-    /// No key placed (the part was too thin for any key).
+    /// No tenon placed (the part was too thin for any tenon).
     None,
 }
 
-impl KeyKind {
+impl TenonKind {
     pub fn as_str(self) -> &'static str {
         match self {
-            KeyKind::Frustum => "frustum",
-            KeyKind::Dome => "dome",
-            KeyKind::None => "none",
+            TenonKind::Frustum => "frustum",
+            TenonKind::Dome => "dome",
+            TenonKind::None => "none",
         }
     }
 }
 
-/// The placement frame for a key, derived from the membrane. `axis` points along
+/// The placement frame for a tenon, derived from the membrane. `axis` points along
 /// the membrane's +normal (into `part_a`); the base sits in the tangent plane at
 /// `anchor`. `u`/`v` are the in-plane (cosmetic) base directions; `u` is width,
 /// `v` is length.
 #[derive(Debug, Clone, Copy)]
-pub struct KeyFrame {
+pub struct TenonFrame {
     pub anchor: Vec3,
     pub axis: Vec3,
     pub u: Vec3,
@@ -148,7 +148,7 @@ pub struct KeyFrame {
 pub struct FrustumDims {
     /// Base width (along `u`).
     pub width: f32,
-    /// Base length (along `v`), = `KEY_LENGTH_TO_WIDTH × width`.
+    /// Base length (along `v`), = `TENON_LENGTH_TO_WIDTH × width`.
     pub length: f32,
     /// Depth into the body (along `axis`).
     pub depth: f32,
@@ -159,17 +159,17 @@ impl FrustumDims {
     /// **depth** (both in mm — model units are mm). The base length follows the
     /// fixed 1.25× proportion; the taper (top = 50% of base) is applied at build
     /// time. Values are clamped to a sane mm range so a stray 0 / huge input can't
-    /// produce a degenerate or absurd key.
+    /// produce a degenerate or absurd tenon.
     pub fn from_width_depth(width_mm: f32, depth_mm: f32) -> Self {
-        let width = width_mm.clamp(KEY_WIDTH_MIN_MM, KEY_WIDTH_MAX_MM);
-        let depth = depth_mm.clamp(KEY_DEPTH_MIN_MM, KEY_DEPTH_MAX_MM);
-        let length = KEY_LENGTH_TO_WIDTH * width;
+        let width = width_mm.clamp(TENON_WIDTH_MIN_MM, TENON_WIDTH_MAX_MM);
+        let depth = depth_mm.clamp(TENON_DEPTH_MIN_MM, TENON_DEPTH_MAX_MM);
+        let length = TENON_LENGTH_TO_WIDTH * width;
         FrustumDims { width, length, depth }
     }
 }
 
 /// Half-ellipsoid (oblong dome) semi-axes, in mm. `half_w` is along `u`, `half_l`
-/// along `v` (= `KEY_LENGTH_TO_WIDTH × half_w`, matching the frustum's footprint
+/// along `v` (= `TENON_LENGTH_TO_WIDTH × half_w`, matching the frustum's footprint
 /// ratio), and `depth` is the bulge along `+axis`. Equal axes → a hemisphere.
 #[derive(Debug, Clone, Copy)]
 pub struct DomeDims {
@@ -183,40 +183,40 @@ impl DomeDims {
     /// length follows the same 1.25× ratio the frustum uses, so a locked
     /// width=depth dome reads as a round-ish dome. Clamped to the sane mm range.
     pub fn from_width_depth(width_mm: f32, depth_mm: f32) -> Self {
-        let width = width_mm.clamp(KEY_WIDTH_MIN_MM, KEY_WIDTH_MAX_MM);
-        let depth = depth_mm.clamp(KEY_DEPTH_MIN_MM, KEY_DEPTH_MAX_MM);
+        let width = width_mm.clamp(TENON_WIDTH_MIN_MM, TENON_WIDTH_MAX_MM);
+        let depth = depth_mm.clamp(TENON_DEPTH_MIN_MM, TENON_DEPTH_MAX_MM);
         DomeDims {
             half_w: width * 0.5,
-            half_l: KEY_LENGTH_TO_WIDTH * width * 0.5,
+            half_l: TENON_LENGTH_TO_WIDTH * width * 0.5,
             depth,
         }
     }
 }
 
-/// The result of placing a key: the two (possibly modified) halves plus the kind
-/// of key chosen and a human-readable reason (for the report + the user alert).
-pub struct KeyOutcome {
+/// The result of placing a tenon: the two (possibly modified) halves plus the kind
+/// of tenon chosen and a human-readable reason (for the report + the user alert).
+pub struct TenonOutcome {
     pub part_a: IndexedMesh,
     pub part_b: IndexedMesh,
-    pub kind: KeyKind,
+    pub kind: TenonKind,
     /// Empty on a clean nominal frustum; otherwise WHY we shrank / fell back.
     pub detail: String,
 }
 
-/// Derive the key frame from the membrane: centroid anchor, area-weighted average
+/// Derive the tenon frame from the membrane: centroid anchor, area-weighted average
 /// normal as the axis (matching the +normal side the part-grouping uses), and a
 /// stable in-plane basis. Returns `None` if the membrane is degenerate (no area /
-/// cancelling normals) — the caller then skips the key.
-pub fn frame_from_membrane(membrane: &Membrane) -> Option<KeyFrame> {
-    frame_from_membrane_at(membrane, KeyOffset::default())
+/// cancelling normals) — the caller then skips the tenon.
+pub fn frame_from_membrane(membrane: &Membrane) -> Option<TenonFrame> {
+    frame_from_membrane_at(membrane, TenonOffset::default())
 }
 
-/// [`frame_from_membrane`] with the key slid `offset` millimetres across the cut
+/// [`frame_from_membrane`] with the tenon slid `offset` millimetres across the cut
 /// face. The offset moves the SEED, not the finished anchor: the seed is then
 /// snapped onto the membrane and the normal taken there, exactly as for the
-/// centroid — so on a curved seam the moved key still sits ON the surface with the
+/// centroid — so on a curved seam the moved tenon still sits ON the surface with the
 /// local normal, instead of floating off the tangent plane of where it started.
-pub fn frame_from_membrane_at(membrane: &Membrane, offset: KeyOffset) -> Option<KeyFrame> {
+pub fn frame_from_membrane_at(membrane: &Membrane, offset: TenonOffset) -> Option<TenonFrame> {
     if membrane.vertices.is_empty() || membrane.triangles.is_empty() {
         return None;
     }
@@ -231,7 +231,7 @@ pub fn frame_from_membrane_at(membrane: &Membrane, offset: KeyOffset) -> Option<
     //
     // Averaging the whole patch (centroid + area-weighted mean of every triangle
     // normal) describes a curved membrane by a single plane, which no point on a
-    // saddle-shaped seam actually lies on: the key was built with a flat base on
+    // saddle-shaped seam actually lies on: the tenon was built with a flat base on
     // that mean plane, so one corner punched through to the far side of the cut
     // while the opposite corner floated clear of it. On a flat membrane the two
     // agree, which is why it only showed up on curved seams.
@@ -244,7 +244,7 @@ pub fn frame_from_membrane_at(membrane: &Membrane, offset: KeyOffset) -> Option<
     // Slide the seed across the cut face before snapping. The in-plane basis for
     // the slide is the one derived from the membrane's mean normal — the same
     // basis the panel/gizmo report offsets in, so a drag of 1mm along `u` moves
-    // the key 1mm along the `u` the user saw.
+    // the tenon 1mm along the `u` the user saw.
     let centroid = if offset.is_zero() {
         centroid
     } else {
@@ -269,7 +269,7 @@ pub fn frame_from_membrane_at(membrane: &Membrane, offset: KeyOffset) -> Option<
     }
 
     // Local normal: area-weight only the triangles touching the anchor's triangle
-    // vertices, so the axis follows the seam where the key actually sits while
+    // vertices, so the axis follows the seam where the tenon actually sits while
     // staying steadier than a single triangle's normal on a coarse mesh.
     let seed = membrane.triangles[best_tri];
     let mut nsum = Vec3::ZERO;
@@ -290,10 +290,10 @@ pub fn frame_from_membrane_at(membrane: &Membrane, offset: KeyOffset) -> Option<
     let axis = nsum.scale(1.0 / nlen);
 
     let (u, v) = orthonormal_basis(axis);
-    Some(KeyFrame { anchor, axis, u, v, cut_area })
+    Some(TenonFrame { anchor, axis, u, v, cut_area })
 }
 
-/// The key frame for a FLAT cut: the plane's own normal, anchored at the centroid
+/// The tenon frame for a FLAT cut: the plane's own normal, anchored at the centroid
 /// of the cross-section the plane carves through the body.
 ///
 /// The contour cut derives its frame from the membrane it built; a plane cut has
@@ -304,8 +304,8 @@ pub fn frame_from_plane(
     mesh: &IndexedMesh,
     normal: Vec3,
     plane_offset: f32,
-    offset: KeyOffset,
-) -> Option<KeyFrame> {
+    offset: TenonOffset,
+) -> Option<TenonFrame> {
     let nlen = normal.length();
     if nlen < 1e-9 {
         return None;
@@ -320,12 +320,12 @@ pub fn frame_from_plane(
     // construction. Sliding it off the material is the user's business: the
     // clearance probe finds no walls and the ladder reports the part too thin.
     let anchor = section.centroid.add(u.scale(offset.u)).add(v.scale(offset.v));
-    Some(KeyFrame { anchor, axis, u, v, cut_area: section.area })
+    Some(TenonFrame { anchor, axis, u, v, cut_area: section.area })
 }
 
 /// Area-weighted mean normal of a whole membrane. Only used to pick the in-plane
-/// basis an offset is measured in: it must NOT depend on where the key currently
-/// sits, or sliding the key would rotate the very axes the slide is measured along.
+/// basis an offset is measured in: it must NOT depend on where the tenon currently
+/// sits, or sliding the tenon would rotate the very axes the slide is measured along.
 fn mean_membrane_normal(membrane: &Membrane) -> Vec3 {
     let mut nsum = Vec3::ZERO;
     for t in &membrane.triangles {
@@ -340,7 +340,7 @@ fn mean_membrane_normal(membrane: &Membrane) -> Vec3 {
 
 /// Build an orthonormal `(u, v)` pair spanning the plane perpendicular to `axis`.
 /// Stable: seeds from whichever world axis is least aligned with `axis`. Purely
-/// cosmetic for the key (peg & socket share it), so any stable choice is fine.
+/// cosmetic for the tenon (tenon & mortise share it), so any stable choice is fine.
 fn orthonormal_basis(axis: Vec3) -> (Vec3, Vec3) {
     let seed = if axis.x.abs() <= axis.y.abs() && axis.x.abs() <= axis.z.abs() {
         Vec3::new(1.0, 0.0, 0.0)
@@ -357,33 +357,33 @@ fn orthonormal_basis(axis: Vec3) -> (Vec3, Vec3) {
 }
 
 /// Flip a frame so its `axis` points toward `part_b` (the −normal side) instead
-/// of into `part_a`, for building a peg/socket that protrudes from part_a's cut
+/// of into `part_a`, for building a tenon/mortise that protrudes from part_a's cut
 /// face into part_b. Negating `axis` alone would flip the `(u, v, axis)`
 /// handedness and invert the frustum winding (manifold would reject it); swapping
 /// `u` and `v` restores right-handedness so the outward winding is preserved.
 /// Sink a BUILD frame's base `half_kerf` deeper into part_a.
 ///
 /// The cutter is a slab centred on the membrane, so each half's cut face ends up
-/// `kerf/2` away from it — while the key is built on the membrane itself, with
-/// only `KEY_BASE_OVERLAP_MM` (0.3 mm) of base reaching back for the union. At the
+/// `kerf/2` away from it — while the tenon is built on the membrane itself, with
+/// only `TENON_BASE_OVERLAP_MM` (0.3 mm) of base reaching back for the union. At the
 /// default 0.1 mm kerf that overlap still bites solid material, but at a 1 mm kerf
 /// the base stops 0.2 mm short of part_a's face: the union welds nothing and the
-/// peg comes out as a loose island inside the same mesh (exactly what a 1 mm cut
+/// tenon comes out as a loose island inside the same mesh (exactly what a 1 mm cut
 /// produced). Sinking the base by half the kerf puts it back inside the material;
-/// the caller lengthens the peg by the whole kerf so the tip still stands the
+/// the caller lengthens the tenon by the whole kerf so the tip still stands the
 /// requested depth proud of part_b's face.
-fn sink_frame_into_part_a(build_frame: &KeyFrame, half_kerf: f32) -> KeyFrame {
+fn sink_frame_into_part_a(build_frame: &TenonFrame, half_kerf: f32) -> TenonFrame {
     if half_kerf <= 0.0 {
         return *build_frame;
     }
-    KeyFrame {
+    TenonFrame {
         anchor: build_frame.anchor.sub(build_frame.axis.scale(half_kerf)),
         ..*build_frame
     }
 }
 
-fn frame_extruding_toward_part_b(frame: &KeyFrame) -> KeyFrame {
-    KeyFrame {
+fn frame_extruding_toward_part_b(frame: &TenonFrame) -> TenonFrame {
+    TenonFrame {
         anchor: frame.anchor,
         axis: frame.axis.scale(-1.0),
         u: frame.v,
@@ -393,11 +393,11 @@ fn frame_extruding_toward_part_b(frame: &KeyFrame) -> KeyFrame {
 }
 
 /// Mirror a frame so its `axis` points into part_b instead of part_a (used to
-/// flip which half gets the peg). Same construction as
+/// flip which half gets the tenon). Same construction as
 /// [`frame_extruding_toward_part_b`] — negate `axis`, swap `u`/`v` to keep a
-/// right-handed basis — but conceptually it re-roots the key on the opposite side.
-fn flip_frame_sides(frame: &KeyFrame) -> KeyFrame {
-    KeyFrame {
+/// right-handed basis — but conceptually it re-roots the tenon on the opposite side.
+fn flip_frame_sides(frame: &TenonFrame) -> TenonFrame {
+    TenonFrame {
         anchor: frame.anchor,
         axis: frame.axis.scale(-1.0),
         u: frame.v,
@@ -406,55 +406,55 @@ fn flip_frame_sides(frame: &KeyFrame) -> KeyFrame {
     }
 }
 
-/// Max tilt (radians) the key axis may lean off the membrane normal. Past this the
-/// peg skims nearly parallel to the cut face — clearance/fit degrade and it can't
-/// realistically socket — so the UI clamps to this and we re-clamp here as a
+/// Max tilt (radians) the tenon axis may lean off the membrane normal. Past this the
+/// tenon skims nearly parallel to the cut face — clearance/fit degrade and it can't
+/// realistically mortise — so the UI clamps to this and we re-clamp here as a
 /// backstop. ~60°.
-pub const KEY_MAX_TILT_RAD: f32 = std::f32::consts::FRAC_PI_3;
+pub const TENON_MAX_TILT_RAD: f32 = std::f32::consts::FRAC_PI_3;
 
-/// User-controlled reorientation of the key, expressed in the cut's own tangent
+/// User-controlled reorientation of the tenon, expressed in the cut's own tangent
 /// frame so it stays attached to the seam regardless of how the model sits in world
 /// space. All three pivot about the **base center** (`anchor`):
 /// - `tilt`: polar angle the body leans OFF the membrane normal (0 = straight out;
-///   clamped to [`KEY_MAX_TILT_RAD`]).
+///   clamped to [`TENON_MAX_TILT_RAD`]).
 /// - `azimuth`: which in-plane direction it leans toward (rotation of the lean
 ///   about the original normal). Irrelevant when `tilt == 0`.
-/// - `roll`: spin of the key about its own axis — orients the rectangle / oblong
+/// - `roll`: spin of the tenon about its own axis — orients the rectangle / oblong
 ///   dome footprint.
 ///
-/// The key body is **rigidly rotated** by these angles — it keeps its exact shape
+/// The tenon body is **rigidly rotated** by these angles — it keeps its exact shape
 /// (no shear/stretch in the body). BUT the flat base footprint must stay glued in
 /// the cut plane, so a thin **collar** at the base stretches to bridge the rotated
 /// body down to the fixed flat footprint. See [`LeanXform`].
 #[derive(Debug, Clone, Copy, Default)]
-pub struct KeyTilt {
+pub struct TenonTilt {
     pub tilt: f32,
     pub azimuth: f32,
     pub roll: f32,
 }
 
-impl KeyTilt {
+impl TenonTilt {
     pub fn new(tilt: f32, azimuth: f32, roll: f32) -> Self {
-        KeyTilt { tilt, azimuth, roll }
+        TenonTilt { tilt, azimuth, roll }
     }
 }
 
-/// Where the key sits ON the cut face, as millimetres along the frame's own `u`
+/// Where the tenon sits ON the cut face, as millimetres along the frame's own `u`
 /// and `v` axes from the natural anchor (the centroid of the cut).
 ///
 /// The centroid is a fine default and a poor rule: on a bean-shaped section it can
-/// sit in the thinnest part, or in air. This lets the user slide the key to where
+/// sit in the thinnest part, or in air. This lets the user slide the tenon to where
 /// there is material, without moving the cut itself.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct KeyOffset {
+pub struct TenonOffset {
     pub u: f32,
     pub v: f32,
 }
 
-impl KeyOffset {
+impl TenonOffset {
     pub fn new(u: f32, v: f32) -> Self {
         let finite = |x: f32| if x.is_finite() { x } else { 0.0 };
-        KeyOffset { u: finite(u), v: finite(v) }
+        TenonOffset { u: finite(u), v: finite(v) }
     }
 
     fn is_zero(&self) -> bool {
@@ -471,22 +471,22 @@ fn rotate_about(v: Vec3, axis: Vec3, angle: f32) -> Vec3 {
         .add(axis.scale(axis.dot(v) * (1.0 - c)))
 }
 
-/// Reorientation applied at BUILD time, in the key's local `(u, v, axis)` space
+/// Reorientation applied at BUILD time, in the tenon's local `(u, v, axis)` space
 /// (origin at `anchor`, `+z` along the build axis toward the tip): a **pure rigid
-/// rotation** of the whole key about the base center, plus an axial **sink** that
-/// pushes the rotated key deeper into the peg's half so its tilted base stays fully
-/// buried below the cut plane (a solid bond), and the socket fully breaches the cut
+/// rotation** of the whole tenon about the base center, plus an axial **sink** that
+/// pushes the rotated tenon deeper into the tenon's half so its tilted base stays fully
+/// buried below the cut plane (a solid bond), and the mortise fully breaches the cut
 /// face.
 ///
 /// Because the transform is a single rigid rotation (+ uniform translation) applied
-/// IDENTICALLY to the peg and the socket, containment is preserved: the socket is
-/// the peg dilated by the tolerance, and `R(socket) ⊇ R(peg)` — so the leaned peg
-/// always fits its leaned socket (a clean slide fit at any tilt). The key keeps its
+/// IDENTICALLY to the tenon and the mortise, containment is preserved: the mortise is
+/// the tenon dilated by the tolerance, and `R(mortise) ⊇ R(tenon)` — so the leaned tenon
+/// always fits its leaned mortise (a clean slide fit at any tilt). The tenon keeps its
 /// exact shape (no shear/stretch).
 ///
 /// `R = R_lean · R_roll`: roll about local `+z` first (spins the footprint), then
 /// lean about the in-plane axis `k = +z × L`, `L = (cos az, sin az, 0)`. Identity
-/// (`tilt == 0 && roll == 0`) leaves geometry untouched (the exact original key).
+/// (`tilt == 0 && roll == 0`) leaves geometry untouched (the exact original tenon).
 #[derive(Debug, Clone, Copy)]
 struct LeanXform {
     tilt: f32,
@@ -497,7 +497,7 @@ struct LeanXform {
     /// Axial sink (mm, along −z) applied AFTER the rotation so the tilted base stays
     /// buried below the cut plane. 0 when not leaning.
     sink: f32,
-    /// In-plane shift (mm, local u/v) that puts the key's axis back through the
+    /// In-plane shift (mm, local u/v) that puts the tenon's axis back through the
     /// ANCHOR — the point on the membrane where the crosshair sits. See
     /// [`LeanXform::for_build`]. 0 when not leaning.
     shift_u: f32,
@@ -517,15 +517,15 @@ impl LeanXform {
         identity: true,
     };
 
-    /// Build the transform for a key built in `build_frame`, given the user `tilt`
-    /// and the key footprint `half_diag` (mm, the base half-diagonal — how far the
+    /// Build the transform for a tenon built in `build_frame`, given the user `tilt`
+    /// and the tenon footprint `half_diag` (mm, the base half-diagonal — how far the
     /// base extends from the axis). The lean direction is computed as a WORLD
     /// direction from the ORIGINAL (un-swapped) tangent basis and projected onto
     /// `build_frame.(u, v)` so it points the same world way through any swap.
     fn for_build(
-        orig: &KeyFrame,
-        build_frame: &KeyFrame,
-        tilt: &KeyTilt,
+        orig: &TenonFrame,
+        build_frame: &TenonFrame,
+        tilt: &TenonTilt,
         half_diag: f32,
         max_tilt: f32,
         half_kerf: f32,
@@ -536,8 +536,8 @@ impl LeanXform {
             return LeanXform::IDENTITY;
         }
         // Clamp to what this placement can actually take — the walls decide, not a
-        // fixed 60° (see `max_tilt_for`). KEY_MAX_TILT_RAD is only the hard ceiling.
-        let cap = max_tilt.clamp(0.0, KEY_MAX_TILT_RAD);
+        // fixed 60° (see `max_tilt_for`). TENON_MAX_TILT_RAD is only the hard ceiling.
+        let cap = max_tilt.clamp(0.0, TENON_MAX_TILT_RAD);
         let t = tilt.tilt.clamp(-cap, cap);
         // World lean direction in the original tangent plane → local (u, v) coords.
         let lean_world = orig
@@ -556,18 +556,18 @@ impl LeanXform {
         };
         let tilt_used = if leaning && len > 1e-9 { t } else { 0.0 };
         // Sink so the rotated base stays buried: a base corner at half_diag from the
-        // axis rises by ≤ half_diag·sin(tilt) when the key tilts. Sink the whole key
+        // axis rises by ≤ half_diag·sin(tilt) when the tenon tilts. Sink the whole tenon
         // by that much (plus a hair) so even the highest base corner stays below the
         // cut plane → the union bonds along a fully embedded base.
         let sink = half_diag.max(0.0) * tilt_used.abs().sin();
         // Put the axis back through the anchor.
         //
-        // The key is built on a frame whose origin sits half a kerf BELOW the
+        // The tenon is built on a frame whose origin sits half a kerf BELOW the
         // membrane, and the sink above pushes it deeper still — so rotating about
-        // that origin slid the key's cross-section at the membrane sideways by
+        // that origin slid the tenon's cross-section at the membrane sideways by
         // (half_kerf + sink)·tan(tilt), while the crosshair (which marks the
         // anchor) stayed put. At a real lean the section walked out from under the
-        // crosshair and nearly off the key. Shifting back by that much makes the
+        // crosshair and nearly off the tenon. Shifting back by that much makes the
         // lean pivot where the user sees it pivot: on the membrane.
         let along = if len > 1e-9 { (lu / len, lv / len) } else { (0.0, 0.0) };
         let lat = (half_kerf.max(0.0) + sink) * tilt_used.tan();
@@ -583,13 +583,13 @@ impl LeanXform {
         }
     }
 
-    /// Depth the body has to be BUILT to so that a leaned key still stands the
+    /// Depth the body has to be BUILT to so that a leaned tenon still stands the
     /// requested `depth` proud of the cut face.
     ///
-    /// Leaning used to eat the peg: the body keeps its length, but what sticks out
+    /// Leaning used to eat the tenon: the body keeps its length, but what sticks out
     /// past the cut plane is `depth·cos(tilt) − sink`, and the sink grows with the
-    /// lean — at 60° on a 2.5mm key that is nothing at all. So the trunk grows to
-    /// put both back, and the key the user asked for is the key they get at any
+    /// lean — at 60° on a 2.5mm tenon that is nothing at all. So the trunk grows to
+    /// put both back, and the tenon the user asked for is the tenon they get at any
     /// lean.
     fn stretch_depth(&self, depth: f32) -> f32 {
         if self.identity || self.tilt.abs() < 1e-6 {
@@ -601,7 +601,7 @@ impl LeanXform {
     }
 
     /// Transform a local point: rigid roll (about +z), then rigid lean (about the
-    /// in-plane axis k), then sink along −z. Identical for peg and socket, so it
+    /// in-plane axis k), then sink along −z. Identical for tenon and mortise, so it
     /// preserves their nesting (clean slide fit at any tilt).
     #[inline]
     fn apply(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
@@ -634,33 +634,33 @@ impl LeanXform {
 /// Build a tapered rectangular frustum (truncated box) in the given frame.
 ///
 /// The base rectangle (`width`×`length`) sits at `anchor` in the `u`/`v` plane;
-/// the top is `KEY_TOP_SCALE`× the base, offset `depth` along `axis`. `grow` >0
-/// dilates the solid by that amount on every face (the socket = peg with
+/// the top is `TENON_TOP_SCALE`× the base, offset `depth` along `axis`. `grow` >0
+/// dilates the solid by that amount on every face (the mortise = tenon with
 /// `grow = tolerance`): base/top rings enlarge by `grow`, the tip extends `grow`
 /// past `depth`, and the mouth is pulled `grow` back behind the base plane so the
-/// socket fully clears the peg as it enters.
+/// mortise fully clears the tenon as it enters.
 ///
-/// The base/mouth ALSO extends `KEY_BASE_OVERLAP_MM` *past* the cut plane into the
-/// other half, so the peg's base overlaps part_a's material (a clean boolean union
-/// instead of a fragile coplanar butt-joint) and the socket's mouth fully breaches
+/// The base/mouth ALSO extends `TENON_BASE_OVERLAP_MM` *past* the cut plane into the
+/// other half, so the tenon's base overlaps part_a's material (a clean boolean union
+/// instead of a fragile coplanar butt-joint) and the mortise's mouth fully breaches
 /// part_b's cut face.
 ///
 /// Output is watertight with outward winding (same convention as
 /// [`axis_aligned_slab`]) so `to_manifold` accepts it.
 ///
-/// `fillet` (mm) rounds the peg: the cross-section becomes a rounded-rectangle
+/// `fillet` (mm) rounds the tenon: the cross-section becomes a rounded-rectangle
 /// (the 4 vertical corners are quarter-circle arcs of radius `fillet`) and the TIP
 /// is rounded over (a quarter-round from the side wall up to the tip). `fillet = 0`
 /// gives the original sharp tapered box. The fillet is clamped so it can't exceed
 /// the smaller half-extent (which would invert the corner).
-pub fn build_frustum(frame: &KeyFrame, dims: FrustumDims, grow: f32, fillet: f32) -> IndexedMesh {
+pub fn build_frustum(frame: &TenonFrame, dims: FrustumDims, grow: f32, fillet: f32) -> IndexedMesh {
     build_frustum_leaned(frame, dims, grow, fillet, LeanXform::IDENTITY)
 }
 
-/// [`build_frustum`] with an explicit [`LeanXform`] for a rotated key. The body is
+/// [`build_frustum`] with an explicit [`LeanXform`] for a rotated tenon. The body is
 /// rigid-rotated; a thin collar at the base blends to the flat glued footprint.
 fn build_frustum_leaned(
-    frame: &KeyFrame,
+    frame: &TenonFrame,
     dims: FrustumDims,
     grow: f32,
     fillet: f32,
@@ -670,11 +670,11 @@ fn build_frustum_leaned(
     // Half-extents at base and top, dilated by `grow`.
     let bw = dims.width * 0.5 + g; // base half-width
     let bl = dims.length * 0.5 + g; // base half-length
-    let tw = dims.width * KEY_TOP_SCALE * 0.5 + g; // top half-width
-    let tl = dims.length * KEY_TOP_SCALE * 0.5 + g; // top half-length
-    // Base/mouth: behind the cut plane by `grow` (socket clearance) PLUS the fixed
+    let tw = dims.width * TENON_TOP_SCALE * 0.5 + g; // top half-width
+    let tl = dims.length * TENON_TOP_SCALE * 0.5 + g; // top half-length
+    // Base/mouth: behind the cut plane by `grow` (mortise clearance) PLUS the fixed
     // overlap that pushes the base into the other half for a solid boolean.
-    let z0 = -g - KEY_BASE_OVERLAP_MM;
+    let z0 = -g - TENON_BASE_OVERLAP_MM;
     let z1 = dims.depth + g; // tip: past nominal depth by `grow`
     let height = (z1 - z0).max(1e-4);
 
@@ -811,7 +811,7 @@ fn build_frustum_leaned(
 /// rigid (straight) above it — the body keeps its shape and only the short collar
 /// band stretches. With no lean it's the original flat 8-vertex box.
 fn build_sharp_frustum(
-    frame: &KeyFrame,
+    frame: &TenonFrame,
     bw: f32,
     bl: f32,
     tw: f32,
@@ -831,7 +831,7 @@ fn build_sharp_frustum(
 
     // The 8-vertex tapered box. `local()` applies the rigid lean rotation + sink, so
     // a leaned box is just this box rigidly rotated — still 8 verts / 12 tris, still
-    // watertight, and the socket (same rotation, dilated) provably contains the peg.
+    // watertight, and the mortise (same rotation, dilated) provably contains the tenon.
     let positions = vec![
         local(-bw, -bl, z0),
         local(bw, -bl, z0),
@@ -859,31 +859,31 @@ fn build_sharp_frustum(
     IndexedMesh { positions, triangles: faces.to_vec() }
 }
 
-/// The decided key for a cut: which rung of the fit ladder, at what size, plus a
+/// The decided tenon for a cut: which rung of the fit ladder, at what size, plus a
 /// human-readable reason (for the report + the user alert). Computed by
-/// [`decide_key`] from the frame + measured clearance — SHARED by the real cut
-/// ([`apply_key`]) and the live preview ([`build_key_preview_soup`]) so the
-/// preview shows exactly the key that will be cut.
+/// [`decide_tenon`] from the frame + measured clearance — SHARED by the real cut
+/// ([`apply_tenon`]) and the live preview ([`build_tenon_preview_soup`]) so the
+/// preview shows exactly the tenon that will be cut.
 #[derive(Debug, Clone)]
-pub enum KeyPlan {
+pub enum TenonPlan {
     Frustum { dims: FrustumDims, detail: String },
     Dome { dims: DomeDims, detail: String },
     None { detail: String },
 }
 
-impl KeyPlan {
-    pub fn kind(&self) -> KeyKind {
+impl TenonPlan {
+    pub fn kind(&self) -> TenonKind {
         match self {
-            KeyPlan::Frustum { .. } => KeyKind::Frustum,
-            KeyPlan::Dome { .. } => KeyKind::Dome,
-            KeyPlan::None { .. } => KeyKind::None,
+            TenonPlan::Frustum { .. } => TenonKind::Frustum,
+            TenonPlan::Dome { .. } => TenonKind::Dome,
+            TenonPlan::None { .. } => TenonKind::None,
         }
     }
     pub fn detail(&self) -> &str {
         match self {
-            KeyPlan::Frustum { detail, .. }
-            | KeyPlan::Dome { detail, .. }
-            | KeyPlan::None { detail } => detail,
+            TenonPlan::Frustum { detail, .. }
+            | TenonPlan::Dome { detail, .. }
+            | TenonPlan::None { detail } => detail,
         }
     }
 }
@@ -891,43 +891,43 @@ impl KeyPlan {
 /// Run the **fit ladder** purely as a sizing decision (no booleans). The ladder's
 /// start depends on the requested `shape`:
 /// - `Frustum`: tapered frustum (shrunk to keep ≥1 mm of wall) → dome fallback →
-///   no key. The dome is an automatic safety net for a too-thin part.
-/// - `Dome`: half-sphere directly (the user chose it on purpose) → no key. No
+///   no tenon. The dome is an automatic safety net for a too-thin part.
+/// - `Dome`: half-sphere directly (the user chose it on purpose) → no tenon. No
 ///   frustum fallback — a dome is the deliberately-smaller choice.
 ///
-/// Clearance is measured against the **socket** (the larger of peg/socket) so both
-/// halves keep ≥`KEY_WALL_MARGIN_MM` of material.
-fn decide_key(
+/// Clearance is measured against the **mortise** (the larger of tenon/mortise) so both
+/// halves keep ≥`TENON_WALL_MARGIN_MM` of material.
+fn decide_tenon(
     clearance: &Clearance,
     nominal: FrustumDims,
     nominal_dome: DomeDims,
-    shape: KeyShape,
+    shape: TenonShape,
     tolerance: f32,
     half_kerf: f32,
-) -> KeyPlan {
-    if shape == KeyShape::Frustum {
+) -> TenonPlan {
+    if shape == TenonShape::Frustum {
         // Rung 1: tapered frustum at the requested size, shrunk only if needed.
         if let Some(dims) = clearance.fit_frustum(nominal, tolerance, half_kerf) {
             let shrunk = dims.width < nominal.width - 1e-4 || dims.depth < nominal.depth - 1e-4;
             let detail = if shrunk {
                 format!(
-                    "key shrunk to fit (1 mm wall): {:.2}×{:.2} mm base, {:.2} mm deep",
+                    "tenon shrunk to fit (1 mm wall): {:.2}×{:.2} mm base, {:.2} mm deep",
                     dims.width, dims.length, dims.depth
                 )
             } else {
                 String::new()
             };
-            return KeyPlan::Frustum { dims, detail };
+            return TenonPlan::Frustum { dims, detail };
         }
         // Rung 2: frustum didn't fit → automatic dome fallback. Use a round-ish
         // hemisphere sized from the frustum width (not the oblong request) so the
-        // safety-net key fits where the frustum couldn't.
+        // safety-net tenon fits where the frustum couldn't.
         let fallback = DomeDims::from_width_depth(nominal.width, nominal.width);
         if let Some(dims) = clearance.fit_dome(fallback, tolerance, half_kerf) {
-            return KeyPlan::Dome {
+            return TenonPlan::Dome {
                 dims,
                 detail: format!(
-                    "Key fell back to a half-sphere ({:.2}×{:.2} mm, {:.2} mm deep) — the part is too thin for a full key.",
+                    "Tenon fell back to a half-sphere ({:.2}×{:.2} mm, {:.2} mm deep) — the part is too thin for a full tenon.",
                     dims.half_w * 2.0, dims.half_l * 2.0, dims.depth
                 ),
             };
@@ -940,38 +940,38 @@ fn decide_key(
                 || dims.depth < nominal_dome.depth - 1e-4;
             let detail = if shrunk {
                 format!(
-                    "dome key shrunk to fit (1 mm wall): {:.2}×{:.2} mm, {:.2} mm deep",
+                    "dome tenon shrunk to fit (1 mm wall): {:.2}×{:.2} mm, {:.2} mm deep",
                     dims.half_w * 2.0, dims.half_l * 2.0, dims.depth
                 )
             } else {
                 String::new()
             };
-            return KeyPlan::Dome { dims, detail };
+            return TenonPlan::Dome { dims, detail };
         }
     }
 
-    // Final rung: no key fits.
-    KeyPlan::None {
-        detail: "No key placed — the part is too thin for any key.".to_string(),
+    // Final rung: no tenon fits.
+    TenonPlan::None {
+        detail: "No tenon placed — the part is too thin for any tenon.".to_string(),
     }
 }
 
 /// Lengthen a fitted plan by the whole kerf, to be spent on the two ends the
 /// cutter's void swallows: half sinks the base into part_a (see
 /// [`sink_frame_into_part_a`]), half puts the tip back where the user asked for it,
-/// `depth` proud of part_b's cut face. Applied AFTER [`decide_key`] so the fit
+/// `depth` proud of part_b's cut face. Applied AFTER [`decide_tenon`] so the fit
 /// ladder and its "shrunk to fit" message still speak in the user's numbers.
-fn grow_plan_for_kerf(plan: KeyPlan, half_kerf: f32) -> KeyPlan {
+fn grow_plan_for_kerf(plan: TenonPlan, half_kerf: f32) -> TenonPlan {
     if half_kerf <= 0.0 {
         return plan;
     }
     let extra = 2.0 * half_kerf;
     match plan {
-        KeyPlan::Frustum { dims, detail } => KeyPlan::Frustum {
+        TenonPlan::Frustum { dims, detail } => TenonPlan::Frustum {
             dims: FrustumDims { depth: dims.depth + extra, ..dims },
             detail,
         },
-        KeyPlan::Dome { dims, detail } => KeyPlan::Dome {
+        TenonPlan::Dome { dims, detail } => TenonPlan::Dome {
             dims: DomeDims { depth: dims.depth + extra, ..dims },
             detail,
         },
@@ -979,16 +979,16 @@ fn grow_plan_for_kerf(plan: KeyPlan, half_kerf: f32) -> KeyPlan {
     }
 }
 
-/// Lengthen a decided plan so a leaned key still stands its requested depth proud
+/// Lengthen a decided plan so a leaned tenon still stands its requested depth proud
 /// of the cut face — the plan-level twin of [`LeanXform::stretch_depth`], used by
 /// the preview (which builds straight from the plan).
-fn stretch_plan_for_lean(plan: KeyPlan, lean: &LeanXform) -> KeyPlan {
+fn stretch_plan_for_lean(plan: TenonPlan, lean: &LeanXform) -> TenonPlan {
     match plan {
-        KeyPlan::Frustum { dims, detail } => KeyPlan::Frustum {
+        TenonPlan::Frustum { dims, detail } => TenonPlan::Frustum {
             dims: FrustumDims { depth: lean.stretch_depth(dims.depth), ..dims },
             detail,
         },
-        KeyPlan::Dome { dims, detail } => KeyPlan::Dome {
+        TenonPlan::Dome { dims, detail } => TenonPlan::Dome {
             dims: DomeDims { depth: lean.stretch_depth(dims.depth), ..dims },
             detail,
         },
@@ -998,37 +998,37 @@ fn stretch_plan_for_lean(plan: KeyPlan, lean: &LeanXform) -> KeyPlan {
 
 /// The largest lean this placement can take, in radians.
 ///
-/// A fixed 60° cap knew nothing about the part: on a thin wall it let the key lean
+/// A fixed 60° cap knew nothing about the part: on a thin wall it let the tenon lean
 /// until the trunk came out the side, and on a solid block it stopped short for no
 /// reason. This walks the lean up in small steps and keeps the last angle where
-/// the key is still buried in material — both sideways (the leaned trunk swings
+/// the tenon is still buried in material — both sideways (the leaned trunk swings
 /// toward a lateral wall) and backwards (the lean sinks the base into part_a).
-/// [`KEY_MAX_TILT_RAD`] stays the hard ceiling.
+/// [`TENON_MAX_TILT_RAD`] stays the hard ceiling.
 ///
 /// The lateral room is the TIGHTEST of the four probes, not the room in the lean's
 /// own direction: the user aims the lean with the roll ring, and a cap that moved
 /// while they turned it would be worse than one that is merely conservative.
-fn max_tilt_for(clearance: &Clearance, plan: &KeyPlan, tolerance: f32) -> f32 {
+fn max_tilt_for(clearance: &Clearance, plan: &TenonPlan, tolerance: f32) -> f32 {
     let (half_diag, depth) = match plan {
-        KeyPlan::Frustum { dims, .. } => {
+        TenonPlan::Frustum { dims, .. } => {
             (0.5 * dims.width.hypot(dims.length) + tolerance, dims.depth)
         }
-        KeyPlan::Dome { dims, .. } => (dims.half_w.max(dims.half_l) + tolerance, dims.depth),
-        // No key to lean.
-        KeyPlan::None { .. } => return 0.0,
+        TenonPlan::Dome { dims, .. } => (dims.half_w.max(dims.half_l) + tolerance, dims.depth),
+        // No tenon to lean.
+        TenonPlan::None { .. } => return 0.0,
     };
-    let room_lat = clearance.half_room_u().min(clearance.half_room_v()) - KEY_WALL_MARGIN_MM;
-    let room_back = clearance.depth_a - KEY_WALL_MARGIN_MM;
+    let room_lat = clearance.half_room_u().min(clearance.half_room_v()) - TENON_WALL_MARGIN_MM;
+    let room_back = clearance.depth_a - TENON_WALL_MARGIN_MM;
     const STEPS: u32 = 60;
     let mut best = 0.0;
     for i in 1..=STEPS {
-        let t = KEY_MAX_TILT_RAD * (i as f32) / (STEPS as f32);
+        let t = TENON_MAX_TILT_RAD * (i as f32) / (STEPS as f32);
         let sink = half_diag * t.sin();
         let built = (depth + sink) / t.cos().max(0.2);
-        // How far the key reaches sideways: the leaned tip, plus the base still
+        // How far the tenon reaches sideways: the leaned tip, plus the base still
         // standing half a diagonal off the axis.
         let reach = built * t.sin() + half_diag * t.cos();
-        if reach > room_lat || sink + KEY_BASE_OVERLAP_MM > room_back {
+        if reach > room_lat || sink + TENON_BASE_OVERLAP_MM > room_back {
             break;
         }
         best = t;
@@ -1036,75 +1036,75 @@ fn max_tilt_for(clearance: &Clearance, plan: &KeyPlan, tolerance: f32) -> f32 {
     best
 }
 
-/// Place a key across the cut, honoring the fit ladder via [`decide_key`]. The
-/// chosen rung + reason ride back on the [`KeyOutcome`] so the report and the user
+/// Place a tenon across the cut, honoring the fit ladder via [`decide_tenon`]. The
+/// chosen rung + reason ride back on the [`TenonOutcome`] so the report and the user
 /// alert agree with the preview.
 ///
 /// A degenerate frame, or any boolean failure, yields the parts UNCHANGED with
-/// `KeyKind::None` + a reason — a failed key must NEVER destroy the cut result.
+/// `TenonKind::None` + a reason — a failed tenon must NEVER destroy the cut result.
 #[allow(clippy::too_many_arguments)]
-pub fn apply_key(
+pub fn apply_tenon(
     model: &IndexedMesh,
     part_a: IndexedMesh,
     part_b: IndexedMesh,
     membrane: &Membrane,
-    shape: KeyShape,
+    shape: TenonShape,
     swap_sides: bool,
-    tilt: KeyTilt,
+    tilt: TenonTilt,
     width_mm: f32,
     depth_mm: f32,
     fillet_mm: f32,
     tolerance: f32,
     kerf_mm: f32,
-    offset: KeyOffset,
-) -> KeyOutcome {
+    offset: TenonOffset,
+) -> TenonOutcome {
     let frame0 = match frame_from_membrane_at(membrane, offset) {
         Some(f) => f,
         None => {
-            return KeyOutcome {
+            return TenonOutcome {
                 part_a,
                 part_b,
-                kind: KeyKind::None,
-                detail: "key skipped: degenerate cut frame (no area / cancelling normals)"
+                kind: TenonKind::None,
+                detail: "tenon skipped: degenerate cut frame (no area / cancelling normals)"
                     .to_string(),
             };
         }
     };
-    apply_key_at_frame(
+    apply_tenon_at_frame(
         model, part_a, part_b, frame0, shape, swap_sides, tilt, width_mm, depth_mm, fillet_mm,
         tolerance, kerf_mm,
     )
 }
 
-/// [`apply_key`] with the placement frame supplied directly, for cuts that have no
-/// membrane to derive it from — the flat plane cut, which frames the key on the
+/// [`apply_tenon`] with the placement frame supplied directly, for cuts that have no
+/// membrane to derive it from — the flat plane cut, which frames the tenon on the
 /// plane itself (see [`frame_from_plane`]).
 #[allow(clippy::too_many_arguments)]
-pub fn apply_key_at_frame(
+pub fn apply_tenon_at_frame(
     model: &IndexedMesh,
     part_a: IndexedMesh,
     part_b: IndexedMesh,
-    frame0: KeyFrame,
-    shape: KeyShape,
+    frame0: TenonFrame,
+    shape: TenonShape,
     swap_sides: bool,
-    tilt: KeyTilt,
+    tilt: TenonTilt,
     width_mm: f32,
     depth_mm: f32,
     fillet_mm: f32,
     tolerance: f32,
     kerf_mm: f32,
-) -> KeyOutcome {
+) -> TenonOutcome {
     let tolerance = sanitize_tolerance(tolerance);
     // Half the cutter thickness — how far each half's cut face sits from the
-    // membrane the key is framed on. See `sink_frame_into_part_a`.
+    // membrane the tenon is framed on. See `sink_frame_into_part_a`.
     let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
 
-    // Flip which half gets the peg vs the socket. By default the peg roots in
-    // part_a (the membrane's +normal side) and protrudes into part_b's socket. To
+    // Flip which half gets the tenon vs the mortise. By default the tenon roots in
+    // part_a (the membrane's +normal side) and protrudes into part_b's mortise. To
     // swap, mirror the placement frame (negate the axis, keeping a right-handed
     // basis by swapping u/v) AND swap the two part roles — then the SAME downstream
-    // logic (peg onto the first arg, socket from the second) puts the peg on part_b
-    // and the socket on part_a. Geometry is otherwise identical, so the fit ladder
+    // logic (tenon onto the first arg, mortise from the second) puts the tenon on part_b
+    // and the mortise on part_a. Geometry is otherwise identical, so the fit ladder
     // and clearance below are unchanged.
     let (frame, part_a, part_b) = if swap_sides {
         (flip_frame_sides(&frame0), part_b, part_a)
@@ -1127,17 +1127,17 @@ pub fn apply_key_at_frame(
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
     let plan = grow_plan_for_kerf(
-        decide_key(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf),
+        decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf),
         half_kerf,
     );
-    // How far this placement can lean before the key leaves the material. The cut
+    // How far this placement can lean before the tenon leaves the material. The cut
     // must agree with the preview, which caps the gizmo the same way.
     let max_tilt = max_tilt_for(&clearance, &plan, tolerance);
 
-    // The KeyOutcome from apply_frustum/apply_dome holds (peg-half, socket-half) in
+    // The TenonOutcome from apply_frustum/apply_dome holds (tenon-half, mortise-half) in
     // (part_a, part_b). When we swapped roles above, swap them back so the returned
     // part_a/part_b match the caller's original orientation.
-    let unswap = |mut out: KeyOutcome| -> KeyOutcome {
+    let unswap = |mut out: TenonOutcome| -> TenonOutcome {
         if swap_sides {
             std::mem::swap(&mut out.part_a, &mut out.part_b);
         }
@@ -1145,66 +1145,66 @@ pub fn apply_key_at_frame(
     };
 
     match plan {
-        KeyPlan::Frustum { dims, detail } => {
+        TenonPlan::Frustum { dims, detail } => {
             let out = unswap(apply_frustum(part_a, part_b, &frame, &orig_for_lean, tilt, dims, fillet_mm, tolerance, half_kerf, max_tilt));
-            if out.kind == KeyKind::Frustum {
-                KeyOutcome { detail, ..out }
+            if out.kind == TenonKind::Frustum {
+                TenonOutcome { detail, ..out }
             } else {
-                // Boolean failed despite fitting — report as no key, parts intact.
-                KeyOutcome {
-                    kind: KeyKind::None,
-                    detail: format!("No key placed — frustum boolean failed: {}", out.detail),
+                // Boolean failed despite fitting — report as no tenon, parts intact.
+                TenonOutcome {
+                    kind: TenonKind::None,
+                    detail: format!("No tenon placed — frustum boolean failed: {}", out.detail),
                     ..out
                 }
             }
         }
-        KeyPlan::Dome { dims, detail } => {
+        TenonPlan::Dome { dims, detail } => {
             let out = unswap(apply_dome(part_a, part_b, &frame, &orig_for_lean, tilt, dims, tolerance, half_kerf, max_tilt));
-            if out.kind == KeyKind::Dome {
-                KeyOutcome { detail, ..out }
+            if out.kind == TenonKind::Dome {
+                TenonOutcome { detail, ..out }
             } else {
-                KeyOutcome {
-                    kind: KeyKind::None,
-                    detail: format!("No key placed — dome boolean failed: {}", out.detail),
+                TenonOutcome {
+                    kind: TenonKind::None,
+                    detail: format!("No tenon placed — dome boolean failed: {}", out.detail),
                     ..out
                 }
             }
         }
-        // No key placed → return the parts in the CALLER's orientation. part_a/
+        // No tenon placed → return the parts in the CALLER's orientation. part_a/
         // part_b here are still in swapped roles if we swapped, so put them back.
-        KeyPlan::None { detail } => {
+        TenonPlan::None { detail } => {
             let (pa, pb) = if swap_sides { (part_b, part_a) } else { (part_a, part_b) };
-            KeyOutcome { part_a: pa, part_b: pb, kind: KeyKind::None, detail }
+            TenonOutcome { part_a: pa, part_b: pb, kind: TenonKind::None, detail }
         }
     }
 }
 
-/// Build the registration key the cut WOULD place, as a flat triangle soup (9 f32
-/// per triangle, model-local) for the live preview — peg AND socket together, of
+/// Build the registration tenon the cut WOULD place, as a flat triangle soup (9 f32
+/// per triangle, model-local) for the live preview — tenon AND mortise together, of
 /// the chosen rung (frustum or dome). Mirrors the truthful cutter preview: it
 /// builds the membrane the same way the cut does, derives the same frame, probes
-/// clearance against the model, and runs the SAME [`decide_key`] ladder — so the
+/// clearance against the model, and runs the SAME [`decide_tenon`] ladder — so the
 /// preview is exactly what cuts.
 ///
-/// Returns `(soup, kind, detail)`. On no key (too thin / degenerate), the soup is
+/// Returns `(soup, kind, detail)`. On no tenon (too thin / degenerate), the soup is
 /// empty and `detail` explains why (for the alert). `None` only if the membrane
 /// itself can't be built from the loop.
 #[allow(clippy::too_many_arguments)]
-pub fn build_key_preview_soup(
+pub fn build_tenon_preview_soup(
     model: &IndexedMesh,
     loop_pts: &[Vec3],
     membrane_smoothing: f32,
     density: f32,
-    shape: KeyShape,
+    shape: TenonShape,
     swap_sides: bool,
-    tilt: KeyTilt,
+    tilt: TenonTilt,
     width_mm: f32,
     depth_mm: f32,
     fillet_mm: f32,
     tolerance: f32,
     kerf_mm: f32,
-    offset: KeyOffset,
-) -> Option<KeyPreview> {
+    offset: TenonOffset,
+) -> Option<TenonPreview> {
     use crate::membrane::{build_membrane_full, CONTOUR_SUBDIVISIONS, DEFAULT_GRID_DIVISIONS};
 
     let grid = DEFAULT_GRID_DIVISIONS * (density.clamp(1.0, 4.0) as f64);
@@ -1213,61 +1213,61 @@ pub fn build_key_preview_soup(
     let frame = match frame_from_membrane_at(&membrane, offset) {
         Some(f) => f,
         None => {
-            return Some(KeyPreview {
+            return Some(TenonPreview {
                 soup: Vec::new(),
-                peg_triangles: 0,
-                kind: KeyKind::None,
-                detail: "No key — degenerate cut frame.".to_string(),
+                tenon_triangles: 0,
+                kind: TenonKind::None,
+                detail: "No tenon — degenerate cut frame.".to_string(),
                 frame: None,
             })
         }
     };
-    Some(build_key_preview_at_frame(
+    Some(build_tenon_preview_at_frame(
         model, frame, shape, swap_sides, tilt, width_mm, depth_mm, fillet_mm, tolerance, kerf_mm,
     ))
 }
 
-/// [`build_key_preview_soup`] with the frame supplied, for the flat plane cut —
-/// which frames its key on the plane instead of on a membrane. Same ladder, same
+/// [`build_tenon_preview_soup`] with the frame supplied, for the flat plane cut —
+/// which frames its tenon on the plane instead of on a membrane. Same ladder, same
 /// build, so the plane preview is as truthful as the contour one.
 #[allow(clippy::too_many_arguments)]
-pub fn build_key_preview_at_frame(
+pub fn build_tenon_preview_at_frame(
     model: &IndexedMesh,
-    frame: KeyFrame,
-    shape: KeyShape,
+    frame: TenonFrame,
+    shape: TenonShape,
     swap_sides: bool,
-    tilt: KeyTilt,
+    tilt: TenonTilt,
     width_mm: f32,
     depth_mm: f32,
     fillet_mm: f32,
     tolerance: f32,
     kerf_mm: f32,
-) -> KeyPreview {
+) -> TenonPreview {
     let tolerance = sanitize_tolerance(tolerance);
     let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
 
     // At preview time the body isn't split yet; probe clearance against the whole
     // model on both sides (its walls are the same walls the halves will have).
     // Probe the natural (swapped) frame — the lean/roll are applied at build time as
-    // a rigid rotation, not folded into the probe frame (matches `apply_key`).
+    // a rigid rotation, not folded into the probe frame (matches `apply_tenon`).
     let placed = if swap_sides { flip_frame_sides(&frame) } else { frame };
     let orig_for_lean = placed;
     let clearance = Clearance::probe(&placed, model, model);
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
     let plan = grow_plan_for_kerf(
-        decide_key(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf),
+        decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf),
         half_kerf,
     );
-    // The build frame must MATCH what `apply_key` uses so the preview is exactly
-    // what cuts: extrude the peg toward part_b, with the rigid lean about the base.
+    // The build frame must MATCH what `apply_tenon` uses so the preview is exactly
+    // what cuts: extrude the tenon toward part_b, with the rigid lean about the base.
     let build_frame = sink_frame_into_part_a(&frame_extruding_toward_part_b(&placed), half_kerf);
     // Sink uses the base half-diagonal so the tilted base stays buried (matches
-    // apply_frustum/apply_dome; the socket footprint is a hair larger).
+    // apply_frustum/apply_dome; the mortise footprint is a hair larger).
     let half_diag = match &plan {
-        KeyPlan::Frustum { dims, .. } => 0.5 * dims.width.hypot(dims.length) + tolerance,
-        KeyPlan::Dome { dims, .. } => (dims.half_w.max(dims.half_l)) + tolerance,
-        KeyPlan::None { .. } => 0.0,
+        TenonPlan::Frustum { dims, .. } => 0.5 * dims.width.hypot(dims.length) + tolerance,
+        TenonPlan::Dome { dims, .. } => (dims.half_w.max(dims.half_l)) + tolerance,
+        TenonPlan::None { .. } => 0.0,
     };
     let max_tilt = max_tilt_for(&clearance, &plan, tolerance);
     let lean = LeanXform::for_build(&orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
@@ -1275,94 +1275,94 @@ pub fn build_key_preview_at_frame(
     let plan = stretch_plan_for_lean(plan, &lean);
 
     let mut soup: Vec<f32> = Vec::new();
-    // Triangles [0, peg_triangles) are the peg, the rest the socket. The frontend
+    // Triangles [0, tenon_triangles) are the tenon, the rest the mortise. The frontend
     // colours the two apart, which is the only way the Fit Tolerance knob is
-    // visible: it grows the socket and leaves the peg exactly where it was.
-    let mut peg_triangles = 0usize;
+    // visible: it grows the mortise and leaves the tenon exactly where it was.
+    let mut tenon_triangles = 0usize;
     let (kind, detail) = match &plan {
-        KeyPlan::Frustum { dims, detail } => {
-            // peg + socket — matching apply_frustum so the preview is exactly what
-            // cuts (rigid lean applied identically, socket fillet = peg fillet + tol).
+        TenonPlan::Frustum { dims, detail } => {
+            // tenon + mortise — matching apply_frustum so the preview is exactly what
+            // cuts (rigid lean applied identically, mortise fillet = tenon fillet + tol).
             append_soup(&mut soup, &build_frustum_leaned(&build_frame, *dims, 0.0, fillet_mm, lean));
-            peg_triangles = soup.len() / 9;
+            tenon_triangles = soup.len() / 9;
             append_soup(&mut soup, &build_frustum_leaned(&build_frame, *dims, tolerance, fillet_mm + tolerance, lean));
-            (KeyKind::Frustum, detail.clone())
+            (TenonKind::Frustum, detail.clone())
         }
-        KeyPlan::Dome { dims, detail } => {
+        TenonPlan::Dome { dims, detail } => {
             append_soup(&mut soup, &build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, 0.0, DOME_SEGMENTS, lean));
-            peg_triangles = soup.len() / 9;
+            tenon_triangles = soup.len() / 9;
             append_soup(&mut soup, &build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, tolerance, DOME_SEGMENTS, lean));
-            (KeyKind::Dome, detail.clone())
+            (TenonKind::Dome, detail.clone())
         }
-        KeyPlan::None { detail } => (KeyKind::None, detail.clone()),
+        TenonPlan::None { detail } => (TenonKind::None, detail.clone()),
     };
     // Report the placement frame for the gizmo. We hand back the NATURAL tangent
-    // basis (the swapped `placed`): anchor = base center, axis = the +normal the key
-    // roots against (toward the peg's half), and u/v the in-plane basis. The frontend
+    // basis (the swapped `placed`): anchor = base center, axis = the +normal the tenon
+    // roots against (toward the tenon's half), and u/v the in-plane basis. The frontend
     // mounts the rotation gizmo at the anchor oriented to this frame, and converts
     // gizmo rotations into tilt/azimuth/roll. `tip` is the leaned apex (model-local).
-    let info = build_key_frame_info(&placed, &build_frame, &plan, lean, max_tilt, half_diag);
-    KeyPreview { soup, peg_triangles, kind, detail, frame: info }
+    let info = build_tenon_frame_info(&placed, &build_frame, &plan, lean, max_tilt, half_diag);
+    TenonPreview { soup, tenon_triangles, kind, detail, frame: info }
 }
 
-/// What the live preview hands the frontend: the key the cut WOULD place, as one
+/// What the live preview hands the frontend: the tenon the cut WOULD place, as one
 /// flat triangle soup with the boundary between its two halves marked.
 #[derive(Debug, Clone)]
-pub struct KeyPreview {
-    /// Peg triangles first, then the socket's (9 f32 per triangle, model-local).
+pub struct TenonPreview {
+    /// Tenon triangles first, then the mortise's (9 f32 per triangle, model-local).
     pub soup: Vec<f32>,
-    /// How many of `soup`'s triangles belong to the PEG.
-    pub peg_triangles: usize,
+    /// How many of `soup`'s triangles belong to the TENON.
+    pub tenon_triangles: usize,
     /// Which rung of the ladder was placed (frustum / dome / none).
-    pub kind: KeyKind,
+    pub kind: TenonKind,
     /// Human-readable reason, for the panel's alert.
     pub detail: String,
-    /// Placement frame for the aim gizmo. `None` when no key was placed.
-    pub frame: Option<KeyFrameInfo>,
+    /// Placement frame for the aim gizmo. `None` when no tenon was placed.
+    pub frame: Option<TenonFrameInfo>,
 }
 
 /// Placement-frame info handed to the frontend so the aim/roll gizmo sits exactly
-/// on the previewed key. All in model-local coords (the same space as the soup).
+/// on the previewed tenon. All in model-local coords (the same space as the soup).
 #[derive(Debug, Clone, Copy)]
-pub struct KeyFrameInfo {
+pub struct TenonFrameInfo {
     /// Base center (pivot for tilt/roll).
     pub anchor: Vec3,
-    /// The +normal the key roots against (un-tilted; the tilt-0 axis direction).
+    /// The +normal the tenon roots against (un-tilted; the tilt-0 axis direction).
     pub axis: Vec3,
     /// In-plane basis (width / length directions), already rolled-out to the
     /// un-rolled natural basis so the frontend computes azimuth in a stable frame.
     pub u: Vec3,
     pub v: Vec3,
-    /// The leaned TIP point (apex of the peg) in model-local coords — where the
+    /// The leaned TIP point (apex of the tenon) in model-local coords — where the
     /// aim handle is drawn. Reflects the current tilt/azimuth/roll rigid rotation.
     pub tip: Vec3,
-    /// Peg height (depth along the build axis to the tip), for handle scaling.
+    /// Tenon height (depth along the build axis to the tip), for handle scaling.
     pub depth: f32,
     /// The largest lean this placement takes (radians) — see [`max_tilt_for`]. The
     /// gizmo clamps to it, so the ring stops where the geometry does instead of at
     /// a constant that knows nothing about the part.
     pub max_tilt: f32,
-    /// Base half-diagonal (mm, socket footprint). The frontend leans the key
+    /// Base half-diagonal (mm, mortise footprint). The frontend leans the tenon
     /// client-side on a soup built straight, so it needs the same number Rust used
     /// to sink and lengthen it — otherwise the preview and the cut disagree the
     /// moment the user touches the lean ring.
     pub half_diag: f32,
 }
 
-/// Compute the [`KeyFrameInfo`] for a decided plan: the tip is the apex of the peg
+/// Compute the [`TenonFrameInfo`] for a decided plan: the tip is the apex of the tenon
 /// after the rigid lean rotation, in model-local coords.
-fn build_key_frame_info(
-    natural: &KeyFrame,
-    build_frame: &KeyFrame,
-    plan: &KeyPlan,
+fn build_tenon_frame_info(
+    natural: &TenonFrame,
+    build_frame: &TenonFrame,
+    plan: &TenonPlan,
     lean: LeanXform,
     max_tilt: f32,
     half_diag: f32,
-) -> Option<KeyFrameInfo> {
+) -> Option<TenonFrameInfo> {
     let depth = match plan {
-        KeyPlan::Frustum { dims, .. } => dims.depth,
-        KeyPlan::Dome { dims, .. } => dims.depth,
-        KeyPlan::None { .. } => return None,
+        TenonPlan::Frustum { dims, .. } => dims.depth,
+        TenonPlan::Dome { dims, .. } => dims.depth,
+        TenonPlan::None { .. } => return None,
     };
     // The tip sits at local (0, 0, depth) in the build frame, transformed by the lean
     // (it's above the collar, so this is the full rigid rotation — the tip leans in
@@ -1373,7 +1373,7 @@ fn build_key_frame_info(
         .add(build_frame.u.scale(tx))
         .add(build_frame.v.scale(ty))
         .add(build_frame.axis.scale(tz));
-    Some(KeyFrameInfo {
+    Some(TenonFrameInfo {
         anchor: natural.anchor,
         axis: natural.axis,
         u: natural.u,
@@ -1395,13 +1395,13 @@ fn append_soup(soup: &mut Vec<f32>, mesh: &IndexedMesh) {
     }
 }
 
-/// Union the nominal frustum peg onto `part_a` and difference the grown socket
+/// Union the nominal frustum tenon onto `part_a` and difference the grown mortise
 /// from `part_b`. On any boolean failure, returns the parts UNCHANGED with a
-/// `None` kind + reason — a failed key must never destroy the cut result.
+/// `None` kind + reason — a failed tenon must never destroy the cut result.
 ///
 /// EXTRUSION DIRECTION: `frame.axis` points into `part_a` (the +normal side). The
-/// peg must protrude FROM part_a's cut face INTO part_b's region so it fills the
-/// socket on reassembly — i.e. it extrudes along `−axis` (toward part_b). We build
+/// tenon must protrude FROM part_a's cut face INTO part_b's region so it fills the
+/// mortise on reassembly — i.e. it extrudes along `−axis` (toward part_b). We build
 /// in a flipped frame (`axis` negated) whose wide base sits on the cut plane and
 /// whose body+tip extend toward part_b. The union with part_a bonds along the cut
 /// face; the difference carves the matching cavity from part_b in the same place.
@@ -1409,79 +1409,79 @@ fn append_soup(soup: &mut Vec<f32>, mesh: &IndexedMesh) {
 fn apply_frustum(
     part_a: IndexedMesh,
     part_b: IndexedMesh,
-    frame: &KeyFrame,
-    orig_for_lean: &KeyFrame,
-    tilt: KeyTilt,
+    frame: &TenonFrame,
+    orig_for_lean: &TenonFrame,
+    tilt: TenonTilt,
     dims: FrustumDims,
     fillet: f32,
     tolerance: f32,
     half_kerf: f32,
     max_tilt: f32,
-) -> KeyOutcome {
+) -> TenonOutcome {
     // Base sunk half a kerf into part_a's material (`dims` already carries the
     // matching extra length — see `grow_plan_for_kerf`).
     let build_frame = sink_frame_into_part_a(&frame_extruding_toward_part_b(frame), half_kerf);
     // Rigid lean rotation about the base (identity when tilt == 0 && roll == 0): the
     // body keeps its shape, a thin collar at the base stays glued flat on the cut
-    // face. Peg and socket share the SAME lean so the socket follows the peg exactly.
+    // face. Tenon and mortise share the SAME lean so the mortise follows the tenon exactly.
     // The lean's sink depends on the base half-diagonal so the tilted base stays
-    // buried. Use the SOCKET's footprint (slightly larger) so both share one sink.
+    // buried. Use the MORTISE's footprint (slightly larger) so both share one sink.
     let half_diag = 0.5 * ((dims.width).hypot(dims.length)) + tolerance;
     let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
     // Leaning lengthens the trunk instead of eating it (see `stretch_depth`).
     let dims = FrustumDims { depth: lean.stretch_depth(dims.depth), ..dims };
-    let peg_mesh = build_frustum_leaned(&build_frame, dims, 0.0, fillet, lean);
-    // The socket is the peg offset outward by `tolerance`; a uniform offset of a
-    // rounded-rect grows the corner radius by the same amount, so the socket's fillet
-    // is peg fillet + tolerance. The lean is a rigid rotation applied identically to
-    // both, so the dilated socket provably contains the leaned peg.
-    let socket_mesh = build_frustum_leaned(&build_frame, dims, tolerance, fillet + tolerance, lean);
+    let tenon_mesh = build_frustum_leaned(&build_frame, dims, 0.0, fillet, lean);
+    // The mortise is the tenon offset outward by `tolerance`; a uniform offset of a
+    // rounded-rect grows the corner radius by the same amount, so the mortise's fillet
+    // is tenon fillet + tolerance. The lean is a rigid rotation applied identically to
+    // both, so the dilated mortise provably contains the leaned tenon.
+    let mortise_mesh = build_frustum_leaned(&build_frame, dims, tolerance, fillet + tolerance, lean);
 
     let result = (|| -> Result<(IndexedMesh, IndexedMesh), String> {
         let a = to_manifold(&part_a).map_err(|e| format!("part_a invalid: {e}"))?;
         let b = to_manifold(&part_b).map_err(|e| format!("part_b invalid: {e}"))?;
-        let peg = to_manifold(&peg_mesh).map_err(|e| format!("peg invalid: {e}"))?;
-        let socket = to_manifold(&socket_mesh).map_err(|e| format!("socket invalid: {e}"))?;
+        let tenon = to_manifold(&tenon_mesh).map_err(|e| format!("tenon invalid: {e}"))?;
+        let mortise = to_manifold(&mortise_mesh).map_err(|e| format!("mortise invalid: {e}"))?;
 
-        let a_keyed = a.union(&peg);
-        let b_keyed = b.difference(&socket);
+        let a_tenoned = a.union(&tenon);
+        let b_tenoned = b.difference(&mortise);
 
-        let a_out = crate::membrane::manifold_to_indexed(&a_keyed)
+        let a_out = crate::membrane::manifold_to_indexed(&a_tenoned)
             .ok_or("part_a union produced empty result")?;
-        let b_out = crate::membrane::manifold_to_indexed(&b_keyed)
+        let b_out = crate::membrane::manifold_to_indexed(&b_tenoned)
             .ok_or("part_b difference produced empty result")?;
         Ok((a_out, b_out))
     })();
 
     match result {
-        Ok((a_out, b_out)) => KeyOutcome {
+        Ok((a_out, b_out)) => TenonOutcome {
             part_a: a_out,
             part_b: b_out,
-            kind: KeyKind::Frustum,
+            kind: TenonKind::Frustum,
             detail: String::new(),
         },
-        Err(reason) => KeyOutcome {
+        Err(reason) => TenonOutcome {
             part_a,
             part_b,
-            kind: KeyKind::None,
-            detail: format!("key skipped: {reason}"),
+            kind: TenonKind::None,
+            detail: format!("tenon skipped: {reason}"),
         },
     }
 }
 
 // ---------------------------------------------------------------------------
-// Clearance — measure the local mesh thickness around the cut and clamp the key
-// so it keeps ≥ KEY_WALL_MARGIN_MM of solid material from every wall, both halves.
+// Clearance — measure the local mesh thickness around the cut and clamp the tenon
+// so it keeps ≥ TENON_WALL_MARGIN_MM of solid material from every wall, both halves.
 // ---------------------------------------------------------------------------
 
-/// Local thickness around the key anchor, in mm along the key's own axes. All
+/// Local thickness around the tenon anchor, in mm along the tenon's own axes. All
 /// distances are "how far solid material extends from the anchor before the first
 /// wall" in that direction. `+∞` means no wall was hit (open/over-large part —
 /// effectively unconstrained).
 struct Clearance {
-    /// Depth available into part_b along `−axis` (the socket's extrusion).
+    /// Depth available into part_b along `−axis` (the mortise's extrusion).
     depth_b: f32,
-    /// Material available BEHIND the base, into part_a along `+axis`. A leaned key
+    /// Material available BEHIND the base, into part_a along `+axis`. A leaned tenon
     /// sinks into it (see [`LeanXform`]), so this is what bounds the lean.
     depth_a: f32,
     /// Lateral room from the anchor to the nearest wall along ±u and ±v, taking
@@ -1493,9 +1493,9 @@ struct Clearance {
 }
 
 impl Clearance {
-    /// Probe the un-keyed halves. Rays start a hair off the cut plane to avoid
+    /// Probe the un-tenoned halves. Rays start a hair off the cut plane to avoid
     /// self-hitting the cut face, and are cast against each part's triangles.
-    fn probe(frame: &KeyFrame, part_a: &IndexedMesh, part_b: &IndexedMesh) -> Self {
+    fn probe(frame: &TenonFrame, part_a: &IndexedMesh, part_b: &IndexedMesh) -> Self {
         let eps = 1e-3;
         // Depth into part_b: start just inside part_b, go along −axis.
         let neg_axis = frame.axis.scale(-1.0);
@@ -1506,7 +1506,7 @@ impl Clearance {
         let depth_a = nearest_hit(part_a, origin_a, frame.axis).map(|d| d + eps).unwrap_or(f32::INFINITY);
 
         // Lateral: probe both halves along ±u/±v from the anchor; the tightest
-        // wall on EITHER part governs (the key footprint spans both at the seam).
+        // wall on EITHER part governs (the tenon footprint spans both at the seam).
         let lat = |dir: Vec3| -> f32 {
             let oa = frame.anchor.add(dir.scale(eps));
             let da = nearest_hit(part_a, oa, dir).map(|d| d + eps).unwrap_or(f32::INFINITY);
@@ -1531,20 +1531,20 @@ impl Clearance {
         self.lat_v_neg.min(self.lat_v_pos)
     }
 
-    /// Clamp the nominal frustum so the SOCKET (peg + tolerance, plus the 1 mm
+    /// Clamp the nominal frustum so the MORTISE (tenon + tolerance, plus the 1 mm
     /// margin) fits: cap depth against part_b, and the base half-extents against
     /// the lateral walls. Returns `None` if nothing useful fits (→ try the dome).
     fn fit_frustum(&self, nominal: FrustumDims, tolerance: f32, half_kerf: f32) -> Option<FrustumDims> {
-        let m = KEY_WALL_MARGIN_MM;
-        // The socket extends `tolerance` past the peg; fold a small allowance in
-        // by reserving the full margin against the SOCKET extent. We size the peg
-        // (nominal) and let the margin absorb the tolerance: cap so peg + tol + m
+        let m = TENON_WALL_MARGIN_MM;
+        // The mortise extends `tolerance` past the tenon; fold a small allowance in
+        // by reserving the full margin against the MORTISE extent. We size the tenon
+        // (nominal) and let the margin absorb the tolerance: cap so tenon + tol + m
         // stays inside the wall. The reservation is the tolerance this cut will
         // actually build with — a looser fit eats into the wall it must clear.
         let tol = tolerance.max(0.0);
 
-        // Depth: socket tip at depth+tol must stay m short of part_b's far wall.
-        // `depth_b` is measured from the membrane, and the peg is lengthened by the
+        // Depth: mortise tip at depth+tol must stay m short of part_b's far wall.
+        // `depth_b` is measured from the membrane, and the tenon is lengthened by the
         // kerf to cross the cutter's void, so half of that eats into the room here.
         let max_depth = (self.depth_b - m - tol - half_kerf.max(0.0)).max(0.0);
         // Lateral: base half-extent + tol + m must stay inside the side walls.
@@ -1556,17 +1556,17 @@ impl Clearance {
         let depth = nominal.depth.min(max_depth);
 
         // Keep the base proportion (length = 1.25×width) if both axes were capped
-        // differently — shrink the looser one to match the tighter, so the key
+        // differently — shrink the looser one to match the tighter, so the tenon
         // stays a sensible rectangle rather than a sliver.
         if width > 0.0 && length > 0.0 {
-            let by_width = length / KEY_LENGTH_TO_WIDTH; // width implied by length cap
+            let by_width = length / TENON_LENGTH_TO_WIDTH; // width implied by length cap
             width = width.min(by_width);
-            length = KEY_LENGTH_TO_WIDTH * width;
+            length = TENON_LENGTH_TO_WIDTH * width;
         }
 
-        // A key smaller than this floor isn't worth placing — bail to the dome.
-        let floor = (KEY_MIN_FOOTPRINT_MM).max(0.0);
-        if width < floor || length < floor || depth < KEY_MIN_DEPTH_MM {
+        // A tenon smaller than this floor isn't worth placing — bail to the dome.
+        let floor = (TENON_MIN_FOOTPRINT_MM).max(0.0);
+        if width < floor || length < floor || depth < TENON_MIN_DEPTH_MM {
             return None;
         }
         Some(FrustumDims { width, length, depth })
@@ -1578,7 +1578,7 @@ impl Clearance {
     /// are preserved where they fit, only over-large axes shrink). Returns `None`
     /// if the result is smaller than the minimum useful dome on any axis.
     fn fit_dome(&self, nominal: DomeDims, tolerance: f32, half_kerf: f32) -> Option<DomeDims> {
-        let m = KEY_WALL_MARGIN_MM;
+        let m = TENON_WALL_MARGIN_MM;
         let tol = tolerance.max(0.0);
         let cap_depth = (self.depth_b - m - tol - half_kerf.max(0.0)).max(0.0);
         let cap_w = (self.half_room_u() - m - tol).max(0.0);
@@ -1588,7 +1588,7 @@ impl Clearance {
         let depth = nominal.depth.min(cap_depth);
         // The minimum useful dome: a hemisphere of the floor radius (so the floor
         // applies to the semi-axes and the bulge depth alike).
-        let floor = KEY_MIN_DOME_RADIUS_MM;
+        let floor = TENON_MIN_DOME_RADIUS_MM;
         if half_w < floor || half_l < floor || depth < floor {
             None
         } else {
@@ -1597,18 +1597,18 @@ impl Clearance {
     }
 }
 
-/// Smallest base footprint (width/length, mm) a frustum key is allowed to shrink
-/// to before we give up on it and try the dome. The cutoff is 0.99 mm: a key is
+/// Smallest base footprint (width/length, mm) a frustum tenon is allowed to shrink
+/// to before we give up on it and try the dome. The cutoff is 0.99 mm: a tenon is
 /// placed as long as its size is ≥ 0.99 mm, and only rejected when smaller.
-const KEY_MIN_FOOTPRINT_MM: f32 = 0.99;
-/// Smallest depth (mm) a frustum key may shrink to before we try the dome.
-const KEY_MIN_DEPTH_MM: f32 = 0.99;
-/// Smallest dome radius (mm) worth placing before falling back to no key. (Below the
+const TENON_MIN_FOOTPRINT_MM: f32 = 0.99;
+/// Smallest depth (mm) a frustum tenon may shrink to before we try the dome.
+const TENON_MIN_DEPTH_MM: f32 = 0.99;
+/// Smallest dome radius (mm) worth placing before falling back to no tenon. (Below the
 /// 0.99 mm frustum cutoff — a dome can usefully locate at a smaller size.)
-const KEY_MIN_DOME_RADIUS_MM: f32 = 0.75;
+const TENON_MIN_DOME_RADIUS_MM: f32 = 0.75;
 
 /// Nearest ray/mesh hit distance (Möller–Trumbore over all triangles). `None` if
-/// the ray escapes. Brute force — fine for the handful of probe rays per key.
+/// the ray escapes. Brute force — fine for the handful of probe rays per tenon.
 fn nearest_hit(mesh: &IndexedMesh, origin: Vec3, dir: Vec3) -> Option<f32> {
     use dragonfruit_mesh_core::bvh::ray_tri;
     let mut best: Option<f32> = None;
@@ -1626,7 +1626,7 @@ fn nearest_hit(mesh: &IndexedMesh, origin: Vec3, dir: Vec3) -> Option<f32> {
 }
 
 // ---------------------------------------------------------------------------
-// Half-sphere (dome) key — the fallback when a frustum can't fit a thin part.
+// Half-sphere (dome) tenon — the fallback when a frustum can't fit a thin part.
 // ---------------------------------------------------------------------------
 
 /// Build a watertight OBLONG dome — a half-ellipsoid bulging along `+axis` of the
@@ -1638,19 +1638,19 @@ fn nearest_hit(mesh: &IndexedMesh, origin: Vec3, dir: Vec3) -> Option<f32> {
 /// `(half_w·…, half_l·…, depth·cosθ)`. Below the equator (z=0) a short straight
 /// skirt drops to the mouth plane, then a flat cap closes it.
 ///
-/// `grow` dilates every semi-axis by that amount (the socket = peg with
+/// `grow` dilates every semi-axis by that amount (the mortise = tenon with
 /// `grow = tolerance`), and the flat cap sits at `z = −grow − overlap` — pulled
-/// back into part_a by `grow` (socket clearance) plus the fixed `KEY_BASE_OVERLAP_MM`
-/// so the dome base overlaps part_a's solid for a clean union (and the socket mouth
-/// fully breaches part_b). The straight skirt makes the socket a clean per-axis
-/// dilation of the peg (no coincident faces) so the boolean is robust.
+/// back into part_a by `grow` (mortise clearance) plus the fixed `TENON_BASE_OVERLAP_MM`
+/// so the dome base overlaps part_a's solid for a clean union (and the mortise mouth
+/// fully breaches part_b). The straight skirt makes the mortise a clean per-axis
+/// dilation of the tenon (no coincident faces) so the boolean is robust.
 ///
 /// `segments` = longitude steps; the surface uses a fixed number of latitude rings.
 /// `lean` rigid-rotates the bulge; the lower rings blend to keep the flat mouth
 /// disk glued in the cut plane (the dome's many latitude rings make the collar
 /// blend smooth). Pass [`LeanXform::IDENTITY`] for an upright dome.
 fn build_dome_leaned(
-    frame: &KeyFrame,
+    frame: &TenonFrame,
     half_w: f32,
     half_l: f32,
     depth: f32,
@@ -1661,9 +1661,9 @@ fn build_dome_leaned(
     let aw = (half_w + grow).max(1e-4); // semi-axis along u
     let al = (half_l + grow).max(1e-4); // semi-axis along v
     let ad = (depth + grow).max(1e-4); // semi-axis along +axis (bulge depth)
-    // Cap plane: pulled back by `grow` (socket dilation) + the fixed overlap so the
-    // base sinks into part_a. For the peg (grow=0) this is just the overlap.
-    let z_mouth = -grow - KEY_BASE_OVERLAP_MM;
+    // Cap plane: pulled back by `grow` (mortise dilation) + the fixed overlap so the
+    // base sinks into part_a. For the tenon (grow=0) this is just the overlap.
+    let z_mouth = -grow - TENON_BASE_OVERLAP_MM;
     let seg = segments.max(6);
     let rings = DOME_RINGS; // latitude bands from the EQUATOR (z=0) up to the pole
 
@@ -1698,7 +1698,7 @@ fn build_dome_leaned(
         }
     }
     // Skirt ring: the equator profile dropped straight down to the mouth plane (a
-    // short vertical wall so the socket cleanly clears the peg as it enters).
+    // short vertical wall so the mortise cleanly clears the tenon as it enters).
     let skirt = positions.len() as u32;
     for j in 0..seg {
         let phi = 2.0 * std::f32::consts::PI * (j as f32 / seg as f32);
@@ -1743,59 +1743,59 @@ fn build_dome_leaned(
     IndexedMesh { positions, triangles }
 }
 
-/// Union the dome peg onto `part_a`, difference the grown dome socket from
+/// Union the dome tenon onto `part_a`, difference the grown dome mortise from
 /// `part_b`. Same failure contract as [`apply_frustum`].
 fn apply_dome(
     part_a: IndexedMesh,
     part_b: IndexedMesh,
-    frame: &KeyFrame,
-    orig_for_lean: &KeyFrame,
-    tilt: KeyTilt,
+    frame: &TenonFrame,
+    orig_for_lean: &TenonFrame,
+    tilt: TenonTilt,
     dims: DomeDims,
     tolerance: f32,
     half_kerf: f32,
     max_tilt: f32,
-) -> KeyOutcome {
+) -> TenonOutcome {
     // Same kerf correction as the frustum: the mouth sinks into part_a and `dims`
     // arrives already grown (see `grow_plan_for_kerf`).
     let build_frame = sink_frame_into_part_a(&frame_extruding_toward_part_b(frame), half_kerf);
     // Rigid lean rotation about the base (identity when tilt == 0 && roll == 0): the
-    // bulge keeps its shape and is sunk so the tilted mouth disk stays buried. Peg +
-    // socket share the SAME rigid lean, so the dilated socket contains the leaned peg.
+    // bulge keeps its shape and is sunk so the tilted mouth disk stays buried. Tenon +
+    // mortise share the SAME rigid lean, so the dilated mortise contains the leaned tenon.
     let half_diag = dims.half_w.max(dims.half_l) + tolerance;
     let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
     // Leaning lengthens the bulge instead of eating it (see `stretch_depth`).
     let dims = DomeDims { depth: lean.stretch_depth(dims.depth), ..dims };
-    let peg_mesh =
+    let tenon_mesh =
         build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, 0.0, DOME_SEGMENTS, lean);
-    let socket_mesh =
+    let mortise_mesh =
         build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, tolerance, DOME_SEGMENTS, lean);
 
     let result = (|| -> Result<(IndexedMesh, IndexedMesh), String> {
         let a = to_manifold(&part_a).map_err(|e| format!("part_a invalid: {e}"))?;
         let b = to_manifold(&part_b).map_err(|e| format!("part_b invalid: {e}"))?;
-        let peg = to_manifold(&peg_mesh).map_err(|e| format!("dome peg invalid: {e}"))?;
-        let socket = to_manifold(&socket_mesh).map_err(|e| format!("dome socket invalid: {e}"))?;
-        let a_keyed = a.union(&peg);
-        let b_keyed = b.difference(&socket);
-        let a_out = crate::membrane::manifold_to_indexed(&a_keyed)
+        let tenon = to_manifold(&tenon_mesh).map_err(|e| format!("dome tenon invalid: {e}"))?;
+        let mortise = to_manifold(&mortise_mesh).map_err(|e| format!("dome mortise invalid: {e}"))?;
+        let a_tenoned = a.union(&tenon);
+        let b_tenoned = b.difference(&mortise);
+        let a_out = crate::membrane::manifold_to_indexed(&a_tenoned)
             .ok_or("dome union produced empty result")?;
-        let b_out = crate::membrane::manifold_to_indexed(&b_keyed)
+        let b_out = crate::membrane::manifold_to_indexed(&b_tenoned)
             .ok_or("dome difference produced empty result")?;
         Ok((a_out, b_out))
     })();
 
     match result {
-        Ok((a_out, b_out)) => KeyOutcome {
+        Ok((a_out, b_out)) => TenonOutcome {
             part_a: a_out,
             part_b: b_out,
-            kind: KeyKind::Dome,
+            kind: TenonKind::Dome,
             detail: String::new(),
         },
-        Err(reason) => KeyOutcome {
+        Err(reason) => TenonOutcome {
             part_a,
             part_b,
-            kind: KeyKind::None,
+            kind: TenonKind::None,
             detail: reason,
         },
     }
@@ -1884,7 +1884,7 @@ mod tests {
     }
 
     #[test]
-    fn frame_axis_follows_the_surface_where_the_key_sits() {
+    fn frame_axis_follows_the_surface_where_the_tenon_sits() {
         let mem = warped_membrane();
         let frame = frame_from_membrane(&mem).expect("frame");
 
@@ -1946,33 +1946,33 @@ mod tests {
         let mem = flat_membrane(10.0);
         let frame = frame_from_membrane(&mem).expect("frame");
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
-        let peg = build_frustum(&frame, dims, 0.0, 0.0);
-        assert_eq!(peg.positions.len(), 8, "frustum has 8 corners");
-        assert_eq!(peg.triangles.len(), 12, "frustum has 12 triangles");
-        let m = to_manifold(&peg).expect("frustum converts to a watertight manifold");
+        let tenon = build_frustum(&frame, dims, 0.0, 0.0);
+        assert_eq!(tenon.positions.len(), 8, "frustum has 8 corners");
+        assert_eq!(tenon.triangles.len(), 12, "frustum has 12 triangles");
+        let m = to_manifold(&tenon).expect("frustum converts to a watertight manifold");
         assert!(m.num_tri() > 0, "non-empty manifold");
     }
 
     // Test 1b: a FILLETED frustum (rounded corners + tip) is watertight, and its
-    // peg still fits inside the grown filleted socket.
+    // tenon still fits inside the grown filleted mortise.
     #[test]
     fn filleted_frustum_is_watertight_and_fits() {
         let mem = flat_membrane(10.0);
         let frame = frame_from_membrane(&mem).expect("frame");
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
         let fillet = 0.6;
-        let peg = build_frustum(&frame, dims, 0.0, fillet);
+        let tenon = build_frustum(&frame, dims, 0.0, fillet);
         // Rounded build has many more verts/tris than the 8/12 sharp box.
-        assert!(peg.positions.len() > 8, "filleted peg has extra verts");
-        let peg_m = to_manifold(&peg).expect("filleted peg is watertight");
-        assert!(peg_m.num_tri() > 0, "non-empty");
-        // Socket = peg offset by tol with fillet grown by tol (matches apply_frustum).
-        let socket_m =
-            to_manifold(&build_frustum(&frame, dims, 0.1, fillet + 0.1)).expect("filleted socket");
-        let leftover = peg_m.difference(&socket_m);
+        assert!(tenon.positions.len() > 8, "filleted tenon has extra verts");
+        let tenon_m = to_manifold(&tenon).expect("filleted tenon is watertight");
+        assert!(tenon_m.num_tri() > 0, "non-empty");
+        // Mortise = tenon offset by tol with fillet grown by tol (matches apply_frustum).
+        let mortise_m =
+            to_manifold(&build_frustum(&frame, dims, 0.1, fillet + 0.1)).expect("filleted mortise");
+        let leftover = tenon_m.difference(&mortise_m);
         assert!(
             leftover.is_empty() || leftover.num_tri() == 0,
-            "filleted peg fits inside grown filleted socket (leftover = {})",
+            "filleted tenon fits inside grown filleted mortise (leftover = {})",
             leftover.num_tri()
         );
     }
@@ -1984,7 +1984,7 @@ mod tests {
         let dims = FrustumDims::from_width_depth(6.0, 4.0);
         assert!((dims.width - 6.0).abs() < 1e-4, "width = requested 6 mm (got {})", dims.width);
         assert!(
-            (dims.length - KEY_LENGTH_TO_WIDTH * 6.0).abs() < 1e-4,
+            (dims.length - TENON_LENGTH_TO_WIDTH * 6.0).abs() < 1e-4,
             "length = 1.25 × width (got {})",
             dims.length
         );
@@ -1996,47 +1996,47 @@ mod tests {
     fn frustum_dims_are_clamped_to_sane_range() {
         // Absurdly large → capped at the max; zero → floored at the min.
         let huge = FrustumDims::from_width_depth(1.0e6, 1.0e6);
-        assert!((huge.width - KEY_WIDTH_MAX_MM).abs() < 1e-3, "width capped at max");
-        assert!((huge.depth - KEY_DEPTH_MAX_MM).abs() < 1e-3, "depth capped at max");
+        assert!((huge.width - TENON_WIDTH_MAX_MM).abs() < 1e-3, "width capped at max");
+        assert!((huge.depth - TENON_DEPTH_MAX_MM).abs() < 1e-3, "depth capped at max");
         let tiny = FrustumDims::from_width_depth(0.0, 0.0);
-        assert!((tiny.width - KEY_WIDTH_MIN_MM).abs() < 1e-3, "width floored at min");
-        assert!((tiny.depth - KEY_DEPTH_MIN_MM).abs() < 1e-3, "depth floored at min");
+        assert!((tiny.width - TENON_WIDTH_MIN_MM).abs() < 1e-3, "width floored at min");
+        assert!((tiny.depth - TENON_DEPTH_MIN_MM).abs() < 1e-3, "depth floored at min");
     }
 
-    // Test 3: tolerance growth — socket strictly larger than peg on every face.
+    // Test 3: tolerance growth — mortise strictly larger than tenon on every face.
     #[test]
-    fn socket_grows_by_tolerance_on_all_faces() {
+    fn mortise_grows_by_tolerance_on_all_faces() {
         let mem = flat_membrane(10.0);
         let frame = frame_from_membrane(&mem).expect("frame");
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
         let tol = 0.1;
-        let peg = build_frustum(&frame, dims, 0.0, 0.0);
-        let socket = build_frustum(&frame, dims, tol, 0.0);
+        let tenon = build_frustum(&frame, dims, 0.0, 0.0);
+        let mortise = build_frustum(&frame, dims, tol, 0.0);
 
-        let (plo, phi) = bbox_of(&peg);
-        let (slo, shi) = bbox_of(&socket);
-        // Frame axis is ±Z here, u/v in the XY plane. Socket should exceed the peg
+        let (plo, phi) = bbox_of(&tenon);
+        let (slo, shi) = bbox_of(&mortise);
+        // Frame axis is ±Z here, u/v in the XY plane. Mortise should exceed the tenon
         // by ~tol in every direction (the mouth pulls back by tol in −axis too).
         for (a, b, name) in [
             (slo.x, plo.x, "x lo"),
             (slo.y, plo.y, "y lo"),
             (slo.z, plo.z, "z lo"),
         ] {
-            assert!(a < b - tol * 0.5, "socket {name} extends past peg");
+            assert!(a < b - tol * 0.5, "mortise {name} extends past tenon");
         }
         for (a, b, name) in [
             (shi.x, phi.x, "x hi"),
             (shi.y, phi.y, "y hi"),
             (shi.z, phi.z, "z hi"),
         ] {
-            assert!(a > b + tol * 0.5, "socket {name} extends past peg");
+            assert!(a > b + tol * 0.5, "mortise {name} extends past tenon");
         }
     }
 
-    // Test 4: apply_key on a flat cut grows part_a (peg added) and keeps both
+    // Test 4: apply_tenon on a flat cut grows part_a (tenon added) and keeps both
     // halves watertight.
     #[test]
-    fn apply_key_unions_peg_and_carves_socket() {
+    fn apply_tenon_unions_the_tenon_and_carves_the_mortise() {
         // Two stacked boxes acting as the two halves, meeting at z=0 over a 10×10
         // area — exactly what a flat equatorial cut of a 10×10×20 box yields. The
         // un-cut model is the full 10×10×20 body (clearance probes against THIS).
@@ -2046,35 +2046,35 @@ mod tests {
         let mem = flat_membrane(10.0);
 
         let a_tris_before = part_a.triangle_count();
-        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default());
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
 
-        assert_eq!(out.kind, KeyKind::Frustum, "frustum key placed: {}", out.detail);
+        assert_eq!(out.kind, TenonKind::Frustum, "frustum tenon placed: {}", out.detail);
         assert!(
             out.part_a.triangle_count() > a_tris_before,
-            "part_a gained triangles from the unioned peg"
+            "part_a gained triangles from the unioned tenon"
         );
         // Both halves remain watertight (convertible to a manifold).
-        assert!(to_manifold(&out.part_a).is_ok(), "keyed part_a is watertight");
-        assert!(to_manifold(&out.part_b).is_ok(), "keyed part_b is watertight");
+        assert!(to_manifold(&out.part_a).is_ok(), "tenoned part_a is watertight");
+        assert!(to_manifold(&out.part_b).is_ok(), "tenoned part_b is watertight");
     }
 
-    // Test 4b: swap_sides flips which half gets the peg — now part_B grows it (the
+    // Test 4b: swap_sides flips which half gets the tenon — now part_B grows it (the
     // mirror of test 4), and the returned parts keep the caller's a/b orientation.
     #[test]
-    fn swap_sides_puts_the_peg_on_part_b() {
+    fn swap_sides_puts_the_tenon_on_part_b() {
         let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
         let part_a = axis_aligned_slab(Vec3::new(-5.0, -5.0, 0.0), Vec3::new(5.0, 5.0, 10.0));
         let part_b = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 0.0));
         let mem = flat_membrane(10.0);
 
         let b_tris_before = part_b.triangle_count();
-        // swap_sides = true → peg unions onto part_b, socket carves part_a.
-        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, true, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default());
+        // swap_sides = true → tenon unions onto part_b, mortise carves part_a.
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, true, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
 
-        assert_eq!(out.kind, KeyKind::Frustum, "swapped frustum key placed: {}", out.detail);
+        assert_eq!(out.kind, TenonKind::Frustum, "swapped frustum tenon placed: {}", out.detail);
         assert!(
             out.part_b.triangle_count() > b_tris_before,
-            "part_b gained the peg when swapped ({} → {})",
+            "part_b gained the tenon when swapped ({} → {})",
             b_tris_before,
             out.part_b.triangle_count()
         );
@@ -2082,19 +2082,19 @@ mod tests {
         assert!(to_manifold(&out.part_b).is_ok(), "swapped part_b watertight");
     }
 
-    // Test 5: the peg fits inside the grown socket cavity (difference is empty).
+    // Test 5: the tenon fits inside the grown mortise cavity (difference is empty).
     #[test]
-    fn peg_fits_inside_socket_cavity() {
+    fn tenon_fits_inside_mortise_cavity() {
         let mem = flat_membrane(10.0);
         let frame = frame_from_membrane(&mem).expect("frame");
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
-        let peg = to_manifold(&build_frustum(&frame, dims, 0.0, 0.0)).expect("peg");
-        let socket = to_manifold(&build_frustum(&frame, dims, 0.1, 0.0)).expect("socket");
-        // peg − socket should be empty: the peg lies entirely within the cavity.
-        let leftover = peg.difference(&socket);
+        let tenon = to_manifold(&build_frustum(&frame, dims, 0.0, 0.0)).expect("tenon");
+        let mortise = to_manifold(&build_frustum(&frame, dims, 0.1, 0.0)).expect("mortise");
+        // tenon − mortise should be empty: the tenon lies entirely within the cavity.
+        let leftover = tenon.difference(&mortise);
         assert!(
             leftover.is_empty() || leftover.num_tri() == 0,
-            "peg is fully contained in the grown socket (leftover tris = {})",
+            "tenon is fully contained in the grown mortise (leftover tris = {})",
             leftover.num_tri()
         );
     }
@@ -2111,70 +2111,70 @@ mod tests {
         (model, part_a, part_b)
     }
 
-    // Test 7: a thin part_b forces the frustum to SHRINK (depth capped) but a key
-    // is still placed, keeping the socket clear of the far wall by ≥1 mm.
+    // Test 7: a thin part_b forces the frustum to SHRINK (depth capped) but a tenon
+    // is still placed, keeping the mortise clear of the far wall by ≥1 mm.
     #[test]
     fn clearance_clamp_shrinks_the_frustum() {
         let mem = flat_membrane(10.0);
-        // Request a 5 mm-deep key, but part_b is only 4 mm deep → the 5 mm depth
+        // Request a 5 mm-deep tenon, but part_b is only 4 mm deep → the 5 mm depth
         // would punch through, so the clamp must cut it down to stop ≥1 mm short.
         let (model, part_a, part_b) = split_halves(20.0, 4.0);
-        let key_w = 5.0;
-        let key_d = 5.0;
-        assert!(key_d > 4.0, "test premise: requested depth exceeds the part");
+        let tenon_w = 5.0;
+        let tenon_d = 5.0;
+        assert!(tenon_d > 4.0, "test premise: requested depth exceeds the part");
 
-        let out = apply_key(&model, part_a, part_b.clone(), &mem, KeyShape::Frustum, false, KeyTilt::default(), key_w, key_d, 0.0, 0.1, 0.0, KeyOffset::default());
+        let out = apply_tenon(&model, part_a, part_b.clone(), &mem, TenonShape::Frustum, false, TenonTilt::default(), tenon_w, tenon_d, 0.0, 0.1, 0.0, TenonOffset::default());
 
-        assert_eq!(out.kind, KeyKind::Frustum, "still a frustum, just smaller: {}", out.detail);
+        assert_eq!(out.kind, TenonKind::Frustum, "still a frustum, just smaller: {}", out.detail);
         assert!(out.detail.contains("shrunk"), "reports the shrink: {:?}", out.detail);
 
         // No punch-through: part_b's far wall (z = −4) stays intact — its bbox min
-        // is unchanged, meaning the socket cavity did NOT breach the bottom.
+        // is unchanged, meaning the mortise cavity did NOT breach the bottom.
         let (lo_before, _) = bbox_of(&part_b);
         let (lo_after, _) = bbox_of(&out.part_b);
         assert!(
             (lo_after.z - lo_before.z).abs() < 1e-3,
-            "far wall intact (min z {} → {}); socket did not punch through",
+            "far wall intact (min z {} → {}); mortise did not punch through",
             lo_before.z,
             lo_after.z
         );
-        // And the socket genuinely carved material (part_b changed) yet stayed
+        // And the mortise genuinely carved material (part_b changed) yet stayed
         // watertight.
         assert!(
             out.part_b.triangle_count() != part_b.triangle_count(),
-            "socket carved part_b"
+            "mortise carved part_b"
         );
-        assert!(to_manifold(&out.part_b).is_ok(), "keyed part_b watertight");
+        assert!(to_manifold(&out.part_b).is_ok(), "tenoned part_b watertight");
     }
 
-    // Test 8: the fit ladder falls back — dome on a too-thin part, no key on a
+    // Test 8: the fit ladder falls back — dome on a too-thin part, no tenon on a
     // paper-thin part — each with a reason.
     #[test]
     fn fit_ladder_falls_back_to_dome_then_none() {
         let mem = flat_membrane(10.0);
 
-        // ~2.0 mm deep part_b: below the frustum's depth floor (1 mm key + 1 mm
+        // ~2.0 mm deep part_b: below the frustum's depth floor (1 mm tenon + 1 mm
         // wall + 0.1 mm tol = 2.1 mm needed) but the shallower dome still fits.
         let (model1, pa, pb) = split_halves(20.0, 2.0);
-        let dome_out = apply_key(&model1, pa, pb, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default());
-        assert_eq!(dome_out.kind, KeyKind::Dome, "dome fallback: {}", dome_out.detail);
+        let dome_out = apply_tenon(&model1, pa, pb, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
+        assert_eq!(dome_out.kind, TenonKind::Dome, "dome fallback: {}", dome_out.detail);
         assert!(
             dome_out.detail.contains("half-sphere"),
             "dome reason mentions half-sphere: {:?}",
             dome_out.detail
         );
 
-        // Paper-thin part_b (0.5 mm): even the dome can't keep 1 mm → no key, and
+        // Paper-thin part_b (0.5 mm): even the dome can't keep 1 mm → no tenon, and
         // the parts come back UNCHANGED.
         let (model2, pa2, pb2) = split_halves(20.0, 0.5);
         let pb2_tris = pb2.triangle_count();
-        let none_out = apply_key(&model2, pa2, pb2, &mem, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default());
-        assert_eq!(none_out.kind, KeyKind::None, "no key: {}", none_out.detail);
-        assert!(none_out.detail.contains("too thin"), "no-key reason: {:?}", none_out.detail);
+        let none_out = apply_tenon(&model2, pa2, pb2, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
+        assert_eq!(none_out.kind, TenonKind::None, "no tenon: {}", none_out.detail);
+        assert!(none_out.detail.contains("too thin"), "no-tenon reason: {:?}", none_out.detail);
         assert_eq!(
             none_out.part_b.triangle_count(),
             pb2_tris,
-            "part_b is unchanged when no key is placed"
+            "part_b is unchanged when no tenon is placed"
         );
     }
 
@@ -2185,10 +2185,10 @@ mod tests {
         let mem = flat_membrane(10.0);
         // Plenty thick for a frustum — but we ask for a dome explicitly.
         let (model, pa, pb) = split_halves(20.0, 20.0);
-        let out = apply_key(&model, pa, pb, &mem, KeyShape::Dome, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default());
+        let out = apply_tenon(&model, pa, pb, &mem, TenonShape::Dome, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
         assert_eq!(
             out.kind,
-            KeyKind::Dome,
+            TenonKind::Dome,
             "explicit dome on a thick part is a dome, not a frustum: {}",
             out.detail
         );
@@ -2196,10 +2196,10 @@ mod tests {
         assert!(to_manifold(&out.part_b).is_ok(), "domed part_b watertight");
     }
 
-    // Leaning must not eat the peg. It used to: the body kept its length but the
-    // sink that buries the tilted base ate what stuck out, so a 2.5mm key leaned
+    // Leaning must not eat the tenon. It used to: the body kept its length but the
+    // sink that buries the tilted base ate what stuck out, so a 2.5mm tenon leaned
     // over stood barely a millimetre proud — the user asked for a lean and got a
-    // shorter key. The trunk now grows to put it back.
+    // shorter tenon. The trunk now grows to put it back.
     #[test]
     fn leaning_keeps_the_peg_standing_its_full_depth() {
         let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
@@ -2210,37 +2210,37 @@ mod tests {
             Vec3::new(-5.0, 5.0, 0.0),
         ];
         let depth = 2.5;
-        // Only the PEG's triangles: the socket is grown by the tolerance and would
+        // Only the TENON's triangles: the mortise is grown by the tolerance and would
         // read a hair longer.
         let tip_height = |tilt_deg: f32| -> f32 {
-            let preview = build_key_preview_soup(
-                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, false,
-                KeyTilt::new(tilt_deg.to_radians(), 0.0, 0.0), 2.0, depth, 0.0, 0.1, 0.0,
-                KeyOffset::default(),
+            let preview = build_tenon_preview_soup(
+                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, false,
+                TenonTilt::new(tilt_deg.to_radians(), 0.0, 0.0), 2.0, depth, 0.0, 0.1, 0.0,
+                TenonOffset::default(),
             )
             .expect("preview builds");
-            let peg = &preview.soup[..preview.peg_triangles * 9];
-            // The cut is at z=0 and the peg extrudes along ±z.
-            peg.chunks_exact(3).map(|c| c[2].abs()).fold(0.0f32, f32::max)
+            let tenon = &preview.soup[..preview.tenon_triangles * 9];
+            // The cut is at z=0 and the tenon extrudes along ±z.
+            tenon.chunks_exact(3).map(|c| c[2].abs()).fold(0.0f32, f32::max)
         };
         let upright = tip_height(0.0);
         assert!(
             (upright - depth).abs() < 0.05,
-            "an upright key stands its requested depth, got {upright}",
+            "an upright tenon stands its requested depth, got {upright}",
         );
         let leaned = tip_height(30.0);
         assert!(
             leaned >= depth - 0.05,
-            "a leaned key still stands {depth}mm proud, got {leaned}",
+            "a leaned tenon still stands {depth}mm proud, got {leaned}",
         );
     }
 
     // The lean cap comes from the part, not from a constant: room to spare means the
-    // full 60°, a tight wall means less, and a key that can't lean at all reports 0.
+    // full 60°, a tight wall means less, and a tenon that can't lean at all reports 0.
     #[test]
-    fn the_lean_cap_follows_the_room_around_the_key() {
+    fn the_lean_cap_follows_the_room_around_the_tenon() {
         let dims = FrustumDims::from_width_depth(2.0, 2.5);
-        let plan = KeyPlan::Frustum { dims, detail: String::new() };
+        let plan = TenonPlan::Frustum { dims, detail: String::new() };
         let roomy = Clearance {
             depth_a: f32::INFINITY,
             depth_b: f32::INFINITY,
@@ -2251,13 +2251,13 @@ mod tests {
         };
         assert_eq!(
             max_tilt_for(&roomy, &plan, 0.1),
-            KEY_MAX_TILT_RAD,
+            TENON_MAX_TILT_RAD,
             "nothing in the way → the hard ceiling",
         );
 
         let walled = Clearance { lat_u_pos: 4.0, lat_u_neg: 4.0, ..roomy };
         let capped = max_tilt_for(&walled, &plan, 0.1);
-        assert!(capped > 0.0 && capped < KEY_MAX_TILT_RAD, "a near wall caps the lean, got {capped}");
+        assert!(capped > 0.0 && capped < TENON_MAX_TILT_RAD, "a near wall caps the lean, got {capped}");
 
         let cramped = Clearance { lat_v_pos: 1.2, lat_v_neg: 1.2, ..roomy };
         assert_eq!(max_tilt_for(&cramped, &plan, 0.1), 0.0, "no room at all → no lean");
@@ -2268,9 +2268,9 @@ mod tests {
     }
 
     // Test 6: the preview soup is non-empty, finite, and a multiple of 9 floats
-    // (peg + socket), and reports the frustum kind on a healthy part.
+    // (tenon + mortise), and reports the frustum kind on a healthy part.
     #[test]
-    fn key_preview_soup_is_valid() {
+    fn tenon_preview_soup_is_valid() {
         // A 10×10×20 box as the model; an equatorial loop at z=0.
         let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
         let loop_pts = vec![
@@ -2280,30 +2280,30 @@ mod tests {
             Vec3::new(-5.0, 5.0, 0.0),
         ];
         let preview =
-            build_key_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default())
+            build_tenon_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default())
                 .expect("preview builds");
         let soup = &preview.soup;
-        assert_eq!(preview.kind, KeyKind::Frustum, "healthy box → frustum key preview");
+        assert_eq!(preview.kind, TenonKind::Frustum, "healthy box → frustum tenon preview");
         assert!(!soup.is_empty(), "preview soup non-empty");
         assert_eq!(soup.len() % 9, 0, "whole triangles");
         assert!(soup.iter().all(|f| f.is_finite()), "all coords finite");
-        // The peg is the first half of the soup and the socket the rest, so the
+        // The tenon is the first half of the soup and the mortise the rest, so the
         // frontend can colour them apart.
-        assert!(preview.peg_triangles > 0, "peg triangles reported");
+        assert!(preview.tenon_triangles > 0, "tenon triangles reported");
         assert!(
-            preview.peg_triangles < soup.len() / 9,
-            "the socket's triangles come after the peg's",
+            preview.tenon_triangles < soup.len() / 9,
+            "the mortise's triangles come after the tenon's",
         );
     }
 
-    // A thick kerf must not leave the peg floating. The cutter is a slab centred on
-    // the membrane, so part_a's cut face ends up kerf/2 away from it; the key's base
-    // reaches back only KEY_BASE_OVERLAP_MM. At a 1 mm kerf that is 0.2 mm short, and
-    // the union welded nothing — the peg came out as a separate island in the same
+    // A thick kerf must not leave the tenon floating. The cutter is a slab centred on
+    // the membrane, so part_a's cut face ends up kerf/2 away from it; the tenon's base
+    // reaches back only TENON_BASE_OVERLAP_MM. At a 1 mm kerf that is 0.2 mm short, and
+    // the union welded nothing — the tenon came out as a separate island in the same
     // mesh. The base must clear part_a's face at any kerf, and the tip must still
     // stand the requested depth proud of part_b's face.
     #[test]
-    fn key_spans_the_kerf_at_any_cutter_thickness() {
+    fn tenon_spans_the_kerf_at_any_cutter_thickness() {
         let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
         let loop_pts = vec![
             Vec3::new(-5.0, -5.0, 0.0),
@@ -2313,15 +2313,15 @@ mod tests {
         ];
         let depth = 5.0;
         for kerf in [0.0, crate::membrane::DEFAULT_CUTTER_THICKNESS_MM, 1.0, 2.0] {
-            let preview = build_key_preview_soup(
-                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum,
-                false, KeyTilt::default(), 5.0, depth, 0.0, 0.1, kerf, KeyOffset::default(),
+            let preview = build_tenon_preview_soup(
+                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum,
+                false, TenonTilt::default(), 5.0, depth, 0.0, 0.1, kerf, TenonOffset::default(),
             )
             .expect("preview builds");
             let (soup, kind, detail) = (&preview.soup, preview.kind, &preview.detail);
-            assert_eq!(kind, KeyKind::Frustum, "kerf {kerf}: frustum placed ({detail})");
+            assert_eq!(kind, TenonKind::Frustum, "kerf {kerf}: frustum placed ({detail})");
 
-            // The cut is at z=0 and the key extrudes along ±z; take the extent on the
+            // The cut is at z=0 and the tenon extrudes along ±z; take the extent on the
             // side the base sinks into and the side the tip reaches.
             let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
             for c in soup.chunks_exact(3) {
@@ -2333,9 +2333,9 @@ mod tests {
             // has real material to bond to.
             let base_depth = lo.abs().min(hi.abs());
             assert!(
-                base_depth >= half + KEY_BASE_OVERLAP_MM - 1e-3,
+                base_depth >= half + TENON_BASE_OVERLAP_MM - 1e-3,
                 "kerf {kerf}: base reaches {base_depth} behind the cut, needs {} (half kerf + overlap)",
-                half + KEY_BASE_OVERLAP_MM,
+                half + TENON_BASE_OVERLAP_MM,
             );
             // Tip: the requested depth clear of part_b's face, not of the membrane.
             let tip = lo.abs().max(hi.abs());
@@ -2347,10 +2347,10 @@ mod tests {
         }
     }
 
-    // Test 6b: the swap flag visibly flips the preview — the key's body extends to
+    // Test 6b: the swap flag visibly flips the preview — the tenon's body extends to
     // the OPPOSITE side of the cut (so the flip is apparent on screen, not a no-op).
     #[test]
-    fn swap_flips_the_preview_key_direction() {
+    fn swap_flips_the_preview_tenon_direction() {
         let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
         let loop_pts = vec![
             Vec3::new(-5.0, -5.0, 0.0),
@@ -2358,11 +2358,11 @@ mod tests {
             Vec3::new(5.0, 5.0, 0.0),
             Vec3::new(-5.0, 5.0, 0.0),
         ];
-        // The cut is at z=0; the peg extrudes along ±z. Measure the soup's z-extent
+        // The cut is at z=0; the tenon extrudes along ±z. Measure the soup's z-extent
         // on each side of the cut for unswapped vs swapped.
         let z_extent = |swap: bool| -> (f32, f32) {
-            let soup = build_key_preview_soup(
-                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, KeyShape::Frustum, swap, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, KeyOffset::default(),
+            let soup = build_tenon_preview_soup(
+                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, swap, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default(),
             )
             .expect("preview builds")
             .soup;
@@ -2376,43 +2376,43 @@ mod tests {
         };
         let (lo0, hi0) = z_extent(false);
         let (lo1, hi1) = z_extent(true);
-        // Unswapped: peg extends mostly to ONE side; swapped: mostly to the OTHER.
+        // Unswapped: tenon extends mostly to ONE side; swapped: mostly to the OTHER.
         // The body's far extent should land on opposite signs of z.
         let far0 = if hi0.abs() > lo0.abs() { hi0 } else { lo0 };
         let far1 = if hi1.abs() > lo1.abs() { hi1 } else { lo1 };
         assert!(
             far0.signum() != far1.signum(),
-            "swap flips the key to the other side of the cut (far0={far0}, far1={far1})"
+            "swap flips the tenon to the other side of the cut (far0={far0}, far1={far1})"
         );
     }
 
-    // Test 9: the dome key (round AND oblong) is watertight and the peg fits inside
-    // the grown socket.
+    // Test 9: the dome tenon (round AND oblong) is watertight and the tenon fits inside
+    // the grown mortise.
     #[test]
     fn dome_is_watertight_and_fits() {
         let mem = flat_membrane(10.0);
         let frame = frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
         // (half_w, half_l, depth) cases: a round hemisphere and two oblong ones.
         for (hw, hl, d) in [(3.0, 3.0, 3.0), (4.0, 2.0, 3.0), (2.0, 2.5, 5.0)] {
-            let peg = build_dome_leaned(&frame, hw, hl, d, 0.0, DOME_SEGMENTS, LeanXform::IDENTITY);
-            let socket =
+            let tenon = build_dome_leaned(&frame, hw, hl, d, 0.0, DOME_SEGMENTS, LeanXform::IDENTITY);
+            let mortise =
                 build_dome_leaned(&frame, hw, hl, d, 0.1, DOME_SEGMENTS, LeanXform::IDENTITY);
-            let peg_m = to_manifold(&peg)
-                .unwrap_or_else(|e| panic!("dome peg ({hw},{hl},{d}) watertight: {e}"));
-            let socket_m = to_manifold(&socket)
-                .unwrap_or_else(|e| panic!("dome socket ({hw},{hl},{d}) watertight: {e}"));
-            let leftover = peg_m.difference(&socket_m);
+            let tenon_m = to_manifold(&tenon)
+                .unwrap_or_else(|e| panic!("dome tenon ({hw},{hl},{d}) watertight: {e}"));
+            let mortise_m = to_manifold(&mortise)
+                .unwrap_or_else(|e| panic!("dome mortise ({hw},{hl},{d}) watertight: {e}"));
+            let leftover = tenon_m.difference(&mortise_m);
             assert!(
                 leftover.is_empty() || leftover.num_tri() == 0,
-                "dome peg ({hw},{hl},{d}) fits inside grown socket (leftover = {})",
+                "dome tenon ({hw},{hl},{d}) fits inside grown mortise (leftover = {})",
                 leftover.num_tri()
             );
         }
     }
 
-    // Test 11: a TILTED key rigidly rotates (keeps its exact shape) about the base,
+    // Test 11: a TILTED tenon rigidly rotates (keeps its exact shape) about the base,
     // sunk so the tilted base stays buried below the cut plane, and the tip leans
-    // over. The whole key is one rigid body — no shear/stretch.
+    // over. The whole tenon is one rigid body — no shear/stretch.
     #[test]
     fn tilt_rotates_rigidly_and_leans_the_tip() {
         let mem = flat_membrane(10.0);
@@ -2420,9 +2420,9 @@ mod tests {
             frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
         let half_diag = 0.5 * dims.width.hypot(dims.length);
-        let tilt = KeyTilt::new(std::f32::consts::FRAC_PI_4, 0.0, 0.0); // 45° lean
+        let tilt = TenonTilt::new(std::f32::consts::FRAC_PI_4, 0.0, 0.0); // 45° lean
         let orig = frame_from_membrane(&mem).expect("frame");
-        let lean = LeanXform::for_build(&orig, &frame, &tilt, half_diag, KEY_MAX_TILT_RAD, 0.0);
+        let lean = LeanXform::for_build(&orig, &frame, &tilt, half_diag, TENON_MAX_TILT_RAD, 0.0);
 
         let _ = build_frustum_leaned(&frame, dims, 0.0, 0.0, lean); // builds watertight
         // The base footprint must stay buried below the cut plane: transform each base
@@ -2430,7 +2430,7 @@ mod tests {
         // ≤ ~0, so the union bonds along a fully embedded base.
         let bw = dims.width * 0.5;
         let bl = dims.length * 0.5;
-        let z_mouth = -KEY_BASE_OVERLAP_MM;
+        let z_mouth = -TENON_BASE_OVERLAP_MM;
         let mut max_base_height = f32::NEG_INFINITY;
         for &(sx, sy) in &[(1.0f32, 1.0f32), (-1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)] {
             // local z height of the transformed base corner (z component of apply()).
@@ -2442,7 +2442,7 @@ mod tests {
             "tilted base stays buried below the cut plane (highest base z = {max_base_height})"
         );
         // Tip: the apex leans over at the angle asked for. Measured from the ANCHOR
-        // (the point on the membrane the key pivots about), not from the sunk base
+        // (the point on the membrane the tenon pivots about), not from the sunk base
         // — at 45° the tip stands as far sideways as it stands proud.
         let (tx, ty, tz) = lean.apply(0.0, 0.0, dims.depth);
         let lateral = (tx * tx + ty * ty).sqrt();
@@ -2453,12 +2453,12 @@ mod tests {
         );
     }
 
-    // Test 11a1: the key's axis goes through the ANCHOR at any lean.
+    // Test 11a1: the tenon's axis goes through the ANCHOR at any lean.
     //
     // It used to pivot about the build frame's origin, which sits half a kerf below
-    // the membrane and sinks further as the lean grows — so the key's section at the
+    // the membrane and sinks further as the lean grows — so the tenon's section at the
     // membrane slid out from under the crosshair that marks the anchor, nearly
-    // leaving the key at a big lean.
+    // leaving the tenon at a big lean.
     #[test]
     fn the_lean_pivots_on_the_anchor_not_the_sunk_base() {
         let mem = flat_membrane(10.0);
@@ -2467,9 +2467,9 @@ mod tests {
         let orig = frame_from_membrane(&mem).expect("frame");
         let half_kerf = 0.25;
         for deg in [10.0f32, 30.0, 55.0, -40.0] {
-            let tilt = KeyTilt::new(deg.to_radians(), 0.7, 0.0);
+            let tilt = TenonTilt::new(deg.to_radians(), 0.7, 0.0);
             let lean =
-                LeanXform::for_build(&orig, &frame, &tilt, 4.0, KEY_MAX_TILT_RAD, half_kerf);
+                LeanXform::for_build(&orig, &frame, &tilt, 4.0, TENON_MAX_TILT_RAD, half_kerf);
             // Two points on the un-leaned axis → the leaned axis. Where does it cross
             // the membrane (local z = half_kerf above the build origin)?
             let (ax, ay, az) = lean.apply(0.0, 0.0, 0.0);
@@ -2485,7 +2485,7 @@ mod tests {
     }
 
     // Test 11a2: the lean is a RIGID rotation — pairwise distances between any two
-    // points are preserved (the key keeps its exact shape, no shear).
+    // points are preserved (the tenon keeps its exact shape, no shear).
     #[test]
     fn tilt_preserves_body_shape() {
         let mem = flat_membrane(10.0);
@@ -2493,8 +2493,8 @@ mod tests {
             frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
         let dims = FrustumDims::from_width_depth(5.0, 6.0);
         let orig = frame_from_membrane(&mem).expect("frame");
-        let tilt = KeyTilt::new(40.0_f32.to_radians(), 0.9, 0.4);
-        let lean = LeanXform::for_build(&orig, &frame, &tilt, 4.0, KEY_MAX_TILT_RAD, 0.0);
+        let tilt = TenonTilt::new(40.0_f32.to_radians(), 0.9, 0.4);
+        let lean = LeanXform::for_build(&orig, &frame, &tilt, 4.0, TENON_MAX_TILT_RAD, 0.0);
         // Any two points: their distance must be the same before and after the lean
         // (a rigid rotation + uniform sink preserves all lengths).
         let a = (2.0f32, 1.0f32, dims.depth * 0.3);
@@ -2511,12 +2511,12 @@ mod tests {
         );
     }
 
-    // Test 11b: a tilted key (peg AND socket) is watertight at a range of angles —
-    // the rigid lean + collar must not break the manifold. (The peg/socket SLIDE FIT
+    // Test 11b: a tilted tenon (tenon AND mortise) is watertight at a range of angles —
+    // the rigid lean + collar must not break the manifold. (The tenon/mortise SLIDE FIT
     // under lean is exercised end-to-end by the boolean in the real-pipeline tests;
     // here we pin the per-mesh watertightness, which is what manifold needs.)
     #[test]
-    fn tilted_key_is_watertight() {
+    fn tilted_tenon_is_watertight() {
         let mem = flat_membrane(10.0);
         let frame =
             frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
@@ -2526,37 +2526,37 @@ mod tests {
             (55.0, 1.2, 0.6, 0.0),
             (45.0, 2.5, 0.0, 0.7),
         ] {
-            let tilt = KeyTilt::new(deg.to_radians(), az, roll);
+            let tilt = TenonTilt::new(deg.to_radians(), az, roll);
             let dims = FrustumDims::from_width_depth(5.0, 5.0);
-            let lean = LeanXform::for_build(&orig, &frame, &tilt, dims.depth, KEY_MAX_TILT_RAD, 0.0);
-            let peg = build_frustum_leaned(&frame, dims, 0.0, fillet, lean);
-            // Match apply_frustum: when leaning, socket uses the SAME fillet as the
-            // peg (dilated extents) so peg/socket share z-levels and nest per slab.
-            let socket = build_frustum_leaned(&frame, dims, 0.1, fillet, lean);
-            let peg_m = to_manifold(&peg)
-                .unwrap_or_else(|e| panic!("tilted peg ({deg}°,{az},{roll}) watertight: {e}"));
-            let socket_m = to_manifold(&socket)
-                .unwrap_or_else(|e| panic!("tilted socket ({deg}°) watertight: {e}"));
-            assert!(peg_m.num_tri() > 0 && socket_m.num_tri() > 0, "non-empty");
-            // Per-z-slab nesting: the peg fits fully inside the grown socket cavity.
-            let leftover = peg_m.difference(&socket_m);
+            let lean = LeanXform::for_build(&orig, &frame, &tilt, dims.depth, TENON_MAX_TILT_RAD, 0.0);
+            let tenon = build_frustum_leaned(&frame, dims, 0.0, fillet, lean);
+            // Match apply_frustum: when leaning, mortise uses the SAME fillet as the
+            // tenon (dilated extents) so tenon/mortise share z-levels and nest per slab.
+            let mortise = build_frustum_leaned(&frame, dims, 0.1, fillet, lean);
+            let tenon_m = to_manifold(&tenon)
+                .unwrap_or_else(|e| panic!("tilted tenon ({deg}°,{az},{roll}) watertight: {e}"));
+            let mortise_m = to_manifold(&mortise)
+                .unwrap_or_else(|e| panic!("tilted mortise ({deg}°) watertight: {e}"));
+            assert!(tenon_m.num_tri() > 0 && mortise_m.num_tri() > 0, "non-empty");
+            // Per-z-slab nesting: the tenon fits fully inside the grown mortise cavity.
+            let leftover = tenon_m.difference(&mortise_m);
             assert!(
                 leftover.is_empty() || leftover.num_tri() == 0,
-                "tilted peg ({deg}°) fits inside the socket cavity (leftover = {})",
+                "tilted tenon ({deg}°) fits inside the mortise cavity (leftover = {})",
                 leftover.num_tri()
             );
         }
     }
 
     // Test 11c: zero tilt is a TRUE no-op — the leaned build is byte-identical to the
-    // plain build (so a key with no lean is exactly today's geometry).
+    // plain build (so a tenon with no lean is exactly today's geometry).
     #[test]
     fn zero_tilt_is_identity() {
         let mem = flat_membrane(10.0);
         let frame =
             frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
         let orig = frame_from_membrane(&mem).expect("frame");
-        let lean = LeanXform::for_build(&orig, &frame, &KeyTilt::default(), 5.0, KEY_MAX_TILT_RAD, 0.0);
+        let lean = LeanXform::for_build(&orig, &frame, &TenonTilt::default(), 5.0, TENON_MAX_TILT_RAD, 0.0);
         assert!(lean.identity, "zero tilt + zero roll → identity lean");
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
         let plain = build_frustum(&frame, dims, 0.0, 0.4);
@@ -2570,29 +2570,29 @@ mod tests {
         }
     }
 
-    // Test 11d: the full apply_key path with a tilt keeps both halves watertight and
-    // still bonds the peg (part_a gains tris) — end-to-end, not just the builder.
+    // Test 11d: the full apply_tenon path with a tilt keeps both halves watertight and
+    // still bonds the tenon (part_a gains tris) — end-to-end, not just the builder.
     #[test]
-    fn apply_key_with_tilt_is_watertight() {
+    fn apply_tenon_with_tilt_is_watertight() {
         let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
         let part_a = axis_aligned_slab(Vec3::new(-5.0, -5.0, 0.0), Vec3::new(5.0, 5.0, 10.0));
         let part_b = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 0.0));
         let mem = flat_membrane(10.0);
         let a_before = part_a.triangle_count();
-        let tilt = KeyTilt::new(40.0_f32.to_radians(), 0.7, 0.3);
-        let out = apply_key(&model, part_a, part_b, &mem, KeyShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, 0.0, KeyOffset::default());
-        assert_eq!(out.kind, KeyKind::Frustum, "tilted key placed: {}", out.detail);
-        assert!(out.part_a.triangle_count() > a_before, "peg bonded to part_a");
+        let tilt = TenonTilt::new(40.0_f32.to_radians(), 0.7, 0.3);
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, 0.0, TenonOffset::default());
+        assert_eq!(out.kind, TenonKind::Frustum, "tilted tenon placed: {}", out.detail);
+        assert!(out.part_a.triangle_count() > a_before, "tenon bonded to part_a");
         assert!(to_manifold(&out.part_a).is_ok(), "tilted part_a watertight");
         assert!(to_manifold(&out.part_b).is_ok(), "tilted part_b watertight");
     }
 
-    // Test 10: THE REAL PIPELINE — run an actual contour_split on a cube, then key
+    // Test 10: THE REAL PIPELINE — run an actual contour_split on a cube, then tenon
     // the parts it produces (NOT hand-built boxes). This reproduces exactly what
     // the production cut does, so it catches failures that the box-fixture tests
     // miss (e.g. the contour parts not re-importing cleanly to manifold).
     #[test]
-    fn keys_the_real_contour_split_parts() {
+    fn places_a_tenon_on_the_real_contour_split_parts() {
         use crate::membrane::{contour_split, DEFAULT_CUTTER_THICKNESS_MM, DEFAULT_MEMBRANE_SMOOTHING};
 
         // A 20-unit cube, cut around its equator with a dense surface loop — the
@@ -2618,7 +2618,7 @@ mod tests {
         .expect("contour split severs the cube");
 
         // First: do the contour parts even re-import to manifold on their own?
-        // (If THIS fails, the key boolean can't possibly work — the parts are bad.)
+        // (If THIS fails, the tenon boolean can't possibly work — the parts are bad.)
         assert!(
             to_manifold(&split.part_a).is_ok(),
             "contour part_a re-imports to manifold"
@@ -2631,28 +2631,28 @@ mod tests {
         let a_before = split.part_a.triangle_count();
         let b_before = split.part_b.triangle_count();
 
-        // Now key the REAL parts — clearance probes against the original `model`.
-        let out = apply_key(&model, split.part_a, split.part_b, &split.membrane, KeyShape::Frustum, false, KeyTilt::default(), 5.0, 5.0, 0.0, 0.1, DEFAULT_CUTTER_THICKNESS_MM, KeyOffset::default());
+        // Now tenon the REAL parts — clearance probes against the original `model`.
+        let out = apply_tenon(&model, split.part_a, split.part_b, &split.membrane, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, DEFAULT_CUTTER_THICKNESS_MM, TenonOffset::default());
 
         assert_eq!(
             out.kind,
-            KeyKind::Frustum,
-            "key placed on real contour parts (detail: {})",
+            TenonKind::Frustum,
+            "tenon placed on real contour parts (detail: {})",
             out.detail
         );
         assert!(
             out.part_a.triangle_count() != a_before,
-            "part_a changed (peg unioned): {} → {}",
+            "part_a changed (tenon unioned): {} → {}",
             a_before,
             out.part_a.triangle_count()
         );
         assert!(
             out.part_b.triangle_count() != b_before,
-            "part_b changed (socket carved): {} → {}",
+            "part_b changed (mortise carved): {} → {}",
             b_before,
             out.part_b.triangle_count()
         );
-        assert!(to_manifold(&out.part_a).is_ok(), "keyed part_a watertight");
-        assert!(to_manifold(&out.part_b).is_ok(), "keyed part_b watertight");
+        assert!(to_manifold(&out.part_a).is_ok(), "tenoned part_a watertight");
+        assert!(to_manifold(&out.part_b).is_ok(), "tenoned part_b watertight");
     }
 }

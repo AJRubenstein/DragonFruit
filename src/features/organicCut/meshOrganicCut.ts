@@ -9,7 +9,7 @@
  * each part is read back by index via `mesh_organic_cut_read_part`.
  */
 import * as THREE from 'three';
-import type { KeyPreviewFrame, OrganicCutLoopPoint, OrganicCutOptions, OrganicCutReport, OrganicCutResult } from './types';
+import type { TenonPreviewFrame, OrganicCutLoopPoint, OrganicCutOptions, OrganicCutReport, OrganicCutResult } from './types';
 
 type TauriInvoke = <T>(
   cmd: string,
@@ -23,7 +23,7 @@ interface TauriCoreModule {
 
 let tauriCorePromise: Promise<TauriCoreModule | null> | null = null;
 let stagedCutSourceKey: string | null = null;
-// The geometry OBJECT last staged. Tracked alongside the key so that if a model's
+// The geometry OBJECT last staged. Tracked alongside the tenon so that if a model's
 // geometry is replaced under the SAME id (e.g. a cut then undo restores the
 // original geometry reference), we detect the change and re-stage instead of
 // reusing the stale captured source.
@@ -47,7 +47,7 @@ async function loadTauriCore(): Promise<TauriCoreModule | null> {
 type OrganicCutReadCommand =
   | 'mesh_organic_cut_read_geodesic'
   | 'mesh_organic_cut_read_membrane'
-  | 'mesh_organic_cut_read_key';
+  | 'mesh_organic_cut_read_tenon';
 
 /** Decode raw LE bytes (ArrayBuffer / Uint8Array / number[]) into an f32 array. */
 function decodeF32(bytes: ArrayBuffer | Uint8Array | number[], label: string): Float32Array {
@@ -127,16 +127,16 @@ async function readAllParts(invoke: TauriInvoke, count: number): Promise<Float32
 
 /**
  * Captures the given geometry as the non-mutating cut source for repeated
- * previews. Keyed so re-staging the same geometry is a cheap no-op.
+ * previews. Tenoned so re-staging the same geometry is a cheap no-op.
  */
 /**
- * True if the given source key is already staged + captured, so callers on a hot
+ * True if the given source tenon is already staged + captured, so callers on a hot
  * path (e.g. the per-frame geodesic during a waypoint drag) can skip the
  * `stageCutSource` await entirely.
  */
 export function isCutSourceStaged(sourceKey: string, geometry?: THREE.BufferGeometry): boolean {
   if (stagedCutSourceKey !== sourceKey) return false;
-  // Same key but a different geometry object → the mesh was replaced (cut/undo);
+  // Same tenon but a different geometry object → the mesh was replaced (cut/undo);
   // treat as not staged so callers re-stage the current geometry.
   if (geometry && stagedCutSourceGeometry !== geometry) return false;
   return true;
@@ -149,7 +149,7 @@ export async function stageCutSource(
   const core = await loadTauriCore();
   if (!core) return false;
 
-  // Re-stage if either the key OR the geometry object changed (same id can carry
+  // Re-stage if either the tenon OR the geometry object changed (same id can carry
   // new geometry after a cut/undo).
   if (stagedCutSourceKey === sourceKey && stagedCutSourceGeometry === geometry) {
     return true;
@@ -246,38 +246,38 @@ export async function computeGeodesicLoop(
   }
 }
 
-/** Which key the preview placed: a frustum, a half-sphere dome, or none. */
-export type KeyPreviewKind = 'frustum' | 'dome' | 'none';
+/** Which tenon the preview placed: a frustum, a half-sphere dome, or none. */
+export type TenonPreviewKind = 'frustum' | 'dome' | 'none';
 
 /**
  * Result of the contour-cut preview round-trip: the membrane cutter soup plus,
- * when a key was requested, the key (peg + socket) soup and the chosen-rung kind
- * + a human-readable reason (for the fell-back/no-key alert).
+ * when a tenon was requested, the tenon (tenon + mortise) soup and the chosen-rung kind
+ * + a human-readable reason (for the fell-back/no-tenon alert).
  */
 export interface MembranePreviewResult {
   /** The cutter membrane/slab soup (9 floats per triangle), or null. */
   membrane: Float32Array | null;
-  /** The key (peg + socket) soup, or null when no key / not requested. */
-  keyPreview: Float32Array | null;
+  /** The tenon (tenon + mortise) soup, or null when no tenon / not requested. */
+  tenonPreview: Float32Array | null;
   /**
-   * How many of `keyPreview`'s triangles are the PEG — the soup is the peg
-   * followed by the socket. The two are drawn in different colours, which is what
-   * makes Fit Tolerance legible: it grows the socket and never moves the peg.
+   * How many of `tenonPreview`'s triangles are the TENON — the soup is the tenon
+   * followed by the mortise. The two are drawn in different colours, which is what
+   * makes Fit Tolerance legible: it grows the mortise and never moves the tenon.
    */
-  keyPegTriangleCount: number;
-  /** Which key rung was chosen. 'none' when not requested or too thin. */
-  keyKind: KeyPreviewKind;
-  /** Reason the key shrank / fell back / was skipped. Empty when nominal/off. */
-  keyDetail: string;
+  tenonTriangleCount: number;
+  /** Which tenon rung was chosen. 'none' when not requested or too thin. */
+  tenonKind: TenonPreviewKind;
+  /** Reason the tenon shrank / fell back / was skipped. Empty when nominal/off. */
+  tenonDetail: string;
   /**
-   * Placement frame of the previewed key (model-local), for the aim+roll gizmo.
-   * Null when no key was placed.
+   * Placement frame of the previewed tenon (model-local), for the aim+roll gizmo.
+   * Null when no tenon was placed.
    */
-  keyFrame: KeyPreviewFrame | null;
+  tenonFrame: TenonPreviewFrame | null;
 }
 
 /**
- * Builds the contour-cut MEMBRANE (and, when `generateKey`, the registration key)
+ * Builds the contour-cut MEMBRANE (and, when `generateTenon`, the registration tenon)
  * for the given loop, returning each as a flat triangle soup (9 floats per
  * triangle, model-local) for previewing in the scene. Requires the source already
  * staged + captured. Returns a result with null soups outside Tauri / on failure /
@@ -288,26 +288,26 @@ export async function computeMembranePreview(
   membraneSmoothing = 0.5,
   density = 1.0,
   thicknessMm = 0.1,
-  generateKey = false,
-  keyWidthMm = 2.0,
-  keyDepthMm = 2.5,
-  keyShape: 'frustum' | 'dome' = 'frustum',
-  keyFilletMm = 0.0,
-  keyToleranceMm = 0.1,
-  keySwapSides = false,
-  keyOffsetUMm = 0.0,
-  keyOffsetVMm = 0.0,
-  keyTiltRad = 0.0,
-  keyTiltAzimuthRad = 0.0,
-  keyRollRad = 0.0,
+  generateTenon = false,
+  tenonWidthMm = 2.0,
+  tenonDepthMm = 2.5,
+  tenonShape: 'frustum' | 'dome' = 'frustum',
+  tenonFilletMm = 0.0,
+  tenonToleranceMm = 0.1,
+  tenonSwapSides = false,
+  tenonOffsetUMm = 0.0,
+  tenonOffsetVMm = 0.0,
+  tenonTiltRad = 0.0,
+  tenonTiltAzimuthRad = 0.0,
+  tenonRollRad = 0.0,
 ): Promise<MembranePreviewResult> {
   const empty: MembranePreviewResult = {
     membrane: null,
-    keyPreview: null,
-    keyPegTriangleCount: 0,
-    keyKind: 'none',
-    keyDetail: '',
-    keyFrame: null,
+    tenonPreview: null,
+    tenonTriangleCount: 0,
+    tenonKind: 'none',
+    tenonDetail: '',
+    tenonFrame: null,
   };
   const core = await loadTauriCore();
   if (!core) return empty;
@@ -319,42 +319,42 @@ export async function computeMembranePreview(
     membraneSmoothing,
     density,
     thicknessMm,
-    generateKey,
-    keyWidthMm,
-    keyDepthMm,
-    keyShape,
-    keyFilletMm,
-    keyToleranceMm,
-    keySwapSides,
-    keyOffsetUMm,
-    keyOffsetVMm,
-    keyTiltRad,
-    keyTiltAzimuthRad,
-    keyRollRad,
+    generateTenon,
+    tenonWidthMm,
+    tenonDepthMm,
+    tenonShape,
+    tenonFilletMm,
+    tenonToleranceMm,
+    tenonSwapSides,
+    tenonOffsetUMm,
+    tenonOffsetVMm,
+    tenonTiltRad,
+    tenonTiltAzimuthRad,
+    tenonRollRad,
   });
   try {
     const reportJson = await core.invoke<string>('mesh_organic_cut_membrane_preview', { requestJson });
     const report = JSON.parse(reportJson) as {
       triangleCount: number;
-      keyTriangleCount?: number;
-      keyPegTriangleCount?: number;
-      keyKind?: KeyPreviewKind;
-      keyDetail?: string;
-      keyFrame?: KeyPreviewFrame | null;
+      jointTriangleCount?: number;
+      tenonTriangleCount?: number;
+      tenonKind?: TenonPreviewKind;
+      tenonDetail?: string;
+      tenonFrame?: TenonPreviewFrame | null;
     };
     const membrane = report.triangleCount
       ? await readPositionsFromCommand(core.invoke, 'mesh_organic_cut_read_membrane')
       : null;
-    const keyPreview = report.keyTriangleCount
-      ? await readPositionsFromCommand(core.invoke, 'mesh_organic_cut_read_key')
+    const tenonPreview = report.jointTriangleCount
+      ? await readPositionsFromCommand(core.invoke, 'mesh_organic_cut_read_tenon')
       : null;
     return {
       membrane,
-      keyPreview,
-      keyPegTriangleCount: report.keyPegTriangleCount ?? 0,
-      keyKind: report.keyKind ?? 'none',
-      keyDetail: report.keyDetail ?? '',
-      keyFrame: report.keyFrame ?? null,
+      tenonPreview,
+      tenonTriangleCount: report.tenonTriangleCount ?? 0,
+      tenonKind: report.tenonKind ?? 'none',
+      tenonDetail: report.tenonDetail ?? '',
+      tenonFrame: report.tenonFrame ?? null,
     };
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -364,33 +364,33 @@ export async function computeMembranePreview(
 }
 
 /**
- * Preview the key a FLAT cut would place, framed on the cut plane.
+ * Preview the tenon a FLAT cut would place, framed on the cut plane.
  *
  * The membrane preview above is contour-only — it builds a membrane from the loop
- * and frames the key on it. A flat cut has no membrane, so this hands Rust the
- * plane the preview drew and lets it frame the key on the cross-section that plane
+ * and frames the tenon on it. A flat cut has no membrane, so this hands Rust the
+ * plane the preview drew and lets it frame the tenon on the cross-section that plane
  * carves. Returns the same shape, with a null membrane.
  */
-export async function computePlaneKeyPreview(
+export async function computePlaneTenonPreview(
   planeNormal: [number, number, number],
   planeOffset: number,
-  generateKey: boolean,
-  keyWidthMm = 2.0,
-  keyDepthMm = 2.5,
-  keyShape: 'frustum' | 'dome' = 'frustum',
-  keyFilletMm = 0.0,
-  keyToleranceMm = 0.1,
-  keySwapSides = false,
-  keyOffsetUMm = 0.0,
-  keyOffsetVMm = 0.0,
+  generateTenon: boolean,
+  tenonWidthMm = 2.0,
+  tenonDepthMm = 2.5,
+  tenonShape: 'frustum' | 'dome' = 'frustum',
+  tenonFilletMm = 0.0,
+  tenonToleranceMm = 0.1,
+  tenonSwapSides = false,
+  tenonOffsetUMm = 0.0,
+  tenonOffsetVMm = 0.0,
 ): Promise<MembranePreviewResult> {
   const empty: MembranePreviewResult = {
     membrane: null,
-    keyPreview: null,
-    keyPegTriangleCount: 0,
-    keyKind: 'none',
-    keyDetail: '',
-    keyFrame: null,
+    tenonPreview: null,
+    tenonTriangleCount: 0,
+    tenonKind: 'none',
+    tenonDetail: '',
+    tenonFrame: null,
   };
   const core = await loadTauriCore();
   if (!core) return empty;
@@ -398,39 +398,39 @@ export async function computePlaneKeyPreview(
   const requestJson = JSON.stringify({
     planeNormal,
     planeOffset,
-    generateKey,
-    keyWidthMm,
-    keyDepthMm,
-    keyShape,
-    keyFilletMm,
-    keyToleranceMm,
-    keySwapSides,
-    keyOffsetUMm,
-    keyOffsetVMm,
+    generateTenon,
+    tenonWidthMm,
+    tenonDepthMm,
+    tenonShape,
+    tenonFilletMm,
+    tenonToleranceMm,
+    tenonSwapSides,
+    tenonOffsetUMm,
+    tenonOffsetVMm,
   });
   try {
-    const reportJson = await core.invoke<string>('mesh_organic_cut_plane_key_preview', { requestJson });
+    const reportJson = await core.invoke<string>('mesh_organic_cut_plane_tenon_preview', { requestJson });
     const report = JSON.parse(reportJson) as {
-      keyTriangleCount?: number;
-      keyPegTriangleCount?: number;
-      keyKind?: KeyPreviewKind;
-      keyDetail?: string;
-      keyFrame?: KeyPreviewFrame | null;
+      jointTriangleCount?: number;
+      tenonTriangleCount?: number;
+      tenonKind?: TenonPreviewKind;
+      tenonDetail?: string;
+      tenonFrame?: TenonPreviewFrame | null;
     };
-    const keyPreview = report.keyTriangleCount
-      ? await readPositionsFromCommand(core.invoke, 'mesh_organic_cut_read_key')
+    const tenonPreview = report.jointTriangleCount
+      ? await readPositionsFromCommand(core.invoke, 'mesh_organic_cut_read_tenon')
       : null;
     return {
       membrane: null,
-      keyPreview,
-      keyPegTriangleCount: report.keyPegTriangleCount ?? 0,
-      keyKind: report.keyKind ?? 'none',
-      keyDetail: report.keyDetail ?? '',
-      keyFrame: report.keyFrame ?? null,
+      tenonPreview,
+      tenonTriangleCount: report.tenonTriangleCount ?? 0,
+      tenonKind: report.tenonKind ?? 'none',
+      tenonDetail: report.tenonDetail ?? '',
+      tenonFrame: report.tenonFrame ?? null,
     };
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('[organicCut] plane key preview command failed', err);
+    console.error('[organicCut] plane tenon preview command failed', err);
     return empty;
   }
 }

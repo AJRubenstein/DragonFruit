@@ -520,7 +520,7 @@ fn orient_membrane(m: &mut Membrane) {
     // The flood-fill makes winding CONSISTENT (all triangles agree with their
     // neighbours). Whether the patch faces "up" or "down" overall doesn't matter:
     // the slab copies this winding for the top sheet and reverses it for the
-    // bottom, and the side wall is keyed to the boundary ring — all consistent
+    // bottom, and the side wall is tenoned to the boundary ring — all consistent
     // regardless of the global facing. (An earlier global-flip heuristic here was
     // buggy and inverted correctly-wound patches → removed.)
 }
@@ -1210,8 +1210,8 @@ pub struct PlaneSection {
 ///
 /// Note the centroid is the section's AREA centroid, which on a non-convex section
 /// (a C, or two separate legs) can land in air. Callers that need a point inside
-/// the material must check — here, the key's clearance probe does it for free: it
-/// finds no material and the fit ladder reports the part too thin for a key.
+/// the material must check — here, the tenon's clearance probe does it for free: it
+/// finds no material and the fit ladder reports the part too thin for a tenon.
 pub fn plane_section(mesh: &IndexedMesh, normal: Vec3, offset: f32, u: Vec3, v: Vec3) -> Option<PlaneSection> {
     let nlen = normal.length();
     if nlen < 1e-9 {
@@ -1478,7 +1478,7 @@ pub struct ContourSplit {
     /// Membrane triangle count (for diagnostics / reporting).
     pub membrane_tris: usize,
     /// The RAW seam membrane (before boundary-widening), kept so the registration
-    /// key can derive its placement frame from it (centroid anchor, average-normal
+    /// tenon can derive its placement frame from it (centroid anchor, average-normal
     /// axis, cross-section area). `part_a` is on this membrane's +normal side.
     pub membrane: Membrane,
 }
@@ -1699,7 +1699,7 @@ pub fn contour_split(
 
 /// The result of a MULTI-loop contour split (≥2 loops union'd into one cutter).
 /// Unlike [`ContourSplit`] there is no single membrane — each loop has its own,
-/// returned in `membranes` so the caller can place one registration key per seam.
+/// returned in `membranes` so the caller can place one registration tenon per seam.
 pub struct ContourSplitMulti {
     /// The largest connected component left after the cut — the main body.
     pub part_a: IndexedMesh,
@@ -1710,14 +1710,14 @@ pub struct ContourSplitMulti {
     /// Total membrane triangle count across all loops (for diagnostics).
     pub membrane_tris: usize,
     /// The per-loop membranes (one per valid loop), in loop order. Kept so the
-    /// caller can place a registration key at EACH seam (one key per cut).
+    /// caller can place a registration tenon at EACH seam (one tenon per cut).
     pub membranes: Vec<Membrane>,
 }
 
 /// Signed side of a whole mesh relative to the membrane: positive if the mesh's
 /// centroid sits on the membrane's +normal side, negative otherwise. The
-/// multi-loop key code uses this to pass the +normal-side part as `part_a` to
-/// `apply_key` (the side convention the single-loop cut keeps by construction).
+/// multi-loop tenon code uses this to pass the +normal-side part as `part_a` to
+/// `apply_tenon` (the side convention the single-loop cut keeps by construction).
 pub fn side_of_mesh(membrane: &Membrane, mesh: &IndexedMesh) -> f32 {
     signed_side_distance(membrane, mesh_centroid(mesh))
 }
@@ -1836,7 +1836,7 @@ fn group_largest_vs_rest(islands: Vec<IndexedMesh>) -> Option<(IndexedMesh, Inde
 
 /// Convert a `manifold` solid back to an `IndexedMesh`. Returns `None` only on a
 /// malformed/empty conversion (matches `organic_cut.rs::manifold_to_indexed`).
-/// `pub(crate)` so the key module can convert its boolean results back too.
+/// `pub(crate)` so the tenon module can convert its boolean results back too.
 pub(crate) fn manifold_to_indexed(model: &manifold_csg::Manifold) -> Option<IndexedMesh> {
     if model.is_empty() || model.num_tri() == 0 {
         return None;

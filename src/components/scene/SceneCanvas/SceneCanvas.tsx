@@ -507,7 +507,7 @@ export function SceneCanvas({
   /** True while an organic-cut waypoint is being dragged — disables OrbitControls. */
   organicCutDragging?: boolean;
   /**
-   * The cut-tool registration-key aim/roll gizmo, rendered INSIDE the picking
+   * The cut-tool registration-tenon aim/roll gizmo, rendered INSIDE the picking
    * provider (so its handles are grabbable through the model). Supplied by the host
    * because the gizmo needs session state; null when the cut tool isn't active.
    */
@@ -6542,7 +6542,7 @@ export function SceneCanvas({
                 />
               )}
 
-              {/* Cut-tool key aim/roll gizmo — rendered INSIDE the picking provider
+              {/* Cut-tool tenon aim/roll gizmo — rendered INSIDE the picking provider
                   (like the main gizmo) so its handles are grabbable through the mesh
                   via the GPU picking system. Supplied by the host (page.tsx). */}
               {organicCutKeyGizmo}
