@@ -605,9 +605,27 @@ fn build_frustum_leaned(
     let tl = dims.length * TENON_TOP_SCALE * 0.5 + g; // top half-length
     // Base/mouth: behind the cut plane by `grow` (mortise clearance) PLUS the fixed
     // overlap that pushes the base into the other half for a solid boolean.
-    let z0 = -g - TENON_BASE_OVERLAP_MM - lean.base_sink;
+    // Base/mouth: behind the cut plane by `grow` (mortise clearance) PLUS the fixed
+    // overlap that pushes the base into the other half for a solid boolean, PLUS
+    // whatever the lean needs to keep the turned base buried (`base_sink`).
+    let z0_taper = -g - TENON_BASE_OVERLAP_MM;
+    let z0 = z0_taper - lean.base_sink;
     let z1 = dims.depth + g; // tip: past nominal depth by `grow`
     let height = (z1 - z0).max(1e-4);
+
+    // Extending the base must not change the tenon's SHAPE, only its length. Sizing
+    // the base ring at the new, deeper plane and lofting straight to the top would
+    // spread the same taper over a longer run — so the section at the cut face came
+    // out narrower the further it leaned, and the tenon visibly shrank on release.
+    // Prolong the cone instead: widen the base ring by exactly what the existing
+    // slope gives over the extra length, and every section from `z0_taper` up —
+    // the one at the cut face above all — is the one it always was.
+    let (bw, bl) = if lean.base_sink > 0.0 {
+        let k = (z1 - z0) / (z1 - z0_taper).max(1e-4);
+        (tw + (bw - tw) * k, tl + (bl - tl) * k)
+    } else {
+        (bw, bl)
+    };
 
     // Corner radius: the requested fillet, but never more than the smallest half-
     // extent (a corner arc can't be bigger than the side it rounds) nor more than
@@ -2442,6 +2460,54 @@ mod tests {
         // Standing straight in the same spot, it is fine.
         let upright = confirm_tenon_stays_inside(plan, &cone, &frame, LeanXform::IDENTITY);
         assert!(upright.fits(), "and upright it is fine: {}", upright.detail());
+    }
+
+    // Leaning must not resize the tenon where it counts: its cross-section AT THE
+    // CUT FACE. Extending the base to keep the turned base buried used to re-loft
+    // the taper over a longer run, so the section at the face got narrower the
+    // further it leaned — the tenon visibly shrank the moment Rust answered, while
+    // the client-side preview (which cannot resize anything) had looked right.
+    #[test]
+    fn extending_the_base_for_a_lean_does_not_thin_the_tenon_at_the_cut_face() {
+        let frame = TenonFrame {
+            anchor: Vec3::ZERO,
+            axis: Vec3::new(0.0, 0.0, 1.0),
+            u: Vec3::new(1.0, 0.0, 0.0),
+            v: Vec3::new(0.0, 1.0, 0.0),
+            cut_area: 100.0,
+        };
+        let dims = FrustumDims::from_width_depth(3.0, 4.0);
+        // Half-width of the solid at the cut plane (z = 0), measured off the mesh.
+        let width_at_face = |base_sink: f32| -> f32 {
+            let lean = LeanXform { tilt: 0.0, roll: 0.0, shift_u: 0.0, base_sink, identity: base_sink <= 0.0 };
+            let mesh = build_frustum_leaned(&frame, dims, 0.0, 0.0, lean);
+            // Widest |x| among vertices straddling the cut plane, by interpolating
+            // each edge that crosses z = 0.
+            let mut widest = 0.0f32;
+            for t in &mesh.triangles {
+                for (i, j) in [(0, 1), (1, 2), (2, 0)] {
+                    let (a, b) = (mesh.positions[t[i] as usize], mesh.positions[t[j] as usize]);
+                    if (a.z > 0.0) == (b.z > 0.0) {
+                        continue;
+                    }
+                    let s = (0.0 - a.z) / (b.z - a.z);
+                    widest = widest.max((a.x + s * (b.x - a.x)).abs());
+                }
+            }
+            widest
+        };
+
+        let upright = width_at_face(0.0);
+        assert!(upright > 0.5, "premise: the tenon straddles the cut plane ({upright}mm)");
+        // 45° on this footprint asks for a real extension, not a rounding error.
+        for sink in [0.5f32, 1.2, 2.0] {
+            let leaned = width_at_face(sink);
+            assert!(
+                (leaned - upright).abs() < 1e-3,
+                "with {sink}mm of base extension the tenon is still {upright}mm across \
+                 at the cut face, got {leaned}",
+            );
+        }
     }
 
     // Leaning is never silently refused. Room to spare and it fits; a near wall and
