@@ -3072,3 +3072,50 @@ mod tests {
         assert!(outcome.report.likely_support_geometry);
     }
 }
+
+use crate::stl_budget::TriangleBudget;
+
+pub fn decimate_indexed_to_budget(mesh: &IndexedMesh, budget: &TriangleBudget) -> IndexedMesh {
+    if !budget.is_decimated {
+        return mesh.clone();
+    }
+
+    let positions: Vec<f32> = mesh
+        .positions
+        .iter()
+        .flat_map(|p| [p.x, p.y, p.z])
+        .collect();
+    
+    let indices: Vec<u32> = mesh
+        .triangles
+        .iter()
+        .flat_map(|t| [t[0], t[1], t[2]])
+        .collect();
+
+    let locks = vec![false; mesh.positions.len()];
+    let adapter = meshopt::VertexDataAdapter::new(
+        bytemuck::cast_slice::<_, u8>(&mesh.positions),
+        12,
+        0,
+    ).unwrap();
+
+    let decimated_indices = meshopt::simplify_with_locks(
+        &indices,
+        &adapter,
+        &locks,
+        budget.budget_tris * 3,
+        budget.target_error as f32,
+        meshopt::SimplifyOptions::LockBorder | meshopt::SimplifyOptions::Regularize,
+        None,
+    );
+
+    let triangles = decimated_indices
+        .chunks_exact(3)
+        .map(|c| [c[0], c[1], c[2]])
+        .collect();
+
+    IndexedMesh {
+        positions: mesh.positions.clone(),
+        triangles,
+    }
+}
