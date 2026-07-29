@@ -615,13 +615,14 @@ fn organic_cut_contour(
             };
         }
 
-        // Split into the FINAL separate solids: the body is one component, and each
-        // freed piece (e.g. each arm) is its own. `part_b` held them merged so the
-        // per-seam tenon booleans could run locally; now decompose it so every piece
-        // becomes its own part. The body (`part_a`) is one component but decompose
-        // it too in case a cut split it further. Largest first → body leads.
-        let mut parts: Vec<IndexedMesh> = Vec::new();
-        parts.extend(crate::membrane::decompose_components(&part_a));
+        // Split into the FINAL separate solids: the body is one part, and each freed
+        // piece (e.g. each arm) is its own. `part_b` held them merged so the per-seam
+        // tenon booleans could run locally; decompose it so every piece becomes its
+        // own part. The BODY is deliberately left whole: it carries the shells the
+        // cut never touched (loose flakes the model already had), and decomposing it
+        // would hand each of them back to the user as a separate solid — which is
+        // exactly how a 548-triangle flake kept turning up as a third piece.
+        let mut parts: Vec<IndexedMesh> = vec![part_a];
         parts.extend(crate::membrane::decompose_components(&part_b));
         parts.sort_by(|a, b| b.triangles.len().cmp(&a.triangles.len()));
 

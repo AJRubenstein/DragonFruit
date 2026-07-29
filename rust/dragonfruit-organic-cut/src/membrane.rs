@@ -1302,6 +1302,12 @@ fn mesh_centroid(mesh: &IndexedMesh) -> Vec3 {
 /// anything the cut never touched.
 const CUT_FACE_BAND_FACTOR: f32 = 4.0;
 
+/// A freed island smaller across than this many kerf thicknesses is debris the
+/// wafer shaved off, not a piece: it rides with the body. Ten kerfs is 1 mm at the
+/// default thickness — far above the crumbs a cut leaves, far below anything worth
+/// printing on its own.
+const KERF_DEBRIS_DIAGONALS: f32 = 10.0;
+
 /// Group the severed islands into exactly two parts by which SIDE of the cut face
 /// each one is on (+normal side → A, −normal side → B). Islands on the same side
 /// are concatenated into one `IndexedMesh`.
@@ -2345,11 +2351,12 @@ pub fn contour_split_multi(
                 .fold(f32::INFINITY, f32::min);
             let c = mesh_centroid(island);
             eprintln!(
-                "[cut]   island {i}: {} tris, centroid ({:.2}, {:.2}, {:.2}), nearest vertex to any seam {nearest:.3} mm",
+                "[cut]   island {i}: {} tris, centroid ({:.2}, {:.2}, {:.2}), nearest vertex to any seam {nearest:.3} mm, bbox diagonal {:.3} mm",
                 island.triangles.len(),
                 c.x,
                 c.y,
-                c.z
+                c.z,
+                island.bbox().diag()
             );
         }
     }
@@ -2435,14 +2442,21 @@ fn group_largest_vs_rest(
         })
     };
 
-    let freed_count = islands.iter().skip(1).filter(|i| on_a_cut_face(i)).count();
-    if freed_count == 0 {
+    // A chip the wafer shaved off the seam is not a piece anyone asked for: it comes
+    // off the cut face like a real piece, but it is kerf-sized. The user's roof gave
+    // a 16-triangle crumb 0.4 mm across, handed over as a solid of its own.
+    let debris_diag = thickness * KERF_DEBRIS_DIAGONALS;
+    let is_freed = |island: &IndexedMesh| {
+        island.bbox().diag() > debris_diag && on_a_cut_face(island)
+    };
+
+    if !islands.iter().skip(1).any(is_freed) {
         return Err(islands); // handed back so the caller can say WHY nothing came free
     }
     let mut it = islands.into_iter();
     let largest = it.next().expect("checked non-empty"); // sorted largest-first
     let (freed, orphans): (Vec<IndexedMesh>, Vec<IndexedMesh>) =
-        it.partition(|island| on_a_cut_face(island));
+        it.partition(|island| is_freed(island));
     let mut body = vec![largest];
     body.extend(orphans);
     Ok((concat_meshes(body), concat_meshes(freed)))
