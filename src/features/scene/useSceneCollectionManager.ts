@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
-import { isVoxlBinaryV2, parseVoxlBinaryV2, parseVoxlDocument, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
+import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, readSidecarFileBytes, resolveOriginalRefSidecar, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import type { SelectionHighlightMode } from '@/components/selection';
@@ -872,6 +872,8 @@ export interface LoadedModel {
   fileUrl: string;
   /** Original on-disk mesh retained when `geometry` is a reduced native preview. */
   sourcePath?: string | null;
+  /** Original mesh sidecar reference when not embedded in ORIG chunk. */
+  originalRef?: VoxlMeshRef;
   fileSizeBytes?: number;
   geometry: GeometryWithBounds;
   transform: ModelTransform;
@@ -980,6 +982,85 @@ type ModelClipboardEntry = {
   supportClipboard: SupportClipboardPayload | null;
 };
 
+// ---------------------------------------------------------------------------
+// COW chunk-store hooks (Ph0.1 sub-phase C2 / C3)
+// ---------------------------------------------------------------------------
+
+/**
+ * `ExportManager` is loaded lazily here. It is a heavy module that pulls in the
+ * STL exporter, the support stores and the raft geometry generators, and this
+ * file is on the app's critical path — a static import would drag all of it into
+ * the initial scene bundle for work that is, by construction, deferrable.
+ */
+async function exportManager() {
+  const { ExportManager } = await import('@/features/export/logic/ExportManager');
+  return ExportManager;
+}
+
+const scheduleIdleTask = (task: () => void, timeout = 500): void => {
+  if (typeof window !== 'undefined' && typeof (window as unknown as {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void;
+  }).requestIdleCallback === 'function') {
+    (window as unknown as {
+      requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void;
+    }).requestIdleCallback(task, { timeout });
+    return;
+  }
+  setTimeout(task, 0);
+};
+
+/**
+ * Bakes one model's mesh chunk after a finalized geometry mutation.
+ *
+ * Idle-scheduled so React commits the new geometry to the screen first: the bake
+ * is an encode + SHA + zlib-6 over the whole mesh, and the user is looking at
+ * the result of the operation that produced it.
+ *
+ * Failures are logged, never thrown. The geometry SIGNATURE is the authority, so
+ * a bake that does not land costs the next autosave tick one lazy re-bake — it
+ * can never cause a stale write.
+ */
+function scheduleModelChunkBake(model: LoadedModel | undefined): void {
+  if (!model) return;
+  scheduleIdleTask(() => {
+    void exportManager()
+      .then((manager) => manager.bakeModelGeometryChunk(model))
+      .catch((error) => {
+        console.warn('[SceneCollection] Mesh chunk bake failed; the next autosave will bake lazily.', error);
+      });
+  });
+}
+
+/**
+ * Coalesced sweep over the whole scene: bakes anything not yet in the store and
+ * releases anything that has left it.
+ *
+ * This is deliberately a sweep rather than a hook per entry point. Models arrive
+ * from import, both split paths, paste, undo/redo and autosave recovery, and a
+ * per-path hook set would need every one of those — and every future one — to
+ * remember. The sweep is derived from the model list itself, which is the same
+ * reasoning that made the geometry signature preferable to a dirty flag.
+ */
+let chunkStoreSweepPending = false;
+function scheduleChunkStoreSweep(getModels: () => LoadedModel[]): void {
+  if (chunkStoreSweepPending) return;
+  chunkStoreSweepPending = true;
+  scheduleIdleTask(() => {
+    chunkStoreSweepPending = false;
+    const models = getModels();
+    void exportManager()
+      .then(async (manager) => {
+        manager.retainModelChunks(models.map((m) => m.id));
+        for (const model of models) {
+          await manager.bakeModelGeometryChunk(model);
+        }
+      })
+      .catch((error) => {
+        console.warn('[SceneCollection] Mesh chunk sweep failed; the next autosave will bake lazily.', error);
+      });
+  }, 1_500);
+}
+
 export function useSceneCollectionManager() {
   type ScenePluginImportEntry = {
     pluginId: string;
@@ -1050,6 +1131,15 @@ export function useSceneCollectionManager() {
   modelsRef.current = models;
   activeModelIdRef.current = activeModelId;
   selectedModelIdsRef.current = selectedModelIds;
+
+  // Keep the COW chunk store in step with the scene (Ph0.1 sub-phase C).
+  // Coalesced and idle-scheduled, so a burst of imports or an Auto-Arrange
+  // sweeps once. See `scheduleChunkStoreSweep` for why this is a sweep rather
+  // than a hook on every model-producing path.
+  useEffect(() => {
+    if (models.length === 0) return;
+    scheduleChunkStoreSweep(() => modelsRef.current);
+  }, [models]);
   const [modelClipboard, setModelClipboard] = useState<ModelClipboardEntry[]>([]);
   const [recentOpenedFiles, setRecentOpenedFiles] = useState<RecentOpenedFileEntry[]>([]);
   const [importProgress, setImportProgress] = useState<ImportProgressState>({
@@ -2631,7 +2721,15 @@ export function useSceneCollectionManager() {
     const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds, {
       includeSupportState: includeSupportHistory,
     });
-    pushSceneSnapshotHistory(before, after, historyDescription);
+    // COW chunk-store bake (Ph0.1 sub-phase C3). This is the VERIFIED sole
+    // finalization point for hollow, hole-punch, mirror and repair, so baking
+    // here moves the encode+SHA+zlib-6 onto the operation the user is already
+    // waiting for and off the next autosave tick.
+    //
+    // Fire-and-forget on purpose: the geometry SIGNATURE is the authority, so if
+    // this bake never lands the next tick simply bakes lazily instead. It can
+    // cost a slow tick; it can never write stale geometry.
+    void scheduleModelChunkBake(nextModels.find((m) => m.id === id));
 
     return true;
   }, [pushSceneSnapshotHistory, deferAccelerateGeometry]);
@@ -2985,6 +3083,18 @@ export function useSceneCollectionManager() {
 
     const existing = modelsRef.current.filter((m) => ids.has(m.id));
     if (existing.length === 0) return;
+
+    // Release the deleted models' compressed mesh chunks (Ph0.1 sub-phase C2).
+    // The encode cache this replaced had exactly one `.get` and one `.set` and
+    // no eviction anywhere: a deleted 4M-tri model kept ~191 MiB of raw STL
+    // resident for the remainder of the session, and repeated import → delete
+    // cycles grew the heap without bound. Refcounted, so instances that still
+    // share the blob keep it alive.
+    void exportManager()
+      .then((manager) => manager.releaseModelChunks(ids))
+      .catch((error) => {
+        console.warn('[SceneCollection] Failed releasing mesh chunks for deleted models.', error);
+      });
 
     const supportStateBeforeDelete = getSnapshot();
     const kickstandSnapshotBefore = getKickstandSnapshot();
@@ -4099,11 +4209,13 @@ export function useSceneCollectionManager() {
 
       let document: VoxlDocumentV1;
       let resolvedMeshBytes: Map<string, Uint8Array>;
+      let resolvedOriginalMeshBytes: Map<string, Uint8Array> | undefined;
 
       if (isV2) {
         const r = parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
         document = r.document;
         resolvedMeshBytes = r.meshBytes;
+        resolvedOriginalMeshBytes = r.originalMeshBytes;
       } else {
         document = parseVoxlDocument(await file.text());
         resolvedMeshBytes = new Map();
@@ -4244,6 +4356,42 @@ export function useSceneCollectionManager() {
           existingIds.add(resolvedId);
           idMap.set(model.id, resolvedId);
 
+          const origMeshBytes = resolvedOriginalMeshBytes?.get(model.id);
+          if (origMeshBytes) {
+            void meshChunkStore.bake({
+              modelId: resolvedId,
+              slot: 'original',
+              signature: `original:${resolvedId}`,
+              encode: () => origMeshBytes,
+            });
+          } else {
+            const voxlFilePath = (file as File & { path?: string; filePath?: string }).path
+              || (file as File & { filePath?: string }).filePath
+              || options?.sourcePath;
+            const origRefToResolve = model.originalRef ?? (
+              typeof model.sourcePath === 'string' && model.sourcePath.trim().length > 0
+                ? { mode: 'external-file' as const, fileName: model.sourcePath }
+                : undefined
+            );
+            const sidecarPath = resolveOriginalRefSidecar(origRefToResolve, voxlFilePath || undefined);
+
+            if (sidecarPath) {
+              try {
+                const sidecarBytes = await readSidecarFileBytes(sidecarPath);
+                if (sidecarBytes) {
+                  void meshChunkStore.bake({
+                    modelId: resolvedId,
+                    slot: 'original',
+                    signature: `original:${resolvedId}`,
+                    encode: () => sidecarBytes,
+                  });
+                }
+              } catch (err) {
+                console.warn(`[SceneCollection] Unreadable sidecar file at "${sidecarPath}", falling back to preview:`, err);
+              }
+            }
+          }
+
           const polygonCount = geometry.geometry.getAttribute('position').count / 3;
           const color = clampHexColor(model.color, DEFAULT_MESH_COLOR);
 
@@ -4251,6 +4399,8 @@ export function useSceneCollectionManager() {
             id: resolvedId,
             name: sanitizeImportedModelDisplayName(model.name),
             fileUrl: '',
+            sourcePath: model.sourcePath ?? undefined,
+            originalRef: model.originalRef,
             fileSizeBytes: model.fileSizeBytes,
             geometry,
             transform: {
