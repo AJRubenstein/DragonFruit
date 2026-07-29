@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import * as THREE from 'three';
+import { classifyFromGeometry } from '@/utils/meshRepair';
 import {
   serializeVoxlDocumentV2,
   parseVoxlBinaryV2,
@@ -148,4 +150,48 @@ test('toggleSupportDesignation action state toggling logic', () => {
   assert.equal(models[0].isSupportGeometry, true);
   assert.equal(models[1].isSupportGeometry, true);
   assert.equal(models[2].isSupportGeometry, false);
+});
+
+test('classifyFromGeometry with assumeSupportGeometry: true preserves likely_support_geometry: true', async () => {
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0]), 3));
+
+  let capturedOptionsJson: string | undefined;
+
+  (globalThis as any).window = {
+    __TAURI_INTERNALS__: {
+      invoke: async (cmd: string, args?: any) => {
+        if (cmd === 'stage_mesh_binary_set') return;
+        if (cmd === 'mesh_classify_staged') {
+          capturedOptionsJson = args?.optionsJson;
+          const parsed = JSON.parse(args.optionsJson);
+          return JSON.stringify({
+            version: 1,
+            pre: { triangle_count: 1 },
+            post: { triangle_count: 1 },
+            steps: [],
+            likely_support_geometry: parsed.assume_support_geometry === true,
+            residual_issues: [],
+            fully_repaired: true,
+            total_ms: 1,
+          });
+        }
+        if (cmd === 'mesh_repair_read_positions') {
+          return new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0]).buffer;
+        }
+        throw new Error(`Unexpected command: ${cmd}`);
+      },
+    },
+  };
+
+  try {
+    const result = await classifyFromGeometry(geom, { assumeSupportGeometry: true });
+    assert.ok(result);
+    assert.ok(capturedOptionsJson);
+    const parsed = JSON.parse(capturedOptionsJson);
+    assert.equal(parsed.assume_support_geometry, true);
+    assert.equal(result.report.likely_support_geometry, true);
+  } finally {
+    delete (globalThis as any).window;
+  }
 });

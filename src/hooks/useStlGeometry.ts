@@ -330,7 +330,7 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
         ? { assumeSupportGeometry: options.assumeSupportGeometry }
         : {};
       const result = classifyOnly
-        ? await classifyFromGeometry(geometry)
+        ? await classifyFromGeometry(geometry, repairOpts)
         : await repairFromGeometry(geometry, repairOpts);
       if (result) {
         let effectiveResult = result;
@@ -343,7 +343,7 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
             console.warn(`[processGeometry] Rejecting native auto-repair result: ${qualityGate.reason}. Falling back to classify-only pass.`);
             try {
               options.onNativeProcessingStage?.('classifying');
-              const fallbackClassification = await classifyFromGeometry(geometry);
+              const fallbackClassification = await classifyFromGeometry(geometry, repairOpts);
               if (fallbackClassification) {
                 effectiveResult = fallbackClassification;
                 usedFallbackClassification = true;

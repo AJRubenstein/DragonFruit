@@ -88,6 +88,8 @@ pub struct RepairOutcome {
     pub report: MeshHealthReport,
 }
 
+pub type ClassificationOutcome = RepairOutcome;
+
 pub fn repair(mut mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
     let t_start = std::time::Instant::now();
 
@@ -854,7 +856,10 @@ fn record_model_manifold_status(mesh: &IndexedMesh, report: &mut MeshHealthRepor
 /// This does **not** run the repair pipeline. It only attempts to classify and
 /// reorder triangles into model-first / support-second sections so the frontend
 /// can apply section-specific tinting while honoring "Load As-Is" behavior.
-pub fn classify_support_split(mut mesh: IndexedMesh) -> RepairOutcome {
+pub fn classify_support_split(
+    mut mesh: IndexedMesh,
+    options: &RepairOptions,
+) -> ClassificationOutcome {
     let t_start = std::time::Instant::now();
 
     // Pre-analysis with placeholder component count — the classifier
@@ -864,12 +869,19 @@ pub fn classify_support_split(mut mesh: IndexedMesh) -> RepairOutcome {
     let pre = minimal_analysis(&mesh, 0);
     let mut report = MeshHealthReport::new(pre);
 
+    if options.assume_support_geometry == Some(true) {
+        report.likely_support_geometry = true;
+    }
+
     let t = std::time::Instant::now();
     let component_count = if let Some((model_tri_count, likely_support_geometry, cc)) =
-        classify_and_reorder_model_support_triangles(&mut mesh, None)
+        classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry)
     {
         report.model_triangle_count = Some(model_tri_count);
         report.likely_support_geometry = likely_support_geometry;
+        if options.assume_support_geometry == Some(true) {
+            report.likely_support_geometry = true;
+        }
         report.steps.push(RepairStepReport {
             name: "classify_support_geometry_split".into(),
             changed: 0,
@@ -3036,6 +3048,24 @@ mod tests {
             ..RepairOptions::default()
         };
         let outcome = repair(mesh, &options);
+        assert!(outcome.report.likely_support_geometry);
+    }
+
+    #[test]
+    fn classify_support_split_respects_assume_support_geometry() {
+        let mesh = IndexedMesh {
+            positions: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(10.0, 0.0, 0.0),
+                Vec3::new(0.0, 10.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        };
+        let options = RepairOptions {
+            assume_support_geometry: Some(true),
+            ..RepairOptions::default()
+        };
+        let outcome = classify_support_split(mesh, &options);
         assert!(outcome.report.likely_support_geometry);
     }
 }
