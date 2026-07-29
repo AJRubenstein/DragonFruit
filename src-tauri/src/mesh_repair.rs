@@ -1010,7 +1010,7 @@ fn dump_organic_cut_inputs(bytes: &[u8], options_json: &str) {
         return;
     }
     eprintln!(
-        "[cut] dumped inputs to {}/cut-{n}.{{bin,json}} ({} bytes of mesh)",
+        "\n--- cut-{n} ---\n[cut] dumped inputs to {}/cut-{n}.{{bin,json}} ({} bytes of mesh)",
         dir.display(),
         bytes.len()
     );

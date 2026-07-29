@@ -1356,12 +1356,31 @@ fn split_into_two_sides(
 
     let on_the_cut = side_a.len() + side_b.len();
     if on_the_cut < 2 {
-        return Err(format!(
-            "The seam does not go all the way around the part. It runs across the \
-             surface without closing through the body, so nothing came free (the cut \
-             left {on_the_cut} piece). Move the waypoints so the loop wraps right \
-             round what you want to separate."
-        ));
+        // The cut ran but nothing came apart. WHERE the two sides still hold on to
+        // each other is the whole of what the user needs to know, and it is the one
+        // thing the geometry can tell us — so ask it rather than guessing that the
+        // seam must not have closed.
+        let largest = side_a.first().or_else(|| side_b.first()).or_else(|| orphans.first());
+        return Err(match largest.and_then(|body| find_surviving_join(body, membrane, band)) {
+            Some((_, plus, minus)) if plus + minus <= JOIN_IS_LOCAL_HOPS => {
+                "The cut face came out clean, but a thread of material still bridges the \
+                 seam right beside it: the loop runs under an overhanging detail there, so \
+                 the two sides never come apart. Nudge those waypoints past the detail."
+                    .to_string()
+            }
+            Some(_) => {
+                "The cut face came out clean, but the part is still attached somewhere \
+                 else — one seam cannot free a piece that is joined in more than one \
+                 place. Add a loop around the other join and cut them together."
+                    .to_string()
+            }
+            None => {
+                "The seam does not go all the way around the part. It runs across the \
+                 surface without closing through the body, so nothing came free. Move the \
+                 waypoints so the loop wraps right round what you want to separate."
+                    .to_string()
+            }
+        });
     }
     if side_a.is_empty() || side_b.is_empty() {
         return Err(format!(
@@ -1899,11 +1918,6 @@ fn debug_contour_split(
     thickness: f32,
 ) {
     let p = |v: Vec3| format!("({:.2}, {:.2}, {:.2})", v.x, v.y, v.z);
-    let mem_mesh = IndexedMesh {
-        positions: membrane.vertices.clone(),
-        triangles: membrane.triangles.clone(),
-    };
-    let mem_bvh = dragonfruit_mesh_core::bvh::Bvh::build(&mem_mesh);
     let band = (thickness * CUT_FACE_BAND_FACTOR).max(1e-3);
     let mb = {
         let mut b = dragonfruit_mesh_core::mesh::Aabb::empty();
@@ -1987,6 +2001,19 @@ fn debug_contour_split(
             "[cut] cut face buried in material: {before}/{} membrane triangles BEFORE the cut, {after} still after",
             membrane.triangles.len()
         );
+        if after > 0 {
+            let where_ = membrane
+                .triangles
+                .iter()
+                .filter(|t| is_inside_model(&bvh, body, centroid(t)))
+                .take(4)
+                .map(|t| {
+                    let c = centroid(t);
+                    format!(" ({:.2}, {:.2}, {:.2})", c.x, c.y, c.z)
+                })
+                .collect::<String>();
+            eprintln!("[cut] material survives ON the cut face at:{where_}");
+        }
     }
 
     let mut on_the_cut = 0usize;
@@ -2014,68 +2041,90 @@ fn debug_contour_split(
             p(island.bbox().max)
         );
     }
-    // With a clean cut face, whatever still holds the piece is somewhere else on the
-    // model. Walk the surface outward from each side of the cut face at once: the
-    // vertex that is nearest to BOTH fronts, away from the cut itself, sits on the
-    // neck of material that survived — the place the user has to wrap a second loop
-    // around (or move the seam past).
+    // With a clean cut face, whatever still holds the piece is somewhere else on
+    // the model — see [`report_surviving_neck`].
     if on_the_cut < 2 {
-      if let Some(body) = islands.first() {
-        let mut neighbours: Vec<Vec<u32>> = vec![Vec::new(); body.positions.len()];
-        for t in &body.triangles {
-            for k in 0..3 {
-                let (a, b) = (t[k], t[(k + 1) % 3]);
-                neighbours[a as usize].push(b);
-                neighbours[b as usize].push(a);
-            }
+        if let Some(body) = islands.first() {
+            report_surviving_neck(body, membrane, band, "");
         }
-        let walk = |seeds: Vec<u32>| {
-            let mut hops = vec![u32::MAX; body.positions.len()];
-            let mut queue: std::collections::VecDeque<u32> = seeds.into_iter().collect();
-            for &s in &queue {
-                hops[s as usize] = 0;
-            }
-            while let Some(v) = queue.pop_front() {
-                let d = hops[v as usize];
-                for &n in &neighbours[v as usize] {
-                    if hops[n as usize] == u32::MAX {
-                        hops[n as usize] = d + 1;
-                        queue.push_back(n);
-                    }
+    }
+}
+
+/// Where the two sides of a cut still hold on to each other, if they do: a point on
+/// the surviving neck of material, and how many surface hops it sits from each side
+/// of the cut face.
+///
+/// Walks the surface outward from both sides at once and takes the vertex nearest
+/// to both fronts, away from the cut itself. The hop counts are the useful part: a
+/// handful means the join is right beside the seam — a lip or an overhanging
+/// shingle the wafer never got past — while hundreds mean the piece is genuinely
+/// held somewhere else, and no single loop was ever going to free it.
+fn find_surviving_join(body: &IndexedMesh, membrane: &Membrane, band: f32) -> Option<(Vec3, u32, u32)> {
+    let mem_mesh = IndexedMesh {
+        positions: membrane.vertices.clone(),
+        triangles: membrane.triangles.clone(),
+    };
+    let mem_bvh = dragonfruit_mesh_core::bvh::Bvh::build(&mem_mesh);
+    let mut neighbours: Vec<Vec<u32>> = vec![Vec::new(); body.positions.len()];
+    for t in &body.triangles {
+        for k in 0..3 {
+            let (a, b) = (t[k], t[(k + 1) % 3]);
+            neighbours[a as usize].push(b);
+            neighbours[b as usize].push(a);
+        }
+    }
+    let walk = |seeds: Vec<u32>| {
+        let mut hops = vec![u32::MAX; body.positions.len()];
+        let mut queue: std::collections::VecDeque<u32> = seeds.into_iter().collect();
+        for &s in &queue {
+            hops[s as usize] = 0;
+        }
+        while let Some(v) = queue.pop_front() {
+            let d = hops[v as usize];
+            for &n in &neighbours[v as usize] {
+                if hops[n as usize] == u32::MAX {
+                    hops[n as usize] = d + 1;
+                    queue.push_back(n);
                 }
             }
-            hops
-        };
-        let side_seeds = |want_positive: bool| {
-            body.positions
-                .iter()
-                .enumerate()
-                .filter(|(_, &v)| {
-                    matches!(signed_side_on_cut_face(&mem_bvh, &mem_mesh, v, band),
-                        Some(s) if (s >= 0.0) == want_positive)
-                })
-                .map(|(i, _)| i as u32)
-                .collect::<Vec<_>>()
-        };
-        let (from_plus, from_minus) = (walk(side_seeds(true)), walk(side_seeds(false)));
-        let neck = (0..body.positions.len())
-            .filter(|&i| from_plus[i] > 3 && from_minus[i] > 3)
-            .filter(|&i| from_plus[i] != u32::MAX && from_minus[i] != u32::MAX)
-            .min_by_key(|&i| from_plus[i] + from_minus[i]);
-        match neck {
-            Some(i) => eprintln!(
-                "[cut] the two sides still meet around {} ({} + {} hops from the cut face)",
-                p(body.positions[i]),
-                from_plus[i],
-                from_minus[i]
-            ),
-            None => eprintln!("[cut] the two sides do not meet anywhere else"),
         }
-    }
-      }
-    }
+        hops
+    };
+    let side_seeds = |want_positive: bool| {
+        body.positions
+            .iter()
+            .enumerate()
+            .filter(|(_, &v)| {
+                matches!(signed_side_on_cut_face(&mem_bvh, &mem_mesh, v, band),
+                    Some(s) if (s >= 0.0) == want_positive)
+            })
+            .map(|(i, _)| i as u32)
+            .collect::<Vec<_>>()
+    };
+    let (from_plus, from_minus) = (walk(side_seeds(true)), walk(side_seeds(false)));
+    let i = (0..body.positions.len())
+        .filter(|&i| from_plus[i] > 3 && from_minus[i] > 3)
+        .filter(|&i| from_plus[i] != u32::MAX && from_minus[i] != u32::MAX)
+        .min_by_key(|&i| from_plus[i] + from_minus[i])?;
+    Some((body.positions[i], from_plus[i], from_minus[i]))
+}
 
+/// A join found beyond this many surface hops from the cut face is somewhere ELSE
+/// on the model, not a lip beside the seam. Around a centimetre of surface on the
+/// meshes this runs on — far past any detail the rim could have cleared.
+const JOIN_IS_LOCAL_HOPS: u32 = 12;
 
+/// Print [`find_surviving_join`]'s answer, for the `DF_CUT_DEBUG` trace.
+#[cfg(feature = "manifold")]
+fn report_surviving_neck(body: &IndexedMesh, membrane: &Membrane, band: f32, label: &str) {
+    match find_surviving_join(body, membrane, band) {
+        Some((v, plus, minus)) => eprintln!(
+            "[cut] {label}the two sides still meet around ({:.2}, {:.2}, {:.2}) ({plus} + {minus} hops from the cut face)",
+            v.x, v.y, v.z
+        ),
+        None => eprintln!("[cut] {label}the two sides do not meet anywhere else"),
+    }
+}
 
 /// Distance from `p` to the nearest surface point of `mesh`, via the BVH. Searches
 /// a box around `p`, widening until it finds triangles. Diagnostics only.
@@ -2279,20 +2328,70 @@ pub fn contour_split_multi(
     islands.sort_by(|a, b| b.triangles.len().cmp(&a.triangles.len()));
 
     let component_count = islands.len();
+    if std::env::var_os("DF_CUT_DEBUG").is_some() {
+        eprintln!("[cut] multi-loop: {} loops, islands AFTER: {component_count}", membranes.len());
+        for (i, island) in islands.iter().enumerate() {
+            let stride = (island.positions.len() / 2000).max(1);
+            let nearest = membranes
+                .iter()
+                .map(|m| {
+                    island
+                        .positions
+                        .iter()
+                        .step_by(stride)
+                        .map(|&v| distance_to_membrane(m, v))
+                        .fold(f32::INFINITY, f32::min)
+                })
+                .fold(f32::INFINITY, f32::min);
+            let c = mesh_centroid(island);
+            eprintln!(
+                "[cut]   island {i}: {} tris, centroid ({:.2}, {:.2}, {:.2}), nearest vertex to any seam {nearest:.3} mm",
+                island.triangles.len(),
+                c.x,
+                c.y,
+                c.z
+            );
+        }
+    }
+    if std::env::var_os("DF_CUT_DEBUG").is_some() {
+        if let Some(body) = islands.first() {
+            let band = (thickness_mm * CUT_FACE_BAND_FACTOR).max(1e-3);
+            for (i, m) in membranes.iter().enumerate() {
+                report_surviving_neck(body, m, band, &format!("loop {i}: "));
+            }
+        }
+    }
     if component_count < 2 {
         return Err(format!(
             "multi-loop cutter did not sever the model (got {component_count} component) — \
              at least one loop must wrap all the way through the material it encircles"
         ));
     }
-    let (part_a, part_b) = group_largest_vs_rest(&membranes, islands, thickness_mm).ok_or_else(
-        || {
-            "The cut broke the model into pieces, but none of them came off a seam — nothing \
-             the loops encircle came free. Move the waypoints so each loop wraps right round \
-             what you want to separate."
-                .to_string()
-        },
-    )?;
+    let (part_a, part_b) = group_largest_vs_rest(&membranes, islands, thickness_mm)
+        .map_err(|islands| {
+            // Same question as the single-loop cut: where do the two sides still hold
+            // on to each other? Report the most LOCAL join across the seams — that is
+            // the one standing in the way.
+            let band = (thickness_mm * CUT_FACE_BAND_FACTOR).max(1e-3);
+            let closest = islands.first().and_then(|body| {
+                membranes
+                    .iter()
+                    .filter_map(|m| find_surviving_join(body, m, band))
+                    .min_by_key(|(_, plus, minus)| plus + minus)
+            });
+            match closest {
+                Some((_, plus, minus)) if plus + minus <= JOIN_IS_LOCAL_HOPS => {
+                    "The cut faces came out clean, but a thread of material still bridges one \
+                     of the seams right beside it: that loop runs under an overhanging detail, \
+                     so nothing comes apart. Nudge those waypoints past the detail."
+                        .to_string()
+                }
+                _ => "The cut broke the model into pieces, but none of them came off a seam — \
+                      nothing the loops encircle came free. Move the waypoints so each loop \
+                      wraps right round what you want to separate."
+                    .to_string(),
+            }
+        })?;
 
     Ok(ContourSplitMulti { part_a, part_b, component_count, membrane_tris, membranes })
 }
@@ -2312,9 +2411,9 @@ fn group_largest_vs_rest(
     membranes: &[Membrane],
     islands: Vec<IndexedMesh>,
     thickness: f32,
-) -> Option<(IndexedMesh, IndexedMesh)> {
+) -> Result<(IndexedMesh, IndexedMesh), Vec<IndexedMesh>> {
     if islands.len() < 2 {
-        return None;
+        return Err(islands);
     }
     let band = (thickness * CUT_FACE_BAND_FACTOR).max(1e-3);
     let faces: Vec<(IndexedMesh, dragonfruit_mesh_core::bvh::Bvh)> = membranes
@@ -2336,16 +2435,17 @@ fn group_largest_vs_rest(
         })
     };
 
+    let freed_count = islands.iter().skip(1).filter(|i| on_a_cut_face(i)).count();
+    if freed_count == 0 {
+        return Err(islands); // handed back so the caller can say WHY nothing came free
+    }
     let mut it = islands.into_iter();
-    let largest = it.next()?; // sorted largest-first by split_by_cutter
+    let largest = it.next().expect("checked non-empty"); // sorted largest-first
     let (freed, orphans): (Vec<IndexedMesh>, Vec<IndexedMesh>) =
         it.partition(|island| on_a_cut_face(island));
-    if freed.is_empty() {
-        return None;
-    }
     let mut body = vec![largest];
     body.extend(orphans);
-    Some((concat_meshes(body), concat_meshes(freed)))
+    Ok((concat_meshes(body), concat_meshes(freed)))
 }
 
 /// Convert a `manifold` solid back to an `IndexedMesh`. Returns `None` only on a
