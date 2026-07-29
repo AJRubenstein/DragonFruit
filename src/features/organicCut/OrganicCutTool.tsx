@@ -119,16 +119,15 @@ interface OrganicCutToolProps {
    */
   tenonFrame?: TenonPreviewFrame | null;
   /**
-   * The tenon's offset on the cut face, and the offset the previewed soup was built
-   * with. While the base handle is dragged the soup is NOT rebuilt (a Rust
-   * round-trip per frame), so the difference between these two is applied here as
-   * a translation — that is what makes the tenon follow the handle instead of
+   * Where the tenon has been dragged to, as a model-local point. While the handle
+   * is dragged the soup is NOT rebuilt (that would be a Rust round-trip per frame),
+   * so the difference between this and the built frame's own anchor is applied here
+   * as a translation — which is what makes the tenon follow the handle instead of
    * jumping when the drag ends.
    */
   tenonAnchor?: [number, number, number] | null;
-  /** Live tenon tilt / azimuth / roll (radians) for the client-side rotation. */
+  /** Live tenon lean / roll (radians) for the client-side rotation. */
   tenonTiltRad?: number;
-  tenonTiltAzimuthRad?: number;
   tenonRollRad?: number;
   /**
    * Show the translucent cut-plan preview surfaces (the flat plane quad, the
@@ -288,7 +287,6 @@ export function OrganicCutTool({
   tenonFrame,
   tenonAnchor,
   tenonTiltRad = 0,
-  tenonTiltAzimuthRad = 0,
   tenonRollRad = 0,
   showPreview = true,
 }: OrganicCutToolProps) {
@@ -547,8 +545,8 @@ export function OrganicCutTool({
   // `tenonLeanTransform` — it has to mirror Rust's LeanXform sign for sign, so it
   // lives where it can be tested.
   const tenonTiltMatrix = useMemo(
-    () => (tenonFrame ? tenonLeanMatrix(tenonFrame, tenonTiltRad, tenonTiltAzimuthRad, tenonRollRad) : null),
-    [tenonFrame, tenonTiltRad, tenonTiltAzimuthRad, tenonRollRad],
+    () => (tenonFrame ? tenonLeanMatrix(tenonFrame, tenonTiltRad, tenonRollRad) : null),
+    [tenonFrame, tenonTiltRad, tenonRollRad],
   );
 
   /**

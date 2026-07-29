@@ -9703,11 +9703,10 @@ export default function Home() {
                   onTenonAnchorChange={(anchor) =>
                     organicCut.setPanelState({ ...organicCut.panelState, tenonAnchor: anchor })
                   }
-                  onTenonAimChange={(tilt, azimuth, roll) =>
+                  onTenonAimChange={(tilt, roll) =>
                     organicCut.setPanelState({
                       ...organicCut.panelState,
                       tenonTiltRad: tilt,
-                      tenonTiltAzimuthRad: azimuth,
                       tenonRollRad: roll,
                     })
                   }
@@ -9873,7 +9872,6 @@ export default function Home() {
                 tenonFrame={organicCut.tenonFrame}
                 tenonAnchor={organicCut.panelState.tenonAnchor}
                 tenonTiltRad={organicCut.panelState.tenonTiltRad}
-                tenonTiltAzimuthRad={organicCut.panelState.tenonTiltAzimuthRad}
                 tenonRollRad={organicCut.panelState.tenonRollRad}
                 showPreview={organicCut.panelState.showPreview}
               />

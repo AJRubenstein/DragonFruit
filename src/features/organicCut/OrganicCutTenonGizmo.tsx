@@ -32,7 +32,7 @@ export interface OrganicCutTenonGizmoProps {
   tenonTiltRad: number;
   tenonRollRad: number;
   /** Report a new aim/roll (radians); tilt is pre-clamped. */
-  onTenonAimChange: (tiltRad: number, azimuthRad: number, rollRad: number) => void;
+  onTenonAimChange: (tiltRad: number, rollRad: number) => void;
   /**
    * Where the tenon sits on the cut face (mm along the frame's u/v), and the
    * reporter for the base handle that slides it. Omit the setter and no handle is
@@ -64,31 +64,6 @@ function wrapAngle(rad: number): number {
   return wrapped;
 }
 
-/**
- * The lean's azimuth for a given roll — the tenon has TWO freedoms, not three.
- *
- * MIND THE SIGN. The tenon is built in a frame whose axis is NEGATED against the cut
- * frame (`frame_extruding_toward_part_b`), so a roll of +ρ there turns the body the
- * other way round the cut normal. Deriving the azimuth as `roll + c` therefore did
- * not weld the two together — it left the body turning at 2ρ against a lean plane
- * turning at ρ, which is exactly the extra spin about its own axis that had no
- * ring and no name. Subtracting cancels it: body and lean plane move as one.
- *
- * The old gizmo had the lean (off the normal), the plane that lean happens in, and
- * the tenon's own spin about its axis, all independent. The third one is the one
- * nobody wants: the lean plane should simply BE the plane of one of the tenon's
- * narrow faces, at every roll. So the roll turns the lean plane and the tenon
- * together, as one body, and the azimuth is derived here rather than free.
- *
- * The quarter turn is which face gets it. The tenon is built in a frame whose u/v
- * are SWAPPED against the cut frame (`frame_extruding_toward_part_b` in tenon.rs),
- * so its width — the narrow face — lies along the cut frame's v. Leaning toward v
- * is therefore leaning in the plane of a narrow face; drop the quarter turn to
- * tip it over a wide face instead.
- */
-function leanAzimuthFor(rollRad: number): number {
-  return wrapAngle(Math.PI / 2 - rollRad);
-}
 
 /**
  * The registration-tenon aim/roll gizmo — the app's standard ScreenSpaceGizmo
@@ -230,20 +205,23 @@ export function OrganicCutTenonGizmo({
         // Wrap every revolution away at the source: the rotation is the same one,
         // and the readout, the Reset-aim check and Rust all see a sane number.
         const roll = wrapAngle(tenonRollRad + delta);
-        // Rolling turns the tenon AND the direction it leans, together — that is the
-        // whole point of aiming with the roll ring.
-        onTenonAimChange(tenonTiltRad, leanAzimuthFor(roll), roll);
+        // Rolling turns the tenon AND the direction it leans, together. That is no
+        // longer arranged here: the lean is applied in the tenon's own frame before
+        // the roll, so the roll carries both by construction. This used to derive a
+        // separate azimuth to keep them together, and got the sign wrong — the body
+        // and its lean plane turned opposite ways, so a full turn of this ring moved
+        // the tenon half as far and it visibly lagged the handle.
+        onTenonAimChange(tenonTiltRad, roll);
         return;
       }
       // The green ring turns about the tenon's own u, tipping it toward its own v —
       // the plane of a narrow face. What it reports IS the lean, signed: past 0 it
-      // keeps going to the other side of the normal instead of flipping the
-      // azimuth, which is the −90° end of the user's sketch. The azimuth is never
-      // touched here; it belongs to the roll.
-      // The cap is the part's, not a constant: a tenon with a wall right next to it
-      // stops leaning sooner, and one in open material goes the full 60°.
+      // keeps going to the other side of the normal instead of turning round, which
+      // is the −90° end of the user's sketch.
+      // Only the hard ceiling clamps it: a lean the part cannot take is reported as
+      // a won't-fit verdict (the tenon turns red), not refused by a frozen ring.
       const tilt = clampTenonTilt(tenonTiltRad - delta, tenonFrame);
-      onTenonAimChange(tilt, leanAzimuthFor(tenonRollRad), tenonRollRad);
+      onTenonAimChange(tilt, tenonRollRad);
     },
     [onTenonAimChange, tenonTiltRad, tenonRollRad, tenonFrame],
   );

@@ -71,7 +71,6 @@ export interface OrganicCutSpec {
     tenonAnchor: [number, number, number] | null;
     tenonSwapSides: boolean;
     tenonTiltRad: number;
-    tenonTiltAzimuthRad: number;
     tenonRollRad: number;
   }[];
   /** Wafer thickness in mm ("consistent thickness") — the kerf the cut removes. */
@@ -136,11 +135,6 @@ export interface OrganicCutSpec {
    * the cut face; the body shears to lean. 0 = straight out. Serde: `tenonTiltRad`.
    */
   tenonTiltRad?: number;
-  /**
-   * Tenon tilt azimuth (radians): which in-plane direction the lean points toward.
-   * Irrelevant when tenonTiltRad === 0. Serde: `tenonTiltAzimuthRad`.
-   */
-  tenonTiltAzimuthRad?: number;
   /** Tenon roll (radians): spin about the tenon's own axis. Serde: `tenonRollRad`. */
   tenonRollRad?: number;
 }

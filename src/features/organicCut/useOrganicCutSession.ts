@@ -86,7 +86,6 @@ export type LoopTenonSettings = Pick<
   | 'tenonUniformScale'
   | 'tenonSwapSides'
   | 'tenonTiltRad'
-  | 'tenonTiltAzimuthRad'
   | 'tenonRollRad'
 >;
 
@@ -136,7 +135,6 @@ function extractTenon(ps: OrganicCutPanelState): LoopTenonSettings {
     tenonUniformScale: ps.tenonUniformScale,
     tenonSwapSides: ps.tenonSwapSides,
     tenonTiltRad: ps.tenonTiltRad,
-    tenonTiltAzimuthRad: ps.tenonTiltAzimuthRad,
     tenonRollRad: ps.tenonRollRad,
   };
 }
@@ -169,7 +167,6 @@ function tenonsEqual(a: LoopTenonSettings, b: LoopTenonSettings): boolean {
     a.tenonUniformScale === b.tenonUniformScale &&
     a.tenonSwapSides === b.tenonSwapSides &&
     a.tenonTiltRad === b.tenonTiltRad &&
-    a.tenonTiltAzimuthRad === b.tenonTiltAzimuthRad &&
     a.tenonRollRad === b.tenonRollRad
   );
 }
@@ -186,7 +183,6 @@ function tenonToSpec(k: LoopTenonSettings) {
     tenonAnchor: k.tenonAnchor,
     tenonSwapSides: k.tenonSwapSides,
     tenonTiltRad: k.tenonTiltRad,
-    tenonTiltAzimuthRad: k.tenonTiltAzimuthRad,
     tenonRollRad: k.tenonRollRad,
   };
 }
@@ -416,7 +412,6 @@ const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
   // Tenon points straight out of the cut by default; the in-viewport aim gizmo
   // (drag the tip) leans it, the roll ring spins it. All measured in radians.
   tenonTiltRad: 0,
-  tenonTiltAzimuthRad: 0,
   tenonRollRad: 0,
   // Cut-plan preview on by default — the user sees where the cut lands; the
   // toggle hides it for an unobscured view of the model while drawing.
@@ -1011,7 +1006,6 @@ export function useOrganicCutSession({
             ps.tenonAnchor,
             0,
             0,
-            0,
           );
       }
       if (!ps.generateTenon || loop.length < MIN_LOOP_POINTS) return null;
@@ -1066,7 +1060,7 @@ export function useOrganicCutSession({
       cancelled = true;
       clearTimeout(timer);
     };
-    // NOTE: tenonTilt/azimuth/roll are intentionally NOT deps — the aim is applied
+    // NOTE: tenonTilt/roll are intentionally NOT deps — the aim is applied
     // live on the client (see `tenonLeanTransform`), so changing it must NOT rebuild
     // the soup. Keeping them out is what makes the gizmo smooth.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1341,8 +1335,7 @@ export function useOrganicCutSession({
             // Aim/roll: the base-glued lean + spin set by the in-viewport gizmo. The
             // preview already showed exactly this tenon (same angles, same shear).
             tenonTiltRad: ps.tenonTiltRad,
-            tenonTiltAzimuthRad: ps.tenonTiltAzimuthRad,
-            tenonRollRad: ps.tenonRollRad,
+                    tenonRollRad: ps.tenonRollRad,
           };
         } else {
           // Compute the plane from the SAME helper the preview uses, so the cut
@@ -1367,8 +1360,7 @@ export function useOrganicCutSession({
             tenonToleranceMm: ps.tenonToleranceMm,
             tenonSwapSides: ps.tenonSwapSides,
             tenonTiltRad: ps.tenonTiltRad,
-            tenonTiltAzimuthRad: ps.tenonTiltAzimuthRad,
-            tenonRollRad: ps.tenonRollRad,
+                    tenonRollRad: ps.tenonRollRad,
           };
         }
         const result = await cutFromCapturedSource({ cut: cutSpec });

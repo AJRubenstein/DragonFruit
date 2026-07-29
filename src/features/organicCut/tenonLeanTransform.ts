@@ -21,55 +21,45 @@ import { TENON_MAX_TILT_RAD, type TenonPreviewFrame } from './types';
 export function tenonLeanMatrix(
   frame: TenonPreviewFrame,
   tiltRad: number,
-  azimuthRad: number,
   rollRad: number,
 ): THREE.Matrix4 | null {
   const anchor = new THREE.Vector3(...frame.anchor);
   // Natural ("orig") frame as reported.
   const axisN = new THREE.Vector3(...frame.axis).normalize();
   const uN = new THREE.Vector3(...frame.u).normalize();
-  const vN = new THREE.Vector3(...frame.v).normalize();
-  // Build frame = frame_extruding_toward_part_b(natural): negate axis, swap u/v.
+  // Build frame = frame_extruding_toward_part_b(natural): negate axis, swap u/v,
+  // so the build frame's +y — the hinge the lean turns about, giving a tip over a
+  // NARROW face — is the natural u.
   const buildAxis = axisN.clone().multiplyScalar(-1);
-  const buildU = vN.clone();
   const buildV = uN.clone();
 
   const tilt = clampTenonTilt(tiltRad, frame);
   const roll = rollRad;
   if (Math.abs(tilt) < 1e-6 && Math.abs(roll) < 1e-6) return null;
 
-  // Apply order (matches LeanXform::apply): roll about build +axis, then lean about
-  // the in-plane axis k, composed as q = qLean · qRoll.
+  // Apply order (matches LeanXform::apply): lean about the body's own +y FIRST,
+  // then roll about +z — which is what welds the lean plane to the body, so the
+  // roll turns the two as one. There is no azimuth: it was a second number for a
+  // freedom the tenon does not have, and it drifted out of step with the roll.
   const q = new THREE.Quaternion();
+  if (Math.abs(tilt) >= 1e-6) {
+    q.premultiply(new THREE.Quaternion().setFromAxisAngle(buildV, tilt));
+  }
   if (Math.abs(roll) >= 1e-6) {
     q.premultiply(new THREE.Quaternion().setFromAxisAngle(buildAxis, roll));
-  }
-  let lateral: THREE.Vector3 | null = null;
-  if (Math.abs(tilt) >= 1e-6) {
-    // leanWorld = cos(az)·uN + sin(az)·vN (in the ORIGINAL/natural tangent plane).
-    const leanWorld = uN
-      .clone()
-      .multiplyScalar(Math.cos(azimuthRad))
-      .add(vN.clone().multiplyScalar(Math.sin(azimuthRad)));
-    // Project onto the BUILD basis: lu = leanWorld·buildU, lv = leanWorld·buildV.
-    const lu = leanWorld.dot(buildU);
-    const lv = leanWorld.dot(buildV);
-    const len = Math.hypot(lu, lv);
-    if (len > 1e-9) {
-      // k (build-local) = (−lv, lu, 0)/len → world vector via the build basis.
-      const k = buildU
-        .clone()
-        .multiplyScalar(-lv / len)
-        .add(buildV.clone().multiplyScalar(lu / len))
-        .normalize();
-      q.premultiply(new THREE.Quaternion().setFromAxisAngle(k, tilt));
-    }
   }
 
   // A pure rigid rotation about the anchor — nothing else. Rust used to sink the
   // leaned tenon and stretch its trunk (so the cap stayed at a fixed height above
   // the cut face) and this had to mirror both; neither exists now, because leaning
   // a solid does not resize it. See LeanXform.
+  //
+  // KNOWN, BOUNDED DIFFERENCE: Rust turns about its build origin — half a kerf
+  // below the membrane — and shifts back so the axis passes through the anchor.
+  // Turning about the anchor here lands the body up to half_kerf·(1−cos tilt)
+  // differently ALONG the axis: under 0.02mm at a 0.1mm kerf and 45°, so the
+  // preview is honest at any size a printer can hold. Both put the tenon's axis
+  // through the crosshair, which is the part the user is aiming.
   const toOrigin = new THREE.Matrix4().makeTranslation(-anchor.x, -anchor.y, -anchor.z);
   const rot = new THREE.Matrix4().makeRotationFromQuaternion(q);
   const back = new THREE.Matrix4().makeTranslation(anchor.x, anchor.y, anchor.z);

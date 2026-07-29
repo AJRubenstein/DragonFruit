@@ -111,8 +111,6 @@ export interface OrganicCutPanelState {
    * cut face; the body shears to lean. 0 = straight out.
    */
   tenonTiltRad: number;
-  /** Tenon tilt azimuth (radians): which in-plane direction the lean points toward. */
-  tenonTiltAzimuthRad: number;
   /** Tenon roll (radians): spin about the tenon's own axis. Driven by the roll gizmo. */
   tenonRollRad: number;
   /**
@@ -672,7 +670,7 @@ export function OrganicCutPanel({
                         <button
                           type="button"
                           className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
-                          onClick={() => setState({ tenonTiltRad: 0, tenonTiltAzimuthRad: 0, tenonRollRad: 0 })}
+                          onClick={() => setState({ tenonTiltRad: 0, tenonRollRad: 0 })}
                           disabled={disabled || isApplying}
                           title="Reset the tenon to point straight out of the cut (no lean / roll)."
                         >

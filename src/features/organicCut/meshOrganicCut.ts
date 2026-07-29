@@ -303,7 +303,6 @@ export async function computeMembranePreview(
   tenonSwapSides = false,
   tenonAnchor: [number, number, number] | null = null,
   tenonTiltRad = 0.0,
-  tenonTiltAzimuthRad = 0.0,
   tenonRollRad = 0.0,
 ): Promise<MembranePreviewResult> {
   const empty: MembranePreviewResult = {
@@ -334,7 +333,6 @@ export async function computeMembranePreview(
     tenonSwapSides,
     tenonAnchor,
     tenonTiltRad,
-    tenonTiltAzimuthRad,
     tenonRollRad,
   });
   try {

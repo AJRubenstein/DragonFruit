@@ -76,8 +76,6 @@ pub struct LoopTenonSpec {
     #[serde(default)]
     pub tenon_tilt_rad: f32,
     #[serde(default)]
-    pub tenon_tilt_azimuth_rad: f32,
-    #[serde(default)]
     pub tenon_roll_rad: f32,
 }
 
@@ -170,9 +168,6 @@ pub struct OrganicCutSpec {
     #[serde(default)]
     pub tenon_tilt_rad: f32,
     /// Tenon tilt azimuth (radians): which in-plane direction the lean points toward,
-    /// measured in the cut's tangent frame. Irrelevant when `tenon_tilt_rad == 0`.
-    #[serde(default)]
-    pub tenon_tilt_azimuth_rad: f32,
     /// Tenon roll (radians): spin of the tenon about its own axis — orients the
     /// rectangle / oblong dome footprint. Default 0.
     #[serde(default)]
@@ -490,7 +485,7 @@ fn resolve_loop_tenon(spec: &OrganicCutSpec, i: usize) -> ResolvedTenon {
             tolerance: k.tenon_tolerance_mm,
             at: k.tenon_anchor.map(|p| Vec3::new(p[0], p[1], p[2])),
             swap: k.tenon_swap_sides,
-            tilt: crate::tenon::TenonTilt::new(k.tenon_tilt_rad, k.tenon_tilt_azimuth_rad, k.tenon_roll_rad),
+            tilt: crate::tenon::TenonTilt::new(k.tenon_tilt_rad, k.tenon_roll_rad),
         },
         None => ResolvedTenon {
             generate: spec.generate_tenon,
@@ -501,11 +496,7 @@ fn resolve_loop_tenon(spec: &OrganicCutSpec, i: usize) -> ResolvedTenon {
             tolerance: spec.tenon_tolerance_mm,
             at: spec.tenon_anchor.map(|p| Vec3::new(p[0], p[1], p[2])),
             swap: spec.tenon_swap_sides,
-            tilt: crate::tenon::TenonTilt::new(
-                spec.tenon_tilt_rad,
-                spec.tenon_tilt_azimuth_rad,
-                spec.tenon_roll_rad,
-            ),
+            tilt: crate::tenon::TenonTilt::new(spec.tenon_tilt_rad, spec.tenon_roll_rad),
         },
     }
 }
@@ -1223,7 +1214,6 @@ mod tests {
             tenon_anchor: None,
             tenon_swap_sides: false,
             tenon_tilt_rad: 0.0,
-            tenon_tilt_azimuth_rad: 0.0,
             tenon_roll_rad: 0.0,
         };
         let run = |loop_tenons: Vec<LoopTenonSpec>| {
