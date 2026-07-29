@@ -15,6 +15,9 @@ pub mod geodesic;
 pub mod tenon;
 #[cfg(feature = "manifold")]
 pub mod membrane;
+/// EXPERIMENT: split by walking the surface (see the module docs). Not wired into the app.
+#[cfg(feature = "manifold")]
+pub mod surface_cut;
 pub mod organic_cut;
 
 pub use crate::geodesic::{surface_loop_from_mesh, surface_loop_positions, GeodesicSolver};

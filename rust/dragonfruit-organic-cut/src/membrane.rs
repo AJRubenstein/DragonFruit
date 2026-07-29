@@ -1296,6 +1296,34 @@ fn mesh_centroid(mesh: &IndexedMesh) -> Vec3 {
     sum.scale(1.0 / mesh.positions.len() as f32)
 }
 
+/// Put a failed cut's reason in front of what the SURFACE says about the seams,
+/// when the surface has something more fundamental to say.
+///
+/// The geometric reasons (`why`) all assume the loops enclose something and the
+/// cutter fell short. Sometimes they do not enclose anything at all: a loop round
+/// a tentacle that fuses back to the body encircles a handle, and no cutter can
+/// free a piece along it. Saying "move the waypoints" there sends the user to
+/// chase a fault that is not theirs.
+#[cfg(feature = "manifold")]
+fn explain_failure(mesh: &IndexedMesh, loops: &[Vec<Vec3>], why: String) -> String {
+    match crate::surface_cut::seams_enclose_a_piece(mesh, loops) {
+        crate::surface_cut::SeamVerdict::NotSeparating if loops.len() == 1 => {
+            "This loop does not enclose a piece. It goes round a part that is joined to the \
+             body somewhere else as well — a tentacle that loops back, an arm that touches \
+             down twice — and a single loop can never free one of those, whatever it cuts \
+             with. Add a second loop around the other join and cut them together."
+                .to_string()
+        }
+        crate::surface_cut::SeamVerdict::NotSeparating => {
+            "These loops do not enclose a piece between them: the part they go round is \
+             still joined to the body somewhere none of them crosses. Add a loop around \
+             that join too."
+                .to_string()
+        }
+        _ => why,
+    }
+}
+
 /// How near the cut face an island vertex must be to count as sitting ON it, as a
 /// multiple of the cutter thickness. The boolean leaves the two kerf walls half a
 /// thickness apart, so a few thicknesses is generous while still excluding
@@ -2220,7 +2248,8 @@ pub fn contour_split(
     if std::env::var_os("DF_CUT_DEBUG").is_some() {
         debug_contour_split(&refined, &model, &membrane, &slab, &islands, thickness_mm);
     }
-    let (part_a, part_b) = split_into_two_sides(&membrane, islands, thickness_mm)?;
+    let (part_a, part_b) = split_into_two_sides(&membrane, islands, thickness_mm)
+        .map_err(|why| explain_failure(mesh, &[loop_pts.to_vec()], why))?;
 
     Ok(ContourSplit { part_a, part_b, component_count, membrane_tris, membrane })
 }
@@ -2375,7 +2404,7 @@ pub fn contour_split_multi(
         ));
     }
     let (part_a, part_b) = group_largest_vs_rest(&membranes, islands, thickness_mm)
-        .map_err(|islands| {
+        .map_err(|islands| -> String {
             // Same question as the single-loop cut: where do the two sides still hold
             // on to each other? Report the most LOCAL join across the seams — that is
             // the one standing in the way.
@@ -2398,7 +2427,8 @@ pub fn contour_split_multi(
                       wraps right round what you want to separate."
                     .to_string(),
             }
-        })?;
+        })
+        .map_err(|why| explain_failure(mesh, loops, why))?;
 
     Ok(ContourSplitMulti { part_a, part_b, component_count, membrane_tris, membranes })
 }
