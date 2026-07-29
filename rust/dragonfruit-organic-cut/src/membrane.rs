@@ -1296,29 +1296,124 @@ fn mesh_centroid(mesh: &IndexedMesh) -> Vec3 {
     sum.scale(1.0 / mesh.positions.len() as f32)
 }
 
-/// Group the severed islands into exactly two parts by which SIDE of the membrane
-/// each island sits on (+normal side → A, −normal side → B). Islands on the same
-/// side are concatenated into one `IndexedMesh`. Returns `None` if, after
-/// grouping, either side is empty (the cut didn't actually separate the body).
+/// How near the cut face an island vertex must be to count as sitting ON it, as a
+/// multiple of the cutter thickness. The boolean leaves the two kerf walls half a
+/// thickness apart, so a few thicknesses is generous while still excluding
+/// anything the cut never touched.
+const CUT_FACE_BAND_FACTOR: f32 = 4.0;
+
+/// Group the severed islands into exactly two parts by which SIDE of the cut face
+/// each one is on (+normal side → A, −normal side → B). Islands on the same side
+/// are concatenated into one `IndexedMesh`.
 ///
-/// This is what makes the contour cut work on real organic models, where a single
-/// seam can carve the body into many islands per side (the dragon's base gave 3-4
-/// components — top + bottom + slivers — which this collapses to a clean 2).
-fn split_into_two_sides(membrane: &Membrane, islands: Vec<IndexedMesh>) -> Option<(IndexedMesh, IndexedMesh)> {
-    let mut side_a: Vec<IndexedMesh> = Vec::new();
-    let mut side_b: Vec<IndexedMesh> = Vec::new();
+/// Only islands that actually SIT ON the cut face are grouped. Two traps make that
+/// necessary, and both were seen on a real model:
+///
+/// - `decompose` returns every connected shell of the result, INCLUDING the ones
+///   the model already had. A loose flake that shipped inside the STL is not a
+///   piece the cut freed; counting it as one hands the user a scrap from the far
+///   side of the model and calls the cut a success. Those orphans ride along with
+///   the bigger part instead.
+/// - The side cannot be read from an island's CENTROID. A model's centroid can sit
+///   a hundred millimetres from the seam, where the nearest membrane triangle's
+///   normal says nothing about which side the island is on — the freed spire and
+///   the whole body both came out "+". Only points on the cut face itself carry
+///   that information, so each island votes with the vertices it has there.
+///
+/// `Err` carries the message the user sees: too few pieces touching the cut face
+/// (the seam never closed through the body), or all of them on one side.
+fn split_into_two_sides(
+    membrane: &Membrane,
+    islands: Vec<IndexedMesh>,
+    thickness: f32,
+) -> Result<(IndexedMesh, IndexedMesh), String> {
+    let membrane_mesh = IndexedMesh {
+        positions: membrane.vertices.clone(),
+        triangles: membrane.triangles.clone(),
+    };
+    let bvh = dragonfruit_mesh_core::bvh::Bvh::build(&membrane_mesh);
+    let band = (thickness * CUT_FACE_BAND_FACTOR).max(1e-3);
+
+    let (mut side_a, mut side_b, mut orphans) = (Vec::new(), Vec::new(), Vec::new());
     for island in islands {
-        let c = mesh_centroid(&island);
-        if signed_side_distance(membrane, c) >= 0.0 {
-            side_a.push(island);
-        } else {
-            side_b.push(island);
+        // Each vertex ON the cut face votes for its side; the majority wins. One
+        // vertex would do on a clean kerf, but a rim that pokes out past the body
+        // can put a stray vertex on the wrong side of the membrane's own normal.
+        let mut vote = 0i64;
+        for &v in &island.positions {
+            match signed_side_on_cut_face(&bvh, &membrane_mesh, v, band) {
+                Some(s) if s >= 0.0 => vote += 1,
+                Some(_) => vote -= 1,
+                None => {}
+            }
+        }
+        match vote {
+            0 => orphans.push(island),
+            v if v > 0 => side_a.push(island),
+            _ => side_b.push(island),
         }
     }
-    if side_a.is_empty() || side_b.is_empty() {
-        return None;
+
+    let on_the_cut = side_a.len() + side_b.len();
+    if on_the_cut < 2 {
+        return Err(format!(
+            "The seam does not go all the way around the part. It runs across the \
+             surface without closing through the body, so nothing came free (the cut \
+             left {on_the_cut} piece). Move the waypoints so the loop wraps right \
+             round what you want to separate."
+        ));
     }
-    Some((concat_meshes(side_a), concat_meshes(side_b)))
+    if side_a.is_empty() || side_b.is_empty() {
+        return Err(format!(
+            "The seam does not go all the way around the part. The cut broke the \
+             surface into {on_the_cut} pieces, but they all ended up on the same \
+             side of the cut face, so there is nothing to separate. Move the waypoints \
+             so the loop wraps right round what you want to free."
+        ));
+    }
+
+    // Shells the cut never touched stay with the bigger part — they were never
+    // attached to anything, and the user did not ask for them to come free.
+    let tris = |ms: &[IndexedMesh]| ms.iter().map(|m| m.triangles.len()).sum::<usize>();
+    if tris(&side_a) >= tris(&side_b) {
+        side_a.append(&mut orphans);
+    } else {
+        side_b.append(&mut orphans);
+    }
+    Ok((concat_meshes(side_a), concat_meshes(side_b)))
+}
+
+/// Signed side of `p` relative to the cut face, or `None` when `p` is further than
+/// `band` from it — i.e. not on the cut face at all. Signed by the nearest membrane
+/// triangle's normal, which is meaningful precisely because `p` is right on it.
+fn signed_side_on_cut_face(
+    bvh: &dragonfruit_mesh_core::bvh::Bvh,
+    membrane_mesh: &IndexedMesh,
+    p: Vec3,
+    band: f32,
+) -> Option<f32> {
+    let query = dragonfruit_mesh_core::mesh::Aabb {
+        min: Vec3::new(p.x - band, p.y - band, p.z - band),
+        max: Vec3::new(p.x + band, p.y + band, p.z + band),
+    };
+    let mut best_d2 = band * band;
+    let mut best_signed = None;
+    bvh.query_aabb(&query, |ti| {
+        let t = &membrane_mesh.triangles[ti as usize];
+        let a = membrane_mesh.positions[t[0] as usize];
+        let b = membrane_mesh.positions[t[1] as usize];
+        let c = membrane_mesh.positions[t[2] as usize];
+        let (cp, d2) = closest_on_tri(p, a, b, c);
+        if d2 <= best_d2 {
+            best_d2 = d2;
+            let n = b.sub(a).cross(c.sub(a));
+            let nlen = n.length();
+            if nlen > 1e-12 {
+                best_signed = Some(p.sub(cp).dot(n.scale(1.0 / nlen)));
+            }
+        }
+    });
+    best_signed
 }
 
 /// Concatenate several meshes into one (offsetting triangle indices). The pieces
@@ -1508,6 +1603,17 @@ fn widen_membrane_boundary(m: &mut Membrane, amount: f32) {
     if bn < 3 || amount <= 0.0 {
         return;
     }
+    let dirs = boundary_outward_dirs(m);
+    for i in 0..bn {
+        let b = m.boundary[i] as usize;
+        m.vertices[b] = m.vertices[b].add(dirs[i].scale(amount));
+    }
+}
+
+/// The outward direction at each boundary vertex — see [`widen_membrane_boundary`]
+/// for why it is derived from LOCAL 3D geometry rather than a global plane.
+fn boundary_outward_dirs(m: &Membrane) -> Vec<Vec3> {
+    let bn = m.boundary.len();
     let neighbours = one_ring(m);
     let is_boundary = {
         let mut s = vec![false; m.vertices.len()];
@@ -1567,11 +1673,139 @@ fn widen_membrane_boundary(m: &mut Membrane, amount: f32) {
         dirs = next;
     }
 
-    // 3. Push each boundary vertex outward by `amount`.
+    dirs
+}
+
+/// How far the rim may hunt for the skin, as a multiple of the widen margin — 1 mm
+/// at the default margin.
+///
+/// It has to cover two things: a smoothed seam dipping below the surface (0.14 mm
+/// on the model that found this), and a seam running UNDER an overhanging detail —
+/// a shingle, a scale, a fold — whose lip the rim must pass to reach open air. On
+/// that model's turret the lip was thicker than half a millimetre, and a shorter
+/// leash left the two sides bridged by exactly that ridge. It stays a leash rather
+/// than an open walk because the rim only moves when it FINDS air (see the caller):
+/// a vertex that runs out of leash is aimed into the body and stays put, so the cut
+/// cannot creep outside the seam the user drew.
+const WAFER_WIDEN_MAX_STEPS: u32 = 10;
+
+/// Push the boundary ring outward until the rim is CLEAR OF MATERIAL — past the
+/// last skin it crosses, not merely out of the first wall.
+///
+/// The fixed widen assumes the seam lies exactly on the surface, so `margin` alone
+/// carries the rim outside. Two things break that assumption on a real model, and
+/// either one leaves a ring of material bridging the two sides that no boolean can
+/// separate:
+///
+/// - Seam smoothing cuts the corner at every wiggle and sinks the line BELOW the
+///   skin, deeper than the margin.
+/// - The seam runs under an overhanging detail — a roof shingle, a scale, a fold.
+///   Here the rim can be perfectly outside the skin and still be bridged, because
+///   the lip does not touch the rim: it passes OVER it.
+///
+/// So the rim does not ask "am I inside?" but "where does material stop along my
+/// way out?", by ray-casting: the last surface the ray crosses within the leash is
+/// the far side of whatever lies in the way, and the rim goes `margin` past it. A
+/// rim with nothing ahead of it does not move.
+///
+/// The leash is what keeps the cut inside the seam the user drew. A rim vertex
+/// whose way out is longer than the leash is aimed into the body rather than at
+/// the air, and it stays exactly where it is — shoving it halfway would cut
+/// material nobody asked to cut without freeing anything. The per-vertex distances
+/// are dilated around the ring so a buried stretch carries its neighbours with it
+/// instead of leaving a step in the rim.
+fn push_boundary_out_of_the_skin(m: &mut Membrane, model: &IndexedMesh, margin: f32) {
+    let bn = m.boundary.len();
+    if bn < 3 || margin <= 0.0 || model.triangles.is_empty() {
+        return;
+    }
+    let bvh = dragonfruit_mesh_core::bvh::Bvh::build(model);
+    let dirs = boundary_outward_dirs(m);
+    let cap = margin * WAFER_WIDEN_MAX_STEPS as f32;
+
+    let mut extra = vec![0.0f32; bn];
+    let mut stuck: Vec<Vec3> = Vec::new();
+    for i in 0..bn {
+        let p = m.vertices[m.boundary[i] as usize];
+        if dirs[i].length() < 0.5 {
+            continue; // no usable outward direction here
+        }
+        if let Some(exit) = last_exit_along(&bvh, model, p, dirs[i], cap) {
+            extra[i] = exit + margin;
+        } else if is_inside_model(&bvh, model, p) {
+            // Buried, and no way out within the leash: this vertex is aimed into the
+            // body. It stays put (see above), but it is exactly where a cut fails, so
+            // the trace names it.
+            stuck.push(p);
+        }
+    }
+    if !stuck.is_empty() && std::env::var_os("DF_CUT_DEBUG").is_some() {
+        eprintln!(
+            "[cut] rim vertices with no way out within {cap:.2} mm: {} of {bn}{}",
+            stuck.len(),
+            stuck
+                .iter()
+                .take(6)
+                .map(|p| format!(" ({:.2}, {:.2}, {:.2})", p.x, p.y, p.z))
+                .collect::<String>()
+        );
+    }
+
+    // Dilate over a ±2 window: a buried vertex pulls its neighbours out too, so the
+    // rim gains a smooth bulge rather than a spike.
+    let dilated: Vec<f32> = (0..bn)
+        .map(|i| (0..5).fold(0.0f32, |acc, k| acc.max(extra[(i + bn + k - 2) % bn])))
+        .collect();
     for i in 0..bn {
         let b = m.boundary[i] as usize;
-        m.vertices[b] = m.vertices[b].add(dirs[i].scale(amount));
+        m.vertices[b] = m.vertices[b].add(dirs[i].scale(dilated[i]));
     }
+}
+
+/// How far along `dir` the ray from `p` last crosses the model's skin, within
+/// `limit` mm. `None` when it crosses nothing — the way out is already clear, or
+/// whatever is in the way is further off than the leash allows.
+///
+/// The LAST crossing is the one that matters: an overhanging lip is entered and
+/// left again, and the rim has to end up past both.
+fn last_exit_along(
+    bvh: &dragonfruit_mesh_core::bvh::Bvh,
+    model: &IndexedMesh,
+    p: Vec3,
+    dir: Vec3,
+    limit: f32,
+) -> Option<f32> {
+    let far = p.add(dir.scale(limit));
+    let query = dragonfruit_mesh_core::mesh::Aabb {
+        min: p.min(far),
+        max: p.max(far),
+    };
+    let mut last: Option<f32> = None;
+    bvh.query_aabb(&query, |ti| {
+        let t = &model.triangles[ti as usize];
+        let hit = dragonfruit_mesh_core::bvh::ray_tri(
+            p,
+            dir,
+            model.positions[t[0] as usize],
+            model.positions[t[1] as usize],
+            model.positions[t[2] as usize],
+        );
+        if let Some(d) = hit {
+            if d > 1e-5 && d <= limit {
+                last = Some(last.map_or(d, |b: f32| b.max(d)));
+            }
+        }
+    });
+    last
+}
+
+/// Is `p` inside the closed `model`? Ray parity through the BVH: a ray from an
+/// interior point crosses the skin an odd number of times.
+fn is_inside_model(bvh: &dragonfruit_mesh_core::bvh::Bvh, model: &IndexedMesh, p: Vec3) -> bool {
+    // Irrational-ish direction, so the ray is unlikely to graze an edge or vertex —
+    // the one case parity counting gets wrong.
+    let dir = Vec3::new(0.577_35, 0.577_36, 0.577_34);
+    bvh.ray_hit_count(model, p, dir) % 2 == 1
 }
 
 /// Build the contour-cut CUTTER (membrane + thickened slab) from the model and
@@ -1583,7 +1817,7 @@ fn widen_membrane_boundary(m: &mut Membrane, amount: f32) {
 /// Returns `(membrane, slab)`. `density` is the already-clamped resolution
 /// multiplier. `Err` if the membrane can't be built from the loop.
 fn build_contour_cutter(
-    _mesh: &IndexedMesh,
+    mesh: &IndexedMesh,
     loop_pts: &[Vec3],
     thickness_mm: f32,
     membrane_smoothing: f32,
@@ -1594,10 +1828,13 @@ fn build_contour_cutter(
     // source of truth, and a raw loop can't self-intersect), THEN push only its
     // boundary ring 0.1 mm outward so the wafer is 0.1 mm wider than the body's
     // cross-section (poking just past the wall → clean sever) without lifting it:
-    // the rim stays at the same height, on the seam. (`_mesh` unused now.)
+    // the rim stays at the same height, on the seam. Where a smoothed seam sank
+    // BELOW the skin, that fixed margin is not enough to reach the wall, so a
+    // second pass keeps pushing exactly those vertices out until they clear it.
     let mut membrane = build_membrane_full(loop_pts, CONTOUR_SUBDIVISIONS, membrane_smoothing, grid_divisions)
         .ok_or_else(|| format!("could not build a membrane from the loop ({} points)", loop_pts.len()))?;
     widen_membrane_boundary(&mut membrane, DEFAULT_WAFER_WIDEN_MM);
+    push_boundary_out_of_the_skin(&mut membrane, mesh, DEFAULT_WAFER_WIDEN_MM);
     let slab = thicken_to_slab(&membrane, thickness_mm, 0.0, &[]);
     Ok((membrane, slab))
 }
@@ -1625,6 +1862,250 @@ pub fn build_cutter_preview_soup(
         }
     }
     Some(soup)
+}
+
+/// Distance from `p` to the nearest point of the membrane surface (unsigned).
+fn distance_to_membrane(m: &Membrane, p: Vec3) -> f32 {
+    let mut best = f32::INFINITY;
+    for t in &m.triangles {
+        let (_, d2) = closest_on_tri(
+            p,
+            m.vertices[t[0] as usize],
+            m.vertices[t[1] as usize],
+            m.vertices[t[2] as usize],
+        );
+        best = best.min(d2);
+    }
+    best.sqrt()
+}
+
+/// Stderr trace of what the contour cut actually produced, gated on `DF_CUT_DEBUG`.
+///
+/// It answers the question a wrong-looking cut always raises: which of these
+/// islands did the CUT make? `decompose` returns every connected shell of the
+/// result, including the ones the model already had — a model that ships as
+/// several loose shells hands `split_into_two_sides` islands the wafer never
+/// touched, and one of those can be classified as the freed piece. So we print
+/// the shell count BEFORE the cut alongside each island's size, position, side
+/// and, decisively, how far it sits from the membrane: a piece the cut freed has
+/// vertices ON the cut face (≈0 mm), a pre-existing shell is far away.
+#[cfg(feature = "manifold")]
+fn debug_contour_split(
+    model_mesh: &IndexedMesh,
+    model: &manifold_csg::Manifold,
+    membrane: &Membrane,
+    slab: &IndexedMesh,
+    islands: &[IndexedMesh],
+    thickness: f32,
+) {
+    let p = |v: Vec3| format!("({:.2}, {:.2}, {:.2})", v.x, v.y, v.z);
+    let mem_mesh = IndexedMesh {
+        positions: membrane.vertices.clone(),
+        triangles: membrane.triangles.clone(),
+    };
+    let mem_bvh = dragonfruit_mesh_core::bvh::Bvh::build(&mem_mesh);
+    let band = (thickness * CUT_FACE_BAND_FACTOR).max(1e-3);
+    let mb = {
+        let mut b = dragonfruit_mesh_core::mesh::Aabb::empty();
+        for &v in &membrane.vertices {
+            b.expand(v);
+        }
+        b
+    };
+    eprintln!(
+        "[cut] membrane: {} tris, area {:.2} mm², bbox {} .. {}",
+        membrane.triangles.len(),
+        membrane.area(),
+        p(mb.min),
+        p(mb.max)
+    );
+    eprintln!(
+        "[cut] slab: {} tris, bbox {} .. {}",
+        slab.triangles.len(),
+        p(slab.bbox().min),
+        p(slab.bbox().max)
+    );
+    eprintln!(
+        "[cut] model shells BEFORE the boolean: {} — islands AFTER: {}",
+        model.decompose().len(),
+        islands.len()
+    );
+
+    // Does the wafer's rim poke OUT through the skin all the way round? Where it
+    // does not, a bridge of material survives the difference and the cut cannot
+    // separate, however clean the boolean is.
+    {
+        let bvh = dragonfruit_mesh_core::bvh::Bvh::build(model_mesh);
+        // Irrational-ish direction so the ray is unlikely to graze an edge.
+        let dir = Vec3::new(0.577_35, 0.577_36, 0.577_34);
+        let bn = membrane.boundary.len();
+        let stride = (bn / 200).max(1);
+        let (mut tested, mut inside, mut deepest) = (0usize, 0usize, 0.0f32);
+        for &bi in membrane.boundary.iter().step_by(stride) {
+            let p = membrane.vertices[bi as usize];
+            tested += 1;
+            if bvh.ray_hit_count(model_mesh, p, dir) % 2 == 1 {
+                inside += 1;
+                deepest = deepest.max(distance_to_surface(&bvh, model_mesh, p));
+            }
+        }
+        eprintln!(
+            "[cut] wafer rim still INSIDE the model: {inside}/{tested} sampled seam vertices (deepest {deepest:.3} mm below the skin)"
+        );
+    }
+
+    // Where does material still cross the cut face? Every membrane triangle sits in
+    // the middle of the kerf, so after a clean difference NONE of them should be
+    // buried in the largest island. The ones that are mark the holes through which
+    // the two sides stay bridged; if there are none, the piece is held somewhere
+    // else entirely and no cutter along this seam will ever free it.
+    // Read it against the count BEFORE the cut: a membrane that was never in the
+    // material to begin with (a film bulging out through the surface) would also
+    // score zero here, and that is a different bug entirely.
+    let centroid = |t: &[u32; 3]| {
+        membrane.vertices[t[0] as usize]
+            .add(membrane.vertices[t[1] as usize])
+            .add(membrane.vertices[t[2] as usize])
+            .scale(1.0 / 3.0)
+    };
+    let before = {
+        let bvh = dragonfruit_mesh_core::bvh::Bvh::build(model_mesh);
+        membrane
+            .triangles
+            .iter()
+            .filter(|t| is_inside_model(&bvh, model_mesh, centroid(t)))
+            .count()
+    };
+    if let Some(body) = islands.first() {
+        let bvh = dragonfruit_mesh_core::bvh::Bvh::build(body);
+        let after = membrane
+            .triangles
+            .iter()
+            .filter(|t| is_inside_model(&bvh, body, centroid(t)))
+            .count();
+        eprintln!(
+            "[cut] cut face buried in material: {before}/{} membrane triangles BEFORE the cut, {after} still after",
+            membrane.triangles.len()
+        );
+    }
+
+    let mut on_the_cut = 0usize;
+    for (i, island) in islands.iter().enumerate() {
+        let c = mesh_centroid(island);
+        // Sample at most ~2000 vertices: the nearest one tells us whether this
+        // island touches the cut face at all.
+        let stride = (island.positions.len() / 2000).max(1);
+        let nearest = island
+            .positions
+            .iter()
+            .step_by(stride)
+            .map(|&v| distance_to_membrane(membrane, v))
+            .fold(f32::INFINITY, f32::min);
+        if nearest <= band {
+            on_the_cut += 1;
+        }
+        eprintln!(
+            "[cut]   island {i}: {} tris, centroid {} (side {:+.3}), nearest vertex to membrane {:.3} mm, bbox {} .. {}",
+            island.triangles.len(),
+            p(c),
+            signed_side_distance(membrane, c),
+            nearest,
+            p(island.bbox().min),
+            p(island.bbox().max)
+        );
+    }
+    // With a clean cut face, whatever still holds the piece is somewhere else on the
+    // model. Walk the surface outward from each side of the cut face at once: the
+    // vertex that is nearest to BOTH fronts, away from the cut itself, sits on the
+    // neck of material that survived — the place the user has to wrap a second loop
+    // around (or move the seam past).
+    if on_the_cut < 2 {
+      if let Some(body) = islands.first() {
+        let mut neighbours: Vec<Vec<u32>> = vec![Vec::new(); body.positions.len()];
+        for t in &body.triangles {
+            for k in 0..3 {
+                let (a, b) = (t[k], t[(k + 1) % 3]);
+                neighbours[a as usize].push(b);
+                neighbours[b as usize].push(a);
+            }
+        }
+        let walk = |seeds: Vec<u32>| {
+            let mut hops = vec![u32::MAX; body.positions.len()];
+            let mut queue: std::collections::VecDeque<u32> = seeds.into_iter().collect();
+            for &s in &queue {
+                hops[s as usize] = 0;
+            }
+            while let Some(v) = queue.pop_front() {
+                let d = hops[v as usize];
+                for &n in &neighbours[v as usize] {
+                    if hops[n as usize] == u32::MAX {
+                        hops[n as usize] = d + 1;
+                        queue.push_back(n);
+                    }
+                }
+            }
+            hops
+        };
+        let side_seeds = |want_positive: bool| {
+            body.positions
+                .iter()
+                .enumerate()
+                .filter(|(_, &v)| {
+                    matches!(signed_side_on_cut_face(&mem_bvh, &mem_mesh, v, band),
+                        Some(s) if (s >= 0.0) == want_positive)
+                })
+                .map(|(i, _)| i as u32)
+                .collect::<Vec<_>>()
+        };
+        let (from_plus, from_minus) = (walk(side_seeds(true)), walk(side_seeds(false)));
+        let neck = (0..body.positions.len())
+            .filter(|&i| from_plus[i] > 3 && from_minus[i] > 3)
+            .filter(|&i| from_plus[i] != u32::MAX && from_minus[i] != u32::MAX)
+            .min_by_key(|&i| from_plus[i] + from_minus[i]);
+        match neck {
+            Some(i) => eprintln!(
+                "[cut] the two sides still meet around {} ({} + {} hops from the cut face)",
+                p(body.positions[i]),
+                from_plus[i],
+                from_minus[i]
+            ),
+            None => eprintln!("[cut] the two sides do not meet anywhere else"),
+        }
+    }
+      }
+    }
+
+
+
+/// Distance from `p` to the nearest surface point of `mesh`, via the BVH. Searches
+/// a box around `p`, widening until it finds triangles. Diagnostics only.
+#[cfg(feature = "manifold")]
+fn distance_to_surface(
+    bvh: &dragonfruit_mesh_core::bvh::Bvh,
+    mesh: &IndexedMesh,
+    p: Vec3,
+) -> f32 {
+    for r in [0.5f32, 2.0, 8.0, 32.0] {
+        let query = dragonfruit_mesh_core::mesh::Aabb {
+            min: Vec3::new(p.x - r, p.y - r, p.z - r),
+            max: Vec3::new(p.x + r, p.y + r, p.z + r),
+        };
+        let mut best = f32::INFINITY;
+        bvh.query_aabb(&query, |t| {
+            let t = &mesh.triangles[t as usize];
+            let (_, d2) = closest_on_tri(
+                p,
+                mesh.positions[t[0] as usize],
+                mesh.positions[t[1] as usize],
+                mesh.positions[t[2] as usize],
+            );
+            best = best.min(d2);
+        });
+        if best.is_finite() {
+            return best.sqrt();
+        }
+    }
+    f32::INFINITY
 }
 
 /// End-to-end contour cut: build a soap-film membrane spanning `loop_pts`,
@@ -1681,22 +2162,10 @@ pub fn contour_split(
 
     let islands = split_by_cutter(&model, &cutter);
     let component_count = islands.len();
-    if component_count < 2 {
-        return Err(format!(
-            "The seam does not go all the way around the part. It runs across the \
-             surface without closing through the body, so nothing came free (the cut \
-             left {component_count} piece). Move the waypoints so the loop wraps right \
-             round what you want to separate."
-        ));
+    if std::env::var_os("DF_CUT_DEBUG").is_some() {
+        debug_contour_split(&refined, &model, &membrane, &slab, &islands, thickness_mm);
     }
-    let (part_a, part_b) = split_into_two_sides(&membrane, islands).ok_or_else(|| {
-        format!(
-            "The seam does not go all the way around the part. The cut broke the \
-             surface into {component_count} pieces, but they all ended up on the same \
-             side of the cut face, so there is nothing to separate. Move the waypoints \
-             so the loop wraps right round what you want to free."
-        )
-    })?;
+    let (part_a, part_b) = split_into_two_sides(&membrane, islands, thickness_mm)?;
 
     Ok(ContourSplit { part_a, part_b, component_count, membrane_tris, membrane })
 }
@@ -2441,14 +2910,17 @@ mod tests {
             v.z += 5.0;
         }
 
-        let above1 = axis_aligned_slab(Vec3::new(0.0, 0.0, 6.0), Vec3::new(2.0, 2.0, 8.0));
-        let above2 = axis_aligned_slab(Vec3::new(8.0, 8.0, 6.0), Vec3::new(9.0, 9.0, 8.0));
-        let below1 = axis_aligned_slab(Vec3::new(0.0, 0.0, 1.0), Vec3::new(2.0, 2.0, 3.0));
-        let below2 = axis_aligned_slab(Vec3::new(8.0, 8.0, 1.0), Vec3::new(9.0, 9.0, 3.0));
+        // The islands sit ON the cut face, half a kerf either side of it, exactly as
+        // the boolean leaves them — that contact is what tells us their side.
+        let above1 = axis_aligned_slab(Vec3::new(0.0, 0.0, 5.05), Vec3::new(2.0, 2.0, 8.0));
+        let above2 = axis_aligned_slab(Vec3::new(8.0, 8.0, 5.05), Vec3::new(9.0, 9.0, 8.0));
+        let below1 = axis_aligned_slab(Vec3::new(0.0, 0.0, 1.0), Vec3::new(2.0, 2.0, 4.95));
+        let below2 = axis_aligned_slab(Vec3::new(8.0, 8.0, 1.0), Vec3::new(9.0, 9.0, 4.95));
         let islands = vec![above1.clone(), below1.clone(), above2.clone(), below2.clone()];
 
         let (part_a, part_b) =
-            split_into_two_sides(&membrane, islands).expect("should group into 2 sides");
+            split_into_two_sides(&membrane, islands, DEFAULT_CUTTER_THICKNESS_MM)
+                .expect("should group into 2 sides");
         // Each side has two slabs → 24 tris; both parts non-empty and equal here.
         assert!(part_a.triangle_count() > 0 && part_b.triangle_count() > 0);
         let total = part_a.triangle_count() + part_b.triangle_count();
@@ -2458,11 +2930,68 @@ mod tests {
     #[test]
     fn split_into_two_sides_errors_when_all_on_one_side() {
         // If every island is on the SAME side of the membrane, the cut didn't
-        // separate the body → None (caller falls back to the plane).
+        // separate the body → Err (the caller reports it, no fallback).
         let membrane = build_membrane(&square_loop(10.0), 1).expect("membrane"); // z=0
-        let above1 = axis_aligned_slab(Vec3::new(0.0, 0.0, 1.0), Vec3::new(2.0, 2.0, 3.0));
-        let above2 = axis_aligned_slab(Vec3::new(8.0, 8.0, 1.0), Vec3::new(9.0, 9.0, 3.0));
-        assert!(split_into_two_sides(&membrane, vec![above1, above2]).is_none());
+        let above1 = axis_aligned_slab(Vec3::new(0.0, 0.0, 0.05), Vec3::new(2.0, 2.0, 3.0));
+        let above2 = axis_aligned_slab(Vec3::new(8.0, 8.0, 0.05), Vec3::new(9.0, 9.0, 3.0));
+        let err = split_into_two_sides(
+            &membrane,
+            vec![above1, above2],
+            DEFAULT_CUTTER_THICKNESS_MM,
+        )
+        .expect_err("both islands on one side cannot be separated");
+        assert!(err.contains("same side"), "{err}");
+    }
+
+    #[test]
+    fn a_loose_shell_the_cut_never_touched_is_not_the_freed_piece() {
+        // A shell that shipped inside the STL sits nowhere near the cut face. It is
+        // not a piece the cut freed, so it rides along with the bigger part instead
+        // of being handed to the user as the result of the cut.
+        let membrane = build_membrane(&square_loop(10.0), 1).expect("membrane"); // z=0
+        let one_side = axis_aligned_slab(Vec3::new(0.0, 0.0, 0.05), Vec3::new(9.0, 9.0, 3.0));
+        let other1 = axis_aligned_slab(Vec3::new(0.0, 0.0, -3.0), Vec3::new(2.0, 2.0, -0.05));
+        let other2 = axis_aligned_slab(Vec3::new(8.0, 8.0, -3.0), Vec3::new(9.0, 9.0, -0.05));
+        let stray = axis_aligned_slab(Vec3::new(100.0, 100.0, 100.0), Vec3::new(101.0, 101.0, 101.0));
+
+        let (part_a, part_b) = split_into_two_sides(
+            &membrane,
+            vec![one_side, other1, other2, stray],
+            DEFAULT_CUTTER_THICKNESS_MM,
+        )
+        .expect("two sides touch the cut face");
+
+        let mut sizes = [part_a.triangle_count(), part_b.triangle_count()];
+        sizes.sort();
+        assert_eq!(
+            sizes,
+            [12, 36],
+            "the stray shell must join the bigger side, never come out as the freed piece"
+        );
+    }
+
+    #[test]
+    fn a_seam_that_sank_below_the_skin_still_severs() {
+        // A smoothed seam does not sit exactly on the surface: it cuts the corner at
+        // every wiggle and sinks below the skin — on the user's tower, by 0.14 mm,
+        // more than the fixed widen margin. The rim has to hunt its way out, or a
+        // ring of material bridges the two sides and nothing separates. Here every
+        // waypoint is pulled 0.3 mm INTO the cube and the cut must still sever it.
+        let model = cube(10.0);
+        let axis = Vec3::new(5.0, 5.0, 0.0);
+        let loop_pts: Vec<Vec3> = dense_equator_loop(10.0, 8)
+            .into_iter()
+            .map(|p| {
+                let inward = Vec3::new(axis.x - p.x, axis.y - p.y, 0.0);
+                let l = inward.length();
+                if l > 1e-6 { p.add(inward.scale(0.3 / l)) } else { p }
+            })
+            .collect();
+
+        let split = contour_split(&model, &loop_pts, DEFAULT_CUTTER_THICKNESS_MM, DEFAULT_MEMBRANE_SMOOTHING, 1.0)
+            .expect("a seam sunk below the skin must still sever the cube");
+        assert!(split.part_a.triangle_count() > 0, "part A empty");
+        assert!(split.part_b.triangle_count() > 0, "part B empty");
     }
 
     #[test]
