@@ -56,6 +56,10 @@ pub struct RepairOptions {
     /// Minimum self-intersection-triangle count in the *pre* analysis required
     /// for `solidify_fragmented_components` to auto-trigger.
     pub solidify_self_intersection_threshold: usize,
+    /// When set to `Some(true)`, forces the repair pipeline to treat the input
+    /// mesh as support geometry (`likely_support_geometry = true`) and bypasses
+    /// component shape heuristic re-derivation.
+    pub assume_support_geometry: Option<bool>,
 }
 
 impl Default for RepairOptions {
@@ -73,6 +77,7 @@ impl Default for RepairOptions {
             solidify_fragmented_components: true,
             solidify_component_threshold: 256,
             solidify_self_intersection_threshold: 128,
+            assume_support_geometry: None,
         }
     }
 }
@@ -82,6 +87,8 @@ pub struct RepairOutcome {
     pub mesh: IndexedMesh,
     pub report: MeshHealthReport,
 }
+
+pub type ClassificationOutcome = RepairOutcome;
 
 pub fn repair(mut mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
     let t_start = std::time::Instant::now();
@@ -95,6 +102,9 @@ pub fn repair(mut mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
     let mut skip_final_orientation = false;
     let mut solidify_rollback_reason: Option<String> = None;
     let mut report = MeshHealthReport::new(pre);
+    if options.assume_support_geometry == Some(true) {
+        report.likely_support_geometry = true;
+    }
 
     if auto_fragmented_solidify {
         report.steps.push(RepairStepReport {
@@ -179,7 +189,7 @@ pub fn repair(mut mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
         {
             let analysis_before_fast = analyze(&mesh);
             let t = std::time::Instant::now();
-            match try_solidify_via_manifold_union(&mesh) {
+            match try_solidify_via_manifold_union(&mesh, options) {
                 Some((
                     unioned,
                     manifold_accepted,
@@ -334,7 +344,7 @@ pub fn repair(mut mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
             #[cfg(feature = "manifold")]
             {
                 let t = std::time::Instant::now();
-                match try_solidify_via_manifold_union(&mesh) {
+                match try_solidify_via_manifold_union(&mesh, options) {
                     Some((
                         unioned,
                         manifold_accepted,
@@ -672,7 +682,7 @@ pub fn repair(mut mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
     if report.model_triangle_count.is_none() {
         let t = std::time::Instant::now();
         if let Some((model_tri_count, likely_support_geometry, _comp_count)) =
-            classify_and_reorder_model_support_triangles(&mut mesh)
+            classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry)
         {
             report.model_triangle_count = Some(model_tri_count);
             if !report.likely_support_geometry {
@@ -846,7 +856,10 @@ fn record_model_manifold_status(mesh: &IndexedMesh, report: &mut MeshHealthRepor
 /// This does **not** run the repair pipeline. It only attempts to classify and
 /// reorder triangles into model-first / support-second sections so the frontend
 /// can apply section-specific tinting while honoring "Load As-Is" behavior.
-pub fn classify_support_split(mut mesh: IndexedMesh) -> RepairOutcome {
+pub fn classify_support_split(
+    mut mesh: IndexedMesh,
+    options: &RepairOptions,
+) -> ClassificationOutcome {
     let t_start = std::time::Instant::now();
 
     // Pre-analysis with placeholder component count — the classifier
@@ -856,12 +869,19 @@ pub fn classify_support_split(mut mesh: IndexedMesh) -> RepairOutcome {
     let pre = minimal_analysis(&mesh, 0);
     let mut report = MeshHealthReport::new(pre);
 
+    if options.assume_support_geometry == Some(true) {
+        report.likely_support_geometry = true;
+    }
+
     let t = std::time::Instant::now();
     let component_count = if let Some((model_tri_count, likely_support_geometry, cc)) =
-        classify_and_reorder_model_support_triangles(&mut mesh)
+        classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry)
     {
         report.model_triangle_count = Some(model_tri_count);
         report.likely_support_geometry = likely_support_geometry;
+        if options.assume_support_geometry == Some(true) {
+            report.likely_support_geometry = true;
+        }
         report.steps.push(RepairStepReport {
             name: "classify_support_geometry_split".into(),
             changed: 0,
@@ -1043,6 +1063,7 @@ fn compute_likely_support_geometry(
 #[cfg(feature = "manifold")]
 fn try_solidify_via_manifold_union(
     mesh: &IndexedMesh,
+    options: &RepairOptions,
 ) -> Option<(IndexedMesh, usize, usize, usize, usize, bool, usize)> {
     use manifold_csg::Manifold;
 
@@ -1079,14 +1100,18 @@ fn try_solidify_via_manifold_union(
         .unwrap_or(MODEL_MIN_TRIS_FLOOR);
 
     let classify_group = |cid: usize| {
-        classify_model_support_group(
-            cid,
-            raft_z_cut,
-            model_seed,
-            model_min_tris,
-            &comp_max_z,
-            &comp_tri_count,
-        )
+        if options.assume_support_geometry == Some(true) {
+            GeometryGroup::Support
+        } else {
+            classify_model_support_group(
+                cid,
+                raft_z_cut,
+                model_seed,
+                model_min_tris,
+                &comp_max_z,
+                &comp_tri_count,
+            )
+        }
     };
 
     let mut model_manifolds: Vec<Manifold> = Vec::with_capacity(n_comps.min(4096));
@@ -1424,14 +1449,18 @@ fn try_solidify_via_manifold_union(
     );
 
     let support_triangles_out = (out_triangles.len()).saturating_sub(model_triangles_out);
-    let likely_support_geometry = compute_likely_support_geometry(
-        model_triangles_out,
-        support_triangles_out,
-        model_input_components,
-        support_input_components,
-        model_input_triangles,
-        support_input_triangles,
-    );
+    let likely_support_geometry = if options.assume_support_geometry == Some(true) {
+        true
+    } else {
+        compute_likely_support_geometry(
+            model_triangles_out,
+            support_triangles_out,
+            model_input_components,
+            support_input_components,
+            model_input_triangles,
+            support_input_triangles,
+        )
+    };
 
     Some((
         IndexedMesh {
@@ -2391,7 +2420,14 @@ fn cull_interior_components(mesh: &mut IndexedMesh) -> (usize, usize) {
 /// before reordering, which the caller can reuse to avoid a second union-find.
 fn classify_and_reorder_model_support_triangles(
     mesh: &mut IndexedMesh,
+    assume_support_geometry: Option<bool>,
 ) -> Option<(usize, bool, usize)> {
+    if assume_support_geometry == Some(true) {
+        return Some((0, true, 1));
+    }
+    if assume_support_geometry == Some(false) {
+        return Some((mesh.triangles.len(), false, 1));
+    }
     if mesh.triangles.len() < 8 || mesh.positions.is_empty() {
         return None;
     }
@@ -2499,13 +2535,16 @@ fn classify_and_reorder_model_support_triangles(
         && model_avg_tris > 0
         && support_avg_tris.saturating_mul(3) < model_avg_tris;
 
-    // Remaining guards are sanity bounds; density_ok does the heavy lifting.
+    // Remaining guards: keep density_ok and support_input_triangles as-is.
+    // Comment out overly aggressive component floor & bed-touch bounds.
     if !density_ok
+        || support_input_triangles < 2_000
+        /*
         || support_comp_count < model_comp_count.saturating_mul(2).max(4)
         || n_comps < 12
-        || support_input_triangles < 2_000
         || support_base_touch_components < support_comp_count.saturating_div(4).max(3)
         || support_base_touch_triangles < 500
+        */
     {
         return None;
     }
@@ -2995,5 +3034,41 @@ mod tests {
         assert!(compute_likely_support_geometry(
             20_000, 180_000, 1, 32, 20_000, 220_000,
         ));
+    }
+
+    #[test]
+    fn assume_support_geometry_enforces_likely_support_classification() {
+        let mut mesh = IndexedMesh {
+            positions: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(10.0, 0.0, 0.0),
+                Vec3::new(0.0, 10.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        };
+        let options = RepairOptions {
+            assume_support_geometry: Some(true),
+            ..RepairOptions::default()
+        };
+        let outcome = repair(mesh, &options);
+        assert!(outcome.report.likely_support_geometry);
+    }
+
+    #[test]
+    fn classify_support_split_respects_assume_support_geometry() {
+        let mesh = IndexedMesh {
+            positions: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(10.0, 0.0, 0.0),
+                Vec3::new(0.0, 10.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        };
+        let options = RepairOptions {
+            assume_support_geometry: Some(true),
+            ..RepairOptions::default()
+        };
+        let outcome = classify_support_split(mesh, &options);
+        assert!(outcome.report.likely_support_geometry);
     }
 }

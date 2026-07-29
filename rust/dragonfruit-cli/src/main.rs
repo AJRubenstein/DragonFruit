@@ -1069,24 +1069,25 @@ fn cmd_slice_run(
 
     // Same flow as Tauri's slice_solid_native_to_temp_path:
     // load STL or positions.bin → build SliceJobV3 → dispatch to engine
-    let is_positions_bin = input.extension()
+    // Load STL, positions.bin, or .voxl container
+    let file_ext = input.extension()
         .and_then(|e| e.to_str())
-        .map(|e| e == "bin")
-        .unwrap_or(false);
-    let is_voxl = is_voxl_file(input);
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
 
-    let (flat, mesh_encoding) = if is_positions_bin {
-        (read_positions_bin(input)?, "positions_bin".to_string())
-    } else if is_voxl {
-        let (positions, used_orig) = load_voxl_triangles(input)?;
-        if !json_output {
-            eprintln!("slice: read VOXL file with {} triangles (used_orig_chunk={})", positions.len() / 9, used_orig);
-        }
-        let encoding = if used_orig { "voxl_orig" } else { "voxl_mesh" };
-        (positions, encoding.to_string())
+    let (flat, model_tri_count, mesh_encoding) = if file_ext == "voxl" {
+        let voxl = load_voxl(input)?;
+        (voxl.triangles_xyz, voxl.model_triangle_count as u32, "voxl".to_string())
+    } else if file_ext == "bin" {
+        let f = read_positions_bin(input)?;
+        let count = (f.len() / 9) as u32;
+        (f, count, "positions_bin".to_string())
     } else {
-        (load_binary_stl(input)?, "stl".to_string())
+        let f = load_binary_stl(input)?;
+        let count = (f.len() / 9) as u32;
+        (f, count, "stl".to_string())
     };
+
     if flat.len() % 9 != 0 {
         return Err(format!("Invalid triangle buffer length: {}", flat.len()));
     }
@@ -1130,7 +1131,7 @@ fn cmd_slice_run(
         z_blur_kernel: "box".to_string(),
         z_blur_sigma: 0.5,
         aa_on_supports: false,
-        model_triangle_count: (flat.len() / 9) as u32,
+        model_triangle_count: model_tri_count,
         mirror_x,
         mirror_y,
         z_blend_look_back: 2,
@@ -1147,6 +1148,7 @@ fn cmd_slice_run(
         metadata_json: metadata_json.to_string(),
         format_version: format_version.clone(),
         minimum_aa_alpha_percent: min_aa_alpha,
+        ..Default::default()
     };
 
     let t0 = Instant::now();
@@ -1562,6 +1564,7 @@ fn cmd_benchmark(
         blur_brush_radius_px: 1,
         minimum_aa_alpha_percent: 35.0,
         dither_enabled: false,
+        ..Default::default()
     };
 
     if !json_output {

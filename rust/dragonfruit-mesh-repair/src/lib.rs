@@ -19,7 +19,9 @@ pub use crate::hollowing::{
     HolePunchReport, HolePunchSpec, HollowMode, HollowOptions, HollowOutcome, HollowReport,
     HollowSession, OpenFace,
 };
-pub use crate::repair::{classify_support_split, repair, RepairOptions, RepairOutcome};
+pub use crate::repair::{
+    classify_support_split, repair, ClassificationOutcome, RepairOptions, RepairOutcome,
+};
 pub use crate::report::MeshHealthReport;
 
 use std::path::Path;

@@ -209,6 +209,8 @@ function mapModelToVoxl(model: VoxlModelRuntimeLike): VoxlModelEntry {
       mode: 'external-file',
       fileName: model.name,
     },
+    isSupportGeometry: model.isSupportGeometry,
+    linkGroupId: model.linkGroupId,
   };
 }
 
