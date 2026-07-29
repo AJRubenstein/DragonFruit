@@ -8,6 +8,12 @@ license = "MIT"
 name = "dragonfruit_organic_cut"
 path = "src/lib.rs"
 
+# Measures cut strategies against a directory of DF_CUT_DUMP captures.
+[[bin]]
+name = "cut_bench"
+path = "src/bin/cut_bench.rs"
+required-features = ["manifold"]
+
 # Replays a cut captured with DF_CUT_DUMP, outside the app. Debug tool only.
 [[bin]]
 name = "cut_replay"
