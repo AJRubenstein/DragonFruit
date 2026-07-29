@@ -151,7 +151,7 @@ export interface OrganicCutSpec {
  * Past ~60° the tenon skims the cut face and can't realistically mortise. The real
  * cap is usually lower and comes from the part — see `TenonPreviewFrame.maxTiltRad`.
  */
-export const TENON_MAX_TILT_RAD = Math.PI / 3;
+export const TENON_MAX_TILT_RAD = Math.PI / 4;
 
 export interface TenonPreviewFrame {
   anchor: [number, number, number];

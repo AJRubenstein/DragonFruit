@@ -1013,8 +1013,8 @@ export function useOrganicCutSession({
             ps.tenonToleranceMm,
             ps.tenonSwapSides,
             ps.tenonAnchor,
-            0,
-            0,
+            ps.tenonTiltRad,
+            ps.tenonRollRad,
           );
       }
       if (!ps.generateTenon || loop.length < MIN_LOOP_POINTS) return null;
@@ -1069,9 +1069,15 @@ export function useOrganicCutSession({
       cancelled = true;
       clearTimeout(timer);
     };
-    // NOTE: tenonTilt/roll are intentionally NOT deps — the aim is applied
-    // live on the client (see `tenonLeanTransform`), so changing it must NOT rebuild
-    // the soup. Keeping them out is what makes the gizmo smooth.
+    // The aim IS a dep, deliberately — but it costs nothing while you drag.
+    //
+    // Whether a LEANED tenon still fits is Rust's answer, and leaving the angle out
+    // of here meant that answer was always computed on an upright tenon: you could
+    // lean one clean out of the model and it stayed green. The angle is in now, and
+    // the guard above (`isDraggingPoint`, which the aim gizmo raises like every other
+    // drag) means no request goes out while the ring is turning — the client-side
+    // lean carries the visuals. One rebuild lands when you let go, which is when
+    // the verdict matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     toolActive,
@@ -1093,6 +1099,8 @@ export function useOrganicCutSession({
     panelState.tenonToleranceMm,
     panelState.tenonSwapSides,
     panelState.tenonAnchor,
+    panelState.tenonTiltRad,
+    panelState.tenonRollRad,
   ]);
 
   const addPoint = React.useCallback((point: OrganicCutLoopPoint) => {
