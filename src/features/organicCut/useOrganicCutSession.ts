@@ -232,15 +232,14 @@ function geodesicPolylineToLoopPoints(poly: Float32Array): OrganicCutLoopPoint[]
   return out;
 }
 
-/** The cut loop a given session loop contributes, or null if it's not a real loop. */
-function loopCutPoints(l: SessionLoop): OrganicCutLoopPoint[] | null {
-  if (l.polyline && l.polyline.length >= MIN_CONTOUR_POINTS * 3) {
-    return geodesicPolylineToLoopPoints(l.polyline);
-  }
-  if (l.points.length >= MIN_CONTOUR_POINTS) {
-    return l.points.slice();
-  }
-  return null;
+/**
+ * Does this session loop contribute a seam to a contour cut? Enough waypoints is
+ * enough to be cuttable — the DENSE seam is fetched or recomputed when the cut is
+ * applied. What the waypoints cannot do is stand in FOR the seam: a membrane spanned
+ * over four of them is a flat quad nowhere near the surface they were drawn on.
+ */
+function loopIsCuttable(l: SessionLoop): boolean {
+  return (l.polyline?.length ?? 0) >= MIN_CONTOUR_POINTS * 3 || l.points.length >= MIN_CONTOUR_POINTS;
 }
 
 export interface UseOrganicCutSessionArgs {
@@ -1285,7 +1284,7 @@ export function useOrganicCutSession({
     const minPoints = isContour ? MIN_CONTOUR_POINTS : MIN_LOOP_POINTS;
     // Contour cuts every loop with enough points; flat is always single-loop (the
     // active one). Bail if there's nothing real to cut.
-    const contourReady = isContour ? allLoopsState.filter((l) => loopCutPoints(l) !== null).length : 0;
+    const contourReady = isContour ? allLoopsState.filter(loopIsCuttable).length : 0;
     if (isContour ? contourReady === 0 : currentLoop.length < minPoints) return;
     if (!geom || !geomKey) return;
     const loopSnapshot = currentLoop.slice();
@@ -1317,15 +1316,27 @@ export function useOrganicCutSession({
           // Each kept loop carries its OWN tenon, kept aligned with its points so the
           // backend places per-loop tenons (loopTenons[i] ↔ the i-th loop).
           const kept: { points: OrganicCutLoopPoint[]; tenon: LoopTenonSettings }[] = [];
-          allLoopsState.forEach((l, i) => {
+          for (const [i, l] of allLoopsState.entries()) {
             let pts: OrganicCutLoopPoint[] | null = null;
             if (i === activeIdx && geodesic && geodesic.length >= MIN_CONTOUR_POINTS * 3) {
               pts = geodesicPolylineToLoopPoints(geodesic);
-            } else {
-              pts = loopCutPoints(l);
+            } else if (l.polyline && l.polyline.length >= MIN_CONTOUR_POINTS * 3) {
+              pts = geodesicPolylineToLoopPoints(l.polyline);
+            } else if (l.points.length >= MIN_CONTOUR_POINTS) {
+              // No cached seam for this loop: restoring the loops after a cut or an
+              // undo drops the derived polyline, and only the ACTIVE loop's geodesic
+              // effect puts one back. Recompute it here rather than falling back to
+              // the bare waypoints — four waypoints spanned by a membrane is a flat
+              // quad metres away from the surface the user drew on, and it cuts
+              // exactly like that.
+              const poly = await computeGeodesicLoop(l.points, l.points.length >= 3, ps.smoothing);
+              if (cancelled) return;
+              if (poly && poly.length >= MIN_CONTOUR_POINTS * 3) {
+                pts = geodesicPolylineToLoopPoints(poly);
+              }
             }
             if (pts) kept.push({ points: pts, tenon: l.tenon });
-          });
+          }
           if (kept.length === 0) return; // nothing to cut
           const allLoops = kept.map((k) => k.points);
           cutSpec = {
