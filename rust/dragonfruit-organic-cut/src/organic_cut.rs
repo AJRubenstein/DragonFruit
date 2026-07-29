@@ -763,12 +763,12 @@ fn organic_cut_plane(
 
     // If either side is empty the plane missed the body — treat as no usable cut.
     if part_a.triangles.is_empty() || part_b.triangles.is_empty() {
-        return Err(format!(
-            "plane did not divide the mesh (partA tris={}, partB tris={}) — \
-             loop likely tangent to the surface rather than wrapping through it",
-            part_a.triangle_count(),
-            part_b.triangle_count()
-        ));
+        return Err(
+            "The plane does not pass through the part. It grazes the surface instead of \
+             crossing the body, so there is nothing on one side of it. Move the points so \
+             the plane goes through what you want to separate."
+                .to_string(),
+        );
     }
 
     // Registration tenon, same as the contour cut — the frame comes from the plane
@@ -810,13 +810,30 @@ fn organic_cut_plane(
         (part_a, part_b)
     };
 
-    let parts = vec![part_a, part_b];
+    // Hand back every SOLID the plane produced, not two bags of them. A plane
+    // through a fork, a pair of legs or a curled tentacle meets the body in
+    // several places, and each side of it then holds several disjoint lumps: merged
+    // into one part they would arrive as a single model that cannot be arranged or
+    // printed apart. Decomposed AFTER the tenon, so the tenon's boolean still runs
+    // against whole sides. The +normal side leads, as before.
+    let mut parts: Vec<IndexedMesh> = Vec::new();
+    parts.extend(crate::membrane::decompose_components(&part_a));
+    parts.extend(crate::membrane::decompose_components(&part_b));
+    // `part_a`/`part_b` in the report keep their meaning: the leading solid, and
+    // everything else the cut produced.
+    let part_a_triangle_count = parts.first().map(|p| p.triangle_count()).unwrap_or(0);
+    let part_b_triangle_count: usize = parts.iter().skip(1).map(|p| p.triangle_count()).sum();
+    let detail = if parts.len() > 2 {
+        format!("plane cut: {} solids (the plane crosses the body in more than one place)", parts.len())
+    } else {
+        String::new()
+    };
     let report = OrganicCutReport {
         source_triangle_count,
-        part_a_triangle_count: parts[0].triangle_count(),
-        part_b_triangle_count: parts[1].triangle_count(),
+        part_a_triangle_count,
+        part_b_triangle_count,
         engine: "plane".to_string(),
-        detail: String::new(),
+        detail,
         tenon_kind: tenon_kind.as_str().to_string(),
         tenon_detail,
         part_count: parts.len(),
@@ -1051,6 +1068,45 @@ mod tests {
         for (got, want) in [(section.centroid.x, 15.0), (section.centroid.y, 15.0), (section.centroid.z, 12.0)] {
             assert!((got - want).abs() < 1e-3, "centroid on the plane's middle: {got} vs {want}");
         }
+    }
+
+    /// A U: a base with two legs standing on it, built with the boolean so it is one
+    /// watertight solid. A horizontal plane through the legs meets the body TWICE.
+    #[cfg(feature = "manifold")]
+    fn u_shape() -> IndexedMesh {
+        use crate::membrane::{axis_aligned_slab, to_manifold};
+        let base = to_manifold(&axis_aligned_slab(Vec3::new(0.0, 0.0, 0.0), Vec3::new(30.0, 10.0, 5.0))).expect("base");
+        let left = to_manifold(&axis_aligned_slab(Vec3::new(0.0, 0.0, 5.0), Vec3::new(8.0, 10.0, 25.0))).expect("left");
+        let right = to_manifold(&axis_aligned_slab(Vec3::new(22.0, 0.0, 5.0), Vec3::new(30.0, 10.0, 25.0))).expect("right");
+        manifold_to_indexed(&base.union(&left).union(&right)).expect("U")
+    }
+
+    // A plane crossing the body in more than one place used to hand back its lumps
+    // MERGED into two parts: the two leg tops arrived as a single model that could
+    // not be moved or printed apart. Every solid is now its own part.
+    #[cfg(feature = "manifold")]
+    #[test]
+    fn a_plane_across_two_legs_hands_back_every_solid() {
+        let mesh = u_shape();
+        let options = OrganicCutOptions {
+            cut: OrganicCutSpec {
+                mode: CutMode::Plane,
+                plane: Some(CutPlaneSpec { normal: [0.0, 0.0, 1.0], offset: 15.0 }),
+                generate_tenon: false,
+                ..Default::default()
+            },
+        };
+        let outcome = organic_cut(mesh, &options);
+        assert_eq!(outcome.report.engine, "plane");
+        assert_eq!(
+            outcome.report.part_count, 3,
+            "two leg tops and the base, each its own solid: {}",
+            outcome.report.detail,
+        );
+        assert_eq!(outcome.parts.len(), 3);
+        let mut sizes: Vec<usize> = outcome.parts.iter().map(|p| p.triangle_count()).collect();
+        sizes.sort_unstable();
+        assert!(sizes[0] > 0 && sizes[2] > sizes[0], "the base is the biggest of the three: {sizes:?}");
     }
 
     // A flat cut used to return `tenon_kind: "none"` unconditionally — the tenon was
