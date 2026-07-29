@@ -984,6 +984,8 @@ type ModelClipboardEntry = {
   polygonCount: number;
   meshModifiers?: ModelMeshModifiers;
   supportClipboard: SupportClipboardPayload | null;
+  isSupportGeometry?: boolean;
+  linkGroupId?: string;
 };
 
 export function useSceneCollectionManager() {
@@ -3022,6 +3024,7 @@ export function useSceneCollectionManager() {
       polygonCount: modelTriCount,
       ignoreAutoLift: source.ignoreAutoLift,
       manualZMoveOverride: source.manualZMoveOverride,
+      isSupportGeometry: false,
     };
 
     const supportModel: LoadedModel = {
@@ -3042,6 +3045,7 @@ export function useSceneCollectionManager() {
       polygonCount: supportTriCount,
       ignoreAutoLift: source.ignoreAutoLift,
       manualZMoveOverride: source.manualZMoveOverride,
+      isSupportGeometry: true,
     };
 
     const nextModels = [
@@ -3305,6 +3309,8 @@ export function useSceneCollectionManager() {
         polygonCount: source.polygonCount,
         meshModifiers: undefined,
         supportClipboard,
+        isSupportGeometry: source.isSupportGeometry,
+        linkGroupId: source.linkGroupId,
       },
     ]);
 
@@ -3334,6 +3340,8 @@ export function useSceneCollectionManager() {
         polygonCount: source.polygonCount,
         meshModifiers: undefined,
         supportClipboard,
+        isSupportGeometry: source.isSupportGeometry,
+        linkGroupId: source.linkGroupId,
       };
     }));
 
@@ -3376,6 +3384,8 @@ export function useSceneCollectionManager() {
       color: first.color,
       polygonCount: first.polygonCount,
       meshModifiers: undefined,
+      isSupportGeometry: first.isSupportGeometry,
+      linkGroupId: first.linkGroupId,
     };
 
     const nextModels = [...models, pastedModel];
@@ -3768,6 +3778,8 @@ export function useSceneCollectionManager() {
         color: entry.color,
         polygonCount: entry.polygonCount,
         meshModifiers: undefined,
+        isSupportGeometry: entry.isSupportGeometry,
+        linkGroupId: entry.linkGroupId,
       };
     });
 
@@ -3848,6 +3860,8 @@ export function useSceneCollectionManager() {
         color: source.color,
         polygonCount: source.polygonCount,
         meshModifiers: undefined,
+        isSupportGeometry: source.isSupportGeometry,
+        linkGroupId: source.linkGroupId,
       };
     });
 
