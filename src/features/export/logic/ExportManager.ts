@@ -1154,6 +1154,8 @@ export class ExportManager {
               scale: { x: number; y: number; z: number };
             };
             meshModifiers?: ModelMeshModifiers;
+            isSupportGeometry?: boolean;
+            linkGroupId?: string;
             mesh: {
               mode: 'embedded-file';
               fileName: string;
@@ -1200,6 +1202,8 @@ export class ExportManager {
               // every saved VOXL silently loses hollowing/hole-punch
               // re-editability (voxl-format-spec.md V2.1 requirement).
               meshModifiers: resolveModelMeshModifiers(model),
+              isSupportGeometry: model.isSupportGeometry,
+              linkGroupId: model.linkGroupId,
               mesh: {
                 mode: 'embedded-file',
                 fileName: `${this.normalizeExportFilenameBase(model.name || 'model')}.stl`,
