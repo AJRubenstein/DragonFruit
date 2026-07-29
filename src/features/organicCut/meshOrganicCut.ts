@@ -265,9 +265,15 @@ export interface MembranePreviewResult {
    * makes Fit Tolerance legible: it grows the mortise and never moves the tenon.
    */
   tenonTriangleCount: number;
-  /** Which tenon rung was chosen. 'none' when not requested or too thin. */
+  /** Which shape is drawn. 'none' when no tenon was requested. */
   tenonKind: TenonPreviewKind;
-  /** Reason the tenon shrank / fell back / was skipped. Empty when nominal/off. */
+  /**
+   * Whether the previewed tenon can actually be placed where it sits. False means
+   * "draw it in the won't-fit colour and refuse the cut" — the soup is still a
+   * full tenon at the requested size, so the user can see and move it.
+   */
+  tenonFits: boolean;
+  /** Why it doesn't fit, for the panel's alert. Empty when it does. */
   tenonDetail: string;
   /**
    * Placement frame of the previewed tenon (model-local), for the aim+roll gizmo.
@@ -306,6 +312,7 @@ export async function computeMembranePreview(
     tenonPreview: null,
     tenonTriangleCount: 0,
     tenonKind: 'none',
+    tenonFits: true,
     tenonDetail: '',
     tenonFrame: null,
   };
@@ -339,6 +346,7 @@ export async function computeMembranePreview(
       jointTriangleCount?: number;
       tenonTriangleCount?: number;
       tenonKind?: TenonPreviewKind;
+      tenonFits?: boolean;
       tenonDetail?: string;
       tenonFrame?: TenonPreviewFrame | null;
     };
@@ -353,6 +361,7 @@ export async function computeMembranePreview(
       tenonPreview,
       tenonTriangleCount: report.tenonTriangleCount ?? 0,
       tenonKind: report.tenonKind ?? 'none',
+      tenonFits: report.tenonFits ?? true,
       tenonDetail: report.tenonDetail ?? '',
       tenonFrame: report.tenonFrame ?? null,
     };
@@ -389,6 +398,7 @@ export async function computePlaneTenonPreview(
     tenonPreview: null,
     tenonTriangleCount: 0,
     tenonKind: 'none',
+    tenonFits: true,
     tenonDetail: '',
     tenonFrame: null,
   };
@@ -414,6 +424,7 @@ export async function computePlaneTenonPreview(
       jointTriangleCount?: number;
       tenonTriangleCount?: number;
       tenonKind?: TenonPreviewKind;
+      tenonFits?: boolean;
       tenonDetail?: string;
       tenonFrame?: TenonPreviewFrame | null;
     };
@@ -425,6 +436,7 @@ export async function computePlaneTenonPreview(
       tenonPreview,
       tenonTriangleCount: report.tenonTriangleCount ?? 0,
       tenonKind: report.tenonKind ?? 'none',
+      tenonFits: report.tenonFits ?? true,
       tenonDetail: report.tenonDetail ?? '',
       tenonFrame: report.tenonFrame ?? null,
     };

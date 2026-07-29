@@ -9874,6 +9874,7 @@ export default function Home() {
                 membranePreview={organicCut.membranePreview}
                 tenonPreview={organicCut.tenonPreview}
                 tenonTriangleCount={organicCut.tenonTriangleCount}
+                tenonFits={organicCut.tenonFits}
                 tenonFrame={organicCut.tenonFrame}
                 tenonOffsetUMm={organicCut.panelState.tenonOffsetUMm}
                 tenonOffsetVMm={organicCut.panelState.tenonOffsetVMm}

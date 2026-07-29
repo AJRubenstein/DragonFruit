@@ -859,41 +859,114 @@ fn build_sharp_frustum(
     IndexedMesh { positions, triangles: faces.to_vec() }
 }
 
-/// The decided tenon for a cut: which rung of the fit ladder, at what size, plus a
-/// human-readable reason (for the report + the user alert). Computed by
-/// [`decide_tenon`] from the frame + measured clearance — SHARED by the real cut
+/// The decided tenon for a cut: the solid to build — ALWAYS the shape and size the
+/// user asked for — and whether it actually fits where they put it. Computed by
+/// [`decide_tenon`] from the frame + measured clearance, and SHARED by the real cut
 /// ([`apply_tenon`]) and the live preview ([`build_tenon_preview_soup`]) so the
 /// preview shows exactly the tenon that will be cut.
+///
+/// The plan does not resize anything and never substitutes one shape for another.
+/// A tenon that doesn't fit is still built, at the requested size, so the preview
+/// can draw it in the "won't fit" colour where the user put it — with the reason —
+/// and they can move it or shrink it themselves. Deciding *for* them (shrinking to
+/// the biggest thing that fits, or swapping the frustum for a half-sphere) meant a
+/// 3 mm tenon silently became a 1.5 mm one, and the number in the panel stopped
+/// describing the thing on screen.
 #[derive(Debug, Clone)]
-pub enum TenonPlan {
-    Frustum { dims: FrustumDims, detail: String },
-    Dome { dims: DomeDims, detail: String },
-    None { detail: String },
+pub struct TenonPlan {
+    /// The solid to build, at the size the user asked for.
+    pub body: TenonBody,
+    pub verdict: TenonVerdict,
+}
+
+/// The shape to build, at the requested size.
+#[derive(Debug, Clone, Copy)]
+pub enum TenonBody {
+    Frustum(FrustumDims),
+    Dome(DomeDims),
+}
+
+/// Whether the tenon fits where the user put it. No middle rungs: a tenon either
+/// goes in as asked, or it doesn't go in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TenonVerdict {
+    Fits,
+    DoesNotFit(TenonProblem),
+}
+
+/// Why a tenon can't go where the user put it. Carries the measurements so the
+/// message can name them, instead of saying "the part is too thin" to everything.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TenonProblem {
+    /// Too little material behind the cut face to sink the tenon into.
+    TooShallow { room_mm: f32, needed_mm: f32 },
+    /// The side walls are closer together than the tenon's footprint.
+    TooNarrow { room_mm: f32, needed_mm: f32 },
+    /// The cut face itself is unusable (no area, or normals that cancel), so there
+    /// is nowhere to root a tenon and no frame to aim one with.
+    DegenerateFace,
+}
+
+impl TenonProblem {
+    /// The sentence shown to the user. Says which way it doesn't fit and by how
+    /// much — "too thin" alone sent people looking at the wrong dimension.
+    pub fn message(&self) -> String {
+        match *self {
+            TenonProblem::TooShallow { room_mm, needed_mm } => format!(
+                "This tenon doesn't fit here — only {room_mm:.2} mm of material behind the cut face, and it needs {needed_mm:.2} mm. Shorten it or move it somewhere thicker.",
+            ),
+            TenonProblem::TooNarrow { room_mm, needed_mm } => format!(
+                "This tenon doesn't fit here — the walls leave {room_mm:.2} mm across, and its base needs {needed_mm:.2} mm. Narrow it or move it away from the edge.",
+            ),
+            TenonProblem::DegenerateFace => {
+                "No tenon — this cut leaves no usable face to root one on.".to_string()
+            }
+        }
+    }
 }
 
 impl TenonPlan {
+    /// The shape being built. Note this is what is DRAWN, not proof anything was
+    /// cut: check [`TenonPlan::fits`] for that.
     pub fn kind(&self) -> TenonKind {
-        match self {
-            TenonPlan::Frustum { .. } => TenonKind::Frustum,
-            TenonPlan::Dome { .. } => TenonKind::Dome,
-            TenonPlan::None { .. } => TenonKind::None,
+        match self.body {
+            TenonBody::Frustum(_) => TenonKind::Frustum,
+            TenonBody::Dome(_) => TenonKind::Dome,
         }
     }
-    pub fn detail(&self) -> &str {
-        match self {
-            TenonPlan::Frustum { detail, .. }
-            | TenonPlan::Dome { detail, .. }
-            | TenonPlan::None { detail } => detail,
+    pub fn fits(&self) -> bool {
+        self.verdict == TenonVerdict::Fits
+    }
+    /// The reason it doesn't fit; empty when it does.
+    pub fn detail(&self) -> String {
+        match self.verdict {
+            TenonVerdict::Fits => String::new(),
+            TenonVerdict::DoesNotFit(problem) => problem.message(),
+        }
+    }
+    /// The depth the body stands, whichever shape it is.
+    fn depth(&self) -> f32 {
+        match self.body {
+            TenonBody::Frustum(d) => d.depth,
+            TenonBody::Dome(d) => d.depth,
+        }
+    }
+    /// Base half-diagonal (how far the footprint reaches from the axis), plus the
+    /// mortise's tolerance — the figure the lean's sink is measured from.
+    fn half_diag(&self, tolerance: f32) -> f32 {
+        match self.body {
+            TenonBody::Frustum(d) => 0.5 * d.width.hypot(d.length) + tolerance,
+            TenonBody::Dome(d) => d.half_w.max(d.half_l) + tolerance,
         }
     }
 }
 
-/// Run the **fit ladder** purely as a sizing decision (no booleans). The ladder's
-/// start depends on the requested `shape`:
-/// - `Frustum`: tapered frustum (shrunk to keep ≥1 mm of wall) → dome fallback →
-///   no tenon. The dome is an automatic safety net for a too-thin part.
-/// - `Dome`: half-sphere directly (the user chose it on purpose) → no tenon. No
-///   frustum fallback — a dome is the deliberately-smaller choice.
+/// Decide the tenon: build what was asked for, and say whether it fits.
+///
+/// This used to be a **fit ladder** that shrank the frustum to whatever the walls
+/// allowed, then swapped it for a half-sphere, then gave up. All three rungs are
+/// gone. The user picks the shape and the size; this only measures. The dome is
+/// still a shape they can choose — it is no longer something we choose for them.
 ///
 /// Clearance is measured against the **mortise** (the larger of tenon/mortise) so both
 /// halves keep ≥`TENON_WALL_MARGIN_MM` of material.
@@ -905,55 +978,22 @@ fn decide_tenon(
     tolerance: f32,
     half_kerf: f32,
 ) -> TenonPlan {
-    if shape == TenonShape::Frustum {
-        // Rung 1: tapered frustum at the requested size, shrunk only if needed.
-        if let Some(dims) = clearance.fit_frustum(nominal, tolerance, half_kerf) {
-            let shrunk = dims.width < nominal.width - 1e-4 || dims.depth < nominal.depth - 1e-4;
-            let detail = if shrunk {
-                format!(
-                    "tenon shrunk to fit (1 mm wall): {:.2}×{:.2} mm base, {:.2} mm deep",
-                    dims.width, dims.length, dims.depth
-                )
-            } else {
-                String::new()
-            };
-            return TenonPlan::Frustum { dims, detail };
-        }
-        // Rung 2: frustum didn't fit → automatic dome fallback. Use a round-ish
-        // hemisphere sized from the frustum width (not the oblong request) so the
-        // safety-net tenon fits where the frustum couldn't.
-        let fallback = DomeDims::from_width_depth(nominal.width, nominal.width);
-        if let Some(dims) = clearance.fit_dome(fallback, tolerance, half_kerf) {
-            return TenonPlan::Dome {
-                dims,
-                detail: format!(
-                    "Tenon fell back to a half-sphere ({:.2}×{:.2} mm, {:.2} mm deep) — the part is too thin for a full tenon.",
-                    dims.half_w * 2.0, dims.half_l * 2.0, dims.depth
-                ),
-            };
-        }
+    let (body, fit) = if shape == TenonShape::Frustum {
+        (
+            TenonBody::Frustum(nominal),
+            clearance.check_frustum(nominal, tolerance, half_kerf),
+        )
     } else {
-        // Dome chosen explicitly: place the oblong half-ellipsoid (shrunk to fit).
-        // No frustum fallback — the dome is the deliberately smaller, round option.
-        if let Some(dims) = clearance.fit_dome(nominal_dome, tolerance, half_kerf) {
-            let shrunk = dims.half_w < nominal_dome.half_w - 1e-4
-                || dims.depth < nominal_dome.depth - 1e-4;
-            let detail = if shrunk {
-                format!(
-                    "dome tenon shrunk to fit (1 mm wall): {:.2}×{:.2} mm, {:.2} mm deep",
-                    dims.half_w * 2.0, dims.half_l * 2.0, dims.depth
-                )
-            } else {
-                String::new()
-            };
-            return TenonPlan::Dome { dims, detail };
-        }
-    }
-
-    // Final rung: no tenon fits.
-    TenonPlan::None {
-        detail: "No tenon placed — the part is too thin for any tenon.".to_string(),
-    }
+        (
+            TenonBody::Dome(nominal_dome),
+            clearance.check_dome(nominal_dome, tolerance, half_kerf),
+        )
+    };
+    let verdict = match fit {
+        Ok(()) => TenonVerdict::Fits,
+        Err(problem) => TenonVerdict::DoesNotFit(problem),
+    };
+    TenonPlan { body, verdict }
 }
 
 /// Lengthen a fitted plan by the whole kerf, to be spent on the two ends the
@@ -966,34 +1006,28 @@ fn grow_plan_for_kerf(plan: TenonPlan, half_kerf: f32) -> TenonPlan {
         return plan;
     }
     let extra = 2.0 * half_kerf;
-    match plan {
-        TenonPlan::Frustum { dims, detail } => TenonPlan::Frustum {
-            dims: FrustumDims { depth: dims.depth + extra, ..dims },
-            detail,
-        },
-        TenonPlan::Dome { dims, detail } => TenonPlan::Dome {
-            dims: DomeDims { depth: dims.depth + extra, ..dims },
-            detail,
-        },
-        none => none,
-    }
+    let body = match plan.body {
+        TenonBody::Frustum(dims) => {
+            TenonBody::Frustum(FrustumDims { depth: dims.depth + extra, ..dims })
+        }
+        TenonBody::Dome(dims) => TenonBody::Dome(DomeDims { depth: dims.depth + extra, ..dims }),
+    };
+    TenonPlan { body, ..plan }
 }
 
 /// Lengthen a decided plan so a leaned tenon still stands its requested depth proud
 /// of the cut face — the plan-level twin of [`LeanXform::stretch_depth`], used by
 /// the preview (which builds straight from the plan).
 fn stretch_plan_for_lean(plan: TenonPlan, lean: &LeanXform) -> TenonPlan {
-    match plan {
-        TenonPlan::Frustum { dims, detail } => TenonPlan::Frustum {
-            dims: FrustumDims { depth: lean.stretch_depth(dims.depth), ..dims },
-            detail,
-        },
-        TenonPlan::Dome { dims, detail } => TenonPlan::Dome {
-            dims: DomeDims { depth: lean.stretch_depth(dims.depth), ..dims },
-            detail,
-        },
-        none => none,
-    }
+    let body = match plan.body {
+        TenonBody::Frustum(dims) => {
+            TenonBody::Frustum(FrustumDims { depth: lean.stretch_depth(dims.depth), ..dims })
+        }
+        TenonBody::Dome(dims) => {
+            TenonBody::Dome(DomeDims { depth: lean.stretch_depth(dims.depth), ..dims })
+        }
+    };
+    TenonPlan { body, ..plan }
 }
 
 /// The largest lean this placement can take, in radians.
@@ -1009,14 +1043,7 @@ fn stretch_plan_for_lean(plan: TenonPlan, lean: &LeanXform) -> TenonPlan {
 /// own direction: the user aims the lean with the roll ring, and a cap that moved
 /// while they turned it would be worse than one that is merely conservative.
 fn max_tilt_for(clearance: &Clearance, plan: &TenonPlan, tolerance: f32) -> f32 {
-    let (half_diag, depth) = match plan {
-        TenonPlan::Frustum { dims, .. } => {
-            (0.5 * dims.width.hypot(dims.length) + tolerance, dims.depth)
-        }
-        TenonPlan::Dome { dims, .. } => (dims.half_w.max(dims.half_l) + tolerance, dims.depth),
-        // No tenon to lean.
-        TenonPlan::None { .. } => return 0.0,
-    };
+    let (half_diag, depth) = (plan.half_diag(tolerance), plan.depth());
     let room_lat = clearance.half_room_u().min(clearance.half_room_v()) - TENON_WALL_MARGIN_MM;
     let room_back = clearance.depth_a - TENON_WALL_MARGIN_MM;
     const STEPS: u32 = 60;
@@ -1144,11 +1171,26 @@ pub fn apply_tenon_at_frame(
         out
     };
 
-    match plan {
-        TenonPlan::Frustum { dims, detail } => {
+    // A tenon that doesn't fit never reaches the booleans. It is not shrunk to
+    // something that would, and not quietly dropped either: the parts come back
+    // untouched with the reason, and the caller refuses the cut. The preview drew
+    // it in red at this exact size, so the user already knows which one and why.
+    if let TenonVerdict::DoesNotFit(problem) = plan.verdict {
+        // Still in swapped roles if we swapped above; put them back for the caller.
+        let (pa, pb) = if swap_sides { (part_b, part_a) } else { (part_a, part_b) };
+        return TenonOutcome {
+            part_a: pa,
+            part_b: pb,
+            kind: TenonKind::None,
+            detail: problem.message(),
+        };
+    }
+
+    match plan.body {
+        TenonBody::Frustum(dims) => {
             let out = unswap(apply_frustum(part_a, part_b, &frame, &orig_for_lean, tilt, dims, fillet_mm, tolerance, half_kerf, max_tilt));
             if out.kind == TenonKind::Frustum {
-                TenonOutcome { detail, ..out }
+                out
             } else {
                 // Boolean failed despite fitting — report as no tenon, parts intact.
                 TenonOutcome {
@@ -1158,10 +1200,10 @@ pub fn apply_tenon_at_frame(
                 }
             }
         }
-        TenonPlan::Dome { dims, detail } => {
+        TenonBody::Dome(dims) => {
             let out = unswap(apply_dome(part_a, part_b, &frame, &orig_for_lean, tilt, dims, tolerance, half_kerf, max_tilt));
             if out.kind == TenonKind::Dome {
-                TenonOutcome { detail, ..out }
+                out
             } else {
                 TenonOutcome {
                     kind: TenonKind::None,
@@ -1169,12 +1211,6 @@ pub fn apply_tenon_at_frame(
                     ..out
                 }
             }
-        }
-        // No tenon placed → return the parts in the CALLER's orientation. part_a/
-        // part_b here are still in swapped roles if we swapped, so put them back.
-        TenonPlan::None { detail } => {
-            let (pa, pb) = if swap_sides { (part_b, part_a) } else { (part_a, part_b) };
-            TenonOutcome { part_a: pa, part_b: pb, kind: TenonKind::None, detail }
         }
     }
 }
@@ -1217,7 +1253,8 @@ pub fn build_tenon_preview_soup(
                 soup: Vec::new(),
                 tenon_triangles: 0,
                 kind: TenonKind::None,
-                detail: "No tenon — degenerate cut frame.".to_string(),
+                fits: false,
+                detail: TenonProblem::DegenerateFace.message(),
                 frame: None,
             })
         }
@@ -1264,11 +1301,7 @@ pub fn build_tenon_preview_at_frame(
     let build_frame = sink_frame_into_part_a(&frame_extruding_toward_part_b(&placed), half_kerf);
     // Sink uses the base half-diagonal so the tilted base stays buried (matches
     // apply_frustum/apply_dome; the mortise footprint is a hair larger).
-    let half_diag = match &plan {
-        TenonPlan::Frustum { dims, .. } => 0.5 * dims.width.hypot(dims.length) + tolerance,
-        TenonPlan::Dome { dims, .. } => (dims.half_w.max(dims.half_l)) + tolerance,
-        TenonPlan::None { .. } => 0.0,
-    };
+    let half_diag = plan.half_diag(tolerance);
     let max_tilt = max_tilt_for(&clearance, &plan, tolerance);
     let lean = LeanXform::for_build(&orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
     // Leaning lengthens the trunk instead of eating it (see `stretch_depth`).
@@ -1278,31 +1311,35 @@ pub fn build_tenon_preview_at_frame(
     // Triangles [0, tenon_triangles) are the tenon, the rest the mortise. The frontend
     // colours the two apart, which is the only way the Fit Tolerance knob is
     // visible: it grows the mortise and leaves the tenon exactly where it was.
-    let mut tenon_triangles = 0usize;
-    let (kind, detail) = match &plan {
-        TenonPlan::Frustum { dims, detail } => {
+    let tenon_triangles;
+    // The body is built WHETHER OR NOT it fits. A tenon that can't be placed is
+    // still drawn, at the size the user asked for, so the scene can colour it as
+    // "won't fit" where they put it — erasing it took the aim gizmo with it and
+    // left them nothing to drag somewhere it would work.
+    let kind = match plan.body {
+        TenonBody::Frustum(dims) => {
             // tenon + mortise — matching apply_frustum so the preview is exactly what
             // cuts (rigid lean applied identically, mortise fillet = tenon fillet + tol).
-            append_soup(&mut soup, &build_frustum_leaned(&build_frame, *dims, 0.0, fillet_mm, lean));
+            append_soup(&mut soup, &build_frustum_leaned(&build_frame, dims, 0.0, fillet_mm, lean));
             tenon_triangles = soup.len() / 9;
-            append_soup(&mut soup, &build_frustum_leaned(&build_frame, *dims, tolerance, fillet_mm + tolerance, lean));
-            (TenonKind::Frustum, detail.clone())
+            append_soup(&mut soup, &build_frustum_leaned(&build_frame, dims, tolerance, fillet_mm + tolerance, lean));
+            TenonKind::Frustum
         }
-        TenonPlan::Dome { dims, detail } => {
+        TenonBody::Dome(dims) => {
             append_soup(&mut soup, &build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, 0.0, DOME_SEGMENTS, lean));
             tenon_triangles = soup.len() / 9;
             append_soup(&mut soup, &build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, tolerance, DOME_SEGMENTS, lean));
-            (TenonKind::Dome, detail.clone())
+            TenonKind::Dome
         }
-        TenonPlan::None { detail } => (TenonKind::None, detail.clone()),
     };
+    let (fits, detail) = (plan.fits(), plan.detail());
     // Report the placement frame for the gizmo. We hand back the NATURAL tangent
     // basis (the swapped `placed`): anchor = base center, axis = the +normal the tenon
     // roots against (toward the tenon's half), and u/v the in-plane basis. The frontend
     // mounts the rotation gizmo at the anchor oriented to this frame, and converts
     // gizmo rotations into tilt/azimuth/roll. `tip` is the leaned apex (model-local).
     let info = build_tenon_frame_info(&placed, &build_frame, &plan, lean, max_tilt, half_diag);
-    TenonPreview { soup, tenon_triangles, kind, detail, frame: info }
+    TenonPreview { soup, tenon_triangles, kind, fits, detail, frame: info }
 }
 
 /// What the live preview hands the frontend: the tenon the cut WOULD place, as one
@@ -1313,9 +1350,14 @@ pub struct TenonPreview {
     pub soup: Vec<f32>,
     /// How many of `soup`'s triangles belong to the TENON.
     pub tenon_triangles: usize,
-    /// Which rung of the ladder was placed (frustum / dome / none).
+    /// Which shape is DRAWN (frustum / dome). Says nothing about whether it fits —
+    /// see `fits`, which is what decides the colour and whether the cut is allowed.
     pub kind: TenonKind,
-    /// Human-readable reason, for the panel's alert.
+    /// Whether this tenon can actually be placed where the user put it. `false`
+    /// means "draw it in the won't-fit colour and refuse the cut", NOT "no tenon":
+    /// the soup is still a full tenon and mortise at the requested size.
+    pub fits: bool,
+    /// Why it doesn't fit, for the panel's alert. Empty when it does.
     pub detail: String,
     /// Placement frame for the aim gizmo. `None` when no tenon was placed.
     pub frame: Option<TenonFrameInfo>,
@@ -1359,11 +1401,9 @@ fn build_tenon_frame_info(
     max_tilt: f32,
     half_diag: f32,
 ) -> Option<TenonFrameInfo> {
-    let depth = match plan {
-        TenonPlan::Frustum { dims, .. } => dims.depth,
-        TenonPlan::Dome { dims, .. } => dims.depth,
-        TenonPlan::None { .. } => return None,
-    };
+    // The frame is reported even for a tenon that doesn't fit — that is exactly
+    // when the user needs the gizmo, to drag it somewhere it does.
+    let depth = plan.depth();
     // The tip sits at local (0, 0, depth) in the build frame, transformed by the lean
     // (it's above the collar, so this is the full rigid rotation — the tip leans in
     // both lateral AND axial directions).
@@ -1531,81 +1571,85 @@ impl Clearance {
         self.lat_v_neg.min(self.lat_v_pos)
     }
 
-    /// Clamp the nominal frustum so the MORTISE (tenon + tolerance, plus the 1 mm
-    /// margin) fits: cap depth against part_b, and the base half-extents against
-    /// the lateral walls. Returns `None` if nothing useful fits (→ try the dome).
-    fn fit_frustum(&self, nominal: FrustumDims, tolerance: f32, half_kerf: f32) -> Option<FrustumDims> {
+    /// Does the requested frustum fit here? Measured against the MORTISE (tenon +
+    /// tolerance) plus the 1 mm wall margin, so both halves keep their material.
+    ///
+    /// Reports the tightest violation, in the user's units: the room there is and
+    /// the room it needs, so the message can name a number they can act on.
+    fn check_frustum(
+        &self,
+        nominal: FrustumDims,
+        tolerance: f32,
+        half_kerf: f32,
+    ) -> Result<(), TenonProblem> {
+        // The mortise extends `tolerance` past the tenon, so the wall must clear the
+        // tenon PLUS that tolerance PLUS the margin. The reservation uses the
+        // tolerance this cut will actually build with — a looser fit eats into the
+        // wall it has to leave standing.
         let m = TENON_WALL_MARGIN_MM;
-        // The mortise extends `tolerance` past the tenon; fold a small allowance in
-        // by reserving the full margin against the MORTISE extent. We size the tenon
-        // (nominal) and let the margin absorb the tolerance: cap so tenon + tol + m
-        // stays inside the wall. The reservation is the tolerance this cut will
-        // actually build with — a looser fit eats into the wall it must clear.
         let tol = tolerance.max(0.0);
 
-        // Depth: mortise tip at depth+tol must stay m short of part_b's far wall.
+        // Depth: the mortise tip at depth+tol must stay m short of part_b's far wall.
         // `depth_b` is measured from the membrane, and the tenon is lengthened by the
         // kerf to cross the cutter's void, so half of that eats into the room here.
-        let max_depth = (self.depth_b - m - tol - half_kerf.max(0.0)).max(0.0);
-        // Lateral: base half-extent + tol + m must stay inside the side walls.
-        let max_half_w = (self.half_room_u() - m - tol).max(0.0);
-        let max_half_l = (self.half_room_v() - m - tol).max(0.0);
-
-        let mut width = nominal.width.min(max_half_w * 2.0);
-        let mut length = nominal.length.min(max_half_l * 2.0);
-        let depth = nominal.depth.min(max_depth);
-
-        // Keep the base proportion (length = 1.25×width) if both axes were capped
-        // differently — shrink the looser one to match the tighter, so the tenon
-        // stays a sensible rectangle rather than a sliver.
-        if width > 0.0 && length > 0.0 {
-            let by_width = length / TENON_LENGTH_TO_WIDTH; // width implied by length cap
-            width = width.min(by_width);
-            length = TENON_LENGTH_TO_WIDTH * width;
+        let needed_depth = nominal.depth + tol + m + half_kerf.max(0.0);
+        if self.depth_b < needed_depth {
+            return Err(TenonProblem::TooShallow {
+                room_mm: self.depth_b,
+                needed_mm: needed_depth,
+            });
         }
-
-        // A tenon smaller than this floor isn't worth placing — bail to the dome.
-        let floor = (TENON_MIN_FOOTPRINT_MM).max(0.0);
-        if width < floor || length < floor || depth < TENON_MIN_DEPTH_MM {
-            return None;
+        // Lateral: base half-extent + tol + m must stay inside the side walls. Both
+        // axes are reported as full widths — that is what the panel's fields say.
+        let checks = [
+            (self.half_room_u(), nominal.width),
+            (self.half_room_v(), nominal.length),
+        ];
+        for (half_room, extent) in checks {
+            let needed = extent + 2.0 * (tol + m);
+            if half_room * 2.0 < needed {
+                return Err(TenonProblem::TooNarrow {
+                    room_mm: half_room * 2.0,
+                    needed_mm: needed,
+                });
+            }
         }
-        Some(FrustumDims { width, length, depth })
+        Ok(())
     }
 
-    /// Clamp an oblong dome (per-axis) so the grown half-ellipsoid keeps ≥ margin
-    /// from every wall: `depth` against part_b's depth, `half_w`/`half_l` against
-    /// the lateral walls. Each axis is capped independently (the oblong proportions
-    /// are preserved where they fit, only over-large axes shrink). Returns `None`
-    /// if the result is smaller than the minimum useful dome on any axis.
-    fn fit_dome(&self, nominal: DomeDims, tolerance: f32, half_kerf: f32) -> Option<DomeDims> {
+    /// [`Clearance::check_frustum`] for the oblong dome: same margins, measured
+    /// against the half-ellipsoid's semi-axes and bulge depth.
+    fn check_dome(
+        &self,
+        nominal: DomeDims,
+        tolerance: f32,
+        half_kerf: f32,
+    ) -> Result<(), TenonProblem> {
         let m = TENON_WALL_MARGIN_MM;
         let tol = tolerance.max(0.0);
-        let cap_depth = (self.depth_b - m - tol - half_kerf.max(0.0)).max(0.0);
-        let cap_w = (self.half_room_u() - m - tol).max(0.0);
-        let cap_l = (self.half_room_v() - m - tol).max(0.0);
-        let half_w = nominal.half_w.min(cap_w);
-        let half_l = nominal.half_l.min(cap_l);
-        let depth = nominal.depth.min(cap_depth);
-        // The minimum useful dome: a hemisphere of the floor radius (so the floor
-        // applies to the semi-axes and the bulge depth alike).
-        let floor = TENON_MIN_DOME_RADIUS_MM;
-        if half_w < floor || half_l < floor || depth < floor {
-            None
-        } else {
-            Some(DomeDims { half_w, half_l, depth })
+        let needed_depth = nominal.depth + tol + m + half_kerf.max(0.0);
+        if self.depth_b < needed_depth {
+            return Err(TenonProblem::TooShallow {
+                room_mm: self.depth_b,
+                needed_mm: needed_depth,
+            });
         }
+        let checks = [
+            (self.half_room_u(), nominal.half_w),
+            (self.half_room_v(), nominal.half_l),
+        ];
+        for (half_room, semi_axis) in checks {
+            let needed = 2.0 * (semi_axis + tol + m);
+            if half_room * 2.0 < needed {
+                return Err(TenonProblem::TooNarrow {
+                    room_mm: half_room * 2.0,
+                    needed_mm: needed,
+                });
+            }
+        }
+        Ok(())
     }
 }
-
-/// Smallest base footprint (width/length, mm) a frustum tenon is allowed to shrink
-/// to before we give up on it and try the dome. The cutoff is 0.99 mm: a tenon is
-/// placed as long as its size is ≥ 0.99 mm, and only rejected when smaller.
-const TENON_MIN_FOOTPRINT_MM: f32 = 0.99;
-/// Smallest depth (mm) a frustum tenon may shrink to before we try the dome.
-const TENON_MIN_DEPTH_MM: f32 = 0.99;
-/// Smallest dome radius (mm) worth placing before falling back to no tenon. (Below the
-/// 0.99 mm frustum cutoff — a dome can usefully locate at a smaller size.)
-const TENON_MIN_DOME_RADIUS_MM: f32 = 0.75;
 
 /// Nearest ray/mesh hit distance (Möller–Trumbore over all triangles). `None` if
 /// the ray escapes. Brute force — fine for the handful of probe rays per tenon.
@@ -2111,70 +2155,79 @@ mod tests {
         (model, part_a, part_b)
     }
 
-    // Test 7: a thin part_b forces the frustum to SHRINK (depth capped) but a tenon
-    // is still placed, keeping the mortise clear of the far wall by ≥1 mm.
+    // A tenon too deep for the part is REFUSED, not quietly shortened to whatever
+    // would have fitted. The parts come back untouched, and the reason names both
+    // numbers — the room there is, and the room it needed — so the user can fix it.
     #[test]
-    fn clearance_clamp_shrinks_the_frustum() {
+    fn a_tenon_too_deep_for_the_part_is_refused_not_shrunk() {
         let mem = flat_membrane(10.0);
-        // Request a 5 mm-deep tenon, but part_b is only 4 mm deep → the 5 mm depth
-        // would punch through, so the clamp must cut it down to stop ≥1 mm short.
+        // Request a 5 mm-deep tenon into a part_b only 4 mm thick: it would punch
+        // through, and shortening it to ~2.9 mm would silently give the user a
+        // tenon they never asked for.
         let (model, part_a, part_b) = split_halves(20.0, 4.0);
-        let tenon_w = 5.0;
-        let tenon_d = 5.0;
-        assert!(tenon_d > 4.0, "test premise: requested depth exceeds the part");
+        let pb_tris = part_b.triangle_count();
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
 
-        let out = apply_tenon(&model, part_a, part_b.clone(), &mem, TenonShape::Frustum, false, TenonTilt::default(), tenon_w, tenon_d, 0.0, 0.1, 0.0, TenonOffset::default());
-
-        assert_eq!(out.kind, TenonKind::Frustum, "still a frustum, just smaller: {}", out.detail);
-        assert!(out.detail.contains("shrunk"), "reports the shrink: {:?}", out.detail);
-
-        // No punch-through: part_b's far wall (z = −4) stays intact — its bbox min
-        // is unchanged, meaning the mortise cavity did NOT breach the bottom.
-        let (lo_before, _) = bbox_of(&part_b);
-        let (lo_after, _) = bbox_of(&out.part_b);
+        assert_eq!(out.kind, TenonKind::None, "refused, not placed: {}", out.detail);
         assert!(
-            (lo_after.z - lo_before.z).abs() < 1e-3,
-            "far wall intact (min z {} → {}); mortise did not punch through",
-            lo_before.z,
-            lo_after.z
+            out.detail.contains("doesn't fit") && out.detail.contains("4.00 mm"),
+            "the reason names the room it has: {:?}",
+            out.detail
         );
-        // And the mortise genuinely carved material (part_b changed) yet stayed
-        // watertight.
-        assert!(
-            out.part_b.triangle_count() != part_b.triangle_count(),
-            "mortise carved part_b"
+        assert_eq!(
+            out.part_b.triangle_count(),
+            pb_tris,
+            "a refused tenon leaves both halves untouched",
         );
-        assert!(to_manifold(&out.part_b).is_ok(), "tenoned part_b watertight");
     }
 
-    // Test 8: the fit ladder falls back — dome on a too-thin part, no tenon on a
-    // paper-thin part — each with a reason.
+    // Nor is a frustum ever swapped for a half-sphere. The dome is a shape the user
+    // can pick; it stopped being a consolation prize we hand out behind their back.
     #[test]
-    fn fit_ladder_falls_back_to_dome_then_none() {
+    fn a_frustum_that_does_not_fit_never_becomes_a_dome() {
         let mem = flat_membrane(10.0);
-
-        // ~2.0 mm deep part_b: below the frustum's depth floor (1 mm tenon + 1 mm
-        // wall + 0.1 mm tol = 2.1 mm needed) but the shallower dome still fits.
-        let (model1, pa, pb) = split_halves(20.0, 2.0);
-        let dome_out = apply_tenon(&model1, pa, pb, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
-        assert_eq!(dome_out.kind, TenonKind::Dome, "dome fallback: {}", dome_out.detail);
+        // 2 mm of part_b: the old ladder shrank past the frustum floor and placed a
+        // dome here, reporting "fell back to a half-sphere".
+        let (model, pa, pb) = split_halves(20.0, 2.0);
+        let out = apply_tenon(&model, pa, pb, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
+        assert_eq!(out.kind, TenonKind::None, "no dome substitution: {}", out.detail);
         assert!(
-            dome_out.detail.contains("half-sphere"),
-            "dome reason mentions half-sphere: {:?}",
-            dome_out.detail
+            !out.detail.contains("half-sphere"),
+            "and it doesn't offer one: {:?}",
+            out.detail
         );
+    }
 
-        // Paper-thin part_b (0.5 mm): even the dome can't keep 1 mm → no tenon, and
-        // the parts come back UNCHANGED.
-        let (model2, pa2, pb2) = split_halves(20.0, 0.5);
-        let pb2_tris = pb2.triangle_count();
-        let none_out = apply_tenon(&model2, pa2, pb2, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
-        assert_eq!(none_out.kind, TenonKind::None, "no tenon: {}", none_out.detail);
-        assert!(none_out.detail.contains("too thin"), "no-tenon reason: {:?}", none_out.detail);
-        assert_eq!(
-            none_out.part_b.triangle_count(),
-            pb2_tris,
-            "part_b is unchanged when no tenon is placed"
+    // A refused tenon is still BUILT for the preview, at the size that was asked
+    // for, with its placement frame — that is what the scene draws in red and what
+    // the gizmo hangs off, so the user can drag it somewhere it fits.
+    #[test]
+    fn a_refused_tenon_is_still_previewed_at_its_requested_size() {
+        let (model, _, _) = split_halves(20.0, 2.0);
+        let frame = TenonFrame {
+            anchor: Vec3::ZERO,
+            axis: Vec3::new(0.0, 0.0, 1.0),
+            u: Vec3::new(1.0, 0.0, 0.0),
+            v: Vec3::new(0.0, 1.0, 0.0),
+            cut_area: 100.0,
+        };
+        let preview = build_tenon_preview_at_frame(&model, frame, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
+
+        assert!(!preview.fits, "it does not fit: {:?}", preview.detail);
+        assert!(!preview.detail.is_empty(), "and it says why");
+        assert_eq!(preview.kind, TenonKind::Frustum, "still drawn as the frustum asked for");
+        assert!(preview.tenon_triangles > 0, "the tenon is still built");
+        assert!(
+            preview.soup.len() / 9 > preview.tenon_triangles,
+            "and so is its mortise",
+        );
+        assert!(preview.frame.is_some(), "the aim gizmo still has a frame to sit on");
+
+        // The body is the REQUESTED 5 mm, not the ~1 mm the walls would have allowed.
+        let depth = preview.frame.expect("frame").depth;
+        assert!(
+            (depth - 5.0).abs() < 1e-3,
+            "previewed at the requested 5 mm depth, got {depth}",
         );
     }
 
@@ -2240,7 +2293,7 @@ mod tests {
     #[test]
     fn the_lean_cap_follows_the_room_around_the_tenon() {
         let dims = FrustumDims::from_width_depth(2.0, 2.5);
-        let plan = TenonPlan::Frustum { dims, detail: String::new() };
+        let plan = TenonPlan { body: TenonBody::Frustum(dims), verdict: TenonVerdict::Fits };
         let roomy = Clearance {
             depth_a: f32::INFINITY,
             depth_b: f32::INFINITY,

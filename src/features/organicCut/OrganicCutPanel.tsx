@@ -8,16 +8,15 @@ import { DEFAULT_CUT_SETTINGS, DEFAULT_TENON_SETTINGS } from './useOrganicCutSes
 /** Tenon width/depth bounds (mm) — shared by the fields and the uniform-scale lock. */
 const TENON_DIM_MAX_MM = 20;
 /**
- * Smallest width the FRUSTUM tenon accepts, mirroring Rust's TENON_MIN_FOOTPRINT_MM
- * (0.99mm) rounded up to a round number.
+ * Smallest width the FRUSTUM tenon accepts. This field IS the floor now: Rust no
+ * longer has one of its own — it builds what it is asked for and only says whether
+ * it fits — so anything the panel allows is a tenon the user can actually get.
  */
 const FRUSTUM_MIN_WIDTH_MM = 1;
 /**
- * Smallest width the DOME tenon accepts. Rust stores a dome as semi-axes — width
- * becomes half_w = width/2 — and rejects any dome whose radius falls under
- * TENON_MIN_DOME_RADIUS_MM (0.75mm). So a 1mm dome is a 0.5mm radius and is thrown
- * out with "the part is too thin for any tenon", no matter how chunky the model is.
- * 1.5mm is the first width that survives that floor.
+ * Smallest width the DOME tenon accepts. Higher than the frustum's because width
+ * is a diameter here: Rust stores a dome as semi-axes, so 1.5mm of width is a
+ * 0.75mm radius — below that a hemisphere stops locating anything.
  */
 const DOME_MIN_WIDTH_MM = 1.5;
 
@@ -32,8 +31,8 @@ const TENON_BASE_OVERLAP_MM = 0.3;
 const TENON_FILLET_STEP_MM = 0.1;
 /**
  * Fit-tolerance ceiling (mm), mirroring Rust's TENON_TOLERANCE_MAX_MM. Every extra
- * 0.1mm of mortise is 0.1mm less wall the fit ladder has to work with, so past
- * this the tenon starts shrinking itself away on thin parts.
+ * 0.1mm of mortise is 0.1mm less wall to clear, so on a thin part a loose fit is
+ * what tips a tenon from fitting to not.
  */
 const TENON_TOLERANCE_MAX_MM = 1;
 
@@ -198,7 +197,12 @@ interface OrganicCutPanelProps {
    * half-sphere fallback for a thin part), or 'none'. Drives the alert below the
    * toggle so the user knows when the cut fell back.
    */
-  tenonKind?: 'frustum' | 'dome' | 'none';
+  /**
+   * Whether the previewed tenon fits where it sits. False blocks Cut: Rust would
+   * refuse the tenon anyway, and the halves would come out unpinned with the
+   * reason buried in a report nobody reads.
+   */
+  tenonFits?: boolean;
   /** Reason the tenon shrank / fell back / was skipped (shown as an alert). */
   tenonDetail?: string;
 }
@@ -229,7 +233,7 @@ export function OrganicCutPanel({
   isApplying = false,
   canApply = false,
   disabled = false,
-  tenonKind = 'none',
+  tenonFits = true,
   tenonDetail = '',
 }: OrganicCutPanelProps) {
   const [expanded, setExpanded] = React.useState(true);
@@ -252,6 +256,10 @@ export function OrganicCutPanel({
 
   // Is there anything for each card's reset to undo? Derived from the defaults
   // rather than listed by hand, so a setting added later is covered on its own.
+  // A tenon that doesn't fit blocks the cut. Rust refuses to place it anyway, so
+  // cutting anyway would hand back two halves that don't locate, with the reason
+  // buried in a report — better to stop at the button, next to the red tenon.
+  const tenonBlocksCut = state.generateTenon && !tenonFits;
   const tenonSettingsDirty = (Object.keys(DEFAULT_TENON_SETTINGS) as (keyof typeof DEFAULT_TENON_SETTINGS)[])
     .some((k) => k !== 'generateTenon' && state[k] !== DEFAULT_TENON_SETTINGS[k]);
   const cutSettingsDirty = (Object.keys(DEFAULT_CUT_SETTINGS) as (keyof typeof DEFAULT_CUT_SETTINGS)[])
@@ -823,30 +831,19 @@ export function OrganicCutPanel({
                 </div>
               )}
 
-              {/* Fell-back / no-tenon alert. Only when the tenon is ON and the preview
-                  reported a non-nominal outcome (dome fallback, no tenon, or shrink). */}
-              {state.generateTenon && tenonDetail && (
+              {/* Won't-fit alert. There is only one tier now: the tenon goes in as
+                  asked, or it doesn't go in and this says which way it doesn't fit
+                  and by how much. (It used to have three, because the cut used to
+                  shrink the tenon or swap it for a half-sphere behind the user's
+                  back and had to confess to it afterwards.) */}
+              {state.generateTenon && !tenonFits && tenonDetail && (
                 <div
                   className="rounded border px-2 py-1.5 text-[10px] leading-snug"
-                  style={
-                    tenonKind === 'none'
-                      ? {
-                          borderColor: 'color-mix(in srgb, #f59e0b, var(--border-subtle) 40%)',
-                          background: 'color-mix(in srgb, #f59e0b, var(--surface-1) 88%)',
-                          color: 'var(--text-strong)',
-                        }
-                      : tenonKind === 'dome'
-                        ? {
-                            borderColor: 'color-mix(in srgb, #eab308, var(--border-subtle) 50%)',
-                            background: 'color-mix(in srgb, #eab308, var(--surface-1) 90%)',
-                            color: 'var(--text-strong)',
-                          }
-                        : {
-                            borderColor: 'var(--border-subtle)',
-                            background: 'var(--surface-1)',
-                            color: 'var(--text-muted)',
-                          }
-                  }
+                  style={{
+                    borderColor: 'color-mix(in srgb, #b3121b, var(--border-subtle) 40%)',
+                    background: 'color-mix(in srgb, #b3121b, var(--surface-1) 88%)',
+                    color: 'var(--text-strong)',
+                  }}
                 >
                   {tenonDetail}
                 </div>
@@ -972,7 +969,8 @@ export function OrganicCutPanel({
               type="button"
               className="ui-button ui-button-accent flex-1 !min-h-8 px-1.5 py-1 text-[10px] sm:text-[11px] whitespace-normal text-center leading-tight disabled:opacity-60"
               onClick={onApply}
-              disabled={disabled || isApplying || !canApply}
+              disabled={disabled || isApplying || !canApply || tenonBlocksCut}
+              title={tenonBlocksCut ? tenonDetail : undefined}
             >
               <span className="inline-flex items-center justify-center gap-1.5">
                 {isApplying && <Loader2 className="h-3 w-3 animate-spin" />}

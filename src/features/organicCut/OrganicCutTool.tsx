@@ -9,6 +9,7 @@ import { cutPlaneFromPoints } from './cutPlane';
 import { tenonLeanMatrix } from './tenonLeanTransform';
 import type { PlaneMeshCurve } from './planeMeshIntersection';
 import { useOrganicCutColorNumbers } from './useOrganicCutColors';
+import { TENON_WONT_FIT_COLORS } from './organicCutColors';
 
 interface OrganicCutToolProps {
   models: LoadedModel[];
@@ -104,6 +105,12 @@ interface OrganicCutToolProps {
    * that the Fit Tolerance knob looks dead, since it only grows the mortise.
    */
   tenonTriangleCount?: number;
+  /**
+   * Whether the previewed tenon fits where it sits. When false the tenon is drawn
+   * in [`TENON_WONT_FIT_COLORS`] instead of its own — it is still drawn, and still
+   * carries its gizmo, so the user can move it somewhere it does fit.
+   */
+  tenonFits?: boolean;
   /**
    * Placement frame of the previewed tenon (model-local). The tenon SOUP is built
    * UN-tilted (straight); the tilt is applied LIVE as a rigid rotation of the tenon
@@ -279,6 +286,7 @@ export function OrganicCutTool({
   membranePreview,
   tenonPreview,
   tenonTriangleCount = 0,
+  tenonFits = true,
   tenonFrame,
   tenonOffsetUMm = 0,
   tenonOffsetVMm = 0,
@@ -291,6 +299,20 @@ export function OrganicCutTool({
   // Every colour this tool paints with, from the saved preference (see
   // organicCutColors.ts). Changing one repaints without a reload.
   const colors = useOrganicCutColorNumbers();
+  // A tenon that can't be placed is painted as a status, not as itself: its three
+  // colours are replaced wholesale so it reads as wrong from any angle, not as a
+  // tenon with an odd outline. See TENON_WONT_FIT_COLORS.
+  const tenonColors = useMemo(
+    () =>
+      tenonFits
+        ? { front: colors.tenonFront, back: colors.tenonBack, edge: colors.tenonEdge }
+        : {
+            front: parseInt(TENON_WONT_FIT_COLORS.front.slice(1), 16),
+            back: parseInt(TENON_WONT_FIT_COLORS.back.slice(1), 16),
+            edge: parseInt(TENON_WONT_FIT_COLORS.edge.slice(1), 16),
+          },
+    [tenonFits, colors.tenonFront, colors.tenonBack, colors.tenonEdge],
+  );
   const activeModel = useMemo(() => models.find((m) => m.id === activeModelId), [models, activeModelId]);
   const transform = activeTransform || activeModel?.transform;
 
@@ -537,7 +559,7 @@ export function OrganicCutTool({
    * Translation that carries the built tenon (and its outline) to where the handle
    * has dragged it, until Rust catches up on release. Null when they agree.
    */
-  const keyOffsetMatrix = useMemo(() => {
+  const tenonOffsetMatrix = useMemo(() => {
     if (!tenonFrame || !tenonPreviewOffset) return null;
     const du = tenonOffsetUMm - tenonPreviewOffset.u;
     const dv = tenonOffsetVMm - tenonPreviewOffset.v;
@@ -937,7 +959,7 @@ export function OrganicCutTool({
               // applying the translation on the OUTSIDE keeps the aim unchanged.
               if (tenonTiltMatrix) g.matrix.copy(tenonTiltMatrix);
               else g.matrix.identity();
-              if (keyOffsetMatrix) g.matrix.premultiply(keyOffsetMatrix);
+              if (tenonOffsetMatrix) g.matrix.premultiply(tenonOffsetMatrix);
               g.matrixWorldNeedsUpdate = true;
             }}
           >
@@ -950,7 +972,7 @@ export function OrganicCutTool({
                 camera angle instead of depending on where the lights are. */}
             <mesh geometry={tenonGeometry} renderOrder={999} frustumCulled={false}>
               <meshBasicMaterial
-                color={colors.tenonBack}
+                color={tenonColors.back}
                 transparent
                 opacity={0.5}
                 side={THREE.BackSide}
@@ -961,7 +983,7 @@ export function OrganicCutTool({
             </mesh>
             <mesh geometry={tenonGeometry} renderOrder={1000} frustumCulled={false}>
               <meshBasicMaterial
-                color={colors.tenonFront}
+                color={tenonColors.front}
                 transparent
                 opacity={0.7}
                 side={THREE.FrontSide}
@@ -1016,7 +1038,7 @@ export function OrganicCutTool({
             {tenonWireframe && (
               <lineSegments geometry={tenonWireframe} renderOrder={1001} frustumCulled={false}>
                 <lineBasicMaterial
-                  color={colors.tenonEdge}
+                  color={tenonColors.edge}
                   transparent
                   opacity={0.9}
                   depthTest={false}

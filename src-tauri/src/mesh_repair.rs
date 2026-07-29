@@ -1268,6 +1268,11 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         let mut tenon_tris = 0usize;
         let mut tenon_kind = "none".to_string();
         let mut tenon_detail = String::new();
+        // Whether the previewed tenon can actually be placed. A tenon that can't is
+        // still built and still framed — drawn in the won't-fit colour, with its
+        // gizmo — so `false` means "show it in red and refuse the cut", not "no
+        // tenon". Defaults true so a cut with no tenon requested never blocks.
+        let mut tenon_fits = true;
         // Placement frame for the aim/roll gizmo (anchor, axis, u, v, tip), in
         // model-local coords. None when no tenon is previewed.
         let mut tenon_frame: Option<dragonfruit_organic_cut::TenonFrameInfo> = None;
@@ -1298,6 +1303,7 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
                     tenon_tris = preview.tenon_triangles;
                     tenon_soup = preview.soup;
                     tenon_kind = preview.kind.as_str().to_string();
+                    tenon_fits = preview.fits;
                     tenon_detail = preview.detail;
                     tenon_frame = preview.frame;
                 }
@@ -1323,12 +1329,12 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         let bytes: Vec<u8> = bytemuck::cast_slice::<f32, u8>(&soup).to_vec();
         let tenon_bytes: Vec<u8> = bytemuck::cast_slice::<f32, u8>(&tenon_soup).to_vec();
         let joint_tris = tenon_soup.len() / 9;
-        Ok::<_, String>((bytes, tri_count, tenon_bytes, joint_tris, tenon_tris, tenon_kind, tenon_detail, tenon_frame))
+        Ok::<_, String>((bytes, tri_count, tenon_bytes, joint_tris, tenon_tris, tenon_kind, tenon_fits, tenon_detail, tenon_frame))
     })
     .await
     .map_err(|e| format!("membrane preview task panicked: {e}"))??;
 
-    let (bytes, tri_count, tenon_bytes, joint_tris, tenon_tris, tenon_kind, tenon_detail, tenon_frame) = result;
+    let (bytes, tri_count, tenon_bytes, joint_tris, tenon_tris, tenon_kind, tenon_fits, tenon_detail, tenon_frame) = result;
     *organic_cut_membrane_bytes()
         .lock()
         .map_err(|e| format!("membrane lock poisoned: {e}"))? = Some(bytes);
@@ -1354,7 +1360,7 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         None => "null".to_string(),
     };
     Ok(format!(
-        "{{\"triangleCount\":{tri_count},\"jointTriangleCount\":{joint_tris},\"tenonTriangleCount\":{tenon_tris},\"tenonKind\":\"{tenon_kind}\",\"tenonDetail\":\"{tenon_detail_json}\",\"tenonFrame\":{tenon_frame_json}}}"
+        "{{\"triangleCount\":{tri_count},\"jointTriangleCount\":{joint_tris},\"tenonTriangleCount\":{tenon_tris},\"tenonKind\":\"{tenon_kind}\",\"tenonFits\":{tenon_fits},\"tenonDetail\":\"{tenon_detail_json}\",\"tenonFrame\":{tenon_frame_json}}}"
     ))
 }
 
@@ -1422,6 +1428,7 @@ pub async fn mesh_organic_cut_plane_tenon_preview(request_json: String) -> Resul
             preview.soup,
             preview.tenon_triangles,
             preview.kind.as_str().to_string(),
+            preview.fits,
             preview.detail,
             preview.frame,
         )))
@@ -1429,7 +1436,7 @@ pub async fn mesh_organic_cut_plane_tenon_preview(request_json: String) -> Resul
     .await
     .map_err(|e| format!("plane tenon preview task panicked: {e}"))??;
 
-    let Some((tenon_soup, tenon_tris, tenon_kind, tenon_detail, tenon_frame)) = result else {
+    let Some((tenon_soup, tenon_tris, tenon_kind, tenon_fits, tenon_detail, tenon_frame)) = result else {
         return Ok(NO_TENON_PREVIEW_JSON.to_string());
     };
     let joint_tris = tenon_soup.len() / 9;
@@ -1453,13 +1460,13 @@ pub async fn mesh_organic_cut_plane_tenon_preview(request_json: String) -> Resul
         None => "null".to_string(),
     };
     Ok(format!(
-        "{{\"triangleCount\":0,\"jointTriangleCount\":{joint_tris},\"tenonTriangleCount\":{tenon_tris},\"tenonKind\":\"{tenon_kind}\",\"tenonDetail\":\"{tenon_detail_json}\",\"tenonFrame\":{tenon_frame_json}}}"
+        "{{\"triangleCount\":0,\"jointTriangleCount\":{joint_tris},\"tenonTriangleCount\":{tenon_tris},\"tenonKind\":\"{tenon_kind}\",\"tenonFits\":{tenon_fits},\"tenonDetail\":\"{tenon_detail_json}\",\"tenonFrame\":{tenon_frame_json}}}"
     ))
 }
 
 /// The empty answer for a tenon preview: no tenon, no frame, no membrane.
 const NO_TENON_PREVIEW_JSON: &str =
-    "{\"triangleCount\":0,\"jointTriangleCount\":0,\"tenonTriangleCount\":0,\"tenonKind\":\"none\",\"tenonDetail\":\"\",\"tenonFrame\":null}";
+    "{\"triangleCount\":0,\"jointTriangleCount\":0,\"tenonTriangleCount\":0,\"tenonKind\":\"none\",\"tenonFits\":true,\"tenonDetail\":\"\",\"tenonFrame\":null}";
 
 /// Returns the most recent registration-tenon preview as raw LE f32 triangle-soup
 /// bytes (tenon followed by mortise). Empty when no tenon was previewed.

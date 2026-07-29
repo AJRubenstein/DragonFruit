@@ -359,6 +359,12 @@ export interface OrganicCutSession {
   tenonTriangleCount: number;
   /** Which tenon the preview placed: 'frustum', 'dome' (fallback), or 'none'. */
   tenonKind: TenonPreviewKind;
+  /**
+   * Whether the previewed tenon fits where it sits. False draws it in the won't-fit
+   * colour and blocks the cut — the cut would refuse it in Rust anyway, and finding
+   * that out after committing is no way to learn it.
+   */
+  tenonFits: boolean;
   /** Reason the tenon shrank / fell back / was skipped (for the panel alert). */
   tenonDetail: string;
   /**
@@ -462,6 +468,7 @@ export function useOrganicCutSession({
   const [tenonPreview, setTenonPreview] = React.useState<Float32Array | null>(null);
   const [tenonTriangleCount, setTenonTriangleCount] = React.useState(0);
   const [tenonKind, setTenonKind] = React.useState<TenonPreviewKind>('none');
+  const [tenonFits, setTenonFits] = React.useState<boolean>(true);
   const [tenonDetail, setTenonDetail] = React.useState<string>('');
   // Placement frame of the previewed tenon (anchor/axis/u/v/tip), for the aim+roll
   // gizmo. Null when no tenon is previewed.
@@ -807,6 +814,7 @@ export function useOrganicCutSession({
     setTenonPreview(null);
     setTenonTriangleCount(0);
     setTenonKind('none');
+    setTenonFits(true);
     setTenonDetail('');
     setTenonFrame(null);
   }, []);
@@ -1048,6 +1056,7 @@ export function useOrganicCutSession({
         setTenonPreview(result.tenonPreview);
         setTenonTriangleCount(result.tenonTriangleCount);
         setTenonKind(result.tenonKind);
+        setTenonFits(result.tenonFits);
         setTenonDetail(result.tenonDetail);
         setTenonFrame(result.tenonFrame);
         setTenonPreviewOffset({ u: panelState.tenonOffsetUMm, v: panelState.tenonOffsetVMm });
@@ -1209,6 +1218,7 @@ export function useOrganicCutSession({
     setTenonPreview(null);
     setTenonTriangleCount(0);
     setTenonKind('none');
+    setTenonFits(true);
     setTenonDetail('');
     setTenonFrame(null);
   }, [commitLoops]);
@@ -1487,6 +1497,7 @@ export function useOrganicCutSession({
     tenonPreview,
     tenonTriangleCount,
     tenonKind,
+    tenonFits,
     tenonDetail,
     tenonFrame,
     tenonPreviewOffset,

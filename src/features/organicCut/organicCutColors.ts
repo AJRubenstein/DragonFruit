@@ -53,6 +53,20 @@ const ORGANIC_CUT_COLORS_EVENT = 'organic-cut-colors-changed';
  * to see precisely was the hardest to see. Blue holds against both pale and
  * mid-tone surfaces, and the waypoints stay green so the handles still pop off it.
  */
+/**
+ * The colours a tenon takes when it does NOT fit where the user put it.
+ *
+ * Deliberately NOT a preference: this is a status, like a form error, and a
+ * preference is a way to make it invisible. It replaces the tenon's own three
+ * colours wholesale — face, far face and outline — because tinting only the
+ * outline reads as decoration on a translucent solid.
+ */
+export const TENON_WONT_FIT_COLORS = {
+  front: '#b3121b',
+  back: '#5c0a0f',
+  edge: '#ff4d4d',
+} as const;
+
 export const DEFAULT_ORGANIC_CUT_COLORS: OrganicCutColors = {
   seam: '#00008b',
   seamHover: '#c9752e',
