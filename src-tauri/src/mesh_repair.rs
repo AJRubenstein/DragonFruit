@@ -992,6 +992,11 @@ fn read_binary_stl_vertex(record: &[u8; 50], offset: usize) -> Vec3 {
     Vec3::new(read_f32(offset), read_f32(offset + 4), read_f32(offset + 8))
 }
 
+// PRESERVED (Low-RAM Fallback / Feasibility Baseline):
+// Legacy streaming disk-bucket preview generator from origin/dev.
+// Kept in-place for future low-RAM system fallbacks and streaming decimation feasibility benchmarks.
+// Superseded in active PLAN-3 path by in-memory engine (`decimate_sections_to_budget`).
+#[allow(dead_code)]
 struct PreviewTempDir(PathBuf);
 
 impl Drop for PreviewTempDir {
@@ -1023,6 +1028,7 @@ fn binary_stl_bounds(path: &std::path::Path, triangle_count: u32) -> Result<(Vec
     Ok((min, max))
 }
 
+#[allow(dead_code)]
 fn simplify_preview_region(
     path: &std::path::Path,
     triangle_count: usize,
@@ -1081,6 +1087,7 @@ fn simplify_preview_region(
     Ok(output)
 }
 
+#[allow(dead_code)]
 fn load_binary_stl_preview(
     path: &std::path::Path,
     triangle_count: u32,

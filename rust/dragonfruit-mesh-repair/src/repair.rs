@@ -2418,6 +2418,7 @@ fn cull_interior_components(mesh: &mut IndexedMesh) -> (usize, usize) {
 /// Returns `(model_triangle_count, likely_support_geometry, component_count)`
 /// on success.  The component count is the total number of connected components
 /// before reordering, which the caller can reuse to avoid a second union-find.
+#[allow(unused_assignments)]
 fn classify_and_reorder_model_support_triangles(
     mesh: &mut IndexedMesh,
     assume_support_geometry: Option<bool>,
@@ -2490,7 +2491,12 @@ fn classify_and_reorder_model_support_triangles(
     let mut support_comp_count = 0usize;
     let mut model_input_triangles = 0usize;
     let mut support_input_triangles = 0usize;
+    // PRESERVED (PLAN-2 Support Heuristics):
+    // Tracks base contact counts and triangle volumes for support connected components.
+    // Kept in-place for future UI configuration knobs and advanced support detection rules.
+    #[allow(unused_variables, unused_assignments)]
     let mut support_base_touch_components = 0usize;
+    #[allow(unused_variables, unused_assignments)]
     let mut support_base_touch_triangles = 0usize;
     let base_touch_cut = global_min_z + BASE_TOUCH_EPS_MM;
 
