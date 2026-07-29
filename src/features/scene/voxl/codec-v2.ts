@@ -849,9 +849,10 @@ export function resolveOriginalRefSidecar(
  */
 export async function readSidecarFileBytes(filePath: string): Promise<Uint8Array | null> {
   try {
-    if (typeof process !== 'undefined' && process.versions?.node) {
+    if (typeof window === 'undefined' && typeof process !== 'undefined' && process.versions?.node) {
       try {
-        const fs = await import('fs');
+        const req = eval('require');
+        const fs = req('fs');
         if (fs.existsSync(filePath)) {
           const buf = fs.readFileSync(filePath);
           return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
