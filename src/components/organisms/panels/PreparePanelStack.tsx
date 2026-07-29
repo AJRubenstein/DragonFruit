@@ -343,6 +343,7 @@ export function PreparePanelStack({
           isApplying={organicCut.isApplying}
           canApply={organicCut.canApply}
           tenonFits={organicCut.tenonFits}
+          cutError={organicCut.cutError}
           tenonDetail={organicCut.tenonDetail}
         />
       )}

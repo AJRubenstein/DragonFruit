@@ -201,6 +201,11 @@ interface OrganicCutPanelProps {
    * reason buried in a report nobody reads.
    */
   tenonFits?: boolean;
+  /**
+   * Why the last cut refused, or null. Shown by the Cut button, because that is
+   * where the user just clicked and got nothing.
+   */
+  cutError?: string | null;
   /** Reason the tenon shrank / fell back / was skipped (shown as an alert). */
   tenonDetail?: string;
 }
@@ -232,6 +237,7 @@ export function OrganicCutPanel({
   canApply = false,
   disabled = false,
   tenonFits = true,
+  cutError = null,
   tenonDetail = '',
 }: OrganicCutPanelProps) {
   const [expanded, setExpanded] = React.useState(true);
@@ -954,6 +960,22 @@ export function OrganicCutPanel({
           className="px-2 pb-2 pt-2 sm:px-2.5 sm:pb-2.5 border-t"
           style={{ borderColor: 'var(--border-subtle)' }}
         >
+          {/* Why the last cut refused. It belongs HERE, by the button that just did
+              nothing — the reason used to go to stderr, so from the user's side the
+              cut either silently failed or (worse) came back as a plane cut through
+              the whole model that nobody asked for. */}
+          {cutError && (
+            <div
+              className="mb-2 rounded border px-2 py-1.5 text-[10px] leading-snug"
+              style={{
+                borderColor: 'color-mix(in srgb, #b3121b, var(--border-subtle) 40%)',
+                background: 'color-mix(in srgb, #b3121b, var(--surface-1) 88%)',
+                color: 'var(--text-strong)',
+              }}
+            >
+              {cutError}
+            </div>
+          )}
           <div className="flex gap-2">
             <button
               type="button"

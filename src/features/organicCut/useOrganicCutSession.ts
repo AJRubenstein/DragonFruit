@@ -326,6 +326,12 @@ export interface OrganicCutSession {
   apply: () => void;
   isApplying: boolean;
   lastResult: OrganicCutResult | null;
+  /**
+   * Why the last cut refused, for the panel to show. Null when the last cut worked
+   * (or none has run). A refused cut used to say so only on stderr — the user saw
+   * the button do nothing, or worse, saw a fallback cut they never asked for.
+   */
+  cutError: string | null;
   // Derived gates for the panel
   canApply: boolean;
   pointCount: number;
@@ -454,6 +460,7 @@ export function useOrganicCutSession({
   const [activeLoopIndex, setActiveLoopIndex] = React.useState(0);
   const [isApplying, setIsApplying] = React.useState(false);
   const [lastResult, setLastResult] = React.useState<OrganicCutResult | null>(null);
+  const [cutError, setCutError] = React.useState<string | null>(null);
   const [geodesicPolyline, setGeodesicPolyline] = React.useState<Float32Array | null>(null);
   // Plane-mode seam: every curve where the cutting plane meets the mesh — the
   // exact seam a flat cut produces. Null in contour mode.
@@ -838,6 +845,7 @@ export function useOrganicCutSession({
       setLoops([emptyLoop(extractTenon(panelStateRef.current))]);
       setActiveLoopIndex(0);
       setLastResult(null);
+      setCutError(null);
       setSelectedIndex(null);
       clearModelDerivedPreviews();
     }
@@ -869,6 +877,7 @@ export function useOrganicCutSession({
     // Sync the panel's tenon editor to the now-active loop's tenon.
     setPanelState((ps) => withTenon(ps, restoredLoops[nextActive]?.tenon ?? DEFAULT_LOOP_TENON));
     setLastResult(null);
+    setCutError(null);
     clearModelDerivedPreviews();
     flushEditRun();
     // Redo history + selection don't carry across models.
@@ -1179,6 +1188,7 @@ export function useOrganicCutSession({
     // Keep the panel's current tenon on the fresh loop (don't reset the user's prefs).
     commitLoops('cut:clear all', () => [emptyLoop(extractTenon(panelStateRef.current))], 0);
     setLastResult(null);
+    setCutError(null);
     setSelectedIndex(null);
     setGeodesicPolyline(null);
   }, [commitLoops]);
@@ -1335,7 +1345,7 @@ export function useOrganicCutSession({
             // Aim/roll: the base-glued lean + spin set by the in-viewport gizmo. The
             // preview already showed exactly this tenon (same angles, same shear).
             tenonTiltRad: ps.tenonTiltRad,
-                    tenonRollRad: ps.tenonRollRad,
+            tenonRollRad: ps.tenonRollRad,
           };
         } else {
           // Compute the plane from the SAME helper the preview uses, so the cut
@@ -1360,12 +1370,19 @@ export function useOrganicCutSession({
             tenonToleranceMm: ps.tenonToleranceMm,
             tenonSwapSides: ps.tenonSwapSides,
             tenonTiltRad: ps.tenonTiltRad,
-                    tenonRollRad: ps.tenonRollRad,
+            tenonRollRad: ps.tenonRollRad,
           };
         }
         const result = await cutFromCapturedSource({ cut: cutSpec });
         if (cancelled || !result) return;
         setLastResult(result);
+        // A cut that refused says why, on screen. `noop` is the engine's way of
+        // saying "I did not touch your model, and here is what stopped me".
+        setCutError(
+          result.report.engine === 'noop'
+            ? result.report.detail || 'The cut could not be made.'
+            : null,
+        );
 
         // Commit every part to the scene (replace the active model with the first,
         // add the rest as new models — a multi-loop cut can free several pieces). If
@@ -1479,6 +1496,7 @@ export function useOrganicCutSession({
     apply,
     isApplying,
     lastResult,
+    cutError,
     canApply,
     pointCount,
     geodesicPolyline,

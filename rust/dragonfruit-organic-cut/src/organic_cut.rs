@@ -414,29 +414,18 @@ pub fn organic_cut(mesh: IndexedMesh, options: &OrganicCutOptions) -> OrganicCut
             match organic_cut_contour(&mesh, options) {
                 Ok(outcome) => return outcome,
                 Err(reason) => {
-                    // A MULTI-LOOP cut has no meaningful single-plane fallback — a
-                    // plane derived from one loop would slice straight through the
-                    // model (the "really bad geometry" we set out to avoid). Don't
-                    // destroy the mesh: return a no-op with the reason so the user
-                    // can fix the loops. Only a SINGLE-loop contour falls back to the
-                    // flat plane cut (still a sensible cut through that one seam).
-                    if !options.cut.extra_loops.is_empty() {
-                        eprintln!("[dragonfruit-mesh-repair] multi-loop contour cut failed (no plane fallback): {reason}");
-                        return noop_outcome(mesh, format!("multi-loop contour cut failed: {reason}"));
-                    }
-                    eprintln!("[dragonfruit-mesh-repair] contour cut fell back to plane: {reason}");
-                    // Fall through to the plane path, preserving WHY in the detail.
-                    return match organic_cut_plane(&mesh, options) {
-                        Ok(mut outcome) => {
-                            outcome.report.detail =
-                                format!("contour fell back to plane: {reason}");
-                            outcome
-                        }
-                        Err(plane_reason) => noop_outcome(
-                            mesh,
-                            format!("contour failed ({reason}); plane also failed ({plane_reason})"),
-                        ),
-                    };
+                    // A contour cut NEVER falls back to a plane.
+                    //
+                    // The membrane IS the cut surface — it is what the user drew,
+                    // and it is bounded by their seam, so a contour cut cannot reach
+                    // outside it. A plane fitted to the same loop is infinite: it
+                    // slices clean across the whole body. And because the PREVIEW
+                    // never falls back, what they saw was a membrane over their seam
+                    // and what they got was a guillotine through the model, with the
+                    // seam and the tenon left stuck to whatever scrap came off.
+                    //
+                    // So refuse, hand back the reason, and leave the mesh alone.
+                    return noop_outcome(mesh, format!("contour cut failed: {reason}"));
                 }
             }
         }
@@ -1251,13 +1240,18 @@ mod tests {
 
     #[cfg(feature = "manifold")]
     #[test]
-    fn contour_mode_falls_back_to_plane_when_membrane_cannot_sever() {
+    fn contour_mode_refuses_rather_than_cutting_outside_the_seam() {
         // A diamond loop through the four FACE CENTERS at z=5. The membrane spans
-        // only the inner diamond, so the cube's corner prisms stay bridged →
-        // contour can't sever (1 component) → falls back to the plane cut. The
-        // best-fit plane of these points IS z=5, which cleanly divides the cube,
-        // so the fallback succeeds with engine="plane" and records the reason.
+        // only the inner diamond, so the cube's corner prisms stay bridged and the
+        // contour cut cannot sever.
+        //
+        // This used to fall back to the best-fit plane — z=5, straight through the
+        // whole cube, corners and all. A contour cut must never reach outside the
+        // seam the user drew, and the preview never falls back, so what they saw (a
+        // membrane over the diamond) and what they got (a guillotine across the
+        // body, with the seam and tenon stuck to the offcut) were different cuts.
         let mesh = IndexedMesh::from_triangle_soup(&cube_soup(10.0), 1e-6);
+        let source_tris = mesh.triangles.len();
         let loop_points = vec![
             OrganicCutLoopPoint { position: [0.0, 5.0, 5.0], normal: [0.0; 3] },
             OrganicCutLoopPoint { position: [5.0, 0.0, 5.0], normal: [0.0; 3] },
@@ -1272,12 +1266,19 @@ mod tests {
             },
         };
         let outcome = organic_cut(mesh, &options);
-        // It fell back to the plane (the loop still defines a best-fit plane).
-        assert_eq!(outcome.report.engine, "plane", "should fall back to the plane engine");
+        assert_eq!(
+            outcome.report.engine, "noop",
+            "a contour cut that cannot sever refuses; it does not become a plane cut",
+        );
         assert!(
-            outcome.report.detail.contains("contour fell back"),
-            "detail should record the fallback: {}",
-            outcome.report.detail
+            outcome.report.detail.contains("contour cut failed"),
+            "and it says why: {}",
+            outcome.report.detail,
+        );
+        assert!(outcome.parts.is_empty(), "a refused cut hands back no parts to commit");
+        assert_eq!(
+            outcome.report.source_triangle_count, source_tris,
+            "and it reports the body it left alone",
         );
     }
 
