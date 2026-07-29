@@ -1425,6 +1425,7 @@ dependencies = [
  "cdt",
  "clap",
  "manifold-csg",
+ "meshopt",
  "quick-xml 0.31.0",
  "rayon",
  "serde",

@@ -838,8 +838,7 @@ pub async fn load_stl_file(file_path: String) -> Result<Response, String> {
     // (72 bytes/triangle), before Three.js builds its BVH and uploads buffers.
     // Reject inputs that cannot fit that representation before the repair
     // loader reads and indexes the entire STL in memory.
-    const MAX_NATIVE_STL_TRIANGLES: u64 = 6_000_000;
-    const PREVIEW_TARGET_TRIANGLES: usize = 2_000_000;
+    const TRIGGER_TRIANGLES: u64 = 4_000_000;
     const MAX_NATIVE_ASCII_STL_BYTES: u64 = 300_000_000;
     let file_size = std::fs::metadata(path)
         .map_err(|e| format!("Failed to inspect STL '{}': {e}", file_path))?
@@ -854,14 +853,30 @@ pub async fn load_stl_file(file_path: String) -> Result<Response, String> {
     if header_len == header.len() {
         let triangle_count = u32::from_le_bytes(header[80..84].try_into().unwrap()) as u64;
         let expected_binary_size = 84u64.saturating_add(triangle_count.saturating_mul(50));
-        if expected_binary_size == file_size && triangle_count > MAX_NATIVE_STL_TRIANGLES {
+        if expected_binary_size == file_size && triangle_count > TRIGGER_TRIANGLES {
+            let (bbox_min, bbox_max) = binary_stl_bounds(path, triangle_count as u32)?;
+            let extent = bbox_max.sub(bbox_min);
+            let bbox_diagonal_mm = extent.length() as f64;
             drop(file);
-            let preview =
-                load_binary_stl_preview(path, triangle_count as u32, PREVIEW_TARGET_TRIANGLES)?;
+
+            let budget = dragonfruit_mesh_repair::stl_budget::compute_triangle_budget(
+                triangle_count as usize,
+                bbox_diagonal_mm,
+                None,
+            );
+
+            let mesh = io::stl::load(path)
+                .map_err(|e| format!("Failed to load STL '{}': {e}", file_path))?;
+            
+            let outcome = dragonfruit_mesh_repair::repair::decimate_indexed_to_budget(mesh, &budget);
+            let preview = outcome.mesh;
+
             log::info!(
-                "[load_stl_file] Streaming preview complete: {} -> {} triangles",
+                "[load_stl_file] Preview complete: {} -> {} triangles (budget: {}, error: {:.4})",
                 triangle_count,
-                preview.triangles.len()
+                preview.triangles.len(),
+                budget.budget_tris,
+                outcome.achieved_error
             );
             return encode_stl_response(&preview, triangle_count as u32, true).map(Response::new);
         }

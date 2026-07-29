@@ -3075,17 +3075,16 @@ mod tests {
 
 use crate::stl_budget::TriangleBudget;
 
-pub fn decimate_indexed_to_budget(mesh: &IndexedMesh, budget: &TriangleBudget) -> IndexedMesh {
-    if !budget.is_decimated {
-        return mesh.clone();
+pub struct DecimationOutcome {
+    pub mesh: IndexedMesh,
+    pub achieved_error: f32,
+}
+
+pub fn decimate_indexed_to_budget(mesh: IndexedMesh, budget: &TriangleBudget) -> DecimationOutcome {
+    if !budget.is_decimated || mesh.triangles.len() <= budget.budget_tris {
+        return DecimationOutcome { mesh, achieved_error: 0.0 };
     }
 
-    let positions: Vec<f32> = mesh
-        .positions
-        .iter()
-        .flat_map(|p| [p.x, p.y, p.z])
-        .collect();
-    
     let indices: Vec<u32> = mesh
         .triangles
         .iter()
@@ -3099,23 +3098,45 @@ pub fn decimate_indexed_to_budget(mesh: &IndexedMesh, budget: &TriangleBudget) -
         0,
     ).unwrap();
 
-    let decimated_indices = meshopt::simplify_with_locks(
-        &indices,
-        &adapter,
-        &locks,
-        budget.budget_tris * 3,
+    let error_tiers = [
         budget.target_error as f32,
-        meshopt::SimplifyOptions::LockBorder | meshopt::SimplifyOptions::Regularize,
-        None,
-    );
+        0.01,
+        0.025,
+        0.05,
+        0.10,
+    ];
 
-    let triangles = decimated_indices
+    let mut final_indices = vec![];
+    let mut final_error = 0.0;
+
+    for &err in &error_tiers {
+        let decimated_indices = meshopt::simplify_with_locks(
+            &indices,
+            &adapter,
+            &locks,
+            budget.budget_tris * 3,
+            err,
+            meshopt::SimplifyOptions::LockBorder | meshopt::SimplifyOptions::Regularize,
+            None,
+        );
+        let out_tris = decimated_indices.len() / 3;
+        final_indices = decimated_indices;
+        final_error = err;
+        if out_tris <= budget.soft_ceiling_tris {
+            break;
+        }
+    }
+
+    let triangles: Vec<[u32; 3]> = final_indices
         .chunks_exact(3)
         .map(|c| [c[0], c[1], c[2]])
         .collect();
 
-    IndexedMesh {
-        positions: mesh.positions.clone(),
-        triangles,
+    DecimationOutcome {
+        mesh: IndexedMesh {
+            positions: mesh.positions,
+            triangles,
+        },
+        achieved_error: final_error,
     }
 }
