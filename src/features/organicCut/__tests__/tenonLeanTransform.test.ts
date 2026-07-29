@@ -63,18 +63,29 @@ test('the leaned axis still passes through the anchor', () => {
   }
 });
 
-test('leaning keeps the tip standing its full depth proud of the cut', () => {
+test('leaning rotates the tenon rigidly: the cap lands at depth·cos(lean)', () => {
   const frame = frameAtOrigin();
   // The straight soup's tip is at build-axis depth, i.e. z = −depth.
   const upright = moved(tenonLeanMatrix(frame, 1e-9, Math.PI / 2, 0) ?? new THREE.Matrix4(), 0, 0, -frame.depth);
   assert.ok(Math.abs(Math.abs(upright.z) - frame.depth) < 1e-3, 'sanity: upright stands its depth');
   for (const deg of [20, 45]) {
-    const m = tenonLeanMatrix(frame, (deg * Math.PI) / 180, Math.PI / 2, 0);
+    const rad = (deg * Math.PI) / 180;
+    const m = tenonLeanMatrix(frame, rad, Math.PI / 2, 0);
     assert.ok(m, `${deg}° produces a matrix`);
     const tip = moved(m, 0, 0, -frame.depth);
+    // The trunk keeps its length — leaning a solid does not resize it.
     assert.ok(
-      Math.abs(tip.z) > frame.depth - 0.05,
-      `${deg}°: the tip still stands ${frame.depth}mm proud, got ${Math.abs(tip.z)}`,
+      Math.abs(tip.length() - frame.depth) < 1e-3,
+      `${deg}°: the trunk keeps its ${frame.depth}mm, got ${tip.length()}`,
+    );
+    // So the cap comes DOWN to depth·cos(lean). This used to assert the opposite —
+    // that the tip still stood its full depth proud — which is why Rust stretched
+    // the trunk and sank the base, and why the tenon was a different size at every
+    // angle.
+    const expected = frame.depth * Math.cos(rad);
+    assert.ok(
+      Math.abs(Math.abs(tip.z) - expected) < 1e-3,
+      `${deg}°: cap at depth·cos(lean) = ${expected}mm, got ${Math.abs(tip.z)}`,
     );
   }
 });

@@ -460,10 +460,15 @@ fn rotate_about(v: Vec3, axis: Vec3, angle: f32) -> Vec3 {
 
 /// Reorientation applied at BUILD time, in the tenon's local `(u, v, axis)` space
 /// (origin at `anchor`, `+z` along the build axis toward the tip): a **pure rigid
-/// rotation** of the whole tenon about the base center, plus an axial **sink** that
-/// pushes the rotated tenon deeper into the tenon's half so its tilted base stays fully
-/// buried below the cut plane (a solid bond), and the mortise fully breaches the cut
-/// face.
+/// rotation** of the whole tenon about the base center — nothing else.
+///
+/// It used to sink the leaned tenon deeper so its whole tilted base stayed buried,
+/// and lengthen the trunk so the tip still stood `depth` proud of the cut face.
+/// Between them the tenon was a different SIZE at every angle, which is not what a
+/// tenon is: it is a solid, and leaning a solid does not change it. The cap simply
+/// ends up `depth·cos(lean)` above the cut face, because that is where a rigid body
+/// of length `depth` leaning by that much puts it. The base half that rotates up out
+/// of part_a is the half that enters the mortise, which carries the same rotation.
 ///
 /// Because the transform is a single rigid rotation (+ uniform translation) applied
 /// IDENTICALLY to the tenon and the mortise, containment is preserved: the mortise is
@@ -481,9 +486,6 @@ struct LeanXform {
     /// Lean rotation axis in local (u, v) coords (unit, in-plane): k = z × L.
     k_u: f32,
     k_v: f32,
-    /// Axial sink (mm, along −z) applied AFTER the rotation so the tilted base stays
-    /// buried below the cut plane. 0 when not leaning.
-    sink: f32,
     /// In-plane shift (mm, local u/v) that puts the tenon's axis back through the
     /// ANCHOR — the point on the membrane where the crosshair sits. See
     /// [`LeanXform::for_build`]. 0 when not leaning.
@@ -498,7 +500,6 @@ impl LeanXform {
         roll: 0.0,
         k_u: 1.0,
         k_v: 0.0,
-        sink: 0.0,
         shift_u: 0.0,
         shift_v: 0.0,
         identity: true,
@@ -542,53 +543,30 @@ impl LeanXform {
             (1.0, 0.0)
         };
         let tilt_used = if leaning && len > 1e-9 { t } else { 0.0 };
-        // Sink so the rotated base stays buried: a base corner at half_diag from the
-        // axis rises by ≤ half_diag·sin(tilt) when the tenon tilts. Sink the whole tenon
-        // by that much (plus a hair) so even the highest base corner stays below the
-        // cut plane → the union bonds along a fully embedded base.
-        let sink = half_diag.max(0.0) * tilt_used.abs().sin();
         // Put the axis back through the anchor.
         //
         // The tenon is built on a frame whose origin sits half a kerf BELOW the
-        // membrane, and the sink above pushes it deeper still — so rotating about
-        // that origin slid the tenon's cross-section at the membrane sideways by
-        // (half_kerf + sink)·tan(tilt), while the crosshair (which marks the
-        // anchor) stayed put. At a real lean the section walked out from under the
-        // crosshair and nearly off the tenon. Shifting back by that much makes the
-        // lean pivot where the user sees it pivot: on the membrane.
+        // membrane, so rotating about that origin slides the tenon's cross-section
+        // at the membrane sideways by half_kerf·tan(tilt) while the crosshair (which
+        // marks the anchor) stays put. Shifting back by that much makes the lean
+        // pivot where the user sees it pivot: on the membrane, under the crosshair.
         let along = if len > 1e-9 { (lu / len, lv / len) } else { (0.0, 0.0) };
-        let lat = (half_kerf.max(0.0) + sink) * tilt_used.tan();
+        let lat = half_kerf.max(0.0) * tilt_used.tan();
+        let _ = half_diag;
         LeanXform {
             tilt: tilt_used,
             roll: tilt.roll,
             k_u,
             k_v,
-            sink,
             shift_u: -lat * along.0,
             shift_v: -lat * along.1,
             identity: false,
         }
     }
 
-    /// Depth the body has to be BUILT to so that a leaned tenon still stands the
-    /// requested `depth` proud of the cut face.
-    ///
-    /// Leaning used to eat the tenon: the body keeps its length, but what sticks out
-    /// past the cut plane is `depth·cos(tilt) − sink`, and the sink grows with the
-    /// lean — at 60° on a 2.5mm tenon that is nothing at all. So the trunk grows to
-    /// put both back, and the tenon the user asked for is the tenon they get at any
-    /// lean.
-    fn stretch_depth(&self, depth: f32) -> f32 {
-        if self.identity || self.tilt.abs() < 1e-6 {
-            return depth;
-        }
-        // Floored well past the tilt cap (~78°) so this can never blow up.
-        let cos = self.tilt.abs().cos().max(0.2);
-        (depth + self.sink) / cos
-    }
 
     /// Transform a local point: rigid roll (about +z), then rigid lean (about the
-    /// in-plane axis k), then sink along −z. Identical for tenon and mortise, so it
+    /// in-plane axis k). Identical for tenon and mortise, so it
     /// preserves their nesting (clean slide fit at any tilt).
     #[inline]
     fn apply(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
@@ -614,7 +592,7 @@ impl LeanXform {
         };
         // 3) Sink along −z so the tilted base stays buried, and slide in-plane so
         // the axis still passes through the anchor.
-        (lx + self.shift_u, ly + self.shift_v, lz - self.sink)
+        (lx + self.shift_u, ly + self.shift_v, lz)
     }
 }
 
@@ -816,7 +794,7 @@ fn build_sharp_frustum(
             .add(frame.axis.scale(z))
     };
 
-    // The 8-vertex tapered box. `local()` applies the rigid lean rotation + sink, so
+    // The 8-vertex tapered box. `local()` applies the rigid lean rotation, so
     // a leaned box is just this box rigidly rotated — still 8 verts / 12 tris, still
     // watertight, and the mortise (same rotation, dilated) provably contains the tenon.
     let positions = vec![
@@ -939,7 +917,7 @@ impl TenonPlan {
         }
     }
     /// Base half-diagonal (how far the footprint reaches from the axis), plus the
-    /// mortise's tolerance — the figure the lean's sink is measured from.
+    /// mortise's tolerance — how far the leaned body swings off the axis.
     fn half_diag(&self, tolerance: f32) -> f32 {
         match self.body {
             TenonBody::Frustum(d) => 0.5 * d.width.hypot(d.length) + tolerance,
@@ -1009,20 +987,6 @@ fn grow_plan_for_kerf(plan: TenonPlan, half_kerf: f32) -> TenonPlan {
     TenonPlan { body, ..plan }
 }
 
-/// Lengthen a decided plan so a leaned tenon still stands its requested depth proud
-/// of the cut face — the plan-level twin of [`LeanXform::stretch_depth`], used by
-/// the preview (which builds straight from the plan).
-fn stretch_plan_for_lean(plan: TenonPlan, lean: &LeanXform) -> TenonPlan {
-    let body = match plan.body {
-        TenonBody::Frustum(dims) => {
-            TenonBody::Frustum(FrustumDims { depth: lean.stretch_depth(dims.depth), ..dims })
-        }
-        TenonBody::Dome(dims) => {
-            TenonBody::Dome(DomeDims { depth: lean.stretch_depth(dims.depth), ..dims })
-        }
-    };
-    TenonPlan { body, ..plan }
-}
 
 /// Does this placement survive being LEANED by `tilt`?
 ///
@@ -1034,9 +998,8 @@ fn stretch_plan_for_lean(plan: TenonPlan, lean: &LeanXform) -> TenonPlan {
 /// tenon still has material around it.
 ///
 /// A lean costs room three ways: the trunk swings SIDEWAYS toward a lateral wall,
-/// its base sinks BACKWARDS into the tenon's own half, and — because the trunk is
-/// lengthened to keep standing its full depth proud (see `stretch_depth`) — the
-/// swing is measured on the longer body, not the nominal one.
+/// its base dips BACKWARDS into the tenon's own half as it rotates. The body is
+/// rigid, so both are measured on the tenon the user asked for.
 fn check_lean(
     clearance: &Clearance,
     half_diag: f32,
@@ -1048,13 +1011,13 @@ fn check_lean(
         return Ok(());
     }
     let m = TENON_WALL_MARGIN_MM;
-    let sink = half_diag * t.sin();
-    let built = (depth + sink) / t.cos().max(0.2);
+    // The base corner that rotates DOWN into part_a, and the rigid trunk.
+    let dip = half_diag * t.sin();
     // Sideways: the leaned tip, plus the base still standing half a diagonal off
     // the axis. Measured against the TIGHTEST of the four probes rather than the
     // room in the lean's own direction — the roll ring aims the lean, and a verdict
     // that flickered as the user turned it would be worse than a conservative one.
-    let reach = built * t.sin() + half_diag * t.cos();
+    let reach = depth * t.sin() + half_diag * t.cos();
     let room_lat = clearance.half_room_u().min(clearance.half_room_v());
     if reach + m > room_lat {
         return Err(TenonProblem::TooNarrow {
@@ -1062,9 +1025,9 @@ fn check_lean(
             needed_mm: (reach + m) * 2.0,
         });
     }
-    // Backwards: the sink has to stay inside the material behind the base, or the
-    // tenon's own half opens up around its root.
-    let needed_back = sink + TENON_BASE_OVERLAP_MM + m;
+    // Backwards: the dipping base corner has to stay inside the material behind the
+    // base, or the tenon's own half opens up around its root.
+    let needed_back = dip + TENON_BASE_OVERLAP_MM + m;
     if needed_back > clearance.depth_a {
         return Err(TenonProblem::TooShallow {
             room_mm: clearance.depth_a,
@@ -1321,8 +1284,6 @@ pub fn build_tenon_preview_at_frame(
     // gizmo silently refuses to do. Only the hard ceiling remains.
     let max_tilt = TENON_MAX_TILT_RAD;
     let lean = LeanXform::for_build(&orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
-    // Leaning lengthens the trunk instead of eating it (see `stretch_depth`).
-    let plan = stretch_plan_for_lean(plan, &lean);
 
     let mut soup: Vec<f32> = Vec::new();
     // Triangles [0, tenon_triangles) are the tenon, the rest the mortise. The frontend
@@ -1486,8 +1447,6 @@ fn apply_frustum(
     // buried. Use the MORTISE's footprint (slightly larger) so both share one sink.
     let half_diag = 0.5 * ((dims.width).hypot(dims.length)) + tolerance;
     let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
-    // Leaning lengthens the trunk instead of eating it (see `stretch_depth`).
-    let dims = FrustumDims { depth: lean.stretch_depth(dims.depth), ..dims };
     let tenon_mesh = build_frustum_leaned(&build_frame, dims, 0.0, fillet, lean);
     // The mortise is the tenon offset outward by `tolerance`; a uniform offset of a
     // rounded-rect grows the corner radius by the same amount, so the mortise's fillet
@@ -1826,8 +1785,6 @@ fn apply_dome(
     // mortise share the SAME rigid lean, so the dilated mortise contains the leaned tenon.
     let half_diag = dims.half_w.max(dims.half_l) + tolerance;
     let lean = LeanXform::for_build(orig_for_lean, &build_frame, &tilt, half_diag, max_tilt, half_kerf);
-    // Leaning lengthens the bulge instead of eating it (see `stretch_depth`).
-    let dims = DomeDims { depth: lean.stretch_depth(dims.depth), ..dims };
     let tenon_mesh =
         build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, 0.0, DOME_SEGMENTS, lean);
     let mortise_mesh =
@@ -2556,26 +2513,28 @@ mod tests {
         let lean = LeanXform::for_build(&orig, &frame, &tilt, half_diag, TENON_MAX_TILT_RAD, 0.0);
 
         let _ = build_frustum_leaned(&frame, dims, 0.0, 0.0, lean); // builds watertight
-        // The base footprint must stay buried below the cut plane: transform each base
-        // corner (local z = the mouth plane) and check its height along the axis is
-        // ≤ ~0, so the union bonds along a fully embedded base.
-        let bw = dims.width * 0.5;
-        let bl = dims.length * 0.5;
-        let z_mouth = -TENON_BASE_OVERLAP_MM;
-        let mut max_base_height = f32::NEG_INFINITY;
-        for &(sx, sy) in &[(1.0f32, 1.0f32), (-1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)] {
-            // local z height of the transformed base corner (z component of apply()).
-            let (_, _, hz) = lean.apply(sx * bw, sy * bl, z_mouth);
-            max_base_height = max_base_height.max(hz);
-        }
-        assert!(
-            max_base_height <= 0.01,
-            "tilted base stays buried below the cut plane (highest base z = {max_base_height})"
-        );
-        // Tip: the apex leans over at the angle asked for. Measured from the ANCHOR
-        // (the point on the membrane the tenon pivots about), not from the sunk base
-        // — at 45° the tip stands as far sideways as it stands proud.
+
+        // The body is RIGID: leaning it rotates it and nothing else. Every corner
+        // keeps its distance from the base centre, and the tip keeps its length.
+        //
+        // It used to sink the whole tenon and lengthen the trunk so the cap stayed
+        // at a fixed height above the cut face. That made the tenon a different size
+        // at every angle — the panel said 5mm and the solid was something else.
         let (tx, ty, tz) = lean.apply(0.0, 0.0, dims.depth);
+        let tip_len = (tx * tx + ty * ty + tz * tz).sqrt();
+        assert!(
+            (tip_len - dims.depth).abs() < 1e-3,
+            "the trunk keeps its {} mm, got {tip_len}",
+            dims.depth,
+        );
+
+        // And so the cap ends up at depth·cos(lean) above the cut face — lower than
+        // standing straight, which is what leaning a solid does.
+        let expected = dims.depth * tilt.tilt.cos();
+        assert!(
+            (tz - expected).abs() < 1e-3,
+            "cap at depth·cos(lean) = {expected} mm above the face, got {tz}",
+        );
         let lateral = (tx * tx + ty * ty).sqrt();
         assert!(lateral > 0.1, "the tip actually leans (lateral {lateral} mm)");
         assert!(

@@ -44,7 +44,6 @@ export function tenonLeanMatrix(
   if (Math.abs(roll) >= 1e-6) {
     q.premultiply(new THREE.Quaternion().setFromAxisAngle(buildAxis, roll));
   }
-  let sink = 0;
   let lateral: THREE.Vector3 | null = null;
   if (Math.abs(tilt) >= 1e-6) {
     // leanWorld = cos(az)·uN + sin(az)·vN (in the ORIGINAL/natural tangent plane).
@@ -64,47 +63,17 @@ export function tenonLeanMatrix(
         .add(buildV.clone().multiplyScalar(lu / len))
         .normalize();
       q.premultiply(new THREE.Quaternion().setFromAxisAngle(k, tilt));
-      // Sink so the tilted base stays buried — the same half_diag·sin(tilt) Rust
-      // uses, with the real footprint it reports.
-      sink = (frame.halfDiagMm ?? frame.depth * 0.9) * Math.sin(Math.abs(tilt));
-      // Slide back in-plane so the axis still passes through the anchor, matching
-      // LeanXform's shift. This matrix pivots ON the anchor (not on Rust's sunk
-      // build origin), so here it is the sink alone that walks the tenon sideways.
-      lateral = leanWorld
-        .clone()
-        .multiplyScalar((-sink * Math.tan(tilt)) / len)
-        .projectOnPlane(buildAxis);
     }
   }
 
-  // The soup was built STRAIGHT, so it is built to the un-leaned depth. Rust
-  // lengthens the trunk when it leans (LeanXform::stretch_depth) so the tenon keeps
-  // standing its full depth proud; stretch by the same factor along the build axis
-  // or the previewed tenon comes out shorter than the one that cuts.
-  const depth = Math.max(frame.depth, 1e-4);
-  const stretch =
-    Math.abs(tilt) < 1e-6
-      ? 1
-      : (depth + sink) / (depth * Math.max(Math.cos(Math.abs(tilt)), 0.2));
-
-  // Compose about the anchor: to origin, stretch along the axis, rotate, sink +
-  // slide, back. m = back · move · rot · stretch · toOrigin.
+  // A pure rigid rotation about the anchor — nothing else. Rust used to sink the
+  // leaned tenon and stretch its trunk (so the cap stayed at a fixed height above
+  // the cut face) and this had to mirror both; neither exists now, because leaning
+  // a solid does not resize it. See LeanXform.
   const toOrigin = new THREE.Matrix4().makeTranslation(-anchor.x, -anchor.y, -anchor.z);
   const rot = new THREE.Matrix4().makeRotationFromQuaternion(q);
-  // Scale along ONE direction: I + (f−1)·(a ⊗ a), with a the unit build axis.
-  const g = stretch - 1;
-  const { x: ax, y: ay, z: az } = buildAxis;
-  const stretchM = new THREE.Matrix4().set(
-    1 + g * ax * ax, g * ax * ay, g * ax * az, 0,
-    g * ay * ax, 1 + g * ay * ay, g * ay * az, 0,
-    g * az * ax, g * az * ay, 1 + g * az * az, 0,
-    0, 0, 0, 1,
-  );
-  const move = buildAxis.clone().multiplyScalar(-sink);
-  if (lateral) move.add(lateral);
-  const moveM = new THREE.Matrix4().makeTranslation(move.x, move.y, move.z);
   const back = new THREE.Matrix4().makeTranslation(anchor.x, anchor.y, anchor.z);
-  return back.multiply(moveM).multiply(rot).multiply(stretchM).multiply(toOrigin);
+  return back.multiply(rot).multiply(toOrigin);
 }
 
 /**
