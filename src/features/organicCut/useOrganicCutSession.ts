@@ -82,8 +82,7 @@ export type LoopTenonSettings = Pick<
   | 'tenonShape'
   | 'tenonFilletMm'
   | 'tenonToleranceMm'
-  | 'tenonOffsetUMm'
-  | 'tenonOffsetVMm'
+  | 'tenonAnchor'
   | 'tenonUniformScale'
   | 'tenonSwapSides'
   | 'tenonTiltRad'
@@ -133,8 +132,7 @@ function extractTenon(ps: OrganicCutPanelState): LoopTenonSettings {
     tenonShape: ps.tenonShape,
     tenonFilletMm: ps.tenonFilletMm,
     tenonToleranceMm: ps.tenonToleranceMm,
-    tenonOffsetUMm: ps.tenonOffsetUMm,
-    tenonOffsetVMm: ps.tenonOffsetVMm,
+    tenonAnchor: ps.tenonAnchor,
     tenonUniformScale: ps.tenonUniformScale,
     tenonSwapSides: ps.tenonSwapSides,
     tenonTiltRad: ps.tenonTiltRad,
@@ -148,6 +146,16 @@ function withTenon(ps: OrganicCutPanelState, tenon: LoopTenonSettings): OrganicC
   return { ...ps, ...tenon };
 }
 
+/** Value-equality of two anchors — a place on the cut face, or "wherever is natural". */
+function sameAnchor(
+  a: [number, number, number] | null,
+  b: [number, number, number] | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+}
+
 /** Value-equality of two tenon settings (to skip no-op state churn). */
 function tenonsEqual(a: LoopTenonSettings, b: LoopTenonSettings): boolean {
   return (
@@ -157,8 +165,7 @@ function tenonsEqual(a: LoopTenonSettings, b: LoopTenonSettings): boolean {
     a.tenonShape === b.tenonShape &&
     a.tenonFilletMm === b.tenonFilletMm &&
     a.tenonToleranceMm === b.tenonToleranceMm &&
-    a.tenonOffsetUMm === b.tenonOffsetUMm &&
-    a.tenonOffsetVMm === b.tenonOffsetVMm &&
+    sameAnchor(a.tenonAnchor, b.tenonAnchor) &&
     a.tenonUniformScale === b.tenonUniformScale &&
     a.tenonSwapSides === b.tenonSwapSides &&
     a.tenonTiltRad === b.tenonTiltRad &&
@@ -176,8 +183,7 @@ function tenonToSpec(k: LoopTenonSettings) {
     tenonShape: k.tenonShape,
     tenonFilletMm: k.tenonFilletMm,
     tenonToleranceMm: k.tenonToleranceMm,
-    tenonOffsetUMm: k.tenonOffsetUMm,
-    tenonOffsetVMm: k.tenonOffsetVMm,
+    tenonAnchor: k.tenonAnchor,
     tenonSwapSides: k.tenonSwapSides,
     tenonTiltRad: k.tenonTiltRad,
     tenonTiltAzimuthRad: k.tenonTiltAzimuthRad,
@@ -373,7 +379,6 @@ export interface OrganicCutSession {
    */
   tenonFrame: TenonPreviewFrame | null;
   /** The tenon offset (mm along u/v) the current preview soup was built with. */
-  tenonPreviewOffset: { u: number; v: number };
 }
 
 const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
@@ -402,8 +407,7 @@ const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
   // on every face. 0.1mm is a print-scale slide fit; 0 is a press fit.
   tenonToleranceMm: 0.1,
   // Tenon centred on the cut by default; the blue base handle slides it.
-  tenonOffsetUMm: 0,
-  tenonOffsetVMm: 0,
+  tenonAnchor: null,
   // Dome Uniform Scale on by default — width/depth move together (round dome)
   // until the user unlocks it for an oblong shape.
   tenonUniformScale: true,
@@ -479,7 +483,6 @@ export function useOrganicCutSession({
    * gizmo), so the view offsets the built tenon by the difference — without this
    * reference the tenon would sit still until the drag ended, which is blind work.
    */
-  const [tenonPreviewOffset, setTenonPreviewOffset] = React.useState<{ u: number; v: number }>({ u: 0, v: 0 });
   // Selected waypoint index (click a marker to select; Delete removes it).
   const [selectedIndex, setSelectedIndex] = React.useState<number | null>(null);
 
@@ -1005,8 +1008,7 @@ export function useOrganicCutSession({
             ps.tenonFilletMm,
             ps.tenonToleranceMm,
             ps.tenonSwapSides,
-            ps.tenonOffsetUMm,
-            ps.tenonOffsetVMm,
+            ps.tenonAnchor,
             0,
             0,
             0,
@@ -1026,8 +1028,7 @@ export function useOrganicCutSession({
           ps.tenonFilletMm,
           ps.tenonToleranceMm,
           ps.tenonSwapSides,
-          ps.tenonOffsetUMm,
-          ps.tenonOffsetVMm,
+          ps.tenonAnchor,
         );
     })();
 
@@ -1059,7 +1060,6 @@ export function useOrganicCutSession({
         setTenonFits(result.tenonFits);
         setTenonDetail(result.tenonDetail);
         setTenonFrame(result.tenonFrame);
-        setTenonPreviewOffset({ u: panelState.tenonOffsetUMm, v: panelState.tenonOffsetVMm });
       })();
     }, PREVIEW_SETTLE_MS);
     return () => {
@@ -1089,8 +1089,7 @@ export function useOrganicCutSession({
     panelState.tenonFilletMm,
     panelState.tenonToleranceMm,
     panelState.tenonSwapSides,
-    panelState.tenonOffsetUMm,
-    panelState.tenonOffsetVMm,
+    panelState.tenonAnchor,
   ]);
 
   const addPoint = React.useCallback((point: OrganicCutLoopPoint) => {
@@ -1337,8 +1336,7 @@ export function useOrganicCutSession({
             tenonShape: ps.tenonShape,
             tenonFilletMm: ps.tenonFilletMm,
             tenonToleranceMm: ps.tenonToleranceMm,
-            tenonOffsetUMm: ps.tenonOffsetUMm,
-            tenonOffsetVMm: ps.tenonOffsetVMm,
+            tenonAnchor: ps.tenonAnchor,
             tenonSwapSides: ps.tenonSwapSides,
             // Aim/roll: the base-glued lean + spin set by the in-viewport gizmo. The
             // preview already showed exactly this tenon (same angles, same shear).
@@ -1500,6 +1498,5 @@ export function useOrganicCutSession({
     tenonFits,
     tenonDetail,
     tenonFrame,
-    tenonPreviewOffset,
   };
 }

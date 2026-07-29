@@ -68,8 +68,7 @@ export interface OrganicCutSpec {
     tenonShape: 'frustum' | 'dome';
     tenonFilletMm: number;
     tenonToleranceMm: number;
-    tenonOffsetUMm: number;
-    tenonOffsetVMm: number;
+    tenonAnchor: [number, number, number] | null;
     tenonSwapSides: boolean;
     tenonTiltRad: number;
     tenonTiltAzimuthRad: number;
@@ -126,11 +125,10 @@ export interface OrganicCutSpec {
    */
   tenonToleranceMm?: number;
   /**
-   * Where the tenon sits on the cut face: mm along the cut frame's `u`/`v` axes from
-   * the natural anchor. Both 0/omitted = centred. Serde: `tenonOffsetUMm`/`VMm`.
+   * Where the tenon sits on the cut face: the model-local POINT the user put it on.
+   * Omitted/null = the natural middle of the cut. Serde: `tenonAnchor`.
    */
-  tenonOffsetUMm?: number;
-  tenonOffsetVMm?: number;
+  tenonAnchor?: [number, number, number] | null;
   /** Flip which half gets the tenon vs the mortise. Serde field: `tenonSwapSides`. */
   tenonSwapSides?: boolean;
   /**
@@ -169,9 +167,9 @@ export interface TenonPreviewFrame {
   tip: [number, number, number];
   depth: number;
   /**
-   * Largest lean this placement can take (radians), from the room around the tenon
-   * rather than a constant. Absent from an older backend — fall back to the hard
-   * ceiling then.
+   * The hard ceiling on the lean (radians). Leaning further than the part allows is
+   * reported as a won't-fit verdict, not prevented — a cap that fell to 0 near an
+   * edge meant the ring turned and the tenon didn't move.
    */
   maxTiltRad?: number;
   /**

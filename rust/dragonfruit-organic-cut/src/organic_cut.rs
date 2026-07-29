@@ -70,9 +70,7 @@ pub struct LoopTenonSpec {
     #[serde(default = "default_tenon_tolerance")]
     pub tenon_tolerance_mm: f32,
     #[serde(default)]
-    pub tenon_offset_u_mm: f32,
-    #[serde(default)]
-    pub tenon_offset_v_mm: f32,
+    pub tenon_anchor: Option<[f32; 3]>,
     #[serde(default)]
     pub tenon_swap_sides: bool,
     #[serde(default)]
@@ -158,12 +156,10 @@ pub struct OrganicCutSpec {
     /// 0 = press fit. Defaults to 0.1 mm (a print-scale slide fit).
     #[serde(default = "default_tenon_tolerance")]
     pub tenon_tolerance_mm: f32,
-    /// Where the tenon sits on the cut face, in mm along the cut frame's `u`/`v`
-    /// axes from the natural anchor (the centroid of the cut). Both 0 = centred.
+    /// Where the tenon sits on the cut face: the point (model-local) the user put
+    /// the crosshair on. `None` = the natural middle of the cut.
     #[serde(default)]
-    pub tenon_offset_u_mm: f32,
-    #[serde(default)]
-    pub tenon_offset_v_mm: f32,
+    pub tenon_anchor: Option<[f32; 3]>,
     /// Flip which half gets the tenon vs the mortise. Default false: tenon on `part_a`
     /// (the membrane's +normal side), mortise carved from `part_b`. True swaps them.
     #[serde(default)]
@@ -476,7 +472,7 @@ struct ResolvedTenon {
     shape: crate::tenon::TenonShape,
     fillet: f32,
     tolerance: f32,
-    offset: crate::tenon::TenonOffset,
+    at: crate::tenon::TenonAnchor,
     swap: bool,
     tilt: crate::tenon::TenonTilt,
 }
@@ -492,7 +488,7 @@ fn resolve_loop_tenon(spec: &OrganicCutSpec, i: usize) -> ResolvedTenon {
             shape: crate::tenon::TenonShape::from_str_or_default(&k.tenon_shape),
             fillet: k.tenon_fillet_mm,
             tolerance: k.tenon_tolerance_mm,
-            offset: crate::tenon::TenonOffset::new(k.tenon_offset_u_mm, k.tenon_offset_v_mm),
+            at: k.tenon_anchor.map(|p| Vec3::new(p[0], p[1], p[2])),
             swap: k.tenon_swap_sides,
             tilt: crate::tenon::TenonTilt::new(k.tenon_tilt_rad, k.tenon_tilt_azimuth_rad, k.tenon_roll_rad),
         },
@@ -503,7 +499,7 @@ fn resolve_loop_tenon(spec: &OrganicCutSpec, i: usize) -> ResolvedTenon {
             shape: crate::tenon::TenonShape::from_str_or_default(&spec.tenon_shape),
             fillet: spec.tenon_fillet_mm,
             tolerance: spec.tenon_tolerance_mm,
-            offset: crate::tenon::TenonOffset::new(spec.tenon_offset_u_mm, spec.tenon_offset_v_mm),
+            at: spec.tenon_anchor.map(|p| Vec3::new(p[0], p[1], p[2])),
             swap: spec.tenon_swap_sides,
             tilt: crate::tenon::TenonTilt::new(
                 spec.tenon_tilt_rad,
@@ -612,7 +608,7 @@ fn organic_cut_contour(
                     rk.fillet,
                     rk.tolerance,
                     thickness,
-                    rk.offset,
+                    rk.at,
                 );
                 // Map the (+normal, −normal) result back to (body, freed) = (a, b).
                 if a_on_plus {
@@ -708,7 +704,7 @@ fn organic_cut_contour(
             rk.fillet,
             rk.tolerance,
             thickness,
-            rk.offset,
+            rk.at,
         );
         part_a = tenoned.part_a;
         part_b = tenoned.part_b;
@@ -802,7 +798,7 @@ fn organic_cut_plane(
     let mut tenon_kind = crate::tenon::TenonKind::None;
     let mut tenon_detail = String::new();
     let (part_a, part_b) = if rk.generate {
-        match crate::tenon::frame_from_plane(mesh, plane.normal, plane.offset, rk.offset) {
+        match crate::tenon::frame_from_plane(mesh, plane.normal, plane.offset, rk.at) {
             Some(frame) => {
                 // `split_by_plane` hands back (+normal side, −normal side), and the
                 // tenon's frame axis IS that +normal — so `first` is part_a already.
@@ -1091,8 +1087,7 @@ mod tests {
                 tenon_width_mm: 5.0,
                 tenon_depth_mm: 5.0,
                 tenon_tolerance_mm: 0.1,
-                tenon_offset_u_mm: 0.0,
-                tenon_offset_v_mm: 0.0,
+                tenon_anchor: None,
                 ..Default::default()
             },
         };
@@ -1225,8 +1220,7 @@ mod tests {
             tenon_shape: "frustum".to_string(),
             tenon_fillet_mm: 0.0,
             tenon_tolerance_mm: 0.1,
-            tenon_offset_u_mm: 0.0,
-            tenon_offset_v_mm: 0.0,
+            tenon_anchor: None,
             tenon_swap_sides: false,
             tenon_tilt_rad: 0.0,
             tenon_tilt_azimuth_rad: 0.0,

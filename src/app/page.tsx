@@ -9698,15 +9698,10 @@ export default function Home() {
                   tenonFrame={organicCut.tenonFrame}
                   tenonTiltRad={organicCut.panelState.tenonTiltRad}
                   tenonRollRad={organicCut.panelState.tenonRollRad}
-                  tenonOffsetUMm={organicCut.panelState.tenonOffsetUMm}
-                  tenonOffsetVMm={organicCut.panelState.tenonOffsetVMm}
-                  tenonPreviewOffset={organicCut.tenonPreviewOffset}
-                  onTenonOffsetChange={(offsetUMm, offsetVMm) =>
-                    organicCut.setPanelState({
-                      ...organicCut.panelState,
-                      tenonOffsetUMm: offsetUMm,
-                      tenonOffsetVMm: offsetVMm,
-                    })
+                  tenonAnchor={organicCut.panelState.tenonAnchor}
+                  membranePreview={organicCut.membranePreview}
+                  onTenonAnchorChange={(anchor) =>
+                    organicCut.setPanelState({ ...organicCut.panelState, tenonAnchor: anchor })
                   }
                   onTenonAimChange={(tilt, azimuth, roll) =>
                     organicCut.setPanelState({
@@ -9876,9 +9871,7 @@ export default function Home() {
                 tenonTriangleCount={organicCut.tenonTriangleCount}
                 tenonFits={organicCut.tenonFits}
                 tenonFrame={organicCut.tenonFrame}
-                tenonOffsetUMm={organicCut.panelState.tenonOffsetUMm}
-                tenonOffsetVMm={organicCut.panelState.tenonOffsetVMm}
-                tenonPreviewOffset={organicCut.tenonPreviewOffset}
+                tenonAnchor={organicCut.panelState.tenonAnchor}
                 tenonTiltRad={organicCut.panelState.tenonTiltRad}
                 tenonTiltAzimuthRad={organicCut.panelState.tenonTiltAzimuthRad}
                 tenonRollRad={organicCut.panelState.tenonRollRad}

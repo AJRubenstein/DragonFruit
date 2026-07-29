@@ -88,12 +88,12 @@ export interface OrganicCutPanelState {
    */
   tenonToleranceMm: number;
   /**
-   * Where the tenon sits on the cut face: mm along the cut frame's u/v axes from
-   * the natural anchor (the centroid of the cut). Driven by the blue handle at
-   * the tenon's base in the 3D view, not by a field — dragging it is the point.
+   * Where the tenon sits on the cut face: the model-local point the blue handle
+   * was dragged to, or null for the natural middle of the cut. A point, not a
+   * displacement — see Rust's `TenonAnchor` for why that distinction is the whole
+   * fix. Driven by the handle in the 3D view, not by a field.
    */
-  tenonOffsetUMm: number;
-  tenonOffsetVMm: number;
+  tenonAnchor: [number, number, number] | null;
   /**
    * Dome only: when true, the Width/Depth sliders are ratio-locked — dragging one
    * scales the other to preserve the current proportions (resize as a unit). When
@@ -681,22 +681,23 @@ export function OrganicCutPanel({
                       </div>
                     );
                   })()}
-                  {/* Offset readout + recentre. Like the aim above, the offset is
-                      set in the viewport (drag the blue dot at the tenon's base), so
-                      there is nothing to show until the tenon has actually moved. */}
+                  {/* Recentre. Like the aim above, WHERE the tenon sits is set in
+                      the viewport (drag the blue dot at its base), so there is
+                      nothing to show until it has actually been moved. The place
+                      itself is a point in model space — a pair of millimetre
+                      readouts would be measuring it against an origin the user
+                      cannot see, which is what it used to do. */}
                   {(() => {
-                    const u = Math.round(state.tenonOffsetUMm * 10) / 10;
-                    const v = Math.round(state.tenonOffsetVMm * 10) / 10;
-                    if (u === 0 && v === 0) return null;
+                    if (!state.tenonAnchor) return null;
                     return (
                       <div className="flex items-center justify-between gap-2">
                         <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>
-                          {`Offset: ${u}, ${v} mm`}
+                          Moved off centre
                         </span>
                         <button
                           type="button"
                           className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
-                          onClick={() => setState({ tenonOffsetUMm: 0, tenonOffsetVMm: 0 })}
+                          onClick={() => setState({ tenonAnchor: null })}
                           disabled={disabled || isApplying}
                           title="Put the tenon back in the middle of the cut."
                         >

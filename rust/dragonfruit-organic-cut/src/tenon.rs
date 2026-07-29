@@ -208,15 +208,19 @@ pub struct TenonOutcome {
 /// stable in-plane basis. Returns `None` if the membrane is degenerate (no area /
 /// cancelling normals) — the caller then skips the tenon.
 pub fn frame_from_membrane(membrane: &Membrane) -> Option<TenonFrame> {
-    frame_from_membrane_at(membrane, TenonOffset::default())
+    frame_from_membrane_at(membrane, None)
 }
 
-/// [`frame_from_membrane`] with the tenon slid `offset` millimetres across the cut
-/// face. The offset moves the SEED, not the finished anchor: the seed is then
-/// snapped onto the membrane and the normal taken there, exactly as for the
-/// centroid — so on a curved seam the moved tenon still sits ON the surface with the
-/// local normal, instead of floating off the tangent plane of where it started.
-pub fn frame_from_membrane_at(membrane: &Membrane, offset: TenonOffset) -> Option<TenonFrame> {
+/// [`frame_from_membrane`] with the tenon placed at `at` — a point on the cut face,
+/// in model-local space, which is where the user put the crosshair.
+///
+/// It is a POINT, not a displacement. An offset had to be interpreted: measured in
+/// some basis, from some origin, and re-derived on every preview — and the frontend
+/// and this function did not agree on any of those three, so the tenon landed
+/// somewhere neither of them had pointed. A point needs no interpretation. It is
+/// snapped to the membrane on the way in, which for a point picked ON the membrane
+/// is a no-op, and for anything else is the nearest place it could actually sit.
+pub fn frame_from_membrane_at(membrane: &Membrane, at: TenonAnchor) -> Option<TenonFrame> {
     if membrane.vertices.is_empty() || membrane.triangles.is_empty() {
         return None;
     }
@@ -226,8 +230,8 @@ pub fn frame_from_membrane_at(membrane: &Membrane, offset: TenonOffset) -> Optio
         return None;
     }
 
-    // Seed from the vertex centroid, then SNAP IT ONTO the membrane and take the
-    // surface normal THERE.
+    // Where the user put it, or the middle of the cut if they have not moved it.
+    // Either way it is SNAPPED ONTO the membrane and the normal taken THERE.
     //
     // Averaging the whole patch (centroid + area-weighted mean of every triangle
     // normal) describes a curved membrane by a single plane, which no point on a
@@ -235,32 +239,22 @@ pub fn frame_from_membrane_at(membrane: &Membrane, offset: TenonOffset) -> Optio
     // that mean plane, so one corner punched through to the far side of the cut
     // while the opposite corner floated clear of it. On a flat membrane the two
     // agree, which is why it only showed up on curved seams.
-    let mut centroid = Vec3::ZERO;
-    for &p in &membrane.vertices {
-        centroid = centroid.add(p);
-    }
-    centroid = centroid.scale(1.0 / membrane.vertices.len() as f32);
+    let seed = at.unwrap_or_else(|| {
+        let mut centroid = Vec3::ZERO;
+        for &p in &membrane.vertices {
+            centroid = centroid.add(p);
+        }
+        centroid.scale(1.0 / membrane.vertices.len() as f32)
+    });
 
-    // Slide the seed across the cut face before snapping. The in-plane basis for
-    // the slide is the one derived from the membrane's mean normal — the same
-    // basis the panel/gizmo report offsets in, so a drag of 1mm along `u` moves
-    // the tenon 1mm along the `u` the user saw.
-    let centroid = if offset.is_zero() {
-        centroid
-    } else {
-        let mean_axis = mean_membrane_normal(membrane);
-        let (su, sv) = orthonormal_basis(mean_axis);
-        centroid.add(su.scale(offset.u)).add(sv.scale(offset.v))
-    };
-
-    let mut anchor = centroid;
+    let mut anchor = seed;
     let mut best_d2 = f32::INFINITY;
     let mut best_tri = 0usize;
     for (i, t) in membrane.triangles.iter().enumerate() {
         let a = membrane.vertices[t[0] as usize];
         let b = membrane.vertices[t[1] as usize];
         let c = membrane.vertices[t[2] as usize];
-        let (cp, d2) = crate::membrane::closest_on_tri(centroid, a, b, c);
+        let (cp, d2) = crate::membrane::closest_on_tri(seed, a, b, c);
         if d2 < best_d2 {
             best_d2 = d2;
             anchor = cp;
@@ -304,7 +298,7 @@ pub fn frame_from_plane(
     mesh: &IndexedMesh,
     normal: Vec3,
     plane_offset: f32,
-    offset: TenonOffset,
+    at: TenonAnchor,
 ) -> Option<TenonFrame> {
     let nlen = normal.length();
     if nlen < 1e-9 {
@@ -316,10 +310,13 @@ pub fn frame_from_plane(
     if !(section.area > 1e-9) {
         return None;
     }
-    // The plane is flat, so sliding the anchor keeps it on the cut face by
-    // construction. Sliding it off the material is the user's business: the
-    // clearance probe finds no walls and the ladder reports the part too thin.
-    let anchor = section.centroid.add(u.scale(offset.u)).add(v.scale(offset.v));
+    // Flatten the user's point onto the cut plane — it came from a pointer ray, so
+    // it is already on it bar float error. Off the material is their business: the
+    // clearance probe finds no walls and the verdict says it doesn't fit.
+    let anchor = match at {
+        Some(p) => p.sub(axis.scale(p.sub(section.centroid).dot(axis))),
+        None => section.centroid,
+    };
     Some(TenonFrame { anchor, axis, u, v, cut_area: section.area })
 }
 
@@ -442,25 +439,15 @@ impl TenonTilt {
 /// Where the tenon sits ON the cut face, as millimetres along the frame's own `u`
 /// and `v` axes from the natural anchor (the centroid of the cut).
 ///
-/// The centroid is a fine default and a poor rule: on a bean-shaped section it can
-/// sit in the thinnest part, or in air. This lets the user slide the tenon to where
-/// there is material, without moving the cut itself.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct TenonOffset {
-    pub u: f32,
-    pub v: f32,
-}
-
-impl TenonOffset {
-    pub fn new(u: f32, v: f32) -> Self {
-        let finite = |x: f32| if x.is_finite() { x } else { 0.0 };
-        TenonOffset { u: finite(u), v: finite(v) }
-    }
-
-    fn is_zero(&self) -> bool {
-        self.u == 0.0 && self.v == 0.0
-    }
-}
+/// Where the tenon sits on the cut face: a point in MODEL-LOCAL space, or `None`
+/// for the natural middle of the cut.
+///
+/// The centroid is a fine default and a poor rule — on a bean-shaped section it can
+/// sit in the thinnest part, or in air — so the user drags the tenon to where there
+/// is material. What they drag it to is a place, and a place is a point: the same
+/// three numbers mean the same thing to the pointer, the preview and the cut, with
+/// nothing to convert and nothing to disagree about.
+pub type TenonAnchor = Option<Vec3>;
 
 /// Rotate `v` about unit `axis` by `angle` radians (Rodrigues' rotation formula).
 fn rotate_about(v: Vec3, axis: Vec3, angle: f32) -> Vec3 {
@@ -1107,9 +1094,9 @@ pub fn apply_tenon(
     fillet_mm: f32,
     tolerance: f32,
     kerf_mm: f32,
-    offset: TenonOffset,
+    at: TenonAnchor,
 ) -> TenonOutcome {
-    let frame0 = match frame_from_membrane_at(membrane, offset) {
+    let frame0 = match frame_from_membrane_at(membrane, at) {
         Some(f) => f,
         None => {
             return TenonOutcome {
@@ -1266,14 +1253,14 @@ pub fn build_tenon_preview_soup(
     fillet_mm: f32,
     tolerance: f32,
     kerf_mm: f32,
-    offset: TenonOffset,
+    at: TenonAnchor,
 ) -> Option<TenonPreview> {
     use crate::membrane::{build_membrane_full, CONTOUR_SUBDIVISIONS, DEFAULT_GRID_DIVISIONS};
 
     let grid = DEFAULT_GRID_DIVISIONS * (density.clamp(1.0, 4.0) as f64);
     let membrane =
         build_membrane_full(loop_pts, CONTOUR_SUBDIVISIONS, membrane_smoothing, grid)?;
-    let frame = match frame_from_membrane_at(&membrane, offset) {
+    let frame = match frame_from_membrane_at(&membrane, at) {
         Some(f) => f,
         None => {
             return Some(TenonPreview {
@@ -1932,6 +1919,51 @@ mod tests {
         best.sqrt()
     }
 
+    // The tenon lands where it was put. This is the whole point of an anchor being
+    // a POINT: ask for a place on the cut face and that is the place you get, with
+    // no basis to agree on and no displacement to re-derive.
+    //
+    // It used to be an offset in millimetres from the centroid, measured in one
+    // basis by the handle and applied in another by this function — on a warped
+    // seam those are tens of degrees apart, so the tenon appeared somewhere neither
+    // had asked for, and small drags could jump it clear across the patch.
+    #[test]
+    fn the_tenon_lands_where_it_was_put() {
+        let mem = warped_membrane();
+        // Sample real places ON the cut face — the vertices are, by construction.
+        for i in [0usize, 7, 23, 40] {
+            let wanted = mem.vertices[i % mem.vertices.len()];
+            let frame = frame_from_membrane_at(&mem, Some(wanted)).expect("frame");
+            assert!(
+                frame.anchor.sub(wanted).length() < 1e-3,
+                "asked for {wanted:?}, got {:?}",
+                frame.anchor,
+            );
+        }
+    }
+
+    // A point that is NOT on the cut face lands at the nearest place it could
+    // actually sit, rather than being refused or drifting off the surface. The
+    // handle can only produce points on the face, so this is a guard for float
+    // error and for a membrane rebuilt at a different smoothing under an anchor
+    // that was saved against the old one.
+    #[test]
+    fn an_anchor_off_the_face_snaps_onto_it() {
+        let mem = warped_membrane();
+        let on_face = mem.vertices[11 % mem.vertices.len()];
+        let axis = mean_membrane_normal(&mem);
+        let adrift = on_face.add(axis.scale(3.0));
+        let frame = frame_from_membrane_at(&mem, Some(adrift)).expect("frame");
+        assert!(
+            distance_to_membrane(&mem, frame.anchor) < 1e-3,
+            "the anchor sits on the cut face",
+        );
+        assert!(
+            frame.anchor.sub(adrift).length() <= 3.0 + 1e-3,
+            "and at the NEAREST spot, not wherever",
+        );
+    }
+
     #[test]
     fn frame_anchor_sits_on_a_curved_membrane() {
         let mem = warped_membrane();
@@ -2121,7 +2153,7 @@ mod tests {
         let mem = flat_membrane(10.0);
 
         let a_tris_before = part_a.triangle_count();
-        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None);
 
         assert_eq!(out.kind, TenonKind::Frustum, "frustum tenon placed: {}", out.detail);
         assert!(
@@ -2144,7 +2176,7 @@ mod tests {
 
         let b_tris_before = part_b.triangle_count();
         // swap_sides = true → tenon unions onto part_b, mortise carves part_a.
-        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, true, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, true, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None);
 
         assert_eq!(out.kind, TenonKind::Frustum, "swapped frustum tenon placed: {}", out.detail);
         assert!(
@@ -2197,7 +2229,7 @@ mod tests {
         // tenon they never asked for.
         let (model, part_a, part_b) = split_halves(20.0, 4.0);
         let pb_tris = part_b.triangle_count();
-        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None);
 
         assert_eq!(out.kind, TenonKind::None, "refused, not placed: {}", out.detail);
         assert!(
@@ -2220,7 +2252,7 @@ mod tests {
         // 2 mm of part_b: the old ladder shrank past the frustum floor and placed a
         // dome here, reporting "fell back to a half-sphere".
         let (model, pa, pb) = split_halves(20.0, 2.0);
-        let out = apply_tenon(&model, pa, pb, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
+        let out = apply_tenon(&model, pa, pb, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None);
         assert_eq!(out.kind, TenonKind::None, "no dome substitution: {}", out.detail);
         assert!(
             !out.detail.contains("half-sphere"),
@@ -2269,7 +2301,7 @@ mod tests {
         let mem = flat_membrane(10.0);
         // Plenty thick for a frustum — but we ask for a dome explicitly.
         let (model, pa, pb) = split_halves(20.0, 20.0);
-        let out = apply_tenon(&model, pa, pb, &mem, TenonShape::Dome, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default());
+        let out = apply_tenon(&model, pa, pb, &mem, TenonShape::Dome, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None);
         assert_eq!(
             out.kind,
             TenonKind::Dome,
@@ -2300,7 +2332,7 @@ mod tests {
             let preview = build_tenon_preview_soup(
                 &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, false,
                 TenonTilt::new(tilt_deg.to_radians(), 0.0, 0.0), 2.0, depth, 0.0, 0.1, 0.0,
-                TenonOffset::default(),
+                None,
             )
             .expect("preview builds");
             let tenon = &preview.soup[..preview.tenon_triangles * 9];
@@ -2379,7 +2411,7 @@ mod tests {
             Vec3::new(-5.0, 5.0, 0.0),
         ];
         let preview =
-            build_tenon_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default())
+            build_tenon_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None)
                 .expect("preview builds");
         let soup = &preview.soup;
         assert_eq!(preview.kind, TenonKind::Frustum, "healthy box → frustum tenon preview");
@@ -2414,7 +2446,7 @@ mod tests {
         for kerf in [0.0, crate::membrane::DEFAULT_CUTTER_THICKNESS_MM, 1.0, 2.0] {
             let preview = build_tenon_preview_soup(
                 &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum,
-                false, TenonTilt::default(), 5.0, depth, 0.0, 0.1, kerf, TenonOffset::default(),
+                false, TenonTilt::default(), 5.0, depth, 0.0, 0.1, kerf, None,
             )
             .expect("preview builds");
             let (soup, kind, detail) = (&preview.soup, preview.kind, &preview.detail);
@@ -2461,7 +2493,7 @@ mod tests {
         // on each side of the cut for unswapped vs swapped.
         let z_extent = |swap: bool| -> (f32, f32) {
             let soup = build_tenon_preview_soup(
-                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, swap, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, TenonOffset::default(),
+                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, swap, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None,
             )
             .expect("preview builds")
             .soup;
@@ -2683,7 +2715,7 @@ mod tests {
         let mem = flat_membrane(60.0);
         let a_before = part_a.triangle_count();
         let tilt = TenonTilt::new(40.0_f32.to_radians(), 0.7, 0.3);
-        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, 0.0, TenonOffset::default());
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, 0.0, None);
         assert_eq!(out.kind, TenonKind::Frustum, "tilted tenon placed: {}", out.detail);
         assert!(out.part_a.triangle_count() > a_before, "tenon bonded to part_a");
         assert!(to_manifold(&out.part_a).is_ok(), "tilted part_a watertight");
@@ -2735,7 +2767,7 @@ mod tests {
         let b_before = split.part_b.triangle_count();
 
         // Now tenon the REAL parts — clearance probes against the original `model`.
-        let out = apply_tenon(&model, split.part_a, split.part_b, &split.membrane, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, DEFAULT_CUTTER_THICKNESS_MM, TenonOffset::default());
+        let out = apply_tenon(&model, split.part_a, split.part_b, &split.membrane, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, DEFAULT_CUTTER_THICKNESS_MM, None);
 
         assert_eq!(
             out.kind,

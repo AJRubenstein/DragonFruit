@@ -125,9 +125,7 @@ interface OrganicCutToolProps {
    * a translation — that is what makes the tenon follow the handle instead of
    * jumping when the drag ends.
    */
-  tenonOffsetUMm?: number;
-  tenonOffsetVMm?: number;
-  tenonPreviewOffset?: { u: number; v: number };
+  tenonAnchor?: [number, number, number] | null;
   /** Live tenon tilt / azimuth / roll (radians) for the client-side rotation. */
   tenonTiltRad?: number;
   tenonTiltAzimuthRad?: number;
@@ -288,9 +286,7 @@ export function OrganicCutTool({
   tenonTriangleCount = 0,
   tenonFits = true,
   tenonFrame,
-  tenonOffsetUMm = 0,
-  tenonOffsetVMm = 0,
-  tenonPreviewOffset,
+  tenonAnchor,
   tenonTiltRad = 0,
   tenonTiltAzimuthRad = 0,
   tenonRollRad = 0,
@@ -556,19 +552,20 @@ export function OrganicCutTool({
   );
 
   /**
-   * Translation that carries the built tenon (and its outline) to where the handle
-   * has dragged it, until Rust catches up on release. Null when they agree.
+   * Carries the built tenon to where it has been dragged, until the next preview
+   * arrives with it built there. Both are POINTS in the same space, so this is
+   * their plain difference — no basis to pick and none to get wrong. (It used to
+   * be a displacement along the frame's u/v, which is what made the stand-in tenon
+   * set off at an angle to where the real one was going.)
    */
   const tenonOffsetMatrix = useMemo(() => {
-    if (!tenonFrame || !tenonPreviewOffset) return null;
-    const du = tenonOffsetUMm - tenonPreviewOffset.u;
-    const dv = tenonOffsetVMm - tenonPreviewOffset.v;
-    if (Math.abs(du) < 1e-6 && Math.abs(dv) < 1e-6) return null;
-    const u = new THREE.Vector3(...tenonFrame.u).normalize().multiplyScalar(du);
-    const v = new THREE.Vector3(...tenonFrame.v).normalize().multiplyScalar(dv);
-    const d = u.add(v);
+    if (!tenonFrame || !tenonAnchor) return null;
+    const from = new THREE.Vector3(...tenonFrame.anchor);
+    const to = new THREE.Vector3(...tenonAnchor);
+    const d = to.sub(from);
+    if (d.lengthSq() < 1e-12) return null;
     return new THREE.Matrix4().makeTranslation(d.x, d.y, d.z);
-  }, [tenonFrame, tenonOffsetUMm, tenonOffsetVMm, tenonPreviewOffset]);
+  }, [tenonFrame, tenonAnchor]);
 
   // Clip the tenon preview AT THE WAFER: hide everything on the part_a (+normal) side
   // of the cut plane, so the preview shows only the portion that actually goes into

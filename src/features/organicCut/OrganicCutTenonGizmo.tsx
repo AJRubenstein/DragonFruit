@@ -38,13 +38,15 @@ export interface OrganicCutTenonGizmoProps {
    * reporter for the base handle that slides it. Omit the setter and no handle is
    * drawn — the tenon stays on the centroid.
    */
-  tenonOffsetUMm?: number;
-  tenonOffsetVMm?: number;
-  /** The offset the previewed tenon was built with — see `keyOffsetMatrix` in the
-   *  tool. The crosshair rides the same difference so it stays under the cursor
-   *  instead of snapping back to the last frame Rust returned. */
-  tenonPreviewOffset?: { u: number; v: number };
-  onTenonOffsetChange?: (offsetUMm: number, offsetVMm: number) => void;
+  tenonAnchor?: [number, number, number] | null;
+  /**
+   * The contour membrane (flat triangle soup, model-local). The handle drags ON it:
+   * a pointer ray against the cut face answers "where did they point" directly, in
+   * the one form the cut also speaks — a point. Absent in flat-cut mode, where the
+   * cut face IS a plane and the ray meets it exactly.
+   */
+  membranePreview?: Float32Array | null;
+  onTenonAnchorChange?: (anchor: [number, number, number] | null) => void;
   /** Notifies the host that a gizmo drag started/ended (to pause OrbitControls). */
   onDragStateChange?: (dragging: boolean) => void;
 }
@@ -118,10 +120,9 @@ export function OrganicCutTenonGizmo({
   tenonTiltRad,
   tenonRollRad,
   onTenonAimChange,
-  tenonOffsetUMm = 0,
-  tenonOffsetVMm = 0,
-  tenonPreviewOffset,
-  onTenonOffsetChange,
+  tenonAnchor,
+  membranePreview,
+  onTenonAnchorChange,
   onDragStateChange,
 }: OrganicCutTenonGizmoProps) {
   const activeModel = useMemo(
@@ -254,69 +255,96 @@ export function OrganicCutTenonGizmo({
   // in front of it — which then read as "add a waypoint".
   const colors = useOrganicCutColorNumbers();
   const [draggingHandle, setDraggingHandle] = useState(false);
-  const handleDragRef = useRef<{ u: number; v: number; startU: number; startV: number } | null>(null);
+  const draggingRef = useRef(false);
 
-  /** Pointer ray → (u, v) millimetres on the tenon's cut-face plane, in LOCAL mm. */
-  const planePoint = useCallback(
-    (e: ThreeEvent<PointerEvent>): { u: number; v: number } | null => {
+  /**
+   * The cut face as a mesh, for hit-testing the drag. Built from the membrane soup
+   * once per preview — the same triangles the cut uses, so a point on it is a point
+   * the cut can honour.
+   */
+  const membraneMesh = useMemo(() => {
+    if (!membranePreview || membranePreview.length < 9) return null;
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(membranePreview, 3));
+    geom.computeBoundingSphere();
+    return new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  }, [membranePreview]);
+
+  /**
+   * Pointer ray → the model-local POINT on the cut face under the cursor.
+   *
+   * On a contour cut that is a hit against the membrane itself. On a flat cut the
+   * face is a plane, so the ray meets it exactly and no mesh is needed. Either way
+   * the answer is a place on the cut face — which is precisely what the anchor is,
+   * so nothing has to be converted, accumulated, or measured against an origin.
+   */
+  const facePoint = useCallback(
+    (e: ThreeEvent<PointerEvent>): [number, number, number] | null => {
       const g = worldTenonGizmo;
       if (!g) return null;
+      if (membraneMesh) {
+        // The membrane is in model-local coords, so cast the ray there too.
+        const local = new THREE.Ray(
+          e.ray.origin.clone().applyMatrix4(g.worldToLocal),
+          e.ray.direction.clone().transformDirection(g.worldToLocal).normalize(),
+        );
+        const raycaster = new THREE.Raycaster();
+        raycaster.ray.copy(local);
+        raycaster.far = Infinity;
+        const hit = raycaster.intersectObject(membraneMesh, false)[0];
+        // A ray that misses the face says nothing about where the tenon should go;
+        // better to leave it where it is than to invent a point.
+        if (!hit) return null;
+        return [hit.point.x, hit.point.y, hit.point.z];
+      }
       const denom = e.ray.direction.dot(g.axisW);
       if (Math.abs(denom) < 1e-6) return null; // ray parallel to the cut face
       const t = g.anchorW.clone().sub(e.ray.origin).dot(g.axisW) / denom;
       if (!Number.isFinite(t)) return null;
-      // Back to model-local space, where the offsets are measured: a scaled plate
-      // would otherwise turn a 1mm drag into 1mm of WORLD, not of model.
       const hitLocal = e.ray.origin
         .clone()
         .add(e.ray.direction.clone().multiplyScalar(t))
         .applyMatrix4(g.worldToLocal);
-      const d = hitLocal.sub(g.anchorL);
-      return { u: d.dot(g.uL), v: d.dot(g.vL) };
+      return [hitLocal.x, hitLocal.y, hitLocal.z];
     },
-    [worldTenonGizmo],
+    [worldTenonGizmo, membraneMesh],
   );
 
   const handlePointerDown = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
-      if (e.button !== 0 || !onTenonOffsetChange) return;
+      if (e.button !== 0 || !onTenonAnchorChange) return;
       e.stopPropagation();
-      const grab = planePoint(e);
-      if (!grab) return;
       try {
         (e.currentTarget as unknown as { setPointerCapture?: (id: number) => void })
           .setPointerCapture?.(e.pointerId);
       } catch {
         /* capture is best-effort */
       }
-      // Grab-relative, so the tenon follows the cursor from wherever it was picked
-      // up instead of snapping its centre under the pointer.
-      handleDragRef.current = { u: grab.u, v: grab.v, startU: tenonOffsetUMm, startV: tenonOffsetVMm };
-      // `grab` is measured from the anchor of the LAST built frame, and startU/V
-      // are the live offsets — the difference between them is exactly the pending
-      // slide, so the deltas below stay right even mid-rebuild.
+      // No grab offset to remember: the tenon goes where the pointer is. It used to
+      // be dragged grab-relative because the offset accumulated deltas and drift
+      // would compound; an absolute point has nothing to accumulate.
+      draggingRef.current = true;
       setDraggingHandle(true);
       onDragStateChange?.(true);
       document.body.style.cursor = 'grabbing';
     },
-    [planePoint, tenonOffsetUMm, tenonOffsetVMm, onDragStateChange, onTenonOffsetChange],
+    [onDragStateChange, onTenonAnchorChange],
   );
 
   const handlePointerMove = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
-      const drag = handleDragRef.current;
-      if (!drag || !onTenonOffsetChange) return;
+      if (!draggingRef.current || !onTenonAnchorChange) return;
       e.stopPropagation();
-      const now = planePoint(e);
-      if (!now) return;
-      onTenonOffsetChange(drag.startU + (now.u - drag.u), drag.startV + (now.v - drag.v));
+      const at = facePoint(e);
+      if (!at) return;
+      onTenonAnchorChange(at);
     },
-    [planePoint, onTenonOffsetChange],
+    [facePoint, onTenonAnchorChange],
   );
 
   const endHandleDrag = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
-      if (!handleDragRef.current) return;
+      if (!draggingRef.current) return;
       e.stopPropagation();
       try {
         const target = e.currentTarget as unknown as {
@@ -327,7 +355,7 @@ export function OrganicCutTenonGizmo({
       } catch {
         /* best-effort release */
       }
-      handleDragRef.current = null;
+      draggingRef.current = false;
       setDraggingHandle(false);
       onDragStateChange?.(false);
       document.body.style.cursor = '';
@@ -337,10 +365,10 @@ export function OrganicCutTenonGizmo({
 
   const handlePointerOver = useCallback((e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    if (!handleDragRef.current) document.body.style.cursor = 'grab';
+    if (!draggingRef.current) document.body.style.cursor = 'grab';
   }, []);
   const handlePointerOut = useCallback(() => {
-    if (!handleDragRef.current) document.body.style.cursor = '';
+    if (!draggingRef.current) document.body.style.cursor = '';
   }, []);
 
   /**
@@ -395,22 +423,19 @@ export function OrganicCutTenonGizmo({
     };
   }, []);
 
-  /** The crosshair's world position, carrying the not-yet-rebuilt drag offset. */
+  /**
+   * The crosshair's world position: the anchor, which during a drag is already
+   * ahead of the frame Rust last sent back. No offsets to reconcile — the anchor
+   * IS the place, so the crosshair sits on it and the preview catches up under it.
+   */
   const handlePosition = useMemo((): [number, number, number] | null => {
     const g = worldTenonGizmo;
     if (!g) return null;
-    const du = tenonOffsetUMm - (tenonPreviewOffset?.u ?? tenonOffsetUMm);
-    const dv = tenonOffsetVMm - (tenonPreviewOffset?.v ?? tenonOffsetVMm);
-    if (Math.abs(du) < 1e-6 && Math.abs(dv) < 1e-6) return g.position;
-    // The offsets are LOCAL mm, so shift in local space and go back out to world.
+    if (!tenonAnchor) return g.position;
     const localToWorld = new THREE.Matrix4().copy(g.worldToLocal).invert();
-    const p = g.anchorL
-      .clone()
-      .add(g.uL.clone().multiplyScalar(du))
-      .add(g.vL.clone().multiplyScalar(dv))
-      .applyMatrix4(localToWorld);
+    const p = new THREE.Vector3(...tenonAnchor).applyMatrix4(localToWorld);
     return [p.x, p.y, p.z];
-  }, [worldTenonGizmo, tenonOffsetUMm, tenonOffsetVMm, tenonPreviewOffset]);
+  }, [worldTenonGizmo, tenonAnchor]);
 
   const handleGizmoDragState = useCallback(
     (dragging: boolean) => {
@@ -423,7 +448,7 @@ export function OrganicCutTenonGizmo({
 
   return (
     <>
-    {onTenonOffsetChange && (
+    {onTenonAnchorChange && (
       <group position={handlePosition ?? worldTenonGizmo.position} rotation={worldTenonGizmo.rotation}>
         {/* Invisible grab volume. A sphere rather than a disc in the cut plane:
             seen edge-on a disc is a line and there is nothing left to grab. */}

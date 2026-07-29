@@ -301,12 +301,10 @@ struct GeodesicRequestDto {
     /// every face. 0 = press fit. Default 0.1 (slide fit).
     #[serde(default = "default_tenon_tolerance")]
     tenon_tolerance_mm: f32,
-    /// Where the tenon sits on the cut face: mm along the cut frame's `u`/`v` axes
-    /// from the natural anchor (the centroid). Both 0 = centred, the old behaviour.
+    /// Where the tenon sits on the cut face: the model-local point the user put the
+    /// crosshair on. Absent = the natural middle of the cut.
     #[serde(default)]
-    tenon_offset_u_mm: f32,
-    #[serde(default)]
-    tenon_offset_v_mm: f32,
+    tenon_anchor: Option<[f32; 3]>,
     /// Flat-cut only: the plane the tenon is framed on, as `dot(normal, p) == offset`
     /// in model-local space — the exact plane the frontend previewed. Absent for a
     /// contour preview, which frames the tenon on the membrane instead.
@@ -368,8 +366,7 @@ impl Default for GeodesicRequestDto {
             tenon_shape: "frustum".to_string(),
             tenon_fillet_mm: 0.0,
             tenon_tolerance_mm: 0.1,
-            tenon_offset_u_mm: 0.0,
-            tenon_offset_v_mm: 0.0,
+            tenon_anchor: None,
             plane_normal: [0.0; 3],
             plane_offset: 0.0,
             tenon_swap_sides: false,
@@ -1242,7 +1239,9 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
     let tenon_shape = dragonfruit_organic_cut::TenonShape::from_str_or_default(&req.tenon_shape);
     let tenon_fillet_mm = req.tenon_fillet_mm;
     let tenon_tolerance_mm = req.tenon_tolerance_mm;
-    let tenon_offset = dragonfruit_organic_cut::TenonOffset::new(req.tenon_offset_u_mm, req.tenon_offset_v_mm);
+    let tenon_at: dragonfruit_organic_cut::TenonAnchor = req
+        .tenon_anchor
+        .map(|p| Vec3::new(p[0], p[1], p[2]));
     let tenon_swap_sides = req.tenon_swap_sides;
     let tenon_tilt = dragonfruit_organic_cut::TenonTilt::new(
         req.tenon_tilt_rad,
@@ -1297,7 +1296,7 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
                         // the preview must be built with it too or it lies about
                         // where the tenon's base sits.
                         thickness_mm,
-                        tenon_offset,
+                        tenon_at,
                     )
                 {
                     tenon_tris = preview.tenon_triangles;
@@ -1384,7 +1383,9 @@ pub async fn mesh_organic_cut_plane_tenon_preview(request_json: String) -> Resul
         req.tenon_tilt_azimuth_rad,
         req.tenon_roll_rad,
     );
-    let tenon_offset = dragonfruit_organic_cut::TenonOffset::new(req.tenon_offset_u_mm, req.tenon_offset_v_mm);
+    let tenon_at: dragonfruit_organic_cut::TenonAnchor = req
+        .tenon_anchor
+        .map(|p| Vec3::new(p[0], p[1], p[2]));
     let (tenon_width_mm, tenon_depth_mm, tenon_fillet_mm, tenon_tolerance_mm, tenon_swap_sides) = (
         req.tenon_width_mm,
         req.tenon_depth_mm,
@@ -1406,7 +1407,7 @@ pub async fn mesh_organic_cut_plane_tenon_preview(request_json: String) -> Resul
 
     let result = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
-        let Some(frame) = dragonfruit_organic_cut::frame_from_plane(&mesh, normal, offset, tenon_offset)
+        let Some(frame) = dragonfruit_organic_cut::frame_from_plane(&mesh, normal, offset, tenon_at)
         else {
             return Ok::<_, String>(None);
         };

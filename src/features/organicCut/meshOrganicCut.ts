@@ -301,8 +301,7 @@ export async function computeMembranePreview(
   tenonFilletMm = 0.0,
   tenonToleranceMm = 0.1,
   tenonSwapSides = false,
-  tenonOffsetUMm = 0.0,
-  tenonOffsetVMm = 0.0,
+  tenonAnchor: [number, number, number] | null = null,
   tenonTiltRad = 0.0,
   tenonTiltAzimuthRad = 0.0,
   tenonRollRad = 0.0,
@@ -333,8 +332,7 @@ export async function computeMembranePreview(
     tenonFilletMm,
     tenonToleranceMm,
     tenonSwapSides,
-    tenonOffsetUMm,
-    tenonOffsetVMm,
+    tenonAnchor,
     tenonTiltRad,
     tenonTiltAzimuthRad,
     tenonRollRad,
@@ -390,8 +388,7 @@ export async function computePlaneTenonPreview(
   tenonFilletMm = 0.0,
   tenonToleranceMm = 0.1,
   tenonSwapSides = false,
-  tenonOffsetUMm = 0.0,
-  tenonOffsetVMm = 0.0,
+  tenonAnchor: [number, number, number] | null = null,
 ): Promise<MembranePreviewResult> {
   const empty: MembranePreviewResult = {
     membrane: null,
@@ -415,8 +412,7 @@ export async function computePlaneTenonPreview(
     tenonFilletMm,
     tenonToleranceMm,
     tenonSwapSides,
-    tenonOffsetUMm,
-    tenonOffsetVMm,
+    tenonAnchor,
   });
   try {
     const reportJson = await core.invoke<string>('mesh_organic_cut_plane_tenon_preview', { requestJson });
