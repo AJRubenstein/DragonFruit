@@ -340,6 +340,10 @@ fn mean_membrane_normal(membrane: &Membrane) -> Vec3 {
 /// Build an orthonormal `(u, v)` pair spanning the plane perpendicular to `axis`.
 /// Stable: seeds from whichever world axis is least aligned with `axis`. Purely
 /// cosmetic for the tenon (tenon & mortise share it), so any stable choice is fine.
+pub(crate) fn plane_basis(axis: Vec3) -> (Vec3, Vec3) {
+    orthonormal_basis(axis)
+}
+
 fn orthonormal_basis(axis: Vec3) -> (Vec3, Vec3) {
     let seed = if axis.x.abs() <= axis.y.abs() && axis.x.abs() <= axis.z.abs() {
         Vec3::new(1.0, 0.0, 0.0)

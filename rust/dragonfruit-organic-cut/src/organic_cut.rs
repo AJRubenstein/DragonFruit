@@ -778,37 +778,49 @@ fn organic_cut_plane(
     let rk = resolve_loop_tenon(&options.cut, 0);
     let mut tenon_kind = crate::tenon::TenonKind::None;
     let mut tenon_detail = String::new();
-    let (part_a, part_b) = if rk.generate {
-        match crate::tenon::frame_from_plane(mesh, plane.normal, plane.offset, rk.at) {
-            Some(frame) => {
-                // `split_by_plane` hands back (+normal side, −normal side), and the
-                // tenon's frame axis IS that +normal — so `first` is part_a already.
-                let tenoned = crate::tenon::apply_tenon_at_frame(
-                    mesh,
-                    part_a,
-                    part_b,
-                    frame,
-                    rk.shape,
-                    rk.swap,
-                    rk.tilt,
-                    rk.width,
-                    rk.depth,
-                    rk.fillet,
-                    rk.tolerance,
-                    0.0,
-                );
-                tenon_kind = tenoned.kind;
-                tenon_detail = tenoned.detail;
-                (tenoned.part_a, tenoned.part_b)
-            }
-            None => {
-                tenon_detail = "No tenon — the plane carves no usable cross-section.".to_string();
-                (part_a, part_b)
-            }
+    let (mut part_a, mut part_b) = (part_a, part_b);
+    if rk.generate {
+        let axis = plane.normal;
+        let (u, v) = crate::tenon::plane_basis(axis);
+        let frames = tenon_frames_per_section(&part_a, &part_b, axis, plane.offset, u, v, rk.at);
+        if frames.is_empty() {
+            tenon_detail = "No tenon — the plane carves no usable cross-section.".to_string();
         }
-    } else {
-        (part_a, part_b)
-    };
+        // One tenon per mating pair. `split_by_plane` hands back (+normal side,
+        // −normal side) and the frame axis IS that +normal, so `first` is part_a.
+        let (mut placed, mut skipped) = (0usize, Vec::new());
+        for frame in &frames {
+            let tenoned = crate::tenon::apply_tenon_at_frame(
+                mesh,
+                part_a,
+                part_b,
+                *frame,
+                rk.shape,
+                rk.swap,
+                rk.tilt,
+                rk.width,
+                rk.depth,
+                rk.fillet,
+                rk.tolerance,
+                0.0,
+            );
+            if tenoned.kind != crate::tenon::TenonKind::None {
+                placed += 1;
+                tenon_kind = tenoned.kind;
+            } else if !tenoned.detail.is_empty() {
+                skipped.push(tenoned.detail.clone());
+            }
+            part_a = tenoned.part_a;
+            part_b = tenoned.part_b;
+        }
+        if !frames.is_empty() && placed < frames.len() {
+            tenon_detail = if placed == 0 {
+                format!("no tenons placed ({})", skipped.join("; "))
+            } else {
+                format!("{placed}/{} tenons placed ({})", frames.len(), skipped.join("; "))
+            };
+        }
+    }
 
     // Hand back every SOLID the plane produced, not two bags of them. A plane
     // through a fork, a pair of legs or a curled tentacle meets the body in
@@ -839,6 +851,134 @@ fn organic_cut_plane(
         part_count: parts.len(),
     };
     Ok(OrganicCutOutcome { parts, report })
+}
+
+/// Every separate cut FACE a side of the plane presents: one `(area, centroid)` per
+/// connected patch of faces lying on the plane.
+///
+/// One tenon per cut face is the point, and the unit has to be the patch rather
+/// than the solid. `plane_section` measures every section at once and hands back a
+/// single centroid for all of them, which on a body the plane meets twice — a fork,
+/// a pair of legs — lands in the air between them: the tenon's clearance probe then
+/// finds no material and the cut comes out with no registration at all, silently.
+/// Nor is one centroid per solid enough: the base of a U is ONE solid carrying TWO
+/// cut faces, and averaging those two lands in the same empty air. Grouping the
+/// on-plane faces into connected patches cannot land outside the material, needs no
+/// ring-chaining, and gives every mating pair its own tenon.
+#[cfg(feature = "manifold")]
+fn cut_face_patches(part: &IndexedMesh, axis: Vec3, offset: f32) -> Vec<(f32, Vec3)> {
+    // A face is ON the plane when all three of its vertices are, to within the
+    // tolerance the boolean itself works to.
+    let eps = 1e-3;
+    let on_plane: Vec<u32> = part
+        .triangles
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| {
+            t.iter()
+                .all(|&i| (part.positions[i as usize].dot(axis) - offset).abs() <= eps)
+        })
+        .map(|(i, _)| i as u32)
+        .collect();
+    if on_plane.is_empty() {
+        return Vec::new();
+    }
+
+    let mut edge_faces: ahash::AHashMap<(u32, u32), Vec<u32>> = ahash::AHashMap::new();
+    for &fi in &on_plane {
+        let t = &part.triangles[fi as usize];
+        for k in 0..3 {
+            let (a, b) = (t[k], t[(k + 1) % 3]);
+            let key = if a < b { (a, b) } else { (b, a) };
+            edge_faces.entry(key).or_default().push(fi);
+        }
+    }
+    let mut neighbours: ahash::AHashMap<u32, Vec<u32>> = ahash::AHashMap::new();
+    for faces in edge_faces.values() {
+        for (i, &f) in faces.iter().enumerate() {
+            for &g in faces.iter().skip(i + 1) {
+                neighbours.entry(f).or_default().push(g);
+                neighbours.entry(g).or_default().push(f);
+            }
+        }
+    }
+
+    let mut seen: ahash::AHashSet<u32> = ahash::AHashSet::new();
+    let mut patches = Vec::new();
+    for &start in &on_plane {
+        if !seen.insert(start) {
+            continue;
+        }
+        let (mut area2, mut centroid) = (0.0f32, Vec3::ZERO);
+        let mut queue = std::collections::VecDeque::from([start]);
+        while let Some(f) = queue.pop_front() {
+            let t = &part.triangles[f as usize];
+            let p = [
+                part.positions[t[0] as usize],
+                part.positions[t[1] as usize],
+                part.positions[t[2] as usize],
+            ];
+            let a2 = p[1].sub(p[0]).cross(p[2].sub(p[0])).length();
+            area2 += a2;
+            centroid = centroid.add(p[0].add(p[1]).add(p[2]).scale(a2 / 3.0));
+            for &n in neighbours.get(&f).map(|v| v.as_slice()).unwrap_or(&[]) {
+                if seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+        if area2 > 1e-9 {
+            patches.push((area2 * 0.5, centroid.scale(1.0 / area2)));
+        }
+    }
+    patches
+}
+
+/// Pair each cut face on one side of the plane with the one it mates on the other,
+/// and give every pair a tenon frame of its own.
+///
+/// `at` keeps its meaning: an explicit anchor picks the ONE pair whose cut face it
+/// sits on, so a user placing the crosshair still gets exactly one tenon, where
+/// they put it.
+#[cfg(feature = "manifold")]
+fn tenon_frames_per_section(
+    part_a: &IndexedMesh,
+    part_b: &IndexedMesh,
+    axis: Vec3,
+    offset: f32,
+    u: Vec3,
+    v: Vec3,
+    at: crate::tenon::TenonAnchor,
+) -> Vec<crate::tenon::TenonFrame> {
+    let a_faces = cut_face_patches(part_a, axis, offset);
+    let b_faces = cut_face_patches(part_b, axis, offset);
+
+    let mut frames: Vec<crate::tenon::TenonFrame> = Vec::new();
+    for (area, centroid) in a_faces {
+        // The mating face is the one at the same place on the plane: a split leaves
+        // the pair coincident.
+        let mated = b_faces
+            .iter()
+            .any(|(_, c)| c.sub(centroid).length() <= area.sqrt().max(0.1));
+        if mated {
+            frames.push(crate::tenon::TenonFrame { anchor: centroid, axis, u, v, cut_area: area });
+        }
+    }
+    match at {
+        Some(p) => {
+            let flat = p.sub(axis.scale(p.dot(axis) - offset));
+            frames
+                .into_iter()
+                .min_by(|x, y| {
+                    let dx = x.anchor.sub(flat).length();
+                    let dy = y.anchor.sub(flat).length();
+                    dx.partial_cmp(&dy).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|f| vec![crate::tenon::TenonFrame { anchor: flat, ..f }])
+                .unwrap_or_default()
+        }
+        None => frames,
+    }
 }
 
 #[cfg(feature = "manifold")]
@@ -1107,6 +1247,45 @@ mod tests {
         let mut sizes: Vec<usize> = outcome.parts.iter().map(|p| p.triangle_count()).collect();
         sizes.sort_unstable();
         assert!(sizes[0] > 0 && sizes[2] > sizes[0], "the base is the biggest of the three: {sizes:?}");
+    }
+
+    // With two sections, the tenon used to be anchored on the centroid of BOTH of
+    // them — a point in the air between the legs — so the clearance probe found no
+    // material and the cut came out with no registration at all, silently. Each
+    // mating pair now gets its own.
+    #[cfg(feature = "manifold")]
+    #[test]
+    fn a_plane_across_two_legs_tenons_each_section() {
+        let mesh = u_shape();
+        let spec = |generate: bool| OrganicCutOptions {
+            cut: OrganicCutSpec {
+                mode: CutMode::Plane,
+                plane: Some(CutPlaneSpec { normal: [0.0, 0.0, 1.0], offset: 15.0 }),
+                generate_tenon: generate,
+                tenon_width_mm: 3.0,
+                tenon_depth_mm: 3.0,
+                tenon_tolerance_mm: 0.1,
+                tenon_anchor: None,
+                ..Default::default()
+            },
+        };
+        let plain = organic_cut(mesh.clone(), &spec(false));
+        let tenoned = organic_cut(mesh, &spec(true));
+
+        assert_eq!(tenoned.report.tenon_kind, "frustum", "{}", tenoned.report.tenon_detail);
+        assert!(
+            tenoned.report.tenon_detail.is_empty(),
+            "both sections should be tenoned: {}",
+            tenoned.report.tenon_detail,
+        );
+        assert_eq!(tenoned.report.part_count, plain.report.part_count, "the tenons must not add solids");
+        let total = |o: &OrganicCutOutcome| o.parts.iter().map(|p| p.triangle_count()).sum::<usize>();
+        assert!(
+            total(&tenoned) > total(&plain),
+            "two tenons and two mortises add geometry: {} vs {}",
+            total(&tenoned),
+            total(&plain),
+        );
     }
 
     // A flat cut used to return `tenon_kind: "none"` unconditionally — the tenon was
