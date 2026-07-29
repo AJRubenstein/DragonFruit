@@ -845,10 +845,26 @@ export function OrganicCutTool({
     onLineHoverChange?.(null);
   }, [onLineHoverChange]);
 
+  /**
+   * Did the press that produced this click START on the seam?
+   *
+   * A click is delivered on release, to whatever is under the pointer THEN. Aim the
+   * tenon with the gizmo while its rings happen to lie over the seam, let go, and
+   * the seam collected a click it never saw the press for — so a waypoint appeared
+   * out of nowhere, mid-way through aiming. Inserting on the seam is a deliberate
+   * act: it takes a press and a release, both here.
+   */
+  const pressStartedOnLine = useRef(false);
+  const handleLinePointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
+    pressStartedOnLine.current = e.button === 0;
+  }, []);
+
   // Left-click on the seam → insert a waypoint at the clicked point.
   const handleLineClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
-      if (!onLineClick) return;
+      const started = pressStartedOnLine.current;
+      pressStartedOnLine.current = false;
+      if (!onLineClick || !started) return;
       if (e.button !== undefined && e.button !== 0) return; // left only
       if (draggingIndex !== null) return;
       e.stopPropagation();
@@ -892,6 +908,7 @@ export function OrganicCutTool({
               onPointerOver={handleLinePointerOver}
               onPointerMove={handleLinePointerMove}
               onPointerOut={handleLinePointerOut}
+              onPointerDown={handleLinePointerDown}
               onClick={handleLineClick}
             >
               <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
