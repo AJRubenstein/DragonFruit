@@ -144,6 +144,18 @@ function withTenon(ps: OrganicCutPanelState, tenon: LoopTenonSettings): OrganicC
   return { ...ps, ...tenon };
 }
 
+/**
+ * A reason from the engine, as a sentence. The engine's strings are written for a
+ * person, but this is the last stop before the screen and a stray lowercase start
+ * or missing full stop is exactly the sort of thing that survives a refactor.
+ */
+function asSentence(text: string): string {
+  const t = text.trim();
+  if (!t) return t;
+  const capitalised = t[0].toUpperCase() + t.slice(1);
+  return /[.!?]$/.test(capitalised) ? capitalised : `${capitalised}.`;
+}
+
 /** Value-equality of two anchors — a place on the cut face, or "wherever is natural". */
 function sameAnchor(
   a: [number, number, number] | null,
@@ -1388,7 +1400,7 @@ export function useOrganicCutSession({
         // saying "I did not touch your model, and here is what stopped me".
         setCutError(
           result.report.engine === 'noop'
-            ? result.report.detail || 'The cut could not be made.'
+            ? asSentence(result.report.detail || 'The cut could not be made')
             : null,
         );
 

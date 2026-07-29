@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { Loader2, RotateCcw, TriangleAlert } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 import type { OrganicCutMode } from './types';
@@ -106,9 +106,10 @@ export interface OrganicCutPanelState {
    */
   tenonSwapSides: boolean;
   /**
-   * Tenon tilt (radians): how far the tenon leans off the cut normal. Driven by the
-   * in-viewport aim gizmo (drag the tenon's tip). The base stays glued flat to the
-   * cut face; the body shears to lean. 0 = straight out.
+   * Tenon tilt (radians): how far the tenon leans off the cut normal, up to 45°.
+   * Driven by the in-viewport aim gizmo (the green ring). The body is rigid — it
+   * turns about its base and keeps its size — so the cap ends up at depth·cos(lean)
+   * above the cut face. 0 = straight out.
    */
   tenonTiltRad: number;
   /** Tenon roll (radians): spin about the tenon's own axis. Driven by the roll gizmo. */
@@ -966,14 +967,16 @@ export function OrganicCutPanel({
               the whole model that nobody asked for. */}
           {cutError && (
             <div
-              className="mb-2 rounded border px-2 py-1.5 text-[10px] leading-snug"
+              role="alert"
+              className="mb-2 flex items-start gap-2 rounded border px-2.5 py-2 text-[11px] leading-snug"
               style={{
-                borderColor: 'color-mix(in srgb, #b3121b, var(--border-subtle) 40%)',
-                background: 'color-mix(in srgb, #b3121b, var(--surface-1) 88%)',
+                borderColor: 'color-mix(in srgb, #b3121b, var(--border-subtle) 25%)',
+                background: 'color-mix(in srgb, #b3121b, var(--surface-1) 80%)',
                 color: 'var(--text-strong)',
               }}
             >
-              {cutError}
+              <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" style={{ color: '#ff6b6b' }} />
+              <span>{cutError}</span>
             </div>
           )}
           <div className="flex gap-2">

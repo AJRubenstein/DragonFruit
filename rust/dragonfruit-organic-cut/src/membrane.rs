@@ -1683,14 +1683,18 @@ pub fn contour_split(
     let component_count = islands.len();
     if component_count < 2 {
         return Err(format!(
-            "contour cutter did not sever the model (got {component_count} component) — \
-             the loop likely didn't wrap all the way through the body"
+            "The seam does not go all the way around the part. It runs across the \
+             surface without closing through the body, so nothing came free (the cut \
+             left {component_count} piece). Move the waypoints so the loop wraps right \
+             round what you want to separate."
         ));
     }
     let (part_a, part_b) = split_into_two_sides(&membrane, islands).ok_or_else(|| {
         format!(
-            "contour cut produced {component_count} islands but they all fell on ONE side of \
-             the membrane (the loop didn't pass through the body)"
+            "The seam does not go all the way around the part. The cut broke the \
+             surface into {component_count} pieces, but they all ended up on the same \
+             side of the cut face, so there is nothing to separate. Move the waypoints \
+             so the loop wraps right round what you want to free."
         )
     })?;
 

@@ -425,7 +425,7 @@ pub fn organic_cut(mesh: IndexedMesh, options: &OrganicCutOptions) -> OrganicCut
                     // seam and the tenon left stuck to whatever scrap came off.
                     //
                     // So refuse, hand back the reason, and leave the mesh alone.
-                    return noop_outcome(mesh, format!("contour cut failed: {reason}"));
+                    return noop_outcome(mesh, reason);
                 }
             }
         }
@@ -1271,8 +1271,8 @@ mod tests {
             "a contour cut that cannot sever refuses; it does not become a plane cut",
         );
         assert!(
-            outcome.report.detail.contains("contour cut failed"),
-            "and it says why: {}",
+            outcome.report.detail.contains("seam does not go all the way around"),
+            "and it says why, in words the user can act on: {}",
             outcome.report.detail,
         );
         assert!(outcome.parts.is_empty(), "a refused cut hands back no parts to commit");
