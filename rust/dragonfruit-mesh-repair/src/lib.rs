@@ -21,7 +21,8 @@ pub use crate::hollowing::{
     HollowSession, OpenFace,
 };
 pub use crate::repair::{
-    classify_support_split, repair, ClassificationOutcome, RepairOptions, RepairOutcome,
+    classify_support_split, decimate_sections_to_budget, repair, ClassificationOutcome, RepairOptions,
+    RepairOutcome, SectionDecimationOutcome,
 };
 pub use crate::report::MeshHealthReport;
 pub use crate::stl_budget::{compute_triangle_budget, TriangleBudget};

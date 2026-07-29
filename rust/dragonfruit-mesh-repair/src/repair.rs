@@ -3140,3 +3140,92 @@ pub fn decimate_indexed_to_budget(mesh: IndexedMesh, budget: &TriangleBudget) ->
         achieved_error: final_error,
     }
 }
+
+pub struct SectionDecimationOutcome {
+    pub mesh: IndexedMesh,
+    pub model_triangle_count: usize,
+    pub achieved_error: f32,
+}
+
+pub fn decimate_sections_to_budget(mesh: IndexedMesh, model_tri_count: usize, budget: &TriangleBudget) -> SectionDecimationOutcome {
+    if !budget.is_decimated || mesh.triangles.len() <= budget.budget_tris {
+        return SectionDecimationOutcome { mesh, model_triangle_count: model_tri_count, achieved_error: 0.0 };
+    }
+
+    if model_tri_count == 0 || model_tri_count >= mesh.triangles.len() {
+        let out = decimate_indexed_to_budget(mesh, budget);
+        let out_tris = out.mesh.triangles.len();
+        return SectionDecimationOutcome {
+            mesh: out.mesh,
+            model_triangle_count: model_tri_count.min(out_tris),
+            achieved_error: out.achieved_error,
+        };
+    }
+
+    let total_tris = mesh.triangles.len();
+    let model_budget = ((budget.budget_tris as f64) * (model_tri_count as f64) / (total_tris as f64)) as usize;
+    let support_budget = budget.budget_tris.saturating_sub(model_budget);
+
+    // Section 0
+    let mesh0 = IndexedMesh {
+        positions: mesh.positions.clone(),
+        triangles: mesh.triangles[0..model_tri_count].to_vec(),
+    };
+    let mut budget0 = budget.clone();
+    budget0.budget_tris = model_budget;
+    budget0.soft_ceiling_tris = model_budget;
+    let out0 = decimate_indexed_to_budget(mesh0, &budget0);
+
+    // Section 1
+    let mesh1 = IndexedMesh {
+        positions: mesh.positions.clone(),
+        triangles: mesh.triangles[model_tri_count..].to_vec(),
+    };
+    let mut budget1 = budget.clone();
+    budget1.budget_tris = support_budget;
+    budget1.soft_ceiling_tris = support_budget;
+    let out1 = decimate_indexed_to_budget(mesh1, &budget1);
+
+    let mut concat_tris = out0.mesh.triangles.clone();
+    concat_tris.extend_from_slice(&out1.mesh.triangles);
+
+    SectionDecimationOutcome {
+        mesh: IndexedMesh {
+            positions: mesh.positions,
+            triangles: concat_tris,
+        },
+        model_triangle_count: out0.mesh.triangles.len(),
+        achieved_error: out0.achieved_error.max(out1.achieved_error),
+    }
+}
+
+#[cfg(test)]
+mod section_decimation_tests {
+    use super::*;
+    use crate::core::mesh::Vec3;
+
+    #[test]
+    fn test_decimate_sections() {
+        let mut positions = vec![];
+        let mut triangles = vec![];
+        for i in 0..100 {
+            positions.push(Vec3::new(i as f32, 0.0, 0.0));
+            positions.push(Vec3::new(0.0, i as f32, 0.0));
+            positions.push(Vec3::new(0.0, 0.0, i as f32));
+            let base = i * 3;
+            triangles.push([base, base + 1, base + 2]);
+        }
+        let mesh = IndexedMesh { positions, triangles };
+        let mut budget = TriangleBudget {
+            is_decimated: true,
+            budget_tris: 50,
+            soft_ceiling_tris: 50,
+            target_error: 0.1,
+            bbox_diagonal_mm: 100.0,
+        };
+        
+        let out = decimate_sections_to_budget(mesh, 60, &budget);
+        assert_eq!(out.model_triangle_count, 60);
+        assert!(out.mesh.triangles.len() <= 100);
+    }
+}

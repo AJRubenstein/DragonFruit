@@ -868,7 +868,10 @@ pub async fn load_stl_file(file_path: String) -> Result<Response, String> {
             let mesh = io::stl::load(path)
                 .map_err(|e| format!("Failed to load STL '{}': {e}", file_path))?;
             
-            let outcome = dragonfruit_mesh_repair::repair::decimate_indexed_to_budget(mesh, &budget);
+            let classify_outcome = dragonfruit_mesh_repair::repair::classify_support_split(mesh, &dragonfruit_mesh_repair::RepairOptions::default());
+            let model_tri_count = classify_outcome.report.model_triangle_count.unwrap_or(classify_outcome.mesh.triangles.len());
+            
+            let outcome = dragonfruit_mesh_repair::repair::decimate_sections_to_budget(classify_outcome.mesh, model_tri_count, &budget);
             let preview = outcome.mesh;
 
             log::info!(
@@ -878,7 +881,7 @@ pub async fn load_stl_file(file_path: String) -> Result<Response, String> {
                 budget.budget_tris,
                 outcome.achieved_error
             );
-            return encode_stl_response(&preview, triangle_count as u32, true).map(Response::new);
+            return encode_stl_response(&preview, triangle_count as u32, true, Some(outcome.model_triangle_count as u32)).map(Response::new);
         }
     }
     if file_size > MAX_NATIVE_ASCII_STL_BYTES && header.starts_with(b"solid") {
@@ -894,7 +897,7 @@ pub async fn load_stl_file(file_path: String) -> Result<Response, String> {
         io::stl::load(path).map_err(|e| format!("Failed to load STL '{}': {e}", file_path))?;
 
     let tri_count = mesh.triangles.len();
-    encode_stl_response(&mesh, tri_count as u32, false).map(Response::new)
+    encode_stl_response(&mesh, tri_count as u32, false, None).map(Response::new)
 }
 
 const STL_RESPONSE_MAGIC: &[u8; 4] = b"DFST";
@@ -905,6 +908,7 @@ fn encode_stl_response(
     mesh: &IndexedMesh,
     original_triangle_count: u32,
     is_preview: bool,
+    model_triangle_count: Option<u32>,
 ) -> Result<Vec<u8>, String> {
     let tri_count = mesh.triangles.len();
     let positions_len = tri_count * 9 * std::mem::size_of::<f32>();
@@ -932,6 +936,9 @@ fn encode_stl_response(
     result.extend_from_slice(&original_triangle_count.to_le_bytes());
     result.extend_from_slice(&(tri_count as u32).to_le_bytes());
     result.resize(response_len, 0);
+    if let Some(mtc) = model_triangle_count {
+        result[32..36].copy_from_slice(&mtc.to_le_bytes());
+    }
     let (position_output, normal_output) =
         result[STL_RESPONSE_HEADER_BYTES..].split_at_mut(positions_len);
     position_output
