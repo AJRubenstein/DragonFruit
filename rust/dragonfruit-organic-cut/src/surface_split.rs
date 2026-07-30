@@ -17,6 +17,15 @@
 //! - Retriangulate only the faces the seam crosses, with the chords as constraints,
 //!   so every other triangle of the model is left exactly as it was.
 //!
+//! Known gap: on a real, dirty model a handful of seams (8 of the 32 captured)
+//! leave one or two edges used by four triangles instead of two, always where the
+//! seam grazes a pair of faces that sit on the same two edges. Measured and ruled
+//! out: dropping needle triangles by relative area (makes it worse — a needle is
+//! still part of the tiling), cutting a chord only once across faces, and dropping
+//! repeated triangles (worse again). The faces involved come out of the walk in
+//! pairs, so the next place to look is the walk stepping into a face it has already
+//! left.
+//!
 //! Known gap: a seam that lies exactly ALONG existing edges — a ring at precisely a
 //! mesh's own grid line, which a hand-drawn seam never is, but a machine-made one
 //! could be — walks from vertex to vertex rather than crossing anything, and the
@@ -41,6 +50,9 @@ pub struct SplitSurface {
     pub piece_of_face: Vec<u32>,
     /// The seam as vertices of `mesh`, in order round the loop.
     pub seam_vertices: Vec<u32>,
+    /// Which face of the INPUT mesh each face of `mesh` came from. A face the seam
+    /// never touched maps to itself.
+    pub source_face: Vec<u32>,
 }
 
 /// Cut `mesh`'s surface along one seam (a closed polyline lying on it).
@@ -63,6 +75,7 @@ pub fn split_along_seams(mesh: &IndexedMesh, seams: &[Vec<Vec3>]) -> Result<Spli
     let mut current = mesh.clone();
     let mut seam_edges: AHashSet<(u32, u32)> = AHashSet::new();
     let mut seam_vertices: Vec<u32> = Vec::new();
+    let mut source_face: Vec<u32> = (0..mesh.triangles.len() as u32).collect();
 
     for seam in seams.iter().filter(|s| s.len() >= 3) {
         let dense = densify(seam, median_edge_length(&current) * 0.25);
@@ -76,10 +89,11 @@ pub fn split_along_seams(mesh: &IndexedMesh, seams: &[Vec<Vec3>]) -> Result<Spli
         current = cut.mesh;
         seam_edges.extend(cut.seam_edges);
         seam_vertices.extend(cut.seam_vertices);
+        source_face = cut.source_face.iter().map(|&f| source_face[f as usize]).collect();
     }
 
     let piece_of_face = pieces(&current, &seam_edges);
-    Ok(SplitSurface { mesh: current, piece_of_face, seam_vertices })
+    Ok(SplitSurface { mesh: current, piece_of_face, seam_vertices, source_face })
 }
 
 // ---------------------------------------------------------------------------
@@ -355,6 +369,7 @@ struct CutFaces {
     mesh: IndexedMesh,
     seam_edges: AHashSet<(u32, u32)>,
     seam_vertices: Vec<u32>,
+    source_face: Vec<u32>,
 }
 
 fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFaces, String> {
@@ -393,11 +408,23 @@ fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFace
     // one crossing and leaves at the next, so consecutive crossings that share a
     // face are the two ends of one chord.
     let mut chords: AHashMap<u32, Vec<(u32, u32)>> = AHashMap::new();
+    let mut seam_edges_on_edges: Vec<(u32, u32)> = Vec::new();
     for (i, c) in crossings.iter().enumerate() {
         let j = (i + 1) % crossings.len();
-        if c.to == crossings[j].from && vertex_of[i] != vertex_of[j] {
-            chords.entry(c.to).or_default().push((vertex_of[i], vertex_of[j]));
+        if c.to != crossings[j].from || vertex_of[i] == vertex_of[j] {
+            continue;
         }
+        // In and out through the SAME edge: the seam only grazed this face, and a
+        // "chord" between those two crossings runs ALONG the edge instead of across
+        // the face. Cutting along it splits nothing and leaves a needle of no area
+        // — one in each of the two faces that share the edge, which is what turns
+        // that edge into one used four times. The wall the seam needs there is the
+        // edge itself, and the crossings have already split it.
+        if c.edge == crossings[j].edge {
+            seam_edges_on_edges.push((vertex_of[i], vertex_of[j]));
+            continue;
+        }
+        chords.entry(c.to).or_default().push((vertex_of[i], vertex_of[j]));
     }
     // Only the vertices we MADE split an edge; the ones snapped to a corner were
     // already there and must not be inserted into a face's boundary twice.
@@ -410,7 +437,13 @@ fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFace
     // model away from the cut is untouched, vertex for vertex.
     let touched: AHashSet<u32> = chords.keys().copied().collect();
     let mut triangles: Vec<[u32; 3]> = Vec::with_capacity(mesh.triangles.len() + crossings.len() * 2);
+    let mut source_face: Vec<u32> = Vec::with_capacity(triangles.capacity());
     let mut seam_edges: AHashSet<(u32, u32)> = AHashSet::new();
+    // Where the seam grazed an edge, the wall is the stretch of that edge between
+    // the two crossings — including any crossing that landed between them.
+    for (x, y) in seam_edges_on_edges {
+        seam_edges.insert(edge_key(x, y));
+    }
 
     for (fi, tri) in mesh.triangles.iter().enumerate() {
         let fi = fi as u32;
@@ -418,8 +451,11 @@ fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFace
             // A face with crossings but no chord still needs its edges split, or the
             // neighbour that WAS rebuilt leaves a T-junction against it.
             if face_has_split_edge(tri, &on_edge) {
-                triangles.extend(retriangulate_face(&positions, tri, &[], &on_edge)?);
+                let out = retriangulate_face(&positions, tri, &[], &on_edge)?;
+                source_face.extend(std::iter::repeat_n(fi, out.len()));
+                triangles.extend(out);
             } else {
+                source_face.push(fi);
                 triangles.push(*tri);
             }
             continue;
@@ -428,13 +464,16 @@ fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFace
         for &(a, b) in face_chords {
             seam_edges.insert(edge_key(a, b));
         }
-        triangles.extend(retriangulate_face(&positions, tri, face_chords, &on_edge)?);
+        let out = retriangulate_face(&positions, tri, face_chords, &on_edge)?;
+        source_face.extend(std::iter::repeat_n(fi, out.len()));
+        triangles.extend(out);
     }
 
     Ok(CutFaces {
         mesh: IndexedMesh { positions, triangles },
         seam_edges,
         seam_vertices: vertex_of,
+        source_face,
     })
 }
 
@@ -463,6 +502,7 @@ fn retriangulate_face(
     if normal.length() < 1e-18 {
         return Ok(vec![*tri]); // degenerate face: leave it be
     }
+
 
     // The face's boundary, walked corner to corner, with every crossing that sits
     // on each edge inserted in order along it. The neighbour across an edge walks
@@ -537,6 +577,20 @@ fn retriangulate_face(
             }
             // Wind it the way the face pointed.
             out.push(if n.dot(normal) >= 0.0 { [x, y, z] } else { [x, z, y] });
+        }
+    }
+    if std::env::var_os("DF_SPLIT_DEBUG").is_some() {
+        let area = |x: u32, y: u32, z: u32| {
+            let (p, q, r) = (positions[x as usize], positions[y as usize], positions[z as usize]);
+            q.sub(p).cross(r.sub(p)).length() * 0.5
+        };
+        let whole = area(tri[0], tri[1], tri[2]);
+        let sum: f32 = out.iter().map(|t| area(t[0], t[1], t[2])).sum();
+        if (sum - whole).abs() > whole * 0.01 {
+            eprintln!(
+                "[trozos] cara {tri:?} área {whole:.5} -> {sum:.5} con {} cuerdas {:?}",
+                chords.len(), chords
+            );
         }
     }
     Ok(out)
@@ -690,6 +744,26 @@ mod tests {
         assert_eq!(open_edges(&split.mesh), 0, "still watertight after two cuts");
         let pieces: AHashSet<u32> = split.piece_of_face.iter().copied().collect();
         assert_eq!(pieces.len(), 2, "two rings free the length of tube between them: {pieces:?}");
+    }
+
+    // A seam that wanders instead of running straight crosses some faces more than
+    // once, which is where a face gets several chords and the rebuild has to keep
+    // its pieces from overlapping.
+    #[test]
+    fn a_wandering_seam_still_leaves_the_surface_closed() {
+        let model = torus(10.0, 3.0, 64, 32);
+        let seam: Vec<Vec3> = (0..240)
+            .map(|k| {
+                let f = k as f32 / 240.0;
+                let v = f * std::f32::consts::TAU;
+                // Wobble round the torus as it goes round the tube.
+                let u = 0.3 + 0.25 * (v * 5.0).sin();
+                let r = 10.0 + 3.0 * v.cos();
+                Vec3::new(r * u.cos(), r * u.sin(), 3.0 * v.sin())
+            })
+            .collect();
+        let split = split_along_seam(&model, &seam).expect("a wandering seam still cuts");
+        assert_eq!(open_edges(&split.mesh), 0, "cutting the surface must not open it");
     }
 
     #[test]

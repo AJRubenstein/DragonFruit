@@ -53,6 +53,17 @@ fn distance_to_surface(bvh: &dragonfruit_mesh_core::bvh::Bvh, mesh: &IndexedMesh
 }
 
 /// Edges used by anything other than two faces — a mesh with none is closed.
+fn open_edges_of(mesh: &IndexedMesh) -> std::collections::HashSet<(u32, u32)> {
+    let mut counts: std::collections::HashMap<(u32, u32), usize> = std::collections::HashMap::new();
+    for t in &mesh.triangles {
+        for k in 0..3 {
+            let (a, b) = (t[k], t[(k + 1) % 3]);
+            *counts.entry(if a < b { (a, b) } else { (b, a) }).or_default() += 1;
+        }
+    }
+    counts.into_iter().filter(|(_, c)| *c != 2).map(|(e, _)| e).collect()
+}
+
 fn open_edge_count(mesh: &IndexedMesh) -> usize {
     let mut counts: std::collections::HashMap<(u32, u32), usize> = std::collections::HashMap::new();
     for t in &mesh.triangles {
@@ -164,12 +175,31 @@ fn main() -> Result<(), String> {
             let cut_txt = match &cut {
                 Ok(s) => {
                     let open = open_edge_count(&s.mesh);
+                    let before = open_edge_count(&mesh);
+                    if std::env::var_os("DF_SPLIT_DEBUG").is_some() && open > before {
+                        let was: std::collections::HashSet<(u32, u32)> = open_edges_of(&mesh);
+                        for e in open_edges_of(&s.mesh).difference(&was) {
+                            let p = s.mesh.positions[e.0 as usize];
+                            let users: Vec<u32> = s.mesh.triangles.iter().enumerate()
+                                .filter(|(_, t)| (0..3).any(|k| {
+                                    let (a, b) = (t[k], t[(k + 1) % 3]);
+                                    (if a < b { (a, b) } else { (b, a) }) == *e
+                                }))
+                                .map(|(ti, _)| s.source_face[ti])
+                                .collect();
+                            let uses = users.len();
+                            eprintln!(
+                                "[leak] {stem}/{i} edge {e:?} used x{uses} by faces {users:?} at ({:.3},{:.3},{:.3})",
+                                p.x, p.y, p.z
+                            );
+                        }
+                    }
                     let sides: std::collections::BTreeSet<u32> =
                         s.piece_of_face.iter().copied().collect();
                     if open == 0 {
                         split_ok += 1;
                     }
-                    format!("{} piezas, {open} abiertas ({cut_ms}ms)", sides.len())
+                    format!("{} piezas, abiertas {before} -> {open} ({cut_ms}ms)", sides.len())
                 }
                 Err(e) => format!("— {} ({cut_ms}ms)", e.chars().take(38).collect::<String>()),
             };
