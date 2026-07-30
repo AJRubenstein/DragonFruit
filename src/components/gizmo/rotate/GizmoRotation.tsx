@@ -5,7 +5,6 @@ import * as THREE from 'three';
 import { ThreeEvent, useThree, useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import { GIZMO_COLORS, GIZMO_SIZES, GIZMO_LIGHTING } from '../constants';
-import { snapAngle, SNAP_COARSE, SNAP_FINE, SNAP_STORAGE_KEY } from './snapRotation';
 import type { GizmoAxis } from '../types';
 import {
   getCachedConeGeometry,
@@ -103,10 +102,8 @@ export function GizmoRotation({
   const billboardRotationRef = useRef<number>(0);
   const lastMouseAngle = useRef<number>(0);
   const shouldFlipRef = useRef(false);
-  // Snap rotation refs (object-space)
-  const rawAccumulatedAngleRef = useRef<number>(0);
-  const lastSnappedAngleRef = useRef<number>(0);
-  const prevSnapIncrementRef = useRef<number | null>(null);
+  /** Object-space rotation accumulated by the current drag, for the readout. */
+  const accumulatedAngleRef = useRef<number>(0);
   // Callback refs to stabilize useEffect deps (prevents effect churn during drag)
   const onDragRef = useRef(onDrag);
   const onDragEndRef = useRef(onDragEnd);
@@ -298,10 +295,7 @@ export function GizmoRotation({
     if (allowed === false) {
       return;
     }
-    // Initialize snap refs at drag start to avoid spurious first-frame transition
-    rawAccumulatedAngleRef.current = 0;
-    lastSnappedAngleRef.current = 0;
-    prevSnapIncrementRef.current = null;
+    accumulatedAngleRef.current = 0;
     window.dispatchEvent(new CustomEvent('dragonfruit:rotation-hint', { detail: { visible: false } }));
     setIsDragging(true);
   };
@@ -359,35 +353,8 @@ export function GizmoRotation({
       const objectSignFactor = -flipMult;
       const axisSign = -1;
 
-      const rawObjectDelta = deltaAngle * objectSignFactor;
-      rawAccumulatedAngleRef.current += rawObjectDelta;
-
-      // Determine snap state from modifier keys or persistent toggle
-      let snapToggled = false;
-      try { snapToggled = localStorage.getItem(SNAP_STORAGE_KEY) === 'true'; } catch {}
-      const isSnapActive = e.metaKey || e.ctrlKey || snapToggled;
-      const currentIncrement = isSnapActive
-        ? (e.shiftKey ? SNAP_FINE : SNAP_COARSE)
-        : null;
-
-      // Reset accumulated on any transition (free↔snap, coarse↔fine)
-      // to prevent grid-misalignment jumps
-      if (currentIncrement !== prevSnapIncrementRef.current) {
-        rawAccumulatedAngleRef.current = lastSnappedAngleRef.current;
-      }
-      prevSnapIncrementRef.current = currentIncrement;
-
-      let emittedObjectDelta: number;
-      if (currentIncrement !== null) {
-        // Snap mode: quantize accumulated angle, emit difference
-        const snappedAngle = snapAngle(rawAccumulatedAngleRef.current, currentIncrement);
-        emittedObjectDelta = snappedAngle - lastSnappedAngleRef.current;
-        lastSnappedAngleRef.current = snappedAngle;
-      } else {
-        // Free rotation: emit raw delta
-        emittedObjectDelta = rawObjectDelta;
-        lastSnappedAngleRef.current += rawObjectDelta;
-      }
+      const emittedObjectDelta = deltaAngle * objectSignFactor;
+      accumulatedAngleRef.current += emittedObjectDelta;
 
       // Visual delta = objectDelta * axisSign. The model applies emitted
       // object deltas with the opposite sign, so the handle arc mirrors that
@@ -408,7 +375,7 @@ export function GizmoRotation({
       // Parent applies object rotation with -angle, so mirror that sign here so
       // the readout matches Transform panel values and perceived rotation direction.
       window.dispatchEvent(new CustomEvent('dragonfruit:snap-angle', {
-        detail: { active: true, angle: -lastSnappedAngleRef.current, axis },
+        detail: { active: true, angle: -accumulatedAngleRef.current, axis },
       }));
 
       lastMouseAngle.current = currentMouseAngle;

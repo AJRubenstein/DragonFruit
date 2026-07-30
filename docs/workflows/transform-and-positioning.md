@@ -27,7 +27,6 @@ Quick actions:
 ## 3) Rotate
 
 - Edit X/Y/Z angles directly.
-- Use **Angle-Snap** toggle for snapped rotation behavior.
 - Use **Reset Rotation** when needed.
 
 ## 4) Scale
