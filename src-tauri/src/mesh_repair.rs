@@ -900,6 +900,21 @@ pub async fn load_stl_file(file_path: String) -> Result<Response, String> {
     encode_stl_response(&mesh, tri_count as u32, false, None).map(Response::new)
 }
 
+/// DragonFruit Streaming Transfer (DFST) Binary IPC Protocol Specification:
+/// Header Length: 64 Bytes Total (Single header at index 0 per STL payload)
+///
+/// Byte Offsets:
+///   0 ..  3 : ASCII Magic "DFST" (0x44465354)
+///   4 ..  7 : Flags u32 (Bit 0: IS_PREVIEW)
+///   8 .. 11 : Original Input Triangle Count (u32 LE)
+///  12 .. 15 : Output Preview Triangle Count (u32 LE)
+///  16 .. 31 : Reserved / Bounding Box Extents (16 bytes)
+///  32 .. 35 : Model Section Triangle Count / Boundary Offset (u32 LE)
+///  36 .. 63 : Reserved Metadata Padding (28 bytes)
+///
+/// Payload (starts at Byte 64):
+///   64 .. 64 + (previewTriangleCount * 36) : Positions (Float32Array, 9 floats per triangle)
+///   64 + (previewTriangleCount * 36) .. End : Normals (Float32Array, 9 floats per triangle)
 const STL_RESPONSE_MAGIC: &[u8; 4] = b"DFST";
 const STL_RESPONSE_HEADER_BYTES: usize = 64;
 const STL_RESPONSE_FLAG_PREVIEW: u32 = 1;

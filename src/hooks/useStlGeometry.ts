@@ -731,14 +731,33 @@ type NativeStlLoadResult = {
   isPreview: boolean;
 };
 
+/**
+ * DragonFruit Streaming Transfer (DFST) Binary IPC Protocol Specification:
+ * Header Length: 64 Bytes Total (Single header at index 0 per STL payload)
+ * 
+ * Byte Offsets:
+ *   0 ..  3 : ASCII Magic "DFST" (0x44465354)
+ *   4 ..  7 : Flags u32 (Bit 0: IS_PREVIEW)
+ *   8 .. 11 : Original Input Triangle Count (u32 LE)
+ *  12 .. 15 : Output Preview Triangle Count (u32 LE)
+ *  16 .. 31 : Reserved / Bounding Box Extents (16 bytes)
+ *  32 .. 35 : Model Section Triangle Count / Boundary Offset (u32 LE)
+ *  36 .. 63 : Reserved Metadata Padding (28 bytes)
+ * 
+ * Payload (starts at Byte 64):
+ *   64 .. 64 + (previewTriangleCount * 36) : Positions (Float32Array, 9 floats per triangle)
+ *   64 + (previewTriangleCount * 36) .. End : Normals (Float32Array, 9 floats per triangle)
+ */
+const STL_RESPONSE_HEADER_BYTES = 64;
+
 async function loadStlViaTauri(filePath: string): Promise<NativeStlLoadResult | null> {
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     const bytes = await invoke<ArrayBuffer>('load_stl_file', { filePath });
     if (!bytes || bytes.byteLength === 0) return null;
 
-    if (bytes.byteLength < 16) return null;
-    const header = new DataView(bytes, 0, 16);
+    if (bytes.byteLength < STL_RESPONSE_HEADER_BYTES) return null;
+    const header = new DataView(bytes, 0, STL_RESPONSE_HEADER_BYTES);
     const hasMagic = header.getUint8(0) === 0x44
       && header.getUint8(1) === 0x46
       && header.getUint8(2) === 0x53
@@ -748,15 +767,18 @@ async function loadStlViaTauri(filePath: string): Promise<NativeStlLoadResult | 
     const flags = header.getUint32(4, true);
     const originalTriangleCount = header.getUint32(8, true);
     const previewTriangleCount = header.getUint32(12, true);
-    const expectedBytes = 16 + previewTriangleCount * 18 * Float32Array.BYTES_PER_ELEMENT;
+    const modelTriangleCount = header.getUint32(32, true);
+
+    const triangleBytes = previewTriangleCount * 18 * Float32Array.BYTES_PER_ELEMENT;
+    const expectedBytes = STL_RESPONSE_HEADER_BYTES + triangleBytes;
     if (previewTriangleCount === 0 || bytes.byteLength !== expectedBytes) {
       throw new Error('Native STL loader returned a truncated response.');
     }
 
-    const positions = new Float32Array(bytes, 16, previewTriangleCount * 9);
+    const positions = new Float32Array(bytes, STL_RESPONSE_HEADER_BYTES, previewTriangleCount * 9);
     const normals = new Float32Array(
       bytes,
-      16 + previewTriangleCount * 9 * Float32Array.BYTES_PER_ELEMENT,
+      STL_RESPONSE_HEADER_BYTES + previewTriangleCount * 9 * Float32Array.BYTES_PER_ELEMENT,
       previewTriangleCount * 9,
     );
 
