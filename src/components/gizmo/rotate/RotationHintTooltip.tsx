@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MouseTooltip } from '@/components/ui/MouseTooltip';
 
-/** Cursor-following tooltip shown on rotation ring hover. */
+/** Cursor-following tooltip shown on rotation ring hover, describing the dial. */
 export function RotationHintTooltip() {
   const [visible, setVisible] = useState(false);
 
@@ -25,6 +25,9 @@ export function RotationHintTooltip() {
         }}
       >
         <div>Drag to rotate</div>
+        <div className="mt-0.5 opacity-70">
+          Dial marks pull at 5° / 10° / 45°
+        </div>
       </div>
     </MouseTooltip>
   );
