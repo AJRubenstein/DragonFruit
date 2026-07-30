@@ -160,6 +160,14 @@ export function GizmoRotation({
   const [heldMark, setHeldMark] = useState<DialSnapTarget | null>(null);
   /** Screen position of the press, for the click slop. */
   const pressPointRef = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * Mirror of isDragging for the pointer handlers.
+   *
+   * A ref, not the state: these are R3F handlers firing mid-gesture, and the
+   * hint has to be suppressed by what is true right now rather than by what the
+   * last render captured.
+   */
+  const isDraggingRef = useRef(false);
   // Callback refs to stabilize useEffect deps (prevents effect churn during drag)
   const onDragRef = useRef(onDrag);
   const onDragEndRef = useRef(onDragEnd);
@@ -334,6 +342,7 @@ export function GizmoRotation({
     setHeldMark(zeroHold);
     pressPointRef.current = { x: e.clientX, y: e.clientY };
 
+    isDraggingRef.current = true;
     window.dispatchEvent(new CustomEvent('dragonfruit:rotation-hint', { detail: { visible: false } }));
     setIsDragging(true);
   };
@@ -342,6 +351,10 @@ export function GizmoRotation({
     if (!interactionsEnabled) return;
     e.stopPropagation();
     onPointerEnter();
+    // The handle rides the sweep, so it keeps arriving under the pointer and
+    // re-firing this while the gesture is running. Announcing "drag to rotate"
+    // on top of the dial you are already dragging is pure noise.
+    if (isDraggingRef.current) return;
     window.dispatchEvent(new CustomEvent('dragonfruit:rotation-hint', { detail: { visible: true, axis } }));
   };
 
@@ -436,6 +449,7 @@ export function GizmoRotation({
     const handleGlobalPointerUp = () => {
       // Remove pointermove synchronously so it can't re-fire active:true before React re-renders
       window.removeEventListener('pointermove', handleGlobalPointerMove);
+      isDraggingRef.current = false;
       setIsDragging(false);
       setDialZero(null);
       setHeldMark(null);
