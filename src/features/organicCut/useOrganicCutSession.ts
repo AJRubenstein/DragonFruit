@@ -666,6 +666,11 @@ export function useOrganicCutSession({
     if (!wasDragging && isDraggingPoint) {
       flushEditRun();
       dragBaselineRef.current = { loops: loopsRef.current, active: activeLoopIndexRef.current };
+      // The preview is too heavy to rebuild on every pointer move, so the last one
+      // stays up for the drag. The TENON cannot: it is drawn where the cut face
+      // used to be, and as the seam moves out from under it, it is left standing in
+      // mid-air. Better nothing than a tenon pointing at a place that has moved.
+      setTenonPreview(null);
       return;
     }
     if (!wasDragging || isDraggingPoint) return;
