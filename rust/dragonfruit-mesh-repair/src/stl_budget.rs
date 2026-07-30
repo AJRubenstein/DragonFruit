@@ -12,6 +12,8 @@ pub struct TriangleBudget {
     pub is_decimated: bool,
     /// Model bounding box diagonal in mm.
     pub bbox_diagonal_mm: f64,
+    /// Whether to process Section 0 and Section 1 separately targeting the same triangle budget using lockstep error tiers.
+    pub enable_per_section_decimation: bool,
 }
 
 pub fn compute_triangle_budget(
@@ -36,6 +38,7 @@ pub fn compute_triangle_budget(
             soft_ceiling_tris: soft_ceiling_triangles,
             is_decimated: false,
             bbox_diagonal_mm,
+            enable_per_section_decimation: true,
         }
     } else {
         TriangleBudget {
@@ -44,6 +47,7 @@ pub fn compute_triangle_budget(
             soft_ceiling_tris: soft_ceiling_triangles,
             is_decimated: true,
             bbox_diagonal_mm,
+            enable_per_section_decimation: true,
         }
     }
 }
@@ -59,6 +63,7 @@ mod tests {
         assert_eq!(budget.budget_tris, 4_000_000);
         assert!((budget.target_error - 0.0375).abs() < 1e-6);
         assert_eq!(budget.bbox_diagonal_mm, 150.0);
+        assert_eq!(budget.enable_per_section_decimation, true);
     }
 
     #[test]

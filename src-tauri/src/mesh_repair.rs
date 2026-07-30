@@ -901,7 +901,7 @@ pub async fn load_stl_file(file_path: String) -> Result<Response, String> {
 }
 
 const STL_RESPONSE_MAGIC: &[u8; 4] = b"DFST";
-const STL_RESPONSE_HEADER_BYTES: usize = 16;
+const STL_RESPONSE_HEADER_BYTES: usize = 64;
 const STL_RESPONSE_FLAG_PREVIEW: u32 = 1;
 
 fn encode_stl_response(

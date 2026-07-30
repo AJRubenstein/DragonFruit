@@ -3154,6 +3154,16 @@ pub struct SectionDecimationOutcome {
 }
 
 pub fn decimate_sections_to_budget(mesh: IndexedMesh, model_tri_count: usize, budget: &TriangleBudget) -> SectionDecimationOutcome {
+    if !budget.enable_per_section_decimation {
+        let out = decimate_indexed_to_budget(mesh, budget);
+        let out_tris = out.mesh.triangles.len();
+        return SectionDecimationOutcome {
+            mesh: out.mesh,
+            model_triangle_count: model_tri_count.min(out_tris),
+            achieved_error: out.achieved_error,
+        };
+    }
+
     if !budget.is_decimated || mesh.triangles.len() <= budget.budget_tris {
         return SectionDecimationOutcome { mesh, model_triangle_count: model_tri_count, achieved_error: 0.0 };
     }
@@ -3168,40 +3178,81 @@ pub fn decimate_sections_to_budget(mesh: IndexedMesh, model_tri_count: usize, bu
         };
     }
 
-    let total_tris = mesh.triangles.len();
-    let model_budget = ((budget.budget_tris as f64) * (model_tri_count as f64) / (total_tris as f64)) as usize;
-    let support_budget = budget.budget_tris.saturating_sub(model_budget);
+    let indices0: Vec<u32> = mesh.triangles[0..model_tri_count]
+        .iter()
+        .flat_map(|t| [t[0], t[1], t[2]])
+        .collect();
+    
+    let indices1: Vec<u32> = mesh.triangles[model_tri_count..]
+        .iter()
+        .flat_map(|t| [t[0], t[1], t[2]])
+        .collect();
 
-    // Section 0
-    let mesh0 = IndexedMesh {
-        positions: mesh.positions.clone(),
-        triangles: mesh.triangles[0..model_tri_count].to_vec(),
-    };
-    let mut budget0 = budget.clone();
-    budget0.budget_tris = model_budget;
-    budget0.soft_ceiling_tris = model_budget;
-    let out0 = decimate_indexed_to_budget(mesh0, &budget0);
+    let adapter = meshopt::VertexDataAdapter::new(
+        bytemuck::cast_slice::<_, u8>(&mesh.positions),
+        12,
+        0,
+    ).unwrap();
+    let locks = vec![false; mesh.positions.len()];
 
-    // Section 1
-    let mesh1 = IndexedMesh {
-        positions: mesh.positions.clone(),
-        triangles: mesh.triangles[model_tri_count..].to_vec(),
-    };
-    let mut budget1 = budget.clone();
-    budget1.budget_tris = support_budget;
-    budget1.soft_ceiling_tris = support_budget;
-    let out1 = decimate_indexed_to_budget(mesh1, &budget1);
+    let error_tiers = [
+        budget.target_error as f32,
+        0.01,
+        0.025,
+        0.05,
+        0.10,
+    ];
 
-    let mut concat_tris = out0.mesh.triangles.clone();
-    concat_tris.extend_from_slice(&out1.mesh.triangles);
+    let mut final_indices0 = vec![];
+    let mut final_indices1 = vec![];
+    let mut final_error = 0.0;
+
+    for &err in &error_tiers {
+        let dec0 = meshopt::simplify_with_locks(
+            &indices0,
+            &adapter,
+            &locks,
+            (budget.budget_tris * 3).min(indices0.len()),
+            err,
+            meshopt::SimplifyOptions::LockBorder | meshopt::SimplifyOptions::Regularize,
+            None,
+        );
+        let dec1 = meshopt::simplify_with_locks(
+            &indices1,
+            &adapter,
+            &locks,
+            (budget.budget_tris * 3).min(indices1.len()),
+            err,
+            meshopt::SimplifyOptions::LockBorder | meshopt::SimplifyOptions::Regularize,
+            None,
+        );
+
+        let out_total = (dec0.len() + dec1.len()) / 3;
+        final_indices0 = dec0;
+        final_indices1 = dec1;
+        final_error = err;
+
+        if out_total <= budget.soft_ceiling_tris {
+            break;
+        }
+    }
+
+    let out0_len = final_indices0.len() / 3;
+    let mut concat_tris = Vec::with_capacity((final_indices0.len() + final_indices1.len()) / 3);
+    for c in final_indices0.chunks_exact(3) {
+        concat_tris.push([c[0], c[1], c[2]]);
+    }
+    for c in final_indices1.chunks_exact(3) {
+        concat_tris.push([c[0], c[1], c[2]]);
+    }
 
     SectionDecimationOutcome {
         mesh: IndexedMesh {
             positions: mesh.positions,
             triangles: concat_tris,
         },
-        model_triangle_count: out0.mesh.triangles.len(),
-        achieved_error: out0.achieved_error.max(out1.achieved_error),
+        model_triangle_count: out0_len,
+        achieved_error: final_error,
     }
 }
 
@@ -3228,10 +3279,17 @@ mod section_decimation_tests {
             soft_ceiling_tris: 50,
             target_error: 0.1,
             bbox_diagonal_mm: 100.0,
+            enable_per_section_decimation: true,
         };
         
-        let out = decimate_sections_to_budget(mesh, 60, &budget);
-        assert_eq!(out.model_triangle_count, 60);
+        // Test lockstep mode
+        let out = decimate_sections_to_budget(mesh.clone(), 60, &budget);
         assert!(out.mesh.triangles.len() <= 100);
+
+        // Test Phase 3.1 fallback mode
+        budget.enable_per_section_decimation = false;
+        let out2 = decimate_sections_to_budget(mesh, 60, &budget);
+        assert!(out2.model_triangle_count <= 60);
+        assert!(out2.mesh.triangles.len() <= 100);
     }
 }
