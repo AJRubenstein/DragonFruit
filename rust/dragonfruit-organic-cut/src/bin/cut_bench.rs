@@ -12,6 +12,7 @@ use std::time::Instant;
 
 use dragonfruit_mesh_core::mesh::{IndexedMesh, Vec3};
 use dragonfruit_organic_cut::surface_cut::{seams_enclose_a_piece, SeamVerdict};
+use dragonfruit_organic_cut::surface_split::split_along_seams;
 use dragonfruit_organic_cut::membrane::{contour_split, DEFAULT_CUTTER_THICKNESS_MM};
 use dragonfruit_organic_cut::OrganicCutOptions;
 
@@ -51,6 +52,18 @@ fn distance_to_surface(bvh: &dragonfruit_mesh_core::bvh::Bvh, mesh: &IndexedMesh
     f32::INFINITY
 }
 
+/// Edges used by anything other than two faces — a mesh with none is closed.
+fn open_edge_count(mesh: &IndexedMesh) -> usize {
+    let mut counts: std::collections::HashMap<(u32, u32), usize> = std::collections::HashMap::new();
+    for t in &mesh.triangles {
+        for k in 0..3 {
+            let (a, b) = (t[k], t[(k + 1) % 3]);
+            *counts.entry(if a < b { (a, b) } else { (b, a) }).or_default() += 1;
+        }
+    }
+    counts.values().filter(|c| **c != 2).count()
+}
+
 fn main() -> Result<(), String> {
     let dir = std::env::args().nth(1).ok_or("usage: crown_bench <dump dir>")?;
     let dir = Path::new(&dir);
@@ -64,10 +77,10 @@ fn main() -> Result<(), String> {
     names.sort_by_key(|n| n.trim_start_matches("cut-").trim_end_matches(".json").parse::<u32>().unwrap_or(0));
 
     println!(
-        "{:<10} {:<5} {:>6}  {:<24}  {:>5}  {:<34}",
-        "dump", "loop", "pts", "wafer piece + rest", "", "surface verdict / seam off-skin"
+        "{:<10} {:<5} {:>6}  {:<24}  {:>5}  {:<62}",
+        "dump", "loop", "pts", "wafer piece + rest", "", "surface verdict | exact split"
     );
-    let (mut wafer_ok, mut surface_ok, mut total) = (0, 0, 0);
+    let (mut wafer_ok, mut surface_ok, mut split_ok, mut total) = (0, 0, 0, 0);
 
     for name in names {
         let json = dir.join(&name);
@@ -144,6 +157,22 @@ fn main() -> Result<(), String> {
             let t1 = Instant::now();
             let verdict = seams_enclose_a_piece(&mesh, std::slice::from_ref(lp));
             let surface_ms = t1.elapsed().as_millis();
+            // The exact cut: does the seam become mesh edges, watertight, two sides?
+            let t2 = Instant::now();
+            let cut = split_along_seams(&mesh, std::slice::from_ref(lp));
+            let cut_ms = t2.elapsed().as_millis();
+            let cut_txt = match &cut {
+                Ok(s) => {
+                    let open = open_edge_count(&s.mesh);
+                    let sides: std::collections::BTreeSet<u32> =
+                        s.piece_of_face.iter().copied().collect();
+                    if open == 0 {
+                        split_ok += 1;
+                    }
+                    format!("{} piezas, {open} abiertas ({cut_ms}ms)", sides.len())
+                }
+                Err(e) => format!("— {} ({cut_ms}ms)", e.chars().take(38).collect::<String>()),
+            };
 
             let wafer_txt = match &wafer {
                 Ok(s) => {
@@ -161,13 +190,13 @@ fn main() -> Result<(), String> {
                 SeamVerdict::TooCoarse => "mesh too coarse to tell".to_string(),
             };
             println!(
-                "{:<10} {:<5} {:>6}  {:<24}  {:>5}  {:<34}",
+                "{:<10} {:<5} {:>6}  {:<24}  {:>5}  {:<62}",
                 stem,
                 i,
                 lp.len(),
                 wafer_txt,
                 "",
-                format!("{sizes} / off {off_max:.2}mm ({surface_ms}ms)")
+                format!("{sizes} ({surface_ms}ms) | corte: {cut_txt}")
             );
         }
         if loops.len() > 1 {
@@ -177,7 +206,7 @@ fn main() -> Result<(), String> {
                 SeamVerdict::TooCoarse => "mesh too coarse to tell".to_string(),
             };
             println!(
-                "{:<10} {:<5} {:>6}  {:<24}  {:>5}  {:<34}",
+                "{:<10} {:<5} {:>6}  {:<24}  {:>5}  {:<62}",
                 stem,
                 "all",
                 loops.iter().map(|l| l.len()).sum::<usize>(),
@@ -187,6 +216,6 @@ fn main() -> Result<(), String> {
             );
         }
     }
-    println!("\nseparated: wafer {wafer_ok}/{total}, surface walk {surface_ok}/{total}");
+    println!("\nseparated: wafer {wafer_ok}/{total}, surface walk {surface_ok}/{total}, exact split watertight {split_ok}/{total}");
     Ok(())
 }
