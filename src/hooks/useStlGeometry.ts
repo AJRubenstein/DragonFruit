@@ -126,10 +126,11 @@ export interface ProcessGeometryOptions {
    * attribute (e.g. from the Rust-side STL parser).
    * @internal
    */
-  _skipComputeNormals?: boolean;
   assumeSupportGeometry?: boolean;
   /** Skip nonessential analysis for a native reduced-detail preview. @internal */
   _isNativePreview?: boolean;
+  /** Model section boundary offset extracted directly from the DFST binary IPC header. @internal */
+  _nativeModelTriangleCount?: number;
 }
 
 // Cloning extremely large position buffers can require hundreds of MB and can
@@ -403,11 +404,15 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
         // If the repaired mesh has a model/support split, extract the support
         // section as a separate geometry for orange overlay rendering.
         const positionsWereApplied = shouldApplyPositions;
+        const effectiveModelTriCount = report.model_triangle_count ?? options._nativeModelTriangleCount;
 
-        if (positionsWereApplied && report.model_triangle_count != null && report.model_triangle_count > 0) {
+        if ((positionsWereApplied || options._skipComputeNormals) && effectiveModelTriCount != null && effectiveModelTriCount > 0) {
+          if (!report.model_triangle_count) {
+            report.model_triangle_count = effectiveModelTriCount;
+          }
           const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute;
           const allPos = posAttr.array as Float32Array;
-          const modelFloatEnd = report.model_triangle_count * 9; // 3 vertices × 3 floats per tri
+          const modelFloatEnd = effectiveModelTriCount * 9; // 3 vertices × 3 floats per tri
           if (modelFloatEnd < allPos.length) {
             const supportPositions = allPos.slice(modelFloatEnd);
             const supportGeo = new THREE.BufferGeometry();
@@ -728,6 +733,7 @@ type NativeStlLoadResult = {
   geometry: THREE.BufferGeometry;
   originalTriangleCount: number;
   previewTriangleCount: number;
+  modelTriangleCount?: number;
   isPreview: boolean;
 };
 
@@ -802,6 +808,7 @@ async function loadStlViaTauri(filePath: string): Promise<NativeStlLoadResult | 
       geometry,
       originalTriangleCount,
       previewTriangleCount,
+      modelTriangleCount: modelTriangleCount > 0 ? modelTriangleCount : undefined,
       isPreview: (flags & 1) !== 0,
     };
   } catch (error) {
@@ -823,6 +830,7 @@ export async function loadStlGeometry(fileUrl: string, options: ProcessGeometryO
         ...options,
         _skipComputeNormals: true,
         _isNativePreview: nativeResult.isPreview,
+        _nativeModelTriangleCount: nativeResult.modelTriangleCount,
         ...(nativeResult.isPreview ? { nativeProcessingMode: 'none' as const } : {}),
       });
       if (nativeResult.isPreview) {
