@@ -1003,35 +1003,26 @@ fn classify_model_support_group(
     }
 }
 
+/// Determines if an imported file should be treated as a 100% standalone support structure.
+///
+/// Prior to PLAN-3, an inequality heuristic flagged files where support triangles outnumber
+/// model triangles (`support_triangles_out >= model_triangles_out`) as `likely_support_geometry = true`.
+/// This caused files containing both a model body and heavy support scaffolds to import as ALL GOLD
+/// even though a valid 2-section boundary (`model_triangle_count > 0`) was present for "Split Supports".
+///
+/// Under PLAN-3, `likely_support_geometry` evaluates to `true` ONLY when `model_triangles_out == 0`
+/// (i.e. the file is 100% pure support geometry with no model body). When `model_triangles_out > 0`,
+/// `likely_support_geometry` is `false`, allowing the mesh to render with a PINK model body and GOLD
+/// support overlay, while keeping the "Split Supports" feature enabled.
 fn compute_likely_support_geometry(
     model_triangles_out: usize,
     support_triangles_out: usize,
-    model_comp_count: usize,
-    support_comp_count: usize,
-    model_input_triangles: usize,
-    support_input_triangles: usize,
+    _model_comp_count: usize,
+    _support_comp_count: usize,
+    _model_input_triangles: usize,
+    _support_input_triangles: usize,
 ) -> bool {
-    let model_avg_tris = if model_comp_count > 0 {
-        model_input_triangles / model_comp_count
-    } else {
-        0
-    };
-    let support_avg_tris = if support_comp_count > 0 {
-        support_input_triangles / support_comp_count
-    } else {
-        0
-    };
-
-    let strong_density = model_avg_tris > 0 && support_avg_tris.saturating_mul(4) < model_avg_tris;
-
-    support_triangles_out > 0
-        && (model_triangles_out == 0
-            || (strong_density
-                && support_triangles_out >= model_triangles_out
-                && support_comp_count >= model_comp_count)
-            || (support_comp_count >= model_comp_count.saturating_mul(6)
-                && support_input_triangles >= model_input_triangles.saturating_mul(2)
-                && support_triangles_out >= model_triangles_out.saturating_mul(2)))
+    support_triangles_out > 0 && model_triangles_out == 0
 }
 
 /// Attempt to solidify a fragmented mesh by converting each connected
@@ -3036,8 +3027,11 @@ mod tests {
     }
 
     #[test]
-    fn likely_support_flag_turns_on_for_support_dominated_output() {
+    fn likely_support_flag_turns_on_only_when_model_triangles_are_zero() {
         assert!(compute_likely_support_geometry(
+            0, 180_000, 0, 32, 0, 220_000,
+        ));
+        assert!(!compute_likely_support_geometry(
             20_000, 180_000, 1, 32, 20_000, 220_000,
         ));
     }
