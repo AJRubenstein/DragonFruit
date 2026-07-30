@@ -3099,11 +3099,12 @@ pub fn decimate_indexed_to_budget(mesh: IndexedMesh, budget: &TriangleBudget) ->
     ).unwrap();
 
     let error_tiers = [
-        budget.target_error as f32,
-        0.01,
+        (budget.target_error as f32).min(0.003),
+        0.003,
+        0.005,
+        0.008,
+        0.010,
         0.025,
-        0.05,
-        0.10,
     ];
 
     let mut final_indices = vec![];
@@ -3190,11 +3191,12 @@ pub fn decimate_sections_to_budget(mesh: IndexedMesh, model_tri_count: usize, bu
     let locks = vec![false; mesh.positions.len()];
 
     let error_tiers = [
-        budget.target_error as f32,
-        0.01,
+        (budget.target_error as f32).min(0.003),
+        0.003,
+        0.005,
+        0.008,
+        0.010,
         0.025,
-        0.05,
-        0.10,
     ];
 
     let mut final_indices0 = vec![];

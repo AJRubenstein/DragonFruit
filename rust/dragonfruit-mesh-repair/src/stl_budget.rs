@@ -28,8 +28,8 @@ pub fn compute_triangle_budget(
 
     // Bounding-Box Scaled Epsilon:
     // Scale error bound relative to bounding box diagonal, strictly constrained
-    // between 0.005 mm (0.50 microns) and 0.050 mm (50 microns).
-    let epsilon = (bbox_diagonal_mm * 0.00025).clamp(0.005, 0.050);
+    // between 0.003 (0.3% max relative geometric error bound) and 0.050 (5.0%).
+    let epsilon = (bbox_diagonal_mm * 0.00025).clamp(0.003, 0.050);
 
     if triangle_count <= target_budget_triangles {
         TriangleBudget {
@@ -80,5 +80,12 @@ mod tests {
         assert_eq!(budget.is_decimated, true);
         assert_eq!(budget.budget_tris, 4_000_000);
         assert!((budget.target_error - 0.025).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_compute_triangle_budget_small_model_clamp() {
+        let budget = compute_triangle_budget(5_000_000, 5.0, None);
+        assert_eq!(budget.is_decimated, true);
+        assert!((budget.target_error - 0.003).abs() < 1e-6); // Clamped to 0.003 minimum
     }
 }
