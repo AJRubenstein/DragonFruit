@@ -136,12 +136,16 @@ pub fn offset_seam(mesh: &IndexedMesh, seam: &[Vec3], by: f32) -> Vec<Vec3> {
         return seam.to_vec();
     }
     let bvh = Bvh::build(mesh);
-    // Resample first. A geodesic crossing a flat face puts no points in between —
-    // the model's base, sitting on the plate, is one straight run of 6 to 8 mm steps
-    // where the rest of the seam steps a half — and offsetting the two ends of a step
-    // that long leaves a chord that is nowhere near the surface between them. Every
-    // failure of a clearance on this model was on that run.
-    let seam = &densify(seam, median_edge_length(mesh));
+    // The seam is offset point for point, WITHOUT resampling it first. Resampling
+    // looks like the safe thing to do — a geodesic crossing a flat face puts no
+    // points in between, and the model's base makes one run of 6 to 8 mm steps where
+    // the rest of the seam steps half a millimetre — but the points it invents go in
+    // along the straight chord, and where the seam turns into a crevice that chord
+    // passes THROUGH the model. Offsetting from inside the solid and dropping the
+    // result on the nearest face lands it on whatever happens to be nearest: a spike,
+    // one point most of a millimetre from both its neighbours and back again, which
+    // crosses its own seam and breaks the cut into crumbs of one and three and five
+    // triangles. The long steps are the walk's business, and it handles them.
     let n = seam.len();
     (0..n)
         .map(|i| {
@@ -164,22 +168,26 @@ pub fn offset_seam(mesh: &IndexedMesh, seam: &[Vec3], by: f32) -> Vec<Vec3> {
             if len < 1e-9 {
                 return p;
             }
-            let moved = p.add(sideways.scale(by / len));
-            match nearest_face(&bvh, mesh, moved) {
-                Some(g) => {
-                    let t = &mesh.triangles[g as usize];
-                    closest_on_tri(
-                        moved,
-                        mesh.positions[t[0] as usize],
-                        mesh.positions[t[1] as usize],
-                        mesh.positions[t[2] as usize],
-                    )
-                    .0
-                }
-                None => moved,
-            }
+            project_onto(&bvh, mesh, p.add(sideways.scale(by / len)))
         })
         .collect()
+}
+
+/// `p` dropped onto the nearest face of the mesh.
+fn project_onto(bvh: &Bvh, mesh: &IndexedMesh, p: Vec3) -> Vec3 {
+    match nearest_face(bvh, mesh, p) {
+        Some(g) => {
+            let t = &mesh.triangles[g as usize];
+            closest_on_tri(
+                p,
+                mesh.positions[t[0] as usize],
+                mesh.positions[t[1] as usize],
+                mesh.positions[t[2] as usize],
+            )
+            .0
+        }
+        None => p,
+    }
 }
 
 /// Cut `mesh`'s surface along one seam (a closed polyline lying on it).
@@ -200,19 +208,23 @@ pub fn split_along_seams(mesh: &IndexedMesh, seams: &[Vec<Vec3>]) -> Result<Spli
         return Err("a seam needs at least 3 points".to_string());
     }
     let mut current = mesh.clone();
+    let apart = seam_separation(seams);
+    let snap_mm = snap_distance(mesh, apart);
     let mut seam_edges: AHashSet<(u32, u32)> = AHashSet::new();
     let mut seam_vertices: Vec<u32> = Vec::new();
     let mut source_face: Vec<u32> = (0..mesh.triangles.len() as u32).collect();
 
     for seam in seams.iter().filter(|s| s.len() >= 3) {
-        let dense = densify(seam, median_edge_length(&current) * 0.25);
+        let step = median_edge_length(&current) * 0.25;
+        let step = apart.map_or(step, |a| step.min(a * 0.5));
+        let dense = densify(seam, step);
         let bvh = Bvh::build(&current);
         let topo = Topology::build(&current);
         let crossings = walk(&current, &bvh, &topo, &dense)?;
         if crossings.is_empty() {
             return Err("the seam never crosses a triangle edge — it fits inside one face".to_string());
         }
-        let cut = retriangulate(&current, crossings)?;
+        let cut = retriangulate(&current, crossings, snap_mm)?;
         current = cut.mesh;
         // Rename the walls this seam cut through before adding its own. Skipping this
         // leaves the earlier seam's wall naming edges that no longer exist: the fill
@@ -462,6 +474,50 @@ fn densify(seam: &[Vec3], step: f32) -> Vec<Vec3> {
     out
 }
 
+/// How close two things have to be before the cut treats them as one, in mm.
+///
+/// It is set by the mesh's own resolution — a crossing landing a fiftieth of a
+/// typical edge from a corner is that corner, and making a second vertex there only
+/// buys a sliver of no area. Where two seams are cut in the same operation it is
+/// held below the gap they keep from each other as well, because merging across
+/// that gap welds the two seams together and the strip between them disappears.
+fn snap_distance(mesh: &IndexedMesh, apart: Option<f32>) -> f32 {
+    let from_mesh = median_edge_length(mesh) * 0.02;
+    match apart {
+        None => from_mesh,
+        Some(a) => from_mesh.min(a * 0.25),
+    }
+}
+
+/// The closest two of these seams ever come to each other, or `None` for one seam.
+///
+/// A cut with a joint clearance sends down two seams a tenth of a millimetre apart,
+/// and that gap is then the finest thing anywhere near the cut. Both the snapping
+/// distance and the sampling step are held under it: merge across it and the seams
+/// weld together, step over it and the walk loses the trail among the slivers the
+/// first seam left.
+fn seam_separation(seams: &[Vec<Vec3>]) -> Option<f32> {
+    let mut apart = f32::MAX;
+    for (i, s) in seams.iter().enumerate() {
+        for other in seams.iter().skip(i + 1) {
+            for &p in s {
+                for w in other.windows(2) {
+                    apart = apart.min(distance_to_segment(p, w[0], w[1]));
+                }
+            }
+        }
+    }
+    (apart != f32::MAX).then_some(apart)
+}
+
+/// Distance from `p` to the segment `a`–`b`.
+fn distance_to_segment(p: Vec3, a: Vec3, b: Vec3) -> f32 {
+    let ab = b.sub(a);
+    let len2 = ab.dot(ab);
+    let t = if len2 < 1e-12 { 0.0 } else { (p.sub(a).dot(ab) / len2).clamp(0.0, 1.0) };
+    p.sub(a.add(ab.scale(t))).length()
+}
+
 fn median_edge_length(mesh: &IndexedMesh) -> f32 {
     let stride = (mesh.triangles.len() / 2000).max(1);
     let mut lengths: Vec<f32> = mesh
@@ -607,32 +663,47 @@ struct CutFaces {
     split_edges: AHashMap<(u32, u32), Vec<u32>>,
 }
 
-fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFaces, String> {
+fn retriangulate(
+    mesh: &IndexedMesh,
+    crossings: Vec<Crossing>,
+    snap_mm: f32,
+) -> Result<CutFaces, String> {
     // A vertex per crossing, shared by the two faces that meet at it — unless the
     // crossing lands on an end of the edge, which is what happens every time the
     // seam passes near a vertex of the mesh. Making a new vertex there would put
     // two of them in the same place and leave the face around it with slivers of no
     // area; the existing vertex is used instead, and the seam simply runs through
     // it. Crossings that land on top of each other on one edge are shared too.
-    const SNAP: f32 = 0.02; // of an edge's length
+    // How close is "on top of": the SMALLER of two per cent of the edge being
+    // crossed and a distance fixed for the whole cut. Either one alone is wrong. A
+    // percentage alone is enormous on a big triangle — a model sitting on the plate
+    // has a flat base of triangles centimetres across next to a skin of
+    // half-millimetre ones, and two per cent of a seven-millimetre edge is 0.14 mm,
+    // wider than any joint clearance anyone would ask for, so two seams 0.1 mm apart
+    // crossing that edge merged into ONE vertex, the strip between them pinched out,
+    // and the wall was left hanging at the pinch. A distance alone is enormous on the
+    // slivers the FIRST seam leaves behind, where edges are shorter than the distance
+    // itself, and the second seam welds itself to the first all over again.
     let mut positions = mesh.positions.clone();
     let mut vertex_of: Vec<u32> = Vec::with_capacity(crossings.len());
     let mut made_on_edge: AHashMap<(u32, u32), Vec<(f32, u32)>> = AHashMap::new();
     for c in &crossings {
-        if c.t <= SNAP {
+        let (p, q) = (positions[c.edge.0 as usize], positions[c.edge.1 as usize]);
+        let len = q.sub(p).length();
+        let snap = if len > 1e-9 { (snap_mm / len).min(0.02) } else { 0.5 };
+        if c.t <= snap {
             vertex_of.push(c.edge.0);
             continue;
         }
-        if c.t >= 1.0 - SNAP {
+        if c.t >= 1.0 - snap {
             vertex_of.push(c.edge.1);
             continue;
         }
         let made = made_on_edge.entry(c.edge).or_default();
-        if let Some(&(_, vi)) = made.iter().find(|(t, _)| (t - c.t).abs() <= SNAP) {
+        if let Some(&(_, vi)) = made.iter().find(|(t, _)| (t - c.t).abs() <= snap) {
             vertex_of.push(vi);
             continue;
         }
-        let (p, q) = (positions[c.edge.0 as usize], positions[c.edge.1 as usize]);
         positions.push(p.add(q.sub(p).scale(c.t)));
         let vi = (positions.len() - 1) as u32;
         made.push((c.t, vi));
@@ -1100,7 +1171,8 @@ mod tests {
     }
 
     // The seam grazing the mesh's own vertices is the case that leaked on the real
-    // model: a crossing that lands within `SNAP` of a corner uses the corner, so a
+    // model: a crossing that lands within the snapping distance of a corner uses the
+    // corner, so a
     // face ends up split on one edge and nothing else, and a triangulation anchored
     // at a fixed vertex then spans that split edge. Both faces sharing it do the
     // same, and the edge comes out used four times — closed, but not manifold, and
@@ -1156,5 +1228,40 @@ mod tests {
         assert_eq!(labels.len(), 2, "the surface falls in exactly two: {labels:?}");
         let above = split.piece_of_face.iter().filter(|p| **p == 0).count();
         assert!(above > 0 && above < split.mesh.triangles.len(), "both sides carry faces");
+    }
+
+    /// Two seams a tenth of a millimetre apart on a mesh of hundred-millimetre
+    /// triangles — a joint clearance on the flat base a model stands on. The snapping
+    /// distance used to be two per cent of the crossed edge, which is 1 mm here: both seams
+    /// crossed the same edge, both were snapped to the SAME vertex, the strip between
+    /// them pinched out at that vertex, and the wall between a body and the strip
+    /// stopped dead there. Nothing was reported: the surface stayed closed, the fill
+    /// walked round the pinch, and the cut simply did nothing.
+    #[test]
+    fn two_seams_closer_together_than_the_triangles_they_cross_stay_apart() {
+        let model = cube(100.0, 1);
+        let ring_at = |z: f32| -> Vec<Vec3> {
+            (0..80)
+                .map(|k| {
+                    let t = (k % 20) as f32 * 5.0;
+                    match k / 20 {
+                        0 => Vec3::new(t, 0.0, z),
+                        1 => Vec3::new(100.0, t, z),
+                        2 => Vec3::new(100.0 - t, 100.0, z),
+                        _ => Vec3::new(0.0, 100.0 - t, z),
+                    }
+                })
+                .collect()
+        };
+        let seams = vec![ring_at(52.0), ring_at(52.1)];
+        let split = split_along_seams(&model, &seams).expect("two close seams should cut");
+        assert_eq!(open_edges(&split.mesh), 0, "cutting the surface must not open it");
+        assert!(
+            split.loose_wall_ends().is_empty(),
+            "the wall must not stop dead: {:?}",
+            split.loose_wall_ends()
+        );
+        let labels: AHashSet<u32> = split.piece_of_face.iter().copied().collect();
+        assert_eq!(labels.len(), 3, "top, bottom and the strip between: {labels:?}");
     }
 }
