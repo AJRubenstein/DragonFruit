@@ -75,17 +75,37 @@ pub struct SplitSurface {
 impl SplitSurface {
     /// Vertices where the wall stops dead, as positions — the places a cut that
     /// should have separated leaks through.
+    /// Counted PER PAIR OF PIECES, which is the only count that means anything. Three
+    /// wall edges at a vertex is not a loose end — it is three pieces meeting, and the
+    /// wall there is closed. Taken all together that vertex looks fine while the wall
+    /// between two of those pieces stops dead, which is the leak that matters and the
+    /// one a global count cannot see.
     pub fn loose_wall_ends(&self) -> Vec<Vec3> {
-        let mut degree: AHashMap<u32, usize> = AHashMap::new();
-        for &(a, b) in &self.seam_edges {
-            *degree.entry(a).or_default() += 1;
-            *degree.entry(b).or_default() += 1;
+        let mut faces_of: AHashMap<(u32, u32), Vec<u32>> = AHashMap::new();
+        for (fi, t) in self.mesh.triangles.iter().enumerate() {
+            for k in 0..3 {
+                faces_of.entry(edge_key(t[k], t[(k + 1) % 3])).or_default().push(fi as u32);
+            }
         }
-        degree
-            .into_iter()
-            .filter(|(_, n)| *n < 2)
-            .map(|(v, _)| self.positions_of(v))
-            .collect()
+        let mut degree: AHashMap<((u32, u32), u32), usize> = AHashMap::new();
+        for e in &self.seam_edges {
+            let Some(faces) = faces_of.get(e) else { continue };
+            if faces.len() != 2 {
+                continue;
+            }
+            let (p, q) = (
+                self.piece_of_face[faces[0] as usize],
+                self.piece_of_face[faces[1] as usize],
+            );
+            let pair = (p.min(q), p.max(q));
+            *degree.entry((pair, e.0)).or_default() += 1;
+            *degree.entry((pair, e.1)).or_default() += 1;
+        }
+        let mut ends: Vec<u32> =
+            degree.into_iter().filter(|(_, n)| *n < 2).map(|((_, v), _)| v).collect();
+        ends.sort_unstable();
+        ends.dedup();
+        ends.into_iter().map(|v| self.positions_of(v)).collect()
     }
 
     fn positions_of(&self, v: u32) -> Vec3 {

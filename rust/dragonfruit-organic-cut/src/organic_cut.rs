@@ -241,6 +241,13 @@ pub struct OrganicCutReport {
     /// this many parts back and commits each as its own model.
     #[serde(default)]
     pub part_count: usize,
+    /// Where the cut went wrong, in model coordinates. Empty on success and whenever
+    /// the failure has no one place — but when it does have one, a coordinate in a
+    /// sentence is useless to a person looking at a model, so these are meant to be
+    /// DRAWN. The seam leaving a gap, or crossing itself, is one spot the user has to
+    /// find and nudge; a rim nothing can span is a whole ring worth showing.
+    #[serde(default)]
+    pub leak_points: Vec<[f32; 3]>,
 }
 
 /// Result of an organic cut: the resulting parts plus a report.
@@ -386,7 +393,7 @@ fn best_fit_plane_normal(points: &[OrganicCutLoopPoint], centroid: Vec3) -> Opti
     Some(normal.scale(1.0 / len))
 }
 
-fn noop_outcome(mesh: IndexedMesh, detail: String) -> OrganicCutOutcome {
+fn noop_outcome(mesh: IndexedMesh, detail: String, leak_points: Vec<[f32; 3]>) -> OrganicCutOutcome {
     let source_triangle_count = mesh.triangle_count();
     let report = OrganicCutReport {
         source_triangle_count,
@@ -399,6 +406,7 @@ fn noop_outcome(mesh: IndexedMesh, detail: String) -> OrganicCutOutcome {
         // A no-op didn't split anything — no parts to commit (the frontend skips
         // committing on engine == "noop" anyway).
         part_count: 0,
+        leak_points,
     };
     OrganicCutOutcome {
         parts: Vec::new(),
@@ -430,7 +438,7 @@ pub fn organic_cut(mesh: IndexedMesh, options: &OrganicCutOptions) -> OrganicCut
                     // seam and the tenon left stuck to whatever scrap came off.
                     //
                     // So refuse, hand back the reason, and leave the mesh alone.
-                    return noop_outcome(mesh, reason);
+                    return noop_outcome(mesh, reason.why, reason.at);
                 }
             }
         }
@@ -439,14 +447,14 @@ pub fn organic_cut(mesh: IndexedMesh, options: &OrganicCutOptions) -> OrganicCut
             Ok(outcome) => return outcome,
             Err(reason) => {
                 eprintln!("[dragonfruit-mesh-repair] organic cut fell back: {reason}");
-                return noop_outcome(mesh, reason);
+                return noop_outcome(mesh, reason, Vec::new());
             }
         }
     }
     #[allow(unreachable_code)]
     {
         let _ = options;
-        noop_outcome(mesh, "manifold feature disabled".to_string())
+        noop_outcome(mesh, "manifold feature disabled".to_string(), Vec::new())
     }
 }
 
@@ -534,6 +542,13 @@ fn nearest_seam(cap: &crate::membrane::Membrane, loops: &[Vec<Vec3>]) -> usize {
         .map_or(0, |(i, _)| i)
 }
 
+/// A cut that refused, and where. `at` is empty when the failure has no one place.
+#[cfg(feature = "manifold")]
+pub struct CutRefusal {
+    pub why: String,
+    pub at: Vec<[f32; 3]>,
+}
+
 /// Both ways of cutting refused, so the user hears both reasons. The surface cut's is
 /// first because it is the one that answers "could this cut ever work" — a seam that
 /// does not separate the surface cannot be cut by any cutter, and the wafer's own
@@ -566,6 +581,9 @@ fn contour_cut_by_surface(
     options: &OrganicCutOptions,
     loops: &[Vec<Vec3>],
     loop_tenons: &[ResolvedTenon],
+    // Filled with the places the cut went wrong, so the caller can DRAW them. A
+    // coordinate in a sentence is no use to someone looking at a model.
+    leaks: &mut Vec<[f32; 3]>,
 ) -> Result<OrganicCutOutcome, String> {
     // Joint clearance: a real gap between the two halves, so glue has somewhere to go
     // and the assembled model comes out the size it started. There is nothing between
@@ -588,6 +606,9 @@ fn contour_cut_by_surface(
     };
 
     let split = crate::surface_split::split_along_seams(mesh, &seams)?;
+    // From here on every refusal has a place: the wall's loose ends are exactly where
+    // the two sides still hold on to each other.
+    leaks.extend(split.loose_wall_ends().iter().map(|p| [p.x, p.y, p.z]));
     let density = options.cut.density.clamp(1.0, 4.0) as f64;
     let closed = crate::surface_cap::close_pieces(
         &split,
@@ -773,6 +794,7 @@ fn contour_cut_by_surface(
         tenon_kind: tenon_kind.as_str().to_string(),
         tenon_detail,
         part_count: parts.len(),
+        leak_points: Vec::new(),
     };
     Ok(OrganicCutOutcome { parts, report })
 }
@@ -785,7 +807,7 @@ fn contour_cut_by_surface(
 fn organic_cut_contour(
     mesh: &IndexedMesh,
     options: &OrganicCutOptions,
-) -> Result<OrganicCutOutcome, String> {
+) -> Result<OrganicCutOutcome, CutRefusal> {
     let source_triangle_count = mesh.triangle_count();
 
     // Gather every loop for this cut: the primary `loop_points` plus any
@@ -816,11 +838,14 @@ fn organic_cut_contour(
         }
     }
     if loops.is_empty() {
-        return Err(format!(
-            "contour cut needs >=3 loop points (got {} primary + {} extra loops)",
-            options.cut.loop_points.len(),
-            options.cut.extra_loops.len()
-        ));
+        return Err(CutRefusal {
+            why: format!(
+                "contour cut needs >=3 loop points (got {} primary + {} extra loops)",
+                options.cut.loop_points.len(),
+                options.cut.extra_loops.len()
+            ),
+            at: Vec::new(),
+        });
     }
 
     // The SURFACE cut first: split the skin along the seam so the seam becomes mesh
@@ -828,7 +853,8 @@ fn organic_cut_contour(
     // nothing to classify afterwards — see `docs/adr/0002-cut-the-surface-not-a-volume.md`.
     // The wafer stays behind it because the surface cut leans on a flood fill, and a
     // flood fill leaks through a hole in the skin, which the boolean forgives.
-    let surface_gave_up = match contour_cut_by_surface(mesh, options, &loops, &loop_tenons) {
+    let mut leaks: Vec<[f32; 3]> = Vec::new();
+    let surface_gave_up = match contour_cut_by_surface(mesh, options, &loops, &loop_tenons, &mut leaks) {
         Ok(outcome) => return Ok(outcome),
         Err(why) => {
             if std::env::var_os("DF_CUT_DEBUG").is_some() {
@@ -857,7 +883,7 @@ fn organic_cut_contour(
             options.cut.membrane_smoothing,
             options.cut.density,
         )
-        .map_err(|why| both_gave_up(&surface_gave_up, &why))?;
+        .map_err(|why| CutRefusal { why: both_gave_up(&surface_gave_up, &why), at: leaks.clone() })?;
         let component_count = split.component_count;
         let membrane_tris = split.membrane_tris;
         let mut part_a = split.part_a;
@@ -952,6 +978,7 @@ fn organic_cut_contour(
             tenon_kind: tenon_kind.as_str().to_string(),
             tenon_detail,
             part_count: parts.len(),
+            leak_points: Vec::new(),
         };
         return Ok(OrganicCutOutcome { parts, report });
     }
@@ -966,7 +993,7 @@ fn organic_cut_contour(
         options.cut.membrane_smoothing,
         options.cut.density,
     )
-    .map_err(|why| both_gave_up(&surface_gave_up, &why))?;
+    .map_err(|why| CutRefusal { why: both_gave_up(&surface_gave_up, &why), at: leaks.clone() })?;
 
     let membrane_tris = split.membrane_tris;
     let mut part_a = split.part_a;
@@ -1013,6 +1040,7 @@ fn organic_cut_contour(
         tenon_kind: tenon_kind.as_str().to_string(),
         tenon_detail,
         part_count: parts.len(),
+        leak_points: Vec::new(),
     };
     Ok(OrganicCutOutcome { parts, report })
 }
@@ -1157,6 +1185,7 @@ fn organic_cut_plane(
         tenon_kind: tenon_kind.as_str().to_string(),
         tenon_detail,
         part_count: parts.len(),
+        leak_points: Vec::new(),
     };
     Ok(OrganicCutOutcome { parts, report })
 }
