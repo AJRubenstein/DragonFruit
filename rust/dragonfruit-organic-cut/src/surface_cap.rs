@@ -215,48 +215,66 @@ fn rims_between_pieces(mesh: &IndexedMesh, piece_of_face: &[u32]) -> Result<Vec<
         return Ok(Vec::new());
     }
 
-    let mut around: AHashMap<u32, Vec<u32>> = AHashMap::new();
-    for &(a, b) in cut.keys() {
-        around.entry(a).or_default().push(b);
-        around.entry(b).or_default().push(a);
-    }
-    // A rim is a simple cycle. A vertex on four cut edges is two rims pinched
-    // together there, and there is no one lid for that shape — better to say so and
-    // let the caller fall back than to sew something arbitrary.
-    if let Some((&v, ns)) = around.iter().find(|(_, ns)| ns.len() != 2) {
-        return Err(format!(
-            "the cut pinches at vertex {v}, where {} cut edges meet instead of two",
-            ns.len()
-        ));
+    // Trace the rims PER PAIR OF PIECES, not over the cut edges all at once.
+    //
+    // Taken all at once, three cut edges meeting at a vertex look like a pinch and
+    // there is no telling which two continue each other. They are not a pinch: they
+    // are a BRANCH, where three pieces meet, and a wall that branches is still closed
+    // and still separates. Refusing there turned away cuts that work perfectly well.
+    // Split the edges by the two pieces they hold apart first and the branch resolves
+    // itself — each pair only carries two of the three edges, so every vertex is back
+    // to degree two and the rim is a plain cycle again.
+    let mut by_pair: AHashMap<(u32, u32), Vec<(u32, u32)>> = AHashMap::new();
+    for (e, (f0, f1)) in &cut {
+        let (p, q) = (piece_of_face[*f0 as usize], piece_of_face[*f1 as usize]);
+        by_pair.entry((p.min(q), p.max(q))).or_default().push(*e);
     }
 
     let mut rims = Vec::new();
-    let mut seen: AHashSet<u32> = AHashSet::new();
-    for &start in around.keys() {
-        if !seen.insert(start) {
-            continue;
+    for edges in by_pair.values() {
+        let mut around: AHashMap<u32, Vec<u32>> = AHashMap::new();
+        for &(a, b) in edges {
+            around.entry(a).or_default().push(b);
+            around.entry(b).or_default().push(a);
         }
-        let mut ring = vec![start];
-        let mut prev = start;
-        let mut cur = around[&start][0];
-        while cur != start {
-            seen.insert(cur);
-            ring.push(cur);
-            let ns = &around[&cur];
-            let next = if ns[0] == prev { ns[1] } else { ns[0] };
-            prev = cur;
-            cur = next;
-        }
-        if ring.len() < 3 {
-            return Err("a rim of the cut is shorter than a triangle".to_string());
+        // Still not two within one pair means the wall really does cross itself
+        // there, and no single lid fits that shape. Say so and let the caller fall
+        // back rather than sew something arbitrary.
+        if let Some((&v, ns)) = around.iter().find(|(_, ns)| ns.len() != 2) {
+            return Err(format!(
+                "the cut crosses itself at vertex {v}, where {} of its edges meet \
+                 between the same two pieces instead of two",
+                ns.len()
+            ));
         }
 
-        let (u, v) = (ring[0], ring[1]);
-        let (f0, f1) = cut[&edge_key(u, v)];
-        let (side_a, side_b) = (piece_of_face[f0 as usize], piece_of_face[f1 as usize]);
-        let side_a_runs_u_to_v = directed(&mesh.triangles[f0 as usize], u, v)
-            .ok_or_else(|| "a rim edge is missing from the face that carries it".to_string())?;
-        rims.push(Rim { ring, side_a, side_b, side_a_runs_u_to_v });
+        let mut seen: AHashSet<u32> = AHashSet::new();
+        for &start in around.keys() {
+            if !seen.insert(start) {
+                continue;
+            }
+            let mut ring = vec![start];
+            let mut prev = start;
+            let mut cur = around[&start][0];
+            while cur != start {
+                seen.insert(cur);
+                ring.push(cur);
+                let ns = &around[&cur];
+                let next = if ns[0] == prev { ns[1] } else { ns[0] };
+                prev = cur;
+                cur = next;
+            }
+            if ring.len() < 3 {
+                return Err("a rim of the cut is shorter than a triangle".to_string());
+            }
+
+            let (u, v) = (ring[0], ring[1]);
+            let (f0, f1) = cut[&edge_key(u, v)];
+            let (side_a, side_b) = (piece_of_face[f0 as usize], piece_of_face[f1 as usize]);
+            let side_a_runs_u_to_v = directed(&mesh.triangles[f0 as usize], u, v)
+                .ok_or_else(|| "a rim edge is missing from the face that carries it".to_string())?;
+            rims.push(Rim { ring, side_a, side_b, side_a_runs_u_to_v });
+        }
     }
     Ok(rims)
 }

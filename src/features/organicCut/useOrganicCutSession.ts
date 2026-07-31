@@ -1303,6 +1303,10 @@ export function useOrganicCutSession({
     const geodesic = geodesicPolylineRef.current;
     let cancelled = false;
     setIsApplying(true);
+    // Clear the last refusal BEFORE the cut runs, not after it comes back. A cut on
+    // this model takes seconds, and a message left on screen through all of it cannot
+    // be told apart from the one this press is about to produce.
+    setCutError(null);
     void (async () => {
       try {
         const staged = await stageCutSource(geom, geomKey);
