@@ -136,15 +136,30 @@ pub fn offset_seam(mesh: &IndexedMesh, seam: &[Vec3], by: f32) -> Vec<Vec3> {
         return seam.to_vec();
     }
     let bvh = Bvh::build(mesh);
+    // Resample first. A geodesic crossing a flat face puts no points in between —
+    // the model's base, sitting on the plate, is one straight run of 6 to 8 mm steps
+    // where the rest of the seam steps a half — and offsetting the two ends of a step
+    // that long leaves a chord that is nowhere near the surface between them. Every
+    // failure of a clearance on this model was on that run.
+    let seam = &densify(seam, median_edge_length(mesh));
     let n = seam.len();
     (0..n)
         .map(|i| {
             let p = seam[i];
             let along = seam[(i + 1) % n].sub(seam[(i + n - 1) % n]);
-            let Some(face) = nearest_face(&bvh, mesh, p) else {
+            // The normal of the ONE nearest face is not good enough where the seam
+            // runs along a sharp edge of the model — the base sitting on the plate is
+            // the everyday case. Right on that edge, "nearest" flips between the flat
+            // bottom and the wall as the point wobbles, the sideways direction turns
+            // ninety degrees with it, and the two offsets end up on different faces of
+            // the corner: one along the floor, one up the wall. The strip between them
+            // is then nonsense and the wall it leaves has a gap. Averaging the faces
+            // that meet near the point gives the bisector instead, which is the same
+            // direction on both sides of the edge and turns smoothly along it.
+            let Some(normal) = normal_around(&bvh, mesh, p, by.abs() * 4.0) else {
                 return p;
             };
-            let sideways = mesh.tri_normal(face).cross(along);
+            let sideways = normal.cross(along);
             let len = sideways.length();
             if len < 1e-9 {
                 return p;
@@ -370,6 +385,37 @@ fn crossing_t(mesh: &IndexedMesh, edge: (u32, u32), a: Vec3, b: Vec3) -> f32 {
         a.add(d.scale(0.5)).sub(p).dot(e) / ee
     };
     t.clamp(0.0, 1.0)
+}
+
+/// The surface's direction at `p`, averaged over every face within `reach`.
+///
+/// On a smooth patch this is just the local normal. On an edge it is the bisector of
+/// the faces that meet there, which is what makes it usable: it is the same answer
+/// from either side, so anything derived from it stops jumping as the point crosses.
+/// Falls back to the single nearest face when nothing is in reach.
+fn normal_around(bvh: &Bvh, mesh: &IndexedMesh, p: Vec3, reach: f32) -> Option<Vec3> {
+    let query = Aabb {
+        min: Vec3::new(p.x - reach, p.y - reach, p.z - reach),
+        max: Vec3::new(p.x + reach, p.y + reach, p.z + reach),
+    };
+    let r2 = reach * reach;
+    let mut sum = Vec3::new(0.0, 0.0, 0.0);
+    bvh.query_aabb(&query, |ti| {
+        let t = &mesh.triangles[ti as usize];
+        let (_, d2) = closest_on_tri(
+            p,
+            mesh.positions[t[0] as usize],
+            mesh.positions[t[1] as usize],
+            mesh.positions[t[2] as usize],
+        );
+        if d2 <= r2 {
+            sum = sum.add(mesh.tri_normal(ti));
+        }
+    });
+    if sum.length() > 1e-6 {
+        return Some(sum.scale(1.0 / sum.length()));
+    }
+    nearest_face(bvh, mesh, p).map(|f| mesh.tri_normal(f))
 }
 
 /// The face of `mesh` nearest `p`, searching a box that widens until it finds one.
