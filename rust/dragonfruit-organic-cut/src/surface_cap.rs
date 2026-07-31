@@ -241,11 +241,27 @@ fn rims_between_pieces(mesh: &IndexedMesh, piece_of_face: &[u32]) -> Result<Vec<
         // there, and no single lid fits that shape. Say so and let the caller fall
         // back rather than sew something arbitrary.
         if let Some((&v, ns)) = around.iter().find(|(_, ns)| ns.len() != 2) {
-            return Err(format!(
-                "the cut crosses itself at vertex {v}, where {} of its edges meet \
-                 between the same two pieces instead of two",
-                ns.len()
-            ));
+            // Say it in millimetres, and say which of the two it is. One edge is a
+            // LOOSE END — the wall stops dead and the two sides still hold on there.
+            // Three or more is the wall crossing itself. They are different problems
+            // and they need different things from the user, and neither of them is
+            // helped by a vertex index.
+            let p = mesh.positions[v as usize];
+            let at = format!("({:.1}, {:.1}, {:.1})", p.x, p.y, p.z);
+            return Err(if ns.len() < 2 {
+                format!(
+                    "the cut does not close: the seam leaves a gap at {at} — the two \
+                     sides still meet there. Nudge the seam across that spot and cut \
+                     again."
+                )
+            } else {
+                format!(
+                    "the seam crosses itself at {at}, where {} of its edges meet \
+                     between the same two pieces. Redraw it so it does not double \
+                     back there.",
+                    ns.len()
+                )
+            });
         }
 
         let mut seen: AHashSet<u32> = AHashSet::new();
