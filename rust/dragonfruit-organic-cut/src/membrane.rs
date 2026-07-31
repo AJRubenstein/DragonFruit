@@ -141,6 +141,70 @@ pub fn build_membrane_full(
     Some(membrane)
 }
 
+/// Triangulate a closed 3D ring directly, with no plane and no projection.
+///
+/// The smallest-total-area triangulation of the ring, found by the classic dynamic
+/// program: the best way to span `i..j` is the best way to span `i..k`, plus `k..j`,
+/// plus the triangle that joins them, minimised over `k`. Cubic in the ring's length,
+/// which is nothing at the few hundred vertices a cut face has, and it always
+/// returns a triangulation — there is no configuration it can refuse, because it
+/// never has to decide what "inside" means in 2D.
+///
+/// It is not a soap film: with no interior vertices it is as taut as a drum skin, and
+/// on a deeply bowed rim it will not follow the surface the preview showed. That is
+/// the trade for a cap that exists at all, and relaxation afterwards has nothing to
+/// move. Used only when the grid seed refuses.
+fn span_rim_in_3d(ring: &[Vec3]) -> Option<Membrane> {
+    let n = ring.len();
+    if n < 3 {
+        return None;
+    }
+    let area = |i: usize, k: usize, j: usize| -> f32 {
+        ring[k].sub(ring[i]).cross(ring[j].sub(ring[i])).length() * 0.5
+    };
+    // `cost[i][j]` spans the sub-ring i..=j; `via[i][j]` remembers the apex that did
+    // it, so the triangles can be read back out afterwards.
+    let mut cost = vec![vec![0.0f32; n]; n];
+    let mut via = vec![vec![0usize; n]; n];
+    for span in 2..n {
+        for i in 0..n - span {
+            let j = i + span;
+            let mut best = (f32::INFINITY, i + 1);
+            for k in i + 1..j {
+                let c = cost[i][k] + cost[k][j] + area(i, k, j);
+                if c < best.0 {
+                    best = (c, k);
+                }
+            }
+            cost[i][j] = best.0;
+            via[i][j] = best.1;
+        }
+    }
+    if !cost[0][n - 1].is_finite() {
+        return None;
+    }
+
+    let mut triangles = Vec::with_capacity(n - 2);
+    let mut stack = vec![(0usize, n - 1)];
+    while let Some((i, j)) = stack.pop() {
+        if j <= i + 1 {
+            continue;
+        }
+        let k = via[i][j];
+        triangles.push([i as u32, k as u32, j as u32]);
+        stack.push((i, k));
+        stack.push((k, j));
+    }
+    if triangles.is_empty() {
+        return None;
+    }
+    Some(Membrane {
+        vertices: ring.to_vec(),
+        triangles,
+        boundary: (0..n as u32).collect(),
+    })
+}
+
 /// Span a soap film whose boundary is EXACTLY `ring` — same vertices, same order,
 /// nothing inserted between them.
 ///
@@ -164,7 +228,16 @@ pub fn build_membrane_on_ring(ring: &[Vec3], grid_divisions: f64, smoothing: f32
     // visibly nothing like the flat sheet the user was shown, and it gets committed
     // to their scene without a word. A cap that cannot be spanned properly is a cap
     // that should send the cut to the wafer.
-    let mut membrane = seed_grid(ring, grid_divisions, false)?;
+    let mut membrane = match seed_grid(ring, grid_divisions, false) {
+        Some(m) => m,
+        // The grid seed flattens the rim onto its best-fit plane before triangulating,
+        // and a rim that wanders across a curved surface crosses ITSELF in that
+        // projection — so the triangulator either refuses or hands back a cap that
+        // cuts through the skin. That was every failing cut on the user's model.
+        // Spanning the rim in 3D instead, with no projection anywhere, cannot hit
+        // that: it is a triangulation of the ring itself.
+        None => span_rim_in_3d(ring)?,
+    };
     if membrane.boundary.len() != ring.len() {
         return None;
     }

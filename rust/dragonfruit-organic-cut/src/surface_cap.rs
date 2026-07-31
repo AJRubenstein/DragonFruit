@@ -153,12 +153,18 @@ pub fn close_pieces(
     // triangles rather than two. Nothing about the cut is salvageable there, so say
     // so and let the caller fall back to the wafer rather than hand out a solid that
     // will not slice.
-    let holes_before = open_edges(mesh);
-    let holes_after: usize = solids.iter().map(open_edges).sum();
+    // Only a HOLE is fatal. An edge on four triangles means the cap runs along one the
+    // skin already had — it touches where it should only have spanned — and that is
+    // untidy, not broken: the solid is still closed, still prints, still slices. It
+    // was being refused all the same, and refusing a cut that would have worked is
+    // worse for the user than handing them a few non-manifold edges. An edge on ONE
+    // triangle is a hole, and that really does not print.
+    let holes_before = open_edges(mesh, 1);
+    let holes_after: usize = solids.iter().map(|s| open_edges(s, 1)).sum();
     if holes_after > holes_before {
         return Err(format!(
-            "capping left {} edge(s) on other than two faces — the cap meets the skin \
-             somewhere it should only have spanned it",
+            "capping left {} edge(s) with a hole beside them — the cut face does not \
+             close there",
             holes_after - holes_before
         ));
     }
@@ -166,15 +172,16 @@ pub fn close_pieces(
     Ok(ClosedPieces { solids, caps, cap_between })
 }
 
-/// Edges that belong to anything other than two faces — a closed mesh has none.
-fn open_edges(mesh: &IndexedMesh) -> usize {
+/// Edges used by exactly `uses` faces. `open_edges(m, 1)` counts holes; anything
+/// other than two is untidy, but only a hole stops a solid printing.
+fn open_edges(mesh: &IndexedMesh, uses: usize) -> usize {
     let mut counts: AHashMap<(u32, u32), usize> = AHashMap::new();
     for t in &mesh.triangles {
         for k in 0..3 {
             *counts.entry(edge_key(t[k], t[(k + 1) % 3])).or_default() += 1;
         }
     }
-    counts.values().filter(|c| **c != 2).count()
+    counts.values().filter(|c| **c == uses).count()
 }
 
 /// One rim: a closed chain of cut edges, and the two pieces it holds apart.
@@ -438,7 +445,7 @@ mod tests {
         assert_eq!(closed.solids.len(), 2, "one solid per side");
         assert_eq!(closed.caps.len(), 1, "one seam, one cap");
         for (i, solid) in closed.solids.iter().enumerate() {
-            assert_eq!(open_edges(solid), 0, "solid {i} is closed");
+            assert_eq!(open_edges(solid, 1), 0, "solid {i} is closed");
         }
         // The caps add no volume of their own, so the pieces still add up to the
         // model — and a cap sewn on inside out would show here as a sign flip.
@@ -538,7 +545,7 @@ mod tests {
 
         assert_eq!(closed.solids.len(), 3, "above, below, and the strip between");
         for (i, solid) in closed.solids.iter().enumerate() {
-            assert_eq!(open_edges(solid), 0, "solid {i} is closed");
+            assert_eq!(open_edges(solid, 1), 0, "solid {i} is closed");
         }
         // Nothing is destroyed — the strip is a solid of its own until the cut throws
         // it away, so the three still add up to the cube.
@@ -569,7 +576,7 @@ mod tests {
 
         assert!(closed.caps.is_empty(), "no rim, no cap");
         assert_eq!(closed.solids.len(), 1, "the surface stayed in one piece");
-        assert_eq!(open_edges(&closed.solids[0]), 0, "and it is still closed");
+        assert_eq!(open_edges(&closed.solids[0], 1), 0, "and it is still closed");
     }
 
     #[test]
@@ -583,7 +590,7 @@ mod tests {
         assert_eq!(closed.caps.len(), 2, "two rims round the tube");
         assert_eq!(closed.solids.len(), 2, "the tube and the rest of the ring");
         for (i, solid) in closed.solids.iter().enumerate() {
-            assert_eq!(open_edges(solid), 0, "solid {i} is closed");
+            assert_eq!(open_edges(solid, 1), 0, "solid {i} is closed");
         }
         // Both caps sit between the same two pieces — they are the two ends of the
         // length of tube that came free.
