@@ -135,6 +135,9 @@ export interface ProcessGeometryOptions {
   skipClassification?: boolean;
   /** Skip `computeVertexNormals()` - the geometry already has a `normal` attribute */
   _skipComputeNormals?: boolean;
+  _isTauriRuntime?: () => boolean;
+  _classifyFromGeometry?: typeof classifyFromGeometry;
+  _repairFromGeometry?: typeof repairFromGeometry;
 }
 
 // Cloning extremely large position buffers can require hundreds of MB and can
@@ -283,14 +286,13 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   // In the browser we fall back to the legacy Manifold WASM path (which only
   // activates when NaN defects were detected).
   let nativeModifiedGeometry = false;
-  if (isTauriRuntime()) {
+  const skipAll = options.skipClassification || options.nativeProcessingMode === 'none';
+  const checkTauri = options._isTauriRuntime ?? isTauriRuntime;
+  
+  if (checkTauri() && !skipAll) {
     const nativeMode = options.nativeProcessingMode ?? 'auto';
     const skipAutoNativeProcessingForSize = nativeMode === 'auto'
       && sourceTriangleEstimate >= AUTO_NATIVE_PROCESSING_TRIANGLE_THRESHOLD;
-
-    if (nativeMode === 'none') {
-      console.log('[processGeometry] Native repair skipped (mode=none) — running classification for support geometry detection');
-    }
 
     if (skipAutoNativeProcessingForSize) {
       console.warn(
@@ -334,9 +336,11 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
       const repairOpts = options.assumeSupportGeometry != null
         ? { assumeSupportGeometry: options.assumeSupportGeometry }
         : {};
+      const runClassify = options._classifyFromGeometry ?? classifyFromGeometry;
+      const runRepair = options._repairFromGeometry ?? repairFromGeometry;
       const result = classifyOnly
-        ? await classifyFromGeometry(geometry, repairOpts)
-        : await repairFromGeometry(geometry, repairOpts);
+        ? await runClassify(geometry, repairOpts)
+        : await runRepair(geometry, repairOpts);
       if (result) {
         let effectiveResult = result;
         let usedFallbackClassification = false;
@@ -348,7 +352,7 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
             console.warn(`[processGeometry] Rejecting native auto-repair result: ${qualityGate.reason}. Falling back to classify-only pass.`);
             try {
               options.onNativeProcessingStage?.('classifying');
-              const fallbackClassification = await classifyFromGeometry(geometry, repairOpts);
+              const fallbackClassification = await runClassify(geometry, repairOpts);
               if (fallbackClassification) {
                 effectiveResult = fallbackClassification;
                 usedFallbackClassification = true;
