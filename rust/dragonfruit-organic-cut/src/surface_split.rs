@@ -179,6 +179,23 @@ pub fn split_along_seams(mesh: &IndexedMesh, seams: &[Vec<Vec3>]) -> Result<Spli
         }
         let cut = retriangulate(&current, crossings)?;
         current = cut.mesh;
+        // Rename the walls this seam cut through before adding its own. Skipping this
+        // leaves the earlier seam's wall naming edges that no longer exist: the fill
+        // walks through the gap, the cut does not separate, and nothing anywhere
+        // reports a problem.
+        seam_edges = seam_edges
+            .into_iter()
+            .flat_map(|e| match cut.split_edges.get(&e) {
+                None => vec![e],
+                Some(made) => {
+                    let mut chain = Vec::with_capacity(made.len() + 2);
+                    chain.push(e.0);
+                    chain.extend(made.iter().copied());
+                    chain.push(e.1);
+                    chain.windows(2).map(|w| edge_key(w[0], w[1])).collect()
+                }
+            })
+            .collect();
         seam_edges.extend(cut.seam_edges);
         seam_vertices.extend(cut.seam_vertices);
         source_face = cut.source_face.iter().map(|&f| source_face[f as usize]).collect();
@@ -516,6 +533,12 @@ struct CutFaces {
     seam_edges: AHashSet<(u32, u32)>,
     seam_vertices: Vec<u32>,
     source_face: Vec<u32>,
+    /// Every edge this seam SPLIT, and the vertices it put along it, in order. A wall
+    /// an earlier seam left behind is a pair of vertex indices, and once this seam
+    /// crosses that wall the edge it names stops existing — so the earlier wall has
+    /// to be renamed in terms of the pieces it fell into, or it silently stops being
+    /// a wall.
+    split_edges: AHashMap<(u32, u32), Vec<u32>>,
 }
 
 fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFaces, String> {
@@ -651,11 +674,16 @@ fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFace
         triangles.extend(out);
     }
 
+    let split_edges = made_on_edge
+        .into_iter()
+        .map(|(e, made)| (e, made.into_iter().map(|(_, vi)| vi).collect()))
+        .collect();
     Ok(CutFaces {
         mesh: IndexedMesh { positions, triangles },
         seam_edges,
         seam_vertices: vertex_of,
         source_face,
+        split_edges,
     })
 }
 

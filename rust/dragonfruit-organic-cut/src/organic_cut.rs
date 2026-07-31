@@ -595,7 +595,30 @@ fn contour_cut_by_surface(
         options.cut.membrane_smoothing,
     )?;
     if closed.caps.is_empty() {
-        return Err("the seams cut the surface but do not separate it".to_string());
+        // Say WHERE, not just that. A wall that separates anything is a closed curve;
+        // where it stops dead the fill simply walks round the end, and that one spot
+        // is the whole reason the cut did nothing. Naming it in model coordinates is
+        // the difference between "it failed" and something the user can go and look
+        // at.
+        let loose = split.loose_wall_ends();
+        if loose.is_empty() {
+            return Err(
+                "the seams cut the surface but do not separate it — they do not enclose \
+                 a piece"
+                    .to_string(),
+            );
+        }
+        let where_ = loose
+            .iter()
+            .take(3)
+            .map(|p| format!("({:.1}, {:.1}, {:.1})", p.x, p.y, p.z))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "the cut does not close: the seam leaves a gap at {where_}{} — the two \
+             sides still meet there. Nudge the seam across that spot and cut again.",
+            if loose.len() > 3 { format!(" and {} more", loose.len() - 3) } else { String::new() },
+        ));
     }
 
     let mut solids: Vec<IndexedMesh> = closed.solids;
