@@ -4,7 +4,8 @@
 //! rather than across faces, "which side is this triangle on" is a walk over the
 //! face graph — no cutter, no kerf, no epsilon, nothing to classify afterwards —
 //! and the two sides can be capped with the membrane they already share a boundary
-//! with. See `docs/adr/0002-contour-cut-post-mortem.md`.
+//! with. See `docs/adr/0002-cut-the-surface-not-a-volume.md` for the decision and
+//! `docs/dev/organic-cut-surface-redesign.md` for the measurements behind it.
 //!
 //! The shape of it:
 //!
@@ -17,14 +18,23 @@
 //! - Retriangulate only the faces the seam crosses, with the chords as constraints,
 //!   so every other triangle of the model is left exactly as it was.
 //!
-//! Known gap: on a real, dirty model a handful of seams (8 of the 32 captured)
-//! leave one or two edges used by four triangles instead of two, always where the
-//! seam grazes a pair of faces that sit on the same two edges. Measured and ruled
-//! out: dropping needle triangles by relative area (makes it worse — a needle is
-//! still part of the tiling), cutting a chord only once across faces, and dropping
-//! repeated triangles (worse again). The faces involved come out of the walk in
-//! pairs, so the next place to look is the walk stepping into a face it has already
-//! left.
+//! Both halves of the retriangulation turn on ONE rule, which is worth stating
+//! plainly because getting it wrong is what leaked on the real model for a whole
+//! session: **an edge the rebuild adds — a seam chord, or the base of an ear — may
+//! never run along an edge of the face it is added to.** Such an edge has no
+//! interior. It is either a needle of no area or, worse, a span from one end of an
+//! edge the NEIGHBOUR has already split to the other, and a span like that is a
+//! T-junction. Both faces either side do it at once, so the edge comes out used by
+//! four triangles: the surface is closed but not manifold, and the flood fill walks
+//! straight through what was meant to be a wall. That was 8 of the 32 captured
+//! seams; with the rule in place, all 32 keep every edge on exactly two faces.
+//!
+//! The rule is asked structurally — does one edge of the face carry both ends? — and
+//! never by measuring how straight three points are. Measured and ruled out, so they
+//! are not tried again: dropping needle triangles by relative area (a needle is
+//! still part of the tiling, and what is left leans on an edge that no longer exists
+//! — that is a hole), cutting a chord only once across faces, and dropping repeated
+//! triangles. All three treat the symptom.
 //!
 //! Known gap: a seam that lies exactly ALONG existing edges — a ring at precisely a
 //! mesh's own grid line, which a hand-drawn seam never is, but a machine-made one
@@ -53,6 +63,60 @@ pub struct SplitSurface {
     /// Which face of the INPUT mesh each face of `mesh` came from. A face the seam
     /// never touched maps to itself.
     pub source_face: Vec<u32>,
+}
+
+/// The seam moved `by` mm to one side of itself, still lying on the surface.
+///
+/// Sideways means perpendicular to the seam and IN the surface — the surface normal
+/// crossed with the seam's own direction. Not the membrane's normal, which points
+/// across the cut, and not any fixed axis, which means a different thing at every
+/// point of a bent seam.
+///
+/// This is how a cut gets a GAP. The surface cut's two halves share their cut face,
+/// so there is nothing between them to widen; cutting along the seam moved both ways
+/// instead, and throwing away the strip of skin between, takes out a band of exactly
+/// `2 × by` — which is the clearance a glued joint needs if it is not to come out
+/// fatter than the model. The offset has to be far finer than a triangle, which is
+/// why it moves the CURVE and lets the exact splitter do the rest, rather than
+/// dropping faces near the rim: at a tenth of a millimetre on a mesh whose triangles
+/// are a third of one, face-level erosion cannot resolve the gap at all.
+///
+/// Each moved point is put back onto the skin, because the walk that follows assumes
+/// it lies there.
+pub fn offset_seam(mesh: &IndexedMesh, seam: &[Vec3], by: f32) -> Vec<Vec3> {
+    if seam.len() < 3 || by == 0.0 {
+        return seam.to_vec();
+    }
+    let bvh = Bvh::build(mesh);
+    let n = seam.len();
+    (0..n)
+        .map(|i| {
+            let p = seam[i];
+            let along = seam[(i + 1) % n].sub(seam[(i + n - 1) % n]);
+            let Some(face) = nearest_face(&bvh, mesh, p) else {
+                return p;
+            };
+            let sideways = mesh.tri_normal(face).cross(along);
+            let len = sideways.length();
+            if len < 1e-9 {
+                return p;
+            }
+            let moved = p.add(sideways.scale(by / len));
+            match nearest_face(&bvh, mesh, moved) {
+                Some(g) => {
+                    let t = &mesh.triangles[g as usize];
+                    closest_on_tri(
+                        moved,
+                        mesh.positions[t[0] as usize],
+                        mesh.positions[t[1] as usize],
+                        mesh.positions[t[2] as usize],
+                    )
+                    .0
+                }
+                None => moved,
+            }
+        })
+        .collect()
 }
 
 /// Cut `mesh`'s surface along one seam (a closed polyline lying on it).
@@ -404,34 +468,42 @@ fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFace
         vertex_of.push(vi);
     }
 
+    // Only the vertices we MADE split an edge; the ones snapped to a corner were
+    // already there and must not be inserted into a face's boundary twice. Kept in
+    // order along their edge, which is the order the wall runs in where the seam
+    // grazes along that edge instead of crossing the face.
+    for made in made_on_edge.values_mut() {
+        made.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    let on_edge: AHashMap<(u32, u32), Vec<u32>> = made_on_edge
+        .iter()
+        .map(|(e, made)| (*e, made.iter().map(|(_, vi)| *vi).collect()))
+        .collect();
+
     // Each face collects the chords the seam draws across it: the seam comes in at
     // one crossing and leaves at the next, so consecutive crossings that share a
     // face are the two ends of one chord.
     let mut chords: AHashMap<u32, Vec<(u32, u32)>> = AHashMap::new();
-    let mut seam_edges_on_edges: Vec<(u32, u32)> = Vec::new();
+    let mut grazed: Vec<((u32, u32), u32, u32)> = Vec::new();
     for (i, c) in crossings.iter().enumerate() {
         let j = (i + 1) % crossings.len();
         if c.to != crossings[j].from || vertex_of[i] == vertex_of[j] {
             continue;
         }
-        // In and out through the SAME edge: the seam only grazed this face, and a
-        // "chord" between those two crossings runs ALONG the edge instead of across
-        // the face. Cutting along it splits nothing and leaves a needle of no area
-        // — one in each of the two faces that share the edge, which is what turns
-        // that edge into one used four times. The wall the seam needs there is the
-        // edge itself, and the crossings have already split it.
-        if c.edge == crossings[j].edge {
-            seam_edges_on_edges.push((vertex_of[i], vertex_of[j]));
+        // Both ends on ONE edge of the face: the seam grazed the face instead of
+        // crossing it, and the straight "chord" between those two ends runs ALONG
+        // that edge, so it has no interior. Cutting the boundary polygon with it
+        // splits off a needle of no area — the same needle in EACH of the two faces
+        // that share the edge, which is exactly how an edge ends up used four
+        // times and the flood fill walks through the wall. The wall the seam needs
+        // there is that stretch of the edge, and the crossings have already split
+        // it.
+        if let Some(e) = shared_face_edge(&mesh.triangles[c.to as usize], &[vertex_of[i], vertex_of[j]], &on_edge) {
+            grazed.push((e, vertex_of[i], vertex_of[j]));
             continue;
         }
         chords.entry(c.to).or_default().push((vertex_of[i], vertex_of[j]));
     }
-    // Only the vertices we MADE split an edge; the ones snapped to a corner were
-    // already there and must not be inserted into a face's boundary twice.
-    let on_edge: AHashMap<(u32, u32), Vec<u32>> = made_on_edge
-        .into_iter()
-        .map(|(e, made)| (e, made.into_iter().map(|(_, vi)| vi).collect()))
-        .collect();
 
     // Faces the seam crosses are rebuilt; every other face is kept as it is, so the
     // model away from the cut is untouched, vertex for vertex.
@@ -440,9 +512,23 @@ fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFace
     let mut source_face: Vec<u32> = Vec::with_capacity(triangles.capacity());
     let mut seam_edges: AHashSet<(u32, u32)> = AHashSet::new();
     // Where the seam grazed an edge, the wall is the stretch of that edge between
-    // the two crossings — including any crossing that landed between them.
-    for (x, y) in seam_edges_on_edges {
-        seam_edges.insert(edge_key(x, y));
+    // the two ends, sub-segment by sub-segment: the crossings have split the edge,
+    // so the whole edge is not there any more to name as one.
+    for (e, x, y) in grazed {
+        let mut chain = Vec::with_capacity(4);
+        chain.push(e.0);
+        chain.extend(made_on_edge.get(&e).into_iter().flatten().map(|(_, vi)| *vi));
+        chain.push(e.1);
+        let (Some(ix), Some(iy)) = (
+            chain.iter().position(|v| *v == x),
+            chain.iter().position(|v| *v == y),
+        ) else {
+            continue;
+        };
+        let (lo, hi) = if ix < iy { (ix, iy) } else { (iy, ix) };
+        for pair in chain[lo..=hi].windows(2) {
+            seam_edges.insert(edge_key(pair[0], pair[1]));
+        }
     }
 
     for (fi, tri) in mesh.triangles.iter().enumerate() {
@@ -482,15 +568,81 @@ fn face_has_split_edge(tri: &[u32; 3], on_edge: &AHashMap<(u32, u32), Vec<u32>>)
     (0..3).any(|k| on_edge.contains_key(&edge_key(tri[k], tri[(k + 1) % 3])))
 }
 
+/// The one edge of `tri` that every vertex of `vs` sits on, if there is one — which
+/// is the same as saying they are all in a straight line along the face's boundary.
+///
+/// A vertex sits on a face's edge when it is one of its ends — every crossing that
+/// snapped to a corner is — or when the seam made it there. Asked structurally
+/// rather than by measuring how straight the points are: the edge either carries
+/// them all or it does not, and the module keeps its epsilons out of the topology.
+fn shared_face_edge(
+    tri: &[u32; 3],
+    vs: &[u32],
+    on_edge: &AHashMap<(u32, u32), Vec<u32>>,
+) -> Option<(u32, u32)> {
+    let carries = |e: &(u32, u32), v: u32| {
+        v == e.0 || v == e.1 || on_edge.get(e).is_some_and(|made| made.contains(&v))
+    };
+    (0..3)
+        .map(|k| edge_key(tri[k], tri[(k + 1) % 3]))
+        .find(|e| vs.iter().all(|&v| carries(e, v)))
+}
+
+/// Triangulate one convex piece of a face by clipping ears off it.
+///
+/// A fan from a fixed vertex is the obvious thing and it is the leak the module docs
+/// open with. This face's boundary carries the crossings its NEIGHBOURS made on the
+/// edges they share with it, so three of its vertices are often in a straight line,
+/// and a fan anchored at one end of that line spans the whole original edge — which
+/// the neighbour has already split.
+///
+/// The test is on the ear's BASE, the one new edge it adds: it may not run along an
+/// edge of the original face. That covers the degenerate ear for free, since three
+/// points in a line all sit on one face edge. Clipping an ear off a convex polygon
+/// leaves a convex polygon, so no solver is needed.
+fn clip_convex_ears(
+    positions: &[Vec3],
+    poly: &[u32],
+    normal: Vec3,
+    tri: &[u32; 3],
+    on_edge: &AHashMap<(u32, u32), Vec<u32>>,
+    out: &mut Vec<[u32; 3]>,
+) {
+    let mut poly: Vec<u32> = poly.to_vec();
+    let mut emit = |x: u32, y: u32, z: u32| {
+        let (p, q, r) = (positions[x as usize], positions[y as usize], positions[z as usize]);
+        let cross = q.sub(p).cross(r.sub(p));
+        if cross.length() > 1e-20 {
+            // Wind it the way the face pointed.
+            out.push(if cross.dot(normal) >= 0.0 { [x, y, z] } else { [x, z, y] });
+        }
+    };
+    while poly.len() > 3 {
+        let n = poly.len();
+        let ear = (0..n).find(|&k| {
+            shared_face_edge(tri, &[poly[(k + n - 1) % n], poly[(k + 1) % n]], on_edge).is_none()
+        });
+        // No ear left means every remaining vertex is on one edge of the face, so
+        // what is left has no area and nothing to add.
+        let Some(k) = ear else { return };
+        emit(poly[(k + n - 1) % n], poly[k], poly[(k + 1) % n]);
+        poly.remove(k);
+    }
+    // The last three are the piece itself, base and all — unless they are in a line.
+    if poly.len() == 3 && shared_face_edge(tri, &poly, on_edge).is_none() {
+        emit(poly[0], poly[1], poly[2]);
+    }
+}
+
 /// Rebuild one face: its corners, the crossings sitting on its edges, and the
 /// seam's chords across it.
 ///
 /// A triangle is convex, and a chord between two points of its boundary cuts it
 /// into two convex polygons — which stays true however many chords are added, so
-/// each piece triangulates by a fan from any of its corners, exactly and without a
-/// solver. (A constrained Delaunay pass looked like the obvious tool and is the
-/// wrong one: given a chord it treats it as the boundary of a region and hands back
-/// only the side it decides is inside, quietly dropping the rest of the face.)
+/// each piece triangulates without a solver. (A constrained Delaunay pass looked
+/// like the obvious tool and is the wrong one: given a chord it treats it as the
+/// boundary of a region and hands back only the side it decides is inside, quietly
+/// dropping the rest of the face.)
 fn retriangulate_face(
     positions: &[Vec3],
     tri: &[u32; 3],
@@ -568,16 +720,7 @@ fn retriangulate_face(
 
     let mut out = Vec::with_capacity(polygons.len() * 2);
     for poly in polygons {
-        for k in 1..poly.len() - 1 {
-            let (x, y, z) = (poly[0], poly[k], poly[k + 1]);
-            let (p, q, r) = (positions[x as usize], positions[y as usize], positions[z as usize]);
-            let n = q.sub(p).cross(r.sub(p));
-            if n.length() < 1e-20 {
-                continue; // three points in a line: no triangle
-            }
-            // Wind it the way the face pointed.
-            out.push(if n.dot(normal) >= 0.0 { [x, y, z] } else { [x, z, y] });
-        }
+        clip_convex_ears(positions, &poly, normal, tri, on_edge, &mut out);
     }
     if std::env::var_os("DF_SPLIT_DEBUG").is_some() {
         let area = |x: u32, y: u32, z: u32| {
@@ -764,6 +907,37 @@ mod tests {
             .collect();
         let split = split_along_seam(&model, &seam).expect("a wandering seam still cuts");
         assert_eq!(open_edges(&split.mesh), 0, "cutting the surface must not open it");
+    }
+
+    // The seam grazing the mesh's own vertices is the case that leaked on the real
+    // model: a crossing that lands within `SNAP` of a corner uses the corner, so a
+    // face ends up split on one edge and nothing else, and a triangulation anchored
+    // at a fixed vertex then spans that split edge. Both faces sharing it do the
+    // same, and the edge comes out used four times — closed, but not manifold, and
+    // the flood fill goes straight through the wall. The cube's grid line is at
+    // z = 5 and its faces are 1.25 across, so a ring 0.025 above it crosses at
+    // exactly the snapping distance.
+    #[test]
+    fn a_seam_grazing_the_mesh_s_own_vertices_still_tiles() {
+        let model = cube(10.0, 8);
+        let z = 5.025;
+        let ring: Vec<Vec3> = (0..80)
+            .map(|k| {
+                let t = (k % 20) as f32 * 0.5;
+                match k / 20 {
+                    0 => Vec3::new(t, 0.0, z),
+                    1 => Vec3::new(10.0, t, z),
+                    2 => Vec3::new(10.0 - t, 10.0, z),
+                    _ => Vec3::new(0.0, 10.0 - t, z),
+                }
+            })
+            .collect();
+        let split = split_along_seam(&model, &ring).expect("the seam should cut the surface");
+        // `open_edges` counts every edge NOT used by exactly two faces, so this is
+        // the four-times case as much as the hole.
+        assert_eq!(open_edges(&split.mesh), 0, "every edge belongs to exactly two faces");
+        let labels: AHashSet<u32> = split.piece_of_face.iter().copied().collect();
+        assert_eq!(labels.len(), 2, "the surface still falls in exactly two: {labels:?}");
     }
 
     #[test]
