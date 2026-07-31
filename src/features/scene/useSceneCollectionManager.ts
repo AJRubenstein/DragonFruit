@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
-import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, readSidecarFileBytes, resolveOriginalRefSidecar, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
+import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, readSidecarFileBytes, resolveOriginalRefSidecar, type VoxlDocumentV1, type VoxlMeshRef, type PrecompressedChunk } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import type { SelectionHighlightMode } from '@/components/selection';
@@ -3156,10 +3156,17 @@ export function useSceneCollectionManager() {
       { includeSupportState: true },
     );
     pushSceneSnapshotHistory(before, after, `Split Supports from ${source.name}`);
+    } catch (e) {
+      console.error(e);
+      emitSceneImportReport('Failed to split supports', 'error');
     } finally {
       setImportProgress({ active: false, type: null, label: '', detail: '', progress: null });
     }
-  }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield]);
+  }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield, emitSceneImportReport]);
+
+  const scanModelForSupportsInPlace = useCallback(async (modelId: string) => {
+    console.log(`[SceneCollection] scanModelForSupportsInPlace not fully implemented for model ${modelId}`);
+  }, []);
 
   const renameGroup = useCallback((groupId: string, nextName: string) => {
     const trimmed = nextName.trim();
@@ -4346,12 +4353,14 @@ export function useSceneCollectionManager() {
       let document: VoxlDocumentV1;
       let resolvedMeshBytes: Map<string, Uint8Array>;
       let resolvedOriginalMeshBytes: Map<string, Uint8Array> | undefined;
+      let originalMeshChunks: Map<string, PrecompressedChunk> | undefined;
 
       if (isV2) {
         const r = parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
         document = r.document;
         resolvedMeshBytes = r.meshBytes;
         resolvedOriginalMeshBytes = r.originalMeshBytes;
+        originalMeshChunks = r.originalMeshChunks;
       } else {
         document = parseVoxlDocument(await file.text());
         resolvedMeshBytes = new Map();
@@ -4439,15 +4448,11 @@ export function useSceneCollectionManager() {
             }
 
             const embeddedName = meshRef.fileName?.trim() || `${model.name || 'model'}.stl`;
-            const mimeType = meshRef.mimeType?.trim() || 'model/stl';
-            // Create a clean copy with explicit ArrayBuffer for Blob compatibility
-            const blobData = new Uint8Array(bytes);
-            const blob = new Blob([blobData], { type: mimeType });
-            url = URL.createObjectURL(blob);
 
-            geometry = await loadMeshGeometry(url, embeddedName, {
+            geometry = await loadMeshGeometry(bytes, embeddedName, {
               nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
               assumeSupportGeometry: model.isSupportGeometry,
+              skipClassification: model.isSupportGeometry,
             onNativeProcessingStage: (stage) => {
               if (stage === 'repairing') {
                 setImportProgress({
@@ -4494,7 +4499,17 @@ export function useSceneCollectionManager() {
           idMap.set(model.id, resolvedId);
 
           const origMeshBytes = resolvedOriginalMeshBytes?.get(model.id);
-          if (origMeshBytes) {
+          const origMeshChunk = originalMeshChunks?.get(model.id);
+
+          if (origMeshChunk) {
+            void meshChunkStore.bake({
+              modelId: resolvedId,
+              slot: 'original',
+              signature: `original:${resolvedId}`,
+              precompressed: origMeshChunk,
+              encode: () => origMeshBytes || new Uint8Array(0),
+            });
+          } else if (origMeshBytes) {
             void meshChunkStore.bake({
               modelId: resolvedId,
               slot: 'original',
@@ -4964,7 +4979,7 @@ export function useSceneCollectionManager() {
     const currentSelectedModelIds = selectedModelIdsRef.current;
 
     const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
-    const linkGroupId = `link-${generateUuid()}`;
+    const linkGroupId = `link-${uuidv4()}`;
 
     const nextModels = currentModels.map((m) => {
       if (ids.has(m.id)) {
@@ -5287,6 +5302,7 @@ export function useSceneCollectionManager() {
     setSelectionHighlightMode,
     heatmapColors,
     setHeatmapColors,
+    scanModelForSupportsInPlace,
     onHeatmapColorChange: useCallback((index: number, color: string) => {
       setHeatmapColors(prev => {
         const next = [...prev];

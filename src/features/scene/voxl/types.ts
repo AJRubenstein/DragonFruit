@@ -162,6 +162,12 @@ export type BuildVoxlDocumentInput = {
   extensions?: Record<string, unknown>;
 };
 
+export interface PrecompressedChunk {
+  data: Uint8Array;
+  compression: number;
+  uncompressedSize: number;
+}
+
 /**
  * Unified result from parsing any VOXL file (V1 JSON or V2 binary).
  *
@@ -175,6 +181,8 @@ export type ParsedVoxlResult = {
   meshBytes: Map<string, Uint8Array>;
   /** Pre-decoded original full-res mesh bytes keyed by model ID (if ORIG chunk present). */
   originalMeshBytes?: Map<string, Uint8Array>;
+  /** Pre-compressed original mesh chunks for lazy decompression. */
+  originalMeshChunks?: Map<string, PrecompressedChunk>;
   /** The VOXL format version that was read (e.g. 1, 2.1). */
   sourceVersion: number;
 };

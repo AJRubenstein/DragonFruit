@@ -131,6 +131,10 @@ export interface ProcessGeometryOptions {
   _isNativePreview?: boolean;
   /** Model section boundary offset extracted directly from the DFST binary IPC header. @internal */
   _nativeModelTriangleCount?: number;
+  /** Skip classification/repair in Tauri when loading a pre-repaired mesh */
+  skipClassification?: boolean;
+  /** Skip `computeVertexNormals()` - the geometry already has a `normal` attribute */
+  _skipComputeNormals?: boolean;
 }
 
 // Cloning extremely large position buffers can require hundreds of MB and can
@@ -870,6 +874,19 @@ export async function loadStlGeometry(fileUrl: string, options: ProcessGeometryO
   });
 }
 
+export async function loadStlGeometryFromBuffer(buffer: Uint8Array, options: ProcessGeometryOptions = {}): Promise<GeometryWithBounds> {
+  return new Promise((resolve, reject) => {
+    try {
+      const loader = new STLLoader();
+      const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+      const geometry = loader.parse(arrayBuffer);
+      processGeometry(geometry, options).then(resolve).catch(reject);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 function collectMergedGeometryFromObject3d(root: THREE.Object3D, sourceLabel: '3MF' | 'OBJ'): THREE.BufferGeometry {
   root.updateMatrixWorld(true);
 
@@ -1194,15 +1211,22 @@ export async function loadObjGeometry(fileUrl: string, options?: ProcessGeometry
   });
 }
 
-export async function loadMeshGeometry(fileUrl: string, fileName?: string, options?: ProcessGeometryOptions): Promise<GeometryWithBounds> {
+export async function loadMeshGeometry(fileUrlOrBuffer: string | Uint8Array, fileName?: string, options?: ProcessGeometryOptions): Promise<GeometryWithBounds> {
+  const opts = options?.skipClassification ? { ...options, nativeProcessingMode: 'none' as const } : options;
+  
+  if (fileUrlOrBuffer instanceof Uint8Array) {
+    return loadStlGeometryFromBuffer(fileUrlOrBuffer, opts);
+  }
+
+  const fileUrl = fileUrlOrBuffer;
   const ext = (fileName ?? '').trim().toLowerCase();
   if (ext.endsWith('.3mf')) {
-    return load3mfGeometry(fileUrl, options);
+    return load3mfGeometry(fileUrl, opts);
   }
   if (ext.endsWith('.obj')) {
-    return loadObjGeometry(fileUrl, options);
+    return loadObjGeometry(fileUrl, opts);
   }
-  return loadStlGeometry(fileUrl, options);
+  return loadStlGeometry(fileUrl, opts);
 }
 
 export function useStlGeometry(fileUrl: string | null, directGeometry?: THREE.BufferGeometry | null): GeometryWithBounds | null {

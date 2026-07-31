@@ -14,6 +14,7 @@ import {
   Box,
   Link,
   Unlink,
+  Search,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -29,7 +30,8 @@ export type EditorMenuAction =
   | 'mark-as-support-geometry'
   | 'mark-as-model-geometry'
   | 'link-models'
-  | 'unlink-models';
+  | 'unlink-models'
+  | 'scan-for-supports';
 
 export type EditorContextMenuPosition = {
   x: number;
@@ -61,8 +63,9 @@ const MENU_ITEMS: MenuItemDef[] = [
   { id: 'split-supports', label: msg({ message: 'Split supports', comment: 'Context-menu command that detaches the generated support scaffolding at the clicked point. "Supports" = the temporary print scaffolding structures, not customer support.' }), icon: Split },
   { id: 'mark-as-support-geometry', label: msg`Mark as Support Geometry`, icon: LifeBuoy },
   { id: 'mark-as-model-geometry',   label: msg`Mark as Model Geometry`,   icon: Box },
-  { id: 'link-models',   label: msg`Link Selected Models`,   icon: Link },
-  { id: 'unlink-models', label: msg`Unlink Selected Models`, icon: Unlink },
+  { id: 'scan-for-supports',        label: msg`Scan for Supports`,        icon: Search },
+  // { id: 'link-models',   label: msg`Link Selected Models`,   icon: Link },
+  // { id: 'unlink-models', label: msg`Unlink Selected Models`, icon: Unlink },
 ];
 
 const MENU_WIDTH = 176;

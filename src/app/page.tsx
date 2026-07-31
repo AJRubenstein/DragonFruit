@@ -5836,6 +5836,13 @@ export default function Home() {
         }
         break;
       }
+      case 'scan-for-supports': {
+        const targetId = scene.activeModelId;
+        if (targetId) {
+          scene.scanModelForSupportsInPlace(targetId);
+        }
+        break;
+      }
       default:
         break;
     }

@@ -3190,14 +3190,9 @@ pub fn decimate_sections_to_budget(mesh: IndexedMesh, model_tri_count: usize, bu
     ).unwrap();
     let locks = vec![false; mesh.positions.len()];
 
-    let error_tiers = [
-        (budget.target_error as f32).min(0.003),
-        0.003,
-        0.005,
-        0.008,
-        0.010,
-        0.025,
-    ];
+    let mut error_tiers = Vec::with_capacity(1 + crate::decimation_config::DECIMATION_ERROR_TIERS.len());
+    error_tiers.push((budget.target_error as f32).min(crate::decimation_config::EPSILON_MIN_CLAMP as f32));
+    error_tiers.extend(crate::decimation_config::DECIMATION_ERROR_TIERS.iter().map(|&e| e as f32));
 
     let mut final_indices0 = vec![];
     let mut final_indices1 = vec![];

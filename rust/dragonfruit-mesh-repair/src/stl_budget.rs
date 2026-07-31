@@ -23,13 +23,14 @@ pub fn compute_triangle_budget(
 ) -> TriangleBudget {
     let _ = available_ram_bytes;
 
-    let target_budget_triangles = 4_000_000;
-    let soft_ceiling_triangles = 8_000_000;
+    let target_budget_triangles = crate::decimation_config::TARGET_BUDGET_TRIANGLES;
+    let soft_ceiling_triangles = crate::decimation_config::SOFT_CEILING_TRIANGLES;
 
     // Bounding-Box Scaled Epsilon:
     // Scale error bound relative to bounding box diagonal, strictly constrained
     // between 0.003 (0.3% max relative geometric error bound) and 0.050 (5.0%).
-    let epsilon = (bbox_diagonal_mm * 0.00025).clamp(0.003, 0.050);
+    let epsilon = (bbox_diagonal_mm * crate::decimation_config::EPSILON_BBOX_SCALE)
+        .clamp(crate::decimation_config::EPSILON_MIN_CLAMP, crate::decimation_config::EPSILON_MAX_CLAMP);
 
     if triangle_count <= target_budget_triangles {
         TriangleBudget {

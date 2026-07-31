@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { STLExporter } from 'three-stdlib';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
 import { resolveModelMeshModifiers } from '@/features/mesh-modifiers/meshModifierStore';
@@ -132,7 +133,16 @@ export class ExportManager {
 
   private static exportModelAsEmbeddedBinaryStlBytes(model: LoadedModel): Uint8Array {
     const localGroup = new THREE.Group();
-    const mesh = new THREE.Mesh(model.geometry.geometry);
+    let geometry = model.geometry.geometry;
+
+    const modelSectionGeometry = model.geometry.meshDefects?.modelSectionGeometry;
+    const supportSectionGeometry = model.geometry.meshDefects?.supportSectionGeometry;
+
+    if (modelSectionGeometry && supportSectionGeometry) {
+      geometry = mergeGeometries([modelSectionGeometry, supportSectionGeometry], false);
+    }
+
+    const mesh = new THREE.Mesh(geometry);
     const centerOffset = model.geometry.center;
     mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
     localGroup.add(mesh);
@@ -1284,10 +1294,12 @@ export class ExportManager {
                 ? { nativePreview: { ...model.geometry.nativePreview } }
                 : {}),
               ...(model.originalRef
-                ? { originalRef: model.originalRef }
-                : (!options.embedOriginalMesh && typeof model.sourcePath === 'string' && model.sourcePath.trim().length > 0
-                  ? { originalRef: { mode: 'external-file' as const, fileName: model.sourcePath } }
-                  : {})),
+                ? { originalRef: origChunk ? { ...model.originalRef, sha256: origChunk.sha256, uncompressedSizeBytes: origChunk.uncompressedSize } : model.originalRef }
+                : (options.embedOriginalMesh && origChunk
+                  ? { originalRef: { mode: 'embedded-chunk' as const, sha256: origChunk.sha256, uncompressedSizeBytes: origChunk.uncompressedSize } }
+                  : (!options.embedOriginalMesh && typeof model.sourcePath === 'string' && model.sourcePath.trim().length > 0
+                    ? { originalRef: { mode: 'external-file' as const, fileName: model.sourcePath } }
+                    : {}))),
               // Honesty flag (Ph0.1 D2): this model's embedded mesh is the last
               // committed bake, not the geometry currently on screen, because a
               // mutation was still baking when the bounded wait expired.

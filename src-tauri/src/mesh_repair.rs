@@ -827,7 +827,11 @@ pub async fn mesh_repair_read_positions() -> Result<Response, String> {
 /// Processing the file in Rust avoids loading the entire raw STL into the
 /// webview's memory space, which can save ~1 GB for a large binary STL.
 #[tauri::command]
-pub async fn load_stl_file(file_path: String) -> Result<Response, String> {
+pub async fn load_stl_file(
+    file_path: String,
+    skip_classification: Option<bool>,
+    model_triangle_count: Option<u32>,
+) -> Result<Response, String> {
     use dragonfruit_mesh_repair::io;
 
     let path = std::path::Path::new(&file_path);
@@ -853,7 +857,8 @@ pub async fn load_stl_file(file_path: String) -> Result<Response, String> {
     if header_len == header.len() {
         let triangle_count = u32::from_le_bytes(header[80..84].try_into().unwrap()) as u64;
         let expected_binary_size = 84u64.saturating_add(triangle_count.saturating_mul(50));
-        if expected_binary_size == file_size && triangle_count > TRIGGER_TRIANGLES {
+        let force_decimate = skip_classification.unwrap_or(false) && model_triangle_count.is_some();
+        if expected_binary_size == file_size && (triangle_count > TRIGGER_TRIANGLES || force_decimate) {
             let (bbox_min, bbox_max) = binary_stl_bounds(path, triangle_count as u32)?;
             let extent = bbox_max.sub(bbox_min);
             let bbox_diagonal_mm = extent.length() as f64;
@@ -868,10 +873,17 @@ pub async fn load_stl_file(file_path: String) -> Result<Response, String> {
             let mesh = io::stl::load(path)
                 .map_err(|e| format!("Failed to load STL '{}': {e}", file_path))?;
             
-            let classify_outcome = dragonfruit_mesh_repair::repair::classify_support_split(mesh, &dragonfruit_mesh_repair::RepairOptions::default());
-            let model_tri_count = classify_outcome.report.model_triangle_count.unwrap_or(classify_outcome.mesh.triangles.len());
+            let (mesh_to_decimate, model_tri_count) = if skip_classification.unwrap_or(false) && model_triangle_count.is_some() {
+                let provided_count = model_triangle_count.unwrap();
+                let count = provided_count.min(mesh.triangles.len() as u32) as usize;
+                (mesh, count)
+            } else {
+                let classify_outcome = dragonfruit_mesh_repair::repair::classify_support_split(mesh, &dragonfruit_mesh_repair::RepairOptions::default());
+                let count = classify_outcome.report.model_triangle_count.unwrap_or(classify_outcome.mesh.triangles.len());
+                (classify_outcome.mesh, count)
+            };
             
-            let outcome = dragonfruit_mesh_repair::repair::decimate_sections_to_budget(classify_outcome.mesh, model_tri_count, &budget);
+            let outcome = dragonfruit_mesh_repair::repair::decimate_sections_to_budget(mesh_to_decimate, model_tri_count, &budget);
             let preview = outcome.mesh;
 
             log::info!(
@@ -1387,5 +1399,33 @@ mod tests {
     fn repair_and_punch_options_parsing_reject_malformed_json() {
         assert!(parse_options(r#"{"weldEpsilon": "tiny"}"#).is_err());
         assert!(parse_hole_punch_options(r#"{"punches": {}}"#).is_err());
+    }
+
+    #[test]
+    fn test_load_stl_file_with_skip_classification() {
+        use std::io::Write;
+        use tauri::ipc::IpcResponse;
+
+        let path = std::env::temp_dir().join("test_load_stl_file.stl");
+        let mut file = std::fs::File::create(&path).unwrap();
+        let mut header = [0u8; 84];
+        header[80..84].copy_from_slice(&10u32.to_le_bytes());
+        file.write_all(&header).unwrap();
+        for _ in 0..10 {
+            let record = [0u8; 50];
+            file.write_all(&record).unwrap();
+        }
+        drop(file);
+        
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let resp = rt.block_on(load_stl_file(path.to_str().unwrap().to_string(), Some(true), Some(6)));
+        let response = resp.unwrap();
+        let body = response.body().unwrap();
+        let bytes = match body {
+            tauri::ipc::InvokeResponseBody::Raw(b) => b,
+            _ => panic!("Expected Raw body"),
+        };
+        let model_tri_count = u32::from_le_bytes(bytes[32..36].try_into().unwrap());
+        assert_eq!(model_tri_count, 6);
     }
 }

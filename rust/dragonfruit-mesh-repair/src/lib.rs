@@ -7,6 +7,7 @@
 pub mod analysis;
 pub mod arrangement;
 pub mod core;
+pub mod decimation_config;
 pub mod hollowing;
 pub mod io;
 pub mod repair;
