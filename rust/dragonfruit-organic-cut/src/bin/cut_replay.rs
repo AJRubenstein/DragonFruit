@@ -50,7 +50,7 @@ fn main() -> Result<(), String> {
         options.cut.loop_points.len(),
         options.cut.extra_loops.len(),
         options.cut.mode,
-        options.cut.cutter_thickness_mm,
+        options.cut.joint_clearance_mm,
         options.cut.density
     );
 

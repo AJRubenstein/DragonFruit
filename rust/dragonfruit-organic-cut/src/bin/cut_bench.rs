@@ -13,7 +13,8 @@ use std::time::Instant;
 use dragonfruit_mesh_core::mesh::{IndexedMesh, Vec3};
 use dragonfruit_organic_cut::surface_cut::{seams_enclose_a_piece, SeamVerdict};
 use dragonfruit_organic_cut::surface_split::split_along_seams;
-use dragonfruit_organic_cut::membrane::{contour_split, DEFAULT_CUTTER_THICKNESS_MM};
+use dragonfruit_organic_cut::membrane::{contour_split, DEFAULT_CUTTER_THICKNESS_MM, DEFAULT_GRID_DIVISIONS};
+use dragonfruit_organic_cut::surface_cap::close_pieces;
 use dragonfruit_organic_cut::OrganicCutOptions;
 
 /// Matches the app's staged loader (`dragonfruit_mesh_repair::io::DEFAULT_MERGE_EPSILON`).
@@ -64,6 +65,11 @@ fn open_edges_of(mesh: &IndexedMesh) -> std::collections::HashSet<(u32, u32)> {
     counts.into_iter().filter(|(_, c)| *c != 2).map(|(e, _)| e).collect()
 }
 
+/// A point's exact bits, for matching the same vertex across two renumbered meshes.
+fn key(p: Vec3) -> [u32; 3] {
+    [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()]
+}
+
 fn open_edge_count(mesh: &IndexedMesh) -> usize {
     let mut counts: std::collections::HashMap<(u32, u32), usize> = std::collections::HashMap::new();
     for t in &mesh.triangles {
@@ -86,12 +92,18 @@ fn main() -> Result<(), String> {
         .filter(|n| n.ends_with(".json"))
         .collect();
     names.sort_by_key(|n| n.trim_start_matches("cut-").trim_end_matches(".json").parse::<u32>().unwrap_or(0));
+    // Chasing one dump costs a minute otherwise: `DF_BENCH_ONLY=cut-20,cut-21`.
+    if let Some(only) = std::env::var_os("DF_BENCH_ONLY") {
+        let only = only.to_string_lossy().to_string();
+        let wanted: Vec<&str> = only.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        names.retain(|n| wanted.contains(&n.trim_end_matches(".json")));
+    }
 
     println!(
         "{:<10} {:<5} {:>6}  {:<24}  {:>5}  {:<62}",
         "dump", "loop", "pts", "wafer piece + rest", "", "surface verdict | exact split"
     );
-    let (mut wafer_ok, mut surface_ok, mut split_ok, mut total) = (0, 0, 0, 0);
+    let (mut wafer_ok, mut surface_ok, mut split_ok, mut cap_ok, mut total) = (0, 0, 0, 0, 0);
 
     for name in names {
         let json = dir.join(&name);
@@ -104,7 +116,7 @@ fn main() -> Result<(), String> {
         let options: OrganicCutOptions = serde_json::from_str(&std::fs::read_to_string(&json).map_err(|e| e.to_string())?)
             .map_err(|e| format!("{}: {e}", json.display()))?;
         let spec = &options.cut;
-        let thickness = if spec.cutter_thickness_mm > 0.0 { spec.cutter_thickness_mm } else { DEFAULT_CUTTER_THICKNESS_MM };
+        let thickness = if spec.joint_clearance_mm > 0.0 { spec.joint_clearance_mm } else { DEFAULT_CUTTER_THICKNESS_MM };
 
         let mut loops: Vec<Vec<Vec3>> = Vec::new();
         let to_v = |pts: &[dragonfruit_organic_cut::OrganicCutLoopPoint]| -> Vec<Vec3> {
@@ -172,6 +184,7 @@ fn main() -> Result<(), String> {
             let t2 = Instant::now();
             let cut = split_along_seams(&mesh, std::slice::from_ref(lp));
             let cut_ms = t2.elapsed().as_millis();
+            let mut cap_txt = String::from("—");
             let cut_txt = match &cut {
                 Ok(s) => {
                     let open = open_edge_count(&s.mesh);
@@ -192,13 +205,104 @@ fn main() -> Result<(), String> {
                                 "[leak] {stem}/{i} edge {e:?} used x{uses} by faces {users:?} at ({:.3},{:.3},{:.3})",
                                 p.x, p.y, p.z
                             );
+                            // Who spans the gap: a triangle whose own edge contains
+                            // both ends of the open one is the T-junction's other
+                            // half.
+                            let (pa, pb) = (s.mesh.positions[e.0 as usize], s.mesh.positions[e.1 as usize]);
+                            let on_seg = |u: Vec3, v: Vec3, p: Vec3| {
+                                let d = v.sub(u);
+                                let dd = d.dot(d);
+                                if dd < 1e-18 { return false; }
+                                let t = p.sub(u).dot(d) / dd;
+                                (-0.001..=1.001).contains(&t)
+                                    && p.sub(u.add(d.scale(t))).length() < 1e-4
+                            };
+                            for (ti, ot) in s.mesh.triangles.iter().enumerate() {
+                                for k in 0..3 {
+                                    let (u, v) = (ot[k], ot[(k + 1) % 3]);
+                                    if (u, v) == (e.0, e.1) || (v, u) == (e.0, e.1) {
+                                        continue;
+                                    }
+                                    let (pu, pv) = (s.mesh.positions[u as usize], s.mesh.positions[v as usize]);
+                                    if on_seg(pu, pv, pa) && on_seg(pu, pv, pb) {
+                                        eprintln!(
+                                            "[leak]   spanned by tri {ot:?} edge ({u},{v}) from source face {}",
+                                            s.source_face[ti]
+                                        );
+                                    }
+                                }
+                            }
+                            let mut seen: Vec<u32> = users.clone();
+                            seen.sort_unstable();
+                            seen.dedup();
+                            for f in seen {
+                                eprintln!("[leak]   source face {f} = {:?}", mesh.triangles[f as usize]);
+                            }
                         }
                     }
                     let sides: std::collections::BTreeSet<u32> =
                         s.piece_of_face.iter().copied().collect();
-                    if open == 0 {
+                    // Against what the INPUT already carried, not against zero: the
+                    // user's STL ships 3 edges that are not on two faces, and a cut
+                    // is only asked not to add any.
+                    if open <= before {
                         split_ok += 1;
                     }
+                    // Capping is the other half of the exact cut: pieces only mean
+                    // something once each one closes into a solid.
+                    let t3 = Instant::now();
+                    // Same density knob the wafer's membrane takes, so the cap comes
+                    // out as fine as the cutter the user previewed.
+                    let cap_grid = DEFAULT_GRID_DIVISIONS * spec.density.clamp(1.0, 4.0) as f64;
+                    let capped = close_pieces(s, cap_grid, spec.membrane_smoothing);
+                    let cap_ms = t3.elapsed().as_millis();
+                    cap_txt = match &capped {
+                        Ok(c) => {
+                            // Again against what the input carried: its 3 open edges
+                            // travel with whichever piece holds them, and a cap is
+                            // only asked not to add any of its own.
+                            let leaked: usize =
+                                c.solids.iter().map(open_edge_count).sum::<usize>().saturating_sub(before);
+                            if leaked == 0 {
+                                cap_ok += 1;
+                            } else if std::env::var_os("DF_SPLIT_DEBUG").is_some() {
+                                let was: std::collections::HashSet<[[u32; 3]; 2]> = open_edges_of(&s.mesh)
+                                    .iter()
+                                    .map(|e| [key(s.mesh.positions[e.0 as usize]), key(s.mesh.positions[e.1 as usize])])
+                                    .collect();
+                                for (si, solid) in c.solids.iter().enumerate() {
+                                    for e in open_edges_of(solid) {
+                                        let (pa, pb) = (solid.positions[e.0 as usize], solid.positions[e.1 as usize]);
+                                        let k = [key(pa), key(pb)];
+                                        if was.contains(&k) || was.contains(&[k[1], k[0]]) {
+                                            continue;
+                                        }
+                                        let uses = solid.triangles.iter().filter(|t| (0..3).any(|j| {
+                                            let (x, y) = (t[j], t[(j + 1) % 3]);
+                                            (x.min(y), x.max(y)) == (e.0.min(e.1), e.0.max(e.1))
+                                        })).count();
+                                        eprintln!(
+                                            "[tapa] {stem}/{i} sólido {si}: arista nueva abierta x{uses} \
+                                             ({:.3},{:.3},{:.3})-({:.3},{:.3},{:.3})",
+                                            pa.x, pa.y, pa.z, pb.x, pb.y, pb.z
+                                        );
+                                    }
+                                }
+                                eprintln!(
+                                    "[tapa] {stem}/{i}: {} tapas, aros de {:?}, entre {:?}",
+                                    c.caps.len(),
+                                    c.caps.iter().map(|m| m.boundary.len()).collect::<Vec<_>>(),
+                                    c.cap_between
+                                );
+                            }
+                            format!(
+                                "{} tapas, {} sólidos, +{leaked} abiertas ({cap_ms}ms)",
+                                c.caps.len(),
+                                c.solids.len()
+                            )
+                        }
+                        Err(e) => format!("— {} ({cap_ms}ms)", e.chars().take(46).collect::<String>()),
+                    };
                     format!("{} piezas, abiertas {before} -> {open} ({cut_ms}ms)", sides.len())
                 }
                 Err(e) => format!("— {} ({cut_ms}ms)", e.chars().take(38).collect::<String>()),
@@ -226,7 +330,7 @@ fn main() -> Result<(), String> {
                 lp.len(),
                 wafer_txt,
                 "",
-                format!("{sizes} ({surface_ms}ms) | corte: {cut_txt}")
+                format!("{sizes} ({surface_ms}ms) | corte: {cut_txt} | {cap_txt}")
             );
         }
         if loops.len() > 1 {
@@ -246,6 +350,9 @@ fn main() -> Result<(), String> {
             );
         }
     }
-    println!("\nseparated: wafer {wafer_ok}/{total}, surface walk {surface_ok}/{total}, exact split watertight {split_ok}/{total}");
+    println!(
+        "\nseparated: wafer {wafer_ok}/{total}, surface walk {surface_ok}/{total}, \
+         exact split watertight {split_ok}/{total}, every piece capped into a solid {cap_ok}/{total}"
+    );
     Ok(())
 }
