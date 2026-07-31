@@ -115,7 +115,7 @@ pub fn build_membrane_full(
     // Grid seed (constrained Delaunay over a uniform interior point grid) →
     // well-shaped, near-uniform triangles with NO fan apex. Falls back to the
     // centroid fan + subdivision only if CDT fails (degenerate/odd loop).
-    let mut membrane = match seed_grid(&loop_pts, grid_divisions) {
+    let mut membrane = match seed_grid(&loop_pts, grid_divisions, true) {
         Some(m) => m,
         None => {
             let mut fan = seed_fan(&loop_pts)?;
@@ -134,6 +134,34 @@ pub fn build_membrane_full(
     orient_membrane(&mut membrane);
     // Minimal-surface relaxation bows the (flat) grid to follow the loop contour.
     // `smoothing` scales the pass count: 0.5 → 60 (original), 1 → 120, 2 → 240.
+    let passes = (smoothing.clamp(0.0, 2.0) * 120.0).round() as usize;
+    if passes > 0 {
+        relax(&mut membrane, passes, 0.5);
+    }
+    Some(membrane)
+}
+
+/// Span a soap film whose boundary is EXACTLY `ring` — same vertices, same order,
+/// nothing inserted between them.
+///
+/// [`build_membrane_full`] cannot do this, by design. It densifies the rim so the
+/// triangulator has short boundary edges, and its fan fallback subdivides them, so
+/// what comes back is a REFINEMENT of the loop rather than the loop. That is right
+/// for the wafer, whose rim only has to lie on the seam. It is wrong for a cap,
+/// which is sewn to the cut surface's own edges: an extra vertex on the rim has no
+/// counterpart on the other side of it, and that is a T-junction — a hole.
+///
+/// `ring` must already be a clean ring (no repeated point, no zero-length edge);
+/// it comes from mesh topology, so nothing here is allowed to tidy it up.
+pub fn build_membrane_on_ring(ring: &[Vec3], grid_divisions: f64, smoothing: f32) -> Option<Membrane> {
+    if ring.len() < 3 {
+        return None;
+    }
+    let mut membrane = seed_grid(ring, grid_divisions, false).or_else(|| seed_fan(ring))?;
+    if membrane.boundary.len() != ring.len() {
+        return None;
+    }
+    orient_membrane(&mut membrane);
     let passes = (smoothing.clamp(0.0, 2.0) * 120.0).round() as usize;
     if passes > 0 {
         relax(&mut membrane, passes, 0.5);
@@ -348,7 +376,10 @@ fn point_in_polygon(p: (f64, f64), poly: &[(f64, f64)]) -> bool {
 /// closed constraint (CDT returns only interior triangles) → lift back to 3D.
 /// Returns `None` (caller falls back to `seed_fan`) if the loop is degenerate or
 /// CDT fails.
-fn seed_grid(loop_pts: &[Vec3], grid_divisions: f64) -> Option<Membrane> {
+/// With `densify_rim` off the boundary ring comes back as `loop_pts` itself, vertex
+/// for vertex and in order — which a cap needs and the wafer does not (see
+/// [`build_membrane_on_ring`]).
+fn seed_grid(loop_pts: &[Vec3], grid_divisions: f64, densify_rim: bool) -> Option<Membrane> {
     let n = loop_pts.len();
     if n < 3 {
         return None;
@@ -385,7 +416,7 @@ fn seed_grid(loop_pts: &[Vec3], grid_divisions: f64) -> Option<Membrane> {
         let a3 = loop_pts[i];
         let b3 = loop_pts[(i + 1) % n];
         let seg_len = ((a2.0 - b2.0).powi(2) + (a2.1 - b2.1).powi(2)).sqrt();
-        let steps = ((seg_len / spacing).floor() as usize).max(1);
+        let steps = if densify_rim { ((seg_len / spacing).floor() as usize).max(1) } else { 1 };
         // Emit the start vertex + interior subdivisions; the next segment emits
         // its own start, so we don't duplicate the shared corner.
         for s in 0..steps {
@@ -2707,7 +2738,7 @@ mod tests {
         // many interior vertices, and NO fan slivers (worst angle well above the
         // fan's ~0°).
         let loop_pts = square_loop(20.0);
-        let m = seed_grid(&loop_pts, DEFAULT_GRID_DIVISIONS).expect("grid seed should build");
+        let m = seed_grid(&loop_pts, DEFAULT_GRID_DIVISIONS, true).expect("grid seed should build");
         check_membrane_valid(&m).expect("grid seed must be a valid disk");
 
         // Boundary ring is the DENSIFIED loop (more points than the 4 corners),
@@ -2743,7 +2774,7 @@ mod tests {
             Vec3::new(0.0, 4.0, 0.0),
         ];
         let fan = seed_fan(&loop_pts).expect("fan");
-        let grid = seed_grid(&loop_pts, DEFAULT_GRID_DIVISIONS).expect("grid");
+        let grid = seed_grid(&loop_pts, DEFAULT_GRID_DIVISIONS, true).expect("grid");
         // The fan of a 40×4 rectangle has very thin triangles (worst angle small);
         // the grid should be far better.
         assert!(
@@ -2799,7 +2830,7 @@ mod tests {
         // A saddle loop (no plane contains it) must still triangulate cleanly via
         // the best-fit-plane projection, then relax bows it.
         let loop_pts = saddle_loop(20.0, 6.0);
-        let m = seed_grid(&loop_pts, DEFAULT_GRID_DIVISIONS).expect("grid seed on saddle");
+        let m = seed_grid(&loop_pts, DEFAULT_GRID_DIVISIONS, true).expect("grid seed on saddle");
         check_membrane_valid(&m).expect("saddle grid must be valid");
         for v in &m.vertices {
             assert!(v.finite(), "non-finite vertex in saddle grid");
