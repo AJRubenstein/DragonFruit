@@ -603,7 +603,6 @@ export function TransformGizmo({
           {shouldRenderPart('ring-x') && (
             <GizmoRotation
               axis="x"
-              worldAxisDir={worldAxisDirs.x}
               axisVisualFlip={axisVisualFlip?.x ?? 1}
               isHovered={!suppressHover && hoveredPart === 'ring-x'}
               isActive={activePart === 'ring-x'}
@@ -626,7 +625,6 @@ export function TransformGizmo({
           {shouldRenderPart('ring-y') && (
             <GizmoRotation
               axis="y"
-              worldAxisDir={worldAxisDirs.y}
               axisVisualFlip={axisVisualFlip?.y ?? 1}
               isHovered={!suppressHover && hoveredPart === 'ring-y'}
               isActive={activePart === 'ring-y'}
@@ -649,7 +647,6 @@ export function TransformGizmo({
           {shouldRenderPart('ring-z') && (
             <GizmoRotation
               axis="z"
-              worldAxisDir={worldAxisDirs.z}
               axisVisualFlip={axisVisualFlip?.z ?? 1}
               isHovered={!suppressHover && hoveredPart === 'ring-z'}
               isActive={activePart === 'ring-z'}
