@@ -73,8 +73,6 @@ export interface OrganicCutSpec {
     tenonTiltRad: number;
     tenonRollRad: number;
   }[];
-  /** Wafer thickness in mm ("consistent thickness") — the kerf the cut removes. */
-  thicknessMm: number;
   /** Seam-line smoothing 0..1 (how much the cut line rounds through waypoints). */
   smoothing: number;
   /** Membrane smoothing 0..1 (how smooth/taut the curved cutter surface is). */
@@ -99,10 +97,16 @@ export interface OrganicCutSpec {
    */
   mode?: OrganicCutMode;
   /**
-   * Contour cutter thickness in mm. <=0 / omitted → Rust uses its default
-   * (~0.01 mm = physically zero). Serde field: `cutterThicknessMm`.
+   * Extra clearance in mm for the mortise-and-tenon joint, on top of the tenon's
+   * own tolerance. Omitted/0 — the default — means the two halves meet exactly,
+   * which is what the surface cut gives; raise it if a print needs slack to
+   * assemble. Serde field: `jointClearanceMm`.
+   *
+   * This was the wafer's thickness, back when the cut was a wafer and the number
+   * was structural. It is neither now. (There was also a legacy `thicknessMm` on
+   * this spec that Rust never read — the reason the old slider was a no-op. Gone.)
    */
-  cutterThicknessMm?: number;
+  jointClearanceMm?: number;
   /**
    * When true (contour mode), the cut also generates a registration tenon: a tenon
    * union'd onto one half and a matching mortise carved from the other. Omitted/

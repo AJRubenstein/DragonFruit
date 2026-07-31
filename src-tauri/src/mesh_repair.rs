@@ -277,10 +277,12 @@ struct GeodesicRequestDto {
     /// the cut density live.
     #[serde(default = "default_density_one")]
     density: f32,
-    /// Cutter thickness in mm. Default 0.1 (the cut's default kerf). Lets the
-    /// cutter preview show the REAL slab thickness, not a zero-width sheet.
-    #[serde(default = "default_thickness_tenth")]
-    thickness_mm: f32,
+    /// Extra clearance in mm for the mortise-and-tenon joint, on top of the tenon's
+    /// own tolerance. Zero — the default — means the halves meet exactly. Previewed
+    /// with the same number the cut spends, or the preview lies about the fit. Was
+    /// `thicknessMm` when the cut was a wafer whose thickness was structural.
+    #[serde(default, alias = "thicknessMm")]
+    joint_clearance_mm: f32,
     /// When true, the preview also builds the registration tenon (tenon + mortise) the
     /// cut would place, so the user sees it before cutting. Default off.
     #[serde(default)]
@@ -328,10 +330,6 @@ fn default_density_one() -> f32 {
     1.0
 }
 
-fn default_thickness_tenth() -> f32 {
-    0.1
-}
-
 fn default_tenon_width() -> f32 {
     2.0
 }
@@ -356,7 +354,7 @@ impl Default for GeodesicRequestDto {
             smoothing: 0.5,
             membrane_smoothing: 0.5,
             density: 1.0,
-            thickness_mm: 0.1,
+            joint_clearance_mm: 0.0,
             generate_tenon: false,
             tenon_width_mm: 2.0,
             tenon_depth_mm: 2.5,
@@ -1254,14 +1252,11 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         .collect();
     let membrane_smoothing = req.membrane_smoothing;
     let density = req.density;
-    // Resolve the kerf the way the CUT does (<=0 → the crate default), so the
-    // previewed cutter and tenon are built on the thickness that will actually be
-    // removed instead of a razor-thin stand-in.
-    let thickness_mm = if req.thickness_mm > 0.0 {
-        req.thickness_mm
-    } else {
-        dragonfruit_organic_cut::membrane::DEFAULT_CUTTER_THICKNESS_MM
-    };
+    // The cutter preview draws the wafer, whose thickness is no longer a setting —
+    // it is sub-resolution either way, and the surface cut it now stands behind has
+    // no thickness at all.
+    let thickness_mm = dragonfruit_organic_cut::membrane::DEFAULT_CUTTER_THICKNESS_MM;
+    let joint_clearance_mm = req.joint_clearance_mm.max(0.0);
     let generate_tenon = req.generate_tenon;
     let tenon_width_mm = req.tenon_width_mm;
     let tenon_depth_mm = req.tenon_depth_mm;
@@ -1316,11 +1311,8 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
                         tenon_width_mm,
                         tenon_depth_mm,
                         tenon_fillet_mm,
-                        tenon_tolerance_mm,
-                        // The kerf the cut will remove: the tenon has to span it, so
-                        // the preview must be built with it too or it lies about
-                        // where the tenon's base sits.
-                        thickness_mm,
+                        // Same sum the cut spends, so the previewed fit is the real one.
+                        tenon_tolerance_mm + joint_clearance_mm,
                         tenon_at,
                     )
                 {
@@ -1432,8 +1424,6 @@ pub async fn mesh_organic_cut_plane_tenon_preview(request_json: String) -> Resul
         else {
             return Ok::<_, String>(None);
         };
-        // A flat split is zero-thickness — both halves meet ON the plane — so
-        // there is no kerf for the tenon to span.
         let preview = dragonfruit_organic_cut::build_tenon_preview_at_frame(
             &mesh,
             frame,
@@ -1444,7 +1434,6 @@ pub async fn mesh_organic_cut_plane_tenon_preview(request_json: String) -> Resul
             tenon_depth_mm,
             tenon_fillet_mm,
             tenon_tolerance_mm,
-            0.0,
         );
         Ok(Some((
             preview.soup,

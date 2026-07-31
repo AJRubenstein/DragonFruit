@@ -121,10 +121,15 @@ pub struct OrganicCutSpec {
     /// Flat (`plane`) vs curved (`contour`). Default `plane` for back-compat.
     #[serde(default)]
     pub mode: CutMode,
-    /// Contour cutter thickness in mm. Default ~0.01 (physically zero) when
-    /// unset/<=0. Only used by the contour cut.
-    #[serde(default)]
-    pub cutter_thickness_mm: f32,
+    /// Extra clearance in mm for the mortise-and-tenon joint, on top of the tenon's
+    /// own tolerance. Zero — the default — means the two halves meet exactly, which
+    /// is what the surface cut gives; raise it if a print needs slack to assemble.
+    ///
+    /// This used to be the cutter's thickness, and it used to be structural: the cut
+    /// was a wafer that had to be thick enough to sever. It is not any more. The old
+    /// `cutterThicknessMm` name is still read so captured dumps keep replaying.
+    #[serde(default, alias = "cutterThicknessMm")]
+    pub joint_clearance_mm: f32,
     /// Membrane density multiplier (>=1) — raises the cutter poly count for the
     /// CUT. 1.0 = default resolution. Clamped to 4 in `contour_split`.
     #[serde(default = "default_one")]
@@ -490,6 +495,265 @@ fn resolve_loop_tenon(spec: &OrganicCutSpec, i: usize) -> ResolvedTenon {
     }
 }
 
+#[cfg(feature = "manifold")]
+fn distance_to_segment(p: Vec3, a: Vec3, b: Vec3) -> f32 {
+    let ab = b.sub(a);
+    let len2 = ab.dot(ab);
+    if len2 < 1e-18 {
+        return p.sub(a).length();
+    }
+    let t = (p.sub(a).dot(ab) / len2).clamp(0.0, 1.0);
+    p.sub(a.add(ab.scale(t))).length()
+}
+
+/// Which drawn seam a cap belongs to: the one its rim sits on. Rims come out of the
+/// cut in the order the surface was walked, which is no order at all, and a cut with
+/// a clearance has two per seam — so the pairing is measured rather than counted.
+#[cfg(feature = "manifold")]
+fn nearest_seam(cap: &crate::membrane::Membrane, loops: &[Vec<Vec3>]) -> usize {
+    let sample: Vec<Vec3> = cap
+        .boundary
+        .iter()
+        .step_by((cap.boundary.len() / 16).max(1))
+        .map(|&b| cap.vertices[b as usize])
+        .collect();
+    let cost = |lp: &Vec<Vec3>| -> f32 {
+        sample
+            .iter()
+            .map(|p| {
+                (0..lp.len())
+                    .map(|k| distance_to_segment(*p, lp[k], lp[(k + 1) % lp.len()]))
+                    .fold(f32::INFINITY, f32::min)
+            })
+            .sum()
+    };
+    loops
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| cost(a).partial_cmp(&cost(b)).unwrap_or(std::cmp::Ordering::Equal))
+        .map_or(0, |(i, _)| i)
+}
+
+/// Both ways of cutting refused, so the user hears both reasons. The surface cut's is
+/// first because it is the one that answers "could this cut ever work" — a seam that
+/// does not separate the surface cannot be cut by any cutter, and the wafer's own
+/// complaint about the same seam is a symptom.
+#[cfg(feature = "manifold")]
+fn both_gave_up(surface: &str, wafer: &str) -> String {
+    if surface.is_empty() {
+        return wafer.to_string();
+    }
+    format!("{surface}; and the wafer could not either: {wafer}")
+}
+
+/// Cut by splitting the model's SURFACE along the seams and closing each piece with
+/// the membrane as its lid.
+///
+/// This is the contour cut proper, and the wafer below is only what happens when it
+/// cannot. Nothing here is reconstructed after the fact: the seam becomes mesh edges,
+/// the pieces are what the surface falls into, and each lid is sewn to the cut's own
+/// edge chain with the winding reversed on the far side, so the two mate exactly and
+/// the kerf is zero. `Err` means the caller should try the wafer — a torn or holed
+/// skin lets the flood fill leak from one side to the other, and the boolean is the
+/// more forgiving of the two there.
+///
+/// The pieces the seam never touched — the loose flakes a real STL ships — are folded
+/// into the body rather than handed back. Handing them over as freed pieces is the
+/// oldest bug in this file.
+#[cfg(feature = "manifold")]
+fn contour_cut_by_surface(
+    mesh: &IndexedMesh,
+    options: &OrganicCutOptions,
+    loops: &[Vec<Vec3>],
+    loop_tenons: &[ResolvedTenon],
+) -> Result<OrganicCutOutcome, String> {
+    // Joint clearance: a real gap between the two halves, so glue has somewhere to go
+    // and the assembled model comes out the size it started. There is nothing between
+    // the halves to widen — they share their cut face — so the gap is made by cutting
+    // along the seam moved BOTH ways, half the clearance each, and throwing away the
+    // strip of skin in between.
+    let clearance = options.cut.joint_clearance_mm.max(0.0);
+    let seams: Vec<Vec<Vec3>> = if clearance > 0.0 {
+        loops
+            .iter()
+            .flat_map(|l| {
+                [
+                    crate::surface_split::offset_seam(mesh, l, -clearance * 0.5),
+                    crate::surface_split::offset_seam(mesh, l, clearance * 0.5),
+                ]
+            })
+            .collect()
+    } else {
+        loops.to_vec()
+    };
+
+    let split = crate::surface_split::split_along_seams(mesh, &seams)?;
+    let density = options.cut.density.clamp(1.0, 4.0) as f64;
+    let closed = crate::surface_cap::close_pieces(
+        &split,
+        crate::membrane::DEFAULT_GRID_DIVISIONS * density,
+        options.cut.membrane_smoothing,
+    )?;
+    if closed.caps.is_empty() {
+        return Err("the seams cut the surface but do not separate it".to_string());
+    }
+
+    let mut solids: Vec<IndexedMesh> = closed.solids;
+    let capped: std::collections::BTreeSet<u32> =
+        closed.cap_between.iter().flat_map(|&(a, b)| [a, b]).collect();
+
+    // Which cap belongs to which seam is measured, not assumed: rims come out of the
+    // cut in whatever order the surface was walked, and a cut with a clearance has
+    // TWO of them per seam.
+    let cap_seam: Vec<usize> = closed.caps.iter().map(|cap| nearest_seam(cap, loops)).collect();
+
+    // The strip of skin between a seam's two offsets is the material the gap is made
+    // of, and it goes in the bin. Found structurally rather than by measuring how
+    // near the seam it stays: a seam cut with a clearance has two caps, and the piece
+    // they BOTH face is the strip between them. No distance, no threshold — which
+    // matters, because a drawn seam is a couple of dozen points and the strip can sit
+    // further from that polyline than its own width.
+    let mut binned: std::collections::BTreeSet<u32> = Default::default();
+    if clearance > 0.0 {
+        for s in 0..loops.len() {
+            let mine: Vec<usize> = (0..closed.caps.len()).filter(|&c| cap_seam[c] == s).collect();
+            let [first, second] = mine.as_slice() else {
+                continue;
+            };
+            let (a, b) = closed.cap_between[*first];
+            let (x, y) = closed.cap_between[*second];
+            // Both rims between the SAME two pieces, and the strip is not one of two
+            // things — it is either of them. That happens when the seam goes round a
+            // handle: the two offsets did not free the piece the user drew round, they
+            // freed the sliver between themselves, and the rest of the model stayed in
+            // one piece behind the handle. Picking either is a coin toss, and one face
+            // of the coin quietly bins the model and hands back the sliver.
+            if (a.min(b), a.max(b)) == (x.min(y), x.max(y)) {
+                return Err(
+                    "the seam goes round a handle — a part joined to the body somewhere \
+                     else as well — so cutting along it frees nothing but the strip the \
+                     clearance is made of"
+                        .to_string(),
+                );
+            }
+            if let Some(strip) = [a, b].into_iter().find(|p| *p == x || *p == y) {
+                binned.insert(strip);
+            }
+        }
+    }
+
+    // One registration tenon per seam, framed on the cut face of the piece it stands
+    // on — not on some surface between the two halves. That is what lets the gap cost
+    // nothing: the tenon's base is already inside its own material whatever the
+    // clearance is, so there is no sinking, no lengthening, and no kerf to reason
+    // about. It simply crosses the gap and the mortise is carved wherever it lands.
+    //
+    let (mut tenon_kind, mut tenon_detail) = (crate::tenon::TenonKind::None, String::new());
+    let requested = loop_tenons.iter().filter(|k| k.generate).count();
+    let mut placed = 0usize;
+    let mut skipped: Vec<String> = Vec::new();
+    for (s, rk) in loop_tenons.iter().enumerate() {
+        if !rk.generate {
+            continue;
+        }
+        // The seam's own caps, and the pieces they face that are not the binned
+        // strip. Without a clearance that is one cap and its two pieces; with one it
+        // is two caps, each facing the strip on its other side.
+        let mine: Vec<usize> = (0..closed.caps.len()).filter(|&c| cap_seam[c] == s).collect();
+        let mut sides: Vec<u32> = mine
+            .iter()
+            .flat_map(|&c| [closed.cap_between[c].0, closed.cap_between[c].1])
+            .filter(|p| !binned.contains(p))
+            .collect();
+        sides.sort_unstable();
+        sides.dedup();
+        let (Some(&cap_index), [p, q]) = (mine.first(), sides.as_slice()) else {
+            skipped.push(format!("seam {}: no cut face to stand a tenon on", s + 1));
+            continue;
+        };
+        let cap = &closed.caps[cap_index];
+        let plus_first = crate::membrane::side_of_mesh(cap, &solids[*p as usize]) >= 0.0;
+        let (ia, ib) =
+            if plus_first { (*p as usize, *q as usize) } else { (*q as usize, *p as usize) };
+        let tenoned = crate::tenon::apply_tenon(
+            mesh,
+            std::mem::take(&mut solids[ia]),
+            std::mem::take(&mut solids[ib]),
+            cap,
+            rk.shape,
+            rk.swap,
+            rk.tilt,
+            rk.width,
+            rk.depth,
+            rk.fillet,
+            rk.tolerance,
+            rk.at,
+        );
+        solids[ia] = tenoned.part_a;
+        solids[ib] = tenoned.part_b;
+        if tenoned.kind != crate::tenon::TenonKind::None {
+            placed += 1;
+            tenon_kind = tenoned.kind;
+        } else if !tenoned.detail.is_empty() {
+            skipped.push(format!("seam {}: {}", s + 1, tenoned.detail));
+        }
+    }
+    if requested > 0 {
+        tenon_detail = if placed == requested {
+            String::new()
+        } else if placed == 0 {
+            tenon_kind = crate::tenon::TenonKind::None;
+            format!("no tenons placed ({})", skipped.join("; "))
+        } else {
+            format!("{placed}/{requested} tenons placed ({})", skipped.join("; "))
+        };
+    }
+
+    // Biggest piece first, then the freed ones; the untouched shells ride along with
+    // whichever piece is biggest, which is where they came from.
+    let mut parts: Vec<IndexedMesh> = Vec::with_capacity(solids.len());
+    let mut orphans: Vec<IndexedMesh> = Vec::new();
+    for (piece, solid) in solids.into_iter().enumerate() {
+        let piece = piece as u32;
+        if binned.contains(&piece) {
+            continue; // the strip the clearance is made of
+        }
+        if capped.contains(&piece) {
+            parts.push(solid);
+        } else {
+            orphans.push(solid);
+        }
+    }
+    parts.sort_by(|a, b| b.triangles.len().cmp(&a.triangles.len()));
+    let Some(body) = parts.first_mut() else {
+        return Err("the cut left no piece with a cut face".to_string());
+    };
+    let orphan_tris: usize = orphans.iter().map(|o| o.triangle_count()).sum();
+    for orphan in orphans {
+        let base = body.positions.len() as u32;
+        body.positions.extend(orphan.positions);
+        body.triangles.extend(orphan.triangles.iter().map(|t| [t[0] + base, t[1] + base, t[2] + base]));
+    }
+
+    let part_b_tris: usize = parts.iter().skip(1).map(|p| p.triangle_count()).sum();
+    let report = OrganicCutReport {
+        source_triangle_count: mesh.triangle_count(),
+        part_a_triangle_count: parts[0].triangle_count(),
+        part_b_triangle_count: part_b_tris,
+        engine: "surface".to_string(),
+        detail: format!(
+            "surface cut: {} seams, {} parts, {} cap tris, {orphan_tris} tris of loose shell kept with the body",
+            loops.len(),
+            parts.len(),
+            closed.caps.iter().map(|c| c.triangles.len()).sum::<usize>(),
+        ),
+        tenon_kind: tenon_kind.as_str().to_string(),
+        tenon_detail,
+        part_count: parts.len(),
+    };
+    Ok(OrganicCutOutcome { parts, report })
+}
+
 /// Curved "wafer" cut (M4): build a soap-film membrane following the drawn loop,
 /// thicken it into a razor-thin cutter, and split the mesh into two mating parts.
 /// Delegates the geometry to [`crate::membrane::contour_split`]; returns `Err`
@@ -536,11 +800,30 @@ fn organic_cut_contour(
         ));
     }
 
-    let thickness = if options.cut.cutter_thickness_mm > 0.0 {
-        options.cut.cutter_thickness_mm
-    } else {
-        crate::membrane::DEFAULT_CUTTER_THICKNESS_MM
+    // The SURFACE cut first: split the skin along the seam so the seam becomes mesh
+    // edges, then close each piece with the membrane as its lid. No cutter, no kerf,
+    // nothing to classify afterwards — see `docs/adr/0002-cut-the-surface-not-a-volume.md`.
+    // The wafer stays behind it because the surface cut leans on a flood fill, and a
+    // flood fill leaks through a hole in the skin, which the boolean forgives.
+    let surface_gave_up = match contour_cut_by_surface(mesh, options, &loops, &loop_tenons) {
+        Ok(outcome) => return Ok(outcome),
+        Err(why) => {
+            if std::env::var_os("DF_CUT_DEBUG").is_some() {
+                eprintln!("[cut] surface cut gave up, falling back to the wafer: {why}");
+            }
+            why
+        }
     };
+
+    // The wafer's slab thickness is its own business now, not a setting. It only ever
+    // had two jobs — stay under print resolution, and be thick enough for the boolean
+    // to resolve its two faces apart — and letting the user drive it was measured to
+    // be no help at all: the same seam fails identically at 0.1, 0.3 and 0.5 mm.
+    // Worse, the slab's thickness doubled as sideways reach across a fold, by
+    // accident, which made a thicker cutter look like a cure. What the user asks for
+    // is joint clearance, and that is spent on the joint.
+    let thickness = crate::membrane::DEFAULT_CUTTER_THICKNESS_MM;
+    let clearance = options.cut.joint_clearance_mm.max(0.0);
 
     // MULTI-LOOP: union a cutter per loop, difference once, group largest-vs-rest.
     if loops.len() >= 2 {
@@ -550,7 +833,8 @@ fn organic_cut_contour(
             thickness,
             options.cut.membrane_smoothing,
             options.cut.density,
-        )?;
+        )
+        .map_err(|why| both_gave_up(&surface_gave_up, &why))?;
         let component_count = split.component_count;
         let membrane_tris = split.membrane_tris;
         let mut part_a = split.part_a;
@@ -586,8 +870,7 @@ fn organic_cut_contour(
                     rk.width,
                     rk.depth,
                     rk.fillet,
-                    rk.tolerance,
-                    thickness,
+                    rk.tolerance + clearance,
                     rk.at,
                 );
                 // Map the (+normal, −normal) result back to (body, freed) = (a, b).
@@ -636,7 +919,8 @@ fn organic_cut_contour(
             part_b_triangle_count: part_b_tris,
             engine: "membrane".to_string(),
             detail: format!(
-                "multi-loop cut: {} loops, {} components, {} parts, membrane tris={}",
+                "multi-loop wafer cut: {} loops, {} components, {} parts, membrane tris={} \
+                 (the surface cut gave up first: {surface_gave_up})",
                 loops.len(),
                 component_count,
                 parts.len(),
@@ -652,14 +936,14 @@ fn organic_cut_contour(
     // SINGLE-LOOP: the classic curved cut, which also supports the registration tenon
     // (anchored on the one membrane) and the clean +/- side grouping.
     let loop_pts = &loops[0];
-    let split =
-        crate::membrane::contour_split(
-            mesh,
-            loop_pts,
-            thickness,
-            options.cut.membrane_smoothing,
-            options.cut.density,
-        )?;
+    let split = crate::membrane::contour_split(
+        mesh,
+        loop_pts,
+        thickness,
+        options.cut.membrane_smoothing,
+        options.cut.density,
+    )
+    .map_err(|why| both_gave_up(&surface_gave_up, &why))?;
 
     let membrane_tris = split.membrane_tris;
     let mut part_a = split.part_a;
@@ -683,8 +967,7 @@ fn organic_cut_contour(
             rk.width,
             rk.depth,
             rk.fillet,
-            rk.tolerance,
-            thickness,
+            rk.tolerance + clearance,
             rk.at,
         );
         part_a = tenoned.part_a;
@@ -700,7 +983,10 @@ fn organic_cut_contour(
         part_a_triangle_count: parts[0].triangle_count(),
         part_b_triangle_count: parts[1].triangle_count(),
         engine: "membrane".to_string(),
-        detail: format!("membrane tris={membrane_tris}"),
+        detail: format!(
+            "wafer cut: membrane tris={membrane_tris} \
+             (the surface cut gave up first: {surface_gave_up})"
+        ),
         tenon_kind: tenon_kind.as_str().to_string(),
         tenon_detail,
         part_count: parts.len(),
@@ -802,7 +1088,6 @@ fn organic_cut_plane(
                 rk.depth,
                 rk.fillet,
                 rk.tolerance,
-                0.0,
             );
             if tenoned.kind != crate::tenon::TenonKind::None {
                 placed += 1;
@@ -1409,6 +1694,71 @@ mod tests {
         assert_eq!(outcome.report.part_count, 3);
         for (i, p) in outcome.parts.iter().enumerate() {
             assert!(p.triangle_count() > 0, "part {i} empty");
+        }
+    }
+
+    // A ring round a HANDLE — a tentacle that leaves the body and fuses back — cannot
+    // free anything, whatever it is cut with. Cut it with a joint clearance and the
+    // two offsets DO free something: the sliver between themselves. Both of the
+    // seam's rims then sit between the same two pieces, so "the piece the two rims
+    // both face" stops naming one thing, and choosing either at random is a coin toss
+    // whose other face bins the model and hands back the sliver. This is that case,
+    // and the only right answer is to refuse.
+    #[cfg(feature = "manifold")]
+    #[test]
+    fn a_ring_round_a_handle_never_hands_back_the_sliver_instead_of_the_model() {
+        let (major, minor, around, tube) = (10.0_f32, 3.0_f32, 64usize, 32usize);
+        let mut positions = Vec::new();
+        for i in 0..around {
+            let u = i as f32 / around as f32 * std::f32::consts::TAU;
+            for j in 0..tube {
+                let v = j as f32 / tube as f32 * std::f32::consts::TAU;
+                let r = major + minor * v.cos();
+                positions.push(Vec3::new(r * u.cos(), r * u.sin(), minor * v.sin()));
+            }
+        }
+        let idx = |i: usize, j: usize| ((i % around) * tube + (j % tube)) as u32;
+        let mut triangles = Vec::new();
+        for i in 0..around {
+            for j in 0..tube {
+                triangles.push([idx(i, j), idx(i + 1, j), idx(i + 1, j + 1)]);
+                triangles.push([idx(i, j), idx(i + 1, j + 1), idx(i, j + 1)]);
+            }
+        }
+        let mesh = IndexedMesh { positions, triangles };
+        let source = mesh.triangle_count();
+
+        let ring: Vec<OrganicCutLoopPoint> = (0..96)
+            .map(|j| {
+                let v = j as f32 / 96.0 * std::f32::consts::TAU;
+                let r = major + minor * v.cos();
+                let (a, s) = (0.3_f32, minor * v.sin());
+                OrganicCutLoopPoint { position: [r * a.cos(), r * a.sin(), s], normal: [0.0; 3] }
+            })
+            .collect();
+        let outcome = organic_cut(
+            mesh,
+            &OrganicCutOptions {
+                cut: OrganicCutSpec {
+                    loop_points: ring,
+                    mode: CutMode::Contour,
+                    joint_clearance_mm: 0.3,
+                    ..Default::default()
+                },
+            },
+        );
+
+        // Refusing is the right answer, and the reason has to name the handle. What is
+        // NEVER allowed is succeeding with the sliver: a cut that hands back a fraction
+        // of the model it was given has thrown the model away.
+        assert_eq!(outcome.report.engine, "noop", "detail={}", outcome.report.detail);
+        for part in &outcome.parts {
+            assert!(
+                part.triangle_count() * 4 > source,
+                "a part of {} triangles came back from a model of {source} — the cut \
+                 kept the sliver and binned the body",
+                part.triangle_count(),
+            );
         }
     }
 

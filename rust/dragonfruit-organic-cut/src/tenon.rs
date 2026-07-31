@@ -364,27 +364,6 @@ fn orthonormal_basis(axis: Vec3) -> (Vec3, Vec3) {
 /// face into part_b. Negating `axis` alone would flip the `(u, v, axis)`
 /// handedness and invert the frustum winding (manifold would reject it); swapping
 /// `u` and `v` restores right-handedness so the outward winding is preserved.
-/// Sink a BUILD frame's base `half_kerf` deeper into part_a.
-///
-/// The cutter is a slab centred on the membrane, so each half's cut face ends up
-/// `kerf/2` away from it — while the tenon is built on the membrane itself, with
-/// only `TENON_BASE_OVERLAP_MM` (0.3 mm) of base reaching back for the union. At the
-/// default 0.1 mm kerf that overlap still bites solid material, but at a 1 mm kerf
-/// the base stops 0.2 mm short of part_a's face: the union welds nothing and the
-/// tenon comes out as a loose island inside the same mesh (exactly what a 1 mm cut
-/// produced). Sinking the base by half the kerf puts it back inside the material;
-/// the caller lengthens the tenon by the whole kerf so the tip still stands the
-/// requested depth proud of part_b's face.
-fn sink_frame_into_part_a(build_frame: &TenonFrame, half_kerf: f32) -> TenonFrame {
-    if half_kerf <= 0.0 {
-        return *build_frame;
-    }
-    TenonFrame {
-        anchor: build_frame.anchor.sub(build_frame.axis.scale(half_kerf)),
-        ..*build_frame
-    }
-}
-
 fn frame_extruding_toward_part_b(frame: &TenonFrame) -> TenonFrame {
     TenonFrame {
         anchor: frame.anchor,
@@ -475,7 +454,6 @@ struct LeanXform {
     roll: f32,
     /// In-plane shift (mm, local u) that puts the tenon's axis back through the
     /// ANCHOR — the point on the membrane where the crosshair sits. 0 when upright.
-    shift_u: f32,
     /// Extra length (mm) added to the BASE END only, so a leaned base stays buried.
     ///
     /// Rotating the body lifts its leading base corner by half_diag·sin(tilt), which
@@ -491,14 +469,14 @@ struct LeanXform {
 
 impl LeanXform {
     const IDENTITY: LeanXform =
-        LeanXform { tilt: 0.0, roll: 0.0, shift_u: 0.0, base_sink: 0.0, identity: true };
+        LeanXform { tilt: 0.0, roll: 0.0, base_sink: 0.0, identity: true };
 
     /// Build the transform for a tenon built in `build_frame`, given the user `tilt`
     /// and the tenon footprint `half_diag` (mm, the base half-diagonal — how far the
     /// base extends from the axis). The lean direction is computed as a WORLD
     /// direction from the ORIGINAL (un-swapped) tangent basis and projected onto
     /// `build_frame.(u, v)` so it points the same world way through any swap.
-    fn for_build(tilt: &TenonTilt, max_tilt: f32, half_kerf: f32, half_diag: f32) -> LeanXform {
+    fn for_build(tilt: &TenonTilt, max_tilt: f32, half_diag: f32) -> LeanXform {
         let leaning = tilt.tilt.abs() >= 1e-6;
         let rolling = tilt.roll.abs() >= 1e-6;
         if !leaning && !rolling {
@@ -508,18 +486,9 @@ impl LeanXform {
         // verdict, reported to the user — not something enforced by refusing to turn.
         let cap = max_tilt.clamp(0.0, TENON_MAX_TILT_RAD);
         let t = if leaning { tilt.tilt.clamp(-cap, cap) } else { 0.0 };
-        // Put the axis back through the anchor. The tenon is built on a frame whose
-        // origin sits half a kerf BELOW the membrane, so leaning about that origin
-        // slides the tenon's section at the membrane sideways by half_kerf·tan(tilt)
-        // while the crosshair stays put. Shift back by that much and the lean pivots
-        // where the user sees it pivot: under the crosshair. Applied BEFORE the roll,
-        // so it turns with everything else.
-        // Leaning about +y tips the body toward +x, so the axis meets the membrane
-        // half_kerf·tan(tilt) to the +x side; shift back the other way.
-        let shift_u = -half_kerf.max(0.0) * t.tan();
         // How far the leading base corner rises when the body turns — see `base_sink`.
         let base_sink = half_diag.max(0.0) * t.abs().sin();
-        LeanXform { tilt: t, roll: tilt.roll, shift_u, base_sink, identity: false }
+        LeanXform { tilt: t, roll: tilt.roll, base_sink, identity: false }
     }
 
 
@@ -552,7 +521,6 @@ impl LeanXform {
             pz = rz;
         }
         // 2) Slide the axis back under the crosshair (see `for_build`).
-        px += self.shift_u;
         // 3) Roll about local +z, carrying the leaned body and its lean plane alike.
         let (mut px2, mut py2) = (px, y);
         if self.roll.abs() >= 1e-9 {
@@ -934,18 +902,17 @@ fn decide_tenon(
     nominal_dome: DomeDims,
     shape: TenonShape,
     tolerance: f32,
-    half_kerf: f32,
     tilt: f32,
 ) -> TenonPlan {
     let (body, fit) = if shape == TenonShape::Frustum {
         (
             TenonBody::Frustum(nominal),
-            clearance.check_frustum(nominal, tolerance, half_kerf),
+            clearance.check_frustum(nominal, tolerance),
         )
     } else {
         (
             TenonBody::Dome(nominal_dome),
-            clearance.check_dome(nominal_dome, tolerance, half_kerf),
+            clearance.check_dome(nominal_dome, tolerance),
         )
     };
     // Standing straight is only half the question: a tenon that fits upright can
@@ -960,26 +927,6 @@ fn decide_tenon(
     };
     TenonPlan { verdict, ..plan }
 }
-
-/// Lengthen a fitted plan by the whole kerf, to be spent on the two ends the
-/// cutter's void swallows: half sinks the base into part_a (see
-/// [`sink_frame_into_part_a`]), half puts the tip back where the user asked for it,
-/// `depth` proud of part_b's cut face. Applied AFTER [`decide_tenon`] so the fit
-/// ladder and its "shrunk to fit" message still speak in the user's numbers.
-fn grow_plan_for_kerf(plan: TenonPlan, half_kerf: f32) -> TenonPlan {
-    if half_kerf <= 0.0 {
-        return plan;
-    }
-    let extra = 2.0 * half_kerf;
-    let body = match plan.body {
-        TenonBody::Frustum(dims) => {
-            TenonBody::Frustum(FrustumDims { depth: dims.depth + extra, ..dims })
-        }
-        TenonBody::Dome(dims) => TenonBody::Dome(DomeDims { depth: dims.depth + extra, ..dims }),
-    };
-    TenonPlan { body, ..plan }
-}
-
 
 /// Does this placement survive being LEANED by `tilt`?
 ///
@@ -1049,7 +996,6 @@ pub fn apply_tenon(
     depth_mm: f32,
     fillet_mm: f32,
     tolerance: f32,
-    kerf_mm: f32,
     at: TenonAnchor,
 ) -> TenonOutcome {
     let frame0 = match frame_from_membrane_at(membrane, at) {
@@ -1066,7 +1012,7 @@ pub fn apply_tenon(
     };
     apply_tenon_at_frame(
         model, part_a, part_b, frame0, shape, swap_sides, tilt, width_mm, depth_mm, fillet_mm,
-        tolerance, kerf_mm,
+        tolerance,
     )
 }
 
@@ -1086,12 +1032,10 @@ pub fn apply_tenon_at_frame(
     depth_mm: f32,
     fillet_mm: f32,
     tolerance: f32,
-    kerf_mm: f32,
 ) -> TenonOutcome {
     let tolerance = sanitize_tolerance(tolerance);
     // Half the cutter thickness — how far each half's cut face sits from the
     // membrane the tenon is framed on. See `sink_frame_into_part_a`.
-    let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
 
     // Flip which half gets the tenon vs the mortise. By default the tenon roots in
     // part_a (the membrane's +normal side) and protrudes into part_b's mortise. To
@@ -1118,16 +1062,13 @@ pub fn apply_tenon_at_frame(
     let clearance = Clearance::probe(&frame, model, model);
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
-    let plan = grow_plan_for_kerf(
-        decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf, tilt.tilt),
-        half_kerf,
-    );
+    let plan = decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, tilt.tilt);
     // The same containment check the preview runs, on the same frame, so what the
     // user saw refused in red is what the cut refuses.
     let plan = {
         let build_frame =
-            sink_frame_into_part_a(&frame_extruding_toward_part_b(&frame), half_kerf);
-        let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, half_kerf, plan.half_diag(tolerance));
+            frame_extruding_toward_part_b(&frame);
+        let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, plan.half_diag(tolerance));
         confirm_tenon_stays_inside(plan, model, &build_frame, lean)
     };
     // How far this placement can lean before the tenon leaves the material. The cut
@@ -1164,7 +1105,7 @@ pub fn apply_tenon_at_frame(
 
     match plan.body {
         TenonBody::Frustum(dims) => {
-            let out = unswap(apply_frustum(part_a, part_b, &frame, tilt, dims, fillet_mm, tolerance, half_kerf, max_tilt));
+            let out = unswap(apply_frustum(part_a, part_b, &frame, tilt, dims, fillet_mm, tolerance, max_tilt));
             if out.kind == TenonKind::Frustum {
                 out
             } else {
@@ -1177,7 +1118,7 @@ pub fn apply_tenon_at_frame(
             }
         }
         TenonBody::Dome(dims) => {
-            let out = unswap(apply_dome(part_a, part_b, &frame, tilt, dims, tolerance, half_kerf, max_tilt));
+            let out = unswap(apply_dome(part_a, part_b, &frame, tilt, dims, tolerance, max_tilt));
             if out.kind == TenonKind::Dome {
                 out
             } else {
@@ -1214,7 +1155,6 @@ pub fn build_tenon_preview_soup(
     depth_mm: f32,
     fillet_mm: f32,
     tolerance: f32,
-    kerf_mm: f32,
     at: TenonAnchor,
 ) -> Option<TenonPreview> {
     use crate::membrane::{build_membrane_full, CONTOUR_SUBDIVISIONS, DEFAULT_GRID_DIVISIONS};
@@ -1236,7 +1176,7 @@ pub fn build_tenon_preview_soup(
         }
     };
     Some(build_tenon_preview_at_frame(
-        model, frame, shape, swap_sides, tilt, width_mm, depth_mm, fillet_mm, tolerance, kerf_mm,
+        model, frame, shape, swap_sides, tilt, width_mm, depth_mm, fillet_mm, tolerance,
     ))
 }
 
@@ -1254,10 +1194,8 @@ pub fn build_tenon_preview_at_frame(
     depth_mm: f32,
     fillet_mm: f32,
     tolerance: f32,
-    kerf_mm: f32,
 ) -> TenonPreview {
     let tolerance = sanitize_tolerance(tolerance);
-    let half_kerf = if kerf_mm.is_finite() { (kerf_mm * 0.5).max(0.0) } else { 0.0 };
 
     // At preview time the body isn't split yet; probe clearance against the whole
     // model on both sides (its walls are the same walls the halves will have).
@@ -1267,13 +1205,10 @@ pub fn build_tenon_preview_at_frame(
     let clearance = Clearance::probe(&placed, model, model);
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
-    let plan = grow_plan_for_kerf(
-        decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, half_kerf, tilt.tilt),
-        half_kerf,
-    );
+    let plan = decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, tilt.tilt);
     // The build frame must MATCH what `apply_tenon` uses so the preview is exactly
     // what cuts: extrude the tenon toward part_b, with the rigid lean about the base.
-    let build_frame = sink_frame_into_part_a(&frame_extruding_toward_part_b(&placed), half_kerf);
+    let build_frame = frame_extruding_toward_part_b(&placed);
     // Sink uses the base half-diagonal so the tilted base stays buried (matches
     // apply_frustum/apply_dome; the mortise footprint is a hair larger).
     let half_diag = plan.half_diag(tolerance);
@@ -1281,7 +1216,7 @@ pub fn build_tenon_preview_at_frame(
     // far is a thing the fit VERDICT reports (see `check_lean`), not a thing the
     // gizmo silently refuses to do. Only the hard ceiling remains.
     let max_tilt = TENON_MAX_TILT_RAD;
-    let lean = LeanXform::for_build(&tilt, max_tilt, half_kerf, half_diag);
+    let lean = LeanXform::for_build(&tilt, max_tilt, half_diag);
     // Where the leaned tenon ACTUALLY ended up — the probes only ever measured
     // where it started. See `confirm_tenon_stays_inside`.
     let plan = confirm_tenon_stays_inside(plan, model, &build_frame, lean);
@@ -1293,7 +1228,6 @@ pub fn build_tenon_preview_at_frame(
     let soup_lean = LeanXform {
         tilt: 0.0,
         roll: 0.0,
-        shift_u: 0.0,
         base_sink: lean.base_sink,
         identity: lean.base_sink <= 0.0,
     };
@@ -1446,19 +1380,18 @@ fn apply_frustum(
     dims: FrustumDims,
     fillet: f32,
     tolerance: f32,
-    half_kerf: f32,
     max_tilt: f32,
 ) -> TenonOutcome {
     // Base sunk half a kerf into part_a's material (`dims` already carries the
     // matching extra length — see `grow_plan_for_kerf`).
-    let build_frame = sink_frame_into_part_a(&frame_extruding_toward_part_b(frame), half_kerf);
+    let build_frame = frame_extruding_toward_part_b(frame);
     // Rigid lean rotation about the base (identity when tilt == 0 && roll == 0): the
     // body keeps its shape, a thin collar at the base stays glued flat on the cut
     // face. Tenon and mortise share the SAME lean so the mortise follows the tenon exactly.
     // The lean's sink depends on the base half-diagonal so the tilted base stays
     // buried. Use the MORTISE's footprint (slightly larger) so both share one sink.
     let half_diag = 0.5 * ((dims.width).hypot(dims.length)) + tolerance;
-    let lean = LeanXform::for_build(&tilt, max_tilt, half_kerf, half_diag);
+    let lean = LeanXform::for_build(&tilt, max_tilt, half_diag);
     let tenon_mesh = build_frustum_leaned(&build_frame, dims, 0.0, fillet, lean);
     // The mortise is the tenon offset outward by `tolerance`; a uniform offset of a
     // rounded-rect grows the corner radius by the same amount, so the mortise's fillet
@@ -1569,7 +1502,6 @@ impl Clearance {
         &self,
         nominal: FrustumDims,
         tolerance: f32,
-        half_kerf: f32,
     ) -> Result<(), TenonProblem> {
         // The mortise extends `tolerance` past the tenon, so the wall must clear the
         // tenon PLUS that tolerance PLUS the margin. The reservation uses the
@@ -1581,7 +1513,7 @@ impl Clearance {
         // Depth: the mortise tip at depth+tol must stay m short of part_b's far wall.
         // `depth_b` is measured from the membrane, and the tenon is lengthened by the
         // kerf to cross the cutter's void, so half of that eats into the room here.
-        let needed_depth = nominal.depth + tol + m + half_kerf.max(0.0);
+        let needed_depth = nominal.depth + tol + m;
         if self.depth_b < needed_depth {
             return Err(TenonProblem::TooShallow {
                 room_mm: self.depth_b,
@@ -1612,11 +1544,10 @@ impl Clearance {
         &self,
         nominal: DomeDims,
         tolerance: f32,
-        half_kerf: f32,
     ) -> Result<(), TenonProblem> {
         let m = TENON_WALL_MARGIN_MM;
         let tol = tolerance.max(0.0);
-        let needed_depth = nominal.depth + tol + m + half_kerf.max(0.0);
+        let needed_depth = nominal.depth + tol + m;
         if self.depth_b < needed_depth {
             return Err(TenonProblem::TooShallow {
                 room_mm: self.depth_b,
@@ -1856,17 +1787,16 @@ fn apply_dome(
     tilt: TenonTilt,
     dims: DomeDims,
     tolerance: f32,
-    half_kerf: f32,
     max_tilt: f32,
 ) -> TenonOutcome {
     // Same kerf correction as the frustum: the mouth sinks into part_a and `dims`
     // arrives already grown (see `grow_plan_for_kerf`).
-    let build_frame = sink_frame_into_part_a(&frame_extruding_toward_part_b(frame), half_kerf);
+    let build_frame = frame_extruding_toward_part_b(frame);
     // Rigid lean rotation about the base (identity when tilt == 0 && roll == 0): the
     // bulge keeps its shape and is sunk so the tilted mouth disk stays buried. Tenon +
     // mortise share the SAME rigid lean, so the dilated mortise contains the leaned tenon.
     let half_diag = dims.half_w.max(dims.half_l) + tolerance;
-    let lean = LeanXform::for_build(&tilt, max_tilt, half_kerf, half_diag);
+    let lean = LeanXform::for_build(&tilt, max_tilt, half_diag);
     let tenon_mesh =
         build_dome_leaned(&build_frame, dims.half_w, dims.half_l, dims.depth, 0.0, DOME_SEGMENTS, lean);
     let mortise_mesh =
@@ -2192,7 +2122,7 @@ mod tests {
         let mem = flat_membrane(10.0);
 
         let a_tris_before = part_a.triangle_count();
-        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None);
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, None);
 
         assert_eq!(out.kind, TenonKind::Frustum, "frustum tenon placed: {}", out.detail);
         assert!(
@@ -2215,7 +2145,7 @@ mod tests {
 
         let b_tris_before = part_b.triangle_count();
         // swap_sides = true → tenon unions onto part_b, mortise carves part_a.
-        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, true, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None);
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, true, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, None);
 
         assert_eq!(out.kind, TenonKind::Frustum, "swapped frustum tenon placed: {}", out.detail);
         assert!(
@@ -2268,7 +2198,7 @@ mod tests {
         // tenon they never asked for.
         let (model, part_a, part_b) = split_halves(20.0, 4.0);
         let pb_tris = part_b.triangle_count();
-        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None);
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, None);
 
         assert_eq!(out.kind, TenonKind::None, "refused, not placed: {}", out.detail);
         assert!(
@@ -2291,7 +2221,7 @@ mod tests {
         // 2 mm of part_b: the old ladder shrank past the frustum floor and placed a
         // dome here, reporting "fell back to a half-sphere".
         let (model, pa, pb) = split_halves(20.0, 2.0);
-        let out = apply_tenon(&model, pa, pb, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None);
+        let out = apply_tenon(&model, pa, pb, &mem, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, None);
         assert_eq!(out.kind, TenonKind::None, "no dome substitution: {}", out.detail);
         assert!(
             !out.detail.contains("half-sphere"),
@@ -2313,7 +2243,7 @@ mod tests {
             v: Vec3::new(0.0, 1.0, 0.0),
             cut_area: 100.0,
         };
-        let preview = build_tenon_preview_at_frame(&model, frame, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0);
+        let preview = build_tenon_preview_at_frame(&model, frame, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1);
 
         assert!(!preview.fits, "it does not fit: {:?}", preview.detail);
         assert!(!preview.detail.is_empty(), "and it says why");
@@ -2340,7 +2270,7 @@ mod tests {
         let mem = flat_membrane(10.0);
         // Plenty thick for a frustum — but we ask for a dome explicitly.
         let (model, pa, pb) = split_halves(20.0, 20.0);
-        let out = apply_tenon(&model, pa, pb, &mem, TenonShape::Dome, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None);
+        let out = apply_tenon(&model, pa, pb, &mem, TenonShape::Dome, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, None);
         assert_eq!(
             out.kind,
             TenonKind::Dome,
@@ -2369,7 +2299,7 @@ mod tests {
         let extent = |tilt_deg: f32| -> (f32, f32) {
             let preview = build_tenon_preview_soup(
                 &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, false,
-                TenonTilt::new(tilt_deg.to_radians(), 0.0), width, depth, 0.0, tol, 0.0,
+                TenonTilt::new(tilt_deg.to_radians(), 0.0), width, depth, 0.0, tol,
                 None,
             )
             .expect("preview builds");
@@ -2453,7 +2383,7 @@ mod tests {
             body: TenonBody::Frustum(FrustumDims::from_width_depth(2.0, 4.0)),
             verdict: TenonVerdict::Fits,
         };
-        let hard = LeanXform::for_build(&TenonTilt::new(TENON_MAX_TILT_RAD, 0.0), TENON_MAX_TILT_RAD, 0.0, 1.0);
+        let hard = LeanXform::for_build(&TenonTilt::new(TENON_MAX_TILT_RAD, 0.0), TENON_MAX_TILT_RAD, 1.0);
         let leaned = confirm_tenon_stays_inside(plan.clone(), &cone, &frame, hard);
         assert_eq!(
             leaned.verdict,
@@ -2483,7 +2413,7 @@ mod tests {
         let dims = FrustumDims::from_width_depth(3.0, 4.0);
         // Half-width of the solid at the cut plane (z = 0), measured off the mesh.
         let width_at_face = |base_sink: f32| -> f32 {
-            let lean = LeanXform { tilt: 0.0, roll: 0.0, shift_u: 0.0, base_sink, identity: base_sink <= 0.0 };
+            let lean = LeanXform { tilt: 0.0, roll: 0.0, base_sink, identity: base_sink <= 0.0 };
             let mesh = build_frustum_leaned(&frame, dims, 0.0, 0.0, lean);
             // Widest |x| among vertices straddling the cut plane, by interpolating
             // each edge that crosses z = 0.
@@ -2574,7 +2504,7 @@ mod tests {
             Vec3::new(-5.0, 5.0, 0.0),
         ];
         let preview =
-            build_tenon_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None)
+            build_tenon_preview_soup(&model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, None)
                 .expect("preview builds");
         let soup = &preview.soup;
         assert_eq!(preview.kind, TenonKind::Frustum, "healthy box → frustum tenon preview");
@@ -2590,56 +2520,10 @@ mod tests {
         );
     }
 
-    // A thick kerf must not leave the tenon floating. The cutter is a slab centred on
-    // the membrane, so part_a's cut face ends up kerf/2 away from it; the tenon's base
-    // reaches back only TENON_BASE_OVERLAP_MM. At a 1 mm kerf that is 0.2 mm short, and
-    // the union welded nothing — the tenon came out as a separate island in the same
-    // mesh. The base must clear part_a's face at any kerf, and the tip must still
-    // stand the requested depth proud of part_b's face.
-    #[test]
-    fn tenon_spans_the_kerf_at_any_cutter_thickness() {
-        let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
-        let loop_pts = vec![
-            Vec3::new(-5.0, -5.0, 0.0),
-            Vec3::new(5.0, -5.0, 0.0),
-            Vec3::new(5.0, 5.0, 0.0),
-            Vec3::new(-5.0, 5.0, 0.0),
-        ];
-        let depth = 5.0;
-        for kerf in [0.0, crate::membrane::DEFAULT_CUTTER_THICKNESS_MM, 1.0, 2.0] {
-            let preview = build_tenon_preview_soup(
-                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum,
-                false, TenonTilt::default(), 5.0, depth, 0.0, 0.1, kerf, None,
-            )
-            .expect("preview builds");
-            let (soup, kind, detail) = (&preview.soup, preview.kind, &preview.detail);
-            assert_eq!(kind, TenonKind::Frustum, "kerf {kerf}: frustum placed ({detail})");
-
-            // The cut is at z=0 and the tenon extrudes along ±z; take the extent on the
-            // side the base sinks into and the side the tip reaches.
-            let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
-            for c in soup.chunks_exact(3) {
-                lo = lo.min(c[2]);
-                hi = hi.max(c[2]);
-            }
-            let half = kerf * 0.5;
-            // Base: past part_a's face (at ∓half) by the whole overlap, so the union
-            // has real material to bond to.
-            let base_depth = lo.abs().min(hi.abs());
-            assert!(
-                base_depth >= half + TENON_BASE_OVERLAP_MM - 1e-3,
-                "kerf {kerf}: base reaches {base_depth} behind the cut, needs {} (half kerf + overlap)",
-                half + TENON_BASE_OVERLAP_MM,
-            );
-            // Tip: the requested depth clear of part_b's face, not of the membrane.
-            let tip = lo.abs().max(hi.abs());
-            assert!(
-                tip >= half + depth - 1e-3,
-                "kerf {kerf}: tip reaches {tip}, needs {} (half kerf + depth)",
-                half + depth,
-            );
-        }
-    }
+    // GONE with the kerf: the tenon no longer has a gap to span. The cut face is
+    // shared by both halves, so the tenon stands on it and the clearance the user
+    // asks for is spent on the joint's fit (`tolerance`), not on reaching across a
+    // void. See `surface_cap`.
 
     // Test 6b: the swap flag visibly flips the preview — the tenon's body extends to
     // the OPPOSITE side of the cut (so the flip is apparent on screen, not a no-op).
@@ -2656,7 +2540,7 @@ mod tests {
         // on each side of the cut for unswapped vs swapped.
         let z_extent = |swap: bool| -> (f32, f32) {
             let soup = build_tenon_preview_soup(
-                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, swap, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, 0.0, None,
+                &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, swap, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, None,
             )
             .expect("preview builds")
             .soup;
@@ -2715,7 +2599,7 @@ mod tests {
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
         let half_diag = 0.5 * dims.width.hypot(dims.length);
         let tilt = TenonTilt::new(std::f32::consts::FRAC_PI_4, 0.0); // 45° lean
-        let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, 0.0, half_diag);
+        let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, half_diag);
 
         let _ = build_frustum_leaned(&frame, dims, 0.0, 0.0, lean); // builds watertight
 
@@ -2761,12 +2645,12 @@ mod tests {
     fn rolling_turns_the_tenon_and_its_lean_together() {
         let tilt = std::f32::consts::FRAC_PI_6; // 30°
         let depth = 5.0;
-        let upright = LeanXform::for_build(&TenonTilt::new(tilt, 0.0), TENON_MAX_TILT_RAD, 0.0, 1.0);
+        let upright = LeanXform::for_build(&TenonTilt::new(tilt, 0.0), TENON_MAX_TILT_RAD, 1.0);
         let (ux, uy, uz) = upright.apply(0.0, 0.0, depth);
 
         for deg in [30.0f32, 90.0, 150.0, 240.0, 330.0] {
             let roll = deg.to_radians();
-            let rolled = LeanXform::for_build(&TenonTilt::new(tilt, roll), TENON_MAX_TILT_RAD, 0.0, 1.0);
+            let rolled = LeanXform::for_build(&TenonTilt::new(tilt, roll), TENON_MAX_TILT_RAD, 1.0);
             let (rx, ry, rz) = rolled.apply(0.0, 0.0, depth);
             // Turn the un-rolled tip by the same angle about +z and they must agree.
             let (s, c) = roll.sin_cos();
@@ -2779,32 +2663,8 @@ mod tests {
         }
     }
 
-    // Test 11a1: the tenon's axis goes through the ANCHOR at any lean.
-    //
-    // It used to pivot about the build frame's origin, which sits half a kerf below
-    // the membrane and sinks further as the lean grows — so the tenon's section at the
-    // membrane slid out from under the crosshair that marks the anchor, nearly
-    // leaving the tenon at a big lean.
-    #[test]
-    fn the_lean_pivots_on_the_anchor_not_the_sunk_base() {
-        let half_kerf = 0.25;
-        for deg in [10.0f32, 30.0, 55.0, -40.0] {
-            let tilt = TenonTilt::new(deg.to_radians(), 0.0);
-            let lean =
-                LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, half_kerf, 4.0);
-            // Two points on the un-leaned axis → the leaned axis. Where does it cross
-            // the membrane (local z = half_kerf above the build origin)?
-            let (ax, ay, az) = lean.apply(0.0, 0.0, 0.0);
-            let (bx, by, bz) = lean.apply(0.0, 0.0, 10.0);
-            let t = (half_kerf - az) / (bz - az);
-            let (cx, cy) = (ax + t * (bx - ax), ay + t * (by - ay));
-            let off = (cx * cx + cy * cy).sqrt();
-            assert!(
-                off < 1e-3,
-                "at {deg}° the axis still crosses the membrane on the anchor (off by {off} mm)",
-            );
-        }
-    }
+    // GONE with the kerf: nothing sinks the base any more, so there is no sunk base
+    // to pivot away from. The build frame sits ON the cut face.
 
     // Test 11a2: the lean is a RIGID rotation — pairwise distances between any two
     // points are preserved (the tenon keeps its exact shape, no shear).
@@ -2812,7 +2672,7 @@ mod tests {
     fn tilt_preserves_body_shape() {
         let dims = FrustumDims::from_width_depth(5.0, 6.0);
         let tilt = TenonTilt::new(40.0_f32.to_radians(), 0.4);
-        let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, 0.0, 4.0);
+        let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, 4.0);
         // Any two points: their distance must be the same before and after the lean
         // (a rigid rotation + uniform sink preserves all lengths).
         let a = (2.0f32, 1.0f32, dims.depth * 0.3);
@@ -2845,7 +2705,7 @@ mod tests {
         ] {
             let tilt = TenonTilt::new(deg.to_radians(), roll);
             let dims = FrustumDims::from_width_depth(5.0, 5.0);
-            let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, 0.0, 4.0);
+            let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, 4.0);
             let tenon = build_frustum_leaned(&frame, dims, 0.0, fillet, lean);
             // Match apply_frustum: when leaning, mortise uses the SAME fillet as the
             // tenon (dilated extents) so tenon/mortise share z-levels and nest per slab.
@@ -2872,7 +2732,7 @@ mod tests {
         let mem = flat_membrane(10.0);
         let frame =
             frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
-        let lean = LeanXform::for_build(&TenonTilt::default(), TENON_MAX_TILT_RAD, 0.0, 0.0);
+        let lean = LeanXform::for_build(&TenonTilt::default(), TENON_MAX_TILT_RAD, 0.0);
         assert!(lean.identity, "zero tilt + zero roll → identity lean");
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
         let plain = build_frustum(&frame, dims, 0.0, 0.4);
@@ -2900,7 +2760,7 @@ mod tests {
         let mem = flat_membrane(60.0);
         let a_before = part_a.triangle_count();
         let tilt = TenonTilt::new(40.0_f32.to_radians(), 0.3);
-        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, 0.0, None);
+        let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, None);
         assert_eq!(out.kind, TenonKind::Frustum, "tilted tenon placed: {}", out.detail);
         assert!(out.part_a.triangle_count() > a_before, "tenon bonded to part_a");
         assert!(to_manifold(&out.part_a).is_ok(), "tilted part_a watertight");
@@ -2952,7 +2812,7 @@ mod tests {
         let b_before = split.part_b.triangle_count();
 
         // Now tenon the REAL parts — clearance probes against the original `model`.
-        let out = apply_tenon(&model, split.part_a, split.part_b, &split.membrane, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, DEFAULT_CUTTER_THICKNESS_MM, None);
+        let out = apply_tenon(&model, split.part_a, split.part_b, &split.membrane, TenonShape::Frustum, false, TenonTilt::default(), 5.0, 5.0, 0.0, 0.1, None);
 
         assert_eq!(
             out.kind,

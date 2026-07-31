@@ -97,14 +97,14 @@ export type LoopTenonSettings = Pick<
  */
 export type CutSettings = Pick<
   OrganicCutPanelState,
-  'cutMode' | 'thicknessMm' | 'smoothing' | 'membraneSmoothing' | 'density'
+  'cutMode' | 'jointClearanceMm' | 'smoothing' | 'membraneSmoothing' | 'density'
 >;
 
 /** Pull the cut-wide settings out of the panel state. */
 function extractSettings(ps: OrganicCutPanelState): CutSettings {
   return {
     cutMode: ps.cutMode,
-    thicknessMm: ps.thicknessMm,
+    jointClearanceMm: ps.jointClearanceMm,
     smoothing: ps.smoothing,
     membraneSmoothing: ps.membraneSmoothing,
     density: ps.density,
@@ -115,7 +115,7 @@ function extractSettings(ps: OrganicCutPanelState): CutSettings {
 function settingsEqual(a: CutSettings, b: CutSettings): boolean {
   return (
     a.cutMode === b.cutMode &&
-    a.thicknessMm === b.thicknessMm &&
+    a.jointClearanceMm === b.jointClearanceMm &&
     a.smoothing === b.smoothing &&
     a.membraneSmoothing === b.membraneSmoothing &&
     a.density === b.density
@@ -396,9 +396,10 @@ export interface OrganicCutSession {
 
 const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
   cutMode: 'contour',
-  // 0.1mm matches the Rust default kerf (the value the contour cut used before
+  // Zero: the surface cut's two halves share their cut face, so nothing is removed
+  // and there is nothing to make up for. Slack is the user's to ask for.
   // the slider was wired up) — the proven-good out-of-box thickness.
-  thicknessMm: 0.1,
+  jointClearanceMm: 0.0,
   // Default to full smoothing (1) on both the seam line and the cut surface —
   // the smoothest out-of-box result. The sliders go to 2 for extra rounding.
   smoothing: 1.0,
@@ -1020,7 +1021,7 @@ export function useOrganicCutSession({
             previewLoop,
             ps.membraneSmoothing,
             ps.density,
-            ps.thicknessMm,
+            ps.jointClearanceMm,
             ps.generateTenon,
             ps.tenonWidthMm,
             ps.tenonDepthMm,
@@ -1106,7 +1107,7 @@ export function useOrganicCutSession({
     clearCutPreview,
     panelState.membraneSmoothing,
     panelState.density,
-    panelState.thicknessMm,
+    panelState.jointClearanceMm,
     panelState.generateTenon,
     panelState.tenonWidthMm,
     panelState.tenonDepthMm,
@@ -1350,18 +1351,15 @@ export function useOrganicCutSession({
             // Per-loop tenon settings, aligned with the loops above (loopPoints +
             // extraLoops). The backend tenons each seam with its own tenon/mortise.
             loopTenons: kept.map((k) => tenonToSpec(k.tenon)),
-            thicknessMm: ps.thicknessMm,
             // `smoothing` = seam-line smoothing (the geodesic was already computed
             // with it, but send it so the cut's loop matches). `membraneSmoothing`
             // = cutter-surface relaxation. Both 0..1.
             smoothing: ps.smoothing,
             membraneSmoothing: ps.membraneSmoothing,
             mode: 'contour' as const,
-            // The "Wafer Thickness" slider drives the actual kerf. Rust reads
-            // `cutterThicknessMm` for the contour cut (falling back to its default
-            // only when this is <= 0), so send the slider value here — sending it
-            // as `thicknessMm` (a separate field) is what made the slider a no-op.
-            cutterThicknessMm: ps.thicknessMm,
+            // Slack for the joint, not for the cut: the surface cut's halves share
+            // their cut face, so the number is spent on the tenon's fit.
+            jointClearanceMm: ps.jointClearanceMm,
             // Cut resolution multiplier — raises the cutter poly count. The live
             // preview reflects this too (so what you see is what gets cut).
             density: ps.density,
@@ -1389,7 +1387,7 @@ export function useOrganicCutSession({
           const plane = cutPlaneFromPoints(loopSnapshot);
           cutSpec = {
             loopPoints: loopSnapshot,
-            thicknessMm: ps.thicknessMm,
+            jointClearanceMm: ps.jointClearanceMm,
             smoothing: ps.smoothing,
             mode: 'plane' as const,
             plane: plane

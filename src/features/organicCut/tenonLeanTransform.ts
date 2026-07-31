@@ -54,12 +54,12 @@ export function tenonLeanMatrix(
   // the cut face) and this had to mirror both; neither exists now, because leaning
   // a solid does not resize it. See LeanXform.
   //
-  // KNOWN, BOUNDED DIFFERENCE: Rust turns about its build origin — half a kerf
-  // below the membrane — and shifts back so the axis passes through the anchor.
-  // Turning about the anchor here lands the body up to half_kerf·(1−cos tilt)
-  // differently ALONG the axis: under 0.02mm at a 0.1mm kerf and 45°, so the
-  // preview is honest at any size a printer can hold. Both put the tenon's axis
-  // through the crosshair, which is the part the user is aiming.
+  // This used to carry a known, bounded difference: Rust turned about a build origin
+  // half a kerf below the membrane and shifted back to put the axis through the
+  // anchor, which landed the body up to half_kerf·(1−cos tilt) differently along the
+  // axis. There is no kerf any more — the two halves share their cut face and the
+  // build frame sits ON it — so both sides now turn about the same point and the
+  // preview matches the cut exactly.
   const toOrigin = new THREE.Matrix4().makeTranslation(-anchor.x, -anchor.y, -anchor.z);
   const rot = new THREE.Matrix4().makeRotationFromQuaternion(q);
   const back = new THREE.Matrix4().makeTranslation(anchor.x, anchor.y, anchor.z);

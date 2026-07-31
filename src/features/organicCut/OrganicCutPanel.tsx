@@ -59,7 +59,7 @@ function maxTenonFilletMm(widthMm: number, depthMm: number): number {
 export interface OrganicCutPanelState {
   /** Flat planar cut vs curved contour ("wafer") cut along the drawn loop. */
   cutMode: OrganicCutMode;
-  thicknessMm: number;
+  jointClearanceMm: number;
   /** Seam-line smoothing 0..1 — how much the cut line rounds through waypoints. */
   smoothing: number;
   /** Membrane smoothing 0..1 — how smooth/taut the curved cutter surface is. */
@@ -493,17 +493,18 @@ export function OrganicCutPanel({
           </div>
           )}
 
-          {/* Cut thickness (the kerf the cut removes). */}
+          {/* Joint clearance — slack in the mortise, NOT a kerf. The cut removes
+              nothing: both halves share their cut face. */}
           <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
-            <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Cut Thickness</label>
+            <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Joint Clearance</label>
             <ScrollableNumberField
-              value={state.thicknessMm}
-              onChange={(value) => setState({ thicknessMm: clampFloat(value, 0.05, 1.5, 2) })}
-              min={0.05}
+              value={state.jointClearanceMm}
+              onChange={(value) => setState({ jointClearanceMm: clampFloat(value, 0, 1.5, 2) })}
+              min={0}
               max={1.5}
               step={0.05}
               unit="mm"
-              ariaLabel="Cut thickness in millimeters"
+              ariaLabel="Joint clearance in millimeters"
               disabled={disabled || isApplying}
               className="mt-1"
             />
