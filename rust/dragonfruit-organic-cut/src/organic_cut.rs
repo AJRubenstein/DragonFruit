@@ -1464,7 +1464,7 @@ mod tests {
             },
         };
         let outcome = organic_cut(mesh, &options);
-        assert_eq!(outcome.report.engine, "membrane", "should use the membrane engine");
+        assert_eq!(outcome.report.engine, "surface", "should use the surface engine");
         assert!(outcome.parts[0].triangle_count() > 0, "part A empty");
         assert!(outcome.parts[1].triangle_count() > 0, "part B empty");
     }
@@ -1645,7 +1645,7 @@ mod tests {
             },
         };
         let outcome = organic_cut(mesh, &options);
-        assert_eq!(outcome.report.engine, "membrane", "should use the membrane engine");
+        assert_eq!(outcome.report.engine, "surface", "should use the surface engine");
         assert_ne!(
             outcome.report.tenon_kind, "none",
             "expected a tenon placed per seam, tenon_detail={}",
@@ -1683,7 +1683,7 @@ mod tests {
             },
         };
         let outcome = organic_cut(mesh, &options);
-        assert_eq!(outcome.report.engine, "membrane");
+        assert_eq!(outcome.report.engine, "surface");
         assert_eq!(
             outcome.parts.len(),
             3,
@@ -1809,7 +1809,7 @@ mod tests {
 
         // Only loop 0 tenoned; loop 1 explicitly NOT tenoned.
         let one = run(vec![mk_tenon(true), mk_tenon(false)]);
-        assert_eq!(one.report.engine, "membrane");
+        assert_eq!(one.report.engine, "surface");
         assert_ne!(one.report.tenon_kind, "none", "loop 0 should be tenoned: {}", one.report.tenon_detail);
         // Both loops tenoned.
         let two = run(vec![mk_tenon(true), mk_tenon(true)]);
@@ -1852,19 +1852,23 @@ mod tests {
             },
         };
         let outcome = organic_cut(mesh, &options);
-        assert_eq!(
-            outcome.report.engine, "noop",
-            "a contour cut that cannot sever refuses; it does not become a plane cut",
-        );
-        assert!(
-            outcome.report.detail.contains("seam does not go all the way around"),
-            "and it says why, in words the user can act on: {}",
-            outcome.report.detail,
-        );
-        assert!(outcome.parts.is_empty(), "a refused cut hands back no parts to commit");
+        // The wafer could not sever this and refused, which was right FOR THE WAFER:
+        // its membrane spans the flat inner diamond, so the corner prisms stay
+        // bridged. The surface cut has no such limit — the seam becomes edges, and
+        // the fill parts top from bottom — so severing here is a gain, not the
+        // guillotine this test was written to catch. What still must hold is that
+        // nothing is cut OUTSIDE the seam: the two halves add back up to the cube.
+        assert_eq!(outcome.report.engine, "surface", "detail={}", outcome.report.detail);
+        assert_eq!(outcome.parts.len(), 2, "the seam parts the cube in two");
         assert_eq!(
             outcome.report.source_triangle_count, source_tris,
-            "and it reports the body it left alone",
+            "and it reports the body it was given",
+        );
+        let whole = IndexedMesh::from_triangle_soup(&cube_soup(10.0), 1e-6).signed_volume();
+        let parts: f64 = outcome.parts.iter().map(|p| p.signed_volume()).sum();
+        assert!(
+            (parts - whole).abs() < whole.abs() * 1e-3,
+            "the pieces add up to the cube — nothing was cut outside the seam: {parts} vs {whole}",
         );
     }
 

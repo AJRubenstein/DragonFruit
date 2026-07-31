@@ -63,6 +63,34 @@ pub struct SplitSurface {
     /// Which face of the INPUT mesh each face of `mesh` came from. A face the seam
     /// never touched maps to itself.
     pub source_face: Vec<u32>,
+    /// The wall: the edges of `mesh` the flood fill is not allowed to cross.
+    ///
+    /// A wall that separates anything is a set of CLOSED curves. Where a vertex of it
+    /// has only one wall edge the wall has a loose end, and the fill simply walks
+    /// round it — which is the difference between a cut that separates and one that
+    /// does not. [`SplitSurface::loose_wall_ends`] finds them.
+    pub seam_edges: Vec<(u32, u32)>,
+}
+
+impl SplitSurface {
+    /// Vertices where the wall stops dead, as positions — the places a cut that
+    /// should have separated leaks through.
+    pub fn loose_wall_ends(&self) -> Vec<Vec3> {
+        let mut degree: AHashMap<u32, usize> = AHashMap::new();
+        for &(a, b) in &self.seam_edges {
+            *degree.entry(a).or_default() += 1;
+            *degree.entry(b).or_default() += 1;
+        }
+        degree
+            .into_iter()
+            .filter(|(_, n)| *n < 2)
+            .map(|(v, _)| self.positions_of(v))
+            .collect()
+    }
+
+    fn positions_of(&self, v: u32) -> Vec3 {
+        self.mesh.positions[v as usize]
+    }
 }
 
 /// The seam moved `by` mm to one side of itself, still lying on the surface.
@@ -157,7 +185,8 @@ pub fn split_along_seams(mesh: &IndexedMesh, seams: &[Vec<Vec3>]) -> Result<Spli
     }
 
     let piece_of_face = pieces(&current, &seam_edges);
-    Ok(SplitSurface { mesh: current, piece_of_face, seam_vertices, source_face })
+    let seam_edges: Vec<(u32, u32)> = seam_edges.into_iter().collect();
+    Ok(SplitSurface { mesh: current, piece_of_face, seam_vertices, source_face, seam_edges })
 }
 
 // ---------------------------------------------------------------------------
@@ -187,16 +216,69 @@ struct Crossing {
 /// comfortably INSIDE the current one, so the walk sticks there and sails past
 /// every edge it should have crossed.
 fn walk(mesh: &IndexedMesh, bvh: &Bvh, topo: &Topology, seam: &[Vec3]) -> Result<Vec<Crossing>, String> {
-    /// How far the walk will look for the sample's face before giving up and
-    /// asking the whole mesh. Dense sampling keeps this at 1 almost always.
-    const NEARBY_HOPS: usize = 3;
     /// A step should cross a handful of faces at most; more means the sampling and
     /// the mesh disagree wildly and the caller is better off with the old cut.
     const MAX_HOPS_PER_STEP: usize = 8;
 
+    // The ring has to close, and where it closes is the face the walk ENDS in — not
+    // the one a global nearest-face lookup picks for the first sample. On an edge or
+    // a vertex several faces are equally nearest, so those two differ, and then the
+    // wall is left open exactly where the seam closes on itself. That does not look
+    // like much: the surface is still watertight and still cut, and the flood fill
+    // simply walks round the loose end and calls the model one piece. One crossing in
+    // 280 was enough to refuse a whole cut.
+    //
+    // So walk it twice. The first pass is thrown away and only says where the walk
+    // comes to rest; the second starts there, and its two ends meet by construction.
     let mut crossings: Vec<Crossing> = Vec::new();
-    let mut face = nearest_face(bvh, mesh, seam[0])
+    let mut start_face = nearest_face(bvh, mesh, seam[0])
         .ok_or_else(|| "the seam starts nowhere near the surface".to_string())?;
+    for _ in 0..2 {
+        crossings.clear();
+        start_face = walk_once(mesh, bvh, topo, seam, start_face, &mut crossings)?;
+    }
+
+    // A drift the second pass could not settle: bridge it if the two ends are close
+    // enough to join honestly, and otherwise leave the ring open rather than invent a
+    // path across the model. `SplitSurface::loose_wall_ends` then names the spot.
+    let face = start_face;
+    let start_face = walk_start(mesh, bvh, seam)?;
+    if face != start_face {
+        if let Some(path) = topo.path_between(face, start_face, MAX_HOPS_PER_STEP) {
+            let (a, b) = (seam[seam.len() - 1], seam[0]);
+            for pair in path.windows(2) {
+                let Some(edge) = topo.shared_edge(pair[0], pair[1]) else {
+                    return Err("two faces the walk stepped between share no edge".to_string());
+                };
+                let t = crossing_t(mesh, edge, a, b);
+                crossings.push(Crossing { edge, t, from: pair[0], to: pair[1] });
+            }
+        }
+    }
+    Ok(crossings)
+}
+
+/// The face a global lookup puts the seam's first sample in.
+fn walk_start(mesh: &IndexedMesh, bvh: &Bvh, seam: &[Vec3]) -> Result<u32, String> {
+    nearest_face(bvh, mesh, seam[0])
+        .ok_or_else(|| "the seam starts nowhere near the surface".to_string())
+}
+
+/// One lap of the seam from `from`, recording every edge crossed. Returns the face it
+/// came to rest in.
+fn walk_once(
+    mesh: &IndexedMesh,
+    bvh: &Bvh,
+    topo: &Topology,
+    seam: &[Vec3],
+    from: u32,
+    crossings: &mut Vec<Crossing>,
+) -> Result<u32, String> {
+    /// How far the walk will look for the sample's face before giving up and asking
+    /// the whole mesh. Dense sampling keeps this at 1 almost always.
+    const NEARBY_HOPS: usize = 3;
+    const MAX_HOPS_PER_STEP: usize = 8;
+    let mut face = from;
 
     for i in 0..seam.len() {
         let (a, b) = (seam[i], seam[(i + 1) % seam.len()]);
@@ -222,7 +304,7 @@ fn walk(mesh: &IndexedMesh, bvh: &Bvh, topo: &Topology, seam: &[Vec3]) -> Result
         }
         face = next;
     }
-    Ok(crossings)
+    Ok(face)
 }
 
 /// Where on `edge` the step from `a` to `b` crosses it, as a fraction of the edge.
@@ -485,9 +567,15 @@ fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFace
     // face are the two ends of one chord.
     let mut chords: AHashMap<u32, Vec<(u32, u32)>> = AHashMap::new();
     let mut grazed: Vec<((u32, u32), u32, u32)> = Vec::new();
+    let (mut broke_chain, mut same_vertex) = (0usize, 0usize);
     for (i, c) in crossings.iter().enumerate() {
         let j = (i + 1) % crossings.len();
-        if c.to != crossings[j].from || vertex_of[i] == vertex_of[j] {
+        if c.to != crossings[j].from {
+            broke_chain += 1;
+            continue;
+        }
+        if vertex_of[i] == vertex_of[j] {
+            same_vertex += 1;
             continue;
         }
         // Both ends on ONE edge of the face: the seam grazed the face instead of
@@ -503,6 +591,14 @@ fn retriangulate(mesh: &IndexedMesh, crossings: Vec<Crossing>) -> Result<CutFace
             continue;
         }
         chords.entry(c.to).or_default().push((vertex_of[i], vertex_of[j]));
+    }
+
+    if std::env::var_os("DF_SPLIT_DEBUG").is_some() {
+        eprintln!(
+            "[muro] {} cruces: {broke_chain} sin cadena (el paseo saltó), \
+             {same_vertex} en el mismo vértice",
+            crossings.len()
+        );
     }
 
     // Faces the seam crosses are rebuilt; every other face is kept as it is, so the

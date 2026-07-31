@@ -334,6 +334,28 @@ fn main() -> Result<(), String> {
             );
         }
         if loops.len() > 1 {
+            // What the APP actually does: cut along every seam at once. The per-loop
+            // rows above never show this, and a piece held by two seams only comes
+            // away when both are walls at the same time.
+            let together = match split_along_seams(&mesh, &loops) {
+                Ok(s) => {
+                    let pieces: std::collections::BTreeSet<u32> =
+                        s.piece_of_face.iter().copied().collect();
+                    let loose = s.loose_wall_ends();
+                    if !loose.is_empty() {
+                        for p in loose.iter().take(8) {
+                            eprintln!(
+                                "[muro] {stem}: el muro se queda a medias en ({:.3},{:.3},{:.3})",
+                                p.x, p.y, p.z
+                            );
+                        }
+                    }
+                    format!("{} piezas juntas, {} cabos sueltos del muro", pieces.len(), loose.len())
+                }
+                Err(e) => format!("— {}", e.chars().take(46).collect::<String>()),
+            };
+            println!("{:<10} {:<5} {:>6}  {:<24}  {:>5}  {together}", stem, "todos", "", "", "");
+
             let sizes = match seams_enclose_a_piece(&mesh, &loops) {
                 SeamVerdict::Enclosed { piece_faces } => format!("encloses {piece_faces} faces"),
                 SeamVerdict::NotSeparating => "separates nothing".to_string(),
