@@ -157,7 +157,14 @@ pub fn build_membrane_on_ring(ring: &[Vec3], grid_divisions: f64, smoothing: f32
     if ring.len() < 3 {
         return None;
     }
-    let mut membrane = seed_grid(ring, grid_divisions, false).or_else(|| seed_fan(ring))?;
+    // No fan fallback here, deliberately. `seed_fan` spans a ring with ONE interior
+    // vertex at the centroid, which is a cone, not a surface — and relaxing it cannot
+    // help, because there is no interior to relax. On a flat little ring nobody
+    // notices; on a real cut face it is a funnel of triangles radiating from a point,
+    // visibly nothing like the flat sheet the user was shown, and it gets committed
+    // to their scene without a word. A cap that cannot be spanned properly is a cap
+    // that should send the cut to the wafer.
+    let mut membrane = seed_grid(ring, grid_divisions, false)?;
     if membrane.boundary.len() != ring.len() {
         return None;
     }
