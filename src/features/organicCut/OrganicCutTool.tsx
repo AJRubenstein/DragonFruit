@@ -17,6 +17,13 @@ interface OrganicCutToolProps {
   activeTransform?: ModelTransform;
   /** Whether the tool is interactive (false while applying). Reserved for future use. */
   active: boolean;
+  /**
+   * Where the last refused cut went wrong, model-local. Drawn as bright markers on
+   * the surface, because this is the one thing the user cannot work out for
+   * themselves: a coordinate in the panel text names a place they have no way to
+   * find. Empty when the last cut succeeded or was never made.
+   */
+  cutLeakPoints?: [number, number, number][];
   /** Loop points placed so far (model-local space), owned by the parent. */
   loop: OrganicCutLoopPoint[];
   /** Append a point picked on the surface. Reserved for future in-canvas hooks. */
@@ -280,6 +287,7 @@ export function OrganicCutTool({
   models,
   activeModelId,
   activeTransform,
+  cutLeakPoints,
   loop,
   onUpdatePoint,
   onDragStateChange,
@@ -1100,6 +1108,17 @@ export function OrganicCutTool({
             be moved by Snap to Edges. Each marker is draggable: a press that moves
             repositions it; a press that doesn't is a select; a double-click toggles
             the lock. */}
+        {/* Where the last refused cut went wrong. Drawn on top of everything and
+            larger than a waypoint, because the whole point is to be findable: the
+            user is being told to nudge the seam across this exact spot, and it is
+            often on the far side of the model. */}
+        {(cutLeakPoints ?? []).map((p, idx) => (
+          <mesh key={`leak-${idx}`} position={[p[0], p[1], p[2]]} renderOrder={1005} frustumCulled={false}>
+            <sphereGeometry args={[markerRadius * 2.5, 12, 12]} />
+            <meshBasicMaterial color={colors.markerSelected} depthTest={false} transparent opacity={0.9} />
+          </mesh>
+        ))}
+
         {loop.map((p, idx) => {
           const isDragging = draggingIndex === idx;
           const isSelected = selectedIndex === idx;

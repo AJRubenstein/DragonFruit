@@ -343,6 +343,8 @@ export interface OrganicCutSession {
    * the button do nothing, or worse, saw a fallback cut they never asked for.
    */
   cutError: string | null;
+  /** Where the refused cut went wrong, model-local, for the viewport to mark. */
+  cutLeakPoints: [number, number, number][];
   // Derived gates for the panel
   canApply: boolean;
   pointCount: number;
@@ -473,6 +475,9 @@ export function useOrganicCutSession({
   const [isApplying, setIsApplying] = React.useState(false);
   const [lastResult, setLastResult] = React.useState<OrganicCutResult | null>(null);
   const [cutError, setCutError] = React.useState<string | null>(null);
+  // The spots a refused cut points at, drawn in the viewport. Cleared with the error
+  // they belong to, so a marker can never outlive its message.
+  const [cutLeakPoints, setCutLeakPoints] = React.useState<[number, number, number][]>([]);
   const [geodesicPolyline, setGeodesicPolyline] = React.useState<Float32Array | null>(null);
   // Plane-mode seam: every curve where the cutting plane meets the mesh — the
   // exact seam a flat cut produces. Null in contour mode.
@@ -863,6 +868,7 @@ export function useOrganicCutSession({
       setActiveLoopIndex(0);
       setLastResult(null);
       setCutError(null);
+    setCutLeakPoints([]);
       setSelectedIndex(null);
       clearModelDerivedPreviews();
     }
@@ -895,6 +901,7 @@ export function useOrganicCutSession({
     setPanelState((ps) => withTenon(ps, restoredLoops[nextActive]?.tenon ?? DEFAULT_LOOP_TENON));
     setLastResult(null);
     setCutError(null);
+    setCutLeakPoints([]);
     clearModelDerivedPreviews();
     flushEditRun();
     // Redo history + selection don't carry across models.
@@ -1214,6 +1221,7 @@ export function useOrganicCutSession({
     commitLoops('cut:clear all', () => [emptyLoop(extractTenon(panelStateRef.current))], 0);
     setLastResult(null);
     setCutError(null);
+    setCutLeakPoints([]);
     setSelectedIndex(null);
     setGeodesicPolyline(null);
   }, [commitLoops]);
@@ -1307,6 +1315,7 @@ export function useOrganicCutSession({
     // this model takes seconds, and a message left on screen through all of it cannot
     // be told apart from the one this press is about to produce.
     setCutError(null);
+    setCutLeakPoints([]);
     void (async () => {
       try {
         const staged = await stageCutSource(geom, geomKey);
@@ -1421,6 +1430,7 @@ export function useOrganicCutSession({
             ? asSentence(result.report.detail || 'The cut could not be made')
             : null,
         );
+        setCutLeakPoints(result.report.engine === 'noop' ? (result.report.leakPoints ?? []) : []);
 
         // Commit every part to the scene (replace the active model with the first,
         // add the rest as new models — a multi-loop cut can free several pieces). If
@@ -1535,6 +1545,7 @@ export function useOrganicCutSession({
     isApplying,
     lastResult,
     cutError,
+    cutLeakPoints,
     canApply,
     pointCount,
     geodesicPolyline,

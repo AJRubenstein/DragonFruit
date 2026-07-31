@@ -203,6 +203,13 @@ export interface OrganicCutReport {
    * a no-op. The frontend reads exactly this many parts back.
    */
   partCount?: number;
+  /**
+   * Where the cut went wrong, in model-local coordinates. Empty on success, and on
+   * failures that have no one place (a rim nothing can span is a whole ring, not a
+   * point). These are for DRAWING: a coordinate in a sentence is no use to someone
+   * looking at a model, so the tool puts a marker on each one.
+   */
+  leakPoints?: [number, number, number][];
 }
 
 export interface OrganicCutResult {

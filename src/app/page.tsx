@@ -9851,6 +9851,7 @@ export default function Home() {
                 activeModelId={displayActiveModelId}
                 activeTransform={transformMgr.transform}
                 active={!organicCut.isApplying}
+                cutLeakPoints={organicCut.cutLeakPoints}
                 loop={organicCut.loop}
                 onAddPoint={organicCut.addPoint}
                 onUpdatePoint={organicCut.updatePoint}
