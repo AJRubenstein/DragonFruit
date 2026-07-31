@@ -70,6 +70,9 @@ pub struct SplitSurface {
     /// round it — which is the difference between a cut that separates and one that
     /// does not. [`SplitSurface::loose_wall_ends`] finds them.
     pub seam_edges: Vec<(u32, u32)>,
+    /// Which of the seams given to the cut each wall edge belongs to, in step with
+    /// `seam_edges`.
+    pub seam_of_edge: Vec<usize>,
 }
 
 impl SplitSurface {
@@ -81,12 +84,180 @@ impl SplitSurface {
     /// between two of those pieces stops dead, which is the leak that matters and the
     /// one a global count cannot see.
     pub fn loose_wall_ends(&self) -> Vec<Vec3> {
+        self.loose_wall_ends_by_vertex().into_iter().map(|v| self.positions_of(v)).collect()
+    }
+
+    fn positions_of(&self, v: u32) -> Vec3 {
+        self.mesh.positions[v as usize]
+    }
+
+    /// Fold the debris a joint clearance leaves behind back into its neighbour.
+    ///
+    /// `pairs` names the seams that are the two sides of one clearance. Where two of
+    /// those pass within a triangle of each other the retriangulation can leave
+    /// islands of one and three and sixteen faces, walled off from everything. They
+    /// are not pieces of the model: they are shavings of the strip the clearance is
+    /// made of, and the wall around them does not close, so a single one of them
+    /// refuses the whole cut.
+    ///
+    /// Three things have to be true before a piece is folded away, and asking for all
+    /// three is what keeps this from ever swallowing a piece the user meant to free:
+    /// its border must carry BOTH sides of one clearance — only the strip and its
+    /// shavings do — the wall around it must be broken, and it must be smaller than
+    /// every piece it touches. The last one is what matters most: without it, a body
+    /// that picks up a few edges of the far offset where the two tangle qualifies on
+    /// the first two counts, and folding THAT away hands the user a sliver of two
+    /// thousand triangles back from a model of half a million. A seam that goes round
+    /// a handle also touches both sides, but its wall is closed, so it is left alone
+    /// and still refused later, by name.
+    ///
+    /// Nothing is deleted; the faces are relabelled, and the caller decides what to
+    /// bin as it did before.
+    pub fn dissolve_clearance_debris(&mut self, pairs: &[(usize, usize)]) {
+        let broken: AHashSet<u32> =
+            self.loose_wall_ends_by_vertex().into_iter().collect();
+        if broken.is_empty() {
+            return;
+        }
+        let sides_of_piece = self.sides_of_piece();
+        let mut border: AHashMap<(u32, u32), usize> = AHashMap::new();
+        let mut touches_break: AHashSet<u32> = AHashSet::new();
+        let faces_of = self.faces_of_edge();
+        for e in &self.seam_edges {
+            let Some(faces) = faces_of.get(e) else { continue };
+            if faces.len() != 2 {
+                continue;
+            }
+            let (p, q) = (
+                self.piece_of_face[faces[0] as usize],
+                self.piece_of_face[faces[1] as usize],
+            );
+            *border.entry((p.min(q), p.max(q))).or_default() += 1;
+            if broken.contains(&e.0) || broken.contains(&e.1) {
+                touches_break.insert(p);
+                touches_break.insert(q);
+            }
+        }
+
+        let mut faces: AHashMap<u32, usize> = AHashMap::new();
+        for &p in &self.piece_of_face {
+            *faces.entry(p).or_default() += 1;
+        }
+        let neighbours = |piece: u32| -> Vec<(u32, usize)> {
+            border
+                .iter()
+                .filter(|((p, q), _)| *p == piece || *q == piece)
+                .map(|((p, q), n)| (if *p == piece { *q } else { *p }, *n))
+                .collect()
+        };
+
+        // The strip itself qualifies on every count below — it is what the shavings
+        // are shavings OF — so name it first and leave it alone. Folding the strip
+        // into the body was how a cut came back with the strip as the freed piece and
+        // the model as the body.
+        let strips: AHashSet<u32> =
+            pairs.iter().filter_map(|&(a, b)| self.strip_between(a, b)).collect();
+
+        let mut relabel: AHashMap<u32, u32> = AHashMap::new();
+        for (&piece, sides) in &sides_of_piece {
+            if strips.contains(&piece) || !touches_break.contains(&piece) {
+                continue;
+            }
+            if !pairs.iter().any(|(a, b)| sides.contains(a) && sides.contains(b)) {
+                continue;
+            }
+            let mine = faces.get(&piece).copied().unwrap_or(0);
+            let around = neighbours(piece);
+            if around.iter().any(|(q, _)| faces.get(q).copied().unwrap_or(0) <= mine) {
+                continue;
+            }
+            // Into whichever neighbour holds most of its border.
+            if let Some((into, _)) = around.into_iter().max_by_key(|(_, n)| *n) {
+                relabel.insert(piece, into);
+            }
+        }
+        for p in self.piece_of_face.iter_mut() {
+            if let Some(&into) = relabel.get(p) {
+                *p = into;
+            }
+        }
+    }
+
+    /// The strip of skin held between seams `a` and `b` — what a joint clearance
+    /// throws away.
+    ///
+    /// Read off the wall rather than measured: the strip can sit further from the
+    /// drawn seam than its own width, so distance is no use, and counting rims held
+    /// only while a seam had exactly two of them.
+    ///
+    /// The strip is the piece that runs ALONG both offsets — for their whole length,
+    /// because that is what a strip between two seams is. So take, for each piece,
+    /// how much of its border the WEAKER of the two offsets holds, and keep the
+    /// largest. A body has thousands of edges of one offset and, where the two
+    /// tangle, perhaps three of the other, which scores three. A shaving scores one.
+    /// The strip scores its own length. Nothing here is a threshold: it is an
+    /// argmax, and the gap between the strip and everything else is three orders of
+    /// magnitude.
+    pub fn strip_between(&self, a: usize, b: usize) -> Option<u32> {
+        let mut along: AHashMap<(u32, usize), usize> = AHashMap::new();
+        let faces_of = self.faces_of_edge();
+        for (i, e) in self.seam_edges.iter().enumerate() {
+            let Some(faces) = faces_of.get(e) else { continue };
+            if faces.len() != 2 {
+                continue;
+            }
+            let side = self.seam_of_edge[i];
+            if side != a && side != b {
+                continue;
+            }
+            for &f in faces {
+                *along.entry((self.piece_of_face[f as usize], side)).or_default() += 1;
+            }
+        }
+        let pieces: AHashSet<u32> = along.keys().map(|(p, _)| *p).collect();
+        pieces
+            .into_iter()
+            .map(|p| {
+                let ea = along.get(&(p, a)).copied().unwrap_or(0);
+                let eb = along.get(&(p, b)).copied().unwrap_or(0);
+                (p, ea.min(eb))
+            })
+            .filter(|(_, score)| *score > 0)
+            .max_by_key(|(p, score)| (*score, std::cmp::Reverse(*p)))
+            .map(|(p, _)| p)
+    }
+
+    /// Which seams run along each piece's border.
+    fn sides_of_piece(&self) -> AHashMap<u32, AHashSet<usize>> {
+        let faces_of = self.faces_of_edge();
+        let mut sides: AHashMap<u32, AHashSet<usize>> = AHashMap::new();
+        for (i, e) in self.seam_edges.iter().enumerate() {
+            let Some(faces) = faces_of.get(e) else { continue };
+            if faces.len() != 2 {
+                continue;
+            }
+            for &f in faces {
+                sides
+                    .entry(self.piece_of_face[f as usize])
+                    .or_default()
+                    .insert(self.seam_of_edge[i]);
+            }
+        }
+        sides
+    }
+
+    fn faces_of_edge(&self) -> AHashMap<(u32, u32), Vec<u32>> {
         let mut faces_of: AHashMap<(u32, u32), Vec<u32>> = AHashMap::new();
         for (fi, t) in self.mesh.triangles.iter().enumerate() {
             for k in 0..3 {
                 faces_of.entry(edge_key(t[k], t[(k + 1) % 3])).or_default().push(fi as u32);
             }
         }
+        faces_of
+    }
+
+    fn loose_wall_ends_by_vertex(&self) -> Vec<u32> {
+        let faces_of = self.faces_of_edge();
         let mut degree: AHashMap<((u32, u32), u32), usize> = AHashMap::new();
         for e in &self.seam_edges {
             let Some(faces) = faces_of.get(e) else { continue };
@@ -105,11 +276,7 @@ impl SplitSurface {
             degree.into_iter().filter(|(_, n)| *n < 2).map(|((_, v), _)| v).collect();
         ends.sort_unstable();
         ends.dedup();
-        ends.into_iter().map(|v| self.positions_of(v)).collect()
-    }
-
-    fn positions_of(&self, v: u32) -> Vec3 {
-        self.mesh.positions[v as usize]
+        ends
     }
 }
 
@@ -210,11 +377,14 @@ pub fn split_along_seams(mesh: &IndexedMesh, seams: &[Vec<Vec3>]) -> Result<Spli
     let mut current = mesh.clone();
     let apart = seam_separation(seams);
     let snap_mm = snap_distance(mesh, apart);
-    let mut seam_edges: AHashSet<(u32, u32)> = AHashSet::new();
+    // Which seam each wall edge came from, kept through every later cut. Two seams
+    // 0.1 mm apart are the two sides of one joint clearance, and telling their edges
+    // apart is what lets the debris where they tangle be recognised for what it is.
+    let mut seam_edges: AHashMap<(u32, u32), usize> = AHashMap::new();
     let mut seam_vertices: Vec<u32> = Vec::new();
     let mut source_face: Vec<u32> = (0..mesh.triangles.len() as u32).collect();
 
-    for seam in seams.iter().filter(|s| s.len() >= 3) {
+    for (si, seam) in seams.iter().enumerate().filter(|(_, s)| s.len() >= 3) {
         let step = median_edge_length(&current) * 0.25;
         let step = apart.map_or(step, |a| step.min(a * 0.5));
         let dense = densify(seam, step);
@@ -232,25 +402,33 @@ pub fn split_along_seams(mesh: &IndexedMesh, seams: &[Vec<Vec3>]) -> Result<Spli
         // reports a problem.
         seam_edges = seam_edges
             .into_iter()
-            .flat_map(|e| match cut.split_edges.get(&e) {
-                None => vec![e],
+            .flat_map(|(e, owner)| match cut.split_edges.get(&e) {
+                None => vec![(e, owner)],
                 Some(made) => {
                     let mut chain = Vec::with_capacity(made.len() + 2);
                     chain.push(e.0);
                     chain.extend(made.iter().copied());
                     chain.push(e.1);
-                    chain.windows(2).map(|w| edge_key(w[0], w[1])).collect()
+                    chain.windows(2).map(|w| (edge_key(w[0], w[1]), owner)).collect()
                 }
             })
             .collect();
-        seam_edges.extend(cut.seam_edges);
+        seam_edges.extend(cut.seam_edges.into_iter().map(|e| (e, si)));
         seam_vertices.extend(cut.seam_vertices);
         source_face = cut.source_face.iter().map(|&f| source_face[f as usize]).collect();
     }
 
-    let piece_of_face = pieces(&current, &seam_edges);
-    let seam_edges: Vec<(u32, u32)> = seam_edges.into_iter().collect();
-    Ok(SplitSurface { mesh: current, piece_of_face, seam_vertices, source_face, seam_edges })
+    let walls: AHashSet<(u32, u32)> = seam_edges.keys().copied().collect();
+    let piece_of_face = pieces(&current, &walls);
+    let (seam_edges, seam_of_edge): (Vec<(u32, u32)>, Vec<usize>) = seam_edges.into_iter().unzip();
+    Ok(SplitSurface {
+        mesh: current,
+        piece_of_face,
+        seam_vertices,
+        source_face,
+        seam_edges,
+        seam_of_edge,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1263,5 +1441,25 @@ mod tests {
         );
         let labels: AHashSet<u32> = split.piece_of_face.iter().copied().collect();
         assert_eq!(labels.len(), 3, "top, bottom and the strip between: {labels:?}");
+
+        // And the strip is named for what it is. It is the band the clearance is made
+        // of — the piece that runs along both seams — and binning the wrong one hands
+        // the user the shaving and bins the model.
+        // Not by size — on a mesh this coarse the band round the cube carries more
+        // faces than the lid it separates — but by where it is: every face of the
+        // strip lies inside the tenth of a millimetre between the two seams.
+        let strip = split.strip_between(0, 1).expect("the strip is between the two seams");
+        for (fi, t) in split.mesh.triangles.iter().enumerate() {
+            if split.piece_of_face[fi] != strip {
+                continue;
+            }
+            for &v in t {
+                let z = split.mesh.positions[v as usize].z;
+                assert!(
+                    (51.99..=52.11).contains(&z),
+                    "a face of the strip sits at z = {z}, outside the seams at 52.0 and 52.1",
+                );
+            }
+        }
     }
 }

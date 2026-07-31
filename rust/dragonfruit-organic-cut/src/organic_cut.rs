@@ -605,7 +605,16 @@ fn contour_cut_by_surface(
         loops.to_vec()
     };
 
-    let split = crate::surface_split::split_along_seams(mesh, &seams)?;
+    let mut split = crate::surface_split::split_along_seams(mesh, &seams)?;
+    // The two seams of one clearance were made 0.1 mm apart; where they run through
+    // the same triangle they leave shavings of the strip walled off on their own, and
+    // one shaving of a single face refuses the whole cut. Fold them back in before
+    // anything is measured.
+    if clearance > 0.0 {
+        let pairs: Vec<(usize, usize)> = (0..loops.len()).map(|s| (2 * s, 2 * s + 1)).collect();
+        split.dissolve_clearance_debris(&pairs);
+    }
+    let split = split;
     // From here on every refusal has a place: the wall's loose ends are exactly where
     // the two sides still hold on to each other.
     leaks.extend(split.loose_wall_ends().iter().map(|p| [p.x, p.y, p.z]));
@@ -652,38 +661,45 @@ fn contour_cut_by_surface(
     let cap_seam: Vec<usize> = closed.caps.iter().map(|cap| nearest_seam(cap, loops)).collect();
 
     // The strip of skin between a seam's two offsets is the material the gap is made
-    // of, and it goes in the bin. Found structurally rather than by measuring how
-    // near the seam it stays: a seam cut with a clearance has two caps, and the piece
-    // they BOTH face is the strip between them. No distance, no threshold — which
-    // matters, because a drawn seam is a couple of dozen points and the strip can sit
-    // further from that polyline than its own width.
+    // of, and it goes in the bin. It is read off the wall — the strip is what has BOTH
+    // of that seam's offsets along its border, and nothing else does — rather than
+    // measured or counted. No distance, which matters because a drawn seam is a couple
+    // of dozen points and the strip can sit further from that polyline than its own
+    // width; and no counting of rims, which held while a seam had exactly two of them
+    // and broke the moment the two offsets tangled and left a shaving with a rim of
+    // its own.
     let mut binned: std::collections::BTreeSet<u32> = Default::default();
     if clearance > 0.0 {
         for s in 0..loops.len() {
-            let mine: Vec<usize> = (0..closed.caps.len()).filter(|&c| cap_seam[c] == s).collect();
-            let [first, second] = mine.as_slice() else {
-                continue;
-            };
-            let (a, b) = closed.cap_between[*first];
-            let (x, y) = closed.cap_between[*second];
-            // Both rims between the SAME two pieces, and the strip is not one of two
-            // things — it is either of them. That happens when the seam goes round a
-            // handle: the two offsets did not free the piece the user drew round, they
-            // freed the sliver between themselves, and the rest of the model stayed in
-            // one piece behind the handle. Picking either is a coin toss, and one face
-            // of the coin quietly bins the model and hands back the sliver.
-            if (a.min(b), a.max(b)) == (x.min(y), x.max(y)) {
-                return Err(
-                    "the seam goes round a handle — a part joined to the body somewhere \
-                     else as well — so cutting along it frees nothing but the strip the \
-                     clearance is made of"
-                        .to_string(),
-                );
-            }
-            if let Some(strip) = [a, b].into_iter().find(|p| *p == x || *p == y) {
-                binned.insert(strip);
-            }
+            binned.extend(split.strip_between(2 * s, 2 * s + 1));
         }
+        // Binning it all leaves nothing. That is the seam going round a handle — a
+        // part joined to the body somewhere else as well: the two offsets did not
+        // free the piece the user drew round, they freed the sliver between
+        // themselves, and the rest of the model stayed in one piece behind the
+        // handle. Handing back a sliver instead of the model is the one outcome that
+        // must never happen quietly.
+        let pieces: std::collections::BTreeSet<u32> =
+            split.piece_of_face.iter().copied().collect();
+        if pieces.iter().filter(|p| !binned.contains(p)).count() < 2 {
+            return Err(
+                "the seam goes round a handle — a part joined to the body somewhere \
+                 else as well — so cutting along it frees nothing but the strip the \
+                 clearance is made of"
+                    .to_string(),
+            );
+        }
+    }
+
+    if std::env::var_os("DF_CUT_DEBUG").is_some() {
+        let mut size: std::collections::BTreeMap<u32, usize> = Default::default();
+        for &p in &split.piece_of_face {
+            *size.entry(p).or_default() += 1;
+        }
+        eprintln!(
+            "[corte] piezas {size:?}, a la basura {binned:?}, tapas entre {:?}",
+            closed.cap_between
+        );
     }
 
     // One registration tenon per seam, framed on the cut face of the piece it stands
