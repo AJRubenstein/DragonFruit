@@ -2126,6 +2126,7 @@ export default function Home() {
       ? scene.models.find((m) => m.id === scene.activeModelId)
       : undefined;
     const canSplitSupports = !!activeModel?.geometry.meshDefects?.nativeRepairReport?.model_triangle_count;
+    const canMergeSupports = scene.selectedModelIds.length === 2;
 
     const hasTargetModel = !!scene.activeModelId || scene.selectedModelIds.length > 0;
     const canLink = scene.selectedModelIds.length >= 2;
@@ -2141,6 +2142,7 @@ export default function Home() {
       ...(!canUnlink ? (['unlink-models'] as const) : []),
       ...(!scene.canPasteModel ? (['paste'] as const) : []),
       ...(!canSplitSupports ? (['split-supports'] as const) : []),
+      ...(!canMergeSupports ? (['merge-supports'] as const) : []),
     ];
   }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
@@ -5759,6 +5761,11 @@ export default function Home() {
           return;
         }
         break;
+      }
+      case 'merge-supports': {
+        closeEditorContextMenu();
+        scene.mergeSupports();
+        return;
       }
       case 'delete':
         if (scene.activeModelId) {

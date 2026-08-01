@@ -42,6 +42,9 @@ export function UndrainedWarningModal({
       <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
         After adding drain holes, automatically recognized support components may revert to model designation (pink). Right-click -&gt; Scan for Supports after adding holes.
       </p>
+      <p className="text-sm leading-relaxed font-medium" style={{ color: 'var(--text-muted)' }}>
+        Pro tip: right-click, Split Supports, hide supports, punch holes, right-click Merge Supports, then carry on.
+      </p>
     </StructuredDialogModal>
   );
 }
