@@ -81,6 +81,7 @@ import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import { RtspRelayCanvasPlayer } from '@/components/monitoring/RtspRelayCanvasPlayer';
 import { IconButton, Toast, ToastViewport } from '@/components/atoms';
 import { EditorContextMenu, ORGANIC_CUT_ADD_WAYPOINT_ITEM, ORGANIC_CUT_DELETE_WAYPOINT_ITEM, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
+import { MouseTooltip } from '@/components/ui/MouseTooltip';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { DiagnosticsModal } from '@/components/modals/DiagnosticsModal';
@@ -219,7 +220,7 @@ import { IslandsPanel } from '@/components/controls/IslandsPanel';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import { useSupportInteractionManager } from '@/features/supports/useSupportInteractionManager';
 import { useUndoRedoHotkeys } from '@/hotkeys/useUndoRedoHotkeys';
-import { useOrganicCutHotkeys, useOrganicCutPreviewHotkey } from '@/hotkeys/useOrganicCutHotkeys';
+import { useOrganicCutHotkeys } from '@/hotkeys/useOrganicCutHotkeys';
 import { hotkeyStore, useActionActive, isActionActiveSync, isPrimaryModifierPressed } from '@/hotkeys/hotkeyStore';
 import { useDeleteHotkey } from '@/features/delete/useDeleteHotkey';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
@@ -9370,8 +9371,10 @@ export default function Home() {
     [],
   );
   const organicCutMarkerHoverRef = React.useRef<number | null>(null);
+  const [organicCutMarkerHover, setOrganicCutMarkerHover] = React.useState<number | null>(null);
   const handleOrganicCutMarkerHoverChange = React.useCallback((index: number | null) => {
     organicCutMarkerHoverRef.current = index;
+    setOrganicCutMarkerHover(index);
   }, []);
   // One menu for both actions; `kind` selects which item/handler.
   const [organicCutLineMenu, setOrganicCutLineMenu] = React.useState<
@@ -9435,16 +9438,6 @@ export default function Home() {
   // Delete for the Cut tool, claimed through the delete registry. Undo/redo are
   // the app's own: every Cut edit is pushed to the history.
   useOrganicCutHotkeys(organicCutHotkeyRef);
-  // Show Preview, from the configurable CUT.TOGGLE_PREVIEW binding.
-  useOrganicCutPreviewHotkey(
-    React.useCallback(() => {
-      organicCut.setPanelState({
-        ...organicCut.panelState,
-        showPreview: !organicCut.panelState.showPreview,
-      });
-    }, [organicCut]),
-    organicCutToolActive,
-  );
 
   // Mirror session state: while the user is in Mirror mode we don't bake the
   // geometry per-click (a 2.4M-vert bake is slow on big meshes). Instead, each
@@ -9827,7 +9820,7 @@ export default function Home() {
             organicCutKeyGizmo={
               // Both cut modes place a tenon now, so the aim gizmo follows the tenon
               // rather than the mode; it mounts whenever there is a frame to sit on.
-              organicCutToolActive && organicCut.tenonFrame && organicCut.panelState.showPreview ? (
+              organicCutToolActive && organicCut.tenonFrame ? (
                 <OrganicCutTenonGizmo
                   models={scene.models}
                   activeModelId={displayActiveModelId}
@@ -10013,7 +10006,6 @@ export default function Home() {
                 tenonAnchor={organicCut.panelState.tenonAnchor}
                 tenonTiltRad={organicCut.panelState.tenonTiltRad}
                 tenonRollRad={organicCut.panelState.tenonRollRad}
-                showPreview={organicCut.panelState.showPreview}
               />
             )}
             {scene.mode === 'prepare' && transformMgr.transformMode === 'mirror' && (
@@ -10140,6 +10132,22 @@ export default function Home() {
             : [ORGANIC_CUT_ADD_WAYPOINT_ITEM]
         }
       />
+
+      {/* Waypoint hover hint: the double-click-to-lock behaviour, shown only while
+          the pointer is over a waypoint in the 3D view. */}
+      <MouseTooltip visible={organicCutToolActive && organicCutMarkerHover !== null}>
+        <div
+          className="rounded px-2 py-1.5 text-[11px] leading-tight font-medium shadow-lg whitespace-nowrap"
+          style={{
+            background: 'rgba(24, 24, 24, 0.98)',
+            color: 'var(--text-strong, #e0e0e0)',
+            border: '1px solid var(--accent, #baf72e)',
+            boxShadow: '0 6px 32px 0 rgba(0,0,0,0.44), 0 1.5px 8px 0 rgba(0,0,0,0.28)',
+          }}
+        >
+          Double-click to lock this waypoint from snapping.
+        </div>
+      </MouseTooltip>
 
       <DiagnosticsModals
         clearHistory={clearHistory}

@@ -232,12 +232,6 @@ export const DEFAULT_KEYBINDINGS: HotkeyConfig = {
             modifier: 'ctrl',
             description: 'Select all hole punches / items'
         }
-    },
-    CUT: {
-        TOGGLE_PREVIEW: {
-            key: 'b',
-            description: 'Show or hide the cut preview while the Cut tool is open'
-        }
     }
 } as const;
 

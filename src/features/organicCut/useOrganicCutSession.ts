@@ -92,8 +92,7 @@ export type LoopTenonSettings = Pick<
 /**
  * The cut-wide settings — everything that shapes the cut but isn't per-loop and
  * isn't per-tenon. Undo covers these too: changing the kerf is as much an edit as
- * moving a waypoint. The pure-UI `showPreview` is left out on purpose — hiding
- * the preview is not an edit to undo.
+ * moving a waypoint.
  */
 export type CutSettings = Pick<
   OrganicCutPanelState,
@@ -324,7 +323,7 @@ export interface OrganicCutSession {
   /** Index of the loop currently being edited (gets markers + membrane preview). */
   activeLoopIndex: number;
   /** Per-loop summaries for the panel's loop chips (index + waypoint count). */
-  loopSummaries: { index: number; pointCount: number; hasTenon: boolean }[];
+  loopSummaries: { index: number; pointCount: number }[];
   /** Make loop `index` the active (editable) one. Out-of-range is a no-op. */
   selectLoop: (index: number) => void;
   /**
@@ -354,7 +353,6 @@ export interface OrganicCutSession {
   cutLeakPoints: [number, number, number][];
   // Derived gates for the panel
   canApply: boolean;
-  pointCount: number;
   /**
    * Surface-following loop polyline (flat xyz, model-local space) computed by the
    * Rust geodesic engine, for rendering the seam ON the surface instead of as
@@ -440,9 +438,6 @@ const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
   // (drag the tip) leans it, the roll ring spins it. All measured in radians.
   tenonTiltRad: 0,
   tenonRollRad: 0,
-  // Cut-plan preview on by default — the user sees where the cut lands; the
-  // toggle hides it for an unobscured view of the model while drawing.
-  showPreview: true,
 };
 
 /** Minimum points before a CONTOUR cut is possible (a real loop needs ≥3). */
@@ -1562,7 +1557,7 @@ export function useOrganicCutSession({
   const activeLoopReady = pointCount >= MIN_CONTOUR_POINTS;
   const loopCount = loops.length;
   const loopSummaries = React.useMemo(
-    () => loops.map((l, i) => ({ index: i, pointCount: l.points.length, hasTenon: l.tenon.generateTenon })),
+    () => loops.map((l, i) => ({ index: i, pointCount: l.points.length })),
     [loops],
   );
   // How many loops are real loops (would actually cut), for the Cut gate.
@@ -1605,7 +1600,6 @@ export function useOrganicCutSession({
     cutError,
     cutLeakPoints,
     canApply,
-    pointCount,
     geodesicPolyline,
     planeCurves,
     membranePreview,

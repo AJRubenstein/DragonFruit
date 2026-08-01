@@ -13,13 +13,13 @@ const FIELDS: { key: keyof OrganicCutColors; label: string; hint: string }[] = [
   { key: 'seamInactive', label: 'Seam (other loops)', hint: 'The loops of a multi-loop cut you are not editing.' },
   { key: 'seamGlow', label: 'Seam glow', hint: 'Halo around the hovered seam.' },
   { key: 'cutSurface', label: 'Cut surface', hint: 'The contour membrane and the flat cut plane.' },
-  { key: 'tenonFront', label: 'Tenon (near faces)', hint: 'The tenon’s faces turned toward you — the half that pokes out.' },
-  { key: 'tenonBack', label: 'Tenon (far faces)', hint: 'Its far faces, darker so the shape reads solid.' },
-  { key: 'tenonEdge', label: 'Tenon edges', hint: 'The tenon’s silhouette lines.' },
-  { key: 'mortiseFront', label: 'Mortise (near faces)', hint: 'The hole carved in the other half — the tenon plus the fit tolerance.' },
-  { key: 'mortiseBack', label: 'Mortise (far faces)', hint: 'Its far faces, darker so the shape reads solid.' },
-  { key: 'mortiseEdge', label: 'Mortise edges', hint: 'The mortise’s silhouette lines.' },
-  { key: 'tenonHandle', label: 'Tenon handle', hint: 'The dot you drag to slide the tenon across the cut.' },
+  { key: 'tenonFront', label: 'Key (near faces)', hint: 'The key’s faces turned toward you — the half that pokes out.' },
+  { key: 'tenonBack', label: 'Key (far faces)', hint: 'Its far faces, darker so the shape reads solid.' },
+  { key: 'tenonEdge', label: 'Key edges', hint: 'The key’s silhouette lines.' },
+  { key: 'mortiseFront', label: 'Keyway (near faces)', hint: 'The hole carved in the other half — the key plus the fit tolerance.' },
+  { key: 'mortiseBack', label: 'Keyway (far faces)', hint: 'Its far faces, darker so the shape reads solid.' },
+  { key: 'mortiseEdge', label: 'Keyway edges', hint: 'The keyway’s silhouette lines.' },
+  { key: 'tenonHandle', label: 'Key handle', hint: 'The dot you drag to slide the key across the cut.' },
   { key: 'markerFirst', label: 'First waypoint', hint: 'The point the loop starts from.' },
   { key: 'markerPoint', label: 'Waypoint', hint: 'Every other point on the loop.' },
   { key: 'markerSelected', label: 'Waypoint (selected)', hint: 'The point you clicked.' },
@@ -46,17 +46,17 @@ export function OrganicCutColorsSection() {
     <div className="rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <div>
-          <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Cut Tool Colors</div>
+          <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Cut Colors</div>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            The seam, cut surface, registration tenon and waypoints drawn while cutting.
+            The seam, cut surface, registration key and waypoints drawn while cutting.
           </div>
         </div>
         <button
           type="button"
           onClick={() => saveOrganicCutColors(DEFAULT_ORGANIC_CUT_COLORS)}
           disabled={isDefault}
-          title="Put every Cut tool colour back to its default."
-          aria-label="Reset cut tool colors to defaults"
+          title="Put every Cut colour back to its default."
+          aria-label="Reset cut colors to defaults"
           className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors hover:brightness-125 disabled:cursor-default disabled:opacity-40"
           style={{
             borderColor: 'color-mix(in srgb, var(--success), transparent 55%)',
