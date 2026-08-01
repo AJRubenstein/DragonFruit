@@ -278,21 +278,39 @@ function estimateGeometryBytes(geometry: THREE.BufferGeometry): number {
   return total;
 }
 
-// Deliberately not deduplicated across snapshots/models: many pairs will
-// reference the same unchanged geometry, so this over-counts rather than
-// under-counts. That's the right direction for a safety cap -- it can only
-// make eviction more eager than strictly necessary, never less.
+// Counts each distinct BufferGeometry ONCE, because that is what the process
+// actually holds: cloneLoadedModel is a shallow clone, so every snapshot that
+// didn't change the mesh shares the same geometry object. A move stores two
+// snapshots and allocates no mesh memory at all.
+//
+// Counting per snapshot instead treated that shared mesh as a fresh allocation
+// each time, so the budget was exhausted after a handful of moves and eviction
+// threw away undo entries that cost nothing -- their scene snapshots went with
+// them, and undoing those actions was silently declined and discarded. Only
+// geometry a step genuinely creates (a cut, a hollow) adds to the total now.
 function estimateSceneSnapshotRegistryBytes(): number {
+  const counted = new Set<THREE.BufferGeometry>();
   let total = 0;
+  const add = (model: LoadedModel) => {
+    const geometry = model.geometry.geometry;
+    if (counted.has(geometry)) return;
+    counted.add(geometry);
+    total += estimateGeometryBytes(geometry);
+  };
   for (const pair of sceneSnapshotRegistry.values()) {
-    for (const model of pair.before.models) {
-      total += estimateGeometryBytes(model.geometry.geometry);
-    }
-    for (const model of pair.after.models) {
-      total += estimateGeometryBytes(model.geometry.geometry);
-    }
+    pair.before.models.forEach(add);
+    pair.after.models.forEach(add);
   }
   return total;
+}
+
+/**
+ * The registry's geometry total, for the history debug panel. Same dedup rule as
+ * the eviction budget above, so the panel reports the memory that is actually
+ * held rather than a per-snapshot sum that counts one shared mesh many times.
+ */
+export function getSceneSnapshotRegistryBytes(): number {
+  return estimateSceneSnapshotRegistryBytes();
 }
 
 function storeSceneSnapshotPair(pair: SceneSnapshotPair): string {
@@ -2734,6 +2752,236 @@ export function useSceneCollectionManager() {
     return true;
   }, [pushSceneSnapshotHistory, deferAccelerateGeometry]);
 
+  /**
+   * Commits a brand-new model built from an arbitrary BufferGeometry, inheriting
+   * transform/color/visibility from a base model. Used by the Organic Cut tool
+   * to add the second split part (part B) as an independent model. Returns the
+   * new model id, or null on failure.
+   */
+  const addModelFromGeometry = useCallback((
+    bufferGeometry: THREE.BufferGeometry,
+    baseModelId: string,
+    name: string,
+    historyDescription: string,
+  ): string | null => {
+    const currentModels = modelsRef.current;
+    const base = currentModels.find((m) => m.id === baseModelId);
+    if (!base) return null;
+
+    if (!bufferGeometry.boundingBox) bufferGeometry.computeBoundingBox();
+    const bbox = bufferGeometry.boundingBox ? bufferGeometry.boundingBox.clone() : new THREE.Box3();
+    const center = bbox.getCenter(new THREE.Vector3());
+    const size = bbox.getSize(new THREE.Vector3());
+
+    accelerateGeometry(bufferGeometry);
+
+    const geometry: GeometryWithBounds = {
+      geometry: bufferGeometry,
+      bbox,
+      center,
+      size,
+      flatteningPlanes: [],
+    };
+
+    const polygonCount = (() => {
+      const idx = bufferGeometry.getIndex();
+      if (idx) return Math.floor(idx.count / 3);
+      const pos = bufferGeometry.getAttribute('position');
+      return pos ? Math.floor(pos.count / 3) : 0;
+    })();
+
+    const id = generateId();
+    const newModel: LoadedModel = {
+      id,
+      name,
+      groupId: base.groupId,
+      groupName: base.groupName,
+      fileUrl: '',
+      fileSizeBytes: base.fileSizeBytes,
+      geometry,
+      transform: {
+        position: base.transform.position.clone(),
+        rotation: base.transform.rotation.clone(),
+        scale: base.transform.scale.clone(),
+      },
+      visible: true,
+      color: base.color,
+      polygonCount,
+      meshModifiers: base.meshModifiers ? clonePlainObject(base.meshModifiers) : undefined,
+    };
+
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current, { includeSupportState: false });
+    const nextModels = [...currentModels, newModel];
+    setModels(nextModels);
+
+    // Defer post-processing (flattening planes) like replaceModelGeometry does.
+    const scheduleIdle = (cb: () => void) => {
+      if (typeof window !== 'undefined' && typeof (window as any).requestIdleCallback === 'function') {
+        (window as any).requestIdleCallback(cb, { timeout: 250 });
+      } else {
+        setTimeout(cb, 16);
+      }
+    };
+    scheduleIdle(() => {
+      const planes = computeFlatteningPlanes(bufferGeometry);
+      setModels((prev) => prev.map((m) => (
+        m.id === id ? { ...m, geometry: { ...m.geometry, flatteningPlanes: planes } } : m
+      )));
+    });
+
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current, { includeSupportState: false });
+    pushSceneSnapshotHistory(before, after, historyDescription);
+
+    return id;
+  }, [generateId, pushSceneSnapshotHistory]);
+
+  /**
+   * Atomically splits one model into two: replaces the source model's geometry
+   * with `partAGeometry`, and appends `partBGeometry` as a new sibling model.
+   *
+   * This MUST be a single state update + single history entry. Doing it as two
+   * separate calls (replaceModelGeometry + addModelFromGeometry) races on the
+   * stale `modelsRef`/history snapshots and loses one of the pieces. Used by the
+   * Organic Cut tool. Returns the new (part B) model id, or null on failure.
+   */
+  const splitModelIntoParts = useCallback((
+    sourceId: string,
+    partGeometries: THREE.BufferGeometry[],
+    historyDescription: string,
+  ): string[] | null => {
+    const currentModels = modelsRef.current;
+    const source = currentModels.find((m) => m.id === sourceId);
+    if (!source || partGeometries.length === 0) return null;
+
+    // KEEP EVERY PART EXACTLY WHERE IT WAS CUT (nothing moves in 3D space).
+    //
+    // The render layer (StlMesh) draws each model's mesh at `-geometryBboxCenter`
+    // inside the model's transform group, so a vertex renders at
+    //     world = R · S · (vertex - partCenter) + partPosition
+    // (R = rotation, S = scale). For the original model it was
+    //     world = R · S · (vertex - sourceCenter) + sourcePosition.
+    // Since the cut parts share the SAME vertices as the source (same space), to
+    // keep every vertex at its original world spot we must satisfy
+    //     R·S·(v - partCenter) + partPosition = R·S·(v - sourceCenter) + sourcePos
+    // ⇒ partPosition = sourcePosition + R·S·(partCenter - sourceCenter).
+    //
+    // So we DON'T move the geometry (translating vertices would shift them by
+    // R·S·delta under any rotation — the bug that made parts jump). Instead we
+    // leave each part's bbox where it is and COMPENSATE its transform.position by
+    // the rotated+scaled center delta. Vertices stay put; the part lands exactly
+    // where it was cut, for any source rotation/scale.
+    const sourceGeom = source.geometry.geometry;
+    if (!sourceGeom.boundingBox) sourceGeom.computeBoundingBox();
+    const sourceCenter = sourceGeom.boundingBox
+      ? sourceGeom.boundingBox.getCenter(new THREE.Vector3())
+      : source.geometry.center.clone();
+
+    const srcQuat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(source.transform.rotation.x, source.transform.rotation.y, source.transform.rotation.z),
+    );
+    const srcScale = source.transform.scale;
+
+    // Position that keeps `partCenter` at the same world spot the source frame put
+    // it: sourcePosition + R·S·(partCenter - sourceCenter).
+    const positionForPart = (partCenter: THREE.Vector3): THREE.Vector3 => {
+      const d = partCenter.clone().sub(sourceCenter);
+      d.multiply(srcScale); // component-wise scale
+      d.applyQuaternion(srcQuat); // then rotate
+      return source.transform.position.clone().add(d);
+    };
+
+    const buildBounds = (g: THREE.BufferGeometry): GeometryWithBounds => {
+      if (!g.boundingBox) g.computeBoundingBox();
+      const bbox = g.boundingBox ? g.boundingBox.clone() : new THREE.Box3();
+      const center = bbox.getCenter(new THREE.Vector3());
+      const size = bbox.getSize(new THREE.Vector3());
+      accelerateGeometry(g);
+      return { geometry: g, bbox, center, size, flatteningPlanes: [] };
+    };
+
+    const polyCount = (g: THREE.BufferGeometry): number => {
+      const idx = g.getIndex();
+      if (idx) return Math.floor(idx.count / 3);
+      const pos = g.getAttribute('position');
+      return pos ? Math.floor(pos.count / 3) : 0;
+    };
+
+    // The source becomes the FIRST part; every other part is appended as a new
+    // model. (A multi-loop cut can free several pieces, so there may be >2 parts.)
+    const built = partGeometries.map(buildBounds);
+    const extraIds = built.slice(1).map(() => generateId());
+
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current, { includeSupportState: false });
+
+    const part0 = built[0];
+    const part0Position = positionForPart(part0.center);
+
+    const extraModels: LoadedModel[] = built.slice(1).map((pg, i) => ({
+      id: extraIds[i],
+      // Number the pieces when there are several ("Cut 2", "Cut 3"); keep the plain
+      // "Cut" name for the usual two-part split.
+      name: built.length > 2 ? `${source.name} Cut ${i + 2}` : `${source.name} Cut`,
+      groupId: source.groupId,
+      groupName: source.groupName,
+      fileUrl: '',
+      fileSizeBytes: source.fileSizeBytes,
+      geometry: pg,
+      transform: {
+        position: positionForPart(pg.center),
+        rotation: source.transform.rotation.clone(),
+        scale: source.transform.scale.clone(),
+      },
+      visible: true,
+      color: source.color,
+      polygonCount: polyCount(pg.geometry),
+      meshModifiers: source.meshModifiers ? clonePlainObject(source.meshModifiers) : undefined,
+    }));
+
+    // ONE atomic update: source becomes part 0 (geometry swapped + position
+    // compensated so it doesn't shift), the rest are appended.
+    const nextModels = [
+      ...currentModels.map((m) => (
+        m.id === sourceId
+          ? {
+              ...m,
+              geometry: part0,
+              polygonCount: polyCount(part0.geometry),
+              transform: {
+                position: part0Position,
+                rotation: m.transform.rotation.clone(),
+                scale: m.transform.scale.clone(),
+              },
+            }
+          : m
+      )),
+      ...extraModels,
+    ];
+    setModels(nextModels);
+
+    // Defer flattening-plane computation for every new geometry.
+    const scheduleIdle = (cb: () => void) => {
+      if (typeof window !== 'undefined' && typeof (window as any).requestIdleCallback === 'function') {
+        (window as any).requestIdleCallback(cb, { timeout: 250 });
+      } else {
+        setTimeout(cb, 16);
+      }
+    };
+    scheduleIdle(() => {
+      const planes = built.map((b) => computeFlatteningPlanes(b.geometry));
+      setModels((prev) => prev.map((m) => {
+        if (m.id === sourceId) return { ...m, geometry: { ...m.geometry, flatteningPlanes: planes[0] } };
+        const ei = extraIds.indexOf(m.id);
+        if (ei >= 0) return { ...m, geometry: { ...m.geometry, flatteningPlanes: planes[ei + 1] } };
+        return m;
+      }));
+    });
+
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current, { includeSupportState: false });
+    pushSceneSnapshotHistory(before, after, historyDescription);
+
+    return extraIds;
+  }, [generateId, pushSceneSnapshotHistory]);
+
   const finalizeModelGeometryPostProcessing = useCallback((id: string) => {
     const target = modelsRef.current.find((m) => m.id === id);
     if (!target) return;
@@ -4992,6 +5240,8 @@ export function useSceneCollectionManager() {
     updateModelTransforms,
     setModelTransformRaw,
     replaceModelGeometry,
+    addModelFromGeometry,
+    splitModelIntoParts,
     finalizeModelGeometryPostProcessing,
     setModelManualZMoveOverride,
     setModelVisibility,

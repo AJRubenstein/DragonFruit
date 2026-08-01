@@ -184,6 +184,7 @@ function StlMeshComponent({
   onSupportClick,
   onHolePunchClick,
   onHolePunchHover,
+  onOrganicCutClick,
   onSupportHover,
   onActiveModelChange,
   disableRaycast,
@@ -258,6 +259,7 @@ function StlMeshComponent({
   onSupportClick?: (hit: THREE.Intersection) => void;
   onHolePunchClick?: (hit: THREE.Intersection) => void;
   onHolePunchHover?: (hit: THREE.Intersection | null) => void;
+  onOrganicCutClick?: (hit: THREE.Intersection) => void;
   onSupportHover?: (hit: THREE.Intersection | null) => void;
   onActiveModelChange?: (id: string | null, options?: { selectionMode?: 'single' | 'toggle' | 'add' }) => void;
   disableRaycast?: boolean;
@@ -313,6 +315,11 @@ function StlMeshComponent({
   const [isPointerHovered, setIsPointerHovered] = React.useState(false);
   const { camera } = useThree();
   const suppressNextHolePunchClickRef = React.useRef(false);
+  // Same idea as hole-punch: when a pointer-down lands on a not-yet-active model
+  // (a reselection click), suppress the FOLLOWING click so it only selects the
+  // model instead of also dropping a cut waypoint. Captured at pointer-down
+  // because by click time the model may already have become active.
+  const suppressNextOrganicCutClickRef = React.useRef(false);
 
   const smoothingScratchLocalPointRef = React.useRef(new THREE.Vector3());
   const supportDimCameraLocalPointRef = React.useRef(new THREE.Vector3());
@@ -942,6 +949,32 @@ if (uDitherAmount > 0.0) {
             return;
           }
 
+          if (mode === 'prepare' && transformMode === 'organicCut' && onOrganicCutClick) {
+            // Select-only when this click is a (re)selection rather than a draw:
+            // either the model isn't active yet, OR the pointer-down landed on a
+            // not-yet-active model (captured into the suppress ref) and selection
+            // made it active mid-gesture. Without the ref, reselecting a model
+            // would also drop a stray waypoint.
+            const shouldOnlySelect = suppressNextOrganicCutClickRef.current || !isActiveModel;
+            suppressNextOrganicCutClickRef.current = false;
+            if (shouldOnlySelect) {
+              e.stopPropagation();
+              if (onActiveModelChange) {
+                onActiveModelChange(modelId, { selectionMode: 'single' });
+              }
+              return;
+            }
+
+            const firstIsGizmo = e.intersections[0]?.object.userData?.isGizmoHandle === true;
+            if (isGizmoHoverCategory || firstIsGizmo) {
+              return;
+            }
+
+            e.stopPropagation();
+            onOrganicCutClick(e as unknown as THREE.Intersection);
+            return;
+          }
+
           if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchClick) {
             const shouldOnlySelect = suppressNextHolePunchClickRef.current || !isActiveModel;
             suppressNextHolePunchClickRef.current = false;
@@ -1258,6 +1291,12 @@ if (uDitherAmount > 0.0) {
               suppressNextHolePunchClickRef.current = !isActiveModel;
             } else {
               suppressNextHolePunchClickRef.current = false;
+            }
+
+            if (transformMode === 'organicCut' && onOrganicCutClick) {
+              suppressNextOrganicCutClickRef.current = !isActiveModel;
+            } else {
+              suppressNextOrganicCutClickRef.current = false;
             }
 
             // If the pointer is over a gizmo handle, do not consume the event at

@@ -10,6 +10,7 @@ import {
   ClipboardPaste,
   Trash2,
   Split,
+  Plus,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -21,7 +22,10 @@ export type EditorMenuAction =
   | 'repair'
   | 'split-supports'
   | 'supports-toggle-curve'
-  | 'supports-add-joint';
+  | 'supports-add-joint'
+  // Organic-cut tool actions.
+  | 'organic-cut-add-waypoint'
+  | 'organic-cut-delete-waypoint';
 
 export type EditorContextMenuPosition = {
   x: number;
@@ -40,6 +44,23 @@ type MenuItemDef = {
   id: EditorMenuAction;
   label: ReturnType<typeof msg>;
   icon: LucideIcon;
+};
+
+/** Menu item shape, re-exported so feature callers can build custom item lists. */
+export type EditorMenuItemDef = MenuItemDef;
+
+/** Convenience: the "Add waypoint here" item for the Organic Cut tool. */
+export const ORGANIC_CUT_ADD_WAYPOINT_ITEM: EditorMenuItemDef = {
+  id: 'organic-cut-add-waypoint',
+  label: msg`Add waypoint here`,
+  icon: Plus,
+};
+
+/** Convenience: the "Delete waypoint" item for the Organic Cut tool. */
+export const ORGANIC_CUT_DELETE_WAYPOINT_ITEM: EditorMenuItemDef = {
+  id: 'organic-cut-delete-waypoint',
+  label: msg`Delete waypoint`,
+  icon: Trash2,
 };
 
 // msg`` marks strings for extraction without evaluating them immediately;

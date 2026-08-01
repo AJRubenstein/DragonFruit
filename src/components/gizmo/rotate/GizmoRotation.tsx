@@ -79,8 +79,20 @@ interface GizmoRotationProps {
    * convention like displayY = -cutterY in HolePunchGizmo).
    */
   axisVisualFlip?: number;
+  /**
+   * True when the PARENT turns the whole gizmo by this very rotation — the tenon's
+   * roll ring, whose frame is built from the roll it is setting. The ring then
+   * already carries the movement on screen, and a handle that also advanced inside
+   * it would travel twice as far as the pointer and overtake it.
+   */
+  frameCarriesRotation?: boolean;
   onDragStart: () => boolean | void;
-  onDrag: (angle: number) => void;
+  /**
+   * Turn the object by this much. Return how much of it the object ACTUALLY took
+   * when the rotation has a hard end (the tenon's lean stops where the geometry
+   * stops); return nothing and all of it is assumed to have gone through.
+   */
+  onDrag: (angle: number) => number | void;
   onDragEnd: () => void;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
@@ -132,6 +144,7 @@ export function GizmoRotation({
   disableRingBillboard = false,
   handleScale = 1.0,
   axisVisualFlip = 1,
+  frameCarriesRotation = false,
   onDragStart,
   onDrag,
   onDragEnd,
@@ -432,12 +445,27 @@ export function GizmoRotation({
       prevTargetRef.current = resolved.angleRad;
 
       if (delta !== 0) {
-        sweepAccumRef.current += delta;
+        // What comes back is how much the object actually took. A rotation with a
+        // hard end (the tenon's lean stops where the geometry stops) returns less
+        // than it was asked for, and the sweep has to stop with it — the dial's own
+        // radius keeps following the pointer above, so easing back off the end
+        // picks up again straight away, but the reading and the handle must never
+        // claim an angle the object never reached.
+        const asked = emittedDeltaForSweep(delta, axisVisualFlip);
+        const answer = onDragRef.current(asked);
+        const applied = typeof answer === 'number' ? answer : asked;
+        // Back into dial units, the same mapping run backwards.
+        const appliedSweep =
+          axisVisualFlip === 0 || applied === asked ? delta : -applied / axisVisualFlip;
+        sweepAccumRef.current += appliedSweep;
         // The handle rides the sweep so it stays under the pointer, on the mark
-        // when the magnet has it.
-        handleAngleRef.current = dialZeroRef.current + sweepAccumRef.current;
-        targetHandleAngleRef.current = handleAngleRef.current;
-        onDragRef.current(emittedDeltaForSweep(delta, axisVisualFlip));
+        // when the magnet has it — unless the parent is turning the whole gizmo by
+        // this rotation, in which case the ring already carries it and advancing
+        // here too would send the handle round at twice the pointer's speed.
+        if (!frameCarriesRotation) {
+          handleAngleRef.current = dialZeroRef.current + sweepAccumRef.current;
+          targetHandleAngleRef.current = handleAngleRef.current;
+        }
       }
 
       // Readout shows the sweep since the grab, which is what the dial measures.
