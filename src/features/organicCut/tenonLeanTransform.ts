@@ -30,11 +30,12 @@ export function tenonLeanMatrix(
   const uN = new THREE.Vector3(...frame.u).normalize();
   // Build frame = frame_extruding_toward_part_b(natural): negate axis, swap u/v,
   // so the build frame's +y — the hinge the FIRST lean turns about, giving a tip
-  // over a NARROW face — is the natural u, and +x (the second lean's hinge) is the
-  // natural v. `buildX = buildV × buildAxis` recovers that +v in world terms.
+  // over a NARROW face — is the natural u. The second lean's hinge is the gizmo's
+  // X ring, which sits on −vR, so `buildX` must be the natural −v — `buildAxis ×
+  // buildV` — to match it (Rust mirrors this by leaning about −build_x).
   const buildAxis = axisN.clone().multiplyScalar(-1);
   const buildV = uN.clone();
-  const buildX = new THREE.Vector3().crossVectors(buildV, buildAxis).normalize();
+  const buildX = new THREE.Vector3().crossVectors(buildAxis, buildV).normalize();
 
   const tiltY = clampTenonTilt(tiltYRad, frame);
   const tiltX = clampTenonTilt(tiltXRad, frame);

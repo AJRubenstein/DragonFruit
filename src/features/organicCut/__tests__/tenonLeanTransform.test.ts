@@ -121,6 +121,7 @@ test('the X-lean tips in the perpendicular plane, along u', () => {
   assert.ok(Math.abs(minus.y) < 1e-3, `same the other way, got v = ${minus.y}`);
   assert.ok(plus.x * minus.x < 0, 'the X-lean sign picks the u side');
   assert.ok(Math.abs(plus.x - -minus.x) < 1e-3, 'and it is symmetric');
+  assert.ok(plus.x > 0, 'a positive X-lean tips toward +u, matching the ring drag');
 });
 
 test('both leans together tip the tenon diagonally', () => {
