@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
+import { useActionActive } from './hotkeyStore';
 
 /**
  * Priority for the Cut tool's delete claim. Above the support-interaction
@@ -43,4 +44,25 @@ export function useOrganicCutHotkeys(stateRef: RefObject<OrganicCutHotkeyState>)
       unregister();
     };
   }, [stateRef]);
+}
+
+/**
+ * `CUT.TOGGLE_PREVIEW` → show/hide the cut-plan preview, while the tool is open.
+ *
+ * Through the central binding rather than a keydown listener of its own: that is
+ * what makes it rebindable and visible in Settings → Hotkeys, and a direct
+ * window listener is blocked by the `hotkey-restriction` lint rule anyway.
+ */
+export function useOrganicCutPreviewHotkey(onToggle: () => void, enabled: boolean) {
+  const active = useActionActive('CUT', 'TOGGLE_PREVIEW');
+  const wasActive = useRef(false);
+
+  useEffect(() => {
+    // Fire on the PRESS edge only: the store reports the binding as held, and a
+    // toggle that ran every frame of a held key would strobe the preview.
+    if (enabled && active && !wasActive.current) {
+      onToggle();
+    }
+    wasActive.current = active;
+  }, [active, enabled, onToggle]);
 }

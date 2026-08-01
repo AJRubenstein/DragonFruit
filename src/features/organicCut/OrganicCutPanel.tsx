@@ -549,6 +549,9 @@ export function OrganicCutPanel({
                     setState({
                       generateTenon: true,
                       tenonShape: 'frustum',
+                      // Turning a key on brings the preview back: the user is about
+                      // to configure a tenon they need to see.
+                      showPreview: true,
                       tenonFilletMm: Math.min(
                         state.tenonFilletMm,
                         maxTenonFilletMm(state.tenonWidthMm, state.tenonDepthMm),
@@ -570,6 +573,9 @@ export function OrganicCutPanel({
                     setState({
                       generateTenon: true,
                       tenonShape: 'dome',
+                      // Turning a key on brings the preview back: the user is about
+                      // to configure a tenon they need to see.
+                      showPreview: true,
                       tenonWidthMm: Math.max(state.tenonWidthMm, DOME_MIN_WIDTH_MM),
                       tenonDepthMm: Math.max(state.tenonDepthMm, DOME_MIN_WIDTH_MM),
                     })
