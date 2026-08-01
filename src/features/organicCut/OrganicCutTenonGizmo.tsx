@@ -11,7 +11,7 @@ import { clampTenonTilt } from './tenonLeanTransform';
 import { useOrganicCutColorNumbers } from './useOrganicCutColors';
 
 /** The tenon has two rotations, not three: the lean (green ring) and the roll. */
-const LEAN_AND_ROLL_RINGS: GizmoAxis[] = ['x', 'y', 'z'];
+const LEAN_AND_ROLL_RINGS: GizmoAxis[] = ['y', 'z'];
 
 export interface OrganicCutTenonGizmoProps {
   /** All loaded models (to find the active one for its geometry/offset). */
