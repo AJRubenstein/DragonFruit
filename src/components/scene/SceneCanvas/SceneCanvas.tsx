@@ -362,6 +362,9 @@ export function SceneCanvas({
   onSupportClick,
   onHolePunchClick,
   onHolePunchHover,
+  onOrganicCutClick,
+  organicCutDragging,
+  organicCutKeyGizmo,
   onSupportHover,
   onActiveModelChange,
   onMarqueeSelectionChange,
@@ -500,6 +503,15 @@ export function SceneCanvas({
   onSupportClick?: (hit: THREE.Intersection) => void;
   onHolePunchClick?: (hit: THREE.Intersection) => void;
   onHolePunchHover?: (hit: THREE.Intersection | null) => void;
+  onOrganicCutClick?: (hit: THREE.Intersection) => void;
+  /** True while an organic-cut waypoint is being dragged — disables OrbitControls. */
+  organicCutDragging?: boolean;
+  /**
+   * The cut-tool registration-tenon aim/roll gizmo, rendered INSIDE the picking
+   * provider (so its handles are grabbable through the model). Supplied by the host
+   * because the gizmo needs session state; null when the cut tool isn't active.
+   */
+  organicCutKeyGizmo?: React.ReactNode;
   onSupportHover?: (hit: THREE.Intersection | null) => void;
   onActiveModelChange?: (id: string | null, options?: { selectionMode?: 'single' | 'toggle' | 'add' }) => void;
   onMarqueeSelectionChange?: (ids: string[]) => void;
@@ -5376,7 +5388,7 @@ export function SceneCanvas({
           safetyMarginMm={activeBuildVolumeSettings.safetyMarginMm}
           frontLabel={frontFaceLabel}
         />
-        <EnableLocalClipping enabled={clipLower != null || clipUpper != null || indicatorPlaneZ != null} />
+        <EnableLocalClipping enabled={clipLower != null || clipUpper != null || indicatorPlaneZ != null || !!organicCutKeyGizmo} />
         <CameraProvider cameraRef={cameraRef} />
         <CameraProjectionController mode={cameraProjectionMode} />
         <CameraClipPlaneStabilizer />
@@ -5559,6 +5571,7 @@ export function SceneCanvas({
                       modelSectionGeometry={model.geometry.meshDefects?.modelSectionGeometry ?? null}
                       onHolePunchClick={onHolePunchClick}
                       onHolePunchHover={onHolePunchHover}
+                      onOrganicCutClick={onOrganicCutClick}
                     >
                       {useActiveModelAttachedSupportProxy && isActive && (
                         <group
@@ -6533,6 +6546,11 @@ export function SceneCanvas({
                 />
               )}
 
+              {/* Cut-tool tenon aim/roll gizmo — rendered INSIDE the picking provider
+                  (like the main gizmo) so its handles are grabbable through the mesh
+                  via the GPU picking system. Supplied by the host (page.tsx). */}
+              {organicCutKeyGizmo}
+
               {selectedMarker && enableVolumeGlow && (
                 <IslandOverlay
                   markers={[selectedMarker]}
@@ -6689,6 +6707,7 @@ export function SceneCanvas({
             && !isGizmoDragging
             && !isMarqueeSelecting
             && !isPlacementActive
+            && !organicCutDragging
           }
           onStart={handleOrbitStart}
           onChange={handleOrbitChange}

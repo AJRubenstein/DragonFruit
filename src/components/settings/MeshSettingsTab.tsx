@@ -10,6 +10,7 @@ import { SelectionHighlightDropdown } from '@/components/controls/SelectionHighl
 import type { SelectionHighlightMode } from '@/components/selection';
 import { Input, Select } from '@/components/atoms';
 import { Layers, MousePointer2, SlidersHorizontal } from 'lucide-react';
+import { OrganicCutColorsSection } from '@/features/organicCut';
 
 type PreviewModelConfig = {
   label: string;
@@ -559,6 +560,8 @@ export function MeshSettingsTab({
                 </div>
               </div>
             </div>
+
+            <OrganicCutColorsSection />
 
             <div className="rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
               <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-strong)' }}>Tint Intensity</div>

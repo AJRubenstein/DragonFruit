@@ -72,6 +72,7 @@ import { MeshSmoothingBrushCursor } from '@/features/mesh-smoothing/MeshSmoothin
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
+import { OrganicCutTool, OrganicCutTenonGizmo, useOrganicCutSession } from '@/features/organicCut';
 import { MirrorTool } from '@/features/mirror/MirrorTool';
 import { bakeWithFlips } from '@/features/mirror/logic/bakeWithFlips';
 import { buildMirrorSupportTransforms, reflectTransformAcrossWorldAxis } from '@/features/mirror/logic/buildMirrorSupportTransforms';
@@ -79,7 +80,7 @@ import type { MirrorAxis } from '@/features/mirror/types';
 import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import { RtspRelayCanvasPlayer } from '@/components/monitoring/RtspRelayCanvasPlayer';
 import { IconButton, Toast, ToastViewport } from '@/components/atoms';
-import { EditorContextMenu, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
+import { EditorContextMenu, ORGANIC_CUT_ADD_WAYPOINT_ITEM, ORGANIC_CUT_DELETE_WAYPOINT_ITEM, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { DiagnosticsModal } from '@/components/modals/DiagnosticsModal';
@@ -206,7 +207,7 @@ import {
 } from '@/features/scene/arrange/highPrecisionArrangeWorkerClient';
 
 // Domain Features
-import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker } from '@/features/scene/useSceneCollectionManager';
+import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
 import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import { useTransformManager } from '@/features/transform/useTransformManager';
@@ -218,6 +219,7 @@ import { IslandsPanel } from '@/components/controls/IslandsPanel';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import { useSupportInteractionManager } from '@/features/supports/useSupportInteractionManager';
 import { useUndoRedoHotkeys } from '@/hotkeys/useUndoRedoHotkeys';
+import { useOrganicCutHotkeys, useOrganicCutPreviewHotkey } from '@/hotkeys/useOrganicCutHotkeys';
 import { hotkeyStore, useActionActive, isActionActiveSync, isPrimaryModifierPressed } from '@/hotkeys/hotkeyStore';
 import { useDeleteHotkey } from '@/features/delete/useDeleteHotkey';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
@@ -232,13 +234,15 @@ import {
   getHistoryDebugEvents,
   getRedoCount,
   getUndoCount,
+  getHistoryStackBytes,
   redo,
   subscribeHistory,
   subscribeHistoryDebug,
+  setHistoryOriginProvider,
   subscribeHistoryOperations,
   undo,
 } from '@/history/historyStore';
-import type { HistoryDebugEvent } from '@/history/types';
+import type { HistoryDebugEvent, HistoryOrigin } from '@/history/types';
 import { formatHistoryLabel } from '@/history/formatHistoryLabel';
 import { getSavedCameraProjectionSettings, saveCameraProjectionSettings } from '@/components/settings/cameraProjectionPreferences';
 import {
@@ -316,6 +320,7 @@ import { resolveCompositeMaterialLabel } from '@/utils/materialLabel';
 
 import { type MeshShaderType } from '@/features/shaders/mesh';
 import type { ModelTransform, TransformMode } from '@/hooks/useModelTransform';
+import type { SupportMode } from '@/supports/types';
 import { VoxlSizeLimitError } from '@/features/scene/voxl';
 import {
   useSceneAutosave,
@@ -525,6 +530,26 @@ function createModelTransformKey(modelId: string, transform: ModelTransform): st
     transform.scale.y.toFixed(6),
     transform.scale.z.toFixed(6),
   ].join('|');
+}
+
+/**
+ * Modes a history entry may name as its origin. The history store carries the
+ * origin as plain strings (it must not depend on the app's unions), so these
+ * narrow it back on the way in — an entry recorded by an older build, or a mode
+ * that has since been renamed, is ignored rather than jamming the app into a
+ * mode that no longer exists.
+ */
+const HISTORY_APP_MODES: readonly SupportMode[] = ['prepare', 'analysis', 'support', 'export', 'printing'];
+const HISTORY_TRANSFORM_MODES: readonly TransformMode[] = [
+  'select', 'transform', 'smoothing', 'arrange', 'placeOnFace', 'mirror', 'hollowing', 'organicCut',
+];
+
+function isAppMode(value: string): value is SupportMode {
+  return (HISTORY_APP_MODES as readonly string[]).includes(value);
+}
+
+function isTransformMode(value: string): value is TransformMode {
+  return (HISTORY_TRANSFORM_MODES as readonly string[]).includes(value);
 }
 
 export default function Home() {
@@ -1138,6 +1163,16 @@ export default function Home() {
   const [printingDeviceProcessingElapsedSec, setPrintingDeviceProcessingElapsedSec] = React.useState(0);
   const lastOwnedPrintTempPathRef = React.useRef<string | null>(null);
   const [historyDebugEvents, setHistoryDebugEvents] = React.useState<HistoryDebugEvent[]>([]);
+  // Sizes for the history debug panel. Recomputed only while the panel is open —
+  // walking every payload on each push would tax the hot path for a readout
+  // nobody is looking at.
+  const [historyStackBytes, setHistoryStackBytes] = React.useState<{ undo: number; redo: number; total: number }>({
+    undo: 0,
+    redo: 0,
+    total: 0,
+  });
+  const [sceneSnapshotBytes, setSceneSnapshotBytes] = React.useState(0);
+  const isHistoryDebugOpenRef = React.useRef(false);
   const [historyStackCounts, setHistoryStackCounts] = React.useState<{ undo: number; redo: number }>({
     undo: 0,
     redo: 0,
@@ -5355,6 +5390,15 @@ export default function Home() {
     run(Math.max(0, frameDelay));
   }, [commitPendingTransformHistory]);
 
+  // The tool the user is in, mirrored for `pushHistory` to stamp onto entries,
+  // and the inverse — switching back to an undone entry's tool. Both are refs
+  // because the history subscriber below is installed once, long before the mode
+  // setters exist further down this component.
+  const historyOriginRef = React.useRef<HistoryOrigin>({ appMode: 'prepare', transformMode: 'select' });
+  const restoreHistoryOriginRef = React.useRef<(origin: HistoryOrigin) => void>(() => {});
+
+  React.useEffect(() => setHistoryOriginProvider(() => historyOriginRef.current), []);
+
   React.useEffect(() => {
     const fallbackDescription = (type: string) => {
       if (type === 'scene_models_snapshot_apply') return 'Scene Change';
@@ -5364,6 +5408,11 @@ export default function Home() {
     const unsubscribe = subscribeHistoryOperations(({ direction, action }) => {
       const sourceDescription = action.description?.trim() || fallbackDescription(action.type);
       const description = formatHistoryLabel(sourceDescription);
+
+      // Follow the stack back to where the edit was made: undoing a cut while the
+      // Transform gizmo is up should put the Cut tool back, not silently reshape
+      // geometry the current tool can't even show.
+      if (action.origin) restoreHistoryOriginRef.current(action.origin);
 
       pendingHistoryTransformResyncRef.current = true;
       invalidatePendingTransformHistory();
@@ -5503,6 +5552,11 @@ export default function Home() {
     };
   }, [cancelPendingHistoryTransformResyncFrames]);
 
+  // Latest "is the Cut tool active" flag, for the right-click-up handler below
+  // (declared here so it precedes that handler; updated once organicCutToolActive
+  // is computed later in the component).
+  const organicCutToolActiveRef = React.useRef(false);
+
   const handleEditorPointerDownCapture = React.useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 2) return;
     rightClickGestureRef.current = { x: e.clientX, y: e.clientY, moved: false };
@@ -5527,6 +5581,29 @@ export default function Home() {
     // No editor menu on the empty-scene welcome screen — there is nothing to act
     // on (unless the clipboard holds a cut/copied model that could be pasted).
     if (!moved && !shouldSuppress && (scene.models.length > 0 || scene.canPasteModel)) {
+      // Cut tool: a hovered waypoint MARKER arms "Delete waypoint"; otherwise a
+      // hovered seam LINE arms "Add waypoint here". Either opens the cut menu
+      // instead of the model/support menu. Marker takes priority over line.
+      if (organicCutToolActiveRef.current) {
+        const markerHover = organicCutMarkerHoverRef.current;
+        if (markerHover != null) {
+          setOrganicCutLineMenu({ kind: 'delete', x: e.clientX, y: e.clientY, index: markerHover });
+          window.setTimeout(() => { rightClickGestureRef.current = null; }, 0);
+          return;
+        }
+        const seamHover = organicCutLineHoverRef.current;
+        if (seamHover) {
+          setOrganicCutLineMenu({
+            kind: 'add',
+            x: e.clientX,
+            y: e.clientY,
+            localPoint: seamHover.localPoint,
+            afterIndex: seamHover.afterIndex,
+          });
+          window.setTimeout(() => { rightClickGestureRef.current = null; }, 0);
+          return;
+        }
+      }
       if (scene.mode === 'support' && supportShaftHoverDebug.segmentId && supportShaftHoverDebug.point) {
         setEditorContextMenuSupportTarget({
           segmentId: supportShaftHoverDebug.segmentId,
@@ -5862,6 +5939,12 @@ export default function Home() {
     const refreshHistoryDebug = () => {
       setHistoryDebugEvents(getHistoryDebugEvents());
       setHistoryStackCounts({ undo: getUndoCount(), redo: getRedoCount() });
+      // Sizes only while the panel is open: both walk every entry, and the debug
+      // log updates on every push.
+      if (isHistoryDebugOpenRef.current) {
+        setHistoryStackBytes(getHistoryStackBytes());
+        setSceneSnapshotBytes(getSceneSnapshotRegistryBytes());
+      }
     };
 
     refreshHistoryDebug();
@@ -5874,6 +5957,15 @@ export default function Home() {
       unsubHistoryDebug();
     };
   }, []);
+
+  React.useEffect(() => {
+    isHistoryDebugOpenRef.current = isHistoryDebugOpen;
+    // Opening the panel must not wait for the next push to show a number.
+    if (isHistoryDebugOpen) {
+      setHistoryStackBytes(getHistoryStackBytes());
+      setSceneSnapshotBytes(getSceneSnapshotRegistryBytes());
+    }
+  }, [isHistoryDebugOpen]);
 
   React.useEffect(() => {
     if (isHistoryDebugOpen) {
@@ -7494,7 +7586,23 @@ export default function Home() {
     transformMgr.setTransformMode(nextMode);
   }, [suppressTransformPersistenceCycles, transformMgr.transformMode, transformMgr.setTransformMode]);
 
-  useUndoRedoHotkeys({ disabled: hollowingEditMode });
+  // Keep the history origin mirror current, and wire the restore now that both
+  // setters exist. The restore is assigned on every render (no dep array) so it
+  // always closes over today's mode — a stale closure would switch to the tool
+  // that was current when the effect last ran.
+  React.useEffect(() => {
+    historyOriginRef.current = { appMode: scene.mode, transformMode: transformMgr.transformMode };
+  }, [scene.mode, transformMgr.transformMode]);
+
+  React.useEffect(() => {
+    restoreHistoryOriginRef.current = (origin: HistoryOrigin) => {
+      if (isAppMode(origin.appMode) && origin.appMode !== scene.mode) scene.setMode(origin.appMode);
+      if (isTransformMode(origin.transformMode) && origin.transformMode !== transformMgr.transformMode) {
+        setTransformModeWithMirrorFinalize(origin.transformMode);
+      }
+    };
+  });
+
   useDeleteHotkey();
   useCameraProjectionHotkey();
   const hasCavityGeometry = scene.activeModel
@@ -9216,6 +9324,190 @@ export default function Home() {
 
   const mirrorToolActive = scene.mode === 'prepare' && transformMgr.transformMode === 'mirror';
 
+  // Organic Cut tool session. All Cutting-Mode state and the cut round-trip live
+  // inside the feature hook; page.tsx only supplies the active geometry and
+  // renders the two mounts below. See src/features/organicCut/.
+  const organicCutToolActive = scene.mode === 'prepare' && transformMgr.transformMode === 'organicCut';
+  useUndoRedoHotkeys({ disabled: hollowingEditMode });
+  React.useEffect(() => { organicCutToolActiveRef.current = organicCutToolActive; }, [organicCutToolActive]);
+  // True while a cut waypoint is being dragged, so OrbitControls stays disabled
+  // for the duration of the drag (camera must not move while editing the seam).
+  const [organicCutDragging, setOrganicCutDragging] = React.useState(false);
+  // Timestamp of the most recent drag end. A pointer-up after a drag still
+  // synthesizes a `click` on the model beneath, which would call addPoint and
+  // duplicate the just-moved waypoint. We swallow any organic-cut click that
+  // lands within a short window after a drag ends.
+  const organicCutLastDragEndRef = React.useRef(0);
+  // WHICH of the two the pointer has hold of. Dragging a waypoint moves the seam,
+  // and the cut face travels out from under the tenon; dragging the tenon itself
+  // does not move the face at all. They are both "a cut drag" for OrbitControls
+  // and for undo coalescing, and they are not the same thing at all for the tenon.
+  const [organicCutDraggingTenon, setOrganicCutDraggingTenon] = React.useState(false);
+  const handleOrganicCutDragStateChange = React.useCallback(
+    (dragging: boolean, what: 'seam' | 'tenon' = 'seam') => {
+      if (!dragging) organicCutLastDragEndRef.current = Date.now();
+      setOrganicCutDraggingTenon(dragging && what === 'tenon');
+      setOrganicCutDragging(dragging);
+    },
+    [],
+  );
+  const organicCut = useOrganicCutSession({
+    toolActive: organicCutToolActive,
+    activeGeometry: scene.activeModel?.geometry.geometry ?? null,
+    activeGeometryKey: scene.activeModel?.id ?? null,
+    isDraggingPoint: organicCutDragging,
+    isDraggingTenon: organicCutDraggingTenon,
+    commitParts: React.useCallback((parts: THREE.BufferGeometry[]) => {
+      const target = scene.activeModel;
+      if (!target) {
+        // eslint-disable-next-line no-console
+        console.warn('[organicCut] commitParts: no active model');
+        return false;
+      }
+      // ONE atomic split — replacing + adding as separate calls races on stale
+      // state and deletes a piece. A multi-loop cut may hand us >2 parts.
+      const newIds = scene.splitModelIntoParts(target.id, parts, 'Organic Cut');
+      // eslint-disable-next-line no-console
+      console.info(`[organicCut] commitParts OK | parts=${parts.length} newModelIds=${newIds?.join(',') ?? 'null'}`);
+      return newIds != null;
+    }, [scene]),
+  });
+
+  // Surface picking for the Cut tool rides the SAME StlMesh click pipeline as
+  // hole-punch (camera/orbit/gizmo aware), rather than a separate pick mesh.
+  // Convert the hit into a model-LOCAL loop point (matches the mesh object's own
+  // geometry space) so the stored loop is independent of the plate transform.
+  const handleOrganicCutClick = React.useCallback((hit: THREE.Intersection) => {
+    // Ignore the click synthesized by a waypoint drag's pointer-up — it would
+    // add a duplicate point on top of the one we just moved. (Also covers the
+    // brief moment after the drag where `organicCutDragging` has already reset.)
+    if (organicCutDragging || Date.now() - organicCutLastDragEndRef.current < 250) {
+      return;
+    }
+    const target = scene.activeModel;
+    if (!target) return;
+    const hitModelId = (hit.object.userData?.modelId as string | undefined) ?? target.id;
+    if (hitModelId !== target.id) return;
+
+    // If a waypoint is selected, an empty-surface click just DESELECTS it — it
+    // does NOT place a new point. (Click away to dismiss the selection.)
+    if (organicCut.selectedIndex != null) {
+      organicCut.selectPoint(null);
+      return;
+    }
+
+    hit.object.updateWorldMatrix(true, false);
+    const localPoint = hit.object.worldToLocal(hit.point.clone());
+    const localNormal = hit.face?.normal
+      ? hit.face.normal.clone().normalize()
+      : new THREE.Vector3(0, 0, 1);
+
+    organicCut.addPoint({
+      position: [localPoint.x, localPoint.y, localPoint.z],
+      normal: [localNormal.x, localNormal.y, localNormal.z],
+    });
+  }, [organicCut, scene.activeModel, organicCutDragging]);
+
+  // Cut-tool right-click menus, hover-to-arm. The OrganicCutTool reports when the
+  // cursor is over the seam (→ "Add waypoint here") or over a waypoint marker (→
+  // "Delete waypoint"). We stash the armed target in refs; the existing
+  // right-click-up pipeline opens the appropriate menu instead of the
+  // model/support one, and on confirm we insert or delete.
+  // Left-click on the seam line inserts a waypoint at the clicked point (the more
+  // discoverable counterpart to the right-click "Add waypoint here").
+  const handleOrganicCutLineClick = React.useCallback(
+    (info: { localPoint: [number, number, number]; afterIndex: number }) => {
+      organicCut.selectPoint(null);
+      organicCut.insertPoint(info.afterIndex, { position: info.localPoint, normal: [0, 0, 0] });
+    },
+    [organicCut],
+  );
+  const organicCutLineHoverRef = React.useRef<
+    { localPoint: [number, number, number]; afterIndex: number } | null
+  >(null);
+  const handleOrganicCutLineHoverChange = React.useCallback(
+    (info: { localPoint: [number, number, number]; afterIndex: number } | null) => {
+      organicCutLineHoverRef.current = info;
+    },
+    [],
+  );
+  const organicCutMarkerHoverRef = React.useRef<number | null>(null);
+  const handleOrganicCutMarkerHoverChange = React.useCallback((index: number | null) => {
+    organicCutMarkerHoverRef.current = index;
+  }, []);
+  // One menu for both actions; `kind` selects which item/handler.
+  const [organicCutLineMenu, setOrganicCutLineMenu] = React.useState<
+    | { kind: 'add'; x: number; y: number; localPoint: [number, number, number]; afterIndex: number }
+    | { kind: 'delete'; x: number; y: number; index: number }
+    | null
+  >(null);
+  const handleOrganicCutLineMenuAction = React.useCallback(
+    (action: EditorMenuAction) => {
+      if (action === 'organic-cut-add-waypoint' && organicCutLineMenu?.kind === 'add') {
+        organicCut.insertPoint(organicCutLineMenu.afterIndex, {
+          position: organicCutLineMenu.localPoint,
+          normal: [0, 0, 0],
+        });
+      } else if (action === 'organic-cut-delete-waypoint' && organicCutLineMenu?.kind === 'delete') {
+        organicCut.removePoint(organicCutLineMenu.index);
+      }
+      setOrganicCutLineMenu(null);
+    },
+    [organicCut, organicCutLineMenu],
+  );
+  // Dismiss the cut line menu on outside click / Escape / scroll, like the editor
+  // context menu.
+  React.useEffect(() => {
+    if (!organicCutLineMenu) return;
+    const onDown = () => setOrganicCutLineMenu(null);
+    // Escape comes from the central hotkey store (no direct key listeners —
+    // docs/reference/hotkeys.md); the rising edge is what dismisses the menu.
+    let wasEscapeActive = hotkeyStore.getState().activeKeys.has('escape');
+    let unsubscribeEscape: (() => void) | null = null;
+    // Defer so the opening right-click doesn't immediately close it.
+    const id = window.setTimeout(() => {
+      window.addEventListener('pointerdown', onDown);
+      unsubscribeEscape = hotkeyStore.subscribe(() => {
+        const isEscapeActive = hotkeyStore.getState().activeKeys.has('escape');
+        if (isEscapeActive && !wasEscapeActive) setOrganicCutLineMenu(null);
+        wasEscapeActive = isEscapeActive;
+      });
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+      window.removeEventListener('pointerdown', onDown);
+      unsubscribeEscape?.();
+    };
+  }, [organicCutLineMenu]);
+
+  // Cut-tool session state read by useOrganicCutHotkeys, kept in a ref so the
+  // hotkey subscription survives the per-click churn of waypoint editing.
+  const organicCutHotkeyRef = React.useRef({
+    active: organicCutToolActive,
+    removePoint: organicCut.removePoint,
+    selectedIndex: organicCut.selectedIndex,
+  });
+  React.useEffect(() => {
+    organicCutHotkeyRef.current = {
+      active: organicCutToolActive,
+      removePoint: organicCut.removePoint,
+      selectedIndex: organicCut.selectedIndex,
+    };
+  }, [organicCutToolActive, organicCut.removePoint, organicCut.selectedIndex]);
+  // Delete for the Cut tool, claimed through the delete registry. Undo/redo are
+  // the app's own: every Cut edit is pushed to the history.
+  useOrganicCutHotkeys(organicCutHotkeyRef);
+  // Show Preview, from the configurable CUT.TOGGLE_PREVIEW binding.
+  useOrganicCutPreviewHotkey(
+    React.useCallback(() => {
+      organicCut.setPanelState({
+        ...organicCut.panelState,
+        showPreview: !organicCut.panelState.showPreview,
+      });
+    }, [organicCut]),
+    organicCutToolActive,
+  );
+
   // Mirror session state: while the user is in Mirror mode we don't bake the
   // geometry per-click (a 2.4M-vert bake is slow on big meshes). Instead, each
   // click toggles a parity bit and applies a negative-scale transform — the GPU
@@ -9317,6 +9609,7 @@ export default function Home() {
               hollowing: hollowing,
               holePunch: holePunch,
               arrange: arrange,
+              organicCut: organicCut,
               outsidePlateModelIds: outsidePlateModelIds,
               handleModelSelection: handleModelSelection,
               handleModelRangeSelection: handleModelRangeSelection,
@@ -9591,6 +9884,37 @@ export default function Home() {
             onSupportClick={supports.onModelClick}
             onHolePunchClick={scene.mode === 'prepare' && transformMgr.transformMode === 'hollowing' && !hollowingEditMode ? handleHolePunchClick : undefined}
             onHolePunchHover={scene.mode === 'prepare' && transformMgr.transformMode === 'hollowing' && !hollowingEditMode ? handleHolePunchHover : undefined}
+            onOrganicCutClick={organicCutToolActive ? handleOrganicCutClick : undefined}
+            organicCutDragging={organicCutDragging}
+            organicCutKeyGizmo={
+              // Both cut modes place a tenon now, so the aim gizmo follows the tenon
+              // rather than the mode; it mounts whenever there is a frame to sit on.
+              organicCutToolActive && organicCut.tenonFrame && organicCut.panelState.showPreview ? (
+                <OrganicCutTenonGizmo
+                  models={scene.models}
+                  activeModelId={displayActiveModelId}
+                  activeTransform={transformMgr.transform}
+                  tenonFrame={organicCut.tenonFrame}
+                  tenonTiltRad={organicCut.panelState.tenonTiltRad}
+                  tenonRollRad={organicCut.panelState.tenonRollRad}
+                  tenonAnchor={organicCut.panelState.tenonAnchor}
+                  membranePreview={organicCut.membranePreview}
+                  onTenonAnchorChange={(anchor) =>
+                    organicCut.setPanelState({ ...organicCut.panelState, tenonAnchor: anchor })
+                  }
+                  onTenonAimChange={(tilt, roll) =>
+                    organicCut.setPanelState({
+                      ...organicCut.panelState,
+                      tenonTiltRad: tilt,
+                      tenonRollRad: roll,
+                    })
+                  }
+                  onDragStateChange={(dragging) =>
+                    handleOrganicCutDragStateChange(dragging, 'tenon')
+                  }
+                />
+              ) : undefined
+            }
             onSupportHover={supports.onModelHover}
             onActiveModelChange={handleSceneModelSelection}
             onMarqueeSelectionChange={handleSceneMarqueeSelection}
@@ -9722,6 +10046,38 @@ export default function Home() {
                 onBeforeFaceApply={handlePlaceOnFaceBeforeApply}
               />
             )}
+            {organicCutToolActive && (
+              <OrganicCutTool
+                models={scene.models}
+                activeModelId={displayActiveModelId}
+                activeTransform={transformMgr.transform}
+                active={!organicCut.isApplying}
+                cutLeakPoints={organicCut.cutLeakPoints}
+                loop={organicCut.loop}
+                onAddPoint={organicCut.addPoint}
+                onUpdatePoint={organicCut.updatePoint}
+                onDragStateChange={handleOrganicCutDragStateChange}
+                onLineHoverChange={handleOrganicCutLineHoverChange}
+                onLineClick={handleOrganicCutLineClick}
+                selectedIndex={organicCut.selectedIndex}
+                onSelectPoint={organicCut.selectPoint}
+                onToggleLockPoint={organicCut.toggleLockPoint}
+                onMarkerHoverChange={handleOrganicCutMarkerHoverChange}
+                geodesicPolyline={organicCut.geodesicPolyline}
+                planeCurves={organicCut.planeCurves}
+                inactiveLoopPolylines={organicCut.inactiveLoopPolylines}
+                cutMode={organicCut.panelState.cutMode}
+                membranePreview={organicCut.membranePreview}
+                tenonPreview={organicCut.tenonPreview}
+                tenonTriangleCount={organicCut.tenonTriangleCount}
+                tenonFits={organicCut.tenonFits}
+                tenonFrame={organicCut.tenonFrame}
+                tenonAnchor={organicCut.panelState.tenonAnchor}
+                tenonTiltRad={organicCut.panelState.tenonTiltRad}
+                tenonRollRad={organicCut.panelState.tenonRollRad}
+                showPreview={organicCut.panelState.showPreview}
+              />
+            )}
             {scene.mode === 'prepare' && transformMgr.transformMode === 'mirror' && (
               <MirrorTool
                 activeModelId={displayActiveModelId}
@@ -9834,6 +10190,19 @@ export default function Home() {
         disabledActions={editorContextMenuDisabledActions}
       />
 
+      {/* Organic-cut right-click menu: "Add waypoint here" (seam) or "Delete
+          waypoint" (marker), depending on what was hovered when right-clicked. */}
+      <EditorContextMenu
+        position={organicCutLineMenu ? { x: organicCutLineMenu.x, y: organicCutLineMenu.y } : null}
+        onAction={handleOrganicCutLineMenuAction}
+        title={organicCutLineMenu?.kind === 'delete' ? 'Waypoint' : 'Cut Seam'}
+        items={
+          organicCutLineMenu?.kind === 'delete'
+            ? [ORGANIC_CUT_DELETE_WAYPOINT_ITEM]
+            : [ORGANIC_CUT_ADD_WAYPOINT_ITEM]
+        }
+      />
+
       <DiagnosticsModals
         clearHistory={clearHistory}
         clearHistoryDebugEvents={clearHistoryDebugEvents}
@@ -9842,6 +10211,8 @@ export default function Home() {
         historyDebugEvents={historyDebugEvents}
         historyPreviewTargetEventId={historyPreviewTargetEventId}
         historyStackCounts={historyStackCounts}
+        historyStackBytes={historyStackBytes}
+        sceneSnapshotBytes={sceneSnapshotBytes}
         isDiagnosticsOpen={isDiagnosticsOpen}
         isHistoryDebugOpen={isHistoryDebugOpen}
         isHistoryPreviewActive={isHistoryPreviewActive}

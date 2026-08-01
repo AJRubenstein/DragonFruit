@@ -898,8 +898,11 @@ export async function readSidecarFileBytes(filePath: string): Promise<Uint8Array
   try {
     if (typeof window === 'undefined' && typeof process !== 'undefined' && process.versions?.node) {
       try {
-        const req = eval('require');
-        const fs = req('fs');
+        // The bundlers must not follow this: codec-v2 reaches the browser
+        // bundle through page.tsx, and neither Turbopack nor webpack can
+        // resolve a Node builtin there. The guard above keeps the import from
+        // ever running outside Node, so leaving it unresolved is safe.
+        const fs = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ 'node:fs');
         if (fs.existsSync(filePath)) {
           const buf = fs.readFileSync(filePath);
           return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);

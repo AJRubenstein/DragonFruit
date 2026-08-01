@@ -1070,18 +1070,25 @@ fn cmd_slice_run(
     // Same flow as Tauri's slice_solid_native_to_temp_path:
     // load STL or positions.bin → build SliceJobV3 → dispatch to engine
     // Load STL, positions.bin, or .voxl container
-    let file_ext = input.extension()
+    let is_positions_bin = input.extension()
         .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .unwrap_or_default();
+        .map(|e| e == "bin")
+        .unwrap_or(false);
+    let is_voxl = is_voxl_file(input);
 
-    let (flat, model_tri_count, mesh_encoding) = if file_ext == "voxl" {
-        let voxl = load_voxl(input)?;
-        (voxl.triangles_xyz, voxl.model_triangle_count as u32, "voxl".to_string())
-    } else if file_ext == "bin" {
+    let (flat, model_tri_count, mesh_encoding) = if is_positions_bin {
         let f = read_positions_bin(input)?;
         let count = (f.len() / 9) as u32;
         (f, count, "positions_bin".to_string())
+    } else if is_voxl {
+        let voxl = load_voxl(input)?;
+        if !json_output {
+            eprintln!(
+                "slice: read VOXL file with {} triangles (model_triangles={}, mesh_encoding={})",
+                voxl.total_triangle_count, voxl.model_triangle_count, voxl.mesh_encoding
+            );
+        }
+        (voxl.triangles_xyz, voxl.model_triangle_count as u32, voxl.mesh_encoding)
     } else {
         let f = load_binary_stl(input)?;
         let count = (f.len() / 9) as u32;
