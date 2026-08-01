@@ -118,7 +118,12 @@ export interface GizmoConfig {
   onMoveEnd?: () => void;
   
   onRotateStart?: (axis: GizmoAxis) => boolean | void;
-  onRotate?: (axis: GizmoAxis, angle: number) => void;
+  /**
+   * Turn the object by `angle` about `axis`. Return how much of it the object
+   * actually took when the rotation has a hard end; return nothing and the ring's
+   * handle assumes all of it went through.
+   */
+  onRotate?: (axis: GizmoAxis, angle: number) => number | void;
   onRotateEnd?: () => void;
   
   onScaleStart?: (axis: GizmoAxis, isUniform: boolean) => boolean | void;

@@ -400,9 +400,9 @@ export function TransformGizmo({
     }
   };
 
-  const handleRotate = (axis: GizmoAxis, angle: number) => {
+  const handleRotate = (axis: GizmoAxis, angle: number): number | void => {
     if (onRotate) {
-      onRotate(axis, angle);
+      return onRotate(axis, angle);
     }
   };
 

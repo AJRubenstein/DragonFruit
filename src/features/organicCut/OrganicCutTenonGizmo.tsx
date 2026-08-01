@@ -195,7 +195,7 @@ export function OrganicCutTenonGizmo({
   }, [tenonFrame, tenonRollRad, meshLocalOffset, hasTransform, tpx, tpy, tpz, trx, try_, trz, tsx, tsy, tsz]);
 
   const handleGizmoRotate = useCallback(
-    (axis: GizmoAxis, delta: number) => {
+    (axis: GizmoAxis, delta: number): number => {
       if (axis === 'z') {
         // Roll takes the delta UNFLIPPED: the flip the lean ring needs drove the
         // tenon the opposite way to the handle the user was dragging on this one.
@@ -212,7 +212,8 @@ export function OrganicCutTenonGizmo({
         // and its lean plane turned opposite ways, so a full turn of this ring moved
         // the tenon half as far and it visibly lagged the handle.
         onTenonAimChange(tenonTiltRad, roll);
-        return;
+        // All of it went through — the roll has no end to run into.
+        return delta;
       }
       // The green ring turns about the tenon's own u, tipping it toward its own v —
       // the plane of a narrow face. What it reports IS the lean, signed: past 0 it
@@ -222,6 +223,10 @@ export function OrganicCutTenonGizmo({
       // a won't-fit verdict (the tenon turns red), not refused by a frozen ring.
       const tilt = clampTenonTilt(tenonTiltRad - delta, tenonFrame);
       onTenonAimChange(tilt, tenonRollRad);
+      // Against the ceiling this is less than `delta`, and zero once it is hard
+      // against it — so the ring's handle stops with the tenon instead of running
+      // on and reporting leans of 138° that the tenon never took.
+      return tenonTiltRad - tilt;
     },
     [onTenonAimChange, tenonTiltRad, tenonRollRad, tenonFrame],
   );
@@ -477,6 +482,10 @@ export function OrganicCutTenonGizmo({
       showCenter={false}
       showMovePlanes={false}
       rotateAxes={LEAN_AND_ROLL_RINGS}
+      // The roll turns the gizmo's own frame (the basis above is rolled with the
+      // tenon), so the blue ring already carries the whole movement. A handle that
+      // also advanced inside it went twice as far as the pointer and overtook it.
+      axisVisualFlip={{ z: 0 }}
       onRotate={handleGizmoRotate}
       onDragStateChange={handleGizmoDragState}
     />

@@ -47,10 +47,18 @@ interface GizmoRotationProps {
    * Set to -1 to invert the ring handle animation direction relative to the
    * object rotation (e.g. when the gizmo local frame has an inverted axis
    * convention like displayY = -cutterY in HolePunchGizmo).
+   * Set to 0 when the parent turns the whole gizmo frame by this very rotation:
+   * the ring then already carries the movement, and a handle that also advanced
+   * inside it would travel twice as far as the pointer and overtake it.
    */
   axisVisualFlip?: number;
   onDragStart: () => boolean | void;
-  onDrag: (angle: number) => void;
+  /**
+   * Apply this much rotation to the object. Return how much of it the object
+   * ACTUALLY took, when that can be less than what was asked (a clamped range);
+   * return nothing and the handle assumes all of it was applied.
+   */
+  onDrag: (angle: number) => number | void;
   onDragEnd: () => void;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
@@ -106,6 +114,13 @@ export function GizmoRotation({
   // Snap rotation refs (object-space)
   const rawAccumulatedAngleRef = useRef<number>(0);
   const lastSnappedAngleRef = useRef<number>(0);
+  /**
+   * How far the OBJECT has turned since the drag started — which is not how far
+   * the pointer has swept when the parent clamps. The two accumulators above
+   * follow the pointer, because the snap grid has to; this one follows the thing
+   * the user is looking at, and it is what the handle and the readout show.
+   */
+  const appliedAngleRef = useRef<number>(0);
   const prevSnapIncrementRef = useRef<number | null>(null);
   // Callback refs to stabilize useEffect deps (prevents effect churn during drag)
   const onDragRef = useRef(onDrag);
@@ -301,6 +316,7 @@ export function GizmoRotation({
     // Initialize snap refs at drag start to avoid spurious first-frame transition
     rawAccumulatedAngleRef.current = 0;
     lastSnappedAngleRef.current = 0;
+    appliedAngleRef.current = 0;
     prevSnapIncrementRef.current = null;
     window.dispatchEvent(new CustomEvent('dragonfruit:rotation-hint', { detail: { visible: false } }));
     setIsDragging(true);
@@ -389,26 +405,33 @@ export function GizmoRotation({
         lastSnappedAngleRef.current += rawObjectDelta;
       }
 
+      // Send rotation delta to parent (object rotation). What comes back is how
+      // much the object actually took: a parent whose rotation has a hard end
+      // (the tenon's lean stops where the geometry stops) returns less than it was
+      // asked for, and the handle has to stop where the object stopped instead of
+      // sailing past it and reporting an angle nothing ever reached.
+      const answer = onDragRef.current(emittedObjectDelta);
+      const appliedObjectDelta = typeof answer === 'number' ? answer : emittedObjectDelta;
+      appliedAngleRef.current += appliedObjectDelta;
+
       // Visual delta = objectDelta * axisSign. The model applies emitted
       // object deltas with the opposite sign, so the handle arc mirrors that
       // application step to move with the visible rotation.
       // axisVisualFlip allows the parent to invert the visual animation direction
       // (e.g. when the gizmo's local frame has an inverted axis convention such
-      // as displayY = -cutterY in HolePunchGizmo).
-      const visualDelta = emittedObjectDelta * axisSign * axisVisualFlip;
+      // as displayY = -cutterY in HolePunchGizmo), or to zero it when the parent
+      // turns the gizmo's own frame by this rotation and the ring already carries it.
+      const visualDelta = appliedObjectDelta * axisSign * axisVisualFlip;
 
       // Update handle angle for visual feedback (ref-based)
       handleAngleRef.current += visualDelta;
       targetHandleAngleRef.current = handleAngleRef.current;
 
-      // Send rotation delta to parent (object rotation)
-      onDragRef.current(emittedObjectDelta);
-
       // Dispatch snap readout event for DOM overlay (always active while dragging)
       // Parent applies object rotation with -angle, so mirror that sign here so
       // the readout matches Transform panel values and perceived rotation direction.
       window.dispatchEvent(new CustomEvent('dragonfruit:snap-angle', {
-        detail: { active: true, angle: -lastSnappedAngleRef.current, axis },
+        detail: { active: true, angle: -appliedAngleRef.current, axis },
       }));
 
       lastMouseAngle.current = currentMouseAngle;
