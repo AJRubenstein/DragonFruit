@@ -337,25 +337,47 @@ fn mean_membrane_normal(membrane: &Membrane) -> Vec3 {
     if len > 1e-9 { nsum.scale(1.0 / len) } else { Vec3::new(0.0, 0.0, 1.0) }
 }
 
-/// Build an orthonormal `(u, v)` pair spanning the plane perpendicular to `axis`.
-/// Stable: seeds from whichever world axis is least aligned with `axis`. Purely
-/// cosmetic for the tenon (tenon & mortise share it), so any stable choice is fine.
+/// Build an orthonormal `(u, v)` pair spanning the plane perpendicular to `axis`,
+/// with `u × v = axis` (the handedness the frustum's winding depends on).
+///
+/// This basis is NOT cosmetic. The tenon leans in the plane of one of its narrow
+/// faces, and which plane that is comes from here — so a `u` that swings when
+/// `axis` barely moves swings the lean with it. That is what the old rule did: it
+/// seeded from whichever world axis was least aligned, which is a comparison of
+/// nearly-equal magnitudes, and every time `|x|` crossed `|y|` the basis turned a
+/// quarter turn. The preview and the cut measure the axis on membranes built from
+/// their own copy of the seam — near-identical, not identical — so a tenon framed
+/// anywhere near one of those crossings leaned one way on screen and another way
+/// in the cut.
+///
+/// Frisvad's construction (Duff et al., "Building an Orthonormal Basis,
+/// Revisited") instead varies smoothly with `axis` everywhere except across
+/// `axis.z = 0`, where the sign flips. That is one circle of directions instead of
+/// three great circles, and it is not where a cut face's normal usually points.
+///
+/// It is not a cure: a seam whose normal lies near the z = 0 equator can still
+/// have its lean plane turn over. The cure is to weld `u` to something the seam
+/// itself defines rather than to the world axes at all.
 pub(crate) fn plane_basis(axis: Vec3) -> (Vec3, Vec3) {
     orthonormal_basis(axis)
 }
 
 fn orthonormal_basis(axis: Vec3) -> (Vec3, Vec3) {
-    let seed = if axis.x.abs() <= axis.y.abs() && axis.x.abs() <= axis.z.abs() {
-        Vec3::new(1.0, 0.0, 0.0)
-    } else if axis.y.abs() <= axis.z.abs() {
-        Vec3::new(0.0, 1.0, 0.0)
-    } else {
-        Vec3::new(0.0, 0.0, 1.0)
-    };
-    let mut u = seed.sub(axis.scale(seed.dot(axis)));
+    let len = axis.length();
+    if len < 1e-9 {
+        return (Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0));
+    }
+    let n = axis.scale(1.0 / len);
+    let s = if n.z >= 0.0 { 1.0 } else { -1.0 };
+    // `s + n.z` is never near zero: `s` carries the sign of `n.z`, so the sum is
+    // between 1 and 2 in magnitude. That is the whole point of the "revisited"
+    // form — the naive one divides by `1 + n.z` and blows up at the south pole.
+    let a = -1.0 / (s + n.z);
+    let b = n.x * n.y * a;
+    let u = Vec3::new(1.0 + s * n.x * n.x * a, s * b, -s * n.x);
     let ulen = u.length();
-    u = if ulen > 1e-9 { u.scale(1.0 / ulen) } else { Vec3::new(1.0, 0.0, 0.0) };
-    let v = axis.cross(u);
+    let u = if ulen > 1e-9 { u.scale(1.0 / ulen) } else { Vec3::new(1.0, 0.0, 0.0) };
+    let v = n.cross(u);
     (u, v)
 }
 
@@ -1838,6 +1860,36 @@ mod tests {
     use crate::membrane::{
         axis_aligned_slab, build_membrane_full, CONTOUR_SUBDIVISIONS, DEFAULT_MEMBRANE_SMOOTHING,
     };
+
+    /// The in-plane basis has to move as little as the axis does. The tenon's lean
+    /// plane is welded to `u`, and the preview and the cut each measure the axis on
+    /// their own copy of the membrane — so a `u` that turns a quarter turn when the
+    /// axis moves a thousandth of a degree makes the tenon lean one way on screen
+    /// and another way in the cut.
+    #[test]
+    fn the_in_plane_basis_does_not_swing_when_the_axis_barely_moves() {
+        // Right through the old rule's worst crossing: |x| = |y| = |z|, where its
+        // seed jumped from world X to world Y on the last bit of the mantissa.
+        let d = 1.0 / 3.0f32.sqrt();
+        for (sx, sy) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
+            let axis = Vec3::new(d * sx, d * sy, d);
+            let (u, _) = orthonormal_basis(axis);
+            for eps in [1e-5f32, -1e-5, 1e-4, -1e-4] {
+                let nudged = {
+                    let p = Vec3::new(d * sx + eps, d * sy - eps, d);
+                    p.scale(1.0 / p.length())
+                };
+                let (u2, v2) = orthonormal_basis(nudged);
+                assert!(
+                    u.dot(u2) > 0.999,
+                    "a {eps} nudge turned u from {u:?} to {u2:?}",
+                );
+                // And it is still a right-handed orthonormal frame.
+                assert!(u2.dot(v2).abs() < 1e-5, "u and v stay perpendicular");
+                assert!((u2.cross(v2).dot(nudged) - 1.0).abs() < 1e-4, "u × v = axis");
+            }
+        }
+    }
 
     /// A flat square membrane in the z=0 plane, side `s`, centered at origin. Its
     /// average normal is ±Z and its area is s² — a clean fixture for the frame +
