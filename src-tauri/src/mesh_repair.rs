@@ -321,6 +321,9 @@ struct GeodesicRequestDto {
     /// body shears to lean. Default 0.
     #[serde(default)]
     tenon_tilt_rad: f32,
+    /// Second lean (radians) about the perpendicular in-plane axis. Default 0.
+    #[serde(default)]
+    tenon_tilt_x_rad: f32,
     /// Tenon roll (radians) — spin about the tenon's own axis. Default 0.
     #[serde(default)]
     tenon_roll_rad: f32,
@@ -366,6 +369,7 @@ impl Default for GeodesicRequestDto {
             plane_offset: 0.0,
             tenon_swap_sides: false,
             tenon_tilt_rad: 0.0,
+            tenon_tilt_x_rad: 0.0,
             tenon_roll_rad: 0.0,
         }
     }
@@ -1267,7 +1271,7 @@ pub async fn mesh_organic_cut_membrane_preview(request_json: String) -> Result<S
         .tenon_anchor
         .map(|p| Vec3::new(p[0], p[1], p[2]));
     let tenon_swap_sides = req.tenon_swap_sides;
-    let tenon_tilt = dragonfruit_organic_cut::TenonTilt::new(req.tenon_tilt_rad, req.tenon_roll_rad);
+    let tenon_tilt = dragonfruit_organic_cut::TenonTilt::new(req.tenon_tilt_rad, req.tenon_tilt_x_rad, req.tenon_roll_rad);
 
     // Use the captured cut SOURCE mesh so the preview can apply the real loop
     // offset (needs surface normals) and show the REAL cutter slab — exactly what
@@ -1395,7 +1399,7 @@ pub async fn mesh_organic_cut_plane_tenon_preview(request_json: String) -> Resul
     let offset = req.plane_offset;
     let generate_tenon = req.generate_tenon;
     let tenon_shape = dragonfruit_organic_cut::TenonShape::from_str_or_default(&req.tenon_shape);
-    let tenon_tilt = dragonfruit_organic_cut::TenonTilt::new(req.tenon_tilt_rad, req.tenon_roll_rad);
+    let tenon_tilt = dragonfruit_organic_cut::TenonTilt::new(req.tenon_tilt_rad, req.tenon_tilt_x_rad, req.tenon_roll_rad);
     let tenon_at: dragonfruit_organic_cut::TenonAnchor = req
         .tenon_anchor
         .map(|p| Vec3::new(p[0], p[1], p[2]));

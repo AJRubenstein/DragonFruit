@@ -11,7 +11,7 @@ import { clampTenonTilt } from './tenonLeanTransform';
 import { useOrganicCutColorNumbers } from './useOrganicCutColors';
 
 /** The tenon has two rotations, not three: the lean (green ring) and the roll. */
-const LEAN_AND_ROLL_RINGS: GizmoAxis[] = ['y', 'z'];
+const LEAN_AND_ROLL_RINGS: GizmoAxis[] = ['x', 'y', 'z'];
 
 export interface OrganicCutTenonGizmoProps {
   /** All loaded models (to find the active one for its geometry/offset). */
@@ -26,13 +26,14 @@ export interface OrganicCutTenonGizmoProps {
    */
   tenonFrame: TenonPreviewFrame | null;
   /**
-   * Current tenon lean / roll (radians). The lean's azimuth is not an input: it
-   * follows the roll (see `leanAzimuthFor`), so the gizmo derives it.
+   * Current tenon leans / roll (radians): the two orthogonal leans (about the
+   * frame's u / v axes) and the spin about the tenon's own axis.
    */
   tenonTiltRad: number;
+  tenonTiltXRad: number;
   tenonRollRad: number;
-  /** Report a new aim/roll (radians); tilt is pre-clamped. */
-  onTenonAimChange: (tiltRad: number, rollRad: number) => void;
+  /** Report a new aim (radians); the leans are pre-clamped. */
+  onTenonAimChange: (tiltYRad: number, tiltXRad: number, rollRad: number) => void;
   /**
    * Where the tenon sits on the cut face (mm along the frame's u/v), and the
    * reporter for the base handle that slides it. Omit the setter and no handle is
@@ -93,6 +94,7 @@ export function OrganicCutTenonGizmo({
   activeTransform,
   tenonFrame,
   tenonTiltRad,
+  tenonTiltXRad,
   tenonRollRad,
   onTenonAimChange,
   tenonAnchor,
@@ -211,7 +213,7 @@ export function OrganicCutTenonGizmo({
         // separate azimuth to keep them together, and got the sign wrong — the body
         // and its lean plane turned opposite ways, so a full turn of this ring moved
         // the tenon half as far and it visibly lagged the handle.
-        onTenonAimChange(tenonTiltRad, roll);
+        onTenonAimChange(tenonTiltRad, tenonTiltXRad, roll);
         // All of it went through — the roll has no end to run into.
         return delta;
       }
@@ -221,14 +223,24 @@ export function OrganicCutTenonGizmo({
       // is the −90° end of the user's sketch.
       // Only the hard ceiling clamps it: a lean the part cannot take is reported as
       // a won't-fit verdict (the tenon turns red), not refused by a frozen ring.
-      const tilt = clampTenonTilt(tenonTiltRad - delta, tenonFrame);
-      onTenonAimChange(tilt, tenonRollRad);
-      // Against the ceiling this is less than `delta`, and zero once it is hard
-      // against it — so the ring's handle stops with the tenon instead of running
-      // on and reporting leans of 138° that the tenon never took.
-      return tenonTiltRad - tilt;
+      if (axis === 'y') {
+        const tilt = clampTenonTilt(tenonTiltRad - delta, tenonFrame);
+        onTenonAimChange(tilt, tenonTiltXRad, tenonRollRad);
+        // Against the ceiling this is less than `delta`, and zero once it is hard
+        // against it — so the ring's handle stops with the tenon instead of running
+        // on and reporting leans of 138° that the tenon never took.
+        return tenonTiltRad - tilt;
+      }
+      // axis === 'x': the second lean, about the tenon's own v — the perpendicular
+      // plane, tipping over the OTHER face. The gizmo's X axis is −vR (the basis
+      // above), the OPPOSITE sign to Y's +uR — so the ring's drag direction is
+      // flipped relative to Y, and the lean takes the delta UNFLIPPED (where the Y
+      // lean flips it). Same clamp/ceiling behaviour.
+      const tiltX = clampTenonTilt(tenonTiltXRad + delta, tenonFrame);
+      onTenonAimChange(tenonTiltRad, tiltX, tenonRollRad);
+      return tiltX - tenonTiltXRad;
     },
-    [onTenonAimChange, tenonTiltRad, tenonRollRad, tenonFrame],
+    [onTenonAimChange, tenonTiltRad, tenonTiltXRad, tenonRollRad, tenonFrame],
   );
 
   // --- The base handle: slide the tenon across the cut face --------------------

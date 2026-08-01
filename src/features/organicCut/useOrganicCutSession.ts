@@ -86,6 +86,7 @@ export type LoopTenonSettings = Pick<
   | 'tenonUniformScale'
   | 'tenonSwapSides'
   | 'tenonTiltRad'
+  | 'tenonTiltXRad'
   | 'tenonRollRad'
 >;
 
@@ -134,6 +135,7 @@ function extractTenon(ps: OrganicCutPanelState): LoopTenonSettings {
     tenonUniformScale: ps.tenonUniformScale,
     tenonSwapSides: ps.tenonSwapSides,
     tenonTiltRad: ps.tenonTiltRad,
+    tenonTiltXRad: ps.tenonTiltXRad,
     tenonRollRad: ps.tenonRollRad,
   };
 }
@@ -178,6 +180,7 @@ function tenonsEqual(a: LoopTenonSettings, b: LoopTenonSettings): boolean {
     a.tenonUniformScale === b.tenonUniformScale &&
     a.tenonSwapSides === b.tenonSwapSides &&
     a.tenonTiltRad === b.tenonTiltRad &&
+    a.tenonTiltXRad === b.tenonTiltXRad &&
     a.tenonRollRad === b.tenonRollRad
   );
 }
@@ -194,6 +197,7 @@ function tenonToSpec(k: LoopTenonSettings) {
     tenonAnchor: k.tenonAnchor,
     tenonSwapSides: k.tenonSwapSides,
     tenonTiltRad: k.tenonTiltRad,
+    tenonTiltXRad: k.tenonTiltXRad,
     tenonRollRad: k.tenonRollRad,
   };
 }
@@ -437,6 +441,7 @@ const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
   // Tenon points straight out of the cut by default; the in-viewport aim gizmo
   // (drag the tip) leans it, the roll ring spins it. All measured in radians.
   tenonTiltRad: 0,
+  tenonTiltXRad: 0,
   tenonRollRad: 0,
   // Cut-plan preview on by default — the user sees where the cut lands; the eye
   // button in the panel header hides it for an unobscured view while drawing.
@@ -1128,6 +1133,7 @@ export function useOrganicCutSession({
             ps.tenonSwapSides,
             ps.tenonAnchor,
             ps.tenonTiltRad,
+            ps.tenonTiltXRad,
             ps.tenonRollRad,
           );
       }
@@ -1182,6 +1188,7 @@ export function useOrganicCutSession({
       panelState.tenonSwapSides,
       panelState.tenonAnchor,
       panelState.tenonTiltRad,
+      panelState.tenonTiltXRad,
       panelState.tenonRollRad,
     ]);
     const cached = previewCacheRef.current.get(cacheKey);
@@ -1238,6 +1245,7 @@ export function useOrganicCutSession({
     panelState.tenonSwapSides,
     panelState.tenonAnchor,
     panelState.tenonTiltRad,
+    panelState.tenonTiltXRad,
     panelState.tenonRollRad,
   ]);
 
@@ -1506,6 +1514,7 @@ export function useOrganicCutSession({
             // Aim/roll: the base-glued lean + spin set by the in-viewport gizmo. The
             // preview already showed exactly this tenon (same angles, same shear).
             tenonTiltRad: ps.tenonTiltRad,
+            tenonTiltXRad: ps.tenonTiltXRad,
             tenonRollRad: ps.tenonRollRad,
           };
         } else {
@@ -1531,6 +1540,7 @@ export function useOrganicCutSession({
             tenonToleranceMm: ps.tenonToleranceMm,
             tenonSwapSides: ps.tenonSwapSides,
             tenonTiltRad: ps.tenonTiltRad,
+            tenonTiltXRad: ps.tenonTiltXRad,
             tenonRollRad: ps.tenonRollRad,
           };
         }
