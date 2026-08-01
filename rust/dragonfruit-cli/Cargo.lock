@@ -318,6 +318,7 @@ dependencies = [
  "clap",
  "dragonfruit-islands",
  "dragonfruit-slicing-engine",
+ "flate2",
  "libdeflater",
  "proptest",
  "serde",

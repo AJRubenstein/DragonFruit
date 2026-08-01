@@ -21,6 +21,7 @@ clap = { version = "4", features = ["derive"] }
 zip = { version = "0.6.6", default-features = false, features = ["deflate"] }
 base64 = "0.22"
 libdeflater = "1"
+flate2 = "1"
 
 [dev-dependencies]
 proptest = "1.9.0"

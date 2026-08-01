@@ -7,6 +7,7 @@ import { DuplicatePanel } from '@/components/controls/DuplicatePanel';
 import { MeshSmoothingSettingsPanel } from '@/features/mesh-smoothing/MeshSmoothingSettingsPanel';
 import { HollowingPanel } from '@/features/hollowing';
 import { HolePunchPanel } from '@/features/hole-punching/HolePunchPanel';
+import { OrganicCutPanel, type OrganicCutSession } from '@/features/organicCut';
 import type { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import type { useTransformManager } from '@/features/transform/useTransformManager';
 import type { useHollowingManager } from '@/features/hollowing/useHollowingManager';
@@ -19,6 +20,7 @@ export type PreparePanelStackProps = {
   hollowing: ReturnType<typeof useHollowingManager>;
   holePunch: ReturnType<typeof useHolePunchManager>;
   arrange: ReturnType<typeof useArrangeManager>;
+  organicCut: OrganicCutSession;
 
   outsidePlateModelIds: React.ComponentProps<typeof ModelManagerPanel>['outsidePlateModelIds'];
   handleModelSelection: React.ComponentProps<typeof ModelManagerPanel>['onSelect'];
@@ -62,6 +64,7 @@ export function PreparePanelStack({
   hollowing,
   holePunch,
   arrange,
+  organicCut,
   outsidePlateModelIds,
   handleModelSelection,
   handleModelRangeSelection,
@@ -317,6 +320,32 @@ export function PreparePanelStack({
             interiorViewAvailable={hasCavityGeometry}
           />
         </>
+      )}
+
+      {scene.geom && transformMgr.transformMode === 'organicCut' && (
+        <OrganicCutPanel
+          key="prepare-organic-cut-panel"
+          state={organicCut.panelState}
+          onStateChange={organicCut.setPanelState}
+          pointCount={organicCut.pointCount}
+          onClearLoop={organicCut.clearLoop}
+          onSnapToEdges={organicCut.snapActiveLoopToEdges}
+          canSnapToEdges={organicCut.canSnapToEdges}
+          loopCount={organicCut.loopCount}
+          activeLoopIndex={organicCut.activeLoopIndex}
+          loopSummaries={organicCut.loopSummaries}
+          onSelectLoop={organicCut.selectLoop}
+          onAddLoop={organicCut.addLoop}
+          canAddLoop={organicCut.canAddLoop}
+          onRemoveLoop={organicCut.removeLoop}
+          canRemoveLoop={organicCut.canRemoveLoop}
+          onApply={organicCut.apply}
+          isApplying={organicCut.isApplying}
+          canApply={organicCut.canApply}
+          tenonFits={organicCut.tenonFits}
+          cutError={organicCut.cutError}
+          tenonDetail={organicCut.tenonDetail}
+        />
       )}
 
       {scene.models.length > 0 && transformMgr.transformMode === 'arrange' && (
