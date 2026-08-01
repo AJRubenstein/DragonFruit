@@ -66,7 +66,7 @@ import { DEFAULT_RAFT_SETTINGS } from '../Rafts/Crenelated/RaftDefaults';
 import type { SupportKind } from './supportKindState';
 import { resetSupportSettingsScrollForTabChange } from './supportSidebarScroll';
 
-const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm text-center no-spinners';
+const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm text-center no-spinners !bg-[var(--surface-0)]';
 const SECTION_CARD_STYLE: React.CSSProperties = {
     borderColor: 'var(--border-subtle)',
     background: 'var(--surface-1)',

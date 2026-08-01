@@ -137,13 +137,6 @@ interface OrganicCutToolProps {
   /** Live tenon lean / roll (radians) for the client-side rotation. */
   tenonTiltRad?: number;
   tenonRollRad?: number;
-  /**
-   * Show the translucent cut-plan preview surfaces (the flat plane quad, the
-   * contour membrane + its wireframe, and the registration tenon). When false,
-   * only the seam line + loop markers (the editable handles) draw, so the model
-   * is unobscured. Default true.
-   */
-  showPreview?: boolean;
 }
 
 /** Marker radius as a fraction of the model's bbox diagonal (small = precise). */
@@ -310,7 +303,6 @@ export function OrganicCutTool({
   tenonAnchor,
   tenonTiltRad = 0,
   tenonRollRad = 0,
-  showPreview = true,
 }: OrganicCutToolProps) {
   // Every colour this tool paints with, from the saved preference (see
   // organicCutColors.ts). Changing one repaints without a reload.
@@ -949,7 +941,7 @@ export function OrganicCutTool({
         )}
 
         {/* Contour membrane preview: the exact curved cutter surface. */}
-        {showPreview && membraneGeometry && (
+        {membraneGeometry && (
           <mesh geometry={membraneGeometry} renderOrder={997} frustumCulled={false}>
             <meshBasicMaterial
               color={colors.cutSurface}
@@ -962,7 +954,7 @@ export function OrganicCutTool({
         )}
 
         {/* Wireframe overlay so the triangulation (grid remesh) is visible. */}
-        {showPreview && membraneWireframe && (
+        {membraneWireframe && (
           <lineSegments geometry={membraneWireframe} renderOrder={998} frustumCulled={false}>
             <lineBasicMaterial
               color={0xcccccc}
@@ -984,7 +976,7 @@ export function OrganicCutTool({
             tenon instantly with no Rust round-trip. Wrapped in a group carrying that
             matrix (identity when un-tilted). It's CLIPPED at the wafer so only the
             portion going into the body (part_b side) shows — not the overhang above. */}
-        {showPreview && tenonGeometry && (
+        {tenonGeometry && (
           <group
             matrixAutoUpdate={false}
             ref={(g) => {
@@ -1086,7 +1078,7 @@ export function OrganicCutTool({
 
 
         {/* Live translucent cut-plane preview (what the slice will look like). */}
-        {showPreview && planePreview && (
+        {planePreview && (
           <mesh
             position={planePreview.position}
             quaternion={planePreview.quat}

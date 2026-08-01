@@ -327,7 +327,6 @@ export function PreparePanelStack({
           key="prepare-organic-cut-panel"
           state={organicCut.panelState}
           onStateChange={organicCut.setPanelState}
-          pointCount={organicCut.pointCount}
           onClearLoop={organicCut.clearLoop}
           onSnapToEdges={organicCut.snapActiveLoopToEdges}
           canSnapToEdges={organicCut.canSnapToEdges}
