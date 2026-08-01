@@ -3243,11 +3243,20 @@ export function useSceneCollectionManager() {
         edgeGeometry: modelModel.geometry.edgeGeometry,
       };
 
+      const supportGeo = new THREE.BufferGeometry();
+      supportGeo.setAttribute('position', new THREE.BufferAttribute(mappedSupportPositions, 3));
+      supportGeo.computeVertexNormals();
+
+      const modelGeo = new THREE.BufferGeometry();
+      modelGeo.setAttribute('position', new THREE.BufferAttribute(modelPositions, 3));
+
       // Set the nativeRepairReport properties to preserve support triangle designation
       mergedGeometry.meshDefects = {
         hasDefects: false,
         repairedFloats: 0,
         totalVertices: combinedPositions.length / 3,
+        supportSectionGeometry: supportGeo,
+        modelSectionGeometry: modelGeo,
         nativeRepairReport: {
           version: 1,
           source_path: null,
@@ -3362,6 +3371,7 @@ export function useSceneCollectionManager() {
         center: false,
         nativeProcessingMode: 'classify-only',
         assumeSupportGeometry: model.isSupportGeometry,
+        _nativeModelTriangleCount: model.geometry.meshDefects?.nativeRepairReport?.model_triangle_count ?? undefined,
       });
       const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
       const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
