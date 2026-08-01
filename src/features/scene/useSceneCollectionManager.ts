@@ -2790,7 +2790,7 @@ export function useSceneCollectionManager() {
       return pos ? Math.floor(pos.count / 3) : 0;
     })();
 
-    const id = generateId();
+    const id = uuidv4();
     const newModel: LoadedModel = {
       id,
       name,
@@ -2833,7 +2833,7 @@ export function useSceneCollectionManager() {
     pushSceneSnapshotHistory(before, after, historyDescription);
 
     return id;
-  }, [generateId, pushSceneSnapshotHistory]);
+  }, [pushSceneSnapshotHistory]);
 
   /**
    * Atomically splits one model into two: replaces the source model's geometry
@@ -2909,7 +2909,7 @@ export function useSceneCollectionManager() {
     // The source becomes the FIRST part; every other part is appended as a new
     // model. (A multi-loop cut can free several pieces, so there may be >2 parts.)
     const built = partGeometries.map(buildBounds);
-    const extraIds = built.slice(1).map(() => generateId());
+    const extraIds = built.slice(1).map(() => uuidv4());
 
     const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current, { includeSupportState: false });
 
@@ -2980,7 +2980,7 @@ export function useSceneCollectionManager() {
     pushSceneSnapshotHistory(before, after, historyDescription);
 
     return extraIds;
-  }, [generateId, pushSceneSnapshotHistory]);
+  }, [pushSceneSnapshotHistory]);
 
   const finalizeModelGeometryPostProcessing = useCallback((id: string) => {
     const target = modelsRef.current.find((m) => m.id === id);
