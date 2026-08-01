@@ -3164,9 +3164,59 @@ export function useSceneCollectionManager() {
     }
   }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield, emitSceneImportReport]);
 
-  const scanModelForSupportsInPlace = useCallback(async (modelId: string) => {
-    console.log(`[SceneCollection] scanModelForSupportsInPlace not fully implemented for model ${modelId}`);
-  }, []);
+  const scanModelForSupportsInPlace = useCallback(async (modelId: string): Promise<boolean> => {
+    const model = modelsRef.current.find(m => m.id === modelId);
+    if (!model) return false;
+    
+    setImportProgress({
+      active: true,
+      type: 'mesh',
+      label: 'Scanning for Supports…',
+      detail: `Classifying ${model.name}`,
+      progress: null,
+    });
+    await waitForUiYield();
+
+    try {
+      const processed = await processGeometry(model.geometry.geometry, {
+        center: false,
+        nativeProcessingMode: 'classify-only',
+        assumeSupportGeometry: model.isSupportGeometry,
+      });
+      const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
+      const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
+      const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
+
+      setModels(prev => prev.map(m =>
+        m.id === modelId ? { ...m, geometry: processed, polygonCount } : m
+      ));
+
+      if (repairReport) {
+        const reportEntry: MeshRepairReportEntry = {
+          id: modelId,
+          modelName: model.name,
+          report: repairReport,
+        };
+        setPendingMeshRepairReports([]);
+        clearSceneImportReport();
+        setMeshRepairReportPresentation('optimistic');
+        setMeshRepairReports([reportEntry]);
+      } else {
+        setPendingMeshRepairReports([]);
+        emitSceneImportReport(`Scanned ${model.name}.`, 'success');
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[scanModelForSupportsInPlace] Scan failed:', err);
+      setPendingMeshRepairReports([]);
+      const message = err instanceof Error ? err.message : String(err);
+      emitSceneImportReport(`Scan failed: ${message}`, 'error', { durationMs: 6_000 });
+      return false;
+    } finally {
+      setImportProgress({ active: false, type: null, label: '', detail: '', progress: null });
+    }
+  }, [clearSceneImportReport, emitSceneImportReport, setImportProgress, waitForUiYield]);
 
   const renameGroup = useCallback((groupId: string, nextName: string) => {
     const trimmed = nextName.trim();

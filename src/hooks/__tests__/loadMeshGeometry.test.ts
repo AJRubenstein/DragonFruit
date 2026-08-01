@@ -256,4 +256,19 @@ describe('processGeometry classification bypass', () => {
     assert.equal(classifyCalled, true, 'should run classification');
     assert.equal(repairCalled, false, 'should not run repair');
   });
+
+  it('runs classification when nativeProcessingMode is none but skipClassification is not true', async () => {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 1,0,0, 0,1,0], 3));
+    let classifyCalled = false;
+    let repairCalled = false;
+    await processGeometry(geom, {
+      nativeProcessingMode: 'none',
+      _isTauriRuntime: () => true,
+      _classifyFromGeometry: async () => { classifyCalled = true; return null as any; },
+      _repairFromGeometry: async () => { repairCalled = true; return null as any; }
+    });
+    assert.equal(classifyCalled, true, 'should run classification');
+    assert.equal(repairCalled, false, 'should not run repair');
+  });
 });

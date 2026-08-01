@@ -286,7 +286,7 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   // In the browser we fall back to the legacy Manifold WASM path (which only
   // activates when NaN defects were detected).
   let nativeModifiedGeometry = false;
-  const skipAll = options.skipClassification || options.nativeProcessingMode === 'none';
+  const skipAll = options.skipClassification === true;
   const checkTauri = options._isTauriRuntime ?? isTauriRuntime;
   
   if (checkTauri() && !skipAll) {
