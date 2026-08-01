@@ -2462,6 +2462,9 @@ fn classify_and_reorder_model_support_triangles(
     let mut comp_min_z = vec![f32::INFINITY; n_comps];
     let mut comp_tri_count = vec![0usize; n_comps];
     let mut comp_vol = vec![0.0f64; n_comps];
+
+    let mut edge_counts = ahash::AHashMap::<(u32, u32), (u32, u32)>::with_capacity(mesh.triangles.len() * 3);
+
     for (fi, tri) in mesh.triangles.iter().enumerate() {
         let cid = components[fi] as usize;
         comp_tri_count[cid] += 1;
@@ -2478,12 +2481,30 @@ fn classify_and_reorder_model_support_triangles(
             - (a.y as f64) * ((b.x as f64) * (c.z as f64) - (b.z as f64) * (c.x as f64))
             + (a.z as f64) * ((b.x as f64) * (c.y as f64) - (b.y as f64) * (c.x as f64));
         comp_vol[cid] += v;
+
+        let edges = [
+            (tri[0].min(tri[1]), tri[0].max(tri[1])),
+            (tri[1].min(tri[2]), tri[1].max(tri[2])),
+            (tri[2].min(tri[0]), tri[2].max(tri[0])),
+        ];
+        for e in edges {
+            edge_counts.entry(e)
+                .and_modify(|val| val.0 = val.0.saturating_add(1))
+                .or_insert((1, cid as u32));
+        }
+    }
+
+    let mut comp_boundaries = vec![0usize; n_comps];
+    for (&_edge, &(count, cid)) in &edge_counts {
+        if count == 1 {
+            comp_boundaries[cid as usize] += 1;
+        }
     }
 
     for cid in 0..n_comps {
         comp_vol[cid] /= 6.0;
     }
-    let has_undrained_cavity = (0..n_comps).any(|cid| comp_vol[cid] < -1e-2);
+    let has_undrained_cavity = (0..n_comps).any(|cid| comp_vol[cid] < -1e-2 && comp_boundaries[cid] == 0);
 
     let model_seed = match (0..n_comps)
         .filter(|&cid| comp_tri_count[cid] >= 4 && comp_max_z[cid] > raft_z_cut)
@@ -2511,7 +2532,7 @@ fn classify_and_reorder_model_support_triangles(
     let model_min_tris = (comp_tri_count[model_seed] / 8).max(MODEL_MIN_TRIS_FLOOR);
 
     let classify_group = |cid: usize| {
-        if comp_vol[cid] < -1e-2 {
+        if comp_vol[cid] < -1e-2 && comp_boundaries[cid] == 0 {
             return GeometryGroup::Model;
         }
         classify_model_support_group(
@@ -3396,5 +3417,29 @@ mod classify_hollowing_tests {
         assert_eq!(outcome.split, None);
         assert_eq!(outcome.component_count, 2);
         assert_eq!(outcome.has_undrained_cavity, true);
+    }
+
+    #[test]
+    fn test_non_watertight_negative_volume_is_ignored() {
+        let (mut v1, mut t1) = make_cube(Vec3::new(0.0, 0.0, 0.0), 10.0, false); // outer, normal winding
+        let (v2, mut t2) = make_cube(Vec3::new(2.0, 2.0, 2.0), 6.0, true); // inner, flipped winding (cavity)
+        
+        // Remove one triangle to make the inner cavity open/non-watertight
+        t2.remove(0);
+        
+        let base_idx = v1.len() as u32;
+        v1.extend(v2);
+        for tri in t2 {
+            t1.push([tri[0] + base_idx, tri[1] + base_idx, tri[2] + base_idx]);
+        }
+        
+        let mut mesh = IndexedMesh {
+            positions: v1,
+            triangles: t1,
+        };
+        
+        let outcome = classify_and_reorder_model_support_triangles(&mut mesh, None);
+        // Should not recognize an undrained cavity since it has boundary edges
+        assert_eq!(outcome.has_undrained_cavity, false);
     }
 }
