@@ -5212,7 +5212,7 @@ export function useSceneCollectionManager() {
     const currentSelectedModelIds = selectedModelIdsRef.current;
 
     const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
-    const linkGroupId = `link-${generateUuid()}`;
+    const linkGroupId = `link-${uuidv4()}`;
 
     const nextModels = currentModels.map((m) => {
       if (ids.has(m.id)) {
