@@ -615,6 +615,27 @@ fn contour_cut_by_surface(
         split.dissolve_clearance_debris(&pairs);
     }
     let split = split;
+
+    // A closed curve on a closed surface separates it into exactly two, so `n` seams
+    // can leave at most `n` pieces more than the surface arrived in. This is a
+    // theorem, not a tolerance — and when the count comes out far over it, the split
+    // did not cut the model, it shattered it. That is worth refusing on the spot:
+    // capping sixty pieces is minutes of work to produce sixty models, most of them
+    // a single triangle, in place of the one the user asked for.
+    let arrived = shell_count(mesh);
+    let pieces_now = split.piece_of_face.iter().copied().collect::<std::collections::BTreeSet<_>>().len();
+    if pieces_now > arrived + seams.len() {
+        return Err(format!(
+            "the cut shattered the surface: {} seams over {arrived} shell{} can leave at \
+             most {} pieces and this left {pieces_now}. Somewhere the seam is running \
+             along the mesh's own edges instead of across them. Redraw that stretch so \
+             it crosses the triangles.",
+            seams.len(),
+            if arrived == 1 { "" } else { "s" },
+            arrived + seams.len(),
+        ));
+    }
+
     // The refusals below carry places, not just words: the wall's loose ends are
     // exactly where the two sides still hold on to each other, and they are handed
     // out so the caller can DRAW them. Only on refusal — a cut that succeeded with a
@@ -827,6 +848,33 @@ fn contour_cut_by_surface(
         leak_points: Vec::new(),
     };
     Ok(OrganicCutOutcome { parts, report })
+}
+
+/// How many connected shells a mesh arrives in, joined through shared vertices —
+/// the baseline the piece count after a split is judged against. A model that comes
+/// in as a body plus a stray splinter is two, and the split is not to blame for it.
+fn shell_count(mesh: &IndexedMesh) -> usize {
+    let mut parent: Vec<u32> = (0..mesh.positions.len() as u32).collect();
+    fn find(parent: &mut Vec<u32>, mut v: u32) -> u32 {
+        while parent[v as usize] != v {
+            parent[v as usize] = parent[parent[v as usize] as usize];
+            v = parent[v as usize];
+        }
+        v
+    }
+    for t in &mesh.triangles {
+        for k in 1..3 {
+            let (a, b) = (find(&mut parent, t[0]), find(&mut parent, t[k]));
+            if a != b {
+                parent[a as usize] = b;
+            }
+        }
+    }
+    let mut roots: ahash::AHashSet<u32> = Default::default();
+    for t in &mesh.triangles {
+        roots.insert(find(&mut parent, t[0]));
+    }
+    roots.len()
 }
 
 /// Curved "wafer" cut (M4): build a soap-film membrane following the drawn loop,
