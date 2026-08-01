@@ -4235,15 +4235,26 @@ export default function Home() {
       const restored = await importSceneFile(file, { suppressRecentTracking: true, suppressPlacementPrompt: true, suppressRepair: true });
       if (restored) {
         await clearAutosave();
-      } else if (recoverySnapshot) {
-        console.warn('[Autosave] Restore failed; keeping recovery prompt available.');
-        setAutosaveRecovery(recoverySnapshot);
+      } else {
+        setSceneSaveError({
+          title: 'Restore Failed',
+          message: 'The autosaved recovery file is corrupted or unreadable.',
+          detail: 'The scene importer rejected or could not parse the autosave data.',
+        });
+        await clearAutosave();
       }
     } catch (error) {
       console.error('[Autosave] Failed to restore autosaved scene.', error);
-      if (recoverySnapshot) {
-        setAutosaveRecovery(recoverySnapshot);
-      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isMissing = errorMessage.includes('No autosaved scene file found') || errorMessage.includes('does not exist');
+      setSceneSaveError({
+        title: 'Restore Failed',
+        message: isMissing
+          ? 'The autosave recovery file could not be found.'
+          : 'The autosaved recovery file is corrupted or unreadable.',
+        detail: errorMessage,
+      });
+      await clearAutosave();
     } finally {
       setNativePickerPreparationState({
         active: false,
@@ -4252,7 +4263,7 @@ export default function Home() {
         progress: null,
       });
     }
-  }, [autosaveRecovery, clearAutosave, importSceneFile]);
+  }, [autosaveRecovery, clearAutosave, importSceneFile, setSceneSaveError]);
 
   const handleAutosaveDiscard = React.useCallback(async () => {
     setAutosaveRecovery(null);
