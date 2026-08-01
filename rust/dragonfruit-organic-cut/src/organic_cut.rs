@@ -615,15 +615,24 @@ fn contour_cut_by_surface(
         split.dissolve_clearance_debris(&pairs);
     }
     let split = split;
-    // From here on every refusal has a place: the wall's loose ends are exactly where
-    // the two sides still hold on to each other.
-    leaks.extend(split.loose_wall_ends().iter().map(|p| [p.x, p.y, p.z]));
+    // The refusals below carry places, not just words: the wall's loose ends are
+    // exactly where the two sides still hold on to each other, and they are handed
+    // out so the caller can DRAW them. Only on refusal — a cut that succeeded with a
+    // pinch in its clearance strip has nothing to warn about.
     let density = options.cut.density.clamp(1.0, 4.0) as f64;
-    let closed = crate::surface_cap::close_pieces(
+    let closed = match crate::surface_cap::close_pieces(
         &split,
         crate::membrane::DEFAULT_GRID_DIVISIONS * density,
         options.cut.membrane_smoothing,
-    )?;
+    ) {
+        Ok(closed) => closed,
+        Err(e) => {
+            // The refusal names its own place, and that is what gets drawn. Falling
+            // back to the wall's loose ends would mark somewhere else entirely.
+            leaks.extend(e.at.iter().map(|p| [p.x, p.y, p.z]));
+            return Err(e.why);
+        }
+    };
     if closed.caps.is_empty() {
         // Say WHERE, not just that. A wall that separates anything is a closed curve;
         // where it stops dead the fill simply walks round the end, and that one spot
@@ -631,6 +640,7 @@ fn contour_cut_by_surface(
         // the difference between "it failed" and something the user can go and look
         // at.
         let loose = split.loose_wall_ends();
+        leaks.extend(loose.iter().map(|p| [p.x, p.y, p.z]));
         if loose.is_empty() {
             return Err(
                 "the seams cut the surface but do not separate it — they do not enclose \
@@ -661,17 +671,17 @@ fn contour_cut_by_surface(
     let cap_seam: Vec<usize> = closed.caps.iter().map(|cap| nearest_seam(cap, loops)).collect();
 
     // The strip of skin between a seam's two offsets is the material the gap is made
-    // of, and it goes in the bin. It is read off the wall — the strip is what has BOTH
-    // of that seam's offsets along its border, and nothing else does — rather than
-    // measured or counted. No distance, which matters because a drawn seam is a couple
-    // of dozen points and the strip can sit further from that polyline than its own
-    // width; and no counting of rims, which held while a seam had exactly two of them
-    // and broke the moment the two offsets tangled and left a shaving with a rim of
-    // its own.
+    // of, and it goes in the bin. It is read off the wall — strip is what has BOTH of
+    // that seam's offsets along its border in comparable measure, and nothing else
+    // does — rather than measured or counted. No distance, which matters because a
+    // drawn seam is a couple of dozen points and the strip can sit further from that
+    // polyline than its own width; and no counting of rims, which held while a seam
+    // had exactly two of them and broke the moment the two offsets tangled and
+    // severed the strip into arcs. The arcs are all strip, and all of them go.
     let mut binned: std::collections::BTreeSet<u32> = Default::default();
     if clearance > 0.0 {
         for s in 0..loops.len() {
-            binned.extend(split.strip_between(2 * s, 2 * s + 1));
+            binned.extend(split.strips_between(2 * s, 2 * s + 1));
         }
         // Binning it all leaves nothing. That is the seam going round a handle — a
         // part joined to the body somewhere else as well: the two offsets did not
@@ -727,7 +737,12 @@ fn contour_cut_by_surface(
             .collect();
         sides.sort_unstable();
         sides.dedup();
-        let (Some(&cap_index), [p, q]) = (mine.first(), sides.as_slice()) else {
+        // Frame the tenon on a cap that closes a KEPT piece — with a clearance, a
+        // seam also has caps on the binned strip, and a frame on one of those would
+        // stand the tenon on skin that is about to be thrown away.
+        let cap_index =
+            mine.iter().copied().find(|&c| !binned.contains(&closed.cap_between[c].0));
+        let (Some(cap_index), [p, q]) = (cap_index, sides.as_slice()) else {
             skipped.push(format!("seam {}: no cut face to stand a tenon on", s + 1));
             continue;
         };

@@ -301,7 +301,7 @@ fn main() -> Result<(), String> {
                                 c.solids.len()
                             )
                         }
-                        Err(e) => format!("— {} ({cap_ms}ms)", e.chars().take(46).collect::<String>()),
+                        Err(e) => format!("— {} ({cap_ms}ms)", e.why.chars().take(46).collect::<String>()),
                     };
                     format!("{} piezas, abiertas {before} -> {open} ({cut_ms}ms)", sides.len())
                 }

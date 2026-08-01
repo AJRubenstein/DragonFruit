@@ -151,12 +151,12 @@ impl SplitSurface {
                 .collect()
         };
 
-        // The strip itself qualifies on every count below — it is what the shavings
-        // are shavings OF — so name it first and leave it alone. Folding the strip
-        // into the body was how a cut came back with the strip as the freed piece and
-        // the model as the body.
+        // Strip material itself qualifies on every count below — it is what the
+        // shavings are shavings OF — so name it first and leave it alone. Folding
+        // strip into the body was how a cut came back with the strip as the freed
+        // piece and the model as the body; the strip is BINNED later, not merged.
         let strips: AHashSet<u32> =
-            pairs.iter().filter_map(|&(a, b)| self.strip_between(a, b)).collect();
+            pairs.iter().flat_map(|&(a, b)| self.strips_between(a, b)).collect();
 
         let mut relabel: AHashMap<u32, u32> = AHashMap::new();
         for (&piece, sides) in &sides_of_piece {
@@ -190,15 +190,16 @@ impl SplitSurface {
     /// drawn seam than its own width, so distance is no use, and counting rims held
     /// only while a seam had exactly two of them.
     ///
-    /// The strip is the piece that runs ALONG both offsets — for their whole length,
-    /// because that is what a strip between two seams is. So take, for each piece,
-    /// how much of its border the WEAKER of the two offsets holds, and keep the
-    /// largest. A body has thousands of edges of one offset and, where the two
-    /// tangle, perhaps three of the other, which scores three. A shaving scores one.
-    /// The strip scores its own length. Nothing here is a threshold: it is an
-    /// argmax, and the gap between the strip and everything else is three orders of
-    /// magnitude.
-    pub fn strip_between(&self, a: usize, b: usize) -> Option<u32> {
+    /// The strip is what runs ALONG both offsets, and where the two offsets touch it
+    /// is severed into several pieces — all of them still strip, all of them still
+    /// to be thrown away. So the test is per piece and it is about BALANCE: a piece
+    /// of the strip has one offset down one flank and the other down the other, near
+    /// enough half and half, while a body has thousands of edges of its own offset
+    /// and picks up at most a handful of the far one where the two tangle. Half-and-
+    /// half against thousands-to-a-handful is not a tuned threshold; anything in
+    /// between would be a piece that runs along one seam and only ever touches the
+    /// other, and the geometry has no such piece to offer.
+    pub fn strips_between(&self, a: usize, b: usize) -> Vec<u32> {
         let mut along: AHashMap<(u32, usize), usize> = AHashMap::new();
         let faces_of = self.faces_of_edge();
         for (i, e) in self.seam_edges.iter().enumerate() {
@@ -215,16 +216,16 @@ impl SplitSurface {
             }
         }
         let pieces: AHashSet<u32> = along.keys().map(|(p, _)| *p).collect();
-        pieces
+        let mut out: Vec<u32> = pieces
             .into_iter()
-            .map(|p| {
+            .filter(|&p| {
                 let ea = along.get(&(p, a)).copied().unwrap_or(0);
                 let eb = along.get(&(p, b)).copied().unwrap_or(0);
-                (p, ea.min(eb))
+                ea > 0 && eb > 0 && ea.min(eb) * 4 >= ea.max(eb)
             })
-            .filter(|(_, score)| *score > 0)
-            .max_by_key(|(p, score)| (*score, std::cmp::Reverse(*p)))
-            .map(|(p, _)| p)
+            .collect();
+        out.sort_unstable();
+        out
     }
 
     /// Which seams run along each piece's border.
@@ -1448,9 +1449,10 @@ mod tests {
         // Not by size — on a mesh this coarse the band round the cube carries more
         // faces than the lid it separates — but by where it is: every face of the
         // strip lies inside the tenth of a millimetre between the two seams.
-        let strip = split.strip_between(0, 1).expect("the strip is between the two seams");
+        let strips = split.strips_between(0, 1);
+        assert_eq!(strips.len(), 1, "one unbroken band round the cube: {strips:?}");
         for (fi, t) in split.mesh.triangles.iter().enumerate() {
-            if split.piece_of_face[fi] != strip {
+            if split.piece_of_face[fi] != strips[0] {
                 continue;
             }
             for &v in t {

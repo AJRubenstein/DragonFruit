@@ -31,6 +31,23 @@ use dragonfruit_mesh_core::mesh::{IndexedMesh, Vec3};
 use crate::membrane::{build_membrane_on_ring, Membrane};
 use crate::surface_split::SplitSurface;
 
+/// Why the cut could not be closed, and WHERE.
+///
+/// The place is the point of it. A refusal the user cannot go and look at is a
+/// refusal they cannot act on, and a coordinate in a sentence is not somewhere you
+/// can look — the caller draws these.
+#[derive(Debug)]
+pub struct CapRefusal {
+    pub why: String,
+    pub at: Vec<Vec3>,
+}
+
+impl CapRefusal {
+    fn new(why: impl Into<String>, at: Vec<Vec3>) -> Self {
+        CapRefusal { why: why.into(), at }
+    }
+}
+
 /// The pieces of a surface cut, each closed into its own solid.
 pub struct ClosedPieces {
     /// One solid per piece, indexed by the piece number `piece_of_face` gave it.
@@ -52,11 +69,11 @@ pub fn close_pieces(
     split: &SplitSurface,
     grid_divisions: f64,
     smoothing: f32,
-) -> Result<ClosedPieces, String> {
+) -> Result<ClosedPieces, CapRefusal> {
     let mesh = &split.mesh;
     let piece_count = split.piece_of_face.iter().copied().max().map_or(0, |m| m as usize + 1);
     if piece_count == 0 {
-        return Err("the cut surface has no faces".to_string());
+        return Err(CapRefusal::new("the cut surface has no faces", Vec::new()));
     }
 
     let rims = rims_between_pieces(mesh, &split.piece_of_face)?;
@@ -70,8 +87,12 @@ pub fn close_pieces(
 
     for rim in &rims {
         let ring: Vec<Vec3> = rim.ring.iter().map(|&v| mesh.positions[v as usize]).collect();
-        let cap = build_membrane_on_ring(&ring, grid_divisions, smoothing)
-            .ok_or_else(|| format!("no cap spans the {}-vertex rim of this cut", ring.len()))?;
+        let cap = build_membrane_on_ring(&ring, grid_divisions, smoothing).ok_or_else(|| {
+            CapRefusal::new(
+                format!("no cap spans the {}-vertex rim of this cut", ring.len()),
+                marks(&ring),
+            )
+        })?;
 
         // The cap's boundary is the rim itself, so those vertices are already in the
         // mesh; only its interior is new.
@@ -100,29 +121,36 @@ pub fn close_pieces(
             .map(|k| edge_key(rim.ring[k], rim.ring[(k + 1) % rim.ring.len()]))
             .collect();
         if free != wanted {
-            return Err(format!(
-                "the cap for a {}-vertex rim does not close it: {} of its edges are \
-                 unmatched and {} of the rim's are missing",
-                rim.ring.len(),
-                free.difference(&wanted).count(),
-                wanted.difference(&free).count(),
+            return Err(CapRefusal::new(
+                format!(
+                    "the cap for a {}-vertex rim does not close it: {} of its edges are \
+                     unmatched and {} of the rim's are missing",
+                    rim.ring.len(),
+                    free.difference(&wanted).count(),
+                    wanted.difference(&free).count(),
+                ),
+                marks(&ring),
             ));
         }
 
         // Which way the cap runs along the rim, read off the one triangle that owns
         // the rim's first edge.
         let (u, v) = (rim.ring[0], rim.ring[1]);
-        let cap_runs_u_to_v = cap_tris
-            .iter()
-            .find_map(|t| directed(t, u, v))
-            .ok_or_else(|| "the cap does not reach the rim edge it was built on".to_string())?;
+        let cap_runs_u_to_v = cap_tris.iter().find_map(|t| directed(t, u, v)).ok_or_else(|| {
+            CapRefusal::new("the cap does not reach the rim edge it was built on", marks(&ring))
+        })?;
 
         // A piece and its cap must traverse their shared edge in OPPOSITE directions,
-        // or the solid comes out inside out.
-        for &(piece, face_runs_u_to_v) in &[
-            (rim.side_a, rim.side_a_runs_u_to_v),
-            (rim.side_b, !rim.side_a_runs_u_to_v),
-        ] {
+        // or the solid comes out inside out. `side_a`'s faces traverse the ring in
+        // ring order by construction; `side_b` gets the same triangles reversed, and
+        // only when the rim really is the whole border between the two — a rim with
+        // several pieces across it closes `side_a` alone, and each of those others
+        // closes itself with its own rim.
+        let mut sides = vec![(rim.side_a, true)];
+        if rim.shared {
+            sides.push((rim.side_b, false));
+        }
+        for &(piece, face_runs_u_to_v) in &sides {
             let flip = cap_runs_u_to_v != !face_runs_u_to_v;
             extra_faces[piece as usize].extend(
                 cap_tris.iter().map(|t| if flip { [t[0], t[2], t[1]] } else { *t }),
@@ -162,10 +190,13 @@ pub fn close_pieces(
     let holes_before = open_edges(mesh, 1);
     let holes_after: usize = solids.iter().map(|s| open_edges(s, 1)).sum();
     if holes_after > holes_before {
-        return Err(format!(
-            "capping left {} edge(s) with a hole beside them — the cut face does not \
-             close there",
-            holes_after - holes_before
+        return Err(CapRefusal::new(
+            format!(
+                "capping left {} edge(s) with a hole beside them — the cut face does not \
+                 close there",
+                holes_after - holes_before
+            ),
+            Vec::new(),
         ));
     }
 
@@ -184,122 +215,156 @@ fn open_edges(mesh: &IndexedMesh, uses: usize) -> usize {
     counts.values().filter(|c| **c == uses).count()
 }
 
-/// One rim: a closed chain of cut edges, and the two pieces it holds apart.
+/// One rim: a closed loop of a piece's boundary, in the order the piece's own faces
+/// traverse it.
 struct Rim {
     /// The rim's vertices in order round it, each an index into the cut surface.
+    /// `side_a`'s faces traverse `ring[k] -> ring[k+1]`; a cap for `side_a` has to
+    /// run the other way, and one for `side_b` this way.
     ring: Vec<u32>,
     side_a: u32,
+    /// The piece across the rim. When `shared` it is exact — the whole loop lies
+    /// between `side_a` and `side_b` — and the cap serves both. When not, it is
+    /// only the piece across MOST of the loop, kept so a caller can still ask what
+    /// the cap roughly faces, and the cap belongs to `side_a` alone.
     side_b: u32,
-    /// Whether `side_a`'s face traverses the rim's first edge from `ring[0]` to
-    /// `ring[1]`. `side_b`'s face traverses it the other way, the surface being
-    /// consistently wound.
-    side_a_runs_u_to_v: bool,
+    shared: bool,
 }
 
-/// Every closed chain of edges whose two faces ended up in different pieces.
+/// The boundary loops of every piece: for each piece, every closed chain of edges
+/// where it meets anything else.
 ///
-/// An edge used by anything other than two faces is left alone: that is a hole the
-/// model arrived with, and inventing a lid for it would be a change nobody asked
-/// for.
-fn rims_between_pieces(mesh: &IndexedMesh, piece_of_face: &[u32]) -> Result<Vec<Rim>, String> {
+/// Traced by walking each piece's boundary with the piece on the left, and at a
+/// vertex the walk continues by ROTATING through the piece's own faces until it
+/// leaves them. That detail is what makes the loops closed by construction — the
+/// boundary of any set of faces of a closed surface is a set of closed curves, and
+/// the rotation is what keeps two loops that touch at one vertex (a strip of joint
+/// clearance pinching where its seams tangle) from being read as one broken one.
+/// The old way — collecting the edges between each PAIR of pieces and chaining them
+/// by vertex — refused exactly there: the pinch leaves the pair's chain open, and a
+/// cut whose pieces were all perfectly separable was thrown away for it.
+///
+/// A loop lying between the same two pieces for its whole length comes out once,
+/// `shared`, so the two solids get the SAME cap triangles reversed and mate exactly.
+/// A loop with more than one piece across it belongs to `side_a` alone.
+///
+/// Edges the model brought with holes (not exactly two faces) count as boundary for
+/// the walk, so a seam that runs into a tear still yields a closed ring. Loops made
+/// of NOTHING but such edges are the model's own holes and are left alone, as they
+/// always were.
+fn rims_between_pieces(mesh: &IndexedMesh, piece_of_face: &[u32]) -> Result<Vec<Rim>, CapRefusal> {
     let mut edge_faces: AHashMap<(u32, u32), Vec<u32>> = AHashMap::new();
     for (fi, t) in mesh.triangles.iter().enumerate() {
         for k in 0..3 {
             edge_faces.entry(edge_key(t[k], t[(k + 1) % 3])).or_default().push(fi as u32);
         }
     }
+    // The face across `e` from `f`, when the edge is an honest two-sided one.
+    let across = |f: u32, e: (u32, u32)| -> Option<u32> {
+        match edge_faces.get(&e).map(|v| v.as_slice()) {
+            Some(&[a, b]) => Some(if a == f { b } else { a }),
+            _ => None,
+        }
+    };
+    // Is the directed edge u->v of face f a boundary of f's piece?
+    let is_boundary = |f: u32, u: u32, v: u32| -> bool {
+        across(f, edge_key(u, v))
+            .map_or(true, |g| piece_of_face[g as usize] != piece_of_face[f as usize])
+    };
+    // v's successor in f, walking the face's own winding.
+    let next_in_face = |f: u32, v: u32| -> u32 {
+        let t = &mesh.triangles[f as usize];
+        let k = (0..3).find(|&k| t[k] == v).expect("the walk stays on faces that hold its vertex");
+        t[(k + 1) % 3]
+    };
 
-    let mut cut: AHashMap<(u32, u32), (u32, u32)> = AHashMap::new(); // edge -> its two faces
-    for (e, faces) in &edge_faces {
-        if faces.len() != 2 {
+    // Every directed boundary edge, each owned by the face that traverses it.
+    let mut pending: AHashMap<(u32, u32), u32> = AHashMap::new(); // (u -> v) -> face
+    for (fi, t) in mesh.triangles.iter().enumerate() {
+        for k in 0..3 {
+            let (u, v) = (t[k], t[(k + 1) % 3]);
+            if is_boundary(fi as u32, u, v) {
+                pending.insert((u, v), fi as u32);
+            }
+        }
+    }
+
+    let mut rims: Vec<Rim> = Vec::new();
+    let mut seen_loops: AHashMap<Vec<(u32, u32)>, usize> = AHashMap::new();
+    let mut starts: Vec<(u32, u32)> = pending.keys().copied().collect();
+    starts.sort_unstable();
+    for start in starts {
+        let Some(&start_face) = pending.get(&start) else { continue };
+        let piece = piece_of_face[start_face as usize];
+
+        let mut ring: Vec<u32> = Vec::new();
+        let mut edges: Vec<(u32, u32)> = Vec::new();
+        let mut others: AHashMap<u32, usize> = AHashMap::new();
+        let (mut u, mut v, mut f) = (start.0, start.1, start_face);
+        loop {
+            ring.push(u);
+            edges.push(edge_key(u, v));
+            if let Some(g) = across(f, edge_key(u, v)) {
+                *others.entry(piece_of_face[g as usize]).or_default() += 1;
+            }
+            pending.remove(&(u, v));
+            // Rotate round `v` through this piece's faces until the walk leaves them:
+            // that sector, not the raw count of boundary edges at `v`, is what says
+            // which edge continues this loop.
+            let mut cur = f;
+            loop {
+                let w = next_in_face(cur, v);
+                if is_boundary(cur, v, w) {
+                    (u, v, f) = (v, w, cur);
+                    break;
+                }
+                cur = across(cur, edge_key(v, w))
+                    .expect("an interior edge of a piece has a face on both sides");
+            }
+            if (u, v) == start {
+                break;
+            }
+        }
+        // A loop of nothing but the model's own open edges is a hole it arrived
+        // with; inventing a lid for it is a change nobody asked for. Asked BEFORE
+        // the loop is judged too short, because a torn model's holes are exactly
+        // where two-vertex loops live — this model carries one 0.01 mm wide, a
+        // hundred and fifty millimetres from any seam, and refusing the whole cut
+        // over it turned away every cut on it.
+        if others.is_empty() {
             continue;
         }
-        if piece_of_face[faces[0] as usize] != piece_of_face[faces[1] as usize] {
-            cut.insert(*e, (faces[0], faces[1]));
-        }
-    }
-    if cut.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Trace the rims PER PAIR OF PIECES, not over the cut edges all at once.
-    //
-    // Taken all at once, three cut edges meeting at a vertex look like a pinch and
-    // there is no telling which two continue each other. They are not a pinch: they
-    // are a BRANCH, where three pieces meet, and a wall that branches is still closed
-    // and still separates. Refusing there turned away cuts that work perfectly well.
-    // Split the edges by the two pieces they hold apart first and the branch resolves
-    // itself — each pair only carries two of the three edges, so every vertex is back
-    // to degree two and the rim is a plain cycle again.
-    let mut by_pair: AHashMap<(u32, u32), Vec<(u32, u32)>> = AHashMap::new();
-    for (e, (f0, f1)) in &cut {
-        let (p, q) = (piece_of_face[*f0 as usize], piece_of_face[*f1 as usize]);
-        by_pair.entry((p.min(q), p.max(q))).or_default().push(*e);
-    }
-
-    let mut rims = Vec::new();
-    for edges in by_pair.values() {
-        let mut around: AHashMap<u32, Vec<u32>> = AHashMap::new();
-        for &(a, b) in edges {
-            around.entry(a).or_default().push(b);
-            around.entry(b).or_default().push(a);
-        }
-        // Still not two within one pair means the wall really does cross itself
-        // there, and no single lid fits that shape. Say so and let the caller fall
-        // back rather than sew something arbitrary.
-        if let Some((&v, ns)) = around.iter().find(|(_, ns)| ns.len() != 2) {
-            // Say it in millimetres, and say which of the two it is. One edge is a
-            // LOOSE END — the wall stops dead and the two sides still hold on there.
-            // Three or more is the wall crossing itself. They are different problems
-            // and they need different things from the user, and neither of them is
-            // helped by a vertex index.
-            let p = mesh.positions[v as usize];
-            let at = format!("({:.1}, {:.1}, {:.1})", p.x, p.y, p.z);
-            return Err(if ns.len() < 2 {
-                format!(
-                    "the cut does not close: the seam leaves a gap at {at} — the two \
-                     sides still meet there. Nudge the seam across that spot and cut \
-                     again."
-                )
-            } else {
-                format!(
-                    "the seam crosses itself at {at}, where {} of its edges meet \
-                     between the same two pieces. Redraw it so it does not double \
-                     back there.",
-                    ns.len()
-                )
-            });
+        if ring.len() < 3 {
+            let at: Vec<Vec3> = ring.iter().map(|&v| mesh.positions[v as usize]).collect();
+            return Err(CapRefusal::new("a rim of the cut is shorter than a triangle", at));
         }
 
-        let mut seen: AHashSet<u32> = AHashSet::new();
-        for &start in around.keys() {
-            if !seen.insert(start) {
-                continue;
+        let mut key = edges;
+        key.sort_unstable();
+        match seen_loops.get(&key) {
+            // The same loop walked from its other side: one rim, two owners, and the
+            // cap they will share mates exactly by construction.
+            Some(&i) => {
+                rims[i].side_b = piece;
+                rims[i].shared = true;
             }
-            let mut ring = vec![start];
-            let mut prev = start;
-            let mut cur = around[&start][0];
-            while cur != start {
-                seen.insert(cur);
-                ring.push(cur);
-                let ns = &around[&cur];
-                let next = if ns[0] == prev { ns[1] } else { ns[0] };
-                prev = cur;
-                cur = next;
+            None => {
+                let side_b = *others.iter().max_by_key(|(_, n)| **n).map(|(p, _)| p).unwrap();
+                seen_loops.insert(key, rims.len());
+                rims.push(Rim { ring, side_a: piece, side_b, shared: false });
             }
-            if ring.len() < 3 {
-                return Err("a rim of the cut is shorter than a triangle".to_string());
-            }
-
-            let (u, v) = (ring[0], ring[1]);
-            let (f0, f1) = cut[&edge_key(u, v)];
-            let (side_a, side_b) = (piece_of_face[f0 as usize], piece_of_face[f1 as usize]);
-            let side_a_runs_u_to_v = directed(&mesh.triangles[f0 as usize], u, v)
-                .ok_or_else(|| "a rim edge is missing from the face that carries it".to_string())?;
-            rims.push(Rim { ring, side_a, side_b, side_a_runs_u_to_v });
         }
     }
     Ok(rims)
+}
+
+/// A handful of points spread round a ring, so a refusal about it can be SEEN
+/// without burying the model in markers: a rim of four hundred vertices needs a few
+/// pins along it, not four hundred.
+fn marks(ring: &[Vec3]) -> Vec<Vec3> {
+    const HOW_MANY: usize = 6;
+    let step = (ring.len() / HOW_MANY).max(1);
+    ring.iter().step_by(step).take(HOW_MANY).copied().collect()
 }
 
 /// Does `tri` traverse the edge between `u` and `v` from `u` to `v`? `None` if the
