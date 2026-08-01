@@ -199,6 +199,20 @@ impl SplitSurface {
     /// half against thousands-to-a-handful is not a tuned threshold; anything in
     /// between would be a piece that runs along one seam and only ever touches the
     /// other, and the geometry has no such piece to offer.
+    ///
+    /// Balance alone is not enough, and the way it fails is the worst outcome there
+    /// is: it binned 500 022 of a model's 500 186 triangles and handed back the
+    /// crumbs. When the two offsets sever nothing, every face stays in ONE piece —
+    /// and then a seam edge has that same piece on both of its sides, so counting per
+    /// face credited it twice, the body came out perfectly balanced, and the body was
+    /// named the strip.
+    ///
+    /// So a seam edge only counts for a piece when it BOUNDS it: the two faces across
+    /// it in different pieces. That is what "runs along" has to mean. The strip is
+    /// bounded by the two offsets and nothing else; a body the seams failed to cut is
+    /// not bounded by them at all, it merely contains them. Structural, no threshold
+    /// — and not by size either: on a coarse mesh the band round a cube carries more
+    /// faces than the lid it frees, and there is a test that says so.
     pub fn strips_between(&self, a: usize, b: usize) -> Vec<u32> {
         let mut along: AHashMap<(u32, usize), usize> = AHashMap::new();
         let faces_of = self.faces_of_edge();
@@ -211,9 +225,15 @@ impl SplitSurface {
             if side != a && side != b {
                 continue;
             }
-            for &f in faces {
-                *along.entry((self.piece_of_face[f as usize], side)).or_default() += 1;
+            let (pa, pb) = (
+                self.piece_of_face[faces[0] as usize],
+                self.piece_of_face[faces[1] as usize],
+            );
+            if pa == pb {
+                continue; // the seam runs THROUGH this piece; it does not bound it
             }
+            *along.entry((pa, side)).or_default() += 1;
+            *along.entry((pb, side)).or_default() += 1;
         }
         let pieces: AHashSet<u32> = along.keys().map(|(p, _)| *p).collect();
         let mut out: Vec<u32> = pieces
@@ -1487,5 +1507,19 @@ mod tests {
                 );
             }
         }
+
+        // THE DISASTER, in one line. When the two offsets sever nothing, everything
+        // is one piece — and that one piece has both seams along its border, in full
+        // and perfectly balanced, so a test made only of balance calls it the strip
+        // and bins the model. (In the real report it was 500 022 of 500 186
+        // triangles, thrown away, with the crumbs handed back as the cut.) What saves
+        // it is that a strip is THIN: this piece is the whole cube, and almost none
+        // of it lies on the seams.
+        let mut nothing_separated = split;
+        nothing_separated.piece_of_face.iter_mut().for_each(|p| *p = 0);
+        assert!(
+            nothing_separated.strips_between(0, 1).is_empty(),
+            "a piece that is the whole model is not the strip of a 0.1 mm clearance",
+        );
     }
 }
