@@ -3338,7 +3338,7 @@ export function useSceneCollectionManager() {
         polygonCount: modelTriangleCount + supportTriangleCount,
         ignoreAutoLift: modelModel.ignoreAutoLift,
         manualZMoveOverride: modelModel.manualZMoveOverride,
-        isSupportGeometry: false,
+        isSupportGeometry: undefined,
       };
 
       const nextModels = [
@@ -3382,7 +3382,7 @@ export function useSceneCollectionManager() {
       const processed = await processGeometry(model.geometry.geometry, {
         center: false,
         nativeProcessingMode: 'classify-only',
-        assumeSupportGeometry: model.isSupportGeometry,
+        assumeSupportGeometry: undefined,
         _nativeModelTriangleCount: model.geometry.meshDefects?.nativeRepairReport?.model_triangle_count ?? undefined,
       });
       const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
@@ -3390,7 +3390,7 @@ export function useSceneCollectionManager() {
       const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
 
       setModels(prev => prev.map(m =>
-        m.id === modelId ? { ...m, geometry: processed, polygonCount } : m
+        m.id === modelId ? { ...m, geometry: processed, polygonCount, isSupportGeometry: undefined } : m
       ));
 
       if (repairReport) {
