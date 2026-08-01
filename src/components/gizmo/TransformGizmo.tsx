@@ -85,12 +85,12 @@ function computeViewCullState(
     move[axis] = quantizeOpacity(1 - smoothstep(0.82, 0.97, alignment));
     scale[axis] = quantizeOpacity(1 - smoothstep(0.78, 0.95, alignment));
 
-    // Rotation rings use axis-specific fade tuning:
-    // - X/Y should get out of the way sooner (helps top-down and near-top-down usability)
-    // - Z can stay visible a bit longer to avoid feeling like it disappears too eagerly.
-    const rotateFadeStart = axis === 'z' ? 0.03 : 0.03;
-    const rotateFadeEnd = axis === 'z' ? 0.14 : 0.55;
-    rotate[axis] = quantizeOpacity(smoothstep(rotateFadeStart, rotateFadeEnd, alignment));
+    // Rotation rings fade only when they're nearly edge-on (a thin line that's
+    // hard to grab). X/Y used to fade much earlier — a deliberate top-down
+    // declutter for the world-aligned gizmo — but that made rings vanish at
+    // moderate angles for any gizmo whose rings aren't world-aligned (e.g. the
+    // Cut tool's tenon), so all axes share the same forgiving curve now.
+    rotate[axis] = quantizeOpacity(smoothstep(0.03, 0.14, alignment));
   }
 
   return { move, scale, rotate };

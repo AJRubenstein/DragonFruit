@@ -9820,7 +9820,7 @@ export default function Home() {
             organicCutKeyGizmo={
               // Both cut modes place a tenon now, so the aim gizmo follows the tenon
               // rather than the mode; it mounts whenever there is a frame to sit on.
-              organicCutToolActive && organicCut.tenonFrame ? (
+              organicCutToolActive && organicCut.tenonFrame && organicCut.panelState.showPreview ? (
                 <OrganicCutTenonGizmo
                   models={scene.models}
                   activeModelId={displayActiveModelId}
@@ -10006,6 +10006,7 @@ export default function Home() {
                 tenonAnchor={organicCut.panelState.tenonAnchor}
                 tenonTiltRad={organicCut.panelState.tenonTiltRad}
                 tenonRollRad={organicCut.panelState.tenonRollRad}
+                showPreview={organicCut.panelState.showPreview}
               />
             )}
             {scene.mode === 'prepare' && transformMgr.transformMode === 'mirror' && (
