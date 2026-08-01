@@ -570,18 +570,19 @@ export function useOrganicCutSession({
   // there and serializing SessionLoop (points + per-loop tenon settings).
   const savedLoopsRef = React.useRef<Map<string, { loops: SessionLoop[]; activeIndex: number }>>(new Map());
 
-  // Undo-restore: when a cut commits we remember the model id, ALL the loops, and
-  // the PRE-CUT geometry object reference. If the user undoes the cut, scene
-  // history restores that exact geometry reference (cloneLoadedModel keeps
-  // geometry by reference), so when we see the active model's geometry revert to
-  // it we restore the loops — letting the user tweak and re-cut instead of
-  // starting over. Cleared once consumed or superseded.
-  const undoRestoreRef = React.useRef<{
-    modelId: string;
-    geometry: THREE.BufferGeometry;
-    loops: SessionLoop[];
-    activeIndex: number;
-  } | null>(null);
+  // Retired seams, by model: ALL the loops a model had, and the exact geometry
+  // object they were drawn on. Scene history restores geometry BY REFERENCE
+  // (cloneLoadedModel is a shallow clone), so when the active model's geometry
+  // turns out to be one of these again — undoing a cut, undoing a repair — those
+  // are its seams and they come back, and the user tweaks and re-cuts instead of
+  // starting over.
+  //
+  // A MAP, not one slot: two models can each have a retired seam waiting (cut one
+  // piece, select another, cut that too, then undo both), and a single slot lost
+  // the first the moment the second was written.
+  const undoRestoreRef = React.useRef<
+    Map<string, { geometry: THREE.BufferGeometry; loops: SessionLoop[]; activeIndex: number }>
+  >(new Map());
 
   // Redo stack for waypoint undo (Ctrl+Z / Ctrl+Shift+Z). Holds points popped by
   // undo so they can be re-added; cleared whenever a NEW point is placed (standard
@@ -941,22 +942,22 @@ export function useOrganicCutSession({
     loopsGeometryKeyRef.current = activeGeometryKey;
 
     if (previousGeometry === activeGeometry) return;
-    // A different MODEL is the other effect's business: it stashes and restores per
-    // model, and both would be writing the loops in the same commit.
-    if (previousKey !== activeGeometryKey) return;
 
-    const pending = undoRestoreRef.current;
+    const pending = activeGeometryKey ? undoRestoreRef.current.get(activeGeometryKey) : undefined;
     if (
       toolActive &&
+      activeGeometryKey &&
       pending &&
-      activeGeometryKey === pending.modelId &&
       activeGeometry === pending.geometry &&
       pending.loops.some((l) => l.points.length > 0)
     ) {
-      // The mesh the loops were drawn on is back → so are they. The entry is
-      // consumed; retiring them again re-arms it below.
-      undoRestoreRef.current = null;
-      savedLoopsRef.current.set(pending.modelId, { loops: pending.loops, activeIndex: pending.activeIndex });
+      // The mesh the loops were drawn on is back → so are they. Checked BEFORE the
+      // "is this a different model" question below, because it answers a stronger
+      // one: this is not merely the same model, it is the same mesh. The per-model
+      // stash runs in its own effect declared above this one, so writing the loops
+      // here lands last and wins — which is the right way round.
+      undoRestoreRef.current.delete(activeGeometryKey);
+      savedLoopsRef.current.set(activeGeometryKey, { loops: pending.loops, activeIndex: pending.activeIndex });
       const nextActive = Math.min(pending.activeIndex, pending.loops.length - 1);
       setLoops(pending.loops);
       setActiveLoopIndex(nextActive);
@@ -965,18 +966,25 @@ export function useOrganicCutSession({
       return;
     }
 
+    // Retiring a seam is a different question from restoring one, and only this
+    // half belongs to the model that is LEAVING. A plain model switch is the other
+    // effect's business — it stashes per model and restores per model, and both of
+    // us writing the loops in the same commit would fight. (Restoring above is
+    // exempt: it is keyed on the mesh, and an exact mesh match is the stronger
+    // answer, so it is allowed to land even across a switch.)
+    if (previousKey !== activeGeometryKey) return;
+
     // The mesh was replaced under the loops. Remember them against the mesh they
     // belonged to — but only if there is something to remember: the cut clears the
     // loops itself before this runs, and overwriting its entry with an empty one
     // would cost the user their seam on undo.
     const retiring = loopsRef.current;
     if (previousGeometry && previousKey && retiring.some((l) => l.points.length > 0)) {
-      undoRestoreRef.current = {
-        modelId: previousKey,
+      undoRestoreRef.current.set(previousKey, {
         geometry: previousGeometry,
         loops: retiring,
         activeIndex: activeLoopIndexRef.current,
-      };
+      });
       savedLoopsRef.current.delete(previousKey);
       setLoops([emptyLoop(extractTenon(panelStateRef.current))]);
       setActiveLoopIndex(0);
@@ -1513,12 +1521,11 @@ export function useOrganicCutSession({
           // Remember the loops + the PRE-CUT geometry reference so that an UNDO
           // (which restores that exact geometry) brings the membrane/loops back.
           if (geomKey && geom) {
-            undoRestoreRef.current = {
-              modelId: geomKey,
+            undoRestoreRef.current.set(geomKey, {
               geometry: geom,
               loops: loopsSnapshot,
               activeIndex: activeIdx,
-            };
+            });
           }
           // A cut retires EVERY seam in the session, not just the live one. The
           // parts that come back are new bodies, and the stash is tenoned by model
