@@ -143,12 +143,16 @@ pub fn components_touching_band(mesh: &IndexedMesh, band: &AHashSet<u32>) -> Vec
             edge_faces.entry(key).or_default().push(fi as u32);
         }
     }
+    // Face by face, not by iterating the map — see `Topology::build`.
     let mut neighbours: Vec<Vec<u32>> = vec![Vec::new(); mesh.triangles.len()];
-    for faces in edge_faces.values() {
-        for (i, &f) in faces.iter().enumerate() {
-            for &g in faces.iter().skip(i + 1) {
-                neighbours[f as usize].push(g);
-                neighbours[g as usize].push(f);
+    for (fi, t) in mesh.triangles.iter().enumerate() {
+        for k in 0..3 {
+            let (a, b) = (t[k], t[(k + 1) % 3]);
+            let key = if a < b { (a, b) } else { (b, a) };
+            for &g in &edge_faces[&key] {
+                if g != fi as u32 {
+                    neighbours[fi].push(g);
+                }
             }
         }
     }

@@ -1260,12 +1260,17 @@ fn cut_face_patches(part: &IndexedMesh, axis: Vec3, offset: f32) -> Vec<(f32, Ve
             edge_faces.entry(key).or_default().push(fi);
         }
     }
+    // Face by face, not by iterating the map — see `Topology::build` in surface_split.
     let mut neighbours: ahash::AHashMap<u32, Vec<u32>> = ahash::AHashMap::new();
-    for faces in edge_faces.values() {
-        for (i, &f) in faces.iter().enumerate() {
-            for &g in faces.iter().skip(i + 1) {
-                neighbours.entry(f).or_default().push(g);
-                neighbours.entry(g).or_default().push(f);
+    for &fi in &on_plane {
+        let t = &part.triangles[fi as usize];
+        for k in 0..3 {
+            let (a, b) = (t[k], t[(k + 1) % 3]);
+            let key = if a < b { (a, b) } else { (b, a) };
+            for &g in &edge_faces[&key] {
+                if g != fi {
+                    neighbours.entry(fi).or_default().push(g);
+                }
             }
         }
     }

@@ -732,12 +732,19 @@ impl Topology {
                 edge_faces.entry(edge_key(t[k], t[(k + 1) % 3])).or_default().push(fi as u32);
             }
         }
+        // Walked face by face, NOT by iterating the map: a hash map hands its entries
+        // back in a different order every run, and both readers of this list break
+        // ties by which neighbour they met first — `nearest_around` keeps the first
+        // face at the winning distance, `path_between` keeps the first shortest path.
+        // With a random order the seam walked a different way through the same model
+        // on every cut, and the same cut came out one or two triangles apart each time.
         let mut neighbours: Vec<Vec<u32>> = vec![Vec::new(); mesh.triangles.len()];
-        for faces in edge_faces.values() {
-            for (i, &f) in faces.iter().enumerate() {
-                for &g in faces.iter().skip(i + 1) {
-                    neighbours[f as usize].push(g);
-                    neighbours[g as usize].push(f);
+        for (fi, t) in mesh.triangles.iter().enumerate() {
+            for k in 0..3 {
+                for &g in &edge_faces[&edge_key(t[k], t[(k + 1) % 3])] {
+                    if g != fi as u32 {
+                        neighbours[fi].push(g);
+                    }
                 }
             }
         }
@@ -1259,6 +1266,23 @@ mod tests {
             .flat_map(|t| t.iter().flat_map(|&i| { let p = positions[i as usize]; [p.x, p.y, p.z] }).collect::<Vec<f32>>())
             .collect();
         IndexedMesh::from_triangle_soup(&soup, 1e-5)
+    }
+
+    /// The face graph has to come out the same on every run. Both of its readers
+    /// break ties by whichever neighbour they met first, so an order that comes from
+    /// a hash map makes the seam walk a different way through the same model each
+    /// time, and the same cut lands one or two triangles apart between runs.
+    #[test]
+    fn face_neighbours_follow_the_mesh_not_a_hash_map() {
+        let mesh = cube(10.0, 3);
+        let topo = Topology::build(&mesh);
+        for (fi, t) in mesh.triangles.iter().enumerate() {
+            let expected: Vec<u32> = (0..3)
+                .flat_map(|k| topo.edge_faces[&edge_key(t[k], t[(k + 1) % 3])].iter().copied())
+                .filter(|g| *g != fi as u32)
+                .collect();
+            assert_eq!(topo.neighbours[fi], expected, "face {fi}");
+        }
     }
 
     fn open_edges(mesh: &IndexedMesh) -> usize {
