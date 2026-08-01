@@ -16,7 +16,7 @@ Centralized Zustand state store controls all key bindings.
 4. **Modifying bindings**: Update `DEFAULT_KEYBINDINGS` in `hotkeyConfig.ts`.
 5. **Toggles fire on the press edge**: `useActionActive` reports the binding as HELD, not
    as pressed. A toggle must compare against the previous value (see
-   `useInteriorViewHotkey`) or it re-fires for as long as
+   `useInteriorViewHotkey`, `useOrganicCutPreviewHotkey`) or it re-fires for as long as
    the key is down.
 
 ## API Reference
