@@ -908,22 +908,41 @@ export function useOrganicCutSession({
     setSelectedIndex(null);
   }, [activeGeometryKey, clearModelDerivedPreviews, flushEditRun]);
 
-  // Undo-restore: when the active model's geometry REVERTS to the exact pre-cut
-  // reference we stashed at cut time (scene-history undo restores geometry by
-  // reference), bring the loops/membrane back so the user can tweak and re-cut.
-  // Tenoned on the geometry REFERENCE (not the id) because a cut+undo keeps the
-  // same model id — only the geometry object changes.
+  // A seam belongs to the MESH it was drawn on, and this is the one effect that
+  // enforces it. When the mesh under the loops is replaced — the cut itself, a
+  // REDO of the cut, a repair, a decimation — the seam describes a surface that no
+  // longer exists, so it is retired and remembered against the mesh it belonged to;
+  // when that exact mesh comes back, so does it. Undo and redo are then symmetric
+  // by construction rather than by two lists of cases kept in step by hand.
+  //
+  // Getting the redo half wrong was visible: the loops stayed on screen, the
+  // geodesic recomputed against the CUT surface, and the membrane came back
+  // smaller — following the cut face instead of the skin. Tracked by the geometry
+  // REFERENCE, not the model id: a cut and its undo keep the same id and only swap
+  // the geometry object.
+  const loopsGeometryRef = React.useRef<THREE.BufferGeometry | null | undefined>(activeGeometry);
+  const loopsGeometryKeyRef = React.useRef<string | null>(activeGeometryKey);
   React.useEffect(() => {
-    if (!toolActive) return;
+    const previousGeometry = loopsGeometryRef.current;
+    const previousKey = loopsGeometryKeyRef.current;
+    loopsGeometryRef.current = activeGeometry;
+    loopsGeometryKeyRef.current = activeGeometryKey;
+
+    if (previousGeometry === activeGeometry) return;
+    // A different MODEL is the other effect's business: it stashes and restores per
+    // model, and both would be writing the loops in the same commit.
+    if (previousKey !== activeGeometryKey) return;
+
     const pending = undoRestoreRef.current;
-    if (!pending) return;
     if (
+      toolActive &&
+      pending &&
       activeGeometryKey === pending.modelId &&
       activeGeometry === pending.geometry &&
       pending.loops.some((l) => l.points.length > 0)
     ) {
-      // Geometry reverted to the pre-cut state → restore the loops. Consume the
-      // entry so a later unrelated geometry change doesn't re-trigger it.
+      // The mesh the loops were drawn on is back → so are they. The entry is
+      // consumed; retiring them again re-arms it below.
       undoRestoreRef.current = null;
       savedLoopsRef.current.set(pending.modelId, { loops: pending.loops, activeIndex: pending.activeIndex });
       const nextActive = Math.min(pending.activeIndex, pending.loops.length - 1);
@@ -931,8 +950,28 @@ export function useOrganicCutSession({
       setActiveLoopIndex(nextActive);
       setPanelState((ps) => withTenon(ps, pending.loops[nextActive]?.tenon ?? DEFAULT_LOOP_TENON));
       setSelectedIndex(null);
+      return;
     }
-  }, [toolActive, activeGeometry, activeGeometryKey]);
+
+    // The mesh was replaced under the loops. Remember them against the mesh they
+    // belonged to — but only if there is something to remember: the cut clears the
+    // loops itself before this runs, and overwriting its entry with an empty one
+    // would cost the user their seam on undo.
+    const retiring = loopsRef.current;
+    if (previousGeometry && previousKey && retiring.some((l) => l.points.length > 0)) {
+      undoRestoreRef.current = {
+        modelId: previousKey,
+        geometry: previousGeometry,
+        loops: retiring,
+        activeIndex: activeLoopIndexRef.current,
+      };
+      savedLoopsRef.current.delete(previousKey);
+      setLoops([emptyLoop(extractTenon(panelStateRef.current))]);
+      setActiveLoopIndex(0);
+      setSelectedIndex(null);
+      clearModelDerivedPreviews();
+    }
+  }, [toolActive, activeGeometry, activeGeometryKey, clearModelDerivedPreviews]);
 
   // Recompute the surface-following loop whenever the active loop's points change.
   // Stages the source mesh (cheap no-op if already staged for this geometry) then
