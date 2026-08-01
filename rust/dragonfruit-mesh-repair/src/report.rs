@@ -37,9 +37,6 @@ pub struct MeshHealthReport {
     /// `None` when the model is a valid manifold or the check did not run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_manifold_status: Option<String>,
-    /// Indicates the model contains hollow cavities or resin traps with no drain holes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub has_undrained_cavity: Option<bool>,
     /// If any defect classes remain after repair, they are listed here as
     /// human-readable strings so the UI can surface them.
     pub residual_issues: Vec<String>,
@@ -69,7 +66,6 @@ impl MeshHealthReport {
             model_triangle_count: None,
             model_is_manifold: None,
             model_manifold_status: None,
-            has_undrained_cavity: None,
             residual_issues: Vec::new(),
             fully_repaired: false,
             total_ms: 0.0,

@@ -65,7 +65,6 @@ export interface MeshHealthReport {
   model_is_manifold?: boolean | null;
   /** Specific manifold_csg status string when `model_is_manifold` is false. */
   model_manifold_status?: string | null;
-  has_undrained_cavity?: boolean | null;
   residual_issues: string[];
   fully_repaired: boolean;
   total_ms: number;
@@ -132,7 +131,6 @@ interface RawMeshHealthReport extends UnknownRecord {
   model_triangle_count?: unknown;
   model_is_manifold?: unknown;
   model_manifold_status?: unknown;
-  has_undrained_cavity?: unknown;
   residual_issues?: unknown;
   fully_repaired?: unknown;
   total_ms?: unknown;
@@ -222,7 +220,6 @@ function normalizeMeshHealthReport(input: unknown): MeshHealthReport {
       : null,
     model_is_manifold: typeof raw.model_is_manifold === 'boolean' ? raw.model_is_manifold : null,
     model_manifold_status: typeof raw.model_manifold_status === 'string' ? raw.model_manifold_status : null,
-    has_undrained_cavity: typeof raw.has_undrained_cavity === 'boolean' ? raw.has_undrained_cavity : null,
     residual_issues: asStringArray(raw.residual_issues),
     fully_repaired: asBoolean(raw.fully_repaired),
     total_ms: asNumber(raw.total_ms),
