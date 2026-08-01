@@ -10,6 +10,7 @@ import { tenonLeanMatrix } from './tenonLeanTransform';
 import type { PlaneMeshCurve } from './planeMeshIntersection';
 import { useOrganicCutColorNumbers } from './useOrganicCutColors';
 import { TENON_WONT_FIT_COLORS } from './organicCutColors';
+import { CutLeakPins } from './CutLeakPins';
 
 interface OrganicCutToolProps {
   models: LoadedModel[];
@@ -1108,16 +1109,10 @@ export function OrganicCutTool({
             be moved by Snap to Edges. Each marker is draggable: a press that moves
             repositions it; a press that doesn't is a select; a double-click toggles
             the lock. */}
-        {/* Where the last refused cut went wrong. Drawn on top of everything and
-            larger than a waypoint, because the whole point is to be findable: the
-            user is being told to nudge the seam across this exact spot, and it is
-            often on the far side of the model. */}
-        {(cutLeakPoints ?? []).map((p, idx) => (
-          <mesh key={`leak-${idx}`} position={[p[0], p[1], p[2]]} renderOrder={1005} frustumCulled={false}>
-            <sphereGeometry args={[markerRadius * 2.5, 12, 12]} />
-            <meshBasicMaterial color={colors.markerSelected} depthTest={false} transparent opacity={0.9} />
-          </mesh>
-        ))}
+        {/* Where the last refused cut went wrong, pinned rather than blobbed: the
+            user is being told to nudge the seam across these exact spots, so what
+            marks them must not cover them. See `CutLeakPins`. */}
+        <CutLeakPins points={cutLeakPoints ?? []} />
 
         {loop.map((p, idx) => {
           const isDragging = draggingIndex === idx;

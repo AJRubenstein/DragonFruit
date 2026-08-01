@@ -648,16 +648,15 @@ fn contour_cut_by_surface(
                     .to_string(),
             );
         }
-        let where_ = loose
-            .iter()
-            .take(3)
-            .map(|p| format!("({:.1}, {:.1}, {:.1})", p.x, p.y, p.z))
-            .collect::<Vec<_>>()
-            .join(", ");
+        // Count them and point at them; do NOT read out coordinates. A number like
+        // (-59.6, -11.4, -131.2) in a sentence is not somewhere anyone can look —
+        // the pins in the viewport are, and they are numbered to match this count.
         return Err(format!(
-            "the cut does not close: the seam leaves a gap at {where_}{} — the two \
-             sides still meet there. Nudge the seam across that spot and cut again.",
-            if loose.len() > 3 { format!(" and {} more", loose.len() - 3) } else { String::new() },
+            "the cut does not close: the two sides still hold on to each other in {} \
+             {}, pinned in the viewport. Nudge the seam across {} and cut again.",
+            loose.len(),
+            if loose.len() == 1 { "place" } else { "places" },
+            if loose.len() == 1 { "it" } else { "them" },
         ));
     }
 
