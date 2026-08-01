@@ -423,15 +423,30 @@ pub const TENON_MAX_TILT_RAD: f32 = std::f32::consts::FRAC_PI_4;
 /// space. All three pivot about the **base center** (`anchor`):
 /// - `tilt`: polar angle the body leans OFF the membrane normal (0 = straight out;
 ///   clamped to [`TENON_MAX_TILT_RAD`]).
+/// The tenon's rotational freedom in the build frame: two ORTHOGONAL leans (about
+/// the in-plane `+y` and `+x` axes) plus a roll about the axis. The two leans are
+/// independent scalars, so they never need to agree with each other — the whole
+/// point versus the old azimuth, which was a second number for the same freedom as
+/// the roll and drifted out of step with it.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TenonTilt {
+    /// Lean about the build frame's `+y` (the existing single-lean axis).
     pub tilt: f32,
+    /// Lean about the build frame's `+x` — the perpendicular lean plane.
+    pub tilt_x: f32,
     pub roll: f32,
 }
 
 impl TenonTilt {
-    pub fn new(tilt: f32, roll: f32) -> Self {
-        TenonTilt { tilt, roll }
+    pub fn new(tilt: f32, tilt_x: f32, roll: f32) -> Self {
+        TenonTilt { tilt, tilt_x, roll }
+    }
+
+    /// The combined off-normal lean magnitude (radians) from both lean axes. The fit
+    /// checks only care how far the tenon tips off the normal, not which way, so this
+    /// is what they bound.
+    pub fn lean_magnitude(&self) -> f32 {
+        (self.tilt * self.tilt + self.tilt_x * self.tilt_x).sqrt()
     }
 }
 
@@ -467,39 +482,39 @@ pub type TenonAnchor = Option<Vec3>;
 /// always fits its leaned mortise (a clean slide fit at any tilt). The tenon keeps its
 /// exact shape (no shear/stretch).
 ///
-/// `R = R_lean · R_roll`: roll about local `+z` first (spins the footprint), then
-/// lean about the in-plane axis `k = +z × L`, `L = (cos az, sin az, 0)`. Identity
-/// (`tilt == 0 && roll == 0`) leaves geometry untouched (the exact original tenon).
+/// `R = R_roll · R_leanX · R_leanY`: lean about local `+y`, then about local `+x`
+/// (both in the tenon's own frame, welding the lean planes to the body), then roll
+/// about local `+z`. Identity (`tilt == 0 && tilt_x == 0 && roll == 0`) leaves
+/// geometry untouched (the exact original tenon).
 #[derive(Debug, Clone, Copy)]
 struct LeanXform {
     tilt: f32,
+    tilt_x: f32,
     roll: f32,
-    /// In-plane shift (mm, local u) that puts the tenon's axis back through the
-    /// ANCHOR — the point on the membrane where the crosshair sits. 0 when upright.
     /// Extra length (mm) added to the BASE END only, so a leaned base stays buried.
     ///
-    /// Rotating the body lifts its leading base corner by half_diag·sin(tilt), which
+    /// Rotating the body lifts its leading base corner by half_diag·sin(lean), which
     /// on a short tenon is far more than the 0.3mm of overlap it is built with — so
     /// the base edge surfaced through the cut face and sat there in plain view. The
     /// trunk grows DOWNWARD by that much: the tenon still ends up longer than it was
     /// drawn, but only into the material it is rooted in, and the cap stays exactly
     /// at depth·cos(lean). (Growing the whole body, which is what the old
     /// `stretch_depth` did, moved the cap and changed the tenon the user asked for.)
+    /// With TWO leans the corner that lifts is the one the combined lean tips up, so
+    /// `base_sink` is driven by the combined magnitude `sqrt(tilt² + tilt_x²)`.
     base_sink: f32,
     identity: bool,
 }
 
 impl LeanXform {
     const IDENTITY: LeanXform =
-        LeanXform { tilt: 0.0, roll: 0.0, base_sink: 0.0, identity: true };
+        LeanXform { tilt: 0.0, tilt_x: 0.0, roll: 0.0, base_sink: 0.0, identity: true };
 
-    /// Build the transform for a tenon built in `build_frame`, given the user `tilt`
+    /// Build the transform for a tenon built in `build_frame`, given the user tilt
     /// and the tenon footprint `half_diag` (mm, the base half-diagonal — how far the
-    /// base extends from the axis). The lean direction is computed as a WORLD
-    /// direction from the ORIGINAL (un-swapped) tangent basis and projected onto
-    /// `build_frame.(u, v)` so it points the same world way through any swap.
+    /// base extends from the axis).
     fn for_build(tilt: &TenonTilt, max_tilt: f32, half_diag: f32) -> LeanXform {
-        let leaning = tilt.tilt.abs() >= 1e-6;
+        let leaning = tilt.tilt.abs() >= 1e-6 || tilt.tilt_x.abs() >= 1e-6;
         let rolling = tilt.roll.abs() >= 1e-6;
         if !leaning && !rolling {
             return LeanXform::IDENTITY;
@@ -507,33 +522,31 @@ impl LeanXform {
         // Clamp to the hard ceiling. Whether the lean still FITS is `check_lean`'s
         // verdict, reported to the user — not something enforced by refusing to turn.
         let cap = max_tilt.clamp(0.0, TENON_MAX_TILT_RAD);
-        let t = if leaning { tilt.tilt.clamp(-cap, cap) } else { 0.0 };
+        let t = if tilt.tilt.abs() >= 1e-6 { tilt.tilt.clamp(-cap, cap) } else { 0.0 };
+        let t_x = if tilt.tilt_x.abs() >= 1e-6 { tilt.tilt_x.clamp(-cap, cap) } else { 0.0 };
         // How far the leading base corner rises when the body turns — see `base_sink`.
-        let base_sink = half_diag.max(0.0) * t.abs().sin();
-        LeanXform { tilt: t, roll: tilt.roll, base_sink, identity: false }
+        let combined = (t * t + t_x * t_x).sqrt();
+        let base_sink = half_diag.max(0.0) * combined.sin();
+        LeanXform { tilt: t, tilt_x: t_x, roll: tilt.roll, base_sink, identity: false }
     }
 
 
-    /// Transform a local point: rigid lean about the body's own **+y**, then rigid
-    /// roll about **+z**. Identical for tenon and mortise, so it preserves their
-    /// nesting (a clean slide fit at any angle).
+    /// Transform a local point: rigid lean about the body's own **+y**, then about
+    /// its own **+x**, then roll about **+z**. Identical for tenon and mortise, so
+    /// it preserves their nesting (a clean slide fit at any angle).
     ///
     /// The order is the whole trick. Leaning FIRST, in the tenon's own frame, welds
-    /// the lean plane to the body: the roll then turns the two together because it
-    /// turns everything. There used to be a third number for this — an `azimuth`
-    /// naming which way the lean pointed, in world terms, which the frontend derived
-    /// from the roll and kept in sync by hand. It did not stay in sync (the body
-    /// turned one way and its lean plane the other, so a full turn of the ring moved
-    /// the tenon half as far), and it could not: two numbers describing one freedom
-    /// will always be able to disagree.
+    /// the lean planes to the body: the roll then turns the two together because it
+    /// turns everything. (The old azimuth failed because it named the lean direction
+    /// in world terms and kept it in sync with the roll by hand — two numbers
+    /// describing one freedom can always disagree. Two independent leans cannot.)
     #[inline]
     fn apply(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
         if self.identity {
             return (x, y, z);
         }
         // 1) Lean about local +y: (x, z) turn, y is the hinge. +y is the build
-        // frame's length axis, so the tenon tips over one of its NARROW faces —
-        // the plane the user sketched the lean in.
+        // frame's length axis, so the tenon tips over one of its NARROW faces.
         let (mut px, mut pz) = (x, z);
         if self.tilt.abs() >= 1e-9 {
             let (s, c) = self.tilt.sin_cos();
@@ -542,9 +555,19 @@ impl LeanXform {
             px = rx;
             pz = rz;
         }
-        // 2) Slide the axis back under the crosshair (see `for_build`).
+        // 2) Lean about local +x: (y, z) turn — the perpendicular plane, tipping the
+        // tenon over the OTHER face. Applied in the same local frame as the +y lean
+        // (both before the roll), so the roll still spins the whole leaned body.
+        let (mut py, mut pz2) = (y, pz);
+        if self.tilt_x.abs() >= 1e-9 {
+            let (s, c) = self.tilt_x.sin_cos();
+            let ry = py * c - pz2 * s;
+            let rz = py * s + pz2 * c;
+            py = ry;
+            pz2 = rz;
+        }
         // 3) Roll about local +z, carrying the leaned body and its lean plane alike.
-        let (mut px2, mut py2) = (px, y);
+        let (mut px2, mut py2) = (px, py);
         if self.roll.abs() >= 1e-9 {
             let (s, c) = self.roll.sin_cos();
             let rx = px2 * c - py2 * s;
@@ -552,7 +575,7 @@ impl LeanXform {
             px2 = rx;
             py2 = ry;
         }
-        (px2, py2, pz)
+        (px2, py2, pz2)
     }
 }
 
@@ -1084,7 +1107,7 @@ pub fn apply_tenon_at_frame(
     let clearance = Clearance::probe(&frame, model, model);
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
-    let plan = decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, tilt.tilt);
+    let plan = decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, tilt.lean_magnitude());
     // The same containment check the preview runs, on the same frame, so what the
     // user saw refused in red is what the cut refuses.
     let plan = {
@@ -1227,7 +1250,7 @@ pub fn build_tenon_preview_at_frame(
     let clearance = Clearance::probe(&placed, model, model);
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
-    let plan = decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, tilt.tilt);
+    let plan = decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, tilt.lean_magnitude());
     // The build frame must MATCH what `apply_tenon` uses so the preview is exactly
     // what cuts: extrude the tenon toward part_b, with the rigid lean about the base.
     let build_frame = frame_extruding_toward_part_b(&placed);
@@ -1249,6 +1272,7 @@ pub fn build_tenon_preview_at_frame(
     // already-extended body gives exactly the solid the cut builds.
     let soup_lean = LeanXform {
         tilt: 0.0,
+        tilt_x: 0.0,
         roll: 0.0,
         base_sink: lean.base_sink,
         identity: lean.base_sink <= 0.0,
@@ -2351,7 +2375,7 @@ mod tests {
         let extent = |tilt_deg: f32| -> (f32, f32) {
             let preview = build_tenon_preview_soup(
                 &model, &loop_pts, DEFAULT_MEMBRANE_SMOOTHING, 1.0, TenonShape::Frustum, false,
-                TenonTilt::new(tilt_deg.to_radians(), 0.0), width, depth, 0.0, tol,
+                TenonTilt::new(tilt_deg.to_radians(), 0.0, 0.0), width, depth, 0.0, tol,
                 None,
             )
             .expect("preview builds");
@@ -2435,7 +2459,7 @@ mod tests {
             body: TenonBody::Frustum(FrustumDims::from_width_depth(2.0, 4.0)),
             verdict: TenonVerdict::Fits,
         };
-        let hard = LeanXform::for_build(&TenonTilt::new(TENON_MAX_TILT_RAD, 0.0), TENON_MAX_TILT_RAD, 1.0);
+        let hard = LeanXform::for_build(&TenonTilt::new(TENON_MAX_TILT_RAD, 0.0, 0.0), TENON_MAX_TILT_RAD, 1.0);
         let leaned = confirm_tenon_stays_inside(plan.clone(), &cone, &frame, hard);
         assert_eq!(
             leaned.verdict,
@@ -2465,7 +2489,7 @@ mod tests {
         let dims = FrustumDims::from_width_depth(3.0, 4.0);
         // Half-width of the solid at the cut plane (z = 0), measured off the mesh.
         let width_at_face = |base_sink: f32| -> f32 {
-            let lean = LeanXform { tilt: 0.0, roll: 0.0, base_sink, identity: base_sink <= 0.0 };
+            let lean = LeanXform { tilt: 0.0, tilt_x: 0.0, roll: 0.0, base_sink, identity: base_sink <= 0.0 };
             let mesh = build_frustum_leaned(&frame, dims, 0.0, 0.0, lean);
             // Widest |x| among vertices straddling the cut plane, by interpolating
             // each edge that crosses z = 0.
@@ -2650,7 +2674,7 @@ mod tests {
             frame_extruding_toward_part_b(&frame_from_membrane(&mem).expect("frame"));
         let dims = FrustumDims::from_width_depth(5.0, 5.0);
         let half_diag = 0.5 * dims.width.hypot(dims.length);
-        let tilt = TenonTilt::new(std::f32::consts::FRAC_PI_4, 0.0); // 45° lean
+        let tilt = TenonTilt::new(std::f32::consts::FRAC_PI_4, 0.0, 0.0); // 45° lean
         let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, half_diag);
 
         let _ = build_frustum_leaned(&frame, dims, 0.0, 0.0, lean); // builds watertight
@@ -2684,6 +2708,38 @@ mod tests {
         );
     }
 
+    // The second lean is the perpendicular plane: tilting about +x moves the tip
+    // along +y (the axis the Y-lean leaves untouched), so the two are independent.
+    #[test]
+    fn x_lean_tips_in_the_perpendicular_plane() {
+        let tilt = TenonTilt::new(0.0, std::f32::consts::FRAC_PI_4, 0.0); // 45° X-lean only
+        let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, 1.0);
+        let (tx, ty, tz) = lean.apply(0.0, 0.0, 5.0);
+        assert!(tx.abs() < 1e-4, "X-lean must not move the tip along x (got {tx})");
+        let tip_len = (tx * tx + ty * ty + tz * tz).sqrt();
+        assert!((tip_len - 5.0).abs() < 1e-3, "the trunk keeps its length ({tip_len})");
+        // At 45° the tip leans one-to-one along +y, exactly as the Y-lean does along +x.
+        assert!(
+            (ty.abs() - tz.abs()).abs() < 0.05,
+            "at 45° X-lean the tip leans one to one: lateral {ty} mm vs height {tz} mm",
+        );
+    }
+
+    // Both leans together tip the tenon DIAGONALLY: two orthogonal rotations compose,
+    // so the cap sits at depth·cos(tilt)·cos(tilt_x) — the combined lean, exactly.
+    #[test]
+    fn both_leans_tip_diagonally() {
+        let tilt = TenonTilt::new(0.3, 0.4, 0.0);
+        let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, 1.0);
+        let (tx, ty, tz) = lean.apply(0.0, 0.0, 5.0);
+        assert!(tx.abs() > 1e-3 && ty.abs() > 1e-3, "tip must move in BOTH in-plane axes");
+        let expected_tz = 5.0 * 0.3_f32.cos() * 0.4_f32.cos();
+        assert!(
+            (tz - expected_tz).abs() < 1e-3,
+            "cap at depth·cos(tilt)·cos(tilt_x) = {expected_tz}, got {tz}",
+        );
+    }
+
     // Rolling turns the tenon AND the direction it leans, as ONE body: the tip at
     // roll δ is the tip at roll 0, turned by δ about the cut normal. Nothing else
     // is acceptable — the ring is the tenon's own spin, so whatever it does to the
@@ -2697,12 +2753,12 @@ mod tests {
     fn rolling_turns_the_tenon_and_its_lean_together() {
         let tilt = std::f32::consts::FRAC_PI_6; // 30°
         let depth = 5.0;
-        let upright = LeanXform::for_build(&TenonTilt::new(tilt, 0.0), TENON_MAX_TILT_RAD, 1.0);
+        let upright = LeanXform::for_build(&TenonTilt::new(tilt, 0.0, 0.0), TENON_MAX_TILT_RAD, 1.0);
         let (ux, uy, uz) = upright.apply(0.0, 0.0, depth);
 
         for deg in [30.0f32, 90.0, 150.0, 240.0, 330.0] {
             let roll = deg.to_radians();
-            let rolled = LeanXform::for_build(&TenonTilt::new(tilt, roll), TENON_MAX_TILT_RAD, 1.0);
+            let rolled = LeanXform::for_build(&TenonTilt::new(tilt, 0.0, roll), TENON_MAX_TILT_RAD, 1.0);
             let (rx, ry, rz) = rolled.apply(0.0, 0.0, depth);
             // Turn the un-rolled tip by the same angle about +z and they must agree.
             let (s, c) = roll.sin_cos();
@@ -2723,7 +2779,7 @@ mod tests {
     #[test]
     fn tilt_preserves_body_shape() {
         let dims = FrustumDims::from_width_depth(5.0, 6.0);
-        let tilt = TenonTilt::new(40.0_f32.to_radians(), 0.4);
+        let tilt = TenonTilt::new(40.0_f32.to_radians(), 0.0, 0.4);
         let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, 4.0);
         // Any two points: their distance must be the same before and after the lean
         // (a rigid rotation + uniform sink preserves all lengths).
@@ -2755,7 +2811,7 @@ mod tests {
             (55.0, 1.2, 0.6, 0.0),
             (45.0, 2.5, 0.0, 0.7),
         ] {
-            let tilt = TenonTilt::new(deg.to_radians(), roll);
+            let tilt = TenonTilt::new(deg.to_radians(), 0.0, roll);
             let dims = FrustumDims::from_width_depth(5.0, 5.0);
             let lean = LeanXform::for_build(&tilt, TENON_MAX_TILT_RAD, 4.0);
             let tenon = build_frustum_leaned(&frame, dims, 0.0, fillet, lean);
@@ -2811,7 +2867,7 @@ mod tests {
         let part_b = axis_aligned_slab(Vec3::new(-30.0, -30.0, -10.0), Vec3::new(30.0, 30.0, 0.0));
         let mem = flat_membrane(60.0);
         let a_before = part_a.triangle_count();
-        let tilt = TenonTilt::new(40.0_f32.to_radians(), 0.3);
+        let tilt = TenonTilt::new(40.0_f32.to_radians(), 0.0, 0.3);
         let out = apply_tenon(&model, part_a, part_b, &mem, TenonShape::Frustum, false, tilt, 4.0, 4.0, 0.0, 0.1, None);
         assert_eq!(out.kind, TenonKind::Frustum, "tilted tenon placed: {}", out.detail);
         assert!(out.part_a.triangle_count() > a_before, "tenon bonded to part_a");

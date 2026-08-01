@@ -29,11 +29,11 @@ function moved(m: THREE.Matrix4, x: number, y: number, z: number): THREE.Vector3
 }
 
 test('no lean and no roll is no matrix at all', () => {
-  assert.equal(tenonLeanMatrix(frameAtOrigin(), 0, 0), null);
+  assert.equal(tenonLeanMatrix(frameAtOrigin(), 0, 0, 0), null);
 });
 
 test('a roll alone spins the tenon about its axis and moves nothing else', () => {
-  const m = tenonLeanMatrix(frameAtOrigin(), 0, Math.PI / 2);
+  const m = tenonLeanMatrix(frameAtOrigin(), 0, 0, Math.PI / 2);
   assert.ok(m, 'a roll produces a matrix');
   // A point on the axis stays on the axis: the roll turns the section, not the axis.
   const onAxis = moved(m, 0, 0, -2.5);
@@ -49,7 +49,7 @@ test('the leaned axis still passes through the anchor', () => {
   // The bug this guards: the tenon is sunk as it leans, which used to walk its
   // section at the membrane out from under the crosshair.
   for (const deg of [10, 30, 55, -35]) {
-    const m = tenonLeanMatrix(frameAtOrigin(), (deg * Math.PI) / 180, 0.4);
+    const m = tenonLeanMatrix(frameAtOrigin(), (deg * Math.PI) / 180, 0, 0.4);
     assert.ok(m, `${deg}° produces a matrix`);
     const a = moved(m, 0, 0, 0);
     const b = moved(m, 0, 0, -10);
@@ -66,11 +66,11 @@ test('the leaned axis still passes through the anchor', () => {
 test('leaning rotates the tenon rigidly: the cap lands at depth·cos(lean)', () => {
   const frame = frameAtOrigin();
   // The straight soup's tip is at build-axis depth, i.e. z = −depth.
-  const upright = moved(tenonLeanMatrix(frame, 1e-9, 0) ?? new THREE.Matrix4(), 0, 0, -frame.depth);
+  const upright = moved(tenonLeanMatrix(frame, 1e-9, 0, 0) ?? new THREE.Matrix4(), 0, 0, -frame.depth);
   assert.ok(Math.abs(Math.abs(upright.z) - frame.depth) < 1e-3, 'sanity: upright stands its depth');
   for (const deg of [20, 45]) {
     const rad = (deg * Math.PI) / 180;
-    const m = tenonLeanMatrix(frame, rad, 0);
+    const m = tenonLeanMatrix(frame, rad, 0, 0);
     assert.ok(m, `${deg}° produces a matrix`);
     const tip = moved(m, 0, 0, -frame.depth);
     // The trunk keeps its length — leaning a solid does not resize it.
@@ -93,8 +93,8 @@ test('leaning rotates the tenon rigidly: the cap lands at depth·cos(lean)', () 
 test('the lean tips the tenon in one plane, and its sign picks the side', () => {
   const frame = frameAtOrigin();
   // Azimuth π/2 leans along the frame's v, so u must stay clear either way.
-  const plus = moved(tenonLeanMatrix(frame, 0.5, 0)!, 0, 0, -frame.depth);
-  const minus = moved(tenonLeanMatrix(frame, -0.5, 0)!, 0, 0, -frame.depth);
+  const plus = moved(tenonLeanMatrix(frame, 0.5, 0, 0)!, 0, 0, -frame.depth);
+  const minus = moved(tenonLeanMatrix(frame, -0.5, 0, 0)!, 0, 0, -frame.depth);
   assert.ok(Math.abs(plus.x) < 1e-3, `stays in the lean plane, got u = ${plus.x}`);
   assert.ok(Math.abs(minus.x) < 1e-3, `same the other way, got u = ${minus.x}`);
   assert.ok(plus.y * minus.y < 0, 'the sign of the lean picks the side it tips to');
@@ -111,4 +111,26 @@ test('the clamp honours the room the part leaves, then the hard ceiling', () => 
   assert.equal(clampTenonTilt(3.0, uncapped), TENON_MAX_TILT_RAD);
   // Nor can one that reports an absurd one.
   assert.equal(clampTenonTilt(3.0, frameAtOrigin({ maxTiltRad: 99 })), TENON_MAX_TILT_RAD);
+});
+
+test('the X-lean tips in the perpendicular plane, along u', () => {
+  const frame = frameAtOrigin();
+  const plus = moved(tenonLeanMatrix(frame, 0, 0.5, 0)!, 0, 0, -frame.depth);
+  const minus = moved(tenonLeanMatrix(frame, 0, -0.5, 0)!, 0, 0, -frame.depth);
+  assert.ok(Math.abs(plus.y) < 1e-3, `stays out of the Y lean plane, got v = ${plus.y}`);
+  assert.ok(Math.abs(minus.y) < 1e-3, `same the other way, got v = ${minus.y}`);
+  assert.ok(plus.x * minus.x < 0, 'the X-lean sign picks the u side');
+  assert.ok(Math.abs(plus.x - -minus.x) < 1e-3, 'and it is symmetric');
+});
+
+test('both leans together tip the tenon diagonally', () => {
+  const frame = frameAtOrigin();
+  const tip = moved(tenonLeanMatrix(frame, 0.3, 0.4, 0)!, 0, 0, -frame.depth);
+  assert.ok(Math.abs(tip.x) > 1e-3 && Math.abs(tip.y) > 1e-3, 'tip moves in BOTH in-plane axes');
+  // Two orthogonal leans compose: the cap sits at depth·cos(tilt)·cos(tilt_x).
+  const expected = frame.depth * Math.cos(0.3) * Math.cos(0.4);
+  assert.ok(
+    Math.abs(Math.abs(tip.z) - expected) < 1e-3,
+    `cap at depth·cos·cos = ${expected}mm, got ${Math.abs(tip.z)}`,
+  );
 });

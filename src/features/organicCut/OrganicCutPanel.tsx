@@ -113,6 +113,8 @@ export interface OrganicCutPanelState {
    * above the cut face. 0 = straight out.
    */
   tenonTiltRad: number;
+  /** Second lean (radians) about the perpendicular in-plane axis. Driven by the X ring. */
+  tenonTiltXRad: number;
   /** Tenon roll (radians): spin about the tenon's own axis. Driven by the roll gizmo. */
   tenonRollRad: number;
   /**
@@ -599,10 +601,12 @@ export function OrganicCutPanel({
                     // never reported at all, so spinning the tenon also read 0°.
                     const toDeg = (rad: number) => Math.round((rad * 180) / Math.PI * 10) / 10;
                     const leanDeg = toDeg(state.tenonTiltRad);
+                    const leanXDeg = toDeg(state.tenonTiltXRad);
                     const rollDeg = toDeg(state.tenonRollRad);
-                    if (leanDeg === 0 && rollDeg === 0) return null;
+                    if (leanDeg === 0 && leanXDeg === 0 && rollDeg === 0) return null;
                     const parts = [
                       leanDeg !== 0 ? `${leanDeg}° lean` : null,
+                      leanXDeg !== 0 ? `${leanXDeg}° lean X` : null,
                       rollDeg !== 0 ? `${rollDeg}° roll` : null,
                     ].filter(Boolean);
                     return (
@@ -613,7 +617,7 @@ export function OrganicCutPanel({
                         <button
                           type="button"
                           className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
-                          onClick={() => setState({ tenonTiltRad: 0, tenonRollRad: 0 })}
+                          onClick={() => setState({ tenonTiltRad: 0, tenonTiltXRad: 0, tenonRollRad: 0 })}
                           disabled={disabled || isApplying}
                           title="Reset the key to point straight out of the cut (no lean / roll)."
                         >

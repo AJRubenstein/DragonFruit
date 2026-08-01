@@ -9837,16 +9837,18 @@ export default function Home() {
                   activeTransform={transformMgr.transform}
                   tenonFrame={organicCut.tenonFrame}
                   tenonTiltRad={organicCut.panelState.tenonTiltRad}
+                  tenonTiltXRad={organicCut.panelState.tenonTiltXRad}
                   tenonRollRad={organicCut.panelState.tenonRollRad}
                   tenonAnchor={organicCut.panelState.tenonAnchor}
                   membranePreview={organicCut.membranePreview}
                   onTenonAnchorChange={(anchor) =>
                     organicCut.setPanelState({ ...organicCut.panelState, tenonAnchor: anchor })
                   }
-                  onTenonAimChange={(tilt, roll) =>
+                  onTenonAimChange={(tiltY, tiltX, roll) =>
                     organicCut.setPanelState({
                       ...organicCut.panelState,
-                      tenonTiltRad: tilt,
+                      tenonTiltRad: tiltY,
+                      tenonTiltXRad: tiltX,
                       tenonRollRad: roll,
                     })
                   }
@@ -10015,6 +10017,7 @@ export default function Home() {
                 tenonFrame={organicCut.tenonFrame}
                 tenonAnchor={organicCut.panelState.tenonAnchor}
                 tenonTiltRad={organicCut.panelState.tenonTiltRad}
+                tenonTiltXRad={organicCut.panelState.tenonTiltXRad}
                 tenonRollRad={organicCut.panelState.tenonRollRad}
                 showPreview={organicCut.panelState.showPreview}
               />

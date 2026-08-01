@@ -20,7 +20,8 @@ import { TENON_MAX_TILT_RAD, type TenonPreviewFrame } from './types';
  */
 export function tenonLeanMatrix(
   frame: TenonPreviewFrame,
-  tiltRad: number,
+  tiltYRad: number,
+  tiltXRad: number,
   rollRad: number,
 ): THREE.Matrix4 | null {
   const anchor = new THREE.Vector3(...frame.anchor);
@@ -28,22 +29,29 @@ export function tenonLeanMatrix(
   const axisN = new THREE.Vector3(...frame.axis).normalize();
   const uN = new THREE.Vector3(...frame.u).normalize();
   // Build frame = frame_extruding_toward_part_b(natural): negate axis, swap u/v,
-  // so the build frame's +y — the hinge the lean turns about, giving a tip over a
-  // NARROW face — is the natural u.
+  // so the build frame's +y — the hinge the FIRST lean turns about, giving a tip
+  // over a NARROW face — is the natural u, and +x (the second lean's hinge) is the
+  // natural v. `buildX = buildV × buildAxis` recovers that +v in world terms.
   const buildAxis = axisN.clone().multiplyScalar(-1);
   const buildV = uN.clone();
+  const buildX = new THREE.Vector3().crossVectors(buildV, buildAxis).normalize();
 
-  const tilt = clampTenonTilt(tiltRad, frame);
+  const tiltY = clampTenonTilt(tiltYRad, frame);
+  const tiltX = clampTenonTilt(tiltXRad, frame);
   const roll = rollRad;
-  if (Math.abs(tilt) < 1e-6 && Math.abs(roll) < 1e-6) return null;
+  if (Math.abs(tiltY) < 1e-6 && Math.abs(tiltX) < 1e-6 && Math.abs(roll) < 1e-6) return null;
 
-  // Apply order (matches LeanXform::apply): lean about the body's own +y FIRST,
-  // then roll about +z — which is what welds the lean plane to the body, so the
-  // roll turns the two as one. There is no azimuth: it was a second number for a
-  // freedom the tenon does not have, and it drifted out of step with the roll.
+  // Apply order (matches LeanXform::apply): lean about the body's own +y, then
+  // about +x, then roll about +z — both leans in the tenon's own frame weld the
+  // lean planes to the body, so the roll turns the two as one. (The old azimuth
+  // failed because it was a second number for the same freedom as the roll; two
+  // independent leans cannot disagree.)
   const q = new THREE.Quaternion();
-  if (Math.abs(tilt) >= 1e-6) {
-    q.premultiply(new THREE.Quaternion().setFromAxisAngle(buildV, tilt));
+  if (Math.abs(tiltY) >= 1e-6) {
+    q.premultiply(new THREE.Quaternion().setFromAxisAngle(buildV, tiltY));
+  }
+  if (Math.abs(tiltX) >= 1e-6) {
+    q.premultiply(new THREE.Quaternion().setFromAxisAngle(buildX, tiltX));
   }
   if (Math.abs(roll) >= 1e-6) {
     q.premultiply(new THREE.Quaternion().setFromAxisAngle(buildAxis, roll));
