@@ -681,9 +681,11 @@ pub fn repair(mut mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
     // per-section tinting can still work.
     if report.model_triangle_count.is_none() {
         let t = std::time::Instant::now();
-        if let Some((model_tri_count, likely_support_geometry, _comp_count)) =
-            classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry)
-        {
+        let class_res = classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry);
+        if class_res.has_undrained_cavity {
+            report.has_undrained_cavity = Some(true);
+        }
+        if let Some((model_tri_count, likely_support_geometry)) = class_res.split {
             report.model_triangle_count = Some(model_tri_count);
             if !report.likely_support_geometry {
                 report.likely_support_geometry = likely_support_geometry;
@@ -874,9 +876,11 @@ pub fn classify_support_split(
     }
 
     let t = std::time::Instant::now();
-    let component_count = if let Some((model_tri_count, likely_support_geometry, cc)) =
-        classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry)
-    {
+    let class_res = classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry);
+    if class_res.has_undrained_cavity {
+        report.has_undrained_cavity = Some(true);
+    }
+    let component_count = if let Some((model_tri_count, likely_support_geometry)) = class_res.split {
         report.model_triangle_count = Some(model_tri_count);
         report.likely_support_geometry = likely_support_geometry;
         if options.assume_support_geometry == Some(true) {
@@ -891,7 +895,7 @@ pub fn classify_support_split(
             )),
             elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
         });
-        cc
+        class_res.component_count
     } else {
         report.steps.push(RepairStepReport {
             name: "classify_support_geometry_split".into(),
@@ -899,13 +903,7 @@ pub fn classify_support_split(
             notes: Some("classify-only split: no reliable model/support partition found".into()),
             elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
         });
-        // Fall back to computing components ourselves for the report.
-        triangle_components(&mesh)
-            .iter()
-            .copied()
-            .max()
-            .unwrap_or(0) as usize
-            + 1
+        class_res.component_count
     };
 
     // Patch the pre-analysis with the real component count and build the
@@ -2402,32 +2400,53 @@ fn cull_interior_components(mesh: &mut IndexedMesh) -> (usize, usize) {
     (removed_tris, removed_comps)
 }
 
+struct ClassificationResult {
+    split: Option<(usize, bool)>,
+    component_count: usize,
+    has_undrained_cavity: bool,
+}
+
 /// Conservative fallback classifier that partitions triangles into model and
 /// support sections by connected component height bands, then reorders the
 /// mesh triangles so model section comes first and support section follows.
 ///
-/// Returns `(model_triangle_count, likely_support_geometry, component_count)`
-/// on success.  The component count is the total number of connected components
-/// before reordering, which the caller can reuse to avoid a second union-find.
+/// Returns a ClassificationResult struct. The component count is the total number
+/// of connected components before reordering, which the caller can reuse.
 #[allow(unused_assignments)]
 fn classify_and_reorder_model_support_triangles(
     mesh: &mut IndexedMesh,
     assume_support_geometry: Option<bool>,
-) -> Option<(usize, bool, usize)> {
+) -> ClassificationResult {
     if assume_support_geometry == Some(true) {
-        return Some((0, true, 1));
+        return ClassificationResult {
+            split: Some((0, true)),
+            component_count: 1,
+            has_undrained_cavity: false,
+        };
     }
     if assume_support_geometry == Some(false) {
-        return Some((mesh.triangles.len(), false, 1));
+        return ClassificationResult {
+            split: Some((mesh.triangles.len(), false)),
+            component_count: 1,
+            has_undrained_cavity: false,
+        };
     }
     if mesh.triangles.len() < 8 || mesh.positions.is_empty() {
-        return None;
+        return ClassificationResult {
+            split: None,
+            component_count: 0,
+            has_undrained_cavity: false,
+        };
     }
 
     let components = triangle_components(mesh);
     let n_comps = components.iter().copied().max().unwrap_or(0) as usize + 1;
     if n_comps < 2 {
-        return None;
+        return ClassificationResult {
+            split: None,
+            component_count: n_comps,
+            has_undrained_cavity: false,
+        };
     }
 
     const BASE_TOUCH_EPS_MM: f32 = 0.25;
@@ -2442,6 +2461,7 @@ fn classify_and_reorder_model_support_triangles(
     let mut comp_max_z = vec![f32::NEG_INFINITY; n_comps];
     let mut comp_min_z = vec![f32::INFINITY; n_comps];
     let mut comp_tri_count = vec![0usize; n_comps];
+    let mut comp_vol = vec![0.0f64; n_comps];
     for (fi, tri) in mesh.triangles.iter().enumerate() {
         let cid = components[fi] as usize;
         comp_tri_count[cid] += 1;
@@ -2450,15 +2470,38 @@ fn classify_and_reorder_model_support_triangles(
         let z2 = mesh.positions[tri[2] as usize].z;
         comp_max_z[cid] = comp_max_z[cid].max(z0.max(z1).max(z2));
         comp_min_z[cid] = comp_min_z[cid].min(z0.min(z1).min(z2));
+
+        let a = mesh.positions[tri[0] as usize];
+        let b = mesh.positions[tri[1] as usize];
+        let c = mesh.positions[tri[2] as usize];
+        let v = (a.x as f64) * ((b.y as f64) * (c.z as f64) - (b.z as f64) * (c.y as f64))
+            - (a.y as f64) * ((b.x as f64) * (c.z as f64) - (b.z as f64) * (c.x as f64))
+            + (a.z as f64) * ((b.x as f64) * (c.y as f64) - (b.y as f64) * (c.x as f64));
+        comp_vol[cid] += v;
     }
 
-    let model_seed = (0..n_comps)
+    for cid in 0..n_comps {
+        comp_vol[cid] /= 6.0;
+    }
+    let has_undrained_cavity = (0..n_comps).any(|cid| comp_vol[cid] < -1e-2);
+
+    let model_seed = match (0..n_comps)
         .filter(|&cid| comp_tri_count[cid] >= 4 && comp_max_z[cid] > raft_z_cut)
         .max_by(|&a, &b| {
             comp_max_z[a]
                 .partial_cmp(&comp_max_z[b])
                 .unwrap_or(std::cmp::Ordering::Equal)
-        })?;
+        })
+    {
+        Some(seed) => seed,
+        None => {
+            return ClassificationResult {
+                split: None,
+                component_count: n_comps,
+                has_undrained_cavity,
+            };
+        }
+    };
 
     // Components with at least 1/8 of the seed's triangle count are "high-poly"
     // and treated as model shells even if they don't reach the top Z band.
@@ -2468,6 +2511,9 @@ fn classify_and_reorder_model_support_triangles(
     let model_min_tris = (comp_tri_count[model_seed] / 8).max(MODEL_MIN_TRIS_FLOOR);
 
     let classify_group = |cid: usize| {
+        if comp_vol[cid] < -1e-2 {
+            return GeometryGroup::Model;
+        }
         classify_model_support_group(
             cid,
             raft_z_cut,
@@ -2543,7 +2589,11 @@ fn classify_and_reorder_model_support_triangles(
         || support_base_touch_triangles < 500
         */
     {
-        return None;
+        return ClassificationResult {
+            split: None,
+            component_count: n_comps,
+            has_undrained_cavity,
+        };
     }
 
     let mut model_tris: Vec<[u32; 3]> = Vec::with_capacity(mesh.triangles.len());
@@ -2558,7 +2608,11 @@ fn classify_and_reorder_model_support_triangles(
     }
 
     if model_tris.is_empty() || support_tris.is_empty() {
-        return None;
+        return ClassificationResult {
+            split: None,
+            component_count: n_comps,
+            has_undrained_cavity,
+        };
     }
 
     let model_triangles_out = model_tris.len();
@@ -2577,7 +2631,11 @@ fn classify_and_reorder_model_support_triangles(
         support_input_triangles,
     );
 
-    Some((model_triangles_out, likely_support_geometry, n_comps))
+    ClassificationResult {
+        split: Some((model_triangles_out, likely_support_geometry)),
+        component_count: n_comps,
+        has_undrained_cavity,
+    }
 }
 
 /// Assign a component id to each triangle via union-find over shared edges;
@@ -3282,5 +3340,61 @@ mod section_decimation_tests {
         let out2 = decimate_sections_to_budget(mesh, 60, &budget);
         assert!(out2.model_triangle_count <= 60);
         assert!(out2.mesh.triangles.len() <= 100);
+    }
+}
+
+#[cfg(test)]
+mod classify_hollowing_tests {
+    use super::*;
+    use crate::core::mesh::Vec3;
+
+    fn make_cube(offset: Vec3, size: f32, flip: bool) -> (Vec<Vec3>, Vec<[u32; 3]>) {
+        let mut v = vec![
+            offset,
+            offset.add(Vec3::new(size, 0.0, 0.0)),
+            offset.add(Vec3::new(size, size, 0.0)),
+            offset.add(Vec3::new(0.0, size, 0.0)),
+            offset.add(Vec3::new(0.0, 0.0, size)),
+            offset.add(Vec3::new(size, 0.0, size)),
+            offset.add(Vec3::new(size, size, size)),
+            offset.add(Vec3::new(0.0, size, size)),
+        ];
+        
+        let mut t = vec![
+            [0, 2, 1], [0, 3, 2], // bottom
+            [4, 5, 6], [4, 6, 7], // top
+            [0, 1, 5], [0, 5, 4], // front
+            [1, 2, 6], [1, 6, 5], // right
+            [2, 3, 7], [2, 7, 6], // back
+            [3, 0, 4], [3, 4, 7], // left
+        ];
+        if flip {
+            for tri in &mut t {
+                tri.swap(1, 2);
+            }
+        }
+        (v, t)
+    }
+
+    #[test]
+    fn test_classify_hollowing_shell_as_model() {
+        let (mut v1, mut t1) = make_cube(Vec3::new(0.0, 0.0, 0.0), 10.0, false); // outer, normal winding
+        let (v2, t2) = make_cube(Vec3::new(2.0, 2.0, 2.0), 6.0, true); // inner, flipped winding (cavity)
+        
+        let base_idx = v1.len() as u32;
+        v1.extend(v2);
+        for tri in t2 {
+            t1.push([tri[0] + base_idx, tri[1] + base_idx, tri[2] + base_idx]);
+        }
+        
+        let mut mesh = IndexedMesh {
+            positions: v1,
+            triangles: t1,
+        };
+        
+        let outcome = classify_and_reorder_model_support_triangles(&mut mesh, None);
+        assert_eq!(outcome.split, None);
+        assert_eq!(outcome.component_count, 2);
+        assert_eq!(outcome.has_undrained_cavity, true);
     }
 }

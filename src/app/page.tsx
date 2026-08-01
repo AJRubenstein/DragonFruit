@@ -329,6 +329,7 @@ import { SceneAutosaveRecoveryModal } from '@/components/scene/SceneAutosaveReco
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { ManifoldWarningModal } from '@/components/modals/ManifoldWarningModal';
+import { UndrainedWarningModal } from '@/components/modals/UndrainedWarningModal';
 
 import { IslandScanWorkflowCard } from '@/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard';
 import { IslandVolumesHierarchyCard } from '@/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard';
@@ -551,6 +552,18 @@ export default function Home() {
     if (!hasUnwarned) return;
     for (const model of flagged) warnedManifoldModelIdsRef.current.add(model.id);
     setShowManifoldWarning(true);
+  }, [scene.models]);
+
+  const warnedUndrainedModelIdsRef = React.useRef<Set<string>>(new Set());
+  const [showUndrainedWarning, setShowUndrainedWarning] = React.useState(false);
+  React.useEffect(() => {
+    const flagged = scene.models.filter(
+      (model) => model.geometry?.meshDefects?.nativeRepairReport?.has_undrained_cavity === true,
+    );
+    const hasUnwarned = flagged.some((model) => !warnedUndrainedModelIdsRef.current.has(model.id));
+    if (!hasUnwarned) return;
+    for (const model of flagged) warnedUndrainedModelIdsRef.current.add(model.id);
+    setShowUndrainedWarning(true);
   }, [scene.models]);
   const importSceneFile = scene.importSceneFile;
   const importSceneFiles = scene.importSceneFiles;
@@ -10067,6 +10080,11 @@ export default function Home() {
       <ManifoldWarningModal
         isOpen={showManifoldWarning}
         onAcknowledge={() => setShowManifoldWarning(false)}
+      />
+
+      <UndrainedWarningModal
+        isOpen={showUndrainedWarning}
+        onAcknowledge={() => setShowUndrainedWarning(false)}
       />
 
       <MeshRepairModals
