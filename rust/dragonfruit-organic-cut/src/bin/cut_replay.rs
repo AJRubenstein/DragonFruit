@@ -17,6 +17,32 @@ use dragonfruit_organic_cut::{organic_cut, OrganicCutOptions};
 /// replayed mesh is welded differently from the one the cut ran on.
 const MERGE_EPSILON: f32 = 1e-5;
 
+/// The triangle count of each connected shell of `mesh`, joined through shared
+/// vertices.
+fn shell_sizes(mesh: &IndexedMesh) -> Vec<usize> {
+    let mut parent: Vec<u32> = (0..mesh.positions.len() as u32).collect();
+    fn find(parent: &mut Vec<u32>, mut v: u32) -> u32 {
+        while parent[v as usize] != v {
+            parent[v as usize] = parent[parent[v as usize] as usize];
+            v = parent[v as usize];
+        }
+        v
+    }
+    for t in &mesh.triangles {
+        for k in 1..3 {
+            let (a, b) = (find(&mut parent, t[0]), find(&mut parent, t[k]));
+            if a != b {
+                parent[a as usize] = b;
+            }
+        }
+    }
+    let mut count: std::collections::HashMap<u32, usize> = Default::default();
+    for t in &mesh.triangles {
+        *count.entry(find(&mut parent, t[0])).or_default() += 1;
+    }
+    count.into_values().collect()
+}
+
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (mesh_path, options_path, out_prefix) = match args.as_slice() {
@@ -57,6 +83,21 @@ fn main() -> Result<(), String> {
     // The trace inside `contour_split` is what we came for.
     std::env::set_var("DF_CUT_DEBUG", "1");
     let outcome = organic_cut(mesh, &options);
+
+    // What each part is actually MADE of. A part that comes back as several
+    // disconnected shells is the loose islands the user sees floating beside the
+    // model, and they are invisible in a triangle count.
+    for (i, part) in outcome.parts.iter().enumerate() {
+        let mut shells = shell_sizes(part);
+        shells.sort_unstable_by(|a, b| b.cmp(a));
+        let small: Vec<usize> = shells.iter().skip(1).copied().collect();
+        eprintln!(
+            "[cut] part {i}: {} tris in {} shell(s){}",
+            part.triangle_count(),
+            shells.len(),
+            if small.is_empty() { String::new() } else { format!(", the loose ones {small:?}") },
+        );
+    }
 
     // Each resulting part as raw LE f32 soup, the same format the dump uses, so the
     // pieces can be rendered or diffed outside the app.
