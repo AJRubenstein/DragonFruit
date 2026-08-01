@@ -256,6 +256,13 @@ export interface UseOrganicCutSessionArgs {
    */
   isDraggingPoint?: boolean;
   /**
+   * True while the drag above is the TENON's own — its base handle or one of its
+   * rings — rather than a seam waypoint. The tenon is drawn and moved locally for
+   * the whole gesture and Rust is asked once, on release; only a waypoint drag
+   * takes the cut face out from under it and makes the drawn tenon a lie.
+   */
+  isDraggingTenon?: boolean;
+  /**
    * Commit the split parts to the scene: replace the active model's geometry with
    * `parts[0]` and add `parts[1..]` as new independent models. A multi-loop cut may
    * pass more than two parts (one per freed piece). Supplied by the host (page.tsx)
@@ -464,6 +471,7 @@ export function useOrganicCutSession({
   activeGeometry,
   activeGeometryKey,
   isDraggingPoint = false,
+  isDraggingTenon = false,
   commitParts,
 }: UseOrganicCutSessionArgs): OrganicCutSession {
   const [panelState, setPanelState] = React.useState<OrganicCutPanelState>(DEFAULT_PANEL_STATE);
@@ -673,10 +681,14 @@ export function useOrganicCutSession({
       flushEditRun();
       dragBaselineRef.current = { loops: loopsRef.current, active: activeLoopIndexRef.current };
       // The preview is too heavy to rebuild on every pointer move, so the last one
-      // stays up for the drag. The TENON cannot: it is drawn where the cut face
-      // used to be, and as the seam moves out from under it, it is left standing in
-      // mid-air. Better nothing than a tenon pointing at a place that has moved.
-      setTenonPreview(null);
+      // stays up for the drag. A WAYPOINT drag moves the seam, and the cut face
+      // goes out from under the tenon: it would be left standing in mid-air, so it
+      // goes. Dragging the TENON does not move the face — the anchor and the lean
+      // are carried on the built soup, client-side — so it stays on screen for the
+      // whole gesture and Rust is asked once, when the handle is let go. It used to
+      // be dropped for both, which is why the tenon vanished the moment you took
+      // hold of it.
+      if (!isDraggingTenon) setTenonPreview(null);
       return;
     }
     if (!wasDragging || isDraggingPoint) return;
@@ -703,7 +715,7 @@ export function useOrganicCutSession({
         afterSettings: settingsRef.current,
       },
     });
-  }, [isDraggingPoint, flushEditRun]);
+  }, [isDraggingPoint, isDraggingTenon, flushEditRun]);
 
   /**
    * The ONE path every user edit to the loops takes: apply it and record it on the

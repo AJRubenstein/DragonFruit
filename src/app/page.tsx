@@ -9149,15 +9149,25 @@ export default function Home() {
   // duplicate the just-moved waypoint. We swallow any organic-cut click that
   // lands within a short window after a drag ends.
   const organicCutLastDragEndRef = React.useRef(0);
-  const handleOrganicCutDragStateChange = React.useCallback((dragging: boolean) => {
-    if (!dragging) organicCutLastDragEndRef.current = Date.now();
-    setOrganicCutDragging(dragging);
-  }, []);
+  // WHICH of the two the pointer has hold of. Dragging a waypoint moves the seam,
+  // and the cut face travels out from under the tenon; dragging the tenon itself
+  // does not move the face at all. They are both "a cut drag" for OrbitControls
+  // and for undo coalescing, and they are not the same thing at all for the tenon.
+  const [organicCutDraggingTenon, setOrganicCutDraggingTenon] = React.useState(false);
+  const handleOrganicCutDragStateChange = React.useCallback(
+    (dragging: boolean, what: 'seam' | 'tenon' = 'seam') => {
+      if (!dragging) organicCutLastDragEndRef.current = Date.now();
+      setOrganicCutDraggingTenon(dragging && what === 'tenon');
+      setOrganicCutDragging(dragging);
+    },
+    [],
+  );
   const organicCut = useOrganicCutSession({
     toolActive: organicCutToolActive,
     activeGeometry: scene.activeModel?.geometry.geometry ?? null,
     activeGeometryKey: scene.activeModel?.id ?? null,
     isDraggingPoint: organicCutDragging,
+    isDraggingTenon: organicCutDraggingTenon,
     commitParts: React.useCallback((parts: THREE.BufferGeometry[]) => {
       const target = scene.activeModel;
       if (!target) {
@@ -9710,7 +9720,9 @@ export default function Home() {
                       tenonRollRad: roll,
                     })
                   }
-                  onDragStateChange={handleOrganicCutDragStateChange}
+                  onDragStateChange={(dragging) =>
+                    handleOrganicCutDragStateChange(dragging, 'tenon')
+                  }
                 />
               ) : undefined
             }
