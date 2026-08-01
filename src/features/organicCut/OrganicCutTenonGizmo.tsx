@@ -481,6 +481,12 @@ export function OrganicCutTenonGizmo({
       enableRotate
       showCenter={false}
       showMovePlanes={false}
+      // Fixed-relative, same as the hole-punch gizmo: rings stay in the tenon's
+      // frame (no camera billboarding) and never fade with the view, so the
+      // lean/roll handles don't chase the camera or vanish at oblique angles.
+      disableArrowFlip
+      disableRingBillboard
+      disableViewCull
       rotateAxes={LEAN_AND_ROLL_RINGS}
       // The roll turns the gizmo's own frame (the basis above is rolled with the
       // tenon), so the blue ring already carries the whole movement. A handle that
