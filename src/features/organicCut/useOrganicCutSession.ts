@@ -438,6 +438,9 @@ const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
   // (drag the tip) leans it, the roll ring spins it. All measured in radians.
   tenonTiltRad: 0,
   tenonRollRad: 0,
+  // Cut-plan preview on by default — the user sees where the cut lands; the eye
+  // button in the panel header hides it for an unobscured view while drawing.
+  showPreview: true,
 };
 
 /** Minimum points before a CONTOUR cut is possible (a real loop needs ≥3). */

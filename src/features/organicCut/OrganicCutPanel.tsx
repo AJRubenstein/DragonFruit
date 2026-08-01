@@ -1,5 +1,5 @@
 import React from 'react';
-import { CircleHelp, Loader2, RotateCcw, Trash2, TriangleAlert } from 'lucide-react';
+import { CircleHelp, Eye, EyeOff, Loader2, RotateCcw, Trash2, TriangleAlert } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { CompactNumberField } from '@/components/ui/compactNumberField';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -115,6 +115,12 @@ export interface OrganicCutPanelState {
   tenonTiltRad: number;
   /** Tenon roll (radians): spin about the tenon's own axis. Driven by the roll gizmo. */
   tenonRollRad: number;
+  /**
+   * Render the translucent cut-plan preview (plane quad / contour membrane +
+   * registration tenon) in the 3D view. When off, only the seam line + loop markers
+   * draw, so the model is unobscured. On by default.
+   */
+  showPreview: boolean;
 }
 
 /**
@@ -395,12 +401,28 @@ export function OrganicCutPanel({
           // are spread over several cards; the drawn loops and the tenon are left
           // alone (the tenon card has its own reset, and losing a seam to a stray
           // click on a reset button would be a cruel way to find this button).
-          <AnimatedResetButton
-            onClick={() => setState({ ...DEFAULT_CUT_SETTINGS })}
-            disabled={disabled || isApplying || !cutSettingsDirty}
-            title="Put the cut settings back to their defaults: cut mode, thickness, both smoothings and resolution. Your drawn loops and key settings are untouched."
-            ariaLabel="Reset cut settings to defaults"
-          />
+          <div className="flex items-center gap-1">
+            <IconButton
+              type="button"
+              className="!p-0.5 transition-colors disabled:opacity-40"
+              onClick={() => setState({ showPreview: !state.showPreview })}
+              disabled={disabled || isApplying}
+              title={state.showPreview ? 'Hide the cut preview' : 'Show the cut preview'}
+              aria-label="Toggle cut preview"
+            >
+              {state.showPreview ? (
+                <Eye className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              ) : (
+                <EyeOff className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
+              )}
+            </IconButton>
+            <AnimatedResetButton
+              onClick={() => setState({ ...DEFAULT_CUT_SETTINGS })}
+              disabled={disabled || isApplying || !cutSettingsDirty}
+              title="Put the cut settings back to their defaults: cut mode, thickness, both smoothings and resolution. Your drawn loops and key settings are untouched."
+              ariaLabel="Reset cut settings to defaults"
+            />
+          </div>
         ) : null}
       />
 
