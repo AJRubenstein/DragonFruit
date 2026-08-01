@@ -440,17 +440,14 @@ export function GizmoRotation({
       }
 
       const delta = shortestAngleDelta(prevTargetRef.current, resolved.angleRad);
-
-      if (sweepGroupRef.current) sweepGroupRef.current.rotation.z = resolved.angleRad;
       prevTargetRef.current = resolved.angleRad;
 
       if (delta !== 0) {
         // What comes back is how much the object actually took. A rotation with a
         // hard end (the tenon's lean stops where the geometry stops) returns less
-        // than it was asked for, and the sweep has to stop with it — the dial's own
-        // radius keeps following the pointer above, so easing back off the end
-        // picks up again straight away, but the reading and the handle must never
-        // claim an angle the object never reached.
+        // than it was asked for, and the sweep has to stop with it — so the dial's
+        // radius and the handle both stop at the limit instead of running on under
+        // the pointer; easing back off the end picks up again straight away.
         const asked = emittedDeltaForSweep(delta, axisVisualFlip);
         const answer = onDragRef.current(asked);
         const applied = typeof answer === 'number' ? answer : asked;
@@ -458,14 +455,27 @@ export function GizmoRotation({
         const appliedSweep =
           axisVisualFlip === 0 || applied === asked ? delta : -applied / axisVisualFlip;
         sweepAccumRef.current += appliedSweep;
-        // The handle rides the sweep so it stays under the pointer, on the mark
-        // when the magnet has it — unless the parent is turning the whole gizmo by
-        // this rotation, in which case the ring already carries it and advancing
-        // here too would send the handle round at twice the pointer's speed.
+        // The handle rides the sweep so it stays on the mark when the magnet has
+        // it — unless the parent is turning the whole gizmo by this rotation, in
+        // which case the ring already carries it and advancing here too would send
+        // the handle round at twice the pointer's speed.
         if (!frameCarriesRotation) {
           handleAngleRef.current = dialZeroRef.current + sweepAccumRef.current;
           targetHandleAngleRef.current = handleAngleRef.current;
         }
+      }
+
+      // The dial's radius shows the APPLIED rotation: at a hard end (the tenon's
+      // lean clamps) it stops with the handle rather than running on under the
+      // pointer. When the parent turns the whole gizmo by this rotation, the ring
+      // already carries it, so the radius rides the raw pointer angle instead.
+      // The sweep group sits in the dial's frame (already rotated by dialZero), so
+      // feed it the sweep RELATIVE to the grab — handleAngle − dialZero — not the
+      // absolute handle angle.
+      if (sweepGroupRef.current) {
+        sweepGroupRef.current.rotation.z = frameCarriesRotation
+          ? resolved.angleRad
+          : handleAngleRef.current - dialZeroRef.current;
       }
 
       // Readout shows the sweep since the grab, which is what the dial measures.
@@ -494,7 +504,7 @@ export function GizmoRotation({
       window.removeEventListener('pointermove', handleGlobalPointerMove);
       window.removeEventListener('pointerup', handleGlobalPointerUp);
     };
-  }, [isDragging, camera, gl, axis, axisVisualFlip]);
+  }, [isDragging, camera, gl, axis, axisVisualFlip, frameCarriesRotation]);
 
   // Use GPU picking hover state OR prop-based hover (fallback)
   const effectiveHovered = !suppressHover && (isPickingHovered || isHovered);

@@ -232,13 +232,11 @@ export function OrganicCutTenonGizmo({
         return tenonTiltRad - tilt;
       }
       // axis === 'x': the second lean, about the tenon's own v — the perpendicular
-      // plane, tipping over the OTHER face. The gizmo's X axis is −vR (the basis
-      // above), the OPPOSITE sign to Y's +uR — so the ring's drag direction is
-      // flipped relative to Y, and the lean takes the delta UNFLIPPED (where the Y
-      // lean flips it). Same clamp/ceiling behaviour.
-      const tiltX = clampTenonTilt(tenonTiltXRad + delta, tenonFrame);
+      // plane, tipping over the OTHER face. Mirrors the Y ring exactly (the −v
+      // axis is already baked into `buildX`/Rust, so the ring needs the same flip).
+      const tiltX = clampTenonTilt(tenonTiltXRad - delta, tenonFrame);
       onTenonAimChange(tenonTiltRad, tiltX, tenonRollRad);
-      return tiltX - tenonTiltXRad;
+      return tenonTiltXRad - tiltX;
     },
     [onTenonAimChange, tenonTiltRad, tenonTiltXRad, tenonRollRad, tenonFrame],
   );

@@ -1109,7 +1109,7 @@ export function useOrganicCutSession({
     // no membrane of its own (the seam is drawn locally), so it only has something
     // to ask for when a tenon is wanted.
     const request = ((): (() => Promise<MembranePreviewResult>) | null => {
-      if (!toolActive || isDraggingPoint || !activeGeometry || !activeGeometryKey) return null;
+      if (!toolActive || isDraggingPoint || isDraggingTenon || !activeGeometry || !activeGeometryKey) return null;
       const ps = panelState;
       if (cutMode === 'contour') {
         if (loop.length < MIN_CONTOUR_POINTS) return null;
@@ -1157,8 +1157,9 @@ export function useOrganicCutSession({
 
     if (!request) {
       // Don't clear just because a drag started — keep the last preview up for the
-      // duration of the drag; only clear when there is truly nothing to show.
-      if (!isDraggingPoint) clearCutPreview();
+      // duration of the drag (the lean is client-side, so no rebuild is needed until
+      // the tenon/waypoint drag ends); only clear when there is truly nothing to show.
+      if (!isDraggingPoint && !isDraggingTenon) clearCutPreview();
       return;
     }
     // Both mode branches above already required these; naming them keeps the async
@@ -1232,6 +1233,7 @@ export function useOrganicCutSession({
     cutMode,
     geodesicPolyline,
     isDraggingPoint,
+    isDraggingTenon,
     clearCutPreview,
     panelState.membraneSmoothing,
     panelState.density,

@@ -558,11 +558,13 @@ impl LeanXform {
         // 2) Lean about local +x: (y, z) turn — the perpendicular plane, tipping the
         // tenon over the OTHER face. Applied in the same local frame as the +y lean
         // (both before the roll), so the roll still spins the whole leaned body.
+        // Signed for −build_x, to match the gizmo's X ring (which sits on −vR) and
+        // the frontend's `buildX = buildAxis × buildV`.
         let (mut py, mut pz2) = (y, pz);
         if self.tilt_x.abs() >= 1e-9 {
             let (s, c) = self.tilt_x.sin_cos();
-            let ry = py * c - pz2 * s;
-            let rz = py * s + pz2 * c;
+            let ry = py * c + pz2 * s;
+            let rz = -py * s + pz2 * c;
             py = ry;
             pz2 = rz;
         }
@@ -2723,6 +2725,9 @@ mod tests {
             (ty.abs() - tz.abs()).abs() < 0.05,
             "at 45° X-lean the tip leans one to one: lateral {ty} mm vs height {tz} mm",
         );
+        // Signed: a positive X-lean tips toward +y (natural u), matching the gizmo's
+        // −v ring — the direction the handle drag implies.
+        assert!(ty > 0.0, "positive X-lean must tip the tip toward +y, got {ty}");
     }
 
     // Both leans together tip the tenon DIAGONALLY: two orthogonal rotations compose,
