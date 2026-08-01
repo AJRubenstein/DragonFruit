@@ -3208,14 +3208,21 @@ export function useSceneCollectionManager() {
       const modelPositions = modelGeom.getAttribute('position').array;
       const supportPositions = supportGeom.getAttribute('position').array;
 
+      const modelCenter = modelModel.geometry.center;
+      const supportCenter = supportModel.geometry.center;
+
       const tempV = new THREE.Vector3();
       const mappedSupportPositions = new Float32Array(supportPositions.length);
       for (let i = 0; i < supportPositions.length; i += 3) {
-        tempV.set(supportPositions[i], supportPositions[i + 1], supportPositions[i + 2]);
+        tempV.set(
+          supportPositions[i] - supportCenter.x,
+          supportPositions[i + 1] - supportCenter.y,
+          supportPositions[i + 2] - supportCenter.z,
+        );
         tempV.applyMatrix4(supportToModelMatrix);
-        mappedSupportPositions[i] = tempV.x;
-        mappedSupportPositions[i + 1] = tempV.y;
-        mappedSupportPositions[i + 2] = tempV.z;
+        mappedSupportPositions[i] = tempV.x + modelCenter.x;
+        mappedSupportPositions[i + 1] = tempV.y + modelCenter.y;
+        mappedSupportPositions[i + 2] = tempV.z + modelCenter.z;
       }
 
       const combinedPositions = new Float32Array(modelPositions.length + mappedSupportPositions.length);
@@ -3317,7 +3324,12 @@ export function useSceneCollectionManager() {
         sourcePath: null,
         geometry: mergedGeometry,
         transform: {
-          position: modelModel.transform.position.clone(),
+          position: (() => {
+            const rotation = new THREE.Quaternion().setFromEuler(modelModel.transform.rotation);
+            const positionOffset = center.clone().sub(modelCenter);
+            positionOffset.multiply(modelModel.transform.scale).applyQuaternion(rotation);
+            return modelModel.transform.position.clone().add(positionOffset);
+          })(),
           rotation: modelModel.transform.rotation.clone(),
           scale: modelModel.transform.scale.clone(),
         },
