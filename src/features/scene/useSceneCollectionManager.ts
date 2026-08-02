@@ -4924,6 +4924,16 @@ export function useSceneCollectionManager() {
     return true;
   }, [importSceneFile, loadFiles, recentOpenedFiles]);
 
+  // Clears the recent-files list: localStorage entries + cached blobs in IndexedDB.
+  const clearRecentOpenedFiles = useCallback(() => {
+    const ids = recentOpenedFiles.map((entry) => entry.id);
+    setRecentOpenedFiles([]);
+    writeRecentOpenedFilesToLocalStorage([]);
+    if (ids.length > 0) {
+      void deleteRecentOpenedFileBlobs(ids);
+    }
+  }, [recentOpenedFiles]);
+
   // Legacy support JSON loader wrapper
   const handleLoadSupportJson = async () => {
     try {
@@ -5229,6 +5239,7 @@ export function useSceneCollectionManager() {
     repairModelInPlace,
     recentOpenedFiles,
     reopenRecentOpenedFile,
+    clearRecentOpenedFiles,
     view3dSettings,
     setView3dSettings,
 
