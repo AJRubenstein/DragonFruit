@@ -432,8 +432,16 @@ export function EmptySceneState({
             {_(msg({ message: 'BETA VERSION', comment: 'Badge shown in the top of the empty workspace when the app is a beta build. Uppercase label.' }))}
           </div>
         ) : (
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
-            {_(msg`Empty workspace`)}
+          <div
+            className="mb-2 inline-flex rounded-full border px-3.5 py-1 text-[13px] font-bold"
+            style={{
+              color: 'var(--accent)',
+              borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 40%)',
+              background: 'color-mix(in srgb, var(--accent), transparent 94%)',
+              boxShadow: '0 0 6px color-mix(in srgb, var(--accent), transparent 84%)',
+            }}
+          >
+            Version {APP_VERSION}
           </div>
         )}
         <h1 className="ui-empty-title" suppressHydrationWarning>{_(taglineDescriptor)}</h1>
