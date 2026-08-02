@@ -4,13 +4,17 @@ import React from 'react';
 import { FolderInput, Loader2, Upload, Printer, Wrench } from 'lucide-react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import { Trans } from '@lingui/react/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import type { RecentOpenedFileEntry } from '@/features/scene/useSceneCollectionManager';
 
 const BUILD_CHANNEL = (process.env.NEXT_PUBLIC_BUILD_CHANNEL ?? '').toLowerCase();
 const APP_VERSION = (process.env.NEXT_PUBLIC_APP_VERSION ?? '').toLowerCase();
+const GIT_COMMIT = process.env.NEXT_PUBLIC_GIT_COMMIT ?? '';
+const GIT_REF = process.env.NEXT_PUBLIC_GIT_REF ?? '';
 const IS_BETA_BUILD = BUILD_CHANNEL.includes('beta') || APP_VERSION.includes('beta');
+const BUILD_LABEL = GIT_COMMIT
+  ? `${GIT_REF ? `${GIT_REF} @ ` : ''}${GIT_COMMIT.slice(0, 7)}`
+  : '';
 
 type EmptySceneStateProps = {
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -414,36 +418,24 @@ export function EmptySceneState({
   return (
     <div className="absolute inset-0 top-[var(--topbar-height)] z-30 flex items-center justify-center pointer-events-none">
       <div className="ui-empty-state pointer-events-auto">
-        {IS_BETA_BUILD ? (
-          <div
-            className="mb-2 inline-flex rounded-full border-2 px-3.5 py-1 text-[13px] font-black uppercase tracking-[0.2em]"
-            style={{
-              color: isLightTheme ? '#9a3412' : '#fdba74',
-              borderColor: 'color-mix(in srgb, #f97316, var(--border-subtle) 22%)',
-              background: isLightTheme
-                ? 'color-mix(in srgb, #f97316, var(--surface-1) 88%)'
-                : 'color-mix(in srgb, #f97316, transparent 96%)',
-              textShadow: isLightTheme ? 'none' : '0 0 4px color-mix(in srgb, #fb923c, transparent 66%)',
-              boxShadow: isLightTheme
-                ? 'none'
-                : '0 0 0 1px color-mix(in srgb, #f97316, transparent 62%), 0 0 10px color-mix(in srgb, #fb923c, transparent 74%)',
-            }}
-          >
-            {_(msg({ message: 'BETA VERSION', comment: 'Badge shown in the top of the empty workspace when the app is a beta build. Uppercase label.' }))}
-          </div>
-        ) : (
-          <div
-            className="mb-2 inline-flex rounded-full border px-3.5 py-1 text-[13px] font-bold"
-            style={{
-              color: 'var(--accent)',
-              borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 40%)',
-              background: 'color-mix(in srgb, var(--accent), transparent 94%)',
-              boxShadow: '0 0 6px color-mix(in srgb, var(--accent), transparent 84%)',
-            }}
-          >
-            Version {APP_VERSION}
-          </div>
-        )}
+        <div
+          className="mb-2 inline-flex rounded-full border px-3.5 py-1 text-[13px] font-bold"
+          style={IS_BETA_BUILD ? {
+            color: isLightTheme ? '#9a3412' : '#fdba74',
+            borderColor: 'color-mix(in srgb, #f97316, var(--border-subtle) 40%)',
+            background: isLightTheme
+              ? 'color-mix(in srgb, #f97316, var(--surface-1) 90%)'
+              : 'color-mix(in srgb, #f97316, transparent 94%)',
+            boxShadow: isLightTheme ? 'none' : '0 0 6px color-mix(in srgb, #f97316, transparent 84%)',
+          } : {
+            color: 'var(--accent)',
+            borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 40%)',
+            background: 'color-mix(in srgb, var(--accent), transparent 94%)',
+            boxShadow: '0 0 6px color-mix(in srgb, var(--accent), transparent 84%)',
+          }}
+        >
+          Version {APP_VERSION}{IS_BETA_BUILD && BUILD_LABEL ? ` — ${BUILD_LABEL}` : ''}
+        </div>
         <h1 className="ui-empty-title" suppressHydrationWarning>{_(taglineDescriptor)}</h1>
         <p className="ui-empty-text" style={{ maxWidth: 560, marginLeft: 'auto', marginRight: 'auto' }}>
           {_(msg`Bring in a mesh or scene to start preparing, analyzing, supporting, and exporting your print.`)}
