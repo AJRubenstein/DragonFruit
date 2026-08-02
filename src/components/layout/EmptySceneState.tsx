@@ -6,14 +6,16 @@ import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import type { RecentOpenedFileEntry } from '@/features/scene/useSceneCollectionManager';
+import { Tooltip } from '@/components/ui/Tooltip';
 
 const BUILD_CHANNEL = (process.env.NEXT_PUBLIC_BUILD_CHANNEL ?? '').toLowerCase();
 const APP_VERSION = (process.env.NEXT_PUBLIC_APP_VERSION ?? '').toLowerCase();
 const GIT_COMMIT = process.env.NEXT_PUBLIC_GIT_COMMIT ?? '';
 const GIT_REF = process.env.NEXT_PUBLIC_GIT_REF ?? '';
 const IS_BETA_BUILD = BUILD_CHANNEL.includes('beta') || APP_VERSION.includes('beta');
-const BUILD_LABEL = GIT_COMMIT
-  ? `${GIT_REF ? `${GIT_REF} @ ` : ''}${GIT_COMMIT.slice(0, 7)}`
+// Full build identity (branch @ full commit) — shown in the hover tooltip and copied on click.
+const FULL_BUILD_LABEL = GIT_COMMIT
+  ? `${GIT_REF ? `${GIT_REF} @ ` : ''}${GIT_COMMIT}`
   : '';
 
 type EmptySceneStateProps = {
@@ -213,6 +215,16 @@ export function EmptySceneState({
 }: EmptySceneStateProps) {
   const { _ } = useLingui();
   const [taglineDescriptor] = React.useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
+  const [copied, setCopied] = React.useState(false);
+  const handleCopyBuildInfo = React.useCallback(async () => {
+    // Full build identity in one string — what a bug report needs.
+    const buildInfo = `DragonFruit ${APP_VERSION} (${BUILD_CHANNEL})${FULL_BUILD_LABEL ? ` — ${FULL_BUILD_LABEL}` : ''}`;
+    try {
+      await navigator.clipboard.writeText(buildInfo);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
+  }, []);
   const [isDropActive, setIsDropActive] = React.useState(false);
   const [isDropUnsupported, setIsDropUnsupported] = React.useState(false);
   const [reopeningEntryId, setReopeningEntryId] = React.useState<string | null>(null);
@@ -418,24 +430,41 @@ export function EmptySceneState({
   return (
     <div className="absolute inset-0 top-[var(--topbar-height)] z-30 flex items-center justify-center pointer-events-none">
       <div className="ui-empty-state pointer-events-auto">
-        <div
-          className="mb-2 inline-flex rounded-full border px-3.5 py-1 text-[13px] font-bold"
-          style={IS_BETA_BUILD ? {
-            color: isLightTheme ? '#9a3412' : '#fdba74',
-            borderColor: 'color-mix(in srgb, #f97316, var(--border-subtle) 40%)',
-            background: isLightTheme
-              ? 'color-mix(in srgb, #f97316, var(--surface-1) 90%)'
-              : 'color-mix(in srgb, #f97316, transparent 94%)',
-            boxShadow: isLightTheme ? 'none' : '0 0 6px color-mix(in srgb, #f97316, transparent 84%)',
-          } : {
-            color: 'var(--accent)',
-            borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 40%)',
-            background: 'color-mix(in srgb, var(--accent), transparent 94%)',
-            boxShadow: '0 0 6px color-mix(in srgb, var(--accent), transparent 84%)',
-          }}
+        <Tooltip
+          content={
+            <span className="whitespace-pre-line">
+              {_(msg`Click to copy build info`)}{FULL_BUILD_LABEL ? `\n${FULL_BUILD_LABEL}` : ''}
+            </span>
+          }
         >
-          Version {APP_VERSION}{IS_BETA_BUILD && BUILD_LABEL ? ` — ${BUILD_LABEL}` : ''}
-        </div>
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={handleCopyBuildInfo}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCopyBuildInfo(); } }}
+            className="mb-2 inline-flex cursor-pointer items-center rounded-full border px-3.5 py-1 text-[13px] font-bold tabular-nums transition-colors"
+            style={copied ? {
+              color: '#2d8a4e',
+              borderColor: '#2d8a4e',
+              background: 'rgba(45,138,78,0.12)',
+              boxShadow: '0 0 6px rgba(45,138,78,0.3)',
+            } : IS_BETA_BUILD ? {
+              color: isLightTheme ? '#9a3412' : '#fdba74',
+              borderColor: 'color-mix(in srgb, #f97316, var(--border-subtle) 40%)',
+              background: isLightTheme
+                ? 'color-mix(in srgb, #f97316, var(--surface-1) 90%)'
+                : 'color-mix(in srgb, #f97316, transparent 94%)',
+              boxShadow: isLightTheme ? 'none' : '0 0 6px color-mix(in srgb, #f97316, transparent 84%)',
+            } : {
+              color: 'var(--accent)',
+              borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 40%)',
+              background: 'color-mix(in srgb, var(--accent), transparent 94%)',
+              boxShadow: '0 0 6px color-mix(in srgb, var(--accent), transparent 84%)',
+            }}
+          >
+            {copied ? '✓ Copied!' : `Version ${APP_VERSION}${IS_BETA_BUILD ? ' — Beta' : ''}`}
+          </span>
+        </Tooltip>
         <h1 className="ui-empty-title" suppressHydrationWarning>{_(taglineDescriptor)}</h1>
         <p className="ui-empty-text" style={{ maxWidth: 560, marginLeft: 'auto', marginRight: 'auto' }}>
           {_(msg`Bring in a mesh or scene to start preparing, analyzing, supporting, and exporting your print.`)}
