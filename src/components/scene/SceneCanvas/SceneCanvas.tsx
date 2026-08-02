@@ -1579,12 +1579,13 @@ export function SceneCanvas({
         r: root.diameter / 2,
       }));
 
-      const chamferInset = raftSettingsForBounds.bottomMode === 'line'
-        ? Math.max(0, raftSettingsForBounds.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsForBounds.chamferAngle))))
-        : 0;
+      const thickness = raftSettingsForBounds.bottomMode === 'line' ? raftSettingsForBounds.lineHeightMm : raftSettingsForBounds.thickness;
+      const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsForBounds.chamferAngle))));
+      const wallInset = raftSettingsForBounds.wallEnabled ? Math.max(0, raftSettingsForBounds.wallThickness) : 0;
+      const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
       const baseProfile = computeFootprint(circles, {
-        marginMm: 0.2 + chamferInset,
+        marginMm: dynamicMargin,
         samplesPerCircle: 24,
       });
 

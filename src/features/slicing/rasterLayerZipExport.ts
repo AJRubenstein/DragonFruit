@@ -1143,11 +1143,13 @@ function buildSupportAndRaftWorldTriangles(
     for (const circles of rootsByModel.values()) {
       if (circles.length === 0) continue;
       const clampedChamfer = Math.min(90, Math.max(45, raft.chamferAngle));
-      const chamferInset = raft.bottomMode === 'line'
-        ? Math.max(0, raft.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - clampedChamfer))
-        : 0;
+      const thickness = raft.bottomMode === 'line' ? raft.lineHeightMm : raft.thickness;
+      const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - clampedChamfer));
+      const wallInset = raft.wallEnabled ? Math.max(0, raft.wallThickness) : 0;
+      const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
+
       const profile = computeFootprint(circles as any, {
-        marginMm: 0.2 + chamferInset,
+        marginMm: dynamicMargin,
         samplesPerCircle: 24,
       });
       if (!profile || profile.length < 3) continue;

@@ -3009,12 +3009,13 @@ export default function Home() {
       for (const circles of rootsByModel.values()) {
         if (circles.length === 0) continue;
 
-        const chamferInset = raftSettingsSnapshot.bottomMode === 'line'
-          ? Math.max(0, raftSettingsSnapshot.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))))
-          : 0;
+        const thickness = raftSettingsSnapshot.bottomMode === 'line' ? raftSettingsSnapshot.lineHeightMm : raftSettingsSnapshot.thickness;
+        const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))));
+        const wallInset = raftSettingsSnapshot.wallEnabled ? Math.max(0, raftSettingsSnapshot.wallThickness) : 0;
+        const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
         const baseProfile = computeFootprint(circles, {
-          marginMm: 0.2 + chamferInset,
+          marginMm: dynamicMargin,
           samplesPerCircle: 24,
         });
 
@@ -7205,12 +7206,13 @@ export default function Home() {
       for (const [modelId, circles] of rootsByModel) {
         if (circles.length === 0) continue;
 
-        const chamferInset = raftSettingsSnapshot.bottomMode === 'line'
-          ? Math.max(0, raftSettingsSnapshot.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))))
-          : 0;
+        const thickness = raftSettingsSnapshot.bottomMode === 'line' ? raftSettingsSnapshot.lineHeightMm : raftSettingsSnapshot.thickness;
+        const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))));
+        const wallInset = raftSettingsSnapshot.wallEnabled ? Math.max(0, raftSettingsSnapshot.wallThickness) : 0;
+        const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
         const baseProfile = computeFootprint(circles, {
-          marginMm: 0.2 + chamferInset,
+          marginMm: dynamicMargin,
           samplesPerCircle: 24,
         });
 

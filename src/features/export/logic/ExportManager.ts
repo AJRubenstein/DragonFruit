@@ -1045,7 +1045,10 @@ export class ExportManager {
           const modelId = modelKey === '__orphan__' ? null : modelKey;
           const raftSettings = modelId ? getRaftSettingsForModel(modelId) : globalRaftSettings;
 
-          const chamferInset = Math.max(0, raftSettings.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettings.chamferAngle))));
+          const thickness = raftSettings.bottomMode === 'line' ? raftSettings.lineHeightMm : raftSettings.thickness;
+          const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettings.chamferAngle))));
+          const wallInset = raftSettings.wallEnabled ? Math.max(0, raftSettings.wallThickness) : 0;
+          const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
           const circles: SupportBaseCircle[] = roots.map(r => ({
             x: r.transform.pos.x,
@@ -1053,7 +1056,7 @@ export class ExportManager {
             r: r.diameter / 2
           }));
 
-          const profile = computeFootprint(circles, { marginMm: 0.2 + (raftSettings.bottomMode === 'line' ? chamferInset : 0), samplesPerCircle: 24 });
+          const profile = computeFootprint(circles, { marginMm: dynamicMargin, samplesPerCircle: 24 });
 
           if (!profile || profile.length < 3) continue;
 
