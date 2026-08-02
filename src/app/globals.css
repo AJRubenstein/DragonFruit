@@ -311,13 +311,13 @@ body {
 }
 
 .ui-button-secondary {
-  background: var(--surface-0);
+  background: var(--surface-1);
   color: var(--text-strong);
   border-color: var(--border-subtle);
 }
 
 .ui-button-secondary:hover {
-  background: color-mix(in srgb, var(--surface-0), white 5%);
+  background: var(--surface-2);
 }
 
 .ui-button-accent {
