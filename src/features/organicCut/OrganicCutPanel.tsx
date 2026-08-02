@@ -492,6 +492,10 @@ export function OrganicCutPanel({
                 unit="mm"
                 disabled={disabled || isApplying}
                 ariaLabel="Joint clearance in millimeters"
+                // The cut-settings grid is two columns, but in flat mode this is the
+                // only field that survives (smoothing/resolution are contour-only), so
+                // stretch it across the empty second column instead of leaving a hole.
+                className={isContour ? undefined : 'col-span-2'}
               />
               {isContour && (
                 <CompactNumberField
