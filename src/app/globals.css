@@ -164,15 +164,18 @@ body {
   gap: var(--space-3);
 }
 
-/* Frosted glass: accent wash + dark tint + blur on one layer, all rolling off
-   below the bar's bottom edge so the seam blends into the viewport. */
-.ui-topbar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  bottom: -64px;
+/* Frosted glass layer, rendered BELOW the topbar (z-30) so the Transform
+   Toolbar (z-40) and every modal (z-50+) float crisp on top of it. The accent
+   wash + dark tint + blur all roll off below the bar's bottom edge so the seam
+   blends into the viewport. */
+.ui-topbar-blur {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--topbar-height) + 64px);
+  z-index: 30;
   pointer-events: none;
-  z-index: -1;
   backdrop-filter: blur(14px) saturate(130%);
   -webkit-backdrop-filter: blur(14px) saturate(130%);
   background:

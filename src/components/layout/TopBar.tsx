@@ -634,10 +634,12 @@ export function TopBar({
   ];
 
   return (
-    <div
-      className="ui-topbar fixed top-0 left-0 right-0 z-50 flex items-center relative"
-      onMouseDownCapture={handleTopBarPointerDown}
-    >
+    <>
+      <div className="ui-topbar-blur" aria-hidden="true" />
+      <div
+        className="ui-topbar fixed top-0 left-0 right-0 z-50 flex items-center relative"
+        onMouseDownCapture={handleTopBarPointerDown}
+      >
       <div
         className={`flex flex-1 max-w-[430px] items-center gap-2.5 pl-0 pr-4 py-1.5 transition-opacity ${topbarActionsDisabled ? 'opacity-45 pointer-events-none' : ''}`}
         data-no-window-drag="false"
@@ -1351,5 +1353,6 @@ export function TopBar({
         openMaterialAntiAliasingToken={profileModalOpenMaterialAntiAliasingToken}
       />
     </div>
+    </>
   );
 }
