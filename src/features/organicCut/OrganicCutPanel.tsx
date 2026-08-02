@@ -1,5 +1,5 @@
 import React from 'react';
-import { CircleHelp, Eye, EyeOff, Loader2, RotateCcw, Trash2, TriangleAlert } from 'lucide-react';
+import { CircleHelp, Eye, EyeOff, Link2, Link2Off, Loader2, RotateCcw, Trash2, TriangleAlert } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { CompactNumberField } from '@/components/ui/compactNumberField';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -623,36 +623,64 @@ export function OrganicCutPanel({
                   {/* The four size knobs sit two per row — the same compact
                       fields as the cut settings above. */}
                   <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                    <CompactNumberField
-                      label="Tenon Width"
-                      value={state.tenonWidthMm}
-                      onChange={(value) =>
-                        state.tenonShape === 'dome'
-                          ? setDomeDim('width', value)
-                          : setFrustumDim('width', value)
-                      }
-                      min={tenonDimMinMm}
-                      max={TENON_DIM_MAX_MM}
-                      step={0.5}
-                      unit="mm"
-                      disabled={disabled || isApplying}
-                      ariaLabel="Tenon width in millimeters"
-                    />
-                    <CompactNumberField
-                      label="Tenon Depth"
-                      value={state.tenonDepthMm}
-                      onChange={(value) =>
-                        state.tenonShape === 'dome'
-                          ? setDomeDim('depth', value)
-                          : setFrustumDim('depth', value)
-                      }
-                      min={tenonDimMinMm}
-                      max={TENON_DIM_MAX_MM}
-                      step={0.5}
-                      unit="mm"
-                      disabled={disabled || isApplying}
-                      ariaLabel="Tenon depth in millimeters"
-                    />
+                    <div className={`col-span-2 grid items-start gap-x-2 ${state.tenonShape === 'dome' ? 'grid-cols-[1fr_auto_1fr]' : 'grid-cols-2'}`}>
+                      <CompactNumberField
+                        label="Tenon Width"
+                        value={state.tenonWidthMm}
+                        onChange={(value) =>
+                          state.tenonShape === 'dome'
+                            ? setDomeDim('width', value)
+                            : setFrustumDim('width', value)
+                        }
+                        min={tenonDimMinMm}
+                        max={TENON_DIM_MAX_MM}
+                        step={0.5}
+                        unit="mm"
+                        disabled={disabled || isApplying}
+                        ariaLabel="Tenon width in millimeters"
+                      />
+                      {/* Dome only: link width:depth so the dome resizes as a
+                          unit (keeps its shape); unlink for free oblong control.
+                          Sits in its own column so it pushes the two inputs apart;
+                          an invisible label mirrors the fields' label+gap so it
+                          lines up with the inputs. */}
+                      {state.tenonShape === 'dome' && (
+                        <div className="flex flex-col items-center">
+                          <span className="ui-meta block invisible" aria-hidden="true">·</span>
+                          <div className="mt-1 flex h-8 items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={() => setState({ tenonUniformScale: !state.tenonUniformScale })}
+                              className="inline-flex items-center justify-center"
+                              style={{ color: state.tenonUniformScale ? 'var(--accent)' : 'var(--text-muted)' }}
+                              title={state.tenonUniformScale
+                                ? 'Unlink width and depth — resize them independently.'
+                                : 'Link width and depth together so the dome keeps its shape.'}
+                              aria-label="Toggle linked width and depth"
+                            >
+                              {state.tenonUniformScale
+                                ? <Link2 className="h-4.5 w-4.5" />
+                                : <Link2Off className="h-4.5 w-4.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <CompactNumberField
+                        label="Tenon Depth"
+                        value={state.tenonDepthMm}
+                        onChange={(value) =>
+                          state.tenonShape === 'dome'
+                            ? setDomeDim('depth', value)
+                            : setFrustumDim('depth', value)
+                        }
+                        min={tenonDimMinMm}
+                        max={TENON_DIM_MAX_MM}
+                        step={0.5}
+                        unit="mm"
+                        disabled={disabled || isApplying}
+                        ariaLabel="Tenon depth in millimeters"
+                      />
+                    </div>
                     {state.tenonShape === 'frustum' && (
                       <CompactNumberField
                         label="Edge Fillet"
@@ -683,32 +711,6 @@ export function OrganicCutPanel({
                       className={state.tenonShape === 'frustum' ? undefined : 'col-span-2'}
                     />
                   </div>
-                  {/* Uniform Scale: dome only — lock width:depth so the dome resizes
-                      as a unit (keeps its shape), or unlock for free oblong control. */}
-                  {state.tenonShape === 'dome' && (
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between gap-2 text-left"
-                      onClick={() => setState({ tenonUniformScale: !state.tenonUniformScale })}
-                      disabled={disabled || isApplying}
-                      title="Lock width and depth together so the dome keeps its shape when resized. Unlock for an oblong dome."
-                    >
-                      <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>Uniform Scale</span>
-                      <span
-                        className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors"
-                        style={{
-                          background: state.tenonUniformScale
-                            ? 'var(--accent)'
-                            : 'color-mix(in srgb, var(--text-muted), transparent 60%)',
-                        }}
-                      >
-                        <span
-                          className="inline-block h-3 w-3 transform rounded-full bg-white transition-transform"
-                          style={{ transform: state.tenonUniformScale ? 'translateX(14px)' : 'translateX(2px)' }}
-                        />
-                      </span>
-                    </button>
-                  )}
                   {/* Flip + reset actions: which half gets the tenon, and back to
                       defaults. The reset leaves the No Tenon/on choice alone. */}
                   <div className="flex gap-1 pt-1">
