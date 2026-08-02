@@ -10034,14 +10034,11 @@ export default function Home() {
             )}
           </SceneCanvas>
 
-          {/* Transform Toolbar */}
+          {/* Snap readout + rotation hint stay scene-anchored; the Transform
+              Toolbar itself renders at the shell level so it can float above
+              the topbar's frosted-glass blur. */}
           {scene.models.length > 0 && scene.mode === 'prepare' && (
             <>
-              <TransformToolbar
-                mode={transformMgr.transformMode}
-                onModeChange={setTransformModeWithMirrorFinalize}
-                onModeHover={handleTransformToolbarHover}
-              />
               <SnapAngleReadout />
               <RotationHintTooltip />
             </>
@@ -10129,6 +10126,14 @@ export default function Home() {
           />
         )}
       </div>
+
+      {scene.models.length > 0 && scene.mode === 'prepare' && (
+        <TransformToolbar
+          mode={transformMgr.transformMode}
+          onModeChange={setTransformModeWithMirrorFinalize}
+          onModeHover={handleTransformToolbarHover}
+        />
+      )}
 
       <EditorContextMenu
         position={editorContextMenuPos}

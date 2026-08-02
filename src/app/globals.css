@@ -58,7 +58,7 @@
   --line-height-tight: 1.2;
   --line-height-normal: 1.45;
 
-  --topbar-height: 48px;
+  --topbar-height: 52px;
 
   /* The base UI density is fixed and DPI-aware (CSS px are physical-size
      constant in the webview). A screen-size factor + user UI scale are applied
@@ -160,7 +160,7 @@ body {
   isolation: isolate;
   height: var(--topbar-height);
   background: transparent;
-  padding: 0 4px;
+  padding: 3px 4px 9px 4px;
   gap: var(--space-3);
 }
 
