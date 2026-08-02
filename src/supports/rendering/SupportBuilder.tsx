@@ -310,7 +310,7 @@ export function SupportBuilder({
                         color: 'white',
                         fontSize: '12px',
                         textShadow: '1px 1px 2px black',
-                        fontFamily: 'sans-serif',
+                        fontFamily: 'var(--font-geist-sans)',
                         pointerEvents: 'none',
                         whiteSpace: 'nowrap'
                     }}

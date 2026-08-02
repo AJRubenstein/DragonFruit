@@ -101,7 +101,7 @@ function PinShape({ label }: { label: string }) {
           pointerEvents: 'none',
           userSelect: 'none',
           color: PIN_COLOR,
-          font: '600 11px ui-monospace, SFMono-Regular, Menlo, monospace',
+          font: '600 11px var(--font-geist-mono)',
           lineHeight: 1,
         }}
       >
