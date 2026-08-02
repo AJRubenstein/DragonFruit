@@ -866,8 +866,8 @@ function buildSupportAndRaftWorldTriangles(
 
     // Mirror proxy hasSolidBottom logic: collapse disk height and shift root up so it
     // sits flush on top of the solid raft rather than extending through it.
-    const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.01, root.diskHeight);
-    const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+    const effectiveDiskHeight = Math.max(0.01, root.diskHeight);
+    const verticalOffset = 0;
     const base = new THREE.Vector3(
       root.transform.pos.x,
       root.transform.pos.y,

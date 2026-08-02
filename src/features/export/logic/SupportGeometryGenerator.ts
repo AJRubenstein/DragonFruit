@@ -129,9 +129,8 @@ export class SupportGeometryGenerator {
   private static getStartPosition(data: SupportData, raftSettings?: RaftSettings): THREE.Vector3 {
     if (data.roots) {
       // RootsRenderer logic for vertical offset
-      const hasSolidBottom = (raftSettings?.bottomMode ?? 'off') === 'solid';
-      const diskHeight = hasSolidBottom ? 0.05 : data.roots.diskHeight;
-      const verticalOffset = hasSolidBottom && raftSettings ? Math.max(raftSettings.thickness - diskHeight, 0) : 0;
+      const diskHeight = data.roots.diskHeight;
+      const verticalOffset = 0;
 
       const basePos = new THREE.Vector3(
         data.roots.transform.pos.x,
@@ -152,9 +151,8 @@ export class SupportGeometryGenerator {
     const group = new THREE.Group();
     
     // Raft offset logic matching RootsRenderer
-    const hasSolidBottom = (raftSettings?.bottomMode ?? 'off') === 'solid';
-    const diskHeight = hasSolidBottom ? 0.05 : root.diskHeight;
-    const verticalOffset = hasSolidBottom && raftSettings ? Math.max(raftSettings.thickness - diskHeight, 0) : 0;
+    const diskHeight = root.diskHeight;
+    const verticalOffset = 0;
     
     const pos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, root.transform.pos.z + verticalOffset);
     // Group is at world pos (lifted if needed)

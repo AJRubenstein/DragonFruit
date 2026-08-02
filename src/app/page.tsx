@@ -2876,9 +2876,7 @@ export default function Home() {
       const topDiameter = topDiameterByRootId.get(root.id) ?? Math.max(0.1, root.diameter * 0.35);
       const topRadius = Math.max(0.001, topDiameter / 2);
 
-      const effectiveDiskHeight = raftSettingsSnapshot.bottomMode === 'solid'
-        ? 0.05
-        : Math.max(0, root.diskHeight);
+      const effectiveDiskHeight = Math.max(0, root.diskHeight);
       const coneHeight = Math.max(0, root.coneHeight);
 
       const diskMm3 = cylinderVolumeMm3(rootRadius, effectiveDiskHeight);

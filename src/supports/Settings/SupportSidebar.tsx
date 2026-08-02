@@ -982,7 +982,7 @@ export function SupportSidebar() {
 
                     <div className="space-y-2">
                         <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.diskHeightMm')}>
-                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Disk Height</div>
+                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Root Disk Height</div>
                             <div className="relative">
                                 <NumberInput
                                     value={settings.roots.diskHeightMm}
@@ -1133,7 +1133,7 @@ export function SupportSidebar() {
 
             <div className={compactTrunkPairClass}>
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.diskHeightMm')}>
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Disk Height">Disk Height</div>
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Root Disk Height">Root Disk Height</div>
                     <div className="relative">
                         <NumberInput
                             value={settings.roots.diskHeightMm}
