@@ -342,8 +342,8 @@ export function OrganicCutPanel({
   const isContour = state.cutMode === 'contour';
   // The header help only explains the mode the user is in, not both at once.
   const cutHelpContent = isContour
-    ? 'Click points around the model to trace a curved seam that splits it in two — the cut follows your loop (3+ points). Turn on a Key to add a key/keyway so the halves index together.'
-    : 'Click 2 points across the model to set a flat cut that slices it in two along a single plane. Turn on a Key to add a key/keyway so the halves index together.';
+    ? 'Click points around the model to trace a curved seam that splits it in two — the cut follows your loop (3+ points). Turn on a Tenon to add a tenon/mortise so the halves index together.'
+    : 'Click 2 points across the model to set a flat cut that slices it in two along a single plane. Turn on a Tenon to add a tenon/mortise so the halves index together.';
 
   // Bound the expanded panel to the viewport so its body can scroll. Collapsed it
   // stays unbounded, which keeps it the height of its header.
@@ -421,7 +421,7 @@ export function OrganicCutPanel({
             <AnimatedResetButton
               onClick={() => setState({ ...DEFAULT_CUT_SETTINGS })}
               disabled={disabled || isApplying || !cutSettingsDirty}
-              title="Put the cut settings back to their defaults: cut mode, thickness, both smoothings and resolution. Your drawn loops and key settings are untouched."
+              title="Put the cut settings back to their defaults: cut mode, thickness, both smoothings and resolution. Your drawn loops and tenon settings are untouched."
               ariaLabel="Reset cut settings to defaults"
             />
           </div>
@@ -523,13 +523,13 @@ export function OrganicCutPanel({
             </div>
           </div>
 
-          {/* Registration key: key + keyway so the two halves index together.
+          {/* Registration tenon: tenon + mortise so the two halves index together.
               Both cut modes: the contour cut frames it on the membrane, the flat
               cut on the plane's own cross-section. */}
           <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
-              {/* No Key vs shape in one control — the same segmented selector as
-                  Cut Mode. No Key cuts the halves without a key; Frustum/Dome
-                  turns the key on with that shape. */}
+              {/* No Tenon vs shape in one control — the same segmented selector as
+                  Cut Mode. No Tenon cuts the halves without a tenon; Frustum/Dome
+                  turns the tenon on with that shape. */}
               <div className="grid grid-cols-3 gap-1">
                 <button
                   type="button"
@@ -537,9 +537,9 @@ export function OrganicCutPanel({
                   onClick={() => setState({ generateTenon: false })}
                   disabled={disabled || isApplying}
                   style={!state.generateTenon ? activeModeStyle : undefined}
-                  title="Don't add a registration key — the halves are cut apart with no way to index them back together."
+                  title="Don't add a registration tenon — the halves are cut apart with no way to index them back together."
                 >
-                  No Key
+                  No Tenon
                 </button>
                 <button
                   type="button"
@@ -551,7 +551,7 @@ export function OrganicCutPanel({
                     setState({
                       generateTenon: true,
                       tenonShape: 'frustum',
-                      // Turning a key on brings the preview back: the user is about
+                      // Turning a tenon on brings the preview back: the user is about
                       // to configure a tenon they need to see.
                       showPreview: true,
                       tenonFilletMm: Math.min(
@@ -562,7 +562,7 @@ export function OrganicCutPanel({
                   }
                   disabled={disabled || isApplying || !canApply}
                   style={state.generateTenon && state.tenonShape === 'frustum' ? activeModeStyle : undefined}
-                  title="Tapered rectangular key — locks the parts against rotation."
+                  title="Tapered rectangular tenon — locks the parts against rotation."
                 >
                   Frustum
                 </button>
@@ -575,7 +575,7 @@ export function OrganicCutPanel({
                     setState({
                       generateTenon: true,
                       tenonShape: 'dome',
-                      // Turning a key on brings the preview back: the user is about
+                      // Turning a tenon on brings the preview back: the user is about
                       // to configure a tenon they need to see.
                       showPreview: true,
                       tenonWidthMm: Math.max(state.tenonWidthMm, DOME_MIN_WIDTH_MM),
@@ -584,7 +584,7 @@ export function OrganicCutPanel({
                   }
                   disabled={disabled || isApplying || !canApply}
                   style={state.generateTenon && state.tenonShape === 'dome' ? activeModeStyle : undefined}
-                  title="Half-sphere key — locates the parts but allows rotation."
+                  title="Half-sphere tenon — locates the parts but allows rotation."
                 >
                   Dome
                 </button>
@@ -609,7 +609,7 @@ export function OrganicCutPanel({
                           className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
                           onClick={() => setState({ tenonAnchor: null })}
                           disabled={disabled || isApplying}
-                          title="Put the key back in the middle of the cut."
+                          title="Put the tenon back in the middle of the cut."
                         >
                           Center
                         </button>
@@ -620,7 +620,7 @@ export function OrganicCutPanel({
                       fields as the cut settings above. */}
                   <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
                     <CompactNumberField
-                      label="Key Width"
+                      label="Tenon Width"
                       value={state.tenonWidthMm}
                       onChange={(value) =>
                         state.tenonShape === 'dome'
@@ -632,10 +632,10 @@ export function OrganicCutPanel({
                       step={0.5}
                       unit="mm"
                       disabled={disabled || isApplying}
-                      ariaLabel="Key width in millimeters"
+                      ariaLabel="Tenon width in millimeters"
                     />
                     <CompactNumberField
-                      label="Key Depth"
+                      label="Tenon Depth"
                       value={state.tenonDepthMm}
                       onChange={(value) =>
                         state.tenonShape === 'dome'
@@ -647,7 +647,7 @@ export function OrganicCutPanel({
                       step={0.5}
                       unit="mm"
                       disabled={disabled || isApplying}
-                      ariaLabel="Key depth in millimeters"
+                      ariaLabel="Tenon depth in millimeters"
                     />
                     {state.tenonShape === 'frustum' && (
                       <CompactNumberField
@@ -659,8 +659,8 @@ export function OrganicCutPanel({
                         step={TENON_FILLET_STEP_MM}
                         unit="mm"
                         disabled={disabled || isApplying}
-                        ariaLabel="Key edge fillet radius in millimeters (0 = sharp)"
-                        title={`Rounds the key's corners and tip. On this key the geometry accepts up to ${tenonFilletMaxMm}mm — a wider or deeper key raises that ceiling.`}
+                        ariaLabel="Tenon edge fillet radius in millimeters (0 = sharp)"
+                        title={`Rounds the tenon's corners and tip. On this tenon the geometry accepts up to ${tenonFilletMaxMm}mm — a wider or deeper tenon raises that ceiling.`}
                       />
                     )}
                     <CompactNumberField
@@ -674,8 +674,8 @@ export function OrganicCutPanel({
                       step={0.05}
                       unit="mm"
                       disabled={disabled || isApplying}
-                      ariaLabel="Key to keyway fit tolerance in millimeters (0 = press fit)"
-                      title="Slack between key and keyway, on every face. 0 = press fit (needs force). 0.1mm is a slide fit on a well-calibrated printer; raise it if the halves won't go together."
+                      ariaLabel="Tenon to mortise fit tolerance in millimeters (0 = press fit)"
+                      title="Slack between tenon and mortise, on every face. 0 = press fit (needs force). 0.1mm is a slide fit on a well-calibrated printer; raise it if the halves won't go together."
                       className={state.tenonShape === 'frustum' ? undefined : 'col-span-2'}
                     />
                   </div>
@@ -705,29 +705,29 @@ export function OrganicCutPanel({
                       </span>
                     </button>
                   )}
-                  {/* Flip + reset actions: which half gets the key, and back to
-                      defaults. The reset leaves the No Key/on choice alone. */}
+                  {/* Flip + reset actions: which half gets the tenon, and back to
+                      defaults. The reset leaves the No Tenon/on choice alone. */}
                   <div className="flex gap-1 pt-1">
                     <button
                       type="button"
                       className="ui-button ui-button-secondary flex-1 !min-h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px] disabled:opacity-60"
                       onClick={() => setState({ tenonSwapSides: !state.tenonSwapSides })}
                       disabled={disabled || isApplying}
-                      title="Swap which cut half receives the key and which receives the keyway."
+                      title="Swap which cut half receives the tenon and which receives the mortise."
                       style={disabled || isApplying ? undefined : {
                         borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 62%)',
                         color: 'color-mix(in srgb, var(--accent-secondary), var(--text-strong) 55%)',
                         background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 95%)',
                       }}
                     >
-                      Flip Key
+                      Flip Tenon
                     </button>
                     <button
                       type="button"
                       className="ui-button ui-button-secondary flex-1 !min-h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px] disabled:opacity-60"
                       onClick={() => setState({ ...DEFAULT_TENON_SETTINGS, generateTenon: state.generateTenon })}
                       disabled={disabled || isApplying || !tenonSettingsDirty}
-                      title="Put every key setting back to its default: shape, width, depth, fillet, fit tolerance, uniform scale, side and aim."
+                      title="Put every tenon setting back to its default: shape, width, depth, fillet, fit tolerance, uniform scale, side and aim."
                       style={disabled || isApplying || !tenonSettingsDirty ? undefined : {
                         borderColor: 'color-mix(in srgb, #f87171, var(--border-subtle) 45%)',
                         color: 'color-mix(in srgb, #f87171, var(--text-strong) 30%)',
