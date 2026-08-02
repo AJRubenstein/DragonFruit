@@ -186,10 +186,6 @@ export function TopBar({
     return window.matchMedia?.('(prefers-color-scheme: light)').matches ?? false;
   });
   const [printerThumbnailFailed, setPrinterThumbnailFailed] = useState(false);
-  const [windowMetrics, setWindowMetrics] = useState(() => ({
-    innerWidth: 0,
-    innerHeight: 0,
-  }));
   const topbarActionsDisabled = isSlicingBusy;
   const [isAppMenuOpen, setIsAppMenuOpen] = useState(false);
   const [appMenuPosition, setAppMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -261,26 +257,6 @@ export function TopBar({
 
     return () => {
       cancelled = true;
-    };
-  }, []);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const updateMetrics = () => {
-      setWindowMetrics({
-        innerWidth: window.innerWidth,
-        innerHeight: window.innerHeight,
-      });
-    };
-
-    updateMetrics();
-    window.addEventListener('resize', updateMetrics);
-    window.addEventListener('orientationchange', updateMetrics);
-
-    return () => {
-      window.removeEventListener('resize', updateMetrics);
-      window.removeEventListener('orientationchange', updateMetrics);
     };
   }, []);
 

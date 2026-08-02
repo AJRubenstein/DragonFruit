@@ -412,7 +412,7 @@ export function EmptySceneState({
   const shouldShowFirstTimeOnboarding = showFirstTimeOnboarding && !isLoading;
 
   return (
-    <div className="absolute inset-0 top-14 z-30 flex items-center justify-center pointer-events-none">
+    <div className="absolute inset-0 top-[var(--topbar-height)] z-30 flex items-center justify-center pointer-events-none">
       <div className="ui-empty-state pointer-events-auto">
         {IS_BETA_BUILD ? (
           <div

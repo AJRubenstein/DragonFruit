@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
-import { Bug, ClipboardCopy, Database, Languages, LayoutGrid, RotateCcw } from 'lucide-react';
+import { Bug, ClipboardCopy, Database, Languages, LayoutGrid, RotateCcw, ZoomIn } from 'lucide-react';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
+import { Select } from '@/components/atoms';
 import { type Locale } from '@/i18n';
 import type { ImportDefaultsSettings } from '@/features/scene/importDefaultsPreferences';
 import {
@@ -10,6 +11,13 @@ import {
   FLOATING_LAYOUT_STORAGE_KEY,
   type FloatingLayoutDebugRequestDetail,
 } from '@/components/layout/floatingLayoutPreferences';
+import {
+  UI_SCALE_PRESETS,
+  getSavedUiScale,
+  normalizeUiScale,
+  saveUiScale,
+  type UiScalePreset,
+} from '@/components/settings/uiScalePreference';
 
 interface GeneralSettingsTabProps {
   floatingLayoutPersistence: boolean;
@@ -37,6 +45,14 @@ export function GeneralSettingsTab({
   const [layoutDump, setLayoutDump] = React.useState<string>('');
   const [dumpStatus, setDumpStatus] = React.useState<string | null>(null);
   const rootsLockedByLineRaft = importDefaults.raftBottomMode === 'line';
+
+  const [uiScale, setUiScale] = React.useState<UiScalePreset>(() => getSavedUiScale());
+
+  const handleUiScaleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const next = normalizeUiScale(Number(event.target.value));
+    setUiScale(next);
+    saveUiScale(next);
+  };
 
   const handleDumpCurrentLayout = React.useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -126,6 +142,52 @@ export function GeneralSettingsTab({
               </div>
             </div>
             <LanguageSwitcher value={language} onChange={onLanguageChange} />
+          </div>
+        </div>
+      </section>
+
+      <section
+        className="rounded-lg border p-3"
+        style={{
+          background: 'var(--surface-1)',
+          borderColor: 'var(--border-subtle)',
+        }}
+      >
+        <div className="flex items-start gap-2">
+          <span
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border"
+            style={{
+              borderColor: 'var(--border-subtle)',
+              background: 'color-mix(in srgb, var(--surface-2), transparent 8%)',
+            }}
+          >
+            <ZoomIn className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+          </span>
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+              UI Scale
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Adjusts the size of the entire interface. 100% adapts to your screen automatically.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
+                Interface scale
+              </div>
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                Larger percentages magnify the whole UI.
+              </div>
+            </div>
+            <Select value={uiScale} onChange={handleUiScaleChange} className="!w-auto">
+              {UI_SCALE_PRESETS.map((preset) => (
+                <option key={preset} value={preset}>{Math.round(preset * 100)}%</option>
+              ))}
+            </Select>
           </div>
         </div>
       </section>
