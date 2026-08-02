@@ -25,6 +25,12 @@ const unitHint = (unit: string) => (
 );
 const compactInputClass = 'ui-input w-full h-[36px] px-3 py-2 text-base text-center no-spinners !bg-[var(--surface-0)]';
 const compactFieldLabelClass = 'text-[11px] font-medium leading-tight';
+// Same active-state styling as the standard segmented selector (Cut Panel).
+const activeModeStyle: React.CSSProperties = {
+    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 30%)',
+    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 85%)',
+    color: 'var(--text-strong)',
+};
 
 export function AutoBracingSettingsCard({
     settings,
@@ -162,25 +168,15 @@ export function AutoBracingSettingsCard({
             {/* Row 4: Seed Spacing (full width) */}
             <label className="space-y-1 min-w-0">
                 <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Cluster Spacing</div>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-3 gap-1">
                     {([['Low', 2], ['Mid', 5], ['High', 10]] as const).map(([label, value]) => {
                         const isActive = settings.seedSpacingMm === value;
                         return (
                             <button
                                 key={label}
                                 type="button"
-                                className="h-9 rounded-md border text-[12px] font-semibold transition-colors"
-                                style={isActive
-                                    ? {
-                                        borderColor: 'color-mix(in srgb, var(--accent), white 10%)',
-                                        background: 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)',
-                                        color: 'color-mix(in srgb, var(--accent), var(--text-strong) 25%)',
-                                    }
-                                    : {
-                                        borderColor: 'var(--border-subtle)',
-                                        background: 'var(--surface-1)',
-                                        color: 'var(--text-muted)',
-                                    }}
+                                className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
+                                style={isActive ? activeModeStyle : undefined}
                                 onClick={() => onChange({ seedSpacingMm: value })}
                             >
                                 {label}
