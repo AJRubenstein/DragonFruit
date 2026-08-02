@@ -26,6 +26,7 @@ type EmptySceneStateProps = {
   onDropMeshFiles?: (files: File[]) => void | Promise<void>;
   recentOpenedFiles?: RecentOpenedFileEntry[];
   onReopenRecentFile?: (entryId: string) => Promise<boolean> | boolean;
+  onClearRecentFiles?: () => void;
   isLoading?: boolean;
   loadingLabel?: string;
   loadingDetail?: string;
@@ -206,6 +207,7 @@ export function EmptySceneState({
   onDropMeshFiles,
   recentOpenedFiles = [],
   onReopenRecentFile,
+  onClearRecentFiles,
   isLoading = false,
   loadingLabel,
   loadingDetail,
@@ -603,25 +605,37 @@ export function EmptySceneState({
             >
               <div className="flex items-center justify-between text-[10px]" style={{ color: 'var(--text-muted)' }}>
                 <span className="font-semibold uppercase tracking-wide">{_(msg`Recent files`)}</span>
-                <span
-                  className="inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold"
-                  style={{
-                    color: 'var(--text-muted)',
-                    background: 'color-mix(in srgb, var(--surface-2), transparent 26%)',
-                    border: '1px solid color-mix(in srgb, var(--border-subtle), transparent 20%)',
-                  }}
-                >
-                  {Math.min(recentOpenedFiles.length, 6)}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {onClearRecentFiles && recentOpenedFiles.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={onClearRecentFiles}
+                      className="rounded px-1.5 py-0.5 font-semibold uppercase tracking-wide transition-colors hover:bg-white/10"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {_(msg`Clear`)}
+                    </button>
+                  )}
+                  <span
+                    className="inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold"
+                    style={{
+                      color: 'var(--text-muted)',
+                      background: 'color-mix(in srgb, var(--surface-2), transparent 26%)',
+                      border: '1px solid color-mix(in srgb, var(--border-subtle), transparent 20%)',
+                    }}
+                  >
+                    {Math.min(recentOpenedFiles.length, 8)}
+                  </span>
+                </div>
               </div>
 
               {recentOpenedFiles.length === 0 ? (
-                <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                  {_(msg`No recent files yet.`)}
+                <div className="mt-1.5 flex h-[38px] items-center justify-center rounded-md text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  {_(msg`No recent files`)}
                 </div>
               ) : (
                 <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                  {recentOpenedFiles.slice().reverse().slice(0, 6).map((entry) => {
+                  {recentOpenedFiles.slice().reverse().slice(0, 8).map((entry) => {
                     const sizeLabel = formatBytes(entry.sizeBytes);
                     const isBusy = reopeningEntryId === entry.id;
                     const period = formatRecentOpenedAt(entry.openedAt, _);

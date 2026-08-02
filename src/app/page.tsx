@@ -9725,6 +9725,7 @@ export default function Home() {
               onDropMeshFiles={handleDroppedPrepareFiles}
               recentOpenedFiles={scene.recentOpenedFiles}
               onReopenRecentFile={handleReopenRecentFile}
+              onClearRecentFiles={scene.clearRecentOpenedFiles}
               isLoading={showEmptyStateLoading}
               loadingLabel={emptyStateLoadingLabel}
               loadingDetail={emptyStateLoadingDetail}
