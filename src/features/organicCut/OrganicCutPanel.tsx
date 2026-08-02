@@ -591,42 +591,7 @@ export function OrganicCutPanel({
               </div>
               {state.generateTenon && (
                 <div className="space-y-1.5 pt-0.5">
-                  {/* Aim readout + a Reset that zeroes the tilt/roll. The aim is set
-                      with the rotate gizmo at the tenon's base in the 3D view, so there
-                      is nothing to say here until the tenon actually leans. */}
-                  {(() => {
-                    // Report at the precision shown. The old threshold was ~0.06°,
-                    // far finer than the whole degrees displayed, so a sliver of
-                    // lean rendered as "0°" that only Reset could clear. Roll was
-                    // never reported at all, so spinning the tenon also read 0°.
-                    const toDeg = (rad: number) => Math.round((rad * 180) / Math.PI * 10) / 10;
-                    const leanDeg = toDeg(state.tenonTiltRad);
-                    const leanXDeg = toDeg(state.tenonTiltXRad);
-                    const rollDeg = toDeg(state.tenonRollRad);
-                    if (leanDeg === 0 && leanXDeg === 0 && rollDeg === 0) return null;
-                    const parts = [
-                      leanDeg !== 0 ? `${leanDeg}° lean` : null,
-                      leanXDeg !== 0 ? `${leanXDeg}° lean X` : null,
-                      rollDeg !== 0 ? `${rollDeg}° roll` : null,
-                    ].filter(Boolean);
-                    return (
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>
-                          {`Aim: ${parts.join(', ')}`}
-                        </span>
-                        <button
-                          type="button"
-                          className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
-                          onClick={() => setState({ tenonTiltRad: 0, tenonTiltXRad: 0, tenonRollRad: 0 })}
-                          disabled={disabled || isApplying}
-                          title="Reset the key to point straight out of the cut (no lean / roll)."
-                        >
-                          Reset Aim
-                        </button>
-                      </div>
-                    );
-                  })()}
-                  {/* Recentre. Like the aim above, WHERE the tenon sits is set in
+                  {/* Recentre. WHERE the tenon sits is set in
                       the viewport (drag the blue dot at its base), so there is
                       nothing to show until it has actually been moved. The place
                       itself is a point in model space — a pair of millimetre

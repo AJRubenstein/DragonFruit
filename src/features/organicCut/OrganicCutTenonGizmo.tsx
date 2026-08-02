@@ -102,6 +102,29 @@ export function OrganicCutTenonGizmo({
   onTenonAnchorChange,
   onDragStateChange,
 }: OrganicCutTenonGizmoProps) {
+  // The roll the gizmo's FRAME is drawn at. Frozen while a rotate ring is being
+  // dragged: the roll commits to the panel state live (so the tenon rolls in the
+  // preview), but if the frame turned with it the ring would rotate under the
+  // pointer mid-drag and feed back into the angle — the roll drift. The frame
+  // adopts the committed roll only when the drag ends.
+  const [basisRoll, setBasisRoll] = useState(tenonRollRad);
+
+  // Frozen initial angles at the start of a rotation drag, so `handleGizmoRotate`
+  // computes every frame from one stable reference instead of reading React state
+  // from a closure. Without this, rapid pointer events catch a stale
+  // tenonRollRad / tenonTiltRad between re-renders and successive deltas overwrite
+  // each other — the handle moves more than the tenon does.
+  const frozenInitialRef = useRef<{
+    tiltY: number;
+    tiltX: number;
+    roll: number;
+    frame: TenonPreviewFrame;
+  } | null>(null);
+  const accumulatedDeltaRef = useRef<{ y: number; x: number; z: number }>({
+    y: 0,
+    x: 0,
+    z: 0,
+  });
   const activeModel = useMemo(
     () => models.find((m) => m.id === activeModelId),
     [models, activeModelId],
@@ -170,8 +193,8 @@ export function OrganicCutTenonGizmo({
     // it would stop showing where the tenon is about to tip.
     // Turned by −roll for the sign reason in `leanAzimuthFor`: this is the frame
     // the body actually ends up in.
-    const cr = Math.cos(tenonRollRad);
-    const sr = Math.sin(tenonRollRad);
+    const cr = Math.cos(basisRoll);
+    const sr = Math.sin(basisRoll);
     const uR = uW.clone().multiplyScalar(cr).sub(vW.clone().multiplyScalar(sr)).normalize();
     const vR = uW.clone().multiplyScalar(sr).add(vW.clone().multiplyScalar(cr)).normalize();
     // The gizmo's local Y is the tenon's rolled u — the axis the lean turns about —
@@ -194,46 +217,88 @@ export function OrganicCutTenonGizmo({
     };
     // Depend on primitive transform values (not the churning object) + tenonFrame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenonFrame, tenonRollRad, meshLocalOffset, hasTransform, tpx, tpy, tpz, trx, try_, trz, tsx, tsy, tsz]);
+  }, [tenonFrame, basisRoll, meshLocalOffset, hasTransform, tpx, tpy, tpz, trx, try_, trz, tsx, tsy, tsz]);
 
   const handleGizmoRotate = useCallback(
     (axis: GizmoAxis, delta: number): number => {
+      // When a drag is active, compute every frame from the FROZEN initial values
+      // plus the total accumulated delta in a ref — the same pattern
+      // HolePunchGizmo uses. This keeps the rotation 1:1 with the handle through
+      // a long drag, even when pointer events fire faster than React re-renders.
+      const frozen = frozenInitialRef.current;
+      if (frozen) {
+        if (axis === 'z') {
+          // Roll takes the delta UNFLIPPED: the flip the lean ring needs drove the
+          // tenon the opposite way to the handle the user was dragging on this one.
+          accumulatedDeltaRef.current.z += delta;
+          const roll = wrapAngle(frozen.roll + accumulatedDeltaRef.current.z);
+          onTenonAimChange(
+            frozen.tiltY - accumulatedDeltaRef.current.y,
+            frozen.tiltX - accumulatedDeltaRef.current.x,
+            roll,
+          );
+          // All of it went through — the roll has no end to run into.
+          return delta;
+        }
+        if (axis === 'y') {
+          // The lean BEFORE this frame, already through the clamp. We call
+          // clampTenonTilt again rather than trusting the accumulator, in case
+          // the frame changed (it shouldn't during a drag, but this is free).
+          const prevLean = clampTenonTilt(
+            frozen.tiltY - accumulatedDeltaRef.current.y,
+            frozen.frame,
+          );
+          // What the lean WOULD be if the full raw delta were applied.
+          const attemptedLean = clampTenonTilt(
+            frozen.tiltY - (accumulatedDeltaRef.current.y + delta),
+            frozen.frame,
+          );
+          // Only accumulate the delta that actually changed the lean. When the
+          // clamp ceiling stops the tenon, the excess delta is discarded — so
+          // the accumulator stays at the clamp value and reversing picks up
+          // immediately instead of having to unwind all the excess first.
+          const effectiveDelta = prevLean - attemptedLean;
+          accumulatedDeltaRef.current.y += effectiveDelta;
+          onTenonAimChange(
+            attemptedLean,
+            frozen.tiltX - accumulatedDeltaRef.current.x,
+            frozen.roll + accumulatedDeltaRef.current.z,
+          );
+          return effectiveDelta;
+        }
+        // axis === 'x': the second lean, mirrors the Y ring.
+        {
+          const prevLeanX = clampTenonTilt(
+            frozen.tiltX - accumulatedDeltaRef.current.x,
+            frozen.frame,
+          );
+          const attemptedLeanX = clampTenonTilt(
+            frozen.tiltX - (accumulatedDeltaRef.current.x + delta),
+            frozen.frame,
+          );
+          const effectiveDelta = prevLeanX - attemptedLeanX;
+          accumulatedDeltaRef.current.x += effectiveDelta;
+          onTenonAimChange(
+            frozen.tiltY - accumulatedDeltaRef.current.y,
+            attemptedLeanX,
+            frozen.roll + accumulatedDeltaRef.current.z,
+          );
+          return effectiveDelta;
+        }
+      }
+
+      // Fallback when no frozen ref exists (drag hasn't started yet — the ref is
+      // set synchronously during handleDragStart, so this should be rare).
       if (axis === 'z') {
-        // Roll takes the delta UNFLIPPED: the flip the lean ring needs drove the
-        // tenon the opposite way to the handle the user was dragging on this one.
-        //
-        // It also accumulates, so spinning the ring a few times used to report
-        // absurd angles ("6403.1° roll") for a tenon that is geometrically at 43°.
-        // Wrap every revolution away at the source: the rotation is the same one,
-        // and the readout, the Reset-aim check and Rust all see a sane number.
         const roll = wrapAngle(tenonRollRad + delta);
-        // Rolling turns the tenon AND the direction it leans, together. That is no
-        // longer arranged here: the lean is applied in the tenon's own frame before
-        // the roll, so the roll carries both by construction. This used to derive a
-        // separate azimuth to keep them together, and got the sign wrong — the body
-        // and its lean plane turned opposite ways, so a full turn of this ring moved
-        // the tenon half as far and it visibly lagged the handle.
         onTenonAimChange(tenonTiltRad, tenonTiltXRad, roll);
-        // All of it went through — the roll has no end to run into.
         return delta;
       }
-      // The green ring turns about the tenon's own u, tipping it toward its own v —
-      // the plane of a narrow face. What it reports IS the lean, signed: past 0 it
-      // keeps going to the other side of the normal instead of turning round, which
-      // is the −90° end of the user's sketch.
-      // Only the hard ceiling clamps it: a lean the part cannot take is reported as
-      // a won't-fit verdict (the tenon turns red), not refused by a frozen ring.
       if (axis === 'y') {
         const tilt = clampTenonTilt(tenonTiltRad - delta, tenonFrame);
         onTenonAimChange(tilt, tenonTiltXRad, tenonRollRad);
-        // Against the ceiling this is less than `delta`, and zero once it is hard
-        // against it — so the ring's handle stops with the tenon instead of running
-        // on and reporting leans of 138° that the tenon never took.
         return tenonTiltRad - tilt;
       }
-      // axis === 'x': the second lean, about the tenon's own v — the perpendicular
-      // plane, tipping over the OTHER face. Mirrors the Y ring exactly (the −v
-      // axis is already baked into `buildX`/Rust, so the ring needs the same flip).
       const tiltX = clampTenonTilt(tenonTiltXRad - delta, tenonFrame);
       onTenonAimChange(tenonTiltRad, tiltX, tenonRollRad);
       return tenonTiltXRad - tiltX;
@@ -432,9 +497,34 @@ export function OrganicCutTenonGizmo({
 
   const handleGizmoDragState = useCallback(
     (dragging: boolean) => {
+      if (dragging) {
+        // Freeze the initial tenon angles in refs so `handleGizmoRotate` never
+        // reads a stale React closure during rapid pointer events.
+        frozenInitialRef.current = {
+          tiltY: tenonTiltRad,
+          tiltX: tenonTiltXRad,
+          roll: tenonRollRad,
+          frame: tenonFrame!,
+        };
+        accumulatedDeltaRef.current = { y: 0, x: 0, z: 0 };
+        // Also freeze the gizmo frame's roll so the ring doesn't rotate under
+        // the pointer mid-drag and feed back into the angle.
+        setBasisRoll(tenonRollRad);
+      } else {
+        // On release, compute the final roll from the frozen ref (which
+        // faithfully tracks every pointer event, not just the last re-render)
+        // so the gizmo frame snaps to exactly where the tenon landed.
+        const frozen = frozenInitialRef.current;
+        if (frozen) {
+          setBasisRoll(wrapAngle(frozen.roll + accumulatedDeltaRef.current.z));
+        } else {
+          setBasisRoll(tenonRollRad);
+        }
+        frozenInitialRef.current = null;
+      }
       onDragStateChange?.(dragging);
     },
-    [onDragStateChange],
+    [onDragStateChange, tenonRollRad, tenonTiltRad, tenonTiltXRad, tenonFrame],
   );
 
   if (!worldTenonGizmo) return null;
@@ -498,13 +588,11 @@ export function OrganicCutTenonGizmo({
       disableRingBillboard
       disableViewCull
       rotateAxes={LEAN_AND_ROLL_RINGS}
-      // The roll turns the gizmo's own frame (the basis above is rolled with the
-      // tenon), so the blue ring already carries the whole movement. A handle that
-      // also advanced inside it went twice as far as the pointer and overtook it.
-      // NOT `axisVisualFlip: 0`: since the protractor dial landed, that factor sits
-      // on the delta the ring EMITS, so zeroing it would stop the tenon rolling at
-      // all. This says the one thing meant — the frame already carries it.
-      axisFrameCarriesRotation={{ z: true }}
+      // The frame's roll is FROZEN during a drag (see `basisRoll`) so the ring
+      // doesn't rotate under the pointer — that feedback is the roll drift. So the
+      // blue ring no longer carries the handle by turning the frame; the handle
+      // advances via the dial instead (like the lean rings), and the frame adopts
+      // the committed roll on release.
       onRotate={handleGizmoRotate}
       onDragStateChange={handleGizmoDragState}
     />
