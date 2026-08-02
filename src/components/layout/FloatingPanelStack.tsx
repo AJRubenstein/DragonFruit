@@ -108,7 +108,7 @@ type WindowContextMenuState = {
   y: number;
 };
 
-const PANEL_MARGIN = 12;
+const PANEL_MARGIN = 4;
 const EDGE_SNAP_THRESHOLD = 20;
 const EDGE_MAGNET_THRESHOLD = 22;
 const EDGE_HINT_THRESHOLD = 36;

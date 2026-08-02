@@ -76,7 +76,8 @@ export function TransformToolbar({ mode, onModeChange, onModeHover }: TransformT
 
   return (
     <div
-      className="fixed top-16 left-1/2 z-30 -translate-x-1/2 flex items-center pointer-events-auto"
+      className="fixed left-1/2 z-[60] -translate-x-1/2 flex items-center pointer-events-auto"
+      style={{ top: 'calc(var(--topbar-height) + 4px)' }}
     >
     <div
       className="rounded-full"
