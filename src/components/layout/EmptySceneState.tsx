@@ -525,59 +525,44 @@ export function EmptySceneState({
           </>
         ) : (
           <>
-            <div
-              className="rounded-lg border p-3 text-left"
-              style={{
-                borderColor: 'color-mix(in srgb, var(--border-subtle), transparent 8%)',
-                background: 'color-mix(in srgb, var(--surface-1), transparent 6%)',
-              }}
-            >
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                {_(msg({ message: 'Import', comment: 'Section header label above the file import buttons. Noun, not imperative verb.' }))}
-              </div>
-              <div className={`grid gap-2 ${onImportSceneChange ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`grid gap-2 w-full ${onImportSceneChange ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <button
+                type="button"
+                onClick={triggerMeshPicker}
+                className="group cursor-pointer rounded-md border px-3 py-3 text-center transition-colors"
+                style={{
+                  background: 'var(--primary-button-surface)',
+                  borderColor: 'color-mix(in srgb, var(--primary-button-surface), white 16%)',
+                }}
+              >
+                <div className="mb-1 inline-flex items-center justify-center gap-1.5 text-sm font-semibold w-full" style={{ color: 'var(--accent-contrast)' }}>
+                  <Upload className="w-4 h-4" />
+                  <span>{_(msg`Load Mesh`)}</span>
+                </div>
+                <div className="text-[11px]" style={{ color: 'color-mix(in srgb, var(--accent-contrast), black 16%)' }}>
+                  {_(msg`Mesh files (.stl, .obj, .3mf)`)}
+                </div>
+              </button>
+
+              {onImportSceneChange && (
                 <button
                   type="button"
-                  onClick={triggerMeshPicker}
-                  className="group cursor-pointer rounded-md border px-3 py-3 text-left transition-colors"
+                  onClick={triggerScenePicker}
+                  className="group cursor-pointer rounded-md border px-3 py-3 text-center transition-colors"
                   style={{
-                    background: 'var(--primary-button-surface)',
-                    borderColor: 'color-mix(in srgb, var(--primary-button-surface), white 16%)',
+                    background: 'var(--secondary-button-surface)',
+                    borderColor: 'color-mix(in srgb, var(--secondary-button-surface), white 16%)',
                   }}
                 >
-                  <div className="mb-1 inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: 'var(--accent-contrast)' }}>
-                    <Upload className="w-4 h-4" />
-                    <span>{_(msg`Load mesh`)}</span>
+                  <div className="mb-1 inline-flex items-center justify-center gap-1.5 text-sm font-semibold w-full" style={{ color: 'var(--accent-secondary-contrast)' }}>
+                    <FolderInput className="w-4 h-4" />
+                    <span>{_(msg`Import Scene`)}</span>
                   </div>
-                  <div className="text-[11px]" style={{ color: 'color-mix(in srgb, var(--accent-contrast), black 16%)' }}>
-                    {_(msg`Mesh files (.stl, .obj, .3mf)`)}
+                  <div className="text-[11px]" style={{ color: 'color-mix(in srgb, var(--accent-secondary-contrast), black 18%)' }}>
+                    {_(msg`Scene files (.voxl, .lys)`)}
                   </div>
                 </button>
-
-                {onImportSceneChange && (
-                  <button
-                    type="button"
-                    onClick={triggerScenePicker}
-                    className="group cursor-pointer rounded-md border px-3 py-3 text-left transition-colors"
-                    style={{
-                      background: 'var(--secondary-button-surface)',
-                      borderColor: 'color-mix(in srgb, var(--secondary-button-surface), white 16%)',
-                    }}
-                  >
-                    <div className="mb-1 inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: 'var(--accent-secondary-contrast)' }}>
-                      <FolderInput className="w-4 h-4" />
-                      <span>{_(msg`Import scene`)}</span>
-                    </div>
-                    <div className="text-[11px]" style={{ color: 'color-mix(in srgb, var(--accent-secondary-contrast), black 18%)' }}>
-                      {_(msg`Scene files (.voxl, .lys)`)}
-                    </div>
-                  </button>
-                )}
-              </div>
-
-              <div className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                <Trans comment="Tip shown below the import buttons. <0> wraps the highlighted label 'Load mesh'; <1> wraps 'Import scene'. These match the button labels above verbatim (same casing) — keep them consistent with however you translated those buttons. Keep both placeholders in your translation.">Tip: Start with <span style={{ color: 'var(--text-strong)' }}>Load mesh</span> for clean prints, or <span style={{ color: 'var(--text-strong)' }}>Import scene</span> to continue an existing setup.</Trans>
-              </div>
+              )}
             </div>
 
             <div
