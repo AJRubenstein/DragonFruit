@@ -9702,7 +9702,7 @@ export default function Home() {
         })}
       </FloatingPanelStack>
 
-      <div className="absolute inset-0 top-[var(--topbar-height)] z-0 flex">
+      <div className="absolute inset-0 z-0 flex">
         <div
           id="scene-root"
           className={`relative h-full ${scene.mode === 'printing' ? 'w-1/2 border-r' : 'w-full'}`}
