@@ -5,6 +5,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { MessageDescriptor } from '@lingui/core';
 import { detectIsIOS } from '@/hooks/usePlatform';
+import { useUiScale } from '@/hooks/useUiScale';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import { AlertTriangle, CheckCircle2, ChevronDown, Download, Gamepad2, LayoutGrid, Loader2, Maximize2, Minimize2, Play, Plus, Printer, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
@@ -559,6 +560,8 @@ export default function Home() {
   // for the lifetime of a scene renderer. Otherwise Ctrl+Z depends on which
   // render branch happens to be mounted.
   useSupportHistoryHandlers();
+  // Applies the user's saved UI scale via native webview zoom (no-op in browser).
+  useUiScale();
   // 1. Scene & Geometry (Multi-Model)
   const scene = useSceneCollectionManager();
 
@@ -9699,7 +9702,7 @@ export default function Home() {
         })}
       </FloatingPanelStack>
 
-      <div className="absolute inset-0 top-14 z-0 flex">
+      <div className="absolute inset-0 top-[var(--topbar-height)] z-0 flex">
         <div
           id="scene-root"
           className={`relative h-full ${scene.mode === 'printing' ? 'w-1/2 border-r' : 'w-full'}`}
