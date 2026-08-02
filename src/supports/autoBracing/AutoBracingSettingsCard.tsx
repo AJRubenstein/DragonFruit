@@ -168,7 +168,7 @@ export function AutoBracingSettingsCard({
             {/* Row 4: Seed Spacing (full width) */}
             <label className="space-y-1 min-w-0">
                 <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Cluster Spacing</div>
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-3 gap-1.5">
                     {([['Low', 2], ['Mid', 5], ['High', 10]] as const).map(([label, value]) => {
                         const isActive = settings.seedSpacingMm === value;
                         return (
@@ -176,7 +176,7 @@ export function AutoBracingSettingsCard({
                                 key={label}
                                 type="button"
                                 className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
-                                style={isActive ? activeModeStyle : undefined}
+                                style={isActive ? activeModeStyle : { background: 'var(--surface-0)' }}
                                 onClick={() => onChange({ seedSpacingMm: value })}
                             >
                                 {label}
