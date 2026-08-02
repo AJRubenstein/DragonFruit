@@ -251,7 +251,7 @@ body {
 .ui-input,
 .ui-select {
   border: 1px solid var(--border-subtle);
-  background: var(--surface-1);
+  background: var(--surface-0);
   color: var(--text-strong);
   border-radius: var(--radius-sm);
   padding: 6px 10px;
@@ -266,7 +266,7 @@ body {
   padding-bottom: 0;
   padding-left: 10px;
   padding-right: 28px;
-  line-height: 30px;
+  line-height: 1;
   vertical-align: middle;
 }
 
@@ -282,7 +282,7 @@ body {
   justify-content: center;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  padding: 6px 11px;
+  padding: 5px 11px 7px 11px;
   font-size: var(--font-size-sm);
   font-weight: 600;
   line-height: 1;
@@ -311,13 +311,13 @@ body {
 }
 
 .ui-button-secondary {
-  background: var(--surface-1);
+  background: var(--surface-0);
   color: var(--text-strong);
   border-color: var(--border-subtle);
 }
 
 .ui-button-secondary:hover {
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-0), white 5%);
 }
 
 .ui-button-accent {
@@ -365,11 +365,11 @@ body {
   padding-bottom: 0;
   padding-left: 10px;
   padding-right: 28px;
-  line-height: 30px;
+  line-height: 1;
 }
 
 .ui-panel .ui-button {
-  padding: 6px 11px;
+  padding: 5px 11px 7px 11px;
 }
 
 button:not(:disabled),
