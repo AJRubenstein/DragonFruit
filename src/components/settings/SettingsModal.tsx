@@ -81,6 +81,11 @@ import {
   type WorkspaceCameraDefaults,
 } from '@/components/settings/workspaceCameraPreferences';
 import {
+  DEFAULT_CAMERA_FOV_SETTINGS,
+  getSavedCameraFovSettings,
+  saveCameraFovSettings,
+} from '@/components/settings/cameraFovPreferences';
+import {
   pickOpenFilesWithNativeDialog,
   readPrintArtifactBytesFromPath,
   savePrintArtifactWithNativeDialog,
@@ -295,6 +300,7 @@ export function SettingsModal({
   const [draftCameraTrackpadZoomAcceleration, setDraftCameraTrackpadZoomAcceleration] = useState<number>(() => getSavedCameraTrackpadSettings().zoomAcceleration);
   const [draftCameraScope, setDraftCameraScope] = useState<CameraScopeMode>(() => getSavedWorkspaceCameraSettings().scope);
   const [draftHigherContrastModelEdges, setDraftHigherContrastModelEdges] = useState<boolean>(() => getSavedWorkspaceCameraSettings().higherContrastModelEdges);
+  const [draftPerspectiveFov, setDraftPerspectiveFov] = useState<number>(() => getSavedCameraFovSettings().fov);
   const [draftThemePreference, setDraftThemePreference] = useState(getSavedThemePreference());
   const [draftThemePreset, setDraftThemePreset] = useState<ThemePreset>(getSavedThemePreset());
   const [draftThemeColors, setDraftThemeColors] = useState<ThemeCustomColors>(getSavedThemeCustomColors());
@@ -393,6 +399,7 @@ export function SettingsModal({
     setDraftCameraTrackpadZoomAcceleration(getSavedCameraTrackpadSettings().zoomAcceleration);
     setDraftCameraScope(getSavedWorkspaceCameraSettings().scope);
     setDraftHigherContrastModelEdges(getSavedWorkspaceCameraSettings().higherContrastModelEdges);
+    setDraftPerspectiveFov(getSavedCameraFovSettings().fov);
     setDraftThemePreference(getSavedThemePreference());
     setDraftThemePreset(savedThemePreset);
     setDraftThemeColors(getSavedThemeCustomColors());
@@ -731,6 +738,7 @@ export function SettingsModal({
     setDraftCameraTrackpadZoomAcceleration(DEFAULT_CAMERA_TRACKPAD_SETTINGS.zoomAcceleration);
     setDraftCameraScope(DEFAULT_WORKSPACE_CAMERA_SETTINGS.scope);
     setDraftHigherContrastModelEdges(DEFAULT_WORKSPACE_CAMERA_SETTINGS.higherContrastModelEdges);
+    setDraftPerspectiveFov(DEFAULT_CAMERA_FOV_SETTINGS.fov);
     setDraftThemePreference('dark');
     setDraftThemePreset('dragonfruit-dark');
     setDraftThemeColors(DEFAULT_THEME_CUSTOM_COLORS);
@@ -813,6 +821,7 @@ export function SettingsModal({
     saveImportDefaultsSettings(draftImportDefaults);
     saveSpaceMouseSettings(draftSpaceMouseSettings);
     saveCameraProjectionSettings({ mode: draftCameraProjectionMode });
+    saveCameraFovSettings({ fov: draftPerspectiveFov });
     saveCameraFeelSettings({ preset: draftCameraFeelPreset });
     saveCameraTrackpadSettings({
       primaryAction: draftCameraTrackpadPrimaryAction,
@@ -870,6 +879,7 @@ export function SettingsModal({
     draftImportDefaults,
     draftSpaceMouseSettings,
     draftCameraProjectionMode,
+    draftPerspectiveFov,
     draftCameraFeelPreset,
     draftCameraTrackpadPrimaryAction,
     draftCameraTrackpadModifierKey,
@@ -1368,6 +1378,8 @@ export function SettingsModal({
                   onCameraScopeChange={setDraftCameraScope}
                   cameraProjectionMode={draftCameraProjectionMode}
                   onCameraProjectionModeChange={setDraftCameraProjectionMode}
+                  perspectiveFov={draftPerspectiveFov}
+                  onPerspectiveFovChange={setDraftPerspectiveFov}
                   cameraFeelPreset={draftCameraFeelPreset}
                   onCameraFeelPresetChange={setDraftCameraFeelPreset}
                   cameraTrackpadPrimaryAction={draftCameraTrackpadPrimaryAction}

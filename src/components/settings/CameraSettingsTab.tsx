@@ -7,12 +7,15 @@ import type { CameraProjectionMode } from '@/components/settings/cameraProjectio
 import type { CameraFeelPreset } from '@/components/settings/cameraFeelPreferences';
 import type { CameraTrackpadModifierKey, CameraTrackpadPrimaryAction } from '@/components/settings/cameraTrackpadPreferences';
 import type { CameraScopeMode, WorkspaceCameraDefaults } from '@/components/settings/workspaceCameraPreferences';
+import { FOV_MIN, FOV_MAX } from '@/components/settings/cameraFovPreferences';
 
 interface CameraSettingsTabProps {
   cameraScope: CameraScopeMode;
   onCameraScopeChange: (scope: CameraScopeMode) => void;
   cameraProjectionMode: CameraProjectionMode;
   onCameraProjectionModeChange: (mode: CameraProjectionMode) => void;
+  perspectiveFov: number;
+  onPerspectiveFovChange: (fov: number) => void;
   cameraFeelPreset: CameraFeelPreset;
   onCameraFeelPresetChange: (preset: CameraFeelPreset) => void;
   cameraTrackpadPrimaryAction: CameraTrackpadPrimaryAction;
@@ -43,6 +46,8 @@ export function CameraSettingsTab({
   onCameraScopeChange,
   cameraProjectionMode,
   onCameraProjectionModeChange,
+  perspectiveFov,
+  onPerspectiveFovChange,
   cameraFeelPreset,
   onCameraFeelPresetChange,
   cameraTrackpadPrimaryAction,
@@ -200,6 +205,25 @@ export function CameraSettingsTab({
                 </button>
               </div>
             </div>
+
+            {cameraProjectionMode === 'perspective' && (
+              <div className="mt-2.5 space-y-0.5">
+                <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
+                  <span>Field of view</span>
+                  <span style={{ color: 'var(--text-strong)' }}>{perspectiveFov}°</span>
+                </label>
+                <input
+                  type="range"
+                  min={FOV_MIN}
+                  max={FOV_MAX}
+                  step={1}
+                  value={perspectiveFov}
+                  onChange={(e) => onPerspectiveFovChange(parseInt(e.target.value, 10))}
+                  className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                  style={{ accentColor: 'var(--accent)', background: 'color-mix(in srgb, var(--text-muted), transparent 72%)' }}
+                />
+              </div>
+            )}
           </div>
         )}
 

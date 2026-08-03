@@ -97,6 +97,11 @@ import {
   type CameraProjectionMode,
 } from '@/components/settings/cameraProjectionPreferences';
 import {
+  DEFAULT_CAMERA_FOV_SETTINGS,
+  getSavedCameraFovSettings,
+  subscribeToCameraFovSettings,
+} from '@/components/settings/cameraFovPreferences';
+import {
   DEFAULT_CAMERA_FEEL_SETTINGS,
   getSavedCameraFeelSettings,
   subscribeToCameraFeelSettings,
@@ -673,6 +678,11 @@ export function SceneCanvas({
     subscribeToCameraProjectionSettings,
     () => getSavedCameraProjectionSettings().mode,
     () => DEFAULT_CAMERA_PROJECTION_SETTINGS.mode,
+  );
+  const perspectiveFov = React.useSyncExternalStore(
+    subscribeToCameraFovSettings,
+    () => getSavedCameraFovSettings().fov,
+    () => DEFAULT_CAMERA_FOV_SETTINGS.fov,
   );
   const cameraFeelPreset = React.useSyncExternalStore(
     subscribeToCameraFeelSettings,
@@ -5335,7 +5345,7 @@ export function SceneCanvas({
         />
         <EnableLocalClipping enabled={clipLower != null || clipUpper != null || indicatorPlaneZ != null || !!organicCutKeyGizmo} />
         <CameraProvider cameraRef={cameraRef} />
-        <CameraProjectionController mode={cameraProjectionMode} />
+        <CameraProjectionController mode={cameraProjectionMode} perspectiveFov={perspectiveFov} />
         <CameraClipPlaneStabilizer />
         {/* GPU Picking Provider - wraps all pickable content when enabled */}
         <PickingProviderWrapper
