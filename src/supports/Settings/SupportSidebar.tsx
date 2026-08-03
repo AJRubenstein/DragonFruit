@@ -1205,14 +1205,14 @@ export function SupportSidebar() {
                     <div className="inline-flex items-center gap-1">
                         <IconButton
                             onClick={handleSave}
-                            className={`!p-1.5 transition-colors ${saveStatus === 'saved' ? '!bg-green-600/30 !text-green-400' : saveStatus === 'error' ? '!bg-red-600/30 !text-red-400' : '!text-green-400/70 hover:!text-green-400 hover:!bg-green-600/15'}`}
+                            className={`!p-0.5 transition-colors ${saveStatus === 'saved' ? '!bg-green-600/30 !text-green-400' : saveStatus === 'error' ? '!bg-red-600/30 !text-red-400' : '!text-green-400/70 hover:!text-green-400 hover:!bg-green-600/15'}`}
                             title={saveStatus !== 'idle' ? (saveStatus === 'saved' ? 'Saved' : 'Save failed') : 'Save settings'}
                         >
                             {saveStatus === 'saved' ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
                         </IconButton>
                         <IconButton
                             onClick={handleRestoreDefaults}
-                            className={`!p-1.5 transition-colors ${defaultsAnimating ? '' : '!text-red-400/70 hover:!text-red-400 hover:!bg-red-600/15'}`}
+                            className={`!p-0.5 transition-colors ${defaultsAnimating ? '' : '!text-red-400/70 hover:!text-red-400 hover:!bg-red-600/15'}`}
                             title="Restore defaults"
                         >
                             <RotateCcw className={`h-3.5 w-3.5 ${defaultsAnimating ? 'animate-spin-once text-orange-400' : ''}`} />
