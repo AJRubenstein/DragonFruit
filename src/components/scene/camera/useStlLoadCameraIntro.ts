@@ -4,6 +4,7 @@ import React from 'react';
 import * as THREE from 'three';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
+import { getSavedCameraFovSettings, DEFAULT_CAMERA_FOV_SETTINGS, subscribeToCameraFovSettings } from '@/components/settings/cameraFovPreferences';
 
 type DefaultCameraConfig = {
   position: [number, number, number];
@@ -33,15 +34,21 @@ export function useStlLoadCameraIntro(
   const pendingDeferredIntroRef = React.useRef(false);
   const deferIntro = options?.deferIntro ?? false;
 
+  const perspectiveFov = React.useSyncExternalStore(
+    subscribeToCameraFovSettings,
+    () => getSavedCameraFovSettings().fov,
+    () => DEFAULT_CAMERA_FOV_SETTINGS.fov,
+  );
+
   const defaultCamera = React.useMemo<DefaultCameraConfig>(() => ({
     position: [
       (fallbackOrbitTarget?.x ?? 0) - 220,
       (fallbackOrbitTarget?.y ?? 0) - 220,
       (fallbackOrbitTarget?.z ?? 0) + 260,
     ],
-    fov: 50,
+    fov: perspectiveFov,
     up: [0, 0, 1],
-  }), [fallbackOrbitTarget?.x, fallbackOrbitTarget?.y, fallbackOrbitTarget?.z]);
+  }), [fallbackOrbitTarget?.x, fallbackOrbitTarget?.y, fallbackOrbitTarget?.z, perspectiveFov]);
 
   const defaultOrbitTarget = React.useMemo(
     () => fallbackOrbitTarget?.clone() ?? new THREE.Vector3(0, 0, 0),

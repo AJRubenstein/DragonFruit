@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import type { CameraProjectionMode } from '@/components/settings/cameraProjectionPreferences';
 
-export function CameraProjectionController({ mode }: { mode: CameraProjectionMode }) {
+export function CameraProjectionController({ mode, perspectiveFov = 50 }: { mode: CameraProjectionMode; perspectiveFov?: number }) {
   const { camera, controls, set, size } = useThree();
   // Orthographic cameras require a negative near so that geometry behind the
   // camera's position (in its local +Z direction) remains visible. When the
@@ -40,6 +40,7 @@ export function CameraProjectionController({ mode }: { mode: CameraProjectionMod
       camera.aspect = aspect;
       camera.near = PERSPECTIVE_NEAR;
       camera.far = PERSPECTIVE_FAR;
+      camera.fov = perspectiveFov;
       camera.updateProjectionMatrix();
       return;
     }
@@ -113,13 +114,13 @@ export function CameraProjectionController({ mode }: { mode: CameraProjectionMod
       return;
     }
 
-    const next = new THREE.PerspectiveCamera(50, aspect, PERSPECTIVE_NEAR, PERSPECTIVE_FAR);
+    const next = new THREE.PerspectiveCamera(perspectiveFov, aspect, PERSPECTIVE_NEAR, PERSPECTIVE_FAR);
     next.up.copy(camera.up);
 
     if (camera instanceof THREE.OrthographicCamera) {
       const span = Math.max(1e-6, (camera.top - camera.bottom) / Math.max(1e-6, camera.zoom));
       const distance = Math.max(0.001, span / 2);
-      
+
       // When switching from ortho to perspective, calculate FOV to match
       // the ortho zoom level so objects appear the same visual size.
       // This prevents zoom-out/zoom-in when transitioning between projections.
@@ -147,7 +148,7 @@ export function CameraProjectionController({ mode }: { mode: CameraProjectionMod
       (controls as any).update?.();
       next.updateMatrixWorld();
     }
-  }, [camera, controls, mode, set, size.height, size.width]);
+  }, [camera, controls, mode, perspectiveFov, set, size.height, size.width]);
 
   return null;
 }
