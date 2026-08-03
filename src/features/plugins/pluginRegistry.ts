@@ -356,6 +356,21 @@ function resolveBuildDimensionMm(
   return fallbackMm;
 }
 
+function sanitizeSafetyMarginMm(input: unknown): PrinterPreset['safetyMarginMm'] {
+  if (!input || typeof input !== 'object') return undefined;
+  const src = input as Record<string, unknown>;
+  const clampEdge = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  };
+  return {
+    front: clampEdge(src.front),
+    back: clampEdge(src.back),
+    left: clampEdge(src.left),
+    right: clampEdge(src.right),
+  };
+}
+
 function sanitizePrinterPreset(input: unknown): PrinterPreset | null {
   const value = (input ?? {}) as Record<string, unknown>;
 
@@ -397,6 +412,7 @@ function sanitizePrinterPreset(input: unknown): PrinterPreset | null {
       depth: resolveBuildDimensionMm((value as any).buildVolumeMm?.depth, resolutionY, pixelSize?.y, 89),
       height: sanitizeNumber((value as any).buildVolumeMm?.height, 175, 1, 10000),
     },
+    safetyMarginMm: sanitizeSafetyMarginMm((value as any).safetyMarginMm),
     display: {
       resolutionX,
       resolutionY,
