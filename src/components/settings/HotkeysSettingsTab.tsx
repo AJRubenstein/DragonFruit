@@ -249,12 +249,7 @@ export function HotkeysSettingsTab() {
           onClick={() => resetCategories(section.categories.map((category) => category.category))}
           title="Reset section to default shortcuts"
           aria-label={`Reset ${section.title} section to default shortcuts`}
-          className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors hover:brightness-125"
-          style={{
-            borderColor: 'color-mix(in srgb, var(--success), transparent 55%)',
-            background: 'color-mix(in srgb, var(--success), transparent 88%)',
-            color: 'var(--success)',
-          }}
+          className="ui-button ui-button-secondary !h-7 !w-7 !p-0 inline-flex shrink-0 items-center justify-center rounded-md"
         >
           <RotateCcw className="h-3.5 w-3.5" />
         </button>
