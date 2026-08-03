@@ -410,12 +410,12 @@ button:disabled,
 
 .ui-label {
   color: var(--indicator);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .ui-meta {
   color: var(--indicator);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .ui-checkbox {
