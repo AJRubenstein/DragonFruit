@@ -1,5 +1,6 @@
 import React from 'react';
 import { Palette } from 'lucide-react';
+import { OrganicCutColorsSection } from '@/features/organicCut';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { Select } from '@/components/atoms';
 import type { ThemeCustomColors, ThemePreference, ThemePreset, ThemeProfile } from '@/components/settings/themeCustomizations';
@@ -128,6 +129,7 @@ export function UISettingsTab({
 }: UISettingsTabProps) {
 	const importInputRef = React.useRef<HTMLInputElement | null>(null);
 	const [pendingPickerColors, setPendingPickerColors] = React.useState<Partial<Record<keyof ThemeCustomColors, string>>>({});
+	const [themeTab, setThemeTab] = React.useState<'general' | 'cut'>('general');
 
 	const builtInProfiles = themeProfiles.filter((profile) => profile.isBuiltIn);
 	const customProfiles = themeProfiles.filter((profile) => !profile.isBuiltIn);
@@ -310,16 +312,15 @@ export function UISettingsTab({
 					</div>
 				</div>
 
-				<div className="mt-2 rounded-lg border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)' }}>
-					<input
-						ref={importInputRef}
-						type="file"
-						accept=".json,application/json"
-						onChange={handleImportInputChange}
-						className="hidden"
-					/>
-					<div className="flex flex-wrap items-center justify-between gap-2">
-						{isBuiltInThemePreset ? (
+				<input
+					ref={importInputRef}
+					type="file"
+					accept=".json,application/json"
+					onChange={handleImportInputChange}
+					className="hidden"
+				/>
+				<div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+					{isBuiltInThemePreset ? (
 							<>
 								<div className="flex flex-wrap items-center gap-1.5">
 									<button
@@ -401,9 +402,32 @@ export function UISettingsTab({
 							</>
 						)}
 					</div>
-				</div>
-			</section>
+	</section>
 
+			<div className="flex items-center gap-1.5 border-b pb-2" style={{ borderColor: 'var(--border-subtle)' }}>
+				<button
+					type="button"
+					onClick={() => setThemeTab('general')}
+					className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-xs rounded-md"
+					style={themeTab === 'general'
+						? { color: 'var(--accent-secondary)', borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 42%)' }
+						: { color: 'var(--text-muted)' }}
+				>
+					General UI
+				</button>
+				<button
+					type="button"
+					onClick={() => setThemeTab('cut')}
+					className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-xs rounded-md"
+					style={themeTab === 'cut'
+						? { color: 'var(--accent-secondary)', borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 42%)' }
+						: { color: 'var(--text-muted)' }}
+				>
+					Cutting Tool
+				</button>
+			</div>
+
+			<div style={{ display: themeTab === 'general' ? undefined : 'none' }}>
 			<div className="grid gap-2.5 xl:grid-cols-2">
 				{THEME_COLOR_SECTIONS.map((section) => (
 					<section
@@ -427,6 +451,11 @@ export function UISettingsTab({
 						</div>
 					</section>
 				))}
+			</div>
+			</div>
+
+			<div style={{ display: themeTab === 'cut' ? undefined : 'none' }}>
+				<OrganicCutColorsSection />
 			</div>
 		</div>
 	);
