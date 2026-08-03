@@ -17,8 +17,11 @@ import {
     type MaterialAntiAliasingSettings,
     type MaterialProfile,
     type PrinterOutputFormat,
+    getActivePrinterProfile,
+    getProfileStoreSnapshot,
 } from '@/features/profiles/profileStore';
 import { getProfileLocalMaterialSettingsAdapter } from '@/features/plugins/pluginRegistry';
+import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────────
 
@@ -867,6 +870,14 @@ export function MaterialAntiAliasingSection({ draft, onChange, lockActivationTog
         ...DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
         ...(draft.antiAliasingSettings ?? {}),
     };
+    const calculatedOffset = React.useMemo(() => {
+        const storeState = getProfileStoreSnapshot();
+        const printer = getActivePrinterProfile(storeState);
+        if (!printer) return 0.05;
+        const pxX = printer.pixelSize?.x ? printer.pixelSize.x / 1000 : (printer.buildVolumeMm?.width ?? 143) / (printer.display?.resolutionX ?? 2560);
+        const pxY = printer.pixelSize?.y ? printer.pixelSize.y / 1000 : (printer.buildVolumeMm?.depth ?? 89) / (printer.display?.resolutionY ?? 1620);
+        return calculateTipOffset(settings, draft.layerHeightMm ?? 0.05, pxX, pxY);
+    }, [settings, draft.layerHeightMm]);
     const customSettingsEnabled = settings.enableCustomSettings === true || settings.enableOverride === true;
     const overrideEnabled = settings.enableOverride === true;
     const aaEnabled = customSettingsEnabled && settings.mode !== 'Off';
@@ -1037,6 +1048,44 @@ export function MaterialAntiAliasingSection({ draft, onChange, lockActivationTog
                         { value: '3DAA', label: '3D AA' },
                     ]}
                 />
+            </AaCard>
+
+            <AaCard
+                title="Tip Penetration Offset"
+                description="Controls the penetration depth of support tips into the model to compensate for grayscale AA curing softness."
+            >
+                <div className="space-y-2">
+                    <SelectDropdown
+                        label="Offset Mode"
+                        value={settings.tipOffsetMode}
+                        onChange={(value) => updateAaSettings({ tipOffsetMode: value as 'disabled' | 'auto' | 'manual' })}
+                        options={[
+                            { value: 'disabled', label: 'Disabled' },
+                            { value: 'auto', label: 'Automatic' },
+                            { value: 'manual', label: 'Manual' },
+                        ]}
+                        className="space-y-1 block"
+                        labelClassName="font-medium"
+                        selectClassName="w-full h-[36px] px-2.5 pr-10 leading-tight text-sm"
+                    />
+
+                    {settings.tipOffsetMode !== 'disabled' && (
+                        <LabeledNumberInput
+                            label="Penetration Distance (mm)"
+                            disabled={settings.tipOffsetMode === 'auto'}
+                            value={settings.tipOffsetMode === 'auto' ? calculatedOffset : settings.tipOffsetMm}
+                            onChange={(val) => updateAaSettings({ tipOffsetMm: val })}
+                        />
+                    )}
+
+                    {settings.tipOffsetMode !== 'disabled' && (
+                        <LabeledToggleInput
+                            label="Display Offset in Viewport"
+                            checked={settings.tipOffsetDisplayInUi}
+                            onChange={(value) => updateAaSettings({ tipOffsetDisplayInUi: value })}
+                        />
+                    )}
+                </div>
             </AaCard>
 
             {!customSettingsEnabled && (
@@ -1388,6 +1437,14 @@ function MaterialAntiAliasingSectionDense({ draft, onChange }: MaterialAntiAlias
         ...DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
         ...(draft.antiAliasingSettings ?? {}),
     };
+    const calculatedOffset = React.useMemo(() => {
+        const storeState = getProfileStoreSnapshot();
+        const printer = getActivePrinterProfile(storeState);
+        if (!printer) return 0.05;
+        const pxX = printer.pixelSize?.x ? printer.pixelSize.x / 1000 : (printer.buildVolumeMm?.width ?? 143) / (printer.display?.resolutionX ?? 2560);
+        const pxY = printer.pixelSize?.y ? printer.pixelSize.y / 1000 : (printer.buildVolumeMm?.depth ?? 89) / (printer.display?.resolutionY ?? 1620);
+        return calculateTipOffset(settings, draft.layerHeightMm ?? 0.05, pxX, pxY);
+    }, [settings, draft.layerHeightMm]);
     const overrideEnabled = settings.enableOverride === true;
     const aaEnabled = overrideEnabled && settings.mode !== 'Off';
     const is3daa = overrideEnabled && settings.mode === '3DAA';
@@ -1699,6 +1756,44 @@ function MaterialAntiAliasingSectionDense({ draft, onChange }: MaterialAntiAlias
                     onChange={(value) => updateAaSettings({ aaOnSupports: value })}
                 />
             </AaCard>
+
+            <AaCard
+                title="Tip Penetration Offset"
+                description="Controls the penetration depth of support tips into the model to compensate for grayscale AA curing softness."
+            >
+                <div className="space-y-2">
+                    <SelectDropdown
+                        label="Offset Mode"
+                        value={settings.tipOffsetMode}
+                        onChange={(value) => updateAaSettings({ tipOffsetMode: value as 'disabled' | 'auto' | 'manual' })}
+                        options={[
+                            { value: 'disabled', label: 'Disabled' },
+                            { value: 'auto', label: 'Automatic' },
+                            { value: 'manual', label: 'Manual' },
+                        ]}
+                        className="space-y-1 block"
+                        labelClassName="font-medium"
+                        selectClassName="w-full h-[36px] px-2.5 pr-10 leading-tight text-sm"
+                    />
+
+                    {settings.tipOffsetMode !== 'disabled' && (
+                        <LabeledNumberInput
+                            label="Penetration Distance (mm)"
+                            disabled={settings.tipOffsetMode === 'auto'}
+                            value={settings.tipOffsetMode === 'auto' ? calculatedOffset : settings.tipOffsetMm}
+                            onChange={(val) => updateAaSettings({ tipOffsetMm: val })}
+                        />
+                    )}
+
+                    {settings.tipOffsetMode !== 'disabled' && (
+                        <LabeledToggleInput
+                            label="Display Offset in Viewport"
+                            checked={settings.tipOffsetDisplayInUi}
+                            onChange={(value) => updateAaSettings({ tipOffsetDisplayInUi: value })}
+                        />
+                    )}
+                </div>
+            </AaCard>
         </div>
     );
 }
@@ -1708,6 +1803,14 @@ function MaterialAntiAliasingSectionLegacy({ draft, onChange }: MaterialAntiAlia
         ...DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
         ...(draft.antiAliasingSettings ?? {}),
     };
+    const calculatedOffset = React.useMemo(() => {
+        const storeState = getProfileStoreSnapshot();
+        const printer = getActivePrinterProfile(storeState);
+        if (!printer) return 0.05;
+        const pxX = printer.pixelSize?.x ? printer.pixelSize.x / 1000 : (printer.buildVolumeMm?.width ?? 143) / (printer.display?.resolutionX ?? 2560);
+        const pxY = printer.pixelSize?.y ? printer.pixelSize.y / 1000 : (printer.buildVolumeMm?.depth ?? 89) / (printer.display?.resolutionY ?? 1620);
+        return calculateTipOffset(settings, draft.layerHeightMm ?? 0.05, pxX, pxY);
+    }, [settings, draft.layerHeightMm]);
 
     const updateAaSettings = React.useCallback((patch: Partial<MaterialAntiAliasingSettings>) => {
         onChange((prev) => ({
@@ -1908,6 +2011,44 @@ function MaterialAntiAliasingSectionLegacy({ draft, onChange }: MaterialAntiAlia
                     <AaInlineHelp>Disabled keeps supports crisp and binary. Enabled allows anti-aliased support edges too.</AaInlineHelp>
                 </AaCard>
             )}
+
+            <AaCard
+                title="Tip Penetration Offset"
+                description="Controls the penetration depth of support tips into the model to compensate for grayscale AA curing softness."
+            >
+                <div className="space-y-2">
+                    <SelectDropdown
+                        label="Offset Mode"
+                        value={settings.tipOffsetMode}
+                        onChange={(value) => updateAaSettings({ tipOffsetMode: value as 'disabled' | 'auto' | 'manual' })}
+                        options={[
+                            { value: 'disabled', label: 'Disabled' },
+                            { value: 'auto', label: 'Automatic' },
+                            { value: 'manual', label: 'Manual' },
+                        ]}
+                        className="space-y-1 block"
+                        labelClassName="font-medium"
+                        selectClassName="w-full h-[36px] px-2.5 pr-10 leading-tight text-sm"
+                    />
+
+                    {settings.tipOffsetMode !== 'disabled' && (
+                        <LabeledNumberInput
+                            label="Penetration Distance (mm)"
+                            disabled={settings.tipOffsetMode === 'auto'}
+                            value={settings.tipOffsetMode === 'auto' ? calculatedOffset : settings.tipOffsetMm}
+                            onChange={(val) => updateAaSettings({ tipOffsetMm: val })}
+                        />
+                    )}
+
+                    {settings.tipOffsetMode !== 'disabled' && (
+                        <LabeledToggleInput
+                            label="Display Offset in Viewport"
+                            checked={settings.tipOffsetDisplayInUi}
+                            onChange={(value) => updateAaSettings({ tipOffsetDisplayInUi: value })}
+                        />
+                    )}
+                </div>
+            </AaCard>
         </>
     );
 }

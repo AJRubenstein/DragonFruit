@@ -41,5 +41,6 @@ export function calculateTipOffset(
     }
 
     // Formula: (2 * Rz + 1) * Hz
-    return (2 * Rz + 1) * layerHeightMm;
+    return Number(((2 * Rz + 1) * layerHeightMm).toFixed(3));
 }
+
