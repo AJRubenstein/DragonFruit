@@ -154,7 +154,7 @@ function AnimatedResetButton({
       disabled={disabled}
       title={title}
       aria-label={ariaLabel}
-      className={`!p-1.5 transition-colors disabled:opacity-40 ${
+      className={`!p-0.5 transition-colors disabled:opacity-40 ${
         animating ? '' : '!text-red-400/70 hover:!text-red-400 hover:!bg-red-600/15'
       }`}
     >
