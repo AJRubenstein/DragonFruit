@@ -154,7 +154,7 @@ export function SceneAutosaveSettingsTab() {
           <div className="rounded-md border px-2.5 py-2 flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
             <div>
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Enable scene autosave</div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Creates recovery snapshots while editing.</div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Creates recovery snapshots while editing.</div>
             </div>
             <button
               type="button"
@@ -187,7 +187,7 @@ export function SceneAutosaveSettingsTab() {
           >
             <div>
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Autosave idle delay</div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Wait this long after edits before autosaving.</div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Wait this long after edits before autosaving.</div>
             </div>
             <div className="inline-flex items-center gap-2">
               <NumberInput
@@ -221,7 +221,7 @@ export function SceneAutosaveSettingsTab() {
           >
             <div>
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Maximum autosave interval</div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>For continuous edits, save at least this often.</div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>For continuous edits, save at least this often.</div>
             </div>
             <div className="inline-flex items-center gap-2">
               <NumberInput
@@ -315,14 +315,14 @@ export function SceneAutosaveSettingsTab() {
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Recovery state</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Recovery state</div>
                 <div className="mt-1 text-xs" style={{ color: 'var(--text-strong)' }}>
                   {manifest == null ? 'No autosave manifest found' : manifest.clean ? 'Clean (no pending recovery)' : 'Recovery available'}
                 </div>
               </div>
 
               <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Last autosave timestamp</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Last autosave timestamp</div>
                 <div className="mt-1 text-xs" style={{ color: 'var(--text-strong)' }}>
                   {manifest?.savedAt ? new Date(manifest.savedAt).toLocaleString() : 'Unknown'}
                 </div>
@@ -330,17 +330,17 @@ export function SceneAutosaveSettingsTab() {
 
               {manifest?.lastError && (
                 <div className="rounded-md border px-2.5 py-2 sm:col-span-2 border-amber-500/40 bg-amber-500/10">
-                  <div className="text-[10px] uppercase tracking-wide font-semibold text-amber-400">Standing Autosave Error</div>
+                  <div className="text-[11px] uppercase tracking-wide font-semibold text-amber-400">Standing Autosave Error</div>
                   <div className="mt-1 text-xs text-amber-200">{manifest.lastError}</div>
                 </div>
               )}
 
               <div className="rounded-md border px-2.5 py-2 sm:col-span-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Autosave scene file</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Autosave scene file</div>
                 <div className="mt-1 text-xs break-all" style={{ color: 'var(--text-strong)' }}>
                   {resolvedAutosavePath ?? 'Unavailable'}
                 </div>
-                <div className="mt-1.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+                <div className="mt-1.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                   {resolvedAutosaveOrigin === 'sidecar'
                     ? 'A recovery copy is written beside each saved project, as <name>_autosave.voxl. It uses roughly as much disk as the project itself.'
                     : 'Recovery copies are written to the app data folder above.'}

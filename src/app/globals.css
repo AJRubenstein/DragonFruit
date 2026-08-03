@@ -363,7 +363,7 @@ body {
 }
 
 .ui-panel h3 {
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-md) !important;
   line-height: var(--line-height-tight);
 }
 

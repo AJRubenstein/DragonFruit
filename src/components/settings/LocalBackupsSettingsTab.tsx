@@ -705,28 +705,28 @@ export function LocalBackupsSettingsTab() {
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Default directory</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Default directory</div>
                 <div className="mt-1 text-xs font-medium break-all" style={{ color: 'var(--text-strong)' }}>
                   {defaultDirectory || 'Resolving...'}
                 </div>
               </div>
 
               <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Selected directory</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Selected directory</div>
                 <div className="mt-1 text-xs font-medium break-all" style={{ color: 'var(--text-strong)' }}>
                   {selectedDirectory || 'Not selected'}
                 </div>
               </div>
 
               <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Last backup on disk</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Last backup on disk</div>
                 <div className="mt-1 text-xs" style={{ color: 'var(--text-strong)' }}>
                   {stateUpdatedAt ? new Date(stateUpdatedAt).toLocaleString() : 'Never'}
                 </div>
               </div>
 
               <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Last local sync</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Last local sync</div>
                 <div className="mt-1 text-xs" style={{ color: 'var(--text-strong)' }}>
                   {lastLocalSyncAt ? new Date(lastLocalSyncAt).toLocaleString() : 'Never'}
                 </div>
@@ -785,8 +785,8 @@ export function LocalBackupsSettingsTab() {
         </div>
 
         <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-          <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Quick actions</div>
-          <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Quick actions</div>
+          <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
             Create a snapshot now and refresh history.
           </div>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -813,12 +813,12 @@ export function LocalBackupsSettingsTab() {
         </div>
 
         <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-          <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Automation</div>
+          <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Automation</div>
           <div className="mt-2 grid gap-2">
             <div className="rounded-md border px-2.5 py-2 flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div>
                 <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Enable automatic backups</div>
-                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Automatically write snapshots to local disk on an interval.</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Automatically write snapshots to local disk on an interval.</div>
               </div>
               <button
                 type="button"
@@ -851,7 +851,7 @@ export function LocalBackupsSettingsTab() {
             >
               <div>
                 <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Sync interval</div>
-                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Minutes between automatic local backups.</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Minutes between automatic local backups.</div>
               </div>
               <div className="inline-flex items-center gap-2">
                 <NumberInput
@@ -879,7 +879,7 @@ export function LocalBackupsSettingsTab() {
         <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
           <div className="flex items-center justify-between gap-2">
             <div>
-              <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Manage Backups</div>
+              <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Manage Backups</div>
               <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>View, restore, or delete older snapshots from disk.</div>
             </div>
             <button
@@ -911,7 +911,7 @@ export function LocalBackupsSettingsTab() {
                         <div className="truncate text-xs font-medium" style={{ color: 'var(--text-strong)' }}>
                           {formatHistoryDate(item)}
                         </div>
-                        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                           ID {item.id}
                         </div>
                       </button>
@@ -1024,7 +1024,7 @@ export function LocalBackupsSettingsTab() {
                   <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
                     Restore Snapshot
                   </h2>
-                  <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+                  <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                     Snapshot from {confirmRestoreId ? new Date(Number(confirmRestoreId)).toLocaleString() : ''}
                   </p>
                 </div>
@@ -1094,7 +1094,7 @@ export function LocalBackupsSettingsTab() {
                 <h4 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                   Backup Snapshot Content
                 </h4>
-                <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                   {selectedHistoryId ? `Snapshot ${new Date(Number(selectedHistoryId)).toLocaleString()}` : 'Loading snapshot...'}
                 </p>
               </div>
@@ -1166,19 +1166,19 @@ export function LocalBackupsSettingsTab() {
                       <div className="h-full min-h-0 overflow-auto custom-scrollbar pr-1">
                         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                           <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                            <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Snapshot ID</div>
+                            <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Snapshot ID</div>
                             <div className="mt-1 text-xs font-medium" style={{ color: 'var(--text-strong)' }}>{selectedHistoryId}</div>
                           </div>
                           <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                            <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Document Updated</div>
+                            <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Document Updated</div>
                             <div className="mt-1 text-xs font-medium" style={{ color: 'var(--text-strong)' }}>{new Date(selectedHistoryDocument.updatedAt).toLocaleString()}</div>
                           </div>
                           <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                            <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Client ID</div>
+                            <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Client ID</div>
                             <div className="mt-1 text-xs font-medium break-all" style={{ color: 'var(--text-strong)' }}>{selectedHistoryDocument.snapshot.clientId}</div>
                           </div>
                           <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                            <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>LocalStorage Keys</div>
+                            <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>LocalStorage Keys</div>
                             <div className="mt-1 text-xs font-medium" style={{ color: 'var(--text-strong)' }}>{Object.keys(selectedHistoryDocument.snapshot.localStorage ?? {}).length}</div>
                           </div>
                         </div>
@@ -1216,11 +1216,11 @@ export function LocalBackupsSettingsTab() {
                         </div>
 
                         <div className="rounded-md border p-2.5 min-h-0 flex flex-col" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                          <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>
+                          <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>
                             {selectedStorageKey ?? 'Select a key'}
                           </div>
                           <pre
-                            className="mt-2 flex-1 min-h-0 w-full rounded-md border p-2 text-[11px] leading-relaxed overflow-auto custom-scrollbar whitespace-pre"
+                            className="mt-2 flex-1 min-h-0 w-full rounded-md border p-2 text-xs leading-relaxed overflow-auto custom-scrollbar whitespace-pre"
                             style={{
                               borderColor: 'color-mix(in srgb, #3f4451, var(--border-subtle) 35%)',
                               background: '#282c34',
@@ -1239,7 +1239,7 @@ export function LocalBackupsSettingsTab() {
                       parsedProfiles ? (
                         <div className="h-full min-h-0 grid gap-2 lg:grid-cols-[minmax(230px,32%)_minmax(0,1fr)]">
                           <div className="rounded-md border p-2 min-h-0 overflow-auto custom-scrollbar" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                            <div className="text-[10px] uppercase tracking-wide font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
+                            <div className="text-[11px] uppercase tracking-wide font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
                               Printer Profiles ({parsedProfiles.printerProfiles.length})
                             </div>
                             <div className="space-y-1.5">
@@ -1266,12 +1266,12 @@ export function LocalBackupsSettingsTab() {
                                   >
                                     <div className="flex items-center justify-between gap-2">
                                       <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>{printer.name ?? printer.id}</div>
-                                      {isActiveSnapshot && <span className="text-[10px] font-semibold" style={{ color: 'var(--accent-secondary)' }}>ACTIVE</span>}
+                                      {isActiveSnapshot && <span className="text-[11px] font-semibold" style={{ color: 'var(--accent-secondary)' }}>ACTIVE</span>}
                                     </div>
-                                    <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                    <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                       {printer.manufacturer ?? 'Unknown manufacturer'}
                                     </div>
-                                    <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                    <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                       {materialCount} material{materialCount === 1 ? '' : 's'}
                                     </div>
                                   </button>
@@ -1287,20 +1287,20 @@ export function LocalBackupsSettingsTab() {
                               <div className="space-y-2">
                                 <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                                   <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>{selectedProfilesPrinter.name ?? selectedProfilesPrinter.id}</div>
-                                  <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                  <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                     {selectedProfilesPrinter.manufacturer ?? 'Unknown manufacturer'}
                                     {selectedProfilesPrinter.networkSupport ? ` • ${selectedProfilesPrinter.networkSupport}` : ''}
                                   </div>
-                                  <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                  <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                     Build: {selectedProfilesPrinter.buildVolumeMm?.width ?? '-'} × {selectedProfilesPrinter.buildVolumeMm?.depth ?? '-'} × {selectedProfilesPrinter.buildVolumeMm?.height ?? '-'} mm
                                   </div>
-                                  <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                  <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                     Display: {selectedProfilesPrinter.display?.resolutionX ?? '-'} × {selectedProfilesPrinter.display?.resolutionY ?? '-'}{selectedProfilesPrinter.display?.outputFormat ? ` (${selectedProfilesPrinter.display.outputFormat})` : ''}
                                   </div>
                                 </div>
 
                                 <div className="rounded-md border p-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                                  <div className="text-[10px] uppercase tracking-wide font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
+                                  <div className="text-[11px] uppercase tracking-wide font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
                                     Materials for this printer ({filteredMaterialsForSelectedPrinter.length})
                                   </div>
                                   <div className="space-y-1.5">
@@ -1319,12 +1319,12 @@ export function LocalBackupsSettingsTab() {
                                         }}>
                                           <div className="flex items-center justify-between gap-2">
                                             <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>{material.name ?? material.id}</div>
-                                            {isActiveSnapshot && <span className="text-[10px] font-semibold" style={{ color: 'var(--accent-secondary)' }}>ACTIVE</span>}
+                                            {isActiveSnapshot && <span className="text-[11px] font-semibold" style={{ color: 'var(--accent-secondary)' }}>ACTIVE</span>}
                                           </div>
-                                          <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                          <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                             {material.brand ?? 'Unknown brand'}{material.resinFamily ? ` • ${material.resinFamily}` : ''}
                                           </div>
-                                          <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                          <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                             Layer {material.layerHeightMm ?? '-'} mm • Normal {material.normalExposureSec ?? '-'}s • Bottom {material.bottomExposureSec ?? '-'}s × {material.bottomLayerCount ?? '-'}
                                           </div>
                                         </div>
@@ -1338,7 +1338,7 @@ export function LocalBackupsSettingsTab() {
                         </div>
                       ) : (
                         <pre
-                          className="rounded-md border p-2 text-[11px] leading-relaxed overflow-auto custom-scrollbar"
+                          className="rounded-md border p-2 text-xs leading-relaxed overflow-auto custom-scrollbar"
                           style={{
                             borderColor: 'color-mix(in srgb, #3f4451, var(--border-subtle) 35%)',
                             background: '#282c34',
@@ -1353,7 +1353,7 @@ export function LocalBackupsSettingsTab() {
 
                     {snapshotModalTab === 'raw' && (
                       <pre
-                        className="flex-1 min-h-0 rounded-md border p-2 text-[11px] leading-relaxed overflow-auto custom-scrollbar whitespace-pre"
+                        className="flex-1 min-h-0 rounded-md border p-2 text-xs leading-relaxed overflow-auto custom-scrollbar whitespace-pre"
                         style={{
                           borderColor: 'color-mix(in srgb, #3f4451, var(--border-subtle) 35%)',
                           background: '#282c34',

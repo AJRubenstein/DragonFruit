@@ -99,7 +99,7 @@ export function UvToolsSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Enable UVTools Integration
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Adds a &ldquo;Send to UVTools&rdquo; option in the slicing panel.
               </div>
             </div>
@@ -131,7 +131,7 @@ export function UvToolsSettingsTab({
                 <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                   UVTools Executable Path
                 </div>
-                <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                   Use auto-discover or enter the path to UVTools.exe manually.
                 </div>
               </div>

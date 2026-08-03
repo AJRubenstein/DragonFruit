@@ -1212,7 +1212,7 @@ export function SettingsModal({
             </span>
             <div>
               <h2 className="text-base font-semibold" style={{ color: 'var(--text-strong)' }}>Settings</h2>
-              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Customize DragonFruit behavior, visuals, and controls.
               </p>
             </div>
@@ -1278,7 +1278,7 @@ export function SettingsModal({
                           <span className="block text-sm font-semibold" style={{ color: active ? 'var(--text-strong)' : 'var(--text-strong)' }}>
                             {meta.label}
                           </span>
-                          <span className="block text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                          <span className="block text-xs truncate" style={{ color: 'var(--text-muted)' }}>
                             {meta.description}
                           </span>
                         </span>
@@ -1333,7 +1333,7 @@ export function SettingsModal({
                           <span className="block text-sm font-semibold" style={{ color: active ? 'var(--text-strong)' : 'var(--text-strong)' }}>
                             {meta.label}
                           </span>
-                          <span className="block text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                          <span className="block text-xs truncate" style={{ color: 'var(--text-muted)' }}>
                             {meta.description}
                           </span>
                         </span>
@@ -1547,7 +1547,7 @@ export function SettingsModal({
                               </span>
                             </Tooltip>
                             <span
-                              className="inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold"
+                              className="inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold"
                               style={buildStatusStyle}
                             >
                               {buildStatusLabel}
@@ -1574,15 +1574,15 @@ export function SettingsModal({
                                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                                   Ty Mansfield
                                 </div>
-                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Open Resin Alliance & Tableflip Foundry
                                 </div>
-                                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Core Framework, Supports, Bugfixes, and General Mayhem
                                 </div>
                               </div>
                               <div
-                                className="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                                 style={{
                                   color: 'var(--accent-contrast)',
                                   borderColor: 'color-mix(in srgb, var(--accent), white 18%)',
@@ -1606,15 +1606,15 @@ export function SettingsModal({
                                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                                   Paul Skapczyk
                                 </div>
-                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Open Resin Alliance
                                 </div>
-                                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Core Framework, UI & UX, Backend, Plugins and Chaos Engineering
                                 </div>
                               </div>
                               <div
-                                className="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                                 style={{
                                   color: 'var(--accent-contrast)',
                                   borderColor: 'color-mix(in srgb, var(--accent), white 18%)',
@@ -1638,15 +1638,15 @@ export function SettingsModal({
                                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                                   William Patton
                                 </div>
-                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                   PattonWebz
                                 </div>
-                                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Breaks stuff, maybe fixes it. Maybe.
                                 </div>
                               </div>
                               <div
-                                className="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                                 style={{
                                   color: 'var(--accent-secondary-contrast)',
                                   borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
@@ -1671,15 +1671,15 @@ export function SettingsModal({
                                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                                   Magistr
                                 </div>
-                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                   umag
                                 </div>
-                                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Support Tooling, Physics, and General Bugfixes. Linux Builds mysteriously work better when he's around, but who knows why.
                                 </div>
                               </div>
                               <div
-                                className="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                                 style={{
                                   color: 'var(--accent-secondary-contrast)',
                                   borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
@@ -1703,15 +1703,15 @@ export function SettingsModal({
                                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                                   Tim
                                 </div>
-                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                   tslater2006
                                 </div>
-                                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Anycubic Photon Support, Testing, and Bugfixes. Prints fun stuff.
                                 </div>
                               </div>
                               <div
-                                className="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                                 style={{
                                   color: 'var(--accent-secondary-contrast)',
                                   borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
@@ -1735,15 +1735,15 @@ export function SettingsModal({
                                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                                   Ada Phillips
                                 </div>
-                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Open Resin Alliance
                                 </div>
-                                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Ensures the software doesn't set itself on fire.
                                 </div>
                               </div>
                               <div
-                                className="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                                 style={{
                                   color: 'var(--accent-secondary-contrast)',
                                   borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
@@ -1767,15 +1767,15 @@ export function SettingsModal({
                                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                                   SinXIV
                                 </div>
-                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Open Resin Alliance
                                 </div>
-                                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                   File Format QA, Edge Case Discovery, and Testing. Finds creative ways to break things so the rest of us don't have to.
                                 </div>
                               </div>
                               <div
-                                className="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                                 style={{
                                   color: 'var(--accent-secondary-contrast)',
                                   borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
@@ -1799,15 +1799,15 @@ export function SettingsModal({
                                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                                   Aaron Baca
                                 </div>
-                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Open Resin Alliance
                                 </div>
-                                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                   Likes anti-aliasing and long walks on the beach. Also automation, scripting, and general bugfixes.
                                 </div>
                               </div>
                               <div
-                                className="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                                 style={{
                                   color: 'var(--accent-secondary-contrast)',
                                   borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
@@ -1824,7 +1824,7 @@ export function SettingsModal({
                       
 
                       <div className="rounded-lg border px-3 py-2 text-center" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-2), transparent 25%)' }}>
-                        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                           DragonFruit is under active development - expect frequent updates and iterative improvements to workflows and features.
                         </div>
                       </div>
@@ -1953,7 +1953,7 @@ export function SettingsModal({
                   <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                     Restore Defaults?
                   </h3>
-                  <p className="text-[11px] leading-snug mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  <p className="text-xs leading-snug mt-0.5" style={{ color: 'var(--text-muted)' }}>
                     This resets settings in this dialog to their default values.
                   </p>
                 </div>
@@ -2106,7 +2106,7 @@ export function SettingsModal({
         )}
       >
         <div className="space-y-2">
-          <label className="block text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+          <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
             Theme name
           </label>
           <input
@@ -2120,7 +2120,7 @@ export function SettingsModal({
           {isCreatingCustomThemeName ? (
             <div className="space-y-2">
               <div className="rounded-md border p-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                   Base preset
                 </label>
                 <div
@@ -2134,7 +2134,7 @@ export function SettingsModal({
                         key={preset}
                         type="button"
                         onClick={() => handleThemeCreateBasePresetChange(preset)}
-                        className="flex-1 rounded-sm border px-2 py-1 text-[11px] font-semibold transition-colors"
+                        className="flex-1 rounded-sm border px-2 py-1 text-xs font-semibold transition-colors"
                         style={active
                           ? {
                             color: 'var(--accent)',
@@ -2157,7 +2157,7 @@ export function SettingsModal({
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div className="rounded-md border p-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                   Primary branding
                 </label>
                 <div className="flex items-center gap-1.5">
@@ -2179,7 +2179,7 @@ export function SettingsModal({
               </div>
 
               <div className="rounded-md border p-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                   Secondary branding
                 </label>
                 <div className="flex items-center gap-1.5">
