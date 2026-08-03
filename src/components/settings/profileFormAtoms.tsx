@@ -711,7 +711,7 @@ type MaterialAntiAliasingSectionProps = {
 };
 
 const AA_STRENGTH_PRESETS = [4, 8, 16, 32] as const;
-const BLUR_WIDTH_PRESETS = [1, 2, 4, 8] as const;
+const BLUR_WIDTH_PRESETS = [0, 1, 2, 4] as const;
 const Z_BLUR_RADIUS_PRESETS = [1, 2, 3] as const;
 const LOOK_BACK_PRESETS = [2, 4, 6, 8] as const;
 
@@ -2002,23 +2002,20 @@ function MaterialAntiAliasingSectionLegacy({ draft, onChange }: MaterialAntiAlia
                 </AaCard>
             )}
 
-            {(settings.mode === 'Blur' || settings.mode === '3DAA') && (
-                <AaCard
-                    title="AA on Supports"
-                    description="Controls whether native support and raft geometry receives grayscale AA in the selected mode."
-                >
-                    <LabeledToggleInput label="AA on Supports" checked={settings.aaOnSupports} onChange={(value) => updateAaSettings({ aaOnSupports: value })} />
-                    <AaInlineHelp>Disabled keeps supports crisp and binary. Enabled allows anti-aliased support edges too.</AaInlineHelp>
-                </AaCard>
-            )}
-
             <AaCard
-                title="Tip Penetration Offset"
-                description="Controls the penetration depth of support tips into the model to compensate for grayscale AA curing softness."
+                title="Support Adjustments"
+                description="Controls anti-aliasing and penetration offsets applied to support and raft geometry."
             >
                 <div className="space-y-2">
+                    <LabeledToggleInput
+                        label="Apply AA to Support Geometry"
+                        checked={settings.aaOnSupports}
+                        onChange={(value) => updateAaSettings({ aaOnSupports: value })}
+                    />
+                    <AaInlineHelp>Disabled keeps supports crisp and binary. Enabled allows anti-aliased support edges too.</AaInlineHelp>
+
                     <SelectDropdown
-                        label="Offset Mode"
+                        label="Tip Compensation Offset Mode"
                         value={settings.tipOffsetMode}
                         onChange={(value) => updateAaSettings({ tipOffsetMode: value as 'disabled' | 'auto' | 'manual' })}
                         options={[
@@ -2033,10 +2030,9 @@ function MaterialAntiAliasingSectionLegacy({ draft, onChange }: MaterialAntiAlia
 
                     {settings.tipOffsetMode !== 'disabled' && (
                         <LabeledNumberInput
-                            label="Penetration Distance (mm)"
-                            disabled={settings.tipOffsetMode === 'auto'}
+                            label="Compensation Distance (mm)"
                             value={settings.tipOffsetMode === 'auto' ? calculatedOffset : settings.tipOffsetMm}
-                            onChange={(val) => updateAaSettings({ tipOffsetMm: val })}
+                            onChange={(val) => updateAaSettings({ tipOffsetMm: val, tipOffsetMode: 'manual' })}
                         />
                     )}
 
