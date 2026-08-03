@@ -1,5 +1,5 @@
 import { MaterialAntiAliasingSettings } from '@/features/profiles/profileStore';
-import { computePhysicalAaConfig, AaPreset } from '@/features/slicing/autoAaPhysics';
+import { resolveEffectiveAaSettings } from '@/features/slicing/resolveEffectiveAaSettings';
 
 /**
  * Resolves the total penetration distance for support contact tips into the model.
@@ -16,31 +16,7 @@ export function calculateTipOffset(
     pixelPitchMm: number,
     pixelPitchYMm: number = pixelPitchMm
 ): number {
-    const mode = settings.tipOffsetMode ?? 'disabled';
-
-    if (mode === 'disabled') {
-        return 0.05;
-    }
-
-    if (mode === 'manual') {
-        return settings.tipOffsetMm ?? 0.05;
-    }
-
-    // Auto mode
-    // Get actual Rz from either custom override or physics calculation
-    let Rz = settings.zBlurRadiusLayers;
-    
-    if (!settings.enableCustomSettings || (settings.enableCustomSettings && !settings.useCustomZBlurRadius)) {
-        // Find preset label for auto mode, default to balanced
-        let preset: AaPreset = 'balanced';
-        if (settings.level === 'sharp') preset = 'sharp';
-        else if (settings.level === 'smooth') preset = 'smooth';
-        
-        const cfg = computePhysicalAaConfig(preset, pixelPitchMm, layerHeightMm, pixelPitchYMm);
-        Rz = cfg.zBlurRadiusLayers;
-    }
-
-    // Formula: (2 * Rz + 1) * Hz
-    return Number(((2 * Rz + 1) * layerHeightMm).toFixed(3));
+    const resolved = resolveEffectiveAaSettings(settings, layerHeightMm, pixelPitchMm, pixelPitchYMm);
+    return Number(resolved.tipOffsetMm.toFixed(3));
 }
 

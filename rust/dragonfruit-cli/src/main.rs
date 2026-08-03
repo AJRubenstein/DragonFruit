@@ -319,6 +319,33 @@ enum SliceCommands {
         /// Anti-aliasing mode (Coverage, Blur, 3daa)
         #[arg(long, default_value = "Blur")]
         anti_aliasing_mode: String,
+        /// 2D Blur brush radius in pixels
+        #[arg(long, default_value = "1")]
+        blur_brush_radius_px: u32,
+        /// 2D Blur brush kernel (gaussian, box)
+        #[arg(long, default_value = "gaussian")]
+        blur_brush_kernel: String,
+        /// 2D Blur sigma X
+        #[arg(long, default_value = "0.5")]
+        blur_brush_sigma_x: f32,
+        /// 2D Blur sigma Y
+        #[arg(long, default_value = "0.5")]
+        blur_brush_sigma_y: f32,
+        /// Z Blur radius in layers
+        #[arg(long, default_value = "0")]
+        z_blur_radius_layers: u32,
+        /// Z Blur kernel (box, gaussian)
+        #[arg(long, default_value = "box")]
+        z_blur_kernel: String,
+        /// Z Blur sigma
+        #[arg(long, default_value = "0.5")]
+        z_blur_sigma: f32,
+        /// Z Blend look-back depth in layers
+        #[arg(long, default_value = "2")]
+        z_blend_look_back: u32,
+        /// Apply AA to support geometry
+        #[arg(long)]
+        aa_on_supports: bool,
         /// X-axis sub-pixel packing mode.
         ///
         /// - `none` (default): raw grayscale at source resolution; width_px = source_width_px.
@@ -1032,6 +1059,15 @@ fn cmd_slice_run(
     png_compression: &str,
     anti_aliasing: &str,
     anti_aliasing_mode: &str,
+    blur_brush_radius_px: u32,
+    blur_brush_kernel: &str,
+    blur_brush_sigma_x: f32,
+    blur_brush_sigma_y: f32,
+    z_blur_radius_layers: u32,
+    z_blur_kernel: &str,
+    z_blur_sigma: f32,
+    z_blend_look_back: u32,
+    aa_on_supports: bool,
     x_packing_mode: &str,
     mirror_x: bool,
     mirror_y: bool,
@@ -1130,18 +1166,18 @@ fn cmd_slice_run(
         container_compression_level: 2,
         anti_aliasing_level: anti_aliasing.to_string(),
         anti_aliasing_mode: anti_aliasing_mode.to_string(),
-        blur_brush_radius_px: 1,
-        blur_brush_kernel: "gaussian".to_string(),
-        blur_brush_sigma_x: 0.5,
-        blur_brush_sigma_y: 0.5,
-        z_blur_radius_layers: 0,
-        z_blur_kernel: "box".to_string(),
-        z_blur_sigma: 0.5,
-        aa_on_supports: false,
+        blur_brush_radius_px,
+        blur_brush_kernel: blur_brush_kernel.to_string(),
+        blur_brush_sigma_x: blur_brush_sigma_x as f64,
+        blur_brush_sigma_y: blur_brush_sigma_y as f64,
+        z_blur_radius_layers,
+        z_blur_kernel: z_blur_kernel.to_string(),
+        z_blur_sigma: z_blur_sigma as f64,
+        aa_on_supports,
         model_triangle_count: model_tri_count,
         mirror_x,
         mirror_y,
-        z_blend_look_back: 2,
+        z_blend_look_back,
         z_blend_minimum_alpha_percent: 0.0,
         z_blend_max_alpha_percent: 90.0,
         z_blend_custom_lut: None,
@@ -1722,11 +1758,16 @@ fn main() {
         Commands::Slice { command } => match command {
             SliceCommands::Run { input, output, layer_height, build_width_mm, build_depth_mm,
                 source_width_px, source_height_px, png_compression, anti_aliasing,
-                anti_aliasing_mode, x_packing_mode, mirror_x, mirror_y, format_version, min_aa_alpha,
-                metadata_json, json } =>
+                anti_aliasing_mode, blur_brush_radius_px, blur_brush_kernel, blur_brush_sigma_x,
+                blur_brush_sigma_y, z_blur_radius_layers, z_blur_kernel, z_blur_sigma,
+                z_blend_look_back, aa_on_supports, x_packing_mode, mirror_x, mirror_y,
+                format_version, min_aa_alpha, metadata_json, json } =>
                 cmd_slice_run(&input, &output, layer_height, build_width_mm, build_depth_mm,
                     source_width_px, source_height_px, &png_compression, &anti_aliasing,
-                    &anti_aliasing_mode, &x_packing_mode, mirror_x, mirror_y, &format_version,
+                    &anti_aliasing_mode, blur_brush_radius_px, &blur_brush_kernel,
+                    blur_brush_sigma_x, blur_brush_sigma_y, z_blur_radius_layers,
+                    &z_blur_kernel, z_blur_sigma, z_blend_look_back, aa_on_supports,
+                    &x_packing_mode, mirror_x, mirror_y, &format_version,
                     min_aa_alpha, &metadata_json, json),
             SliceCommands::Formats => { cmd_slice_formats(); Ok(()) },
             SliceCommands::PreviewLayer { input, layer, output } =>

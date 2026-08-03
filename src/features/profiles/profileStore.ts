@@ -340,11 +340,15 @@ function sanitizeMaterialAntiAliasingSettings(input: unknown): MaterialAntiAlias
         ? source.tipOffsetMode 
         : defaults.tipOffsetMode;
 
+    const enableCustomSettings = typeof source.enableCustomSettings === 'boolean'
+        ? source.enableCustomSettings
+        : (typeof source.enableOverride === 'boolean' ? source.enableOverride : defaults.enableCustomSettings);
+    const rawEnableOverride = typeof source.enableOverride === 'boolean' ? source.enableOverride : defaults.enableOverride;
+    const enableOverride = enableCustomSettings ? rawEnableOverride : false;
+
     return {
-        enableCustomSettings: typeof source.enableCustomSettings === 'boolean'
-            ? source.enableCustomSettings
-            : (typeof source.enableOverride === 'boolean' ? source.enableOverride : defaults.enableCustomSettings),
-        enableOverride: typeof source.enableOverride === 'boolean' ? source.enableOverride : defaults.enableOverride,
+        enableCustomSettings,
+        enableOverride,
         mode,
         level,
         useCustomLevel: typeof source.useCustomLevel === 'boolean' ? source.useCustomLevel : defaults.useCustomLevel,
