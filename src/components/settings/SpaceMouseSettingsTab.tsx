@@ -55,7 +55,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
             <MousePointer2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               3D Mouse Input
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -202,7 +202,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
             <SlidersHorizontal className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               Motion Tuning
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -331,7 +331,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
             <ArrowLeftRight className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               Axis Inversion
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -368,7 +368,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           background: 'color-mix(in srgb, var(--surface-1), var(--accent) 4%)',
         }}
       >
-        <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
           Supports 3Dconnexion SpaceMouse devices. “SpaceMouse” is a trademark of 3Dconnexion.
         </p>
       </div>

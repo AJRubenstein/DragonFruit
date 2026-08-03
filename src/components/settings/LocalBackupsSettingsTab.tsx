@@ -689,8 +689,8 @@ export function LocalBackupsSettingsTab() {
             <HardDrive className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Local On-Disk Backups</h3>
-            <p className="mt-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Local On-Disk Backups</h3>
+            <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
               Automatically saves snapshots of your settings and profiles to a folder on your computer.
             </p>
           </div>
@@ -777,7 +777,7 @@ export function LocalBackupsSettingsTab() {
             <RefreshCcw className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Backup Management</h3>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Backup Management</h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Save snapshots to your local backup folder, then review and restore any point-in-time snapshot in-app.
             </p>
@@ -981,7 +981,7 @@ export function LocalBackupsSettingsTab() {
           </>
         )}
       >
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
           {confirmDeleteId
             ? `Backup snapshot from ${new Date(Number(confirmDeleteId)).toLocaleString()} will be permanently removed from disk.`
             : 'This backup snapshot will be permanently removed from disk.'}
@@ -1045,7 +1045,7 @@ export function LocalBackupsSettingsTab() {
             </div>
 
             <div className="space-y-4 p-5">
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                 This will overwrite your current app settings and profiles with the data from this snapshot, then reload the app. This action cannot be undone.
               </p>
               <div className="flex shrink-0 items-center justify-end gap-2 pt-1">
@@ -1220,7 +1220,7 @@ export function LocalBackupsSettingsTab() {
                             {selectedStorageKey ?? 'Select a key'}
                           </div>
                           <pre
-                            className="mt-2 flex-1 min-h-0 w-full rounded-md border p-2 text-xs leading-relaxed overflow-auto custom-scrollbar whitespace-pre"
+                            className="mt-2 flex-1 min-h-0 w-full rounded-md border p-2 text-xs leading-snug overflow-auto custom-scrollbar whitespace-pre"
                             style={{
                               borderColor: 'color-mix(in srgb, #3f4451, var(--border-subtle) 35%)',
                               background: '#282c34',
@@ -1338,7 +1338,7 @@ export function LocalBackupsSettingsTab() {
                         </div>
                       ) : (
                         <pre
-                          className="rounded-md border p-2 text-xs leading-relaxed overflow-auto custom-scrollbar"
+                          className="rounded-md border p-2 text-xs leading-snug overflow-auto custom-scrollbar"
                           style={{
                             borderColor: 'color-mix(in srgb, #3f4451, var(--border-subtle) 35%)',
                             background: '#282c34',
@@ -1353,7 +1353,7 @@ export function LocalBackupsSettingsTab() {
 
                     {snapshotModalTab === 'raw' && (
                       <pre
-                        className="flex-1 min-h-0 rounded-md border p-2 text-xs leading-relaxed overflow-auto custom-scrollbar whitespace-pre"
+                        className="flex-1 min-h-0 rounded-md border p-2 text-xs leading-snug overflow-auto custom-scrollbar whitespace-pre"
                         style={{
                           borderColor: 'color-mix(in srgb, #3f4451, var(--border-subtle) 35%)',
                           background: '#282c34',

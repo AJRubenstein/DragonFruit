@@ -266,10 +266,10 @@ export function UISettingsTab({
 						<Palette className="h-4 w-4" style={{ color: 'var(--accent)' }} />
 					</span>
 					<div className="flex-1">
-						<h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+						<h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
 							Theme
 						</h3>
-						<p className="mt-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+						<p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
 							Preview is live. <span className="font-semibold">Apply</span> saves it.
 						</p>
 					</div>
@@ -418,7 +418,7 @@ export function UISettingsTab({
 							<h4 className="text-[12px] font-semibold" style={{ color: 'var(--text-strong)' }}>
 								{section.title}
 							</h4>
-							<p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+							<p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
 								{section.description}
 							</p>
 						</div>

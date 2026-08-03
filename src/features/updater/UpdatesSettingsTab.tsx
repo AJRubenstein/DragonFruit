@@ -38,7 +38,7 @@ export function UpdatesSettingsTab({
             <GitBranch className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               Release Channel
             </h3>
             <p className="mt-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
@@ -115,7 +115,7 @@ export function UpdatesSettingsTab({
             <CloudDownload className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               Updates
             </h3>
             <p className="mt-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>

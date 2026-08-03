@@ -890,7 +890,7 @@ export function BackupsSettingsTab() {
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Private GitHub Backups</h3>
+                <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Private GitHub Backups</h3>
                 {!backupsConfigured && (
                   <button
                     type="button"
@@ -922,7 +922,7 @@ export function BackupsSettingsTab() {
                   </div>
                 </div>
               </div>
-              <p className="mt-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                 DragonFruit stores backups in your own private GitHub repository. We intentionally avoid ORA-hosted cloud storage and we do not operate a DragonFruit backup server.
               </p>
             </div>

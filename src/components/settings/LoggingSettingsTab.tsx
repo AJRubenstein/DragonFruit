@@ -298,7 +298,7 @@ export function LoggingSettingsTab({ logLevel, onLogLevelChange }: LoggingSettin
             <ScrollText className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Log File</h3>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Log File</h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               DragonFruit writes structured logs to a platform-specific directory.
               Share this file when reporting startup or network issues.
@@ -376,7 +376,7 @@ export function LoggingSettingsTab({ logLevel, onLogLevelChange }: LoggingSettin
             <Filter className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Minimum Log Level</h3>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Minimum Log Level</h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Controls the least-significant event written to the log file. Changes apply immediately and persist across restarts.
             </p>
@@ -537,7 +537,7 @@ export function LoggingSettingsTab({ logLevel, onLogLevelChange }: LoggingSettin
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="overflow-y-auto font-mono text-xs leading-relaxed"
+          className="overflow-y-auto font-mono text-xs leading-snug"
           style={{
             height: 320,
             background: 'var(--surface-0, #0e0e0e)',
@@ -569,7 +569,7 @@ export function LoggingSettingsTab({ logLevel, onLogLevelChange }: LoggingSettin
         }}
       >
         <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" style={{ color: 'var(--accent)' }} />
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
           The minimum log level applies <strong style={{ color: 'var(--text-strong)' }}>immediately</strong> and is
           also saved for next launch. The viewer filter and noise suppression are local-only — they do not affect what is written to disk.
         </p>
