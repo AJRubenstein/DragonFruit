@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { GeneralSettingsTab } from '@/components/settings/GeneralSettingsTab';
 import { useLocale } from '@/components/I18nClientProvider';
+import contributors from '@/components/settings/contributors.json';
 import { CameraSettingsTab } from '@/components/settings/CameraSettingsTab';
 import { HotkeysSettingsTab } from '@/components/settings/HotkeysSettingsTab';
 import { MeshSettingsTab } from '@/components/settings/MeshSettingsTab';
@@ -1496,9 +1497,8 @@ export function SettingsModal({
                   <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
                     <div className="space-y-3.5 pb-2">
                       <div
-                        className="rounded-xl border p-4"
+                        className="rounded-xl p-4"
                         style={{
-                          borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 62%)',
                           background: 'linear-gradient(145deg, color-mix(in srgb, var(--accent), var(--surface-0) 95%), color-mix(in srgb, var(--accent-secondary), var(--surface-0) 94%))',
                         }}
                       >
@@ -1562,263 +1562,72 @@ export function SettingsModal({
                         </h5>
 
                         <div className="mt-2.5 space-y-2">
-                          <div
-                            className="rounded-lg border px-3 py-2.5"
-                            style={{
-                              borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
-                              background: 'color-mix(in srgb, var(--accent), var(--surface-0) 90%)',
-                            }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                                  Ty Mansfield
-                                </div>
-                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Open Resin Alliance & Tableflip Foundry
-                                </div>
-                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Core Framework, Supports, Bugfixes, and General Mayhem
-                                </div>
-                              </div>
-                              <div
-                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                                style={{
-                                  color: 'var(--accent-contrast)',
-                                  borderColor: 'color-mix(in srgb, var(--accent), white 18%)',
-                                  background: 'color-mix(in srgb, var(--accent), transparent 18%)',
-                                }}
-                              >
-                                Main Developer & Maintainer
-                              </div>
-                            </div>
-                          </div>
+                          {(() => {
+                            const sorted = [...contributors].sort((a, b) => {
+                              const toneRank = (t: string) => t === 'founder' ? 0 : t === 'accent' ? 1 : 2;
+                              const tr = toneRank(a.tone) - toneRank(b.tone);
+                              if (tr !== 0) return tr;
+                              return a.name.localeCompare(b.name);
+                            });
 
-                          <div
-                            className="rounded-lg border px-3 py-2.5"
-                            style={{
-                              borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
-                              background: 'color-mix(in srgb, var(--accent), var(--surface-0) 90%)',
-                            }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                                  Paul Skapczyk
-                                </div>
-                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Open Resin Alliance
-                                </div>
-                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Core Framework, UI & UX, Backend, Plugins and Chaos Engineering
-                                </div>
-                              </div>
-                              <div
-                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                                style={{
-                                  color: 'var(--accent-contrast)',
-                                  borderColor: 'color-mix(in srgb, var(--accent), white 18%)',
-                                  background: 'color-mix(in srgb, var(--accent), transparent 18%)',
-                                }}
-                              >
-                                Main Developer & Maintainer
-                              </div>
-                            </div>
-                          </div>
+                            const tones = ['founder', 'accent', 'secondary'] as const;
 
-                          <div
-                            className="rounded-lg border px-3 py-2.5"
-                            style={{
-                              borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)',
-                              background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-0) 93%)',
-                            }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                                  William Patton
-                                </div>
-                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  PattonWebz
-                                </div>
-                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Breaks stuff, maybe fixes it. Maybe.
-                                </div>
-                              </div>
-                              <div
-                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                                style={{
-                                  color: 'var(--accent-secondary-contrast)',
-                                  borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
-                                  background: 'color-mix(in srgb, var(--accent-secondary), transparent 18%)',
-                                }}
-                              >
-                                Contributor
-                              </div>
-                              
-                            </div>
-                          </div>
-                          
-                          <div
-                            className="rounded-lg border px-3 py-2.5"
-                            style={{
-                              borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)',
-                              background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-0) 93%)',
-                            }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                                  Magistr
-                                </div>
-                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  umag
-                                </div>
-                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Support Tooling, Physics, and General Bugfixes. Linux Builds mysteriously work better when he's around, but who knows why.
-                                </div>
-                              </div>
-                              <div
-                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                                style={{
-                                  color: 'var(--accent-secondary-contrast)',
-                                  borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
-                                  background: 'color-mix(in srgb, var(--accent-secondary), transparent 18%)',
-                                }}
-                              >
-                                Contributor
-                              </div>          
-                            </div>                      
-                          </div>
-                          
-                          <div
-                            className="rounded-lg border px-3 py-2.5"
-                            style={{
-                              borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)',
-                              background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-0) 93%)',
-                            }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                                  Tim
-                                </div>
-                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  tslater2006
-                                </div>
-                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Anycubic Photon Support, Testing, and Bugfixes. Prints fun stuff.
-                                </div>
-                              </div>
-                              <div
-                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                                style={{
-                                  color: 'var(--accent-secondary-contrast)',
-                                  borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
-                                  background: 'color-mix(in srgb, var(--accent-secondary), transparent 18%)',
-                                }}
-                              >
-                                Contributor
-                              </div>          
-                            </div>                      
-                          </div>
-                          
-                          <div
-                            className="rounded-lg border px-3 py-2.5"
-                            style={{
-                              borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)',
-                              background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-0) 93%)',
-                            }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                                  Ada Phillips
-                                </div>
-                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Open Resin Alliance
-                                </div>
-                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Ensures the software doesn't set itself on fire.
-                                </div>
-                              </div>
-                              <div
-                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                                style={{
-                                  color: 'var(--accent-secondary-contrast)',
-                                  borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
-                                  background: 'color-mix(in srgb, var(--accent-secondary), transparent 18%)',
-                                }}
-                              >
-                                Contributor
-                              </div>          
-                            </div>                      
-                          </div>
-                          
-                          <div
-                            className="rounded-lg border px-3 py-2.5"
-                            style={{
-                              borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)',
-                              background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-0) 93%)',
-                            }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                                  SinXIV
-                                </div>
-                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Open Resin Alliance
-                                </div>
-                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  File Format QA, Edge Case Discovery, and Testing. Finds creative ways to break things so the rest of us don't have to.
-                                </div>
-                              </div>
-                              <div
-                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                                style={{
-                                  color: 'var(--accent-secondary-contrast)',
-                                  borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
-                                  background: 'color-mix(in srgb, var(--accent-secondary), transparent 18%)',
-                                }}
-                              >
-                                Contributor
-                              </div>          
-                            </div>                      
-                          </div>
-                          
-                          <div
-                            className="rounded-lg border px-3 py-2.5"
-                            style={{
-                              borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)',
-                              background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-0) 93%)',
-                            }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                                  Aaron Baca
-                                </div>
-                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Open Resin Alliance
-                                </div>
-                                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  Likes anti-aliasing and long walks on the beach. Also automation, scripting, and general bugfixes.
-                                </div>
-                              </div>
-                              <div
-                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                                style={{
-                                  color: 'var(--accent-secondary-contrast)',
-                                  borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 38%)',
-                                  background: 'color-mix(in srgb, var(--accent-secondary), transparent 18%)',
-                                }}
-                              >
-                                Contributor
-                              </div>          
-                            </div>                      
-                          </div>
-                          
+                            return tones.map((tone, i) => {
+                              const people = sorted.filter((p) => p.tone === tone);
+                              if (people.length === 0) return null;
+                              return (
+                                <React.Fragment key={tone}>
+                                  {i > 0 && (
+                                    <div
+                                      className="my-2.5 h-px rounded-full"
+                                      style={{
+                                        background: 'linear-gradient(90deg, transparent 0%, var(--border-subtle) 22%, var(--border-subtle) 78%, transparent 100%)',
+                                      }}
+                                    />
+                                  )}
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {people.map((person) => {
+                                      const toneVar =
+                                        person.tone === 'founder' ? '#d4a017' :
+                                        person.tone === 'accent' ? 'var(--accent)' :
+                                        'var(--accent-secondary)';
+                                      const bgMix = person.tone === 'founder' ? '94%' : person.tone === 'accent' ? '90%' : '93%';
+                                      return (
+                                        <div
+                                          key={person.name}
+                                          className="rounded-lg border px-3 py-2.5"
+                                          style={{
+                                            borderColor: `color-mix(in srgb, ${toneVar}, var(--border-subtle) 45%)`,
+                                            background: `color-mix(in srgb, ${toneVar}, var(--surface-0) ${bgMix})`,
+                                          }}
+                                        >
+                                          <div className="flex items-center justify-between gap-2 text-sm">
+                                            <span className="font-semibold truncate" style={{ color: 'var(--text-strong)' }}>
+                                              {person.name}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={async () => {
+                                                try {
+                                                  const { invoke } = await import('@tauri-apps/api/core');
+                                                  await invoke('open_external_url', { url: `https://github.com/${person.affiliation}` });
+                                                } catch { /* ignore */ }
+                                              }}
+                                              className="inline-flex shrink-0 items-center gap-0.5 font-normal hover:underline"
+                                              style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                                            >
+                                              <Github className="h-3 w-3" />
+                                              {person.affiliation}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </React.Fragment>
+                              );
+                            });
+                          })()}
                         </div>
                       </div>
                       
