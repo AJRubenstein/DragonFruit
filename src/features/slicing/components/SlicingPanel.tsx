@@ -2644,8 +2644,8 @@ export function SlicingPanel({
                                   }}
                               onClick={() => setAaAutoPreset(preset)}
                             >
-                              <div className="text-[11px] font-semibold leading-tight">{label}</div>
-                              <div className="mt-0.5 text-[9px] leading-tight" style={{ color: pActive ? 'color-mix(in srgb, var(--accent-secondary-action-color), var(--text-muted) 38%)' : 'var(--text-muted)' }}>
+                              <div className="text-xs font-semibold leading-tight">{label}</div>
+                              <div className="mt-0.5 text-[10px] leading-tight" style={{ color: pActive ? 'color-mix(in srgb, var(--accent-secondary-action-color), var(--text-muted) 38%)' : 'var(--text-muted)' }}>
                                 {desc}
                               </div>
                             </button>
@@ -2689,8 +2689,8 @@ export function SlicingPanel({
                             }}
                             title={value}
                           >
-                            <div className="text-[9px]" style={{ color: 'var(--text-muted)' }}>{label}</div>
-                            <div className="truncate text-[11px] font-semibold">{value}</div>
+                            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                            <div className="truncate text-xs font-semibold">{value}</div>
                           </div>
                         ))}
                       </div>
