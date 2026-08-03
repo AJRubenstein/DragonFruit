@@ -298,6 +298,7 @@ async function probeNanoDlp(
     }
 
     let networkFilterMatched = false;
+    let deviceHasUnknownFilter = true;
 
     if (requestedNetworkFilter) {
       const machineName = await resolveDeviceMachineName(hostOrIp, port, Math.max(1200, Math.min(timeoutMs, 4000)));
@@ -315,6 +316,7 @@ async function probeNanoDlp(
         if (normalizedMachineName !== normalizedRequestedFilter) {
           const knownNetworkFilter = resolveKnownNetworkFilter(machineName);
           const normalizedKnownNetworkFilter = knownNetworkFilter ? normalizeMachineName(knownNetworkFilter) : null;
+          deviceHasUnknownFilter = knownNetworkFilter === null;
           const explicitKnownFilterMismatch = Boolean(
             normalizedKnownNetworkFilter
             && normalizedKnownNetworkFilter !== normalizedRequestedFilter,
@@ -347,9 +349,11 @@ async function probeNanoDlp(
             normalizedRequestedFilter,
             printerModel: resolveNanoDlpPrinterModel(status),
             fallbackToModelHint: true,
+            deviceHasUnknownFilter,
           });
         } else {
           networkFilterMatched = true;
+          deviceHasUnknownFilter = false;
 
           logNanoDlpFilterDebug(debugFilter, 'probe/match', {
             hostOrIp,
@@ -362,7 +366,7 @@ async function probeNanoDlp(
     }
 
     const modelHintMatched = isSupportedAthenaModelMatch(supportedModel, requestedModelHint);
-    if (!modelHintMatched && !networkFilterMatched) {
+    if (!modelHintMatched && !networkFilterMatched && !deviceHasUnknownFilter) {
       logNanoDlpFilterDebug(debugFilter, 'probe/reject', {
         hostOrIp,
         port,
@@ -371,10 +375,23 @@ async function probeNanoDlp(
         requestedModelHint,
         modelHintMatched,
         networkFilterMatched,
+        deviceHasUnknownFilter,
         printerModel: resolveNanoDlpPrinterModel(status),
       });
       return null;
     }
+
+    logNanoDlpFilterDebug(debugFilter, deviceHasUnknownFilter && !networkFilterMatched && !modelHintMatched ? 'probe/fallback' : 'probe/accept', {
+      hostOrIp,
+      port,
+      reason: deviceHasUnknownFilter && !networkFilterMatched && !modelHintMatched ? 'unknown-filter-fallback' : undefined,
+      supportedModel,
+      requestedModelHint,
+      modelHintMatched,
+      networkFilterMatched,
+      deviceHasUnknownFilter,
+      printerModel: resolveNanoDlpPrinterModel(status),
+    });
 
     const hostName = resolveNanoDlpStatusHostName(status);
     const printerName = resolveNanoDlpPrinterName(status);
@@ -845,7 +862,13 @@ async function handleNanoDlpConnect(payload: unknown): Promise<HandlerResult> {
       && isSupportedAthenaModelMatch(supportedModel, requestedModelHint),
     );
 
-    if (!supportedModel || explicitKnownFilterMismatch || (!modelHintMatched && !networkFilterMatched)) {
+    // When a device reports a name that doesn't match any known Athena filter
+    // key (e.g. "athena" instead of "Athena2 16K"), it's likely reporting a
+    // generic/non-standard name. Allow the connection as a fallback rather than
+    // rejecting it as a model mismatch.
+    const deviceHasUnknownFilter = normalizedDeviceNetworkFilter === null;
+
+    if (!supportedModel || explicitKnownFilterMismatch || (!modelHintMatched && !networkFilterMatched && !deviceHasUnknownFilter)) {
       logNanoDlpFilterDebug(debugFilter, 'connect/reject', {
         host: parsedHost.host,
         port,
@@ -859,6 +882,7 @@ async function handleNanoDlpConnect(payload: unknown): Promise<HandlerResult> {
         modelHintMatched,
         networkFilterMatched,
         explicitKnownFilterMismatch,
+        deviceHasUnknownFilter,
         supportedModel,
         printerModel,
         deviceMachineName,
@@ -891,6 +915,18 @@ async function handleNanoDlpConnect(payload: unknown): Promise<HandlerResult> {
         },
       };
     }
+
+    logNanoDlpFilterDebug(debugFilter, deviceHasUnknownFilter && !networkFilterMatched && !modelHintMatched ? 'connect/fallback' : 'connect/accept', {
+      host: parsedHost.host,
+      port,
+      reason: deviceHasUnknownFilter && !networkFilterMatched && !modelHintMatched ? 'unknown-filter-fallback' : undefined,
+      requestedNetworkFilter,
+      deviceMachineName,
+      deviceNetworkFilter,
+      supportedModel,
+      printerModel,
+      deviceHasUnknownFilter,
+    });
 
     const hostName = resolveNanoDlpStatusHostName(status);
     const printerName = resolveNanoDlpPrinterName(status);
