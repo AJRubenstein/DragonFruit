@@ -137,7 +137,7 @@ export function GeneralSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Interface language
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Applied immediately across the app.
               </div>
             </div>
@@ -179,7 +179,7 @@ export function GeneralSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Interface scale
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Larger percentages magnify the whole UI.
               </div>
             </div>
@@ -225,7 +225,7 @@ export function GeneralSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Remember window positions
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Persist dragged panel positions in local storage.
               </div>
             </div>
@@ -256,7 +256,7 @@ export function GeneralSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Reset saved window layout
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Forget all stored panel positions and return to seeded layout.
               </div>
             </div>
@@ -277,7 +277,7 @@ export function GeneralSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Show Debug Primitives panel
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Toggle visibility of the Prepare-mode debug primitive window.
               </div>
             </div>
@@ -334,7 +334,7 @@ export function GeneralSettingsTab({
           <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
             Default Raft Base
           </div>
-          <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+          <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             Chooses raft bottom mode for imported supports.
           </div>
 
@@ -381,7 +381,7 @@ export function GeneralSettingsTab({
                 <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                   Default Raft Wall
                 </div>
-                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   Enable perimeter wall for imported solid rafts.
                 </div>
               </div>
@@ -414,7 +414,7 @@ export function GeneralSettingsTab({
                 <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                   Roots Enabled on Import
                 </div>
-                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   OFF makes imported root diameter match trunk diameter.
                 </div>
               </div>
@@ -446,7 +446,7 @@ export function GeneralSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Auto-Repair
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Automatically runs native mesh auto-repair for standard mesh imports.
               </div>
             </div>
@@ -477,7 +477,7 @@ export function GeneralSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Auto-Repair Scenes
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Automatically runs native mesh auto-repair for scene-file imports.
               </div>
             </div>

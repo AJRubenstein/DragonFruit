@@ -239,7 +239,7 @@ export function HotkeysSettingsTab() {
           <h4 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
             {section.title}
           </h4>
-          <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
             {section.description}
           </p>
         </div>
@@ -264,7 +264,7 @@ export function HotkeysSettingsTab() {
         {section.categories.map((category) => (
           <div key={`${section.id}-${category.category}`} className="space-y-1">
             {section.categories.length > 1 && (
-              <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 {category.categoryLabel}
               </div>
             )}
@@ -392,7 +392,7 @@ function HotkeyRow({ label, binding, isRecording, onRecord, onCancel, secondaryT
           className="inline-flex min-w-[92px] items-center justify-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:brightness-110"
         >
           {isRecording ? (
-            <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Press keys…</span>
+            <span className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>Press keys…</span>
           ) : (
             tokens.map((token) => <KbdToken key={`${binding.description}-${token}`}>{token}</KbdToken>)
           )}
@@ -400,7 +400,7 @@ function HotkeyRow({ label, binding, isRecording, onRecord, onCancel, secondaryT
 
         {!isRecording && secondaryToken && (
           <span className="inline-flex items-center gap-1" title="Always available">
-            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }} aria-hidden>/</span>
+            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }} aria-hidden>/</span>
             <KbdToken muted>{secondaryToken}</KbdToken>
           </span>
         )}
@@ -412,7 +412,7 @@ function HotkeyRow({ label, binding, isRecording, onRecord, onCancel, secondaryT
 function KbdToken({ children, muted = false }: { children: React.ReactNode, muted?: boolean }) {
   return (
     <kbd
-      className="inline-flex min-w-[20px] items-center justify-center rounded border px-1 py-1 font-mono text-[10px]"
+      className="inline-flex min-w-[20px] items-center justify-center rounded border px-1 py-1 font-mono text-[11px]"
       style={muted
         ? {
           borderColor: 'var(--border-subtle)',

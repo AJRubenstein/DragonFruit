@@ -99,7 +99,7 @@ export function CameraSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Camera scope
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Choose one global projection mode for every workspace, or set projection defaults per workspace.
               </div>
             </div>
@@ -157,7 +157,7 @@ export function CameraSettingsTab({
                 <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                   Projection mode
                 </div>
-                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   Use one projection mode everywhere when global scope is active.
                 </div>
               </div>
@@ -215,7 +215,7 @@ export function CameraSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Workspace camera defaults
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Pick the default projection mode used when you enter each workspace.
               </div>
             </div>
@@ -251,7 +251,7 @@ export function CameraSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 {workspaceMeta.find((workspace) => workspace.key === activeWorkspace)?.label} default camera
               </div>
-              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                 {workspaceMeta.find((workspace) => workspace.key === activeWorkspace)?.hint}
               </div>
 
@@ -303,7 +303,7 @@ export function CameraSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Camera feel
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Controls smoothing and movement acceleration while orbiting, panning, and zooming.
               </div>
             </div>
@@ -376,7 +376,7 @@ export function CameraSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Edge lines
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Draws black outlines along hard edges of the model for better visual clarity.
               </div>
             </div>
@@ -435,7 +435,7 @@ export function CameraSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Trackpad navigation mode
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Two-finger gestures can pan or orbit directly on a trackpad. Pinch-to-zoom stays available either way.
               </div>
             </div>
@@ -479,7 +479,7 @@ export function CameraSettingsTab({
                     <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                       Alternate gesture modifier
                     </div>
-                    <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                       Hold this key to temporarily switch two-finger drag to {cameraTrackpadPrimaryAction === 'pan' ? 'orbit' : 'pan'}.
                     </div>
                   </div>
@@ -519,7 +519,7 @@ export function CameraSettingsTab({
                 <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                   Trackpad acceleration
                 </div>
-                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                   Tune movement speed for two-finger pan/orbit gestures.
                 </div>
 

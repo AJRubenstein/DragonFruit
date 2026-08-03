@@ -77,7 +77,7 @@ export function PerformanceSettingsTab({
         </div>
 
         <div className="mt-3 rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
             <div>
               <div style={{ color: 'var(--text-muted)' }}>Crate</div>
               <div className="font-semibold" style={{ color: 'var(--text-strong)' }}>{SLICING_ENGINE_CRATE}</div>
@@ -123,7 +123,7 @@ export function PerformanceSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Background gradient
               </div>
-              <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                 Scene mood overlay in thumbnail
               </div>
             </div>
@@ -153,7 +153,7 @@ export function PerformanceSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Build plate
               </div>
-              <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                 Render build plate in thumbnail
               </div>
             </div>
@@ -183,7 +183,7 @@ export function PerformanceSettingsTab({
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Grid
               </div>
-              <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                 Render build grid in thumbnail
               </div>
             </div>
@@ -244,7 +244,7 @@ export function PerformanceSettingsTab({
                 <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                   Compression
                 </div>
-                <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                   Auto adapts by AA level, Off is fastest, On favors smaller PNG files
                 </div>
               </div>
@@ -338,7 +338,7 @@ export function PerformanceSettingsTab({
             <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               Clean Stale Files
             </div>
-            <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Remove temp files older than 1 hour
             </div>
           </button>
@@ -364,7 +364,7 @@ export function PerformanceSettingsTab({
             <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               Clean All Files
             </div>
-            <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Emergency cleanup: delete all temp slices
             </div>
           </button>

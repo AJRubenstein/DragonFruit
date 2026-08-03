@@ -218,7 +218,7 @@ export function UISettingsTab({
 		>
 			<div className="grid grid-cols-[minmax(0,1fr)_10.75rem] items-center gap-2.5">
 				<div className="min-w-0">
-					<label className="block truncate text-[11px] font-semibold" style={{ color: 'var(--text-strong)' }}>
+					<label className="block truncate text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
 						{row.label}
 					</label>
 				</div>
@@ -238,7 +238,7 @@ export function UISettingsTab({
 							clearPendingThemeColorPicker(row.key);
 							onThemeColorChange(row.key, event.target.value);
 						}}
-						className="ui-input h-7 min-w-0 flex-1 text-[11px]"
+						className="ui-input h-7 min-w-0 flex-1 text-xs"
 						placeholder={row.placeholder}
 					/>
 				</div>
@@ -269,7 +269,7 @@ export function UISettingsTab({
 						<h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
 							Theme
 						</h3>
-						<p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+						<p className="mt-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
 							Preview is live. <span className="font-semibold">Apply</span> saves it.
 						</p>
 					</div>
@@ -277,14 +277,14 @@ export function UISettingsTab({
 
 				<div className="grid gap-2 md:grid-cols-2">
 					<div className="rounded-lg border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)' }}>
-						<label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+						<label className="mb-1 block text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
 							Theme preset
 						</label>
 						<SelectDropdown<ThemePreset>
 							value={themePreset}
 							options={themePresetOptions}
 							onChange={(nextPreset) => onThemePresetChange(nextPreset)}
-							selectClassName="!h-8 text-[11px] !leading-none"
+							selectClassName="!h-8 text-xs !leading-none"
 							menuClassName="max-w-[28rem]"
 							menuFooterDivider
 							menuFooterAction={{
@@ -296,7 +296,7 @@ export function UISettingsTab({
 					</div>
 
 					<div className="rounded-lg border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)', opacity: isBuiltInThemePreset ? 0.5 : 1 }}>
-						<label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+						<label className="mb-1 block text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
 							Color scheme
 						</label>
 						<Select
@@ -325,7 +325,7 @@ export function UISettingsTab({
 									<button
 										type="button"
 										onClick={handleImportTheme}
-										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-[11px]"
+										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-xs"
 									>
 										Import
 									</button>
@@ -334,7 +334,7 @@ export function UISettingsTab({
 									<button
 										type="button"
 										onClick={onResetThemeColors}
-										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-[11px]"
+										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-xs"
 										style={isThemeResetDirty ? undefined : mutedActionStyle92}
 										disabled={!isThemeResetDirty}
 										title={isThemeResetDirty ? 'Reset current theme edits to selected preset values' : 'No theme changes to reset'}
@@ -349,7 +349,7 @@ export function UISettingsTab({
 									<button
 										type="button"
 										onClick={onRequestSaveCustomTheme}
-										className="ui-button !h-8 !px-2.5 !py-0 text-[11px]"
+										className="ui-button !h-8 !px-2.5 !py-0 text-xs"
 										style={isCustomThemeDirty ? accentSecondaryActionStyle92 : mutedActionStyle92}
 										disabled={!isCustomThemeDirty}
 										title={isCustomThemeDirty ? 'Save current custom theme changes' : 'No unsaved custom theme changes'}
@@ -359,21 +359,21 @@ export function UISettingsTab({
 									<button
 										type="button"
 										onClick={onRequestRenameCustomTheme}
-										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-[11px]"
+										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-xs"
 									>
 										Rename
 									</button>
 									<button
 										type="button"
 										onClick={onExportTheme}
-										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-[11px]"
+										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-xs"
 									>
 										Export
 									</button>
 									<button
 										type="button"
 										onClick={handleImportTheme}
-										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-[11px]"
+										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-xs"
 									>
 										Import
 									</button>
@@ -382,7 +382,7 @@ export function UISettingsTab({
 									<button
 										type="button"
 										onClick={onResetThemeColors}
-										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-[11px]"
+										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-xs"
 										style={isThemeResetDirty ? undefined : mutedActionStyle92}
 										disabled={!isThemeResetDirty}
 										title={isThemeResetDirty ? 'Reset current theme edits to selected preset values' : 'No theme changes to reset'}
@@ -392,7 +392,7 @@ export function UISettingsTab({
 									<button
 										type="button"
 										onClick={onRequestDeleteCustomTheme}
-										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-[11px]"
+										className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-xs"
 										style={dangerActionStyle92}
 									>
 										Delete
@@ -418,7 +418,7 @@ export function UISettingsTab({
 							<h4 className="text-[12px] font-semibold" style={{ color: 'var(--text-strong)' }}>
 								{section.title}
 							</h4>
-							<p className="mt-0.5 text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+							<p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
 								{section.description}
 							</p>
 						</div>
