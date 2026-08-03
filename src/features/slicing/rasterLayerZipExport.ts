@@ -1,7 +1,8 @@
 import JSZip from 'jszip';
 import * as THREE from 'three';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
-import type { MaterialProfile, PrinterProfile } from '@/features/profiles/profileStore';
+import { type MaterialProfile, type PrinterProfile, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
+import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 import {
   getSavedSlicingPerformanceSettings,
   type PngCompressionStrategy,
@@ -786,12 +787,18 @@ function appendContactConePrimitive(
     normal: { x: number; y: number; z: number };
     surfaceNormal?: { x: number; y: number; z: number };
     diskLengthOverride?: number;
-    profile: { contactDiameterMm: number; bodyDiameterMm: number; type?: string; diskThicknessMm?: number; maxStandoffMm?: number; standoffAngleThreshold?: number };
+    profile: { contactDiameterMm: number; bodyDiameterMm: number; type?: string; diskThicknessMm?: number; maxStandoffMm?: number; standoffAngleThreshold?: number; penetrationMm?: number };
   },
   radialSegments = 12,
+  penetrationMm = 0,
 ): void {
   const socket = getFinalSocketPosition(cone as any);
-  const start = new THREE.Vector3(cone.pos.x, cone.pos.y, cone.pos.z);
+  const effectiveNormal = cone.surfaceNormal ?? cone.normal;
+  const start = new THREE.Vector3(
+    cone.pos.x - effectiveNormal.x * penetrationMm,
+    cone.pos.y - effectiveNormal.y * penetrationMm,
+    cone.pos.z - effectiveNormal.z * penetrationMm,
+  );
   const end = new THREE.Vector3(socket.x, socket.y, socket.z);
   const g = createFrustumGeometryBetween(
     start,
@@ -865,6 +872,16 @@ function buildSupportAndRaftWorldTriangles(
   const JOINT_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
   const visibleRootIds = new Set<string>();
   const rootModelKeyById = new Map<string, string>();
+  
+  const material = getActiveMaterialProfile();
+  const printer = getActivePrinterProfile();
+  const tipPenetrationMm = (material && printer) 
+    ? (() => {
+        const pxX = printer.pixelSize?.x ? printer.pixelSize.x / 1000 : (printer.buildVolumeMm?.width ?? 143) / (printer.display?.resolutionX ?? 2560);
+        const pxY = printer.pixelSize?.y ? printer.pixelSize.y / 1000 : (printer.buildVolumeMm?.depth ?? 89) / (printer.display?.resolutionY ?? 1620);
+        return calculateTipOffset(material.antiAliasingSettings, material.layerHeightMm, pxX, pxY);
+      })()
+    : 0;
 
   for (const trunk of Object.values(supportState.trunks)) {
     if (!visibleModelIds.has(trunk.modelId)) continue;
@@ -967,7 +984,7 @@ function buildSupportAndRaftWorldTriangles(
     }
 
     if (trunk.contactCone) {
-      appendContactConePrimitive(sink, trunk.contactCone as any, tessellation.contactConeRadialSegments);
+      appendContactConePrimitive(sink, trunk.contactCone as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
     }
   }
 
@@ -1011,7 +1028,7 @@ function buildSupportAndRaftWorldTriangles(
     }
 
     if (branch.contactCone) {
-      appendContactConePrimitive(sink, branch.contactCone as any, tessellation.contactConeRadialSegments);
+      appendContactConePrimitive(sink, branch.contactCone as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
     }
   }
 
@@ -1045,8 +1062,8 @@ function buildSupportAndRaftWorldTriangles(
         );
       }
     }
-    appendContactDiskPrimitive(sink, twig.contactDiskA, tessellation.contactConeRadialSegments);
-    appendContactDiskPrimitive(sink, twig.contactDiskB, tessellation.contactConeRadialSegments);
+    appendContactDiskPrimitive(sink, twig.contactDiskA, tessellation.contactConeRadialSegments, tipPenetrationMm);
+    appendContactDiskPrimitive(sink, twig.contactDiskB, tessellation.contactConeRadialSegments, tipPenetrationMm);
   }
 
   for (const stick of Object.values(supportState.sticks)) {
@@ -1080,8 +1097,8 @@ function buildSupportAndRaftWorldTriangles(
       }
     }
 
-    appendContactConePrimitive(sink, stick.contactConeA as any, tessellation.contactConeRadialSegments);
-    appendContactConePrimitive(sink, stick.contactConeB as any, tessellation.contactConeRadialSegments);
+    appendContactConePrimitive(sink, stick.contactConeA as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
+    appendContactConePrimitive(sink, stick.contactConeB as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
   }
 
   for (const brace of Object.values(supportState.braces)) {
@@ -1108,7 +1125,7 @@ function buildSupportAndRaftWorldTriangles(
   for (const leaf of Object.values(supportState.leaves)) {
     const modelId = leaf.modelId;
     if (!modelId || !visibleModelIds.has(modelId)) continue;
-    appendContactConePrimitive(sink, leaf.contactCone as any, tessellation.contactConeRadialSegments);
+    appendContactConePrimitive(sink, leaf.contactCone as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
   }
 
   for (const kickstand of Object.values(kickstandState.kickstands)) {
