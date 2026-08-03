@@ -40,7 +40,10 @@ export function resolveEffectiveAaSettings(
 
     // If override is NOT active, return physics-derived auto defaults
     if (!enableOverride) {
-        const autoTipOffset = (2 * autoCfg.zBlurRadiusLayers + 1) * safeLayerH;
+        const effZBlur = typeof settings.zBlurRadiusLayers === 'number'
+            ? Math.max(0, Math.round(settings.zBlurRadiusLayers))
+            : autoCfg.zBlurRadiusLayers;
+        const autoTipOffset = Number(((2 * effZBlur + 1) * safeLayerH).toFixed(3));
         return {
             mode: autoCfg.aaMode,
             aaSteps: autoCfg.aaSteps,
@@ -76,7 +79,7 @@ export function resolveEffectiveAaSettings(
         ? Math.max(0.05, settings.blurBrushSigmaY)
         : 0.5;
 
-    const zBlurRadiusLayers = settings.useCustomZBlurRadius
+    const zBlurRadiusLayers = typeof settings.zBlurRadiusLayers === 'number'
         ? Math.max(0, Math.round(settings.zBlurRadiusLayers))
         : autoCfg.zBlurRadiusLayers;
 
@@ -84,14 +87,15 @@ export function resolveEffectiveAaSettings(
         ? Math.max(0.05, settings.zBlurSigma)
         : 0.5;
 
-    const zBlendLookBack = settings.useCustomZBlendLookBack
+    const zBlendLookBack = typeof settings.zBlendLookBack === 'number'
         ? Math.max(1, Math.round(settings.zBlendLookBack))
         : autoCfg.zBlendLookBack;
 
     // Auto-calculated tip penetration offset based on effective Z blur radius
-    const effectiveTipOffset = settings.tipOffsetMode === 'manual'
+    const rawTipOffset = settings.tipOffsetMode === 'manual'
         ? settings.tipOffsetMm
         : (2 * zBlurRadiusLayers + 1) * safeLayerH;
+    const effectiveTipOffset = Number(rawTipOffset.toFixed(3));
 
     return {
         mode: settings.mode ?? autoCfg.aaMode,

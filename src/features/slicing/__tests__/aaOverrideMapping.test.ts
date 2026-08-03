@@ -95,4 +95,23 @@ test('resolveEffectiveAaSettings correctly resolves AA/blur parameters based on 
     assert.strictEqual(res4.blurBrushSigmaX, 1.5); // Custom sigma
     assert.strictEqual(res4.zBlurRadiusLayers, 3); // Custom Z layers
     assert.strictEqual(res4.zBlurSigma, 1.2); // Custom Z sigma
+
+    // Scenario 5: Dynamic tip penetration offset calculation in Automatic mode as Z-blur layers change
+    const layerH = 0.05;
+    const testAutoOffset = (zLayers: number) => {
+        const s: MaterialAntiAliasingSettings = {
+            enableOverride: true,
+            enableCustomSettings: true,
+            mode: '3DAA',
+            zBlurRadiusLayers: zLayers,
+            tipOffsetMode: 'auto',
+            useCustomZBlurRadius: false, // Preset button clicked
+        } as any;
+        return resolveEffectiveAaSettings(s, layerH, pxPitch).tipOffsetMm;
+    };
+
+    assert.strictEqual(testAutoOffset(0), 0.050); // (2*0 + 1) * 0.05 = 0.050 mm
+    assert.strictEqual(testAutoOffset(1), 0.150); // (2*1 + 1) * 0.05 = 0.150 mm
+    assert.strictEqual(testAutoOffset(2), 0.250); // (2*2 + 1) * 0.05 = 0.250 mm
+    assert.strictEqual(testAutoOffset(3), 0.350); // (2*3 + 1) * 0.05 = 0.350 mm
 });
