@@ -303,7 +303,7 @@ body {
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   padding: 5px 11px 7px 11px;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   font-weight: 600;
   line-height: 1;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
@@ -370,7 +370,7 @@ body {
 .ui-panel .ui-input,
 .ui-panel .ui-select,
 .ui-panel .ui-button {
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
 }
 
 .ui-panel .ui-input,
