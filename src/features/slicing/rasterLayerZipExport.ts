@@ -18,7 +18,7 @@ import { generateChamferedBeam } from '@/supports/Rafts/Crenelated/geometry/gene
 import { buildLineRaftEdgePairs } from '@/supports/Rafts/Crenelated/geometry/buildLineRaftEdgePairs';
 import type { ContactDisk } from '@/supports/types';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone/contactConeUtils';
-import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
+import { calculateDiskThickness, getDiskCenter, getDiskRotation } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getBezierPointAtT } from '@/supports/Curves/BezierUtils';
 import { getTrunkSegmentEndpoints, getBranchSegmentEndpoints } from '@/supports/SupportPrimitives/Knot/knotUtils';
 import { resolveSlicingFormatDefinition } from '@/features/slicing/formats/registry';
@@ -805,6 +805,43 @@ function appendContactConePrimitive(
   g.dispose();
 }
 
+function appendContactDiskPrimitive(
+  sink: TriangleSink,
+  disk: ContactDisk,
+  radialSegments: number,
+  penetrationMm = 0.05,
+): void {
+  const thickness = disk.diskLengthOverride ?? calculateDiskThickness(disk.surfaceNormal, disk.coneAxis, disk.profile);
+  const radius = Math.max(0.01, disk.contactDiameterMm * 0.5);
+
+  const center = getDiskCenter(disk.pos, disk.surfaceNormal, thickness);
+  const rotation = getDiskRotation(disk.surfaceNormal);
+
+  const cylinderHeight = thickness + penetrationMm;
+  const cylinderGeom = new THREE.CylinderGeometry(radius, radius, cylinderHeight, Math.max(4, Math.floor(radialSegments)));
+
+  const groupMatrix = new THREE.Matrix4().compose(
+    new THREE.Vector3(center.x, center.y, center.z),
+    rotation,
+    new THREE.Vector3(1, 1, 1),
+  );
+
+  const cylinderMatrix = groupMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, -penetrationMm / 2, 0));
+  cylinderGeom.applyMatrix4(cylinderMatrix);
+  appendGeometryTriangles(sink, cylinderGeom);
+  cylinderGeom.dispose();
+
+  const sphereSegments = Math.max(4, Math.floor(radialSegments));
+  const heightSegments = Math.max(3, Math.floor(sphereSegments * 0.75));
+  const sphereGeom = new THREE.SphereGeometry(radius, sphereSegments, heightSegments);
+
+  const sphereMatrix = groupMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, thickness / 2, 0));
+  sphereGeom.applyMatrix4(sphereMatrix);
+  appendGeometryTriangles(sink, sphereGeom);
+  sphereGeom.dispose();
+}
+
+
 function buildSupportAndRaftWorldTriangles(
   visibleModelIds: Set<string>,
   collector?: TriangleFloatCollector,
@@ -1008,6 +1045,8 @@ function buildSupportAndRaftWorldTriangles(
         );
       }
     }
+    appendContactDiskPrimitive(sink, twig.contactDiskA, tessellation.contactConeRadialSegments);
+    appendContactDiskPrimitive(sink, twig.contactDiskB, tessellation.contactConeRadialSegments);
   }
 
   for (const stick of Object.values(supportState.sticks)) {

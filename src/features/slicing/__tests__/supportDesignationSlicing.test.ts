@@ -8,6 +8,7 @@ import {
   getModelTriangleCount,
   buildSolidSliceMeshForWasm,
 } from '../rasterLayerZipExport';
+import { setSnapshot } from '@/supports/state';
 
 function createMockModel(
   id: string,
@@ -105,3 +106,96 @@ test('buildSolidSliceMeshForWasm partitions designated support models into suppo
   // Total triangle count in collector must equal 5 (2 model + 3 support)
   assert.equal(solidMesh.trianglesXYZ.length / 9, 5);
 });
+
+test('twig contact disks are successfully appended to the sliced geometry', async () => {
+  // 1. Create a dummy model
+  const model = createMockModel('m1', 2, false);
+
+  // 2. Mock support state with a twig having contactDiskA and contactDiskB
+  const mockTwig = {
+    id: 'twig-1',
+    modelId: 'm1',
+    segments: [], // empty segments so we only test contact disks
+    contactDiskA: {
+      id: 'disk-a',
+      pos: { x: 0, y: 0, z: 10 },
+      surfaceNormal: { x: 0, y: 0, z: 1 },
+      coneAxis: { x: 0, y: 0, z: 1 },
+      contactDiameterMm: 1.0,
+      profile: {
+        type: 'disk' as const,
+        diskThicknessMm: 0.2,
+        maxStandoffMm: 0.35,
+        standoffAngleThreshold: Math.PI / 4,
+      },
+    },
+    contactDiskB: {
+      id: 'disk-b',
+      pos: { x: 5, y: 5, z: 15 },
+      surfaceNormal: { x: 0, y: 0, z: -1 },
+      coneAxis: { x: 0, y: 0, z: -1 },
+      contactDiameterMm: 2.0,
+      profile: {
+        type: 'disk' as const,
+        diskThicknessMm: 0.3,
+        maxStandoffMm: 0.35,
+        standoffAngleThreshold: Math.PI / 4,
+      },
+    },
+  };
+
+  const initialSupportState = {
+    roots: {},
+    trunks: {},
+    branches: {},
+    leaves: {},
+    twigs: { 'twig-1': mockTwig as any },
+    sticks: {},
+    braces: {},
+    anchors: {},
+    knots: {},
+    selectedId: null,
+    hoveredId: null,
+    selectedCategory: null,
+    hoveredCategory: 'none' as const,
+    interactionWarning: null,
+  };
+
+  setSnapshot(initialSupportState);
+
+  // 3. Build solid slice mesh
+  const solidMesh = await buildSolidSliceMeshForWasm({
+    models: [model],
+    printerProfile: mockPrinterProfile,
+    materialProfile: mockMaterialProfile,
+    filenameBase: 'test_twig_disks',
+  });
+
+  // 4. Verify triangles are appended.
+  // Model triangle count is 2 (from mock model).
+  // Total triangles should include:
+  // - 2 model triangles
+  // - cylinder and sphere from contactDiskA
+  // - cylinder and sphere from contactDiskB
+  assert.equal(solidMesh.modelTriangleCount, 2);
+  assert.ok(solidMesh.trianglesXYZ.length / 9 > 2, 'Should append contact disk triangles to support geometry');
+
+  // Clean up
+  setSnapshot({
+    roots: {},
+    trunks: {},
+    branches: {},
+    leaves: {},
+    twigs: {},
+    sticks: {},
+    braces: {},
+    anchors: {},
+    knots: {},
+    selectedId: null,
+    hoveredId: null,
+    selectedCategory: null,
+    hoveredCategory: 'none' as const,
+    interactionWarning: null,
+  });
+});
+
