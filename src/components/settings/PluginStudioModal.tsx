@@ -3244,7 +3244,7 @@ function StepExport({ jsonContent, readmeContent, slug, printerPresetFiles, mate
             </div>
 
             <div className="p-4 space-y-3">
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                 Files to overwrite:
               </p>
               <div className="rounded-lg border p-2 max-h-44 overflow-auto" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
@@ -3941,7 +3941,7 @@ export function PluginStudioModal({ isOpen, onClose }: PluginStudioModalProps) {
                 <div className="mb-3 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), transparent 8%)' }}>
                   <div className="flex items-center gap-2">
                     <ActiveStepIcon className="h-4 w-4" style={{ color: activeStepColor }} />
-                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>{activeStepMeta.label}</h3>
+                    <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>{activeStepMeta.label}</h3>
                   </div>
                   <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>{activeStepMeta.description}</p>
                 </div>
@@ -4107,7 +4107,7 @@ export function PluginStudioModal({ isOpen, onClose }: PluginStudioModalProps) {
               </div>
 
               <div className="p-4 space-y-3">
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                   If you want to keep the generated manifest, copy or download it from the Export step before exiting.
                 </p>
 

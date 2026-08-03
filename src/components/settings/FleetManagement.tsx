@@ -82,7 +82,7 @@ export function FleetManagement({
     <div className="w-full max-w-[920px] rounded-xl border shadow-2xl ui-modal-panel-enter" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
         <div>
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+          <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
             {hasMultiplePrinters ? 'Fleet Management' : 'Network Settings'}
           </h3>
           <p className="ui-meta">{printerName}</p>

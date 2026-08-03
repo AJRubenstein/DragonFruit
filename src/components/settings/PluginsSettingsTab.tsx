@@ -351,7 +351,7 @@ export function PluginsSettingsTab() {
             <Plug className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Plugin Loader</h3>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Plugin Loader</h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Install plugin manifests from GitHub repositories (profile packs only). Remote code execution is not supported.
             </p>
@@ -409,7 +409,7 @@ export function PluginsSettingsTab() {
                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                   Unverified Plugin Liability Warning
                 </div>
-                <div className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                <div className="mt-1 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                   This repository is not on the trusted allowlist. You can still install this <strong>simple/data-only</strong> plugin,
                   but you accept responsibility for validating the source and manifest contents.
                 </div>
@@ -538,7 +538,7 @@ export function PluginsSettingsTab() {
             {pendingInstallPreview.manifest.description && (
               <div className="mt-3 rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Description</div>
-                <div className="mt-1.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                <div className="mt-1.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                   {pendingInstallPreview.manifest.description}
                 </div>
               </div>
@@ -623,7 +623,7 @@ export function PluginsSettingsTab() {
             <PackageCheck className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Installed Plugins</h3>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Installed Plugins</h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Manage built-in and user-installed plugin packs.
             </p>

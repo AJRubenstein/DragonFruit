@@ -4165,7 +4165,7 @@ export function ProfileSettingsModal({
                     <h4 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                       Printer Not Connected
                     </h4>
-                    <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    <p className="mt-1 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                       A network printer is configured, but it is not responding right now. Reconnect it in Fleet Management, then refresh to load on-device materials.
                     </p>
                     {selectedPrinterSupportsNetworkSettings && (
@@ -4195,7 +4195,7 @@ export function ProfileSettingsModal({
                     <h4 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                       Connect to a Machine
                     </h4>
-                    <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    <p className="mt-1 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                       Connect to a machine to view on-device material profiles.
                     </p>
                     {selectedPrinterSupportsNetworkSettings && (
@@ -4426,7 +4426,7 @@ export function ProfileSettingsModal({
             <div className="w-full max-w-[760px] rounded-xl border shadow-2xl overflow-hidden ui-modal-panel-enter" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}>
               <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div>
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Edit Unit</h3>
+                  <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Edit Unit</h3>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     Customize nickname and card thumbnail for this fleet unit in DragonFruit.
                   </p>
@@ -4563,7 +4563,7 @@ export function ProfileSettingsModal({
                     <Printer className="w-4 h-4" style={{ color: 'var(--accent-secondary)' }} />
                   </span>
                   <div>
-                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Printer Library</h3>
+                    <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Printer Library</h3>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Choose an official printer preset to add.</p>
                   </div>
                 </div>
@@ -4690,7 +4690,7 @@ export function ProfileSettingsModal({
             <div className="w-full max-w-[920px] max-h-[88vh] rounded-xl border shadow-2xl ui-modal-panel-enter flex flex-col" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}>
               <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div>
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+                  <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                     {usePluginLocalSettingsAsReplacement && replacementMaterialModalLabel
                       ? `Edit ${replacementMaterialModalLabel} Material Profile`
                       : 'Material Profile Settings'}
@@ -4788,7 +4788,7 @@ export function ProfileSettingsModal({
             <div className="w-full max-w-[960px] max-h-[88vh] rounded-xl border shadow-2xl ui-modal-panel-enter flex flex-col" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}>
               <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div>
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+                  <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                     Printer Profile Settings
                   </h3>
                   <p className="ui-meta">{selectedPrinter.name} • {selectedPrinter.manufacturer || 'Generic'}</p>
@@ -5193,7 +5193,7 @@ export function ProfileSettingsModal({
                     <FlaskConical className="w-4 h-4" style={{ color: 'var(--accent)' }} />
                   </span>
                   <div>
-                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Material Library</h3>
+                    <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Material Library</h3>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Choose an official material preset to add.</p>
                   </div>
                 </div>
@@ -5396,7 +5396,7 @@ export function ProfileSettingsModal({
             <div className="w-full max-w-[920px] max-h-[88vh] rounded-xl border shadow-2xl ui-modal-panel-enter flex flex-col" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}>
               <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div>
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+                  <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                     {usePluginLocalSettingsAsReplacement && replacementMaterialModalLabel
                       ? `Create ${replacementMaterialModalLabel} Material Profile`
                       : 'Create Material Profile'}
@@ -5563,7 +5563,7 @@ export function ProfileSettingsModal({
             <div className="w-full max-w-[860px] max-h-[88vh] rounded-xl border shadow-2xl ui-modal-panel-enter flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}>
               <div className="px-4 py-3 border-b flex items-center justify-between gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div>
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+                  <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                     Official Printer Update
                   </h3>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -5673,7 +5673,7 @@ export function ProfileSettingsModal({
               </>
             )}
           >
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
               For safety reasons, official slicer profiles cannot be modified directly.
               <br />
               Choose <strong>Make Custom Copy</strong> to duplicate and edit safely.
@@ -5714,7 +5714,7 @@ export function ProfileSettingsModal({
             </>
           )}
         >
-          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
             Official material profiles cannot be edited directly.
             <br />
             Choose <strong>Make Custom Copy</strong> to duplicate and adjust exposure settings safely.
@@ -5760,7 +5760,7 @@ export function ProfileSettingsModal({
           )}
         >
           {deleteConfirmTarget ? (
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
               {deleteConfirmTarget.kind === 'printer'
                 ? <>Delete <strong style={{ color: 'var(--text-strong)' }}>{deleteConfirmTarget.name}</strong> and remove all material profiles linked to it?</>
                 : <>Delete material profile <strong style={{ color: 'var(--text-strong)' }}>{deleteConfirmTarget.name}</strong>?</>}
@@ -5822,7 +5822,7 @@ function RemoteMaterialEditDialog({
       <div className="w-full max-w-[920px] max-h-[88vh] rounded-xl border shadow-2xl overflow-hidden flex flex-col ui-modal-panel-enter" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}>
         <div className="flex items-center justify-between px-4 py-3 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
           <div>
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Edit {networkModeLabel} Material Profile</h3>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Edit {networkModeLabel} Material Profile</h3>
             <p className="ui-meta">{material.name} • Profile ID {material.id}</p>
           </div>
           <button

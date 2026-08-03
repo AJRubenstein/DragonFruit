@@ -48,7 +48,7 @@ export function WorkspacesSettingsTab({
             <Layers3 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               3D View
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>

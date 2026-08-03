@@ -143,8 +143,8 @@ export function SceneAutosaveSettingsTab() {
             <HardDrive className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Scene Autosave</h3>
-            <p className="mt-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Scene Autosave</h3>
+            <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
               Automatically saves a crash-recovery `.voxl` scene in the background and offers restore on next launch.
             </p>
           </div>

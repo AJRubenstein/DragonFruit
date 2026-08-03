@@ -1759,7 +1759,7 @@ export function SettingsModal({
                   <RotateCcw className="h-4 w-4" />
                 </span>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+                  <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                     Restore Defaults?
                   </h3>
                   <p className="text-xs leading-snug mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -1779,7 +1779,7 @@ export function SettingsModal({
             </div>
 
             <div className="p-4 space-y-3">
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                 You can still review the changes before saving. Nothing is written until you click <strong>Apply</strong>.
               </p>
 
@@ -1837,7 +1837,7 @@ export function SettingsModal({
           </>
         )}
       >
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
           Save <strong>{draftCustomThemeName.trim() || 'this custom theme'}</strong> with the current scheme and palette values?
         </p>
       </StructuredDialogModal>
@@ -1877,7 +1877,7 @@ export function SettingsModal({
           </>
         )}
       >
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
           Delete <strong>{draftCustomThemeName.trim() || 'this custom theme'}</strong>? DragonFruit will switch back to a built-in preset.
         </p>
       </StructuredDialogModal>
