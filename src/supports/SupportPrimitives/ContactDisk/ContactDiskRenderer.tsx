@@ -10,7 +10,7 @@ import { setContactDiskHudDraggingActive, setContactDiskHudHoverActive, setConta
 import { setHoveredState } from '../../state';
 import { emitImmediateModelHover, getFrontBlockingModelId } from '../../interaction/pointerOcclusion';
 import { isSupportEditInteractionActive } from '../../interaction/gizmoInteractionLock';
-import { subscribeToProfileStore, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
+import { subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
 import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 
 interface ContactDiskRendererProps {
@@ -63,8 +63,13 @@ export function ContactDiskRenderer({
     const [isHovered, setIsHovered] = React.useState(false);
     const { register, unregister } = usePicking();
     
-    const activeMaterial = React.useSyncExternalStore(subscribeToProfileStore, () => getActiveMaterialProfile());
-    const activePrinter = React.useSyncExternalStore(subscribeToProfileStore, () => getActivePrinterProfile());
+    const storeState = React.useSyncExternalStore(
+        subscribeToProfileStore,
+        getProfileStoreSnapshot,
+        getProfileStoreServerSnapshot
+    );
+    const activeMaterial = React.useMemo(() => getActiveMaterialProfile(storeState), [storeState]);
+    const activePrinter = React.useMemo(() => getActivePrinterProfile(storeState), [storeState]);
     const effectivePenetrationMm = React.useMemo(() => {
         if (activeMaterial && activePrinter && activeMaterial.antiAliasingSettings?.tipOffsetDisplayInUi) {
             const pxX = activePrinter.pixelSize?.x ? activePrinter.pixelSize.x / 1000 : (activePrinter.buildVolumeMm?.width ?? 143) / (activePrinter.display?.resolutionX ?? 2560);

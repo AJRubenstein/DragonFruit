@@ -5,7 +5,7 @@ import type { Vec3 } from '../../types';
 import type { SupportTipProfile } from './types';
 import { getConeCenterPosition, getConeQuaternion } from './contactConeUtils';
 import { calculateDiskThickness, getDiskCenter, getDiskRotation } from '../ContactDisk/contactDiskUtils';
-import { subscribeToProfileStore, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
+import { subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
 import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 
 export interface InstancedContactCone {
@@ -360,8 +360,13 @@ export function InstancedContactConeGroup({
     onConePointerMove,
     onConePointerOut,
 }: InstancedContactConeGroupProps) {
-    const activeMaterial = React.useSyncExternalStore(subscribeToProfileStore, () => getActiveMaterialProfile());
-    const activePrinter = React.useSyncExternalStore(subscribeToProfileStore, () => getActivePrinterProfile());
+    const storeState = React.useSyncExternalStore(
+        subscribeToProfileStore,
+        getProfileStoreSnapshot,
+        getProfileStoreServerSnapshot
+    );
+    const activeMaterial = React.useMemo(() => getActiveMaterialProfile(storeState), [storeState]);
+    const activePrinter = React.useMemo(() => getActivePrinterProfile(storeState), [storeState]);
     
     const resolvePenetration = React.useCallback((cone: InstancedContactCone) => {
         if (activeMaterial && activePrinter && activeMaterial.antiAliasingSettings?.tipOffsetDisplayInUi) {

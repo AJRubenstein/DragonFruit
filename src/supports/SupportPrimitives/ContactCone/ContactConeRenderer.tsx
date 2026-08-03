@@ -14,7 +14,7 @@ import { useJointDragPosition } from '../../interaction/jointDragPosition';
 // Primitives
 import { ContactDiskRenderer, calculateDiskThickness } from '../ContactDisk';
 import { isSupportEditInteractionActive } from '../../interaction/gizmoInteractionLock';
-import { subscribeToProfileStore, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
+import { subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
 import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 
 interface ContactConeRendererProps {
@@ -87,8 +87,13 @@ export function ContactConeRenderer({
     const contactRadius = profile.contactDiameterMm / 2;
     const bodyRadius = profile.bodyDiameterMm / 2;
     
-    const activeMaterial = React.useSyncExternalStore(subscribeToProfileStore, () => getActiveMaterialProfile());
-    const activePrinter = React.useSyncExternalStore(subscribeToProfileStore, () => getActivePrinterProfile());
+    const storeState = React.useSyncExternalStore(
+        subscribeToProfileStore,
+        getProfileStoreSnapshot,
+        getProfileStoreServerSnapshot
+    );
+    const activeMaterial = React.useMemo(() => getActiveMaterialProfile(storeState), [storeState]);
+    const activePrinter = React.useMemo(() => getActivePrinterProfile(storeState), [storeState]);
     const penetrationMm = React.useMemo(() => {
         if (activeMaterial && activePrinter && activeMaterial.antiAliasingSettings?.tipOffsetDisplayInUi) {
             const pxX = activePrinter.pixelSize?.x ? activePrinter.pixelSize.x / 1000 : (activePrinter.buildVolumeMm?.width ?? 143) / (activePrinter.display?.resolutionX ?? 2560);
