@@ -10047,7 +10047,7 @@ export default function Home() {
           {scene.models.length > 0 && (
             <div
               ref={modelStatsCardContainerRef}
-              className="absolute bottom-3 left-3 z-30 pointer-events-auto"
+              className="absolute bottom-1 left-1 z-30 pointer-events-auto"
             >
               <ModelStatsCard
                 model={scene.models.find((m) => m.id === displayActiveModelId) || null}
