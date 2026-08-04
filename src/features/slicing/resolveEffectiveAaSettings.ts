@@ -43,7 +43,9 @@ export function resolveEffectiveAaSettings(
         const effZBlur = typeof settings.zBlurRadiusLayers === 'number'
             ? Math.max(0, Math.round(settings.zBlurRadiusLayers))
             : autoCfg.zBlurRadiusLayers;
-        const autoTipOffset = Number(((2 * effZBlur + 1) * safeLayerH).toFixed(3));
+        const autoTipOffset = settings.tipOffsetMode === 'disabled'
+            ? 0.05
+            : Number(((2 * effZBlur + 1) * safeLayerH).toFixed(3));
         return {
             mode: autoCfg.aaMode,
             aaSteps: autoCfg.aaSteps,
@@ -94,6 +96,8 @@ export function resolveEffectiveAaSettings(
     // Auto-calculated tip penetration offset based on effective Z blur radius
     const rawTipOffset = settings.tipOffsetMode === 'manual'
         ? settings.tipOffsetMm
+        : settings.tipOffsetMode === 'disabled'
+        ? 0.05
         : (2 * zBlurRadiusLayers + 1) * safeLayerH;
     const effectiveTipOffset = Number(rawTipOffset.toFixed(3));
 
