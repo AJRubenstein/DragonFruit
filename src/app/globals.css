@@ -159,25 +159,6 @@ body {
   position: relative;
   isolation: isolate;
   height: var(--topbar-height);
-  background: transparent;
-  padding: 3px 4px 9px 4px;
-  gap: var(--space-3);
-}
-
-/* Frosted glass layer, rendered BELOW the topbar (z-30) so the Transform
-   Toolbar (z-40) and every modal (z-50+) float crisp on top of it. The accent
-   wash + dark tint + blur all roll off below the bar's bottom edge so the seam
-   blends into the viewport. */
-.ui-topbar-blur {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: calc(var(--topbar-height) + 64px);
-  z-index: 30;
-  pointer-events: none;
-  backdrop-filter: blur(14px) saturate(130%);
-  -webkit-backdrop-filter: blur(14px) saturate(130%);
   background:
     linear-gradient(
       90deg,
@@ -187,25 +168,64 @@ body {
     ),
     linear-gradient(
       to bottom,
-      color-mix(in srgb, var(--surface-0), transparent 4%) 0%,
-      color-mix(in srgb, var(--surface-0), transparent 10%) 55%,
-      transparent 100%
+      color-mix(in srgb, var(--surface-0), transparent 6%) 0%,
+      color-mix(in srgb, var(--surface-0), transparent 10%) 50%,
+      color-mix(in srgb, var(--surface-0), transparent 22%) 100%
     );
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  padding: 3px 4px 9px 4px;
+  gap: var(--space-3);
   mask-image: linear-gradient(
-    to top,
-    transparent 0%,
-    rgba(0, 0, 0, 0.25) 35%,
-    rgba(0, 0, 0, 0.65) 57%,
-    rgba(0, 0, 0, 0.9) 61%,
-    rgba(0, 0, 0, 1) 63%
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 60%,
+    rgba(0, 0, 0, 0.82) 75%,
+    rgba(0, 0, 0, 0.44) 88%,
+    rgba(0, 0, 0, 0.14) 96%,
+    transparent 100%
   );
   -webkit-mask-image: linear-gradient(
-    to top,
-    transparent 0%,
-    rgba(0, 0, 0, 0.25) 35%,
-    rgba(0, 0, 0, 0.65) 57%,
-    rgba(0, 0, 0, 0.9) 61%,
-    rgba(0, 0, 0, 1) 63%
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 60%,
+    rgba(0, 0, 0, 0.82) 75%,
+    rgba(0, 0, 0, 0.44) 88%,
+    rgba(0, 0, 0, 0.14) 96%,
+    transparent 100%
+  );
+}
+
+/* Subtle backdrop behind the topbar — same height, no extension.
+   Kept as a separate layer (z-30) so the Transform Toolbar (z-40)
+   and modals (z-50+) render crisp above the blur. */
+.ui-topbar-blur {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--topbar-height);
+  z-index: 30;
+  pointer-events: none;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  mask-image: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 60%,
+    rgba(0, 0, 0, 0.82) 75%,
+    rgba(0, 0, 0, 0.44) 88%,
+    rgba(0, 0, 0, 0.14) 96%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 60%,
+    rgba(0, 0, 0, 0.82) 75%,
+    rgba(0, 0, 0, 0.44) 88%,
+    rgba(0, 0, 0, 0.14) 96%,
+    transparent 100%
   );
 }
 
