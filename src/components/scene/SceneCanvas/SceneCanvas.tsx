@@ -3125,11 +3125,17 @@ export function SceneCanvas({
       ids.push(duplicateSourceSupportPreviewModelId);
     }
     if (useActiveModelAttachedSupportProxy && activeModelId) ids.push(activeModelId);
+    // When a model is hidden via the model manager panel, its supports should
+    // also be hidden so they don't float orphaned in the scene.
+    for (const model of models) {
+      if (!model.visible) ids.push(model.id);
+    }
     return Array.from(new Set(ids));
   }, [
     activeModelId,
     arrangeSupportPreviewModelIds,
     duplicateSourceSupportPreviewModelId,
+    models,
     multiGizmoSupportPreviewIds,
     renderDuplicateSourceSupportGhostPreview,
     useActiveModelAttachedSupportProxy,
