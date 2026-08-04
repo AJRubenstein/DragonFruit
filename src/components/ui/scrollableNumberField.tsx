@@ -95,6 +95,9 @@ export function ScrollableNumberField({
     if (!el) return;
     const onWheel = (event: WheelEvent) => {
       if (disabled) return;
+      // Only step on wheel when the field is focused or Shift is held —
+      // prevents accidental value changes while scrolling the page.
+      if (document.activeElement !== el && !event.shiftKey) return;
       event.preventDefault();
       event.stopPropagation();
       stepBy(event.deltaY < 0 ? 1 : -1);
