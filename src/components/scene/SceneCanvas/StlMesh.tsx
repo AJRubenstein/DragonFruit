@@ -397,6 +397,26 @@ function StlMeshComponent({
   // Pre-computed during geometry import — no render-time cost.
   const edgeLinesGeometry = edgeGeometry ?? null;
 
+  // Derive edge color from the selection accent color so edges read as a dark,
+  // saturated shade of the accent (e.g. pink accent → dark burgundy edges)
+  // instead of generic black. Proportional scaling preserves hue at low luminance.
+  const edgeLinesColor = React.useMemo(() => {
+    const base = selectedTintColor ?? '#ec2a77';
+    const hex = base.replace('#', '');
+    if (hex.length !== 6) return '#1a1a1a';
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    // Scale all channels proportionally to ~22% brightness — dark enough for
+    // edge contrast but the hue ratio is preserved so it reads as a tint of
+    // the accent, not generic black.
+    const scale = 0.22;
+    const dr = Math.round(r * scale).toString(16).padStart(2, '0');
+    const dg = Math.round(g * scale).toString(16).padStart(2, '0');
+    const db = Math.round(b * scale).toString(16).padStart(2, '0');
+    return `#${dr}${dg}${db}`;
+  }, [selectedTintColor]);
+
   // Internal ref for the mesh element to control raycasting
   const internalMeshRef = React.useRef<THREE.Mesh>(null);
   const groupRef = React.useRef<THREE.Group | null>(null);
@@ -1430,7 +1450,7 @@ if (uDitherAmount > 0.0) {
 
       {!interiorView && higherContrastModelEdges && !showOpaqueWireOverlay && baseShaderType !== 'wireframe' && !blockerEditMode && edgeLinesGeometry && (
         <lineSegments geometry={edgeLinesGeometry} position={meshLocalOffset} renderOrder={2} raycast={() => null}>
-          <lineBasicMaterial color="#000000" transparent opacity={0.55} depthTest polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} clippingPlanes={planes} />
+          <lineBasicMaterial color={edgeLinesColor} transparent opacity={0.55} depthTest polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} clippingPlanes={planes} />
         </lineSegments>
       )}
 
