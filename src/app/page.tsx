@@ -603,6 +603,8 @@ export default function Home() {
   // 2. Transform Management (needs geom for bounds)
   const transformMgr = useTransformManager({ geom: scene.geom });
   const [uniformScaling, setUniformScaling] = React.useState(true);
+  // Gizmo frame: world axes, or the active model's own (issue #504).
+  const [localTransformSpace, setLocalTransformSpace] = React.useState(false);
 
   // --- Hollowing manager: placed early so its state/setters are in scope for
   //     useHolePunchManager below. Late/cross deps supplied via a ref populated
@@ -7559,6 +7561,7 @@ export default function Home() {
     hasModels: scene.models.length > 0,
     transformMode: transformMgr.transformMode,
     setTransformMode: setTransformModeWithMirrorFinalize,
+    setLocalTransformSpace: setLocalTransformSpace,
     onArrangeAll: () => {
       void (arrangeLayoutMode === 'array'
         ? handleManualArrayArrangeModels('all')
@@ -9578,6 +9581,8 @@ export default function Home() {
               scheduleCommitPendingTransformHistory: scheduleCommitPendingTransformHistory,
               uniformScaling: uniformScaling,
               setUniformScaling: setUniformScaling,
+              localTransformSpace: localTransformSpace,
+              setLocalTransformSpace: setLocalTransformSpace,
               isApplyingHolePunch: isApplyingHolePunch,
               interiorView: interiorView,
               hasCavityGeometry: hasCavityGeometry,
@@ -9817,6 +9822,7 @@ export default function Home() {
             transformMode={transformMgr.transformMode}
             transform={transformMgr.transform}
             uniformScaling={uniformScaling}
+            localTransformSpace={localTransformSpace}
             autoLift={transformMgr.autoLift}
             liftDistance={transformMgr.liftDistance}
             autoSnapEnabled={transformMgr.autoSnapEnabled}

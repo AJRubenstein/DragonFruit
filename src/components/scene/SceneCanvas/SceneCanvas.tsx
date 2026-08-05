@@ -339,6 +339,7 @@ export function SceneCanvas({
   transformMode,
   transform,
   uniformScaling = true,
+  localTransformSpace = false,
   autoLift = false,
   liftDistance = 5,
   autoSnapEnabled = true,
@@ -461,6 +462,8 @@ export function SceneCanvas({
   transformMode?: TransformMode;
   transform?: ModelTransform;
   uniformScaling?: boolean;
+  /** Drive the transform gizmo in the model's own frame instead of the world axes. */
+  localTransformSpace?: boolean;
   autoLift?: boolean;
   liftDistance?: number;
   autoSnapEnabled?: boolean;
@@ -3184,6 +3187,42 @@ export function SceneCanvas({
     if (transform && activeModelId === activeModel.id) return transform;
     return activeModel.transform;
   }, [activeModel, transform, activeModelId]);
+
+  // Local space puts the gizmo in the model's own frame: its arrows point along the
+  // model's axes and its rings turn about them. A multi-selection has no single
+  // frame to borrow, so it stays on the world axes.
+  const gizmoUsesLocalFrame = localTransformSpace && !isMultiGizmoSelection;
+
+  const gizmoFrameQuaternion = React.useMemo(() => (
+    gizmoUsesLocalFrame && activeModelTransform
+      ? quaternionFromGlobalEuler(activeModelTransform.rotation)
+      : new THREE.Quaternion()
+  ), [activeModelTransform, gizmoUsesLocalFrame]);
+
+  const gizmoFrameRotation = React.useMemo<[number, number, number]>(() => {
+    // The gizmo group takes an XYZ-ordered Euler, so the model's global-axis
+    // rotation has to travel through a quaternion to arrive unchanged.
+    const frame = new THREE.Euler().setFromQuaternion(gizmoFrameQuaternion, 'XYZ');
+    return [frame.x, frame.y, frame.z];
+  }, [gizmoFrameQuaternion]);
+
+  /**
+   * Where a gizmo handle's axis points in world coordinates. Handles with no axis
+   * of their own (the centre nub) get a zero vector, which reads as horizontal.
+   */
+  const gizmoAxisWorldDirection = React.useCallback((axis?: 'x' | 'y' | 'z') => new THREE.Vector3(
+    axis === 'x' ? 1 : 0,
+    axis === 'y' ? 1 : 0,
+    axis === 'z' ? 1 : 0,
+  ).applyQuaternion(gizmoFrameQuaternion), [gizmoFrameQuaternion]);
+
+  /**
+   * The frame a rotation drag turns about, frozen at the grab. In local space that
+   * is the model's orientation when the drag started — and since a rotation about
+   * an axis leaves that same axis where it was, holding it for the whole gesture is
+   * exact, not an approximation. Identity in world space.
+   */
+  const gizmoRotationFrameRef = React.useRef(new THREE.Quaternion());
 
   const multiGizmoCenter = React.useMemo(() => {
     if (!isMultiGizmoSelection || selectedTransformableModelIds.length === 0) return null;
@@ -6066,7 +6105,10 @@ export function SceneCanvas({
                     (isMultiGizmoSelection ? (multiGizmoCenter?.y ?? activeModelTransform?.position.y) : activeModelTransform?.position.y) ?? 0,
                     (isMultiGizmoSelection ? (multiGizmoCenter?.z ?? activeModelTransform?.position.z) : activeModelTransform?.position.z) ?? 0,
                   ]}
-                  rotation={[0, 0, 0]}
+                  rotation={gizmoFrameRotation}
+                  // A flipped arrow is decided from the world axes, so in the model's
+                  // frame it would point down an axis that is not the one it drags.
+                  disableArrowFlip={gizmoUsesLocalFrame}
                   enableMove
                   enableRotate={!isMultiGizmoSelection}
                   enableScale
@@ -6119,7 +6161,13 @@ export function SceneCanvas({
                       setActiveGizmoDragDescriptor({ operation: 'move', axis });
                     if (activeModelId && activeModel) {
                       const sourceTransform = transform ?? activeModel.transform;
-                      dragMoveLockZEnabledRef.current = axis !== 'z';
+                      // Dragging an in-plane arrow pins the height, so a sideways drag
+                      // can't drift off the plate. In the model's own frame those arrows
+                      // tilt out of the plate's plane, so ask the axis this drag actually
+                      // follows: pin the height only while it really is horizontal.
+                      dragMoveLockZEnabledRef.current = Math.abs(
+                        gizmoAxisWorldDirection(axis).z,
+                      ) < 1e-6;
                       dragMoveLockedZRef.current = sourceTransform.position.z;
                       const idsForCage = isMultiGizmoSelection
                         ? selectedTransformableModelIds
@@ -6255,6 +6303,9 @@ export function SceneCanvas({
                           : axis === 'y'
                             ? new THREE.Vector3(0, 1, 0)
                             : new THREE.Vector3(0, 0, 1);
+                      // In local space the ring's axis is the model's, so carry it into
+                      // world coordinates before turning about it.
+                      rotationAxis.applyQuaternion(gizmoRotationFrameRef.current);
                       const quaternion = new THREE.Quaternion().setFromAxisAngle(rotationAxis, -angle);
                       activeGroupRef.current.quaternion.premultiply(quaternion);
                       applySupportGroupDelta();
@@ -6276,6 +6327,7 @@ export function SceneCanvas({
                   onRotateStart={(axis) => {
                     stopActiveModelDropAnimation();
                     captureGizmoDragBeforeMatrix();
+                    gizmoRotationFrameRef.current.copy(gizmoFrameQuaternion);
                     const shouldProceed = onTransformStart?.('rotate', { axis });
                     if (shouldProceed === false) return false;
                     setActiveGizmoDragDescriptor({ operation: 'rotate', axis });
