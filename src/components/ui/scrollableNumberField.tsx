@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconButton, cn } from '@/components/atoms';
 import { Minus, Plus } from 'lucide-react';
+import { wheelStepDirection } from '@/components/ui/wheelStepDirection';
 
 interface ScrollableNumberFieldProps {
   value: number;
@@ -96,11 +97,15 @@ export function ScrollableNumberField({
     const onWheel = (event: WheelEvent) => {
       if (disabled) return;
       // Only step on wheel when the field is focused or Shift is held —
-      // prevents accidental value changes while scrolling the page.
+      // prevents accidental value changes while scrolling the page. Shift also
+      // makes a mouse wheel arrive as horizontal scroll, hence the axis-agnostic
+      // direction.
       if (document.activeElement !== el && !event.shiftKey) return;
+      const direction = wheelStepDirection(event);
+      if (direction === 0) return;
       event.preventDefault();
       event.stopPropagation();
-      stepBy(event.deltaY < 0 ? 1 : -1);
+      stepBy(direction);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
