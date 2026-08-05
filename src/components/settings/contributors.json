@@ -70,5 +70,23 @@
     "affiliation": "TheDevMinerTV",
     "role": "Contributor",
     "tone": "secondary"
+  },
+  {
+    "name": "Columbus Labs",
+    "affiliation": "ColumbusLabs",
+    "role": "Contributor",
+    "tone": "secondary"
+  },
+  {
+    "name": "Aysajan Eziz",
+    "affiliation": "AysajanE",
+    "role": "Contributor",
+    "tone": "secondary"
+  },
+  {
+    "name": "Norman",
+    "affiliation": "Barasatii",
+    "role": "Contributor",
+    "tone": "secondary"
   }
 ]

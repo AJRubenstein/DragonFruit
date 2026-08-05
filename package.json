@@ -6,7 +6,7 @@
   "scripts": {
     "sync:version": "node scripts/sync-app-version.mjs",
     "sync:contributors": "node scripts/sync-contributors.mjs",
-    "postversion": "npm run sync:version",
+    "postversion": "npm run sync:version && npm run sync:contributors",
     "generate:builtin-simple-plugins": "node scripts/generate-builtin-simple-plugins.mjs",
     "generate:plugin-registry": "node scripts/generate-plugin-registry.mjs",
     "check:plugin-allowlist": "node scripts/check-complex-plugin-allowlist.mjs",
@@ -15,7 +15,7 @@
     "predev": "npm run generate:plugin-registry && npm run generate:builtin-simple-plugins",
     "prebuild": "npm run generate:plugin-registry && npm run generate:builtin-simple-plugins",
     "prebuild:tauri": "npm run generate:plugin-registry && npm run generate:builtin-simple-plugins",
-    "pretauri:dev": "npm run sync:version && npm run sync:contributors",
+    "pretauri:dev": "npm run sync:version",
     "pretauri:build": "npm run sync:version",
     "pretauri:bundle": "npm run sync:version",
     "pretauri:bundle:windows": "npm run sync:version",
