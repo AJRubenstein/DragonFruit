@@ -10,6 +10,12 @@
  * - Removes anyone no longer in the GitHub list (bots excluded)
  * - Skips bots (type === "Bot")
  *
+ * Runs from the `pretauri:dev` npm hook (via `npm run sync:contributors`), so the
+ * committed list stays fresh as part of the normal dev toolchain instead of a
+ * release-time CI side effect. Because it runs on every `tauri:dev` start, a
+ * GitHub API failure (offline / rate-limited) only warns and leaves the file
+ * untouched — it must never block launching the app.
+ *
  * Usage: node scripts/sync-contributors.mjs
  */
 
@@ -24,15 +30,25 @@ const API_URL = 'https://api.github.com/repos/Open-Resin-Alliance/DragonFruit/co
 async function main() {
   // 1. Fetch live contributors from GitHub
   console.log('Fetching contributors from GitHub API…');
-  const res = await fetch(API_URL);
-  if (!res.ok) {
-    console.error(`GitHub API returned ${res.status}: ${res.statusText}`);
-    process.exit(1);
-  }
-  const ghContributors = await res.json();
-  if (!Array.isArray(ghContributors)) {
-    console.error('Unexpected API response:', ghContributors);
-    process.exit(1);
+  let ghContributors;
+  try {
+    const res = await fetch(API_URL);
+    if (!res.ok) {
+      console.warn(
+        `⚠️  GitHub API returned ${res.status}: ${res.statusText} — leaving contributors.json untouched.`,
+      );
+      return;
+    }
+    ghContributors = await res.json();
+    if (!Array.isArray(ghContributors)) {
+      console.warn('⚠️  Unexpected GitHub API response — leaving contributors.json untouched.');
+      return;
+    }
+  } catch (err) {
+    console.warn(
+      `⚠️  Could not reach the GitHub API (${err.message}) — leaving contributors.json untouched.`,
+    );
+    return;
   }
 
   // 2. Filter bots
