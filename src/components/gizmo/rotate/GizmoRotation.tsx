@@ -5,8 +5,10 @@ import * as THREE from 'three';
 import { ThreeEvent, useThree, useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import { GIZMO_COLORS, GIZMO_SIZES, GIZMO_LIGHTING } from '../constants';
+import { beginGizmoDrag } from '../gizmoDragRegistry';
 import {
   DIAL_ANATOMY,
+  emittedDeltaForSweep,
   stepDialSweep,
   distancePointToLine,
   polarToLocal,
@@ -184,6 +186,11 @@ export function GizmoRotation({
   // Callback refs to stabilize useEffect deps (prevents effect churn during drag)
   const onDragRef = useRef(onDrag);
   const onDragEndRef = useRef(onDragEnd);
+  const axisVisualFlipRef = useRef(axisVisualFlip);
+  /** Tears down the window listeners the running gesture installed. */
+  const detachDragListenersRef = useRef<(() => void) | null>(null);
+  /** Gives up this drag's claim on the registry. */
+  const releaseGizmoDragRef = useRef<(() => void) | null>(null);
   const rotatingArcRef = useRef<THREE.Group>(null);
   const handleRootRef = useRef<THREE.Group>(null);
   const billboardGroupRef = useRef<THREE.Group>(null);
@@ -193,7 +200,50 @@ export function GizmoRotation({
   useEffect(() => {
     onDragRef.current = onDrag;
     onDragEndRef.current = onDragEnd;
-  }, [onDrag, onDragEnd]);
+    axisVisualFlipRef.current = axisVisualFlip;
+  }, [onDrag, onDragEnd, axisVisualFlip]);
+
+  /**
+   * End the gesture, by the one path everything uses: the pointer coming up, the
+   * pointer being cancelled, Escape, or this ring unmounting under a running
+   * drag. Whatever the reason, the listeners come off, the registry claim is
+   * given up, the dial comes down and the readout is told to stop — miss any of
+   * those and the app is left mid-drag with no drag to end it (the readout stuck
+   * to the cursor and the tool inert, which is what Escape used to do).
+   *
+   * 'cancel' also puts the rotation back where the grab found it, by asking for
+   * the sweep applied so far in reverse. A hard end clamps the way back exactly
+   * as it clamped the way out, so the object lands on its starting angle.
+   */
+  const finishDrag = useCallback((mode: 'commit' | 'cancel') => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+
+    detachDragListenersRef.current?.();
+    detachDragListenersRef.current = null;
+    releaseGizmoDragRef.current?.();
+    releaseGizmoDragRef.current = null;
+
+    if (mode === 'cancel' && sweepAccumRef.current !== 0) {
+      onDragRef.current(emittedDeltaForSweep(-sweepAccumRef.current, axisVisualFlipRef.current));
+      sweepAccumRef.current = 0;
+      prevTargetRef.current = 0;
+      handleAngleRef.current = dialZeroRef.current;
+      targetHandleAngleRef.current = dialZeroRef.current;
+    }
+
+    setIsDragging(false);
+    setDialZero(null);
+    setHeldMark(null);
+    heldRef.current = null;
+    pressPointRef.current = null;
+    onDragEndRef.current();
+    window.dispatchEvent(new CustomEvent('dragonfruit:snap-angle', { detail: { active: false } }));
+  }, []);
+
+  // A ring can be unmounted mid-gesture (the tool it belongs to closing under
+  // it). Nothing else will end the drag then, so this does.
+  useEffect(() => () => finishDrag('commit'), [finishDrag]);
 
   // GPU Picking registration
   const pickMeshRef = useRef<THREE.Mesh>(null);
@@ -356,6 +406,9 @@ export function GizmoRotation({
     pressPointRef.current = { x: e.clientX, y: e.clientY };
 
     isDraggingRef.current = true;
+    // Announce the gesture so a key pressed during it reaches this drag rather
+    // than the canvas behind it. See gizmoDragRegistry.
+    releaseGizmoDragRef.current = beginGizmoDrag(() => finishDrag('cancel'));
     window.dispatchEvent(new CustomEvent('dragonfruit:rotation-hint', { detail: { visible: false } }));
     setIsDragging(true);
   };
@@ -483,27 +536,31 @@ export function GizmoRotation({
       }));
     };
 
-    const handleGlobalPointerUp = () => {
-      // Remove pointermove synchronously so it can't re-fire active:true before React re-renders
-      window.removeEventListener('pointermove', handleGlobalPointerMove);
-      isDraggingRef.current = false;
-      setIsDragging(false);
-      setDialZero(null);
-      setHeldMark(null);
-      heldRef.current = null;
-      pressPointRef.current = null;
-      onDragEndRef.current();
-      window.dispatchEvent(new CustomEvent('dragonfruit:snap-angle', { detail: { active: false } }));
-    };
+    const handleGlobalPointerUp = () => finishDrag('commit');
+    // The system took the pointer away (a touch turning into a scroll, a window
+    // losing it). The gesture never finished, so it does not get to keep what it
+    // had applied so far.
+    const handleGlobalPointerCancel = () => finishDrag('cancel');
 
     window.addEventListener('pointermove', handleGlobalPointerMove);
     window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerCancel);
 
-    return () => {
+    // finishDrag detaches through this rather than waiting for the effect's own
+    // cleanup: pointermove has to stop firing synchronously, or it re-announces
+    // the readout as active before React has re-rendered.
+    const detach = () => {
       window.removeEventListener('pointermove', handleGlobalPointerMove);
       window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerCancel);
     };
-  }, [isDragging, camera, gl, axis, axisVisualFlip, frameCarriesRotation]);
+    detachDragListenersRef.current = detach;
+
+    return () => {
+      detach();
+      if (detachDragListenersRef.current === detach) detachDragListenersRef.current = null;
+    };
+  }, [isDragging, camera, gl, axis, axisVisualFlip, frameCarriesRotation, finishDrag]);
 
   // Use GPU picking hover state OR prop-based hover (fallback)
   const effectiveHovered = !suppressHover && (isPickingHovered || isHovered);

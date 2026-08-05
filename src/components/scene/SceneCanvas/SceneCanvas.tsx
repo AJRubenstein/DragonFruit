@@ -23,6 +23,7 @@ import { MeshClassificationRenderer } from '@/components/scene/MeshClassificatio
 import { IslandIdLabels } from '@/components/scene/IslandIdLabels';
 import { ScreenSpaceGizmo as UnifiedGizmo } from '@/components/gizmo';
 import { warmTransformGizmoGeometryCache } from '@/components/gizmo/gizmoGeometryCache';
+import { cancelActiveGizmoDrag } from '@/components/gizmo/gizmoDragRegistry';
 import { PickingDebugOverlay } from '@/components/picking';
 import { SelectionProvider, SelectionManager, SelectionOutlineRenderer, SelectionSpotlight } from '@/components/selection';
 import type { SelectionHighlightMode } from '@/components/selection';
@@ -3952,6 +3953,14 @@ export function SceneCanvas({
       const isEscapeJustPressed = isEscapePressed && !wasEscapePressed;
 
       if (isEscapeJustPressed) {
+        // A gizmo handle being dragged owns Escape: it calls the gesture off and
+        // puts back what it had changed. Dropping the selection instead pulled
+        // the tool out from under a live drag, which left it unable to end.
+        if (cancelActiveGizmoDrag()) {
+          wasEscapePressed = isEscapePressed;
+          return;
+        }
+
         if (!activeModelId && (!selectedModelIds || selectedModelIds.length === 0)) {
           wasEscapePressed = isEscapePressed;
           return;
