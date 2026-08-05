@@ -530,6 +530,16 @@ impl LeanXform {
         LeanXform { tilt: t, tilt_x: t_x, roll: tilt.roll, base_sink, identity: false }
     }
 
+    /// The burial that keeps the base under the cut face at ANY lean up to the
+    /// ceiling — `base_sink` for the worst case rather than for a given angle.
+    ///
+    /// For the live preview, which is built once and then rotated by the gizmo
+    /// without a rebuild: it cannot lengthen itself as the lean grows, so it starts
+    /// out long enough for wherever the lean ends up.
+    fn burial_for_steepest_lean(half_diag: f32) -> f32 {
+        half_diag.max(0.0) * TENON_MAX_TILT_RAD.sin()
+    }
+
 
     /// Transform a local point: rigid lean about the body's own **+y**, then about
     /// its own **+x**, then roll about **+z**. Identical for tenon and mortise, so
@@ -1268,16 +1278,28 @@ pub fn build_tenon_preview_at_frame(
     // where it started. See `confirm_tenon_stays_inside`.
     let plan = confirm_tenon_stays_inside(plan, model, &build_frame, lean);
     // The SOUP is built straight — the frontend applies the lean itself, live, so the
-    // gizmo stays smooth without a round-trip per frame. It carries the lean's base
-    // extension though (see `LeanXform::base_sink`), because that is a change of
-    // LENGTH and a client-side rotation cannot produce it. Rotating this straight,
-    // already-extended body gives exactly the solid the cut builds.
+    // gizmo stays smooth without a round-trip per frame. It carries a base extension
+    // though (see `LeanXform::base_sink`), because that is a change of LENGTH and a
+    // client-side rotation cannot produce it.
+    //
+    // The extension is sized for the STEEPEST lean the gizmo can reach, not for the
+    // lean this soup was built at: the soup has to survive being rotated to any
+    // angle without a rebuild, and one built at 0 has no burial at all, so the base
+    // edge rose through the cut face and sat there in plain view the moment the
+    // gizmo was touched. A soup built at the ceiling never shows it, which is what
+    // the maintainer asked every tenon to look like.
+    //
+    // It is the one place the preview outreaches the cut: `apply_tenon` buries the
+    // base by what its own lean needs. The difference is entirely BELOW the cut
+    // face, inside the half the tenon is welded to, so nothing visible parts ways —
+    // barring a rooted half thinner than the surplus, where the preview's base
+    // reaches out through the back and the cut's does not.
     let soup_lean = LeanXform {
         tilt: 0.0,
         tilt_x: 0.0,
         roll: 0.0,
-        base_sink: lean.base_sink,
-        identity: lean.base_sink <= 0.0,
+        base_sink: LeanXform::burial_for_steepest_lean(half_diag),
+        identity: false,
     };
 
     let mut soup: Vec<f32> = Vec::new();
@@ -2363,7 +2385,7 @@ mod tests {
     // does not resize the tenon. The twin of `tilt_rotates_rigidly_and_leans_the_tip`,
     // which measures the transform; this one measures the SOUP that gets drawn.
     #[test]
-    fn the_preview_soup_is_built_straight_but_grows_at_the_base_with_the_lean() {
+    fn the_preview_soup_is_built_straight_and_buried_deep_enough_for_any_lean() {
         let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
         let loop_pts = vec![
             Vec3::new(-5.0, -5.0, 0.0),
@@ -2391,30 +2413,42 @@ mod tests {
             (cap, base)
         };
 
+        // The base extension is a change of LENGTH, which no client-side rotation can
+        // produce — so the soup carries enough of it for the STEEPEST lean the gizmo
+        // reaches, whatever lean it was built at. Sized for the angle it was built
+        // at instead, a soup built upright had none, and the first few degrees of
+        // the gizmo lifted the base edge out through the cut face in plain view.
+        let half_diag = 0.5 * width.hypot(width * TENON_LENGTH_TO_WIDTH) + tol;
+        let burial = half_diag * TENON_MAX_TILT_RAD.sin();
+
         let (cap0, base0) = extent(0.0);
         assert!(
-            (base0 - cap0 - (depth + TENON_BASE_OVERLAP_MM)).abs() < 0.05,
-            "upright, the tenon is its depth plus the base overlap: cap {cap0}, base {base0}",
+            (base0 - cap0 - (depth + TENON_BASE_OVERLAP_MM + burial)).abs() < 0.05,
+            "upright, the tenon is its depth plus the base overlap plus the burial: \
+             cap {cap0}, base {base0}, burial {burial}",
         );
 
-        // The soup is built STRAIGHT — the frontend leans it, so this must not turn.
-        // What it DOES carry is the base extension, which is a change of length that
-        // no client-side rotation could produce: without it the leaned base lifts out
-        // of the cut face and the bottom edge shows.
-        let half_diag = 0.5 * width.hypot(width * TENON_LENGTH_TO_WIDTH) + tol;
+        // The soup is built STRAIGHT — the frontend leans it, so this must not turn —
+        // and it is the SAME soup at every angle, cap and base both.
         for deg in [15.0f32, 30.0, 45.0] {
             let (cap, base) = extent(deg);
             assert!(
                 (cap - cap0).abs() < 0.05,
                 "at {deg}° the cap end has not moved (soup is built straight): {cap} vs {cap0}",
             );
-            let grew = base - base0;
-            let wanted = half_diag * deg.to_radians().sin();
             assert!(
-                (grew - wanted).abs() < 0.05,
-                "at {deg}° the base reaches {wanted}mm further back, got {grew}",
+                (base - base0).abs() < 0.05,
+                "at {deg}° the base is buried exactly as deep as at 0: {base} vs {base0}",
             );
         }
+
+        // What that burial buys, stated in the terms the gizmo works in: the base
+        // reaches back past the cut face by at least what the steepest lean lifts
+        // its leading corner, so rotating the soup never brings it into view.
+        assert!(
+            base0 - TENON_BASE_OVERLAP_MM >= half_diag * TENON_MAX_TILT_RAD.sin() - 0.05,
+            "the straight soup reaches back far enough to stay buried at the ceiling: base {base0}",
+        );
     }
 
     // Leaned far enough, the tenon comes out through the skin — and the ray probes
