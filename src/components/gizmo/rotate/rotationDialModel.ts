@@ -396,3 +396,59 @@ export function emittedDeltaForSweep(sweepRad: number, axisVisualFlip: number): 
   const emitted = -sweepRad * axisVisualFlip;
   return Object.is(emitted, -0) ? 0 : emitted;
 }
+
+/** How far the dial has turned the object, and where it measures the next move from. */
+export interface DialSweep {
+  /** Sweep the object has actually taken since the grab. Drives handle and radius. */
+  sweepRad: number;
+  /** Dial angle the next pointer reading is measured against. */
+  targetRad: number;
+}
+
+export interface DialSweepStep {
+  /** Where the pointer is now, magnetised, relative to the grab. */
+  cursorAngleRad: number;
+  /** Sign mapping between the dial's sweep and the consumer's rotation. */
+  axisVisualFlip: number;
+  /** True when the consumer turns the ring itself by the rotation it applies. */
+  frameCarriesRotation?: boolean;
+  /**
+   * Hands the consumer the rotation to apply and returns how much it took. Less
+   * than it was asked for means a hard end (the tenon's lean clamps at 45); a
+   * consumer with nothing to refuse can return nothing and take it all.
+   */
+  emit: (deltaRad: number) => number | void;
+}
+
+/**
+ * One pointer move, from the resolved cursor angle to the sweep the object holds.
+ *
+ * The target advances by what the object TOOK, not by where the pointer went.
+ * Past a hard end the refused travel stays as a gap between the two, so backing
+ * off the end holds the object at the limit until the pointer comes back to it,
+ * and from there the mark under the pointer is the angle again. Tracking the
+ * pointer instead re-engages the rotation the instant the drag reverses, from the
+ * limit, and the dial reads the whole overshoot short for the rest of the gesture
+ * (the lean's 45-degree ceiling, backed off, landing on 15).
+ *
+ * When the frame carries the rotation the ring turns by whatever was applied, so
+ * the next reading already comes back short by that much: there the pointer's own
+ * angle is the new target and folding the sweep in would count it twice.
+ */
+export function stepDialSweep(previous: DialSweep, step: DialSweepStep): DialSweep {
+  const { cursorAngleRad, axisVisualFlip, frameCarriesRotation = false, emit } = step;
+  const delta = shortestAngleDelta(previous.targetRad, cursorAngleRad);
+  if (delta === 0) return previous;
+
+  const asked = emittedDeltaForSweep(delta, axisVisualFlip);
+  const answer = emit(asked);
+  const applied = typeof answer === 'number' ? answer : asked;
+  // Back into dial units, the same mapping run backwards.
+  const appliedSweep =
+    axisVisualFlip === 0 || applied === asked ? delta : -applied / axisVisualFlip;
+
+  return {
+    sweepRad: previous.sweepRad + appliedSweep,
+    targetRad: frameCarriesRotation ? cursorAngleRad : previous.targetRad + appliedSweep,
+  };
+}

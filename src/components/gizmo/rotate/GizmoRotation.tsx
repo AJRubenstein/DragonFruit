@@ -7,7 +7,7 @@ import { Line } from '@react-three/drei';
 import { GIZMO_COLORS, GIZMO_SIZES, GIZMO_LIGHTING } from '../constants';
 import {
   DIAL_ANATOMY,
-  emittedDeltaForSweep,
+  stepDialSweep,
   distancePointToLine,
   polarToLocal,
   rayToRingLocal,
@@ -439,30 +439,29 @@ export function GizmoRotation({
         setHeldMark(resolved.held);
       }
 
-      const delta = shortestAngleDelta(prevTargetRef.current, resolved.angleRad);
-      prevTargetRef.current = resolved.angleRad;
-
-      if (delta !== 0) {
-        // What comes back is how much the object actually took. A rotation with a
-        // hard end (the tenon's lean stops where the geometry stops) returns less
-        // than it was asked for, and the sweep has to stop with it — so the dial's
-        // radius and the handle both stop at the limit instead of running on under
-        // the pointer; easing back off the end picks up again straight away.
-        const asked = emittedDeltaForSweep(delta, axisVisualFlip);
-        const answer = onDragRef.current(asked);
-        const applied = typeof answer === 'number' ? answer : asked;
-        // Back into dial units, the same mapping run backwards.
-        const appliedSweep =
-          axisVisualFlip === 0 || applied === asked ? delta : -applied / axisVisualFlip;
-        sweepAccumRef.current += appliedSweep;
-        // The handle rides the sweep so it stays on the mark when the magnet has
-        // it — unless the parent is turning the whole gizmo by this rotation, in
-        // which case the ring already carries it and advancing here too would send
-        // the handle round at twice the pointer's speed.
-        if (!frameCarriesRotation) {
-          handleAngleRef.current = dialZeroRef.current + sweepAccumRef.current;
-          targetHandleAngleRef.current = handleAngleRef.current;
-        }
+      // The object may take less than it is asked for: a rotation with a hard end
+      // (the tenon's lean stops where the geometry stops) refuses the excess, and
+      // the sweep stops with it, so the dial's radius and the handle stop at the
+      // limit instead of running on under the pointer. See `stepDialSweep` for
+      // what the refused travel does to the next reading.
+      const stepped = stepDialSweep(
+        { sweepRad: sweepAccumRef.current, targetRad: prevTargetRef.current },
+        {
+          cursorAngleRad: resolved.angleRad,
+          axisVisualFlip,
+          frameCarriesRotation,
+          emit: (asked) => onDragRef.current(asked),
+        },
+      );
+      sweepAccumRef.current = stepped.sweepRad;
+      prevTargetRef.current = stepped.targetRad;
+      // The handle rides the sweep so it stays on the mark when the magnet has
+      // it — unless the parent is turning the whole gizmo by this rotation, in
+      // which case the ring already carries it and advancing here too would send
+      // the handle round at twice the pointer's speed.
+      if (!frameCarriesRotation) {
+        handleAngleRef.current = dialZeroRef.current + sweepAccumRef.current;
+        targetHandleAngleRef.current = handleAngleRef.current;
       }
 
       // The dial's radius shows the APPLIED rotation: at a hard end (the tenon's
