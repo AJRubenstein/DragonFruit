@@ -113,8 +113,6 @@ export interface OrganicCutPanelState {
    * above the cut face. 0 = straight out.
    */
   tenonTiltRad: number;
-  /** Second lean (radians) about the perpendicular in-plane axis. Driven by the X ring. */
-  tenonTiltXRad: number;
   /** Tenon roll (radians): spin about the tenon's own axis. Driven by the roll gizmo. */
   tenonRollRad: number;
   /**

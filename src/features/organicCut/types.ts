@@ -71,7 +71,6 @@ export interface OrganicCutSpec {
     tenonAnchor: [number, number, number] | null;
     tenonSwapSides: boolean;
     tenonTiltRad: number;
-    tenonTiltXRad: number;
     tenonRollRad: number;
   }[];
   /** Seam-line smoothing 0..1 (how much the cut line rounds through waypoints). */
@@ -140,12 +139,6 @@ export interface OrganicCutSpec {
    * the cut face; the body shears to lean. 0 = straight out. Serde: `tenonTiltRad`.
    */
   tenonTiltRad?: number;
-  /**
-   * Second lean (radians) about the perpendicular in-plane axis — tips the tenon
-   * over the OTHER face. Independent of `tenonTiltRad` and the roll. Serde:
-   * `tenonTiltXRad`.
-   */
-  tenonTiltXRad?: number;
   /** Tenon roll (radians): spin about the tenon's own axis. Serde: `tenonRollRad`. */
   tenonRollRad?: number;
 }

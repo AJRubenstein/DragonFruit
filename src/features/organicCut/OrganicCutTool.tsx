@@ -134,9 +134,8 @@ interface OrganicCutToolProps {
    * jumping when the drag ends.
    */
   tenonAnchor?: [number, number, number] | null;
-  /** Live tenon leans / roll (radians) for the client-side rotation. */
+  /** Live tenon lean / roll (radians) for the client-side rotation. */
   tenonTiltRad?: number;
-  tenonTiltXRad?: number;
   tenonRollRad?: number;
   /**
    * Show the translucent cut-plan preview surfaces (the flat plane quad, the
@@ -310,7 +309,6 @@ export function OrganicCutTool({
   tenonFrame,
   tenonAnchor,
   tenonTiltRad = 0,
-  tenonTiltXRad = 0,
   tenonRollRad = 0,
   showPreview = true,
 }: OrganicCutToolProps) {
@@ -569,8 +567,8 @@ export function OrganicCutTool({
   // `tenonLeanTransform` — it has to mirror Rust's LeanXform sign for sign, so it
   // lives where it can be tested.
   const tenonTiltMatrix = useMemo(
-    () => (tenonFrame ? tenonLeanMatrix(tenonFrame, tenonTiltRad, tenonTiltXRad, tenonRollRad) : null),
-    [tenonFrame, tenonTiltRad, tenonTiltXRad, tenonRollRad],
+    () => (tenonFrame ? tenonLeanMatrix(tenonFrame, tenonTiltRad, tenonRollRad) : null),
+    [tenonFrame, tenonTiltRad, tenonRollRad],
   );
 
   /**

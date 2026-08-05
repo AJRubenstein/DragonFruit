@@ -26,14 +26,13 @@ export interface OrganicCutTenonGizmoProps {
    */
   tenonFrame: TenonPreviewFrame | null;
   /**
-   * Current tenon leans / roll (radians): the two orthogonal leans (about the
-   * frame's u / v axes) and the spin about the tenon's own axis.
+   * Current tenon lean / roll (radians): the lean off the normal (the green ring)
+   * and the spin about the tenon's own axis.
    */
   tenonTiltRad: number;
-  tenonTiltXRad: number;
   tenonRollRad: number;
-  /** Report a new aim (radians); the leans are pre-clamped. */
-  onTenonAimChange: (tiltYRad: number, tiltXRad: number, rollRad: number) => void;
+  /** Report a new aim (radians); the lean is pre-clamped. */
+  onTenonAimChange: (tiltRad: number, rollRad: number) => void;
   /**
    * Where the tenon sits on the cut face (mm along the frame's u/v), and the
    * reporter for the base handle that slides it. Omit the setter and no handle is
@@ -94,7 +93,6 @@ export function OrganicCutTenonGizmo({
   activeTransform,
   tenonFrame,
   tenonTiltRad,
-  tenonTiltXRad,
   tenonRollRad,
   onTenonAimChange,
   tenonAnchor,
@@ -115,14 +113,12 @@ export function OrganicCutTenonGizmo({
   // tenonRollRad / tenonTiltRad between re-renders and successive deltas overwrite
   // each other — the handle moves more than the tenon does.
   const frozenInitialRef = useRef<{
-    tiltY: number;
-    tiltX: number;
+    tilt: number;
     roll: number;
     frame: TenonPreviewFrame;
   } | null>(null);
-  const accumulatedDeltaRef = useRef<{ y: number; x: number; z: number }>({
+  const accumulatedDeltaRef = useRef<{ y: number; z: number }>({
     y: 0,
-    x: 0,
     z: 0,
   });
   const activeModel = useMemo(
@@ -233,24 +229,24 @@ export function OrganicCutTenonGizmo({
           accumulatedDeltaRef.current.z += delta;
           const roll = wrapAngle(frozen.roll + accumulatedDeltaRef.current.z);
           onTenonAimChange(
-            frozen.tiltY - accumulatedDeltaRef.current.y,
-            frozen.tiltX - accumulatedDeltaRef.current.x,
+            frozen.tilt - accumulatedDeltaRef.current.y,
             roll,
           );
           // All of it went through — the roll has no end to run into.
           return delta;
         }
-        if (axis === 'y') {
+        // axis === 'y': the lean.
+        {
           // The lean BEFORE this frame, already through the clamp. We call
           // clampTenonTilt again rather than trusting the accumulator, in case
           // the frame changed (it shouldn't during a drag, but this is free).
           const prevLean = clampTenonTilt(
-            frozen.tiltY - accumulatedDeltaRef.current.y,
+            frozen.tilt - accumulatedDeltaRef.current.y,
             frozen.frame,
           );
           // What the lean WOULD be if the full raw delta were applied.
           const attemptedLean = clampTenonTilt(
-            frozen.tiltY - (accumulatedDeltaRef.current.y + delta),
+            frozen.tilt - (accumulatedDeltaRef.current.y + delta),
             frozen.frame,
           );
           // Only accumulate the delta that actually changed the lean. When the
@@ -261,26 +257,6 @@ export function OrganicCutTenonGizmo({
           accumulatedDeltaRef.current.y += effectiveDelta;
           onTenonAimChange(
             attemptedLean,
-            frozen.tiltX - accumulatedDeltaRef.current.x,
-            frozen.roll + accumulatedDeltaRef.current.z,
-          );
-          return effectiveDelta;
-        }
-        // axis === 'x': the second lean, mirrors the Y ring.
-        {
-          const prevLeanX = clampTenonTilt(
-            frozen.tiltX - accumulatedDeltaRef.current.x,
-            frozen.frame,
-          );
-          const attemptedLeanX = clampTenonTilt(
-            frozen.tiltX - (accumulatedDeltaRef.current.x + delta),
-            frozen.frame,
-          );
-          const effectiveDelta = prevLeanX - attemptedLeanX;
-          accumulatedDeltaRef.current.x += effectiveDelta;
-          onTenonAimChange(
-            frozen.tiltY - accumulatedDeltaRef.current.y,
-            attemptedLeanX,
             frozen.roll + accumulatedDeltaRef.current.z,
           );
           return effectiveDelta;
@@ -291,19 +267,14 @@ export function OrganicCutTenonGizmo({
       // set synchronously during handleDragStart, so this should be rare).
       if (axis === 'z') {
         const roll = wrapAngle(tenonRollRad + delta);
-        onTenonAimChange(tenonTiltRad, tenonTiltXRad, roll);
+        onTenonAimChange(tenonTiltRad, roll);
         return delta;
       }
-      if (axis === 'y') {
-        const tilt = clampTenonTilt(tenonTiltRad - delta, tenonFrame);
-        onTenonAimChange(tilt, tenonTiltXRad, tenonRollRad);
-        return tenonTiltRad - tilt;
-      }
-      const tiltX = clampTenonTilt(tenonTiltXRad - delta, tenonFrame);
-      onTenonAimChange(tenonTiltRad, tiltX, tenonRollRad);
-      return tenonTiltXRad - tiltX;
+      const tilt = clampTenonTilt(tenonTiltRad - delta, tenonFrame);
+      onTenonAimChange(tilt, tenonRollRad);
+      return tenonTiltRad - tilt;
     },
-    [onTenonAimChange, tenonTiltRad, tenonTiltXRad, tenonRollRad, tenonFrame],
+    [onTenonAimChange, tenonTiltRad, tenonRollRad, tenonFrame],
   );
 
   // --- The base handle: slide the tenon across the cut face --------------------
@@ -501,12 +472,11 @@ export function OrganicCutTenonGizmo({
         // Freeze the initial tenon angles in refs so `handleGizmoRotate` never
         // reads a stale React closure during rapid pointer events.
         frozenInitialRef.current = {
-          tiltY: tenonTiltRad,
-          tiltX: tenonTiltXRad,
+          tilt: tenonTiltRad,
           roll: tenonRollRad,
           frame: tenonFrame!,
         };
-        accumulatedDeltaRef.current = { y: 0, x: 0, z: 0 };
+        accumulatedDeltaRef.current = { y: 0, z: 0 };
         // Also freeze the gizmo frame's roll so the ring doesn't rotate under
         // the pointer mid-drag and feed back into the angle.
         setBasisRoll(tenonRollRad);
@@ -524,7 +494,7 @@ export function OrganicCutTenonGizmo({
       }
       onDragStateChange?.(dragging);
     },
-    [onDragStateChange, tenonRollRad, tenonTiltRad, tenonTiltXRad, tenonFrame],
+    [onDragStateChange, tenonRollRad, tenonTiltRad, tenonFrame],
   );
 
   if (!worldTenonGizmo) return null;

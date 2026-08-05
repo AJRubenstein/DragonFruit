@@ -75,9 +75,6 @@ pub struct LoopTenonSpec {
     pub tenon_swap_sides: bool,
     #[serde(default)]
     pub tenon_tilt_rad: f32,
-    /// Second lean about the perpendicular in-plane axis — see `OrganicCutSpec`.
-    #[serde(default)]
-    pub tenon_tilt_x_rad: f32,
     #[serde(default)]
     pub tenon_roll_rad: f32,
 }
@@ -175,11 +172,6 @@ pub struct OrganicCutSpec {
     /// lean (it does not rigidly rotate). Clamped to ~60°.
     #[serde(default)]
     pub tenon_tilt_rad: f32,
-    /// Second lean (radians) about the perpendicular in-plane axis, so the tenon can
-    /// tip over the OTHER face too. 0 = no second lean. Independent of the first
-    /// lean and of the roll — it is a genuine second freedom, not the old azimuth.
-    #[serde(default)]
-    pub tenon_tilt_x_rad: f32,
     /// Tenon roll (radians): spin of the tenon about its own axis — orients the
     /// rectangle / oblong dome footprint. Default 0.
     #[serde(default)]
@@ -494,7 +486,7 @@ fn resolve_loop_tenon(spec: &OrganicCutSpec, i: usize) -> ResolvedTenon {
             tolerance: k.tenon_tolerance_mm,
             at: k.tenon_anchor.map(|p| Vec3::new(p[0], p[1], p[2])),
             swap: k.tenon_swap_sides,
-            tilt: crate::tenon::TenonTilt::new(k.tenon_tilt_rad, k.tenon_tilt_x_rad, k.tenon_roll_rad),
+            tilt: crate::tenon::TenonTilt::new(k.tenon_tilt_rad, k.tenon_roll_rad),
         },
         None => ResolvedTenon {
             generate: spec.generate_tenon,
@@ -505,7 +497,7 @@ fn resolve_loop_tenon(spec: &OrganicCutSpec, i: usize) -> ResolvedTenon {
             tolerance: spec.tenon_tolerance_mm,
             at: spec.tenon_anchor.map(|p| Vec3::new(p[0], p[1], p[2])),
             swap: spec.tenon_swap_sides,
-            tilt: crate::tenon::TenonTilt::new(spec.tenon_tilt_rad, spec.tenon_tilt_x_rad, spec.tenon_roll_rad),
+            tilt: crate::tenon::TenonTilt::new(spec.tenon_tilt_rad, spec.tenon_roll_rad),
         },
     }
 }
@@ -1931,7 +1923,6 @@ mod tests {
             tenon_anchor: None,
             tenon_swap_sides: false,
             tenon_tilt_rad: 0.0,
-            tenon_tilt_x_rad: 0.0,
             tenon_roll_rad: 0.0,
         };
         let run = |loop_tenons: Vec<LoopTenonSpec>| {
