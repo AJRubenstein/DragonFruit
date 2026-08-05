@@ -176,6 +176,16 @@ export function GizmoRotation({
   /** Screen position of the press, for the click slop. */
   const pressPointRef = useRef<{ x: number; y: number } | null>(null);
   /**
+   * Whether the button that started this drag is still down.
+   *
+   * True says the gesture outlives the drag — Escape called it off, or the ring
+   * went away under it — and that the release still has to be dealt with.
+   */
+  const pointerIsDownRef = useRef(false);
+  /** The pointer and button this gesture belongs to. Any other is not ours. */
+  const dragPointerIdRef = useRef<number | null>(null);
+  const dragButtonRef = useRef<number>(0);
+  /**
    * Mirror of isDragging for the pointer handlers.
    *
    * A ref, not the state: these are R3F handlers firing mid-gesture, and the
@@ -204,6 +214,48 @@ export function GizmoRotation({
   }, [onDrag, onDragEnd, axisVisualFlip]);
 
   /**
+   * Eat what is left of a pointer gesture whose drag has already ended: the
+   * pointer coming up, and the click the browser builds from it.
+   *
+   * Capture phase on the window, so nothing below ever sees them — the canvas
+   * would otherwise take the release as a click on whatever sits under the
+   * cursor. Both listeners come off on a timeout scheduled from the release, so
+   * a gesture that ends without a click (the pointer left the element it went
+   * down on) cannot leave a swallower behind to eat someone else's.
+   */
+  const swallowRestOfGesture = useCallback((pointerId: number | null, button: number) => {
+    const stop = (e: Event) => {
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    const remove = () => {
+      window.removeEventListener('pointerup', onRelease, true);
+      window.removeEventListener('pointercancel', onRelease, true);
+      window.removeEventListener('click', onClick, true);
+    };
+    function onRelease(e: Event) {
+      const pointer = e as PointerEvent;
+      // Only the button that was down when the drag ended. Another one coming up
+      // in the meantime is not the release we are waiting for.
+      if (pointerId !== null && pointer.pointerId !== pointerId) return;
+      if (e.type === 'pointerup' && pointer.button !== button) return;
+      stop(e);
+      pointerIsDownRef.current = false;
+      window.removeEventListener('pointerup', onRelease, true);
+      window.removeEventListener('pointercancel', onRelease, true);
+      // The click lands in the same task as the release, so a timeout scheduled
+      // here runs after it, whether it came or not.
+      window.setTimeout(remove, 0);
+    }
+    function onClick(e: Event) {
+      stop(e);
+    }
+    window.addEventListener('pointerup', onRelease, true);
+    window.addEventListener('pointercancel', onRelease, true);
+    window.addEventListener('click', onClick, true);
+  }, []);
+
+  /**
    * End the gesture, by the one path everything uses: the pointer coming up, the
    * pointer being cancelled, Escape, or this ring unmounting under a running
    * drag. Whatever the reason, the listeners come off, the registry claim is
@@ -218,6 +270,14 @@ export function GizmoRotation({
   const finishDrag = useCallback((mode: 'commit' | 'cancel') => {
     if (!isDraggingRef.current) return;
     isDraggingRef.current = false;
+
+    // Ending with the button still down leaves the rest of the gesture homeless:
+    // the pointer comes up on the model behind the gizmo, and the Cut tool reads
+    // that as a click and drops a waypoint on the seam. Whoever ended the drag
+    // owns the gesture to its end, so the remainder is swallowed.
+    if (pointerIsDownRef.current) {
+      swallowRestOfGesture(dragPointerIdRef.current, dragButtonRef.current);
+    }
 
     detachDragListenersRef.current?.();
     detachDragListenersRef.current = null;
@@ -239,7 +299,7 @@ export function GizmoRotation({
     pressPointRef.current = null;
     onDragEndRef.current();
     window.dispatchEvent(new CustomEvent('dragonfruit:snap-angle', { detail: { active: false } }));
-  }, []);
+  }, [swallowRestOfGesture]);
 
   // A ring can be unmounted mid-gesture (the tool it belongs to closing under
   // it). Nothing else will end the drag then, so this does.
@@ -406,6 +466,13 @@ export function GizmoRotation({
     pressPointRef.current = { x: e.clientX, y: e.clientY };
 
     isDraggingRef.current = true;
+    pointerIsDownRef.current = true;
+    // The gesture is this pointer and this button, and nothing else. A second
+    // button pressed and released mid-drag (the right one, reaching for the
+    // camera) reported an up of its own, which ended the rotation on the spot
+    // and left the real button still down with no drag under it.
+    dragPointerIdRef.current = e.pointerId;
+    dragButtonRef.current = e.button;
     // Announce the gesture so a key pressed during it reaches this drag rather
     // than the canvas behind it. See gizmoDragRegistry.
     releaseGizmoDragRef.current = beginGizmoDrag(() => finishDrag('cancel'));
@@ -435,7 +502,12 @@ export function GizmoRotation({
   useEffect(() => {
     if (!isDragging) return;
 
+    /** Is this event part of the gesture that started the drag? */
+    const isOurPointer = (e: PointerEvent) =>
+      dragPointerIdRef.current === null || e.pointerId === dragPointerIdRef.current;
+
     const handleGlobalPointerMove = (e: PointerEvent) => {
+      if (!isOurPointer(e)) return;
       const press = pressPointRef.current;
       if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) <= DIAL_MOVE_SLOP_PX) return;
 
@@ -536,15 +608,41 @@ export function GizmoRotation({
       }));
     };
 
-    const handleGlobalPointerUp = () => finishDrag('commit');
+    // The gesture ends here, so there is nothing left of it to swallow. Only the
+    // button that started it can end it: a second button coming up while it is
+    // held is not this gesture finishing.
+    const handleGlobalPointerUp = (e: PointerEvent) => {
+      if (!isOurPointer(e) || e.button !== dragButtonRef.current) return;
+      pointerIsDownRef.current = false;
+      finishDrag('commit');
+    };
     // The system took the pointer away (a touch turning into a scroll, a window
     // losing it). The gesture never finished, so it does not get to keep what it
-    // had applied so far.
-    const handleGlobalPointerCancel = () => finishDrag('cancel');
+    // had applied so far — and no release is coming.
+    const handleGlobalPointerCancel = (e: PointerEvent) => {
+      if (!isOurPointer(e)) return;
+      pointerIsDownRef.current = false;
+      finishDrag('cancel');
+    };
+    // A menu opening over the viewport mid-gesture is the gesture being taken
+    // away from the ring; the press that would open it belongs to this drag.
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    // A second button pressed while the ring is held reaches nothing: without
+    // this the right button started an orbit under the running rotation, so the
+    // camera moved while the dial was still measuring against it.
+    const handleForeignPointerDown = (e: PointerEvent) => {
+      if (isOurPointer(e) && e.button === dragButtonRef.current) return;
+      e.stopPropagation();
+    };
 
     window.addEventListener('pointermove', handleGlobalPointerMove);
     window.addEventListener('pointerup', handleGlobalPointerUp);
     window.addEventListener('pointercancel', handleGlobalPointerCancel);
+    window.addEventListener('contextmenu', handleContextMenu, true);
+    window.addEventListener('pointerdown', handleForeignPointerDown, true);
 
     // finishDrag detaches through this rather than waiting for the effect's own
     // cleanup: pointermove has to stop firing synchronously, or it re-announces
@@ -553,6 +651,8 @@ export function GizmoRotation({
       window.removeEventListener('pointermove', handleGlobalPointerMove);
       window.removeEventListener('pointerup', handleGlobalPointerUp);
       window.removeEventListener('pointercancel', handleGlobalPointerCancel);
+      window.removeEventListener('contextmenu', handleContextMenu, true);
+      window.removeEventListener('pointerdown', handleForeignPointerDown, true);
     };
     detachDragListenersRef.current = detach;
 
