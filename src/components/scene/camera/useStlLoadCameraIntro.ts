@@ -41,10 +41,15 @@ export function useStlLoadCameraIntro(
   );
 
   const defaultCamera = React.useMemo<DefaultCameraConfig>(() => ({
+    // ~10% farther out than the historical (-220, -220, 260): the viewport now
+    // runs full-height under the fixed topbar instead of starting below it,
+    // which makes the empty scene render larger on screen. Scaling the distance
+    // back keeps the old framing for both perspective and ortho (the ortho
+    // frustum is derived from fov + distance).
     position: [
-      (fallbackOrbitTarget?.x ?? 0) - 220,
-      (fallbackOrbitTarget?.y ?? 0) - 220,
-      (fallbackOrbitTarget?.z ?? 0) + 260,
+      (fallbackOrbitTarget?.x ?? 0) - 290,
+      (fallbackOrbitTarget?.y ?? 0) - 290,
+      (fallbackOrbitTarget?.z ?? 0) + 330,
     ],
     fov: perspectiveFov,
     up: [0, 0, 1],
