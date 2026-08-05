@@ -1,5 +1,6 @@
 import React from 'react';
 import { NumberInput } from '@/components/ui/NumberInput';
+import { wheelStepDirection } from '@/components/ui/wheelStepDirection';
 
 interface MiniStepperFieldProps {
   value: number;
@@ -13,8 +14,9 @@ interface MiniStepperFieldProps {
 /**
  * A compact integer field with small chevron steppers — the Arrange panel's
  * Manual-mode input for Count/Gap-style rows. Integer-clamped and wheel-scrolls
- * to step, with the same dark `--surface-0` background as the other number
- * fields. Shared by the Arrange and Duplicate panels' array grids.
+ * to step — off the dominant axis, since Shift+wheel comes in horizontally —
+ * with the same dark `--surface-0` background as the other number fields.
+ * Shared by the Arrange and Duplicate panels' array grids.
  */
 export function MiniStepperField({
   value,
@@ -35,9 +37,10 @@ export function MiniStepperField({
   return (
     <div className="min-w-0" onWheel={(e) => {
       if (disabled) return;
+      const direction = wheelStepDirection(e);
+      if (direction === 0) return;
       e.preventDefault();
-      const delta = e.deltaY < 0 ? 1 : -1;
-      apply(clamped + delta);
+      apply(clamped + direction);
     }}>
       <NumberInput
         value={clamped}
