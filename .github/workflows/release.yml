@@ -296,9 +296,6 @@ jobs:
     if: needs.detect-version-bump.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
