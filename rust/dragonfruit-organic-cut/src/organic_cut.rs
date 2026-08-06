@@ -172,7 +172,6 @@ pub struct OrganicCutSpec {
     /// lean (it does not rigidly rotate). Clamped to ~60°.
     #[serde(default)]
     pub tenon_tilt_rad: f32,
-    /// Tenon tilt azimuth (radians): which in-plane direction the lean points toward,
     /// Tenon roll (radians): spin of the tenon about its own axis — orients the
     /// rectangle / oblong dome footprint. Default 0.
     #[serde(default)]

@@ -1,7 +1,8 @@
 import React from 'react';
-import { Loader2, RotateCcw, TriangleAlert } from 'lucide-react';
+import { CircleHelp, Eye, EyeOff, Link2, Link2Off, Loader2, RotateCcw, Trash2, TriangleAlert } from 'lucide-react';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
-import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
+import { CompactNumberField } from '@/components/ui/compactNumberField';
+import { Tooltip } from '@/components/ui/Tooltip';
 import type { OrganicCutMode } from './types';
 import { DEFAULT_CUT_SETTINGS, DEFAULT_TENON_SETTINGS } from './useOrganicCutSession';
 
@@ -115,19 +116,19 @@ export interface OrganicCutPanelState {
   /** Tenon roll (radians): spin about the tenon's own axis. Driven by the roll gizmo. */
   tenonRollRad: number;
   /**
-   * Render the translucent cut-plan preview (flat plane quad / contour membrane +
+   * Render the translucent cut-plan preview (plane quad / contour membrane +
    * registration tenon) in the 3D view. When off, only the seam line + loop markers
-   * draw, so the model is unobscured while drawing. On by default.
+   * draw, so the model is unobscured. On by default.
    */
   showPreview: boolean;
 }
 
 /**
- * The small square reset in a card's top-right corner — same affordance the
- * Hotkeys tab uses per card, so "this card's settings, back to default" reads the
- * same everywhere. Disabled (and dimmed) while nothing differs from the default.
+ * The animated reset in the panel's top-right corner — the same affordance the
+ * Support Studio uses: the icon does a one-shot 360° spin on click. Disabled
+ * (and dimmed) while nothing differs from the default.
  */
-function CardResetButton({
+function AnimatedResetButton({
   onClick,
   disabled,
   title,
@@ -138,30 +139,31 @@ function CardResetButton({
   title: string;
   ariaLabel: string;
 }) {
+  const [animating, setAnimating] = React.useState(false);
   return (
-    <button
+    <IconButton
       type="button"
-      onClick={onClick}
+      onClick={() => {
+        if (disabled) return;
+        onClick();
+        setAnimating(true);
+        setTimeout(() => setAnimating(false), 600);
+      }}
       disabled={disabled}
       title={title}
       aria-label={ariaLabel}
-      className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors hover:brightness-125 disabled:cursor-default disabled:opacity-40"
-      style={{
-        borderColor: 'color-mix(in srgb, var(--success), transparent 55%)',
-        background: 'color-mix(in srgb, var(--success), transparent 88%)',
-        color: 'var(--success)',
-      }}
+      className={`!p-0.5 transition-colors disabled:opacity-40 ${
+        animating ? '' : '!text-red-400/70 hover:!text-red-400 hover:!bg-red-600/15'
+      }`}
     >
-      <RotateCcw className="h-3 w-3" />
-    </button>
+      <RotateCcw className={`h-3.5 w-3.5 ${animating ? 'animate-spin-once text-orange-400' : ''}`} />
+    </IconButton>
   );
 }
 
 interface OrganicCutPanelProps {
   state: OrganicCutPanelState;
   onStateChange: (next: OrganicCutPanelState) => void;
-  /** Number of loop points placed so far (shown to the user). */
-  pointCount: number;
   onClearLoop: () => void;
   /**
    * Snap the active loop's waypoints onto the model's nearest sharp edges
@@ -176,7 +178,7 @@ interface OrganicCutPanelProps {
   /** Index of the loop currently being edited. */
   activeLoopIndex?: number;
   /** Per-loop summaries (index + waypoint count + whether it has a tenon) for chips. */
-  loopSummaries?: { index: number; pointCount: number; hasTenon: boolean }[];
+  loopSummaries?: { index: number; pointCount: number }[];
   /** Switch which loop is active (editable). */
   onSelectLoop?: (index: number) => void;
   /** Append a new loop and make it active. */
@@ -213,7 +215,7 @@ interface OrganicCutPanelProps {
 
 /**
  * Tool panel for Organic Cut. Structurally mirrors HolePunchPanel (collapsible
- * Card, accent sub-cards, ScrollableNumberField, Reset/Apply row) so it sits
+ * Card, accent sub-cards, compact number fields, Reset/Apply row) so it sits
  * naturally beside the other Prepare-mode tool panels.
  *
  * M1: thickness/smoothing are wired but the backend ignores them (no-op cut).
@@ -221,7 +223,6 @@ interface OrganicCutPanelProps {
 export function OrganicCutPanel({
   state,
   onStateChange,
-  pointCount,
   onClearLoop,
   onSnapToEdges,
   canSnapToEdges = false,
@@ -337,15 +338,10 @@ export function OrganicCutPanel({
     : undefined;
 
   const isContour = state.cutMode === 'contour';
-  const statusLabel = isContour
-    ? pointCount < 3
-      ? `Click points around the model to trace the seam (${pointCount}/3+)`
-      : `${pointCount} points — ready to cut (contour seam)`
-    : pointCount === 0
-      ? 'Click 2 points across the model to set a flat cut'
-      : pointCount === 1
-        ? '1 point — click one more on the other side'
-        : `${pointCount} points — ready to cut (flat plane)`;
+  // The header help only explains the mode the user is in, not both at once.
+  const cutHelpContent = isContour
+    ? 'Click points around the model to trace a curved seam that splits it in two — the cut follows your loop (3+ points). Turn on a Tenon to add a tenon/mortise so the halves index together.'
+    : 'Click 2 points across the model to set a flat cut that slices it in two along a single plane. Turn on a Tenon to add a tenon/mortise so the halves index together.';
 
   // Bound the expanded panel to the viewport so its body can scroll. Collapsed it
   // stays unbounded, which keeps it the height of its header.
@@ -383,7 +379,20 @@ export function OrganicCutPanel({
                 )}
               </svg>
             </IconButton>
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Cut Tool</h3>
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Cut</h3>
+            <Tooltip
+              maxWidth={280}
+              content={cutHelpContent}
+            >
+              <button
+                type="button"
+                className="inline-flex cursor-help items-center justify-center p-0.5 transition-colors"
+                style={{ color: 'var(--text-muted)' }}
+                aria-label="How to use Cut"
+              >
+                <CircleHelp className="h-4 w-4" />
+              </button>
+            </Tooltip>
           </>
         )}
         right={expanded ? (
@@ -392,12 +401,28 @@ export function OrganicCutPanel({
           // are spread over several cards; the drawn loops and the tenon are left
           // alone (the tenon card has its own reset, and losing a seam to a stray
           // click on a reset button would be a cruel way to find this button).
-          <CardResetButton
-            onClick={() => setState({ ...DEFAULT_CUT_SETTINGS })}
-            disabled={disabled || isApplying || !cutSettingsDirty}
-            title="Put the cut settings back to their defaults: cut mode, thickness, both smoothings and resolution. Your drawn loops and tenon settings are untouched."
-            ariaLabel="Reset cut settings to defaults"
-          />
+          <div className="flex items-center gap-1">
+            <IconButton
+              type="button"
+              className="!p-0.5 transition-colors disabled:opacity-40"
+              onClick={() => setState({ showPreview: !state.showPreview })}
+              disabled={disabled || isApplying}
+              title={state.showPreview ? 'Hide the cut preview' : 'Show the cut preview'}
+              aria-label="Toggle cut preview"
+            >
+              {state.showPreview ? (
+                <Eye className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+              ) : (
+                <EyeOff className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
+              )}
+            </IconButton>
+            <AnimatedResetButton
+              onClick={() => setState({ ...DEFAULT_CUT_SETTINGS })}
+              disabled={disabled || isApplying || !cutSettingsDirty}
+              title="Put the cut settings back to their defaults: cut mode, thickness, both smoothings and resolution. Your drawn loops and tenon settings are untouched."
+              ariaLabel="Reset cut settings to defaults"
+            />
+          </div>
         ) : null}
       />
 
@@ -406,18 +431,6 @@ export function OrganicCutPanel({
         {/* Scrollable body. The panel has more controls than a 1200px-tall screen
             can show, so it scrolls instead of running off the bottom. */}
         <div className="px-2 space-y-2 sm:px-2.5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
-          {/* Live session status */}
-          <div
-            className="rounded-md border p-2 text-center text-[11px]"
-            style={{
-              borderColor: 'var(--accent-secondary-action-border)',
-              background: 'var(--accent-secondary-action-bg-92)',
-              color: 'var(--accent-secondary-action-color)',
-            }}
-          >
-            {statusLabel}
-          </div>
-
           {/* Cut mode: flat plane vs curved contour seam */}
           <div className="rounded-md border p-2 space-y-1.5" style={accentCardStyle}>
             <div className="ui-meta" style={{ color: 'var(--text-muted)' }}>Cut Mode</div>
@@ -445,249 +458,142 @@ export function OrganicCutPanel({
             </div>
           </div>
 
-          {/* Show Preview: render the translucent cut-plan surfaces (plane quad /
-              membrane + tenon) on or off. Off → only the seam line + markers draw,
-              so the model is unobscured while drawing. */}
-          <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
-            <button
-              type="button"
-              className="flex w-full items-center justify-between gap-2 text-left"
-              onClick={() => setState({ showPreview: !state.showPreview })}
-              disabled={disabled || isApplying}
-              title="Show or hide the translucent cut preview in the 3D view. The drawn seam and points stay visible either way."
-            >
-              <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>Show Preview</span>
-              <span
-                className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors"
-                style={{
-                  background: state.showPreview
-                    ? 'var(--accent)'
-                    : 'color-mix(in srgb, var(--text-muted), transparent 60%)',
-                }}
-              >
-                <span
-                  className="inline-block h-3 w-3 transform rounded-full bg-white transition-transform"
-                  style={{ transform: state.showPreview ? 'translateX(14px)' : 'translateX(2px)' }}
+          {/* Cut settings — two compact fields per row, the Arrange panel's
+              Manual-mode number inputs instead of four full-width stepper fields.
+              Seam smoothing (contour only) rounds the seam through the waypoints;
+              joint clearance is slack in the mortise, not a kerf — the cut removes
+              nothing, both halves share their cut face. Cut smoothing (contour
+              only) is how taut the cutter surface is; cut resolution (contour
+              only) is its poly count. */}
+          <div className="rounded-md border p-2" style={cardStyle}>
+            <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+              {isContour && (
+                <CompactNumberField
+                  label="Seam Smoothing"
+                  value={state.smoothing}
+                  onChange={(value) => setState({ smoothing: clampFloat(value, 0, 2, 2) })}
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  disabled={disabled || isApplying}
+                  ariaLabel="Seam line smoothing strength"
+                  title="Rounds the seam line through the waypoints. A flat cut's seam is the plane ∩ mesh, so this only affects contour cuts."
                 />
-              </span>
-            </button>
-          </div>
-
-          {/* Seam-line smoothing: rounds the GEODESIC through the waypoints, so it
-              means nothing for a flat cut — that seam is the plane ∩ mesh curve,
-              which the waypoints only position. Contour mode only. */}
-          {isContour && (
-          <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
-            <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Seam Smoothing</label>
-            <ScrollableNumberField
-              value={state.smoothing}
-              onChange={(value) => setState({ smoothing: clampFloat(value, 0, 2, 2) })}
-              min={0}
-              max={2}
-              step={0.05}
-              unit=""
-              ariaLabel="Seam line smoothing strength"
-              disabled={disabled || isApplying}
-              className="mt-1"
-            />
-          </div>
-          )}
-
-          {/* Joint clearance — slack in the mortise, NOT a kerf. The cut removes
-              nothing: both halves share their cut face. */}
-          <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
-            <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Joint Clearance</label>
-            <ScrollableNumberField
-              value={state.jointClearanceMm}
-              onChange={(value) => setState({ jointClearanceMm: clampFloat(value, 0, 1.5, 2) })}
-              min={0}
-              max={1.5}
-              step={0.05}
-              unit="mm"
-              ariaLabel="Joint clearance in millimeters"
-              disabled={disabled || isApplying}
-              className="mt-1"
-            />
-          </div>
-
-          {/* Cut smoothing (how smooth/taut the curved cutter surface is).
-              Only meaningful for the contour cut. */}
-          {isContour && (
-            <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
-              <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Cut Smoothing</label>
-              <ScrollableNumberField
-                value={state.membraneSmoothing}
-                onChange={(value) => setState({ membraneSmoothing: clampFloat(value, 0, 2, 2) })}
+              )}
+              <CompactNumberField
+                label="Joint Clearance"
+                value={state.jointClearanceMm}
+                onChange={(value) => setState({ jointClearanceMm: clampFloat(value, 0, 1.5, 2) })}
                 min={0}
-                max={2}
+                max={1.5}
                 step={0.05}
-                unit=""
-                ariaLabel="Cut surface smoothing strength"
+                unit="mm"
                 disabled={disabled || isApplying}
-                className="mt-1"
+                ariaLabel="Joint clearance in millimeters"
+                // The cut-settings grid is two columns, but in flat mode this is the
+                // only field that survives (smoothing/resolution are contour-only), so
+                // stretch it across the empty second column instead of leaving a hole.
+                className={isContour ? undefined : 'col-span-2'}
               />
+              {isContour && (
+                <CompactNumberField
+                  label="Cut Smoothing"
+                  value={state.membraneSmoothing}
+                  onChange={(value) => setState({ membraneSmoothing: clampFloat(value, 0, 2, 2) })}
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  disabled={disabled || isApplying}
+                  ariaLabel="Cut surface smoothing strength"
+                  title="How smooth/taut the curved cutter surface is — contour cut only."
+                />
+              )}
+              {isContour && (
+                <CompactNumberField
+                  label="Cut Resolution"
+                  value={state.density}
+                  onChange={(value) => setState({ density: clampFloat(value, 1, 4, 2) })}
+                  min={1}
+                  max={4}
+                  step={0.5}
+                  unit="×"
+                  disabled={disabled || isApplying}
+                  ariaLabel="Cut mesh resolution multiplier (applied at cut)"
+                  title="Cutter poly count — higher is a denser cut mesh. Contour cut only."
+                />
+              )}
             </div>
-          )}
-
-          {/* Cut resolution (cutter poly count). Higher = denser cut mesh. The
-              preview reflects this live so the user sees the change. Contour-only. */}
-          {isContour && (
-            <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
-              <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Cut Resolution</label>
-              <ScrollableNumberField
-                value={state.density}
-                onChange={(value) => setState({ density: clampFloat(value, 1, 4, 2) })}
-                min={1}
-                max={4}
-                step={0.5}
-                unit="×"
-                ariaLabel="Cut mesh resolution multiplier (applied at cut)"
-                disabled={disabled || isApplying}
-                className="mt-1"
-              />
-            </div>
-          )}
+          </div>
 
           {/* Registration tenon: tenon + mortise so the two halves index together.
               Both cut modes: the contour cut frames it on the membrane, the flat
               cut on the plane's own cross-section. */}
           <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
-              <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                className="flex flex-1 items-center justify-between gap-2 text-left"
-                onClick={() => setState({ generateTenon: !state.generateTenon })}
-                disabled={disabled || isApplying}
-                title="Add a tenon to one half and a matching mortise to the other so the parts align when reassembled."
-              >
-                <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>
-                  Generate Tenon{loopCount > 1 ? ` · Loop ${activeLoopIndex + 1}` : ''}
-                </span>
-                <span
-                  className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors"
-                  style={{
-                    background: state.generateTenon
-                      ? 'var(--accent)'
-                      : 'color-mix(in srgb, var(--text-muted), transparent 60%)',
-                  }}
+              {/* No Tenon vs shape in one control — the same segmented selector as
+                  Cut Mode. No Tenon cuts the halves without a tenon; Frustum/Dome
+                  turns the tenon on with that shape. */}
+              <div className="grid grid-cols-3 gap-1">
+                <button
+                  type="button"
+                  className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
+                  onClick={() => setState({ generateTenon: false })}
+                  disabled={disabled || isApplying}
+                  style={!state.generateTenon ? activeModeStyle : undefined}
+                  title="Don't add a registration tenon — the halves are cut apart with no way to index them back together."
                 >
-                  <span
-                    className="inline-block h-3 w-3 transform rounded-full bg-white transition-transform"
-                    style={{ transform: state.generateTenon ? 'translateX(14px)' : 'translateX(2px)' }}
-                  />
-                </span>
-              </button>
-              {/* Card reset, top-right: puts every tenon setting back to default but
-                  leaves the Generate Tenon toggle alone (resetting the settings
-                  shouldn't switch the feature off under the user). */}
-              <CardResetButton
-                onClick={() => setState({ ...DEFAULT_TENON_SETTINGS, generateTenon: state.generateTenon })}
-                disabled={disabled || isApplying || !tenonSettingsDirty}
-                title="Put every tenon setting back to its default: shape, width, depth, fillet, fit tolerance, uniform scale, side and aim."
-                ariaLabel="Reset tenon settings to defaults"
-              />
+                  No Tenon
+                </button>
+                <button
+                  type="button"
+                  className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
+                  onClick={() =>
+                    // Only the frustum is filleted, so the radius can be stale
+                    // (above what this width/depth allows) after a detour through
+                    // the dome. Bring it back in range.
+                    setState({
+                      generateTenon: true,
+                      tenonShape: 'frustum',
+                      // Turning a tenon on brings the preview back: the user is about
+                      // to configure a tenon they need to see.
+                      showPreview: true,
+                      tenonFilletMm: Math.min(
+                        state.tenonFilletMm,
+                        maxTenonFilletMm(state.tenonWidthMm, state.tenonDepthMm),
+                      ),
+                    })
+                  }
+                  disabled={disabled || isApplying || !canApply}
+                  style={state.generateTenon && state.tenonShape === 'frustum' ? activeModeStyle : undefined}
+                  title="Tapered rectangular tenon — locks the parts against rotation."
+                >
+                  Frustum
+                </button>
+                <button
+                  type="button"
+                  className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
+                  onClick={() =>
+                    // A dome's floor is higher than a frustum's, so lift any
+                    // dimension that would be rejected outright on switch.
+                    setState({
+                      generateTenon: true,
+                      tenonShape: 'dome',
+                      // Turning a tenon on brings the preview back: the user is about
+                      // to configure a tenon they need to see.
+                      showPreview: true,
+                      tenonWidthMm: Math.max(state.tenonWidthMm, DOME_MIN_WIDTH_MM),
+                      tenonDepthMm: Math.max(state.tenonDepthMm, DOME_MIN_WIDTH_MM),
+                    })
+                  }
+                  disabled={disabled || isApplying || !canApply}
+                  style={state.generateTenon && state.tenonShape === 'dome' ? activeModeStyle : undefined}
+                  title="Half-sphere tenon — locates the parts but allows rotation."
+                >
+                  Dome
+                </button>
               </div>
-
-              {/* Tenon shape + size. Shape picks frustum (tapered box, locks
-                  rotation) vs dome (half-sphere, locates only). Width drives the
-                  base; depth (frustum only) is how far the tenon pokes in. The
-                  1 mm-wall fit rule still shrinks below these on thin parts. */}
               {state.generateTenon && (
                 <div className="space-y-1.5 pt-0.5">
-                  <div>
-                    <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Tenon Shape</label>
-                    <div className="mt-1 grid grid-cols-2 gap-1">
-                      <button
-                        type="button"
-                        className="ui-button ui-button-secondary !h-7 whitespace-nowrap px-1.5 text-[10px]"
-                        onClick={() =>
-                          // Only the frustum is filleted, so the radius can be
-                          // stale (above what this width/depth allows) after a
-                          // detour through the dome. Bring it back in range.
-                          setState({
-                            tenonShape: 'frustum',
-                            tenonFilletMm: Math.min(
-                              state.tenonFilletMm,
-                              maxTenonFilletMm(state.tenonWidthMm, state.tenonDepthMm),
-                            ),
-                          })
-                        }
-                        disabled={disabled || isApplying}
-                        style={state.tenonShape === 'frustum' ? activeModeStyle : undefined}
-                        title="Tapered rectangular tenon — locks the parts against rotation."
-                      >
-                        Frustum
-                      </button>
-                      <button
-                        type="button"
-                        className="ui-button ui-button-secondary !h-7 whitespace-nowrap px-1.5 text-[10px]"
-                        onClick={() =>
-                          // A dome's floor is higher than a frustum's, so lift any
-                          // dimension that would be rejected outright on switch.
-                          setState({
-                            tenonShape: 'dome',
-                            tenonWidthMm: Math.max(state.tenonWidthMm, DOME_MIN_WIDTH_MM),
-                            tenonDepthMm: Math.max(state.tenonDepthMm, DOME_MIN_WIDTH_MM),
-                          })
-                        }
-                        disabled={disabled || isApplying}
-                        style={state.tenonShape === 'dome' ? activeModeStyle : undefined}
-                        title="Half-sphere tenon — locates the parts but allows rotation."
-                      >
-                        Dome
-                      </button>
-                    </div>
-                  </div>
-                  {/* Flip which half gets the tenon vs the mortise. Affects the cut
-                      (not the preview shape, which is identical either way). */}
-                  <button
-                    type="button"
-                    className="ui-button ui-button-secondary !h-7 w-full whitespace-nowrap px-1.5 text-[10px]"
-                    onClick={() => setState({ tenonSwapSides: !state.tenonSwapSides })}
-                    disabled={disabled || isApplying}
-                    title="Swap which cut half receives the tenon and which receives the mortise."
-                  >
-                    <span className="inline-flex items-center justify-center gap-1.5">
-                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4M16 17H4m0 0l4 4m-4-4l4-4" />
-                      </svg>
-                      <span>{state.tenonSwapSides ? 'Tenon on Side B' : 'Tenon on Side A'}</span>
-                    </span>
-                  </button>
-                  {/* Aim readout + a Reset that zeroes the tilt/roll. The aim is set
-                      with the rotate gizmo at the tenon's base in the 3D view, so there
-                      is nothing to say here until the tenon actually leans. */}
-                  {(() => {
-                    // Report at the precision shown. The old threshold was ~0.06°,
-                    // far finer than the whole degrees displayed, so a sliver of
-                    // lean rendered as "0°" that only Reset could clear. Roll was
-                    // never reported at all, so spinning the tenon also read 0°.
-                    const toDeg = (rad: number) => Math.round((rad * 180) / Math.PI * 10) / 10;
-                    const leanDeg = toDeg(state.tenonTiltRad);
-                    const rollDeg = toDeg(state.tenonRollRad);
-                    if (leanDeg === 0 && rollDeg === 0) return null;
-                    const parts = [
-                      leanDeg !== 0 ? `${leanDeg}° lean` : null,
-                      rollDeg !== 0 ? `${rollDeg}° roll` : null,
-                    ].filter(Boolean);
-                    return (
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>
-                          {`Aim: ${parts.join(', ')}`}
-                        </span>
-                        <button
-                          type="button"
-                          className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px]"
-                          onClick={() => setState({ tenonTiltRad: 0, tenonRollRad: 0 })}
-                          disabled={disabled || isApplying}
-                          title="Reset the tenon to point straight out of the cut (no lean / roll)."
-                        >
-                          Reset Aim
-                        </button>
-                      </div>
-                    );
-                  })()}
-                  {/* Recentre. Like the aim above, WHERE the tenon sits is set in
+                  {/* Recentre. WHERE the tenon sits is set in
                       the viewport (drag the blue dot at its base), so there is
                       nothing to show until it has actually been moved. The place
                       itself is a point in model space — a pair of millimetre
@@ -712,14 +618,12 @@ export function OrganicCutPanel({
                       </div>
                     );
                   })()}
-                  {/* The four size knobs sit two per row: they are short numeric
-                      fields and a single column wasted half the panel's width. */}
+                  {/* The four size knobs sit two per row — the same compact
+                      fields as the cut settings above. */}
                   <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                    {/* Width — frustum: sets just width; dome: ratio-locks depth
-                        when Uniform Scale is on. */}
-                    <div>
-                      <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Tenon Width</label>
-                      <ScrollableNumberField
+                    <div className={`col-span-2 grid items-start gap-x-2 ${state.tenonShape === 'dome' ? 'grid-cols-[1fr_auto_1fr]' : 'grid-cols-2'}`}>
+                      <CompactNumberField
+                        label="Tenon Width"
                         value={state.tenonWidthMm}
                         onChange={(value) =>
                           state.tenonShape === 'dome'
@@ -730,17 +634,37 @@ export function OrganicCutPanel({
                         max={TENON_DIM_MAX_MM}
                         step={0.5}
                         unit="mm"
-                        ariaLabel="Tenon width in millimeters"
-                        compact
                         disabled={disabled || isApplying}
-                        className="mt-1"
+                        ariaLabel="Tenon width in millimeters"
                       />
-                    </div>
-                    {/* Depth — applies to BOTH shapes now (dome bulge into the body
-                        / frustum tenon depth). Dome ratio-locks width when Uniform. */}
-                    <div>
-                      <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Tenon Depth</label>
-                      <ScrollableNumberField
+                      {/* Dome only: link width:depth so the dome resizes as a
+                          unit (keeps its shape); unlink for free oblong control.
+                          Sits in its own column so it pushes the two inputs apart;
+                          an invisible label mirrors the fields' label+gap so it
+                          lines up with the inputs. */}
+                      {state.tenonShape === 'dome' && (
+                        <div className="flex flex-col items-center">
+                          <span className="ui-meta block invisible" aria-hidden="true">·</span>
+                          <div className="mt-1 flex h-8 items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={() => setState({ tenonUniformScale: !state.tenonUniformScale })}
+                              className="inline-flex items-center justify-center"
+                              style={{ color: state.tenonUniformScale ? 'var(--accent)' : 'var(--text-muted)' }}
+                              title={state.tenonUniformScale
+                                ? 'Unlink width and depth — resize them independently.'
+                                : 'Link width and depth together so the dome keeps its shape.'}
+                              aria-label="Toggle linked width and depth"
+                            >
+                              {state.tenonUniformScale
+                                ? <Link2 className="h-4.5 w-4.5" />
+                                : <Link2Off className="h-4.5 w-4.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <CompactNumberField
+                        label="Tenon Depth"
                         value={state.tenonDepthMm}
                         onChange={(value) =>
                           state.tenonShape === 'dome'
@@ -751,90 +675,72 @@ export function OrganicCutPanel({
                         max={TENON_DIM_MAX_MM}
                         step={0.5}
                         unit="mm"
+                        disabled={disabled || isApplying}
                         ariaLabel="Tenon depth in millimeters"
-                        compact
-                        disabled={disabled || isApplying}
-                        className="mt-1"
                       />
                     </div>
-                    {/* Edge Fillet: frustum only (a dome is already fully round). */}
                     {state.tenonShape === 'frustum' && (
-                      <div>
-                        <label
-                          className="ui-meta block"
-                          style={{ color: 'var(--text-muted)' }}
-                          title={`Rounds the tenon's corners and tip. On this tenon the geometry accepts up to ${tenonFilletMaxMm}mm — a wider or deeper tenon raises that ceiling.`}
-                        >
-                          Edge Fillet
-                        </label>
-                        <ScrollableNumberField
-                          value={state.tenonFilletMm}
-                          onChange={(value) => setState({ tenonFilletMm: clampFloat(value, 0, tenonFilletMaxMm, 2) })}
-                          min={0}
-                          max={tenonFilletMaxMm}
-                          step={TENON_FILLET_STEP_MM}
-                          unit="mm"
-                          ariaLabel="Tenon edge fillet radius in millimeters (0 = sharp)"
-                          compact
-                          disabled={disabled || isApplying}
-                          className="mt-1"
-                        />
-                      </div>
-                    )}
-                    {/* Fit tolerance: applies to BOTH shapes — the mortise is carved
-                        this much larger than the tenon on every face. The print-fit
-                        knob: the tenon's own size is what the user drew, this is the
-                        slack around it. */}
-                    <div className={state.tenonShape === 'frustum' ? undefined : 'col-span-2'}>
-                      <label
-                        className="ui-meta block"
-                        style={{ color: 'var(--text-muted)' }}
-                        title="Slack between tenon and mortise, on every face. 0 = press fit (needs force). 0.1mm is a slide fit on a well-calibrated printer; raise it if the halves won't go together."
-                      >
-                        Fit Tolerance
-                      </label>
-                      <ScrollableNumberField
-                        value={state.tenonToleranceMm}
-                        onChange={(value) =>
-                          setState({ tenonToleranceMm: clampFloat(value, 0, TENON_TOLERANCE_MAX_MM, 2) })
-                        }
+                      <CompactNumberField
+                        label="Edge Fillet"
+                        value={state.tenonFilletMm}
+                        onChange={(value) => setState({ tenonFilletMm: clampFloat(value, 0, tenonFilletMaxMm, 2) })}
                         min={0}
-                        max={TENON_TOLERANCE_MAX_MM}
-                        step={0.05}
+                        max={tenonFilletMaxMm}
+                        step={TENON_FILLET_STEP_MM}
                         unit="mm"
-                        ariaLabel="Tenon to mortise fit tolerance in millimeters (0 = press fit)"
-                        compact
                         disabled={disabled || isApplying}
-                        className="mt-1"
+                        ariaLabel="Tenon edge fillet radius in millimeters (0 = sharp)"
+                        title={`Rounds the tenon's corners and tip. On this tenon the geometry accepts up to ${tenonFilletMaxMm}mm — a wider or deeper tenon raises that ceiling.`}
                       />
-                    </div>
+                    )}
+                    <CompactNumberField
+                      label="Fit Tolerance"
+                      value={state.tenonToleranceMm}
+                      onChange={(value) =>
+                        setState({ tenonToleranceMm: clampFloat(value, 0, TENON_TOLERANCE_MAX_MM, 2) })
+                      }
+                      min={0}
+                      max={TENON_TOLERANCE_MAX_MM}
+                      step={0.05}
+                      unit="mm"
+                      disabled={disabled || isApplying}
+                      ariaLabel="Tenon to mortise fit tolerance in millimeters (0 = press fit)"
+                      title="Slack between tenon and mortise, on every face. 0 = press fit (needs force). 0.1mm is a slide fit on a well-calibrated printer; raise it if the halves won't go together."
+                      className={state.tenonShape === 'frustum' ? undefined : 'col-span-2'}
+                    />
                   </div>
-                  {/* Uniform Scale: dome only — lock width:depth so the dome resizes
-                      as a unit (keeps its shape), or unlock for free oblong control. */}
-                  {state.tenonShape === 'dome' && (
+                  {/* Flip + reset actions: which half gets the tenon, and back to
+                      defaults. The reset leaves the No Tenon/on choice alone. */}
+                  <div className="flex gap-1 pt-1">
                     <button
                       type="button"
-                      className="flex w-full items-center justify-between gap-2 text-left"
-                      onClick={() => setState({ tenonUniformScale: !state.tenonUniformScale })}
+                      className="ui-button ui-button-secondary flex-1 !min-h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px] disabled:opacity-60"
+                      onClick={() => setState({ tenonSwapSides: !state.tenonSwapSides })}
                       disabled={disabled || isApplying}
-                      title="Lock width and depth together so the dome keeps its shape when resized. Unlock for an oblong dome."
+                      title="Swap which cut half receives the tenon and which receives the mortise."
+                      style={disabled || isApplying ? undefined : {
+                        borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 62%)',
+                        color: 'color-mix(in srgb, var(--accent-secondary), var(--text-strong) 55%)',
+                        background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 95%)',
+                      }}
                     >
-                      <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>Uniform Scale</span>
-                      <span
-                        className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors"
-                        style={{
-                          background: state.tenonUniformScale
-                            ? 'var(--accent)'
-                            : 'color-mix(in srgb, var(--text-muted), transparent 60%)',
-                        }}
-                      >
-                        <span
-                          className="inline-block h-3 w-3 transform rounded-full bg-white transition-transform"
-                          style={{ transform: state.tenonUniformScale ? 'translateX(14px)' : 'translateX(2px)' }}
-                        />
-                      </span>
+                      Flip Tenon
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      className="ui-button ui-button-secondary flex-1 !min-h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px] disabled:opacity-60"
+                      onClick={() => setState({ ...DEFAULT_TENON_SETTINGS, generateTenon: state.generateTenon })}
+                      disabled={disabled || isApplying || !tenonSettingsDirty}
+                      title="Put every tenon setting back to its default: shape, width, depth, fillet, fit tolerance, uniform scale, side and aim."
+                      style={disabled || isApplying || !tenonSettingsDirty ? undefined : {
+                        borderColor: 'color-mix(in srgb, #f87171, var(--border-subtle) 45%)',
+                        color: 'color-mix(in srgb, #f87171, var(--text-strong) 30%)',
+                        background: 'color-mix(in srgb, #f87171, var(--surface-1) 90%)',
+                      }}
+                    >
+                      Reset
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -867,17 +773,16 @@ export function OrganicCutPanel({
                 <span className="ui-meta" style={{ color: 'var(--text-muted)' }}>
                   Loops{loopCount > 1 ? ` (${loopCount})` : ''}
                 </span>
-                {canRemoveLoop && (
-                  <button
-                    type="button"
-                    className="ui-button ui-button-secondary !h-6 whitespace-nowrap px-1.5 text-[10px] disabled:opacity-60"
-                    onClick={() => onRemoveLoop?.(activeLoopIndex)}
-                    disabled={disabled || isApplying}
-                    title="Remove the loop you're editing."
-                  >
-                    Remove
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--surface-2)] disabled:opacity-40"
+                  onClick={() => onRemoveLoop?.(activeLoopIndex)}
+                  disabled={disabled || isApplying || !canRemoveLoop}
+                  title={canRemoveLoop ? "Remove the loop you're editing." : 'A cut needs at least one loop.'}
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
               </div>
               <div className="flex flex-wrap items-center gap-1">
                 {loopSummaries.map((s) => {
@@ -899,22 +804,11 @@ export function OrganicCutPanel({
                       }
                       title={
                         `Loop ${s.index + 1} — ${s.pointCount} point${s.pointCount === 1 ? '' : 's'}` +
-                        (s.hasTenon ? ', tenoned' : '') +
                         (incomplete ? ' (needs 3+ to cut)' : '') +
                         (isActive ? ' — editing' : ' — click to edit')
                       }
                     >
-                      <span className="inline-flex items-center gap-0.5">
-                        {s.index + 1}
-                        {s.hasTenon && (
-                          <span
-                            aria-hidden
-                            className="inline-block h-1.5 w-1.5 rounded-full"
-                            style={{ background: isActive ? 'currentColor' : 'var(--accent)' }}
-                            title="This loop has a registration tenon"
-                          />
-                        )}
-                      </span>
+                      {s.index + 1}
                     </button>
                   );
                 })}
@@ -928,13 +822,6 @@ export function OrganicCutPanel({
                   +
                 </button>
               </div>
-              {loopCount > 1 && (
-                <div className="ui-meta leading-snug" style={{ color: 'var(--text-muted)' }}>
-                  Cut severs all loops at once. Click a number to edit that loop —
-                  its tenon settings (below) and waypoints are its own. A dot marks a
-                  loop that has a tenon.
-                </div>
-              )}
             </div>
           )}
 
@@ -948,20 +835,13 @@ export function OrganicCutPanel({
             disabled={disabled || isApplying || !canSnapToEdges}
             title="Nudge every waypoint onto the model's nearest sharp edge (crease or boundary), preferring a corner where several edges meet — for points placed roughly in a crease or corner. Does nothing on a smooth model with no sharp edges. Double-click a waypoint to lock it (white cage) so snap leaves it where it is."
           >
-            Snap to edges
+            Snap to Edges
           </button>
-          <div className="text-[9px] sm:text-[10px] text-neutral-400 leading-tight text-center -mt-1">
-            Double-click a waypoint to lock it from snapping.
-          </div>
-
         </div>
 
         {/* Actions stay pinned below the scroll area: Cut must be reachable
             without scrolling to the bottom of a long panel. */}
-        <div
-          className="px-2 pb-2 pt-2 sm:px-2.5 sm:pb-2.5 border-t"
-          style={{ borderColor: 'var(--border-subtle)' }}
-        >
+        <div className="px-2 pb-2 pt-2 sm:px-2.5 sm:pb-2.5">
           {/* Why the last cut refused. It belongs HERE, by the button that just did
               nothing — the reason used to go to stderr, so from the user's side the
               cut either silently failed or (worse) came back as a plane cut through
@@ -988,7 +868,7 @@ export function OrganicCutPanel({
               disabled={disabled || isApplying || !loopSummaries.some((s) => s.pointCount > 0)}
               title="Discard every loop in this cut, not just the active one."
             >
-              Clear all
+              Clear All
             </button>
             <button
               type="button"

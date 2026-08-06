@@ -37,10 +37,10 @@ export function tenonLeanMatrix(
   const roll = rollRad;
   if (Math.abs(tilt) < 1e-6 && Math.abs(roll) < 1e-6) return null;
 
-  // Apply order (matches LeanXform::apply): lean about the body's own +y FIRST,
-  // then roll about +z — which is what welds the lean plane to the body, so the
-  // roll turns the two as one. There is no azimuth: it was a second number for a
-  // freedom the tenon does not have, and it drifted out of step with the roll.
+  // Apply order (matches LeanXform::apply): lean about the body's own +y, then
+  // roll about +z — the lean in the tenon's own frame welds the lean plane to the
+  // body, so the roll turns the two as one. (The old azimuth failed because it was
+  // a second number for the same freedom as the roll; one welded lean cannot.)
   const q = new THREE.Quaternion();
   if (Math.abs(tilt) >= 1e-6) {
     q.premultiply(new THREE.Quaternion().setFromAxisAngle(buildV, tilt));

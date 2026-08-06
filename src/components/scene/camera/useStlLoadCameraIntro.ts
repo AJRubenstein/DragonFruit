@@ -4,6 +4,7 @@ import React from 'react';
 import * as THREE from 'three';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
+import { getSavedCameraFovSettings, DEFAULT_CAMERA_FOV_SETTINGS, subscribeToCameraFovSettings } from '@/components/settings/cameraFovPreferences';
 
 type DefaultCameraConfig = {
   position: [number, number, number];
@@ -33,15 +34,26 @@ export function useStlLoadCameraIntro(
   const pendingDeferredIntroRef = React.useRef(false);
   const deferIntro = options?.deferIntro ?? false;
 
+  const perspectiveFov = React.useSyncExternalStore(
+    subscribeToCameraFovSettings,
+    () => getSavedCameraFovSettings().fov,
+    () => DEFAULT_CAMERA_FOV_SETTINGS.fov,
+  );
+
   const defaultCamera = React.useMemo<DefaultCameraConfig>(() => ({
+    // ~10% farther out than the historical (-220, -220, 260): the viewport now
+    // runs full-height under the fixed topbar instead of starting below it,
+    // which makes the empty scene render larger on screen. Scaling the distance
+    // back keeps the old framing for both perspective and ortho (the ortho
+    // frustum is derived from fov + distance).
     position: [
-      (fallbackOrbitTarget?.x ?? 0) - 220,
-      (fallbackOrbitTarget?.y ?? 0) - 220,
-      (fallbackOrbitTarget?.z ?? 0) + 260,
+      (fallbackOrbitTarget?.x ?? 0) - 290,
+      (fallbackOrbitTarget?.y ?? 0) - 290,
+      (fallbackOrbitTarget?.z ?? 0) + 330,
     ],
-    fov: 50,
+    fov: perspectiveFov,
     up: [0, 0, 1],
-  }), [fallbackOrbitTarget?.x, fallbackOrbitTarget?.y, fallbackOrbitTarget?.z]);
+  }), [fallbackOrbitTarget?.x, fallbackOrbitTarget?.y, fallbackOrbitTarget?.z, perspectiveFov]);
 
   const defaultOrbitTarget = React.useMemo(
     () => fallbackOrbitTarget?.clone() ?? new THREE.Vector3(0, 0, 0),

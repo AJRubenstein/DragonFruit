@@ -23,6 +23,7 @@ import { MeshClassificationRenderer } from '@/components/scene/MeshClassificatio
 import { IslandIdLabels } from '@/components/scene/IslandIdLabels';
 import { ScreenSpaceGizmo as UnifiedGizmo } from '@/components/gizmo';
 import { warmTransformGizmoGeometryCache } from '@/components/gizmo/gizmoGeometryCache';
+import { cancelActiveGizmoDrag } from '@/components/gizmo/gizmoDragRegistry';
 import { PickingDebugOverlay } from '@/components/picking';
 import { SelectionProvider, SelectionManager, SelectionOutlineRenderer, SelectionSpotlight } from '@/components/selection';
 import type { SelectionHighlightMode } from '@/components/selection';
@@ -96,6 +97,11 @@ import {
   subscribeToCameraProjectionSettings,
   type CameraProjectionMode,
 } from '@/components/settings/cameraProjectionPreferences';
+import {
+  DEFAULT_CAMERA_FOV_SETTINGS,
+  getSavedCameraFovSettings,
+  subscribeToCameraFovSettings,
+} from '@/components/settings/cameraFovPreferences';
 import {
   DEFAULT_CAMERA_FEEL_SETTINGS,
   getSavedCameraFeelSettings,
@@ -186,22 +192,6 @@ function resolveTrackpadGestureAction(
   const modifierPressed = isTrackpadModifierPressed(event, modifierKey);
   if (!modifierPressed) return primaryAction;
   return primaryAction === 'pan' ? 'orbit' : 'pan';
-}
-
-function computeFloatingPanelWidthScale(width: number, height: number) {
-  if (width >= 3200 && height >= 1100) return 1.14;
-  if (width >= 2600 && height >= 980) return 1.08;
-  if (width <= 1100 || height <= 700) return 0.72;
-  if (width <= 1366 || height <= 820) return 0.82;
-  if (width <= 1600 || height <= 900) return 0.9;
-  if (width <= 1800 || height <= 980) return 0.95;
-  return 1;
-}
-
-function computeVisualSettingsPanelWidth(width: number, height: number) {
-  const baseWidth = 48;
-  const scale = Math.min(1, computeFloatingPanelWidthScale(width, height));
-  return Math.max(44, Math.round(baseWidth * scale));
 }
 
 const FLOATING_PANEL_RIGHT_INSET_PX = 12;
@@ -690,6 +680,11 @@ export function SceneCanvas({
     () => getSavedCameraProjectionSettings().mode,
     () => DEFAULT_CAMERA_PROJECTION_SETTINGS.mode,
   );
+  const perspectiveFov = React.useSyncExternalStore(
+    subscribeToCameraFovSettings,
+    () => getSavedCameraFovSettings().fov,
+    () => DEFAULT_CAMERA_FOV_SETTINGS.fov,
+  );
   const cameraFeelPreset = React.useSyncExternalStore(
     subscribeToCameraFeelSettings,
     () => getSavedCameraFeelSettings().preset,
@@ -738,48 +733,9 @@ export function SceneCanvas({
     isKickstandPlacementActive,
     isJointCreationActive
   ]);
-  const [viewportSizeForUiAnchors, setViewportSizeForUiAnchors] = React.useState({ width: 0, height: 0 });
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const container = containerRef.current;
-    if (!container) return;
-
-    const updateViewportSize = () => {
-      const next = {
-        width: container.clientWidth,
-        height: container.clientHeight,
-      };
-
-      setViewportSizeForUiAnchors((prev) => {
-        if (prev.width === next.width && prev.height === next.height) return prev;
-        return next;
-      });
-    };
-
-    updateViewportSize();
-    const observer = new ResizeObserver(updateViewportSize);
-    observer.observe(container);
-    window.addEventListener('resize', updateViewportSize);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', updateViewportSize);
-    };
-  }, []);
-
-  const nonPrintingViewCubeRightMargin = React.useMemo(() => {
-    const width = viewportSizeForUiAnchors.width > 0
-      ? viewportSizeForUiAnchors.width
-      : (typeof window === 'undefined' ? 1920 : window.innerWidth);
-    const height = viewportSizeForUiAnchors.height > 0
-      ? viewportSizeForUiAnchors.height
-      : (typeof window === 'undefined' ? 1080 : window.innerHeight);
-
-    const visualSettingsPanelWidth = computeVisualSettingsPanelWidth(width, height);
-    const visualSettingsLeftInset = visualSettingsPanelWidth + FLOATING_PANEL_RIGHT_INSET_PX;
-    return visualSettingsLeftInset + VIEW_CUBE_PANEL_GAP_PX + VIEW_CUBE_HALF_EXTENT_PX;
-  }, [viewportSizeForUiAnchors.height, viewportSizeForUiAnchors.width]);
+  // The visual-settings panel is a fixed 48px-wide strip; the view cube offsets
+  // by its full extent so it never overlaps the floating panel.
+  const nonPrintingViewCubeRightMargin = 48 + FLOATING_PANEL_RIGHT_INSET_PX + VIEW_CUBE_PANEL_GAP_PX + VIEW_CUBE_HALF_EXTENT_PX;
 
   const smoothingProcessing = React.useSyncExternalStore(
     subscribeToMeshSmoothingProcessingState,
@@ -3170,11 +3126,17 @@ export function SceneCanvas({
       ids.push(duplicateSourceSupportPreviewModelId);
     }
     if (useActiveModelAttachedSupportProxy && activeModelId) ids.push(activeModelId);
+    // When a model is hidden via the model manager panel, its supports should
+    // also be hidden so they don't float orphaned in the scene.
+    for (const model of models) {
+      if (!model.visible) ids.push(model.id);
+    }
     return Array.from(new Set(ids));
   }, [
     activeModelId,
     arrangeSupportPreviewModelIds,
     duplicateSourceSupportPreviewModelId,
+    models,
     multiGizmoSupportPreviewIds,
     renderDuplicateSourceSupportGhostPreview,
     useActiveModelAttachedSupportProxy,
@@ -3991,6 +3953,14 @@ export function SceneCanvas({
       const isEscapeJustPressed = isEscapePressed && !wasEscapePressed;
 
       if (isEscapeJustPressed) {
+        // A gizmo handle being dragged owns Escape: it calls the gesture off and
+        // puts back what it had changed. Dropping the selection instead pulled
+        // the tool out from under a live drag, which left it unable to end.
+        if (cancelActiveGizmoDrag()) {
+          wasEscapePressed = isEscapePressed;
+          return;
+        }
+
         if (!activeModelId && (!selectedModelIds || selectedModelIds.length === 0)) {
           wasEscapePressed = isEscapePressed;
           return;
@@ -5390,7 +5360,7 @@ export function SceneCanvas({
         />
         <EnableLocalClipping enabled={clipLower != null || clipUpper != null || indicatorPlaneZ != null || !!organicCutKeyGizmo} />
         <CameraProvider cameraRef={cameraRef} />
-        <CameraProjectionController mode={cameraProjectionMode} />
+        <CameraProjectionController mode={cameraProjectionMode} perspectiveFov={perspectiveFov} />
         <CameraClipPlaneStabilizer />
         {/* GPU Picking Provider - wraps all pickable content when enabled */}
         <PickingProviderWrapper

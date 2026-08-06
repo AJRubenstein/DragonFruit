@@ -420,11 +420,16 @@ pub const TENON_MAX_TILT_RAD: f32 = std::f32::consts::FRAC_PI_4;
 
 /// User-controlled reorientation of the tenon, expressed in the cut's own tangent
 /// frame so it stays attached to the seam regardless of how the model sits in world
-/// space. All three pivot about the **base center** (`anchor`):
+/// space. Both pivot about the **base center** (`anchor`):
 /// - `tilt`: polar angle the body leans OFF the membrane normal (0 = straight out;
 ///   clamped to [`TENON_MAX_TILT_RAD`]).
+/// - `roll`: spin about the tenon's own axis. The lean plane is welded to one of the
+///   tenon's narrow faces, so rolling turns the lean with the body — the whole point
+///   versus the old azimuth, which was a second number for the same freedom as the
+///   roll and drifted out of step with it.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TenonTilt {
+    /// Lean about the build frame's `+y` (the single lean axis).
     pub tilt: f32,
     pub roll: f32,
 }
@@ -467,18 +472,16 @@ pub type TenonAnchor = Option<Vec3>;
 /// always fits its leaned mortise (a clean slide fit at any tilt). The tenon keeps its
 /// exact shape (no shear/stretch).
 ///
-/// `R = R_lean · R_roll`: roll about local `+z` first (spins the footprint), then
-/// lean about the in-plane axis `k = +z × L`, `L = (cos az, sin az, 0)`. Identity
-/// (`tilt == 0 && roll == 0`) leaves geometry untouched (the exact original tenon).
+/// `R = R_roll · R_lean`: lean about local `+y` (in the tenon's own frame, welding the
+/// lean plane to the body), then roll about local `+z`. Identity (`tilt == 0 &&
+/// roll == 0`) leaves geometry untouched (the exact original tenon).
 #[derive(Debug, Clone, Copy)]
 struct LeanXform {
     tilt: f32,
     roll: f32,
-    /// In-plane shift (mm, local u) that puts the tenon's axis back through the
-    /// ANCHOR — the point on the membrane where the crosshair sits. 0 when upright.
     /// Extra length (mm) added to the BASE END only, so a leaned base stays buried.
     ///
-    /// Rotating the body lifts its leading base corner by half_diag·sin(tilt), which
+    /// Rotating the body lifts its leading base corner by half_diag·sin(lean), which
     /// on a short tenon is far more than the 0.3mm of overlap it is built with — so
     /// the base edge surfaced through the cut face and sat there in plain view. The
     /// trunk grows DOWNWARD by that much: the tenon still ends up longer than it was
@@ -493,11 +496,9 @@ impl LeanXform {
     const IDENTITY: LeanXform =
         LeanXform { tilt: 0.0, roll: 0.0, base_sink: 0.0, identity: true };
 
-    /// Build the transform for a tenon built in `build_frame`, given the user `tilt`
+    /// Build the transform for a tenon built in `build_frame`, given the user tilt
     /// and the tenon footprint `half_diag` (mm, the base half-diagonal — how far the
-    /// base extends from the axis). The lean direction is computed as a WORLD
-    /// direction from the ORIGINAL (un-swapped) tangent basis and projected onto
-    /// `build_frame.(u, v)` so it points the same world way through any swap.
+    /// base extends from the axis).
     fn for_build(tilt: &TenonTilt, max_tilt: f32, half_diag: f32) -> LeanXform {
         let leaning = tilt.tilt.abs() >= 1e-6;
         let rolling = tilt.roll.abs() >= 1e-6;
@@ -507,33 +508,39 @@ impl LeanXform {
         // Clamp to the hard ceiling. Whether the lean still FITS is `check_lean`'s
         // verdict, reported to the user — not something enforced by refusing to turn.
         let cap = max_tilt.clamp(0.0, TENON_MAX_TILT_RAD);
-        let t = if leaning { tilt.tilt.clamp(-cap, cap) } else { 0.0 };
+        let t = if tilt.tilt.abs() >= 1e-6 { tilt.tilt.clamp(-cap, cap) } else { 0.0 };
         // How far the leading base corner rises when the body turns — see `base_sink`.
-        let base_sink = half_diag.max(0.0) * t.abs().sin();
+        let base_sink = half_diag.max(0.0) * t.sin();
         LeanXform { tilt: t, roll: tilt.roll, base_sink, identity: false }
     }
 
+    /// The burial that keeps the base under the cut face at ANY lean up to the
+    /// ceiling — `base_sink` for the worst case rather than for a given angle.
+    ///
+    /// For the live preview, which is built once and then rotated by the gizmo
+    /// without a rebuild: it cannot lengthen itself as the lean grows, so it starts
+    /// out long enough for wherever the lean ends up.
+    fn burial_for_steepest_lean(half_diag: f32) -> f32 {
+        half_diag.max(0.0) * TENON_MAX_TILT_RAD.sin()
+    }
 
-    /// Transform a local point: rigid lean about the body's own **+y**, then rigid
-    /// roll about **+z**. Identical for tenon and mortise, so it preserves their
-    /// nesting (a clean slide fit at any angle).
+
+    /// Transform a local point: rigid lean about the body's own **+y**, then roll
+    /// about **+z**. Identical for tenon and mortise, so it preserves their nesting
+    /// (a clean slide fit at any angle).
     ///
     /// The order is the whole trick. Leaning FIRST, in the tenon's own frame, welds
     /// the lean plane to the body: the roll then turns the two together because it
-    /// turns everything. There used to be a third number for this — an `azimuth`
-    /// naming which way the lean pointed, in world terms, which the frontend derived
-    /// from the roll and kept in sync by hand. It did not stay in sync (the body
-    /// turned one way and its lean plane the other, so a full turn of the ring moved
-    /// the tenon half as far), and it could not: two numbers describing one freedom
-    /// will always be able to disagree.
+    /// turns everything. (The old azimuth failed because it named the lean direction
+    /// in world terms and kept it in sync with the roll by hand — two numbers
+    /// describing one freedom can always disagree. One welded lean cannot.)
     #[inline]
     fn apply(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
         if self.identity {
             return (x, y, z);
         }
         // 1) Lean about local +y: (x, z) turn, y is the hinge. +y is the build
-        // frame's length axis, so the tenon tips over one of its NARROW faces —
-        // the plane the user sketched the lean in.
+        // frame's length axis, so the tenon tips over one of its NARROW faces.
         let (mut px, mut pz) = (x, z);
         if self.tilt.abs() >= 1e-9 {
             let (s, c) = self.tilt.sin_cos();
@@ -542,17 +549,16 @@ impl LeanXform {
             px = rx;
             pz = rz;
         }
-        // 2) Slide the axis back under the crosshair (see `for_build`).
-        // 3) Roll about local +z, carrying the leaned body and its lean plane alike.
-        let (mut px2, mut py2) = (px, y);
+        // 2) Roll about local +z, carrying the leaned body and its lean plane alike.
+        let mut py = y;
         if self.roll.abs() >= 1e-9 {
             let (s, c) = self.roll.sin_cos();
-            let rx = px2 * c - py2 * s;
-            let ry = px2 * s + py2 * c;
-            px2 = rx;
-            py2 = ry;
+            let rx = px * c - py * s;
+            let ry = px * s + py * c;
+            px = rx;
+            py = ry;
         }
-        (px2, py2, pz)
+        (px, py, pz)
     }
 }
 
@@ -1084,7 +1090,7 @@ pub fn apply_tenon_at_frame(
     let clearance = Clearance::probe(&frame, model, model);
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
-    let plan = decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, tilt.tilt);
+    let plan = decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, tilt.tilt.abs());
     // The same containment check the preview runs, on the same frame, so what the
     // user saw refused in red is what the cut refuses.
     let plan = {
@@ -1227,7 +1233,7 @@ pub fn build_tenon_preview_at_frame(
     let clearance = Clearance::probe(&placed, model, model);
     let nominal = FrustumDims::from_width_depth(width_mm, depth_mm);
     let nominal_dome = DomeDims::from_width_depth(width_mm, depth_mm);
-    let plan = decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, tilt.tilt);
+    let plan = decide_tenon(&clearance, nominal, nominal_dome, shape, tolerance, tilt.tilt.abs());
     // The build frame must MATCH what `apply_tenon` uses so the preview is exactly
     // what cuts: extrude the tenon toward part_b, with the rigid lean about the base.
     let build_frame = frame_extruding_toward_part_b(&placed);
@@ -1243,15 +1249,27 @@ pub fn build_tenon_preview_at_frame(
     // where it started. See `confirm_tenon_stays_inside`.
     let plan = confirm_tenon_stays_inside(plan, model, &build_frame, lean);
     // The SOUP is built straight — the frontend applies the lean itself, live, so the
-    // gizmo stays smooth without a round-trip per frame. It carries the lean's base
-    // extension though (see `LeanXform::base_sink`), because that is a change of
-    // LENGTH and a client-side rotation cannot produce it. Rotating this straight,
-    // already-extended body gives exactly the solid the cut builds.
+    // gizmo stays smooth without a round-trip per frame. It carries a base extension
+    // though (see `LeanXform::base_sink`), because that is a change of LENGTH and a
+    // client-side rotation cannot produce it.
+    //
+    // The extension is sized for the STEEPEST lean the gizmo can reach, not for the
+    // lean this soup was built at: the soup has to survive being rotated to any
+    // angle without a rebuild, and one built at 0 has no burial at all, so the base
+    // edge rose through the cut face and sat there in plain view the moment the
+    // gizmo was touched. A soup built at the ceiling never shows it, which is what
+    // the maintainer asked every tenon to look like.
+    //
+    // It is the one place the preview outreaches the cut: `apply_tenon` buries the
+    // base by what its own lean needs. The difference is entirely BELOW the cut
+    // face, inside the half the tenon is welded to, so nothing visible parts ways —
+    // barring a rooted half thinner than the surplus, where the preview's base
+    // reaches out through the back and the cut's does not.
     let soup_lean = LeanXform {
         tilt: 0.0,
         roll: 0.0,
-        base_sink: lean.base_sink,
-        identity: lean.base_sink <= 0.0,
+        base_sink: LeanXform::burial_for_steepest_lean(half_diag),
+        identity: false,
     };
 
     let mut soup: Vec<f32> = Vec::new();
@@ -2337,7 +2355,7 @@ mod tests {
     // does not resize the tenon. The twin of `tilt_rotates_rigidly_and_leans_the_tip`,
     // which measures the transform; this one measures the SOUP that gets drawn.
     #[test]
-    fn the_preview_soup_is_built_straight_but_grows_at_the_base_with_the_lean() {
+    fn the_preview_soup_is_built_straight_and_buried_deep_enough_for_any_lean() {
         let model = axis_aligned_slab(Vec3::new(-5.0, -5.0, -10.0), Vec3::new(5.0, 5.0, 10.0));
         let loop_pts = vec![
             Vec3::new(-5.0, -5.0, 0.0),
@@ -2365,30 +2383,42 @@ mod tests {
             (cap, base)
         };
 
+        // The base extension is a change of LENGTH, which no client-side rotation can
+        // produce — so the soup carries enough of it for the STEEPEST lean the gizmo
+        // reaches, whatever lean it was built at. Sized for the angle it was built
+        // at instead, a soup built upright had none, and the first few degrees of
+        // the gizmo lifted the base edge out through the cut face in plain view.
+        let half_diag = 0.5 * width.hypot(width * TENON_LENGTH_TO_WIDTH) + tol;
+        let burial = half_diag * TENON_MAX_TILT_RAD.sin();
+
         let (cap0, base0) = extent(0.0);
         assert!(
-            (base0 - cap0 - (depth + TENON_BASE_OVERLAP_MM)).abs() < 0.05,
-            "upright, the tenon is its depth plus the base overlap: cap {cap0}, base {base0}",
+            (base0 - cap0 - (depth + TENON_BASE_OVERLAP_MM + burial)).abs() < 0.05,
+            "upright, the tenon is its depth plus the base overlap plus the burial: \
+             cap {cap0}, base {base0}, burial {burial}",
         );
 
-        // The soup is built STRAIGHT — the frontend leans it, so this must not turn.
-        // What it DOES carry is the base extension, which is a change of length that
-        // no client-side rotation could produce: without it the leaned base lifts out
-        // of the cut face and the bottom edge shows.
-        let half_diag = 0.5 * width.hypot(width * TENON_LENGTH_TO_WIDTH) + tol;
+        // The soup is built STRAIGHT — the frontend leans it, so this must not turn —
+        // and it is the SAME soup at every angle, cap and base both.
         for deg in [15.0f32, 30.0, 45.0] {
             let (cap, base) = extent(deg);
             assert!(
                 (cap - cap0).abs() < 0.05,
                 "at {deg}° the cap end has not moved (soup is built straight): {cap} vs {cap0}",
             );
-            let grew = base - base0;
-            let wanted = half_diag * deg.to_radians().sin();
             assert!(
-                (grew - wanted).abs() < 0.05,
-                "at {deg}° the base reaches {wanted}mm further back, got {grew}",
+                (base - base0).abs() < 0.05,
+                "at {deg}° the base is buried exactly as deep as at 0: {base} vs {base0}",
             );
         }
+
+        // What that burial buys, stated in the terms the gizmo works in: the base
+        // reaches back past the cut face by at least what the steepest lean lifts
+        // its leading corner, so rotating the soup never brings it into view.
+        assert!(
+            base0 - TENON_BASE_OVERLAP_MM >= half_diag * TENON_MAX_TILT_RAD.sin() - 0.05,
+            "the straight soup reaches back far enough to stay buried at the ceiling: base {base0}",
+        );
     }
 
     // Leaned far enough, the tenon comes out through the skin — and the ray probes

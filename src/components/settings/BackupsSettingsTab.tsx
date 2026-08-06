@@ -864,7 +864,7 @@ export function BackupsSettingsTab() {
       <section className="relative rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
         {!loadingStatus && !backupsConfigured && (
           <div
-            className="absolute right-3 top-3 z-10 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+            className="absolute right-3 top-3 z-10 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
             style={{
               borderColor: 'color-mix(in srgb, #f59e0b, var(--border-subtle) 35%)',
               background: 'color-mix(in srgb, #f59e0b, var(--surface-1) 92%)',
@@ -890,12 +890,12 @@ export function BackupsSettingsTab() {
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Private GitHub Backups</h3>
+                <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Private GitHub Backups</h3>
                 {!backupsConfigured && (
                   <button
                     type="button"
                     onClick={() => setShowOAuthSetupModal(true)}
-                    className="ui-button ui-button-secondary !h-7 !px-2 !py-0 text-[11px]"
+                    className="ui-button ui-button-secondary !h-7 !px-2 !py-0 text-xs"
                   >
                     OAuth setup
                   </button>
@@ -922,7 +922,7 @@ export function BackupsSettingsTab() {
                   </div>
                 </div>
               </div>
-              <p className="mt-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                 DragonFruit stores backups in your own private GitHub repository. We intentionally avoid ORA-hosted cloud storage and we do not operate a DragonFruit backup server.
               </p>
             </div>
@@ -930,7 +930,7 @@ export function BackupsSettingsTab() {
 
         {!setupComplete && (
           <div className="mt-3 rounded-lg border p-3" style={{ borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 54%)', background: 'color-mix(in srgb, var(--accent), var(--surface-1) 95%)' }}>
-            <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Onboarding</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Onboarding</div>
             <h4 className="mt-0.5 text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Set up private backups</h4>
             <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
               DragonFruit handles setup automatically and uses only your own private GitHub repository.
@@ -975,7 +975,7 @@ export function BackupsSettingsTab() {
                       </button>
                     )}
                   </div>
-                  <div className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  <div className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                     {backupsConfigured
                       ? 'We’ll open a secure GitHub popup to connect your account.'
                       : 'After updating .env, restart the app, then click “I configured it”.'}
@@ -1051,7 +1051,7 @@ export function BackupsSettingsTab() {
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Connection</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Connection</div>
                 <div className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--text-strong)' }}>
                   {authenticated ? <CheckCircle2 className="h-3.5 w-3.5" style={{ color: 'color-mix(in srgb, #22c55e, var(--text-strong) 18%)' }} /> : <ShieldX className="h-3.5 w-3.5" style={{ color: 'var(--danger)' }} />}
                   {authenticated ? `@${status.user?.login ?? 'unknown'}` : 'Not connected'}
@@ -1059,24 +1059,24 @@ export function BackupsSettingsTab() {
               </div>
 
               <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Repository</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Repository</div>
                 <div className="mt-1 text-xs font-medium" style={{ color: 'var(--text-strong)' }}>
                   {status.repository?.name ?? 'dragonfruit-backups'}
                 </div>
-                <div className="text-[11px]" style={{ color: repoExists ? 'color-mix(in srgb, #22c55e, var(--text-strong) 18%)' : 'var(--text-muted)' }}>
+                <div className="text-xs" style={{ color: repoExists ? 'color-mix(in srgb, #22c55e, var(--text-strong) 18%)' : 'var(--text-muted)' }}>
                   {repoExists ? 'Private repo ready' : 'Not created yet'}
                 </div>
               </div>
 
               <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Last remote backup</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Last remote backup</div>
                 <div className="mt-1 text-xs" style={{ color: 'var(--text-strong)' }}>
                   {status.remoteUpdatedAt ? new Date(status.remoteUpdatedAt).toLocaleString() : 'Never'}
                 </div>
               </div>
 
               <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Last local sync</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Last local sync</div>
                 <div className="mt-1 text-xs" style={{ color: 'var(--text-strong)' }}>
                   {lastLocalSyncAt ? new Date(lastLocalSyncAt).toLocaleString() : 'Never'}
                 </div>
@@ -1098,8 +1098,8 @@ export function BackupsSettingsTab() {
           </p>
 
           <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-            <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Quick actions</div>
-            <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Quick actions</div>
+            <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
               Run a sync, verify repository readiness, or disconnect this GitHub account.
             </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -1137,7 +1137,7 @@ export function BackupsSettingsTab() {
 
           {remoteConflictSnapshot && (
             <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: 'color-mix(in srgb, #f59e0b, var(--border-subtle) 40%)', background: 'color-mix(in srgb, #f59e0b, var(--surface-1) 95%)' }}>
-              <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: '#fcd34d' }}>Conflict detected</div>
+              <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: '#fcd34d' }}>Conflict detected</div>
               <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                 Remote backup is newer than your local snapshot. Choose how to resolve this sync.
               </p>
@@ -1171,12 +1171,12 @@ export function BackupsSettingsTab() {
           )}
 
           <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-            <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Automation</div>
+            <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Automation</div>
             <div className="mt-2 grid gap-2">
               <div className="rounded-md border px-2.5 py-2 flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <div>
                   <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Enable automatic backups</div>
-                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Automatically sync to your private GitHub backup on an interval.</div>
+                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Automatically sync to your private GitHub backup on an interval.</div>
                 </div>
                 <button
                   type="button"
@@ -1209,7 +1209,7 @@ export function BackupsSettingsTab() {
               >
                 <div>
                   <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Sync interval</div>
-                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Minutes between automatic sync attempts.</div>
+                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Minutes between automatic sync attempts.</div>
                 </div>
                 <div className="inline-flex items-center gap-2">
                   <NumberInput
@@ -1237,7 +1237,7 @@ export function BackupsSettingsTab() {
           <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
             <div className="flex items-center justify-between gap-2">
               <div>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Manage Backups</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Manage Backups</div>
                 <div className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>View, restore, or delete older snapshots from your private repository.</div>
               </div>
               <button
@@ -1269,7 +1269,7 @@ export function BackupsSettingsTab() {
                           <div className="truncate text-xs font-medium" style={{ color: 'var(--text-strong)' }}>
                             {new Date(item.createdAt).toLocaleString()}
                           </div>
-                          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                             ID {item.id}
                           </div>
                         </button>
@@ -1320,7 +1320,7 @@ export function BackupsSettingsTab() {
                 <h4 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                   Backup Snapshot Content
                 </h4>
-                <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                   {selectedHistoryId ? `Snapshot ${new Date(Number(selectedHistoryId)).toLocaleString()}` : 'Loading snapshot...'}
                 </p>
               </div>
@@ -1392,19 +1392,19 @@ export function BackupsSettingsTab() {
                       <div className="h-full min-h-0 overflow-auto custom-scrollbar pr-1">
                         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                           <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                            <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Snapshot ID</div>
+                            <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Snapshot ID</div>
                             <div className="mt-1 text-xs font-medium" style={{ color: 'var(--text-strong)' }}>{selectedHistoryId}</div>
                           </div>
                           <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                            <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Document Updated</div>
+                            <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Document Updated</div>
                             <div className="mt-1 text-xs font-medium" style={{ color: 'var(--text-strong)' }}>{new Date(selectedHistoryDocument.updatedAt).toLocaleString()}</div>
                           </div>
                           <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                            <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Client ID</div>
+                            <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>Client ID</div>
                             <div className="mt-1 text-xs font-medium break-all" style={{ color: 'var(--text-strong)' }}>{selectedHistoryDocument.snapshot.clientId}</div>
                           </div>
                           <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                            <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>LocalStorage Keys</div>
+                            <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>LocalStorage Keys</div>
                             <div className="mt-1 text-xs font-medium" style={{ color: 'var(--text-strong)' }}>{Object.keys(selectedHistoryDocument.snapshot.localStorage ?? {}).length}</div>
                           </div>
                         </div>
@@ -1442,10 +1442,10 @@ export function BackupsSettingsTab() {
                         </div>
 
                         <div className="rounded-md border p-2.5 min-h-0 flex flex-col" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                          <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>
+                          <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>
                             {selectedStorageKey ?? 'Select a key'}
                           </div>
-                          <pre className="mt-2 flex-1 min-h-0 w-full rounded-md border p-2 text-[11px] leading-relaxed overflow-auto custom-scrollbar whitespace-pre" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}>
+                          <pre className="mt-2 flex-1 min-h-0 w-full rounded-md border p-2 text-xs leading-relaxed overflow-auto custom-scrollbar whitespace-pre" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}>
                             {selectedStorageKey
                               ? renderHighlightedJson(stringifyReadable((selectedHistoryDocument.snapshot.localStorage ?? {})[selectedStorageKey]))
                               : 'Select a LocalStorage key from the left to view its value.'}
@@ -1458,7 +1458,7 @@ export function BackupsSettingsTab() {
                       parsedProfiles ? (
                         <div className="h-full min-h-0 grid gap-2 lg:grid-cols-[minmax(230px,32%)_minmax(0,1fr)]">
                           <div className="rounded-md border p-2 min-h-0 overflow-auto custom-scrollbar" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-                            <div className="text-[10px] uppercase tracking-wide font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
+                            <div className="text-[11px] uppercase tracking-wide font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
                               Printer Profiles ({parsedProfiles.printerProfiles.length})
                             </div>
                             <div className="space-y-1.5">
@@ -1485,12 +1485,12 @@ export function BackupsSettingsTab() {
                                   >
                                     <div className="flex items-center justify-between gap-2">
                                       <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>{printer.name ?? printer.id}</div>
-                                      {isActiveSnapshot && <span className="text-[10px] font-semibold" style={{ color: 'var(--accent-secondary)' }}>ACTIVE</span>}
+                                      {isActiveSnapshot && <span className="text-[11px] font-semibold" style={{ color: 'var(--accent-secondary)' }}>ACTIVE</span>}
                                     </div>
-                                    <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                    <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                       {printer.manufacturer ?? 'Unknown manufacturer'}
                                     </div>
-                                    <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                    <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                       {materialCount} material{materialCount === 1 ? '' : 's'}
                                     </div>
                                   </button>
@@ -1506,20 +1506,20 @@ export function BackupsSettingsTab() {
                               <div className="space-y-2">
                                 <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                                   <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>{selectedProfilesPrinter.name ?? selectedProfilesPrinter.id}</div>
-                                  <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                  <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                     {selectedProfilesPrinter.manufacturer ?? 'Unknown manufacturer'}
                                     {selectedProfilesPrinter.networkSupport ? ` • ${selectedProfilesPrinter.networkSupport}` : ''}
                                   </div>
-                                  <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                  <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                     Build: {selectedProfilesPrinter.buildVolumeMm?.width ?? '-'} × {selectedProfilesPrinter.buildVolumeMm?.depth ?? '-'} × {selectedProfilesPrinter.buildVolumeMm?.height ?? '-'} mm
                                   </div>
-                                  <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                  <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                     Display: {selectedProfilesPrinter.display?.resolutionX ?? '-'} × {selectedProfilesPrinter.display?.resolutionY ?? '-'}{selectedProfilesPrinter.display?.outputFormat ? ` (${selectedProfilesPrinter.display.outputFormat})` : ''}
                                   </div>
                                 </div>
 
                                 <div className="rounded-md border p-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                                  <div className="text-[10px] uppercase tracking-wide font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
+                                  <div className="text-[11px] uppercase tracking-wide font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
                                     Materials for this printer ({filteredMaterialsForSelectedPrinter.length})
                                   </div>
                                   <div className="space-y-1.5">
@@ -1538,12 +1538,12 @@ export function BackupsSettingsTab() {
                                         }}>
                                           <div className="flex items-center justify-between gap-2">
                                             <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>{material.name ?? material.id}</div>
-                                            {isActiveSnapshot && <span className="text-[10px] font-semibold" style={{ color: 'var(--accent-secondary)' }}>ACTIVE</span>}
+                                            {isActiveSnapshot && <span className="text-[11px] font-semibold" style={{ color: 'var(--accent-secondary)' }}>ACTIVE</span>}
                                           </div>
-                                          <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                          <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                             {material.brand ?? 'Unknown brand'}{material.resinFamily ? ` • ${material.resinFamily}` : ''}
                                           </div>
-                                          <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                          <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                                             Layer {material.layerHeightMm ?? '-'} mm • Normal {material.normalExposureSec ?? '-'}s • Bottom {material.bottomExposureSec ?? '-'}s × {material.bottomLayerCount ?? '-'}
                                           </div>
                                         </div>
@@ -1556,14 +1556,14 @@ export function BackupsSettingsTab() {
                           </div>
                         </div>
                       ) : (
-                        <pre className="rounded-md border p-2 text-[11px] leading-relaxed overflow-auto custom-scrollbar" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)', color: 'var(--text-muted)', maxHeight: '56vh' }}>
+                        <pre className="rounded-md border p-2 text-xs leading-relaxed overflow-auto custom-scrollbar" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)', color: 'var(--text-muted)', maxHeight: '56vh' }}>
                           {stringifyReadable(selectedHistoryDocument.snapshot.profiles ?? null)}
                         </pre>
                       )
                     )}
 
                     {snapshotModalTab === 'raw' && (
-                      <pre className="flex-1 min-h-0 rounded-md border p-2 text-[11px] leading-relaxed overflow-auto custom-scrollbar whitespace-pre" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)', color: 'var(--text-muted)' }}>
+                      <pre className="flex-1 min-h-0 rounded-md border p-2 text-xs leading-relaxed overflow-auto custom-scrollbar whitespace-pre" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)', color: 'var(--text-muted)' }}>
                         {renderHighlightedJson(stringifyReadable(selectedHistoryDocument))}
                       </pre>
                     )}
@@ -1581,7 +1581,7 @@ export function BackupsSettingsTab() {
             <div className="flex items-center justify-between gap-2 px-4 py-3" style={{ background: 'color-mix(in srgb, var(--surface-1), transparent 8%)' }}>
               <div>
                 <h4 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Set up GitHub OAuth</h4>
-                <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <p className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                   Required for self-compiled builds that do not ship with backup OAuth env values.
                 </p>
               </div>
@@ -1606,7 +1606,7 @@ export function BackupsSettingsTab() {
               </ol>
 
               <div className="rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>BACKUP_COOKIE_SECRET helper</div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>BACKUP_COOKIE_SECRET helper</div>
                 <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                   Generate a local secret (at least 32 chars) and use it in your .env.
                 </div>
@@ -1629,8 +1629,8 @@ export function BackupsSettingsTab() {
               </div>
 
               <div className="rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>.env template</div>
-                <pre className="mt-2 rounded-md border p-2 text-[11px] leading-relaxed overflow-auto custom-scrollbar whitespace-pre" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)', color: 'var(--text-muted)' }}>{`GITHUB_OAUTH_CLIENT_ID=<your_github_oauth_client_id>\nGITHUB_OAUTH_CLIENT_SECRET=<your_github_oauth_client_secret>\nGITHUB_OAUTH_REDIRECT_URI=${oauthCallbackUrl}\nBACKUP_COOKIE_SECRET=${oauthCookieSecretDraft.trim() || '<generate_a_64_char_secret>'}`}</pre>
+                <div className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>.env template</div>
+                <pre className="mt-2 rounded-md border p-2 text-xs leading-relaxed overflow-auto custom-scrollbar whitespace-pre" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)', color: 'var(--text-muted)' }}>{`GITHUB_OAUTH_CLIENT_ID=<your_github_oauth_client_id>\nGITHUB_OAUTH_CLIENT_SECRET=<your_github_oauth_client_secret>\nGITHUB_OAUTH_REDIRECT_URI=${oauthCallbackUrl}\nBACKUP_COOKIE_SECRET=${oauthCookieSecretDraft.trim() || '<generate_a_64_char_secret>'}`}</pre>
                 <div className="mt-2 flex items-center justify-end">
                   <button
                     type="button"

@@ -5,9 +5,11 @@ import * as THREE from 'three';
 import { ThreeEvent, useThree, useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
 import { GIZMO_COLORS, GIZMO_SIZES, GIZMO_LIGHTING } from '../constants';
+import { beginGizmoDrag } from '../gizmoDragRegistry';
 import {
   DIAL_ANATOMY,
   emittedDeltaForSweep,
+  stepDialSweep,
   distancePointToLine,
   polarToLocal,
   rayToRingLocal,
@@ -174,6 +176,16 @@ export function GizmoRotation({
   /** Screen position of the press, for the click slop. */
   const pressPointRef = useRef<{ x: number; y: number } | null>(null);
   /**
+   * Whether the button that started this drag is still down.
+   *
+   * True says the gesture outlives the drag — Escape called it off, or the ring
+   * went away under it — and that the release still has to be dealt with.
+   */
+  const pointerIsDownRef = useRef(false);
+  /** The pointer and button this gesture belongs to. Any other is not ours. */
+  const dragPointerIdRef = useRef<number | null>(null);
+  const dragButtonRef = useRef<number>(0);
+  /**
    * Mirror of isDragging for the pointer handlers.
    *
    * A ref, not the state: these are R3F handlers firing mid-gesture, and the
@@ -184,6 +196,11 @@ export function GizmoRotation({
   // Callback refs to stabilize useEffect deps (prevents effect churn during drag)
   const onDragRef = useRef(onDrag);
   const onDragEndRef = useRef(onDragEnd);
+  const axisVisualFlipRef = useRef(axisVisualFlip);
+  /** Tears down the window listeners the running gesture installed. */
+  const detachDragListenersRef = useRef<(() => void) | null>(null);
+  /** Gives up this drag's claim on the registry. */
+  const releaseGizmoDragRef = useRef<(() => void) | null>(null);
   const rotatingArcRef = useRef<THREE.Group>(null);
   const handleRootRef = useRef<THREE.Group>(null);
   const billboardGroupRef = useRef<THREE.Group>(null);
@@ -193,7 +210,100 @@ export function GizmoRotation({
   useEffect(() => {
     onDragRef.current = onDrag;
     onDragEndRef.current = onDragEnd;
-  }, [onDrag, onDragEnd]);
+    axisVisualFlipRef.current = axisVisualFlip;
+  }, [onDrag, onDragEnd, axisVisualFlip]);
+
+  /**
+   * Eat what is left of a pointer gesture whose drag has already ended: the
+   * pointer coming up, and the click the browser builds from it.
+   *
+   * Capture phase on the window, so nothing below ever sees them — the canvas
+   * would otherwise take the release as a click on whatever sits under the
+   * cursor. Both listeners come off on a timeout scheduled from the release, so
+   * a gesture that ends without a click (the pointer left the element it went
+   * down on) cannot leave a swallower behind to eat someone else's.
+   */
+  const swallowRestOfGesture = useCallback((pointerId: number | null, button: number) => {
+    const stop = (e: Event) => {
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    const remove = () => {
+      window.removeEventListener('pointerup', onRelease, true);
+      window.removeEventListener('pointercancel', onRelease, true);
+      window.removeEventListener('click', onClick, true);
+    };
+    function onRelease(e: Event) {
+      const pointer = e as PointerEvent;
+      // Only the button that was down when the drag ended. Another one coming up
+      // in the meantime is not the release we are waiting for.
+      if (pointerId !== null && pointer.pointerId !== pointerId) return;
+      if (e.type === 'pointerup' && pointer.button !== button) return;
+      stop(e);
+      pointerIsDownRef.current = false;
+      window.removeEventListener('pointerup', onRelease, true);
+      window.removeEventListener('pointercancel', onRelease, true);
+      // The click lands in the same task as the release, so a timeout scheduled
+      // here runs after it, whether it came or not.
+      window.setTimeout(remove, 0);
+    }
+    function onClick(e: Event) {
+      stop(e);
+    }
+    window.addEventListener('pointerup', onRelease, true);
+    window.addEventListener('pointercancel', onRelease, true);
+    window.addEventListener('click', onClick, true);
+  }, []);
+
+  /**
+   * End the gesture, by the one path everything uses: the pointer coming up, the
+   * pointer being cancelled, Escape, or this ring unmounting under a running
+   * drag. Whatever the reason, the listeners come off, the registry claim is
+   * given up, the dial comes down and the readout is told to stop — miss any of
+   * those and the app is left mid-drag with no drag to end it (the readout stuck
+   * to the cursor and the tool inert, which is what Escape used to do).
+   *
+   * 'cancel' also puts the rotation back where the grab found it, by asking for
+   * the sweep applied so far in reverse. A hard end clamps the way back exactly
+   * as it clamped the way out, so the object lands on its starting angle.
+   */
+  const finishDrag = useCallback((mode: 'commit' | 'cancel') => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+
+    // Ending with the button still down leaves the rest of the gesture homeless:
+    // the pointer comes up on the model behind the gizmo, and the Cut tool reads
+    // that as a click and drops a waypoint on the seam. Whoever ended the drag
+    // owns the gesture to its end, so the remainder is swallowed.
+    if (pointerIsDownRef.current) {
+      swallowRestOfGesture(dragPointerIdRef.current, dragButtonRef.current);
+    }
+
+    detachDragListenersRef.current?.();
+    detachDragListenersRef.current = null;
+    releaseGizmoDragRef.current?.();
+    releaseGizmoDragRef.current = null;
+
+    if (mode === 'cancel' && sweepAccumRef.current !== 0) {
+      onDragRef.current(emittedDeltaForSweep(-sweepAccumRef.current, axisVisualFlipRef.current));
+      sweepAccumRef.current = 0;
+      prevTargetRef.current = 0;
+      handleAngleRef.current = dialZeroRef.current;
+      targetHandleAngleRef.current = dialZeroRef.current;
+    }
+
+    setIsDragging(false);
+    setDialZero(null);
+    setHeldMark(null);
+    heldRef.current = null;
+    pressPointRef.current = null;
+    onDragEndRef.current();
+    window.dispatchEvent(new CustomEvent('dragonfruit:snap-angle', { detail: { active: false } }));
+  }, [swallowRestOfGesture]);
+
+  // A ring can be unmounted mid-gesture (the tool it belongs to closing under
+  // it). Nothing else will end the drag then, so this does.
+  useEffect(() => () => finishDrag('commit'), [finishDrag]);
 
   // GPU Picking registration
   const pickMeshRef = useRef<THREE.Mesh>(null);
@@ -356,6 +466,16 @@ export function GizmoRotation({
     pressPointRef.current = { x: e.clientX, y: e.clientY };
 
     isDraggingRef.current = true;
+    pointerIsDownRef.current = true;
+    // The gesture is this pointer and this button, and nothing else. A second
+    // button pressed and released mid-drag (the right one, reaching for the
+    // camera) reported an up of its own, which ended the rotation on the spot
+    // and left the real button still down with no drag under it.
+    dragPointerIdRef.current = e.pointerId;
+    dragButtonRef.current = e.button;
+    // Announce the gesture so a key pressed during it reaches this drag rather
+    // than the canvas behind it. See gizmoDragRegistry.
+    releaseGizmoDragRef.current = beginGizmoDrag(() => finishDrag('cancel'));
     window.dispatchEvent(new CustomEvent('dragonfruit:rotation-hint', { detail: { visible: false } }));
     setIsDragging(true);
   };
@@ -382,7 +502,12 @@ export function GizmoRotation({
   useEffect(() => {
     if (!isDragging) return;
 
+    /** Is this event part of the gesture that started the drag? */
+    const isOurPointer = (e: PointerEvent) =>
+      dragPointerIdRef.current === null || e.pointerId === dragPointerIdRef.current;
+
     const handleGlobalPointerMove = (e: PointerEvent) => {
+      if (!isOurPointer(e)) return;
       const press = pressPointRef.current;
       if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) <= DIAL_MOVE_SLOP_PX) return;
 
@@ -439,33 +564,42 @@ export function GizmoRotation({
         setHeldMark(resolved.held);
       }
 
-      const delta = shortestAngleDelta(prevTargetRef.current, resolved.angleRad);
+      // The object may take less than it is asked for: a rotation with a hard end
+      // (the tenon's lean stops where the geometry stops) refuses the excess, and
+      // the sweep stops with it, so the dial's radius and the handle stop at the
+      // limit instead of running on under the pointer. See `stepDialSweep` for
+      // what the refused travel does to the next reading.
+      const stepped = stepDialSweep(
+        { sweepRad: sweepAccumRef.current, targetRad: prevTargetRef.current },
+        {
+          cursorAngleRad: resolved.angleRad,
+          axisVisualFlip,
+          frameCarriesRotation,
+          emit: (asked) => onDragRef.current(asked),
+        },
+      );
+      sweepAccumRef.current = stepped.sweepRad;
+      prevTargetRef.current = stepped.targetRad;
+      // The handle rides the sweep so it stays on the mark when the magnet has
+      // it — unless the parent is turning the whole gizmo by this rotation, in
+      // which case the ring already carries it and advancing here too would send
+      // the handle round at twice the pointer's speed.
+      if (!frameCarriesRotation) {
+        handleAngleRef.current = dialZeroRef.current + sweepAccumRef.current;
+        targetHandleAngleRef.current = handleAngleRef.current;
+      }
 
-      if (sweepGroupRef.current) sweepGroupRef.current.rotation.z = resolved.angleRad;
-      prevTargetRef.current = resolved.angleRad;
-
-      if (delta !== 0) {
-        // What comes back is how much the object actually took. A rotation with a
-        // hard end (the tenon's lean stops where the geometry stops) returns less
-        // than it was asked for, and the sweep has to stop with it — the dial's own
-        // radius keeps following the pointer above, so easing back off the end
-        // picks up again straight away, but the reading and the handle must never
-        // claim an angle the object never reached.
-        const asked = emittedDeltaForSweep(delta, axisVisualFlip);
-        const answer = onDragRef.current(asked);
-        const applied = typeof answer === 'number' ? answer : asked;
-        // Back into dial units, the same mapping run backwards.
-        const appliedSweep =
-          axisVisualFlip === 0 || applied === asked ? delta : -applied / axisVisualFlip;
-        sweepAccumRef.current += appliedSweep;
-        // The handle rides the sweep so it stays under the pointer, on the mark
-        // when the magnet has it — unless the parent is turning the whole gizmo by
-        // this rotation, in which case the ring already carries it and advancing
-        // here too would send the handle round at twice the pointer's speed.
-        if (!frameCarriesRotation) {
-          handleAngleRef.current = dialZeroRef.current + sweepAccumRef.current;
-          targetHandleAngleRef.current = handleAngleRef.current;
-        }
+      // The dial's radius shows the APPLIED rotation: at a hard end (the tenon's
+      // lean clamps) it stops with the handle rather than running on under the
+      // pointer. When the parent turns the whole gizmo by this rotation, the ring
+      // already carries it, so the radius rides the raw pointer angle instead.
+      // The sweep group sits in the dial's frame (already rotated by dialZero), so
+      // feed it the sweep RELATIVE to the grab — handleAngle − dialZero — not the
+      // absolute handle angle.
+      if (sweepGroupRef.current) {
+        sweepGroupRef.current.rotation.z = frameCarriesRotation
+          ? resolved.angleRad
+          : handleAngleRef.current - dialZeroRef.current;
       }
 
       // Readout shows the sweep since the grab, which is what the dial measures.
@@ -474,27 +608,59 @@ export function GizmoRotation({
       }));
     };
 
-    const handleGlobalPointerUp = () => {
-      // Remove pointermove synchronously so it can't re-fire active:true before React re-renders
-      window.removeEventListener('pointermove', handleGlobalPointerMove);
-      isDraggingRef.current = false;
-      setIsDragging(false);
-      setDialZero(null);
-      setHeldMark(null);
-      heldRef.current = null;
-      pressPointRef.current = null;
-      onDragEndRef.current();
-      window.dispatchEvent(new CustomEvent('dragonfruit:snap-angle', { detail: { active: false } }));
+    // The gesture ends here, so there is nothing left of it to swallow. Only the
+    // button that started it can end it: a second button coming up while it is
+    // held is not this gesture finishing.
+    const handleGlobalPointerUp = (e: PointerEvent) => {
+      if (!isOurPointer(e) || e.button !== dragButtonRef.current) return;
+      pointerIsDownRef.current = false;
+      finishDrag('commit');
+    };
+    // The system took the pointer away (a touch turning into a scroll, a window
+    // losing it). The gesture never finished, so it does not get to keep what it
+    // had applied so far — and no release is coming.
+    const handleGlobalPointerCancel = (e: PointerEvent) => {
+      if (!isOurPointer(e)) return;
+      pointerIsDownRef.current = false;
+      finishDrag('cancel');
+    };
+    // A menu opening over the viewport mid-gesture is the gesture being taken
+    // away from the ring; the press that would open it belongs to this drag.
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    // A second button pressed while the ring is held reaches nothing: without
+    // this the right button started an orbit under the running rotation, so the
+    // camera moved while the dial was still measuring against it.
+    const handleForeignPointerDown = (e: PointerEvent) => {
+      if (isOurPointer(e) && e.button === dragButtonRef.current) return;
+      e.stopPropagation();
     };
 
     window.addEventListener('pointermove', handleGlobalPointerMove);
     window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerCancel);
+    window.addEventListener('contextmenu', handleContextMenu, true);
+    window.addEventListener('pointerdown', handleForeignPointerDown, true);
 
-    return () => {
+    // finishDrag detaches through this rather than waiting for the effect's own
+    // cleanup: pointermove has to stop firing synchronously, or it re-announces
+    // the readout as active before React has re-rendered.
+    const detach = () => {
       window.removeEventListener('pointermove', handleGlobalPointerMove);
       window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerCancel);
+      window.removeEventListener('contextmenu', handleContextMenu, true);
+      window.removeEventListener('pointerdown', handleForeignPointerDown, true);
     };
-  }, [isDragging, camera, gl, axis, axisVisualFlip]);
+    detachDragListenersRef.current = detach;
+
+    return () => {
+      detach();
+      if (detachDragListenersRef.current === detach) detachDragListenersRef.current = null;
+    };
+  }, [isDragging, camera, gl, axis, axisVisualFlip, frameCarriesRotation, finishDrag]);
 
   // Use GPU picking hover state OR prop-based hover (fallback)
   const effectiveHovered = !suppressHover && (isPickingHovered || isHovered);

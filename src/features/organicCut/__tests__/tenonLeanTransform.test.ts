@@ -92,7 +92,7 @@ test('leaning rotates the tenon rigidly: the cap lands at depth·cos(lean)', () 
 
 test('the lean tips the tenon in one plane, and its sign picks the side', () => {
   const frame = frameAtOrigin();
-  // Azimuth π/2 leans along the frame's v, so u must stay clear either way.
+  // The lean tips along the frame's v, so u must stay clear either way.
   const plus = moved(tenonLeanMatrix(frame, 0.5, 0)!, 0, 0, -frame.depth);
   const minus = moved(tenonLeanMatrix(frame, -0.5, 0)!, 0, 0, -frame.depth);
   assert.ok(Math.abs(plus.x) < 1e-3, `stays in the lean plane, got u = ${plus.x}`);
@@ -112,3 +112,4 @@ test('the clamp honours the room the part leaves, then the hard ceiling', () => 
   // Nor can one that reports an absurd one.
   assert.equal(clampTenonTilt(3.0, frameAtOrigin({ maxTiltRad: 99 })), TENON_MAX_TILT_RAD);
 });
+

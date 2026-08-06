@@ -92,8 +92,7 @@ export type LoopTenonSettings = Pick<
 /**
  * The cut-wide settings — everything that shapes the cut but isn't per-loop and
  * isn't per-tenon. Undo covers these too: changing the kerf is as much an edit as
- * moving a waypoint. The pure-UI `showPreview` is left out on purpose — hiding
- * the preview is not an edit to undo.
+ * moving a waypoint.
  */
 export type CutSettings = Pick<
   OrganicCutPanelState,
@@ -324,7 +323,7 @@ export interface OrganicCutSession {
   /** Index of the loop currently being edited (gets markers + membrane preview). */
   activeLoopIndex: number;
   /** Per-loop summaries for the panel's loop chips (index + waypoint count). */
-  loopSummaries: { index: number; pointCount: number; hasTenon: boolean }[];
+  loopSummaries: { index: number; pointCount: number }[];
   /** Make loop `index` the active (editable) one. Out-of-range is a no-op. */
   selectLoop: (index: number) => void;
   /**
@@ -354,7 +353,6 @@ export interface OrganicCutSession {
   cutLeakPoints: [number, number, number][];
   // Derived gates for the panel
   canApply: boolean;
-  pointCount: number;
   /**
    * Surface-following loop polyline (flat xyz, model-local space) computed by the
    * Rust geodesic engine, for rendering the seam ON the surface instead of as
@@ -440,8 +438,8 @@ const DEFAULT_PANEL_STATE: OrganicCutPanelState = {
   // (drag the tip) leans it, the roll ring spins it. All measured in radians.
   tenonTiltRad: 0,
   tenonRollRad: 0,
-  // Cut-plan preview on by default — the user sees where the cut lands; the
-  // toggle hides it for an unobscured view of the model while drawing.
+  // Cut-plan preview on by default — the user sees where the cut lands; the eye
+  // button in the panel header hides it for an unobscured view while drawing.
   showPreview: true,
 };
 
@@ -456,6 +454,14 @@ const MIN_CONTOUR_POINTS = 3;
  * rebuild twice in a row.
  */
 const PREVIEW_SETTLE_MS = 80;
+
+/**
+ * How many settled cut-preview results to keep around. The preview is a heavy Rust
+ * round-trip, so revisiting the same loop/model (switch A → B → back to A) should
+ * hit this cache instead of rebuilding. Bounded because the inputs (loop, geodesic,
+ * settings) can vary a lot across a session; old entries just fall out FIFO.
+ */
+const PREVIEW_CACHE_MAX = 8;
 
 /** Default per-loop tenon settings — the panel defaults, used for fresh loops. */
 const DEFAULT_LOOP_TENON: LoopTenonSettings = extractTenon(DEFAULT_PANEL_STATE);
@@ -504,6 +510,31 @@ export function useOrganicCutSession({
   // Placement frame of the previewed tenon (anchor/axis/u/v/tip), for the aim+roll
   // gizmo. Null when no tenon is previewed.
   const [tenonFrame, setTenonFrame] = React.useState<TenonPreviewFrame | null>(null);
+
+  // Settled-preview cache: a bounded map from the exact preview inputs to the
+  // result, so re-entering an identical state (switch models/loops and come back)
+  // skips the Rust round-trip. The geometry is stored per entry and identity-checked
+  // on hit, because the same model id can carry a fresh geometry object after a cut.
+  const previewCacheRef = React.useRef<
+    Map<string, { geometry: THREE.BufferGeometry; result: MembranePreviewResult }>
+  >(new Map());
+  const applyPreviewResult = React.useCallback((result: MembranePreviewResult) => {
+    setMembranePreview(result.membrane);
+    setTenonPreview(result.tenonPreview);
+    setTenonTriangleCount(result.tenonTriangleCount);
+    setTenonKind(result.tenonKind);
+    setTenonFits(result.tenonFits);
+    setTenonDetail(result.tenonDetail);
+    setTenonFrame(result.tenonFrame);
+  }, [setMembranePreview, setTenonPreview, setTenonTriangleCount, setTenonKind, setTenonFits, setTenonDetail, setTenonFrame]);
+  const setPreviewCache = React.useCallback((key: string, geometry: THREE.BufferGeometry, result: MembranePreviewResult) => {
+    const cache = previewCacheRef.current;
+    if (!cache.has(key) && cache.size >= PREVIEW_CACHE_MAX) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(key, { geometry, result });
+  }, []);
   /**
    * The tenon offset the CURRENT preview soup was built with. Dragging the base
    * handle is deliberately not round-tripped through Rust (same reason as the aim
@@ -1073,7 +1104,7 @@ export function useOrganicCutSession({
     // no membrane of its own (the seam is drawn locally), so it only has something
     // to ask for when a tenon is wanted.
     const request = ((): (() => Promise<MembranePreviewResult>) | null => {
-      if (!toolActive || isDraggingPoint || !activeGeometry || !activeGeometryKey) return null;
+      if (!toolActive || isDraggingPoint || isDraggingTenon || !activeGeometry || !activeGeometryKey) return null;
       const ps = panelState;
       if (cutMode === 'contour') {
         if (loop.length < MIN_CONTOUR_POINTS) return null;
@@ -1120,8 +1151,9 @@ export function useOrganicCutSession({
 
     if (!request) {
       // Don't clear just because a drag started — keep the last preview up for the
-      // duration of the drag; only clear when there is truly nothing to show.
-      if (!isDraggingPoint) clearCutPreview();
+      // duration of the drag (the lean is client-side, so no rebuild is needed until
+      // the tenon/waypoint drag ends); only clear when there is truly nothing to show.
+      if (!isDraggingPoint && !isDraggingTenon) clearCutPreview();
       return;
     }
     // Both mode branches above already required these; naming them keeps the async
@@ -1130,6 +1162,35 @@ export function useOrganicCutSession({
     const geometryKey = activeGeometryKey;
     if (!geometry || !geometryKey) return;
 
+    // Revisits are free: the same inputs produce the same preview, so check the
+    // bounded cache before spending another Rust round-trip on it. The key captures
+    // exactly what `request()` consumes (the contour branch reads the dense geodesic,
+    // the flat branch only the loop + plane).
+    const cacheKey = JSON.stringify([
+      geometryKey,
+      cutMode,
+      loop,
+      cutMode === 'contour' ? (geodesicPolyline ? Array.from(geodesicPolyline) : null) : undefined,
+      panelState.membraneSmoothing,
+      panelState.density,
+      panelState.jointClearanceMm,
+      panelState.generateTenon,
+      panelState.tenonWidthMm,
+      panelState.tenonDepthMm,
+      panelState.tenonShape,
+      panelState.tenonFilletMm,
+      panelState.tenonToleranceMm,
+      panelState.tenonSwapSides,
+      panelState.tenonAnchor,
+      panelState.tenonTiltRad,
+      panelState.tenonRollRad,
+    ]);
+    const cached = previewCacheRef.current.get(cacheKey);
+    if (cached && cached.geometry === geometry) {
+      applyPreviewResult(cached.result);
+      return;
+    }
+
     let cancelled = false;
     const timer = setTimeout(() => {
       void (async () => {
@@ -1137,15 +1198,10 @@ export function useOrganicCutSession({
         if (cancelled || !staged) return;
         const result = await request();
         if (cancelled) return;
+        setPreviewCache(cacheKey, geometry, result);
         // Every field, every time: the flat cut reports a null membrane, which is
         // what clears the contour's membrane when the user switches modes.
-        setMembranePreview(result.membrane);
-        setTenonPreview(result.tenonPreview);
-        setTenonTriangleCount(result.tenonTriangleCount);
-        setTenonKind(result.tenonKind);
-        setTenonFits(result.tenonFits);
-        setTenonDetail(result.tenonDetail);
-        setTenonFrame(result.tenonFrame);
+        applyPreviewResult(result);
       })();
     }, PREVIEW_SETTLE_MS);
     return () => {
@@ -1170,6 +1226,7 @@ export function useOrganicCutSession({
     cutMode,
     geodesicPolyline,
     isDraggingPoint,
+    isDraggingTenon,
     clearCutPreview,
     panelState.membraneSmoothing,
     panelState.density,
@@ -1562,7 +1619,7 @@ export function useOrganicCutSession({
   const activeLoopReady = pointCount >= MIN_CONTOUR_POINTS;
   const loopCount = loops.length;
   const loopSummaries = React.useMemo(
-    () => loops.map((l, i) => ({ index: i, pointCount: l.points.length, hasTenon: l.tenon.generateTenon })),
+    () => loops.map((l, i) => ({ index: i, pointCount: l.points.length })),
     [loops],
   );
   // How many loops are real loops (would actually cut), for the Cut gate.
@@ -1605,7 +1662,6 @@ export function useOrganicCutSession({
     cutError,
     cutLeakPoints,
     canApply,
-    pointCount,
     geodesicPolyline,
     planeCurves,
     membranePreview,

@@ -5,6 +5,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { MessageDescriptor } from '@lingui/core';
 import { detectIsIOS } from '@/hooks/usePlatform';
+import { useUiScale } from '@/hooks/useUiScale';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import { AlertTriangle, CheckCircle2, ChevronDown, Download, Gamepad2, LayoutGrid, Loader2, Maximize2, Minimize2, Play, Plus, Printer, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
@@ -81,6 +82,7 @@ import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import { RtspRelayCanvasPlayer } from '@/components/monitoring/RtspRelayCanvasPlayer';
 import { IconButton, Toast, ToastViewport } from '@/components/atoms';
 import { EditorContextMenu, ORGANIC_CUT_ADD_WAYPOINT_ITEM, ORGANIC_CUT_DELETE_WAYPOINT_ITEM, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
+import { MouseTooltip } from '@/components/ui/MouseTooltip';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { DiagnosticsModal } from '@/components/modals/DiagnosticsModal';
@@ -558,6 +560,8 @@ export default function Home() {
   // for the lifetime of a scene renderer. Otherwise Ctrl+Z depends on which
   // render branch happens to be mounted.
   useSupportHistoryHandlers();
+  // Applies the user's saved UI scale via native webview zoom (no-op in browser).
+  useUiScale();
   // 1. Scene & Geometry (Multi-Model)
   const scene = useSceneCollectionManager();
 
@@ -9370,8 +9374,10 @@ export default function Home() {
     [],
   );
   const organicCutMarkerHoverRef = React.useRef<number | null>(null);
+  const [organicCutMarkerHover, setOrganicCutMarkerHover] = React.useState<number | null>(null);
   const handleOrganicCutMarkerHoverChange = React.useCallback((index: number | null) => {
     organicCutMarkerHoverRef.current = index;
+    setOrganicCutMarkerHover(index);
   }, []);
   // One menu for both actions; `kind` selects which item/handler.
   const [organicCutLineMenu, setOrganicCutLineMenu] = React.useState<
@@ -9696,7 +9702,7 @@ export default function Home() {
         })}
       </FloatingPanelStack>
 
-      <div className="absolute inset-0 top-14 z-0 flex">
+      <div className="absolute inset-0 z-0 flex">
         <div
           id="scene-root"
           className={`relative h-full ${scene.mode === 'printing' ? 'w-1/2 border-r' : 'w-full'}`}
@@ -9719,6 +9725,7 @@ export default function Home() {
               onDropMeshFiles={handleDroppedPrepareFiles}
               recentOpenedFiles={scene.recentOpenedFiles}
               onReopenRecentFile={handleReopenRecentFile}
+              onClearRecentFiles={scene.clearRecentOpenedFiles}
               isLoading={showEmptyStateLoading}
               loadingLabel={emptyStateLoadingLabel}
               loadingDetail={emptyStateLoadingDetail}
@@ -10024,14 +10031,11 @@ export default function Home() {
             )}
           </SceneCanvas>
 
-          {/* Transform Toolbar */}
+          {/* Snap readout + rotation hint stay scene-anchored; the Transform
+              Toolbar itself renders at the shell level so it can float above
+              the topbar's frosted-glass blur. */}
           {scene.models.length > 0 && scene.mode === 'prepare' && (
             <>
-              <TransformToolbar
-                mode={transformMgr.transformMode}
-                onModeChange={setTransformModeWithMirrorFinalize}
-                onModeHover={handleTransformToolbarHover}
-              />
               <SnapAngleReadout />
               <RotationHintTooltip />
             </>
@@ -10040,7 +10044,7 @@ export default function Home() {
           {scene.models.length > 0 && (
             <div
               ref={modelStatsCardContainerRef}
-              className="absolute bottom-3 left-3 z-30 pointer-events-auto"
+              className="absolute bottom-1 left-1 z-30 pointer-events-auto"
             >
               <ModelStatsCard
                 model={scene.models.find((m) => m.id === displayActiveModelId) || null}
@@ -10120,6 +10124,14 @@ export default function Home() {
         )}
       </div>
 
+      {scene.models.length > 0 && scene.mode === 'prepare' && (
+        <TransformToolbar
+          mode={transformMgr.transformMode}
+          onModeChange={setTransformModeWithMirrorFinalize}
+          onModeHover={handleTransformToolbarHover}
+        />
+      )}
+
       <EditorContextMenu
         position={editorContextMenuPos}
         onAction={handleEditorMenuAction}
@@ -10140,6 +10152,22 @@ export default function Home() {
             : [ORGANIC_CUT_ADD_WAYPOINT_ITEM]
         }
       />
+
+      {/* Waypoint hover hint: the double-click-to-lock behaviour, shown only while
+          the pointer is over a waypoint in the 3D view. */}
+      <MouseTooltip visible={organicCutToolActive && organicCutMarkerHover !== null}>
+        <div
+          className="rounded px-2 py-1.5 text-[11px] leading-tight font-medium shadow-lg whitespace-nowrap"
+          style={{
+            background: 'rgba(24, 24, 24, 0.98)',
+            color: 'var(--text-strong, #e0e0e0)',
+            border: '1px solid var(--accent, #baf72e)',
+            boxShadow: '0 6px 32px 0 rgba(0,0,0,0.44), 0 1.5px 8px 0 rgba(0,0,0,0.28)',
+          }}
+        >
+          Double-click to lock this waypoint from snapping.
+        </div>
+      </MouseTooltip>
 
       <DiagnosticsModals
         clearHistory={clearHistory}

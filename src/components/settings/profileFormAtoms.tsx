@@ -140,7 +140,7 @@ function FieldHelpTooltip({ label, help }: { label: string; help: string }) {
             <CircleHelp className="h-2.5 w-2.5" />
             <MouseTooltip visible={hovered} offset={{ x: 0, y: 28 }} className="left-1/2 -translate-x-1/2">
                 <div
-                    className="rounded px-2 py-1.5 text-[11px] leading-tight font-medium shadow-lg"
+                    className="rounded px-2 py-1.5 text-xs leading-tight font-medium shadow-lg"
                     style={{
                         background: 'rgba(24, 24, 24, 0.98)',
                         color: 'var(--text-strong, #e0e0e0)',
@@ -859,7 +859,7 @@ function AaCard({
 }
 
 function AaInlineHelp({ children }: { children: React.ReactNode }) {
-    return <p className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>{children}</p>;
+    return <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>{children}</p>;
 }
 
 export function MaterialAntiAliasingSection({ draft, onChange, lockActivationToggles = false, printerDitherBitDepth = null }: MaterialAntiAliasingSectionProps) {
@@ -2028,7 +2028,7 @@ export function PluginLocalMaterialSettingsSections({
                 <div className="flex items-center justify-between gap-2">
                     <div>
                         <div className="ui-meta font-semibold uppercase tracking-wide">{adapter.displayName ?? 'Format-specific settings'}</div>
-                        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                             Applied to {normalizedOutput} metadata for export.
                         </div>
                     </div>
@@ -2044,7 +2044,7 @@ export function PluginLocalMaterialSettingsSections({
                                 key={tab.id}
                                 type="button"
                                 onClick={() => setActiveTabId(tab.id)}
-                                className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-[11px] rounded-md"
+                                className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-xs rounded-md"
                                 style={active
                                     ? { color: 'var(--accent-secondary)', borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 42%)' }
                                     : { color: 'var(--text-muted)' }}
@@ -2309,7 +2309,7 @@ export function ReplacementMaterialEditorShell({
                             key={tab.id}
                             type="button"
                             onClick={() => onActiveTabChange(tab.id)}
-                            className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-[11px] rounded-md"
+                            className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-xs rounded-md"
                             style={active
                                 ? (activeTabStyle ?? { color: 'var(--accent-secondary)', borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 42%)' })
                                 : { color: 'var(--text-muted)' }}

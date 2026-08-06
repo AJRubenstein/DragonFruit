@@ -19,7 +19,9 @@ import {
   resolveDialAngle,
   ringGroupEuler,
   shortestAngleDelta,
+  stepDialSweep,
   wrapAngle,
+  type DialSweep,
   type DialMarkTier,
   type DialSnapTarget,
 } from "../rotationDialModel";
@@ -595,5 +597,126 @@ describe("emittedDeltaForSweep", () => {
         );
       }
     }
+  });
+});
+
+describe("stepDialSweep", () => {
+  const START: DialSweep = { sweepRad: 0, targetRad: 0 };
+
+  /**
+   * A consumer with a hard end, standing in for the tenon's lean: it takes the
+   * rotation until the ceiling and refuses the rest, reporting back what it took.
+   * `ceilingRad` is in dial units; deltas arrive emitted, so they come back
+   * through the same mapping.
+   */
+  const clampedConsumer = (ceilingRad: number, axisVisualFlip = 1) => {
+    const state = { sweepRad: 0 };
+    return {
+      state,
+      emit: (asked: number) => {
+        const wanted = -asked / axisVisualFlip;
+        const landed = Math.max(-ceilingRad, Math.min(ceilingRad, state.sweepRad + wanted));
+        const took = landed - state.sweepRad;
+        state.sweepRad = landed;
+        return emittedDeltaForSweep(took, axisVisualFlip);
+      },
+    };
+  };
+
+  /** Walk the pointer through a list of angles, returning the dial's final state. */
+  const drag = (
+    angles: number[],
+    emit: (asked: number) => number | void,
+    options: { axisVisualFlip?: number; frameCarriesRotation?: boolean } = {},
+  ) =>
+    angles.reduce<DialSweep>(
+      (state, cursorAngleRad) =>
+        stepDialSweep(state, {
+          cursorAngleRad,
+          axisVisualFlip: options.axisVisualFlip ?? 1,
+          frameCarriesRotation: options.frameCarriesRotation,
+          emit,
+        }),
+      START,
+    );
+
+  it("follows the pointer exactly when the consumer takes everything", () => {
+    const asked: number[] = [];
+    const end = drag([deg(10), deg(25), deg(5), deg(-40)], (a) => {
+      asked.push(a);
+    });
+    // A consumer that returns nothing took it all.
+    assert.ok(closeTo(end.sweepRad, deg(-40)));
+    assert.ok(closeTo(end.targetRad, deg(-40)));
+    assert.ok(closeTo(asked[0], deg(-10)));
+    assert.ok(closeTo(asked[1], deg(-15)));
+  });
+
+  it("stops at the consumer's hard end instead of running on under the pointer", () => {
+    const consumer = clampedConsumer(deg(45));
+    const end = drag([deg(20), deg(45), deg(60.57)], consumer.emit);
+    assert.ok(closeTo(end.sweepRad, deg(45)));
+    assert.ok(closeTo(consumer.state.sweepRad, deg(45)));
+  });
+
+  it("holds at the end until the pointer comes back to it, then reads the mark again", () => {
+    const consumer = clampedConsumer(deg(45));
+    // Out past the ceiling, then back down through it. This is the regression:
+    // measuring the return against the pointer's 60.57 instead of the 45 the
+    // object holds left the dial reading 15 with the pointer on the 45 mark.
+    const overshot = drag([deg(45), deg(60.57)], consumer.emit);
+    assert.ok(closeTo(overshot.sweepRad, deg(45)));
+
+    const easedBack = stepDialSweep(overshot, {
+      cursorAngleRad: deg(50),
+      axisVisualFlip: 1,
+      emit: consumer.emit,
+    });
+    // Still beyond the ceiling: nothing moves.
+    assert.ok(closeTo(easedBack.sweepRad, deg(45)));
+
+    const onTheMark = stepDialSweep(easedBack, {
+      cursorAngleRad: deg(45),
+      axisVisualFlip: 1,
+      emit: consumer.emit,
+    });
+    assert.ok(closeTo(onTheMark.sweepRad, deg(45)));
+
+    const backInside = stepDialSweep(onTheMark, {
+      cursorAngleRad: deg(30),
+      axisVisualFlip: 1,
+      emit: consumer.emit,
+    });
+    assert.ok(closeTo(backInside.sweepRad, deg(30)));
+    assert.ok(closeTo(consumer.state.sweepRad, deg(30)));
+  });
+
+  it("absorbs the overshoot the same way for an inverted display axis", () => {
+    const consumer = clampedConsumer(deg(45), -1);
+    const end = drag([deg(60), deg(45), deg(30)], consumer.emit, { axisVisualFlip: -1 });
+    assert.ok(closeTo(end.sweepRad, deg(30)));
+    assert.ok(closeTo(consumer.state.sweepRad, deg(30)));
+  });
+
+  it("measures against the pointer when the frame carries the rotation", () => {
+    // The ring turns by whatever was applied, so the next reading already comes
+    // back short: folding the sweep into the target too would count it twice.
+    const consumer = clampedConsumer(deg(45));
+    const end = drag([deg(45), deg(60)], consumer.emit, { frameCarriesRotation: true });
+    assert.ok(closeTo(end.targetRad, deg(60)));
+    assert.ok(closeTo(end.sweepRad, deg(45)));
+  });
+
+  it("does nothing at all when the pointer has not moved", () => {
+    let calls = 0;
+    const state = stepDialSweep(START, {
+      cursorAngleRad: 0,
+      axisVisualFlip: 1,
+      emit: () => {
+        calls += 1;
+      },
+    });
+    assert.equal(calls, 0);
+    assert.equal(state, START);
   });
 });
