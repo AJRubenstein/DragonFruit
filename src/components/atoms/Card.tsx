@@ -27,7 +27,7 @@ export function CardHeader({ className, left, right, hideDivider = false }: Card
     <div
       data-panel-drag-handle="true"
       className={cn(
-        'relative px-2.5 py-2 flex items-center',
+        'relative px-2.5 py-2.5 flex items-center',
         className,
       )}
     >
