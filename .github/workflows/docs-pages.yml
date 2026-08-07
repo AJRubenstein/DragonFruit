@@ -53,6 +53,7 @@ jobs:
         run: node scripts/materialize-doc-placeholder-assets.mjs
 
       - name: Configure GitHub Pages
+        id: pages
         uses: actions/configure-pages@v6
 
       - name: Build docs site
@@ -60,33 +61,52 @@ jobs:
 
       - name: Inject updater JSONs into site
         uses: actions/github-script@v9
+        env:
+          PAGES_BASE_URL: ${{ steps.pages.outputs.base_url }}
         with:
           script: |
             const fs = require('fs');
 
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
             async function fetchUpdaterJson(isPrerelease) {
-              const releases = await github.rest.repos.listReleases({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                per_page: 20,
-              });
-
-              const release = releases.data.find(r => r.prerelease === isPrerelease);
-              if (!release) {
-                core.warning(`No ${isPrerelease ? 'pre' : 'stable'} release found — skipping`);
-                return null;
-              }
-
               const assetName = isPrerelease ? 'latest-dev.json' : 'latest.json';
-              const asset = release.assets.find(a => a.name === assetName);
-              if (!asset) {
-                core.warning(`${assetName} not found in release ${release.tag_name} — skipping`);
-                return null;
+
+              // Nightly prereleases never carry an updater feed and are deleted
+              // and recreated on every build, so they always sort to the top of
+              // the prerelease list and would shadow the real dev release.
+              const candidates = releases.filter(r =>
+                !r.draft &&
+                r.prerelease === isPrerelease &&
+                !r.tag_name.startsWith('nightly_'));
+
+              const release = candidates.find(r => r.assets.some(a => a.name === assetName));
+              if (release) {
+                const asset = release.assets.find(a => a.name === assetName);
+                const response = await fetch(asset.browser_download_url);
+                if (!response.ok) {
+                  throw new Error(`Failed to fetch ${assetName} from ${release.tag_name}: ${response.status}`);
+                }
+                core.info(`Using ${assetName} from release ${release.tag_name}`);
+                return { name: assetName, content: await response.text() };
               }
 
-              const response = await fetch(asset.browser_download_url);
-              if (!response.ok) throw new Error(`Failed to fetch ${assetName}: ${response.status}`);
-              return { name: assetName, content: await response.text() };
+              // Deploying replaces the whole site, so a missing feed here means
+              // wiping the one Pages is currently serving. Keep that copy.
+              const liveUrl = `${process.env.PAGES_BASE_URL.replace(/\/$/, '')}/${assetName}`;
+              const live = await fetch(liveUrl);
+              if (live.ok) {
+                core.warning(`No release carries ${assetName} — preserving the copy already on Pages.`);
+                return { name: assetName, content: await live.text() };
+              }
+
+              throw new Error(
+                `No release carries ${assetName} and ${liveUrl} returned ${live.status} — ` +
+                `refusing to deploy a site without it.`);
             }
 
             const results = await Promise.all([
@@ -95,7 +115,6 @@ jobs:
             ]);
 
             for (const result of results) {
-              if (!result) continue;
               fs.writeFileSync(`site/${result.name}`, result.content);
               core.info(`Wrote site/${result.name}`);
             }
