@@ -2,6 +2,7 @@ import React from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import type { CameraProjectionMode } from '@/components/settings/cameraProjectionPreferences';
+import { DEFAULT_FOV_DEG } from '@/components/settings/cameraFovPreferences';
 
 export function CameraProjectionController({ mode, perspectiveFov = 50 }: { mode: CameraProjectionMode; perspectiveFov?: number }) {
   const { camera, controls, set, size } = useThree();
@@ -60,11 +61,13 @@ export function CameraProjectionController({ mode, perspectiveFov = 50 }: { mode
       let preserveZoom = 1;
       if (camera instanceof THREE.PerspectiveCamera) {
         const distance = Math.max(0.001, camera.position.distanceTo(target));
-        const fov = THREE.MathUtils.degToRad(camera.fov);
+        // Ortho framing uses a fixed reference FOV (the default) rather than the
+        // user's perspective FOV setting, so the FOV slider never changes the
+        // orthographic zoom (FOV is a perspective-only property).
+        const fov = THREE.MathUtils.degToRad(DEFAULT_FOV_DEG);
         worldHalfH = Math.max(1, Math.tan(fov * 0.5) * distance);
-        // When switching from perspective to ortho, calculate the ortho zoom
-        // to preserve the same view scale (visual size of objects on screen).
-        // This prevents zoom-out/zoom-in when transitioning between projections.
+        // At the reference FOV, preserveZoom is worldHalfH / the same frustum, i.e.
+        // 1 — ortho zoom stays at the natural 1:1 projection of the reference frustum.
         preserveZoom = Math.max(0.0001, worldHalfH / Math.max(1, Math.tan(fov * 0.5) * distance));
       } else {
         // Already ortho (type mismatch shouldn't happen, but be safe)
