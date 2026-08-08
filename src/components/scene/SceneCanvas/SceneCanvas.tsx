@@ -25,7 +25,7 @@ import { ScreenSpaceGizmo as UnifiedGizmo } from '@/components/gizmo';
 import { warmTransformGizmoGeometryCache } from '@/components/gizmo/gizmoGeometryCache';
 import { cancelActiveGizmoDrag } from '@/components/gizmo/gizmoDragRegistry';
 import { PickingDebugOverlay } from '@/components/picking';
-import { SelectionProvider, SelectionManager, SelectionOutlineRenderer, SelectionSpotlight } from '@/components/selection';
+import { SelectionProvider, SelectionManager, SelectionSpotlight } from '@/components/selection';
 import type { SelectionHighlightMode } from '@/components/selection';
 import type { IslandMarker } from '@/volumeAnalysis/IslandScan/islandOverlayLogic';
 import type { ScanResults } from '@/volumeAnalysis/islandVolume/steps/voxelization/ScanOrchestrator';
@@ -4116,9 +4116,6 @@ export function SceneCanvas({
   const modifyToolActive = mode === 'prepare' && transformMode === 'transform';
   const navigationLodActive = isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive || isGizmoDragging || isGizmoRetargeting || isLayerScrubbing;
   const suppressSupportProxyPointerInteraction = supportCreationModeActive || suppressSupportSelectionAndHover || modifyToolActive;
-  const isSpotlightHighlightActive =
-    effectiveModelSelected
-    && selectionHighlightMode === 'spotlight';
 
   const updateOrbitControlSpeeds = React.useCallback(() => {
     const controls = orbitControlsRef.current;
@@ -6636,17 +6633,6 @@ export function SceneCanvas({
             </React.Suspense>
           </SelectionProvider>
         </PickingProviderWrapper>
-        {/* Selection outline - renders when model is selected */}
-        <SelectionOutlineRenderer
-          meshRef={activeActualMeshRef as React.RefObject<THREE.Mesh>}
-          enabled={!thumbnailCaptureActive && effectiveModelSelected && selectionHighlightMode === 'fresnel'}
-          color="#82ccff"
-          intensity={0.38}
-          power={3.5}
-          rimMin={0.22}
-          rimMax={0.5}
-          alphaCut={0.03}
-        />
         {/* Selection spotlight - illuminates only the selected model via layers */}
         <SelectionSpotlight
           meshRef={activeActualMeshRef as React.RefObject<THREE.Mesh>}
@@ -6750,7 +6736,6 @@ export function SceneCanvas({
         {mode === 'support' && supportPathfindingDebugState.enabled && (
           <SupportPathfindingDebugOverlay snapshot={supportPathfindingDebugState.snapshot} />
         )}
-        {/* Selection outline effect - rendered by SelectionOutlineRenderer inside SelectionProvider */}
         {children}
       </Canvas>
 

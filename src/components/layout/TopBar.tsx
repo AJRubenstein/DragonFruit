@@ -8,7 +8,6 @@ import { SettingsModal, type SettingsTabKey } from '@/components/settings/Settin
 import { ProfileSettingsModal } from '@/components/settings/ProfileSettingsModal';
 import type { SupportMode } from '@/supports/types';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
-import type { SelectionHighlightMode } from '@/components/selection';
 import { Button } from '@/components/atoms';
 import { Activity, AlertTriangle, Anchor, ChevronDown, FolderInput, FolderOpen, Lock, Maximize2, Minimize2, Power, Printer, Save, SaveAll, Square, Upload, X } from 'lucide-react';
 import {
@@ -66,8 +65,6 @@ interface TopBarProps {
   onHoverTintStrengthChange: (value: number) => void;
   selectedTintStrength: number;
   onSelectedTintStrengthChange: (value: number) => void;
-  selectionHighlightMode: SelectionHighlightMode;
-  onSelectionHighlightModeChange: (mode: SelectionHighlightMode) => void;
   debugPrimitivesPanelVisible: boolean;
   onDebugPrimitivesPanelVisibleChange: (value: boolean) => void;
   view3dSettings: View3DSettings;
@@ -133,8 +130,6 @@ export function TopBar({
   onHoverTintStrengthChange,
   selectedTintStrength,
   onSelectedTintStrengthChange,
-  selectionHighlightMode,
-  onSelectionHighlightModeChange,
   debugPrimitivesPanelVisible,
   onDebugPrimitivesPanelVisibleChange,
   view3dSettings,
@@ -1331,8 +1326,6 @@ export function TopBar({
         onHoverTintStrengthChange={onHoverTintStrengthChange}
         selectedTintStrength={selectedTintStrength}
         onSelectedTintStrengthChange={onSelectedTintStrengthChange}
-        selectionHighlightMode={selectionHighlightMode}
-        onSelectionHighlightModeChange={onSelectionHighlightModeChange}
         debugPrimitivesPanelVisible={debugPrimitivesPanelVisible}
         onDebugPrimitivesPanelVisibleChange={onDebugPrimitivesPanelVisibleChange}
         view3dSettings={view3dSettings}

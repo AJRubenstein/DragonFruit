@@ -110,7 +110,6 @@ import {
   type UvToolsSettings,
 } from '@/components/settings/uvToolsPreferences';
 import { outputFormatUsesPngLayers } from '@/features/slicing/formats/registry';
-import type { SelectionHighlightMode } from '@/components/selection';
 import {
   clearSavedFloatingLayout,
   isDebugPrimitivesPanelVisibleEnabled,
@@ -194,8 +193,6 @@ type SettingsModalProps = {
   onHoverTintStrengthChange: (value: number) => void;
   selectedTintStrength: number;
   onSelectedTintStrengthChange: (value: number) => void;
-  selectionHighlightMode: SelectionHighlightMode;
-  onSelectionHighlightModeChange: (mode: SelectionHighlightMode) => void;
   debugPrimitivesPanelVisible: boolean;
   onDebugPrimitivesPanelVisibleChange: (value: boolean) => void;
   view3dSettings: View3DSettings;
@@ -245,8 +242,6 @@ export function SettingsModal({
   onHoverTintStrengthChange,
   selectedTintStrength,
   onSelectedTintStrengthChange,
-  selectionHighlightMode,
-  onSelectionHighlightModeChange,
   debugPrimitivesPanelVisible,
   onDebugPrimitivesPanelVisibleChange,
   view3dSettings,
@@ -288,7 +283,6 @@ export function SettingsModal({
   const [draftHeatmapColors, setDraftHeatmapColors] = useState(heatmapColors);
   const [draftHoverTintStrength, setDraftHoverTintStrength] = useState(hoverTintStrength);
   const [draftSelectedTintStrength, setDraftSelectedTintStrength] = useState(selectedTintStrength);
-  const [draftSelectionHighlightMode, setDraftSelectionHighlightMode] = useState(selectionHighlightMode);
   const [draftSelectionColor, setDraftSelectionColor] = useState(selectionColor);
   const [draftHoverColor, setDraftHoverColor] = useState(hoverColor);
   const [draftCameraProjectionMode, setDraftCameraProjectionMode] = useState<CameraProjectionMode>(() => getSavedCameraProjectionSettings().mode);
@@ -387,9 +381,8 @@ export function SettingsModal({
     setDraftHeatmapColors(heatmapColors);
     setDraftHoverTintStrength(hoverTintStrength);
     setDraftSelectedTintStrength(selectedTintStrength);
-    setDraftSelectionHighlightMode(selectionHighlightMode);
-    setDraftSelectionColor(savedThemeProfile.colors.accent);
-    setDraftHoverColor(savedThemeProfile.colors.accentHover);
+    setDraftSelectionColor(selectionColor);
+    setDraftHoverColor(hoverColor);
     setDraftCameraProjectionMode(getSavedCameraProjectionSettings().mode);
     setDraftCameraFeelPreset(getSavedCameraFeelSettings().preset);
     setDraftCameraTrackpadPrimaryAction(getSavedCameraTrackpadSettings().primaryAction);
@@ -428,7 +421,8 @@ export function SettingsModal({
     heatmapColors,
     hoverTintStrength,
     selectedTintStrength,
-    selectionHighlightMode,
+    selectionColor,
+    hoverColor,
     debugPrimitivesPanelVisible,
     view3dSettings,
     slicingThumbnailRenderSettings,
@@ -726,7 +720,6 @@ export function SettingsModal({
     setDraftHeatmapContrast(1.0);
     setDraftHoverTintStrength(DEFAULT_HOVER_TINT_STRENGTH);
     setDraftSelectedTintStrength(DEFAULT_SELECTED_TINT_STRENGTH);
-    setDraftSelectionHighlightMode('tint');
     setDraftSelectionColor(DEFAULT_THEME_CUSTOM_COLORS.accent);
     setDraftHoverColor(DEFAULT_THEME_CUSTOM_COLORS.accentHover);
     setDraftCameraProjectionMode(DEFAULT_CAMERA_PROJECTION_SETTINGS.mode);
@@ -810,9 +803,8 @@ export function SettingsModal({
     draftHeatmapColors.forEach((color, i) => onHeatmapColorChange(i, color));
     onHoverTintStrengthChange(draftHoverTintStrength);
     onSelectedTintStrengthChange(draftSelectedTintStrength);
-    onSelectionHighlightModeChange(draftSelectionHighlightMode);
-    onSelectionColorChange(draftThemeColors.accent);
-    onHoverColorChange(draftThemeColors.accentHover);
+    onSelectionColorChange(draftSelectionColor);
+    onHoverColorChange(draftHoverColor);
 
     applyThemePreference(draftThemePreference);
     applyThemeCustomColors(draftThemeColors);
@@ -865,7 +857,8 @@ export function SettingsModal({
     draftMeshColor,
     draftHoverTintStrength,
     draftSelectedTintStrength,
-    draftSelectionHighlightMode,
+    draftSelectionColor,
+    draftHoverColor,
     draftCameraScope,
     draftHigherContrastModelEdges,
     draftThemePreset,
@@ -905,7 +898,6 @@ export function SettingsModal({
     onMeshColorChange,
     onHoverTintStrengthChange,
     onSelectedTintStrengthChange,
-    onSelectionHighlightModeChange,
     onSelectionColorChange,
     onHoverColorChange,
     onDebugPrimitivesPanelVisibleChange,
@@ -1434,8 +1426,6 @@ export function SettingsModal({
                   onSelectionColorChange={setDraftSelectionColor}
                   hoverColor={draftHoverColor}
                   onHoverColorChange={setDraftHoverColor}
-                  selectionHighlightMode={draftSelectionHighlightMode}
-                  onSelectionHighlightModeChange={setDraftSelectionHighlightMode}
                   hoverTintStrength={draftHoverTintStrength}
                   onHoverTintStrengthChange={setDraftHoverTintStrength}
                   selectedTintStrength={draftSelectedTintStrength}

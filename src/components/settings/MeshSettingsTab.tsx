@@ -6,10 +6,9 @@ import { MATCAP_OPTIONS, MESH_SHADER_OPTIONS, type MatcapVariant, type MeshShade
 import { HexColorPicker } from 'react-colorful';
 import { MeshShaderPreviewSlot } from '@/components/settings/meshSettings/MeshShaderPreviewSlot';
 import { MeshShaderPreviewCanvas } from '@/components/settings/meshSettings/MeshShaderPreviewCanvas';
-import { SelectionHighlightDropdown } from '@/components/controls/SelectionHighlightDropdown';
-import type { SelectionHighlightMode } from '@/components/selection';
 import { Input, Select } from '@/components/atoms';
-import { Layers, MousePointer2, SlidersHorizontal } from 'lucide-react';
+import { Layers, MousePointer2, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { DEFAULT_HOVER_COLOR, DEFAULT_SELECTION_COLOR } from '@/features/scene/useSceneCollectionManager';
 
 type PreviewModelConfig = {
   label: string;
@@ -49,8 +48,6 @@ type MeshSettingsTabProps = {
   onSelectionColorChange: (color: string) => void;
   hoverColor: string;
   onHoverColorChange: (color: string) => void;
-  selectionHighlightMode: SelectionHighlightMode;
-  onSelectionHighlightModeChange: (mode: SelectionHighlightMode) => void;
   hoverTintStrength: number;
   onHoverTintStrengthChange: (value: number) => void;
   selectedTintStrength: number;
@@ -86,8 +83,6 @@ export function MeshSettingsTab({
   onSelectionColorChange,
   hoverColor,
   onHoverColorChange,
-  selectionHighlightMode,
-  onSelectionHighlightModeChange,
   hoverTintStrength,
   onHoverTintStrengthChange,
   selectedTintStrength,
@@ -99,12 +94,6 @@ export function MeshSettingsTab({
   const [activeColorIndex, setActiveColorIndex] = React.useState<number>(0);
   const [isPreviewHovered, setIsPreviewHovered] = React.useState(false);
   const [isPreviewSelected, setIsPreviewSelected] = React.useState(false);
-
-  React.useEffect(() => {
-    if (selectionHighlightMode === 'none') {
-      setIsPreviewSelected(false);
-    }
-  }, [selectionHighlightMode]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -130,10 +119,8 @@ export function MeshSettingsTab({
   const totalLight = ambientIntensity + directionalIntensity;
   const lightness = Math.min(4, Math.max(0, totalLight));
   const contrast = totalLight > 0 ? directionalIntensity / totalLight : 0.5;
-  const previewSelectedTintColor = selectionHighlightMode === 'spotlight' ? '#ffffff' : selectionColor;
-  const previewSelectedTintStrength = selectionHighlightMode === 'spotlight'
-    ? Math.max(selectedTintStrength, 0.94)
-    : selectedTintStrength;
+  const previewSelectedTintColor = selectionColor;
+  const previewSelectedTintStrength = selectedTintStrength;
 
   const showLighting = shaderType === 'soft_clay' || shaderType === 'toon' || shaderType === 'xray';
   const showRoughness = shaderType === 'soft_clay' || shaderType === 'xray';
@@ -162,6 +149,11 @@ export function MeshSettingsTab({
     onAmbientIntensityChange((1 - next) * t);
     onDirectionalIntensityChange(next * t);
   }, [lightness, onAmbientIntensityChange, onDirectionalIntensityChange]);
+
+  const handleResetColors = React.useCallback(() => {
+    onSelectionColorChange(DEFAULT_SELECTION_COLOR);
+    onHoverColorChange(DEFAULT_HOVER_COLOR);
+  }, [onSelectionColorChange, onHoverColorChange]);
 
   return (
     <div className="space-y-3">
@@ -500,24 +492,21 @@ export function MeshSettingsTab({
           </div>
         </div>
 
-        <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-stretch">
+        <div className="grid grid-cols-2 gap-2">
           <div className="min-w-0 space-y-2">
             <div className="rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Highlight Mode</div>
-                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Visual style applied to selected and hovered meshes.</div>
-                </div>
-                <SelectionHighlightDropdown
-                  value={selectionHighlightMode}
-                  onChange={onSelectionHighlightModeChange}
-                  fullWidth={false}
-                />
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Colors</div>
+                <button
+                  type="button"
+                  onClick={handleResetColors}
+                  title="Reset colors to default"
+                  aria-label="Reset selection and hover colors to default"
+                  className="ui-button ui-button-secondary !h-6 !w-6 !p-0 inline-flex shrink-0 items-center justify-center rounded-md"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                </button>
               </div>
-            </div>
-
-            <div className="rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-              <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-strong)' }}>Colors</div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="space-y-1">
                   <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Selection Color</div>
@@ -593,71 +582,69 @@ export function MeshSettingsTab({
             </div>
           </div>
 
-          <div className="flex min-h-[16rem] lg:min-h-full lg:justify-self-end">
-            <div
-              className="rounded-lg border p-2 w-full lg:w-[20rem] shrink-0 flex flex-col gap-2"
-              style={{
-                borderColor: 'var(--border-subtle)',
-                background: 'var(--surface-0)',
-              }}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Selection Preview</span>
-                <span
-                  className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors"
-                  style={
-                    isPreviewSelected && selectionHighlightMode !== 'none'
-                      ? {
-                          color: 'color-mix(in srgb, var(--accent), var(--text-strong) 25%)',
-                          borderColor: 'color-mix(in srgb, var(--accent), white 12%)',
-                          background: 'color-mix(in srgb, var(--accent), transparent 22%)',
-                        }
-                      : isPreviewHovered
-                        ? {
-                            color: 'var(--text-strong)',
-                            borderColor: 'var(--border-strong)',
-                            background: 'var(--surface-2)',
-                          }
-                        : {
-                            color: 'var(--text-muted)',
-                            borderColor: 'var(--border-subtle)',
-                            background: 'transparent',
-                          }
-                  }
-                >
-                  {isPreviewSelected && selectionHighlightMode !== 'none'
-                    ? 'selected'
+          <div
+            className="rounded-lg border p-2 min-h-[16rem] flex flex-col gap-2"
+            style={{
+              borderColor: 'var(--border-subtle)',
+              background: 'var(--surface-0)',
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Selection Preview</span>
+              <span
+                className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors"
+                style={
+                  isPreviewSelected
+                    ? {
+                        color: 'var(--text-strong)',
+                        borderColor: 'color-mix(in srgb, var(--accent), white 12%)',
+                        background: 'color-mix(in srgb, var(--accent), transparent 22%)',
+                      }
                     : isPreviewHovered
-                      ? 'hovered'
-                      : 'idle'}
-                </span>
-              </div>
-              <div className="flex-1 min-h-0">
-                <MeshShaderPreviewCanvas
-                  shaderType="soft_clay"
-                  matcapVariant="neutral"
-                  flatUseVertexColors={true}
-                  useVertexColors={false}
-                  toonSteps={5}
-                  meshColor="#a3a3a3"
-                  materialRoughness={0.65}
-                  previewModel="knot"
-                  ambientIntensity={0.6}
-                  directionalIntensity={0.8}
-                  xrayOpacity={0.25}
-                  heatmapBlend={0}
-                  heatmapContrast={1}
-                  hoverTintColor={hoverColor}
-                  selectedTintColor={previewSelectedTintColor}
-                  hoverTintStrength={hoverTintStrength}
-                  selectedTintStrength={previewSelectedTintStrength}
-                  isSelected={selectionHighlightMode !== 'none' && isPreviewSelected}
-                  isHovered={isPreviewHovered}
-                  onHoverChange={setIsPreviewHovered}
-                  onPress={() => setIsPreviewSelected((prev) => !prev)}
-                  onCanvasPress={() => setIsPreviewSelected(false)}
-                />
-              </div>
+                      ? {
+                          color: 'var(--text-strong)',
+                          borderColor: 'var(--border-strong)',
+                          background: 'var(--surface-2)',
+                        }
+                      : {
+                          color: 'var(--text-muted)',
+                          borderColor: 'var(--border-subtle)',
+                          background: 'transparent',
+                        }
+                }
+              >
+                {isPreviewSelected
+                  ? 'selected'
+                  : isPreviewHovered
+                    ? 'hovered'
+                    : 'idle'}
+              </span>
+            </div>
+            <div className="flex-1 min-h-0">
+              <MeshShaderPreviewCanvas
+                shaderType="soft_clay"
+                matcapVariant="neutral"
+                flatUseVertexColors={true}
+                useVertexColors={false}
+                toonSteps={5}
+                meshColor="#a3a3a3"
+                materialRoughness={0.65}
+                previewModel="knot"
+                ambientIntensity={0.6}
+                directionalIntensity={0.8}
+                xrayOpacity={0.25}
+                heatmapBlend={0}
+                heatmapContrast={1}
+                hoverTintColor={hoverColor}
+                selectedTintColor={previewSelectedTintColor}
+                hoverTintStrength={hoverTintStrength}
+                selectedTintStrength={previewSelectedTintStrength}
+                isSelected={isPreviewSelected}
+                isHovered={isPreviewHovered}
+                onHoverChange={setIsPreviewHovered}
+                onPress={() => setIsPreviewSelected((prev) => !prev)}
+                onCanvasPress={() => setIsPreviewSelected(false)}
+              />
             </div>
           </div>
         </div>

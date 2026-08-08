@@ -7,7 +7,6 @@ import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeO
 import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, readSidecarFileBytes, resolveOriginalRefSidecar, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
-import type { SelectionHighlightMode } from '@/components/selection';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { createTypedHistory } from '@/history/typedHistory';
 import type { ModelTransform } from '@/hooks/useModelTransform';
@@ -63,7 +62,6 @@ type PersistedMeshAppearance = {
   hoverColor: string;
   hoverTintStrength: number;
   selectedTintStrength: number;
-  selectionHighlightMode: SelectionHighlightMode;
 };
 
 const MESH_APPEARANCE_STORAGE_KEY = 'mesh-appearance-settings';
@@ -81,11 +79,10 @@ const DEFAULT_SHADER_TYPE: MeshShaderType = 'soft_clay';
 const DEFAULT_MATCAP_VARIANT: MatcapVariant = 'neutral';
 const DEFAULT_FLAT_USE_VERTEX_COLORS = true;
 const DEFAULT_TOON_STEPS = 5;
-const DEFAULT_SELECTION_COLOR = '#ec2a77';
-const DEFAULT_HOVER_COLOR = '#ec2a77';
-const DEFAULT_HOVER_TINT_STRENGTH = 0.5;
-const DEFAULT_SELECTED_TINT_STRENGTH = 0.75;
-const DEFAULT_SELECTION_HIGHLIGHT_MODE: SelectionHighlightMode = 'tint';
+export const DEFAULT_SELECTION_COLOR = '#ec2a77';
+export const DEFAULT_HOVER_COLOR = '#ec2a77';
+export const DEFAULT_HOVER_TINT_STRENGTH = 0.5;
+export const DEFAULT_SELECTED_TINT_STRENGTH = 0.75;
 const RECENT_OPENED_FILES_STORAGE_KEY = 'app-recent-opened-files';
 const RECENT_OPENED_FILES_LIMIT = 10;
 const RECENT_FILES_DB_NAME = 'dragonfruit-recent-files';
@@ -425,9 +422,6 @@ function readMeshAppearanceFromLocalStorage(): PersistedMeshAppearance | null {
       hoverColor: clampHexColor(parsed.hoverColor, DEFAULT_HOVER_COLOR),
       hoverTintStrength: clampNumber(parsed.hoverTintStrength, 0, 1, DEFAULT_HOVER_TINT_STRENGTH),
       selectedTintStrength: clampNumber(parsed.selectedTintStrength, 0, 1, DEFAULT_SELECTED_TINT_STRENGTH),
-      selectionHighlightMode: parsed.selectionHighlightMode === 'spotlight' || parsed.selectionHighlightMode === 'fresnel' || parsed.selectionHighlightMode === 'none' || parsed.selectionHighlightMode === 'tint' || parsed.selectionHighlightMode === 'mesh_tint'
-        ? parsed.selectionHighlightMode
-        : DEFAULT_SELECTION_HIGHLIGHT_MODE,
     };
   } catch {
     return null;
@@ -1552,7 +1546,6 @@ export function useSceneCollectionManager() {
       setHoverColor(persistedAppearance.hoverColor ?? DEFAULT_HOVER_COLOR);
       setHoverTintStrength(persistedAppearance.hoverTintStrength);
       setSelectedTintStrength(persistedAppearance.selectedTintStrength);
-      setSelectionHighlightMode(persistedAppearance.selectionHighlightMode ?? DEFAULT_SELECTION_HIGHLIGHT_MODE);
     }
 
     setRecentOpenedFiles(readRecentOpenedFilesFromLocalStorage());
@@ -1567,7 +1560,6 @@ export function useSceneCollectionManager() {
 
   // Global application mode
   const [mode, setMode] = useState<SupportMode>('prepare');
-  const [selectionHighlightMode, setSelectionHighlightMode] = useState<SelectionHighlightMode>(DEFAULT_SELECTION_HIGHLIGHT_MODE);
 
   const defaultImportCenterXY = useMemo(() => {
     if (view3dSettings.originMode === 'front_left') {
@@ -5036,9 +5028,8 @@ export function useSceneCollectionManager() {
       hoverColor: prev?.hoverColor ?? hoverColor,
       hoverTintStrength: prev?.hoverTintStrength ?? hoverTintStrength,
       selectedTintStrength: prev?.selectedTintStrength ?? selectedTintStrength,
-      selectionHighlightMode: prev?.selectionHighlightMode ?? selectionHighlightMode,
     });
-  }, [activeModelId, ambientIntensity, directionalIntensity, flatUseVertexColors, heatmapBlend, heatmapColors, heatmapContrast, hoverColor, hoverTintStrength, materialRoughness, matcapVariant, selectedTintStrength, selectionColor, selectionHighlightMode, shaderType, toonSteps, wireframeThicknessPx, xrayOpacity]);
+  }, [activeModelId, ambientIntensity, directionalIntensity, flatUseVertexColors, heatmapBlend, heatmapColors, heatmapContrast, hoverColor, hoverTintStrength, materialRoughness, matcapVariant, selectedTintStrength, selectionColor, shaderType, toonSteps, wireframeThicknessPx, xrayOpacity]);
 
   const setMeshVisible = useCallback((visible: boolean) => {
     if (activeModelId) {
@@ -5312,8 +5303,6 @@ export function useSceneCollectionManager() {
     setSelectedTintStrength,
     mode,
     setMode,
-    selectionHighlightMode,
-    setSelectionHighlightMode,
     heatmapColors,
     setHeatmapColors,
     onHeatmapColorChange: useCallback((index: number, color: string) => {
