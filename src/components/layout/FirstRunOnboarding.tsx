@@ -3,7 +3,7 @@
 import React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import { Check, ChevronLeft, Moon, Printer, Sun, Wrench } from 'lucide-react';
+import { Check, ChevronLeft, Moon, Sun } from 'lucide-react';
 import {
   applyThemeCustomColors,
   applyThemePreference,
@@ -14,14 +14,11 @@ import {
   THEME_STORAGE_KEY,
 } from '@/components/settings/themeCustomizations';
 import type { ThemePreference } from '@/components/settings/themeCustomizations';
+import { OnboardingPrinterLibrary } from '@/components/layout/OnboardingPrinterLibrary';
 
 type FirstRunOnboardingProps = {
-  /** Whether a printer profile is currently active (drives the printer step auto-advance). */
+  /** Whether a printer profile is currently active (backstop for the printer step auto-advance). */
   hasActivePrinter: boolean;
-  /** Opens the existing printer-library modal (deep-linked to the preset picker). */
-  onAddPrinter: () => void;
-  /** Dismisses the empty-state "Get Started" nudge for this session (no printer). */
-  onUseWithoutPrinter: () => void;
   /** The wizard was completed; the caller persists the one-time flag. */
   onCompleted: () => void;
 };
@@ -44,8 +41,6 @@ function applyBuiltInThemePreference(preference: ThemePreference): void {
 
 export function FirstRunOnboarding({
   hasActivePrinter,
-  onAddPrinter,
-  onUseWithoutPrinter,
   onCompleted,
 }: FirstRunOnboardingProps) {
   const { _ } = useLingui();
@@ -55,12 +50,17 @@ export function FirstRunOnboarding({
 
   const stepIndex = STEPS.indexOf(step);
 
+  // The printer step embeds the library full-screen, so the modal grows to its
+  // full size there and eases back down on the wrap-up step.
+  const isLibraryExpanded = step === 'printer';
+
   const goToStep = React.useCallback((next: WizardStep, dir: 'forward' | 'backward') => {
     setDirection(dir);
     setStep(next);
   }, []);
 
-  // Once a printer is added during the printer step, move on to the wrap-up.
+  // Backstop: if a printer becomes active while on the printer step (e.g. added
+  // via Settings from the app bar), move on to the wrap-up.
   React.useEffect(() => {
     if (step === 'printer' && hasActivePrinter) {
       goToStep('done', 'forward');
@@ -71,11 +71,6 @@ export function FirstRunOnboarding({
     applyBuiltInThemePreference(preference);
     setThemePreference(preference);
   }, []);
-
-  const handleUseWithoutPrinter = React.useCallback(() => {
-    onUseWithoutPrinter();
-    onCompleted();
-  }, [onUseWithoutPrinter, onCompleted]);
 
   return (
     <div
@@ -111,27 +106,41 @@ export function FirstRunOnboarding({
 
       <div className="relative flex h-full w-full items-center justify-center p-6">
         <div
-          className="ui-onboarding-panel flex max-h-[92vh] min-h-[440px] w-full max-w-3xl flex-col overflow-hidden rounded-xl border shadow-2xl"
-          style={{ background: 'var(--surface-0)', borderColor: 'var(--border-strong)' }}
+          className="ui-onboarding-panel flex w-full flex-col overflow-hidden rounded-xl border shadow-2xl"
+          style={{
+            background: 'var(--surface-0)',
+            borderColor: 'var(--border-strong)',
+            // Fixed height (not min-height) so the browser animates the stretch:
+            // a content-driven min-height can't transition. The library clips its
+            // own content while the box grows, so the reveal reads as a stretch.
+            height: isLibraryExpanded ? 'min(86vh, 980px)' : 'min(440px, 86vh)',
+            maxWidth: isLibraryExpanded ? 'min(1040px, 94vw)' : '768px',
+            transition: 'height 320ms ease-out, max-width 320ms ease-out',
+          }}
         >
-          {/* Step progress */}
-          <div className="shrink-0 px-6 pt-5">
-            <div className="flex items-center gap-1.5" aria-hidden="true">
-              {STEPS.map((s, i) => (
-                <span
-                  key={s}
-                  className="h-1 flex-1 rounded-full transition-colors duration-300"
-                  style={{
-                    background: i <= stepIndex
-                      ? 'var(--accent)'
-                      : 'color-mix(in srgb, var(--surface-2), var(--border-subtle) 45%)',
-                  }}
-                />
-              ))}
+          {/* Step progress (hidden while the printer library fills the modal) */}
+          {!isLibraryExpanded && (
+            <div className="shrink-0 px-6 pt-5">
+              <div className="flex items-center gap-1.5" aria-hidden="true">
+                {STEPS.map((s, i) => (
+                  <span
+                    key={s}
+                    className="h-1 flex-1 rounded-full transition-colors duration-300"
+                    style={{
+                      background: i <= stepIndex
+                        ? 'var(--accent)'
+                        : 'color-mix(in srgb, var(--surface-2), var(--border-subtle) 45%)',
+                    }}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div key={step} className={`ui-onboarding-step-${direction} flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6`}>
+          <div
+            key={step}
+            className={`ui-onboarding-step-${direction} flex min-h-0 flex-1 flex-col ${isLibraryExpanded ? 'overflow-hidden p-0' : 'overflow-y-auto px-6 py-6'}`}
+          >
             {step === 'welcome' && (
               <div className="flex flex-1 flex-col">
                 <div className="flex flex-1 flex-col items-center justify-start text-center">
@@ -257,67 +266,10 @@ export function FirstRunOnboarding({
             )}
 
             {step === 'printer' && (
-              <div className="flex flex-1 flex-col">
-                <div className="my-auto w-full">
-                  <h2 className="text-lg font-bold" style={{ color: 'var(--text-strong)' }}>
-                    {_(msg`Set up your printer`)}
-                  </h2>
-                  <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-                    {_(msg`Add the printer you'll be printing on so DragonFruit knows your build volume and defaults. You can add more later.`)}
-                  </p>
-
-                  <div className="mt-5 grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={onAddPrinter}
-                      className="rounded-md border px-3 py-3 text-left transition-colors"
-                      style={{
-                        background: 'var(--primary-button-surface)',
-                        borderColor: 'color-mix(in srgb, var(--primary-button-surface), white 16%)',
-                        color: 'var(--accent-contrast)',
-                      }}
-                    >
-                      <div className="mb-1 inline-flex items-center gap-1.5 text-sm font-semibold">
-                        <Printer className="h-4 w-4" />
-                        <span>{_(msg`Add a printer`)}</span>
-                      </div>
-                      <div className="text-[11px]" style={{ color: 'color-mix(in srgb, var(--accent-contrast), black 18%)' }}>
-                        {_(msg`Browse the library and pick your model.`)}
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleUseWithoutPrinter}
-                      className="rounded-md border px-3 py-3 text-left transition-colors"
-                      style={{
-                        background: 'var(--secondary-button-surface)',
-                        borderColor: 'color-mix(in srgb, var(--secondary-button-surface), white 16%)',
-                        color: 'var(--accent-secondary-contrast)',
-                      }}
-                    >
-                      <div className="mb-1 inline-flex items-center gap-1.5 text-sm font-semibold">
-                        <Wrench className="h-4 w-4" />
-                        <span>{_(msg`Use without a printer`)}</span>
-                      </div>
-                      <div className="text-[11px]" style={{ color: 'color-mix(in srgb, var(--accent-secondary-contrast), black 20%)' }}>
-                        {_(msg`Start preparing now. Add a printer anytime from the top bar.`)}
-                      </div>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-6">
-                  <button
-                    type="button"
-                    onClick={() => goToStep('theme', 'backward')}
-                    className="ui-button ui-button-secondary !h-9 !px-3.5 text-sm"
-                  >
-                    <ChevronLeft className="mr-1 h-4 w-4" />
-                    {_(msg`Back`)}
-                  </button>
-                </div>
-              </div>
+              <OnboardingPrinterLibrary
+                onAdded={() => goToStep('done', 'forward')}
+                onBack={() => goToStep('theme', 'backward')}
+              />
             )}
 
             {step === 'done' && (
@@ -335,37 +287,15 @@ export function FirstRunOnboarding({
                   {_(msg`You're all set`)}
                 </h2>
                 <p className="mt-2 max-w-md text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                  {hasActivePrinter
-                    ? _(msg`Your printer is ready. Drag a model in to start preparing your first print.`)
-                    : _(msg`You can add or switch printers anytime from the top bar.`)}
+                  {_(msg`Your printer is ready. Drag a model in to start preparing your first print.`)}
                 </p>
-
-                {hasActivePrinter ? (
-                  <button
-                    type="button"
-                    onClick={onCompleted}
-                    className="ui-button ui-button-primary mt-8 !h-9 !px-6 text-sm"
-                  >
-                    {_(msg`Start using DragonFruit`)}
-                  </button>
-                ) : (
-                  <div className="mt-8 grid w-full max-w-sm gap-2.5">
-                    <button
-                      type="button"
-                      onClick={handleUseWithoutPrinter}
-                      className="ui-button ui-button-primary !h-9 !px-5 text-sm"
-                    >
-                      {_(msg`Start without a printer`)}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onAddPrinter}
-                      className="ui-button ui-button-secondary !h-9 !px-5 text-sm"
-                    >
-                      {_(msg`Add a printer`)}
-                    </button>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={onCompleted}
+                  className="ui-button ui-button-primary mt-8 !h-9 !px-6 text-sm"
+                >
+                  {_(msg`Start using DragonFruit`)}
+                </button>
               </div>
             )}
           </div>

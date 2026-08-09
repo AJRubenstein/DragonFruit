@@ -10585,8 +10585,6 @@ export default function Home() {
       {onboardingMounted && !onboardingCompleted && (
         <FirstRunOnboarding
           hasActivePrinter={hasActivePrinterProfile}
-          onAddPrinter={handleAddPrinterFromOnboarding}
-          onUseWithoutPrinter={handleUseWithoutPrinter}
           onCompleted={handleOnboardingCompleted}
         />
       )}

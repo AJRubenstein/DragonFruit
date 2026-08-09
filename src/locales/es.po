@@ -82,14 +82,9 @@ msgid "~{mins} min"
 msgstr "~{mins} min"
 
 #. Badge next to the currently-selected printer in the fleet list (adjective describing the device, e.g. "the active one").
-#: src/components/layout/TopBar.tsx:989
+#: src/components/layout/TopBar.tsx:997
 msgid "Active"
 msgstr "Activo"
-
-#: src/components/layout/FirstRunOnboarding.tsx:278
-#: src/components/layout/FirstRunOnboarding.tsx:361
-msgid "Add a printer"
-msgstr ""
 
 #: src/app/page.tsx:2146
 msgid "Add joint"
@@ -100,12 +95,9 @@ msgid "Add or switch printer anytime from the top bar."
 msgstr "Añade o cambia de impresora en cualquier momento desde la barra superior."
 
 #: src/components/layout/EmptySceneState.tsx:525
+#: src/components/layout/OnboardingPrinterLibrary.tsx:334
 msgid "Add printer"
 msgstr "Añadir impresora"
-
-#: src/components/layout/FirstRunOnboarding.tsx:262
-msgid "Add the printer you'll be printing on so DragonFruit knows your build volume and defaults. You can add more later."
-msgstr ""
 
 #: src/components/ui/EditorContextMenu.tsx:55
 msgid "Add waypoint here"
@@ -124,7 +116,7 @@ msgstr "Área Σ {totalAreaLabel} • Mín {minAreaLabel} • Máx {maxAreaLabel
 msgid "Arrange"
 msgstr "Distribuir"
 
-#: src/components/layout/TopBar.tsx:602
+#: src/components/layout/TopBar.tsx:606
 msgid "Arrange model and transforms"
 msgstr "Colocar el modelo y aplicar transformaciones"
 
@@ -138,18 +130,22 @@ msgid "Auto-repaired — {0} errors"
 msgstr "Reparado automáticamente — {0} errores"
 
 #. View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/layout/FirstRunOnboarding.tsx:242
-#: src/components/layout/FirstRunOnboarding.tsx:313
+#: src/components/layout/FirstRunOnboarding.tsx:255
+#: src/components/layout/OnboardingPrinterLibrary.tsx:200
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1407
 msgid "Back"
 msgstr "Detrás"
+
+#: src/components/layout/OnboardingPrinterLibrary.tsx:201
+msgid "Back to setup step"
+msgstr ""
 
 #. View cube face (seen from below), rendered uppercase inside a small 3D cube. Keep it as short as possible.
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1411
 msgid "Bottom"
 msgstr "Abajo"
 
-#: src/components/layout/FirstRunOnboarding.tsx:228
+#: src/components/layout/FirstRunOnboarding.tsx:241
 msgid "Bright surfaces for well-lit workspaces."
 msgstr ""
 
@@ -157,11 +153,7 @@ msgstr ""
 msgid "Bring in a mesh or scene to start preparing, analyzing, supporting, and exporting your print."
 msgstr "Carga una malla o escena para empezar a preparar, analizar, añadir soportes y exportar tu impresión."
 
-#: src/components/layout/FirstRunOnboarding.tsx:281
-msgid "Browse the library and pick your model."
-msgstr ""
-
-#: src/components/layout/TopBar.tsx:610
+#: src/components/layout/TopBar.tsx:614
 msgid "Build and tune supports"
 msgstr "Crear y ajustar soportes"
 
@@ -174,15 +166,23 @@ msgstr "en caché"
 msgid "Camera view mode: {currentLabel}"
 msgstr "Modo de vista de la cámara: {currentLabel}"
 
-#: src/components/layout/TopBar.tsx:1241
+#: src/components/layout/TopBar.tsx:1255
 msgid "Changing print settings invalidates the current sliced file."
 msgstr "Cambiar los ajustes de impresión invalida el archivo laminado actual."
 
-#: src/components/layout/TopBar.tsx:1222
+#: src/components/layout/TopBar.tsx:1236
 msgid "Changing printer profile requires re-slice"
 msgstr "Cambiar el perfil de impresora requiere volver a laminar"
 
-#: src/components/layout/FirstRunOnboarding.tsx:166
+#: src/components/layout/OnboardingPrinterLibrary.tsx:314
+msgid "Choose a printer to add"
+msgstr ""
+
+#: src/components/layout/OnboardingPrinterLibrary.tsx:219
+msgid "Choose an official printer preset to add."
+msgstr ""
+
+#: src/components/layout/FirstRunOnboarding.tsx:179
 msgid "Choose your theme"
 msgstr ""
 
@@ -202,12 +202,12 @@ msgstr "Pulsa la tarjeta para ver los detalles del modelo"
 msgid "Click to copy build info"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:1202
+#: src/components/layout/TopBar.tsx:1216
 #: src/features/updater/GlobalUpdateIndicator.tsx:191
 msgid "Close"
 msgstr "Cerrar"
 
-#: src/components/layout/TopBar.tsx:894
+#: src/components/layout/TopBar.tsx:902
 msgid "Close program"
 msgstr "Cerrar programa"
 
@@ -219,11 +219,11 @@ msgstr "Cerrar las notas de la versión"
 msgid "Close update dialog"
 msgstr "Cerrar el diálogo de actualización"
 
-#: src/components/layout/TopBar.tsx:1254
+#: src/components/layout/TopBar.tsx:1268
 msgid "Close warning"
 msgstr "Cerrar aviso"
 
-#: src/components/layout/TopBar.tsx:1203
+#: src/components/layout/TopBar.tsx:1217
 msgid "Close window"
 msgstr "Cerrar ventana"
 
@@ -240,8 +240,8 @@ msgid "Compact list"
 msgstr ""
 
 #. Confirms proceeding with the profile change despite the re-slice warning above (paired with "Keep current profiles", which cancels).
-#: src/components/layout/FirstRunOnboarding.tsx:249
-#: src/components/layout/TopBar.tsx:1287
+#: src/components/layout/FirstRunOnboarding.tsx:262
+#: src/components/layout/TopBar.tsx:1301
 msgid "Continue"
 msgstr "Continuar"
 
@@ -281,7 +281,7 @@ msgstr "Mostrando nada con la máxima fidelidad."
 msgid "Cut"
 msgstr "Cortar"
 
-#: src/components/layout/FirstRunOnboarding.tsx:193
+#: src/components/layout/FirstRunOnboarding.tsx:206
 msgid "Dark"
 msgstr ""
 
@@ -329,20 +329,20 @@ msgid "Drag a file in. The platform is judging you."
 msgstr "Arrastra un archivo. La plataforma te está juzgando."
 
 #. "DragonFruit" is the product name and should stay untranslated/unchanged.
-#: src/components/layout/TopBar.tsx:771
+#: src/components/layout/TopBar.tsx:779
 msgid "DragonFruit app menu"
 msgstr "Menú de aplicación de DragonFruit"
 
-#: src/components/layout/FirstRunOnboarding.tsx:84
+#: src/components/layout/FirstRunOnboarding.tsx:85
 msgid "DragonFruit first-time setup"
 msgstr ""
 
-#: src/components/layout/FirstRunOnboarding.tsx:143
+#: src/components/layout/FirstRunOnboarding.tsx:157
 msgid "DragonFruit is a free, open-source slicer for resin 3D printing. Load a model, orient it, add supports, and slice it for your printer."
 msgstr ""
 
 #. "DragonFruit" is the product name and should stay untranslated/unchanged; only "menu" needs translating.
-#: src/components/layout/TopBar.tsx:660
+#: src/components/layout/TopBar.tsx:664
 msgid "DragonFruit menu"
 msgstr "Menú de DragonFruit"
 
@@ -391,7 +391,7 @@ msgstr "Desplegar la tarjeta"
 msgid "Expand folder"
 msgstr "Desplegar la carpeta"
 
-#: src/components/layout/TopBar.tsx:615
+#: src/components/layout/TopBar.tsx:619
 msgid "Export"
 msgstr "Exportar"
 
@@ -399,17 +399,17 @@ msgstr "Exportar"
 msgid "Exposure:"
 msgstr "Exposición:"
 
-#: src/components/layout/TopBar.tsx:618
+#: src/components/layout/TopBar.tsx:622
 msgid "Finalize and export output"
 msgstr "Finalizar y exportar el resultado"
 
 #. "Fleet" means the set of physical network printers discovered under the current printer profile, not a literal fleet of vehicles.
-#: src/components/layout/TopBar.tsx:927
+#: src/components/layout/TopBar.tsx:935
 msgid "Fleet quick switch"
 msgstr "Cambio rápido de flota"
 
 #. Section heading above the list of network printers belonging to the current profile. "Units" = individual printers.
-#: src/components/layout/TopBar.tsx:930
+#: src/components/layout/TopBar.tsx:938
 msgid "Fleet units"
 msgstr "Unidades de la flota"
 
@@ -417,7 +417,7 @@ msgstr "Unidades de la flota"
 msgid "Flip model stats card"
 msgstr "Girar la tarjeta de datos del modelo"
 
-#: src/components/layout/FirstRunOnboarding.tsx:146
+#: src/components/layout/FirstRunOnboarding.tsx:160
 msgid "From the community, for the community. Free to use, open to contribute, and shaped by the people who print with it."
 msgstr ""
 
@@ -430,7 +430,7 @@ msgstr "Frente"
 msgid "Get started"
 msgstr "Empezar"
 
-#: src/components/layout/FirstRunOnboarding.tsx:156
+#: src/components/layout/FirstRunOnboarding.tsx:169
 msgid "Get Started"
 msgstr ""
 
@@ -466,7 +466,7 @@ msgstr "Volveré. (Suelta un archivo y de verdad que volveré.)"
 msgid "Idle hands do no slicing."
 msgstr "Las manos ociosas no laminan."
 
-#: src/components/layout/TopBar.tsx:856
+#: src/components/layout/TopBar.tsx:864
 msgid "Import mesh…"
 msgstr "Importar malla…"
 
@@ -474,7 +474,7 @@ msgstr "Importar malla…"
 msgid "Import Scene"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:878
+#: src/components/layout/TopBar.tsx:886
 msgid "Import scene…"
 msgstr "Importar escena…"
 
@@ -487,26 +487,26 @@ msgstr "Importando tu archivo…"
 msgid "In space, no one can hear you slice."
 msgstr "En el espacio, nadie puede oírte laminar."
 
-#: src/components/layout/TopBar.tsx:626
+#: src/components/layout/TopBar.tsx:630
 msgid "Inspect sliced layers before printing"
 msgstr "Inspeccionar las capas laminadas antes de imprimir"
 
-#: src/components/layout/TopBar.tsx:1115
-#: src/components/layout/TopBar.tsx:1116
+#: src/components/layout/TopBar.tsx:1127
+#: src/components/layout/TopBar.tsx:1128
 msgid "Interior view: Off"
 msgstr "Vista interior: desactivada"
 
 #. Tooltip for a toggle button showing its current state, format "Feature name: state". Interior view is a 3D viewport mode that renders the inside of a hollowed model.
-#: src/components/layout/TopBar.tsx:1115
-#: src/components/layout/TopBar.tsx:1116
+#: src/components/layout/TopBar.tsx:1127
+#: src/components/layout/TopBar.tsx:1128
 msgid "Interior view: On"
 msgstr "Vista interior: activada"
 
-#: src/components/layout/TopBar.tsx:1116
+#: src/components/layout/TopBar.tsx:1128
 msgid "Interior view: Unavailable"
 msgstr "Vista interior: no disponible"
 
-#: src/components/layout/TopBar.tsx:1115
+#: src/components/layout/TopBar.tsx:1127
 msgid "Interior view: Unavailable (apply hollowing first)"
 msgstr "Vista interior: no disponible (aplica primero el vaciado)"
 
@@ -520,7 +520,7 @@ msgid "Join the Open Resin Alliance!"
 msgstr "¡Únete a la Open Resin Alliance!"
 
 #. Cancels the pending profile change and closes this warning dialog, leaving the previous profile selection untouched. Paired with the "Continue" button below.
-#: src/components/layout/TopBar.tsx:1272
+#: src/components/layout/TopBar.tsx:1286
 msgid "Keep current profiles"
 msgstr "Mantener perfiles actuales"
 
@@ -554,11 +554,11 @@ msgstr "Capas:"
 msgid "Left"
 msgstr "Izq."
 
-#: src/components/layout/FirstRunOnboarding.tsx:223
+#: src/components/layout/FirstRunOnboarding.tsx:236
 msgid "Light"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:1060
+#: src/components/layout/TopBar.tsx:1069
 msgid "Load a model in Prepare to unlock this stage"
 msgstr "Carga un modelo en Preparar para desbloquear esta etapa"
 
@@ -571,7 +571,7 @@ msgstr ""
 msgid "loading…"
 msgstr "cargando…"
 
-#: src/components/layout/FirstRunOnboarding.tsx:198
+#: src/components/layout/FirstRunOnboarding.tsx:211
 msgid "Low-glare surfaces for late-night printing."
 msgstr ""
 
@@ -583,11 +583,11 @@ msgstr "Perfil de material no disponible"
 msgid "Material:"
 msgstr "Material:"
 
-#: src/components/layout/TopBar.tsx:1180
+#: src/components/layout/TopBar.tsx:1194
 msgid "Maximize"
 msgstr "Maximizar"
 
-#: src/components/layout/TopBar.tsx:1181
+#: src/components/layout/TopBar.tsx:1195
 msgid "Maximize window"
 msgstr "Maximizar ventana"
 
@@ -600,11 +600,11 @@ msgstr "Malla"
 msgid "Mesh files (.stl, .obj, .3mf)"
 msgstr "Archivos de malla (.stl, .obj, .3mf)"
 
-#: src/components/layout/TopBar.tsx:1162
+#: src/components/layout/TopBar.tsx:1176
 msgid "Minimize"
 msgstr "Minimizar"
 
-#: src/components/layout/TopBar.tsx:1163
+#: src/components/layout/TopBar.tsx:1177
 msgid "Minimize window"
 msgstr "Minimizar ventana"
 
@@ -636,7 +636,7 @@ msgid "Modify"
 msgstr "Modificar"
 
 #. Topbar button that opens the live print-progress monitoring view for the active printer. Refers to the monitoring feature, not a display screen.
-#: src/components/layout/TopBar.tsx:533
+#: src/components/layout/TopBar.tsx:537
 msgid "Monitor"
 msgstr "Monitor"
 
@@ -658,13 +658,13 @@ msgstr "Neutro"
 msgid "New version"
 msgstr "Versión nueva"
 
-#: src/components/layout/TopBar.tsx:510
-#: src/components/layout/TopBar.tsx:517
-#: src/components/layout/TopBar.tsx:525
+#: src/components/layout/TopBar.tsx:514
+#: src/components/layout/TopBar.tsx:521
+#: src/components/layout/TopBar.tsx:529
 msgid "No active printer"
 msgstr "Sin impresora activa"
 
-#: src/components/layout/TopBar.tsx:984
+#: src/components/layout/TopBar.tsx:992
 msgid "No IP"
 msgstr "Sin IP"
 
@@ -680,6 +680,10 @@ msgstr "No hay modelos cargados"
 #: src/components/controls/ModelStatsCard.tsx:439
 msgid "No printer connected"
 msgstr "Sin impresora conectada"
+
+#: src/components/layout/OnboardingPrinterLibrary.tsx:269
+msgid "No printers match your search."
+msgstr ""
 
 #: src/components/layout/EmptySceneState.tsx:634
 msgid "No recent files"
@@ -703,8 +707,8 @@ msgstr "No todos los laminadores son iguales. ¡Este es gratis!"
 msgid "Nothing to see here. Yet."
 msgstr "Nada que ver aquí. Todavía."
 
-#: src/components/layout/TopBar.tsx:533
-#: src/components/layout/TopBar.tsx:984
+#: src/components/layout/TopBar.tsx:537
+#: src/components/layout/TopBar.tsx:992
 msgid "Offline"
 msgstr "Sin conexión"
 
@@ -718,7 +722,7 @@ msgstr "Sobre cara"
 msgid "One does not simply import a mesh... or actually, you just click a button."
 msgstr "No se importa una malla sin más... aunque en realidad sí, solo hay que hacer clic en un botón."
 
-#: src/components/layout/TopBar.tsx:984
+#: src/components/layout/TopBar.tsx:992
 msgid "Online"
 msgstr "En línea"
 
@@ -728,7 +732,7 @@ msgid "Opaque wire mesh"
 msgstr "Malla de alambre opaca"
 
 #. "DragonFruit" is the product name and should stay untranslated/unchanged.
-#: src/components/layout/TopBar.tsx:661
+#: src/components/layout/TopBar.tsx:665
 msgid "Open DragonFruit menu"
 msgstr "Abrir menú de DragonFruit"
 
@@ -740,8 +744,8 @@ msgstr "Abrir los perfiles de material"
 msgid "Open printer library and add one now."
 msgstr "Abre la biblioteca de impresoras y añade una ahora."
 
-#: src/components/layout/TopBar.tsx:742
-#: src/components/layout/TopBar.tsx:743
+#: src/components/layout/TopBar.tsx:750
+#: src/components/layout/TopBar.tsx:751
 msgid "Open printer monitor"
 msgstr "Abrir monitor de impresora"
 
@@ -749,7 +753,7 @@ msgstr "Abrir monitor de impresora"
 msgid "Open printer profiles"
 msgstr "Abrir los perfiles de impresora"
 
-#: src/components/layout/TopBar.tsx:834
+#: src/components/layout/TopBar.tsx:842
 msgid "Open scene…"
 msgstr "Abrir escena…"
 
@@ -771,7 +775,7 @@ msgstr "Mapa de calor de voladizos"
 msgid "Paste"
 msgstr "Pegar"
 
-#: src/components/layout/FirstRunOnboarding.tsx:169
+#: src/components/layout/FirstRunOnboarding.tsx:182
 msgid "Pick what fits your workspace. You can change it anytime in Settings."
 msgstr ""
 
@@ -779,38 +783,42 @@ msgstr ""
 msgid "Please hang tight while we prepare your scene."
 msgstr "Espera un momento mientras preparamos tu escena."
 
-#: src/components/layout/TopBar.tsx:599
+#: src/components/layout/TopBar.tsx:603
 msgid "Prepare"
 msgstr "Preparar"
 
 #. Static field-label shown above the printer name in the topbar badge (like "Printer: <name>"), not an instruction. Only shown when a profile has a single printer, so there is no fleet to pick from.
-#: src/components/layout/TopBar.tsx:506
+#: src/components/layout/TopBar.tsx:510
 msgid "Printer"
 msgstr "Impresora"
 
 #. Fallback shown only when a network printer has no display name, host name, or IP address yet. {0} is an internal device identifier, not a human-friendly value.
 #. placeholder {0}: device.id
-#: src/components/layout/TopBar.tsx:936
+#: src/components/layout/TopBar.tsx:944
 msgid "Printer {0}"
 msgstr "Impresora {0}"
 
+#: src/components/layout/OnboardingPrinterLibrary.tsx:216
+msgid "Printer Library"
+msgstr ""
+
 #. placeholder {0}: activePrinterProfile.name
-#: src/components/layout/TopBar.tsx:528
+#: src/components/layout/TopBar.tsx:532
 msgid "Printer profile {0}"
 msgstr "Perfil de impresora {0}"
 
 #. Same distinction as the title tooltip above (profile = saved configuration, printer = connected physical device), phrased for screen readers without the bullet separator.
-#: src/components/layout/TopBar.tsx:526
+#: src/components/layout/TopBar.tsx:530
 msgid "Printer profile {profileName}, active printer {printerName}"
 msgstr "Perfil de impresora {profileName}, impresora activa {printerName}"
 
 #. placeholder {0}: activePrinterProfile.name
-#: src/components/layout/TopBar.tsx:520
+#: src/components/layout/TopBar.tsx:524
 msgid "Printer profile: {0}"
 msgstr "Perfil de impresora: {0}"
 
 #. "Printer profile" is the saved configuration (material, output format, etc.); "Active printer" is the physical network device currently connected under that profile. The two are distinct concepts that happen to both contain the word "printer".
-#: src/components/layout/TopBar.tsx:518
+#: src/components/layout/TopBar.tsx:522
 msgid "Printer profile: {profileName} • Active printer: {printerName}"
 msgstr "Perfil de impresora: {profileName} • Impresora activa: {printerName}"
 
@@ -818,12 +826,12 @@ msgstr "Perfil de impresora: {profileName} • Impresora activa: {printerName}"
 msgid "Printer:"
 msgstr "Impresora:"
 
-#: src/components/layout/TopBar.tsx:623
+#: src/components/layout/TopBar.tsx:627
 msgid "Printing"
 msgstr "Imprimir"
 
 #. "Slice"/"re-slice" is the 3D-printing step that converts a model into printer instructions (G-code). This dialog warns that switching printer profile invalidates the already-sliced file.
-#: src/components/layout/TopBar.tsx:1238
+#: src/components/layout/TopBar.tsx:1252
 msgid "Re-slice required after profile change"
 msgstr "Es necesario volver a laminar tras cambiar de perfil"
 
@@ -874,11 +882,11 @@ msgstr "Reparar"
 msgid "Repair mesh…"
 msgstr "Reparar la malla…"
 
-#: src/components/layout/TopBar.tsx:1180
+#: src/components/layout/TopBar.tsx:1194
 msgid "Restore"
 msgstr "Restaurar"
 
-#: src/components/layout/TopBar.tsx:1181
+#: src/components/layout/TopBar.tsx:1195
 msgid "Restore window"
 msgstr "Restaurar ventana"
 
@@ -892,15 +900,15 @@ msgstr "Dcha."
 msgid "Roads? Where we're printing, we don't need roads."
 msgstr "¿Carreteras? Donde imprimimos, no necesitamos carreteras."
 
-#: src/components/layout/TopBar.tsx:1059
+#: src/components/layout/TopBar.tsx:1068
 msgid "Run slicing in Export to unlock Printing preview"
 msgstr "Lamina en Exportar para desbloquear la vista previa de Impresión"
 
-#: src/components/layout/TopBar.tsx:794
+#: src/components/layout/TopBar.tsx:802
 msgid "Save scene"
 msgstr "Guardar escena"
 
-#: src/components/layout/TopBar.tsx:814
+#: src/components/layout/TopBar.tsx:822
 msgid "Save scene as…"
 msgstr "Guardar escena como…"
 
@@ -917,6 +925,10 @@ msgstr "Archivos de escena (.voxl, .lys)"
 msgid "Sculpt and smooth surface"
 msgstr "Esculpir y suavizar la superficie"
 
+#: src/components/layout/OnboardingPrinterLibrary.tsx:234
+msgid "Search printers"
+msgstr ""
+
 #: src/components/controls/TransformToolbar.tsx:29
 msgid "Select"
 msgstr "Seleccionar"
@@ -929,32 +941,28 @@ msgstr "Seleccionar e inspeccionar el modelo"
 msgid "Select folder"
 msgstr "Seleccionar la carpeta"
 
-#: src/components/layout/TopBar.tsx:512
+#: src/components/layout/TopBar.tsx:516
 msgid "Select printer"
 msgstr "Seleccionar impresora"
 
-#: src/components/layout/TopBar.tsx:520
-#: src/components/layout/TopBar.tsx:528
+#: src/components/layout/TopBar.tsx:524
+#: src/components/layout/TopBar.tsx:532
 msgid "Select printer profile"
 msgstr "Seleccionar perfil de impresora"
 
-#: src/components/layout/TopBar.tsx:504
-#: src/components/layout/TopBar.tsx:516
-#: src/components/layout/TopBar.tsx:524
+#: src/components/layout/TopBar.tsx:508
+#: src/components/layout/TopBar.tsx:520
+#: src/components/layout/TopBar.tsx:528
 msgid "Select profile"
 msgstr "Seleccionar perfil"
 
-#: src/components/layout/TopBar.tsx:742
-#: src/components/layout/TopBar.tsx:743
+#: src/components/layout/TopBar.tsx:750
+#: src/components/layout/TopBar.tsx:751
 msgid "Selected printer is offline"
 msgstr "La impresora seleccionada está sin conexión"
 
-#: src/components/layout/FirstRunOnboarding.tsx:259
-msgid "Set up your printer"
-msgstr ""
-
-#: src/components/layout/TopBar.tsx:1132
-#: src/components/layout/TopBar.tsx:1133
+#: src/components/layout/TopBar.tsx:1146
+#: src/components/layout/TopBar.tsx:1147
 msgid "Settings"
 msgstr "Ajustes"
 
@@ -969,7 +977,7 @@ msgid "Show"
 msgstr "Mostrar"
 
 #. Opens the printer manager screen (printer profile settings), reached from this quick-switch popover. "Manager" refers to that screen.
-#: src/components/layout/TopBar.tsx:1006
+#: src/components/layout/TopBar.tsx:1014
 msgid "Show manager"
 msgstr "Mostrar gestor"
 
@@ -977,7 +985,7 @@ msgstr "Mostrar gestor"
 msgid "Show release notes"
 msgstr "Ver las notas de la versión"
 
-#: src/components/layout/TopBar.tsx:1056
+#: src/components/layout/TopBar.tsx:1065
 msgid "Slicing in progress. Topbar actions are temporarily disabled."
 msgstr "Laminado en curso. Las acciones de la barra superior están temporalmente deshabilitadas."
 
@@ -1004,23 +1012,15 @@ msgstr ""
 msgid "Split to bodies"
 msgstr "Dividir en cuerpos"
 
-#: src/components/layout/FirstRunOnboarding.tsx:300
-msgid "Start preparing now. Add a printer anytime from the top bar."
-msgstr ""
-
-#: src/components/layout/FirstRunOnboarding.tsx:345
+#: src/components/layout/FirstRunOnboarding.tsx:297
 msgid "Start using DragonFruit"
-msgstr ""
-
-#: src/components/layout/FirstRunOnboarding.tsx:354
-msgid "Start without a printer"
 msgstr ""
 
 #: src/components/controls/ModelStatsCard.tsx:578
 msgid "STL size:"
 msgstr "Tamaño del STL:"
 
-#: src/components/layout/TopBar.tsx:607
+#: src/components/layout/TopBar.tsx:611
 msgid "Support"
 msgstr "Soportes"
 
@@ -1116,15 +1116,11 @@ msgstr "Actualización disponible — v{version}"
 msgid "Update failed"
 msgstr "Actualización fallida"
 
-#: src/components/layout/FirstRunOnboarding.tsx:297
-msgid "Use without a printer"
-msgstr ""
-
 #: src/components/layout/EmptySceneState.tsx:544
 msgid "Use without printer"
 msgstr "Usar sin impresora"
 
-#: src/components/layout/TopBar.tsx:1106
+#: src/components/layout/TopBar.tsx:1118
 msgid "View mode"
 msgstr "Modo de vista"
 
@@ -1146,7 +1142,7 @@ msgstr "Cálido"
 msgid "We're gonna need a bigger build plate."
 msgstr "Vamos a necesitar una placa de impresión más grande."
 
-#: src/components/layout/FirstRunOnboarding.tsx:139
+#: src/components/layout/FirstRunOnboarding.tsx:154
 msgid "Welcome!"
 msgstr ""
 
@@ -1159,7 +1155,7 @@ msgstr "¿Qué imprimimos hoy?"
 msgid "Why so empty?"
 msgstr "¿Por qué tan vacío?"
 
-#: src/components/layout/TopBar.tsx:1148
+#: src/components/layout/TopBar.tsx:1162
 msgid "Window controls"
 msgstr "Controles de ventana"
 
@@ -1178,11 +1174,7 @@ msgstr "Una gran resina conlleva una gran responsabilidad."
 msgid "X-ray"
 msgstr "Rayos X"
 
-#: src/components/layout/FirstRunOnboarding.tsx:336
-msgid "You can add or switch printers anytime from the top bar."
-msgstr ""
-
-#: src/components/layout/TopBar.tsx:1263
+#: src/components/layout/TopBar.tsx:1277
 msgid "You can continue to adjust profiles, but you’ll be prompted to re-slice before printing with the updated settings."
 msgstr "Puedes seguir ajustando los perfiles, pero se te pedirá que vuelvas a laminar antes de imprimir con los ajustes actualizados."
 
@@ -1191,7 +1183,7 @@ msgstr "Puedes seguir ajustando los perfiles, pero se te pedirá que vuelvas a l
 msgid "You shall not pass... until you load a model."
 msgstr "¡No pasarás... hasta que cargues un modelo!"
 
-#: src/components/layout/FirstRunOnboarding.tsx:331
+#: src/components/layout/FirstRunOnboarding.tsx:287
 msgid "You're all set"
 msgstr ""
 
@@ -1199,7 +1191,7 @@ msgstr ""
 msgid "Your models called. They want to be sliced."
 msgstr "Tus modelos han llamado. Quieren ser laminados."
 
-#: src/components/layout/FirstRunOnboarding.tsx:335
+#: src/components/layout/FirstRunOnboarding.tsx:290
 msgid "Your printer is ready. Drag a model in to start preparing your first print."
 msgstr ""
 

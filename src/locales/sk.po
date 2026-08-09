@@ -87,14 +87,9 @@ msgid "~{mins} min"
 msgstr "~{mins} min"
 
 #. Badge next to the currently-selected printer in the fleet list (adjective describing the device, e.g. "the active one").
-#: src/components/layout/TopBar.tsx:989
+#: src/components/layout/TopBar.tsx:997
 msgid "Active"
 msgstr "Aktívne"
-
-#: src/components/layout/FirstRunOnboarding.tsx:278
-#: src/components/layout/FirstRunOnboarding.tsx:361
-msgid "Add a printer"
-msgstr ""
 
 #: src/app/page.tsx:2146
 msgid "Add joint"
@@ -105,12 +100,9 @@ msgid "Add or switch printer anytime from the top bar."
 msgstr "Pridaj alebo vymeň tlačiareň kedykoľvek na vrchnej lište."
 
 #: src/components/layout/EmptySceneState.tsx:525
+#: src/components/layout/OnboardingPrinterLibrary.tsx:334
 msgid "Add printer"
 msgstr "Pridať tlačiareň"
-
-#: src/components/layout/FirstRunOnboarding.tsx:262
-msgid "Add the printer you'll be printing on so DragonFruit knows your build volume and defaults. You can add more later."
-msgstr ""
 
 #: src/components/ui/EditorContextMenu.tsx:55
 msgid "Add waypoint here"
@@ -129,7 +121,7 @@ msgstr "Plocha Σ {totalAreaLabel} • Min {minAreaLabel} • Max {maxAreaLabel}
 msgid "Arrange"
 msgstr "Usporiadať"
 
-#: src/components/layout/TopBar.tsx:602
+#: src/components/layout/TopBar.tsx:606
 msgid "Arrange model and transforms"
 msgstr "Usporiadať modely a transformy"
 
@@ -143,10 +135,14 @@ msgid "Auto-repaired — {0} errors"
 msgstr ""
 
 #. View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/layout/FirstRunOnboarding.tsx:242
-#: src/components/layout/FirstRunOnboarding.tsx:313
+#: src/components/layout/FirstRunOnboarding.tsx:255
+#: src/components/layout/OnboardingPrinterLibrary.tsx:200
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1407
 msgid "Back"
+msgstr ""
+
+#: src/components/layout/OnboardingPrinterLibrary.tsx:201
+msgid "Back to setup step"
 msgstr ""
 
 #. View cube face (seen from below), rendered uppercase inside a small 3D cube. Keep it as short as possible.
@@ -154,7 +150,7 @@ msgstr ""
 msgid "Bottom"
 msgstr ""
 
-#: src/components/layout/FirstRunOnboarding.tsx:228
+#: src/components/layout/FirstRunOnboarding.tsx:241
 msgid "Bright surfaces for well-lit workspaces."
 msgstr ""
 
@@ -162,11 +158,7 @@ msgstr ""
 msgid "Bring in a mesh or scene to start preparing, analyzing, supporting, and exporting your print."
 msgstr "Pridaj mesh alebo scénu a začni pripravovať, analyzovať, podporovať a exportovať tvoj výtlačok."
 
-#: src/components/layout/FirstRunOnboarding.tsx:281
-msgid "Browse the library and pick your model."
-msgstr ""
-
-#: src/components/layout/TopBar.tsx:610
+#: src/components/layout/TopBar.tsx:614
 msgid "Build and tune supports"
 msgstr "Budovať a štelovať podpery"
 
@@ -179,15 +171,23 @@ msgstr "kešované"
 msgid "Camera view mode: {currentLabel}"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:1241
+#: src/components/layout/TopBar.tsx:1255
 msgid "Changing print settings invalidates the current sliced file."
 msgstr "Zmena tlačových nastavení spôsobí invalidáciu nasekaného súboru."
 
-#: src/components/layout/TopBar.tsx:1222
+#: src/components/layout/TopBar.tsx:1236
 msgid "Changing printer profile requires re-slice"
 msgstr "Zmena profilu tlačiarne spôsobí potrebu znovu nasekania"
 
-#: src/components/layout/FirstRunOnboarding.tsx:166
+#: src/components/layout/OnboardingPrinterLibrary.tsx:314
+msgid "Choose a printer to add"
+msgstr ""
+
+#: src/components/layout/OnboardingPrinterLibrary.tsx:219
+msgid "Choose an official printer preset to add."
+msgstr ""
+
+#: src/components/layout/FirstRunOnboarding.tsx:179
 msgid "Choose your theme"
 msgstr ""
 
@@ -207,12 +207,12 @@ msgstr ""
 msgid "Click to copy build info"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:1202
+#: src/components/layout/TopBar.tsx:1216
 #: src/features/updater/GlobalUpdateIndicator.tsx:191
 msgid "Close"
 msgstr "Zatvoriť"
 
-#: src/components/layout/TopBar.tsx:894
+#: src/components/layout/TopBar.tsx:902
 msgid "Close program"
 msgstr "Zatvoriť Program"
 
@@ -224,11 +224,11 @@ msgstr ""
 msgid "Close update dialog"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:1254
+#: src/components/layout/TopBar.tsx:1268
 msgid "Close warning"
 msgstr "Zatvoriť varovanie"
 
-#: src/components/layout/TopBar.tsx:1203
+#: src/components/layout/TopBar.tsx:1217
 msgid "Close window"
 msgstr "Zatvoriť okno"
 
@@ -245,8 +245,8 @@ msgid "Compact list"
 msgstr ""
 
 #. Confirms proceeding with the profile change despite the re-slice warning above (paired with "Keep current profiles", which cancels).
-#: src/components/layout/FirstRunOnboarding.tsx:249
-#: src/components/layout/TopBar.tsx:1287
+#: src/components/layout/FirstRunOnboarding.tsx:262
+#: src/components/layout/TopBar.tsx:1301
 msgid "Continue"
 msgstr "Pokračovať"
 
@@ -286,7 +286,7 @@ msgstr "Momentálne sa nezobrazuje nič s maximálnou fidelitou."
 msgid "Cut"
 msgstr "Vystrihnúť"
 
-#: src/components/layout/FirstRunOnboarding.tsx:193
+#: src/components/layout/FirstRunOnboarding.tsx:206
 msgid "Dark"
 msgstr ""
 
@@ -334,20 +334,20 @@ msgid "Drag a file in. The platform is judging you."
 msgstr "Potiahni sem súbor. Tvoja plocha ťa súdi."
 
 #. "DragonFruit" is the product name and should stay untranslated/unchanged.
-#: src/components/layout/TopBar.tsx:771
+#: src/components/layout/TopBar.tsx:779
 msgid "DragonFruit app menu"
 msgstr "Menu aplikácie DragonFruit"
 
-#: src/components/layout/FirstRunOnboarding.tsx:84
+#: src/components/layout/FirstRunOnboarding.tsx:85
 msgid "DragonFruit first-time setup"
 msgstr ""
 
-#: src/components/layout/FirstRunOnboarding.tsx:143
+#: src/components/layout/FirstRunOnboarding.tsx:157
 msgid "DragonFruit is a free, open-source slicer for resin 3D printing. Load a model, orient it, add supports, and slice it for your printer."
 msgstr ""
 
 #. "DragonFruit" is the product name and should stay untranslated/unchanged; only "menu" needs translating.
-#: src/components/layout/TopBar.tsx:660
+#: src/components/layout/TopBar.tsx:664
 msgid "DragonFruit menu"
 msgstr "Menu DragonFruit"
 
@@ -396,7 +396,7 @@ msgstr ""
 msgid "Expand folder"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:615
+#: src/components/layout/TopBar.tsx:619
 msgid "Export"
 msgstr "Exportovať"
 
@@ -404,17 +404,17 @@ msgstr "Exportovať"
 msgid "Exposure:"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:618
+#: src/components/layout/TopBar.tsx:622
 msgid "Finalize and export output"
 msgstr "Finalizuj a exportuj výstup"
 
 #. "Fleet" means the set of physical network printers discovered under the current printer profile, not a literal fleet of vehicles.
-#: src/components/layout/TopBar.tsx:927
+#: src/components/layout/TopBar.tsx:935
 msgid "Fleet quick switch"
 msgstr "Rýchla výmena flotily"
 
 #. Section heading above the list of network printers belonging to the current profile. "Units" = individual printers.
-#: src/components/layout/TopBar.tsx:930
+#: src/components/layout/TopBar.tsx:938
 msgid "Fleet units"
 msgstr "Jednotky flotily"
 
@@ -422,7 +422,7 @@ msgstr "Jednotky flotily"
 msgid "Flip model stats card"
 msgstr ""
 
-#: src/components/layout/FirstRunOnboarding.tsx:146
+#: src/components/layout/FirstRunOnboarding.tsx:160
 msgid "From the community, for the community. Free to use, open to contribute, and shaped by the people who print with it."
 msgstr ""
 
@@ -435,7 +435,7 @@ msgstr ""
 msgid "Get started"
 msgstr "Začať"
 
-#: src/components/layout/FirstRunOnboarding.tsx:156
+#: src/components/layout/FirstRunOnboarding.tsx:169
 msgid "Get Started"
 msgstr ""
 
@@ -471,7 +471,7 @@ msgstr "Vrátim sa. (Podhoď mi súbor a naozaj sa vrátim.)"
 msgid "Idle hands do no slicing."
 msgstr "Nehybné ruky nič nenasekajú."
 
-#: src/components/layout/TopBar.tsx:856
+#: src/components/layout/TopBar.tsx:864
 msgid "Import mesh…"
 msgstr "Importovať Mesh…"
 
@@ -479,7 +479,7 @@ msgstr "Importovať Mesh…"
 msgid "Import Scene"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:878
+#: src/components/layout/TopBar.tsx:886
 msgid "Import scene…"
 msgstr "Importovať Scénu…"
 
@@ -492,26 +492,26 @@ msgstr "Importujem tvoj súbor…"
 msgid "In space, no one can hear you slice."
 msgstr "Vo vesmíre ťa nikdo nebude počuť sekať."
 
-#: src/components/layout/TopBar.tsx:626
+#: src/components/layout/TopBar.tsx:630
 msgid "Inspect sliced layers before printing"
 msgstr "Inšpekcia nasekaných vrstiev pred tlačou"
 
-#: src/components/layout/TopBar.tsx:1115
-#: src/components/layout/TopBar.tsx:1116
+#: src/components/layout/TopBar.tsx:1127
+#: src/components/layout/TopBar.tsx:1128
 msgid "Interior view: Off"
 msgstr "Pohľad Vnútra: Vypnutý"
 
 #. Tooltip for a toggle button showing its current state, format "Feature name: state". Interior view is a 3D viewport mode that renders the inside of a hollowed model.
-#: src/components/layout/TopBar.tsx:1115
-#: src/components/layout/TopBar.tsx:1116
+#: src/components/layout/TopBar.tsx:1127
+#: src/components/layout/TopBar.tsx:1128
 msgid "Interior view: On"
 msgstr "Pohľad Vnútra: Zapnutý"
 
-#: src/components/layout/TopBar.tsx:1116
+#: src/components/layout/TopBar.tsx:1128
 msgid "Interior view: Unavailable"
 msgstr "Pohľad Vnútra: Nedostupný"
 
-#: src/components/layout/TopBar.tsx:1115
+#: src/components/layout/TopBar.tsx:1127
 msgid "Interior view: Unavailable (apply hollowing first)"
 msgstr "Pohľad Vnútra: Nedostupný (najprv aplikuj dutinu)"
 
@@ -525,7 +525,7 @@ msgid "Join the Open Resin Alliance!"
 msgstr "Pridaj sa k Open Resin Alliance!"
 
 #. Cancels the pending profile change and closes this warning dialog, leaving the previous profile selection untouched. Paired with the "Continue" button below.
-#: src/components/layout/TopBar.tsx:1272
+#: src/components/layout/TopBar.tsx:1286
 msgid "Keep current profiles"
 msgstr "Ponechať Terajšie Profily"
 
@@ -559,11 +559,11 @@ msgstr ""
 msgid "Left"
 msgstr ""
 
-#: src/components/layout/FirstRunOnboarding.tsx:223
+#: src/components/layout/FirstRunOnboarding.tsx:236
 msgid "Light"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:1060
+#: src/components/layout/TopBar.tsx:1069
 msgid "Load a model in Prepare to unlock this stage"
 msgstr "Načítajte model v Príprave aby ste odomkli túto časť"
 
@@ -576,7 +576,7 @@ msgstr ""
 msgid "loading…"
 msgstr "načítavam…"
 
-#: src/components/layout/FirstRunOnboarding.tsx:198
+#: src/components/layout/FirstRunOnboarding.tsx:211
 msgid "Low-glare surfaces for late-night printing."
 msgstr ""
 
@@ -588,11 +588,11 @@ msgstr "Materiálový profil nedostupný"
 msgid "Material:"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:1180
+#: src/components/layout/TopBar.tsx:1194
 msgid "Maximize"
 msgstr "Maximalizovať"
 
-#: src/components/layout/TopBar.tsx:1181
+#: src/components/layout/TopBar.tsx:1195
 msgid "Maximize window"
 msgstr "Maximalizovať okno"
 
@@ -605,11 +605,11 @@ msgstr "Mesh"
 msgid "Mesh files (.stl, .obj, .3mf)"
 msgstr "Mesh súbory (.stl, .obj, .3mf)"
 
-#: src/components/layout/TopBar.tsx:1162
+#: src/components/layout/TopBar.tsx:1176
 msgid "Minimize"
 msgstr "Minimizovať"
 
-#: src/components/layout/TopBar.tsx:1163
+#: src/components/layout/TopBar.tsx:1177
 msgid "Minimize window"
 msgstr "Minimizovať okno"
 
@@ -641,7 +641,7 @@ msgid "Modify"
 msgstr "Modifikovať"
 
 #. Topbar button that opens the live print-progress monitoring view for the active printer. Refers to the monitoring feature, not a display screen.
-#: src/components/layout/TopBar.tsx:533
+#: src/components/layout/TopBar.tsx:537
 msgid "Monitor"
 msgstr "Monitorovať"
 
@@ -663,13 +663,13 @@ msgstr ""
 msgid "New version"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:510
-#: src/components/layout/TopBar.tsx:517
-#: src/components/layout/TopBar.tsx:525
+#: src/components/layout/TopBar.tsx:514
+#: src/components/layout/TopBar.tsx:521
+#: src/components/layout/TopBar.tsx:529
 msgid "No active printer"
 msgstr "Žiadne aktívne tlačiarne"
 
-#: src/components/layout/TopBar.tsx:984
+#: src/components/layout/TopBar.tsx:992
 msgid "No IP"
 msgstr "Žiadna IP"
 
@@ -684,6 +684,10 @@ msgstr ""
 
 #: src/components/controls/ModelStatsCard.tsx:439
 msgid "No printer connected"
+msgstr ""
+
+#: src/components/layout/OnboardingPrinterLibrary.tsx:269
+msgid "No printers match your search."
 msgstr ""
 
 #: src/components/layout/EmptySceneState.tsx:634
@@ -708,8 +712,8 @@ msgstr "Nie všetky slicery sú vytvorené rovnako. Tento je voľný!"
 msgid "Nothing to see here. Yet."
 msgstr "Nič tu nieje. Zatiaľ."
 
-#: src/components/layout/TopBar.tsx:533
-#: src/components/layout/TopBar.tsx:984
+#: src/components/layout/TopBar.tsx:537
+#: src/components/layout/TopBar.tsx:992
 msgid "Offline"
 msgstr "Offline"
 
@@ -723,7 +727,7 @@ msgstr "Na-Stranu"
 msgid "One does not simply import a mesh... or actually, you just click a button."
 msgstr "Jeden proste nevloží mesh… alebo, proste stlač tlačítko."
 
-#: src/components/layout/TopBar.tsx:984
+#: src/components/layout/TopBar.tsx:992
 msgid "Online"
 msgstr "Online"
 
@@ -733,7 +737,7 @@ msgid "Opaque wire mesh"
 msgstr ""
 
 #. "DragonFruit" is the product name and should stay untranslated/unchanged.
-#: src/components/layout/TopBar.tsx:661
+#: src/components/layout/TopBar.tsx:665
 msgid "Open DragonFruit menu"
 msgstr "Otvoriť menu DragonFruitu"
 
@@ -745,8 +749,8 @@ msgstr ""
 msgid "Open printer library and add one now."
 msgstr "Otvoriť zotnam tlačiarní a pridať jednu teraz."
 
-#: src/components/layout/TopBar.tsx:742
-#: src/components/layout/TopBar.tsx:743
+#: src/components/layout/TopBar.tsx:750
+#: src/components/layout/TopBar.tsx:751
 msgid "Open printer monitor"
 msgstr "Otvoriť monitor tlačiarne"
 
@@ -754,7 +758,7 @@ msgstr "Otvoriť monitor tlačiarne"
 msgid "Open printer profiles"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:834
+#: src/components/layout/TopBar.tsx:842
 msgid "Open scene…"
 msgstr "Otvoriť scénu…"
 
@@ -776,7 +780,7 @@ msgstr ""
 msgid "Paste"
 msgstr "Prilepiť"
 
-#: src/components/layout/FirstRunOnboarding.tsx:169
+#: src/components/layout/FirstRunOnboarding.tsx:182
 msgid "Pick what fits your workspace. You can change it anytime in Settings."
 msgstr ""
 
@@ -784,38 +788,42 @@ msgstr ""
 msgid "Please hang tight while we prepare your scene."
 msgstr "Vydrž kým ti pripravíme scénu."
 
-#: src/components/layout/TopBar.tsx:599
+#: src/components/layout/TopBar.tsx:603
 msgid "Prepare"
 msgstr "Pripraviť"
 
 #. Static field-label shown above the printer name in the topbar badge (like "Printer: <name>"), not an instruction. Only shown when a profile has a single printer, so there is no fleet to pick from.
-#: src/components/layout/TopBar.tsx:506
+#: src/components/layout/TopBar.tsx:510
 msgid "Printer"
 msgstr "Tlačiareň"
 
 #. Fallback shown only when a network printer has no display name, host name, or IP address yet. {0} is an internal device identifier, not a human-friendly value.
 #. placeholder {0}: device.id
-#: src/components/layout/TopBar.tsx:936
+#: src/components/layout/TopBar.tsx:944
 msgid "Printer {0}"
 msgstr "Tlačiareň {0}"
 
+#: src/components/layout/OnboardingPrinterLibrary.tsx:216
+msgid "Printer Library"
+msgstr ""
+
 #. placeholder {0}: activePrinterProfile.name
-#: src/components/layout/TopBar.tsx:528
+#: src/components/layout/TopBar.tsx:532
 msgid "Printer profile {0}"
 msgstr "Profil tlačiarne {0}"
 
 #. Same distinction as the title tooltip above (profile = saved configuration, printer = connected physical device), phrased for screen readers without the bullet separator.
-#: src/components/layout/TopBar.tsx:526
+#: src/components/layout/TopBar.tsx:530
 msgid "Printer profile {profileName}, active printer {printerName}"
 msgstr "Profil tlačiarne {profileName}, aktívna tlačiareň {printerName}"
 
 #. placeholder {0}: activePrinterProfile.name
-#: src/components/layout/TopBar.tsx:520
+#: src/components/layout/TopBar.tsx:524
 msgid "Printer profile: {0}"
 msgstr "Profil tlačiarne: {0}"
 
 #. "Printer profile" is the saved configuration (material, output format, etc.); "Active printer" is the physical network device currently connected under that profile. The two are distinct concepts that happen to both contain the word "printer".
-#: src/components/layout/TopBar.tsx:518
+#: src/components/layout/TopBar.tsx:522
 msgid "Printer profile: {profileName} • Active printer: {printerName}"
 msgstr "Profil tlačiarne: {profileName} • Aktívna tlačiareň: {printerName}"
 
@@ -823,12 +831,12 @@ msgstr "Profil tlačiarne: {profileName} • Aktívna tlačiareň: {printerName}
 msgid "Printer:"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:623
+#: src/components/layout/TopBar.tsx:627
 msgid "Printing"
 msgstr "Tlačenie"
 
 #. "Slice"/"re-slice" is the 3D-printing step that converts a model into printer instructions (G-code). This dialog warns that switching printer profile invalidates the already-sliced file.
-#: src/components/layout/TopBar.tsx:1238
+#: src/components/layout/TopBar.tsx:1252
 msgid "Re-slice required after profile change"
 msgstr "Znovu nasekanie je potrebné po zmene v profile"
 
@@ -879,11 +887,11 @@ msgstr "Opraviť"
 msgid "Repair mesh…"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:1180
+#: src/components/layout/TopBar.tsx:1194
 msgid "Restore"
 msgstr "Obnoviť"
 
-#: src/components/layout/TopBar.tsx:1181
+#: src/components/layout/TopBar.tsx:1195
 msgid "Restore window"
 msgstr "Obnoviť okno"
 
@@ -897,15 +905,15 @@ msgstr ""
 msgid "Roads? Where we're printing, we don't need roads."
 msgstr "Cesty? Kde tlačíme my, nepotrebujeme cesty."
 
-#: src/components/layout/TopBar.tsx:1059
+#: src/components/layout/TopBar.tsx:1068
 msgid "Run slicing in Export to unlock Printing preview"
 msgstr "Spusťi sekanie v Exporte aby si odomkol preview tlače"
 
-#: src/components/layout/TopBar.tsx:794
+#: src/components/layout/TopBar.tsx:802
 msgid "Save scene"
 msgstr "Uložiť Scénu"
 
-#: src/components/layout/TopBar.tsx:814
+#: src/components/layout/TopBar.tsx:822
 msgid "Save scene as…"
 msgstr "Uložiť Scénu Ako…"
 
@@ -922,6 +930,10 @@ msgstr "Scénické súbory (.voxl, .lys)"
 msgid "Sculpt and smooth surface"
 msgstr "Skulptovať a vyhladzovať povrch"
 
+#: src/components/layout/OnboardingPrinterLibrary.tsx:234
+msgid "Search printers"
+msgstr ""
+
 #: src/components/controls/TransformToolbar.tsx:29
 msgid "Select"
 msgstr "Vybrať"
@@ -934,32 +946,28 @@ msgstr "Vybrať a inšpektovať"
 msgid "Select folder"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:512
+#: src/components/layout/TopBar.tsx:516
 msgid "Select printer"
 msgstr "Vybrať tlačiareň"
 
-#: src/components/layout/TopBar.tsx:520
-#: src/components/layout/TopBar.tsx:528
+#: src/components/layout/TopBar.tsx:524
+#: src/components/layout/TopBar.tsx:532
 msgid "Select printer profile"
 msgstr "Vybrať profil tlačiarne"
 
-#: src/components/layout/TopBar.tsx:504
-#: src/components/layout/TopBar.tsx:516
-#: src/components/layout/TopBar.tsx:524
+#: src/components/layout/TopBar.tsx:508
+#: src/components/layout/TopBar.tsx:520
+#: src/components/layout/TopBar.tsx:528
 msgid "Select profile"
 msgstr "Vybrať profil"
 
-#: src/components/layout/TopBar.tsx:742
-#: src/components/layout/TopBar.tsx:743
+#: src/components/layout/TopBar.tsx:750
+#: src/components/layout/TopBar.tsx:751
 msgid "Selected printer is offline"
 msgstr "Vybraná tlačiareň je offline"
 
-#: src/components/layout/FirstRunOnboarding.tsx:259
-msgid "Set up your printer"
-msgstr ""
-
-#: src/components/layout/TopBar.tsx:1132
-#: src/components/layout/TopBar.tsx:1133
+#: src/components/layout/TopBar.tsx:1146
+#: src/components/layout/TopBar.tsx:1147
 msgid "Settings"
 msgstr "Nastavenia"
 
@@ -974,7 +982,7 @@ msgid "Show"
 msgstr ""
 
 #. Opens the printer manager screen (printer profile settings), reached from this quick-switch popover. "Manager" refers to that screen.
-#: src/components/layout/TopBar.tsx:1006
+#: src/components/layout/TopBar.tsx:1014
 msgid "Show manager"
 msgstr "Ukázať Manažéra"
 
@@ -982,7 +990,7 @@ msgstr "Ukázať Manažéra"
 msgid "Show release notes"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:1056
+#: src/components/layout/TopBar.tsx:1065
 msgid "Slicing in progress. Topbar actions are temporarily disabled."
 msgstr "Momentálne sekám. Akcie vo vrchnej lište sú momentálne vypnuté."
 
@@ -1009,23 +1017,15 @@ msgstr ""
 msgid "Split to bodies"
 msgstr ""
 
-#: src/components/layout/FirstRunOnboarding.tsx:300
-msgid "Start preparing now. Add a printer anytime from the top bar."
-msgstr ""
-
-#: src/components/layout/FirstRunOnboarding.tsx:345
+#: src/components/layout/FirstRunOnboarding.tsx:297
 msgid "Start using DragonFruit"
-msgstr ""
-
-#: src/components/layout/FirstRunOnboarding.tsx:354
-msgid "Start without a printer"
 msgstr ""
 
 #: src/components/controls/ModelStatsCard.tsx:578
 msgid "STL size:"
 msgstr ""
 
-#: src/components/layout/TopBar.tsx:607
+#: src/components/layout/TopBar.tsx:611
 msgid "Support"
 msgstr "Podpera"
 
@@ -1121,15 +1121,11 @@ msgstr ""
 msgid "Update failed"
 msgstr ""
 
-#: src/components/layout/FirstRunOnboarding.tsx:297
-msgid "Use without a printer"
-msgstr ""
-
 #: src/components/layout/EmptySceneState.tsx:544
 msgid "Use without printer"
 msgstr "Používať bez tlačiarne"
 
-#: src/components/layout/TopBar.tsx:1106
+#: src/components/layout/TopBar.tsx:1118
 msgid "View mode"
 msgstr "Režim pohľadu"
 
@@ -1151,7 +1147,7 @@ msgstr ""
 msgid "We're gonna need a bigger build plate."
 msgstr "Budeme potrebovať väčšiu pracovnú plochu."
 
-#: src/components/layout/FirstRunOnboarding.tsx:139
+#: src/components/layout/FirstRunOnboarding.tsx:154
 msgid "Welcome!"
 msgstr ""
 
@@ -1164,7 +1160,7 @@ msgstr "Čo tlačíme dnes?"
 msgid "Why so empty?"
 msgstr "Prečo tak prázdny?"
 
-#: src/components/layout/TopBar.tsx:1148
+#: src/components/layout/TopBar.tsx:1162
 msgid "Window controls"
 msgstr "Ovládanie okna"
 
@@ -1183,11 +1179,7 @@ msgstr "S veľkou živicou prichádza veľká zodpovednosť."
 msgid "X-ray"
 msgstr ""
 
-#: src/components/layout/FirstRunOnboarding.tsx:336
-msgid "You can add or switch printers anytime from the top bar."
-msgstr ""
-
-#: src/components/layout/TopBar.tsx:1263
+#: src/components/layout/TopBar.tsx:1277
 msgid "You can continue to adjust profiles, but you’ll be prompted to re-slice before printing with the updated settings."
 msgstr "Môžeš pokračovať v úprave profilov, ale bude potrebné znovu nasekať model pred tlačou s upravenými nastaveniami."
 
@@ -1196,7 +1188,7 @@ msgstr "Môžeš pokračovať v úprave profilov, ale bude potrebné znovu nasek
 msgid "You shall not pass... until you load a model."
 msgstr "Neprejdeš… kým nenahráš model."
 
-#: src/components/layout/FirstRunOnboarding.tsx:331
+#: src/components/layout/FirstRunOnboarding.tsx:287
 msgid "You're all set"
 msgstr ""
 
@@ -1204,7 +1196,7 @@ msgstr ""
 msgid "Your models called. They want to be sliced."
 msgstr "Tvoje modely volali. Chcú byť posekané."
 
-#: src/components/layout/FirstRunOnboarding.tsx:335
+#: src/components/layout/FirstRunOnboarding.tsx:290
 msgid "Your printer is ready. Drag a model in to start preparing your first print."
 msgstr ""
 
