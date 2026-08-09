@@ -38,10 +38,10 @@ type MeshSettingsTabProps = {
   onMaterialRoughnessChange: (value: number) => void;
   xrayOpacity: number;
   onXrayOpacityChange: (value: number) => void;
-  heatmapBlend: number;
-  onHeatmapBlendChange: (value: number) => void;
-  heatmapContrast: number;
-  onHeatmapContrastChange: (value: number) => void;
+  heatmapMinAngle: number;
+  onHeatmapMinAngleChange: (value: number) => void;
+  heatmapMaxAngle: number;
+  onHeatmapMaxAngleChange: (value: number) => void;
   heatmapColors: string[];
   onHeatmapColorChange: (index: number, color: string) => void;
   selectionColor: string;
@@ -73,10 +73,10 @@ export function MeshSettingsTab({
   onMaterialRoughnessChange,
   xrayOpacity,
   onXrayOpacityChange,
-  heatmapBlend,
-  onHeatmapBlendChange,
-  heatmapContrast,
-  onHeatmapContrastChange,
+  heatmapMinAngle,
+  onHeatmapMinAngleChange,
+  heatmapMaxAngle,
+  onHeatmapMaxAngleChange,
   heatmapColors,
   onHeatmapColorChange,
   selectionColor,
@@ -231,8 +231,8 @@ export function MeshSettingsTab({
               ambientIntensity={ambientIntensity}
               directionalIntensity={directionalIntensity}
               xrayOpacity={xrayOpacity}
-              heatmapBlend={heatmapBlend}
-              heatmapContrast={heatmapContrast}
+              heatmapMinAngle={heatmapMinAngle}
+              heatmapMaxAngle={heatmapMaxAngle}
               heatmapColors={heatmapColors}
               hoverTintStrength={0.5}
               selectedTintStrength={0.75}
@@ -439,26 +439,26 @@ export function MeshSettingsTab({
               <>
                 <div className="rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                   <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Heatmap Blend</span>
-                    <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{heatmapBlend.toFixed(2)}</span>
+                    <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Min Overhang</span>
+                    <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{heatmapMinAngle}°</span>
                   </div>
                   <input
-                    type="range" min="0.0" max="1.0" step="0.01"
-                    value={heatmapBlend}
-                    onChange={(e) => onHeatmapBlendChange(parseFloat(e.target.value))}
+                    type="range" min="0" max="90" step="1"
+                    value={heatmapMinAngle}
+                    onChange={(e) => onHeatmapMinAngleChange(Math.min(parseFloat(e.target.value), heatmapMaxAngle))}
                     className="w-full h-2 rounded-lg appearance-none cursor-pointer"
                     style={{ accentColor: 'var(--accent)', background: 'color-mix(in srgb, var(--text-muted), transparent 72%)' }}
                   />
                 </div>
                 <div className="rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                   <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Heatmap Contrast</span>
-                    <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{heatmapContrast.toFixed(2)}</span>
+                    <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Max Overhang</span>
+                    <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{heatmapMaxAngle}°</span>
                   </div>
                   <input
-                    type="range" min="0.5" max="3.0" step="0.05"
-                    value={heatmapContrast}
-                    onChange={(e) => onHeatmapContrastChange(parseFloat(e.target.value))}
+                    type="range" min="0" max="90" step="1"
+                    value={heatmapMaxAngle}
+                    onChange={(e) => onHeatmapMaxAngleChange(Math.max(parseFloat(e.target.value), heatmapMinAngle))}
                     className="w-full h-2 rounded-lg appearance-none cursor-pointer"
                     style={{ accentColor: 'var(--accent)', background: 'color-mix(in srgb, var(--text-muted), transparent 72%)' }}
                   />
@@ -633,8 +633,8 @@ export function MeshSettingsTab({
                 ambientIntensity={0.6}
                 directionalIntensity={0.8}
                 xrayOpacity={0.25}
-                heatmapBlend={0}
-                heatmapContrast={1}
+                heatmapMinAngle={0}
+                heatmapMaxAngle={45}
                 hoverTintColor={hoverColor}
                 selectedTintColor={previewSelectedTintColor}
                 hoverTintStrength={hoverTintStrength}

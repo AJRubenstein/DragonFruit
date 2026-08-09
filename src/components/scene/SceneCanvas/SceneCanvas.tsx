@@ -310,8 +310,8 @@ export function SceneCanvas({
   flatUseVertexColors,
   toonSteps,
   xrayOpacity,
-  heatmapBlend,
-  heatmapContrast,
+  heatmapMinAngle,
+  heatmapMaxAngle,
   heatmapColors,
   interiorView = false,
   disableRaycast,
@@ -431,8 +431,8 @@ export function SceneCanvas({
   flatUseVertexColors?: boolean;
   toonSteps?: number;
   xrayOpacity?: number;
-  heatmapBlend?: number;
-  heatmapContrast?: number;
+  heatmapMinAngle?: number;
+  heatmapMaxAngle?: number;
   heatmapColors?: string[];
   interiorView?: boolean;
   disableRaycast?: boolean;
@@ -5477,8 +5477,8 @@ export function SceneCanvas({
                       flatUseVertexColors={flatUseVertexColors}
                       toonSteps={toonSteps}
                       xrayOpacity={xrayOpacity}
-                      heatmapBlend={heatmapBlend}
-                      heatmapContrast={heatmapContrast}
+                      heatmapMinAngle={heatmapMinAngle}
+                      heatmapMaxAngle={heatmapMaxAngle}
                       heatmapColors={heatmapColors ?? emptyHeatmapColors}
                       interiorView={interiorView}
                       cavityGeometry={cavityGeometryByModelId?.get(model.id) ?? null}

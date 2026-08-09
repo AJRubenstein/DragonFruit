@@ -54,8 +54,8 @@ type PersistedMeshAppearance = {
   materialRoughness: number;
   wireframeThicknessPx: number;
   xrayOpacity: number;
-  heatmapBlend: number;
-  heatmapContrast: number;
+  heatmapMinAngle: number;
+  heatmapMaxAngle: number;
   heatmapColors: string[];
   meshColor: string;
   selectionColor: string;
@@ -72,8 +72,8 @@ const DEFAULT_DIRECTIONAL_INTENSITY = 0.8;
 const DEFAULT_MATERIAL_ROUGHNESS = 0.65;
 const DEFAULT_WIREFRAME_THICKNESS_PX = 1.5;
 const DEFAULT_XRAY_OPACITY = 0.25;
-const DEFAULT_HEATMAP_BLEND = 0.85;
-const DEFAULT_HEATMAP_CONTRAST = 1.0;
+const DEFAULT_HEATMAP_MIN_ANGLE = 0;
+const DEFAULT_HEATMAP_MAX_ANGLE = 45;
 export const DEFAULT_HEATMAP_COLORS = ['#E55959', '#E5A559', '#D9D959', '#73D973', '#666666'];
 const DEFAULT_SHADER_TYPE: MeshShaderType = 'soft_clay';
 const DEFAULT_MATCAP_VARIANT: MatcapVariant = 'neutral';
@@ -414,8 +414,8 @@ function readMeshAppearanceFromLocalStorage(): PersistedMeshAppearance | null {
       materialRoughness: clampNumber(parsed.materialRoughness, 0, 1, DEFAULT_MATERIAL_ROUGHNESS),
       wireframeThicknessPx: clampNumber(parsed.wireframeThicknessPx, 0.5, 6, DEFAULT_WIREFRAME_THICKNESS_PX),
       xrayOpacity: clampNumber(parsed.xrayOpacity, 0.02, 0.85, DEFAULT_XRAY_OPACITY),
-      heatmapBlend: clampNumber(parsed.heatmapBlend, 0, 1, DEFAULT_HEATMAP_BLEND),
-      heatmapContrast: clampNumber(parsed.heatmapContrast, 0.1, 5, DEFAULT_HEATMAP_CONTRAST),
+      heatmapMinAngle: clampNumber(parsed.heatmapMinAngle, 0, 90, DEFAULT_HEATMAP_MIN_ANGLE),
+      heatmapMaxAngle: clampNumber(parsed.heatmapMaxAngle, 0, 90, DEFAULT_HEATMAP_MAX_ANGLE),
       heatmapColors: Array.isArray(parsed.heatmapColors) && parsed.heatmapColors.length === 5 ? parsed.heatmapColors : DEFAULT_HEATMAP_COLORS,
       meshColor: clampHexColor(parsed.meshColor, DEFAULT_MESH_COLOR),
       selectionColor: clampHexColor(parsed.selectionColor, DEFAULT_SELECTION_COLOR),
@@ -1492,8 +1492,8 @@ export function useSceneCollectionManager() {
   const [toonSteps, setToonSteps] = useState<number>(DEFAULT_TOON_STEPS);
   const [wireframeThicknessPx, setWireframeThicknessPx] = useState<number>(DEFAULT_WIREFRAME_THICKNESS_PX);
   const [xrayOpacity, setXrayOpacity] = useState<number>(DEFAULT_XRAY_OPACITY);
-  const [heatmapBlend, setHeatmapBlend] = useState<number>(DEFAULT_HEATMAP_BLEND);
-  const [heatmapContrast, setHeatmapContrast] = useState<number>(DEFAULT_HEATMAP_CONTRAST);
+  const [heatmapMinAngle, setHeatmapMinAngle] = useState<number>(DEFAULT_HEATMAP_MIN_ANGLE);
+  const [heatmapMaxAngle, setHeatmapMaxAngle] = useState<number>(DEFAULT_HEATMAP_MAX_ANGLE);
   const [heatmapColors, setHeatmapColors] = useState<string[]>(DEFAULT_HEATMAP_COLORS);
   const [preferredMeshColor, setPreferredMeshColor] = useState<string>(DEFAULT_MESH_COLOR);
   const [selectionColor, setSelectionColor] = useState<string>(DEFAULT_SELECTION_COLOR);
@@ -1538,8 +1538,8 @@ export function useSceneCollectionManager() {
       setMaterialRoughness(persistedAppearance.materialRoughness);
       setWireframeThicknessPx(persistedAppearance.wireframeThicknessPx);
       setXrayOpacity(persistedAppearance.xrayOpacity);
-      setHeatmapBlend(persistedAppearance.heatmapBlend ?? DEFAULT_HEATMAP_BLEND);
-      setHeatmapContrast(persistedAppearance.heatmapContrast ?? DEFAULT_HEATMAP_CONTRAST);
+      setHeatmapMinAngle(persistedAppearance.heatmapMinAngle ?? DEFAULT_HEATMAP_MIN_ANGLE);
+      setHeatmapMaxAngle(persistedAppearance.heatmapMaxAngle ?? DEFAULT_HEATMAP_MAX_ANGLE);
       setHeatmapColors(persistedAppearance.heatmapColors ?? DEFAULT_HEATMAP_COLORS);
       setPreferredMeshColor(persistedAppearance.meshColor);
       setSelectionColor(persistedAppearance.selectionColor ?? DEFAULT_SELECTION_COLOR);
@@ -5020,8 +5020,8 @@ export function useSceneCollectionManager() {
       materialRoughness: prev?.materialRoughness ?? materialRoughness,
       wireframeThicknessPx: prev?.wireframeThicknessPx ?? wireframeThicknessPx,
       xrayOpacity: prev?.xrayOpacity ?? xrayOpacity,
-      heatmapBlend: prev?.heatmapBlend ?? heatmapBlend,
-      heatmapContrast: prev?.heatmapContrast ?? heatmapContrast,
+      heatmapMinAngle: prev?.heatmapMinAngle ?? heatmapMinAngle,
+      heatmapMaxAngle: prev?.heatmapMaxAngle ?? heatmapMaxAngle,
       heatmapColors: prev?.heatmapColors ?? heatmapColors,
       meshColor: normalizedColor,
       selectionColor: prev?.selectionColor ?? selectionColor,
@@ -5029,7 +5029,7 @@ export function useSceneCollectionManager() {
       hoverTintStrength: prev?.hoverTintStrength ?? hoverTintStrength,
       selectedTintStrength: prev?.selectedTintStrength ?? selectedTintStrength,
     });
-  }, [activeModelId, ambientIntensity, directionalIntensity, flatUseVertexColors, heatmapBlend, heatmapColors, heatmapContrast, hoverColor, hoverTintStrength, materialRoughness, matcapVariant, selectedTintStrength, selectionColor, shaderType, toonSteps, wireframeThicknessPx, xrayOpacity]);
+  }, [activeModelId, ambientIntensity, directionalIntensity, flatUseVertexColors, heatmapMinAngle, heatmapColors, heatmapMaxAngle, hoverColor, hoverTintStrength, materialRoughness, matcapVariant, selectedTintStrength, selectionColor, shaderType, toonSteps, wireframeThicknessPx, xrayOpacity]);
 
   const setMeshVisible = useCallback((visible: boolean) => {
     if (activeModelId) {
@@ -5281,10 +5281,10 @@ export function useSceneCollectionManager() {
     setWireframeThicknessPx,
     xrayOpacity,
     setXrayOpacity,
-    heatmapBlend,
-    setHeatmapBlend,
-    heatmapContrast,
-    setHeatmapContrast,
+    heatmapMinAngle,
+    setHeatmapMinAngle,
+    heatmapMaxAngle,
+    setHeatmapMaxAngle,
     shaderType,
     setShaderType,
     matcapVariant,

@@ -57,10 +57,10 @@ interface TopBarProps {
   onMaterialRoughnessChange: (value: number) => void;
   xrayOpacity: number;
   onXrayOpacityChange: (value: number) => void;
-  heatmapBlend: number;
-  onHeatmapBlendChange: (value: number) => void;
-  heatmapContrast: number;
-  onHeatmapContrastChange: (value: number) => void;
+  heatmapMinAngle: number;
+  onHeatmapMinAngleChange: (value: number) => void;
+  heatmapMaxAngle: number;
+  onHeatmapMaxAngleChange: (value: number) => void;
   hoverTintStrength: number;
   onHoverTintStrengthChange: (value: number) => void;
   selectedTintStrength: number;
@@ -122,10 +122,10 @@ export function TopBar({
   onMaterialRoughnessChange,
   xrayOpacity,
   onXrayOpacityChange,
-  heatmapBlend,
-  onHeatmapBlendChange,
-  heatmapContrast,
-  onHeatmapContrastChange,
+  heatmapMinAngle,
+  onHeatmapMinAngleChange,
+  heatmapMaxAngle,
+  onHeatmapMaxAngleChange,
   hoverTintStrength,
   onHoverTintStrengthChange,
   selectedTintStrength,
@@ -1318,10 +1318,10 @@ export function TopBar({
         onMaterialRoughnessChange={onMaterialRoughnessChange}
         xrayOpacity={xrayOpacity}
         onXrayOpacityChange={onXrayOpacityChange}
-        heatmapBlend={heatmapBlend}
-        onHeatmapBlendChange={onHeatmapBlendChange}
-        heatmapContrast={heatmapContrast}
-        onHeatmapContrastChange={onHeatmapContrastChange}
+        heatmapMinAngle={heatmapMinAngle}
+        onHeatmapMinAngleChange={onHeatmapMinAngleChange}
+        heatmapMaxAngle={heatmapMaxAngle}
+        onHeatmapMaxAngleChange={onHeatmapMaxAngleChange}
         hoverTintStrength={hoverTintStrength}
         onHoverTintStrengthChange={onHoverTintStrengthChange}
         selectedTintStrength={selectedTintStrength}

@@ -9485,10 +9485,10 @@ export default function Home() {
         onMaterialRoughnessChange={scene.setMaterialRoughness}
         xrayOpacity={scene.xrayOpacity}
         onXrayOpacityChange={scene.setXrayOpacity}
-        heatmapBlend={scene.heatmapBlend}
-        onHeatmapBlendChange={scene.setHeatmapBlend}
-        heatmapContrast={scene.heatmapContrast}
-        onHeatmapContrastChange={scene.setHeatmapContrast}
+        heatmapMinAngle={scene.heatmapMinAngle}
+        onHeatmapMinAngleChange={scene.setHeatmapMinAngle}
+        heatmapMaxAngle={scene.heatmapMaxAngle}
+        onHeatmapMaxAngleChange={scene.setHeatmapMaxAngle}
         hoverTintStrength={scene.hoverTintStrength}
         onHoverTintStrengthChange={scene.setHoverTintStrength}
         selectedTintStrength={scene.selectedTintStrength}
@@ -9770,7 +9770,8 @@ export default function Home() {
             flatUseVertexColors={scene.flatUseVertexColors}
             toonSteps={scene.toonSteps}
             xrayOpacity={scene.xrayOpacity}
-            heatmapContrast={scene.heatmapContrast}
+            heatmapMinAngle={scene.heatmapMinAngle}
+            heatmapMaxAngle={scene.heatmapMaxAngle}
             heatmapColors={scene.heatmapColors}
             interiorView={interiorView}
             cavityGeometryByModelId={new Map(Array.from(cavityGeometryByModelIdRef.current.entries()).map(([id, entry]) => [id, entry.geometry]))}
