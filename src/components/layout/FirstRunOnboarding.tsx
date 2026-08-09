@@ -16,15 +16,13 @@ import {
 import type { ThemePreference } from '@/components/settings/themeCustomizations';
 import { OnboardingPrinterLibrary } from '@/components/layout/OnboardingPrinterLibrary';
 
-type FirstRunOnboardingProps = {
-  /** Whether a printer profile is currently active (backstop for the printer step auto-advance). */
-  hasActivePrinter: boolean;
-  /** The wizard was completed; the caller persists the one-time flag. */
-  onCompleted: () => void;
-};
-
-const STEPS = ['welcome', 'theme', 'printer', 'done'] as const;
+const STEPS = ['welcome', 'theme', 'printer'] as const;
 type WizardStep = (typeof STEPS)[number];
+
+type FirstRunOnboardingProps = {
+  /** Called once a printer has been added — lets the caller clear its replay latch. */
+  onExit: () => void;
+};
 
 // Applies a built-in theme exactly like SettingsModal's apply path: writes the
 // preference + preset + colors keys and live-applies the CSS variables.
@@ -39,10 +37,7 @@ function applyBuiltInThemePreference(preference: ThemePreference): void {
   applyThemeCustomColors(colors);
 }
 
-export function FirstRunOnboarding({
-  hasActivePrinter,
-  onCompleted,
-}: FirstRunOnboardingProps) {
+export function FirstRunOnboarding({ onExit }: FirstRunOnboardingProps) {
   const { _ } = useLingui();
   const [step, setStep] = React.useState<WizardStep>('welcome');
   const [direction, setDirection] = React.useState<'forward' | 'backward'>('forward');
@@ -59,13 +54,9 @@ export function FirstRunOnboarding({
     setStep(next);
   }, []);
 
-  // Backstop: if a printer becomes active while on the printer step (e.g. added
-  // via Settings from the app bar), move on to the wrap-up.
-  React.useEffect(() => {
-    if (step === 'printer' && hasActivePrinter) {
-      goToStep('done', 'forward');
-    }
-  }, [step, hasActivePrinter, goToStep]);
+  const handlePrinterAdded = React.useCallback(() => {
+    onExit();
+  }, [onExit]);
 
   const handleThemeSelect = React.useCallback((preference: ThemePreference) => {
     applyBuiltInThemePreference(preference);
@@ -95,11 +86,11 @@ export function FirstRunOnboarding({
           left: '50%',
           top: '50%',
           transform: 'translate(-50%, -50%)',
-          height: 'min(110vh, 110vw)',
-          width: 'min(110vh, 110vw)',
+          height: 'min(90vh, 110vw)',
+          width: 'min(90vh, 110vw)',
           objectFit: 'contain',
           opacity: 0.07,
-          filter: 'blur(40px)',
+          filter: 'blur(50px)',
           pointerEvents: 'none',
         }}
       />
@@ -115,7 +106,7 @@ export function FirstRunOnboarding({
             // own content while the box grows, so the reveal reads as a stretch.
             height: isLibraryExpanded ? 'min(86vh, 980px)' : 'min(440px, 86vh)',
             maxWidth: isLibraryExpanded ? 'min(1040px, 94vw)' : '768px',
-            transition: 'height 320ms ease-out, max-width 320ms ease-out',
+            transition: 'height 120ms ease-out, max-width 120ms ease-out',
           }}
         >
           {/* Step progress (hidden while the printer library fills the modal) */}
@@ -139,11 +130,12 @@ export function FirstRunOnboarding({
 
           <div
             key={step}
-            className={`ui-onboarding-step-${direction} flex min-h-0 flex-1 flex-col ${isLibraryExpanded ? 'overflow-hidden p-0' : 'overflow-y-auto px-6 py-6'}`}
+            className={`${isLibraryExpanded ? 'ui-onboarding-fade' : `ui-onboarding-step-${direction}`} flex min-h-0 flex-1 flex-col ${isLibraryExpanded ? 'overflow-hidden p-0' : 'overflow-y-auto px-6 py-6'}`}
           >
             {step === 'welcome' && (
               <div className="flex flex-1 flex-col">
                 <div className="flex flex-1 flex-col items-center justify-start text-center">
+                  <div className="mt-2 max-w-[340px] text-base leading-relaxed text-pretty" />
                   <img
                     src="/dragonfruit_assets/branding/text_logo.svg"
                     alt="DragonFruit"
@@ -267,36 +259,9 @@ export function FirstRunOnboarding({
 
             {step === 'printer' && (
               <OnboardingPrinterLibrary
-                onAdded={() => goToStep('done', 'forward')}
+                onAdded={handlePrinterAdded}
                 onBack={() => goToStep('theme', 'backward')}
               />
-            )}
-
-            {step === 'done' && (
-              <div className="flex flex-1 flex-col items-center justify-center text-center">
-                <span
-                  className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full border"
-                  style={{
-                    background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 90%)',
-                    borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 50%)',
-                  }}
-                >
-                  <Check className="h-5 w-5" style={{ color: 'var(--accent-secondary)' }} />
-                </span>
-                <h2 className="text-xl font-bold" style={{ color: 'var(--text-strong)' }}>
-                  {_(msg`You're all set`)}
-                </h2>
-                <p className="mt-2 max-w-md text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                  {_(msg`Your printer is ready. Drag a model in to start preparing your first print.`)}
-                </p>
-                <button
-                  type="button"
-                  onClick={onCompleted}
-                  className="ui-button ui-button-primary mt-8 !h-9 !px-6 text-sm"
-                >
-                  {_(msg`Start using DragonFruit`)}
-                </button>
-              </div>
             )}
           </div>
         </div>

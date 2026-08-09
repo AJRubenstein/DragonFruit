@@ -12,9 +12,9 @@ import {
 import type { PrinterPreset } from '@/features/profiles/profileStore';
 
 type OnboardingPrinterLibraryProps = {
-  /** Called after a preset is added and activated — the wizard advances to its wrap-up. */
+  /** Called after a preset is added and activated — the wizard then closes. */
   onAdded: () => void;
-  /** Collapses back to the printer intro (the modal height animates down). */
+  /** Collapses back to the theme step. */
   onBack: () => void;
 };
 

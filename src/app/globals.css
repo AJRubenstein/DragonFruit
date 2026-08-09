@@ -719,6 +719,16 @@ input[type="number"].no-spinners {
   }
 }
 
+/* Near-instant content fade used while the modal itself resizes. */
+@keyframes onboardingFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .ui-onboarding-backdrop {
   animation: onboardingBackdropIn 180ms ease-out;
 }
@@ -738,13 +748,19 @@ input[type="number"].no-spinners {
   animation: onboardingStepInBackward 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Applied to the printer step content, which fades in while the modal inflates. */
+.ui-onboarding-fade {
+  animation: onboardingFadeIn 140ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-modal-backdrop-enter,
   .ui-modal-panel-enter,
   .ui-onboarding-backdrop,
   .ui-onboarding-panel,
   .ui-onboarding-step-forward,
-  .ui-onboarding-step-backward {
+  .ui-onboarding-step-backward,
+  .ui-onboarding-fade {
     animation: none !important;
   }
 }

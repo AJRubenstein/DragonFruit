@@ -259,10 +259,6 @@ import {
   subscribeToWorkspaceCameraSettings,
 } from '@/components/settings/workspaceCameraPreferences';
 import { openProfileSettingsModal, PROFILE_SETTINGS_MODAL_OPEN_CHANGE_EVENT } from '@/components/settings/profileModalEvents';
-import {
-  getOnboardingCompleted,
-  setOnboardingCompleted as setOnboardingCompletedFlag,
-} from '@/components/settings/onboardingPreferences';
 import { FirstRunOnboarding } from '@/components/layout/FirstRunOnboarding';
 import {
   getProfileMonitoringUiAdapter,
@@ -604,6 +600,10 @@ export default function Home() {
   const activePrinterProfile = React.useMemo(() => getActivePrinterProfile(profileState), [profileState]);
   const activeMaterialProfile = React.useMemo(() => getActiveMaterialProfile(profileState), [profileState]);
   const hasActivePrinterProfile = Boolean(activePrinterProfile);
+  const hasPrinterProfiles = React.useMemo(
+    () => profileState.printerProfiles.length > 0,
+    [profileState.printerProfiles],
+  );
 
   // 2. Transform Management (needs geom for bounds)
   const transformMgr = useTransformManager({ geom: scene.geom });
@@ -977,12 +977,13 @@ export default function Home() {
   const [interiorView, setInteriorView] = React.useState(false);
   const isSupportSpotlightHoldActive = useActionActive('SUPPORTS', 'TEMP_SPOTLIGHT_HOLD');
   const [allowPrepareWithoutPrinter, setAllowPrepareWithoutPrinter] = React.useState(false);
-  // First-run onboarding. Shown on every load until it's completed — there is no
-  // dismiss path, so the persisted flag only flips once the user finishes it.
-  // `mounted` avoids SSR/client mismatches: the wizard is only rendered after
-  // hydration reads the persisted flag from localStorage.
-  const [onboardingCompleted, setOnboardingCompleted] = React.useState(false);
+  // First-run onboarding. `mounted` avoids SSR/client mismatches: the wizard is
+  // only rendered after hydration. It shows whenever there are no printer
+  // profiles — DragonFruit is assumed unset up until a printer is added.
+  // `forceOnboarding` is a session latch for the debug Ctrl+Shift+O replay, so
+  // the wizard can be shown even when a printer already exists.
   const [onboardingMounted, setOnboardingMounted] = React.useState(false);
+  const [forceOnboarding, setForceOnboarding] = React.useState(false);
   const [prepareSmoothingSettingsExpanded, setPrepareSmoothingSettingsExpanded] = React.useState(true);
   const [selectedHolePunchPlacementIds, setSelectedHolePunchPlacementIds] = React.useState<string[]>([]);
   const [hoveredHolePunchPlacementId, setHoveredHolePunchPlacementId] = React.useState<string | null>(null);
@@ -6974,35 +6975,21 @@ export default function Home() {
     setAllowPrepareWithoutPrinter(true);
   }, []);
 
-  // Read the persisted onboarding flag once, after hydration. If a printer
-  // profile already exists at startup (e.g. migrated from an earlier version),
-  // the wizard is moot — mark it done so deleting printers later can't re-trigger it.
+  // Mark the client as hydrated so the onboarding wizard (and top-bar chrome
+  // gating) only render after mount, avoiding SSR/client mismatches.
   React.useEffect(() => {
-    let completed = getOnboardingCompleted();
-    if (!completed && hasActivePrinterProfile) {
-      completed = true;
-      setOnboardingCompletedFlag(true);
-    }
-    setOnboardingCompleted(completed);
     setOnboardingMounted(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleOnboardingCompleted = React.useCallback(() => {
-    setOnboardingCompletedFlag(true);
-    setOnboardingCompleted(true);
-  }, []);
-
-  // DEBUG: Ctrl+Shift+O re-runs the onboarding wizard. Clears the persisted
-  // flag and drops this session's "use without printer" state so the wizard
-  // reappears even when a printer is already active.
+  // DEBUG: Ctrl+Shift+O re-runs the onboarding wizard. Lifts the session latch
+  // and drops this session's "use without printer" state so the wizard reappears
+  // even when a printer profile already exists.
   React.useEffect(() => {
     let wasActive = false;
     const unsubscribe = hotkeyStore.subscribe(() => {
       const isActive = isActionActiveSync('DEBUG', 'RE_RUN_ONBOARDING');
       if (isActive && !wasActive) {
-        setOnboardingCompletedFlag(false);
-        setOnboardingCompleted(false);
+        setForceOnboarding(true);
         setAllowPrepareWithoutPrinter(false);
       }
       wasActive = isActive;
@@ -9560,7 +9547,7 @@ export default function Home() {
         interiorView={interiorView}
         onInteriorViewChange={setInteriorView}
         interiorViewAvailable={hasCavityGeometry}
-        hideWorkflowControls={onboardingMounted && !onboardingCompleted && !hasActivePrinterProfile}
+        hideWorkflowControls={onboardingMounted && (forceOnboarding || !hasPrinterProfiles)}
         heatmapColors={scene.heatmapColors}
         onHeatmapColorChange={scene.onHeatmapColorChange}
         isSlicingBusy={isSlicingBusy}
@@ -9766,7 +9753,7 @@ export default function Home() {
               isLoading={showEmptyStateLoading}
               loadingLabel={emptyStateLoadingLabel}
               loadingDetail={emptyStateLoadingDetail}
-              showFirstTimeOnboarding={onboardingCompleted && !hasActivePrinterProfile && !allowPrepareWithoutPrinter}
+              showFirstTimeOnboarding={!hasActivePrinterProfile && !allowPrepareWithoutPrinter}
               onAddPrinter={handleAddPrinterFromOnboarding}
               onUseWithoutPrinter={handleUseWithoutPrinter}
             />
@@ -10582,10 +10569,9 @@ export default function Home() {
         </ToastViewport>
       )}
 
-      {onboardingMounted && !onboardingCompleted && (
+      {onboardingMounted && (forceOnboarding || !hasPrinterProfiles) && (
         <FirstRunOnboarding
-          hasActivePrinter={hasActivePrinterProfile}
-          onCompleted={handleOnboardingCompleted}
+          onExit={() => setForceOnboarding(false)}
         />
       )}
 

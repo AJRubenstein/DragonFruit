@@ -35,7 +35,7 @@ msgstr "{deltaHours} h"
 msgid "{deltaMin} min"
 msgstr "{deltaMin} min"
 
-#: src/app/page.tsx:433
+#: src/app/page.tsx:429
 #: src/components/controls/ModelStatsCard.tsx:209
 msgid "{hours} h {minutes} min"
 msgstr "{hours} h {minutes} min"
@@ -48,8 +48,8 @@ msgstr "{hours} h {paddedMinutes} min"
 msgid "{minutes} min"
 msgstr "{minutes} min"
 
-#: src/app/page.tsx:425
-#: src/app/page.tsx:434
+#: src/app/page.tsx:421
+#: src/app/page.tsx:430
 #: src/components/controls/ModelStatsCard.tsx:210
 msgid "{minutes} min {seconds} s"
 msgstr "{minutes} min {seconds} s"
@@ -72,12 +72,12 @@ msgid "< 1 min"
 msgstr "< 1 min"
 
 #. Approximate estimated print time (the "~" marks it as a rough estimate). {hours}/{mins} are whole-number quantities.
-#: src/app/page.tsx:417
+#: src/app/page.tsx:413
 msgid "~{hours} h {mins} min"
 msgstr "~{hours} h {mins} min"
 
 #. Approximate estimated print time under an hour (the "~" marks it as a rough estimate).
-#: src/app/page.tsx:418
+#: src/app/page.tsx:414
 msgid "~{mins} min"
 msgstr "~{mins} min"
 
@@ -86,7 +86,7 @@ msgstr "~{mins} min"
 msgid "Active"
 msgstr "Activo"
 
-#: src/app/page.tsx:2146
+#: src/app/page.tsx:2147
 msgid "Add joint"
 msgstr "Añadir unión"
 
@@ -130,7 +130,7 @@ msgid "Auto-repaired — {0} errors"
 msgstr "Reparado automáticamente — {0} errores"
 
 #. View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/layout/FirstRunOnboarding.tsx:255
+#: src/components/layout/FirstRunOnboarding.tsx:246
 #: src/components/layout/OnboardingPrinterLibrary.tsx:200
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1407
 msgid "Back"
@@ -145,7 +145,7 @@ msgstr ""
 msgid "Bottom"
 msgstr "Abajo"
 
-#: src/components/layout/FirstRunOnboarding.tsx:241
+#: src/components/layout/FirstRunOnboarding.tsx:232
 msgid "Bright surfaces for well-lit workspaces."
 msgstr ""
 
@@ -182,7 +182,7 @@ msgstr ""
 msgid "Choose an official printer preset to add."
 msgstr ""
 
-#: src/components/layout/FirstRunOnboarding.tsx:179
+#: src/components/layout/FirstRunOnboarding.tsx:170
 msgid "Choose your theme"
 msgstr ""
 
@@ -240,7 +240,7 @@ msgid "Compact list"
 msgstr ""
 
 #. Confirms proceeding with the profile change despite the re-slice warning above (paired with "Keep current profiles", which cancels).
-#: src/components/layout/FirstRunOnboarding.tsx:262
+#: src/components/layout/FirstRunOnboarding.tsx:253
 #: src/components/layout/TopBar.tsx:1301
 msgid "Continue"
 msgstr "Continuar"
@@ -281,7 +281,7 @@ msgstr "Mostrando nada con la máxima fidelidad."
 msgid "Cut"
 msgstr "Cortar"
 
-#: src/components/layout/FirstRunOnboarding.tsx:206
+#: src/components/layout/FirstRunOnboarding.tsx:197
 msgid "Dark"
 msgstr ""
 
@@ -333,11 +333,11 @@ msgstr "Arrastra un archivo. La plataforma te está juzgando."
 msgid "DragonFruit app menu"
 msgstr "Menú de aplicación de DragonFruit"
 
-#: src/components/layout/FirstRunOnboarding.tsx:85
+#: src/components/layout/FirstRunOnboarding.tsx:76
 msgid "DragonFruit first-time setup"
 msgstr ""
 
-#: src/components/layout/FirstRunOnboarding.tsx:157
+#: src/components/layout/FirstRunOnboarding.tsx:148
 msgid "DragonFruit is a free, open-source slicer for resin 3D printing. Load a model, orient it, add supports, and slice it for your printer."
 msgstr ""
 
@@ -350,7 +350,7 @@ msgstr "Menú de DragonFruit"
 msgid "Drop supported files"
 msgstr "Suelta archivos compatibles"
 
-#: src/app/page.tsx:2152
+#: src/app/page.tsx:2153
 #: src/components/ui/EditorContextMenu.tsx:109
 msgid "Editor"
 msgstr "Editor"
@@ -417,7 +417,7 @@ msgstr "Unidades de la flota"
 msgid "Flip model stats card"
 msgstr "Girar la tarjeta de datos del modelo"
 
-#: src/components/layout/FirstRunOnboarding.tsx:160
+#: src/components/layout/FirstRunOnboarding.tsx:151
 msgid "From the community, for the community. Free to use, open to contribute, and shaped by the people who print with it."
 msgstr ""
 
@@ -430,7 +430,7 @@ msgstr "Frente"
 msgid "Get started"
 msgstr "Empezar"
 
-#: src/components/layout/FirstRunOnboarding.tsx:169
+#: src/components/layout/FirstRunOnboarding.tsx:160
 msgid "Get Started"
 msgstr ""
 
@@ -554,7 +554,7 @@ msgstr "Capas:"
 msgid "Left"
 msgstr "Izq."
 
-#: src/components/layout/FirstRunOnboarding.tsx:236
+#: src/components/layout/FirstRunOnboarding.tsx:227
 msgid "Light"
 msgstr ""
 
@@ -571,7 +571,7 @@ msgstr ""
 msgid "loading…"
 msgstr "cargando…"
 
-#: src/components/layout/FirstRunOnboarding.tsx:211
+#: src/components/layout/FirstRunOnboarding.tsx:202
 msgid "Low-glare surfaces for late-night printing."
 msgstr ""
 
@@ -775,7 +775,7 @@ msgstr "Mapa de calor de voladizos"
 msgid "Paste"
 msgstr "Pegar"
 
-#: src/components/layout/FirstRunOnboarding.tsx:182
+#: src/components/layout/FirstRunOnboarding.tsx:173
 msgid "Pick what fits your workspace. You can change it anytime in Settings."
 msgstr ""
 
@@ -1012,10 +1012,6 @@ msgstr ""
 msgid "Split to bodies"
 msgstr "Dividir en cuerpos"
 
-#: src/components/layout/FirstRunOnboarding.tsx:297
-msgid "Start using DragonFruit"
-msgstr ""
-
 #: src/components/controls/ModelStatsCard.tsx:578
 msgid "STL size:"
 msgstr "Tamaño del STL:"
@@ -1024,7 +1020,7 @@ msgstr "Tamaño del STL:"
 msgid "Support"
 msgstr "Soportes"
 
-#: src/app/page.tsx:2152
+#: src/app/page.tsx:2153
 msgid "Supports"
 msgstr "Soportes"
 
@@ -1066,7 +1062,7 @@ msgstr "Esta escena está agresivamente desocupada."
 msgid "Time to make something real."
 msgstr "Es hora de crear algo real."
 
-#: src/app/page.tsx:2141
+#: src/app/page.tsx:2142
 msgid "Toggle curve"
 msgstr "Alternar curva"
 
@@ -1142,7 +1138,7 @@ msgstr "Cálido"
 msgid "We're gonna need a bigger build plate."
 msgstr "Vamos a necesitar una placa de impresión más grande."
 
-#: src/components/layout/FirstRunOnboarding.tsx:154
+#: src/components/layout/FirstRunOnboarding.tsx:145
 msgid "Welcome!"
 msgstr ""
 
@@ -1183,17 +1179,9 @@ msgstr "Puedes seguir ajustando los perfiles, pero se te pedirá que vuelvas a l
 msgid "You shall not pass... until you load a model."
 msgstr "¡No pasarás... hasta que cargues un modelo!"
 
-#: src/components/layout/FirstRunOnboarding.tsx:287
-msgid "You're all set"
-msgstr ""
-
 #: src/components/layout/EmptySceneState.tsx:73
 msgid "Your models called. They want to be sliced."
 msgstr "Tus modelos han llamado. Quieren ser laminados."
-
-#: src/components/layout/FirstRunOnboarding.tsx:290
-msgid "Your printer is ready. Drag a model in to start preparing your first print."
-msgstr ""
 
 #: src/components/layout/EmptySceneState.tsx:76
 msgid "Zero polygons. Infinite potential."
