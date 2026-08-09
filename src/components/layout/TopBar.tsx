@@ -8,7 +8,6 @@ import { SettingsModal, type SettingsTabKey } from '@/components/settings/Settin
 import { ProfileSettingsModal } from '@/components/settings/ProfileSettingsModal';
 import type { SupportMode } from '@/supports/types';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
-import type { SelectionHighlightMode } from '@/components/selection';
 import { Button } from '@/components/atoms';
 import { Activity, AlertTriangle, Anchor, ChevronDown, FolderInput, FolderOpen, Lock, Maximize2, Minimize2, Power, Printer, Save, SaveAll, Square, Upload, X } from 'lucide-react';
 import {
@@ -58,16 +57,14 @@ interface TopBarProps {
   onMaterialRoughnessChange: (value: number) => void;
   xrayOpacity: number;
   onXrayOpacityChange: (value: number) => void;
-  heatmapBlend: number;
-  onHeatmapBlendChange: (value: number) => void;
-  heatmapContrast: number;
-  onHeatmapContrastChange: (value: number) => void;
+  heatmapMinAngle: number;
+  onHeatmapMinAngleChange: (value: number) => void;
+  heatmapMaxAngle: number;
+  onHeatmapMaxAngleChange: (value: number) => void;
   hoverTintStrength: number;
   onHoverTintStrengthChange: (value: number) => void;
   selectedTintStrength: number;
   onSelectedTintStrengthChange: (value: number) => void;
-  selectionHighlightMode: SelectionHighlightMode;
-  onSelectionHighlightModeChange: (mode: SelectionHighlightMode) => void;
   debugPrimitivesPanelVisible: boolean;
   onDebugPrimitivesPanelVisibleChange: (value: boolean) => void;
   view3dSettings: View3DSettings;
@@ -125,16 +122,14 @@ export function TopBar({
   onMaterialRoughnessChange,
   xrayOpacity,
   onXrayOpacityChange,
-  heatmapBlend,
-  onHeatmapBlendChange,
-  heatmapContrast,
-  onHeatmapContrastChange,
+  heatmapMinAngle,
+  onHeatmapMinAngleChange,
+  heatmapMaxAngle,
+  onHeatmapMaxAngleChange,
   hoverTintStrength,
   onHoverTintStrengthChange,
   selectedTintStrength,
   onSelectedTintStrengthChange,
-  selectionHighlightMode,
-  onSelectionHighlightModeChange,
   debugPrimitivesPanelVisible,
   onDebugPrimitivesPanelVisibleChange,
   view3dSettings,
@@ -1323,16 +1318,14 @@ export function TopBar({
         onMaterialRoughnessChange={onMaterialRoughnessChange}
         xrayOpacity={xrayOpacity}
         onXrayOpacityChange={onXrayOpacityChange}
-        heatmapBlend={heatmapBlend}
-        onHeatmapBlendChange={onHeatmapBlendChange}
-        heatmapContrast={heatmapContrast}
-        onHeatmapContrastChange={onHeatmapContrastChange}
+        heatmapMinAngle={heatmapMinAngle}
+        onHeatmapMinAngleChange={onHeatmapMinAngleChange}
+        heatmapMaxAngle={heatmapMaxAngle}
+        onHeatmapMaxAngleChange={onHeatmapMaxAngleChange}
         hoverTintStrength={hoverTintStrength}
         onHoverTintStrengthChange={onHoverTintStrengthChange}
         selectedTintStrength={selectedTintStrength}
         onSelectedTintStrengthChange={onSelectedTintStrengthChange}
-        selectionHighlightMode={selectionHighlightMode}
-        onSelectionHighlightModeChange={onSelectionHighlightModeChange}
         debugPrimitivesPanelVisible={debugPrimitivesPanelVisible}
         onDebugPrimitivesPanelVisibleChange={onDebugPrimitivesPanelVisibleChange}
         view3dSettings={view3dSettings}

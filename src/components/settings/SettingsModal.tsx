@@ -110,7 +110,6 @@ import {
   type UvToolsSettings,
 } from '@/components/settings/uvToolsPreferences';
 import { outputFormatUsesPngLayers } from '@/features/slicing/formats/registry';
-import type { SelectionHighlightMode } from '@/components/selection';
 import {
   clearSavedFloatingLayout,
   isDebugPrimitivesPanelVisibleEnabled,
@@ -126,6 +125,8 @@ import {
 } from '@/features/scene/importDefaultsPreferences';
 
 const DEFAULT_MESH_COLOR = '#a3a3a3';
+const DEFAULT_HEATMAP_MIN_ANGLE = 0;
+const DEFAULT_HEATMAP_MAX_ANGLE = 45;
 const DEFAULT_AMBIENT_INTENSITY = 0.6;
 const DEFAULT_DIRECTIONAL_INTENSITY = 0.8;
 const DEFAULT_MATERIAL_ROUGHNESS = 0.65;
@@ -183,19 +184,17 @@ type SettingsModalProps = {
   materialRoughness: number;
   onMaterialRoughnessChange: (value: number) => void;
   xrayOpacity: number;
-  heatmapBlend: number;
-  heatmapContrast: number;
+  heatmapMinAngle: number;
+  heatmapMaxAngle: number;
   onXrayOpacityChange: (value: number) => void;
-  onHeatmapBlendChange: (value: number) => void;
-  onHeatmapContrastChange: (value: number) => void;
+  onHeatmapMinAngleChange: (value: number) => void;
+  onHeatmapMaxAngleChange: (value: number) => void;
   heatmapColors: string[];
   onHeatmapColorChange: (index: number, color: string) => void;
   hoverTintStrength: number;
   onHoverTintStrengthChange: (value: number) => void;
   selectedTintStrength: number;
   onSelectedTintStrengthChange: (value: number) => void;
-  selectionHighlightMode: SelectionHighlightMode;
-  onSelectionHighlightModeChange: (mode: SelectionHighlightMode) => void;
   debugPrimitivesPanelVisible: boolean;
   onDebugPrimitivesPanelVisibleChange: (value: boolean) => void;
   view3dSettings: View3DSettings;
@@ -234,19 +233,17 @@ export function SettingsModal({
   materialRoughness,
   onMaterialRoughnessChange,
   xrayOpacity,
-  heatmapBlend,
-  heatmapContrast,
+  heatmapMinAngle,
+  heatmapMaxAngle,
   onXrayOpacityChange,
-  onHeatmapBlendChange,
-  onHeatmapContrastChange,
+  onHeatmapMinAngleChange,
+  onHeatmapMaxAngleChange,
   heatmapColors,
   onHeatmapColorChange,
   hoverTintStrength,
   onHoverTintStrengthChange,
   selectedTintStrength,
   onSelectedTintStrengthChange,
-  selectionHighlightMode,
-  onSelectionHighlightModeChange,
   debugPrimitivesPanelVisible,
   onDebugPrimitivesPanelVisibleChange,
   view3dSettings,
@@ -283,12 +280,11 @@ export function SettingsModal({
   const [draftDirectionalIntensity, setDraftDirectionalIntensity] = useState(directionalIntensity);
   const [draftMaterialRoughness, setDraftMaterialRoughness] = useState(materialRoughness);
   const [draftXrayOpacity, setDraftXrayOpacity] = useState(xrayOpacity);
-  const [draftHeatmapBlend, setDraftHeatmapBlend] = useState(heatmapBlend);
-  const [draftHeatmapContrast, setDraftHeatmapContrast] = useState(heatmapContrast);
+  const [draftHeatmapMinAngle, setDraftHeatmapMinAngle] = useState(heatmapMinAngle);
+  const [draftHeatmapMaxAngle, setDraftHeatmapMaxAngle] = useState(heatmapMaxAngle);
   const [draftHeatmapColors, setDraftHeatmapColors] = useState(heatmapColors);
   const [draftHoverTintStrength, setDraftHoverTintStrength] = useState(hoverTintStrength);
   const [draftSelectedTintStrength, setDraftSelectedTintStrength] = useState(selectedTintStrength);
-  const [draftSelectionHighlightMode, setDraftSelectionHighlightMode] = useState(selectionHighlightMode);
   const [draftSelectionColor, setDraftSelectionColor] = useState(selectionColor);
   const [draftHoverColor, setDraftHoverColor] = useState(hoverColor);
   const [draftCameraProjectionMode, setDraftCameraProjectionMode] = useState<CameraProjectionMode>(() => getSavedCameraProjectionSettings().mode);
@@ -382,14 +378,13 @@ export function SettingsModal({
     setDraftDirectionalIntensity(directionalIntensity);
     setDraftMaterialRoughness(materialRoughness);
     setDraftXrayOpacity(xrayOpacity);
-    setDraftHeatmapBlend(heatmapBlend);
-    setDraftHeatmapContrast(heatmapContrast);
+    setDraftHeatmapMinAngle(heatmapMinAngle);
+    setDraftHeatmapMaxAngle(heatmapMaxAngle);
     setDraftHeatmapColors(heatmapColors);
     setDraftHoverTintStrength(hoverTintStrength);
     setDraftSelectedTintStrength(selectedTintStrength);
-    setDraftSelectionHighlightMode(selectionHighlightMode);
-    setDraftSelectionColor(savedThemeProfile.colors.accent);
-    setDraftHoverColor(savedThemeProfile.colors.accentHover);
+    setDraftSelectionColor(selectionColor);
+    setDraftHoverColor(hoverColor);
     setDraftCameraProjectionMode(getSavedCameraProjectionSettings().mode);
     setDraftCameraFeelPreset(getSavedCameraFeelSettings().preset);
     setDraftCameraTrackpadPrimaryAction(getSavedCameraTrackpadSettings().primaryAction);
@@ -428,14 +423,15 @@ export function SettingsModal({
     heatmapColors,
     hoverTintStrength,
     selectedTintStrength,
-    selectionHighlightMode,
+    selectionColor,
+    hoverColor,
     debugPrimitivesPanelVisible,
     view3dSettings,
     slicingThumbnailRenderSettings,
     shaderType,
     xrayOpacity,
-    heatmapBlend,
-    heatmapContrast,
+    heatmapMinAngle,
+    heatmapMaxAngle,
     heatmapColors,
   ]);
 
@@ -722,11 +718,10 @@ export function SettingsModal({
     setDraftDirectionalIntensity(DEFAULT_DIRECTIONAL_INTENSITY);
     setDraftMaterialRoughness(DEFAULT_MATERIAL_ROUGHNESS);
     setDraftXrayOpacity(DEFAULT_XRAY_OPACITY);
-    setDraftHeatmapBlend(0.85);
-    setDraftHeatmapContrast(1.0);
+    setDraftHeatmapMinAngle(DEFAULT_HEATMAP_MIN_ANGLE);
+    setDraftHeatmapMaxAngle(DEFAULT_HEATMAP_MAX_ANGLE);
     setDraftHoverTintStrength(DEFAULT_HOVER_TINT_STRENGTH);
     setDraftSelectedTintStrength(DEFAULT_SELECTED_TINT_STRENGTH);
-    setDraftSelectionHighlightMode('tint');
     setDraftSelectionColor(DEFAULT_THEME_CUSTOM_COLORS.accent);
     setDraftHoverColor(DEFAULT_THEME_CUSTOM_COLORS.accentHover);
     setDraftCameraProjectionMode(DEFAULT_CAMERA_PROJECTION_SETTINGS.mode);
@@ -805,14 +800,13 @@ export function SettingsModal({
     onDirectionalIntensityChange(draftDirectionalIntensity);
     onMaterialRoughnessChange(draftMaterialRoughness);
     onXrayOpacityChange(draftXrayOpacity);
-    onHeatmapBlendChange(draftHeatmapBlend);
-    onHeatmapContrastChange(draftHeatmapContrast);
+    onHeatmapMinAngleChange(draftHeatmapMinAngle);
+    onHeatmapMaxAngleChange(draftHeatmapMaxAngle);
     draftHeatmapColors.forEach((color, i) => onHeatmapColorChange(i, color));
     onHoverTintStrengthChange(draftHoverTintStrength);
     onSelectedTintStrengthChange(draftSelectedTintStrength);
-    onSelectionHighlightModeChange(draftSelectionHighlightMode);
-    onSelectionColorChange(draftThemeColors.accent);
-    onHoverColorChange(draftThemeColors.accentHover);
+    onSelectionColorChange(draftSelectionColor);
+    onHoverColorChange(draftHoverColor);
 
     applyThemePreference(draftThemePreference);
     applyThemeCustomColors(draftThemeColors);
@@ -865,7 +859,8 @@ export function SettingsModal({
     draftMeshColor,
     draftHoverTintStrength,
     draftSelectedTintStrength,
-    draftSelectionHighlightMode,
+    draftSelectionColor,
+    draftHoverColor,
     draftCameraScope,
     draftHigherContrastModelEdges,
     draftThemePreset,
@@ -892,8 +887,8 @@ export function SettingsModal({
     draftUvToolsSettings,
     draftView3dSettings,
     draftXrayOpacity,
-    draftHeatmapBlend,
-    draftHeatmapContrast,
+    draftHeatmapMinAngle,
+    draftHeatmapMaxAngle,
     draftHeatmapColors,
     draftLogLevel,
     onAmbientIntensityChange,
@@ -905,7 +900,6 @@ export function SettingsModal({
     onMeshColorChange,
     onHoverTintStrengthChange,
     onSelectedTintStrengthChange,
-    onSelectionHighlightModeChange,
     onSelectionColorChange,
     onHoverColorChange,
     onDebugPrimitivesPanelVisibleChange,
@@ -914,8 +908,8 @@ export function SettingsModal({
     onShaderTypeChange,
     onToonStepsChange,
     onXrayOpacityChange,
-    onHeatmapBlendChange,
-    onHeatmapContrastChange,
+    onHeatmapMinAngleChange,
+    onHeatmapMaxAngleChange,
     onHeatmapColorChange,
   ]);
 
@@ -1423,19 +1417,17 @@ export function SettingsModal({
                   materialRoughness={draftMaterialRoughness}
                   onMaterialRoughnessChange={setDraftMaterialRoughness}
                   xrayOpacity={draftXrayOpacity}
-                  heatmapBlend={draftHeatmapBlend}
-                  heatmapContrast={draftHeatmapContrast}
+                  heatmapMinAngle={draftHeatmapMinAngle}
+                  heatmapMaxAngle={draftHeatmapMaxAngle}
                   onXrayOpacityChange={setDraftXrayOpacity}
-                  onHeatmapBlendChange={setDraftHeatmapBlend}
-                  onHeatmapContrastChange={setDraftHeatmapContrast}
+                  onHeatmapMinAngleChange={setDraftHeatmapMinAngle}
+                  onHeatmapMaxAngleChange={setDraftHeatmapMaxAngle}
                   heatmapColors={draftHeatmapColors}
                   onHeatmapColorChange={handleDraftHeatmapColorChange}
                   selectionColor={draftSelectionColor}
                   onSelectionColorChange={setDraftSelectionColor}
                   hoverColor={draftHoverColor}
                   onHoverColorChange={setDraftHoverColor}
-                  selectionHighlightMode={draftSelectionHighlightMode}
-                  onSelectionHighlightModeChange={setDraftSelectionHighlightMode}
                   hoverTintStrength={draftHoverTintStrength}
                   onHoverTintStrengthChange={setDraftHoverTintStrength}
                   selectedTintStrength={draftSelectedTintStrength}

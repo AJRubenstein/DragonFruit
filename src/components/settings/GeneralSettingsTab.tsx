@@ -3,7 +3,8 @@
 import React from 'react';
 import { Bug, ClipboardCopy, Database, Languages, LayoutGrid, RotateCcw, ZoomIn } from 'lucide-react';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
-import { Select } from '@/components/atoms';
+import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
+import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { type Locale } from '@/i18n';
 import type { ImportDefaultsSettings } from '@/features/scene/importDefaultsPreferences';
 import {
@@ -13,10 +14,12 @@ import {
 } from '@/components/layout/floatingLayoutPreferences';
 import {
   UI_SCALE_PRESETS,
+  MIN_UI_SCALE,
+  MAX_UI_SCALE,
   getSavedUiScale,
   normalizeUiScale,
   saveUiScale,
-  type UiScalePreset,
+  type UiScaleValue,
 } from '@/components/settings/uiScalePreference';
 
 interface GeneralSettingsTabProps {
@@ -46,10 +49,25 @@ export function GeneralSettingsTab({
   const [dumpStatus, setDumpStatus] = React.useState<string | null>(null);
   const rootsLockedByLineRaft = importDefaults.raftBottomMode === 'line';
 
-  const [uiScale, setUiScale] = React.useState<UiScalePreset>(() => getSavedUiScale());
+  const [uiScale, setUiScale] = React.useState<UiScaleValue>(() => getSavedUiScale());
+  const [customScaleArmed, setCustomScaleArmed] = React.useState(false);
+  const isCustomScale = customScaleArmed || !UI_SCALE_PRESETS.includes(uiScale);
 
-  const handleUiScaleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const next = normalizeUiScale(Number(event.target.value));
+  const handleUiScaleChange = (rawValue: string) => {
+    // Selecting "Custom" arms the numeric input but saves nothing — the current
+    // scale stays until the user commits a value in the field.
+    if (rawValue === 'custom') {
+      setCustomScaleArmed(true);
+      return;
+    }
+    setCustomScaleArmed(false);
+    const next = normalizeUiScale(Number(rawValue));
+    setUiScale(next);
+    saveUiScale(next);
+  };
+
+  const handleCustomUiScaleChange = (percent: number) => {
+    const next = normalizeUiScale(percent / 100);
     setUiScale(next);
     saveUiScale(next);
   };
@@ -183,12 +201,40 @@ export function GeneralSettingsTab({
                 Larger percentages magnify the whole UI.
               </div>
             </div>
-            <Select value={uiScale} onChange={handleUiScaleChange} className="!w-auto">
-              {UI_SCALE_PRESETS.map((preset) => (
-                <option key={preset} value={preset}>{Math.round(preset * 100)}%</option>
-              ))}
-            </Select>
+            <SelectDropdown<string>
+              value={isCustomScale ? 'custom' : String(uiScale)}
+              options={[
+                ...UI_SCALE_PRESETS.map((preset) => ({ value: String(preset), label: `${Math.round(preset * 100)}%` })),
+                { value: 'custom', label: 'Custom' },
+              ]}
+              onChange={handleUiScaleChange}
+              ariaLabel="Interface scale"
+              title="Interface scale"
+              className="w-36"
+              menuAlign="right"
+              leadingDisplay={<ZoomIn className="w-4 h-4" />}
+              selectClassName="!text-[13px] !pr-9"
+            />
           </div>
+
+          {isCustomScale && (
+            <div className="mt-2.5 flex items-center justify-between gap-3">
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Custom scale
+              </div>
+              <ScrollableNumberField
+                className="w-36"
+                value={Math.round(uiScale * 100)}
+                min={MIN_UI_SCALE * 100}
+                max={MAX_UI_SCALE * 100}
+                step={1}
+                unit="%"
+                ariaLabel="Custom interface scale"
+                commitOnBlur
+                onChange={handleCustomUiScaleChange}
+              />
+            </div>
+          )}
         </div>
       </section>
 

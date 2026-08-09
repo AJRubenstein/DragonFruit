@@ -2,6 +2,7 @@ import React from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import type { CameraProjectionMode } from '@/components/settings/cameraProjectionPreferences';
+import { DEFAULT_FOV_DEG } from '@/components/settings/cameraFovPreferences';
 
 export function CameraProjectionController({ mode, perspectiveFov = 50 }: { mode: CameraProjectionMode; perspectiveFov?: number }) {
   const { camera, controls, set, size } = useThree();
@@ -60,11 +61,13 @@ export function CameraProjectionController({ mode, perspectiveFov = 50 }: { mode
       let preserveZoom = 1;
       if (camera instanceof THREE.PerspectiveCamera) {
         const distance = Math.max(0.001, camera.position.distanceTo(target));
-        const fov = THREE.MathUtils.degToRad(camera.fov);
+        // Ortho framing uses a fixed reference FOV (the default) rather than the
+        // user's perspective FOV setting, so the FOV slider never changes the
+        // orthographic zoom (FOV is a perspective-only property).
+        const fov = THREE.MathUtils.degToRad(DEFAULT_FOV_DEG);
         worldHalfH = Math.max(1, Math.tan(fov * 0.5) * distance);
-        // When switching from perspective to ortho, calculate the ortho zoom
-        // to preserve the same view scale (visual size of objects on screen).
-        // This prevents zoom-out/zoom-in when transitioning between projections.
+        // At the reference FOV, preserveZoom is worldHalfH / the same frustum, i.e.
+        // 1 — ortho zoom stays at the natural 1:1 projection of the reference frustum.
         preserveZoom = Math.max(0.0001, worldHalfH / Math.max(1, Math.tan(fov * 0.5) * distance));
       } else {
         // Already ortho (type mismatch shouldn't happen, but be safe)
@@ -118,16 +121,19 @@ export function CameraProjectionController({ mode, perspectiveFov = 50 }: { mode
     next.up.copy(camera.up);
 
     if (camera instanceof THREE.OrthographicCamera) {
+      // span is the vertical world-space height currently visible in the ortho
+      // frustum at its current zoom (OrthographicCamera scales the frustum by
+      // 1/zoom). Keep the user's perspective FOV and place the camera at the
+      // distance that reproduces that same world height, so the model keeps its
+      // on-screen size across the projection switch. (Setting a matching FOV
+      // instead doesn't survive: this effect re-runs right after set() swaps in
+      // the new camera, resets fov to perspectiveFov, and the camera is left too
+      // close — appearing to zoom in.)
       const span = Math.max(1e-6, (camera.top - camera.bottom) / Math.max(1e-6, camera.zoom));
-      const distance = Math.max(0.001, span / 2);
+      const fovDeg = THREE.MathUtils.clamp(perspectiveFov, 5, 175);
+      next.fov = fovDeg;
+      const distance = Math.max(0.001, span / (2 * Math.tan(THREE.MathUtils.degToRad(fovDeg * 0.5))));
 
-      // When switching from ortho to perspective, calculate FOV to match
-      // the ortho zoom level so objects appear the same visual size.
-      // This prevents zoom-out/zoom-in when transitioning between projections.
-      const requiredHalfFov = Math.atan(span / (2 * distance));
-      const calculatedFov = THREE.MathUtils.radToDeg(2 * requiredHalfFov);
-      next.fov = THREE.MathUtils.clamp(calculatedFov, 5, 175);
-      
       const direction = camera.position.clone().sub(target);
       if (direction.lengthSq() < 1e-10) direction.set(-1, -1, 1);
       direction.normalize();

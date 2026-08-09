@@ -10,9 +10,11 @@ import * as THREE from 'three';
 export type SelectableType = 'model' | 'support' | 'joint';
 
 /**
- * Selection highlight mode - how to visually indicate selection
+ * Selection highlight mode - how to visually indicate selection. The user-facing
+ * "Highlight Mode" setting was removed; the effective mode is derived internally
+ * ('tint' by default, 'spotlight' for the Support-mode hold, 'none' in Printing).
  */
-export type SelectionHighlightMode = 'spotlight' | 'fresnel' | 'tint' | 'none';
+export type SelectionHighlightMode = 'spotlight' | 'tint' | 'none';
 
 /**
  * Selection state

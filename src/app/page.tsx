@@ -7639,22 +7639,13 @@ export default function Home() {
     }
   }, [scene.mode, workspaceCameraSettings]);
 
-  React.useEffect(() => {
-    // Removed old per-workspace selection highlight override effect
-    // const workspaceSelectionHighlightMode = getSavedWorkspaceCameraSettings().selectionHighlightDefaults[scene.mode];
-    // if (workspaceSelectionHighlightMode !== scene.selectionHighlightMode) {
-    //   scene.setSelectionHighlightMode(workspaceSelectionHighlightMode);
-    // }
-  }, [scene.mode, scene.selectionHighlightMode, scene.setSelectionHighlightMode]);
-
-
-
+  // Selection highlight is always Mesh Tint; only the Support-mode spotlight
+  // hold and the Printing workspace deviate (spotlight / none).
   const effectiveSelectionHighlightMode = React.useMemo(() => {
     if (scene.mode === 'printing') return 'none';
-    if (scene.mode !== 'support') return scene.selectionHighlightMode;
     if (isSupportSpotlightHoldActive) return 'spotlight';
-    return scene.selectionHighlightMode === 'spotlight' ? 'tint' : scene.selectionHighlightMode;
-  }, [isSupportSpotlightHoldActive, scene.mode, scene.selectionHighlightMode]);
+    return 'tint';
+  }, [isSupportSpotlightHoldActive, scene.mode]);
 
   const isTransitioningOutOfPrinting = scene.mode !== 'printing' && previousSceneModeRef.current === 'printing';
 
@@ -9494,16 +9485,14 @@ export default function Home() {
         onMaterialRoughnessChange={scene.setMaterialRoughness}
         xrayOpacity={scene.xrayOpacity}
         onXrayOpacityChange={scene.setXrayOpacity}
-        heatmapBlend={scene.heatmapBlend}
-        onHeatmapBlendChange={scene.setHeatmapBlend}
-        heatmapContrast={scene.heatmapContrast}
-        onHeatmapContrastChange={scene.setHeatmapContrast}
+        heatmapMinAngle={scene.heatmapMinAngle}
+        onHeatmapMinAngleChange={scene.setHeatmapMinAngle}
+        heatmapMaxAngle={scene.heatmapMaxAngle}
+        onHeatmapMaxAngleChange={scene.setHeatmapMaxAngle}
         hoverTintStrength={scene.hoverTintStrength}
         onHoverTintStrengthChange={scene.setHoverTintStrength}
         selectedTintStrength={scene.selectedTintStrength}
         onSelectedTintStrengthChange={scene.setSelectedTintStrength}
-        selectionHighlightMode={scene.selectionHighlightMode}
-        onSelectionHighlightModeChange={scene.setSelectionHighlightMode}
         debugPrimitivesPanelVisible={debugPrimitivesPanelVisible}
         onDebugPrimitivesPanelVisibleChange={setDebugPrimitivesPanelVisible}
         view3dSettings={scene.view3dSettings}
@@ -9781,7 +9770,8 @@ export default function Home() {
             flatUseVertexColors={scene.flatUseVertexColors}
             toonSteps={scene.toonSteps}
             xrayOpacity={scene.xrayOpacity}
-            heatmapContrast={scene.heatmapContrast}
+            heatmapMinAngle={scene.heatmapMinAngle}
+            heatmapMaxAngle={scene.heatmapMaxAngle}
             heatmapColors={scene.heatmapColors}
             interiorView={interiorView}
             cavityGeometryByModelId={new Map(Array.from(cavityGeometryByModelIdRef.current.entries()).map(([id, entry]) => [id, entry.geometry]))}

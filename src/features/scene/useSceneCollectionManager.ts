@@ -7,7 +7,6 @@ import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeO
 import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, readSidecarFileBytes, resolveOriginalRefSidecar, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
-import type { SelectionHighlightMode } from '@/components/selection';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { createTypedHistory } from '@/history/typedHistory';
 import type { ModelTransform } from '@/hooks/useModelTransform';
@@ -55,15 +54,14 @@ type PersistedMeshAppearance = {
   materialRoughness: number;
   wireframeThicknessPx: number;
   xrayOpacity: number;
-  heatmapBlend: number;
-  heatmapContrast: number;
+  heatmapMinAngle: number;
+  heatmapMaxAngle: number;
   heatmapColors: string[];
   meshColor: string;
   selectionColor: string;
   hoverColor: string;
   hoverTintStrength: number;
   selectedTintStrength: number;
-  selectionHighlightMode: SelectionHighlightMode;
 };
 
 const MESH_APPEARANCE_STORAGE_KEY = 'mesh-appearance-settings';
@@ -74,18 +72,17 @@ const DEFAULT_DIRECTIONAL_INTENSITY = 0.8;
 const DEFAULT_MATERIAL_ROUGHNESS = 0.65;
 const DEFAULT_WIREFRAME_THICKNESS_PX = 1.5;
 const DEFAULT_XRAY_OPACITY = 0.25;
-const DEFAULT_HEATMAP_BLEND = 0.85;
-const DEFAULT_HEATMAP_CONTRAST = 1.0;
+const DEFAULT_HEATMAP_MIN_ANGLE = 0;
+const DEFAULT_HEATMAP_MAX_ANGLE = 45;
 export const DEFAULT_HEATMAP_COLORS = ['#E55959', '#E5A559', '#D9D959', '#73D973', '#666666'];
 const DEFAULT_SHADER_TYPE: MeshShaderType = 'soft_clay';
 const DEFAULT_MATCAP_VARIANT: MatcapVariant = 'neutral';
 const DEFAULT_FLAT_USE_VERTEX_COLORS = true;
 const DEFAULT_TOON_STEPS = 5;
-const DEFAULT_SELECTION_COLOR = '#ec2a77';
-const DEFAULT_HOVER_COLOR = '#ec2a77';
-const DEFAULT_HOVER_TINT_STRENGTH = 0.5;
-const DEFAULT_SELECTED_TINT_STRENGTH = 0.75;
-const DEFAULT_SELECTION_HIGHLIGHT_MODE: SelectionHighlightMode = 'tint';
+export const DEFAULT_SELECTION_COLOR = '#ec2a77';
+export const DEFAULT_HOVER_COLOR = '#ec2a77';
+export const DEFAULT_HOVER_TINT_STRENGTH = 0.5;
+export const DEFAULT_SELECTED_TINT_STRENGTH = 0.75;
 const RECENT_OPENED_FILES_STORAGE_KEY = 'app-recent-opened-files';
 const RECENT_OPENED_FILES_LIMIT = 10;
 const RECENT_FILES_DB_NAME = 'dragonfruit-recent-files';
@@ -417,17 +414,14 @@ function readMeshAppearanceFromLocalStorage(): PersistedMeshAppearance | null {
       materialRoughness: clampNumber(parsed.materialRoughness, 0, 1, DEFAULT_MATERIAL_ROUGHNESS),
       wireframeThicknessPx: clampNumber(parsed.wireframeThicknessPx, 0.5, 6, DEFAULT_WIREFRAME_THICKNESS_PX),
       xrayOpacity: clampNumber(parsed.xrayOpacity, 0.02, 0.85, DEFAULT_XRAY_OPACITY),
-      heatmapBlend: clampNumber(parsed.heatmapBlend, 0, 1, DEFAULT_HEATMAP_BLEND),
-      heatmapContrast: clampNumber(parsed.heatmapContrast, 0.1, 5, DEFAULT_HEATMAP_CONTRAST),
+      heatmapMinAngle: clampNumber(parsed.heatmapMinAngle, 0, 90, DEFAULT_HEATMAP_MIN_ANGLE),
+      heatmapMaxAngle: clampNumber(parsed.heatmapMaxAngle, 0, 90, DEFAULT_HEATMAP_MAX_ANGLE),
       heatmapColors: Array.isArray(parsed.heatmapColors) && parsed.heatmapColors.length === 5 ? parsed.heatmapColors : DEFAULT_HEATMAP_COLORS,
       meshColor: clampHexColor(parsed.meshColor, DEFAULT_MESH_COLOR),
       selectionColor: clampHexColor(parsed.selectionColor, DEFAULT_SELECTION_COLOR),
       hoverColor: clampHexColor(parsed.hoverColor, DEFAULT_HOVER_COLOR),
       hoverTintStrength: clampNumber(parsed.hoverTintStrength, 0, 1, DEFAULT_HOVER_TINT_STRENGTH),
       selectedTintStrength: clampNumber(parsed.selectedTintStrength, 0, 1, DEFAULT_SELECTED_TINT_STRENGTH),
-      selectionHighlightMode: parsed.selectionHighlightMode === 'spotlight' || parsed.selectionHighlightMode === 'fresnel' || parsed.selectionHighlightMode === 'none' || parsed.selectionHighlightMode === 'tint' || parsed.selectionHighlightMode === 'mesh_tint'
-        ? parsed.selectionHighlightMode
-        : DEFAULT_SELECTION_HIGHLIGHT_MODE,
     };
   } catch {
     return null;
@@ -1498,8 +1492,8 @@ export function useSceneCollectionManager() {
   const [toonSteps, setToonSteps] = useState<number>(DEFAULT_TOON_STEPS);
   const [wireframeThicknessPx, setWireframeThicknessPx] = useState<number>(DEFAULT_WIREFRAME_THICKNESS_PX);
   const [xrayOpacity, setXrayOpacity] = useState<number>(DEFAULT_XRAY_OPACITY);
-  const [heatmapBlend, setHeatmapBlend] = useState<number>(DEFAULT_HEATMAP_BLEND);
-  const [heatmapContrast, setHeatmapContrast] = useState<number>(DEFAULT_HEATMAP_CONTRAST);
+  const [heatmapMinAngle, setHeatmapMinAngle] = useState<number>(DEFAULT_HEATMAP_MIN_ANGLE);
+  const [heatmapMaxAngle, setHeatmapMaxAngle] = useState<number>(DEFAULT_HEATMAP_MAX_ANGLE);
   const [heatmapColors, setHeatmapColors] = useState<string[]>(DEFAULT_HEATMAP_COLORS);
   const [preferredMeshColor, setPreferredMeshColor] = useState<string>(DEFAULT_MESH_COLOR);
   const [selectionColor, setSelectionColor] = useState<string>(DEFAULT_SELECTION_COLOR);
@@ -1544,15 +1538,14 @@ export function useSceneCollectionManager() {
       setMaterialRoughness(persistedAppearance.materialRoughness);
       setWireframeThicknessPx(persistedAppearance.wireframeThicknessPx);
       setXrayOpacity(persistedAppearance.xrayOpacity);
-      setHeatmapBlend(persistedAppearance.heatmapBlend ?? DEFAULT_HEATMAP_BLEND);
-      setHeatmapContrast(persistedAppearance.heatmapContrast ?? DEFAULT_HEATMAP_CONTRAST);
+      setHeatmapMinAngle(persistedAppearance.heatmapMinAngle ?? DEFAULT_HEATMAP_MIN_ANGLE);
+      setHeatmapMaxAngle(persistedAppearance.heatmapMaxAngle ?? DEFAULT_HEATMAP_MAX_ANGLE);
       setHeatmapColors(persistedAppearance.heatmapColors ?? DEFAULT_HEATMAP_COLORS);
       setPreferredMeshColor(persistedAppearance.meshColor);
       setSelectionColor(persistedAppearance.selectionColor ?? DEFAULT_SELECTION_COLOR);
       setHoverColor(persistedAppearance.hoverColor ?? DEFAULT_HOVER_COLOR);
       setHoverTintStrength(persistedAppearance.hoverTintStrength);
       setSelectedTintStrength(persistedAppearance.selectedTintStrength);
-      setSelectionHighlightMode(persistedAppearance.selectionHighlightMode ?? DEFAULT_SELECTION_HIGHLIGHT_MODE);
     }
 
     setRecentOpenedFiles(readRecentOpenedFilesFromLocalStorage());
@@ -1567,7 +1560,6 @@ export function useSceneCollectionManager() {
 
   // Global application mode
   const [mode, setMode] = useState<SupportMode>('prepare');
-  const [selectionHighlightMode, setSelectionHighlightMode] = useState<SelectionHighlightMode>(DEFAULT_SELECTION_HIGHLIGHT_MODE);
 
   const defaultImportCenterXY = useMemo(() => {
     if (view3dSettings.originMode === 'front_left') {
@@ -5028,17 +5020,16 @@ export function useSceneCollectionManager() {
       materialRoughness: prev?.materialRoughness ?? materialRoughness,
       wireframeThicknessPx: prev?.wireframeThicknessPx ?? wireframeThicknessPx,
       xrayOpacity: prev?.xrayOpacity ?? xrayOpacity,
-      heatmapBlend: prev?.heatmapBlend ?? heatmapBlend,
-      heatmapContrast: prev?.heatmapContrast ?? heatmapContrast,
+      heatmapMinAngle: prev?.heatmapMinAngle ?? heatmapMinAngle,
+      heatmapMaxAngle: prev?.heatmapMaxAngle ?? heatmapMaxAngle,
       heatmapColors: prev?.heatmapColors ?? heatmapColors,
       meshColor: normalizedColor,
       selectionColor: prev?.selectionColor ?? selectionColor,
       hoverColor: prev?.hoverColor ?? hoverColor,
       hoverTintStrength: prev?.hoverTintStrength ?? hoverTintStrength,
       selectedTintStrength: prev?.selectedTintStrength ?? selectedTintStrength,
-      selectionHighlightMode: prev?.selectionHighlightMode ?? selectionHighlightMode,
     });
-  }, [activeModelId, ambientIntensity, directionalIntensity, flatUseVertexColors, heatmapBlend, heatmapColors, heatmapContrast, hoverColor, hoverTintStrength, materialRoughness, matcapVariant, selectedTintStrength, selectionColor, selectionHighlightMode, shaderType, toonSteps, wireframeThicknessPx, xrayOpacity]);
+  }, [activeModelId, ambientIntensity, directionalIntensity, flatUseVertexColors, heatmapMinAngle, heatmapColors, heatmapMaxAngle, hoverColor, hoverTintStrength, materialRoughness, matcapVariant, selectedTintStrength, selectionColor, shaderType, toonSteps, wireframeThicknessPx, xrayOpacity]);
 
   const setMeshVisible = useCallback((visible: boolean) => {
     if (activeModelId) {
@@ -5290,10 +5281,10 @@ export function useSceneCollectionManager() {
     setWireframeThicknessPx,
     xrayOpacity,
     setXrayOpacity,
-    heatmapBlend,
-    setHeatmapBlend,
-    heatmapContrast,
-    setHeatmapContrast,
+    heatmapMinAngle,
+    setHeatmapMinAngle,
+    heatmapMaxAngle,
+    setHeatmapMaxAngle,
     shaderType,
     setShaderType,
     matcapVariant,
@@ -5312,8 +5303,6 @@ export function useSceneCollectionManager() {
     setSelectedTintStrength,
     mode,
     setMode,
-    selectionHighlightMode,
-    setSelectionHighlightMode,
     heatmapColors,
     setHeatmapColors,
     onHeatmapColorChange: useCallback((index: number, color: string) => {

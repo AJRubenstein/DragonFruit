@@ -173,8 +173,8 @@ function StlMeshComponent({
   flatUseVertexColors,
   toonSteps,
   xrayOpacity,
-  heatmapBlend,
-  heatmapContrast,
+  heatmapMinAngle,
+  heatmapMaxAngle,
   heatmapColors,
   transform,
   mode,
@@ -239,8 +239,8 @@ function StlMeshComponent({
   flatUseVertexColors?: boolean;
   toonSteps?: number;
   xrayOpacity?: number;
-  heatmapBlend?: number;
-  heatmapContrast?: number;
+  heatmapMinAngle?: number;
+  heatmapMaxAngle?: number;
   heatmapColors?: string[];
   /** When true, overlays black edge lines on model geometry for better shape definition. */
   higherContrastModelEdges?: boolean;
@@ -1408,7 +1408,8 @@ if (uDitherAmount > 0.0) {
             materialRoughness={materialRoughness}
             clippingPlanes={planes}
             xrayOpacity={xrayOpacity}
-            heatmapContrast={heatmapContrast}
+            heatmapMinAngle={heatmapMinAngle}
+            heatmapMaxAngle={heatmapMaxAngle}
             heatmapColors={heatmapColors}
           />
         )}
@@ -1435,7 +1436,8 @@ if (uDitherAmount > 0.0) {
               materialRoughness={materialRoughness}
               clippingPlanes={planes}
               xrayOpacity={xrayOpacity}
-              heatmapContrast={heatmapContrast}
+              heatmapMinAngle={heatmapMinAngle}
+              heatmapMaxAngle={heatmapMaxAngle}
               heatmapColors={heatmapColors}
             />
           </mesh>
