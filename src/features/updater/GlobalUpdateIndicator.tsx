@@ -157,8 +157,11 @@ export function GlobalUpdateIndicator() {
 
   // Format the release date in the app's own locale, not the browser's — the
   // language switcher must move the whole dialog, dates included.
-  const releaseDate = info?.date
-    ? new Date(info.date).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' })
+  // An unparseable date yields "Invalid Date" from toLocaleDateString, so drop
+  // the subtitle entirely rather than showing that to the user.
+  const parsedDate = info?.date ? new Date(info.date) : null;
+  const releaseDate = parsedDate && !Number.isNaN(parsedDate.getTime())
+    ? parsedDate.toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' })
     : null;
   const subtitle = releaseDate ? _(msg`Released ${releaseDate}`) : undefined;
   const version = info?.version ?? '?';

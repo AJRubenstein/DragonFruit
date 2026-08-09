@@ -126,7 +126,11 @@ pub async fn check_updates(
             let version = update.version.clone();
             let current_version = update.current_version.clone();
             let body = update.body.clone();
-            let date = update.date.map(|d| d.to_string());
+            // RFC 3339, not Display: `time` renders as "2026-07-06 4:55:17.703
+            // +00:00:00", which `new Date()` on the frontend cannot parse.
+            let date = update
+                .date
+                .and_then(|d| d.format(&time::format_description::well_known::Rfc3339).ok());
             let download_url = Some(update.download_url.to_string());
 
             info!("[updater] Update available: current={current_version} → new={version} url={}", download_url.as_deref().unwrap_or("?"));
