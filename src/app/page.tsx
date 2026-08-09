@@ -1435,7 +1435,7 @@ export default function Home() {
   // Sub-line under the blocking-overlay title. During "Apply to All" it reports
   // sequence progress; otherwise it's the single-model default.
   const modifierApplyProcessingLabel = applyAllHolePunchProgress
-    ? `Applying model ${Math.min(applyAllHolePunchProgress.done + 1, applyAllHolePunchProgress.total)} of ${applyAllHolePunchProgress.total}`
+    ? `Applying to model ${Math.min(applyAllHolePunchProgress.done + 1, applyAllHolePunchProgress.total)} of ${applyAllHolePunchProgress.total}`
     : 'Processing 1 model';
   const [modifierApplyOverlayElapsedSec, setModifierApplyOverlayElapsedSec] = React.useState(0);
 
