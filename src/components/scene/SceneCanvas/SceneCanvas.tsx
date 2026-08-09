@@ -6106,9 +6106,6 @@ export function SceneCanvas({
                     (isMultiGizmoSelection ? (multiGizmoCenter?.z ?? activeModelTransform?.position.z) : activeModelTransform?.position.z) ?? 0,
                   ]}
                   rotation={gizmoFrameRotation}
-                  // A flipped arrow is decided from the world axes, so in the model's
-                  // frame it would point down an axis that is not the one it drags.
-                  disableArrowFlip={gizmoUsesLocalFrame}
                   enableMove
                   enableRotate={!isMultiGizmoSelection}
                   enableScale
