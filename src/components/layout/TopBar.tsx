@@ -634,9 +634,9 @@ export function TopBar({
 
   return (
     <>
-      <div className="ui-topbar-blur" aria-hidden="true" />
+      <div className={`ui-topbar-blur ${hideWorkflowControls ? 'ui-topbar-blur-transparent' : ''}`} aria-hidden="true" />
       <div
-        className={`ui-topbar fixed top-0 left-0 right-0 z-50 flex items-center relative ${hideWorkflowControls ? 'justify-between' : ''}`}
+        className={`ui-topbar fixed top-0 left-0 right-0 z-50 flex items-center relative ${hideWorkflowControls ? 'justify-between ui-topbar-transparent' : ''}`}
         onMouseDownCapture={handleTopBarPointerDown}
       >
       <div

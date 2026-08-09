@@ -238,6 +238,25 @@ body {
   );
 }
 
+/* During first-run onboarding the top bar goes fully transparent so the
+   wizard backdrop shows through. Both surface layers fade out together. */
+.ui-topbar::before,
+.ui-topbar-blur {
+  transition: opacity 150ms ease;
+}
+
+.ui-topbar-transparent::before {
+  opacity: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.ui-topbar-blur-transparent {
+  opacity: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .ui-topbar-mode-idle {
   border-color: color-mix(in srgb, var(--topbar-accent), var(--border-subtle) 62%);
 }
