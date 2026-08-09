@@ -588,7 +588,10 @@ export function TopBar({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // The steps container is unmounted while the workflow controls are hidden
+    // (onboarding), so re-observe it when they come back to avoid measuring a
+    // detached node (which pinned the icons hidden).
+  }, [hideWorkflowControls]);
 
   const steps: Array<{
     mode: SupportMode;

@@ -3028,12 +3028,18 @@ export function ProfileSettingsModal({
 
     if (deleteConfirmTarget.kind === 'printer') {
       removePrinterProfile(deleteConfirmTarget.id);
+      // Removing the last printer profile should surface the first-run
+      // onboarding (shown whenever there are no printer profiles) — close the
+      // modal rather than leaving its empty "Welcome" state open.
+      if (getProfileStoreSnapshot().printerProfiles.length === 0) {
+        onClose();
+      }
     } else {
       removeMaterialProfile(deleteConfirmTarget.id);
     }
 
     setDeleteConfirmTarget(null);
-  }, [deleteConfirmTarget]);
+  }, [deleteConfirmTarget, onClose]);
 
   const handleSaveMaterialEdits = React.useCallback(() => {
     if (!selectedMaterial) return;
