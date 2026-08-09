@@ -6688,10 +6688,17 @@ export default function Home() {
         slicing.setLayerIndex(clamped);
       }
       preservedNonPrintingLayerIndexRef.current = null;
+    } else if (previousMode === 'export' && currentMode !== 'export') {
+      // Export mode force-selects every visible model (for tinting). Collapse
+      // back to the active model when leaving by any route, so the next tool
+      // doesn't open with all meshes selected.
+      if (scene.activeModelId) {
+        scene.setSelectedModelIds([scene.activeModelId]);
+      }
     }
 
     previousSceneModeRef.current = currentMode;
-  }, [scene.mode, slicing.layerIndex, slicing.numLayers, slicing.setLayerIndex]);
+  }, [scene.mode, scene.activeModelId, scene.setSelectedModelIds, slicing.layerIndex, slicing.numLayers, slicing.setLayerIndex]);
 
   // Invalidate printing artifact if scene changed (detected via history events after the slice marker)
   React.useEffect(() => {
