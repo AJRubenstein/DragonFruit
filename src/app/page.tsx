@@ -7607,9 +7607,17 @@ export default function Home() {
     // "Apply to All" sequence is running — each bake mutates scene.models and
     // re-runs this effect, and models still in the queue would otherwise
     // re-open the modal on top of the progress overlay.
-    const hasUnapplied = getVisibleModelIdsWithUnappliedHoles().length > 0;
-    if (hasUnapplied && unappliedHolePunchResolveRef.current === null && applyAllHolePunchProgress === null) {
+    const unbakedHoleModelIds = getVisibleModelIdsWithUnappliedHoles();
+    if (unbakedHoleModelIds.length > 0 && unappliedHolePunchResolveRef.current === null && applyAllHolePunchProgress === null) {
       setShowUnappliedHolePunchModal(true);
+      // Make the first model with un-baked holes active so the modal's actions
+      // (and the user's next glance) land on a model that needs attention,
+      // rather than whichever model happened to be active on entering export.
+      // Only nudge when the active model isn't already one that needs baking, so
+      // this doesn't fight a deliberate selection or loop on re-run.
+      if (scene.activeModelId === null || !unbakedHoleModelIds.includes(scene.activeModelId)) {
+        scene.setActiveModelId(unbakedHoleModelIds[0]);
+      }
     }
 
     // In export mode, select all visible models for tinting
