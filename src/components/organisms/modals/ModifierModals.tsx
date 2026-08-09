@@ -107,8 +107,8 @@ export function ModifierModals({
           </p>
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
             <strong>Apply to All</strong> bakes the holes into every visible model
-            that has unapplied holes — not just the one on screen. Or open the
-            <strong> Hollow</strong> tool to review and apply them per model.
+            when applicable. Or open the <strong>Hollow</strong> tool to review and
+            apply holes individually.
           </p>
         </div>
       </StructuredDialogModal>
