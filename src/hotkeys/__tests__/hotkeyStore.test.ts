@@ -303,7 +303,7 @@ test('Newly migrated configurations: GLOBAL, DEBUG, MESH, NAVIGATION, PRESETS, H
     assert.equal(isActionActiveSync('GLOBAL', 'SAVE'), true);
     hotkeyStore.getState().clearKeys();
 
-    // 2. DEBUG hotkeys (Ctrl+Shift+D/C/X/A/N/M/K)
+    // 2. DEBUG hotkeys (Ctrl+Shift+D/C/X/A/N/M/K/O)
     hotkeyStore.getState().pressKey('Control');
     hotkeyStore.getState().pressKey('Shift');
     hotkeyStore.getState().pressKey('d');
@@ -332,6 +332,11 @@ test('Newly migrated configurations: GLOBAL, DEBUG, MESH, NAVIGATION, PRESETS, H
 
     hotkeyStore.getState().pressKey('k');
     assert.equal(isActionActiveSync('DEBUG', 'TOGGLE_CAPS'), true);
+    hotkeyStore.getState().releaseKey('k');
+
+    hotkeyStore.getState().pressKey('o');
+    assert.equal(isActionActiveSync('DEBUG', 'RE_RUN_ONBOARDING'), true);
+    hotkeyStore.getState().releaseKey('o');
     hotkeyStore.getState().clearKeys();
 
     // 3. MESH.INVERT_NORMALS (Alt+N)

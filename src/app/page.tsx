@@ -260,6 +260,11 @@ import {
 } from '@/components/settings/workspaceCameraPreferences';
 import { openProfileSettingsModal, PROFILE_SETTINGS_MODAL_OPEN_CHANGE_EVENT } from '@/components/settings/profileModalEvents';
 import {
+  getOnboardingCompleted,
+  setOnboardingCompleted as setOnboardingCompletedFlag,
+} from '@/components/settings/onboardingPreferences';
+import { FirstRunOnboarding } from '@/components/layout/FirstRunOnboarding';
+import {
   getProfileMonitoringUiAdapter,
   getProfileNetworkUiAdapter,
   type PrinterMonitoringSnapshot,
@@ -972,6 +977,12 @@ export default function Home() {
   const [interiorView, setInteriorView] = React.useState(false);
   const isSupportSpotlightHoldActive = useActionActive('SUPPORTS', 'TEMP_SPOTLIGHT_HOLD');
   const [allowPrepareWithoutPrinter, setAllowPrepareWithoutPrinter] = React.useState(false);
+  // First-run onboarding. Shown on every load until it's completed — there is no
+  // dismiss path, so the persisted flag only flips once the user finishes it.
+  // `mounted` avoids SSR/client mismatches: the wizard is only rendered after
+  // hydration reads the persisted flag from localStorage.
+  const [onboardingCompleted, setOnboardingCompleted] = React.useState(false);
+  const [onboardingMounted, setOnboardingMounted] = React.useState(false);
   const [prepareSmoothingSettingsExpanded, setPrepareSmoothingSettingsExpanded] = React.useState(true);
   const [selectedHolePunchPlacementIds, setSelectedHolePunchPlacementIds] = React.useState<string[]>([]);
   const [hoveredHolePunchPlacementId, setHoveredHolePunchPlacementId] = React.useState<string | null>(null);
@@ -6963,6 +6974,42 @@ export default function Home() {
     setAllowPrepareWithoutPrinter(true);
   }, []);
 
+  // Read the persisted onboarding flag once, after hydration. If a printer
+  // profile already exists at startup (e.g. migrated from an earlier version),
+  // the wizard is moot — mark it done so deleting printers later can't re-trigger it.
+  React.useEffect(() => {
+    let completed = getOnboardingCompleted();
+    if (!completed && hasActivePrinterProfile) {
+      completed = true;
+      setOnboardingCompletedFlag(true);
+    }
+    setOnboardingCompleted(completed);
+    setOnboardingMounted(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleOnboardingCompleted = React.useCallback(() => {
+    setOnboardingCompletedFlag(true);
+    setOnboardingCompleted(true);
+  }, []);
+
+  // DEBUG: Ctrl+Shift+O re-runs the onboarding wizard. Clears the persisted
+  // flag and drops this session's "use without printer" state so the wizard
+  // reappears even when a printer is already active.
+  React.useEffect(() => {
+    let wasActive = false;
+    const unsubscribe = hotkeyStore.subscribe(() => {
+      const isActive = isActionActiveSync('DEBUG', 'RE_RUN_ONBOARDING');
+      if (isActive && !wasActive) {
+        setOnboardingCompletedFlag(false);
+        setOnboardingCompleted(false);
+        setAllowPrepareWithoutPrinter(false);
+      }
+      wasActive = isActive;
+    });
+    return unsubscribe;
+  }, []);
+
   // Temporary: LYS Ghost Viewer State
   const [ghostData, setGhostData] = React.useState<any>(null);
   const LysGhostOverlay = React.useMemo(
@@ -9718,7 +9765,7 @@ export default function Home() {
               isLoading={showEmptyStateLoading}
               loadingLabel={emptyStateLoadingLabel}
               loadingDetail={emptyStateLoadingDetail}
-              showFirstTimeOnboarding={!hasActivePrinterProfile && !allowPrepareWithoutPrinter}
+              showFirstTimeOnboarding={onboardingCompleted && !hasActivePrinterProfile && !allowPrepareWithoutPrinter}
               onAddPrinter={handleAddPrinterFromOnboarding}
               onUseWithoutPrinter={handleUseWithoutPrinter}
             />
@@ -10532,6 +10579,15 @@ export default function Home() {
               : "Leaf Fanning: Click a support shaft to lock anchor knot"}
           </Toast>
         </ToastViewport>
+      )}
+
+      {onboardingMounted && !onboardingCompleted && (
+        <FirstRunOnboarding
+          hasActivePrinter={hasActivePrinterProfile}
+          onAddPrinter={handleAddPrinterFromOnboarding}
+          onUseWithoutPrinter={handleUseWithoutPrinter}
+          onCompleted={handleOnboardingCompleted}
+        />
       )}
 
     </EditorLayout>
