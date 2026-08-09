@@ -9560,6 +9560,7 @@ export default function Home() {
         interiorView={interiorView}
         onInteriorViewChange={setInteriorView}
         interiorViewAvailable={hasCavityGeometry}
+        hideWorkflowControls={onboardingMounted && !onboardingCompleted && !hasActivePrinterProfile}
         heatmapColors={scene.heatmapColors}
         onHeatmapColorChange={scene.onHeatmapColorChange}
         isSlicingBusy={isSlicingBusy}

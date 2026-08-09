@@ -97,6 +97,9 @@ interface TopBarProps {
   printerReachabilityByDeviceId?: Record<string, boolean | null>;
   onOpenMonitor?: () => void;
   warnBeforeProfileSettingsOpen?: boolean;
+  /** During first-run onboarding, hide the workflow-mode steps and the
+   *  scene/view controls so the app bar reads as minimal chrome. */
+  hideWorkflowControls?: boolean;
 }
 
 export function TopBar({
@@ -161,6 +164,7 @@ export function TopBar({
   printerReachabilityByDeviceId,
   onOpenMonitor,
   warnBeforeProfileSettingsOpen = false,
+  hideWorkflowControls = false,
 }: TopBarProps) {
   const { _ } = useLingui();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -632,7 +636,7 @@ export function TopBar({
     <>
       <div className="ui-topbar-blur" aria-hidden="true" />
       <div
-        className="ui-topbar fixed top-0 left-0 right-0 z-50 flex items-center relative"
+        className={`ui-topbar fixed top-0 left-0 right-0 z-50 flex items-center relative ${hideWorkflowControls ? 'justify-between' : ''}`}
         onMouseDownCapture={handleTopBarPointerDown}
       >
       <div
@@ -670,6 +674,8 @@ export function TopBar({
           />
         </button>
 
+        {!hideWorkflowControls && (
+        <>
         <div
           className="h-6 w-px mx-0.5 shrink-0"
           style={{ background: 'color-mix(in srgb, var(--border-subtle), transparent 24%)' }}
@@ -728,6 +734,8 @@ export function TopBar({
           </span>
           <ChevronDown className={`h-3.5 w-3.5 ml-auto shrink-0 transition-transform ${isPrinterQuickMenuOpen ? 'rotate-180' : ''}`} style={{ color: 'color-mix(in srgb, var(--text-muted), white 8%)' }} />
         </button>
+        </>
+        )}
 
         {showMonitorButton && (
           <button
@@ -1009,6 +1017,7 @@ export function TopBar({
         </div>
       )}
 
+      {!hideWorkflowControls && (
       <div className="flex min-w-0 flex-1 justify-center px-2">
         <div
           className={`relative w-full transition-opacity ${topbarActionsDisabled ? 'opacity-45' : ''}`}
@@ -1096,9 +1105,12 @@ export function TopBar({
           </div>
         </div>
       </div>
+      )}
 
       <div className="flex flex-1 max-w-[430px] items-center justify-end gap-2 pr-2">
         <div className={`flex items-center gap-2 transition-opacity ${topbarActionsDisabled ? 'opacity-45 pointer-events-none' : ''}`}>
+          {!hideWorkflowControls && (
+          <>
           <ViewTypeDropdown
             value={viewTypeOverride}
             onChange={onViewTypeOverrideChange}
@@ -1123,6 +1135,8 @@ export function TopBar({
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 11l-2 2m2-2l2 2m-2-2v3" />
             </svg>
           </Button>
+          </>
+          )}
             <Button
               type="button"
               variant="secondary"
