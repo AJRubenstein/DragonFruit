@@ -63,8 +63,8 @@ export function RootsRenderer({
     // overlap disk.
     const hasSolidBottom = (raft as any).bottomMode === 'solid';
     const raftThickness = (raft as any).thickness ?? 0;
-    const effectiveDiskHeight = hasSolidBottom ? 0.05 : diskHeight;
-    const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+    const effectiveDiskHeight = diskHeight;
+    const verticalOffset = 0;
 
     const basePos = new THREE.Vector3(
         root.transform.pos.x,

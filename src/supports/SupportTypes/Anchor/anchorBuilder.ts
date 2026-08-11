@@ -57,8 +57,8 @@ export function buildAnchorData(input: AnchorBuildInput): AnchorBuildResult {
     const hasSolidBottom = raft.bottomMode === 'solid';
     const raftThickness = raft.thickness ?? 0;
     const ANCHOR_DISK_HEIGHT_MM = 0.1;
-    const effectiveDiskHeight = hasSolidBottom ? 0.05 : ANCHOR_DISK_HEIGHT_MM;
-    const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+    const effectiveDiskHeight = ANCHOR_DISK_HEIGHT_MM;
+    const verticalOffset = 0;
 
     // Sphere center Z = verticalOffset + effectiveDiskHeight + coneHeight
     // (sphere center is at top of cone, not offset by radius)

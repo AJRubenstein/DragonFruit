@@ -463,8 +463,8 @@ function buildSupportPlacementPreviewBatch(
     if (preview.roots) {
         const root = preview.roots;
         const basePos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, root.transform.pos.z);
-        const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-        const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+        const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+        const verticalOffset = 0;
         const shaftDiameter = Math.max(0.001, preview.segments[0]?.diameter ?? root.diameter);
 
         roots.push({
@@ -2271,8 +2271,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const shafts: InstancedShaft[] = [];
 
             const basePos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, root.transform.pos.z);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
             let currentStart = basePos.clone().add(new THREE.Vector3(0, 0, verticalOffset + effectiveDiskHeight + Math.max(0, root.coneHeight)));
 
             for (const segment of trunk.segments) {
@@ -2579,8 +2579,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             if (!root || !hostKnot) continue;
 
             const basePos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, root.transform.pos.z);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
             let currentStart = basePos.clone().add(new THREE.Vector3(0, 0, verticalOffset + effectiveDiskHeight + Math.max(0, root.coneHeight)));
 
             const shafts: InstancedShaft[] = [];
@@ -3282,8 +3282,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const shaftDiameter = Math.max(0.001, trunk.segments[0]?.diameter ?? 1.5);
             const topRadius = shaftDiameter / 2;
             const bottomRadius = Math.max(0.001, root.diameter / 2);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
 
             const color = resolveSceneSupportColor(trunk.modelId, trunk.id);
             const modelKey = `${trunk.modelId ?? '__unassigned__'}:${color}`;
@@ -3341,8 +3341,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             );
             const topRadius = shaftDiameter / 2;
             const bottomRadius = Math.max(0.001, root.diameter / 2);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
 
             const color = resolveSceneSupportColor(kickstand.modelId, kickstand.id);
             const modelKey = `${kickstand.modelId ?? '__unassigned__'}:${color}`;
@@ -3648,8 +3648,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const shaftDiameter = Math.max(0.001, trunk.segments[0]?.diameter ?? 1.5);
             const topRadius = shaftDiameter / 2;
             const bottomRadius = Math.max(0.001, root.diameter / 2);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
 
             return {
                 id: root.id,
@@ -3678,8 +3678,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             );
             const topRadius = shaftDiameter / 2;
             const bottomRadius = Math.max(0.001, root.diameter / 2);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
 
             return {
                 id: root.id,
