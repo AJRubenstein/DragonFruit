@@ -395,6 +395,8 @@ async function prepareVoxlDocumentV2(
       },
       meshModifiers: m.meshModifiers,
       mesh: meshRef,
+      isSupportGeometry: m.isSupportGeometry,
+      linkGroupId: m.linkGroupId,
     };
   });
 

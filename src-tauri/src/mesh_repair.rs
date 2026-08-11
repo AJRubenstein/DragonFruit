@@ -186,6 +186,8 @@ struct RepairOptionsDto {
     solidify_fragmented_components: Option<bool>,
     solidify_component_threshold: Option<usize>,
     solidify_self_intersection_threshold: Option<usize>,
+    #[serde(alias = "assume_support_geometry")]
+    assume_support_geometry: Option<bool>,
 }
 
 impl From<RepairOptionsDto> for RepairOptions {
@@ -214,6 +216,9 @@ impl From<RepairOptionsDto> for RepairOptions {
             solidify_self_intersection_threshold: dto
                 .solidify_self_intersection_threshold
                 .unwrap_or(defaults.solidify_self_intersection_threshold),
+            assume_support_geometry: dto
+                .assume_support_geometry
+                .or(defaults.assume_support_geometry),
         }
     }
 }
@@ -440,11 +445,12 @@ pub async fn mesh_repair_staged(options_json: String) -> Result<String, String> 
 /// Runs a lightweight model/support section classifier over the current staged
 /// mesh without executing the heavy repair pipeline.
 #[tauri::command]
-pub async fn mesh_classify_staged() -> Result<String, String> {
+pub async fn mesh_classify_staged(options_json: Option<String>) -> Result<String, String> {
+    let options = parse_options(&options_json.unwrap_or_default())?;
     let bytes = read_staging_bytes()?;
     let (mesh, report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
-        let outcome = classify_support_split(mesh);
+        let outcome = classify_support_split(mesh, &options);
         Ok::<_, String>((outcome.mesh, outcome.report))
     })
     .await

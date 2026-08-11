@@ -1628,12 +1628,19 @@ function appendModelTrianglesInRange(
 }
 
 /** Returns the number of triangles in a model that belong to the actual
- *  model body (excluding imported support geometry).  When the repair
- *  report has identified a clear model/support split this is the split
- *  point; when the mesh is flagged as entirely support-dominant the count
- *  is zero. */
-function effectiveModelTriangleCount(model: LoadedModel): number {
+ *  model body (excluding imported support geometry). When explicit
+ *  isSupportGeometry flag is set, it overrides repair report bounds.
+ *  When the repair report has identified a clear model/support split this
+ *  is the split point; when the mesh is flagged as entirely support-dominant
+ *  the count is zero. */
+export function effectiveModelTriangleCount(model: LoadedModel): number {
+  if (model.isSupportGeometry === true) {
+    return 0;
+  }
   const totalTriCount = getModelTriangleCount(model);
+  if (model.isSupportGeometry === false) {
+    return totalTriCount;
+  }
   const report = model.geometry.meshDefects?.nativeRepairReport;
   const modelTriCount = report?.model_triangle_count;
   if (modelTriCount != null && modelTriCount > 0) {
@@ -1645,7 +1652,7 @@ function effectiveModelTriangleCount(model: LoadedModel): number {
 
 /** Returns the total triangle count for a model's geometry
  *  (used for both counting and iteration bounds). */
-function getModelTriangleCount(model: LoadedModel): number {
+export function getModelTriangleCount(model: LoadedModel): number {
   const geometry = model.geometry.geometry;
   const position = geometry.getAttribute('position');
   if (!position) return 0;

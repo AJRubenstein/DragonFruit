@@ -314,10 +314,12 @@ dependencies = [
 name = "dragonfruit-cli"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "clap",
  "dragonfruit-islands",
  "dragonfruit-slicing-engine",
  "flate2",
+ "libdeflater",
  "proptest",
  "serde",
  "serde_json",

@@ -179,6 +179,7 @@ function splitClassifiedModelForOutput(model: LoadedModel): {
 
   const modelPart: LoadedModel = {
     ...model,
+    isSupportGeometry: false,
     geometry: modelBounds,
     polygonCount: split.modelTriangleCount,
     transform: {
@@ -191,6 +192,7 @@ function splitClassifiedModelForOutput(model: LoadedModel): {
     ...model,
     id: `${model.id}:slice-supports`,
     name: `${model.name} (Supports)`,
+    isSupportGeometry: true,
     geometry: supportBounds,
     polygonCount: split.supportTriangleCount,
     meshModifiers: undefined,

@@ -84,6 +84,8 @@ export type VoxlModelEntry = {
   transform: VoxlModelTransform;
   mesh: VoxlMeshRef;
   meshModifiers?: ModelMeshModifiers;
+  isSupportGeometry?: boolean;
+  linkGroupId?: string;
 };
 
 export type VoxlMeta = {
@@ -147,6 +149,8 @@ export type VoxlModelRuntimeLike = {
   };
   mesh?: VoxlMeshRef;
   meshModifiers?: ModelMeshModifiers;
+  isSupportGeometry?: boolean;
+  linkGroupId?: string;
 };
 
 export type BuildVoxlDocumentInput = {

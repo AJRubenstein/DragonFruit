@@ -899,6 +899,8 @@ export interface LoadedModel {
   meshModifiers?: ModelMeshModifiers;
   ignoreAutoLift?: boolean;
   manualZMoveOverride?: boolean;
+  isSupportGeometry?: boolean;
+  linkGroupId?: string;
 }
 
 type DebugPrimitiveType =
@@ -992,6 +994,8 @@ type ModelClipboardEntry = {
   polygonCount: number;
   meshModifiers?: ModelMeshModifiers;
   supportClipboard: SupportClipboardPayload | null;
+  isSupportGeometry?: boolean;
+  linkGroupId?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -2476,6 +2480,9 @@ export function useSceneCollectionManager() {
       };
     }
 
+    let supportsChanged = false;
+    let kickstandsChanged = false;
+
     let transformCommit = {
       supportsChanged: false,
       kickstandsChanged: false,
@@ -2487,14 +2494,52 @@ export function useSceneCollectionManager() {
       transformCommit = transformSupportsForModel(id, beforeTransform, transform);
     }
 
-    setModels(prev => prev.map(m =>
-      m.id === id ? { ...m, transform } : m
-    ));
+    supportsChanged = supportsChanged || transformCommit.supportsChanged;
+    kickstandsChanged = kickstandsChanged || transformCommit.kickstandsChanged;
+
+    const updateMap = new Map<string, ModelTransform>();
+    updateMap.set(id, transform);
+
+    if (currentModel.linkGroupId) {
+      const linkGroupId = currentModel.linkGroupId;
+      const deltaPos = transform.position.clone().sub(beforeTransform.position);
+      const deltaRotX = transform.rotation.x - beforeTransform.rotation.x;
+      const deltaRotY = transform.rotation.y - beforeTransform.rotation.y;
+      const deltaRotZ = transform.rotation.z - beforeTransform.rotation.z;
+      const deltaScale = transform.scale.clone().sub(beforeTransform.scale);
+
+      const peerModels = modelsRef.current.filter((m) => m.linkGroupId === linkGroupId && m.id !== id);
+      for (const peer of peerModels) {
+        const peerBefore = peer.transform;
+        const peerNextPos = peerBefore.position.clone().add(deltaPos);
+        const peerNextRot = eulerFromGlobalEuler({
+          x: peerBefore.rotation.x + deltaRotX,
+          y: peerBefore.rotation.y + deltaRotY,
+          z: peerBefore.rotation.z + deltaRotZ,
+        });
+        const peerNextScale = peerBefore.scale.clone().add(deltaScale);
+        const peerNextTransform: ModelTransform = {
+          position: peerNextPos,
+          rotation: peerNextRot,
+          scale: peerNextScale,
+        };
+        updateMap.set(peer.id, peerNextTransform);
+
+        const peerCommit = transformSupportsForModel(peer.id, peerBefore, peerNextTransform);
+        supportsChanged = supportsChanged || peerCommit.supportsChanged;
+        kickstandsChanged = kickstandsChanged || peerCommit.kickstandsChanged;
+      }
+    }
+
+    setModels(prev => prev.map(m => {
+      const nextTransform = updateMap.get(m.id);
+      return nextTransform ? { ...m, transform: nextTransform } : m;
+    }));
 
     return {
       updated: true,
-      supportsChanged: transformCommit.supportsChanged,
-      kickstandsChanged: transformCommit.kickstandsChanged,
+      supportsChanged,
+      kickstandsChanged,
     };
   }, []);
 
@@ -2511,20 +2556,42 @@ export function useSceneCollectionManager() {
     const currentActiveModelId = activeModelIdRef.current;
     const currentSelectedModelIds = selectedModelIdsRef.current;
 
-    const modelExists = currentModels.some((m) => m.id === id);
-    if (!modelExists) return false;
+    const targetModel = currentModels.find((m) => m.id === id);
+    if (!targetModel) return false;
 
-    const beforeModels = currentModels.map((m) => (
-      m.id === id
-        ? { ...m, transform: cloneTransform(beforeTransform) }
-        : m
-    ));
+    const linkGroupId = targetModel.linkGroupId;
+    const deltaPos = afterTransform.position.clone().sub(beforeTransform.position);
+    const deltaRotX = afterTransform.rotation.x - beforeTransform.rotation.x;
+    const deltaRotY = afterTransform.rotation.y - beforeTransform.rotation.y;
+    const deltaRotZ = afterTransform.rotation.z - beforeTransform.rotation.z;
+    const deltaScale = afterTransform.scale.clone().sub(beforeTransform.scale);
 
-    const afterModels = currentModels.map((m) => (
-      m.id === id
-        ? { ...m, transform: cloneTransform(afterTransform) }
-        : m
-    ));
+    const beforeModels = currentModels.map((m) => {
+      if (m.id === id) {
+        return { ...m, transform: cloneTransform(beforeTransform) };
+      }
+      if (linkGroupId && m.linkGroupId === linkGroupId) {
+        const peerBeforePos = m.transform.position.clone().sub(deltaPos);
+        const peerBeforeRot = eulerFromGlobalEuler({
+          x: m.transform.rotation.x - deltaRotX,
+          y: m.transform.rotation.y - deltaRotY,
+          z: m.transform.rotation.z - deltaRotZ,
+        });
+        const peerBeforeScale = m.transform.scale.clone().sub(deltaScale);
+        return {
+          ...m,
+          transform: { position: peerBeforePos, rotation: peerBeforeRot, scale: peerBeforeScale },
+        };
+      }
+      return m;
+    });
+
+    const afterModels = currentModels.map((m) => {
+      if (m.id === id) {
+        return { ...m, transform: cloneTransform(afterTransform) };
+      }
+      return m;
+    });
 
     const includeSupportByOption = supportSnapshotOptions?.includeSupportState === true
       || !!supportSnapshotOptions?.supportBefore
@@ -2550,7 +2617,7 @@ export function useSceneCollectionManager() {
       supportStateOverride: supportSnapshotOptions?.supportAfter,
       kickstandStateOverride: supportSnapshotOptions?.kickstandAfter,
     });
-    const targetModelName = currentModels.find((m) => m.id === id)?.name ?? id;
+    const targetModelName = targetModel.name ?? id;
     pushSceneSnapshotHistory(before, after, description ?? `Transform Model ${targetModelName}`);
     return true;
   }, [pushSceneSnapshotHistory]);
@@ -2568,9 +2635,45 @@ export function useSceneCollectionManager() {
     const currentActiveModelId = activeModelIdRef.current;
     const currentSelectedModelIds = selectedModelIdsRef.current;
 
+    const updateMap = new Map<string, ModelTransform>();
+    updates.forEach((entry) => updateMap.set(entry.id, entry.transform));
+
+    updates.forEach((entry) => {
+      const model = currentModels.find((m) => m.id === entry.id);
+      if (model?.linkGroupId) {
+        const beforeTransform = model.transform;
+        const transform = entry.transform;
+        const deltaPos = transform.position.clone().sub(beforeTransform.position);
+        const deltaRotX = transform.rotation.x - beforeTransform.rotation.x;
+        const deltaRotY = transform.rotation.y - beforeTransform.rotation.y;
+        const deltaRotZ = transform.rotation.z - beforeTransform.rotation.z;
+        const deltaScale = transform.scale.clone().sub(beforeTransform.scale);
+
+        const peers = currentModels.filter((m) => m.linkGroupId === model.linkGroupId && m.id !== entry.id);
+        for (const peer of peers) {
+          if (!updateMap.has(peer.id)) {
+            const peerBefore = peer.transform;
+            const peerNextPos = peerBefore.position.clone().add(deltaPos);
+            const peerNextRot = eulerFromGlobalEuler({
+              x: peerBefore.rotation.x + deltaRotX,
+              y: peerBefore.rotation.y + deltaRotY,
+              z: peerBefore.rotation.z + deltaRotZ,
+            });
+            const peerNextScale = peerBefore.scale.clone().add(deltaScale);
+            updateMap.set(peer.id, {
+              position: peerNextPos,
+              rotation: peerNextRot,
+              scale: peerNextScale,
+            });
+          }
+        }
+      }
+    });
+
     const supportStateBefore = getSnapshot();
     const kickstandStateBefore = getKickstandSnapshot();
-    const includeSupportHistory = updates.some((entry) => hasSupportsOrKickstandsForModel(entry.id, supportStateBefore, kickstandStateBefore));
+    const allUpdatedIds = Array.from(updateMap.keys());
+    const includeSupportHistory = allUpdatedIds.some((id) => hasSupportsOrKickstandsForModel(id, supportStateBefore, kickstandStateBefore));
 
     const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, {
       includeSupportState: includeSupportHistory,
@@ -2578,17 +2681,14 @@ export function useSceneCollectionManager() {
       kickstandStateOverride: includeSupportHistory ? kickstandStateBefore : undefined,
     });
 
-    const updateMap = new Map<string, ModelTransform>();
     let supportsChanged = false;
     let kickstandsChanged = false;
     let updated = false;
-    updates.forEach((entry) => {
-      updateMap.set(entry.id, entry.transform);
-
-      const currentModel = currentModels.find((model) => model.id === entry.id);
+    updateMap.forEach((nextTransform, id) => {
+      const currentModel = currentModels.find((model) => model.id === id);
       if (!currentModel) return;
-      if (transformsEqual(currentModel.transform, entry.transform)) return;
-      const commit = transformSupportsForModel(entry.id, currentModel.transform, entry.transform);
+      if (transformsEqual(currentModel.transform, nextTransform)) return;
+      const commit = transformSupportsForModel(id, currentModel.transform, nextTransform);
       supportsChanged = supportsChanged || commit.supportsChanged;
       kickstandsChanged = kickstandsChanged || commit.kickstandsChanged;
       updated = true;
@@ -2723,7 +2823,13 @@ export function useSceneCollectionManager() {
 
     const nextModels = currentModels.map((m) => (
       m.id === id
-        ? { ...m, geometry: nextGeometry, polygonCount }
+        ? {
+            ...m,
+            geometry: nextGeometry,
+            polygonCount,
+            isSupportGeometry: target.isSupportGeometry,
+            linkGroupId: target.linkGroupId,
+          }
         : m
     ));
     setModels(nextModels);
@@ -3249,6 +3355,7 @@ export function useSceneCollectionManager() {
       polygonCount: modelTriCount,
       ignoreAutoLift: source.ignoreAutoLift,
       manualZMoveOverride: source.manualZMoveOverride,
+      isSupportGeometry: false,
     };
 
     const supportModel: LoadedModel = {
@@ -3269,6 +3376,7 @@ export function useSceneCollectionManager() {
       polygonCount: supportTriCount,
       ignoreAutoLift: source.ignoreAutoLift,
       manualZMoveOverride: source.manualZMoveOverride,
+      isSupportGeometry: true,
     };
 
     const nextModels = [
@@ -3402,7 +3510,25 @@ export function useSceneCollectionManager() {
       tryRevokeObjectUrl(model.fileUrl);
     });
 
-    const nextModels = currentModels.filter((m) => !ids.has(m.id));
+    const nextModelsWithoutDeleted = currentModels.filter((m) => !ids.has(m.id));
+
+    // Dissolve link groups if remaining peer count < 2
+    const deletedLinkGroupIds = new Set(existing.map((m) => m.linkGroupId).filter(Boolean) as string[]);
+    let nextModels = nextModelsWithoutDeleted;
+    if (deletedLinkGroupIds.size > 0) {
+      deletedLinkGroupIds.forEach((gId) => {
+        const remaining = nextModels.filter((m) => m.linkGroupId === gId);
+        if (remaining.length < 2) {
+          nextModels = nextModels.map((m) => {
+            if (m.linkGroupId === gId) {
+              return { ...m, linkGroupId: undefined };
+            }
+            return m;
+          });
+        }
+      });
+    }
+
     const nextActiveModelId = currentActiveModelId && ids.has(currentActiveModelId) ? null : currentActiveModelId;
     const nextSelectedModelIds = currentSelectedModelIds.filter((sid) => !ids.has(sid));
 
@@ -3526,6 +3652,8 @@ export function useSceneCollectionManager() {
         polygonCount: source.polygonCount,
         meshModifiers: undefined,
         supportClipboard,
+        isSupportGeometry: source.isSupportGeometry,
+        linkGroupId: source.linkGroupId,
       },
     ]);
 
@@ -3555,6 +3683,8 @@ export function useSceneCollectionManager() {
         polygonCount: source.polygonCount,
         meshModifiers: undefined,
         supportClipboard,
+        isSupportGeometry: source.isSupportGeometry,
+        linkGroupId: source.linkGroupId,
       };
     }));
 
@@ -3597,6 +3727,8 @@ export function useSceneCollectionManager() {
       color: first.color,
       polygonCount: first.polygonCount,
       meshModifiers: undefined,
+      isSupportGeometry: first.isSupportGeometry,
+      linkGroupId: first.linkGroupId,
     };
 
     const nextModels = [...models, pastedModel];
@@ -3989,6 +4121,8 @@ export function useSceneCollectionManager() {
         color: entry.color,
         polygonCount: entry.polygonCount,
         meshModifiers: undefined,
+        isSupportGeometry: entry.isSupportGeometry,
+        linkGroupId: entry.linkGroupId,
       };
     });
 
@@ -4069,6 +4203,8 @@ export function useSceneCollectionManager() {
         color: source.color,
         polygonCount: source.polygonCount,
         meshModifiers: undefined,
+        isSupportGeometry: source.isSupportGeometry,
+        linkGroupId: source.linkGroupId,
       };
     });
 
@@ -4550,7 +4686,8 @@ export function useSceneCollectionManager() {
             url = URL.createObjectURL(blob);
 
             geometry = await loadMeshGeometry(url, embeddedName, {
-            nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
+              nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
+              assumeSupportGeometry: model.isSupportGeometry,
             onNativeProcessingStage: (stage) => {
               if (stage === 'repairing') {
                 setImportProgress({
@@ -4654,6 +4791,8 @@ export function useSceneCollectionManager() {
             meshModifiers: undefined,
             ignoreAutoLift: true,
             manualZMoveOverride: true,
+            isSupportGeometry: model.isSupportGeometry,
+            linkGroupId: model.linkGroupId,
           });
 
           // Store meshModifiers externally so model objects stay lightweight
@@ -5037,6 +5176,95 @@ export function useSceneCollectionManager() {
     }
   }, [activeModelId, setModelVisibility]);
 
+  const toggleSupportDesignation = useCallback((modelIds: string[], isSupport: boolean) => {
+    if (modelIds.length === 0) return;
+    const targetIds = new Set(modelIds);
+    const affectedModels = models.filter((m) => targetIds.has(m.id));
+    if (affectedModels.length === 0) return;
+    const needsChange = affectedModels.some((m) => Boolean(m.isSupportGeometry) !== isSupport);
+    if (!needsChange) return;
+
+    const before = captureSceneSnapshot(models, activeModelId, selectedModelIds);
+    const nextModels = models.map((m) => {
+      if (targetIds.has(m.id)) {
+        return { ...m, isSupportGeometry: isSupport };
+      }
+      return m;
+    });
+
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelId, selectedModelIds);
+    pushSceneSnapshotHistory(
+      before,
+      after,
+      isSupport ? 'Mark as Support Geometry' : 'Mark as Model Geometry',
+    );
+  }, [activeModelId, models, pushSceneSnapshotHistory, selectedModelIds]);
+
+  const linkModels = useCallback((idsInput: string[]) => {
+    const ids = new Set(idsInput);
+    if (ids.size < 2) return;
+
+    const currentModels = modelsRef.current;
+    const targetModels = currentModels.filter((m) => ids.has(m.id));
+    if (targetModels.length < 2) return;
+
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+
+    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
+    const linkGroupId = `link-${uuidv4()}`;
+
+    const nextModels = currentModels.map((m) => {
+      if (ids.has(m.id)) {
+        return { ...m, linkGroupId };
+      }
+      return m;
+    });
+
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds);
+    pushSceneSnapshotHistory(before, after, `Link ${targetModels.length} Models`);
+  }, [pushSceneSnapshotHistory]);
+
+  const unlinkModels = useCallback((idsInput: string[]) => {
+    const ids = new Set(idsInput);
+    if (ids.size === 0) return;
+
+    const currentModels = modelsRef.current;
+    const targetModels = currentModels.filter((m) => ids.has(m.id) && m.linkGroupId);
+    if (targetModels.length === 0) return;
+
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+
+    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
+    const affectedGroupIds = new Set(targetModels.map((m) => m.linkGroupId!));
+
+    let nextModels = currentModels.map((m) => {
+      if (ids.has(m.id)) {
+        return { ...m, linkGroupId: undefined };
+      }
+      return m;
+    });
+
+    affectedGroupIds.forEach((gId) => {
+      const remaining = nextModels.filter((m) => m.linkGroupId === gId);
+      if (remaining.length < 2) {
+        nextModels = nextModels.map((m) => {
+          if (m.linkGroupId === gId) {
+            return { ...m, linkGroupId: undefined };
+          }
+          return m;
+        });
+      }
+    });
+
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds);
+    pushSceneSnapshotHistory(before, after, `Unlink ${targetModels.length} Models`);
+  }, [pushSceneSnapshotHistory]);
+
   /**
    * Re-runs the full native repair pipeline on an already-loaded model's
    * geometry and swaps the result back in-place.  Intended for the manual
@@ -5049,6 +5277,7 @@ export function useSceneCollectionManager() {
       const processed = await processGeometry(model.geometry.geometry, {
         center: false,
         nativeProcessingMode: 'repair',
+        assumeSupportGeometry: model.isSupportGeometry,
       });
       const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
       const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
@@ -5247,6 +5476,9 @@ export function useSceneCollectionManager() {
     finalizeModelGeometryPostProcessing,
     setModelManualZMoveOverride,
     setModelVisibility,
+    toggleSupportDesignation,
+    linkModels,
+    unlinkModels,
     setModelMeshModifiers,
     getModelMeshModifiers: useCallback((id: string) => getStoredMeshModifiers(id), []),
     renameModel,
