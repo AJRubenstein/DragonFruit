@@ -36,7 +36,11 @@ interface TransformControlsProps {
   onResetScale: () => void;
   uniformScaling: boolean;
   onUniformScalingChange: (value: boolean) => void;
-  
+
+  // Gizmo space — one flag for both move and rotate, since the gizmo is one frame
+  localSpace: boolean;
+  onLocalSpaceChange: (value: boolean) => void;
+
   // Shared
   modelBBox: THREE.Box3 | null;
   
@@ -64,6 +68,8 @@ export function TransformControls({
   onResetScale,
   uniformScaling,
   onUniformScalingChange,
+  localSpace,
+  onLocalSpaceChange,
   modelBBox,
   autoLift,
   onAutoLiftChange,
@@ -107,6 +113,34 @@ export function TransformControls({
     background: 'transparent',
     color: 'var(--text-strong)',
   };
+
+  const toggleButtonClass = 'h-7 min-w-[64px] rounded-md border px-2 text-[10px] font-semibold uppercase tracking-wide transition-colors';
+
+  const toggleButtonStyle = (active: boolean): React.CSSProperties => (active
+    ? {
+        borderColor: 'color-mix(in srgb, var(--accent), white 10%)',
+        background: 'color-mix(in srgb, var(--accent), var(--surface-0) 76%)',
+        color: 'var(--accent-contrast)',
+      }
+    : {
+        borderColor: 'var(--border-subtle)',
+        background: 'var(--surface-1)',
+        color: 'var(--text-muted)',
+      });
+
+  // Move and rotate share the gizmo's frame, so they share one button: pressing
+  // either one turns both to the model's own axes.
+  const renderLocalSpaceToggle = () => (
+    <button
+      type="button"
+      onClick={() => onLocalSpaceChange(!localSpace)}
+      title="Move and rotate along the model's own axes instead of the build plate's"
+      className={toggleButtonClass}
+      style={toggleButtonStyle(localSpace)}
+    >
+      Local
+    </button>
+  );
 
   // Conversion helpers
   const toDegrees = (rad: number) => (rad * 180) / Math.PI;
@@ -180,7 +214,13 @@ export function TransformControls({
 
           {/* MOVE SECTION */}
           <div className="rounded-md border p-2" style={moveCardStyle}>
-            <SectionHeader title="Move" />
+            <div className="flex items-center">
+              <div className="flex-1" />
+              <SectionHeader title="Move" />
+              <div className="flex-1 flex justify-end">
+                {renderLocalSpaceToggle()}
+              </div>
+            </div>
               <div className="pt-1.5 space-y-2">
                 <div className="grid grid-cols-3 gap-1 min-w-0">
                   <div className="min-w-0">
@@ -302,7 +342,13 @@ export function TransformControls({
 
           {/* ROTATE SECTION */}
           <div className="rounded-md border p-2" style={rotateCardStyle}>
-            <SectionHeader title="Rotate" />
+            <div className="flex items-center">
+              <div className="flex-1" />
+              <SectionHeader title="Rotate" />
+              <div className="flex-1 flex justify-end">
+                {renderLocalSpaceToggle()}
+              </div>
+            </div>
             <div className="pt-1.5 space-y-2">
                 <div className="grid grid-cols-3 gap-1 min-w-0">
                   <div className="min-w-0">

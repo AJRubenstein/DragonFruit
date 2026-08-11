@@ -85,6 +85,11 @@ export const DEFAULT_KEYBINDINGS: HotkeyConfig = {
             key: 'm',
             description: 'Switch canvas tool to Modify'
         },
+        TOOL_MODIFY_LOCAL: {
+            key: 'm',
+            modifier: 'shift',
+            description: 'Switch canvas tool to Modify with the gizmo in the model\'s own axes'
+        },
         TOOL_SMOOTH: {
             key: 's',
             description: 'Switch canvas tool to Smooth'
