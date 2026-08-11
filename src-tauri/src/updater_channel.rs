@@ -174,8 +174,14 @@ pub async fn perform_update(
     };
 
     let Some(update) = update else {
+        warn!("[updater] perform_update called with no cached update");
         return Err("No cached update. Call check_updates first.".into());
     };
+
+    info!(
+        "[updater] perform_update starting: version={} url={}",
+        update.version, update.download_url
+    );
 
     // Emit a Started progress event.
     let _ = on_chunk.send(PerformUpdateProgress {
@@ -184,18 +190,25 @@ pub async fn perform_update(
         phase: "downloading".into(),
     });
 
+    // The plugin reports the length of each chunk, not the running total.
+    let downloaded = std::sync::atomic::AtomicU64::new(0);
+
     // The plugin's Update::download_and_install handles the whole flow:
     // download → verify signature → launch installer → exit app.
     update
         .download_and_install(
             |chunk_len, total_len| {
+                let total = downloaded
+                    .fetch_add(chunk_len as u64, std::sync::atomic::Ordering::Relaxed)
+                    + chunk_len as u64;
                 let _ = on_chunk.send(PerformUpdateProgress {
-                    downloaded_bytes: chunk_len as u64,
+                    downloaded_bytes: total,
                     total_bytes: total_len,
                     phase: "downloading".into(),
                 });
             },
             || {
+                info!("[updater] download complete — installing");
                 let _ = on_chunk.send(PerformUpdateProgress {
                     downloaded_bytes: 0,
                     total_bytes: None,
@@ -204,8 +217,12 @@ pub async fn perform_update(
             },
         )
         .await
-        .map_err(|e| format!("Update failed: {e}"))?;
+        .map_err(|e| {
+            warn!("[updater] download_and_install failed: {e}");
+            format!("Update failed: {e}")
+        })?;
 
+    info!("[updater] update installed successfully");
     Ok("Update installed successfully".into())
 }
 
