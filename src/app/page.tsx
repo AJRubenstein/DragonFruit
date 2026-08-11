@@ -978,12 +978,13 @@ export default function Home() {
   const isSupportSpotlightHoldActive = useActionActive('SUPPORTS', 'TEMP_SPOTLIGHT_HOLD');
   const [allowPrepareWithoutPrinter, setAllowPrepareWithoutPrinter] = React.useState(false);
   // First-run onboarding. `mounted` avoids SSR/client mismatches: the wizard is
-  // only rendered after hydration. It shows whenever there are no printer
-  // profiles — DragonFruit is assumed unset up until a printer is added.
-  // `forceOnboarding` is a session latch for the debug Ctrl+Shift+O replay, so
-  // the wizard can be shown even when a printer already exists.
+  // only rendered after hydration. `wizardActive` latches the wizard open for
+  // the session once it starts, so it can play its finalization step after a
+  // printer is added instead of unmounting the moment a profile exists. It is
+  // (re)opened whenever there are no printer profiles, and by the debug
+  // Ctrl+Shift+O replay even when a printer already exists.
   const [onboardingMounted, setOnboardingMounted] = React.useState(false);
-  const [forceOnboarding, setForceOnboarding] = React.useState(false);
+  const [wizardActive, setWizardActive] = React.useState(false);
   const [prepareSmoothingSettingsExpanded, setPrepareSmoothingSettingsExpanded] = React.useState(true);
   const [selectedHolePunchPlacementIds, setSelectedHolePunchPlacementIds] = React.useState<string[]>([]);
   const [hoveredHolePunchPlacementId, setHoveredHolePunchPlacementId] = React.useState<string | null>(null);
@@ -6981,6 +6982,14 @@ export default function Home() {
     setOnboardingMounted(true);
   }, []);
 
+  // Reopen the wizard whenever there are no printer profiles. Once active it
+  // stays latched until onExit, so the finalization step can play after adding.
+  React.useEffect(() => {
+    if (onboardingMounted && !hasPrinterProfiles) {
+      setWizardActive(true);
+    }
+  }, [onboardingMounted, hasPrinterProfiles]);
+
   // DEBUG: Ctrl+Shift+O re-runs the onboarding wizard. Lifts the session latch
   // and drops this session's "use without printer" state so the wizard reappears
   // even when a printer profile already exists.
@@ -6989,7 +6998,7 @@ export default function Home() {
     const unsubscribe = hotkeyStore.subscribe(() => {
       const isActive = isActionActiveSync('DEBUG', 'RE_RUN_ONBOARDING');
       if (isActive && !wasActive) {
-        setForceOnboarding(true);
+        setWizardActive(true);
         setAllowPrepareWithoutPrinter(false);
       }
       wasActive = isActive;
@@ -9547,7 +9556,7 @@ export default function Home() {
         interiorView={interiorView}
         onInteriorViewChange={setInteriorView}
         interiorViewAvailable={hasCavityGeometry}
-        hideWorkflowControls={onboardingMounted && (forceOnboarding || !hasPrinterProfiles)}
+        hideWorkflowControls={onboardingMounted && wizardActive}
         heatmapColors={scene.heatmapColors}
         onHeatmapColorChange={scene.onHeatmapColorChange}
         isSlicingBusy={isSlicingBusy}
@@ -10569,9 +10578,9 @@ export default function Home() {
         </ToastViewport>
       )}
 
-      {onboardingMounted && (forceOnboarding || !hasPrinterProfiles) && (
+      {onboardingMounted && wizardActive && (
         <FirstRunOnboarding
-          onExit={() => setForceOnboarding(false)}
+          onExit={() => setWizardActive(false)}
         />
       )}
 

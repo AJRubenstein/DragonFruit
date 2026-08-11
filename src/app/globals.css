@@ -772,6 +772,86 @@ input[type="number"].no-spinners {
   animation: onboardingFadeIn 140ms ease-out;
 }
 
+/* First-run finalization: a springy success check that pops in, then the
+   title/copy/action fade up in sequence while the modal settles back down. */
+@keyframes onboardingSuccessCircleIn {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes onboardingSuccessContentIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ui-onboarding-success-circle {
+  animation: onboardingSuccessCircleIn 460ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ui-onboarding-success-title {
+  animation: onboardingSuccessContentIn 420ms 140ms ease-out both;
+}
+
+.ui-onboarding-success-subtitle {
+  animation: onboardingSuccessContentIn 420ms 240ms ease-out both;
+}
+
+.ui-onboarding-success-action {
+  animation: onboardingSuccessContentIn 420ms 340ms ease-out both;
+}
+
+/* Exit: the whole overlay dissolves like a cloud blown away from the center
+   outward, revealing the empty scene beneath. The mask's transparent core
+   grows until the overlay is fully gone, then the wizard unmounts. */
+@property --onboarding-reveal {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+@keyframes onboardingRevealOut {
+  from {
+    --onboarding-reveal: 0%;
+  }
+  to {
+    --onboarding-reveal: 135%;
+  }
+}
+
+.ui-onboarding-reveal {
+  animation: onboardingRevealOut 750ms ease-out forwards;
+  mask-image: radial-gradient(
+    circle at center,
+    transparent 0%,
+    transparent var(--onboarding-reveal),
+    black var(--onboarding-reveal),
+    black 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    circle at center,
+    transparent 0%,
+    transparent var(--onboarding-reveal),
+    black var(--onboarding-reveal),
+    black 100%
+  );
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-modal-backdrop-enter,
   .ui-modal-panel-enter,
@@ -779,7 +859,12 @@ input[type="number"].no-spinners {
   .ui-onboarding-panel,
   .ui-onboarding-step-forward,
   .ui-onboarding-step-backward,
-  .ui-onboarding-fade {
+  .ui-onboarding-fade,
+  .ui-onboarding-success-circle,
+  .ui-onboarding-success-title,
+  .ui-onboarding-success-subtitle,
+  .ui-onboarding-success-action,
+  .ui-onboarding-reveal {
     animation: none !important;
   }
 }

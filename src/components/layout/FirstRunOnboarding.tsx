@@ -16,7 +16,7 @@ import {
 import type { ThemePreference } from '@/components/settings/themeCustomizations';
 import { OnboardingPrinterLibrary } from '@/components/layout/OnboardingPrinterLibrary';
 
-const STEPS = ['welcome', 'theme', 'printer'] as const;
+const STEPS = ['welcome', 'theme', 'printer', 'done'] as const;
 type WizardStep = (typeof STEPS)[number];
 
 type FirstRunOnboardingProps = {
@@ -42,6 +42,10 @@ export function FirstRunOnboarding({ onExit }: FirstRunOnboardingProps) {
   const [step, setStep] = React.useState<WizardStep>('welcome');
   const [direction, setDirection] = React.useState<'forward' | 'backward'>('forward');
   const [themePreference, setThemePreference] = React.useState<ThemePreference>(() => getSavedThemePreference());
+  // Once the wrap-up's CTA is pressed, the overlay dissolves like a cloud blown
+  // away from the center outward; `onExit` unmounts the wizard when it finishes.
+  const [revealing, setRevealing] = React.useState(false);
+  const revealTimeoutRef = React.useRef<number | null>(null);
 
   const stepIndex = STEPS.indexOf(step);
 
@@ -55,8 +59,26 @@ export function FirstRunOnboarding({ onExit }: FirstRunOnboardingProps) {
   }, []);
 
   const handlePrinterAdded = React.useCallback(() => {
-    onExit();
-  }, [onExit]);
+    goToStep('done', 'forward');
+  }, [goToStep]);
+
+  // Blow the whole overlay away like a cloud from the center outward, then
+  // unmount. Skipped (instant) under prefers-reduced-motion.
+  const startReveal = React.useCallback(() => {
+    if (revealing) return;
+    setRevealing(true);
+    const reduced = typeof window !== 'undefined'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    revealTimeoutRef.current = window.setTimeout(() => onExit(), reduced ? 0 : 750);
+  }, [revealing, onExit]);
+
+  React.useEffect(() => {
+    return () => {
+      if (revealTimeoutRef.current !== null) {
+        window.clearTimeout(revealTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleThemeSelect = React.useCallback((preference: ThemePreference) => {
     applyBuiltInThemePreference(preference);
@@ -65,7 +87,7 @@ export function FirstRunOnboarding({ onExit }: FirstRunOnboardingProps) {
 
   return (
     <div
-      className="ui-onboarding-backdrop fixed inset-0 z-40 overflow-hidden"
+      className={`ui-onboarding-backdrop fixed inset-0 z-40 overflow-hidden ${revealing ? 'ui-onboarding-reveal' : ''}`}
       style={{
         background:
           'radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--accent), var(--background) 90%) 0%, ' +
@@ -130,7 +152,7 @@ export function FirstRunOnboarding({ onExit }: FirstRunOnboardingProps) {
 
           <div
             key={step}
-            className={`${isLibraryExpanded ? 'ui-onboarding-fade' : `ui-onboarding-step-${direction}`} flex min-h-0 flex-1 flex-col ${isLibraryExpanded ? 'overflow-hidden p-0' : 'overflow-y-auto px-6 py-6'}`}
+            className={`${isLibraryExpanded || step === 'done' ? 'ui-onboarding-fade' : `ui-onboarding-step-${direction}`} flex min-h-0 flex-1 flex-col ${isLibraryExpanded ? 'overflow-hidden p-0' : 'overflow-y-auto px-6 py-6'}`}
           >
             {step === 'welcome' && (
               <div className="flex flex-1 flex-col">
@@ -262,6 +284,39 @@ export function FirstRunOnboarding({ onExit }: FirstRunOnboardingProps) {
                 onAdded={handlePrinterAdded}
                 onBack={() => goToStep('theme', 'backward')}
               />
+            )}
+
+            {step === 'done' && (
+              <div className="flex flex-1 flex-col">
+                <div className="flex flex-1 flex-col items-center justify-center text-center">
+                  <span
+                    className="ui-onboarding-success-circle inline-flex h-16 w-16 items-center justify-center rounded-full border"
+                    style={{
+                      background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 88%)',
+                      borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 50%)',
+                      color: 'var(--accent-secondary)',
+                      boxShadow: '0 0 0 6px color-mix(in srgb, var(--accent-secondary), transparent 88%)',
+                    }}
+                  >
+                    <Check className="h-8 w-8" strokeWidth={3} />
+                  </span>
+                  <h2 className="ui-onboarding-success-title mt-5 text-xl font-bold" style={{ color: 'var(--text-strong)' }}>
+                    {_(msg`You're all set!`)}
+                  </h2>
+                  <p className="ui-onboarding-success-subtitle mt-2 max-w-md text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    {_(msg`Your printer is ready. Drag a model in to start preparing your first print.`)}
+                  </p>
+                </div>
+                <div className="mt-6 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={startReveal}
+                    className="ui-onboarding-success-action ui-button ui-button-primary !h-10 !px-7 text-[15px]"
+                  >
+                    {_(msg`Start using DragonFruit`)}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
