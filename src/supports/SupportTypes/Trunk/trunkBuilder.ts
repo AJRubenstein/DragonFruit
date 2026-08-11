@@ -6,6 +6,7 @@
  */
 
 import * as THREE from 'three';
+import { v4 as uuidv4 } from 'uuid';
 import { Vec3, Roots, Trunk, Segment, Joint } from '../../types';
 import type { ContactCone, SupportTipProfile } from '../../SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition, getSocketPosition } from '../../SupportPrimitives/ContactCone/contactConeUtils';
@@ -22,13 +23,6 @@ import { gridSnappedXYFromKey } from '../../PlacementLogic/Grid/gridMath';
 import { normalizeFirstConstructionJoint, withCentralStraightSupportJoint } from './trunkConstructionJoints';
 import { encodeSupportSettingsHex } from '../../Settings/supportSettingsCodec';
 import { perfMark, perfMeasureWithSpike } from '../../PlacementLogic/Pathfinding/pathfindingPerf';
-
-function uuidv4() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-        const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-}
 
 const JOINT_CHAIN_Z_EPSILON = 0.0001;
 
@@ -167,9 +161,12 @@ export interface TrunkBuildResult {
 const PLACEMENT_CACHE_QUANT = 0.1; // mm - keep hover cache tight near collision/cavity boundaries
 const NORMAL_CACHE_QUANT = 0.02;   // ~1.1 degree buckets
 const MAX_PLACEMENT_CACHE_ENTRIES = 24;
+export const PLACEMENT_ERROR_CACHE_TTL_MS = 300;
 
-// Map<modelId, Map<cacheKey, result>> — insertion-ordered for FIFO eviction
-type ModelPlacementCache = Map<string, TrunkPlacementResult>;
+type PlacementCacheEntry = { result: TrunkPlacementResult; cachedAt: number };
+
+// Map<modelId, Map<cacheKey, entry>> — insertion-ordered for FIFO eviction
+type ModelPlacementCache = Map<string, PlacementCacheEntry>;
 const placementCacheByModel = new Map<string, ModelPlacementCache>();
 
 function placementCacheKey(tipPos: Vec3, tipNormal: Vec3): string {
@@ -178,8 +175,25 @@ function placementCacheKey(tipPos: Vec3, tipNormal: Vec3): string {
     return `${Math.round(tipPos.x / Q)},${Math.round(tipPos.y / Q)},${Math.round(tipPos.z / Q)},${Math.round(tipNormal.x / NQ)},${Math.round(tipNormal.y / NQ)},${Math.round(tipNormal.z / NQ)}`;
 }
 
+/** Error verdicts can be transient (a stagnated march, a cone-gate near-miss,
+ *  shared caches warmed by earlier probes). Serving them past a short TTL pins
+ *  a stale "blocked" hover on the bucket even after conditions clear, while
+ *  click-time — which bypasses this cache — succeeds. Successful placements
+ *  stay reusable until evicted. */
+export function isCachedPlacementReusable(entry: PlacementCacheEntry, nowMs: number): boolean {
+    if (!entry.result.error) return true;
+    return nowMs - entry.cachedAt <= PLACEMENT_ERROR_CACHE_TTL_MS;
+}
+
 function getPlacementCache(modelId: string, key: string): TrunkPlacementResult | undefined {
-    return placementCacheByModel.get(modelId)?.get(key);
+    const cache = placementCacheByModel.get(modelId);
+    const entry = cache?.get(key);
+    if (!entry) return undefined;
+    if (!isCachedPlacementReusable(entry, Date.now())) {
+        cache!.delete(key);
+        return undefined;
+    }
+    return entry.result;
 }
 
 function setPlacementCache(modelId: string, key: string, result: TrunkPlacementResult): void {
@@ -195,13 +209,22 @@ function setPlacementCache(modelId: string, key: string, result: TrunkPlacementR
         // Evict oldest entry (first inserted)
         cache.delete(cache.keys().next().value!);
     }
-    cache.set(key, result);
+    cache.set(key, { result, cachedAt: Date.now() });
 }
+
+// Cached placements are only valid for the model position and support
+// settings they were computed under; a mismatch drops the model's cache.
+const placementCacheContextByModel = new Map<string, string>();
 
 /** Clear cached placement for a specific model (call when model moves). */
 export function clearPlacementCache(modelId?: string): void {
-    if (modelId) placementCacheByModel.delete(modelId);
-    else placementCacheByModel.clear();
+    if (modelId) {
+        placementCacheByModel.delete(modelId);
+        placementCacheContextByModel.delete(modelId);
+    } else {
+        placementCacheByModel.clear();
+        placementCacheContextByModel.clear();
+    }
 }
 
 export function buildTrunkData(input: TrunkBuildInput): TrunkBuildResult {
@@ -233,10 +256,19 @@ export function buildTrunkData(input: TrunkBuildInput): TrunkBuildResult {
         // Preview uses lower budget (800 expansions) for responsiveness.
         const v2Context = isPreview ? { maxExpansions: 800 } : undefined;
 
-        // Cache key: position + normal quantised at 0.5mm / 0.05 normal.
+        // Cache key: position + normal quantised at 0.1mm / 0.02 normal.
         // Only used for preview → preview reuse; click-time bypasses cache
         // to ensure fresh collision validation against any moved models.
         const cacheKey = isPreview ? placementCacheKey(tipPos, tipNormal) : null;
+        if (cacheKey) {
+            // Results are only reusable while the model sits where it sat and
+            // the support settings match — otherwise drop this model's cache.
+            const cacheContext = `${mesh.matrixWorld.elements.join(',')}|${encodeSupportSettingsHex(settings)}`;
+            if (placementCacheContextByModel.get(modelId) !== cacheContext) {
+                placementCacheByModel.delete(modelId);
+                placementCacheContextByModel.set(modelId, cacheContext);
+            }
+        }
         const cached = cacheKey ? getPlacementCache(modelId, cacheKey) : undefined;
 
         if (cached) {

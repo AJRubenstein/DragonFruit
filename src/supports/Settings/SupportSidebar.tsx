@@ -39,13 +39,15 @@ import {
     GridSettingsCard,
     SupportKindTabs,
 } from './components';
-import { Card, CardHeader, IconButton } from '@/components/ui/primitives';
+import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { SupportAnatomyPreviewSlot } from './AnatomyPreview/SupportAnatomyPreviewSlot';
 import { AutoBracingSettingsCard } from '../autoBracing/AutoBracingSettingsCard';
 import { CurveSettingsCard, getCurveSettingsSelection } from '../Curves/CurveSettingsCard';
 import { runAutoBracing } from '../autoBracing/autoBrace';
+import { shouldRunAutoBracingHotkey } from '../autoBracing/autoBracingHotkey';
+import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { setAnatomyPreviewActiveSettingKey, subscribeToAnatomyPreviewState, getAnatomyPreviewState } from './AnatomyPreview/previewState';
 import {
     getSupportKindSnapshot,
@@ -62,8 +64,9 @@ import {
 } from '../Rafts/Crenelated/RaftState';
 import { DEFAULT_RAFT_SETTINGS } from '../Rafts/Crenelated/RaftDefaults';
 import type { SupportKind } from './supportKindState';
+import { resetSupportSettingsScrollForTabChange } from './supportSidebarScroll';
 
-const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm text-center no-spinners';
+const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm text-center no-spinners !bg-[var(--surface-0)]';
 const SECTION_CARD_STYLE: React.CSSProperties = {
     borderColor: 'var(--border-subtle)',
     background: 'var(--surface-1)',
@@ -207,14 +210,17 @@ function applySettingsToAllSelectedSupports(settings: SupportSettings): void {
  */
 export function SupportSidebar() {
     usePresetHotkeys();
+    const autoBracingHotkeyActive = useActionActive('SUPPORTS', 'AUTO_BRACING');
     const settings = useSyncExternalStore(subscribeToSettings, getSettings, getSettings);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+    const [presetSaveTrigger, setPresetSaveTrigger] = useState(0);
     const [autoBraceStatus, setAutoBraceStatus] = useState<{ kind: 'success' | 'warning' | 'error'; message: string } | null>(null);
     const [defaultsAnimating, setDefaultsAnimating] = useState(false);
     const [expanded, setExpanded] = React.useState(true);
     const [devToolsOpen, setDevToolsOpen] = useState(false);
     const saveStatusTimeoutRef = React.useRef<number | null>(null);
     const autoBraceStatusTimeoutRef = React.useRef<number | null>(null);
+    const autoBracingHotkeyWasActiveRef = React.useRef(false);
     const isAdaptiveConeAngle = (settings.tip.coneAngleMode ?? 'normal') === 'adaptive';
     const supportKindState = React.useSyncExternalStore(subscribeToSupportKindState, getSupportKindSnapshot, getSupportKindSnapshot);
     const activeKind = supportKindState.kind;
@@ -578,6 +584,11 @@ export function SupportSidebar() {
         try {
             saveSettingsToLocalStorage();
             localStorage.setItem(RAFT_STORAGE_KEY, JSON.stringify(getRaftSettings()));
+
+            // Trigger PresetSelector to save any dirty preset from within its
+            // own component scope, matching the context-menu "Save Changes" path.
+            setPresetSaveTrigger((n) => n + 1);
+
             setSaveStatus('saved');
         } catch (err) {
             console.error('[SupportSidebar] Failed to save settings:', err);
@@ -591,7 +602,7 @@ export function SupportSidebar() {
             setSaveStatus('idle');
             saveStatusTimeoutRef.current = null;
         }, 2000);
-    }, []);
+    }, [settings]);
 
     const handleRestoreDefaults = React.useCallback(() => {
         const RAFT_STORAGE_KEY = 'raft-settings';
@@ -634,6 +645,24 @@ export function SupportSidebar() {
             autoBraceStatusTimeoutRef.current = null;
         }, 2800);
     }, []);
+
+    useEffect(() => {
+        if (shouldRunAutoBracingHotkey({
+            active: autoBracingHotkeyActive,
+            wasActive: autoBracingHotkeyWasActiveRef.current,
+            sidebarExpanded: expanded,
+            activeSupportKind: activeKind,
+            curvePageVisible: showCurvePage,
+            modalOpen: document.querySelector('[role="dialog"][aria-modal="true"]') !== null,
+        })) {
+            // This effect translates the centralized hotkey's rising edge into
+            // the same UI action as clicking the Auto Brace button.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            handleAutoBrace();
+        }
+
+        autoBracingHotkeyWasActiveRef.current = autoBracingHotkeyActive;
+    }, [activeKind, autoBracingHotkeyActive, expanded, handleAutoBrace, showCurvePage]);
 
     const getInputProps = React.useCallback((key: string, baseClass: string) => {
         const isActive = activeKey === key;
@@ -953,7 +982,7 @@ export function SupportSidebar() {
 
                     <div className="space-y-2">
                         <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.diskHeightMm')}>
-                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Disk Height</div>
+                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Root Disk Height</div>
                             <div className="relative">
                                 <NumberInput
                                     value={settings.roots.diskHeightMm}
@@ -1104,7 +1133,7 @@ export function SupportSidebar() {
 
             <div className={compactTrunkPairClass}>
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.diskHeightMm')}>
-                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Disk Height">Disk Height</div>
+                    <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title="Root Disk Height">Root Disk Height</div>
                     <div className="relative">
                         <NumberInput
                             value={settings.roots.diskHeightMm}
@@ -1176,14 +1205,14 @@ export function SupportSidebar() {
                     <div className="inline-flex items-center gap-1">
                         <IconButton
                             onClick={handleSave}
-                            className={`!p-1.5 transition-colors ${saveStatus === 'saved' ? '!bg-green-600/30 !text-green-400' : saveStatus === 'error' ? '!bg-red-600/30 !text-red-400' : '!text-green-400/70 hover:!text-green-400 hover:!bg-green-600/15'}`}
+                            className={`!p-0.5 transition-colors ${saveStatus === 'saved' ? '!bg-green-600/30 !text-green-400' : saveStatus === 'error' ? '!bg-red-600/30 !text-red-400' : '!text-green-400/70 hover:!text-green-400 hover:!bg-green-600/15'}`}
                             title={saveStatus !== 'idle' ? (saveStatus === 'saved' ? 'Saved' : 'Save failed') : 'Save settings'}
                         >
                             {saveStatus === 'saved' ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
                         </IconButton>
                         <IconButton
                             onClick={handleRestoreDefaults}
-                            className={`!p-1.5 transition-colors ${defaultsAnimating ? '' : '!text-red-400/70 hover:!text-red-400 hover:!bg-red-600/15'}`}
+                            className={`!p-0.5 transition-colors ${defaultsAnimating ? '' : '!text-red-400/70 hover:!text-red-400 hover:!bg-red-600/15'}`}
                             title="Restore defaults"
                         >
                             <RotateCcw className={`h-3.5 w-3.5 ${defaultsAnimating ? 'animate-spin-once text-orange-400' : ''}`} />
@@ -1207,6 +1236,11 @@ export function SupportSidebar() {
                                     <SupportKindTabs
                                         value={tabKind}
                                         onChange={(kind) => {
+                                            resetSupportSettingsScrollForTabChange(
+                                                scrollViewportRef.current,
+                                                tabKind,
+                                                kind,
+                                            );
                                             setAnatomyPreviewActiveSettingKey(null);
                                             setActiveSupportKind(kind);
                                         }}
@@ -1272,6 +1306,7 @@ export function SupportSidebar() {
                                                 <PresetSelector
                                                     selectedPresetIdOverride={effectivePresetIdOverride}
                                                     disableGlobalPresetActivation={Boolean(editableTarget)}
+                                                    saveTrigger={presetSaveTrigger}
                                                     onPresetSelected={(presetId) => {
                                                         const preset = getPresetById(presetId);
                                                         if (!preset) return;

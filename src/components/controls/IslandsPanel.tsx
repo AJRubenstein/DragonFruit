@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Settings, RotateCcw } from 'lucide-react';
-import { Button, Card, CardHeader, IconButton } from '@/components/ui/primitives';
+import { Button, Card, CardHeader, IconButton } from '@/components/atoms';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
@@ -154,7 +154,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
           right={(
             <IconButton
               onClick={() => setShowSettings(true)}
-              className="!p-1.5"
+              className="!p-0.5"
               title="Scan settings"
             >
               <Settings className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
@@ -164,7 +164,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
         />
 
         {expanded && (
-          <div className="px-2.5 pb-3 space-y-2.5 overflow-y-auto custom-scrollbar" style={{ maxHeight: `calc(100vh - var(--topbar-height) - ${computedBottomClearance}px)` }}>
+          <div className="px-2.5 pt-1 pb-3 space-y-2.5 overflow-y-auto custom-scrollbar" style={{ maxHeight: `calc(100vh - var(--topbar-height) - ${computedBottomClearance}px)` }}>
             {applyingSettings && (
               <div
                 className="absolute inset-0 flex flex-col items-center justify-center z-50 rounded-md"

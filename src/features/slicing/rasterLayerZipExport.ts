@@ -1,7 +1,8 @@
 import JSZip from 'jszip';
 import * as THREE from 'three';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
-import type { MaterialProfile, PrinterProfile } from '@/features/profiles/profileStore';
+import { type MaterialProfile, type PrinterProfile, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
+import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 import {
   getSavedSlicingPerformanceSettings,
   type PngCompressionStrategy,
@@ -18,11 +19,12 @@ import { generateChamferedBeam } from '@/supports/Rafts/Crenelated/geometry/gene
 import { buildLineRaftEdgePairs } from '@/supports/Rafts/Crenelated/geometry/buildLineRaftEdgePairs';
 import type { ContactDisk } from '@/supports/types';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone/contactConeUtils';
-import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
+import { calculateDiskThickness, getDiskCenter, getDiskRotation } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getBezierPointAtT } from '@/supports/Curves/BezierUtils';
 import { getTrunkSegmentEndpoints, getBranchSegmentEndpoints } from '@/supports/SupportPrimitives/Knot/knotUtils';
 import { resolveSlicingFormatDefinition } from '@/features/slicing/formats/registry';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
+import { JOINT_DIAMETER_OFFSET_MM } from '@/supports/constants';
 
 const MAX_CANVAS_PIXELS = 24_000_000;
 const DEFAULT_MESH_CHUNK_TARGET_BYTES = 64 * 1024 * 1024;
@@ -122,9 +124,7 @@ export type SolidSliceMeshForWasm = {
   widthPx: number;
   heightPx: number;
   xPackingMode: 'none' | 'rgb8_div3' | 'gray3_div2';
-  computeBackend: 'auto' | 'cpu' | 'gpu';
   pngCompressionStrategy: PngCompressionStrategy;
-  bvhAccelerationEnabled: boolean;
   mirrorX: boolean;
   mirrorY: boolean;
   modelTriangleCount: number;
@@ -575,14 +575,23 @@ function appendGeometryTriangles(
   const position = geometry.getAttribute('position');
   if (!position) return;
 
+  // A negative-determinant matrix (mirror / negative scale, e.g. a model
+  // matrix from a mirrored .lys import) reflects vertices without reordering
+  // them, inverting each triangle's winding. Swap b<->c to keep the baked
+  // geometry outward-wound for the rasterizer. Support/raft callers pass
+  // rotation-only matrices (determinant +1) or none, so they never flip. (#334)
+  const flipWinding = matrix ? matrix.determinant() < 0 : false;
+
   const v0 = new THREE.Vector3();
   const v1 = new THREE.Vector3();
   const v2 = new THREE.Vector3();
 
   const writeTri = (a: number, b: number, c: number) => {
+    const b2 = flipWinding ? c : b;
+    const c2 = flipWinding ? b : c;
     v0.set(position.getX(a), position.getY(a), position.getZ(a));
-    v1.set(position.getX(b), position.getY(b), position.getZ(b));
-    v2.set(position.getX(c), position.getY(c), position.getZ(c));
+    v1.set(position.getX(b2), position.getY(b2), position.getZ(b2));
+    v2.set(position.getX(c2), position.getY(c2), position.getZ(c2));
 
     if (matrix) {
       v0.applyMatrix4(matrix);
@@ -639,6 +648,21 @@ function createFrustumGeometryBetween(
   return geom;
 }
 
+function appendJointSphere(
+  sink: TriangleSink,
+  pos: { x: number; y: number; z: number },
+  diameter: number,
+  radialSegments: number,
+): void {
+  const radius = Math.max(0.001, diameter * 0.5);
+  const heightSegments = Math.max(3, Math.floor(radialSegments * 0.75));
+  const geom = new THREE.SphereGeometry(radius, radialSegments, heightSegments);
+  const matrix = new THREE.Matrix4().makeTranslation(pos.x, pos.y, pos.z);
+  geom.applyMatrix4(matrix);
+  appendGeometryTriangles(sink, geom);
+  geom.dispose();
+}
+
 function getDiskTipCenter(disk: ContactDisk): THREE.Vector3 {
   const thickness = disk.diskLengthOverride ?? calculateDiskThickness(disk.surfaceNormal, disk.coneAxis, disk.profile);
   return new THREE.Vector3(
@@ -654,6 +678,7 @@ type SupportSliceTessellation = {
   bezierSteps: number;
   rootRadialSegments: number;
   contactConeRadialSegments: number;
+  jointRadialSegments: number;
 };
 
 function resolveSupportSliceTessellation(
@@ -679,6 +704,7 @@ function resolveSupportSliceTessellation(
       bezierSteps: 4,
       rootRadialSegments: 4,
       contactConeRadialSegments: 4,
+      jointRadialSegments: 4,
     };
   }
 
@@ -689,6 +715,7 @@ function resolveSupportSliceTessellation(
       bezierSteps: 6,
       rootRadialSegments: 8,
       contactConeRadialSegments: 6,
+      jointRadialSegments: 6,
     };
   }
 
@@ -699,6 +726,7 @@ function resolveSupportSliceTessellation(
       bezierSteps: 8,
       rootRadialSegments: 10,
       contactConeRadialSegments: 8,
+      jointRadialSegments: 8,
     };
   }
 
@@ -708,6 +736,7 @@ function resolveSupportSliceTessellation(
     bezierSteps: 12,
     rootRadialSegments: 14,
     contactConeRadialSegments: 12,
+    jointRadialSegments: 12,
   };
 }
 
@@ -758,12 +787,18 @@ function appendContactConePrimitive(
     normal: { x: number; y: number; z: number };
     surfaceNormal?: { x: number; y: number; z: number };
     diskLengthOverride?: number;
-    profile: { contactDiameterMm: number; bodyDiameterMm: number; type?: string; diskThicknessMm?: number; maxStandoffMm?: number; standoffAngleThreshold?: number };
+    profile: { contactDiameterMm: number; bodyDiameterMm: number; type?: string; diskThicknessMm?: number; maxStandoffMm?: number; standoffAngleThreshold?: number; penetrationMm?: number };
   },
   radialSegments = 12,
+  penetrationMm = 0,
 ): void {
   const socket = getFinalSocketPosition(cone as any);
-  const start = new THREE.Vector3(cone.pos.x, cone.pos.y, cone.pos.z);
+  const effectiveNormal = cone.surfaceNormal ?? cone.normal;
+  const start = new THREE.Vector3(
+    cone.pos.x - effectiveNormal.x * penetrationMm,
+    cone.pos.y - effectiveNormal.y * penetrationMm,
+    cone.pos.z - effectiveNormal.z * penetrationMm,
+  );
   const end = new THREE.Vector3(socket.x, socket.y, socket.z);
   const g = createFrustumGeometryBetween(
     start,
@@ -776,6 +811,43 @@ function appendContactConePrimitive(
   appendGeometryTriangles(sink, g);
   g.dispose();
 }
+
+function appendContactDiskPrimitive(
+  sink: TriangleSink,
+  disk: ContactDisk,
+  radialSegments: number,
+  penetrationMm = 0.05,
+): void {
+  const thickness = disk.diskLengthOverride ?? calculateDiskThickness(disk.surfaceNormal, disk.coneAxis, disk.profile);
+  const radius = Math.max(0.01, disk.contactDiameterMm * 0.5);
+
+  const center = getDiskCenter(disk.pos, disk.surfaceNormal, thickness);
+  const rotation = getDiskRotation(disk.surfaceNormal);
+
+  const cylinderHeight = thickness + penetrationMm;
+  const cylinderGeom = new THREE.CylinderGeometry(radius, radius, cylinderHeight, Math.max(4, Math.floor(radialSegments)));
+
+  const groupMatrix = new THREE.Matrix4().compose(
+    new THREE.Vector3(center.x, center.y, center.z),
+    rotation,
+    new THREE.Vector3(1, 1, 1),
+  );
+
+  const cylinderMatrix = groupMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, -penetrationMm / 2, 0));
+  cylinderGeom.applyMatrix4(cylinderMatrix);
+  appendGeometryTriangles(sink, cylinderGeom);
+  cylinderGeom.dispose();
+
+  const sphereSegments = Math.max(4, Math.floor(radialSegments));
+  const heightSegments = Math.max(3, Math.floor(sphereSegments * 0.75));
+  const sphereGeom = new THREE.SphereGeometry(radius, sphereSegments, heightSegments);
+
+  const sphereMatrix = groupMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, thickness / 2, 0));
+  sphereGeom.applyMatrix4(sphereMatrix);
+  appendGeometryTriangles(sink, sphereGeom);
+  sphereGeom.dispose();
+}
+
 
 function buildSupportAndRaftWorldTriangles(
   visibleModelIds: Set<string>,
@@ -796,8 +868,20 @@ function buildSupportAndRaftWorldTriangles(
     bezierRadialSegments: tessellation.bezierRadialSegments,
     bezierSteps: tessellation.bezierSteps,
   };
+  const seenJointIds = new Set<string>();
+  const JOINT_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
   const visibleRootIds = new Set<string>();
   const rootModelKeyById = new Map<string, string>();
+  
+  const material = getActiveMaterialProfile();
+  const printer = getActivePrinterProfile();
+  const tipPenetrationMm = (material && printer) 
+    ? (() => {
+        const pxX = printer.pixelSize?.x ? printer.pixelSize.x / 1000 : (printer.buildVolumeMm?.width ?? 143) / (printer.display?.resolutionX ?? 2560);
+        const pxY = printer.pixelSize?.y ? printer.pixelSize.y / 1000 : (printer.buildVolumeMm?.depth ?? 89) / (printer.display?.resolutionY ?? 1620);
+        return calculateTipOffset(material.antiAliasingSettings, material.layerHeightMm, pxX, pxY);
+      })()
+    : 0;
 
   for (const trunk of Object.values(supportState.trunks)) {
     if (!visibleModelIds.has(trunk.modelId)) continue;
@@ -836,8 +920,8 @@ function buildSupportAndRaftWorldTriangles(
 
     // Mirror proxy hasSolidBottom logic: collapse disk height and shift root up so it
     // sits flush on top of the solid raft rather than extending through it.
-    const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.01, root.diskHeight);
-    const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+    const effectiveDiskHeight = Math.max(0.01, root.diskHeight);
+    const verticalOffset = 0;
     const base = new THREE.Vector3(
       root.transform.pos.x,
       root.transform.pos.y,
@@ -878,10 +962,29 @@ function buildSupportAndRaftWorldTriangles(
         seg as any,
         segmentTessellation,
       );
+
+      if (seg.bottomJoint && !seenJointIds.has(seg.bottomJoint.id)) {
+        seenJointIds.add(seg.bottomJoint.id);
+        appendJointSphere(
+          sink,
+          seg.bottomJoint.pos,
+          Math.max(0.001, seg.bottomJoint.diameter - JOINT_BLEND_MM),
+          tessellation.jointRadialSegments,
+        );
+      }
+      if (seg.topJoint && !seenJointIds.has(seg.topJoint.id)) {
+        seenJointIds.add(seg.topJoint.id);
+        appendJointSphere(
+          sink,
+          seg.topJoint.pos,
+          Math.max(0.001, seg.topJoint.diameter - JOINT_BLEND_MM),
+          tessellation.jointRadialSegments,
+        );
+      }
     }
 
     if (trunk.contactCone) {
-      appendContactConePrimitive(sink, trunk.contactCone as any, tessellation.contactConeRadialSegments);
+      appendContactConePrimitive(sink, trunk.contactCone as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
     }
   }
 
@@ -903,10 +1006,29 @@ function buildSupportAndRaftWorldTriangles(
         seg as any,
         segmentTessellation,
       );
+
+      if (seg.bottomJoint && !seenJointIds.has(seg.bottomJoint.id)) {
+        seenJointIds.add(seg.bottomJoint.id);
+        appendJointSphere(
+          sink,
+          seg.bottomJoint.pos,
+          Math.max(0.001, seg.bottomJoint.diameter - JOINT_BLEND_MM),
+          tessellation.jointRadialSegments,
+        );
+      }
+      if (seg.topJoint && !seenJointIds.has(seg.topJoint.id)) {
+        seenJointIds.add(seg.topJoint.id);
+        appendJointSphere(
+          sink,
+          seg.topJoint.pos,
+          Math.max(0.001, seg.topJoint.diameter - JOINT_BLEND_MM),
+          tessellation.jointRadialSegments,
+        );
+      }
     }
 
     if (branch.contactCone) {
-      appendContactConePrimitive(sink, branch.contactCone as any, tessellation.contactConeRadialSegments);
+      appendContactConePrimitive(sink, branch.contactCone as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
     }
   }
 
@@ -920,7 +1042,28 @@ function buildSupportAndRaftWorldTriangles(
         ? new THREE.Vector3(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z)
         : getDiskTipCenter(twig.contactDiskB);
       appendSegmentPrimitive(sink, start, end, Math.max(0.05, seg.diameter), seg as any, segmentTessellation);
+
+      if (seg.bottomJoint && !seenJointIds.has(seg.bottomJoint.id)) {
+        seenJointIds.add(seg.bottomJoint.id);
+        appendJointSphere(
+          sink,
+          seg.bottomJoint.pos,
+          Math.max(0.001, seg.bottomJoint.diameter - JOINT_BLEND_MM),
+          tessellation.jointRadialSegments,
+        );
+      }
+      if (seg.topJoint && !seenJointIds.has(seg.topJoint.id)) {
+        seenJointIds.add(seg.topJoint.id);
+        appendJointSphere(
+          sink,
+          seg.topJoint.pos,
+          Math.max(0.001, seg.topJoint.diameter - JOINT_BLEND_MM),
+          tessellation.jointRadialSegments,
+        );
+      }
     }
+    appendContactDiskPrimitive(sink, twig.contactDiskA, tessellation.contactConeRadialSegments, tipPenetrationMm);
+    appendContactDiskPrimitive(sink, twig.contactDiskB, tessellation.contactConeRadialSegments, tipPenetrationMm);
   }
 
   for (const stick of Object.values(supportState.sticks)) {
@@ -933,10 +1076,29 @@ function buildSupportAndRaftWorldTriangles(
         ? new THREE.Vector3(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z)
         : new THREE.Vector3(...Object.values(getFinalSocketPosition(stick.contactConeB)) as [number, number, number]);
       appendSegmentPrimitive(sink, start, end, Math.max(0.05, seg.diameter), seg as any, segmentTessellation);
+
+      if (seg.bottomJoint && !seenJointIds.has(seg.bottomJoint.id)) {
+        seenJointIds.add(seg.bottomJoint.id);
+        appendJointSphere(
+          sink,
+          seg.bottomJoint.pos,
+          Math.max(0.001, seg.bottomJoint.diameter - JOINT_BLEND_MM),
+          tessellation.jointRadialSegments,
+        );
+      }
+      if (seg.topJoint && !seenJointIds.has(seg.topJoint.id)) {
+        seenJointIds.add(seg.topJoint.id);
+        appendJointSphere(
+          sink,
+          seg.topJoint.pos,
+          Math.max(0.001, seg.topJoint.diameter - JOINT_BLEND_MM),
+          tessellation.jointRadialSegments,
+        );
+      }
     }
 
-    appendContactConePrimitive(sink, stick.contactConeA as any, tessellation.contactConeRadialSegments);
-    appendContactConePrimitive(sink, stick.contactConeB as any, tessellation.contactConeRadialSegments);
+    appendContactConePrimitive(sink, stick.contactConeA as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
+    appendContactConePrimitive(sink, stick.contactConeB as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
   }
 
   for (const brace of Object.values(supportState.braces)) {
@@ -963,7 +1125,7 @@ function buildSupportAndRaftWorldTriangles(
   for (const leaf of Object.values(supportState.leaves)) {
     const modelId = leaf.modelId;
     if (!modelId || !visibleModelIds.has(modelId)) continue;
-    appendContactConePrimitive(sink, leaf.contactCone as any, tessellation.contactConeRadialSegments);
+    appendContactConePrimitive(sink, leaf.contactCone as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
   }
 
   for (const kickstand of Object.values(kickstandState.kickstands)) {
@@ -984,6 +1146,26 @@ function buildSupportAndRaftWorldTriangles(
         ? new THREE.Vector3(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z)
         : new THREE.Vector3(hostKnot.pos.x, hostKnot.pos.y, hostKnot.pos.z);
       appendSegmentPrimitive(sink, currentStart, endPoint, Math.max(0.05, seg.diameter), seg as any, segmentTessellation);
+
+      if (seg.bottomJoint && !seenJointIds.has(seg.bottomJoint.id)) {
+        seenJointIds.add(seg.bottomJoint.id);
+        appendJointSphere(
+          sink,
+          seg.bottomJoint.pos,
+          Math.max(0.001, seg.bottomJoint.diameter - JOINT_BLEND_MM),
+          tessellation.jointRadialSegments,
+        );
+      }
+      if (seg.topJoint && !seenJointIds.has(seg.topJoint.id)) {
+        seenJointIds.add(seg.topJoint.id);
+        appendJointSphere(
+          sink,
+          seg.topJoint.pos,
+          Math.max(0.001, seg.topJoint.diameter - JOINT_BLEND_MM),
+          tessellation.jointRadialSegments,
+        );
+      }
+
       currentStart = endPoint;
     }
   }
@@ -1017,11 +1199,13 @@ function buildSupportAndRaftWorldTriangles(
     for (const circles of rootsByModel.values()) {
       if (circles.length === 0) continue;
       const clampedChamfer = Math.min(90, Math.max(45, raft.chamferAngle));
-      const chamferInset = raft.bottomMode === 'line'
-        ? Math.max(0, raft.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - clampedChamfer))
-        : 0;
+      const thickness = raft.bottomMode === 'line' ? raft.lineHeightMm : raft.thickness;
+      const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - clampedChamfer));
+      const wallInset = raft.wallEnabled ? Math.max(0, raft.wallThickness) : 0;
+      const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
+
       const profile = computeFootprint(circles as any, {
-        marginMm: 0.2 + chamferInset,
+        marginMm: dynamicMargin,
         samplesPerCircle: 24,
       });
       if (!profile || profile.length < 3) continue;
@@ -1257,6 +1441,10 @@ function buildTriangles(
 
   for (const model of models) {
     const matrix = composeModelMatrix(model.transform);
+    // A negative-determinant model transform (mirror / negative scale) reflects
+    // vertices without reordering them, inverting each triangle's winding. Swap
+    // b<->c so the baked model stays outward-wound for the rasterizer. (#334)
+    const flipWinding = matrix.determinant() < 0;
     const center = model.geometry.center;
     const geometry = model.geometry.geometry;
     const position = geometry.getAttribute('position');
@@ -1282,8 +1470,8 @@ function buildTriangles(
         const c = Number(idx[i + 2]);
 
         readVertex(a, v0);
-        readVertex(b, v1);
-        readVertex(c, v2);
+        readVertex(flipWinding ? c : b, v1);
+        readVertex(flipWinding ? b : c, v2);
 
         const zMin = Math.min(v0.z, v1.z, v2.z);
         const zMax = Math.max(v0.z, v1.z, v2.z);
@@ -1310,8 +1498,8 @@ function buildTriangles(
       const count = position.count;
       for (let i = 0; i < count; i += 3) {
         readVertex(i, v0);
-        readVertex(i + 1, v1);
-        readVertex(i + 2, v2);
+        readVertex(flipWinding ? i + 2 : i + 1, v1);
+        readVertex(flipWinding ? i + 1 : i + 2, v2);
 
         const zMin = Math.min(v0.z, v1.z, v2.z);
         const zMax = Math.max(v0.z, v1.z, v2.z);
@@ -1349,6 +1537,10 @@ function buildWorldTriangles(models: LoadedModel[]): WorldTriangle[] {
 
   for (const model of models) {
     const matrix = composeModelMatrix(model.transform);
+    // A negative-determinant model transform (mirror / negative scale) reflects
+    // vertices without reordering them, inverting each triangle's winding. Swap
+    // b<->c so the baked model stays outward-wound for the rasterizer. (#334)
+    const flipWinding = matrix.determinant() < 0;
     const center = model.geometry.center;
     const geometry = model.geometry.geometry;
     const position = geometry.getAttribute('position');
@@ -1374,8 +1566,8 @@ function buildWorldTriangles(models: LoadedModel[]): WorldTriangle[] {
         const c = Number(idx[i + 2]);
 
         readVertex(a, v0);
-        readVertex(b, v1);
-        readVertex(c, v2);
+        readVertex(flipWinding ? c : b, v1);
+        readVertex(flipWinding ? b : c, v2);
 
         const zMin = Math.min(v0.z, v1.z, v2.z);
         const zMax = Math.max(v0.z, v1.z, v2.z);
@@ -1398,8 +1590,8 @@ function buildWorldTriangles(models: LoadedModel[]): WorldTriangle[] {
       const count = position.count;
       for (let i = 0; i < count; i += 3) {
         readVertex(i, v0);
-        readVertex(i + 1, v1);
-        readVertex(i + 2, v2);
+        readVertex(flipWinding ? i + 2 : i + 1, v1);
+        readVertex(flipWinding ? i + 1 : i + 2, v2);
 
         const zMin = Math.min(v0.z, v1.z, v2.z);
         const zMax = Math.max(v0.z, v1.z, v2.z);
@@ -1438,6 +1630,14 @@ function appendModelTrianglesInRange(
   endTri: number,
 ): void {
   const matrix = composeModelMatrix(model.transform);
+  // A negative-determinant model transform (a mirror / negative scale, e.g.
+  // from a Lychee-mirrored .lys import or a transient live mirror preview)
+  // reflects the vertices without reordering them, which inverts every model
+  // triangle's winding. The rasterizer decides fill from face-normal X sign
+  // (geometry.rs: fill_wind), so an inside-out model overlapping the
+  // always-outward supports produces mixed-sign scanlines and dropped fill.
+  // Swap b<->c to keep the baked model consistently outward-wound. (#334)
+  const flipWinding = matrix.determinant() < 0;
   const center = model.geometry.center;
   const geometry = model.geometry.geometry;
   const position = geometry.getAttribute('position');
@@ -1458,6 +1658,11 @@ function appendModelTrianglesInRange(
     return target;
   };
 
+  const push = () =>
+    flipWinding
+      ? collector.pushTriangle(v0.x, v0.y, v0.z, v2.x, v2.y, v2.z, v1.x, v1.y, v1.z)
+      : collector.pushTriangle(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
+
   if (index) {
     const idx = index.array;
     const triStart = startTri * 3;
@@ -1466,7 +1671,7 @@ function appendModelTrianglesInRange(
       readVertex(Number(idx[i]), v0);
       readVertex(Number(idx[i + 1]), v1);
       readVertex(Number(idx[i + 2]), v2);
-      collector.pushTriangle(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
+      push();
     }
   } else {
     const triStart = startTri * 3;
@@ -1475,18 +1680,25 @@ function appendModelTrianglesInRange(
       readVertex(i, v0);
       readVertex(i + 1, v1);
       readVertex(i + 2, v2);
-      collector.pushTriangle(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
+      push();
     }
   }
 }
 
 /** Returns the number of triangles in a model that belong to the actual
- *  model body (excluding imported support geometry).  When the repair
- *  report has identified a clear model/support split this is the split
- *  point; when the mesh is flagged as entirely support-dominant the count
- *  is zero. */
-function effectiveModelTriangleCount(model: LoadedModel): number {
+ *  model body (excluding imported support geometry). When explicit
+ *  isSupportGeometry flag is set, it overrides repair report bounds.
+ *  When the repair report has identified a clear model/support split this
+ *  is the split point; when the mesh is flagged as entirely support-dominant
+ *  the count is zero. */
+export function effectiveModelTriangleCount(model: LoadedModel): number {
+  if (model.isSupportGeometry === true) {
+    return 0;
+  }
   const totalTriCount = getModelTriangleCount(model);
+  if (model.isSupportGeometry === false) {
+    return totalTriCount;
+  }
   const report = model.geometry.meshDefects?.nativeRepairReport;
   const modelTriCount = report?.model_triangle_count;
   if (modelTriCount != null && modelTriCount > 0) {
@@ -1498,7 +1710,7 @@ function effectiveModelTriangleCount(model: LoadedModel): number {
 
 /** Returns the total triangle count for a model's geometry
  *  (used for both counting and iteration bounds). */
-function getModelTriangleCount(model: LoadedModel): number {
+export function getModelTriangleCount(model: LoadedModel): number {
   const geometry = model.geometry.geometry;
   const position = geometry.getAttribute('position');
   if (!position) return 0;
@@ -2071,6 +2283,7 @@ async function rasterizeLayerStack(options: RasterLayerZipExportOptions): Promis
       buildVolumeMm: options.printerProfile.buildVolumeMm,
       bitDepth: options.printerProfile.bitDepth,
       outputFormat: options.printerProfile.display.outputFormat,
+      formatVersion: options.printerProfile.display.formatVersion,
       mirrorX: options.printerProfile.display.mirrorX === true,
       mirrorY: options.printerProfile.display.mirrorY === true,
     },
@@ -2277,6 +2490,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
       buildVolumeMm: options.printerProfile.buildVolumeMm,
       bitDepth: options.printerProfile.bitDepth,
       outputFormat: options.printerProfile.display.outputFormat,
+      formatVersion: options.printerProfile.display.formatVersion,
       mirrorX: options.printerProfile.display.mirrorX === true,
       mirrorY: options.printerProfile.display.mirrorY === true,
     },
@@ -2321,10 +2535,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
     widthPx: settings.widthPx,
     heightPx: settings.heightPx,
     xPackingMode: settings.xPackingMode,
-    // Backend selection is managed internally by the slicing engine.
-    computeBackend: 'auto',
     pngCompressionStrategy: perfSettings.pngCompressionStrategy,
-    bvhAccelerationEnabled: perfSettings.bvhAccelerationEnabled,
     mirrorX: settings.mirrorX,
     mirrorY: settings.mirrorY,
     modelTriangleCount,
@@ -2337,19 +2548,6 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
     meshBounds: collector.meshBounds,
     metadataJson: JSON.stringify(manifest),
   };
-}
-
-export function buildProjectedCrossSectionLoopsAtZ(options: {
-  models: LoadedModel[];
-  zMm: number;
-}): THREE.Vector2[][] {
-  const context = buildProjectedCrossSectionContext(options.models);
-  if (!context) return [];
-
-  return buildProjectedCrossSectionLoopsAtZFromContext({
-    context,
-    zMm: options.zMm,
-  });
 }
 
 export function buildProjectedCrossSectionContext(models: LoadedModel[]): ProjectedCrossSectionContext | null {

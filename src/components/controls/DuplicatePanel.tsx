@@ -1,7 +1,8 @@
 import React from 'react';
 import { CopyPlus, Loader2 } from 'lucide-react';
-import { Button, Card, CardHeader, IconButton } from '@/components/ui/primitives';
+import { Button, Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
+import { MiniStepperField } from '@/components/ui/miniStepperField';
 import type { ArrangePrecisionMode } from '@/components/controls/ArrangePanel';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 
@@ -111,7 +112,8 @@ export function DuplicatePanel({
   const setClampedSpacing = React.useCallback((value: number) => {
     const next = sanitizeNumber(value, 0.5);
     const rounded = Number((Math.round(next * 10) / 10).toFixed(1));
-    onSpacingMmChange(Math.min(5, Math.max(0, rounded)));
+    // Negative spacing nests copies (matches Arrange/Fill Plate).
+    onSpacingMmChange(Math.min(5, Math.max(-5, rounded)));
   }, [onSpacingMmChange, sanitizeNumber]);
 
   const setClampedArrayCount = React.useCallback((setter: (value: number) => void, value: number) => {
@@ -121,7 +123,8 @@ export function DuplicatePanel({
 
   const setClampedArrayGap = React.useCallback((setter: (value: number) => void, value: number) => {
     const next = sanitizeNumber(value, 0);
-    setter(Math.min(120, Math.max(0, Math.round(next))));
+    // Negative gaps nest/overlap array copies.
+    setter(Math.min(120, Math.max(-120, Math.round(next))));
   }, [sanitizeNumber]);
 
   const displayTotalCopies = Math.max(1, layoutMode === 'array'
@@ -263,7 +266,7 @@ export function DuplicatePanel({
                   className="mt-1"
                   value={spacingMm}
                   onChange={setClampedSpacing}
-                  min={0}
+                  min={-5}
                   max={5}
                   step={0.1}
                   unit="mm"
@@ -289,28 +292,21 @@ export function DuplicatePanel({
               ] as const).map(([axis, countValue, onCountChange, gapValue, onGapChange]) => (
                 <div key={axis} className="grid grid-cols-[24px_minmax(0,1fr)_minmax(0,1fr)] gap-1 items-center mb-1 last:mb-0 min-w-0">
                   <span className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{axis}:</span>
-                  <ScrollableNumberField
+                  <MiniStepperField
                     value={countValue}
                     onChange={(next) => setClampedArrayCount(onCountChange, next)}
                     min={1}
                     max={32}
-                    step={1}
                     disabled={panelDisabled}
                     ariaLabel={`${axis} array count`}
-                    decreaseTitle={`Decrease ${axis} count`}
-                    increaseTitle={`Increase ${axis} count`}
                   />
-                  <ScrollableNumberField
+                  <MiniStepperField
                     value={gapValue}
                     onChange={(next) => setClampedArrayGap(onGapChange, next)}
-                    min={0}
+                    min={-120}
                     max={120}
-                    step={1}
-                    unit="mm"
                     disabled={panelDisabled}
                     ariaLabel={`${axis} array gap`}
-                    decreaseTitle={`Decrease ${axis} gap`}
-                    increaseTitle={`Increase ${axis} gap`}
                   />
                 </div>
               ))}

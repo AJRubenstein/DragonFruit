@@ -290,103 +290,170 @@ export function SupportProxyMeshLayer({
   const interiorSupportIdSet = React.useMemo<Set<string> | null>(() => {
     if (!interiorView || !cavityGeometryByModelId || cavityGeometryByModelId.size === 0) return null;
 
-    const THRESHOLD_MM = 0.3;
-    const RAY_HIT_EPSILON_MM = 1e-5;
-    const RAY_DEDUPE_EPSILON_MM = 1e-4;
     const ids = new Set<string>();
     const tempVec = new THREE.Vector3();
-    const insideRaycaster = new THREE.Raycaster();
-    const insideRayDirection = new THREE.Vector3(1, 0.37139, 0.11317).normalize();
-    const cavityMeshByGeometry = new Map<THREE.BufferGeometry, THREE.Mesh>();
-    const queryTarget = { point: new THREE.Vector3(), distance: 0, faceIndex: -1 };
-
-    // Ensure BVH is built on each cavity geometry
-    for (const [, geometry] of cavityGeometryByModelId) {
-      const g = geometry as THREE.BufferGeometry & { boundsTree?: { closestPointToPoint: Function } };
-      if (!g.boundsTree && typeof (g as any).computeBoundsTree === 'function') {
-        (g as any).computeBoundsTree();
-      }
-      cavityMeshByGeometry.set(geometry, new THREE.Mesh(geometry));
-    }
-
-    const isPointInsideCavityVolume = (pointLocal: THREE.Vector3, geometry: THREE.BufferGeometry): boolean => {
-      const mesh = cavityMeshByGeometry.get(geometry);
-      if (!mesh) return false;
-
-      insideRaycaster.set(pointLocal, insideRayDirection);
-      const hits = insideRaycaster.intersectObject(mesh, false);
-      if (hits.length === 0) return false;
-
-      let crossingCount = 0;
-      let lastDistance = Number.NEGATIVE_INFINITY;
-      for (const hit of hits) {
-        if (hit.distance <= RAY_HIT_EPSILON_MM) continue;
-        if (Math.abs(hit.distance - lastDistance) <= RAY_DEDUPE_EPSILON_MM) continue;
-        lastDistance = hit.distance;
-        crossingCount += 1;
-      }
-
-      return (crossingCount % 2) === 1;
+    const queryTarget = { point: new THREE.Vector3(), distance: 0, faceIndex: -1 } as {
+      point: THREE.Vector3;
+      distance: number;
+      faceIndex: number;
     };
 
-    const isPointOnCavitySurface = (pos: Vec3, modelId?: string): boolean => {
-      const geometry = modelId ? cavityGeometryByModelId.get(modelId) : null;
-      if (!geometry && !modelId) {
-        for (const [, geom] of cavityGeometryByModelId) {
-          const g = geom as THREE.BufferGeometry & { boundsTree?: { closestPointToPoint: Function } };
-          tempVec.set(pos.x, pos.y, pos.z);
-          if (g.boundsTree) {
-            queryTarget.distance = Infinity;
-            const result = g.boundsTree.closestPointToPoint(tempVec, queryTarget);
-            if (result && result.distance < THRESHOLD_MM) return true;
-          }
-          if (isPointInsideCavityVolume(tempVec, geom)) return true;
-        }
-        return false;
+    // Build BVH on cavity geometries for O(log n) closest-point queries
+    const cavityBvhByGeometry = new Map<THREE.BufferGeometry, THREE.BufferGeometry & { boundsTree?: { closestPointToPoint: Function } }>();
+    for (const [, geometry] of cavityGeometryByModelId) {
+      const g = geometry as THREE.BufferGeometry & { boundsTree?: { closestPointToPoint: Function }; computeBoundsTree?: () => void };
+      if (!g.boundsTree && typeof g.computeBoundsTree === 'function') {
+        g.computeBoundsTree();
       }
-      if (!geometry) return false;
-      const g = geometry as THREE.BufferGeometry & { boundsTree?: { closestPointToPoint: Function } };
+      cavityBvhByGeometry.set(geometry, g);
+    }
 
-      // Transform world-space support position into the model's local space
+    // Pre-compute face normals for each cavity geometry so we can determine
+    // which side of the cavity surface a point lies on.
+    const faceNormalsByGeometry = new Map<THREE.BufferGeometry, Float32Array>();
+    for (const [, geometry] of cavityGeometryByModelId) {
+      const posAttr = geometry.getAttribute('position');
+      const indexAttr = geometry.getIndex();
+      if (!posAttr) continue;
+      const positions = posAttr.array as Float32Array;
+      const indices = indexAttr ? (indexAttr.array as Uint16Array | Uint32Array) : null;
+
+      const triCount = indices
+        ? indices.length / 3
+        : posAttr.count / 3;
+      const normals = new Float32Array(triCount * 3);
+
+      const a = new THREE.Vector3();
+      const b = new THREE.Vector3();
+      const c = new THREE.Vector3();
+      const edge1 = new THREE.Vector3();
+      const edge2 = new THREE.Vector3();
+      const faceNormal = new THREE.Vector3();
+
+      for (let i = 0; i < triCount; i++) {
+        const i0 = indices ? indices[i * 3] : i * 3;
+        const i1 = indices ? indices[i * 3 + 1] : i * 3 + 1;
+        const i2 = indices ? indices[i * 3 + 2] : i * 3 + 2;
+        a.set(positions[i0 * 3], positions[i0 * 3 + 1], positions[i0 * 3 + 2]);
+        b.set(positions[i1 * 3], positions[i1 * 3 + 1], positions[i1 * 3 + 2]);
+        c.set(positions[i2 * 3], positions[i2 * 3 + 1], positions[i2 * 3 + 2]);
+        edge1.subVectors(b, a);
+        edge2.subVectors(c, a);
+        faceNormal.crossVectors(edge1, edge2).normalize();
+        normals[i * 3] = faceNormal.x;
+        normals[i * 3 + 1] = faceNormal.y;
+        normals[i * 3 + 2] = faceNormal.z;
+      }
+      faceNormalsByGeometry.set(geometry, normals);
+    }
+
+    /**
+     * Returns true if `pos` lies on the interior side of the cavity surface
+     * or is very close to it (within the shell thickness).
+     *
+     * Finds the closest point on the cavity mesh, then compares the vector
+     * from that point to `pos` against the face normal at the closest point.
+     * - dot > 0  → pos is in same direction as normal → INSIDE cavity → show
+     * - dot ≤ 0 but dist < SHELL_PROXIMITY_MM → near the cavity wall → show
+     * - dot ≤ 0 and dist ≥ SHELL_PROXIMITY_MM → in solid material far from cavity → hide
+     *
+     * This is purely local — no watertightness or raycasting required.
+     */
+    const isOnInteriorSide = (pos: Vec3, modelId?: string): boolean => {
+      const geometry = modelId ? cavityGeometryByModelId.get(modelId) : null;
+      const target = geometry ?? (cavityGeometryByModelId ? Array.from(cavityGeometryByModelId.values())[0] : null);
+      if (!target) return false;
+      const g = cavityBvhByGeometry.get(target);
+      if (!g?.boundsTree) return false;
+
       tempVec.set(pos.x, pos.y, pos.z);
       if (modelId && modelWorldInverseById) {
-        const invMatrix = modelWorldInverseById.get(modelId);
-        if (invMatrix) {
-          tempVec.applyMatrix4(invMatrix);
-        }
+        const inv = modelWorldInverseById.get(modelId);
+        if (inv) tempVec.applyMatrix4(inv);
       }
+      queryTarget.distance = Infinity;
+      queryTarget.faceIndex = -1;
+      const result = g.boundsTree.closestPointToPoint(tempVec, queryTarget);
+      if (!result || queryTarget.faceIndex < 0) return false;
 
-      if (g.boundsTree) {
-        queryTarget.distance = Infinity;
-        const result = g.boundsTree.closestPointToPoint(tempVec, queryTarget);
-        if (result !== null && result.distance < THRESHOLD_MM) return true;
-      }
+      const normals = faceNormalsByGeometry.get(target);
+      if (!normals || queryTarget.faceIndex * 3 + 2 >= normals.length) return false;
 
-      return isPointInsideCavityVolume(tempVec, geometry);
+      // Vector from closest cavity point → support point
+      const dx = tempVec.x - queryTarget.point.x;
+      const dy = tempVec.y - queryTarget.point.y;
+      const dz = tempVec.z - queryTarget.point.z;
+
+      // Face normal at closest point (outward from cavity)
+      const nx = normals[queryTarget.faceIndex * 3];
+      const ny = normals[queryTarget.faceIndex * 3 + 1];
+      const nz = normals[queryTarget.faceIndex * 3 + 2];
+
+      const dot = dx * nx + dy * ny + dz * nz;
+
+      // Cavity mesh normals point INTO the cavity (marching-cubes convention).
+      // dot > 0  → point is inside the cavity void → definitely show
+      // dot ≤ 0  → point is in the model wall or outside.
+      //   dist < 1.5mm → on/near the INTERIOR wall (cavity-facing) → show
+      //   dist ≥ 1.5mm → exterior wall or far outside → hide
+      const INTERIOR_WALL_THRESHOLD_MM = 1.5;
+      return dot > 0 || result.distance < INTERIOR_WALL_THRESHOLD_MM;
     };
 
     const isInteriorContactCone = (cone: { pos: Vec3; placementSurface?: 'interior' | 'exterior' } | undefined, modelId?: string): boolean => {
       if (!cone) return false;
       if (cone.placementSurface === 'interior') return true;
       if (cone.placementSurface === 'exterior') return false;
-      return isPointOnCavitySurface(cone.pos, modelId);
+      return isOnInteriorSide(cone.pos, modelId);
     };
 
     const isInteriorContactDisk = (disk: { pos: Vec3; placementSurface?: 'interior' | 'exterior' } | undefined, modelId?: string): boolean => {
       if (!disk) return false;
       if (disk.placementSurface === 'interior') return true;
       if (disk.placementSurface === 'exterior') return false;
-      return isPointOnCavitySurface(disk.pos, modelId);
+      return isOnInteriorSide(disk.pos, modelId);
     };
 
-    // Trunks
-    for (const trunk of Object.values(supportTrunks)) {
-      if (isInteriorContactCone(trunk.contactCone, trunk.modelId)) {
-        ids.add(`trunk:${trunk.id}`);
+    // Sample a segment shaft for cavity interior crossing. Both endpoints are
+    // typically outside the cavity (tip at model surface, base at raft/parent).
+    // The shaft may only pass through the cavity over a short fraction of its
+    // length, so we sample at 10% increments to catch narrow crossings.
+    const isAnySegmentPointInterior = (
+      segs: Array<{ bottomJoint?: { pos: Vec3 }; topJoint?: { pos: Vec3 } }>,
+      modelId?: string,
+    ): boolean => {
+      for (const seg of segs) {
+        if (seg.bottomJoint?.pos && isOnInteriorSide(seg.bottomJoint.pos, modelId)) return true;
+        if (seg.topJoint?.pos && isOnInteriorSide(seg.topJoint.pos, modelId)) return true;
+
+        const a = seg.bottomJoint?.pos;
+        const b = seg.topJoint?.pos;
+        if (a && b) {
+          for (let i = 1; i <= 9; i++) {
+            const t = i / 10;
+            const mid: Vec3 = {
+              x: a.x + (b.x - a.x) * t,
+              y: a.y + (b.y - a.y) * t,
+              z: a.z + (b.z - a.z) * t,
+            };
+            if (isOnInteriorSide(mid, modelId)) return true;
+          }
+        }
       }
-    }
+      return false;
+    };
+
+    // Trunks always have roots (raft-connected) — their shafts originate at the
+    // build plate and their tips are at the model exterior surface. They never
+    // belong in the interior cavity view.
+    // (trunk loop intentionally omitted — trunks are never added to the set)
+
     for (const branch of Object.values(supportBranches)) {
       if (isInteriorContactCone(branch.contactCone, branch.modelId)) {
+        ids.add(`branch:${branch.id}`);
+        continue;
+      }
+      if (isAnySegmentPointInterior(branch.segments, branch.modelId)) {
         ids.add(`branch:${branch.id}`);
       }
     }
@@ -494,12 +561,8 @@ export function SupportProxyMeshLayer({
     };
 
     const pushRoot = (root: InstancedRoot) => {
-      const effectiveDiskHeight = hasSolidBottom
-        ? 0.05
-        : Math.max(0.001, root.effectiveDiskHeight);
-      const verticalOffset = hasSolidBottom
-        ? Math.max(raftThickness - effectiveDiskHeight, 0)
-        : 0;
+      const effectiveDiskHeight = Math.max(0.001, root.effectiveDiskHeight);
+      const verticalOffset = 0;
 
       ensureModel(root.modelId).roots.push({
         ...root,

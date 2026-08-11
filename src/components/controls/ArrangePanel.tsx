@@ -1,7 +1,7 @@
 import React from 'react';
 import { LayoutGrid, Loader2, RotateCw } from 'lucide-react';
-import { NumberInput } from '@/components/ui/NumberInput';
-import { Button, Card, CardHeader, IconButton, Select } from '@/components/ui/primitives';
+import { MiniStepperField } from '@/components/ui/miniStepperField';
+import { Button, Card, CardHeader, IconButton, Select } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 
@@ -38,43 +38,6 @@ interface ArrangePanelProps {
   selectedModelCount: number;
   isApplying?: boolean;
   disableArrangeActions?: boolean;
-}
-
-type MiniStepperFieldProps = {
-  value: number;
-  onChange: (value: number) => void;
-  min: number;
-  max: number;
-  disabled?: boolean;
-};
-
-function MiniStepperField({ value, onChange, min, max, disabled = false }: MiniStepperFieldProps) {
-  const safe = Number.isFinite(value) ? value : min;
-  const clamped = Math.min(max, Math.max(min, Math.round(safe)));
-
-  const apply = React.useCallback((next: number) => {
-    const normalized = Math.min(max, Math.max(min, Math.round(Number.isFinite(next) ? next : min)));
-    onChange(normalized);
-  }, [max, min, onChange]);
-
-  return (
-    <div className="min-w-0" onWheel={(e) => {
-      if (disabled) return;
-      e.preventDefault();
-      const delta = e.deltaY < 0 ? 1 : -1;
-      apply(clamped + delta);
-    }}>
-      <NumberInput
-        value={clamped}
-        onChange={apply}
-        min={min}
-        max={max}
-        step={1}
-        disabled={disabled}
-        className="ui-input h-8 w-full min-w-0 pl-1.5 pr-5 text-xs text-center no-spinners"
-      />
-    </div>
-  );
 }
 
 export function ArrangePanel({
@@ -144,11 +107,13 @@ export function ArrangePanel({
   const setClampedSpacing = React.useCallback((value: number) => {
     const next = sanitizeNumber(value, 0.5);
     const rounded = Number((Math.round(next * 10) / 10).toFixed(1));
-    onSpacingMmChange(Math.min(5, Math.max(0, rounded)));
+    // Allow negative spacing (down to -50mm) so parts can nest/interlock.
+    onSpacingMmChange(Math.min(5, Math.max(-50, rounded)));
   }, [onSpacingMmChange, sanitizeNumber]);
 
   const clampCount = React.useCallback((value: number) => Math.min(64, Math.max(1, Math.round(value))), []);
-  const clampGap = React.useCallback((value: number) => Math.min(120, Math.max(0, Math.round(value))), []);
+  // Negative gaps nest/overlap array copies (matches negative spacing above).
+  const clampGap = React.useCallback((value: number) => Math.min(120, Math.max(-120, Math.round(value))), []);
 
   return (
     <Card>
@@ -249,7 +214,7 @@ export function ArrangePanel({
               className="mt-1"
               value={spacingMm}
               onChange={setClampedSpacing}
-              min={0}
+              min={-50}
               max={5}
               step={0.1}
               unit="mm"
@@ -285,7 +250,7 @@ export function ArrangePanel({
                   <MiniStepperField
                     value={gapValue}
                     onChange={(next) => onGapChange(clampGap(next))}
-                    min={0}
+                    min={-120}
                     max={120}
                     disabled={isApplying}
                   />

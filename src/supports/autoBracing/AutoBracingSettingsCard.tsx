@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { NumberInput } from '@/components/ui/NumberInput';
-import { Button } from '@/components/ui/primitives';
+import { Button } from '@/components/atoms';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import {
     AUTO_BRACING_PATTERN_OPTIONS,
@@ -23,8 +23,14 @@ interface AutoBracingSettingsCardProps {
 const unitHint = (unit: string) => (
     <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{unit}</span>
 );
-const compactInputClass = 'ui-input w-full h-[36px] px-3 py-2 text-base text-center no-spinners';
+const compactInputClass = 'ui-input w-full h-[36px] px-3 py-2 text-base text-center no-spinners !bg-[var(--surface-0)]';
 const compactFieldLabelClass = 'text-[11px] font-medium leading-tight';
+// Same active-state styling as the standard segmented selector (Cut Panel).
+const activeModeStyle: React.CSSProperties = {
+    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 30%)',
+    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 85%)',
+    color: 'var(--text-strong)',
+};
 
 export function AutoBracingSettingsCard({
     settings,
@@ -169,18 +175,8 @@ export function AutoBracingSettingsCard({
                             <button
                                 key={label}
                                 type="button"
-                                className="h-9 rounded-md border text-[12px] font-semibold transition-colors"
-                                style={isActive
-                                    ? {
-                                        borderColor: 'color-mix(in srgb, var(--accent), white 10%)',
-                                        background: 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)',
-                                        color: 'color-mix(in srgb, var(--accent), var(--text-strong) 25%)',
-                                    }
-                                    : {
-                                        borderColor: 'var(--border-subtle)',
-                                        background: 'var(--surface-1)',
-                                        color: 'var(--text-muted)',
-                                    }}
+                                className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
+                                style={isActive ? activeModeStyle : { background: 'var(--surface-0)' }}
                                 onClick={() => onChange({ seedSpacingMm: value })}
                             >
                                 {label}

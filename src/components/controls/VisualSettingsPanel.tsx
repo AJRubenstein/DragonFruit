@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Card } from '@/components/ui/primitives';
+import { Card } from '@/components/atoms';
 import { LayerSlider } from '@/components/controls/LayerSlider';
 
 type VisualSettingsPanelProps = {
@@ -10,10 +10,8 @@ type VisualSettingsPanelProps = {
   onLayerIndexChange: (value: number) => void;
   onScrubStart?: () => void;
   onScrubEnd?: () => void;
-  onCrossSectionModeChange?: (mode: 'smooth' | 'rasterized') => void;
   currentHeightMm?: number;
   maxHeightMm?: number;
-  crossSectionMode: 'smooth' | 'rasterized';
   lowerLayerIndex?: number;
   onLowerLayerIndexChange?: (value: number) => void;
   lowerCurrentHeightMm?: number;
@@ -28,10 +26,8 @@ export function VisualSettingsPanel({
   onLayerIndexChange,
   onScrubStart,
   onScrubEnd,
-  onCrossSectionModeChange,
   currentHeightMm,
   maxHeightMm,
-  crossSectionMode,
   lowerLayerIndex,
   onLowerLayerIndexChange,
   lowerCurrentHeightMm,
@@ -44,7 +40,7 @@ export function VisualSettingsPanel({
   }, [onLayerIndexChange]);
 
   return (
-    <Card className="h-[calc(100vh-var(--topbar-height)-24px)] flex flex-col">
+    <Card className="h-[calc(100vh-var(--topbar-height)-8px)] flex flex-col">
       <div className="px-0 py-1 min-h-0 flex-1 flex flex-col">
         <div className="flex-1 min-h-[220px] overflow-visible">
           <LayerSlider
@@ -55,15 +51,12 @@ export function VisualSettingsPanel({
             onChange={handleLayerChange}
             onScrubStart={onScrubStart}
             onScrubEnd={onScrubEnd}
-            onCrossSectionModeChange={onCrossSectionModeChange}
             currentHeightMm={currentHeightMm}
             maxHeightMm={maxHeightMm}
             showValue={true}
-            crossSectionMode={crossSectionMode}
             lowerValue={lowerLayerIndex}
             onLowerChange={onLowerLayerIndexChange}
             lowerCurrentHeightMm={lowerCurrentHeightMm}
-            showModeIndicator={false}
             crossSectionEnabled={crossSectionEnabled}
             onToggleCrossSection={onToggleCrossSection}
             layerHeightMm={layerHeightMm}
