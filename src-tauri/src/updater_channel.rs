@@ -87,6 +87,10 @@ pub async fn check_updates(
 
     use tauri_plugin_updater::UpdaterExt;
 
+    // PRESERVED (Cross-Platform Compatibility):
+    // #[allow(unused_mut)]: `builder` is mutated on macOS (`#[cfg(target_os = "macos")] builder = builder.target("darwin-universal");`).
+    // Kept mutable for macOS universal binary auto-updater targeting.
+    #[allow(unused_mut)]
     let mut builder = app_handle
         .updater_builder()
         .endpoints(vec![endpoint_url])

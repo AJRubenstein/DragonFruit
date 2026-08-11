@@ -14,6 +14,7 @@ import {
   Box,
   Link,
   Unlink,
+  Search,
   Plus,
   type LucideIcon,
 } from 'lucide-react';
@@ -25,12 +26,14 @@ export type EditorMenuAction =
   | 'paste'
   | 'repair'
   | 'split-supports'
+  | 'merge-supports'
   | 'supports-toggle-curve'
   | 'supports-add-joint'
   | 'mark-as-support-geometry'
   | 'mark-as-model-geometry'
   | 'link-models'
   | 'unlink-models'
+  | 'scan-for-supports'
   // Organic-cut tool actions.
   | 'organic-cut-add-waypoint'
   | 'organic-cut-delete-waypoint';
@@ -80,10 +83,12 @@ const MENU_ITEMS: MenuItemDef[] = [
   { id: 'paste',  label: msg`Paste`,  icon: ClipboardPaste },
   { id: 'repair', label: msg`Repair`, icon: Wrench },
   { id: 'split-supports', label: msg({ message: 'Split supports', comment: 'Context-menu command that detaches the generated support scaffolding at the clicked point. "Supports" = the temporary print scaffolding structures, not customer support.' }), icon: Split },
+  { id: 'merge-supports', label: msg({ message: 'Merge supports', comment: 'Context-menu command that re-attaches the support scaffolding back to the model.' }), icon: Link },
   { id: 'mark-as-support-geometry', label: msg`Mark as Support Geometry`, icon: LifeBuoy },
   { id: 'mark-as-model-geometry',   label: msg`Mark as Model Geometry`,   icon: Box },
-  { id: 'link-models',   label: msg`Link Selected Models`,   icon: Link },
-  { id: 'unlink-models', label: msg`Unlink Selected Models`, icon: Unlink },
+  { id: 'scan-for-supports',        label: msg`Scan for Supports`,        icon: Search },
+  // { id: 'link-models',   label: msg`Link Selected Models`,   icon: Link },
+  // { id: 'unlink-models', label: msg`Unlink Selected Models`, icon: Unlink },
 ];
 
 const MENU_WIDTH = 176;

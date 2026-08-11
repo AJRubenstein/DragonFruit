@@ -1437,6 +1437,7 @@ dependencies = [
  "clap",
  "dragonfruit-mesh-core",
  "manifold-csg",
+ "meshopt",
  "quick-xml 0.31.0",
  "rayon",
  "serde",

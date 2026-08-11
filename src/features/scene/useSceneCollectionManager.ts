@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
-import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, readSidecarFileBytes, resolveOriginalRefSidecar, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
+import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, readSidecarFileBytes, resolveOriginalRefSidecar, type VoxlDocumentV1, type VoxlMeshRef, type PrecompressedChunk } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
@@ -3396,10 +3396,269 @@ export function useSceneCollectionManager() {
       { includeSupportState: true },
     );
     pushSceneSnapshotHistory(before, after, `Split Supports from ${source.name}`);
+    } catch (e) {
+      console.error(e);
+      emitSceneImportReport('Failed to split supports', 'error');
     } finally {
       setImportProgress({ active: false, type: null, label: '', detail: '', progress: null });
     }
-  }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield]);
+  }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield, emitSceneImportReport]);
+
+  /** Re-combines split model and support geometries back into a single model,
+   *  transforming the supports to align with any model movement/rotation. */
+  const mergeSupports = useCallback(async () => {
+    setImportProgress({
+      active: true,
+      type: 'mesh',
+      label: 'Merging Supports…',
+      detail: 'Recombining model and support geometry…',
+      progress: null,
+    });
+    await waitForUiYield();
+
+    try {
+      const selectedIds = selectedModelIdsRef.current;
+      if (selectedIds.length !== 2) return;
+
+      const selectedModels = modelsRef.current.filter((m) => selectedIds.includes(m.id));
+      if (selectedModels.length !== 2) return;
+
+      const modelModel = selectedModels.find((m) => !m.isSupportGeometry)
+        || selectedModels.find((m) => m.id === activeModelIdRef.current)
+        || selectedModels[0];
+      const supportModel = selectedModels.find((m) => m.id !== modelModel.id)!;
+
+      // Model and Support might have different transformations.
+      // Compute matrix to transform support vertices into model local space.
+      const modelMatrix = new THREE.Matrix4().compose(
+        modelModel.transform.position,
+        new THREE.Quaternion().setFromEuler(modelModel.transform.rotation),
+        modelModel.transform.scale,
+      );
+      const supportMatrix = new THREE.Matrix4().compose(
+        supportModel.transform.position,
+        new THREE.Quaternion().setFromEuler(supportModel.transform.rotation),
+        supportModel.transform.scale,
+      );
+      const supportToModelMatrix = new THREE.Matrix4().copy(modelMatrix).invert().multiply(supportMatrix);
+
+      const modelGeom = modelModel.geometry.geometry;
+      const supportGeom = supportModel.geometry.geometry;
+
+      const modelPositions = modelGeom.getAttribute('position').array;
+      const supportPositions = supportGeom.getAttribute('position').array;
+
+      const modelCenter = modelModel.geometry.center;
+      const supportCenter = supportModel.geometry.center;
+
+      const tempV = new THREE.Vector3();
+      const mappedSupportPositions = new Float32Array(supportPositions.length);
+      for (let i = 0; i < supportPositions.length; i += 3) {
+        tempV.set(
+          supportPositions[i] - supportCenter.x,
+          supportPositions[i + 1] - supportCenter.y,
+          supportPositions[i + 2] - supportCenter.z,
+        );
+        tempV.applyMatrix4(supportToModelMatrix);
+        mappedSupportPositions[i] = tempV.x + modelCenter.x;
+        mappedSupportPositions[i + 1] = tempV.y + modelCenter.y;
+        mappedSupportPositions[i + 2] = tempV.z + modelCenter.z;
+      }
+
+      const combinedPositions = new Float32Array(modelPositions.length + mappedSupportPositions.length);
+      combinedPositions.set(modelPositions, 0);
+      combinedPositions.set(mappedSupportPositions, modelPositions.length);
+
+      const modelTriangleCount = modelPositions.length / 9;
+      const supportTriangleCount = mappedSupportPositions.length / 9;
+
+      const mergedGeometryObj = new THREE.BufferGeometry();
+      mergedGeometryObj.setAttribute('position', new THREE.BufferAttribute(combinedPositions, 3));
+      mergedGeometryObj.computeVertexNormals();
+      mergedGeometryObj.computeBoundingBox();
+
+      const bbox = mergedGeometryObj.boundingBox?.clone() ?? new THREE.Box3();
+      const center = bbox.getCenter(new THREE.Vector3());
+      const size = bbox.getSize(new THREE.Vector3());
+
+      const mergedGeometry: GeometryWithBounds = {
+        geometry: mergedGeometryObj,
+        bbox,
+        center,
+        size,
+        flatteningPlanes: modelModel.geometry.flatteningPlanes || [],
+        edgeGeometry: modelModel.geometry.edgeGeometry,
+      };
+
+      const supportGeo = new THREE.BufferGeometry();
+      supportGeo.setAttribute('position', new THREE.BufferAttribute(mappedSupportPositions, 3));
+      supportGeo.computeVertexNormals();
+
+      const modelGeo = new THREE.BufferGeometry();
+      modelGeo.setAttribute('position', new THREE.BufferAttribute(modelPositions, 3));
+
+      // Set the nativeRepairReport properties to preserve support triangle designation
+      mergedGeometry.meshDefects = {
+        hasDefects: false,
+        repairedFloats: 0,
+        totalVertices: combinedPositions.length / 3,
+        supportSectionGeometry: supportGeo,
+        modelSectionGeometry: modelGeo,
+        nativeRepairReport: {
+          version: 1,
+          source_path: null,
+          pre: {
+            triangle_count: modelTriangleCount + supportTriangleCount,
+            vertex_count: (modelTriangleCount + supportTriangleCount) * 3,
+            non_manifold_edges: 0,
+            non_manifold_vertices: 0,
+            boundary_edges: 0,
+            boundary_loops: 0,
+            inconsistent_edges: 0,
+            degenerate_triangles: 0,
+            duplicate_triangles: 0,
+            component_count: 0,
+            self_intersections: 0,
+            signed_volume: 0,
+            is_watertight: false,
+            timings_ms: { topology_ms: 0, self_intersections_ms: 0, components_ms: 0, total_ms: 0 },
+          },
+          post: {
+            triangle_count: modelTriangleCount + supportTriangleCount,
+            vertex_count: (modelTriangleCount + supportTriangleCount) * 3,
+            non_manifold_edges: 0,
+            non_manifold_vertices: 0,
+            boundary_edges: 0,
+            boundary_loops: 0,
+            inconsistent_edges: 0,
+            degenerate_triangles: 0,
+            duplicate_triangles: 0,
+            component_count: 0,
+            self_intersections: 0,
+            signed_volume: 0,
+            is_watertight: false,
+            timings_ms: { topology_ms: 0, self_intersections_ms: 0, components_ms: 0, total_ms: 0 },
+          },
+          steps: [],
+          likely_support_geometry: false,
+          model_triangle_count: modelTriangleCount,
+          residual_issues: [],
+          fully_repaired: true,
+          total_ms: 0,
+        },
+      };
+
+      const before = captureSceneSnapshot(
+        modelsRef.current,
+        activeModelIdRef.current,
+        selectedModelIdsRef.current,
+        { includeSupportState: true },
+      );
+
+      const baseName = modelModel.name.replace(/ \(Model\)$/i, '');
+      const mergedModel: LoadedModel = {
+        id: uuidv4(),
+        name: baseName,
+        fileUrl: modelModel.fileUrl,
+        fileSizeBytes: (modelModel.fileSizeBytes || 0) + (supportModel.fileSizeBytes || 0),
+        sourcePath: null,
+        geometry: mergedGeometry,
+        transform: {
+          position: (() => {
+            const rotation = new THREE.Quaternion().setFromEuler(modelModel.transform.rotation);
+            const positionOffset = center.clone().sub(modelCenter);
+            positionOffset.multiply(modelModel.transform.scale).applyQuaternion(rotation);
+            return modelModel.transform.position.clone().add(positionOffset);
+          })(),
+          rotation: modelModel.transform.rotation.clone(),
+          scale: modelModel.transform.scale.clone(),
+        },
+        visible: modelModel.visible,
+        color: modelModel.color,
+        polygonCount: modelTriangleCount + supportTriangleCount,
+        ignoreAutoLift: modelModel.ignoreAutoLift,
+        manualZMoveOverride: modelModel.manualZMoveOverride,
+        isSupportGeometry: undefined,
+      };
+
+      const nextModels = [
+        ...modelsRef.current.filter((m) => m.id !== modelModel.id && m.id !== supportModel.id),
+        mergedModel,
+      ];
+
+      setModels(nextModels);
+      setActiveModelId(mergedModel.id);
+      setSelectedModelIds([mergedModel.id]);
+
+      const after = captureSceneSnapshot(
+        nextModels,
+        mergedModel.id,
+        [mergedModel.id],
+        { includeSupportState: true },
+      );
+      pushSceneSnapshotHistory(before, after, `Merge Supports for ${mergedModel.name}`);
+    } catch (e) {
+      console.error(e);
+      emitSceneImportReport('Failed to merge supports', 'error');
+    } finally {
+      setImportProgress({ active: false, type: null, label: '', detail: '', progress: null });
+    }
+  }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield, emitSceneImportReport]);
+
+  const scanModelForSupportsInPlace = useCallback(async (modelId: string): Promise<boolean> => {
+    const model = modelsRef.current.find(m => m.id === modelId);
+    if (!model) return false;
+    
+    setImportProgress({
+      active: true,
+      type: 'mesh',
+      label: 'Scanning for Supports…',
+      detail: `Classifying ${model.name}`,
+      progress: null,
+    });
+    await waitForUiYield();
+
+    try {
+      const processed = await processGeometry(model.geometry.geometry, {
+        center: false,
+        nativeProcessingMode: 'classify-only',
+        assumeSupportGeometry: undefined,
+        _nativeModelTriangleCount: model.geometry.meshDefects?.nativeRepairReport?.model_triangle_count ?? undefined,
+      });
+      const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
+      const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
+      const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
+
+      setModels(prev => prev.map(m =>
+        m.id === modelId ? { ...m, geometry: processed, polygonCount, isSupportGeometry: undefined } : m
+      ));
+
+      if (repairReport) {
+        const reportEntry: MeshRepairReportEntry = {
+          id: modelId,
+          modelName: model.name,
+          report: repairReport,
+        };
+        setPendingMeshRepairReports([]);
+        clearSceneImportReport();
+        setMeshRepairReportPresentation('optimistic');
+        setMeshRepairReports([reportEntry]);
+      } else {
+        setPendingMeshRepairReports([]);
+        emitSceneImportReport(`Scanned ${model.name}.`, 'success');
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[scanModelForSupportsInPlace] Scan failed:', err);
+      setPendingMeshRepairReports([]);
+      const message = err instanceof Error ? err.message : String(err);
+      emitSceneImportReport(`Scan failed: ${message}`, 'error', { durationMs: 6_000 });
+      return false;
+    } finally {
+      setImportProgress({ active: false, type: null, label: '', detail: '', progress: null });
+    }
+  }, [clearSceneImportReport, emitSceneImportReport, setImportProgress, waitForUiYield]);
 
   const renameGroup = useCallback((groupId: string, nextName: string) => {
     const trimmed = nextName.trim();
@@ -4586,12 +4845,14 @@ export function useSceneCollectionManager() {
       let document: VoxlDocumentV1;
       let resolvedMeshBytes: Map<string, Uint8Array>;
       let resolvedOriginalMeshBytes: Map<string, Uint8Array> | undefined;
+      let originalMeshChunks: Map<string, PrecompressedChunk> | undefined;
 
       if (isV2) {
         const r = parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
         document = r.document;
         resolvedMeshBytes = r.meshBytes;
         resolvedOriginalMeshBytes = r.originalMeshBytes;
+        originalMeshChunks = r.originalMeshChunks;
       } else {
         document = parseVoxlDocument(await file.text());
         resolvedMeshBytes = new Map();
@@ -4679,15 +4940,11 @@ export function useSceneCollectionManager() {
             }
 
             const embeddedName = meshRef.fileName?.trim() || `${model.name || 'model'}.stl`;
-            const mimeType = meshRef.mimeType?.trim() || 'model/stl';
-            // Create a clean copy with explicit ArrayBuffer for Blob compatibility
-            const blobData = new Uint8Array(bytes);
-            const blob = new Blob([blobData], { type: mimeType });
-            url = URL.createObjectURL(blob);
 
-            geometry = await loadMeshGeometry(url, embeddedName, {
+            geometry = await loadMeshGeometry(bytes, embeddedName, {
               nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
               assumeSupportGeometry: model.isSupportGeometry,
+              skipClassification: model.isSupportGeometry,
             onNativeProcessingStage: (stage) => {
               if (stage === 'repairing') {
                 setImportProgress({
@@ -4734,7 +4991,17 @@ export function useSceneCollectionManager() {
           idMap.set(model.id, resolvedId);
 
           const origMeshBytes = resolvedOriginalMeshBytes?.get(model.id);
-          if (origMeshBytes) {
+          const origMeshChunk = originalMeshChunks?.get(model.id);
+
+          if (origMeshChunk) {
+            void meshChunkStore.bake({
+              modelId: resolvedId,
+              slot: 'original',
+              signature: `original:${resolvedId}`,
+              precompressed: origMeshChunk,
+              encode: () => origMeshBytes || new Uint8Array(0),
+            });
+          } else if (origMeshBytes) {
             void meshChunkStore.bake({
               modelId: resolvedId,
               slot: 'original',
@@ -5487,6 +5754,7 @@ export function useSceneCollectionManager() {
     ungroupGroup,
     splitImportGroup,
     splitSupports,
+    mergeSupports,
     renameGroup,
     selectGroup,
     deleteModels,
@@ -5537,6 +5805,7 @@ export function useSceneCollectionManager() {
     setMode,
     heatmapColors,
     setHeatmapColors,
+    scanModelForSupportsInPlace,
     onHeatmapColorChange: useCallback((index: number, color: string) => {
       setHeatmapColors(prev => {
         const next = [...prev];

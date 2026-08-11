@@ -337,6 +337,7 @@ import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal'
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { ManifoldWarningModal } from '@/components/modals/ManifoldWarningModal';
 
+
 import { IslandScanWorkflowCard } from '@/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard';
 import { IslandVolumesHierarchyCard } from '@/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard';
 import { uploadPrintJobWithProgress, type PluginUploadProgressEvent } from '@/features/plugins/pluginUploadBridge';
@@ -581,6 +582,7 @@ export default function Home() {
     for (const model of flagged) warnedManifoldModelIdsRef.current.add(model.id);
     setShowManifoldWarning(true);
   }, [scene.models]);
+
   const importSceneFile = scene.importSceneFile;
   const importSceneFiles = scene.importSceneFiles;
   const recentOpenedFiles = scene.recentOpenedFiles;
@@ -2154,6 +2156,7 @@ export default function Home() {
       ? scene.models.find((m) => m.id === scene.activeModelId)
       : undefined;
     const canSplitSupports = !!activeModel?.geometry.meshDefects?.nativeRepairReport?.model_triangle_count;
+    const canMergeSupports = scene.selectedModelIds.length === 2;
 
     const hasTargetModel = !!scene.activeModelId || scene.selectedModelIds.length > 0;
     const canLink = scene.selectedModelIds.length >= 2;
@@ -2169,6 +2172,7 @@ export default function Home() {
       ...(!canUnlink ? (['unlink-models'] as const) : []),
       ...(!scene.canPasteModel ? (['paste'] as const) : []),
       ...(!canSplitSupports ? (['split-supports'] as const) : []),
+      ...(!canMergeSupports ? (['merge-supports'] as const) : []),
     ];
   }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
@@ -4237,15 +4241,26 @@ export default function Home() {
       const restored = await importSceneFile(file, { suppressRecentTracking: true, suppressPlacementPrompt: true, suppressRepair: true });
       if (restored) {
         await clearAutosave();
-      } else if (recoverySnapshot) {
-        console.warn('[Autosave] Restore failed; keeping recovery prompt available.');
-        setAutosaveRecovery(recoverySnapshot);
+      } else {
+        setSceneSaveError({
+          title: 'Restore Failed',
+          message: 'The autosaved recovery file is corrupted or unreadable.',
+          detail: 'The scene importer rejected or could not parse the autosave data.',
+        });
+        await clearAutosave();
       }
     } catch (error) {
       console.error('[Autosave] Failed to restore autosaved scene.', error);
-      if (recoverySnapshot) {
-        setAutosaveRecovery(recoverySnapshot);
-      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isMissing = errorMessage.includes('No autosaved scene file found') || errorMessage.includes('does not exist');
+      setSceneSaveError({
+        title: 'Restore Failed',
+        message: isMissing
+          ? 'The autosave recovery file could not be found.'
+          : 'The autosaved recovery file is corrupted or unreadable.',
+        detail: errorMessage,
+      });
+      await clearAutosave();
     } finally {
       setNativePickerPreparationState({
         active: false,
@@ -4254,7 +4269,7 @@ export default function Home() {
         progress: null,
       });
     }
-  }, [autosaveRecovery, clearAutosave, importSceneFile]);
+  }, [autosaveRecovery, clearAutosave, importSceneFile, setSceneSaveError]);
 
   const handleAutosaveDiscard = React.useCallback(async () => {
     setAutosaveRecovery(null);
@@ -5830,6 +5845,11 @@ export default function Home() {
         }
         break;
       }
+      case 'merge-supports': {
+        closeEditorContextMenu();
+        scene.mergeSupports();
+        return;
+      }
       case 'delete':
         if (scene.activeModelId) {
           scene.deleteModel(scene.activeModelId);
@@ -5916,6 +5936,13 @@ export default function Home() {
           : (scene.activeModelId ? [scene.activeModelId] : []);
         if (targetIds.length > 0) {
           scene.unlinkModels(targetIds);
+        }
+        break;
+      }
+      case 'scan-for-supports': {
+        const targetId = scene.activeModelId;
+        if (targetId) {
+          scene.scanModelForSupportsInPlace(targetId);
         }
         break;
       }
@@ -10456,6 +10483,8 @@ export default function Home() {
         isOpen={showManifoldWarning}
         onAcknowledge={() => setShowManifoldWarning(false)}
       />
+
+
 
       <MeshRepairModals
         isManualRepairing={isManualRepairing}

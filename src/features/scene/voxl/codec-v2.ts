@@ -34,6 +34,9 @@ import {
   type VoxlMeta,
   type VoxlModelEntry,
   type VoxlSceneState,
+  type VoxlCompressionRef,
+  type VoxlCompressedDocumentEnvelopeV1,
+  type PrecompressedChunk,
 } from './types';
 import type { DragonfruitImportFormat } from '@/supports/types';
 
@@ -248,11 +251,6 @@ export function resetVoxlCodecStats(): void {
  * `>64 bytes and only if it shrinks` policy the writer used to apply inline, so
  * the emitted bytes are unchanged.
  */
-export interface PrecompressedChunk {
-  data: Uint8Array;
-  compression: number;
-  uncompressedSize: number;
-}
 
 export interface VoxlSerializeOptions {
   /** Model index → already-compressed MESH payload. */
@@ -630,6 +628,44 @@ export async function serializeVoxlDocumentV2Streaming(
 
 // ─── V2 Binary Reader ─────────────────────────────────────────────────────────
 
+class LazyOriginalMeshBytesMap extends Map<string, Uint8Array> {
+  private chunks: Map<string, PrecompressedChunk>;
+  
+  constructor(chunks: Map<string, PrecompressedChunk>) {
+    super();
+    this.chunks = chunks;
+  }
+
+  override has(key: string): boolean {
+    return this.chunks.has(key);
+  }
+
+  override get(key: string): Uint8Array | undefined {
+    // If we've already decompressed it, return the cached value
+    const cached = super.get(key);
+    if (cached) return cached;
+
+    // Otherwise decompress on demand
+    const chunk = this.chunks.get(key);
+    if (chunk) {
+      if (chunk.compression === COMPRESSION_ZLIB) {
+        const inflated = unzlibSync(chunk.data);
+        if (inflated.length !== chunk.uncompressedSize) {
+          throw new Error(`VOXL V2: chunk size mismatch after lazy decompression.`);
+        }
+        super.set(key, inflated);
+        return inflated;
+      } else if (chunk.compression === COMPRESSION_NONE) {
+        super.set(key, chunk.data);
+        return chunk.data;
+      } else {
+        throw new Error(`VOXL V2: unsupported compression type ${chunk.compression}`);
+      }
+    }
+    return undefined;
+  }
+}
+
 /**
  * Parse a VOXL V2 binary container into a `ParsedVoxlResult`.
  *
@@ -751,24 +787,34 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
 
   // ── Resolve ORIG chunks (additive full-res mesh) ──────────────────────
 
-  const originalMeshBytesMap = new Map<string, Uint8Array>();
-  const origBytesByIndex = new Map<number, Uint8Array>();
+  const originalMeshChunksMap = new Map<string, PrecompressedChunk>();
+  const origEntriesByIndex = new Map<number, ChunkDirEntry>();
 
   for (let i = 0; i < models.length; i += 1) {
     const model = models[i];
     const chunkIdx = typeof model.mesh?.chunkIndex === 'number' ? model.mesh.chunkIndex : i;
-    let bytes = origBytesByIndex.get(chunkIdx);
-    if (!bytes) {
+    let entry = origEntriesByIndex.get(chunkIdx);
+    if (!entry) {
       const origEntry = entries.find((e) => e.type === CHUNK_ORIG && e.index === chunkIdx);
       if (origEntry) {
-        bytes = readChunk(origEntry);
-        origBytesByIndex.set(chunkIdx, bytes);
+        origEntriesByIndex.set(chunkIdx, origEntry);
+        entry = origEntry;
       }
     }
-    if (bytes) {
-      originalMeshBytesMap.set(model.id, bytes);
+    if (entry) {
+      // Create a PrecompressedChunk view without decompressing
+      const rawData = data.subarray(entry.offset, entry.offset + entry.compressedSize);
+      originalMeshChunksMap.set(model.id, {
+        data: rawData,
+        compression: entry.compression,
+        uncompressedSize: entry.uncompressedSize,
+      });
     }
   }
+
+  const lazyOriginalMeshBytesMap = originalMeshChunksMap.size > 0 
+    ? new LazyOriginalMeshBytesMap(originalMeshChunksMap) 
+    : undefined;
 
   return {
     document: {
@@ -781,7 +827,8 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
       extensions,
     },
     meshBytes: meshBytesMap,
-    ...(originalMeshBytesMap.size > 0 ? { originalMeshBytes: originalMeshBytesMap } : {}),
+    ...(lazyOriginalMeshBytesMap ? { originalMeshBytes: lazyOriginalMeshBytesMap } : {}),
+    ...(originalMeshChunksMap.size > 0 ? { originalMeshChunks: originalMeshChunksMap } : {}),
     sourceVersion: VOXL_V2_SEMANTIC_REVISION,
   };
 }
@@ -849,7 +896,7 @@ export function resolveOriginalRefSidecar(
  */
 export async function readSidecarFileBytes(filePath: string): Promise<Uint8Array | null> {
   try {
-    if (typeof process !== 'undefined' && process.versions?.node) {
+    if (typeof window === 'undefined' && typeof process !== 'undefined' && process.versions?.node) {
       try {
         // The bundlers must not follow this: codec-v2 reaches the browser
         // bundle through page.tsx, and neither Turbopack nor webpack can
