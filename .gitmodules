@@ -19,3 +19,6 @@
 [submodule "plugins/uniformation"]
 	path = plugins/uniformation
 	url = ../df-plugin-uniformation.git
+[submodule "plugins/chitubox-import"]
+	path = plugins/chitubox-import
+	url = https://github.com/Open-Resin-Alliance/df-plugin-chitubox
