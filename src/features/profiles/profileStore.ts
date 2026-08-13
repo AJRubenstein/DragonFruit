@@ -229,6 +229,9 @@ export type MaterialAntiAliasingSettings = {
     ditherEnabled: boolean;
     ditherBitDepth: number;
     ditherDeviceGamma: number;
+    tipOffsetMode: 'disabled' | 'auto' | 'manual';
+    tipOffsetMm: number;
+    tipOffsetDisplayInUi: boolean;
 };
 
 export const DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS: MaterialAntiAliasingSettings = {
@@ -256,8 +259,11 @@ export const DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS: MaterialAntiAliasingSettin
     selectedLutCurveId: 'default',
     aaOnSupports: false,
     ditherEnabled: false,
-    ditherBitDepth: 3,
-    ditherDeviceGamma: 3.0,
+    ditherBitDepth: 8,
+    ditherDeviceGamma: 2.2,
+    tipOffsetMode: 'disabled',
+    tipOffsetMm: 0.05,
+    tipOffsetDisplayInUi: false,
 };
 
 const MATERIAL_PROFILE_LOCAL_OVERRIDE_KEYS = new Set<keyof MaterialProfile>([
@@ -330,12 +336,19 @@ function sanitizeMaterialAntiAliasingSettings(input: unknown): MaterialAntiAlias
     const levelRaw = typeof source.level === 'string' ? source.level.trim().toLowerCase() : defaults.level;
     const levelSteps = Number(levelRaw.endsWith('x') ? levelRaw.slice(0, -1) : levelRaw);
     const level = `${Math.max(2, Math.min(64, Number.isFinite(levelSteps) ? Math.round(levelSteps) : 4))}x`;
+    const tipOffsetMode = source.tipOffsetMode === 'auto' || source.tipOffsetMode === 'manual' 
+        ? source.tipOffsetMode 
+        : defaults.tipOffsetMode;
+
+    const enableCustomSettings = typeof source.enableCustomSettings === 'boolean'
+        ? source.enableCustomSettings
+        : (typeof source.enableOverride === 'boolean' ? source.enableOverride : defaults.enableCustomSettings);
+    const rawEnableOverride = typeof source.enableOverride === 'boolean' ? source.enableOverride : defaults.enableOverride;
+    const enableOverride = enableCustomSettings ? rawEnableOverride : false;
 
     return {
-        enableCustomSettings: typeof source.enableCustomSettings === 'boolean'
-            ? source.enableCustomSettings
-            : (typeof source.enableOverride === 'boolean' ? source.enableOverride : defaults.enableCustomSettings),
-        enableOverride: typeof source.enableOverride === 'boolean' ? source.enableOverride : defaults.enableOverride,
+        enableCustomSettings,
+        enableOverride,
         mode,
         level,
         useCustomLevel: typeof source.useCustomLevel === 'boolean' ? source.useCustomLevel : defaults.useCustomLevel,
@@ -360,6 +373,9 @@ function sanitizeMaterialAntiAliasingSettings(input: unknown): MaterialAntiAlias
         ditherEnabled: typeof source.ditherEnabled === 'boolean' ? source.ditherEnabled : defaults.ditherEnabled,
         ditherBitDepth: Math.round(clampNumber(source.ditherBitDepth, defaults.ditherBitDepth, 2, 7)),
         ditherDeviceGamma: clampNumber(source.ditherDeviceGamma, defaults.ditherDeviceGamma, 0.5, 4.0),
+        tipOffsetMode,
+        tipOffsetMm: Number.isFinite(Number(source.tipOffsetMm)) ? Number(source.tipOffsetMm) : defaults.tipOffsetMm,
+        tipOffsetDisplayInUi: Boolean(source.tipOffsetDisplayInUi ?? defaults.tipOffsetDisplayInUi),
     };
 }
 

@@ -91,6 +91,13 @@ export interface BakeRequest {
   signature: string;
   /** Produces the raw bytes. Called only on a miss. */
   encode: () => Uint8Array | Promise<Uint8Array>;
+  /** Optional pre-compressed data to bypass encoding and compression */
+  precompressed?: {
+    data: Uint8Array;
+    compression: number;
+    uncompressedSize: number;
+    sha256?: string;
+  };
 }
 
 export interface MeshChunkStoreStats {
@@ -215,25 +222,48 @@ export class MeshChunkStore {
     if (existing) return existing;
 
     const flight = (async (): Promise<BakedChunk> => {
-      const raw = await request.encode();
-      const sha256 = await sha256Hex(raw);
+      let raw: Uint8Array | undefined;
+      let sha256: string;
+      
+      if (request.precompressed && request.precompressed.sha256) {
+        sha256 = request.precompressed.sha256;
+      } else if (request.precompressed) {
+        // If we have precompressed data but no hash, hash the uncompressed data if available, 
+        // but since we don't have it, we'll hash the compressed data for uniqueness.
+        // Actually, we should hash the uncompressed data, but we can't.
+        // If it's precompressed, we must have a way to uniquely identify it. Let's just hash the compressed blob as fallback.
+        sha256 = await sha256Hex(request.precompressed.data);
+      } else {
+        raw = await request.encode();
+        sha256 = await sha256Hex(raw);
+      }
 
       let blob = this.chunkStore.get(sha256);
       if (!blob) {
-        // Level-2 miss: this content has never been seen. This is the only place
-        // zlib runs.
-        let data = raw;
-        let compression = CHUNK_COMPRESSION_NONE;
-        if (raw.length > MIN_COMPRESSIBLE_BYTES) {
-          const compressed = await compressAsync(raw);
-          if (compressed.length < raw.length) {
-            data = compressed;
-            compression = CHUNK_COMPRESSION_ZLIB;
+        // Level-2 miss: this content has never been seen.
+        if (request.precompressed) {
+          blob = {
+            data: request.precompressed.data,
+            compression: request.precompressed.compression,
+            uncompressedSize: request.precompressed.uncompressedSize,
+            refs: 0
+          };
+          this.chunkStore.set(sha256, blob);
+          // Don't increment compressions counter since we didn't compress anything
+        } else {
+          let data = raw!;
+          let compression = CHUNK_COMPRESSION_NONE;
+          if (raw!.length > MIN_COMPRESSIBLE_BYTES) {
+            const compressed = await compressAsync(raw!);
+            if (compressed.length < raw!.length) {
+              data = compressed;
+              compression = CHUNK_COMPRESSION_ZLIB;
+            }
           }
+          blob = { data, compression, uncompressedSize: raw!.length, refs: 0 };
+          this.chunkStore.set(sha256, blob);
+          this.compressions += 1;
         }
-        blob = { data, compression, uncompressedSize: raw.length, refs: 0 };
-        this.chunkStore.set(sha256, blob);
-        this.compressions += 1;
       }
 
       this.adopt(key, request.signature, sha256);

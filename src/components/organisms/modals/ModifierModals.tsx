@@ -6,13 +6,15 @@ import { type HollowingPanelState } from '@/features/hollowing';
 type PendingModifierResetAction = 'hollowing' | 'hole_punch' | 'clear_hollowing';
 
 export type ModifierModalsProps = {
-  handleApplyHolePunch: () => void;
+  handleApplyAllHolePunches: () => void;
+  handleGoToHollowTool: () => void;
   handleCancelDestructiveTransform: () => void;
   handleConfirmBlockerReset: () => void;
   handleConfirmDestructiveTransform: () => void;
   handleConfirmModifierReset: () => void;
   modifierApplyOverlayContent: { title: string; detailLines: string[]; };
   modifierApplyOverlayElapsedLabel: string;
+  modifierApplyProcessingLabel: string;
   pendingBlockerResetState: HollowingPanelState | null;
   pendingDestructiveTransform: { modelId: string; modelName: string; supportCount: number; operationLabel: string; } | null;
   pendingModifierResetAction: PendingModifierResetAction | null;
@@ -26,13 +28,15 @@ export type ModifierModalsProps = {
 
 /** Editor modal organism: StructuredDialog_unappliedHolePunch, StructuredDialog_modifierReset, StructuredDialog_blockerReset, DestructiveTransformModal, modifierApplyBlockingOverlay. */
 export function ModifierModals({
-  handleApplyHolePunch,
+  handleApplyAllHolePunches,
+  handleGoToHollowTool,
   handleCancelDestructiveTransform,
   handleConfirmBlockerReset,
   handleConfirmDestructiveTransform,
   handleConfirmModifierReset,
   modifierApplyOverlayContent,
   modifierApplyOverlayElapsedLabel,
+  modifierApplyProcessingLabel,
   pendingBlockerResetState,
   pendingDestructiveTransform,
   pendingModifierResetAction,
@@ -73,15 +77,24 @@ export function ModifierModals({
             </button>
             <button
               type="button"
-              className="ui-button ui-button-accent !h-9 px-3 text-xs"
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
               onClick={() => {
-                setShowUnappliedHolePunchModal(false);
                 unappliedHolePunchResolveRef.current = null;
-                // Defer so the modal closes before apply starts.
-                setTimeout(() => { handleApplyHolePunch(); }, 0);
+                handleGoToHollowTool();
               }}
             >
-              Apply Now
+              Go to Hollow Tool
+            </button>
+            <button
+              type="button"
+              className="ui-button ui-button-accent !h-9 px-3 text-xs"
+              onClick={() => {
+                unappliedHolePunchResolveRef.current = null;
+                // Defer so the modal closes before apply starts.
+                setTimeout(() => { handleApplyAllHolePunches(); }, 0);
+              }}
+            >
+              Apply to All
             </button>
           </>
         )}
@@ -93,7 +106,9 @@ export function ModifierModals({
             will not appear in the output.
           </p>
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            <strong>Do you want to apply them now?</strong>
+            <strong>Apply to All</strong> bakes the holes into every visible model
+            when applicable. Or open the <strong>Hollow</strong> tool to review and
+            apply holes individually.
           </p>
         </div>
       </StructuredDialogModal>
@@ -222,7 +237,7 @@ export function ModifierModals({
               Elapsed: {modifierApplyOverlayElapsedLabel}
             </div>
             <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              Processing 1 model
+              {modifierApplyProcessingLabel}
             </div>
 
             <div

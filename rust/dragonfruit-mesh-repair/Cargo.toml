@@ -33,6 +33,7 @@ ahash = "0.8"
 smallvec = "1"
 cdt = "0.1"
 manifold-csg = { version = "0.1.4", optional = true, default-features = false }
+meshopt = "0.6.2"
 
 [dev-dependencies]
 proptest = "1.9.0"

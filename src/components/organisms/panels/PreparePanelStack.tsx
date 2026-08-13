@@ -48,6 +48,8 @@ export type PreparePanelStackProps = {
   scheduleCommitPendingTransformHistory: (frameDelay?: number) => void;
   uniformScaling: boolean;
   setUniformScaling: (value: boolean) => void;
+  localTransformSpace: boolean;
+  setLocalTransformSpace: (value: boolean) => void;
 
   isApplyingHolePunch: boolean;
   interiorView: boolean;
@@ -89,6 +91,8 @@ export function PreparePanelStack({
   scheduleCommitPendingTransformHistory,
   uniformScaling,
   setUniformScaling,
+  localTransformSpace,
+  setLocalTransformSpace,
   isApplyingHolePunch,
   interiorView,
   hasCavityGeometry,
@@ -261,6 +265,8 @@ export function PreparePanelStack({
           onResetScale={transformMgr.transformHook.resetScale}
           uniformScaling={uniformScaling}
           onUniformScalingChange={setUniformScaling}
+          localSpace={localTransformSpace}
+          onLocalSpaceChange={setLocalTransformSpace}
           modelBBox={scene.geom.bbox}
           autoLift={transformMgr.autoLift}
           onAutoLiftChange={handleAutoLiftChange}

@@ -344,6 +344,17 @@ export function GizmoRotation({
   const getCameraAlignedAngle = useCallback(() => {
     const cameraDir = new THREE.Vector3().subVectors(camera.position, gizmoPosition).normalize();
 
+    // Where the camera is IN THE RING'S OWN FRAME. The per-axis formulas below say
+    // the same thing for a world-aligned gizmo, but only this reading survives a
+    // gizmo whose frame is the model's own (local space), where the ring's plane
+    // has nothing to do with the world axes.
+    const ringGroup = ringGroupRef.current;
+    if (ringGroup) {
+      const ringBasis = new THREE.Matrix4().extractRotation(ringGroup.matrixWorld).invert();
+      const cameraDirInRing = cameraDir.clone().applyMatrix4(ringBasis);
+      return Math.atan2(cameraDirInRing.y, cameraDirInRing.x);
+    }
+
     if (axis === 'x') {
       return Math.atan2(cameraDir.z, cameraDir.y) + Math.PI / 2;
     }

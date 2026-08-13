@@ -338,6 +338,7 @@ import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal'
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { ManifoldWarningModal } from '@/components/modals/ManifoldWarningModal';
 
+
 import { IslandScanWorkflowCard } from '@/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard';
 import { IslandVolumesHierarchyCard } from '@/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard';
 import { uploadPrintJobWithProgress, type PluginUploadProgressEvent } from '@/features/plugins/pluginUploadBridge';
@@ -582,6 +583,7 @@ export default function Home() {
     for (const model of flagged) warnedManifoldModelIdsRef.current.add(model.id);
     setShowManifoldWarning(true);
   }, [scene.models]);
+
   const importSceneFile = scene.importSceneFile;
   const importSceneFiles = scene.importSceneFiles;
   const recentOpenedFiles = scene.recentOpenedFiles;
@@ -608,6 +610,8 @@ export default function Home() {
   // 2. Transform Management (needs geom for bounds)
   const transformMgr = useTransformManager({ geom: scene.geom });
   const [uniformScaling, setUniformScaling] = React.useState(true);
+  // Gizmo frame: world axes, or the active model's own (issue #504).
+  const [localTransformSpace, setLocalTransformSpace] = React.useState(false);
 
   // --- Hollowing manager: placed early so its state/setters are in scope for
   //     useHolePunchManager below. Late/cross deps supplied via a ref populated
@@ -991,6 +995,12 @@ export default function Home() {
   const [holePunchHoverPlacement, setHolePunchHoverPlacement] = React.useState<HolePunchPlacementState | null>(null);
   const [isApplyingHolePunch, setIsApplyingHolePunch] = React.useState(false);
   const [pendingHolePunchAutoApplyModelId, setPendingHolePunchAutoApplyModelId] = React.useState<string | null>(null);
+  // Export-tab "Apply to All": sequential bake across every visible model with
+  // unapplied holes. The ref holds the remaining model ids after the current
+  // one; progress drives the blocking-overlay label. (Orchestration glue — see
+  // docs/page-tsx-refactor-handoff.md §5.)
+  const holePunchApplyAllQueueRef = React.useRef<string[]>([]);
+  const [applyAllHolePunchProgress, setApplyAllHolePunchProgress] = React.useState<{ done: number; total: number } | null>(null);
   const {
     isFinalizing,
     beginFinalizing,
@@ -1438,7 +1448,12 @@ export default function Home() {
   } = importExport;
 
   const [isExporting, setIsExporting] = React.useState(false);
-  const showModifierApplyBlockingOverlay = isApplyingHollowing || isApplyingHolePunch || isApplyingBlockersHollowing || pendingHolePunchAutoApplyModelId !== null || isFinalizing;
+  const showModifierApplyBlockingOverlay = isApplyingHollowing || isApplyingHolePunch || isApplyingBlockersHollowing || pendingHolePunchAutoApplyModelId !== null || applyAllHolePunchProgress !== null || isFinalizing;
+  // Sub-line under the blocking-overlay title. During "Apply to All" it reports
+  // sequence progress; otherwise it's the single-model default.
+  const modifierApplyProcessingLabel = applyAllHolePunchProgress
+    ? `Applying to model ${Math.min(applyAllHolePunchProgress.done + 1, applyAllHolePunchProgress.total)} of ${applyAllHolePunchProgress.total}`
+    : 'Processing 1 model';
   const [modifierApplyOverlayElapsedSec, setModifierApplyOverlayElapsedSec] = React.useState(0);
 
 
@@ -2165,13 +2180,25 @@ export default function Home() {
       ? scene.models.find((m) => m.id === scene.activeModelId)
       : undefined;
     const canSplitSupports = !!activeModel?.geometry.meshDefects?.nativeRepairReport?.model_triangle_count;
+    const canMergeSupports = scene.selectedModelIds.length === 2;
+
+    const hasTargetModel = !!scene.activeModelId || scene.selectedModelIds.length > 0;
+    const canLink = scene.selectedModelIds.length >= 2;
+    const selectedOrActiveModels = scene.selectedModelIds.length > 0
+      ? scene.models.filter((m) => scene.selectedModelIds.includes(m.id))
+      : (scene.activeModelId ? scene.models.filter((m) => m.id === scene.activeModelId) : []);
+    const canUnlink = selectedOrActiveModels.some((m) => !!m.linkGroupId);
 
     return [
       ...(!scene.activeModelId ? (['delete', 'cut', 'copy', 'repair'] as const) : []),
+      ...(!hasTargetModel ? (['mark-as-support-geometry', 'mark-as-model-geometry'] as const) : []),
+      ...(!canLink ? (['link-models'] as const) : []),
+      ...(!canUnlink ? (['unlink-models'] as const) : []),
       ...(!scene.canPasteModel ? (['paste'] as const) : []),
       ...(!canSplitSupports ? (['split-supports'] as const) : []),
+      ...(!canMergeSupports ? (['merge-supports'] as const) : []),
     ];
-  }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, supportsCanAddJoint, supportsCanToggleCurve]);
+  }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
   const clearPrintingLayerPreviewUrls = React.useCallback(() => {
     printingLayerPreviewLoadInFlightRef.current.clear();
@@ -2879,9 +2906,7 @@ export default function Home() {
       const topDiameter = topDiameterByRootId.get(root.id) ?? Math.max(0.1, root.diameter * 0.35);
       const topRadius = Math.max(0.001, topDiameter / 2);
 
-      const effectiveDiskHeight = raftSettingsSnapshot.bottomMode === 'solid'
-        ? 0.05
-        : Math.max(0, root.diskHeight);
+      const effectiveDiskHeight = Math.max(0, root.diskHeight);
       const coneHeight = Math.max(0, root.coneHeight);
 
       const diskMm3 = cylinderVolumeMm3(rootRadius, effectiveDiskHeight);
@@ -3014,12 +3039,13 @@ export default function Home() {
       for (const circles of rootsByModel.values()) {
         if (circles.length === 0) continue;
 
-        const chamferInset = raftSettingsSnapshot.bottomMode === 'line'
-          ? Math.max(0, raftSettingsSnapshot.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))))
-          : 0;
+        const thickness = raftSettingsSnapshot.bottomMode === 'line' ? raftSettingsSnapshot.lineHeightMm : raftSettingsSnapshot.thickness;
+        const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))));
+        const wallInset = raftSettingsSnapshot.wallEnabled ? Math.max(0, raftSettingsSnapshot.wallThickness) : 0;
+        const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
         const baseProfile = computeFootprint(circles, {
-          marginMm: 0.2 + chamferInset,
+          marginMm: dynamicMargin,
           samplesPerCircle: 24,
         });
 
@@ -4238,15 +4264,26 @@ export default function Home() {
       const restored = await importSceneFile(file, { suppressRecentTracking: true, suppressPlacementPrompt: true, suppressRepair: true });
       if (restored) {
         await clearAutosave();
-      } else if (recoverySnapshot) {
-        console.warn('[Autosave] Restore failed; keeping recovery prompt available.');
-        setAutosaveRecovery(recoverySnapshot);
+      } else {
+        setSceneSaveError({
+          title: 'Restore Failed',
+          message: 'The autosaved recovery file is corrupted or unreadable.',
+          detail: 'The scene importer rejected or could not parse the autosave data.',
+        });
+        await clearAutosave();
       }
     } catch (error) {
       console.error('[Autosave] Failed to restore autosaved scene.', error);
-      if (recoverySnapshot) {
-        setAutosaveRecovery(recoverySnapshot);
-      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isMissing = errorMessage.includes('No autosaved scene file found') || errorMessage.includes('does not exist');
+      setSceneSaveError({
+        title: 'Restore Failed',
+        message: isMissing
+          ? 'The autosave recovery file could not be found.'
+          : 'The autosaved recovery file is corrupted or unreadable.',
+        detail: errorMessage,
+      });
+      await clearAutosave();
     } finally {
       setNativePickerPreparationState({
         active: false,
@@ -4255,7 +4292,7 @@ export default function Home() {
         progress: null,
       });
     }
-  }, [autosaveRecovery, clearAutosave, importSceneFile]);
+  }, [autosaveRecovery, clearAutosave, importSceneFile, setSceneSaveError]);
 
   const handleAutosaveDiscard = React.useCallback(async () => {
     setAutosaveRecovery(null);
@@ -5831,6 +5868,11 @@ export default function Home() {
         }
         break;
       }
+      case 'merge-supports': {
+        closeEditorContextMenu();
+        scene.mergeSupports();
+        return;
+      }
       case 'delete':
         if (scene.activeModelId) {
           scene.deleteModel(scene.activeModelId);
@@ -5881,6 +5923,49 @@ export default function Home() {
           closeEditorContextMenu();
           setManualRepairModelId(targetId);
           return;
+        }
+        break;
+      }
+      case 'mark-as-support-geometry': {
+        const targetIds = scene.selectedModelIds.length > 0
+          ? scene.selectedModelIds
+          : (scene.activeModelId ? [scene.activeModelId] : []);
+        if (targetIds.length > 0) {
+          scene.toggleSupportDesignation(targetIds, true);
+        }
+        break;
+      }
+      case 'mark-as-model-geometry': {
+        const targetIds = scene.selectedModelIds.length > 0
+          ? scene.selectedModelIds
+          : (scene.activeModelId ? [scene.activeModelId] : []);
+        if (targetIds.length > 0) {
+          scene.toggleSupportDesignation(targetIds, false);
+        }
+        break;
+      }
+      case 'link-models': {
+        const targetIds = scene.selectedModelIds.length > 0
+          ? scene.selectedModelIds
+          : (scene.activeModelId ? [scene.activeModelId] : []);
+        if (targetIds.length >= 2) {
+          scene.linkModels(targetIds);
+        }
+        break;
+      }
+      case 'unlink-models': {
+        const targetIds = scene.selectedModelIds.length > 0
+          ? scene.selectedModelIds
+          : (scene.activeModelId ? [scene.activeModelId] : []);
+        if (targetIds.length > 0) {
+          scene.unlinkModels(targetIds);
+        }
+        break;
+      }
+      case 'scan-for-supports': {
+        const targetId = scene.activeModelId;
+        if (targetId) {
+          scene.scanModelForSupportsInPlace(targetId);
         }
         break;
       }
@@ -6690,10 +6775,17 @@ export default function Home() {
         slicing.setLayerIndex(clamped);
       }
       preservedNonPrintingLayerIndexRef.current = null;
+    } else if (previousMode === 'export' && currentMode !== 'export') {
+      // Export mode force-selects every visible model (for tinting). Collapse
+      // back to the active model when leaving by any route, so the next tool
+      // doesn't open with all meshes selected.
+      if (scene.activeModelId) {
+        scene.setSelectedModelIds([scene.activeModelId]);
+      }
     }
 
     previousSceneModeRef.current = currentMode;
-  }, [scene.mode, slicing.layerIndex, slicing.numLayers, slicing.setLayerIndex]);
+  }, [scene.mode, scene.activeModelId, scene.setSelectedModelIds, slicing.layerIndex, slicing.numLayers, slicing.setLayerIndex]);
 
   // Invalidate printing artifact if scene changed (detected via history events after the slice marker)
   React.useEffect(() => {
@@ -7181,12 +7273,13 @@ export default function Home() {
       for (const [modelId, circles] of rootsByModel) {
         if (circles.length === 0) continue;
 
-        const chamferInset = raftSettingsSnapshot.bottomMode === 'line'
-          ? Math.max(0, raftSettingsSnapshot.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))))
-          : 0;
+        const thickness = raftSettingsSnapshot.bottomMode === 'line' ? raftSettingsSnapshot.lineHeightMm : raftSettingsSnapshot.thickness;
+        const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))));
+        const wallInset = raftSettingsSnapshot.wallEnabled ? Math.max(0, raftSettingsSnapshot.wallThickness) : 0;
+        const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
         const baseProfile = computeFootprint(circles, {
-          marginMm: 0.2 + chamferInset,
+          marginMm: dynamicMargin,
           samplesPerCircle: 24,
         });
 
@@ -7602,6 +7695,7 @@ export default function Home() {
     hasModels: scene.models.length > 0,
     transformMode: transformMgr.transformMode,
     setTransformMode: setTransformModeWithMirrorFinalize,
+    setLocalTransformSpace: setLocalTransformSpace,
     onArrangeAll: () => {
       void (arrangeLayoutMode === 'array'
         ? handleManualArrayArrangeModels('all')
@@ -7617,18 +7711,39 @@ export default function Home() {
     scene.setMode('prepare');
   }, [scene.mode, scene.models.length, scene.setMode]);
 
+  // Visible models with unapplied hole punches. Hidden models are ignored
+  // entirely — they neither open the export warning nor get baked by
+  // "Apply to All".
+  const getVisibleModelIdsWithUnappliedHoles = React.useCallback((): string[] => {
+    return scene.models
+      .filter((model) => model.visible)
+      .filter((model) => {
+        const mm = scene.getModelMeshModifiers(model.id);
+        const punches = mm?.holePunches;
+        return Boolean(punches && punches.length > 0 && !mm?.holePunchesBakedIntoGeometry);
+      })
+      .map((model) => model.id);
+  }, [scene.models, scene.getModelMeshModifiers]);
+
   React.useEffect(() => {
     if (scene.mode !== 'export') return;
     if (scene.models.length === 0) return;
 
-    // Check for unapplied hole punches and warn the user.
-    const hasUnapplied = scene.models.some((model) => {
-      const mm = scene.getModelMeshModifiers(model.id);
-      const p = mm?.holePunches;
-      return p && p.length > 0 && !mm?.holePunchesBakedIntoGeometry;
-    });
-    if (hasUnapplied && unappliedHolePunchResolveRef.current === null) {
+    // Check for unapplied hole punches and warn the user. Suppressed while an
+    // "Apply to All" sequence is running — each bake mutates scene.models and
+    // re-runs this effect, and models still in the queue would otherwise
+    // re-open the modal on top of the progress overlay.
+    const unbakedHoleModelIds = getVisibleModelIdsWithUnappliedHoles();
+    if (unbakedHoleModelIds.length > 0 && unappliedHolePunchResolveRef.current === null && applyAllHolePunchProgress === null) {
       setShowUnappliedHolePunchModal(true);
+      // Make the first model with un-baked holes active so the modal's actions
+      // (and the user's next glance) land on a model that needs attention,
+      // rather than whichever model happened to be active on entering export.
+      // Only nudge when the active model isn't already one that needs baking, so
+      // this doesn't fight a deliberate selection or loop on re-run.
+      if (scene.activeModelId === null || !unbakedHoleModelIds.includes(scene.activeModelId)) {
+        scene.setActiveModelId(unbakedHoleModelIds[0]);
+      }
     }
 
     // In export mode, select all visible models for tinting
@@ -7647,7 +7762,54 @@ export default function Home() {
 
     // Select all visible models for export workspace tinting
     scene.setSelectedModelIds(visibleIds);
-  }, [scene.mode, scene.activeModelId, scene.models, scene.setActiveModelId]);
+  }, [scene.mode, scene.activeModelId, scene.models, scene.setActiveModelId, getVisibleModelIdsWithUnappliedHoles, applyAllHolePunchProgress]);
+
+  // Export-tab "Apply to All": bake holes into every visible model that has
+  // unapplied holes, one at a time. Each model is made active and handed to the
+  // manager's auto-apply effect via pendingHolePunchAutoApplyModelId; the
+  // advance effect below walks the queue as each bake settles.
+  const handleApplyAllHolePunches = React.useCallback(() => {
+    setShowUnappliedHolePunchModal(false);
+    const queue = getVisibleModelIdsWithUnappliedHoles();
+    if (queue.length === 0) return;
+    holePunchApplyAllQueueRef.current = queue.slice(1);
+    setApplyAllHolePunchProgress({ done: 0, total: queue.length });
+    scene.setActiveModelId(queue[0]);
+    setPendingHolePunchAutoApplyModelId(queue[0]);
+  }, [getVisibleModelIdsWithUnappliedHoles, scene.setActiveModelId]);
+
+  // Guide the user to the per-model hole-punch UI (Prepare → Hollow tool).
+  const handleGoToHollowTool = React.useCallback(() => {
+    setShowUnappliedHolePunchModal(false);
+    const firstWithHoles = getVisibleModelIdsWithUnappliedHoles()[0];
+    if (firstWithHoles) {
+      scene.setActiveModelId(firstWithHoles);
+    }
+    scene.setMode('prepare');
+    setTransformModeWithMirrorFinalize('hollowing');
+  }, [getVisibleModelIdsWithUnappliedHoles, scene.setActiveModelId, scene.setMode, setTransformModeWithMirrorFinalize]);
+
+  // Advance the "Apply to All" queue once the current model's bake settles.
+  // A model is done when it is no longer applying and the auto-apply handoff
+  // has cleared (the manager sets pendingHolePunchAutoApplyModelId back to null
+  // in the same batched tick it flips isApplyingHolePunch, so this never fires
+  // mid-bake).
+  React.useEffect(() => {
+    if (!applyAllHolePunchProgress) return;
+    if (isApplyingHolePunch) return;
+    if (pendingHolePunchAutoApplyModelId !== null) return;
+
+    const nextModelId = holePunchApplyAllQueueRef.current.shift();
+    if (!nextModelId) {
+      setApplyAllHolePunchProgress(null);
+      return;
+    }
+    setApplyAllHolePunchProgress((previous) => (
+      previous ? { ...previous, done: previous.done + 1 } : previous
+    ));
+    scene.setActiveModelId(nextModelId);
+    setPendingHolePunchAutoApplyModelId(nextModelId);
+  }, [applyAllHolePunchProgress, isApplyingHolePunch, pendingHolePunchAutoApplyModelId, scene.setActiveModelId]);
 
   // When entering arrange mode with exactly one visible model, auto-select it.
   React.useEffect(() => {
@@ -9611,6 +9773,8 @@ export default function Home() {
               scheduleCommitPendingTransformHistory: scheduleCommitPendingTransformHistory,
               uniformScaling: uniformScaling,
               setUniformScaling: setUniformScaling,
+              localTransformSpace: localTransformSpace,
+              setLocalTransformSpace: setLocalTransformSpace,
               isApplyingHolePunch: isApplyingHolePunch,
               interiorView: interiorView,
               hasCavityGeometry: hasCavityGeometry,
@@ -9851,6 +10015,7 @@ export default function Home() {
             transformMode={transformMgr.transformMode}
             transform={transformMgr.transform}
             uniformScaling={uniformScaling}
+            localTransformSpace={localTransformSpace}
             autoLift={transformMgr.autoLift}
             liftDistance={transformMgr.liftDistance}
             autoSnapEnabled={transformMgr.autoSnapEnabled}
@@ -10426,13 +10591,15 @@ export default function Home() {
       />
 
       <ModifierModals
-        handleApplyHolePunch={handleApplyHolePunch}
+        handleApplyAllHolePunches={handleApplyAllHolePunches}
+        handleGoToHollowTool={handleGoToHollowTool}
         handleCancelDestructiveTransform={handleCancelDestructiveTransform}
         handleConfirmBlockerReset={handleConfirmBlockerReset}
         handleConfirmDestructiveTransform={handleConfirmDestructiveTransform}
         handleConfirmModifierReset={handleConfirmModifierReset}
         modifierApplyOverlayContent={modifierApplyOverlayContent}
         modifierApplyOverlayElapsedLabel={modifierApplyOverlayElapsedLabel}
+        modifierApplyProcessingLabel={modifierApplyProcessingLabel}
         pendingBlockerResetState={pendingBlockerResetState}
         pendingDestructiveTransform={pendingDestructiveTransform}
         pendingModifierResetAction={pendingModifierResetAction}
@@ -10448,6 +10615,8 @@ export default function Home() {
         isOpen={showManifoldWarning}
         onAcknowledge={() => setShowManifoldWarning(false)}
       />
+
+
 
       <MeshRepairModals
         isManualRepairing={isManualRepairing}

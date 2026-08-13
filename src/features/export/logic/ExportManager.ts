@@ -1045,7 +1045,10 @@ export class ExportManager {
           const modelId = modelKey === '__orphan__' ? null : modelKey;
           const raftSettings = modelId ? getRaftSettingsForModel(modelId) : globalRaftSettings;
 
-          const chamferInset = Math.max(0, raftSettings.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettings.chamferAngle))));
+          const thickness = raftSettings.bottomMode === 'line' ? raftSettings.lineHeightMm : raftSettings.thickness;
+          const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettings.chamferAngle))));
+          const wallInset = raftSettings.wallEnabled ? Math.max(0, raftSettings.wallThickness) : 0;
+          const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
           const circles: SupportBaseCircle[] = roots.map(r => ({
             x: r.transform.pos.x,
@@ -1053,7 +1056,7 @@ export class ExportManager {
             r: r.diameter / 2
           }));
 
-          const profile = computeFootprint(circles, { marginMm: 0.2 + (raftSettings.bottomMode === 'line' ? chamferInset : 0), samplesPerCircle: 24 });
+          const profile = computeFootprint(circles, { marginMm: dynamicMargin, samplesPerCircle: 24 });
 
           if (!profile || profile.length < 3) continue;
 
@@ -1234,6 +1237,8 @@ export class ExportManager {
               scale: { x: number; y: number; z: number };
             };
             meshModifiers?: ModelMeshModifiers;
+            isSupportGeometry?: boolean;
+            linkGroupId?: string;
             mesh: {
               mode: 'embedded-file';
               fileName: string;
@@ -1282,10 +1287,12 @@ export class ExportManager {
                 ? { nativePreview: { ...model.geometry.nativePreview } }
                 : {}),
               ...(model.originalRef
-                ? { originalRef: model.originalRef }
-                : (!options.embedOriginalMesh && typeof model.sourcePath === 'string' && model.sourcePath.trim().length > 0
-                  ? { originalRef: { mode: 'external-file' as const, fileName: model.sourcePath } }
-                  : {})),
+                ? { originalRef: origChunk ? { ...model.originalRef, sha256: origChunk.sha256, uncompressedSizeBytes: origChunk.uncompressedSize } : model.originalRef }
+                : (options.embedOriginalMesh && origChunk
+                  ? { originalRef: { mode: 'embedded-chunk' as const, sha256: origChunk.sha256, uncompressedSizeBytes: origChunk.uncompressedSize } }
+                  : (!options.embedOriginalMesh && typeof model.sourcePath === 'string' && model.sourcePath.trim().length > 0
+                    ? { originalRef: { mode: 'external-file' as const, fileName: model.sourcePath } }
+                    : {}))),
               // Honesty flag (Ph0.1 D2): this model's embedded mesh is the last
               // committed bake, not the geometry currently on screen, because a
               // mutation was still baking when the bounded wait expired.
@@ -1312,6 +1319,8 @@ export class ExportManager {
               // every saved VOXL silently loses hollowing/hole-punch
               // re-editability (voxl-format-spec.md V2.1 requirement).
               meshModifiers: resolveModelMeshModifiers(model),
+              isSupportGeometry: model.isSupportGeometry,
+              linkGroupId: model.linkGroupId,
               mesh: {
                 mode: 'embedded-file',
                 fileName: `${this.normalizeExportFilenameBase(model.name || 'model')}.stl`,

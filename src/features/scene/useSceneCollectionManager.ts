@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
-import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, readSidecarFileBytes, resolveOriginalRefSidecar, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
+import { isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, parseVoxlDocument, readSidecarFileBytes, resolveOriginalRefSidecar, type VoxlDocumentV1, type VoxlMeshRef, type PrecompressedChunk } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
@@ -899,6 +899,8 @@ export interface LoadedModel {
   meshModifiers?: ModelMeshModifiers;
   ignoreAutoLift?: boolean;
   manualZMoveOverride?: boolean;
+  isSupportGeometry?: boolean;
+  linkGroupId?: string;
 }
 
 type DebugPrimitiveType =
@@ -992,6 +994,8 @@ type ModelClipboardEntry = {
   polygonCount: number;
   meshModifiers?: ModelMeshModifiers;
   supportClipboard: SupportClipboardPayload | null;
+  isSupportGeometry?: boolean;
+  linkGroupId?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -2476,6 +2480,9 @@ export function useSceneCollectionManager() {
       };
     }
 
+    let supportsChanged = false;
+    let kickstandsChanged = false;
+
     let transformCommit = {
       supportsChanged: false,
       kickstandsChanged: false,
@@ -2487,14 +2494,52 @@ export function useSceneCollectionManager() {
       transformCommit = transformSupportsForModel(id, beforeTransform, transform);
     }
 
-    setModels(prev => prev.map(m =>
-      m.id === id ? { ...m, transform } : m
-    ));
+    supportsChanged = supportsChanged || transformCommit.supportsChanged;
+    kickstandsChanged = kickstandsChanged || transformCommit.kickstandsChanged;
+
+    const updateMap = new Map<string, ModelTransform>();
+    updateMap.set(id, transform);
+
+    if (currentModel.linkGroupId) {
+      const linkGroupId = currentModel.linkGroupId;
+      const deltaPos = transform.position.clone().sub(beforeTransform.position);
+      const deltaRotX = transform.rotation.x - beforeTransform.rotation.x;
+      const deltaRotY = transform.rotation.y - beforeTransform.rotation.y;
+      const deltaRotZ = transform.rotation.z - beforeTransform.rotation.z;
+      const deltaScale = transform.scale.clone().sub(beforeTransform.scale);
+
+      const peerModels = modelsRef.current.filter((m) => m.linkGroupId === linkGroupId && m.id !== id);
+      for (const peer of peerModels) {
+        const peerBefore = peer.transform;
+        const peerNextPos = peerBefore.position.clone().add(deltaPos);
+        const peerNextRot = eulerFromGlobalEuler({
+          x: peerBefore.rotation.x + deltaRotX,
+          y: peerBefore.rotation.y + deltaRotY,
+          z: peerBefore.rotation.z + deltaRotZ,
+        });
+        const peerNextScale = peerBefore.scale.clone().add(deltaScale);
+        const peerNextTransform: ModelTransform = {
+          position: peerNextPos,
+          rotation: peerNextRot,
+          scale: peerNextScale,
+        };
+        updateMap.set(peer.id, peerNextTransform);
+
+        const peerCommit = transformSupportsForModel(peer.id, peerBefore, peerNextTransform);
+        supportsChanged = supportsChanged || peerCommit.supportsChanged;
+        kickstandsChanged = kickstandsChanged || peerCommit.kickstandsChanged;
+      }
+    }
+
+    setModels(prev => prev.map(m => {
+      const nextTransform = updateMap.get(m.id);
+      return nextTransform ? { ...m, transform: nextTransform } : m;
+    }));
 
     return {
       updated: true,
-      supportsChanged: transformCommit.supportsChanged,
-      kickstandsChanged: transformCommit.kickstandsChanged,
+      supportsChanged,
+      kickstandsChanged,
     };
   }, []);
 
@@ -2511,20 +2556,42 @@ export function useSceneCollectionManager() {
     const currentActiveModelId = activeModelIdRef.current;
     const currentSelectedModelIds = selectedModelIdsRef.current;
 
-    const modelExists = currentModels.some((m) => m.id === id);
-    if (!modelExists) return false;
+    const targetModel = currentModels.find((m) => m.id === id);
+    if (!targetModel) return false;
 
-    const beforeModels = currentModels.map((m) => (
-      m.id === id
-        ? { ...m, transform: cloneTransform(beforeTransform) }
-        : m
-    ));
+    const linkGroupId = targetModel.linkGroupId;
+    const deltaPos = afterTransform.position.clone().sub(beforeTransform.position);
+    const deltaRotX = afterTransform.rotation.x - beforeTransform.rotation.x;
+    const deltaRotY = afterTransform.rotation.y - beforeTransform.rotation.y;
+    const deltaRotZ = afterTransform.rotation.z - beforeTransform.rotation.z;
+    const deltaScale = afterTransform.scale.clone().sub(beforeTransform.scale);
 
-    const afterModels = currentModels.map((m) => (
-      m.id === id
-        ? { ...m, transform: cloneTransform(afterTransform) }
-        : m
-    ));
+    const beforeModels = currentModels.map((m) => {
+      if (m.id === id) {
+        return { ...m, transform: cloneTransform(beforeTransform) };
+      }
+      if (linkGroupId && m.linkGroupId === linkGroupId) {
+        const peerBeforePos = m.transform.position.clone().sub(deltaPos);
+        const peerBeforeRot = eulerFromGlobalEuler({
+          x: m.transform.rotation.x - deltaRotX,
+          y: m.transform.rotation.y - deltaRotY,
+          z: m.transform.rotation.z - deltaRotZ,
+        });
+        const peerBeforeScale = m.transform.scale.clone().sub(deltaScale);
+        return {
+          ...m,
+          transform: { position: peerBeforePos, rotation: peerBeforeRot, scale: peerBeforeScale },
+        };
+      }
+      return m;
+    });
+
+    const afterModels = currentModels.map((m) => {
+      if (m.id === id) {
+        return { ...m, transform: cloneTransform(afterTransform) };
+      }
+      return m;
+    });
 
     const includeSupportByOption = supportSnapshotOptions?.includeSupportState === true
       || !!supportSnapshotOptions?.supportBefore
@@ -2550,7 +2617,7 @@ export function useSceneCollectionManager() {
       supportStateOverride: supportSnapshotOptions?.supportAfter,
       kickstandStateOverride: supportSnapshotOptions?.kickstandAfter,
     });
-    const targetModelName = currentModels.find((m) => m.id === id)?.name ?? id;
+    const targetModelName = targetModel.name ?? id;
     pushSceneSnapshotHistory(before, after, description ?? `Transform Model ${targetModelName}`);
     return true;
   }, [pushSceneSnapshotHistory]);
@@ -2568,9 +2635,45 @@ export function useSceneCollectionManager() {
     const currentActiveModelId = activeModelIdRef.current;
     const currentSelectedModelIds = selectedModelIdsRef.current;
 
+    const updateMap = new Map<string, ModelTransform>();
+    updates.forEach((entry) => updateMap.set(entry.id, entry.transform));
+
+    updates.forEach((entry) => {
+      const model = currentModels.find((m) => m.id === entry.id);
+      if (model?.linkGroupId) {
+        const beforeTransform = model.transform;
+        const transform = entry.transform;
+        const deltaPos = transform.position.clone().sub(beforeTransform.position);
+        const deltaRotX = transform.rotation.x - beforeTransform.rotation.x;
+        const deltaRotY = transform.rotation.y - beforeTransform.rotation.y;
+        const deltaRotZ = transform.rotation.z - beforeTransform.rotation.z;
+        const deltaScale = transform.scale.clone().sub(beforeTransform.scale);
+
+        const peers = currentModels.filter((m) => m.linkGroupId === model.linkGroupId && m.id !== entry.id);
+        for (const peer of peers) {
+          if (!updateMap.has(peer.id)) {
+            const peerBefore = peer.transform;
+            const peerNextPos = peerBefore.position.clone().add(deltaPos);
+            const peerNextRot = eulerFromGlobalEuler({
+              x: peerBefore.rotation.x + deltaRotX,
+              y: peerBefore.rotation.y + deltaRotY,
+              z: peerBefore.rotation.z + deltaRotZ,
+            });
+            const peerNextScale = peerBefore.scale.clone().add(deltaScale);
+            updateMap.set(peer.id, {
+              position: peerNextPos,
+              rotation: peerNextRot,
+              scale: peerNextScale,
+            });
+          }
+        }
+      }
+    });
+
     const supportStateBefore = getSnapshot();
     const kickstandStateBefore = getKickstandSnapshot();
-    const includeSupportHistory = updates.some((entry) => hasSupportsOrKickstandsForModel(entry.id, supportStateBefore, kickstandStateBefore));
+    const allUpdatedIds = Array.from(updateMap.keys());
+    const includeSupportHistory = allUpdatedIds.some((id) => hasSupportsOrKickstandsForModel(id, supportStateBefore, kickstandStateBefore));
 
     const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, {
       includeSupportState: includeSupportHistory,
@@ -2578,17 +2681,14 @@ export function useSceneCollectionManager() {
       kickstandStateOverride: includeSupportHistory ? kickstandStateBefore : undefined,
     });
 
-    const updateMap = new Map<string, ModelTransform>();
     let supportsChanged = false;
     let kickstandsChanged = false;
     let updated = false;
-    updates.forEach((entry) => {
-      updateMap.set(entry.id, entry.transform);
-
-      const currentModel = currentModels.find((model) => model.id === entry.id);
+    updateMap.forEach((nextTransform, id) => {
+      const currentModel = currentModels.find((model) => model.id === id);
       if (!currentModel) return;
-      if (transformsEqual(currentModel.transform, entry.transform)) return;
-      const commit = transformSupportsForModel(entry.id, currentModel.transform, entry.transform);
+      if (transformsEqual(currentModel.transform, nextTransform)) return;
+      const commit = transformSupportsForModel(id, currentModel.transform, nextTransform);
       supportsChanged = supportsChanged || commit.supportsChanged;
       kickstandsChanged = kickstandsChanged || commit.kickstandsChanged;
       updated = true;
@@ -2723,7 +2823,13 @@ export function useSceneCollectionManager() {
 
     const nextModels = currentModels.map((m) => (
       m.id === id
-        ? { ...m, geometry: nextGeometry, polygonCount }
+        ? {
+            ...m,
+            geometry: nextGeometry,
+            polygonCount,
+            isSupportGeometry: target.isSupportGeometry,
+            linkGroupId: target.linkGroupId,
+          }
         : m
     ));
     setModels(nextModels);
@@ -3249,6 +3355,7 @@ export function useSceneCollectionManager() {
       polygonCount: modelTriCount,
       ignoreAutoLift: source.ignoreAutoLift,
       manualZMoveOverride: source.manualZMoveOverride,
+      isSupportGeometry: false,
     };
 
     const supportModel: LoadedModel = {
@@ -3269,6 +3376,7 @@ export function useSceneCollectionManager() {
       polygonCount: supportTriCount,
       ignoreAutoLift: source.ignoreAutoLift,
       manualZMoveOverride: source.manualZMoveOverride,
+      isSupportGeometry: true,
     };
 
     const nextModels = [
@@ -3288,10 +3396,269 @@ export function useSceneCollectionManager() {
       { includeSupportState: true },
     );
     pushSceneSnapshotHistory(before, after, `Split Supports from ${source.name}`);
+    } catch (e) {
+      console.error(e);
+      emitSceneImportReport('Failed to split supports', 'error');
     } finally {
       setImportProgress({ active: false, type: null, label: '', detail: '', progress: null });
     }
-  }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield]);
+  }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield, emitSceneImportReport]);
+
+  /** Re-combines split model and support geometries back into a single model,
+   *  transforming the supports to align with any model movement/rotation. */
+  const mergeSupports = useCallback(async () => {
+    setImportProgress({
+      active: true,
+      type: 'mesh',
+      label: 'Merging Supports…',
+      detail: 'Recombining model and support geometry…',
+      progress: null,
+    });
+    await waitForUiYield();
+
+    try {
+      const selectedIds = selectedModelIdsRef.current;
+      if (selectedIds.length !== 2) return;
+
+      const selectedModels = modelsRef.current.filter((m) => selectedIds.includes(m.id));
+      if (selectedModels.length !== 2) return;
+
+      const modelModel = selectedModels.find((m) => !m.isSupportGeometry)
+        || selectedModels.find((m) => m.id === activeModelIdRef.current)
+        || selectedModels[0];
+      const supportModel = selectedModels.find((m) => m.id !== modelModel.id)!;
+
+      // Model and Support might have different transformations.
+      // Compute matrix to transform support vertices into model local space.
+      const modelMatrix = new THREE.Matrix4().compose(
+        modelModel.transform.position,
+        new THREE.Quaternion().setFromEuler(modelModel.transform.rotation),
+        modelModel.transform.scale,
+      );
+      const supportMatrix = new THREE.Matrix4().compose(
+        supportModel.transform.position,
+        new THREE.Quaternion().setFromEuler(supportModel.transform.rotation),
+        supportModel.transform.scale,
+      );
+      const supportToModelMatrix = new THREE.Matrix4().copy(modelMatrix).invert().multiply(supportMatrix);
+
+      const modelGeom = modelModel.geometry.geometry;
+      const supportGeom = supportModel.geometry.geometry;
+
+      const modelPositions = modelGeom.getAttribute('position').array;
+      const supportPositions = supportGeom.getAttribute('position').array;
+
+      const modelCenter = modelModel.geometry.center;
+      const supportCenter = supportModel.geometry.center;
+
+      const tempV = new THREE.Vector3();
+      const mappedSupportPositions = new Float32Array(supportPositions.length);
+      for (let i = 0; i < supportPositions.length; i += 3) {
+        tempV.set(
+          supportPositions[i] - supportCenter.x,
+          supportPositions[i + 1] - supportCenter.y,
+          supportPositions[i + 2] - supportCenter.z,
+        );
+        tempV.applyMatrix4(supportToModelMatrix);
+        mappedSupportPositions[i] = tempV.x + modelCenter.x;
+        mappedSupportPositions[i + 1] = tempV.y + modelCenter.y;
+        mappedSupportPositions[i + 2] = tempV.z + modelCenter.z;
+      }
+
+      const combinedPositions = new Float32Array(modelPositions.length + mappedSupportPositions.length);
+      combinedPositions.set(modelPositions, 0);
+      combinedPositions.set(mappedSupportPositions, modelPositions.length);
+
+      const modelTriangleCount = modelPositions.length / 9;
+      const supportTriangleCount = mappedSupportPositions.length / 9;
+
+      const mergedGeometryObj = new THREE.BufferGeometry();
+      mergedGeometryObj.setAttribute('position', new THREE.BufferAttribute(combinedPositions, 3));
+      mergedGeometryObj.computeVertexNormals();
+      mergedGeometryObj.computeBoundingBox();
+
+      const bbox = mergedGeometryObj.boundingBox?.clone() ?? new THREE.Box3();
+      const center = bbox.getCenter(new THREE.Vector3());
+      const size = bbox.getSize(new THREE.Vector3());
+
+      const mergedGeometry: GeometryWithBounds = {
+        geometry: mergedGeometryObj,
+        bbox,
+        center,
+        size,
+        flatteningPlanes: modelModel.geometry.flatteningPlanes || [],
+        edgeGeometry: modelModel.geometry.edgeGeometry,
+      };
+
+      const supportGeo = new THREE.BufferGeometry();
+      supportGeo.setAttribute('position', new THREE.BufferAttribute(mappedSupportPositions, 3));
+      supportGeo.computeVertexNormals();
+
+      const modelGeo = new THREE.BufferGeometry();
+      modelGeo.setAttribute('position', new THREE.BufferAttribute(modelPositions, 3));
+
+      // Set the nativeRepairReport properties to preserve support triangle designation
+      mergedGeometry.meshDefects = {
+        hasDefects: false,
+        repairedFloats: 0,
+        totalVertices: combinedPositions.length / 3,
+        supportSectionGeometry: supportGeo,
+        modelSectionGeometry: modelGeo,
+        nativeRepairReport: {
+          version: 1,
+          source_path: null,
+          pre: {
+            triangle_count: modelTriangleCount + supportTriangleCount,
+            vertex_count: (modelTriangleCount + supportTriangleCount) * 3,
+            non_manifold_edges: 0,
+            non_manifold_vertices: 0,
+            boundary_edges: 0,
+            boundary_loops: 0,
+            inconsistent_edges: 0,
+            degenerate_triangles: 0,
+            duplicate_triangles: 0,
+            component_count: 0,
+            self_intersections: 0,
+            signed_volume: 0,
+            is_watertight: false,
+            timings_ms: { topology_ms: 0, self_intersections_ms: 0, components_ms: 0, total_ms: 0 },
+          },
+          post: {
+            triangle_count: modelTriangleCount + supportTriangleCount,
+            vertex_count: (modelTriangleCount + supportTriangleCount) * 3,
+            non_manifold_edges: 0,
+            non_manifold_vertices: 0,
+            boundary_edges: 0,
+            boundary_loops: 0,
+            inconsistent_edges: 0,
+            degenerate_triangles: 0,
+            duplicate_triangles: 0,
+            component_count: 0,
+            self_intersections: 0,
+            signed_volume: 0,
+            is_watertight: false,
+            timings_ms: { topology_ms: 0, self_intersections_ms: 0, components_ms: 0, total_ms: 0 },
+          },
+          steps: [],
+          likely_support_geometry: false,
+          model_triangle_count: modelTriangleCount,
+          residual_issues: [],
+          fully_repaired: true,
+          total_ms: 0,
+        },
+      };
+
+      const before = captureSceneSnapshot(
+        modelsRef.current,
+        activeModelIdRef.current,
+        selectedModelIdsRef.current,
+        { includeSupportState: true },
+      );
+
+      const baseName = modelModel.name.replace(/ \(Model\)$/i, '');
+      const mergedModel: LoadedModel = {
+        id: uuidv4(),
+        name: baseName,
+        fileUrl: modelModel.fileUrl,
+        fileSizeBytes: (modelModel.fileSizeBytes || 0) + (supportModel.fileSizeBytes || 0),
+        sourcePath: null,
+        geometry: mergedGeometry,
+        transform: {
+          position: (() => {
+            const rotation = new THREE.Quaternion().setFromEuler(modelModel.transform.rotation);
+            const positionOffset = center.clone().sub(modelCenter);
+            positionOffset.multiply(modelModel.transform.scale).applyQuaternion(rotation);
+            return modelModel.transform.position.clone().add(positionOffset);
+          })(),
+          rotation: modelModel.transform.rotation.clone(),
+          scale: modelModel.transform.scale.clone(),
+        },
+        visible: modelModel.visible,
+        color: modelModel.color,
+        polygonCount: modelTriangleCount + supportTriangleCount,
+        ignoreAutoLift: modelModel.ignoreAutoLift,
+        manualZMoveOverride: modelModel.manualZMoveOverride,
+        isSupportGeometry: undefined,
+      };
+
+      const nextModels = [
+        ...modelsRef.current.filter((m) => m.id !== modelModel.id && m.id !== supportModel.id),
+        mergedModel,
+      ];
+
+      setModels(nextModels);
+      setActiveModelId(mergedModel.id);
+      setSelectedModelIds([mergedModel.id]);
+
+      const after = captureSceneSnapshot(
+        nextModels,
+        mergedModel.id,
+        [mergedModel.id],
+        { includeSupportState: true },
+      );
+      pushSceneSnapshotHistory(before, after, `Merge Supports for ${mergedModel.name}`);
+    } catch (e) {
+      console.error(e);
+      emitSceneImportReport('Failed to merge supports', 'error');
+    } finally {
+      setImportProgress({ active: false, type: null, label: '', detail: '', progress: null });
+    }
+  }, [pushSceneSnapshotHistory, setImportProgress, waitForUiYield, emitSceneImportReport]);
+
+  const scanModelForSupportsInPlace = useCallback(async (modelId: string): Promise<boolean> => {
+    const model = modelsRef.current.find(m => m.id === modelId);
+    if (!model) return false;
+    
+    setImportProgress({
+      active: true,
+      type: 'mesh',
+      label: 'Scanning for Supports…',
+      detail: `Classifying ${model.name}`,
+      progress: null,
+    });
+    await waitForUiYield();
+
+    try {
+      const processed = await processGeometry(model.geometry.geometry, {
+        center: false,
+        nativeProcessingMode: 'classify-only',
+        assumeSupportGeometry: undefined,
+        _nativeModelTriangleCount: model.geometry.meshDefects?.nativeRepairReport?.model_triangle_count ?? undefined,
+      });
+      const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
+      const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
+      const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
+
+      setModels(prev => prev.map(m =>
+        m.id === modelId ? { ...m, geometry: processed, polygonCount, isSupportGeometry: undefined } : m
+      ));
+
+      if (repairReport) {
+        const reportEntry: MeshRepairReportEntry = {
+          id: modelId,
+          modelName: model.name,
+          report: repairReport,
+        };
+        setPendingMeshRepairReports([]);
+        clearSceneImportReport();
+        setMeshRepairReportPresentation('optimistic');
+        setMeshRepairReports([reportEntry]);
+      } else {
+        setPendingMeshRepairReports([]);
+        emitSceneImportReport(`Scanned ${model.name}.`, 'success');
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[scanModelForSupportsInPlace] Scan failed:', err);
+      setPendingMeshRepairReports([]);
+      const message = err instanceof Error ? err.message : String(err);
+      emitSceneImportReport(`Scan failed: ${message}`, 'error', { durationMs: 6_000 });
+      return false;
+    } finally {
+      setImportProgress({ active: false, type: null, label: '', detail: '', progress: null });
+    }
+  }, [clearSceneImportReport, emitSceneImportReport, setImportProgress, waitForUiYield]);
 
   const renameGroup = useCallback((groupId: string, nextName: string) => {
     const trimmed = nextName.trim();
@@ -3402,7 +3769,25 @@ export function useSceneCollectionManager() {
       tryRevokeObjectUrl(model.fileUrl);
     });
 
-    const nextModels = currentModels.filter((m) => !ids.has(m.id));
+    const nextModelsWithoutDeleted = currentModels.filter((m) => !ids.has(m.id));
+
+    // Dissolve link groups if remaining peer count < 2
+    const deletedLinkGroupIds = new Set(existing.map((m) => m.linkGroupId).filter(Boolean) as string[]);
+    let nextModels = nextModelsWithoutDeleted;
+    if (deletedLinkGroupIds.size > 0) {
+      deletedLinkGroupIds.forEach((gId) => {
+        const remaining = nextModels.filter((m) => m.linkGroupId === gId);
+        if (remaining.length < 2) {
+          nextModels = nextModels.map((m) => {
+            if (m.linkGroupId === gId) {
+              return { ...m, linkGroupId: undefined };
+            }
+            return m;
+          });
+        }
+      });
+    }
+
     const nextActiveModelId = currentActiveModelId && ids.has(currentActiveModelId) ? null : currentActiveModelId;
     const nextSelectedModelIds = currentSelectedModelIds.filter((sid) => !ids.has(sid));
 
@@ -3526,6 +3911,8 @@ export function useSceneCollectionManager() {
         polygonCount: source.polygonCount,
         meshModifiers: undefined,
         supportClipboard,
+        isSupportGeometry: source.isSupportGeometry,
+        linkGroupId: source.linkGroupId,
       },
     ]);
 
@@ -3555,6 +3942,8 @@ export function useSceneCollectionManager() {
         polygonCount: source.polygonCount,
         meshModifiers: undefined,
         supportClipboard,
+        isSupportGeometry: source.isSupportGeometry,
+        linkGroupId: source.linkGroupId,
       };
     }));
 
@@ -3597,6 +3986,8 @@ export function useSceneCollectionManager() {
       color: first.color,
       polygonCount: first.polygonCount,
       meshModifiers: undefined,
+      isSupportGeometry: first.isSupportGeometry,
+      linkGroupId: first.linkGroupId,
     };
 
     const nextModels = [...models, pastedModel];
@@ -3713,12 +4104,13 @@ export function useSceneCollectionManager() {
           r: root.diameter / 2,
         }));
 
-        const chamferInset = raftSettings.bottomMode === 'line'
-          ? Math.max(0, raftSettings.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettings.chamferAngle))))
-          : 0;
+        const thickness = raftSettings.bottomMode === 'line' ? raftSettings.lineHeightMm : raftSettings.thickness;
+        const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettings.chamferAngle))));
+        const wallInset = raftSettings.wallEnabled ? Math.max(0, raftSettings.wallThickness) : 0;
+        const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
         const baseProfile = computeFootprint(circles, {
-          marginMm: 0.2 + chamferInset,
+          marginMm: dynamicMargin,
           samplesPerCircle: 24,
         });
 
@@ -3989,6 +4381,8 @@ export function useSceneCollectionManager() {
         color: entry.color,
         polygonCount: entry.polygonCount,
         meshModifiers: undefined,
+        isSupportGeometry: entry.isSupportGeometry,
+        linkGroupId: entry.linkGroupId,
       };
     });
 
@@ -4069,6 +4463,8 @@ export function useSceneCollectionManager() {
         color: source.color,
         polygonCount: source.polygonCount,
         meshModifiers: undefined,
+        isSupportGeometry: source.isSupportGeometry,
+        linkGroupId: source.linkGroupId,
       };
     });
 
@@ -4450,12 +4846,14 @@ export function useSceneCollectionManager() {
       let document: VoxlDocumentV1;
       let resolvedMeshBytes: Map<string, Uint8Array>;
       let resolvedOriginalMeshBytes: Map<string, Uint8Array> | undefined;
+      let originalMeshChunks: Map<string, PrecompressedChunk> | undefined;
 
       if (isV2) {
         const r = parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
         document = r.document;
         resolvedMeshBytes = r.meshBytes;
         resolvedOriginalMeshBytes = r.originalMeshBytes;
+        originalMeshChunks = r.originalMeshChunks;
       } else {
         document = parseVoxlDocument(await file.text());
         resolvedMeshBytes = new Map();
@@ -4543,14 +4941,11 @@ export function useSceneCollectionManager() {
             }
 
             const embeddedName = meshRef.fileName?.trim() || `${model.name || 'model'}.stl`;
-            const mimeType = meshRef.mimeType?.trim() || 'model/stl';
-            // Create a clean copy with explicit ArrayBuffer for Blob compatibility
-            const blobData = new Uint8Array(bytes);
-            const blob = new Blob([blobData], { type: mimeType });
-            url = URL.createObjectURL(blob);
 
-            geometry = await loadMeshGeometry(url, embeddedName, {
-            nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
+            geometry = await loadMeshGeometry(bytes, embeddedName, {
+              nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
+              assumeSupportGeometry: model.isSupportGeometry,
+              skipClassification: model.isSupportGeometry,
             onNativeProcessingStage: (stage) => {
               if (stage === 'repairing') {
                 setImportProgress({
@@ -4597,7 +4992,17 @@ export function useSceneCollectionManager() {
           idMap.set(model.id, resolvedId);
 
           const origMeshBytes = resolvedOriginalMeshBytes?.get(model.id);
-          if (origMeshBytes) {
+          const origMeshChunk = originalMeshChunks?.get(model.id);
+
+          if (origMeshChunk) {
+            void meshChunkStore.bake({
+              modelId: resolvedId,
+              slot: 'original',
+              signature: `original:${resolvedId}`,
+              precompressed: origMeshChunk,
+              encode: () => origMeshBytes || new Uint8Array(0),
+            });
+          } else if (origMeshBytes) {
             void meshChunkStore.bake({
               modelId: resolvedId,
               slot: 'original',
@@ -4654,6 +5059,8 @@ export function useSceneCollectionManager() {
             meshModifiers: undefined,
             ignoreAutoLift: true,
             manualZMoveOverride: true,
+            isSupportGeometry: model.isSupportGeometry,
+            linkGroupId: model.linkGroupId,
           });
 
           // Store meshModifiers externally so model objects stay lightweight
@@ -5037,6 +5444,95 @@ export function useSceneCollectionManager() {
     }
   }, [activeModelId, setModelVisibility]);
 
+  const toggleSupportDesignation = useCallback((modelIds: string[], isSupport: boolean) => {
+    if (modelIds.length === 0) return;
+    const targetIds = new Set(modelIds);
+    const affectedModels = models.filter((m) => targetIds.has(m.id));
+    if (affectedModels.length === 0) return;
+    const needsChange = affectedModels.some((m) => Boolean(m.isSupportGeometry) !== isSupport);
+    if (!needsChange) return;
+
+    const before = captureSceneSnapshot(models, activeModelId, selectedModelIds);
+    const nextModels = models.map((m) => {
+      if (targetIds.has(m.id)) {
+        return { ...m, isSupportGeometry: isSupport };
+      }
+      return m;
+    });
+
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelId, selectedModelIds);
+    pushSceneSnapshotHistory(
+      before,
+      after,
+      isSupport ? 'Mark as Support Geometry' : 'Mark as Model Geometry',
+    );
+  }, [activeModelId, models, pushSceneSnapshotHistory, selectedModelIds]);
+
+  const linkModels = useCallback((idsInput: string[]) => {
+    const ids = new Set(idsInput);
+    if (ids.size < 2) return;
+
+    const currentModels = modelsRef.current;
+    const targetModels = currentModels.filter((m) => ids.has(m.id));
+    if (targetModels.length < 2) return;
+
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+
+    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
+    const linkGroupId = `link-${uuidv4()}`;
+
+    const nextModels = currentModels.map((m) => {
+      if (ids.has(m.id)) {
+        return { ...m, linkGroupId };
+      }
+      return m;
+    });
+
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds);
+    pushSceneSnapshotHistory(before, after, `Link ${targetModels.length} Models`);
+  }, [pushSceneSnapshotHistory]);
+
+  const unlinkModels = useCallback((idsInput: string[]) => {
+    const ids = new Set(idsInput);
+    if (ids.size === 0) return;
+
+    const currentModels = modelsRef.current;
+    const targetModels = currentModels.filter((m) => ids.has(m.id) && m.linkGroupId);
+    if (targetModels.length === 0) return;
+
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+
+    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
+    const affectedGroupIds = new Set(targetModels.map((m) => m.linkGroupId!));
+
+    let nextModels = currentModels.map((m) => {
+      if (ids.has(m.id)) {
+        return { ...m, linkGroupId: undefined };
+      }
+      return m;
+    });
+
+    affectedGroupIds.forEach((gId) => {
+      const remaining = nextModels.filter((m) => m.linkGroupId === gId);
+      if (remaining.length < 2) {
+        nextModels = nextModels.map((m) => {
+          if (m.linkGroupId === gId) {
+            return { ...m, linkGroupId: undefined };
+          }
+          return m;
+        });
+      }
+    });
+
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds);
+    pushSceneSnapshotHistory(before, after, `Unlink ${targetModels.length} Models`);
+  }, [pushSceneSnapshotHistory]);
+
   /**
    * Re-runs the full native repair pipeline on an already-loaded model's
    * geometry and swaps the result back in-place.  Intended for the manual
@@ -5049,6 +5545,7 @@ export function useSceneCollectionManager() {
       const processed = await processGeometry(model.geometry.geometry, {
         center: false,
         nativeProcessingMode: 'repair',
+        assumeSupportGeometry: model.isSupportGeometry,
       });
       const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
       const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
@@ -5247,6 +5744,9 @@ export function useSceneCollectionManager() {
     finalizeModelGeometryPostProcessing,
     setModelManualZMoveOverride,
     setModelVisibility,
+    toggleSupportDesignation,
+    linkModels,
+    unlinkModels,
     setModelMeshModifiers,
     getModelMeshModifiers: useCallback((id: string) => getStoredMeshModifiers(id), []),
     renameModel,
@@ -5255,6 +5755,7 @@ export function useSceneCollectionManager() {
     ungroupGroup,
     splitImportGroup,
     splitSupports,
+    mergeSupports,
     renameGroup,
     selectGroup,
     deleteModels,
@@ -5305,6 +5806,7 @@ export function useSceneCollectionManager() {
     setMode,
     heatmapColors,
     setHeatmapColors,
+    scanModelForSupportsInPlace,
     onHeatmapColorChange: useCallback((index: number, color: string) => {
       setHeatmapColors(prev => {
         const next = [...prev];

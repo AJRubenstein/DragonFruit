@@ -689,6 +689,7 @@ export function TransformGizmo({
               interactionsEnabled={partIsInteractable('scale-x')}
               isUniform={uniformScaling}
               gizmoPosition={posVec}
+              worldAxisDir={worldAxisDirs.x}
               onDragStart={(isUniform: boolean) => handleDragStart('scale-x', isUniform)}
               onDrag={(factor: number, isUniform: boolean) => handleScaleDrag('x', factor, isUniform)}
               onDragEnd={handleDragEnd}
@@ -708,6 +709,7 @@ export function TransformGizmo({
               interactionsEnabled={partIsInteractable('scale-y')}
               isUniform={uniformScaling}
               gizmoPosition={posVec}
+              worldAxisDir={worldAxisDirs.y}
               onDragStart={(isUniform: boolean) => handleDragStart('scale-y', isUniform)}
               onDrag={(factor: number, isUniform: boolean) => handleScaleDrag('y', factor, isUniform)}
               onDragEnd={handleDragEnd}
@@ -727,6 +729,7 @@ export function TransformGizmo({
               interactionsEnabled={partIsInteractable('scale-z')}
               isUniform={uniformScaling}
               gizmoPosition={posVec}
+              worldAxisDir={worldAxisDirs.z}
               onDragStart={(isUniform: boolean) => handleDragStart('scale-z', isUniform)}
               onDrag={(factor: number, isUniform: boolean) => handleScaleDrag('z', factor, isUniform)}
               onDragEnd={handleDragEnd}

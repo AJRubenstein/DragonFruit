@@ -561,12 +561,8 @@ export function SupportProxyMeshLayer({
     };
 
     const pushRoot = (root: InstancedRoot) => {
-      const effectiveDiskHeight = hasSolidBottom
-        ? 0.05
-        : Math.max(0.001, root.effectiveDiskHeight);
-      const verticalOffset = hasSolidBottom
-        ? Math.max(raftThickness - effectiveDiskHeight, 0)
-        : 0;
+      const effectiveDiskHeight = Math.max(0.001, root.effectiveDiskHeight);
+      const verticalOffset = 0;
 
       ensureModel(root.modelId).roots.push({
         ...root,

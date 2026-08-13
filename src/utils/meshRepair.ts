@@ -79,6 +79,7 @@ export interface MeshRepairOptions {
   solidifyFragmentedComponents?: boolean;
   solidifyComponentThreshold?: number;
   solidifySelfIntersectionThreshold?: number;
+  assumeSupportGeometry?: boolean;
 }
 
 export interface MeshRepairResult {
@@ -273,7 +274,11 @@ export async function repairFromPath(
 ): Promise<MeshRepairResult | null> {
   const core = await loadTauriCore();
   if (!core) return null;
-  const optionsJson = JSON.stringify(options);
+  const optionsPayload = {
+    ...options,
+    assume_support_geometry: options.assumeSupportGeometry,
+  };
+  const optionsJson = JSON.stringify(optionsPayload);
   const reportJson = await core.invoke<string>('mesh_repair_from_path', {
     filePath,
     optionsJson,
@@ -340,7 +345,11 @@ export async function repairFromGeometry(
     headers: { 'Content-Type': 'application/octet-stream' },
   });
 
-  const optionsJson = JSON.stringify(options);
+  const optionsPayload = {
+    ...options,
+    assume_support_geometry: options.assumeSupportGeometry,
+  };
+  const optionsJson = JSON.stringify(optionsPayload);
   const reportJson = await core.invoke<string>('mesh_repair_staged', {
     optionsJson,
   });
@@ -356,6 +365,7 @@ export async function repairFromGeometry(
  */
 export async function classifyFromGeometry(
   geometry: THREE.BufferGeometry,
+  options: MeshRepairOptions = {},
 ): Promise<MeshRepairResult | null> {
   const core = await loadTauriCore();
   if (!core) return null;
@@ -370,7 +380,14 @@ export async function classifyFromGeometry(
     headers: { 'Content-Type': 'application/octet-stream' },
   });
 
-  const reportJson = await core.invoke<string>('mesh_classify_staged');
+  const optionsPayload = {
+    ...options,
+    assume_support_geometry: options.assumeSupportGeometry,
+  };
+  const optionsJson = JSON.stringify(optionsPayload);
+  const reportJson = await core.invoke<string>('mesh_classify_staged', {
+    optionsJson,
+  });
   const report = normalizeMeshHealthReport(JSON.parse(reportJson));
   const positions = await readStagedPositions(core.invoke);
   return { report, positions };

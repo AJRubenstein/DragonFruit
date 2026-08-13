@@ -1180,7 +1180,9 @@ export function SlicingPanel({
       const report = m.geometry.meshDefects?.nativeRepairReport;
       if (!report) return true; // No analysis report at all
       const hasSplit = report.model_triangle_count != null && report.model_triangle_count > 0;
-      const isSupportGeometry = report.likely_support_geometry === true;
+      const isSupportGeometry = m.isSupportGeometry !== undefined
+        ? m.isSupportGeometry
+        : report.likely_support_geometry === true;
       return !hasSplit && !isSupportGeometry;
     });
 
