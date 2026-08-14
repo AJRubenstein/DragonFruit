@@ -7,6 +7,7 @@ import type { MessageDescriptor } from '@lingui/core';
 import { Check, ChevronRight, Loader2, Printer, X } from 'lucide-react';
 import { getProfileNetworkUiAdapter } from '@/features/plugins/pluginRegistry';
 import { pluginNetworkFetch } from '@/utils/pluginNetworkBridge';
+import { ManualIpEntryCard, SetupMethodChooser, SetupModeButton } from '@/components/printers/SetupMethodChooser';
 import {
   matchPrinterVariantByBitDepth,
   type PrinterPreset,
@@ -114,7 +115,7 @@ type PrinterVariantPickerModalProps = {
 };
 
 /**
- * "Model Selection" — resolves a family preset (e.g. an Athena II 16K with
+ * "Initial Setup" — resolves a family preset (e.g. an Athena II 16K with
  * 3-bit/8-bit variants) to one concrete variant preset.
  *
  * Two tabs: **Auto-detect** (network-first: scan → connect → probe the preset's
@@ -143,7 +144,8 @@ export function PrinterVariantPickerModal({
     return preset.modelVariantDetectPath && hasDetectOps ? adapter : null;
   }, [preset.networkSupport, preset.modelVariantDetectPath]);
 
-  const [mode, setMode] = React.useState<'network' | 'manual'>(networkAdapter ? 'network' : 'manual');
+  const [mode, setMode] = React.useState<'choose' | 'scan' | 'manual' | 'ip'>(networkAdapter ? 'choose' : 'manual');
+  const [manualIp, setManualIp] = React.useState('');
   const [scanning, setScanning] = React.useState(false);
   const [devices, setDevices] = React.useState<DeviceInfo[]>([]);
   const [scanError, setScanError] = React.useState<string | null>(null);
@@ -152,12 +154,13 @@ export function PrinterVariantPickerModal({
   const [detectedVariant, setDetectedVariant] = React.useState<PrinterPreset | null>(null);
   const [detectedDeviceName, setDetectedDeviceName] = React.useState<string | null>(null);
   const [detectError, setDetectError] = React.useState<string | null>(null);
+  // Shown once scanning drags on (~25s) without a detection, offering to add
+  // the printer without networking and configure it later.
+  const [showConfigureLater, setShowConfigureLater] = React.useState(false);
 
   // Kept out of the render path: the connect response gives the resolved
   // host/port used to create the profile once the variant is confirmed.
   const pendingNetworkRef = React.useRef<PrinterVariantPickerNetworkContext | undefined>(undefined);
-  // Auto-runs the network scan once when the dialog opens in network mode.
-  const autoScanStartedRef = React.useRef(false);
   // Lets selecting a device abort the still-running subnet scan so the UI can
   // show the connection progress instead of the scanning bar.
   const scanAbortRef = React.useRef(false);
@@ -198,64 +201,65 @@ export function PrinterVariantPickerModal({
     };
 
     try {
-      // 1. Fast pass over known local hostnames.
-      const localResponse = await pluginNetworkFetch({
-        pluginId: networkAdapter.pluginId,
-        operation: networkAdapter.operations.discover,
-        mode: preset.networkSupport,
-        scanScope: 'local-hostnames',
-        networkFilter: preset.networkFilter ?? undefined,
-        ports: [80, 8080],
-      });
-      const localPayload = (await localResponse.json().catch(() => null)) as { devices?: unknown; error?: unknown } | null;
-      if (!localResponse.ok) {
-        const rawError = typeof localPayload?.error === 'string' && localPayload.error.trim() ? localPayload.error.trim() : '';
-        setScanError(rawError || _(msg`Network scan failed.`));
-        return;
-      }
-      if (Array.isArray(localPayload?.devices)) collectDevices(localPayload.devices);
+      // Run the fast local/mDNS pass and the progressive subnet scan
+      // concurrently. Athena printers don't advertise mDNS, so the subnet scan
+      // is what actually finds them; the local pass adds any Bonjour-advertising
+      // devices without delaying the subnet scan.
+      await Promise.all([
+        (async () => {
+          const localResponse = await pluginNetworkFetch({
+            pluginId: networkAdapter.pluginId,
+            operation: networkAdapter.operations.discover,
+            mode: preset.networkSupport,
+            scanScope: 'local-hostnames',
+            networkFilter: preset.networkFilter ?? undefined,
+            ports: [80, 8080],
+          });
+          const localPayload = (await localResponse.json().catch(() => null)) as { devices?: unknown; error?: unknown } | null;
+          if (!localResponse.ok) {
+            const rawError = typeof localPayload?.error === 'string' && localPayload.error.trim() ? localPayload.error.trim() : '';
+            setScanError(rawError || _(msg`Network scan failed.`));
+            return;
+          }
+          if (Array.isArray(localPayload?.devices)) collectDevices(localPayload.devices);
+        })(),
+        (async () => {
+          let batchStart = 0;
+          while (true) {
+            const response = await pluginNetworkFetch({
+              pluginId: networkAdapter.pluginId,
+              operation: networkAdapter.operations.discover,
+              mode: preset.networkSupport,
+              scanScope: 'subnet',
+              progressive: true,
+              batchStart,
+              batchSize: 96,
+              networkFilter: preset.networkFilter ?? undefined,
+              ports: [80, 8080],
+            });
+            const payload = (await response.json().catch(() => null)) as {
+              devices?: unknown;
+              error?: unknown;
+              done?: unknown;
+              nextBatchStart?: unknown;
+            } | null;
+            if (!response.ok) {
+              const rawError = typeof payload?.error === 'string' && payload.error.trim() ? payload.error.trim() : '';
+              setScanError(rawError || _(msg`Network scan failed.`));
+              break;
+            }
 
-      // 2. If the fast local/mDNS pass already found printers, skip the slow
-      // subnet scan entirely — Bonjour `.local` names are near-instant.
-      if (foundByAddress.size > 0) {
-        return;
-      }
+            if (Array.isArray(payload?.devices)) collectDevices(payload.devices);
 
-      // 3. Progressive subnet scan, collecting devices as they're found.
-      let batchStart = 0;
-      while (true) {
-        const response = await pluginNetworkFetch({
-          pluginId: networkAdapter.pluginId,
-          operation: networkAdapter.operations.discover,
-          mode: preset.networkSupport,
-          scanScope: 'subnet',
-          progressive: true,
-          batchStart,
-          batchSize: 96,
-          networkFilter: preset.networkFilter ?? undefined,
-          ports: [80, 8080],
-        });
-        const payload = (await response.json().catch(() => null)) as {
-          devices?: unknown;
-          error?: unknown;
-          done?: unknown;
-          nextBatchStart?: unknown;
-        } | null;
-        if (!response.ok) {
-          const rawError = typeof payload?.error === 'string' && payload.error.trim() ? payload.error.trim() : '';
-          setScanError(rawError || _(msg`Network scan failed.`));
-          break;
-        }
-
-        if (Array.isArray(payload?.devices)) collectDevices(payload.devices);
-
-        if (scanAbortRef.current) break;
-        const done = payload?.done === true;
-        const nextBatchRaw = Number(payload?.nextBatchStart);
-        const nextBatchStart = Number.isFinite(nextBatchRaw) ? nextBatchRaw : batchStart;
-        if (done || nextBatchStart <= batchStart) break;
-        batchStart = nextBatchStart;
-      }
+            if (scanAbortRef.current) break;
+            const done = payload?.done === true;
+            const nextBatchRaw = Number(payload?.nextBatchStart);
+            const nextBatchStart = Number.isFinite(nextBatchRaw) ? nextBatchRaw : batchStart;
+            if (done || nextBatchStart <= batchStart) break;
+            batchStart = nextBatchStart;
+          }
+        })(),
+      ]);
 
       if (foundByAddress.size === 0) {
         setScanError(formatNoDevicesFoundMessage(_, preset.name));
@@ -264,15 +268,22 @@ export function PrinterVariantPickerModal({
       setScanError(_(msg`Network scan failed.`));
     } finally {
       setScanning(false);
+      // Whether or not the scan found anything, offer the offline fallback.
+      setShowConfigureLater(true);
     }
   }, [networkAdapter, preset.networkSupport, preset.networkFilter, preset.name, _]);
 
-  // Auto-scan once on mount (guarded by the ref so dep changes never re-trigger).
+  // If the scan has been going ~25s without a detection, offer to skip
+  // networking so the user isn't stuck waiting on a long subnet scan.
   React.useEffect(() => {
-    if (!networkAdapter || mode !== 'network' || autoScanStartedRef.current) return;
-    autoScanStartedRef.current = true;
+    const timer = window.setTimeout(() => setShowConfigureLater(true), 25000);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const handleAutoDiscovery = React.useCallback(() => {
+    setMode('scan');
     void runScan();
-  }, [networkAdapter, mode, runScan]);
+  }, [runScan]);
 
   const connectAndDetect = React.useCallback(async (hostInput: string, portInput?: number) => {
     if (!networkAdapter) return;
@@ -283,6 +294,7 @@ export function PrinterVariantPickerModal({
     // scanning bar.
     scanAbortRef.current = true;
     setScanning(false);
+    setShowConfigureLater(false);
     setBusy(true);
     setDetectError(null);
     setDetectedVariant(null);
@@ -354,6 +366,12 @@ export function PrinterVariantPickerModal({
     }
   }, [networkAdapter, preset.networkFilter, preset.modelVariantDetectPath, preset.name, preset.networkSupport, variants, _]);
 
+  const handleManualIpConnect = React.useCallback(() => {
+    const host = manualIp.trim();
+    if (!host) return;
+    void connectAndDetect(host);
+  }, [connectAndDetect, manualIp]);
+
   const handleConfirmDetected = React.useCallback(() => {
     if (!detectedVariant) return;
     onSelect(detectedVariant.presetId, pendingNetworkRef.current);
@@ -365,9 +383,8 @@ export function PrinterVariantPickerModal({
 
   const detectedAlreadyAdded = detectedVariant ? addedPresetIds.has(detectedVariant.presetId) : false;
   const connecting = busy && connectingHost != null;
-  const showNetworkMode = networkAdapter != null && mode === 'network';
+  const showNetworkMode = networkAdapter != null && mode === 'scan';
   const detectedDisplayName = detectedDeviceName?.trim() || detectedVariant?.name || '';
-  const showTabs = networkAdapter != null;
 
   return (
     <div
@@ -381,7 +398,7 @@ export function PrinterVariantPickerModal({
         style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}
         role="dialog"
         aria-modal="true"
-        aria-label="Model Selection"
+        aria-label="Initial Setup"
       >
         {/* Header */}
         <div
@@ -390,7 +407,7 @@ export function PrinterVariantPickerModal({
         >
           <div className="min-w-0">
             <h3 className="truncate text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-              {_(msg`Model Selection`)}
+              {_(msg`Initial Setup`)}
             </h3>
             <p className="ui-meta truncate">{preset.libraryDisplayName ?? preset.name}</p>
           </div>
@@ -413,28 +430,12 @@ export function PrinterVariantPickerModal({
             </p>
           ) : (
             <>
-              {showTabs && (
-                <div className="flex items-center gap-1.5 border-b pb-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                  <button
-                    type="button"
-                    onClick={() => setMode('network')}
-                    className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-xs rounded-md"
-                    style={mode === 'network' ? ACCENT_ACTION_STYLE : { color: 'var(--text-muted)' }}
-                  >
-                    {_(msg`Auto-Detect`)}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode('manual')}
-                    className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-xs rounded-md"
-                    style={mode === 'manual' ? ACCENT_ACTION_STYLE : { color: 'var(--text-muted)' }}
-                  >
-                    {_(msg`Manual`)}
-                  </button>
-                </div>
-              )}
-
-              {showNetworkMode ? (
+              {mode === 'choose' ? (
+                <SetupMethodChooser
+                  onAutoDetect={handleAutoDiscovery}
+                  onManualIp={() => setMode('ip')}
+                />
+              ) : showNetworkMode ? (
                 <div className="space-y-3">
                   {/* Status card */}
                   <div
@@ -559,6 +560,47 @@ export function PrinterVariantPickerModal({
                       {detectError}
                     </p>
                   )}
+
+                  {/* Fallback: skip networking entirely */}
+                  {!detectedVariant && !connecting && devices.length === 0 && showConfigureLater && (
+                    <div className="pt-1 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setMode('manual')}
+                        className="text-xs font-semibold underline-offset-2 hover:underline"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        {_(msg`Configure Networking Later`)}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : mode === 'ip' ? (
+                <div className="space-y-3">
+                  {detectedVariant ? (
+                    <div
+                      className="rounded-xl border px-3 py-2.5"
+                      style={{
+                        borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 55%)',
+                        background: 'color-mix(in srgb, var(--accent), var(--surface-1) 92%)',
+                      }}
+                    >
+                      <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
+                        {formatDetectedVariantLabel(_, detectedDisplayName)}
+                      </div>
+                      <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        {detectedDeviceName ? detectedVariant.name : _(msg`The printer reported this variant.`)}
+                      </div>
+                    </div>
+                  ) : (
+                    <ManualIpEntryCard
+                      value={manualIp}
+                      onChange={setManualIp}
+                      onConnect={handleManualIpConnect}
+                      isConnecting={busy}
+                    />
+                  )}
+
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -617,24 +659,30 @@ export function PrinterVariantPickerModal({
                       </button>
                     );
                   })}
+
                 </div>
               )}
             </>
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer — hidden on the method chooser; the header X handles closing. */}
+        {mode !== 'choose' && (
         <div
           className="flex shrink-0 items-center justify-between gap-3 border-t px-3 py-2"
           style={{ borderColor: 'var(--border-subtle)' }}
         >
-          <span className="min-w-0 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            {showNetworkMode
-              ? (detectedVariant
-                ? formatDetectedVariantLabel(_, detectedDisplayName)
-                : _(msg`Scan your network to detect the model.`))
-              : _(msg`Select the model your printer runs.`)}
-          </span>
+          <SetupModeButton
+            mode={mode === 'scan' ? 'auto' : 'manual'}
+            onSwitch={() => {
+              if (mode === 'scan') {
+                setMode('ip');
+              } else {
+                setMode('scan');
+                void runScan();
+              }
+            }}
+          />
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
@@ -656,6 +704,7 @@ export function PrinterVariantPickerModal({
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

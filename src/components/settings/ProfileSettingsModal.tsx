@@ -344,8 +344,6 @@ export function ProfileSettingsModal({
   const [networkScanPhaseLabel, setNetworkScanPhaseLabel] = React.useState('');
   const [isNetworkConnecting, setIsNetworkConnecting] = React.useState(false);
   const [networkConnectionMessage, setNetworkConnectionMessage] = React.useState('');
-  const [showManualNetworkEntry, setShowManualNetworkEntry] = React.useState(false);
-  const [hasAutoScannedOnOpen, setHasAutoScannedOnOpen] = React.useState(false);
   const [discoveredPrinters, setDiscoveredPrinters] = React.useState<Array<{ id: string; name: string; ipAddress: string; status: 'online' | 'reachable' }>>([]);
   const [cachedDiscoveredPrinters, setCachedDiscoveredPrinters] = React.useState<Array<{ id: string; name: string; ipAddress: string; status: 'online' | 'reachable' }>>([]);
   const [remoteMaterials, setRemoteMaterials] = React.useState<RemoteMaterialProfile[]>([]);
@@ -1866,7 +1864,6 @@ export function ProfileSettingsModal({
     setCachedDiscoveredPrinters(discoveredPrinters);
     setDiscoveredPrinters([]);
     setNetworkConnectionMessage(selectedPrinter.networkConnection?.statusText ?? '');
-    setShowManualNetworkEntry(false);
     setIsAddingNetworkPrinter((selectedPrinter.networkFleet?.length ?? 0) === 0);
   }, [discoveredPrinters, selectedPrinter]);
 
@@ -2075,15 +2072,8 @@ export function ProfileSettingsModal({
     }
   }, [effectiveNetworkUiAdapter, loadRemoteMaterials, remoteMaterialEditDraft, networkUiAdapter, selectedRemoteMaterial, selectedPrinter]);
 
-  React.useEffect(() => {
-    if (isNetworkSettingsOpen) {
-      setHasAutoScannedOnOpen(false);
-    }
-  }, [isNetworkSettingsOpen, selectedPrinter?.id]);
-
   const handleRunNetworkDiscovery = React.useCallback(async () => {
     if (!selectedPrinter) return;
-    if (!networkDiscoveryEnabled) return;
     if (!networkUiAdapter) return;
 
     if (discoveryInFlightRef.current) {
@@ -2536,7 +2526,6 @@ export function ProfileSettingsModal({
       setNetworkIpAddress(debugPrimaryIp);
       setNetworkConnectionMessage('Debug mode: seeded 2 dummy printers (Athena A + Athena B).');
       setIsAddingNetworkPrinter(false);
-      setShowManualNetworkEntry(false);
       return true;
     }
 
@@ -2643,7 +2632,6 @@ export function ProfileSettingsModal({
 
         setNetworkConnectionMessage(`Connected to ${resolvedHostName}`);
         setIsAddingNetworkPrinter(false);
-        setShowManualNetworkEntry(false);
         if (options?.closeOnSuccess) {
           setIsNetworkSettingsOpen(false);
         }
@@ -2725,7 +2713,6 @@ export function ProfileSettingsModal({
     setNetworkDiscoveryEnabled(selectedPrinter.network?.discoveryEnabled ?? true);
     setNetworkIpAddress(selectedPrinter.network?.ipAddress ?? '');
     setIsAddingNetworkPrinter((selectedPrinter.networkFleet?.length ?? 0) === 0);
-    setShowManualNetworkEntry(false);
     setIsNetworkSettingsOpen(true);
   }, [selectedPrinter]);
 
@@ -2779,30 +2766,6 @@ export function ProfileSettingsModal({
     };
     reader.readAsDataURL(file);
   }, []);
-
-  React.useEffect(() => {
-    if (!isNetworkSettingsOpen) return;
-    if (!selectedPrinterSupportsNetworkSettings) return;
-    if (!networkUiAdapter) return;
-    if (!networkDiscoveryEnabled) return;
-    if (!isAddingNetworkPrinter && managedNetworkPrinters.length > 0) return;
-    if (isNetworkScanning) return;
-    if (hasAutoScannedOnOpen) return;
-
-    setHasAutoScannedOnOpen(true);
-    void handleRunNetworkDiscovery();
-  }, [
-    handleRunNetworkDiscovery,
-    hasAutoScannedOnOpen,
-    isNetworkScanning,
-    isNetworkSettingsOpen,
-    networkDiscoveryEnabled,
-    isAddingNetworkPrinter,
-    networkUiAdapter,
-    managedNetworkPrinters.length,
-    selectedPrinter?.networkSupport,
-    selectedPrinterSupportsNetworkSettings,
-  ]);
 
   React.useEffect(() => {
     if (!isMaterialEditorOpen || !selectedMaterial) return;
@@ -3870,7 +3833,6 @@ export function ProfileSettingsModal({
                           }
                           setPrinterRailViewMode('profiles');
                           setIsAddingNetworkPrinter(true);
-                          setShowManualNetworkEntry(false);
                           setIsNetworkSettingsOpen(true);
                         }}
                         aria-label={fleetCount > 0 ? `Open fleet view (${fleetCount})` : 'Add another networked device'}
@@ -3917,7 +3879,6 @@ export function ProfileSettingsModal({
                     type="button"
                     onClick={() => {
                       setIsAddingNetworkPrinter(true);
-                      setShowManualNetworkEntry(false);
                       setIsNetworkSettingsOpen(true);
                     }}
                     className="ui-button ui-button-secondary mt-2 !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
@@ -5568,17 +5529,12 @@ export function ProfileSettingsModal({
               showAddPrinterFlow={isAddingNetworkPrinter || managedNetworkPrinters.length === 0}
               onEnterAddPrinterFlow={() => {
                 setIsAddingNetworkPrinter(true);
-                setShowManualNetworkEntry(false);
               }}
               onExitAddPrinterFlow={() => {
                 setIsAddingNetworkPrinter(false);
-                setShowManualNetworkEntry(false);
               }}
-              networkDiscoveryEnabled={networkDiscoveryEnabled}
-              onToggleDiscovery={() => setNetworkDiscoveryEnabled((prev) => !prev)}
               onRunDiscovery={() => { void handleRunNetworkDiscovery(); }}
               isNetworkScanning={isNetworkScanning}
-              networkScanProgressPct={networkScanProgressPct}
               networkScanPhaseLabel={networkScanPhaseLabel}
               discoveredPrinters={discoveredPrinters}
               isNetworkConnecting={isNetworkConnecting}
@@ -5599,8 +5555,6 @@ export function ProfileSettingsModal({
               }}
               onDisconnectManagedPrinter={handleDisconnectManagedPrinter}
               onRemoveManagedPrinter={handleRemoveManagedPrinter}
-              showManualNetworkEntry={showManualNetworkEntry}
-              onToggleManualEntry={() => setShowManualNetworkEntry((prev) => !prev)}
               networkIpAddress={networkIpAddress}
               onNetworkIpAddressChange={setNetworkIpAddress}
               onConnectManual={() => { void handleConnectNetworkPrinter(); }}
@@ -5610,13 +5564,6 @@ export function ProfileSettingsModal({
                   ? `Selected: ${activeManagedNetworkPrinter.displayName || activeManagedNetworkPrinter.ipAddress}`
                   : 'No active printer selected'}
               onClose={() => setIsNetworkSettingsOpen(false)}
-              onSave={() => {
-                updatePrinterNetworkSettings(selectedPrinter.id, {
-                  discoveryEnabled: networkDiscoveryEnabled,
-                  ipAddress: networkIpAddress.trim(),
-                });
-                setIsNetworkSettingsOpen(false);
-              }}
             />
           </div>
         )}

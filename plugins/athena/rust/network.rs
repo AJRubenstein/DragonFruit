@@ -1433,17 +1433,20 @@ async fn nanodlp_connect(payload: &Value) -> (u16, Value) {
 // mDNS / Bonjour discovery
 // ---------------------------------------------------------------------------
 
-/// Browse local mDNS services (Web/HTTP and printer) and return the `.local`
-/// hostnames of advertising devices. Printers answer a single multicast query,
-/// so this is far faster than probing every subnet address. Returns an empty
-/// list on any failure so callers degrade gracefully.
+/// Browse local mDNS Web/HTTP services and return the `.local` hostnames of
+/// advertising devices. Devices that advertise a web UI (e.g. Bonjour-enabled
+/// printers) answer a single multicast query, so this is faster than probing
+/// every subnet address when the target advertises. Returns an empty list on
+/// any failure so callers degrade gracefully.
+///
+/// Note: only `_http._tcp` is browsed. The Athena/NanoDLP printers do not
+/// advertise mDNS services (verified on-device), so this is a best-effort
+/// fast-path for other devices, never a substitute for the subnet probe.
 async fn discover_mdns_hostnames(timeout_ms: u64) -> Vec<String> {
-    use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+    use mdns_sd::{ServiceDaemon, ServiceEvent};
 
     let Ok(mdns) = ServiceDaemon::new() else { return Vec::new(); };
-    let http_result = mdns.browse("_http._tcp.local.");
-    let printer_result = mdns.browse("_printer._tcp.local.");
-    let (Ok(http_receiver), Ok(printer_receiver)) = (http_result, printer_result) else {
+    let Ok(receiver) = mdns.browse("_http._tcp.local.") else {
         drop(mdns);
         return Vec::new();
     };
@@ -1452,23 +1455,16 @@ async fn discover_mdns_hostnames(timeout_ms: u64) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
 
-    let collect = |out: &mut Vec<String>, seen: &mut HashSet<String>, info: &ServiceInfo| {
-        let host = info.get_hostname().trim_end_matches('.').to_lowercase();
-        if host.ends_with(".local") && seen.insert(host.clone()) {
-            out.push(host);
-        }
-    };
-
     while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout_at(deadline, http_receiver.recv_async()).await {
-            Ok(Ok(ServiceEvent::ServiceResolved(info))) => collect(&mut out, &mut seen, &info),
+        match tokio::time::timeout_at(deadline, receiver.recv_async()).await {
+            Ok(Ok(ServiceEvent::ServiceResolved(info))) => {
+                let host = info.get_hostname().trim_end_matches('.').to_lowercase();
+                if host.ends_with(".local") && seen.insert(host.clone()) {
+                    out.push(host);
+                }
+            }
             Ok(Ok(_)) => {}
             _ => break,
-        }
-        if let Ok(Ok(ServiceEvent::ServiceResolved(info))) =
-            tokio::time::timeout(Duration::from_millis(50), printer_receiver.recv_async()).await
-        {
-            collect(&mut out, &mut seen, &info);
         }
     }
 
