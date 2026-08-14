@@ -133,7 +133,8 @@
     },
     "hasCamera": true,
     "networkSupport": "nanodlp",
-    "networkFilter": "Athena2 12K"
+    "networkFilter": "Athena2 12K",
+    "modelVariantDetectPath": "/athena-iot/dragonfruit/printer_data"
   },
   {
     "presetId": "concepts3d-athena1-12k-nanodlp",

@@ -342,8 +342,13 @@ export function PrinterVariantPickerModal({
       }
 
       const detectedBits = Number(dataPayload?.bitdepth);
-      const matched = matchPrinterVariantByBitDepth(variants, Number.isFinite(detectedBits) ? detectedBits : null);
-      if (!matched) {
+      // Multi-variant presets resolve the concrete variant from the reported
+      // bit depth. Presets without variants (e.g. other Athena models) are
+      // "detected" as themselves — the networking setup is the point.
+      const matched = variants.length > 0
+        ? matchPrinterVariantByBitDepth(variants, Number.isFinite(detectedBits) ? detectedBits : null)
+        : null;
+      if (variants.length > 0 && !matched) {
         setDetectError(formatUnmatchedBitDepthError(_, Number.isFinite(detectedBits) ? detectedBits : null, preset.name));
         return;
       }
@@ -351,7 +356,7 @@ export function PrinterVariantPickerModal({
       const reportedPrinterName = typeof dataPayload?.printerName === 'string' && dataPayload.printerName.trim()
         ? dataPayload.printerName.trim()
         : null;
-      setDetectedVariant(matched);
+      setDetectedVariant(matched ?? preset);
       setDetectedDeviceName(reportedPrinterName);
       pendingNetworkRef.current = {
         host: resolvedHost,
@@ -424,9 +429,9 @@ export function PrinterVariantPickerModal({
 
         {/* Body */}
         <div className="custom-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-          {variants.length === 0 ? (
+          {!networkAdapter && variants.length === 0 ? (
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              {_(msg`This printer has no selectable variants.`)}
+              {_(msg`This printer has no setup options.`)}
             </p>
           ) : (
             <>
@@ -566,7 +571,13 @@ export function PrinterVariantPickerModal({
                     <div className="pt-1 text-center">
                       <button
                         type="button"
-                        onClick={() => setMode('manual')}
+                        onClick={() => {
+                          if (variants.length > 0) {
+                            setMode('manual');
+                          } else {
+                            onSelect(preset.presetId);
+                          }
+                        }}
                         className="text-xs font-semibold underline-offset-2 hover:underline"
                         style={{ color: 'var(--text-muted)' }}
                       >

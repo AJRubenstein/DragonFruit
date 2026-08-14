@@ -3328,7 +3328,9 @@ export function ProfileSettingsModal({
 
     const handleToggle = () => {
       if (isAlreadyAdded) return;
-      if (isFamilyPreset) {
+      // Variant families AND network-detect presets (e.g. Athena) open the
+      // Initial Setup flow.
+      if (isFamilyPreset || Boolean(preset.modelVariantDetectPath)) {
         setVariantChooserPreset(preset);
         return;
       }

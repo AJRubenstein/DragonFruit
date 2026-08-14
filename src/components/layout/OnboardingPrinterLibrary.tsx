@@ -122,7 +122,9 @@ export function OnboardingPrinterLibrary({ onAdded, onBack }: OnboardingPrinterL
   const handleAdd = React.useCallback(() => {
     if (!selectedPresetId) return;
     const preset = presets.find((item) => item.presetId === selectedPresetId);
-    if (preset?.modelVariants?.length) {
+    // Presets with model variants OR a network detect path (e.g. Athena, which
+    // relies on networking) go through the Initial Setup flow.
+    if (preset?.modelVariants?.length || preset?.modelVariantDetectPath) {
       setVariantChooserPreset(preset);
       return;
     }
