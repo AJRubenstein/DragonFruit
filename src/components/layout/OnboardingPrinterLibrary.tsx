@@ -174,7 +174,15 @@ export function OnboardingPrinterLibrary({ onAdded, onBack }: OnboardingPrinterL
       <button
         key={preset.presetId}
         type="button"
-        onClick={() => setSelectedPresetId(isSelected ? null : preset.presetId)}
+        onClick={() => {
+          // Match the printer library: variant families / network-detect presets
+          // (e.g. Athena II) open Initial Setup on click instead of selecting.
+          if (preset.modelVariants?.length || preset.modelVariantDetectPath) {
+            setVariantChooserPreset(preset);
+            return;
+          }
+          setSelectedPresetId(isSelected ? null : preset.presetId);
+        }}
         className="rounded-lg border p-2.5 text-left transition-[background-color,box-shadow] duration-150"
         style={{
           borderColor: 'var(--border-subtle)',

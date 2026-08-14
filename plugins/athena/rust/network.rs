@@ -811,6 +811,81 @@ fn build_ip_candidates_from_prefixes(prefixes: &[String]) -> Vec<String> {
     all
 }
 
+/// Best-effort extract of an IPv4 address from an `arp` output token, which may
+/// be wrapped in parentheses on some platforms.
+fn looks_like_ipv4(token: &str) -> Option<String> {
+    let cleaned: String = token
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    if is_plain_ipv4(&cleaned) {
+        Some(cleaned)
+    } else {
+        None
+    }
+}
+
+fn looks_like_mac(token: &str) -> bool {
+    let sep = if token.contains('-') { '-' } else { ':' };
+    let parts: Vec<&str> = token.split(sep).collect();
+    parts.len() == 6
+        && parts
+            .iter()
+            .all(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// Read the OS ARP/neighbour table and return the IPv4 addresses of hosts known
+/// to be alive on the LAN. Used to prioritize probing so a likely printer is
+/// found in the earliest subnet batches. Returns an empty set on any failure so
+/// callers degrade to a full scan.
+fn discover_live_ipv4_hosts() -> HashSet<String> {
+    let mut hosts = HashSet::new();
+
+    // Linux: /proc/net/arp is a stable, locale-independent source.
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(contents) = std::fs::read_to_string("/proc/net/arp") {
+            for line in contents.lines() {
+                let fields: Vec<&str> = line.split_whitespace().collect();
+                // Flags "0x2" marks a complete (reachable) entry.
+                if fields.len() >= 3 && is_plain_ipv4(fields[0]) && fields[2] == "0x2" {
+                    hosts.insert(fields[0].to_string());
+                }
+            }
+        }
+    }
+
+    // Windows / macOS: parse `arp -a` — lines with both an IPv4 and a MAC.
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        if let Ok(output) = std::process::Command::new("arp").arg("-a").output() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                let mut ipv4: Option<String> = None;
+                let mut has_mac = false;
+                for token in line.split_whitespace() {
+                    if ipv4.is_none() {
+                        if let Some(ip) = looks_like_ipv4(token) {
+                            ipv4 = Some(ip);
+                            continue;
+                        }
+                    }
+                    if !has_mac && looks_like_mac(token) {
+                        has_mac = true;
+                    }
+                }
+                if let Some(ip) = ipv4 {
+                    if has_mac {
+                        hosts.insert(ip);
+                    }
+                }
+            }
+        }
+    }
+
+    hosts
+}
+
 // ---------------------------------------------------------------------------
 // Probing
 // ---------------------------------------------------------------------------
@@ -1443,33 +1518,49 @@ async fn nanodlp_connect(payload: &Value) -> (u16, Value) {
 /// advertise mDNS services (verified on-device), so this is a best-effort
 /// fast-path for other devices, never a substitute for the subnet probe.
 async fn discover_mdns_hostnames(timeout_ms: u64) -> Vec<String> {
-    use mdns_sd::{ServiceDaemon, ServiceEvent};
+    // Run the whole browse lifecycle on a blocking thread so it always runs to
+    // completion (stop_browse + shutdown) even if the tokio caller is cancelled.
+    // Dropping the browse receiver while the mdns-sd daemon thread is still
+    // re-announcing SearchStarted logs a scary "sending on a closed channel"
+    // error — shutting the daemon down before the receiver drops avoids that.
+    tokio::task::spawn_blocking(move || {
+        use mdns_sd::{ServiceDaemon, ServiceEvent};
 
-    let Ok(mdns) = ServiceDaemon::new() else { return Vec::new(); };
-    let Ok(receiver) = mdns.browse("_http._tcp.local.") else {
-        drop(mdns);
-        return Vec::new();
-    };
+        let Ok(mdns) = ServiceDaemon::new() else { return Vec::new(); };
+        let Ok(receiver) = mdns.browse("_http._tcp.local.") else {
+            drop(mdns);
+            return Vec::new();
+        };
 
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms.min(4000));
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms.min(4000));
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
 
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout_at(deadline, receiver.recv_async()).await {
-            Ok(Ok(ServiceEvent::ServiceResolved(info))) => {
-                let host = info.get_hostname().trim_end_matches('.').to_lowercase();
-                if host.ends_with(".local") && seen.insert(host.clone()) {
-                    out.push(host);
+        while std::time::Instant::now() < deadline {
+            match receiver.recv_timeout(Duration::from_millis(75)) {
+                Ok(ServiceEvent::ServiceResolved(info)) => {
+                    let host = info.get_hostname().trim_end_matches('.').to_lowercase();
+                    if host.ends_with(".local") && seen.insert(host.clone()) {
+                        out.push(host);
+                    }
                 }
+                Ok(_) => {}
+                Err(_) => break,
             }
-            Ok(Ok(_)) => {}
-            _ => break,
         }
-    }
 
-    drop(mdns);
-    out
+        // Stop the browse first so the daemon stops re-announcing SearchStarted
+        // to the receiver, then wait for the daemon thread to fully stop before
+        // the receiver drops.
+        let _ = mdns.stop_browse("_http._tcp.local.");
+        if let Ok(status) = mdns.shutdown() {
+            let _ = status.recv_timeout(Duration::from_secs(2));
+        }
+
+        out
+    })
+    .await
+    .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -1612,6 +1703,19 @@ async fn nanodlp_discover(payload: &Value) -> (u16, Value) {
         if !seed_prefixes.is_empty() {
             let prefixes: Vec<String> = seed_prefixes.into_iter().collect();
             subnet_host_candidates = build_ip_candidates_from_prefixes(&prefixes);
+        }
+    }
+
+    // Prioritize ARP-known live hosts so a likely printer is probed first and
+    // shows up in the earliest batches. The remaining hosts are still probed
+    // (full scan), so nothing is missed — this only reorders discovery.
+    if scan_scope == "all" || scan_scope == "subnet" {
+        let live_hosts = discover_live_ipv4_hosts();
+        if !live_hosts.is_empty() {
+            let (live, rest): (Vec<String>, Vec<String>) = subnet_host_candidates
+                .into_iter()
+                .partition(|ip| live_hosts.contains(ip));
+            subnet_host_candidates = [live, rest].concat();
         }
     }
 
