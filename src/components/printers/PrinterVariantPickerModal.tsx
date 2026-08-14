@@ -251,6 +251,10 @@ export function PrinterVariantPickerModal({
 
             if (Array.isArray(payload?.devices)) collectDevices(payload.devices);
 
+            // ARP priority puts the likely printer in the first batch — stop
+            // scanning once a matching device is found so discovery completes
+            // in a couple of seconds instead of a full subnet sweep.
+            if (foundByAddress.size > 0) break;
             if (scanAbortRef.current) break;
             const done = payload?.done === true;
             const nextBatchRaw = Number(payload?.nextBatchStart);

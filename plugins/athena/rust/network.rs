@@ -1646,7 +1646,7 @@ async fn nanodlp_discover(payload: &Value) -> (u16, Value) {
     // "negotiator-gourd.local"). Browsing them avoids the slow per-address
     // subnet probe entirely when the printer is on the LAN.
     if scan_scope == "all" || scan_scope == "local-hostnames" {
-        for host in discover_mdns_hostnames(2500).await {
+        for host in discover_mdns_hostnames(1200).await {
             let normalized = host.trim_end_matches('.').to_lowercase();
             if normalized.ends_with(".local") && local_seen.insert(normalized.clone()) {
                 local_host_candidates.push(normalized);
