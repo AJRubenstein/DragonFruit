@@ -6,10 +6,29 @@ import { msg } from '@lingui/core/macro';
 import { Check, ChevronLeft, ImagePlus, Plus, Printer, Search } from 'lucide-react';
 import {
   addPrinterProfileFromPreset,
-  getAvailablePrinterPresets,
+  getLibraryPrinterPresets,
+  getPrinterPresetVariants,
+  getProfileStoreServerSnapshot,
+  getProfileStoreSnapshot,
   setActivePrinterProfile,
+  subscribeToProfileStore,
+  upsertPrinterNetworkDevice,
 } from '@/features/profiles/profileStore';
-import type { PrinterPreset } from '@/features/profiles/profileStore';
+import type { PrinterNetworkSupport, PrinterPreset, PrinterProfile } from '@/features/profiles/profileStore';
+import {
+  PrinterVariantPickerModal,
+  type PrinterVariantPickerNetworkContext,
+} from '@/components/printers/PrinterVariantPickerModal';
+
+function resolveOfficialPresetIdFromProfile(profile: PrinterProfile): string | null {
+  if (profile.officialPresetId && profile.officialPresetId.trim().length > 0) {
+    return profile.officialPresetId.trim();
+  }
+  if (typeof profile.id === 'string' && profile.id.startsWith('printer-default-')) {
+    return profile.id.slice('printer-default-'.length);
+  }
+  return null;
+}
 
 type OnboardingPrinterLibraryProps = {
   /** Called after a preset is added and activated — the wizard then closes. */
@@ -22,10 +41,30 @@ type OnboardingPrinterLibraryProps = {
 // sidebar + right grouped preset grid, single-select for the onboarding flow.
 export function OnboardingPrinterLibrary({ onAdded, onBack }: OnboardingPrinterLibraryProps) {
   const { _ } = useLingui();
-  const presets = React.useMemo(() => getAvailablePrinterPresets(), []);
+  const presets = React.useMemo(() => getLibraryPrinterPresets(), []);
   const [search, setSearch] = React.useState('');
   const [selectedManufacturer, setSelectedManufacturer] = React.useState<string | null>(null);
   const [selectedPresetId, setSelectedPresetId] = React.useState<string | null>(null);
+  const [variantChooserPreset, setVariantChooserPreset] = React.useState<PrinterPreset | null>(null);
+
+  const profileState = React.useSyncExternalStore(
+    subscribeToProfileStore,
+    getProfileStoreSnapshot,
+    getProfileStoreServerSnapshot,
+  );
+  const addedOfficialPresetIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    profileState.printerProfiles.forEach((profile) => {
+      const presetId = resolveOfficialPresetIdFromProfile(profile);
+      if (presetId) ids.add(presetId);
+    });
+    return ids;
+  }, [profileState.printerProfiles]);
+
+  const variantChooserVariants = React.useMemo(
+    () => (variantChooserPreset ? getPrinterPresetVariants(variantChooserPreset.presetId) : []),
+    [variantChooserPreset],
+  );
 
   const manufacturers = React.useMemo(() => {
     const uniq = new Set(presets.map((preset) => preset.manufacturer));
@@ -82,10 +121,40 @@ export function OnboardingPrinterLibrary({ onAdded, onBack }: OnboardingPrinterL
 
   const handleAdd = React.useCallback(() => {
     if (!selectedPresetId) return;
+    const preset = presets.find((item) => item.presetId === selectedPresetId);
+    if (preset?.modelVariants?.length) {
+      setVariantChooserPreset(preset);
+      return;
+    }
     const newProfileId = addPrinterProfileFromPreset(selectedPresetId);
     setActivePrinterProfile(newProfileId);
     onAdded();
-  }, [selectedPresetId, onAdded]);
+  }, [presets, selectedPresetId, onAdded]);
+
+  const handleSelectVariant = React.useCallback((
+    variantPresetId: string,
+    networkContext?: PrinterVariantPickerNetworkContext,
+  ) => {
+    const newProfileId = addPrinterProfileFromPreset(variantPresetId);
+    if (networkContext) {
+      // The dialog already verified connectivity, so persist the device as
+      // connected so the printer is ready to go.
+      const displayName = networkContext.printerName?.trim() || networkContext.host;
+      upsertPrinterNetworkDevice(newProfileId, {
+        ipAddress: networkContext.host,
+        port: networkContext.port ?? 80,
+        connected: true,
+        mode: networkContext.mode as PrinterNetworkSupport | undefined,
+        hostName: displayName,
+        lastCheckedAt: new Date().toISOString(),
+        statusText: 'Connected',
+        displayName,
+      }, { select: true });
+    }
+    setActivePrinterProfile(newProfileId);
+    setVariantChooserPreset(null);
+    onAdded();
+  }, [onAdded]);
 
   const renderCard = (preset: PrinterPreset) => {
     const isSelected = selectedPresetId === preset.presetId;
@@ -174,7 +243,7 @@ export function OnboardingPrinterLibrary({ onAdded, onBack }: OnboardingPrinterL
         </div>
         <div className="mt-2.5 min-w-0">
           <div className="truncate text-[12px] font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-            {preset.name}
+            {preset.libraryDisplayName ?? preset.name}
           </div>
           <div className="mt-0.5 truncate text-xs" style={{ color: 'var(--text-muted)' }}>
             {preset.manufacturer}
@@ -311,7 +380,7 @@ export function OnboardingPrinterLibrary({ onAdded, onBack }: OnboardingPrinterL
         style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), transparent 8%)' }}
       >
         <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-          {selectedPreset ? selectedPreset.name : _(msg`Choose a printer to add`)}
+          {selectedPreset ? (selectedPreset.libraryDisplayName ?? selectedPreset.name) : _(msg`Choose a printer to add`)}
         </span>
         <button
           type="button"
@@ -334,6 +403,16 @@ export function OnboardingPrinterLibrary({ onAdded, onBack }: OnboardingPrinterL
           {_(msg`Add printer`)}
         </button>
       </div>
+
+      {variantChooserPreset && (
+        <PrinterVariantPickerModal
+          preset={variantChooserPreset}
+          variants={variantChooserVariants}
+          addedPresetIds={addedOfficialPresetIds}
+          onSelect={handleSelectVariant}
+          onClose={() => setVariantChooserPreset(null)}
+        />
+      )}
     </div>
   );
 }

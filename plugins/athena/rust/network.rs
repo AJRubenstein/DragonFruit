@@ -532,6 +532,38 @@ async fn fetch_nanodlp_machine_name(host: &str, port: u16, timeout_ms: u64) -> O
     Some(name.to_string())
 }
 
+/// Best-effort fetch of the Athena `printer_data` endpoint, which reports the
+/// printer's own friendly name (e.g. "Negotiator-Gourd"), bit depth, and screen
+/// metadata. Returns `None` on any failure so callers degrade gracefully.
+async fn fetch_nanodlp_printer_data(host: &str, port: u16, timeout_ms: u64) -> Option<Value> {
+    let url = format!("{}/athena-iot/dragonfruit/printer_data", build_base_url(host, port));
+    let resp = http_client()
+        .get(&url)
+        .header("Accept", "application/json")
+        .timeout(Duration::from_millis(timeout_ms.clamp(1000, 5000)))
+        .send()
+        .await
+        .ok()?;
+    if resp.status().as_u16() != 200 {
+        return None;
+    }
+    resp.json().await.ok()
+}
+
+/// Prefer the friendly `printerName` reported by `printer_data` over the generic
+/// name from `/status`, falling back to the status-derived name.
+async fn resolve_friendly_printer_name(host: &str, port: u16, timeout_ms: u64, status_name: String) -> String {
+    match fetch_nanodlp_printer_data(host, port, timeout_ms).await {
+        Some(data) => data
+            .get("printerName")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(status_name),
+        None => status_name,
+    }
+}
+
 async fn resolve_requested_network_filter(payload: &Value) -> Option<String> {
     let explicit = payload
         .get("networkFilter")
@@ -787,7 +819,7 @@ async fn probe_nanodlp(host: &str, port: u16, timeout_ms: u64) -> Option<Value> 
     let status = fetch_nanodlp_status(host, port, timeout_ms).await?;
     resolve_supported_athena_model(&status)?;
     let hostname = resolve_status_hostname(&status);
-    let printer_name = resolve_printer_name(&status);
+    let printer_name = resolve_friendly_printer_name(host, port, timeout_ms, resolve_printer_name(&status)).await;
     let printer_model = resolve_printer_model(&status);
     let resolved_address = resolve_address(&status, host);
     let status_text = status
@@ -1214,7 +1246,7 @@ async fn nanodlp_connect(payload: &Value) -> (u16, Value) {
         Some(status) => {
             let supported_model = resolve_supported_athena_model(&status);
             let hostname = resolve_status_hostname(&status);
-            let printer_name = resolve_printer_name(&status);
+            let printer_name = resolve_friendly_printer_name(&parsed.0, port, 3500, resolve_printer_name(&status)).await;
             let printer_model = resolve_printer_model(&status);
             let resolved = resolve_address(&status, &parsed.0);
             let status_text = status
@@ -1398,6 +1430,53 @@ async fn nanodlp_connect(payload: &Value) -> (u16, Value) {
 }
 
 // ---------------------------------------------------------------------------
+// mDNS / Bonjour discovery
+// ---------------------------------------------------------------------------
+
+/// Browse local mDNS services (Web/HTTP and printer) and return the `.local`
+/// hostnames of advertising devices. Printers answer a single multicast query,
+/// so this is far faster than probing every subnet address. Returns an empty
+/// list on any failure so callers degrade gracefully.
+async fn discover_mdns_hostnames(timeout_ms: u64) -> Vec<String> {
+    use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+
+    let Ok(mdns) = ServiceDaemon::new() else { return Vec::new(); };
+    let http_result = mdns.browse("_http._tcp.local.");
+    let printer_result = mdns.browse("_printer._tcp.local.");
+    let (Ok(http_receiver), Ok(printer_receiver)) = (http_result, printer_result) else {
+        drop(mdns);
+        return Vec::new();
+    };
+
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms.min(4000));
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+
+    let collect = |out: &mut Vec<String>, seen: &mut HashSet<String>, info: &ServiceInfo| {
+        let host = info.get_hostname().trim_end_matches('.').to_lowercase();
+        if host.ends_with(".local") && seen.insert(host.clone()) {
+            out.push(host);
+        }
+    };
+
+    while tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout_at(deadline, http_receiver.recv_async()).await {
+            Ok(Ok(ServiceEvent::ServiceResolved(info))) => collect(&mut out, &mut seen, &info),
+            Ok(Ok(_)) => {}
+            _ => break,
+        }
+        if let Ok(Ok(ServiceEvent::ServiceResolved(info))) =
+            tokio::time::timeout(Duration::from_millis(50), printer_receiver.recv_async()).await
+        {
+            collect(&mut out, &mut seen, &info);
+        }
+    }
+
+    drop(mdns);
+    out
+}
+
+// ---------------------------------------------------------------------------
 // NanoDLP: discover
 // ---------------------------------------------------------------------------
 
@@ -1474,6 +1553,17 @@ async fn nanodlp_discover(payload: &Value) -> (u16, Value) {
         let s = h.to_string();
         if local_seen.insert(s.clone()) {
             local_host_candidates.push(s);
+        }
+    }
+    // Athena printers advertise Bonjour/mDNS `.local` names (e.g.
+    // "negotiator-gourd.local"). Browsing them avoids the slow per-address
+    // subnet probe entirely when the printer is on the LAN.
+    if scan_scope == "all" || scan_scope == "local-hostnames" {
+        for host in discover_mdns_hostnames(2500).await {
+            let normalized = host.trim_end_matches('.').to_lowercase();
+            if normalized.ends_with(".local") && local_seen.insert(normalized.clone()) {
+                local_host_candidates.push(normalized);
+            }
         }
     }
     local_host_candidates.truncate(24);
@@ -3073,6 +3163,109 @@ async fn nanodlp_printer_webcam_info(payload: &Value) -> (u16, Value) {
 }
 
 // ---------------------------------------------------------------------------
+// NanoDLP: printer data (model variant detection)
+// ---------------------------------------------------------------------------
+
+async fn nanodlp_printer_data(payload: &Value) -> (u16, Value) {
+    let raw_host = resolve_raw_host(payload);
+    let parsed = match parse_host_and_port(&raw_host) {
+        Some(p) => p,
+        None => return (400, json!({ "ok": false, "error": "Invalid host or IP address" })),
+    };
+    let port = resolve_port(payload.get("port"), parsed.1);
+    let path_raw = payload
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let detect_path = if path_raw.is_empty() {
+        "/athena-iot/dragonfruit/printer_data".to_string()
+    } else if path_raw.starts_with('/') {
+        path_raw
+    } else {
+        format!("/{path_raw}")
+    };
+    let endpoint = format!(
+        "{}{}",
+        build_base_url(&parsed.0, port).trim_end_matches('/'),
+        detect_path
+    );
+
+    let result: Result<Value, String> = async {
+        let resp = http_client()
+            .get(&endpoint)
+            .header("Accept", "application/json")
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if resp.status().as_u16() != 200 {
+            return Ok(json!({
+                "ok": false,
+                "ipAddress": parsed.0,
+                "port": port,
+                "error": format!("HTTP {}", resp.status()),
+            }));
+        }
+
+        let decoded: Value = resp.json().await.map_err(|e| e.to_string())?;
+        let obj = match decoded.as_object() {
+            Some(o) => o,
+            None => return Ok(json!({
+                "ok": false,
+                "ipAddress": parsed.0,
+                "port": port,
+                "error": "Invalid printer data payload",
+            })),
+        };
+
+        let as_number = |v: Option<&Value>| -> Option<f64> {
+            match v {
+                Some(Value::Number(n)) => n.as_f64(),
+                Some(Value::String(s)) => s.trim().parse::<f64>().ok(),
+                _ => None,
+            }
+        };
+        let xy = |prefix: &str| -> Option<Value> {
+            obj.get(prefix).and_then(|v| v.as_object()).map(|sub| {
+                json!({
+                    "x": as_number(sub.get("X")).or_else(|| as_number(sub.get("x"))),
+                    "y": as_number(sub.get("Y")).or_else(|| as_number(sub.get("y"))),
+                })
+            })
+        };
+
+        Ok(json!({
+            "ok": true,
+            "ipAddress": parsed.0,
+            "port": port,
+            "bitdepth": as_number(obj.get("bitdepth")),
+            "machineType": obj.get("machineType").and_then(|v| v.as_str()),
+            "screentype": obj.get("screentype").and_then(|v| v.as_str()),
+            "printerName": obj.get("printerName").and_then(|v| v.as_str()),
+            "pixelsize": xy("pixelsize"),
+            "resolution": xy("resolution"),
+        }))
+    }
+    .await;
+
+    match result {
+        Ok(body) => (200, body),
+        Err(message) => (
+            200,
+            json!({
+                "ok": false,
+                "ipAddress": parsed.0,
+                "port": port,
+                "error": message,
+            }),
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
 
@@ -3098,6 +3291,7 @@ async fn handle_athena_network(operation: &str, payload: &Value) -> (u16, Value)
         "printer/force-stop" | "printer/emergency-stop" => nanodlp_printer_emergency_stop(payload).await,
         "printer/status" => nanodlp_printer_status(payload).await,
         "printer/webcam/info" => nanodlp_printer_webcam_info(payload).await,
+        "printerData" => nanodlp_printer_data(payload).await,
         _ => (
             404,
             json!({ "error": format!("Unknown Athena NanoDLP operation: {normalized_operation}") }),

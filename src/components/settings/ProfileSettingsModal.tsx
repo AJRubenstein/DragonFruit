@@ -7,6 +7,10 @@ import { NumberInput } from '@/components/ui/NumberInput';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import {
+  PrinterVariantPickerModal,
+  type PrinterVariantPickerNetworkContext,
+} from '@/components/printers/PrinterVariantPickerModal';
+import {
   applyOfficialMaterialProfileUpdate,
   applyOfficialPrinterProfileUpdate,
   DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS,
@@ -16,6 +20,8 @@ import {
   duplicatePrinterProfileAsCustom,
   getActivePrinterProfile,
   getAvailablePrinterPresets,
+  getLibraryPrinterPresets,
+  getPrinterPresetVariants,
   getOfficialMaterialProfileUpdates,
   getOfficialPrinterProfileUpdates,
   getMaterialProfilesForPrinter,
@@ -37,7 +43,9 @@ import {
   updatePrinterProfile,
   type MaterialProfile,
   type PrinterNetworkDevice,
+  type PrinterNetworkSupport,
   type PrinterOutputFormat,
+  type PrinterPreset,
   type PrinterProfile,
 } from '@/features/profiles/profileStore';
 import {
@@ -393,6 +401,7 @@ export function ProfileSettingsModal({
   const [presetSearch, setPresetSearch] = React.useState('');
   const [selectedPresetManufacturer, setSelectedPresetManufacturer] = React.useState<string>('');
   const [selectedLibraryPresetIds, setSelectedLibraryPresetIds] = React.useState<Set<string>>(new Set());
+  const [variantChooserPreset, setVariantChooserPreset] = React.useState<PrinterPreset | null>(null);
   const [selectedLibraryMaterialKeys, setSelectedLibraryMaterialKeys] = React.useState<Set<string>>(new Set());
   const [manualBuildDimensionsByPrinterId, setManualBuildDimensionsByPrinterId] = React.useState<Record<string, ManualBuildDimensions>>({});
   const [printerRailViewMode, setPrinterRailViewMode] = React.useState<PrinterRailViewMode>('profiles');
@@ -459,6 +468,13 @@ export function ProfileSettingsModal({
   }, []);
 
   const availablePrinterPresets = React.useMemo(() => getAvailablePrinterPresets(), [profileState]);
+  // Library grid shows family presets only; hidden variants remain available
+  // for the networkFilter-hint resolution above via `availablePrinterPresets`.
+  const libraryPrinterPresets = React.useMemo(() => getLibraryPrinterPresets(), [profileState]);
+  const variantChooserVariants = React.useMemo(
+    () => (variantChooserPreset ? getPrinterPresetVariants(variantChooserPreset.presetId) : []),
+    [variantChooserPreset],
+  );
   const officialPrinterUpdates = React.useMemo(() => getOfficialPrinterProfileUpdates(profileState), [profileState]);
   const officialPrinterUpdateIds = React.useMemo(
     () => new Set(officialPrinterUpdates.map((update) => update.printerProfileId)),
@@ -467,17 +483,17 @@ export function ProfileSettingsModal({
   const officialMaterialUpdates = React.useMemo(() => getOfficialMaterialProfileUpdates(profileState), [profileState]);
 
   const presetManufacturers = React.useMemo(() => {
-    const uniq = new Set(availablePrinterPresets.map((preset) => preset.manufacturer));
+    const uniq = new Set(libraryPrinterPresets.map((preset) => preset.manufacturer));
     const sorted = Array.from(uniq)
       .filter(m => m.toLowerCase() !== 'generic')
       .sort((a, b) => a.localeCompare(b));
     const generic = Array.from(uniq).filter(m => m.toLowerCase() === 'generic');
     return [...sorted, ...generic];
-  }, [availablePrinterPresets]);
+  }, [libraryPrinterPresets]);
 
   const filteredPrinterPresets = React.useMemo(() => {
     const search = presetSearch.trim().toLowerCase();
-    return availablePrinterPresets.filter((preset) => {
+    return libraryPrinterPresets.filter((preset) => {
       const manufacturerMatch = search.length > 0 || preset.manufacturer === selectedPresetManufacturer;
       const searchMatch =
         search.length === 0
@@ -486,7 +502,7 @@ export function ProfileSettingsModal({
         || (preset.family ?? '').toLowerCase().includes(search);
       return manufacturerMatch && searchMatch;
     });
-  }, [availablePrinterPresets, presetSearch, selectedPresetManufacturer]);
+  }, [libraryPrinterPresets, presetSearch, selectedPresetManufacturer]);
 
   const isSearching = presetSearch.trim().length > 0;
 
@@ -1753,6 +1769,11 @@ export function ProfileSettingsModal({
         return true;
       }
 
+      if (variantChooserPreset) {
+        setVariantChooserPreset(null);
+        return true;
+      }
+
       if (showPresetPicker) {
         setShowPresetPicker(false);
         return true;
@@ -1811,6 +1832,7 @@ export function ProfileSettingsModal({
     showOfficialMaterialLockDialog,
     showPresetPicker,
     showPrinterUpdateDiffModal,
+    variantChooserPreset,
   ]);
 
   React.useEffect(() => {
@@ -2866,6 +2888,42 @@ export function ProfileSettingsModal({
     if (presetManufacturers.length > 0) setSelectedPresetManufacturer(presetManufacturers[0]);
   }, [selectedLibraryPresetIds, handlePickPrinter, presetManufacturers]);
 
+  const handleResolveVariant = React.useCallback((
+    variantPresetId: string,
+    networkContext?: PrinterVariantPickerNetworkContext,
+  ) => {
+    if (networkContext) {
+      // Network-resolved: create the profile immediately, connected and ready.
+      const newId = addPrinterProfileFromPreset(variantPresetId);
+      const displayName = networkContext.printerName?.trim() || networkContext.host;
+      upsertPrinterNetworkDevice(newId, {
+        ipAddress: networkContext.host,
+        port: networkContext.port ?? 80,
+        connected: true,
+        mode: networkContext.mode as PrinterNetworkSupport | undefined,
+        hostName: displayName,
+        lastCheckedAt: new Date().toISOString(),
+        statusText: 'Connected',
+        displayName,
+      }, { select: true });
+      handlePickPrinter(newId);
+      setVariantChooserPreset(null);
+      setShowPresetPicker(false);
+      setPresetSearch('');
+      setSelectedLibraryPresetIds(new Set());
+      if (presetManufacturers.length > 0) setSelectedPresetManufacturer(presetManufacturers[0]);
+      return;
+    }
+    // Manual-resolved: join the pending multi-select set (added on "Add").
+    setSelectedLibraryPresetIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(variantPresetId)) next.delete(variantPresetId);
+      else next.add(variantPresetId);
+      return next;
+    });
+    setVariantChooserPreset(null);
+  }, [handlePickPrinter, presetManufacturers]);
+
   const requestDeleteSelectedPrinter = React.useCallback(() => {
     if (!selectedPrinter) return;
     setDeleteConfirmTarget({ kind: 'printer', id: selectedPrinter.id, name: selectedPrinter.name });
@@ -3285,8 +3343,14 @@ export function ProfileSettingsModal({
   }, [printerMaterials.length, selectedPrinter, selectedResolvedSettingsMode]);
 
   const renderPresetLibraryCard = React.useCallback((preset: (typeof availablePrinterPresets)[number]) => {
-    const isAlreadyAdded = addedOfficialPresetIds.has(preset.presetId);
-    const isSelected = selectedLibraryPresetIds.has(preset.presetId);
+    const variantIds = preset.modelVariants ?? [];
+    const isFamilyPreset = variantIds.length > 0;
+    const isAlreadyAdded = isFamilyPreset
+      ? variantIds.every((id) => addedOfficialPresetIds.has(id))
+      : addedOfficialPresetIds.has(preset.presetId);
+    const isSelected = isFamilyPreset
+      ? variantIds.some((id) => selectedLibraryPresetIds.has(id))
+      : selectedLibraryPresetIds.has(preset.presetId);
     const isGenericPreset = preset.manufacturer.toLowerCase() === 'generic'
       || preset.name.toLowerCase().includes('generic');
     const platformBadge = preset.platformBadge?.text?.trim()
@@ -3301,6 +3365,10 @@ export function ProfileSettingsModal({
 
     const handleToggle = () => {
       if (isAlreadyAdded) return;
+      if (isFamilyPreset) {
+        setVariantChooserPreset(preset);
+        return;
+      }
       setSelectedLibraryPresetIds((prev) => {
         const next = new Set(prev);
         if (next.has(preset.presetId)) next.delete(preset.presetId);
@@ -3389,7 +3457,7 @@ export function ProfileSettingsModal({
         </div>
         <div className="mt-2.5 min-w-0">
           <div className="truncate text-[12px] font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-            {preset.name}
+            {preset.libraryDisplayName ?? preset.name}
           </div>
           <div className="mt-0.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
             <div className="min-w-0 truncate text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -4687,6 +4755,16 @@ export function ProfileSettingsModal({
               </div>
             </div>
           </div>
+        )}
+
+        {variantChooserPreset && (
+          <PrinterVariantPickerModal
+            preset={variantChooserPreset}
+            variants={variantChooserVariants}
+            addedPresetIds={addedOfficialPresetIds}
+            onSelect={handleResolveVariant}
+            onClose={() => setVariantChooserPreset(null)}
+          />
         )}
 
         {isMaterialEditorOpen && selectedMaterial && (

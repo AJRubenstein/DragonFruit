@@ -30,6 +30,7 @@ rayon = "1.10"
 zip = "2"
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
 if-addrs = "0.10"
+mdns-sd = "0.11"
 tungstenite = "0.24"
 base64 = "0.22"
 sha2 = "0.10"
