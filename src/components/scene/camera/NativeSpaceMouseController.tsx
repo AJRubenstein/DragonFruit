@@ -205,23 +205,27 @@ export function NativeSpaceMouseController({
 
       // ── Ortho + forced-perspective lie ──
       // navlib thinks it's driving a perspective camera, so its "zoom" dollies the
-      // eye FORWARD (a no-op for ortho). Split navlib's per-frame motion into the
-      // in-plane part (pan/orbit — apply as-is) and the forward-dolly part (convert
-      // to camera.zoom). Work in navlib-frame INCREMENTS (navPos_now − navPrevPos)
-      // rather than the gap to our camera, because our camera never receives the
-      // forward dolly and would otherwise diverge, compounding into runaway zoom.
+      // eye FORWARD. We apply navlib's ABSOLUTE eye pose (position + orientation)
+      // straight from the affine: for ortho the eye's distance along the view axis
+      // is invisible (near/far span ±50000), so letting it dolly costs nothing, and
+      // absolute position means the camera lands exactly where navlib frames it —
+      // crucial for the pre-defined view (preset) commands, which reposition the eye
+      // in one big reorientation that per-frame delta integration used to smear
+      // across a rotating frame (→ presets landing in random places).
+      //
+      // The only thing that needs translating for ortho is the "zoom": we still read
+      // navlib's per-frame forward increment (navPos_now − navPos_prev)·fwd and turn
+      // it into camera.zoom below. Because camera.position tracks navPos exactly, the
+      // increment can't diverge, so there is no runaway.
       m.decompose(tmpPos.current, tmpQuat.current, tmpScale.current);
       const fwd = tmpDir.current.set(0, 0, -1).applyQuaternion(tmpQuat.current).normalize();
       let dolly = 0;
       if (navHasPrevRef.current) {
-        // Full per-frame delta from navlib, split into forward (dolly) + lateral.
-        tmpPan.current.copy(tmpPos.current).sub(navPrevPosRef.current);
-        dolly = tmpPan.current.dot(fwd);
-        tmpPan.current.addScaledVector(fwd, -dolly); // lateral pan/orbit increment
-        camera.position.add(tmpPan.current);
+        dolly = tmpPan.current.copy(tmpPos.current).sub(navPrevPosRef.current).dot(fwd);
       }
       navPrevPosRef.current.copy(tmpPos.current);
       navHasPrevRef.current = true;
+      camera.position.copy(tmpPos.current);
       camera.quaternion.copy(tmpQuat.current);
       camera.up.set(affine[4], affine[5], affine[6]).normalize();
 
@@ -367,34 +371,18 @@ export function NativeSpaceMouseController({
     const box = modelBoxRef.current;
     const extents = computeOrthoExtents();
 
-    // navlib frames its pre-defined view commands (the SpaceMouse Top/Front/Right…
-    // buttons) on the CENTRE of `model.extents`. Re-centre the reported box on the
-    // build-plate centre so those presets land on the plate centre, expanding it
-    // symmetrically about that centre so the real model still fits inside the box
-    // (stays fully visible — we only move where the box is centred, not drop it).
-    let modelMin: [number, number, number] = [box.min.x, box.min.y, box.min.z];
-    let modelMax: [number, number, number] = [box.max.x, box.max.y, box.max.z];
-    const plate = fallbackPivot;
-    if (plate) {
-      const hx = Math.max(Math.abs(box.max.x - plate.x), Math.abs(plate.x - box.min.x));
-      const hy = Math.max(Math.abs(box.max.y - plate.y), Math.abs(plate.y - box.min.y));
-      const hz = Math.max(Math.abs(box.max.z - plate.z), Math.abs(plate.z - box.min.z));
-      modelMin = [plate.x - hx, plate.y - hy, plate.z - hz];
-      modelMax = [plate.x + hx, plate.y + hy, plate.z + hz];
-    }
-
     return {
       affine: Array.from(camera.matrixWorld.elements),
       fov,
       focusDistance: focusDistanceForNav,
       perspective: reportPerspective,
       target: [target.x, target.y, target.z],
-      modelMin,
-      modelMax,
+      modelMin: [box.min.x, box.min.y, box.min.z],
+      modelMax: [box.max.x, box.max.y, box.max.z],
       orthoMin: extents.min,
       orthoMax: extents.max,
     };
-  }, [camera, computeOrthoExtents, fallbackPivot, getTarget, refreshModelExtents]);
+  }, [camera, computeOrthoExtents, getTarget, refreshModelExtents]);
 
   useFrame(() => {
     if (!getNativeSpaceMouseActive() || !settings.enabled) return;
