@@ -839,6 +839,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
 
         ladder.forEach((anchorZ, tierIndex) => {
             const isInitial = tierIndex === 0;
+            const pattern = isInitial ? settings.initialPattern : settings.repeatingPattern;
             const place = (lowS: SupportSample, highS: SupportSample, section: 'initial' | 'repeating') => {
                 const distanceOverride = pairDistanceOverrides.get(pairKey(lowS.supportId, highS.supportId));
                 const ignoreMaxDistance = Boolean(distanceOverride?.ignoreMaxDistance);
@@ -897,9 +898,9 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
             };
 
             if (isInitial) {
-                applyInitialPattern(pairs, place);
+                applyInitialPattern(pairs, pattern, place);
             } else {
-                applyRepeatingPattern(pairs, place);
+                applyRepeatingPattern(pairs, pattern, place);
             }
         });
     }

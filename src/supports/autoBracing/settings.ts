@@ -1,6 +1,4 @@
-// Only single-diagonal braces are emitted; any other stored pattern value
-// (e.g. the removed legacy option) normalizes to 'singleDiagonal'.
-export type AutoBracingPattern = 'singleDiagonal';
+export type AutoBracingPattern = 'singleDiagonal' | 'crossDiagonal';
 
 export interface AutoBracingSettings {
     braceDiameterMm: number;
@@ -30,6 +28,11 @@ type NumericAutoBracingSettingKey =
     | 'seedSpacingMm'
     | 'seedJitterMm'
     | 'maxBraceLengthMm';
+
+export const AUTO_BRACING_PATTERN_OPTIONS: readonly AutoBracingPattern[] = [
+    'singleDiagonal',
+    'crossDiagonal',
+];
 
 export const AUTO_BRACING_CONSTRAINTS = {
     braceDiameterMm: { min: 0.5, max: 2.0, step: 0.05, defaultValue: 0.7 },
@@ -79,8 +82,10 @@ function clampNumeric(value: unknown, constraint: NumericConstraint): number {
 }
 
 function normalizePattern(value: unknown, fallback: AutoBracingPattern): AutoBracingPattern {
-    // Any non-'singleDiagonal' value (e.g. a legacy stored option) collapses to the fallback.
-    return value === 'singleDiagonal' ? value : fallback;
+    if (value === 'singleDiagonal' || value === 'crossDiagonal') {
+        return value;
+    }
+    return fallback;
 }
 
 function normalizeBoolean(value: unknown, fallback: boolean): boolean {

@@ -105,7 +105,8 @@ function buildTrunkData(
  * - The "low" end of each brace sits at `anchorZ` on the first trunk.
  * - The "high" end sits at `anchorZ + horizontalDist` on the second trunk
  *   (dzGuess ≈ horizontal distance between the two supports).
- * - Emits exactly one brace (a → b).
+ * - singleDiagonal → one brace (a → b)
+ * - crossDiagonal   → two braces (a → b and b → a)
  */
 function applyPatternToPair(
     result: { start: THREE.Vector3; end: THREE.Vector3; section: 'initial' | 'repeating' }[],
@@ -115,6 +116,7 @@ function applyPatternToPair(
     bY: number,
     horizontalDist: number,
     anchorZ: number,
+    pattern: string,
     section: 'initial' | 'repeating',
     trunkTopZ: number,
 ) {
@@ -123,11 +125,20 @@ function applyPatternToPair(
     // Real auto-bracing rule: skip if the high end would go past the top joint.
     if (anchorZ + dzGuess >= trunkTopZ - 0.1) return;
 
-    result.push({
-        start: new THREE.Vector3(aX, aY, anchorZ),
-        end: new THREE.Vector3(bX, bY, anchorZ + dzGuess),
-        section,
-    });
+    const placeLowHigh = (lowX: number, lowY: number, highX: number, highY: number) => {
+        result.push({
+            start: new THREE.Vector3(lowX, lowY, anchorZ),
+            end: new THREE.Vector3(highX, highY, anchorZ + dzGuess),
+            section,
+        });
+    };
+
+    // singleDiagonal: place(a, b)
+    // crossDiagonal:  place(a, b) + place(b, a)
+    placeLowHigh(aX, aY, bX, bY);
+    if (pattern === 'crossDiagonal') {
+        placeLowHigh(bX, bY, aX, aY);
+    }
 }
 
 /**
@@ -144,7 +155,9 @@ export function BracePreview({
 
     const autoBracing = settings.autoBracing ?? {};
     const braceDiameter = autoBracing.braceDiameterMm ?? 0.7;
+    const initialPattern: string = autoBracing.initialPattern ?? 'singleDiagonal';
     const initialDistance = autoBracing.initialDistanceMm ?? 2.0;
+    const repeatingPattern: string = autoBracing.repeatingPattern ?? 'singleDiagonal';
     const patternInterval = autoBracing.patternIntervalMm ?? 10.0;
     const shaftDiameterMm = Math.max(0.5, settings.shaft?.diameterMm ?? 1.0);
     const rootsDiameterMm = settings.roots?.diameterMm ?? 2.0;
@@ -212,6 +225,7 @@ export function BracePreview({
 
     ladder.forEach((anchorZ, tierIndex) => {
         const isInitial = tierIndex === 0;
+        const pattern = isInitial ? initialPattern : repeatingPattern;
         const section: 'initial' | 'repeating' = isInitial ? 'initial' : 'repeating';
 
         for (const pair of bracePairs) {
@@ -220,7 +234,7 @@ export function BracePreview({
                 pair.aX, pair.aY,
                 pair.bX, pair.bY,
                 pair.dist,
-                anchorZ, section, PREVIEW_HEIGHT_MM,
+                anchorZ, pattern, section, PREVIEW_HEIGHT_MM,
             );
         }
     });

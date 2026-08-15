@@ -3,7 +3,12 @@
 import React from 'react';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { Button } from '@/components/atoms';
-import type { AutoBracingSettings } from './settings';
+import { SelectDropdown } from '@/components/ui/SelectDropdown';
+import {
+    AUTO_BRACING_PATTERN_OPTIONS,
+    type AutoBracingSettings,
+    type AutoBracingPattern,
+} from './settings';
 
 interface AutoBracingSettingsCardProps {
     settings: AutoBracingSettings;
@@ -70,6 +75,28 @@ export function AutoBracingSettingsCard({
         </button>
     );
 
+    const renderPatternSelect = (
+        label: string,
+        value: AutoBracingPattern,
+        onPatternChange: (pattern: AutoBracingPattern) => void,
+    ) => {
+        return (
+            <label className="space-y-1 min-w-0">
+                <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>{label}</div>
+                <SelectDropdown
+                    value={value}
+                    onChange={(nextValue) => onPatternChange(nextValue as AutoBracingPattern)}
+                    options={AUTO_BRACING_PATTERN_OPTIONS.map((pattern) => ({
+                        value: pattern,
+                        label: pattern === 'singleDiagonal' ? 'Single Diagonal' : 'Cross Diagonal',
+                    }))}
+                    className="min-w-0 space-y-0"
+                    selectClassName="h-[36px] px-3 py-2 text-base"
+                />
+            </label>
+        );
+    };
+
     return (
         <div className="space-y-1.5">
             {/* Row 1: Brace Diameter | Max Brace Distance */}
@@ -132,7 +159,13 @@ export function AutoBracingSettingsCard({
                 </label>
             </div>
 
-            {/* Row 3: Seed Spacing (full width) */}
+            {/* Row 3: Initial Pattern | Repeating Pattern */}
+            <div className="grid grid-cols-2 gap-1.5 items-start">
+                {renderPatternSelect('Initial Pattern', settings.initialPattern, (initialPattern) => onChange({ initialPattern }))}
+                {renderPatternSelect('Repeating Pattern', settings.repeatingPattern, (repeatingPattern) => onChange({ repeatingPattern }))}
+            </div>
+
+            {/* Row 4: Seed Spacing (full width) */}
             <label className="space-y-1 min-w-0">
                 <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Cluster Spacing</div>
                 <div className="grid grid-cols-3 gap-1.5">
