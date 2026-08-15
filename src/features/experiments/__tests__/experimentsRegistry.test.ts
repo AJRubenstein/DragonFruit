@@ -7,6 +7,7 @@ import {
   getEnabledExperimentIds,
   getExperimentDefinition,
   getExperimentDefinitions,
+  getExperimentOverrides,
   getGatedPluginIdsForDisabledExperiments,
   isExperimentEnabled,
   type ExperimentDefinition,
@@ -76,6 +77,10 @@ test('getEnabledExperimentIds reflects default-enabled experiments when no windo
   for (const id of enabled) {
     assert.equal(isExperimentEnabled(id), true);
   }
+});
+
+test('getExperimentOverrides is empty when there is no window / no saved state', () => {
+  assert.deepEqual(getExperimentOverrides(), {});
 });
 
 test('computeGatedPluginIds collects gated plugins of disabled experiments only', () => {

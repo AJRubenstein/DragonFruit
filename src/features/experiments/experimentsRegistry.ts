@@ -101,6 +101,23 @@ export function getEnabledExperimentIds(): string[] {
     .map((definition) => definition.id);
 }
 
+/**
+ * The user's explicit experiment toggles, keyed by id — only experiments whose
+ * saved state differs from the manifest `defaultEnabled`. This is the minimal
+ * delta pushed to Rust: it embeds the same manifest itself and just needs the
+ * user's overrides to compute the effective enabled state.
+ */
+export function getExperimentOverrides(): Record<string, boolean> {
+  const record = readEnabledRecord() ?? {};
+  const overrides: Record<string, boolean> = {};
+  for (const definition of EXPERIMENT_DEFINITIONS) {
+    if (definition.id in record) {
+      overrides[definition.id] = record[definition.id];
+    }
+  }
+  return overrides;
+}
+
 let cachedEnabledRaw: string | null | undefined;
 let cachedEnabledRecord: Record<string, boolean> | null = null;
 

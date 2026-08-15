@@ -1,14 +1,17 @@
 import {
-  getEnabledExperimentIds,
+  getExperimentOverrides,
   subscribeToExperiments,
 } from '@/features/experiments/experimentsRegistry';
 
 /**
- * Mirrors the frontend's enabled-experiment set into the Tauri backend so gated
- * Rust commands can enforce the gate themselves (see `docs/dev/experiments-framework.md`,
- * "Gating Rust code"). The frontend owns the source of truth (localStorage) and
- * pushes it here; Rust stores it in `ExperimentsState` via the
- * `set_experiments_enabled` command.
+ * Keeps Rust's view of the Experiments state up to date so gated Rust commands
+ * can enforce the gate themselves (see `docs/dev/experiments-framework.md`,
+ * "Gating Rust code"). Rust embeds `src/config/experiments.json` at compile
+ * time, so it already knows every experiment and its `defaultEnabled`; the only
+ * thing it cannot see is the user's per-experiment toggles in webview
+ * `localStorage`. The frontend pushes just that delta — the user overrides —
+ * via the `set_experiment_overrides` command, and Rust computes the effective
+ * enabled state as `default ⊕ override`.
  *
  * Desktop-only — a no-op in the plain web build (no `__TAURI_INTERNALS__`).
  */
@@ -29,24 +32,24 @@ async function loadTauriCore(): Promise<TauriCoreModule | null> {
   return tauriCorePromise;
 }
 
-async function pushEnabledExperimentsToNative(): Promise<void> {
+async function pushExperimentOverridesToNative(): Promise<void> {
   const core = await loadTauriCore();
   if (!core) return;
   try {
-    await core.invoke('set_experiments_enabled', { enabled: getEnabledExperimentIds() });
+    await core.invoke('set_experiment_overrides', { overrides: getExperimentOverrides() });
   } catch (error) {
-    console.warn('[ExperimentsNativeSync] Failed to sync experiments to native:', error);
+    console.warn('[ExperimentsNativeSync] Failed to sync experiment overrides to native:', error);
   }
 }
 
 /**
- * Pushes the enabled-experiment set on startup and re-pushes whenever an
+ * Pushes the user's experiment overrides on startup and re-pushes whenever an
  * experiment is toggled. Returns an unsubscribe function (no-op off-desktop).
  */
 export function syncExperimentsToNative(): () => void {
   if (!isTauriRuntime()) return () => {};
-  void pushEnabledExperimentsToNative();
+  void pushExperimentOverridesToNative();
   return subscribeToExperiments(() => {
-    void pushEnabledExperimentsToNative();
+    void pushExperimentOverridesToNative();
   });
 }

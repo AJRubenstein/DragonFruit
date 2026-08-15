@@ -59,6 +59,7 @@ never import from `@/features/plugins/...` or other features into it.
 | `setExperimentEnabled(id, enabled)`                 | Persist the user's toggle and notify subscribers.        |
 | `subscribeToExperiments(listener)`                  | Subscribe to toggle changes; returns an unsubscribe fn.  |
 | `getEnabledExperimentIds()`                         | Ids of all currently enabled experiments.                 |
+| `getExperimentOverrides()`                          | The user's explicit toggles — ids whose saved state differs from `defaultEnabled`. The minimal delta pushed to Rust (see *Gating Rust code*). |
 | `getGatedPluginIdsForDisabledExperiments()`         | Plugin ids currently hidden by a disabled experiment.    |
 | `isPluginGatedByDisabledExperiment(pluginId)`       | Whether a plugin is hidden by a disabled experiment.     |
 
@@ -112,9 +113,13 @@ tab follows this same pattern).
 
 ## Gating Rust code
 
-Experiment state lives in the webview's `localStorage` — **Rust can't read it
-directly**. The frontend mirrors the enabled set into Rust, and three patterns
-gate Rust behavior:
+The manifest is the shared source of truth both sides read: `experiments.json`
+is embedded into Rust at compile time (`include_str!` in
+`src-tauri/src/experiments.rs`, the same pattern as the complex-plugin
+allowlist), so Rust natively knows every experiment and its `defaultEnabled`.
+Only the user's *overrides* (toggles that differ from the default) live in the
+webview's `localStorage`, which **Rust can't read directly** — the frontend
+pushes that minimal delta into Rust. Three patterns gate Rust behavior:
 
 **1. Don't call the gated command.** The simplest gate is a TS `isExperimentEnabled`
 check before the `invoke` — when the experiment is off, the Rust command is never
@@ -139,13 +144,16 @@ fn build_open_dialog_with_filters(category: &str, scene_extensions: Option<&[Str
 ```
 
 **3. Rust-side enforcement (defense in depth).** When a command must guard
-itself (e.g. it is reachable without a TS check), it checks the mirrored
-experiment state. The mirror happens automatically: `ExperimentsNativeSync`
-(mounted at the app root in `src/app/layout.tsx`) pushes `getEnabledExperimentIds()`
-to Rust on startup and whenever an experiment is toggled, via the
-`set_experiments_enabled` command. Rust stores the set in managed
-`ExperimentsState` (`src-tauri/src/experiments.rs`). A gated command takes the
-state and checks it at the top:
+itself (e.g. it is reachable without a TS check), it checks the effective
+experiment state. The defaults come from the embedded manifest; the user's
+overrides arrive automatically: `ExperimentsNativeSync` (mounted at the app
+root in `src/app/layout.tsx`) pushes `getExperimentOverrides()` — only ids whose
+toggled state differs from the manifest default — to Rust on startup and
+whenever an experiment is toggled, via the `set_experiment_overrides` command.
+Rust merges those overrides over the manifest defaults in managed
+`ExperimentsState` (`src-tauri/src/experiments.rs`); `is_experiment_enabled`
+returns the override when present, else the manifest default. A gated command
+takes the state and checks it at the top:
 
 ```rust
 use tauri::State;
