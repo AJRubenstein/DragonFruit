@@ -59,6 +59,17 @@ const GESTURE_GAP_MS = 200;
 const VERDICT_TTL_MS = 1500;
 /** One wheel notch in Blink/WebKit's legacy units. */
 const WHEEL_DELTA_QUANTUM = 120;
+/**
+ * How many events into a gesture the inherited verdict still applies.
+ *
+ * A trackpad gives itself away almost immediately — in the captures the
+ * off-axis leak lands on the second event. A wheel never gives itself away at
+ * all, so a gesture that is still silent after a few events is treated as
+ * unproven rather than as more of whatever came before. This is what stops a
+ * hard wheel spin right after a trackpad drag from panning for a second and a
+ * half: it caps the damage at the first few frames.
+ */
+const INHERIT_MAX_EVENTS = 3;
 
 function hasFractionalDelta(sample: WheelSample): boolean {
   return !Number.isInteger(sample.deltaX) || !Number.isInteger(sample.deltaY);
@@ -82,6 +93,7 @@ export function createWheelDeviceClassifier() {
   // Rolling, across gesture boundaries on purpose: slow wheel notches are one
   // gesture each, so a per-gesture memory could never see two of them agree.
   let previousWasQuantised = false;
+  let gestureEventCount = 0;
 
   // Across gestures, until the TTL runs out.
   let recentVerdict: WheelDevice = 'unknown';
@@ -92,10 +104,24 @@ export function createWheelDeviceClassifier() {
   let memoSample: WheelSample | null = null;
   let memoVerdict: WheelDevice = 'unknown';
 
+  /**
+   * A gesture that was a single event, with nothing pointing at a trackpad, was
+   * a wheel notch: a trackpad streams frames for as long as fingers move and
+   * cannot produce a one-event gesture. Recorded as evidence for what comes
+   * next, so a wheel used right after the trackpad stops inheriting its verdict.
+   */
+  function finishGesture(now: number): void {
+    if (gestureEventCount === 1 && gestureVerdict === 'unknown') {
+      recentVerdict = 'wheel';
+      recentVerdictTime = now;
+    }
+  }
+
   function startGesture(): void {
     gestureVerdict = 'unknown';
     gestureSawX = false;
     gestureSawY = false;
+    gestureEventCount = 0;
   }
 
   function evidenceFor(sample: WheelSample): WheelDevice {
@@ -113,8 +139,12 @@ export function createWheelDeviceClassifier() {
     classify(sample: WheelSample, now: number): WheelDevice {
       if (sample === memoSample) return memoVerdict;
 
-      if (now - lastEventTime > GESTURE_GAP_MS) startGesture();
+      if (now - lastEventTime > GESTURE_GAP_MS) {
+        finishGesture(lastEventTime);
+        startGesture();
+      }
       lastEventTime = now;
+      gestureEventCount += 1;
 
       if (sample.deltaX !== 0) gestureSawX = true;
       if (sample.deltaY !== 0) gestureSawY = true;
@@ -124,12 +154,19 @@ export function createWheelDeviceClassifier() {
 
       if (evidence !== 'unknown' && gestureVerdict === 'unknown') {
         gestureVerdict = evidence;
-        recentVerdict = evidence;
+      }
+
+      // Refreshed on every event, not just on the first one: the TTL has to
+      // measure from the last time we saw this device, or a long drag would go
+      // stale while the fingers are still moving.
+      if (gestureVerdict !== 'unknown') {
+        recentVerdict = gestureVerdict;
         recentVerdictTime = now;
       }
 
       let verdict = gestureVerdict;
-      if (verdict === 'unknown' && now - recentVerdictTime <= VERDICT_TTL_MS) {
+      const mayInherit = gestureEventCount <= INHERIT_MAX_EVENTS;
+      if (verdict === 'unknown' && mayInherit && now - recentVerdictTime <= VERDICT_TTL_MS) {
         verdict = recentVerdict;
       }
 

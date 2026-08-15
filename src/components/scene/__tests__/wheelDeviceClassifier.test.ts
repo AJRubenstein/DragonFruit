@@ -6,6 +6,10 @@ import {
   type WheelDevice,
   type WheelSample,
 } from '../SceneCanvas/wheelDeviceClassifier';
+import { MOUSE_FAST, MOUSE_SLOW, TRACKPAD_PINCH, TRACKPAD_SCROLL } from './wheelCaptures.fixture';
+
+/** Mirrors INHERIT_MAX_EVENTS in the classifier. */
+const INHERIT_MAX_EVENTS_IN_TEST = 3;
 
 /**
  * A row as captured in the browser by the `wcap` console helper:
@@ -111,6 +115,64 @@ test('a wrong call cannot outlive the TTL', () => {
 
   at(0, { deltaX: 1, deltaY: 20 });
   assert.equal(at(5000, {}), 'unknown', 'silence must fall back to unknown, never to a stale guess');
+});
+
+test('captured trackpad pinch: trackpad from the first event', () => {
+  const verdicts = replay(
+    TRACKPAD_PINCH.map(([t, dx, dy, wdy]) => ({ t, dx, dy, wdy, ctrl: true })),
+  );
+  assert.ok(
+    verdicts.every((verdict) => verdict === 'trackpad'),
+    `expected every pinch event to read as trackpad, got ${JSON.stringify([...new Set(verdicts)])}`,
+  );
+});
+
+test('captured trackpad scroll: trackpad from the second event onwards', () => {
+  const verdicts = replay(TRACKPAD_SCROLL.map(([t, dx, dy, wdy]) => ({ t, dx, dy, wdy })));
+
+  // The first event of the gesture is dx: 0, dy: -1 — indistinguishable from a
+  // wheel notch, so the classifier says so instead of guessing. This is the
+  // one-frame jump felt at the start of a drag.
+  assert.equal(verdicts[0], 'unknown');
+  assert.equal(verdicts[1], 'trackpad', 'the off-axis leak lands on the second event');
+  assert.ok(
+    verdicts.slice(1).every((verdict) => verdict === 'trackpad'),
+    'the rest of the gesture must stay trackpad, including the frames where dx returns to 0',
+  );
+});
+
+const mouseFastRows = MOUSE_FAST.map(([t, dy]) => ({ t, dx: 0, dy, wdy: dy * -3 }));
+
+test('captured mouse wheel never reads as a trackpad', () => {
+  for (const [label, rows] of [
+    ['slow', MOUSE_SLOW.map(([t, dx, dy, wdy]) => ({ t, dx, dy, wdy }))],
+    ['fast', mouseFastRows],
+  ] as const) {
+    const verdicts = replay(rows);
+    assert.ok(
+      verdicts.every((verdict) => verdict !== 'trackpad'),
+      `${label} wheel produced a trackpad verdict, which would pan instead of zoom`,
+    );
+  }
+});
+
+test('a hard wheel spin right after a trackpad drag stops panning within a few frames', () => {
+  // The fast-spin capture runs at 16-24ms per event — trackpad cadence, from a
+  // mouse — so nothing but the inheritance cap keeps it from riding the
+  // previous verdict for the whole TTL.
+  const trackpadEnd = TRACKPAD_SCROLL.at(-1)![0];
+  const spinStart = mouseFastRows[0].t;
+  const shifted = mouseFastRows.map((row) => ({ ...row, t: row.t - spinStart + trackpadEnd + 300 }));
+
+  const verdicts = replay([
+    ...TRACKPAD_SCROLL.map(([t, dx, dy, wdy]) => ({ t, dx, dy, wdy })),
+    ...shifted,
+  ]).slice(TRACKPAD_SCROLL.length);
+
+  assert.ok(
+    verdicts.slice(INHERIT_MAX_EVENTS_IN_TEST).every((verdict) => verdict !== 'trackpad'),
+    'the spin must stop inheriting the trackpad verdict once the gesture stays silent',
+  );
 });
 
 test('the same event object classifies once', () => {
