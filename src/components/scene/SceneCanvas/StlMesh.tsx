@@ -187,6 +187,7 @@ function StlMeshComponent({
   onOrganicCutClick,
   onSupportHover,
   onActiveModelChange,
+  onSelectModeDragStart,
   disableRaycast,
   blockSupportPlacement,
   suppressNextClickRef,
@@ -262,6 +263,9 @@ function StlMeshComponent({
   onOrganicCutClick?: (hit: THREE.Intersection) => void;
   onSupportHover?: (hit: THREE.Intersection | null) => void;
   onActiveModelChange?: (id: string | null, options?: { selectionMode?: 'single' | 'toggle' | 'add' }) => void;
+  /** In Select mode, left pointer-down on a model reports a potential XY-drag
+   *  start (model + screen coords). The scene owns the actual drag. */
+  onSelectModeDragStart?: (modelId: string, clientX: number, clientY: number) => void;
   disableRaycast?: boolean;
   blockSupportPlacement?: boolean;
   suppressNextClickRef?: React.RefObject<boolean>;
@@ -1349,6 +1353,16 @@ if (uDitherAmount > 0.0) {
                   ? 'add'
                   : 'single';
               onActiveModelChange(modelId, { selectionMode });
+            }
+
+            // Select mode: report a potential XY drag. Only for a plain
+            // single-select press — ctrl/shift are multi-select gestures and
+            // shift+drag is the marquee selection, so neither should move.
+            if (transformMode === 'select') {
+              const native = (e as unknown as { nativeEvent?: MouseEvent }).nativeEvent;
+              if (!native?.ctrlKey && !native?.metaKey && !native?.shiftKey) {
+                onSelectModeDragStart?.(modelId, e.clientX, e.clientY);
+              }
             }
           }
 

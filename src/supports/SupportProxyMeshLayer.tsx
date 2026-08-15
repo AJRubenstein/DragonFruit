@@ -1,6 +1,7 @@
 import React from 'react';
 import * as THREE from 'three';
 import { useSyncExternalStore } from 'react';
+import type { ThreeEvent } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
 import { subscribe, getSnapshot } from './state';
 import { getRaftSettings, subscribeToRaftStore } from './Rafts/Crenelated/RaftState';
@@ -64,6 +65,9 @@ interface SupportProxyMeshLayerProps {
   outOfBoundsMax?: THREE.Vector3 | null;
   outOfBoundsStripeColor?: string;
   onModelPointerSelect?: (modelId: string) => void;
+  /** In Select mode, a pointer-down on a support proxy reports a potential
+   *  model XY-drag start (model + screen coords). The scene owns the drag. */
+  onModelPointerDragStart?: (modelId: string, clientX: number, clientY: number) => void;
   enablePointerSelection?: boolean;
   includeDetailedPrimitives?: boolean;
   /** When true, only show supports whose contact points touch the cavity mesh. */
@@ -164,6 +168,7 @@ export function SupportProxyMeshLayer({
   outOfBoundsMax = null,
   outOfBoundsStripeColor,
   onModelPointerSelect,
+  onModelPointerDragStart,
   enablePointerSelection = true,
   includeDetailedPrimitives = true,
   interiorView = false,
@@ -1082,6 +1087,17 @@ export function SupportProxyMeshLayer({
 
   const pointerHoverEnabled = enablePointerSelection && mode === 'prepare';
   const pointerSelectionEnabled = enablePointerSelection && mode === 'prepare' && !!onModelPointerSelect;
+  const pointerDragStartEnabled = enablePointerSelection && mode === 'prepare';
+
+  const reportModelDragStart = React.useCallback((modelId: string | undefined, event: ThreeEvent<PointerEvent>) => {
+    if (!pointerDragStartEnabled || !onModelPointerDragStart) return;
+    if (!modelId) return;
+    if (hitCategoryRef.current === 'gizmo') return;
+    const native = event.nativeEvent as PointerEvent | undefined;
+    if (native?.ctrlKey || native?.metaKey || native?.shiftKey) return;
+    if (event.button !== 0) return;
+    onModelPointerDragStart(modelId, event.clientX, event.clientY);
+  }, [onModelPointerDragStart, pointerDragStartEnabled]);
 
   const setSupportHoverModel = React.useCallback((nextModelId: string | null) => {
     if (hoverClearRafRef.current !== null) {
@@ -1304,6 +1320,7 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
               onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
+              onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
               onShaftPointerMove={pointerHoverEnabled ? handleProxyShaftPointerMove : undefined}
               onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1317,6 +1334,7 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
               onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
+              onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
               onRootPointerMove={pointerHoverEnabled ? handleProxyRootPointerMove : undefined}
               onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1329,6 +1347,7 @@ export function SupportProxyMeshLayer({
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
               onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
+              onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
               onJointPointerMove={pointerHoverEnabled ? handleProxyJointPointerMove : undefined}
               onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1341,6 +1360,7 @@ export function SupportProxyMeshLayer({
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
               onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
+              onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
               onConePointerMove={pointerHoverEnabled ? handleProxyConePointerMove : undefined}
               onConePointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1360,6 +1380,7 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
               onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
+              onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
               onShaftPointerMove={pointerHoverEnabled ? handleProxyShaftPointerMove : undefined}
               onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1373,6 +1394,7 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
               onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
+              onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
               onRootPointerMove={pointerHoverEnabled ? handleProxyRootPointerMove : undefined}
               onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1385,6 +1407,7 @@ export function SupportProxyMeshLayer({
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
               onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
+              onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
               onJointPointerMove={pointerHoverEnabled ? handleProxyJointPointerMove : undefined}
               onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1397,6 +1420,7 @@ export function SupportProxyMeshLayer({
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
               onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
+              onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
               onConePointerMove={pointerHoverEnabled ? handleProxyConePointerMove : undefined}
               onConePointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1421,6 +1445,7 @@ export function SupportProxyMeshLayer({
               radialSegments={10}
               clippingPlanes={clippingPlanes}
               onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
+              onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
               onShaftPointerMove={pointerHoverEnabled ? handleProxyShaftPointerMove : undefined}
               onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1436,6 +1461,7 @@ export function SupportProxyMeshLayer({
               opacity={hoverOverlayOpacity}
               clippingPlanes={clippingPlanes}
               onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
+              onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
               onRootPointerMove={pointerHoverEnabled ? handleProxyRootPointerMove : undefined}
               onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1451,6 +1477,7 @@ export function SupportProxyMeshLayer({
               opacity={hoverOverlayOpacity}
               clippingPlanes={clippingPlanes}
               onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
+              onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
               onJointPointerMove={pointerHoverEnabled ? handleProxyJointPointerMove : undefined}
               onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
@@ -1466,6 +1493,7 @@ export function SupportProxyMeshLayer({
               opacity={hoverOverlayOpacity}
               clippingPlanes={clippingPlanes}
               onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
+              onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
               onConePointerMove={pointerHoverEnabled ? handleProxyConePointerMove : undefined}
               onConePointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
