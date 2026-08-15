@@ -91,6 +91,16 @@ export function NativeSpaceMouseController({
   // view), so the dolly→zoom conversion must divide by the same number navlib
   // used to size its dolly — not the real eye→target distance.
   const navFocusRef = React.useRef(50);
+  // navlib's eye position drifts FORWARD relative to our camera during a motion:
+  // we strip its perspective dolly each frame (ortho ignores eye distance) but
+  // navlib doesn't re-read our getters mid-motion, so it keeps integrating from
+  // its own (dollied) pose. Measuring the dolly as navlib_eye − camera would read
+  // that growing gap and compound into runaway zoom. Instead we track navlib's
+  // OWN previous eye position and take the per-frame increment, which is immune to
+  // the drift. Reset (navHasPrev=false) at the start of each motion, since navlib
+  // re-snapshots our real pose then and the stale prev would give a first-frame jump.
+  const navPrevPosRef = React.useRef(new THREE.Vector3());
+  const navHasPrevRef = React.useRef(false);
 
   // Cached model extents + refresh counter.
   const modelBoxRef = React.useRef(new THREE.Box3());
@@ -165,21 +175,31 @@ export function NativeSpaceMouseController({
 
       // ── Ortho + forced-perspective lie ──
       // navlib thinks it's driving a perspective camera, so its "zoom" dollies the
-      // eye FORWARD (a no-op for ortho). Split navlib's new eye position into the
+      // eye FORWARD (a no-op for ortho). Split navlib's per-frame motion into the
       // in-plane part (pan/orbit — apply as-is) and the forward-dolly part (convert
-      // to camera.zoom, and suppress the eye motion itself so it doesn't drift).
+      // to camera.zoom). Work in navlib-frame INCREMENTS (navPos_now − navPrevPos)
+      // rather than the gap to our camera, because our camera never receives the
+      // forward dolly and would otherwise diverge, compounding into runaway zoom.
       m.decompose(tmpPos.current, tmpQuat.current, tmpScale.current);
       const fwd = tmpDir.current.set(0, 0, -1).applyQuaternion(tmpQuat.current).normalize();
-      const dolly = tmpPan.current.copy(tmpPos.current).sub(camera.position).dot(fwd);
-      // Strip the forward component so the eye stays on its focus plane.
-      tmpPos.current.addScaledVector(fwd, -dolly);
-      camera.position.copy(tmpPos.current);
+      let dolly = 0;
+      if (navHasPrevRef.current) {
+        // Full per-frame delta from navlib, split into forward (dolly) + lateral.
+        tmpPan.current.copy(tmpPos.current).sub(navPrevPosRef.current);
+        dolly = tmpPan.current.dot(fwd);
+        tmpPan.current.addScaledVector(fwd, -dolly); // lateral pan/orbit increment
+        camera.position.add(tmpPan.current);
+      }
+      navPrevPosRef.current.copy(tmpPos.current);
+      navHasPrevRef.current = true;
       camera.quaternion.copy(tmpQuat.current);
       camera.up.set(affine[4], affine[5], affine[6]).normalize();
 
-      // Dolly toward the focus plane at distance D scales apparent size by D/(D−dolly).
-      // D must be the distance navlib itself used to size the dolly (the synthetic
-      // value we reported), not the real eye→target distance.
+      // This frame's forward increment scales apparent size by D/(D−dolly). D must
+      // be the distance navlib used to size the dolly (the synthetic value we
+      // reported), not the real eye→target distance. Because dolly is now a single
+      // frame's motion (∝ gesture ∝ D), the ratio depends only on gesture strength
+      // — consistent at any zoom level and free of the old compounding drift.
       const ortho = camera as THREE.OrthographicCamera;
       const D = Math.max(1e-3, navFocusRef.current);
       const denom = D - dolly;
@@ -350,6 +370,9 @@ export function NativeSpaceMouseController({
       if (out.motion !== prevMotionRef.current) {
         prevMotionRef.current = out.motion;
         if (out.motion) {
+          // navlib re-snapshots our real pose at motion start, so any prev eye from
+          // a past motion is stale — drop it to avoid a first-frame dolly jump.
+          navHasPrevRef.current = false;
           if (!weDisabledOrbitRef.current) {
             // Remember the orbit radius so handback can rebuild the pivot.
             focusDistRef.current = Math.max(0.1, camera.position.distanceTo(controls.target));
