@@ -101,6 +101,11 @@ export function NativeSpaceMouseController({
   // re-snapshots our real pose then and the stale prev would give a first-frame jump.
   const navPrevPosRef = React.useRef(new THREE.Vector3());
   const navHasPrevRef = React.useRef(false);
+  // navlib snapshots the focus distance ONCE at motion start and sizes its dolly by
+  // that fixed value for the whole gesture. The dolly→zoom conversion must divide by
+  // the SAME frozen value — using the live (per-frame shrinking) navFocusRef makes
+  // denom = D−dolly collapse as you zoom in, snapping the zoom. Locked at motion start.
+  const navFocusLockedRef = React.useRef(50);
 
   // Cached model extents + refresh counter.
   const modelBoxRef = React.useRef(new THREE.Box3());
@@ -201,7 +206,7 @@ export function NativeSpaceMouseController({
       // frame's motion (∝ gesture ∝ D), the ratio depends only on gesture strength
       // — consistent at any zoom level and free of the old compounding drift.
       const ortho = camera as THREE.OrthographicCamera;
-      const D = Math.max(1e-3, navFocusRef.current);
+      const D = Math.max(1e-3, navFocusLockedRef.current);
       const denom = D - dolly;
       if (Math.abs(dolly) > 1e-6 && denom > 1e-3) {
         ortho.zoom = THREE.MathUtils.clamp(ortho.zoom * (D / denom), 0.0001, 2000);
@@ -373,6 +378,9 @@ export function NativeSpaceMouseController({
           // navlib re-snapshots our real pose at motion start, so any prev eye from
           // a past motion is stale — drop it to avoid a first-frame dolly jump.
           navHasPrevRef.current = false;
+          // Freeze the focus distance navlib snapshotted now, so the dolly→zoom
+          // conversion divides by the same value navlib used for the whole gesture.
+          navFocusLockedRef.current = navFocusRef.current;
           if (!weDisabledOrbitRef.current) {
             // Remember the orbit radius so handback can rebuild the pivot.
             focusDistRef.current = Math.max(0.1, camera.position.distanceTo(controls.target));
