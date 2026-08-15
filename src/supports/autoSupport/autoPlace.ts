@@ -835,6 +835,7 @@ export function runAutoPlace(
     // Step 3 is wrapped in a rollback guard: state is committed per-candidate,
     // so an uncaught failure mid-run would otherwise leave partial supports in
     // the store with no history entry to undo them.
+    let analytics!: AutoPlaceAnalytics;
     try {
     for (const candidate of candidates) {
         try {
@@ -863,13 +864,6 @@ export function runAutoPlace(
                 `Exception placing ${candidate.id}: ${e instanceof Error ? e.message : String(e)}`);
         }
     }
-
-    const changed =
-        placedTrunks > 0 ||
-        placedAnchors > 0 ||
-        placedBranches > 0 ||
-        placedLeaves > 0 ||
-        placedSticks > 0;
 
     console.log(LOG_PREFIX,
         `Step 3/3: ${placedTrunks}T ${placedAnchors}A ${placedBranches}B ${placedLeaves}L ${placedSticks}S — ${rejectedCount} rejected ` +
@@ -959,7 +953,7 @@ export function runAutoPlace(
         };
     }
 
-    const analytics: AutoPlaceAnalytics = {
+    analytics = {
         islandsCovered: supportedIds.size,
         islandsUncovered: islands.length - supportedIds.size,
         presets,
@@ -1232,6 +1226,13 @@ export function runAutoPlace(
         setKickstandSnapshot(kickstandBefore);
         return makeResult(0, 0, 0, 0, 0, 0, false, 'Auto-support failed mid-run; changes rolled back.');
     }
+
+    const changed =
+        placedTrunks > 0 ||
+        placedAnchors > 0 ||
+        placedBranches > 0 ||
+        placedLeaves > 0 ||
+        placedSticks > 0;
 
     // ------------------------------------------------------------------
     // 4. Auto-bracing + history
