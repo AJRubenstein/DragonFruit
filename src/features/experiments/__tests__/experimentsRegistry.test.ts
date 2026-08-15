@@ -7,10 +7,11 @@ import {
   getEnabledExperimentIds,
   getExperimentDefinition,
   getExperimentDefinitions,
+  getGatedPluginIdsForDisabledExperiments,
   isExperimentEnabled,
   type ExperimentDefinition,
 } from '@/features/experiments/experimentsRegistry';
-import { GENERATED_BUILTIN_COMPLEX_PLUGIN_ID_ALLOWLIST } from '@/features/plugins/generatedBuiltinComplexPlugins';
+import complexPluginAllowlist from '@/config/complex-plugin-allowlist.json';
 import { getBuiltinComplexPluginDefinitions } from '@/features/plugins/builtinComplexPlugins';
 
 test('experiments.json manifest declares version 1 with a non-empty experiments array', () => {
@@ -33,15 +34,20 @@ test('experiment definitions expose non-empty ids, names and descriptions with v
   }
 });
 
-test('plugin definitions gated behind a disabled experiment are hidden from the getter', () => {
-  // No window → isExperimentEnabled returns defaultEnabled (false for chitubox-import).
-  const ids = getBuiltinComplexPluginDefinitions().map((definition) => definition.id);
-  assert.ok(ids.includes('lys-import'), 'released plugins must stay visible');
-  assert.ok(!ids.includes('chitubox-import'), 'gated plugin must be hidden while its experiment is off');
+test('plugin getter never returns a plugin gated behind a disabled experiment', () => {
+  // No window → isExperimentEnabled returns defaultEnabled, so gated experiments
+  // (e.g. chitubox-import) are treated as disabled. This invariant holds whether
+  // or not the plugin submodules are checked out (CI runs without them).
+  const gatedIds = getGatedPluginIdsForDisabledExperiments();
+  for (const definition of getBuiltinComplexPluginDefinitions()) {
+    assert.ok(!gatedIds.has(definition.id), `gated plugin "${definition.id}" leaked through the getter`);
+  }
 });
 
-test('every gatedPlugins id references an allowlisted builtin complex plugin', () => {
-  const allowlist = new Set(GENERATED_BUILTIN_COMPLEX_PLUGIN_ID_ALLOWLIST);
+test('every gatedPlugins id references a declared builtin complex plugin', () => {
+  // Checked against the declared allowlist (complete regardless of which plugin
+  // submodules are checked out), not the submodule-dependent generated registry.
+  const allowlist = new Set(complexPluginAllowlist.builtinComplexPlugins.map((entry) => entry.id));
 
   for (const definition of getExperimentDefinitions()) {
     for (const pluginId of definition.gatedPlugins ?? []) {
