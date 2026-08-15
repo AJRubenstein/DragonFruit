@@ -1958,6 +1958,7 @@ async fn run_island_scan_native(
                 &job,
                 &triangles,
                 params.bbox_min_z,
+                params.bbox_max_z,
                 true, // store_labels = true for Volume Analysis
                 Some(&move |done: u32, total: u32| {
                     let _ = win_scan.emit("islandscan://progress", SliceProgressPayload {
