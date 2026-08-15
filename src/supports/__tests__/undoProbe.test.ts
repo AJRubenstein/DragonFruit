@@ -135,6 +135,68 @@ test('undo restores a branch-joint move pushed via pushSupportEditHistory (defer
     dispose();
 });
 
+test('undo preserves selection when the moved support still exists', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const dispose = registerSupportHistoryHandlers();
+
+    seedTrunk('t1', 's1', { x: 0, y: 0, z: 10 });
+    // Select the trunk (and its joint) as the user would after dragging a joint.
+    const withSelection: SupportState = {
+        ...getSnapshot(),
+        selectedId: 'top-t1',
+        selectedCategory: 'joint',
+    };
+    setSnapshot(withSelection);
+
+    const before = structuredClone(getSnapshot().trunks.t1);
+    const moved: Trunk = {
+        ...before,
+        segments: before.segments.map((s) => ({
+            ...s,
+            topJoint: s.topJoint ? { ...s.topJoint, pos: { x: 5, y: 0, z: 12 } } : s.topJoint,
+        })),
+    };
+    updateTrunk(moved);
+    pushSupportHistory({ type: SUPPORT_UPDATE_TRUNK, payload: { before, after: moved } });
+
+    undo();
+
+    const after = getSnapshot();
+    assert.equal(after.trunks.t1.segments[0].topJoint?.pos.x, 0, 'joint restored after undo');
+    assert.equal(after.selectedId, 'top-t1', 'joint selection survives undo');
+    assert.equal(after.selectedCategory, 'joint', 'joint selection category survives undo');
+    dispose();
+});
+
+test('undo clears a selection that points at a removed entity', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const dispose = registerSupportHistoryHandlers();
+
+    seedTrunk('t1', 's1', { x: 0, y: 0, z: 10 });
+    setSnapshot({ ...getSnapshot(), selectedId: 'ghost-trunk', selectedCategory: 'trunk' });
+
+    const before = structuredClone(getSnapshot().trunks.t1);
+    const moved: Trunk = {
+        ...before,
+        segments: before.segments.map((s) => ({
+            ...s,
+            topJoint: s.topJoint ? { ...s.topJoint, pos: { x: 5, y: 0, z: 12 } } : s.topJoint,
+        })),
+    };
+    updateTrunk(moved);
+    pushSupportHistory({ type: SUPPORT_UPDATE_TRUNK, payload: { before, after: moved } });
+
+    undo();
+
+    const after = getSnapshot();
+    assert.equal(after.selectedId, null, 'stale selection cleared');
+    dispose();
+});
+
 test('undo restores a deleted branch (SUPPORT_REMOVE_BRANCH cascade)', () => {
     resetStore();
     resetKickstandStore();
