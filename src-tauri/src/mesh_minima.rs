@@ -554,7 +554,12 @@ pub async fn scan_voxel_islands_from_path(
                     source: "voxel".to_string(),
                     contact,
                     base_z: contact_z,
-                    area_mm2: island.total_area_mm2 as f32,
+                    // Contact footprint = base-layer area, not accumulated area.
+                    area_mm2: island
+                        .per_layer_area_mm2
+                        .get(&island.first_layer)
+                        .copied()
+                        .unwrap_or(island.total_area_mm2) as f32,
                     layer_span: [island.first_layer, island.last_layer],
                 });
             } else {
@@ -571,7 +576,11 @@ pub async fn scan_voxel_islands_from_path(
                         source: "voxel".to_string(),
                         contact,
                         base_z: contact_z,
-                        area_mm2: island.total_area_mm2 as f32,
+                        area_mm2: island
+                            .per_layer_area_mm2
+                            .get(&island.first_layer)
+                            .copied()
+                            .unwrap_or(island.total_area_mm2) as f32,
                         layer_span: [island.first_layer, island.last_layer],
                     });
                 }
@@ -746,7 +755,12 @@ pub async fn scan_islands_from_path(
                     source: "voxel".to_string(),
                     contact,
                     base_z: contact_z as f64,
-                    area_mm2: island.total_area_mm2 as f32,
+                    // Contact footprint = base-layer area, not accumulated area.
+                    area_mm2: island
+                        .per_layer_area_mm2
+                        .get(&island.first_layer)
+                        .copied()
+                        .unwrap_or(island.total_area_mm2) as f32,
                     layer_span: [island.first_layer, island.last_layer],
                 }
             })
