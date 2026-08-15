@@ -403,7 +403,7 @@ pub async fn scan_voxel_islands_from_path(
         };
 
         let scan_result =
-            run_island_scan_streaming(&job, &triangles, bbox.min.z as f64, false, None);
+            run_island_scan_streaming(&job, &triangles, bbox.min.z as f64, bbox.max.z as f64, false, None);
 
         // 5a. Build Z-bucket index for projection raycasting
         let z_min = bbox.min.z;
