@@ -19,6 +19,8 @@ type OrbitLikeControls = {
   target: THREE.Vector3;
   enabled?: boolean;
   update: () => void;
+  addEventListener?: (type: string, listener: () => void) => void;
+  removeEventListener?: (type: string, listener: () => void) => void;
 };
 
 function isOrbitLikeControls(value: unknown): value is OrbitLikeControls {
@@ -86,6 +88,10 @@ export function NativeSpaceMouseController({
   // Camera→target distance captured when navlib takes over, so handback can
   // re-seat the orbit pivot in front of the camera at the same radius.
   const focusDistRef = React.useRef(50);
+  // Set on handback: navlib may have rolled the horizon, and constrained orbit is
+  // always world Z-up. We don't level on release (the tilt is kept for viewing) —
+  // only when the user next starts a mouse orbit/pan (the controls 'start' event).
+  const pendingLevelRef = React.useRef(false);
   // The focus distance we last REPORTED to navlib. In the ortho lie this is a
   // synthetic value (sized so navlib's perspective frustum matches the ortho
   // view), so the dolly→zoom conversion must divide by the same number navlib
@@ -133,6 +139,25 @@ export function NativeSpaceMouseController({
       weDisabledOrbitRef.current = false;
     };
   }, [settings.enabled]);
+
+  // ── Re-level the horizon when the mouse takes back over ──
+  // navlib can roll the view; we keep that roll after release, but constrained orbit
+  // is world Z-up. When the user starts a mouse orbit/pan (OrbitControls 'start'),
+  // snap up back to Z and re-aim at the target — a roll-only change (view direction
+  // is preserved) so the drag begins on a level horizon.
+  React.useEffect(() => {
+    if (!isOrbitLikeControls(controls) || !controls.addEventListener) return;
+    const onStart = () => {
+      if (!pendingLevelRef.current) return;
+      pendingLevelRef.current = false;
+      camera.up.set(0, 0, 1);
+      camera.lookAt(controls.target);
+      camera.updateMatrixWorld();
+      controls.update();
+    };
+    controls.addEventListener('start', onStart);
+    return () => controls.removeEventListener?.('start', onStart);
+  }, [controls, camera]);
 
   const getTarget = React.useCallback(
     (out: THREE.Vector3): THREE.Vector3 => {
@@ -229,14 +254,11 @@ export function NativeSpaceMouseController({
       controls.target
         .copy(camera.position)
         .addScaledVector(dir, focusDistRef.current);
-      // Undo any roll navlib introduced: constrained orbit is always world Z-up, so
-      // restore that up and re-aim at the target. This changes roll only (view
-      // direction is preserved, since the target sits along it), leveling the horizon.
-      camera.up.set(0, 0, 1);
-      camera.lookAt(controls.target);
-      camera.updateMatrixWorld();
       controls.enabled = true;
       controls.update();
+      // Keep navlib's roll for now — the horizon only re-levels to Z-up when the
+      // user actually starts a mouse orbit/pan (see the controls 'start' listener).
+      pendingLevelRef.current = true;
     }
     weDisabledOrbitRef.current = false;
   }, [controls, camera]);
