@@ -4972,23 +4972,18 @@ export function ProfileSettingsModal({
                             Clear Image
                           </button>
                         </div>
-                        <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                          Tip: use a front/angled photo for faster visual identification.
-                        </p>
                       </div>
                     </div>
 
-                    <div className="rounded-lg border p-2.5 h-full min-h-0 flex" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), transparent 6%)' }}>
-                      <div className="w-full h-full min-h-0 rounded-md border overflow-hidden flex items-center justify-center" style={{ borderColor: 'var(--border-subtle)', background: printerImageWellBackground }}>
-                        {selectedPrinter.imageDataUrl ? (
-                          <AutoTrimmedImage src={selectedPrinter.imageDataUrl} alt={selectedPrinter.name} className="h-full w-full object-contain" />
-                        ) : (
-                          <div className="text-xs text-center px-3" style={{ color: 'var(--text-muted)' }}>
-                            <Printer className="w-5 h-5 mx-auto mb-1" />
-                            No preview image
-                          </div>
-                        )}
-                      </div>
+                    <div className="w-full h-full min-h-0 rounded-md border overflow-hidden flex items-center justify-center" style={{ borderColor: 'var(--border-subtle)', background: printerImageWellBackground }}>
+                      {selectedPrinter.imageDataUrl ? (
+                        <AutoTrimmedImage src={selectedPrinter.imageDataUrl} alt={selectedPrinter.name} className="h-full w-full object-contain" />
+                      ) : (
+                        <div className="text-xs text-center px-3" style={{ color: 'var(--text-muted)' }}>
+                          <Printer className="w-5 h-5 mx-auto mb-1" />
+                          No preview image
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
