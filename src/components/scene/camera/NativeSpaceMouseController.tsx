@@ -389,6 +389,11 @@ export function NativeSpaceMouseController({
           }
           onNavigationActiveChange?.(true);
         } else {
+          // Motion ended: drop the tracked navlib eye now. It sits far forward
+          // (accumulated dollies we stripped), and applyAffine runs BEFORE the
+          // motion-start reset next gesture — clearing it here stops that stale
+          // eye from producing a giant first-frame dolly (a zoom snap).
+          navHasPrevRef.current = false;
           handBackToOrbit();
           onNavigationActiveChange?.(false);
         }
