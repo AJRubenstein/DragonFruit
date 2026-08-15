@@ -21,6 +21,7 @@ import {
   SUPPORT_REPLACE_TRUNK,
   SUPPORT_EDIT_REPLACE,
   SUPPORT_AUTO_BRACE_REPLACE,
+  SUPPORT_AUTO_PLACE,
   SupportReplaceStatePayload,
 } from './actionTypes';
 import { registerSupportHistoryHandler } from './supportHistory';
@@ -302,6 +303,11 @@ export function registerSupportHistoryHandlers(): () => void {
       return true;
     }),
     registerSupportHistoryHandler(SUPPORT_AUTO_BRACE_REPLACE, (payload, direction) => {
+      if (!payload?.before || !payload?.after) return false;
+      applySnapshotHistory(payload, direction);
+      return true;
+    }),
+    registerSupportHistoryHandler(SUPPORT_AUTO_PLACE, (payload, direction) => {
       if (!payload?.before || !payload?.after) return false;
       applySnapshotHistory(payload, direction);
       return true;

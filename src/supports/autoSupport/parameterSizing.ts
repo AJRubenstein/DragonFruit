@@ -33,8 +33,10 @@ export interface SizeOverrides {
 
 /** Context passed from the orchestrator for model-level sizing. */
 export interface ModelSizingContext {
-    /** Estimated model volume in mm³ (from bounding box or mesh). */
+    /** Estimated model volume in mm³ (from the mesh — exact tetrahedron sum). */
     modelVolumeMm3: number;
+    /** Model top Z (world mm). Used for the weight-above-Z fraction. */
+    modelZMaxMm?: number;
     /** Total number of candidates being placed. */
     totalCandidates: number;
     /** Number of candidates at or below this candidate's Z height.
@@ -102,7 +104,9 @@ export function sizeParameters(
 
     const modelWeightG = ctx.modelVolumeMm3 * RESIN_DENSITY_G_PER_MM3;
     const zHeight = Math.max(candidate.zHeight, 1);
-    const modelZMax = Math.max(candidate.zHeight, 30);
+    // Model top Z drives the weight-above-Z fraction. Falls back to a 30mm
+    // floor when the orchestrator didn't provide it (e.g. tests).
+    const modelZMax = Math.max(ctx.modelZMaxMm ?? 30, zHeight);
 
     // Count supports at or below this Z (including this one).
     const supportsBelow = ctx.candidatesBelowZ ?? ctx.totalCandidates;

@@ -321,7 +321,11 @@ function createAttachmentKnotOnTrunk(args: {
     return null;
 }
 
-export function applyTrunkReplacement(plan: TrunkReplacementPlan, historyBefore?: SupportState): boolean {
+export function applyTrunkReplacement(
+    plan: TrunkReplacementPlan,
+    historyBefore?: SupportState,
+    opts?: { skipHistory?: boolean },
+): boolean {
     const snapshot = getSnapshot();
     const before = structuredClone(historyBefore ?? snapshot);
     const trunk = snapshot.trunks[plan.trunkToRemoveId];
@@ -547,12 +551,14 @@ export function applyTrunkReplacement(plan: TrunkReplacementPlan, historyBefore?
 
     const after = structuredClone(getSnapshot());
 
-    const payload: SupportReplaceTrunkPayload = {
-        before,
-        after,
-    };
+    if (!opts?.skipHistory) {
+        const payload: SupportReplaceTrunkPayload = {
+            before,
+            after,
+        };
 
-    pushSupportHistory({ type: SUPPORT_REPLACE_TRUNK, payload });
+        pushSupportHistory({ type: SUPPORT_REPLACE_TRUNK, payload });
+    }
 
     return true;
 }

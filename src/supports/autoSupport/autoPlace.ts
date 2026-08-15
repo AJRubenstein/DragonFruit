@@ -8,26 +8,58 @@ import { generateCandidates, deduplicateCandidates } from './candidateGeneration
 import { sizeParameters } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
-import { getSnapshot, addRoot, addTrunk, addBranch, addLeaf, addKnot, addAnchor, addStick, addTwig } from '../state';
+import { getSnapshot, setSnapshot, addRoot, addTrunk, addBranch, addLeaf, addKnot, addAnchor, addStick, addTwig } from '../state';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityStick } from '../SupportTypes/Trunk/useTrunkPlacement';
+import { applyTrunkReplacement, planTrunkReplacement } from '../SupportTypes/Trunk/TrunkReplacement';
 import { buildBranchData } from '../SupportTypes/Branch/branchBuilder';
 import { buildLeafData } from '../SupportTypes/Leaf/leafBuilder';
 import { decideGridPlacement } from '../PlacementLogic/Grid/gridPlacement';
 import { calculateSmoothedNormal } from '../PlacementLogic/PlacementUtils';
 import { isShaftBlocked } from '../PlacementLogic/CollisionAvoidance';
 import { runAutoBracing } from '../autoBracing/autoBrace';
-import { pushHistory } from '@/history/historyStore';
+import { pushSupportHistory } from '../history/supportHistory';
+import { SUPPORT_AUTO_PLACE } from '../history/actionTypes';
+import { getKickstandSnapshot, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import { getModelMesh } from './meshStore';
+import {
+    ALREADY_SUPPORTED_RADIUS_MM,
+    GRIDLESS_MERGE_RADIUS_MM,
+    LEAF_FAN_RADIUS_MM,
+    LEAF_FAN_MAX_ANGLE_DEG,
+} from './constants';
 
 const LOG_PREFIX = '[AutoSupport]';
 
 // ---------------------------------------------------------------------------
-// History action type
+// Mesh volume helper
 // ---------------------------------------------------------------------------
 
-const SUPPORT_AUTO_PLACE = 'support:auto-place' as const;
+/**
+ * Exact volume (mm³) of a closed mesh via the signed tetrahedron sum around
+ * the origin. Used for physics-informed sizing — replaces the bounding-box
+ * volume, which wildly overestimates non-cubic models.
+ */
+function computeMeshVolumeMm3(mesh: THREE.Mesh): number {
+    const geo = mesh.geometry;
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!pos) return 0;
+    const index = geo.index;
+    let vol = 0;
+    const addTri = (i0: number, i1: number, i2: number) => {
+        const ax = pos.getX(i0), ay = pos.getY(i0), az = pos.getZ(i0);
+        const bx = pos.getX(i1), by = pos.getY(i1), bz = pos.getZ(i1);
+        const cx = pos.getX(i2), cy = pos.getY(i2), cz = pos.getZ(i2);
+        vol += (ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx)) / 6;
+    };
+    if (index) {
+        for (let i = 0; i < index.count; i += 3) addTri(index.getX(i), index.getX(i + 1), index.getX(i + 2));
+    } else {
+        for (let i = 0; i < pos.count; i += 3) addTri(i, i + 1, i + 2);
+    }
+    return Math.abs(vol);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,8 +96,15 @@ function makeResult(
  * raycasting against the model mesh — exactly the same way manual
  * placement obtains a surface normal from a click intersection.
  *
- * Falls back to the candidate's existing tipNormal when the mesh is
- * unavailable or the raycast misses.
+ * Primary ray goes UPWARD from just below the tip: a support contact sits on
+ * the underside of an overhang, so the first surface hit is the contact face
+ * itself, whose normal (pointing away from the model interior, i.e. downward)
+ * is what the support tip must align with. A downward ray from above would hit
+ * the model's TOP surface first, which is the wrong face for a support.
+ *
+ * Falls back to a downward ray (normal flipped) for top-surface contacts, and
+ * finally to the candidate's placeholder normal when the mesh is unavailable
+ * or both rays miss.
  */
 function resolveSurfaceNormal(
     tipPos: CandidatePoint['tipPos'],
@@ -76,19 +115,12 @@ function resolveSurfaceNormal(
     }
 
     const raycaster = new THREE.Raycaster();
-    // Shoot a ray from slightly above the candidate toward it.
-    const origin = new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z + 2);
-    const direction = new THREE.Vector3(0, 0, -1);
-    raycaster.set(origin, direction);
 
-    // Also try shooting upward in case the surface faces down.
-    const hitsUp: THREE.Intersection[] = [];
+    // Primary: upward ray from just below the tip (underside contact).
     raycaster.set(new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z - 2), new THREE.Vector3(0, 0, 1));
-    hitsUp.push(...raycaster.intersectObject(mesh, false));
-
-    const hits = raycaster.intersectObject(mesh, false);
-    if (hits.length > 0) {
-        const hit = hits[0];
+    const upHits = raycaster.intersectObject(mesh, false);
+    if (upHits.length > 0) {
+        const hit = upHits[0];
         const smoothed = calculateSmoothedNormal(hit);
         return {
             point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
@@ -96,9 +128,12 @@ function resolveSurfaceNormal(
         };
     }
 
-    // Try the upward ray.
-    if (hitsUp.length > 0) {
-        const hit = hitsUp[0];
+    // Fallback: downward ray from above (top-surface contact), normal flipped
+    // so the support still grows away from the face.
+    raycaster.set(new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z + 2), new THREE.Vector3(0, 0, -1));
+    const downHits = raycaster.intersectObject(mesh, false);
+    if (downHits.length > 0) {
+        const hit = downHits[0];
         const smoothed = calculateSmoothedNormal(hit);
         return {
             point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
@@ -113,9 +148,6 @@ function resolveSurfaceNormal(
 // ---------------------------------------------------------------------------
 // Already-supported filter
 // ---------------------------------------------------------------------------
-
-/** Distance within which a candidate is considered already supported. */
-const ALREADY_SUPPORTED_RADIUS_MM = 3.0;
 
 /**
  * Remove candidates whose tip position is already covered by an
@@ -157,20 +189,10 @@ function filterAlreadySupported(candidates: CandidatePoint[]): CandidatePoint[] 
 // Nearby-trunk merge (works even without grid mode)
 // ---------------------------------------------------------------------------
 
-/** When grid is disabled, merge candidates within this XY distance of an existing trunk. */
-const GRIDLESS_MERGE_RADIUS_MM = 4.0;
-
 interface MergeHost {
     trunkId: string;
     tipPos: { x: number; y: number; z: number };
 }
-
-// ---------------------------------------------------------------------------
-// Leaf fan-out — max distance / angle constants
-// ---------------------------------------------------------------------------
-
-const LEAF_FAN_RADIUS_MM = 5.0;
-const LEAF_FAN_MAX_ANGLE_DEG = 60;
 
 // ---------------------------------------------------------------------------
 // Leaf cone triangle collision
@@ -604,16 +626,49 @@ function placeOneCandidate(
             return { kind: 'leaf', preset };
         }
 
-        case 'replace_trunk':
-            // The old trunk gets removed by the caller (or we accept overwrite).
-            // For now: add the new trunk and root.  The old trunk's root is
-            // implicitly replaced because we overwrite the grid node.
-            addRoot(decision.trunkBuild.root);
-            addTrunk(decision.trunkBuild.trunk);
+        case 'replace_trunk': {
+            // Same promote-to-trunk flow as manual placement: materialize the
+            // promoted branch, plan the replacement, then apply it. The old
+            // trunk's contact is preserved as a branch on the new trunk and
+            // rehostable branches/leaves are re-attached — the old trunk is
+            // never left orphaned at the node.
+            const promoteKnot = decision.promoteKnot;
+            const promoteBranch = decision.promoteBranch;
+            if (!promoteKnot || !promoteBranch) {
+                console.log(LOG_PREFIX,
+                    `Replace skip ${candidate.id}: no promoted branch from grid engine`);
+                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset };
+            }
+            addKnot(promoteKnot);
+            addBranch(promoteBranch);
+            const planned = planTrunkReplacement({
+                snapshot: getSnapshot(),
+                trunkIdToRemove: decision.hostTrunkId,
+                mode: 'grid_promote_candidate_to_trunk',
+                nodeKey: decision.nodeKey,
+                promoteBranchId: promoteBranch.id,
+            });
+            const plan = planned?.plan;
+            if (!plan) {
+                console.log(LOG_PREFIX,
+                    `Replace skip ${candidate.id}: replacement planner failed (host ${decision.hostTrunkId})`);
+                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset };
+            }
+            const ok = applyTrunkReplacement(
+                { ...plan, trunkToAdd: decision.trunkBuild.trunk, rootToAdd: decision.trunkBuild.root },
+                undefined,
+                { skipHistory: true }, // the whole run is one undoable entry
+            );
+            if (!ok) {
+                console.log(LOG_PREFIX,
+                    `Replace skip ${candidate.id}: applyTrunkReplacement failed (host ${decision.hostTrunkId})`);
+                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset };
+            }
             console.log(LOG_PREFIX,
                 `Replace trunk @ ${decision.nodeKey}: ` +
                 `${candidate.id} (Z=${candidate.zHeight.toFixed(1)}) → host ${decision.hostTrunkId}`);
             return { kind: 'trunk', preset, entityId: decision.trunkBuild.trunk.id };
+        }
 
         case 'reject': {
             const reason: RejectReason =
@@ -662,6 +717,7 @@ export function runAutoPlace(
     }
 
     const beforeSnapshot = getSnapshot();
+    const kickstandBefore = structuredClone(getKickstandSnapshot());
 
     // ------------------------------------------------------------------
     // 1. Generate candidates
@@ -738,10 +794,9 @@ export function runAutoPlace(
     let modelCtx: ModelSizingContext | undefined;
     if (mesh) {
         const bbox = new THREE.Box3().setFromObject(mesh);
-        const size = new THREE.Vector3();
-        bbox.getSize(size);
         modelCtx = {
-            modelVolumeMm3: size.x * size.y * size.z,
+            modelVolumeMm3: computeMeshVolumeMm3(mesh),
+            modelZMaxMm: bbox.max.z,
             totalCandidates: candidates.length,
             candidatesBelowZ: 0, // placeholder — filled per-candidate below
         };
@@ -777,6 +832,10 @@ export function runAutoPlace(
         clusterTotal.set(c.id, total);
     }
 
+    // Step 3 is wrapped in a rollback guard: state is committed per-candidate,
+    // so an uncaught failure mid-run would otherwise leave partial supports in
+    // the store with no history entry to undo them.
+    try {
     for (const candidate of candidates) {
         try {
             const ctx: ModelSizingContext | undefined = modelCtx
@@ -1151,6 +1210,7 @@ export function runAutoPlace(
                         addKnot(parentKnot);
                         addBranch(branch);
                         overhangSupportsPlaced++;
+                        placedBranches++;
                     }
                 } catch (_) {
                     // Skip this grid point.
@@ -1162,6 +1222,15 @@ export function runAutoPlace(
             console.log(LOG_PREFIX,
                 `Overhang coverage: ${overhangSupportsPlaced} additional branches placed for flat surfaces.`);
         }
+    }
+    } catch (e) {
+        // Safety net: restore the pre-run snapshots and report failure.
+        console.error(LOG_PREFIX,
+            `Auto-support failed mid-run — rolling back.`,
+            e instanceof Error ? e.message : String(e));
+        setSnapshot(beforeSnapshot);
+        setKickstandSnapshot(kickstandBefore);
+        return makeResult(0, 0, 0, 0, 0, 0, false, 'Auto-support failed mid-run; changes rolled back.');
     }
 
     // ------------------------------------------------------------------
@@ -1184,9 +1253,14 @@ export function runAutoPlace(
 
         try {
             const afterSnapshot = getSnapshot();
-            pushHistory({
+            pushSupportHistory({
                 type: SUPPORT_AUTO_PLACE,
-                payload: { before: beforeSnapshot, after: afterSnapshot },
+                payload: {
+                    before: beforeSnapshot,
+                    after: afterSnapshot,
+                    kickstandBefore,
+                    kickstandAfter: structuredClone(getKickstandSnapshot()),
+                },
             });
             console.log(LOG_PREFIX, 'History entry pushed — undo available.');
         } catch (e) {
