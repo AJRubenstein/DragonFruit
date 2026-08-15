@@ -1904,18 +1904,6 @@ async fn run_island_scan_native(
         let triangles_xyz = bytes_to_f32_vec(&mesh_bytes)?;
         let triangles = dragonfruit_slicing_engine::geometry::parse_triangles(&triangles_xyz);
 
-        // Debug dump: write positions + params to temp dir for offline reproduction
-        let dump_dir = std::env::temp_dir().join("dragonfruit-island-debug");
-        let _ = std::fs::create_dir_all(&dump_dir);
-        let _ = std::fs::write(
-            dump_dir.join("params.json"),
-            &params_json,
-        );
-        // Write positions as raw f32 binary (same format as stage_mesh_binary)
-        let _ = std::fs::write(
-            dump_dir.join("positions.bin"),
-            &mesh_bytes,
-        );
         log::debug!(
             "[island-scan-native] triangles={} bbox=({:.4},{:.4},{:.4})-({:.4},{:.4},{:.4}) px_mm={} layer_h={} buf={} conn={} min_area={} overlap_px={} neighborhood={}",
             triangles.len(),
@@ -1925,7 +1913,6 @@ async fn run_island_scan_native(
             params.connectivity, params.min_island_area_mm2,
             params.min_overlap_px, params.overlap_neighborhood_px,
         );
-        log::debug!("[island-scan-native] debug dump: {}", dump_dir.display());
 
         // Phase A: Calculate grid dimensions and bounds
         let origin_x = params.bbox_min_x;
