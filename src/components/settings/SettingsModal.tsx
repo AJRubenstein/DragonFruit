@@ -255,6 +255,17 @@ export function SettingsModal({
   initialTab,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabKey>(initialTab ?? 'general');
+  // The modal stays mounted while closed (isOpen toggles visibility), so activeTab
+  // would otherwise persist across open/close. Reset it to the caller's requested
+  // tab each time the modal opens — the normal open path passes 'general', so
+  // closing on Experiments reopens to General rather than the last-active tab.
+  const wasOpenRef = React.useRef(isOpen);
+  React.useEffect(() => {
+    if (isOpen && !wasOpenRef.current) {
+      setActiveTab(initialTab ?? 'general');
+    }
+    wasOpenRef.current = isOpen;
+  }, [isOpen, initialTab]);
   // Tracks the tab active before the current one, so the Experiments disclaimer
   // can return the user where they were if they decline to acknowledge.
   const previousTabRef = React.useRef<SettingsTabKey>(initialTab ?? 'general');

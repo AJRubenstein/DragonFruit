@@ -193,9 +193,10 @@ experiments). The native-dialog side is *Gating Rust code* below.
 ## Settings UI
 
 Settings → Experiments renders one card per experiment with an ON/OFF toggle.
-Entering the tab first shows an ORA no-warranty / no-liability disclaimer modal
-(rendered via a portal); the tab content is revealed only after the user
-acknowledges.
+The first time the tab is entered in a launch, an ORA no-warranty / no-liability
+disclaimer modal (rendered via a portal) gates the content; after the user
+acknowledges it is not shown again for that launch. The Settings modal always
+reopens on the General tab, not the last-active tab.
 
 ## Verification
 

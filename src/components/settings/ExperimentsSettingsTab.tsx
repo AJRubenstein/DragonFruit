@@ -117,13 +117,24 @@ function ExperimentsDisclaimer({ onAcknowledge, onExit }: ExperimentsDisclaimerP
   );
 }
 
+// Module-level so the disclaimer is shown at most once per app launch, no matter
+// how many times the tab is entered (the tab remounts on each entry).
+let disclaimerSeenThisLaunch = false;
+
 export function ExperimentsSettingsTab({ onExit }: { onExit: () => void }) {
   const [enabledState, setEnabledState] = React.useState<Record<string, boolean>>(() => getInitialEnabledState());
-  // Reset on each tab entry (the tab remounts), so the disclaimer gates every entry.
-  const [acknowledged, setAcknowledged] = React.useState(false);
+  const [showDisclaimer, setShowDisclaimer] = React.useState(false);
 
   const handleToggle = React.useCallback((id: string, enabled: boolean) => {
     setExperimentEnabled(id, enabled);
+  }, []);
+
+  React.useEffect(() => {
+    // Show the ORA disclaimer on the first tab entry of this launch only.
+    if (!disclaimerSeenThisLaunch) {
+      disclaimerSeenThisLaunch = true;
+      setShowDisclaimer(true);
+    }
   }, []);
 
   React.useEffect(() => {
@@ -132,12 +143,12 @@ export function ExperimentsSettingsTab({ onExit }: { onExit: () => void }) {
     });
   }, []);
 
-  if (!acknowledged) {
+  if (showDisclaimer) {
     return typeof document === 'undefined'
       ? null
       : createPortal(
           <ExperimentsDisclaimer
-            onAcknowledge={() => setAcknowledged(true)}
+            onAcknowledge={() => setShowDisclaimer(false)}
             onExit={onExit}
           />,
           document.body,
