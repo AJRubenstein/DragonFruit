@@ -229,6 +229,12 @@ export function NativeSpaceMouseController({
       controls.target
         .copy(camera.position)
         .addScaledVector(dir, focusDistRef.current);
+      // Undo any roll navlib introduced: constrained orbit is always world Z-up, so
+      // restore that up and re-aim at the target. This changes roll only (view
+      // direction is preserved, since the target sits along it), leveling the horizon.
+      camera.up.set(0, 0, 1);
+      camera.lookAt(controls.target);
+      camera.updateMatrixWorld();
       controls.enabled = true;
       controls.update();
     }
