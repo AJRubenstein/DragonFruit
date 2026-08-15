@@ -3862,7 +3862,7 @@ export function ProfileSettingsModal({
                           setIsAddingNetworkPrinter(true);
                           setIsNetworkSettingsOpen(true);
                         }}
-                        aria-label={fleetCount > 0 ? `Open fleet view (${fleetCount})` : 'Add another networked device'}
+                        aria-label={fleetCount > 0 ? `Open fleet view (${fleetCount})` : 'Set up network'}
                         className="ui-button ui-button-secondary !h-7 !w-7 !px-0 !py-0 text-sm inline-flex items-center justify-center rounded-md shrink-0"
                         style={fleetCount > 0
                           ? {
@@ -3871,12 +3871,12 @@ export function ProfileSettingsModal({
                               background: 'color-mix(in srgb, var(--accent), var(--surface-1) 90%)',
                             }
                           : accentSecondaryActionStyle93}
-                        title={fleetCount > 0 ? `Switch to fleet view (${fleetCount})` : 'Add another networked device'}
+                        title={fleetCount > 0 ? `Switch to fleet view (${fleetCount})` : 'Set up network'}
                       >
                         {fleetCount > 0 ? (
                           <span className="grid h-full w-full place-items-center text-[12px] font-semibold leading-none tabular-nums">{fleetCount}</span>
                         ) : (
-                          <Plus className="w-3.5 h-3.5" />
+                          <Wifi className="w-3.5 h-3.5" />
                         )}
                       </button>
                     ) : null,
@@ -3995,7 +3995,8 @@ export function ProfileSettingsModal({
                         className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                         style={{ color: 'var(--text-strong)' }}
                       >
-                        Edit Printer
+                        <Edit3 className="w-3.5 h-3.5" />
+                        Edit
                       </button>
                       <button
                         type="button"
@@ -4025,7 +4026,7 @@ export function ProfileSettingsModal({
                         style={{ color: !hasPrinters ? 'var(--text-muted)' : 'var(--danger)' }}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        Delete Printer
+                        Remove
                       </button>
                     </>
                   )}
