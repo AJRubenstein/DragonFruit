@@ -11,6 +11,7 @@ import {
   type ExperimentDefinition,
 } from '@/features/experiments/experimentsRegistry';
 import { GENERATED_BUILTIN_COMPLEX_PLUGIN_ID_ALLOWLIST } from '@/features/plugins/generatedBuiltinComplexPlugins';
+import { getBuiltinComplexPluginDefinitions } from '@/features/plugins/builtinComplexPlugins';
 
 test('experiments.json manifest declares version 1 with a non-empty experiments array', () => {
   assert.equal(EXPERIMENTS_MANIFEST.version, 1);
@@ -30,6 +31,13 @@ test('experiment definitions expose non-empty ids, names and descriptions with v
     assert.ok(!seen.has(definition.id), `duplicate experiment id "${definition.id}"`);
     seen.add(definition.id);
   }
+});
+
+test('plugin definitions gated behind a disabled experiment are hidden from the getter', () => {
+  // No window → isExperimentEnabled returns defaultEnabled (false for chitubox-import).
+  const ids = getBuiltinComplexPluginDefinitions().map((definition) => definition.id);
+  assert.ok(ids.includes('lys-import'), 'released plugins must stay visible');
+  assert.ok(!ids.includes('chitubox-import'), 'gated plugin must be hidden while its experiment is off');
 });
 
 test('every gatedPlugins id references an allowlisted builtin complex plugin', () => {

@@ -19,6 +19,7 @@ import {
   getPrepareDropSupportStateFromDataTransfer,
   buildDroppedFilesSignature,
   getNativeSceneDialogExtensions,
+  getWebSceneAcceptString,
   type LaunchSceneFileEntry,
   type SceneFileHandoffPayload,
 } from '@/features/import-export/fileHandling';
@@ -624,7 +625,7 @@ export function useImportExportManager({
       return;
     }
 
-    const webFiles = await pickFilesWithWebInput('.voxl,.lys,.zip', true);
+    const webFiles = await pickFilesWithWebInput(getWebSceneAcceptString(), true);
     if (webFiles.length === 0) return;
     const expanded = await expandPickedFilesWithZip(webFiles, 'scene');
     if (expanded.sceneFiles.length > 0) {

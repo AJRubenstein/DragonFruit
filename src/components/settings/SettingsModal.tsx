@@ -1490,7 +1490,14 @@ export function SettingsModal({
                 />
               )}
               {activeTab === 'plugins' && <PluginsSettingsTab />}
-              {activeTab === 'experiments' && <ExperimentsSettingsTab onExit={() => setActiveTab(previousTabRef.current)} />}
+              {activeTab === 'experiments' && (
+                <ExperimentsSettingsTab
+                  // Declining the disclaimer returns to the tab the user came
+                  // from — unless they deep-linked straight here, in which case
+                  // fall back to General rather than re-showing the gate.
+                  onExit={() => setActiveTab(previousTabRef.current === 'experiments' ? 'general' : previousTabRef.current)}
+                />
+              )}
               {activeTab === 'sceneAutosave' && <SceneAutosaveSettingsTab />}
               {activeTab === 'backups' && <LocalBackupsSettingsTab />}
               {activeTab === 'uvtools' && (

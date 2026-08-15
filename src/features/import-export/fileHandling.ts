@@ -30,6 +30,19 @@ export function getNativeSceneDialogExtensions(): string[] {
   ];
 }
 
+/**
+ * `accept` string for the web (browser) scene-file input, so enabled
+ * plugin-gated scene extensions (e.g. `.chitubox` behind an enabled experiment)
+ * are selectable there too. Derived from the filtered plugin scene types.
+ */
+export function getWebSceneAcceptString(): string {
+  const extensions = new Set(['.voxl', '.lys', '.zip']);
+  for (const ft of PLUGIN_SCENE_FILE_TYPES) {
+    extensions.add(ft.fileExtension.toLowerCase());
+  }
+  return [...extensions].join(',');
+}
+
 export function getFileExtension(name: string): string {
   const trimmed = name.trim().toLowerCase();
   const dotIndex = trimmed.lastIndexOf('.');

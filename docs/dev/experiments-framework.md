@@ -174,8 +174,10 @@ getters then filter them automatically:
 
 Consumers must read through these getters, not the raw
 `GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS` const, or the gate is bypassed.
-The chitubox gate also hides `.chitubox` from the native open dialog via the
-frontend-passed extension list — see *Gating Rust code* below for that pattern.
+The chitubox gate also keeps `.chitubox` out of the import surfaces that list
+extensions: the native open dialog (frontend-passed `sceneExtensions`) and the
+browser scene picker (`getWebSceneAcceptString()`, which reflects enabled
+experiments). The native-dialog side is *Gating Rust code* below.
 
 ## Constraints
 
