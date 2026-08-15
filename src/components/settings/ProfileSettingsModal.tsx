@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { AlertTriangle, Box, Check, ChevronLeft, ChevronRight, Download, Edit3, FlaskConical, ImagePlus, LayoutGrid, Loader2, Lock, Plus, Printer, RefreshCw, Search, Trash2, Upload, Wifi, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, Box, Check, ChevronLeft, ChevronRight, Copy, Download, Edit3, FlaskConical, Frown, ImagePlus, LayoutGrid, Loader2, Lock, Plus, Printer, RefreshCw, Search, Trash2, Unlock, Upload, Wifi, WifiOff, X } from 'lucide-react';
 import FleetManagement from '@/components/settings/FleetManagement';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
@@ -34,6 +34,7 @@ import {
   movePrinterProfile,
   setActiveMaterialProfile,
   setActivePrinterProfile,
+  setMaterialProfileLocked,
   selectPrinterNetworkDevice,
   subscribeToProfileStore,
   upsertPrinterNetworkDevice,
@@ -335,6 +336,7 @@ export function ProfileSettingsModal({
   const [showOfficialLockDialog, setShowOfficialLockDialog] = React.useState(false);
   const [officialLockedProfileId, setOfficialLockedProfileId] = React.useState<string | null>(null);
   const [showOfficialMaterialLockDialog, setShowOfficialMaterialLockDialog] = React.useState(false);
+  const [materialLockDialogIsOfficial, setMaterialLockDialogIsOfficial] = React.useState(true);
   const [isNetworkSettingsOpen, setIsNetworkSettingsOpen] = React.useState(false);
   const [isAddingNetworkPrinter, setIsAddingNetworkPrinter] = React.useState(false);
   const [networkDiscoveryEnabled, setNetworkDiscoveryEnabled] = React.useState(true);
@@ -876,6 +878,8 @@ export function ProfileSettingsModal({
     if (!selectedMaterialId) return filteredMaterialProfiles[0];
     return filteredMaterialProfiles.find((material) => material.id === selectedMaterialId) ?? filteredMaterialProfiles[0];
   }, [filteredMaterialProfiles, selectedMaterialId]);
+  const isSelectedMaterialOfficial = typeof selectedMaterial?.officialTemplateId === 'string'
+    && selectedMaterial.officialTemplateId.trim().length > 0;
 
   const selectedPrinterUpdate = React.useMemo(() => {
     if (!selectedPrinter) return null;
@@ -1598,7 +1602,8 @@ export function ProfileSettingsModal({
     setSelectedResinFamily(activeMaterial?.resinFamily ?? null);
     if (shouldOpenMaterialAntiAliasing && activeMaterial) {
       const isOfficial = typeof activeMaterial.officialTemplateId === 'string' && activeMaterial.officialTemplateId.trim().length > 0;
-      if (isOfficial) {
+      if (isOfficial || activeMaterial.locked === true) {
+        setMaterialLockDialogIsOfficial(isOfficial);
         setShowOfficialMaterialLockDialog(true);
       } else {
         materialEditorInitialTabOverrideRef.current = 'anti-aliasing';
@@ -3036,7 +3041,8 @@ export function ProfileSettingsModal({
   const openSelectedMaterialEditor = React.useCallback(() => {
     if (!selectedMaterial) return;
     const isOfficial = typeof selectedMaterial.officialTemplateId === 'string' && selectedMaterial.officialTemplateId.trim().length > 0;
-    if (isOfficial) {
+    if (isOfficial || selectedMaterial.locked === true) {
+      setMaterialLockDialogIsOfficial(isOfficial);
       setShowOfficialMaterialLockDialog(true);
       return;
     }
@@ -3107,7 +3113,7 @@ export function ProfileSettingsModal({
     setIsEditingPrinter(true);
   }, [officialLockedProfileId, handlePickPrinter]);
 
-  const handleDuplicateMaterialAsCustom = React.useCallback(() => {
+  const duplicateSelectedMaterial = React.useCallback((openEditor: boolean) => {
     if (!selectedMaterial || !selectedPrinter) return;
     const baseName = selectedMaterial.name.includes('Custom') ? selectedMaterial.name : `${selectedMaterial.name} Custom`;
     const newId = addMaterialProfile(selectedPrinter.id, {
@@ -3130,12 +3136,31 @@ export function ProfileSettingsModal({
       localSettingsByOutput: selectedMaterial.localSettingsByOutput,
       officialTemplateId: undefined,
       officialTemplateVersion: undefined,
+      locked: false,
     });
     setSelectedMaterialId(newId);
     setActiveMaterialProfile(newId);
     setShowOfficialMaterialLockDialog(false);
-    setIsMaterialEditorOpen(true);
+    if (openEditor) {
+      materialEditorInitialTabOverrideRef.current = null;
+      setIsMaterialEditorOpen(true);
+    }
   }, [selectedMaterial, selectedPrinter]);
+
+  const handleDuplicateMaterialAsCustom = React.useCallback(() => {
+    duplicateSelectedMaterial(true);
+  }, [duplicateSelectedMaterial]);
+
+  const handleDuplicateSelectedMaterial = React.useCallback(() => {
+    duplicateSelectedMaterial(true);
+  }, [duplicateSelectedMaterial]);
+
+  const handleToggleMaterialLock = React.useCallback(() => {
+    if (!selectedMaterial) return;
+    const isOfficial = typeof selectedMaterial.officialTemplateId === 'string' && selectedMaterial.officialTemplateId.trim().length > 0;
+    if (isOfficial) return;
+    setMaterialProfileLocked(selectedMaterial.id, selectedMaterial.locked !== true);
+  }, [selectedMaterial]);
 
   const triggerImageUpload = React.useCallback((printerId: string) => {
     setUploadTargetPrinterId(printerId);
@@ -3837,7 +3862,7 @@ export function ProfileSettingsModal({
                           setIsAddingNetworkPrinter(true);
                           setIsNetworkSettingsOpen(true);
                         }}
-                        aria-label={fleetCount > 0 ? `Open fleet view (${fleetCount})` : 'Add another networked device'}
+                        aria-label={fleetCount > 0 ? `Open fleet view (${fleetCount})` : 'Set up network'}
                         className="ui-button ui-button-secondary !h-7 !w-7 !px-0 !py-0 text-sm inline-flex items-center justify-center rounded-md shrink-0"
                         style={fleetCount > 0
                           ? {
@@ -3846,12 +3871,12 @@ export function ProfileSettingsModal({
                               background: 'color-mix(in srgb, var(--accent), var(--surface-1) 90%)',
                             }
                           : accentSecondaryActionStyle93}
-                        title={fleetCount > 0 ? `Switch to fleet view (${fleetCount})` : 'Add another networked device'}
+                        title={fleetCount > 0 ? `Switch to fleet view (${fleetCount})` : 'Set up network'}
                       >
                         {fleetCount > 0 ? (
                           <span className="grid h-full w-full place-items-center text-[12px] font-semibold leading-none tabular-nums">{fleetCount}</span>
                         ) : (
-                          <Plus className="w-3.5 h-3.5" />
+                          <Wifi className="w-3.5 h-3.5" />
                         )}
                       </button>
                     ) : null,
@@ -3970,7 +3995,8 @@ export function ProfileSettingsModal({
                         className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                         style={{ color: 'var(--text-strong)' }}
                       >
-                        Edit Printer
+                        <Edit3 className="w-3.5 h-3.5" />
+                        Edit
                       </button>
                       <button
                         type="button"
@@ -4000,7 +4026,7 @@ export function ProfileSettingsModal({
                         style={{ color: !hasPrinters ? 'var(--text-muted)' : 'var(--danger)' }}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        Delete Printer
+                        Remove
                       </button>
                     </>
                   )}
@@ -4165,25 +4191,23 @@ export function ProfileSettingsModal({
                                   }}
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <span className="truncate text-sm font-semibold block">{material.name}</span>
-                                  {chips.length > 0 && (
-                                    <span className="flex flex-wrap gap-1 mt-1">
-                                      {chips.map((chip) => (
-                                        <span
-                                          key={`${material.id}-${chip}`}
-                                          className="text-[11px] rounded-full border px-1.5 py-0.5"
-                                          style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}
-                                        >
-                                          {chip}
-                                        </span>
-                                      ))}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-[11px]" style={{ color: material.locked ? '#fbbf24' : 'var(--text-muted)' }}>
-                                  {material.locked ? 'Locked' : 'On device'}
+                                <span className="inline-flex min-w-0 items-center gap-1.5 truncate text-sm font-semibold">
+                                  {material.locked && <Lock className="w-3.5 h-3.5 shrink-0" style={{ color: '#fbbf24' }} />}
+                                  <span className="truncate">{material.name}</span>
                                 </span>
+                                {chips.length > 0 && (
+                                  <span className="flex shrink-0 items-center gap-1">
+                                    {chips.map((chip) => (
+                                      <span
+                                        key={`${material.id}-${chip}`}
+                                        className="text-[11px] rounded-full border px-1.5 py-0.5 whitespace-nowrap"
+                                        style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                                      >
+                                        {chip}
+                                      </span>
+                                    ))}
+                                  </span>
+                                )}
                               </div>
                             </button>
                           );
@@ -4326,6 +4350,7 @@ export function ProfileSettingsModal({
                       {filteredMaterialProfiles.map((material) => {
                         const active = selectedMaterial?.id === material.id;
                         const isOfficial = typeof material.officialTemplateId === 'string' && material.officialTemplateId.trim().length > 0;
+                        const isLocked = isOfficial || material.locked === true;
                         return (
                           <button
                             key={material.id}
@@ -4337,7 +4362,8 @@ export function ProfileSettingsModal({
                             onDoubleClick={() => {
                               setSelectedMaterialId(material.id);
                               setActiveMaterialProfile(material.id);
-                              if (isOfficial) {
+                              if (isLocked) {
+                                setMaterialLockDialogIsOfficial(isOfficial);
                                 setShowOfficialMaterialLockDialog(true);
                               } else {
                                 setIsMaterialEditorOpen(true);
@@ -4358,7 +4384,7 @@ export function ProfileSettingsModal({
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className="inline-flex min-w-0 items-center gap-1.5 truncate font-semibold">
-                                {isOfficial && <Lock className="w-3.5 h-3.5 shrink-0" />}
+                                {isLocked && <Lock className="w-3.5 h-3.5 shrink-0" />}
                                 <span className="truncate">{material.name}</span>
                               </span>
                               <span className="tabular-nums">{Math.round(material.layerHeightMm * 1000)} μm</span>
@@ -4401,6 +4427,17 @@ export function ProfileSettingsModal({
                   </button>
                   <button
                     type="button"
+                    onClick={handleDuplicateSelectedMaterial}
+                    disabled={!selectedMaterial}
+                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                    style={{ color: 'var(--text-strong)' }}
+                    title="Duplicate this material profile as a new editable copy"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Duplicate
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleImportSelectedMaterialBundle}
                     disabled={!selectedPrinter}
                     className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
@@ -4419,6 +4456,19 @@ export function ProfileSettingsModal({
                     <Download className="w-3.5 h-3.5" />
                     Export
                   </button>
+                  {selectedMaterial && !isSelectedMaterialOfficial && (
+                    <button
+                      type="button"
+                      onClick={handleToggleMaterialLock}
+                      className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
+                      style={{ color: 'var(--text-strong)' }}
+                      title={selectedMaterial.locked === true ? 'Unlock this material profile' : 'Lock this material profile to prevent accidental edits'}
+                    >
+                      {selectedMaterial.locked === true
+                        ? <><Unlock className="w-3.5 h-3.5" /> Unlock</>
+                        : <><Lock className="w-3.5 h-3.5" /> Lock</>}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={requestDeleteSelectedMaterial}
@@ -4853,32 +4903,27 @@ export function ProfileSettingsModal({
 
               <div className="p-3 space-y-3 overflow-y-auto custom-scrollbar flex-1">
                 {isSelectedPrinterOfficial && (
-                  <div className="rounded-xl border p-3" style={{ borderColor: 'color-mix(in srgb, #d97706, var(--border-subtle) 36%)', background: 'color-mix(in srgb, #d97706, var(--surface-1) 92%)' }}>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <div className="text-sm font-semibold inline-flex items-center gap-1.5" style={{ color: 'var(--text-strong)' }}>
-                          <AlertTriangle className="w-4 h-4" style={{ color: '#d97706' }} />
-                          Official Profile — Edits Limited!
-                        </div>
-                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                          You can change Output Format, Network Support, Format Version, Webcam Support, and Webcam Rotation here. Everything else stays locked unless you make a custom copy.
-                        </div>
-                        <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                          <strong style={{ color: 'var(--text-strong)' }}>Warning:</strong> Custom, non-official profiles may increase the risk of print failure and can potentially damage the machine or cause personal injury.
-                        </div>
+                  <div className="rounded-xl border px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5" style={{ borderColor: 'color-mix(in srgb, #d97706, var(--border-subtle) 36%)', background: 'color-mix(in srgb, #d97706, var(--surface-1) 92%)' }}>
+                    <div className="flex-1 min-w-[240px]">
+                      <div className="text-sm font-semibold inline-flex items-center gap-1.5" style={{ color: 'var(--text-strong)' }}>
+                        <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: '#d97706' }} />
+                        Official Profile — Edits Limited
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleDuplicateSelectedPrinterAsCustom();
-                        }}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-md"
-                        style={accentSecondaryActionStyle92}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        Create Custom Copy
-                      </button>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        Only some fields are editable here; everything else unlocks with a custom copy. Custom copies may increase the risk of print failure or injury.
+                      </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleDuplicateSelectedPrinterAsCustom();
+                      }}
+                      className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-md shrink-0"
+                      style={accentSecondaryActionStyle92}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Create Custom Copy
+                    </button>
                   </div>
                 )}
 
@@ -4927,23 +4972,18 @@ export function ProfileSettingsModal({
                             Clear Image
                           </button>
                         </div>
-                        <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                          Tip: use a front/angled photo for faster visual identification.
-                        </p>
                       </div>
                     </div>
 
-                    <div className="rounded-lg border p-2.5 h-full min-h-0 flex" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), transparent 6%)' }}>
-                      <div className="w-full h-full min-h-0 rounded-md border overflow-hidden flex items-center justify-center" style={{ borderColor: 'var(--border-subtle)', background: printerImageWellBackground }}>
-                        {selectedPrinter.imageDataUrl ? (
-                          <AutoTrimmedImage src={selectedPrinter.imageDataUrl} alt={selectedPrinter.name} className="h-full w-full object-contain" />
-                        ) : (
-                          <div className="text-xs text-center px-3" style={{ color: 'var(--text-muted)' }}>
-                            <Printer className="w-5 h-5 mx-auto mb-1" />
-                            No preview image
-                          </div>
-                        )}
-                      </div>
+                    <div className="w-full h-full min-h-0 rounded-md border overflow-hidden flex items-center justify-center" style={{ borderColor: 'var(--border-subtle)', background: printerImageWellBackground }}>
+                      {selectedPrinter.imageDataUrl ? (
+                        <AutoTrimmedImage src={selectedPrinter.imageDataUrl} alt={selectedPrinter.name} className="h-full w-full object-contain" />
+                      ) : (
+                        <div className="text-xs text-center px-3" style={{ color: 'var(--text-muted)' }}>
+                          <Printer className="w-5 h-5 mx-auto mb-1" />
+                          No preview image
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -5295,7 +5335,18 @@ export function ProfileSettingsModal({
                 </div>
 
                 <div className="py-2 px-2 overflow-y-auto custom-scrollbar min-h-0">
-                  {(() => {
+                  {availableMaterialPresets.length === 0 ? (
+                    <div className="h-full min-h-[320px] flex flex-col items-center justify-center text-center px-6">
+                      <Frown className="w-16 h-16 mb-3" style={{ color: 'var(--text-muted)' }} strokeWidth={1.5} />
+                      <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+                        No presets here yet
+                      </div>
+                      <p className="mt-1 text-xs leading-snug max-w-[340px]" style={{ color: 'var(--text-muted)' }}>
+                        We searched high and low, but there are no material presets for {selectedPrinter.name} yet. We're working on adding some soon.
+                      </p>
+                    </div>
+                  ) : (
+                  (() => {
                     const renderMaterialPresetRow = (preset: MaterialPreset, index: number, groupKey: string, showFamily = false) => {
                       const templateId = typeof preset.templateId === 'string' ? preset.templateId.trim() : '';
                       const selectionKey = templateId || `${preset.brand ?? 'Default'}::${preset.name}`;
@@ -5408,7 +5459,8 @@ export function ProfileSettingsModal({
                         })}
                       </div>
                     );
-                  })()}
+                  })()
+                  )}
                 </div>
               </div>
 
@@ -5718,13 +5770,15 @@ export function ProfileSettingsModal({
 
         <StructuredDialogModal
           open={showOfficialMaterialLockDialog && Boolean(selectedMaterial)}
-          ariaLabel="Official material profile locked"
-          title="Official Profile Locked"
-          subtitle="Official material profiles can't be edited directly."
+          ariaLabel="Material profile locked"
+          title={materialLockDialogIsOfficial ? 'Official Profile Locked' : 'Profile Locked'}
+          subtitle={materialLockDialogIsOfficial
+            ? "Official material profiles can't be edited directly."
+            : 'This material profile is locked to prevent accidental edits.'}
           icon={<Lock className="h-4 w-4" />}
           iconTone="warning"
           zIndexClassName="z-[75]"
-          closeAriaLabel="Close official material profile lock dialog"
+          closeAriaLabel="Close material profile lock dialog"
           onClose={() => setShowOfficialMaterialLockDialog(false)}
           actions={(
             <>
@@ -5735,26 +5789,48 @@ export function ProfileSettingsModal({
               >
                 Cancel
               </button>
+              {!materialLockDialogIsOfficial && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleToggleMaterialLock();
+                    setShowOfficialMaterialLockDialog(false);
+                  }}
+                  className="ui-button ui-button-secondary !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
+                  style={accentSecondaryActionStyle92}
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  Unlock
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleDuplicateMaterialAsCustom}
                 className="ui-button ui-button-secondary !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
                 style={accentSecondaryActionStyle92}
               >
-                <Lock className="w-3.5 h-3.5" />
+                <Copy className="w-3.5 h-3.5" />
                 Make Custom Copy
               </button>
             </>
           )}
         >
-          <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
-            Official material profiles cannot be edited directly.
-            <br />
-            Choose <strong>Make Custom Copy</strong> to duplicate and adjust exposure settings safely.
-            <br />
-            <br />
-            <strong style={{ color: 'var(--danger)' }}>Warning:</strong> Custom exposure settings may affect print quality and could damage the machine or cause personal injury.
-          </p>
+          {materialLockDialogIsOfficial ? (
+            <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
+              Official material profiles cannot be edited directly.
+              <br />
+              Choose <strong>Make Custom Copy</strong> to duplicate and adjust exposure settings safely.
+              <br />
+              <br />
+              <strong style={{ color: 'var(--danger)' }}>Warning:</strong> Custom exposure settings may affect print quality and could damage the machine or cause personal injury.
+            </p>
+          ) : (
+            <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
+              This material profile is locked, so its settings are read-only.
+              <br />
+              Choose <strong>Unlock</strong> to edit it directly, or <strong>Make Custom Copy</strong> to duplicate it as a new editable profile.
+            </p>
+          )}
         </StructuredDialogModal>
 
         <StructuredDialogModal

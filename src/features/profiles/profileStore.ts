@@ -305,6 +305,13 @@ export type MaterialProfile = {
     printerProfileId: string;
     officialTemplateId?: string;
     officialTemplateVersion?: number;
+    /**
+     * User-applied lock on a non-official (custom) material profile. When true,
+     * the profile is treated as read-only in the UI, mirroring official
+     * profiles, but can be unlocked by the user. Official profiles are always
+     * locked regardless of this flag.
+     */
+    locked?: boolean;
     name: string;
     brand: string;
     currencyCode: string;
@@ -1187,6 +1194,7 @@ function sanitizeState(input: Partial<ProfileStoreState> | null | undefined): Pr
                         printerProfileId,
                         officialTemplateId: inferredTemplateId || undefined,
                         officialTemplateVersion: normalizeProfileVersion(materialProfile.officialTemplateVersion, normalizeProfileVersion((matchedTemplate as any)?.profileVersion, 1)),
+                        locked: materialProfile.locked === true,
                         name: profile.name,
                         brand: typeof (profile as any).brand === 'string' ? (profile as any).brand : 'Default',
                         currencyCode: typeof (profile as any).currencyCode === 'string' ? (profile as any).currencyCode.toUpperCase() : 'USD',
@@ -1765,6 +1773,7 @@ export function addMaterialProfile(
         officialTemplateVersion: Number.isFinite(Number((partial as any)?.officialTemplateVersion))
             ? normalizeProfileVersion((partial as any).officialTemplateVersion, 1)
             : undefined,
+        locked: (partial as any)?.locked === true,
         name: partial?.name?.trim() || `Material ${state.materialProfiles.length + 1}`,
         brand: partial?.brand?.trim() || 'Default',
         currencyCode: partial?.currencyCode?.trim().toUpperCase() || 'USD',
@@ -2082,12 +2091,14 @@ export function updateMaterialProfile(id: string, updates: Partial<Omit<Material
         if (profile.id !== id) return profile;
         // Official template materials are read-only; only internal update paths (applyOfficialMaterialProfileUpdate) may change them.
         const isOfficial = typeof profile.officialTemplateId === 'string' && profile.officialTemplateId.trim().length > 0;
-        if (isOfficial) return profile;
+        // User-locked custom materials are read-only too; only setMaterialProfileLocked may change them.
+        if (isOfficial || profile.locked === true) return profile;
         changed = true;
         return {
             ...profile,
             ...updates,
             printerProfileId: profile.printerProfileId,
+            locked: profile.locked,
             brand: updates.brand !== undefined ? updates.brand : profile.brand,
             currencyCode: updates.currencyCode !== undefined ? updates.currencyCode.toUpperCase() : profile.currencyCode,
             name: updates.name !== undefined ? updates.name : profile.name,
@@ -2097,6 +2108,34 @@ export function updateMaterialProfile(id: string, updates: Partial<Omit<Material
             antiAliasingSettings: updates.antiAliasingSettings !== undefined
                 ? sanitizeMaterialAntiAliasingSettings(updates.antiAliasingSettings)
                 : profile.antiAliasingSettings,
+        };
+    });
+
+    if (!changed) return;
+
+    setState(ensureActiveMaterialForActivePrinter({
+        ...state,
+        materialProfiles,
+    }));
+}
+
+/**
+ * Lock or unlock a user-made (non-official) material profile. Official
+ * profiles are always locked and cannot be toggled here.
+ */
+export function setMaterialProfileLocked(id: string, locked: boolean): void {
+    ensureHydrated();
+    let changed = false;
+
+    const materialProfiles = state.materialProfiles.map((profile) => {
+        if (profile.id !== id) return profile;
+        const isOfficial = typeof profile.officialTemplateId === 'string' && profile.officialTemplateId.trim().length > 0;
+        if (isOfficial) return profile;
+        if (profile.locked === locked) return profile;
+        changed = true;
+        return {
+            ...profile,
+            locked,
         };
     });
 
