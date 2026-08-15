@@ -4,6 +4,7 @@ import React from 'react';
 import { ArrowLeftRight, Ban, CheckCircle2, Gamepad2, MousePointer2, SlidersHorizontal } from 'lucide-react';
 import type { SpaceMouseSettings } from '@/components/settings/spacemousePreferences';
 import { getCandidateGamepads, NAMED_3D_MOUSE } from '@/components/scene/camera/SpaceMouseController';
+import { getNativeSpaceMouseActive, subscribeNativeSpaceMouseActive } from '@/components/scene/camera/nativeSpaceMouseBridge';
 import { Select } from '@/components/atoms';
 
 type SpaceMouseSettingsTabProps = {
@@ -17,6 +18,16 @@ function formatNumber(value: number) {
 
 export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettingsTabProps) {
   const [candidatePads, setCandidatePads] = React.useState<Gamepad[]>([]);
+
+  // When the native 3DxWare/navlib bridge is driving the camera, the 3Dconnexion
+  // driver computes all motion itself — the app never applies per-axis sensitivity
+  // or a deadzone — so the Motion Tuning controls below are inert. Hide them while
+  // navlib is active (tuning lives in the 3Dconnexion control panel instead).
+  const navlibActive = React.useSyncExternalStore(
+    subscribeNativeSpaceMouseActive,
+    getNativeSpaceMouseActive,
+    () => false,
+  );
 
   React.useEffect(() => {
     if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
@@ -184,6 +195,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
         </div>
       </section>
 
+      {!navlibActive && (
       <section
         className="rounded-lg border p-3"
         style={{
@@ -312,6 +324,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           </div>
         </div>
       </section>
+      )}
 
       <section
         className="rounded-lg border p-3"

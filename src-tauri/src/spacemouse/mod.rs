@@ -14,6 +14,34 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 mod navlib_sys;
 
+// ─────────────────────── Diagnostic logging gate ───────────────────────
+//
+// navlib's callback tracing (per-frame affine / extents / getter-census dumps,
+// device-probe results, load-failure notes) is extremely chatty and only useful
+// while actively debugging the integration. It is gated behind this compile-time
+// flag so normal builds stay quiet; flip to `true` to bring the tracing back.
+// The sole exception is the "navlib bridge started" line in `nav::start`, which
+// logs unconditionally so the driver being detected is always visible.
+const NAV_DEBUG_LOG: bool = false;
+
+/// `log::info!` that only fires when [`NAV_DEBUG_LOG`] is set.
+macro_rules! nav_log {
+    ($($arg:tt)*) => {
+        if $crate::spacemouse::NAV_DEBUG_LOG {
+            log::info!($($arg)*);
+        }
+    };
+}
+
+/// `log::warn!` that only fires when [`NAV_DEBUG_LOG`] is set.
+macro_rules! nav_warn {
+    ($($arg:tt)*) => {
+        if $crate::spacemouse::NAV_DEBUG_LOG {
+            log::warn!($($arg)*);
+        }
+    };
+}
+
 // ─────────────────────────── Phase 1: live bridge types ───────────────────────────
 //
 // These cross the JS<->Rust boundary and are platform-independent (plain arrays,
@@ -161,7 +189,7 @@ pub fn probe() -> NavlibProbe {
 #[tauri::command]
 pub fn spacemouse_native_probe() -> NavlibProbe {
     let result = probe();
-    log::info!("[spacemouse] navlib probe: {result:?}");
+    nav_log!("[spacemouse] navlib probe: {result:?}");
     result
 }
 
@@ -314,7 +342,7 @@ mod spike {
                 s.affine_writes += 1;
                 // Throttle: log the camera position every ~30 frames of motion.
                 if s.affine_writes % 30 == 1 {
-                    log::info!(
+                    nav_log!(
                         "[spacemouse] view.affine write #{} pos≈({:.2}, {:.2}, {:.2})",
                         s.affine_writes,
                         s.affine[12],
@@ -327,7 +355,7 @@ mod spike {
                 let m = v.value.b != 0;
                 if m != s.motion {
                     s.motion = m;
-                    log::info!("[spacemouse] motion -> {m}");
+                    nav_log!("[spacemouse] motion -> {m}");
                 }
             }
             b"view.fov" => {
@@ -382,7 +410,7 @@ mod spike {
             unsafe {
                 (self.navlib.nl_close)(self.handle);
             }
-            log::info!("[spacemouse] spike session closed");
+            nav_log!("[spacemouse] spike session closed");
         }
     }
 
@@ -399,7 +427,7 @@ mod spike {
         };
         let rc = (nl.nl_write_value)(handle, name.as_ptr() as PropertyT, &v);
         if rc != 0 {
-            log::warn!(
+            nav_warn!(
                 "[spacemouse] write {} failed rc=0x{rc:X}",
                 String::from_utf8_lossy(&name[..name.len() - 1])
             );
@@ -423,7 +451,7 @@ mod spike {
                     loaded_from = cand;
                     break;
                 }
-                Err(e) => log::warn!("[spacemouse] load {cand} failed: {e}"),
+                Err(e) => nav_warn!("[spacemouse] load {cand} failed: {e}"),
             }
         }
         let navlib = navlib.ok_or_else(|| "navlib could not be loaded".to_string())?;
@@ -462,7 +490,7 @@ mod spike {
             write_bool(&navlib, handle, P_FOCUS, true);
         }
 
-        log::info!(
+        nav_log!(
             "[spacemouse] spike NlCreate ok (handle={handle}) from {loaded_from} — wiggle the puck"
         );
         *guard = Some(SpikeSession {
@@ -652,7 +680,7 @@ mod nav {
         if s.motion {
             if let Ok(mut seen) = getter_census().lock() {
                 if seen.insert(key.to_vec()) {
-                    log::info!(
+                    nav_log!(
                         "[spacemouse] GET {} during motion",
                         String::from_utf8_lossy(key)
                     );
@@ -748,7 +776,7 @@ mod nav {
                 // snap-back navlib may write at transaction end / motion release).
                 let jump = (dx * dx + dy * dy + dz * dz).sqrt();
                 if s.seq % 6 == 1 || jump > 1.0 {
-                    log::info!(
+                    nav_log!(
                         "[spacemouse] affine #{} pos≈({:.2}, {:.2}, {:.2}) Δ≈({:.3}, {:.3}, {:.3}) |Δ|≈{:.3}",
                         s.seq, m[12], m[13], m[14], dx, dy, dz, jump,
                     );
@@ -763,7 +791,7 @@ mod nav {
                     .iter()
                     .all(|v| v.is_finite());
                 if !finite || (b.max.x - b.min.x).abs() < 1e-3 {
-                    log::info!(
+                    nav_log!(
                         "[spacemouse] extents REJECTED (finite={finite}) \
                          min=({:.3},{:.3}) max=({:.3},{:.3})",
                         b.min.x, b.min.y, b.max.x, b.max.y,
@@ -782,7 +810,7 @@ mod nav {
                 s.ortho_max = b.max;
                 s.extents_seq = s.extents_seq.wrapping_add(1);
                 if s.extents_seq % 3 == 1 {
-                    log::info!(
+                    nav_log!(
                         "[spacemouse] extents #{} center≈({:.2},{:.2}) w≈{:.2} h≈{:.2} \
                          Δcenter≈({:.3},{:.3}) Δw≈{:.3}",
                         s.extents_seq,
@@ -805,7 +833,7 @@ mod nav {
                         }
                     }
                     let a = &s.affine;
-                    log::info!(
+                    nav_log!(
                         "[spacemouse] motion -> {m} (perspective={}, focusDistance={:.2}, extentsWidth≈{:.2})\n  \
                          right=({:.2},{:.2},{:.2}) up=({:.2},{:.2},{:.2}) fwd=({:.2},{:.2},{:.2}) pos=({:.2},{:.2},{:.2})",
                         s.perspective,
@@ -833,7 +861,7 @@ mod nav {
                 static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                 let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if n % 6 == 0 || d > 0.25 {
-                    log::info!(
+                    nav_log!(
                         "[spacemouse] view.target set #{n} ({:.2},{:.2},{:.2}) Δ≈({:.3},{:.3},{:.3}) |Δ|≈{:.3}",
                         p.x, p.y, p.z, dx, dy, dz, d,
                     );
@@ -844,7 +872,7 @@ mod nav {
                 static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                 let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if n % 12 == 0 {
-                    log::info!(
+                    nav_log!(
                         "[spacemouse] pivot.position set #{n} ({:.2},{:.2},{:.2})",
                         p.x, p.y, p.z,
                     );
@@ -854,14 +882,14 @@ mod nav {
                 // navlib brackets every motion frame with begin(N)/end(0), which
                 // floods the log. Log sparsely just to confirm frames are running.
                 if v.value.l != 0 && v.value.l % 30 == 1 {
-                    log::info!("[spacemouse] transaction = {} (frames running)", v.value.l);
+                    nav_log!("[spacemouse] transaction = {} (frames running)", v.value.l);
                 }
             }
             // DIAGNOSTIC pose channels — if a Camera-mode gesture lights any of
             // these up, THAT is the "different interface" Camera mode drives.
             b"selection.affine" => {
                 let m = v.value.matrix.m;
-                log::info!(
+                nav_log!(
                     "[spacemouse] *** selection.affine written pos≈({:.2},{:.2},{:.2})",
                     m[12], m[13], m[14],
                 );
@@ -871,20 +899,20 @@ mod nav {
                 static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                 let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if n % 6 == 0 {
-                    log::info!(
+                    nav_log!(
                         "[spacemouse] *** view.frustum written #{n} l={:.2} r={:.2} b={:.2} t={:.2} n={:.2} f={:.2}",
                         f.left, f.right, f.bottom, f.top, f.near_val, f.far_val,
                     );
                 }
             }
             b"view.constructionPlane" => {
-                log::info!("[spacemouse] *** view.constructionPlane written");
+                nav_log!("[spacemouse] *** view.constructionPlane written");
             }
             b"pointer.position" => {
                 static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                 let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if n % 60 == 0 {
-                    log::info!("[spacemouse] *** pointer.position written (#{n})");
+                    nav_log!("[spacemouse] *** pointer.position written (#{n})");
                 }
             }
             b"pivot.visible" => {}
@@ -954,7 +982,7 @@ mod nav {
             unsafe {
                 (self.navlib.nl_close)(self.handle);
             }
-            log::info!("[spacemouse] nav session closed");
+            nav_log!("[spacemouse] nav session closed");
         }
     }
 
@@ -970,7 +998,7 @@ mod nav {
         };
         let rc = (nl.nl_write_value)(handle, name.as_ptr() as PropertyT, &v);
         if rc != 0 {
-            log::warn!(
+            nav_warn!(
                 "[spacemouse] write {} failed rc=0x{rc:X}",
                 String::from_utf8_lossy(&name[..name.len() - 1])
             );
@@ -995,7 +1023,7 @@ mod nav {
                     loaded_from = cand;
                     break;
                 }
-                Err(e) => log::warn!("[spacemouse] load {cand} failed: {e}"),
+                Err(e) => nav_warn!("[spacemouse] load {cand} failed: {e}"),
             }
         }
         let navlib = navlib.ok_or_else(|| "navlib could not be loaded".to_string())?;
