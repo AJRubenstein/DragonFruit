@@ -143,3 +143,20 @@ Two invariants that mimicry won't teach — get either wrong and undo breaks **s
 - **Everything pushed to the stack needs a handler** — even a marker with no undo behaviour
   needs a pass-through (`() => true`), or an unhandled entry strands the stack (see
   `SCENE_SLICED`). A handler returning `false` means "unrecoverable"; the entry is discarded.
+
+## Rust crate version bumps
+
+The native crates under `rust/` (`dragonfruit-islands`, `dragonfruit-sdf`,
+`dragonfruit-mesh-core`, …) are **standalone crates** — there is no workspace
+root — consumed by the Tauri shell via path dependencies in
+`src-tauri/Cargo.toml`. Because path deps always resolve, a stale `version` is
+invisible locally but breaks the lock file, caches, and any versioned consumer.
+
+Whenever you change one of these crates, **bump its `version`** in that crate's
+`Cargo.toml`:
+
+- `patch` for bug fixes, `minor` for new features (semver).
+- If another crate or the shell pins it by version, update that requirement to
+  match.
+- Run `cargo check` (or `cargo build`) afterwards so `Cargo.lock` picks up the
+  bump before committing.
