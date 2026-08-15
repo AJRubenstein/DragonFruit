@@ -22,12 +22,12 @@
 export type CaptureRow = [t: number, dx: number, dy: number, wdy: number];
 
 /**
- * Logitech M705 wheel, turned slowly, with LinearMouse running.
+ * Logitech M705 wheel, turned slowly.
  *
  * Six notches, each an isolated event 240-770ms from the next. Note what is
- * NOT here: no off-axis, no fractions, and wheelDeltaY is -39, not a multiple
- * of 120 — LinearMouse's acceleration curve decides these numbers, not the
- * hardware. So a wheel produces no positive evidence at all, and the classifier
+ * NOT here: no off-axis, no fractions, and wheelDeltaY is -39 — not a multiple
+ * of 120, so the quantisation rule that works in Blink is inert here. A wheel
+ * produces no positive evidence at all on this platform, and the classifier
  * has to reach the right answer by refusing to claim it knows.
  */
 export const MOUSE_SLOW: CaptureRow[] = [
@@ -43,9 +43,15 @@ export const MOUSE_SLOW: CaptureRow[] = [
  * The same M705 spun hard, then let go, then a few slow notches.
  *
  * The capture that buries any timing-based heuristic: 106 events, most of them
- * 16-24ms apart — frame-rate cadence, from a mouse. LinearMouse is smoothing
- * the notches into a continuous stream. Magnitudes run 13 → 65 → 103 → 206,
- * covering the whole range a trackpad flick occupies.
+ * 16-24ms apart — frame-rate cadence, from a mouse. Magnitudes run 13 → 65 →
+ * 103 → 206, covering the whole range a trackpad flick occupies.
+ *
+ * Two later captures settle where that comes from. With LinearMouse quit, the
+ * same spin gives the same structure — a 13 unit for a slow notch, 103 when
+ * accelerated, clean multiples of 103 up to 514, still 16-24ms apart. With it
+ * running again: 12 and 103, multiples to 412, some events only 8ms apart. So
+ * macOS is doing the smoothing; the remapper barely shows up in the numbers.
+ * Neither is kept as a separate fixture — same shape, so no extra coverage.
  *
  * Every row has deltaX 0 and wheelDeltaY === deltaY * -3, so it is stored as
  * [timeStamp, deltaY] pairs and expanded on replay. That -3 relation holds in

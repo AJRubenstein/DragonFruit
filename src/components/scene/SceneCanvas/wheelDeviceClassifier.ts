@@ -39,11 +39,12 @@ export type WheelSample = {
  *
  * What is deliberately NOT used: the *size* of a delta, and the *cadence* of
  * the event stream. Both describe the platform's scroll pipeline, not the
- * device. macOS accelerates the wheel and gives it a momentum tail, so one
- * notch arrives as a burst of decaying pixel deltas that looks exactly like a
- * trackpad flick — the mistake that made the wheel stop zooming mid-gesture.
- * Any of it can be rewritten anyway by a userspace remapper (LinearMouse, Mos,
- * Logi Options+), which sits between the hardware and the browser.
+ * device. macOS accelerates the wheel and smooths it into a stream, so a hard
+ * spin arrives at 16-24ms per event with deltas from 13 to 514 — frame-rate
+ * cadence and trackpad-sized numbers, from a mouse. That is the OS itself, not
+ * a remapper: the captures in the fixtures were taken with LinearMouse both
+ * running and quit, and the numbers are the same. A remapper (LinearMouse, Mos,
+ * Logi Options+) can rewrite them further, which only makes the point stronger.
  *
  * A verdict is sticky for the length of a gesture, and survives between
  * gestures for a short while: the device does not change between two flicks a
