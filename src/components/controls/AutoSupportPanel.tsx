@@ -10,6 +10,8 @@ import { runAutoPlace } from '@/supports/autoSupport';
 import type { SizingDebugInfo, AutoSupportSettings } from '@/supports/autoSupport';
 import { getSettings, updateAutoSupportSettings } from '@/supports/Settings/state';
 import { getSnapshot, setSnapshot } from '@/supports/state';
+import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
+import type { Knot } from '@/supports/types';
 
 /** Set to true while auto-support is busy (scanning or placing).
  *  Page-level overlay reads this to show the "Generating Supports"
@@ -64,44 +66,22 @@ type KnobDef = {
 
 const KNOBS: KnobDef[] = [
   { key: 'minIslandAreaMm2',     label: 'Min Island Area',       min: 0.01, max: 2,    step: 0.01, unit: 'mm²', hint: 'Skip islands smaller than this area' },
-  { key: 'tipInfluenceRadiusMm',  label: 'Tip Influence Radius',  min: 0.1,  max: 10,   step: 0.1,  unit: 'mm',  hint: 'Candidates within this distance are merged' },
-  { key: 'clusterRadiusMm',       label: 'Cluster Radius',        min: 5,    max: 40,   step: 0.5,  unit: 'mm',  hint: 'Max XY distance for grouping into a tree cluster' },
-  { key: 'maxBranchReachMm',      label: 'Max Branch Reach',      min: 5,    max: 40,   step: 0.5,  unit: 'mm',  hint: 'Furthest a branch can fan out from its core trunk' },
-  { key: 'maxBranchAngleDeg',     label: 'Max Branch Angle',      min: 20,   max: 60,   step: 1,    unit: '°',   hint: 'Steepest angle a branch can leave the trunk' },
-  { key: 'minTrunkSeparationMm',  label: 'Min Trunk Separation',  min: 3,    max: 30,   step: 0.5,  unit: 'mm',  hint: 'Minimum XY distance between independent trunks' },
-  { key: 'densityFactor',         label: 'Density Factor',        min: 0.5,  max: 3,    step: 0.1,  unit: '×',   hint: 'Scaling multiplier for overall support density' },
+  { key: 'tipInfluenceRadiusMm',  label: 'Tip Influence Radius',  min: 0.1,  max: 10,   step: 0.1,  unit: 'mm',  hint: 'Candidates within this 3D distance are merged' },
   { key: 'maxAttachmentsPerTrunk',         label: 'Max Attachments / Trunk',   min: 2,  max: 50, step: 1,   unit: '',   hint: 'Max combined branches + leaves per trunk' },
-  { key: 'maxVerticalAttachmentDistanceMm', label: 'Max Vertical Attach Dist', min: 5, max: 80, step: 1,   unit: 'mm', hint: 'Max vertical distance from knot to tip' },
-  { key: 'maxHorizontalAttachmentDistanceMm', label: 'Max Horizontal Attach Dist', min: 2, max: 40, step: 0.5, unit: 'mm', hint: 'Max horizontal distance from knot to tip' },
-  { key: 'minHorizontalLeafAngleDeg',       label: 'Min Horiz Leaf Angle',     min: 10, max: 60, step: 1,   unit: '°',  hint: 'Min angle from horizontal for leaf attachment' },
-  { key: 'verticalKnotSpacingMm', label: 'Vertical Knot Spacing', min: 0.5, max: 10, step: 0.5, unit: 'mm', hint: 'Vertical spacing between knots on same shaft' },
-  { key: 'maxConeAngleDevDeg',   label: 'Max Cone Angle Deviation', min: 5, max: 60, step: 1, unit: '°', hint: 'Max cone angle deviation for clearance search' },
 ];
 
 const PRESETS = {
   light: {
-    minIslandAreaMm2: 0.05, tipInfluenceRadiusMm: 2.0, clusterRadiusMm: 15,
-    maxBranchReachMm: 20, maxBranchAngleDeg: 45, minTrunkSeparationMm: 8,
-    densityFactor: 1.0,
-    maxAttachmentsPerTrunk: 8, maxVerticalAttachmentDistanceMm: 35,
-    maxHorizontalAttachmentDistanceMm: 12, minHorizontalLeafAngleDeg: 35,
-    verticalKnotSpacingMm: 4, maxConeAngleDevDeg: 25,
+    minIslandAreaMm2: 0.05, tipInfluenceRadiusMm: 2.0,
+    maxAttachmentsPerTrunk: 8,
   },
   medium: {
-    minIslandAreaMm2: 0.02, tipInfluenceRadiusMm: 0.5, clusterRadiusMm: 20,
-    maxBranchReachMm: 25, maxBranchAngleDeg: 50, minTrunkSeparationMm: 6,
-    densityFactor: 1.0,
-    maxAttachmentsPerTrunk: 12, maxVerticalAttachmentDistanceMm: 40,
-    maxHorizontalAttachmentDistanceMm: 15, minHorizontalLeafAngleDeg: 30,
-    verticalKnotSpacingMm: 3, maxConeAngleDevDeg: 30,
+    minIslandAreaMm2: 0.02, tipInfluenceRadiusMm: 0.5,
+    maxAttachmentsPerTrunk: 12,
   },
   heavy: {
-    minIslandAreaMm2: 0.0, tipInfluenceRadiusMm: 0.1, clusterRadiusMm: 25,
-    maxBranchReachMm: 30, maxBranchAngleDeg: 55, minTrunkSeparationMm: 4,
-    densityFactor: 1.5,
-    maxAttachmentsPerTrunk: 20, maxVerticalAttachmentDistanceMm: 50,
-    maxHorizontalAttachmentDistanceMm: 20, minHorizontalLeafAngleDeg: 20,
-    verticalKnotSpacingMm: 2, maxConeAngleDevDeg: 40,
+    minIslandAreaMm2: 0.0, tipInfluenceRadiusMm: 0.1,
+    maxAttachmentsPerTrunk: 20,
   },
 } satisfies Record<string, Partial<AutoSupportSettings>>;
 
@@ -202,9 +182,58 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
       for (const id of Object.keys(snap.anchors)) {
         if (snap.anchors[id].modelId === activeModelId) delete next.anchors[id];
       }
-      // Clean up braces and knots (no modelId — delete all).
-      for (const id of Object.keys(snap.braces)) delete next.braces[id];
-      for (const id of Object.keys(snap.knots)) delete next.knots[id];
+      // Delete only this model's braces: those carrying its modelId, or whose
+      // knots hang off its segments (legacy braces without modelId). Other
+      // models' braces survive.
+      const modelSegments = new Set<string>();
+      for (const t of Object.values(snap.trunks)) {
+        if (t.modelId === activeModelId) for (const s of t.segments) modelSegments.add(s.id);
+      }
+      for (const b of Object.values(snap.branches)) {
+        if (b.modelId === activeModelId) for (const s of b.segments) modelSegments.add(s.id);
+      }
+      const removedBraceIds = new Set<string>();
+      for (const [id, brace] of Object.entries(snap.braces)) {
+        const knotA = brace.startKnotId ? snap.knots[brace.startKnotId] : undefined;
+        const knotB = brace.endKnotId ? snap.knots[brace.endKnotId] : undefined;
+        const belongsToModel =
+          brace.modelId === activeModelId ||
+          (knotA ? modelSegments.has(knotA.parentShaftId) : false) ||
+          (knotB ? modelSegments.has(knotB.parentShaftId) : false);
+        if (belongsToModel) {
+          removedBraceIds.add(id);
+          delete next.braces[id];
+        }
+      }
+      // Rebuild knots: keep those referenced by surviving entities (other
+      // models' trunks/branches/braces/leaf cones) or by the kickstand store;
+      // drop orphans left by this model's deleted supports.
+      const survivingSegmentIds = new Set<string>();
+      for (const t of Object.values(next.trunks)) {
+        for (const s of t.segments) survivingSegmentIds.add(s.id);
+      }
+      for (const b of Object.values(next.branches)) {
+        for (const s of b.segments) survivingSegmentIds.add(s.id);
+      }
+      for (const brace of Object.values(next.braces)) {
+        survivingSegmentIds.add(`braceSegment:${brace.id}`);
+      }
+      for (const l of Object.values(next.leaves)) {
+        survivingSegmentIds.add(`leafCone:${l.id}`);
+      }
+      const kickstandKnotIds = new Set<string>();
+      const kickstandSnap = getKickstandSnapshot();
+      for (const k of Object.values(kickstandSnap.kickstands)) {
+        kickstandKnotIds.add(k.hostKnotId);
+        for (const s of k.segments) survivingSegmentIds.add(s.id);
+      }
+      const nextKnots: Record<string, Knot> = {};
+      for (const [id, knot] of Object.entries(snap.knots)) {
+        if (survivingSegmentIds.has(knot.parentShaftId) || kickstandKnotIds.has(id)) {
+          nextKnots[id] = knot;
+        }
+      }
+      next.knots = nextKnots;
       // Clean up twigs and sticks if they reference this model.
       for (const id of Object.keys(snap.twigs)) {
         if (snap.twigs[id].modelId === activeModelId) delete next.twigs[id];
@@ -441,7 +470,6 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
                 { key: 'enabled' as const, label: 'Enabled' },
                 { key: 'prioritizeIntersection' as const, label: 'Prioritize Dual' },
                 { key: 'debugSkipAutoBracing' as const, label: 'Skip Brace' },
-                { key: 'debugClusterColorsEnabled' as const, label: 'Cluster Colors' },
               ]).map((t) => (
                 <button key={t.key} type="button"
                   onClick={() => setDraft((d) => ({ ...d, [t.key]: !(d as any)[t.key] }))}
@@ -461,23 +489,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
               <div className="rounded-md border p-2.5" style={SECTION_CARD}>
                 <SectionHeader title="Detection" />
                 <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['minIslandAreaMm2', 'tipInfluenceRadiusMm', 'densityFactor'].includes(k.key)).map(knob => (
-                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-                <SectionHeader title="Clustering" />
-                <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['clusterRadiusMm', 'minTrunkSeparationMm'].includes(k.key)).map(knob => (
-                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-                <SectionHeader title="Branching" />
-                <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['maxBranchReachMm', 'maxBranchAngleDeg'].includes(k.key)).map(knob => (
+                  {KNOBS.filter(k => ['minIslandAreaMm2', 'tipInfluenceRadiusMm'].includes(k.key)).map(knob => (
                     <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
                   ))}
                 </div>
@@ -489,15 +501,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
               <div className="rounded-md border p-2.5" style={SECTION_CARD}>
                 <SectionHeader title="Attachment Limits" />
                 <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['maxAttachmentsPerTrunk', 'maxVerticalAttachmentDistanceMm', 'maxHorizontalAttachmentDistanceMm', 'minHorizontalLeafAngleDeg'].includes(k.key)).map(knob => (
-                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-                <SectionHeader title="Quality" />
-                <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['verticalKnotSpacingMm', 'maxConeAngleDevDeg'].includes(k.key)).map(knob => (
+                  {KNOBS.filter(k => ['maxAttachmentsPerTrunk'].includes(k.key)).map(knob => (
                     <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
                   ))}
                 </div>
