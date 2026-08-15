@@ -175,6 +175,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           )}
         </div>
 
+        {!navlibActive && (
         <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
           <div className="space-y-1">
             <label className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
@@ -193,6 +194,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
             </Select>
           </div>
         </div>
+        )}
       </section>
 
       {!navlibActive && (
@@ -326,6 +328,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
       </section>
       )}
 
+      {!navlibActive && (
       <section
         className="rounded-lg border p-3"
         style={{
@@ -373,6 +376,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           ))}
         </div>
       </section>
+      )}
 
       <div
         className="rounded-md border px-3 py-2"
