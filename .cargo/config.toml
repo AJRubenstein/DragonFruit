@@ -26,18 +26,6 @@
 # half (which picks up the flags below) and the aarch64-apple-darwin half (which
 # does not), which is exactly what we want.
 
-# Build cache
-# -----------
-# Route rustc invocations through sccache so incremental compile artifacts are
-# cached across clean builds. Requires `sccache` on PATH; install with
-# `winget install Mozilla.sccache`. It is deliberately NOT listed as an env var
-# (RUSTC_WRAPPER) so the per-target `rustflags` above keep working — cargo
-# treats the env var and config as mutually exclusive only for rustflags, but
-# the wrapper is set here to keep the whole story in one file.
-
-[build]
-rustc-wrapper = "sccache"
-
 [target.x86_64-apple-darwin]
 rustflags = ["-C", "target-feature=+avx2,+fma"]
 
