@@ -4190,25 +4190,23 @@ export function ProfileSettingsModal({
                                   }}
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <span className="truncate text-sm font-semibold block">{material.name}</span>
-                                  {chips.length > 0 && (
-                                    <span className="flex flex-wrap gap-1 mt-1">
-                                      {chips.map((chip) => (
-                                        <span
-                                          key={`${material.id}-${chip}`}
-                                          className="text-[11px] rounded-full border px-1.5 py-0.5"
-                                          style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}
-                                        >
-                                          {chip}
-                                        </span>
-                                      ))}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-[11px]" style={{ color: material.locked ? '#fbbf24' : 'var(--text-muted)' }}>
-                                  {material.locked ? 'Locked' : 'On device'}
+                                <span className="inline-flex min-w-0 items-center gap-1.5 truncate text-sm font-semibold">
+                                  {material.locked && <Lock className="w-3.5 h-3.5 shrink-0" style={{ color: '#fbbf24' }} />}
+                                  <span className="truncate">{material.name}</span>
                                 </span>
+                                {chips.length > 0 && (
+                                  <span className="flex shrink-0 items-center gap-1">
+                                    {chips.map((chip) => (
+                                      <span
+                                        key={`${material.id}-${chip}`}
+                                        className="text-[11px] rounded-full border px-1.5 py-0.5 whitespace-nowrap"
+                                        style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                                      >
+                                        {chip}
+                                      </span>
+                                    ))}
+                                  </span>
+                                )}
                               </div>
                             </button>
                           );
