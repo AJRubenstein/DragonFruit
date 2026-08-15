@@ -1,9 +1,12 @@
-import { GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS } from '@/features/plugins/generatedBuiltinComplexPlugins';
+import { getBuiltinComplexPluginDefinitions } from '@/features/plugins/builtinComplexPlugins';
 
-const PLUGIN_SCENE_FILE_TYPES = GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS.flatMap(
+// Plugin file types are derived from the filtered getter so plugins gated behind
+// disabled experiments (e.g. chitubox-import) are excluded from drop targets,
+// scene detection and MIME resolution at module load.
+const PLUGIN_SCENE_FILE_TYPES = getBuiltinComplexPluginDefinitions().flatMap(
   (def) => (def.fileTypes ?? []).filter((ft) => ft.isSceneFile),
 );
-const PLUGIN_ALL_FILE_TYPES = GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS.flatMap(
+const PLUGIN_ALL_FILE_TYPES = getBuiltinComplexPluginDefinitions().flatMap(
   (def) => def.fileTypes ?? [],
 );
 const PREPARE_DROP_EXTENSIONS = new Set([
@@ -13,6 +16,19 @@ const PREPARE_DROP_EXTENSIONS = new Set([
 export const PLUGIN_IMPORT_WARNING_DISMISSED_STORAGE_KEY =
   PLUGIN_SCENE_FILE_TYPES.find((ft) => ft.fileExtension === '.lys')?.importWarning?.storageKey
   ?? 'dragonfruit.lysImportWarningDismissed';
+
+/**
+ * File extensions (without leading dot) the native "Scene Files" open-dialog
+ * filter should offer, derived from the currently available scene file types.
+ * Passed to the Rust `pick_open_files` command so gated extensions are hidden.
+ */
+export function getNativeSceneDialogExtensions(): string[] {
+  return [
+    'voxl',
+    ...PLUGIN_SCENE_FILE_TYPES.map((ft) => ft.fileExtension.replace(/^\./, '').toLowerCase()),
+    'zip',
+  ];
+}
 
 export function getFileExtension(name: string): string {
   const trimmed = name.trim().toLowerCase();

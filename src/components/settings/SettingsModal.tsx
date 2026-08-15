@@ -8,6 +8,7 @@ import { CameraSettingsTab } from '@/components/settings/CameraSettingsTab';
 import { HotkeysSettingsTab } from '@/components/settings/HotkeysSettingsTab';
 import { MeshSettingsTab } from '@/components/settings/MeshSettingsTab';
 import { PluginsSettingsTab } from '@/components/settings/PluginsSettingsTab';
+import { ExperimentsSettingsTab } from '@/components/settings/ExperimentsSettingsTab';
 import { LocalBackupsSettingsTab } from '@/components/settings/LocalBackupsSettingsTab';
 import { SceneAutosaveSettingsTab } from '@/components/settings/SceneAutosaveSettingsTab';
 import { UvToolsSettingsTab } from '@/components/settings/UvToolsSettingsTab';
@@ -18,7 +19,7 @@ import { UpdatesSettingsTab } from '@/features/updater/UpdatesSettingsTab';
 import { getUpdateChannel, type UpdateChannel } from '@/features/updater/updateBridge';
 import { WorkspacesSettingsTab } from '@/components/settings/WorkspacesSettingsTab';
 import { PerformanceSettingsTab, type SlicingThumbnailRenderSettings } from '@/components/settings/PerformanceSettingsTab';
-import { AlertTriangle, Check, CloudDownload, Edit3, ExternalLink, Gamepad2, Github, HardDrive, Info, Keyboard, MonitorCog, Palette, Plug, RotateCcw, Save, Settings2, Trash2, X, Camera, Grid3x3, ArchiveRestore, ScrollText } from 'lucide-react';
+import { AlertTriangle, Check, CloudDownload, Edit3, ExternalLink, FlaskConical, Gamepad2, Github, HardDrive, Info, Keyboard, MonitorCog, Palette, Plug, RotateCcw, Save, Settings2, Trash2, X, Camera, Grid3x3, ArchiveRestore, ScrollText } from 'lucide-react';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
 import {
   applyThemeCustomColors,
@@ -206,7 +207,7 @@ type SettingsModalProps = {
   initialTab?: SettingsTabKey;
 };
 
-export type SettingsTabKey = 'general' | 'camera' | 'workspaces' | 'mesh' | 'performance' | 'spacemouse' | 'plugins' | 'sceneAutosave' | 'backups' | 'uvtools' | 'ui' | 'hotkeys' | 'logging' | 'updates' | 'about';
+export type SettingsTabKey = 'general' | 'camera' | 'workspaces' | 'mesh' | 'performance' | 'spacemouse' | 'plugins' | 'experiments' | 'sceneAutosave' | 'backups' | 'uvtools' | 'ui' | 'hotkeys' | 'logging' | 'updates' | 'about';
 type SettingsTabTone = 'primary' | 'secondary';
 
 export function SettingsModal({
@@ -254,6 +255,13 @@ export function SettingsModal({
   initialTab,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabKey>(initialTab ?? 'general');
+  // Tracks the tab active before the current one, so the Experiments disclaimer
+  // can return the user where they were if they decline to acknowledge.
+  const previousTabRef = React.useRef<SettingsTabKey>(initialTab ?? 'general');
+  const handleSelectTab = React.useCallback((tab: SettingsTabKey) => {
+    previousTabRef.current = activeTab;
+    setActiveTab(tab);
+  }, [activeTab]);
 
   const [copied, setCopied] = useState(false);
   const handleCopyBuildInfo = React.useCallback(async () => {
@@ -1117,6 +1125,12 @@ export function SettingsModal({
       icon: Plug,
       tone: 'secondary',
     },
+    experiments: {
+      label: 'Experiments',
+      description: 'Early-access and experimental features',
+      icon: FlaskConical,
+      tone: 'secondary',
+    },
     sceneAutosave: {
       label: 'Scene Autosave',
       description: 'Autosave and crash recovery behavior',
@@ -1156,7 +1170,7 @@ export function SettingsModal({
   };
 
   const sidebarTopTabs: SettingsTabKey[] = ['general', 'camera', 'workspaces', 'mesh', 'performance', 'spacemouse', 'ui', 'hotkeys'];
-  const sidebarBottomTabs: SettingsTabKey[] = ['plugins', 'sceneAutosave', 'backups', 'uvtools', 'logging', 'updates', 'about'];
+  const sidebarBottomTabs: SettingsTabKey[] = ['plugins', 'experiments', 'sceneAutosave', 'backups', 'uvtools', 'logging', 'updates', 'about'];
 
 
   const ActiveTabIcon = tabMeta[activeTab].icon;
@@ -1252,7 +1266,7 @@ export function SettingsModal({
                     <button
                       key={tab}
                       type="button"
-                      onClick={() => setActiveTab(tab)}
+                      onClick={() => handleSelectTab(tab)}
                       className="w-full rounded-lg border px-3 py-2 text-left transition-all duration-150"
                       style={active
                         ? {
@@ -1305,7 +1319,7 @@ export function SettingsModal({
                       key={tab}
                       type="button"
                       aria-disabled={false}
-                      onClick={() => setActiveTab(tab)}
+                      onClick={() => handleSelectTab(tab)}
                       className="w-full rounded-lg border px-3 py-2 text-left transition-all duration-150"
                       style={{
                         ...(active
@@ -1476,6 +1490,7 @@ export function SettingsModal({
                 />
               )}
               {activeTab === 'plugins' && <PluginsSettingsTab />}
+              {activeTab === 'experiments' && <ExperimentsSettingsTab onExit={() => setActiveTab(previousTabRef.current)} />}
               {activeTab === 'sceneAutosave' && <SceneAutosaveSettingsTab />}
               {activeTab === 'backups' && <LocalBackupsSettingsTab />}
               {activeTab === 'uvtools' && (

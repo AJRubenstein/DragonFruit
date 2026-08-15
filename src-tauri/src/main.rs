@@ -2133,6 +2133,10 @@ struct WriteBytesToPathArgs {
 struct PickOpenFilesArgs {
     category: String,
     multiple: bool,
+    /// Optional override for the "Scene Files" filter extension list. When set,
+    /// the dialog uses exactly these extensions (e.g. so gated file types like
+    /// .chitubox behind a disabled experiment are hidden from the filter).
+    scene_extensions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -3338,13 +3342,21 @@ struct SceneFileHandoffPayload {
     source: String,
 }
 
-fn build_open_dialog_with_filters(category: &str) -> rfd::FileDialog {
+fn build_open_dialog_with_filters(category: &str, scene_extensions: Option<&[String]>) -> rfd::FileDialog {
     let mut dialog = rfd::FileDialog::new();
 
-    // Build scene extension list: voxl + all plugin-registered extensions + zip (for bundles)
-    let mut scene_exts: Vec<&str> = vec!["voxl"];
-    scene_exts.extend_from_slice(BUILTIN_PLUGIN_SCENE_EXTENSIONS);
-    scene_exts.push("zip");
+    // Build scene extension list: the frontend-provided override when present
+    // (so gated file types are hidden), otherwise voxl + all plugin-registered
+    // extensions + zip (for bundles).
+    let scene_exts: Vec<&str> = match scene_extensions {
+        Some(extensions) => extensions.iter().map(|extension| extension.as_str()).collect(),
+        None => {
+            let mut fallback = vec!["voxl"];
+            fallback.extend_from_slice(BUILTIN_PLUGIN_SCENE_EXTENSIONS);
+            fallback.push("zip");
+            fallback
+        }
+    };
 
     let normalized = category.trim().to_ascii_lowercase();
     dialog = match normalized.as_str() {
@@ -3479,7 +3491,7 @@ async fn write_bytes_to_path(args: WriteBytesToPathArgs) -> Result<String, Strin
 #[tauri::command]
 async fn pick_open_files(args: PickOpenFilesArgs) -> Result<Vec<PickedOpenFile>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let dialog = build_open_dialog_with_filters(&args.category);
+        let dialog = build_open_dialog_with_filters(&args.category, args.scene_extensions.as_deref());
 
         let picked_paths: Vec<std::path::PathBuf> = if args.multiple {
             dialog.pick_files().unwrap_or_default()
