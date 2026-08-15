@@ -6,7 +6,7 @@ import { recomputeContactConeForMovedDisk } from '../../SupportPrimitives/Contac
 import { getSettings } from '../../Settings';
 import { resolveConeAxisPolicy } from '../../PlacementLogic/ConeAxisPolicy';
 import { encodeSupportSettingsHex } from '../../Settings/supportSettingsCodec';
-import { generateUuid } from '../../../utils/uuid';
+import { v4 as uuidv4 } from 'uuid';
 import { getRaftSettings } from '../../Rafts/Crenelated/RaftState';
 
 const ANCHOR_ROOT_BASE_DIAMETER_MM = 2.0;
@@ -57,8 +57,8 @@ export function buildAnchorData(input: AnchorBuildInput): AnchorBuildResult {
     const hasSolidBottom = raft.bottomMode === 'solid';
     const raftThickness = raft.thickness ?? 0;
     const ANCHOR_DISK_HEIGHT_MM = 0.1;
-    const effectiveDiskHeight = hasSolidBottom ? 0.05 : ANCHOR_DISK_HEIGHT_MM;
-    const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+    const effectiveDiskHeight = ANCHOR_DISK_HEIGHT_MM;
+    const verticalOffset = 0;
 
     // Sphere center Z = verticalOffset + effectiveDiskHeight + coneHeight
     // (sphere center is at top of cone, not offset by radius)
@@ -103,13 +103,13 @@ export function buildAnchorData(input: AnchorBuildInput): AnchorBuildResult {
     const rootPos: Vec3 = { x: socketPos.x, y: socketPos.y, z: 0 };
     const jointPos: Vec3 = { x: socketPos.x, y: socketPos.y, z: targetSocketZ };
     const joint: Joint = {
-        id: generateUuid(),
+        id: uuidv4(),
         pos: jointPos,
         diameter: ANCHOR_JOINT_DIAMETER_MM,
     };
 
     const socketJoint: Joint = {
-        id: generateUuid(),
+        id: uuidv4(),
         pos: socketPos,
         diameter: ANCHOR_JOINT_DIAMETER_MM,
     };
@@ -123,11 +123,11 @@ export function buildAnchorData(input: AnchorBuildInput): AnchorBuildResult {
 
     const contactCone: ContactCone = {
         ...authoredCone,
-        id: generateUuid(),
+        id: uuidv4(),
         socketJointId: socketJoint.id,
     };
 
-    const anchorId = generateUuid();
+    const anchorId = uuidv4();
     const anchor: Anchor = {
         id: anchorId,
         modelId,

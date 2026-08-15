@@ -5,6 +5,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { MessageDescriptor } from '@lingui/core';
 import { detectIsIOS } from '@/hooks/usePlatform';
+import { useUiScale } from '@/hooks/useUiScale';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import { AlertTriangle, CheckCircle2, ChevronDown, Download, Gamepad2, LayoutGrid, Loader2, Maximize2, Minimize2, Play, Plus, Printer, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
@@ -72,6 +73,7 @@ import { MeshSmoothingBrushCursor } from '@/features/mesh-smoothing/MeshSmoothin
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
+import { OrganicCutTool, OrganicCutTenonGizmo, useOrganicCutSession } from '@/features/organicCut';
 import { MirrorTool } from '@/features/mirror/MirrorTool';
 import { bakeWithFlips } from '@/features/mirror/logic/bakeWithFlips';
 import { buildMirrorSupportTransforms, reflectTransformAcrossWorldAxis } from '@/features/mirror/logic/buildMirrorSupportTransforms';
@@ -79,7 +81,8 @@ import type { MirrorAxis } from '@/features/mirror/types';
 import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import { RtspRelayCanvasPlayer } from '@/components/monitoring/RtspRelayCanvasPlayer';
 import { IconButton, Toast, ToastViewport } from '@/components/atoms';
-import { EditorContextMenu, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
+import { EditorContextMenu, ORGANIC_CUT_ADD_WAYPOINT_ITEM, ORGANIC_CUT_DELETE_WAYPOINT_ITEM, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
+import { MouseTooltip } from '@/components/ui/MouseTooltip';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { DiagnosticsModal } from '@/components/modals/DiagnosticsModal';
@@ -206,7 +209,7 @@ import {
 } from '@/features/scene/arrange/highPrecisionArrangeWorkerClient';
 
 // Domain Features
-import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker } from '@/features/scene/useSceneCollectionManager';
+import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
 import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import { useTransformManager } from '@/features/transform/useTransformManager';
@@ -218,6 +221,7 @@ import { IslandsPanel } from '@/components/controls/IslandsPanel';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import { useSupportInteractionManager } from '@/features/supports/useSupportInteractionManager';
 import { useUndoRedoHotkeys } from '@/hotkeys/useUndoRedoHotkeys';
+import { useOrganicCutHotkeys, useOrganicCutPreviewHotkey } from '@/hotkeys/useOrganicCutHotkeys';
 import { hotkeyStore, useActionActive, isActionActiveSync, isPrimaryModifierPressed } from '@/hotkeys/hotkeyStore';
 import { useDeleteHotkey } from '@/features/delete/useDeleteHotkey';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
@@ -232,13 +236,15 @@ import {
   getHistoryDebugEvents,
   getRedoCount,
   getUndoCount,
+  getHistoryStackBytes,
   redo,
   subscribeHistory,
   subscribeHistoryDebug,
+  setHistoryOriginProvider,
   subscribeHistoryOperations,
   undo,
 } from '@/history/historyStore';
-import type { HistoryDebugEvent } from '@/history/types';
+import type { HistoryDebugEvent, HistoryOrigin } from '@/history/types';
 import { formatHistoryLabel } from '@/history/formatHistoryLabel';
 import { getSavedCameraProjectionSettings, saveCameraProjectionSettings } from '@/components/settings/cameraProjectionPreferences';
 import {
@@ -316,11 +322,21 @@ import { resolveCompositeMaterialLabel } from '@/utils/materialLabel';
 
 import { type MeshShaderType } from '@/features/shaders/mesh';
 import type { ModelTransform, TransformMode } from '@/hooks/useModelTransform';
-import { useSceneAutosave, suppressSceneAutosave } from '@/hooks/useSceneAutosave';
+import type { SupportMode } from '@/supports/types';
+import { VoxlSizeLimitError } from '@/features/scene/voxl';
+import {
+  useSceneAutosave,
+  suppressSceneAutosave,
+  resolveAutosaveRecovery,
+  readAutosaveRecoveryBytes,
+  deleteAutosaveSidecarForProject,
+  SCENE_AUTOSAVE_FAILED_EVENT,
+} from '@/hooks/useSceneAutosave';
 import { SceneAutosaveRecoveryModal } from '@/components/scene/SceneAutosaveRecoveryModal';
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { ManifoldWarningModal } from '@/components/modals/ManifoldWarningModal';
+
 
 import { IslandScanWorkflowCard } from '@/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard';
 import { IslandVolumesHierarchyCard } from '@/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard';
@@ -518,6 +534,26 @@ function createModelTransformKey(modelId: string, transform: ModelTransform): st
   ].join('|');
 }
 
+/**
+ * Modes a history entry may name as its origin. The history store carries the
+ * origin as plain strings (it must not depend on the app's unions), so these
+ * narrow it back on the way in — an entry recorded by an older build, or a mode
+ * that has since been renamed, is ignored rather than jamming the app into a
+ * mode that no longer exists.
+ */
+const HISTORY_APP_MODES: readonly SupportMode[] = ['prepare', 'analysis', 'support', 'export', 'printing'];
+const HISTORY_TRANSFORM_MODES: readonly TransformMode[] = [
+  'select', 'transform', 'smoothing', 'arrange', 'placeOnFace', 'mirror', 'hollowing', 'organicCut',
+];
+
+function isAppMode(value: string): value is SupportMode {
+  return (HISTORY_APP_MODES as readonly string[]).includes(value);
+}
+
+function isTransformMode(value: string): value is TransformMode {
+  return (HISTORY_TRANSFORM_MODES as readonly string[]).includes(value);
+}
+
 export default function Home() {
   const { _ } = useLingui();
   const { stage, sproutParentingLockHeld } = useLeafPlacementState();
@@ -525,6 +561,8 @@ export default function Home() {
   // for the lifetime of a scene renderer. Otherwise Ctrl+Z depends on which
   // render branch happens to be mounted.
   useSupportHistoryHandlers();
+  // Applies the user's saved UI scale via native webview zoom (no-op in browser).
+  useUiScale();
   // 1. Scene & Geometry (Multi-Model)
   const scene = useSceneCollectionManager();
 
@@ -544,6 +582,7 @@ export default function Home() {
     for (const model of flagged) warnedManifoldModelIdsRef.current.add(model.id);
     setShowManifoldWarning(true);
   }, [scene.models]);
+
   const importSceneFile = scene.importSceneFile;
   const importSceneFiles = scene.importSceneFiles;
   const recentOpenedFiles = scene.recentOpenedFiles;
@@ -566,6 +605,8 @@ export default function Home() {
   // 2. Transform Management (needs geom for bounds)
   const transformMgr = useTransformManager({ geom: scene.geom });
   const [uniformScaling, setUniformScaling] = React.useState(true);
+  // Gizmo frame: world axes, or the active model's own (issue #504).
+  const [localTransformSpace, setLocalTransformSpace] = React.useState(false);
 
   // --- Hollowing manager: placed early so its state/setters are in scope for
   //     useHolePunchManager below. Late/cross deps supplied via a ref populated
@@ -776,7 +817,12 @@ export default function Home() {
   const [showSceneSaveChoiceModal, setShowSceneSaveChoiceModal] = React.useState(false);
   const [sceneSaveChoiceFileName, setSceneSaveChoiceFileName] = React.useState<string | null>(null);
   const [sceneSaveChoicePath, setSceneSaveChoicePath] = React.useState<string | null>(null);
-  const [autosaveRecovery, setAutosaveRecovery] = React.useState<{ savedAt: string } | null>(null);
+  const [autosaveRecovery, setAutosaveRecovery] = React.useState<{
+    savedAt: string;
+    /** The payload discovery resolved — the restore reads this exact file. */
+    voxlPath: string;
+    origin: string;
+  } | null>(null);
   const [showCloseUnsavedChangesModal, setShowCloseUnsavedChangesModal] = React.useState(false);
   const [closeUnsavedChangesBusy, setCloseUnsavedChangesBusy] = React.useState<'none' | 'save_and_close' | 'discard_and_close'>('none');
   const [hasUnsavedSceneChanges, setHasUnsavedSceneChanges] = React.useState(false);
@@ -823,8 +869,56 @@ export default function Home() {
     enabled: sceneAutosaveEnabled,
     debounceMs: sceneAutosaveSettings.debounceMs,
     capMs: sceneAutosaveSettings.capMs,
-    preferredSavePath: preferredOverwriteScenePathRef.current,
+    // **Finding N3.** This used to read `preferredOverwriteScenePathRef.current`
+    // — a ref, read during render. Mutating a ref does not re-render, so the
+    // hook kept whatever value happened to be captured at the last unrelated
+    // render. Harmless while autosave wrote to one fixed location; under
+    // sidecars it is a correctness bug, because after a Save As the recovery
+    // file would keep landing beside the *old* project. `activeSceneFilePath` is
+    // state (set on every successful save and on every scene open), so the
+    // sidecar follows the project.
+    preferredSavePath: activeSceneFilePath,
   });
+
+  /**
+   * User-facing scene-save failure (Ph0.1 sub-phase D).
+   *
+   * Two producers, one surface: the 4 GiB VOXL guard rejecting an explicit save
+   * (D1), and a persistently failing autosave (D3 / finding N4). Both were
+   * previously `console.error` into a console the user never opens — and in the
+   * 4 GiB case the alternative was worse than silence, because the writer
+   * wrapped its `u32` offsets and produced a file that parsed and was wrong.
+   */
+  const [sceneSaveError, setSceneSaveError] = React.useState<{
+    title: string;
+    message: string;
+    detail?: string | null;
+  } | null>(null);
+
+  /**
+   * Persistent autosave failure (Ph0.1 D3, finding N4).
+   *
+   * Fires once per outage, after two consecutive failures — one failure is a
+   * transient (antivirus on the destination, a share blinking), two across a
+   * 30 s debounce is a condition. Before this the user's only signal was a
+   * recovery prompt at next launch showing an hour-old timestamp.
+   */
+  React.useEffect(() => {
+    const onAutosaveFailed = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: string; lastSuccessAt?: string | null }>).detail;
+      setSceneSaveError({
+        title: 'Autosave is not working',
+        message: detail?.message ?? 'The background recovery save failed repeatedly.',
+        detail: detail?.lastSuccessAt
+          ? `Last successful autosave: ${new Date(detail.lastSuccessAt).toLocaleString()}. Save your project manually.`
+          : 'No autosave has succeeded this session. Save your project manually.',
+      });
+    };
+    window.addEventListener(SCENE_AUTOSAVE_FAILED_EVENT, onAutosaveFailed);
+    return () => window.removeEventListener(SCENE_AUTOSAVE_FAILED_EVENT, onAutosaveFailed);
+  }, []);
+
+  const dismissSceneSaveError = React.useCallback(() => setSceneSaveError(null), []);
 
   // Editor toast/notification subsystem (state, refs, fade/show effects,
   // helpers). Triggers stay in Home and call these returned setters; the
@@ -1075,6 +1169,16 @@ export default function Home() {
   const [printingDeviceProcessingElapsedSec, setPrintingDeviceProcessingElapsedSec] = React.useState(0);
   const lastOwnedPrintTempPathRef = React.useRef<string | null>(null);
   const [historyDebugEvents, setHistoryDebugEvents] = React.useState<HistoryDebugEvent[]>([]);
+  // Sizes for the history debug panel. Recomputed only while the panel is open —
+  // walking every payload on each push would tax the hot path for a readout
+  // nobody is looking at.
+  const [historyStackBytes, setHistoryStackBytes] = React.useState<{ undo: number; redo: number; total: number }>({
+    undo: 0,
+    redo: 0,
+    total: 0,
+  });
+  const [sceneSnapshotBytes, setSceneSnapshotBytes] = React.useState(0);
+  const isHistoryDebugOpenRef = React.useRef(false);
   const [historyStackCounts, setHistoryStackCounts] = React.useState<{ undo: number; redo: number }>({
     undo: 0,
     redo: 0,
@@ -2052,13 +2156,25 @@ export default function Home() {
       ? scene.models.find((m) => m.id === scene.activeModelId)
       : undefined;
     const canSplitSupports = !!activeModel?.geometry.meshDefects?.nativeRepairReport?.model_triangle_count;
+    const canMergeSupports = scene.selectedModelIds.length === 2;
+
+    const hasTargetModel = !!scene.activeModelId || scene.selectedModelIds.length > 0;
+    const canLink = scene.selectedModelIds.length >= 2;
+    const selectedOrActiveModels = scene.selectedModelIds.length > 0
+      ? scene.models.filter((m) => scene.selectedModelIds.includes(m.id))
+      : (scene.activeModelId ? scene.models.filter((m) => m.id === scene.activeModelId) : []);
+    const canUnlink = selectedOrActiveModels.some((m) => !!m.linkGroupId);
 
     return [
       ...(!scene.activeModelId ? (['delete', 'cut', 'copy', 'repair'] as const) : []),
+      ...(!hasTargetModel ? (['mark-as-support-geometry', 'mark-as-model-geometry'] as const) : []),
+      ...(!canLink ? (['link-models'] as const) : []),
+      ...(!canUnlink ? (['unlink-models'] as const) : []),
       ...(!scene.canPasteModel ? (['paste'] as const) : []),
       ...(!canSplitSupports ? (['split-supports'] as const) : []),
+      ...(!canMergeSupports ? (['merge-supports'] as const) : []),
     ];
-  }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, supportsCanAddJoint, supportsCanToggleCurve]);
+  }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
   const clearPrintingLayerPreviewUrls = React.useCallback(() => {
     printingLayerPreviewLoadInFlightRef.current.clear();
@@ -2766,9 +2882,7 @@ export default function Home() {
       const topDiameter = topDiameterByRootId.get(root.id) ?? Math.max(0.1, root.diameter * 0.35);
       const topRadius = Math.max(0.001, topDiameter / 2);
 
-      const effectiveDiskHeight = raftSettingsSnapshot.bottomMode === 'solid'
-        ? 0.05
-        : Math.max(0, root.diskHeight);
+      const effectiveDiskHeight = Math.max(0, root.diskHeight);
       const coneHeight = Math.max(0, root.coneHeight);
 
       const diskMm3 = cylinderVolumeMm3(rootRadius, effectiveDiskHeight);
@@ -2901,12 +3015,13 @@ export default function Home() {
       for (const circles of rootsByModel.values()) {
         if (circles.length === 0) continue;
 
-        const chamferInset = raftSettingsSnapshot.bottomMode === 'line'
-          ? Math.max(0, raftSettingsSnapshot.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))))
-          : 0;
+        const thickness = raftSettingsSnapshot.bottomMode === 'line' ? raftSettingsSnapshot.lineHeightMm : raftSettingsSnapshot.thickness;
+        const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))));
+        const wallInset = raftSettingsSnapshot.wallEnabled ? Math.max(0, raftSettingsSnapshot.wallThickness) : 0;
+        const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
         const baseProfile = computeFootprint(circles, {
-          marginMm: 0.2 + chamferInset,
+          marginMm: dynamicMargin,
           samplesPerCircle: 24,
         });
 
@@ -4001,6 +4116,9 @@ export default function Home() {
   }, [printingArtifact]);
 
   const performTopBarSaveScene = React.useCallback(async (options?: { nativePathOverride?: string | null }) => {
+    // Captured before the save so a Save As can clean up the sidecar beside the
+    // project the user just moved away from.
+    const previousScenePath = activeSceneFilePath;
     const visibleModels = scene.models.filter((model) => model.visible);
     const scopeModels = visibleModels.length > 0 ? visibleModels : scene.models;
     const resolvedNativePath = options?.nativePathOverride !== undefined
@@ -4058,6 +4176,16 @@ export default function Home() {
       // Once a scene has been successfully saved to a concrete VOXL path,
       // future Ctrl+S should keep saving in-place without prompting again.
       preferredOverwriteScenePathRef.current = nextActiveScenePath;
+
+      // Save As moved the project. The recovery file beside the old one is now
+      // an orphan that implies unsaved work which does not exist — and the new
+      // sidecar is about to be written beside the new project. Safe to remove
+      // here specifically because the save above succeeded.
+      if (previousScenePath && previousScenePath !== nextActiveScenePath) {
+        void deleteAutosaveSidecarForProject(previousScenePath).catch((error) => {
+          console.warn('[SceneAutosave] Failed removing the sidecar beside the previous project.', error);
+        });
+      }
     }
     if (savedPath) {
       setExportSuccessToast({ id: Date.now(), path: savedPath });
@@ -4093,8 +4221,10 @@ export default function Home() {
     });
 
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const bytes = await invoke<ArrayBuffer>('scene_autosave_read_voxl_bytes');
+      // Read exactly the payload discovery resolved — the sidecar beside the
+      // project, or the generic location if that is where the tick fell back to.
+      // The backend re-validates the path against its own candidate list.
+      const bytes = await readAutosaveRecoveryBytes(recoverySnapshot?.voxlPath ?? null);
       const uint8 = new Uint8Array(bytes);
       if (uint8.byteLength === 0) {
         throw new Error('Autosaved VOXL file is empty.');
@@ -4110,15 +4240,26 @@ export default function Home() {
       const restored = await importSceneFile(file, { suppressRecentTracking: true, suppressPlacementPrompt: true, suppressRepair: true });
       if (restored) {
         await clearAutosave();
-      } else if (recoverySnapshot) {
-        console.warn('[Autosave] Restore failed; keeping recovery prompt available.');
-        setAutosaveRecovery(recoverySnapshot);
+      } else {
+        setSceneSaveError({
+          title: 'Restore Failed',
+          message: 'The autosaved recovery file is corrupted or unreadable.',
+          detail: 'The scene importer rejected or could not parse the autosave data.',
+        });
+        await clearAutosave();
       }
     } catch (error) {
       console.error('[Autosave] Failed to restore autosaved scene.', error);
-      if (recoverySnapshot) {
-        setAutosaveRecovery(recoverySnapshot);
-      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isMissing = errorMessage.includes('No autosaved scene file found') || errorMessage.includes('does not exist');
+      setSceneSaveError({
+        title: 'Restore Failed',
+        message: isMissing
+          ? 'The autosave recovery file could not be found.'
+          : 'The autosaved recovery file is corrupted or unreadable.',
+        detail: errorMessage,
+      });
+      await clearAutosave();
     } finally {
       setNativePickerPreparationState({
         active: false,
@@ -4127,7 +4268,7 @@ export default function Home() {
         progress: null,
       });
     }
-  }, [autosaveRecovery, clearAutosave, importSceneFile]);
+  }, [autosaveRecovery, clearAutosave, importSceneFile, setSceneSaveError]);
 
   const handleAutosaveDiscard = React.useCallback(async () => {
     setAutosaveRecovery(null);
@@ -4173,6 +4314,26 @@ export default function Home() {
       void performTopBarSaveScene({ nativePathOverride: queuedNativePathOverride })
         .catch((error) => {
           console.error('[SceneSave] Save operation failed.', error);
+          // The 4 GiB ceiling is the case that must never be silent: without a
+          // guard the writer wrapped its u32 offsets and wrote a file that
+          // parsed and was wrong. The typed error carries the measured size and
+          // the per-model breakdown, so the message can say what to remove.
+          setSceneSaveError(
+            error instanceof VoxlSizeLimitError
+              ? {
+                  title: 'Scene is too large to save',
+                  message: error.userMessage,
+                  detail: error.perModelBreakdown
+                    .slice(0, 5)
+                    .map((row) => `${row.name}: ${(row.compressedBytes / (1024 * 1024)).toFixed(0)} MB compressed`)
+                    .join('\n'),
+                }
+              : {
+                  title: 'Could not save the scene',
+                  message: error instanceof Error ? error.message : String(error),
+                  detail: null,
+                },
+          );
         })
         .finally(() => {
           sceneSaveInFlightRef.current = false;
@@ -4320,10 +4481,18 @@ export default function Home() {
     let cancelled = false;
     void (async () => {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const manifest = await invoke<{ savedAt: string; clean: boolean } | null>('scene_autosave_read_manifest');
-        if (!cancelled && manifest && !manifest.clean) {
-          setAutosaveRecovery({ savedAt: manifest.savedAt });
+        // Discovery, not a bare manifest read: the payload may be a sidecar
+        // beside the project, the generic location, or a legacy `scene.voxl`
+        // from before Ph0.1. `resolveAutosaveRecovery` validates that whichever
+        // it finds actually exists and really is a VOXL file, so the prompt is
+        // never offered for a payload that cannot be restored.
+        const candidate = await resolveAutosaveRecovery();
+        if (!cancelled && candidate && !candidate.clean) {
+          setAutosaveRecovery({
+            savedAt: candidate.savedAt ?? new Date().toISOString(),
+            voxlPath: candidate.voxlPath,
+            origin: candidate.origin,
+          });
         }
       } catch {
         // Non-fatal: no autosave recovery available.
@@ -4355,13 +4524,27 @@ export default function Home() {
     }
   }, [isDesktopRuntime]);
 
+  /**
+   * Clean exit. The recovery file is deleted **only** when there is nothing left
+   * to recover.
+   *
+   * The unsaved-changes branch deliberately keeps the sidecar: a user who closes
+   * the app and declines to save has still, on the next launch, a right to the
+   * autosaved copy. Deleting it here would turn "don't save" into "destroy my
+   * recovery too". `handleDiscardAndCloseProgram` retains it for the same
+   * reason; `handleSaveAndCloseProgram` deletes it via `clearAutosave`, but only
+   * after the save has actually succeeded.
+   */
   const handleRequestProgramClose = React.useCallback(() => {
     if (hasUnsavedSceneChangesRef.current) {
       setShowCloseUnsavedChangesModal(true);
       return;
     }
-    void closeDesktopWindowNow();
-  }, [closeDesktopWindowNow]);
+    void (async () => {
+      await clearAutosave();
+      await closeDesktopWindowNow();
+    })();
+  }, [clearAutosave, closeDesktopWindowNow]);
 
   const handleDiscardAndCloseProgram = React.useCallback(() => {
     void (async () => {
@@ -4423,6 +4606,15 @@ export default function Home() {
           }
 
           if (!hasUnsavedSceneChangesRef.current) {
+            // Clean exit with nothing outstanding: take the close over so the
+            // recovery file is actually gone before the process ends. A
+            // fire-and-forget delete here would race the window teardown and
+            // leave a `_autosave.voxl` beside a fully-saved project.
+            event.preventDefault();
+            void (async () => {
+              await clearAutosave();
+              await closeDesktopWindowNow();
+            })();
             return;
           }
 
@@ -4445,7 +4637,7 @@ export default function Home() {
         unlisten();
       }
     };
-  }, [isDesktopRuntime]);
+  }, [clearAutosave, closeDesktopWindowNow, isDesktopRuntime]);
 
   React.useEffect(() => {
     if (!isDesktopRuntime()) return;
@@ -5214,6 +5406,15 @@ export default function Home() {
     run(Math.max(0, frameDelay));
   }, [commitPendingTransformHistory]);
 
+  // The tool the user is in, mirrored for `pushHistory` to stamp onto entries,
+  // and the inverse — switching back to an undone entry's tool. Both are refs
+  // because the history subscriber below is installed once, long before the mode
+  // setters exist further down this component.
+  const historyOriginRef = React.useRef<HistoryOrigin>({ appMode: 'prepare', transformMode: 'select' });
+  const restoreHistoryOriginRef = React.useRef<(origin: HistoryOrigin) => void>(() => {});
+
+  React.useEffect(() => setHistoryOriginProvider(() => historyOriginRef.current), []);
+
   React.useEffect(() => {
     const fallbackDescription = (type: string) => {
       if (type === 'scene_models_snapshot_apply') return 'Scene Change';
@@ -5223,6 +5424,11 @@ export default function Home() {
     const unsubscribe = subscribeHistoryOperations(({ direction, action }) => {
       const sourceDescription = action.description?.trim() || fallbackDescription(action.type);
       const description = formatHistoryLabel(sourceDescription);
+
+      // Follow the stack back to where the edit was made: undoing a cut while the
+      // Transform gizmo is up should put the Cut tool back, not silently reshape
+      // geometry the current tool can't even show.
+      if (action.origin) restoreHistoryOriginRef.current(action.origin);
 
       pendingHistoryTransformResyncRef.current = true;
       invalidatePendingTransformHistory();
@@ -5362,6 +5568,11 @@ export default function Home() {
     };
   }, [cancelPendingHistoryTransformResyncFrames]);
 
+  // Latest "is the Cut tool active" flag, for the right-click-up handler below
+  // (declared here so it precedes that handler; updated once organicCutToolActive
+  // is computed later in the component).
+  const organicCutToolActiveRef = React.useRef(false);
+
   const handleEditorPointerDownCapture = React.useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 2) return;
     rightClickGestureRef.current = { x: e.clientX, y: e.clientY, moved: false };
@@ -5386,6 +5597,29 @@ export default function Home() {
     // No editor menu on the empty-scene welcome screen — there is nothing to act
     // on (unless the clipboard holds a cut/copied model that could be pasted).
     if (!moved && !shouldSuppress && (scene.models.length > 0 || scene.canPasteModel)) {
+      // Cut tool: a hovered waypoint MARKER arms "Delete waypoint"; otherwise a
+      // hovered seam LINE arms "Add waypoint here". Either opens the cut menu
+      // instead of the model/support menu. Marker takes priority over line.
+      if (organicCutToolActiveRef.current) {
+        const markerHover = organicCutMarkerHoverRef.current;
+        if (markerHover != null) {
+          setOrganicCutLineMenu({ kind: 'delete', x: e.clientX, y: e.clientY, index: markerHover });
+          window.setTimeout(() => { rightClickGestureRef.current = null; }, 0);
+          return;
+        }
+        const seamHover = organicCutLineHoverRef.current;
+        if (seamHover) {
+          setOrganicCutLineMenu({
+            kind: 'add',
+            x: e.clientX,
+            y: e.clientY,
+            localPoint: seamHover.localPoint,
+            afterIndex: seamHover.afterIndex,
+          });
+          window.setTimeout(() => { rightClickGestureRef.current = null; }, 0);
+          return;
+        }
+      }
       if (scene.mode === 'support' && supportShaftHoverDebug.segmentId && supportShaftHoverDebug.point) {
         setEditorContextMenuSupportTarget({
           segmentId: supportShaftHoverDebug.segmentId,
@@ -5610,6 +5844,11 @@ export default function Home() {
         }
         break;
       }
+      case 'merge-supports': {
+        closeEditorContextMenu();
+        scene.mergeSupports();
+        return;
+      }
       case 'delete':
         if (scene.activeModelId) {
           scene.deleteModel(scene.activeModelId);
@@ -5663,6 +5902,49 @@ export default function Home() {
         }
         break;
       }
+      case 'mark-as-support-geometry': {
+        const targetIds = scene.selectedModelIds.length > 0
+          ? scene.selectedModelIds
+          : (scene.activeModelId ? [scene.activeModelId] : []);
+        if (targetIds.length > 0) {
+          scene.toggleSupportDesignation(targetIds, true);
+        }
+        break;
+      }
+      case 'mark-as-model-geometry': {
+        const targetIds = scene.selectedModelIds.length > 0
+          ? scene.selectedModelIds
+          : (scene.activeModelId ? [scene.activeModelId] : []);
+        if (targetIds.length > 0) {
+          scene.toggleSupportDesignation(targetIds, false);
+        }
+        break;
+      }
+      case 'link-models': {
+        const targetIds = scene.selectedModelIds.length > 0
+          ? scene.selectedModelIds
+          : (scene.activeModelId ? [scene.activeModelId] : []);
+        if (targetIds.length >= 2) {
+          scene.linkModels(targetIds);
+        }
+        break;
+      }
+      case 'unlink-models': {
+        const targetIds = scene.selectedModelIds.length > 0
+          ? scene.selectedModelIds
+          : (scene.activeModelId ? [scene.activeModelId] : []);
+        if (targetIds.length > 0) {
+          scene.unlinkModels(targetIds);
+        }
+        break;
+      }
+      case 'scan-for-supports': {
+        const targetId = scene.activeModelId;
+        if (targetId) {
+          scene.scanModelForSupportsInPlace(targetId);
+        }
+        break;
+      }
       default:
         break;
     }
@@ -5673,6 +5955,12 @@ export default function Home() {
     const refreshHistoryDebug = () => {
       setHistoryDebugEvents(getHistoryDebugEvents());
       setHistoryStackCounts({ undo: getUndoCount(), redo: getRedoCount() });
+      // Sizes only while the panel is open: both walk every entry, and the debug
+      // log updates on every push.
+      if (isHistoryDebugOpenRef.current) {
+        setHistoryStackBytes(getHistoryStackBytes());
+        setSceneSnapshotBytes(getSceneSnapshotRegistryBytes());
+      }
     };
 
     refreshHistoryDebug();
@@ -5685,6 +5973,15 @@ export default function Home() {
       unsubHistoryDebug();
     };
   }, []);
+
+  React.useEffect(() => {
+    isHistoryDebugOpenRef.current = isHistoryDebugOpen;
+    // Opening the panel must not wait for the next push to show a number.
+    if (isHistoryDebugOpen) {
+      setHistoryStackBytes(getHistoryStackBytes());
+      setSceneSnapshotBytes(getSceneSnapshotRegistryBytes());
+    }
+  }, [isHistoryDebugOpen]);
 
   React.useEffect(() => {
     if (isHistoryDebugOpen) {
@@ -6915,12 +7212,13 @@ export default function Home() {
       for (const [modelId, circles] of rootsByModel) {
         if (circles.length === 0) continue;
 
-        const chamferInset = raftSettingsSnapshot.bottomMode === 'line'
-          ? Math.max(0, raftSettingsSnapshot.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))))
-          : 0;
+        const thickness = raftSettingsSnapshot.bottomMode === 'line' ? raftSettingsSnapshot.lineHeightMm : raftSettingsSnapshot.thickness;
+        const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))));
+        const wallInset = raftSettingsSnapshot.wallEnabled ? Math.max(0, raftSettingsSnapshot.wallThickness) : 0;
+        const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
         const baseProfile = computeFootprint(circles, {
-          marginMm: 0.2 + chamferInset,
+          marginMm: dynamicMargin,
           samplesPerCircle: 24,
         });
 
@@ -7305,7 +7603,23 @@ export default function Home() {
     transformMgr.setTransformMode(nextMode);
   }, [suppressTransformPersistenceCycles, transformMgr.transformMode, transformMgr.setTransformMode]);
 
-  useUndoRedoHotkeys({ disabled: hollowingEditMode });
+  // Keep the history origin mirror current, and wire the restore now that both
+  // setters exist. The restore is assigned on every render (no dep array) so it
+  // always closes over today's mode — a stale closure would switch to the tool
+  // that was current when the effect last ran.
+  React.useEffect(() => {
+    historyOriginRef.current = { appMode: scene.mode, transformMode: transformMgr.transformMode };
+  }, [scene.mode, transformMgr.transformMode]);
+
+  React.useEffect(() => {
+    restoreHistoryOriginRef.current = (origin: HistoryOrigin) => {
+      if (isAppMode(origin.appMode) && origin.appMode !== scene.mode) scene.setMode(origin.appMode);
+      if (isTransformMode(origin.transformMode) && origin.transformMode !== transformMgr.transformMode) {
+        setTransformModeWithMirrorFinalize(origin.transformMode);
+      }
+    };
+  });
+
   useDeleteHotkey();
   useCameraProjectionHotkey();
   const hasCavityGeometry = scene.activeModel
@@ -7320,6 +7634,7 @@ export default function Home() {
     hasModels: scene.models.length > 0,
     transformMode: transformMgr.transformMode,
     setTransformMode: setTransformModeWithMirrorFinalize,
+    setLocalTransformSpace: setLocalTransformSpace,
     onArrangeAll: () => {
       void (arrangeLayoutMode === 'array'
         ? handleManualArrayArrangeModels('all')
@@ -7400,22 +7715,13 @@ export default function Home() {
     }
   }, [scene.mode, workspaceCameraSettings]);
 
-  React.useEffect(() => {
-    // Removed old per-workspace selection highlight override effect
-    // const workspaceSelectionHighlightMode = getSavedWorkspaceCameraSettings().selectionHighlightDefaults[scene.mode];
-    // if (workspaceSelectionHighlightMode !== scene.selectionHighlightMode) {
-    //   scene.setSelectionHighlightMode(workspaceSelectionHighlightMode);
-    // }
-  }, [scene.mode, scene.selectionHighlightMode, scene.setSelectionHighlightMode]);
-
-
-
+  // Selection highlight is always Mesh Tint; only the Support-mode spotlight
+  // hold and the Printing workspace deviate (spotlight / none).
   const effectiveSelectionHighlightMode = React.useMemo(() => {
     if (scene.mode === 'printing') return 'none';
-    if (scene.mode !== 'support') return scene.selectionHighlightMode;
     if (isSupportSpotlightHoldActive) return 'spotlight';
-    return scene.selectionHighlightMode === 'spotlight' ? 'tint' : scene.selectionHighlightMode;
-  }, [isSupportSpotlightHoldActive, scene.mode, scene.selectionHighlightMode]);
+    return 'tint';
+  }, [isSupportSpotlightHoldActive, scene.mode]);
 
   const isTransitioningOutOfPrinting = scene.mode !== 'printing' && previousSceneModeRef.current === 'printing';
 
@@ -9027,6 +9333,192 @@ export default function Home() {
 
   const mirrorToolActive = scene.mode === 'prepare' && transformMgr.transformMode === 'mirror';
 
+  // Organic Cut tool session. All Cutting-Mode state and the cut round-trip live
+  // inside the feature hook; page.tsx only supplies the active geometry and
+  // renders the two mounts below. See src/features/organicCut/.
+  const organicCutToolActive = scene.mode === 'prepare' && transformMgr.transformMode === 'organicCut';
+  useUndoRedoHotkeys({ disabled: hollowingEditMode });
+  React.useEffect(() => { organicCutToolActiveRef.current = organicCutToolActive; }, [organicCutToolActive]);
+  // True while a cut waypoint is being dragged, so OrbitControls stays disabled
+  // for the duration of the drag (camera must not move while editing the seam).
+  const [organicCutDragging, setOrganicCutDragging] = React.useState(false);
+  // Timestamp of the most recent drag end. A pointer-up after a drag still
+  // synthesizes a `click` on the model beneath, which would call addPoint and
+  // duplicate the just-moved waypoint. We swallow any organic-cut click that
+  // lands within a short window after a drag ends.
+  const organicCutLastDragEndRef = React.useRef(0);
+  // WHICH of the two the pointer has hold of. Dragging a waypoint moves the seam,
+  // and the cut face travels out from under the tenon; dragging the tenon itself
+  // does not move the face at all. They are both "a cut drag" for OrbitControls
+  // and for undo coalescing, and they are not the same thing at all for the tenon.
+  const [organicCutDraggingTenon, setOrganicCutDraggingTenon] = React.useState(false);
+  const handleOrganicCutDragStateChange = React.useCallback(
+    (dragging: boolean, what: 'seam' | 'tenon' = 'seam') => {
+      if (!dragging) organicCutLastDragEndRef.current = Date.now();
+      setOrganicCutDraggingTenon(dragging && what === 'tenon');
+      setOrganicCutDragging(dragging);
+    },
+    [],
+  );
+  const organicCut = useOrganicCutSession({
+    toolActive: organicCutToolActive,
+    activeGeometry: scene.activeModel?.geometry.geometry ?? null,
+    activeGeometryKey: scene.activeModel?.id ?? null,
+    isDraggingPoint: organicCutDragging,
+    isDraggingTenon: organicCutDraggingTenon,
+    commitParts: React.useCallback((parts: THREE.BufferGeometry[]) => {
+      const target = scene.activeModel;
+      if (!target) {
+        // eslint-disable-next-line no-console
+        console.warn('[organicCut] commitParts: no active model');
+        return false;
+      }
+      // ONE atomic split — replacing + adding as separate calls races on stale
+      // state and deletes a piece. A multi-loop cut may hand us >2 parts.
+      const newIds = scene.splitModelIntoParts(target.id, parts, 'Organic Cut');
+      // eslint-disable-next-line no-console
+      console.info(`[organicCut] commitParts OK | parts=${parts.length} newModelIds=${newIds?.join(',') ?? 'null'}`);
+      return newIds != null;
+    }, [scene]),
+  });
+
+  // Surface picking for the Cut tool rides the SAME StlMesh click pipeline as
+  // hole-punch (camera/orbit/gizmo aware), rather than a separate pick mesh.
+  // Convert the hit into a model-LOCAL loop point (matches the mesh object's own
+  // geometry space) so the stored loop is independent of the plate transform.
+  const handleOrganicCutClick = React.useCallback((hit: THREE.Intersection) => {
+    // Ignore the click synthesized by a waypoint drag's pointer-up — it would
+    // add a duplicate point on top of the one we just moved. (Also covers the
+    // brief moment after the drag where `organicCutDragging` has already reset.)
+    if (organicCutDragging || Date.now() - organicCutLastDragEndRef.current < 250) {
+      return;
+    }
+    const target = scene.activeModel;
+    if (!target) return;
+    const hitModelId = (hit.object.userData?.modelId as string | undefined) ?? target.id;
+    if (hitModelId !== target.id) return;
+
+    // If a waypoint is selected, an empty-surface click just DESELECTS it — it
+    // does NOT place a new point. (Click away to dismiss the selection.)
+    if (organicCut.selectedIndex != null) {
+      organicCut.selectPoint(null);
+      return;
+    }
+
+    hit.object.updateWorldMatrix(true, false);
+    const localPoint = hit.object.worldToLocal(hit.point.clone());
+    const localNormal = hit.face?.normal
+      ? hit.face.normal.clone().normalize()
+      : new THREE.Vector3(0, 0, 1);
+
+    organicCut.addPoint({
+      position: [localPoint.x, localPoint.y, localPoint.z],
+      normal: [localNormal.x, localNormal.y, localNormal.z],
+    });
+  }, [organicCut, scene.activeModel, organicCutDragging]);
+
+  // Cut-tool right-click menus, hover-to-arm. The OrganicCutTool reports when the
+  // cursor is over the seam (→ "Add waypoint here") or over a waypoint marker (→
+  // "Delete waypoint"). We stash the armed target in refs; the existing
+  // right-click-up pipeline opens the appropriate menu instead of the
+  // model/support one, and on confirm we insert or delete.
+  // Left-click on the seam line inserts a waypoint at the clicked point (the more
+  // discoverable counterpart to the right-click "Add waypoint here").
+  const handleOrganicCutLineClick = React.useCallback(
+    (info: { localPoint: [number, number, number]; afterIndex: number }) => {
+      organicCut.selectPoint(null);
+      organicCut.insertPoint(info.afterIndex, { position: info.localPoint, normal: [0, 0, 0] });
+    },
+    [organicCut],
+  );
+  const organicCutLineHoverRef = React.useRef<
+    { localPoint: [number, number, number]; afterIndex: number } | null
+  >(null);
+  const handleOrganicCutLineHoverChange = React.useCallback(
+    (info: { localPoint: [number, number, number]; afterIndex: number } | null) => {
+      organicCutLineHoverRef.current = info;
+    },
+    [],
+  );
+  const organicCutMarkerHoverRef = React.useRef<number | null>(null);
+  const [organicCutMarkerHover, setOrganicCutMarkerHover] = React.useState<number | null>(null);
+  const handleOrganicCutMarkerHoverChange = React.useCallback((index: number | null) => {
+    organicCutMarkerHoverRef.current = index;
+    setOrganicCutMarkerHover(index);
+  }, []);
+  // One menu for both actions; `kind` selects which item/handler.
+  const [organicCutLineMenu, setOrganicCutLineMenu] = React.useState<
+    | { kind: 'add'; x: number; y: number; localPoint: [number, number, number]; afterIndex: number }
+    | { kind: 'delete'; x: number; y: number; index: number }
+    | null
+  >(null);
+  const handleOrganicCutLineMenuAction = React.useCallback(
+    (action: EditorMenuAction) => {
+      if (action === 'organic-cut-add-waypoint' && organicCutLineMenu?.kind === 'add') {
+        organicCut.insertPoint(organicCutLineMenu.afterIndex, {
+          position: organicCutLineMenu.localPoint,
+          normal: [0, 0, 0],
+        });
+      } else if (action === 'organic-cut-delete-waypoint' && organicCutLineMenu?.kind === 'delete') {
+        organicCut.removePoint(organicCutLineMenu.index);
+      }
+      setOrganicCutLineMenu(null);
+    },
+    [organicCut, organicCutLineMenu],
+  );
+  // Dismiss the cut line menu on outside click / Escape / scroll, like the editor
+  // context menu.
+  React.useEffect(() => {
+    if (!organicCutLineMenu) return;
+    const onDown = () => setOrganicCutLineMenu(null);
+    // Escape comes from the central hotkey store (no direct key listeners —
+    // docs/reference/hotkeys.md); the rising edge is what dismisses the menu.
+    let wasEscapeActive = hotkeyStore.getState().activeKeys.has('escape');
+    let unsubscribeEscape: (() => void) | null = null;
+    // Defer so the opening right-click doesn't immediately close it.
+    const id = window.setTimeout(() => {
+      window.addEventListener('pointerdown', onDown);
+      unsubscribeEscape = hotkeyStore.subscribe(() => {
+        const isEscapeActive = hotkeyStore.getState().activeKeys.has('escape');
+        if (isEscapeActive && !wasEscapeActive) setOrganicCutLineMenu(null);
+        wasEscapeActive = isEscapeActive;
+      });
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+      window.removeEventListener('pointerdown', onDown);
+      unsubscribeEscape?.();
+    };
+  }, [organicCutLineMenu]);
+
+  // Cut-tool session state read by useOrganicCutHotkeys, kept in a ref so the
+  // hotkey subscription survives the per-click churn of waypoint editing.
+  const organicCutHotkeyRef = React.useRef({
+    active: organicCutToolActive,
+    removePoint: organicCut.removePoint,
+    selectedIndex: organicCut.selectedIndex,
+  });
+  React.useEffect(() => {
+    organicCutHotkeyRef.current = {
+      active: organicCutToolActive,
+      removePoint: organicCut.removePoint,
+      selectedIndex: organicCut.selectedIndex,
+    };
+  }, [organicCutToolActive, organicCut.removePoint, organicCut.selectedIndex]);
+  // Delete for the Cut tool, claimed through the delete registry. Undo/redo are
+  // the app's own: every Cut edit is pushed to the history.
+  useOrganicCutHotkeys(organicCutHotkeyRef);
+  // Show Preview, from the configurable CUT.TOGGLE_PREVIEW binding.
+  useOrganicCutPreviewHotkey(
+    React.useCallback(() => {
+      organicCut.setPanelState({
+        ...organicCut.panelState,
+        showPreview: !organicCut.panelState.showPreview,
+      });
+    }, [organicCut]),
+    organicCutToolActive,
+  );
+
   // Mirror session state: while the user is in Mirror mode we don't bake the
   // geometry per-click (a 2.4M-vert bake is slow on big meshes). Instead, each
   // click toggles a parity bit and applies a negative-scale transform — the GPU
@@ -9069,16 +9561,14 @@ export default function Home() {
         onMaterialRoughnessChange={scene.setMaterialRoughness}
         xrayOpacity={scene.xrayOpacity}
         onXrayOpacityChange={scene.setXrayOpacity}
-        heatmapBlend={scene.heatmapBlend}
-        onHeatmapBlendChange={scene.setHeatmapBlend}
-        heatmapContrast={scene.heatmapContrast}
-        onHeatmapContrastChange={scene.setHeatmapContrast}
+        heatmapMinAngle={scene.heatmapMinAngle}
+        onHeatmapMinAngleChange={scene.setHeatmapMinAngle}
+        heatmapMaxAngle={scene.heatmapMaxAngle}
+        onHeatmapMaxAngleChange={scene.setHeatmapMaxAngle}
         hoverTintStrength={scene.hoverTintStrength}
         onHoverTintStrengthChange={scene.setHoverTintStrength}
         selectedTintStrength={scene.selectedTintStrength}
         onSelectedTintStrengthChange={scene.setSelectedTintStrength}
-        selectionHighlightMode={scene.selectionHighlightMode}
-        onSelectionHighlightModeChange={scene.setSelectionHighlightMode}
         debugPrimitivesPanelVisible={debugPrimitivesPanelVisible}
         onDebugPrimitivesPanelVisibleChange={setDebugPrimitivesPanelVisible}
         view3dSettings={scene.view3dSettings}
@@ -9128,6 +9618,7 @@ export default function Home() {
               hollowing: hollowing,
               holePunch: holePunch,
               arrange: arrange,
+              organicCut: organicCut,
               outsidePlateModelIds: outsidePlateModelIds,
               handleModelSelection: handleModelSelection,
               handleModelRangeSelection: handleModelRangeSelection,
@@ -9152,6 +9643,8 @@ export default function Home() {
               scheduleCommitPendingTransformHistory: scheduleCommitPendingTransformHistory,
               uniformScaling: uniformScaling,
               setUniformScaling: setUniformScaling,
+              localTransformSpace: localTransformSpace,
+              setLocalTransformSpace: setLocalTransformSpace,
               isApplyingHolePunch: isApplyingHolePunch,
               interiorView: interiorView,
               hasCavityGeometry: hasCavityGeometry,
@@ -9276,7 +9769,7 @@ export default function Home() {
         })}
       </FloatingPanelStack>
 
-      <div className="absolute inset-0 top-14 z-0 flex">
+      <div className="absolute inset-0 z-0 flex">
         <div
           id="scene-root"
           className={`relative h-full ${scene.mode === 'printing' ? 'w-1/2 border-r' : 'w-full'}`}
@@ -9299,6 +9792,7 @@ export default function Home() {
               onDropMeshFiles={handleDroppedPrepareFiles}
               recentOpenedFiles={scene.recentOpenedFiles}
               onReopenRecentFile={handleReopenRecentFile}
+              onClearRecentFiles={scene.clearRecentOpenedFiles}
               isLoading={showEmptyStateLoading}
               loadingLabel={emptyStateLoadingLabel}
               loadingDetail={emptyStateLoadingDetail}
@@ -9354,7 +9848,8 @@ export default function Home() {
             flatUseVertexColors={scene.flatUseVertexColors}
             toonSteps={scene.toonSteps}
             xrayOpacity={scene.xrayOpacity}
-            heatmapContrast={scene.heatmapContrast}
+            heatmapMinAngle={scene.heatmapMinAngle}
+            heatmapMaxAngle={scene.heatmapMaxAngle}
             heatmapColors={scene.heatmapColors}
             interiorView={interiorView}
             cavityGeometryByModelId={new Map(Array.from(cavityGeometryByModelIdRef.current.entries()).map(([id, entry]) => [id, entry.geometry]))}
@@ -9390,6 +9885,7 @@ export default function Home() {
             transformMode={transformMgr.transformMode}
             transform={transformMgr.transform}
             uniformScaling={uniformScaling}
+            localTransformSpace={localTransformSpace}
             autoLift={transformMgr.autoLift}
             liftDistance={transformMgr.liftDistance}
             autoSnapEnabled={transformMgr.autoSnapEnabled}
@@ -9402,6 +9898,37 @@ export default function Home() {
             onSupportClick={supports.onModelClick}
             onHolePunchClick={scene.mode === 'prepare' && transformMgr.transformMode === 'hollowing' && !hollowingEditMode ? handleHolePunchClick : undefined}
             onHolePunchHover={scene.mode === 'prepare' && transformMgr.transformMode === 'hollowing' && !hollowingEditMode ? handleHolePunchHover : undefined}
+            onOrganicCutClick={organicCutToolActive ? handleOrganicCutClick : undefined}
+            organicCutDragging={organicCutDragging}
+            organicCutKeyGizmo={
+              // Both cut modes place a tenon now, so the aim gizmo follows the tenon
+              // rather than the mode; it mounts whenever there is a frame to sit on.
+              organicCutToolActive && organicCut.tenonFrame && organicCut.panelState.showPreview ? (
+                <OrganicCutTenonGizmo
+                  models={scene.models}
+                  activeModelId={displayActiveModelId}
+                  activeTransform={transformMgr.transform}
+                  tenonFrame={organicCut.tenonFrame}
+                  tenonTiltRad={organicCut.panelState.tenonTiltRad}
+                  tenonRollRad={organicCut.panelState.tenonRollRad}
+                  tenonAnchor={organicCut.panelState.tenonAnchor}
+                  membranePreview={organicCut.membranePreview}
+                  onTenonAnchorChange={(anchor) =>
+                    organicCut.setPanelState({ ...organicCut.panelState, tenonAnchor: anchor })
+                  }
+                  onTenonAimChange={(tilt, roll) =>
+                    organicCut.setPanelState({
+                      ...organicCut.panelState,
+                      tenonTiltRad: tilt,
+                      tenonRollRad: roll,
+                    })
+                  }
+                  onDragStateChange={(dragging) =>
+                    handleOrganicCutDragStateChange(dragging, 'tenon')
+                  }
+                />
+              ) : undefined
+            }
             onSupportHover={supports.onModelHover}
             onActiveModelChange={handleSceneModelSelection}
             onMarqueeSelectionChange={handleSceneMarqueeSelection}
@@ -9533,6 +10060,38 @@ export default function Home() {
                 onBeforeFaceApply={handlePlaceOnFaceBeforeApply}
               />
             )}
+            {organicCutToolActive && (
+              <OrganicCutTool
+                models={scene.models}
+                activeModelId={displayActiveModelId}
+                activeTransform={transformMgr.transform}
+                active={!organicCut.isApplying}
+                cutLeakPoints={organicCut.cutLeakPoints}
+                loop={organicCut.loop}
+                onAddPoint={organicCut.addPoint}
+                onUpdatePoint={organicCut.updatePoint}
+                onDragStateChange={handleOrganicCutDragStateChange}
+                onLineHoverChange={handleOrganicCutLineHoverChange}
+                onLineClick={handleOrganicCutLineClick}
+                selectedIndex={organicCut.selectedIndex}
+                onSelectPoint={organicCut.selectPoint}
+                onToggleLockPoint={organicCut.toggleLockPoint}
+                onMarkerHoverChange={handleOrganicCutMarkerHoverChange}
+                geodesicPolyline={organicCut.geodesicPolyline}
+                planeCurves={organicCut.planeCurves}
+                inactiveLoopPolylines={organicCut.inactiveLoopPolylines}
+                cutMode={organicCut.panelState.cutMode}
+                membranePreview={organicCut.membranePreview}
+                tenonPreview={organicCut.tenonPreview}
+                tenonTriangleCount={organicCut.tenonTriangleCount}
+                tenonFits={organicCut.tenonFits}
+                tenonFrame={organicCut.tenonFrame}
+                tenonAnchor={organicCut.panelState.tenonAnchor}
+                tenonTiltRad={organicCut.panelState.tenonTiltRad}
+                tenonRollRad={organicCut.panelState.tenonRollRad}
+                showPreview={organicCut.panelState.showPreview}
+              />
+            )}
             {scene.mode === 'prepare' && transformMgr.transformMode === 'mirror' && (
               <MirrorTool
                 activeModelId={displayActiveModelId}
@@ -9541,14 +10100,11 @@ export default function Home() {
             )}
           </SceneCanvas>
 
-          {/* Transform Toolbar */}
+          {/* Snap readout + rotation hint stay scene-anchored; the Transform
+              Toolbar itself renders at the shell level so it can float above
+              the topbar's frosted-glass blur. */}
           {scene.models.length > 0 && scene.mode === 'prepare' && (
             <>
-              <TransformToolbar
-                mode={transformMgr.transformMode}
-                onModeChange={setTransformModeWithMirrorFinalize}
-                onModeHover={handleTransformToolbarHover}
-              />
               <SnapAngleReadout />
               <RotationHintTooltip />
             </>
@@ -9557,7 +10113,7 @@ export default function Home() {
           {scene.models.length > 0 && (
             <div
               ref={modelStatsCardContainerRef}
-              className="absolute bottom-3 left-3 z-30 pointer-events-auto"
+              className="absolute bottom-1 left-1 z-30 pointer-events-auto"
             >
               <ModelStatsCard
                 model={scene.models.find((m) => m.id === displayActiveModelId) || null}
@@ -9637,6 +10193,14 @@ export default function Home() {
         )}
       </div>
 
+      {scene.models.length > 0 && scene.mode === 'prepare' && (
+        <TransformToolbar
+          mode={transformMgr.transformMode}
+          onModeChange={setTransformModeWithMirrorFinalize}
+          onModeHover={handleTransformToolbarHover}
+        />
+      )}
+
       <EditorContextMenu
         position={editorContextMenuPos}
         onAction={handleEditorMenuAction}
@@ -9644,6 +10208,35 @@ export default function Home() {
         items={editorContextMenuItems}
         disabledActions={editorContextMenuDisabledActions}
       />
+
+      {/* Organic-cut right-click menu: "Add waypoint here" (seam) or "Delete
+          waypoint" (marker), depending on what was hovered when right-clicked. */}
+      <EditorContextMenu
+        position={organicCutLineMenu ? { x: organicCutLineMenu.x, y: organicCutLineMenu.y } : null}
+        onAction={handleOrganicCutLineMenuAction}
+        title={organicCutLineMenu?.kind === 'delete' ? 'Waypoint' : 'Cut Seam'}
+        items={
+          organicCutLineMenu?.kind === 'delete'
+            ? [ORGANIC_CUT_DELETE_WAYPOINT_ITEM]
+            : [ORGANIC_CUT_ADD_WAYPOINT_ITEM]
+        }
+      />
+
+      {/* Waypoint hover hint: the double-click-to-lock behaviour, shown only while
+          the pointer is over a waypoint in the 3D view. */}
+      <MouseTooltip visible={organicCutToolActive && organicCutMarkerHover !== null}>
+        <div
+          className="rounded px-2 py-1.5 text-[11px] leading-tight font-medium shadow-lg whitespace-nowrap"
+          style={{
+            background: 'rgba(24, 24, 24, 0.98)',
+            color: 'var(--text-strong, #e0e0e0)',
+            border: '1px solid var(--accent, #baf72e)',
+            boxShadow: '0 6px 32px 0 rgba(0,0,0,0.44), 0 1.5px 8px 0 rgba(0,0,0,0.28)',
+          }}
+        >
+          Double-click to lock this waypoint from snapping.
+        </div>
+      </MouseTooltip>
 
       <DiagnosticsModals
         clearHistory={clearHistory}
@@ -9653,6 +10246,8 @@ export default function Home() {
         historyDebugEvents={historyDebugEvents}
         historyPreviewTargetEventId={historyPreviewTargetEventId}
         historyStackCounts={historyStackCounts}
+        historyStackBytes={historyStackBytes}
+        sceneSnapshotBytes={sceneSnapshotBytes}
         isDiagnosticsOpen={isDiagnosticsOpen}
         isHistoryDebugOpen={isHistoryDebugOpen}
         isHistoryPreviewActive={isHistoryPreviewActive}
@@ -9859,6 +10454,8 @@ export default function Home() {
         showPluginImportWarningModal={showPluginImportWarningModal}
         showSceneSaveChoiceModal={showSceneSaveChoiceModal}
         supportsInfoModelId={supportsInfoModelId}
+        sceneSaveError={sceneSaveError}
+        dismissSceneSaveError={dismissSceneSaveError}
         zipPickerResolveRef={zipPickerResolveRef}
         zipPickerState={zipPickerState}
       />
@@ -9886,6 +10483,8 @@ export default function Home() {
         isOpen={showManifoldWarning}
         onAcknowledge={() => setShowManifoldWarning(false)}
       />
+
+
 
       <MeshRepairModals
         isManualRepairing={isManualRepairing}

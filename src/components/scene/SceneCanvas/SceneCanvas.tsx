@@ -23,8 +23,9 @@ import { MeshClassificationRenderer } from '@/components/scene/MeshClassificatio
 import { IslandIdLabels } from '@/components/scene/IslandIdLabels';
 import { ScreenSpaceGizmo as UnifiedGizmo } from '@/components/gizmo';
 import { warmTransformGizmoGeometryCache } from '@/components/gizmo/gizmoGeometryCache';
+import { cancelActiveGizmoDrag } from '@/components/gizmo/gizmoDragRegistry';
 import { PickingDebugOverlay } from '@/components/picking';
-import { SelectionProvider, SelectionManager, SelectionOutlineRenderer, SelectionSpotlight } from '@/components/selection';
+import { SelectionProvider, SelectionManager, SelectionSpotlight } from '@/components/selection';
 import type { SelectionHighlightMode } from '@/components/selection';
 import type { IslandMarker } from '@/volumeAnalysis/IslandScan/islandOverlayLogic';
 import type { ScanResults } from '@/volumeAnalysis/islandVolume/steps/voxelization/ScanOrchestrator';
@@ -100,6 +101,11 @@ import {
   subscribeToCameraProjectionSettings,
   type CameraProjectionMode,
 } from '@/components/settings/cameraProjectionPreferences';
+import {
+  DEFAULT_CAMERA_FOV_SETTINGS,
+  getSavedCameraFovSettings,
+  subscribeToCameraFovSettings,
+} from '@/components/settings/cameraFovPreferences';
 import {
   DEFAULT_CAMERA_FEEL_SETTINGS,
   getSavedCameraFeelSettings,
@@ -190,22 +196,6 @@ function resolveTrackpadGestureAction(
   const modifierPressed = isTrackpadModifierPressed(event, modifierKey);
   if (!modifierPressed) return primaryAction;
   return primaryAction === 'pan' ? 'orbit' : 'pan';
-}
-
-function computeFloatingPanelWidthScale(width: number, height: number) {
-  if (width >= 3200 && height >= 1100) return 1.14;
-  if (width >= 2600 && height >= 980) return 1.08;
-  if (width <= 1100 || height <= 700) return 0.72;
-  if (width <= 1366 || height <= 820) return 0.82;
-  if (width <= 1600 || height <= 900) return 0.9;
-  if (width <= 1800 || height <= 980) return 0.95;
-  return 1;
-}
-
-function computeVisualSettingsPanelWidth(width: number, height: number) {
-  const baseWidth = 48;
-  const scale = Math.min(1, computeFloatingPanelWidthScale(width, height));
-  return Math.max(44, Math.round(baseWidth * scale));
 }
 
 const FLOATING_PANEL_RIGHT_INSET_PX = 12;
@@ -324,8 +314,8 @@ export function SceneCanvas({
   flatUseVertexColors,
   toonSteps,
   xrayOpacity,
-  heatmapBlend,
-  heatmapContrast,
+  heatmapMinAngle,
+  heatmapMaxAngle,
   heatmapColors,
   interiorView = false,
   disableRaycast,
@@ -353,6 +343,7 @@ export function SceneCanvas({
   transformMode,
   transform,
   uniformScaling = true,
+  localTransformSpace = false,
   autoLift = false,
   liftDistance = 5,
   autoSnapEnabled = true,
@@ -366,6 +357,9 @@ export function SceneCanvas({
   onSupportClick,
   onHolePunchClick,
   onHolePunchHover,
+  onOrganicCutClick,
+  organicCutDragging,
+  organicCutKeyGizmo,
   onSupportHover,
   onActiveModelChange,
   onMarqueeSelectionChange,
@@ -442,8 +436,8 @@ export function SceneCanvas({
   flatUseVertexColors?: boolean;
   toonSteps?: number;
   xrayOpacity?: number;
-  heatmapBlend?: number;
-  heatmapContrast?: number;
+  heatmapMinAngle?: number;
+  heatmapMaxAngle?: number;
   heatmapColors?: string[];
   interiorView?: boolean;
   disableRaycast?: boolean;
@@ -472,6 +466,8 @@ export function SceneCanvas({
   transformMode?: TransformMode;
   transform?: ModelTransform;
   uniformScaling?: boolean;
+  /** Drive the transform gizmo in the model's own frame instead of the world axes. */
+  localTransformSpace?: boolean;
   autoLift?: boolean;
   liftDistance?: number;
   autoSnapEnabled?: boolean;
@@ -504,6 +500,15 @@ export function SceneCanvas({
   onSupportClick?: (hit: THREE.Intersection) => void;
   onHolePunchClick?: (hit: THREE.Intersection) => void;
   onHolePunchHover?: (hit: THREE.Intersection | null) => void;
+  onOrganicCutClick?: (hit: THREE.Intersection) => void;
+  /** True while an organic-cut waypoint is being dragged — disables OrbitControls. */
+  organicCutDragging?: boolean;
+  /**
+   * The cut-tool registration-tenon aim/roll gizmo, rendered INSIDE the picking
+   * provider (so its handles are grabbable through the model). Supplied by the host
+   * because the gizmo needs session state; null when the cut tool isn't active.
+   */
+  organicCutKeyGizmo?: React.ReactNode;
   onSupportHover?: (hit: THREE.Intersection | null) => void;
   onActiveModelChange?: (id: string | null, options?: { selectionMode?: 'single' | 'toggle' | 'add' }) => void;
   onMarqueeSelectionChange?: (ids: string[]) => void;
@@ -682,6 +687,11 @@ export function SceneCanvas({
     () => getSavedCameraProjectionSettings().mode,
     () => DEFAULT_CAMERA_PROJECTION_SETTINGS.mode,
   );
+  const perspectiveFov = React.useSyncExternalStore(
+    subscribeToCameraFovSettings,
+    () => getSavedCameraFovSettings().fov,
+    () => DEFAULT_CAMERA_FOV_SETTINGS.fov,
+  );
   const cameraFeelPreset = React.useSyncExternalStore(
     subscribeToCameraFeelSettings,
     () => getSavedCameraFeelSettings().preset,
@@ -730,48 +740,9 @@ export function SceneCanvas({
     isKickstandPlacementActive,
     isJointCreationActive
   ]);
-  const [viewportSizeForUiAnchors, setViewportSizeForUiAnchors] = React.useState({ width: 0, height: 0 });
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const container = containerRef.current;
-    if (!container) return;
-
-    const updateViewportSize = () => {
-      const next = {
-        width: container.clientWidth,
-        height: container.clientHeight,
-      };
-
-      setViewportSizeForUiAnchors((prev) => {
-        if (prev.width === next.width && prev.height === next.height) return prev;
-        return next;
-      });
-    };
-
-    updateViewportSize();
-    const observer = new ResizeObserver(updateViewportSize);
-    observer.observe(container);
-    window.addEventListener('resize', updateViewportSize);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', updateViewportSize);
-    };
-  }, []);
-
-  const nonPrintingViewCubeRightMargin = React.useMemo(() => {
-    const width = viewportSizeForUiAnchors.width > 0
-      ? viewportSizeForUiAnchors.width
-      : (typeof window === 'undefined' ? 1920 : window.innerWidth);
-    const height = viewportSizeForUiAnchors.height > 0
-      ? viewportSizeForUiAnchors.height
-      : (typeof window === 'undefined' ? 1080 : window.innerHeight);
-
-    const visualSettingsPanelWidth = computeVisualSettingsPanelWidth(width, height);
-    const visualSettingsLeftInset = visualSettingsPanelWidth + FLOATING_PANEL_RIGHT_INSET_PX;
-    return visualSettingsLeftInset + VIEW_CUBE_PANEL_GAP_PX + VIEW_CUBE_HALF_EXTENT_PX;
-  }, [viewportSizeForUiAnchors.height, viewportSizeForUiAnchors.width]);
+  // The visual-settings panel is a fixed 48px-wide strip; the view cube offsets
+  // by its full extent so it never overlaps the floating panel.
+  const nonPrintingViewCubeRightMargin = 48 + FLOATING_PANEL_RIGHT_INSET_PX + VIEW_CUBE_PANEL_GAP_PX + VIEW_CUBE_HALF_EXTENT_PX;
 
   const smoothingProcessing = React.useSyncExternalStore(
     subscribeToMeshSmoothingProcessingState,
@@ -1579,12 +1550,13 @@ export function SceneCanvas({
         r: root.diameter / 2,
       }));
 
-      const chamferInset = raftSettingsForBounds.bottomMode === 'line'
-        ? Math.max(0, raftSettingsForBounds.lineHeightMm) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsForBounds.chamferAngle))))
-        : 0;
+      const thickness = raftSettingsForBounds.bottomMode === 'line' ? raftSettingsForBounds.lineHeightMm : raftSettingsForBounds.thickness;
+      const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsForBounds.chamferAngle))));
+      const wallInset = raftSettingsForBounds.wallEnabled ? Math.max(0, raftSettingsForBounds.wallThickness) : 0;
+      const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
       const baseProfile = computeFootprint(circles, {
-        marginMm: 0.2 + chamferInset,
+        marginMm: dynamicMargin,
         samplesPerCircle: 24,
       });
 
@@ -3170,11 +3142,17 @@ export function SceneCanvas({
       ids.push(duplicateSourceSupportPreviewModelId);
     }
     if (useActiveModelAttachedSupportProxy && activeModelId) ids.push(activeModelId);
+    // When a model is hidden via the model manager panel, its supports should
+    // also be hidden so they don't float orphaned in the scene.
+    for (const model of models) {
+      if (!model.visible) ids.push(model.id);
+    }
     return Array.from(new Set(ids));
   }, [
     activeModelId,
     arrangeSupportPreviewModelIds,
     duplicateSourceSupportPreviewModelId,
+    models,
     multiGizmoSupportPreviewIds,
     renderDuplicateSourceSupportGhostPreview,
     useActiveModelAttachedSupportProxy,
@@ -3222,6 +3200,42 @@ export function SceneCanvas({
     if (transform && activeModelId === activeModel.id) return transform;
     return activeModel.transform;
   }, [activeModel, transform, activeModelId]);
+
+  // Local space puts the gizmo in the model's own frame: its arrows point along the
+  // model's axes and its rings turn about them. A multi-selection has no single
+  // frame to borrow, so it stays on the world axes.
+  const gizmoUsesLocalFrame = localTransformSpace && !isMultiGizmoSelection;
+
+  const gizmoFrameQuaternion = React.useMemo(() => (
+    gizmoUsesLocalFrame && activeModelTransform
+      ? quaternionFromGlobalEuler(activeModelTransform.rotation)
+      : new THREE.Quaternion()
+  ), [activeModelTransform, gizmoUsesLocalFrame]);
+
+  const gizmoFrameRotation = React.useMemo<[number, number, number]>(() => {
+    // The gizmo group takes an XYZ-ordered Euler, so the model's global-axis
+    // rotation has to travel through a quaternion to arrive unchanged.
+    const frame = new THREE.Euler().setFromQuaternion(gizmoFrameQuaternion, 'XYZ');
+    return [frame.x, frame.y, frame.z];
+  }, [gizmoFrameQuaternion]);
+
+  /**
+   * Where a gizmo handle's axis points in world coordinates. Handles with no axis
+   * of their own (the centre nub) get a zero vector, which reads as horizontal.
+   */
+  const gizmoAxisWorldDirection = React.useCallback((axis?: 'x' | 'y' | 'z') => new THREE.Vector3(
+    axis === 'x' ? 1 : 0,
+    axis === 'y' ? 1 : 0,
+    axis === 'z' ? 1 : 0,
+  ).applyQuaternion(gizmoFrameQuaternion), [gizmoFrameQuaternion]);
+
+  /**
+   * The frame a rotation drag turns about, frozen at the grab. In local space that
+   * is the model's orientation when the drag started — and since a rotation about
+   * an axis leaves that same axis where it was, holding it for the whole gesture is
+   * exact, not an approximation. Identity in world space.
+   */
+  const gizmoRotationFrameRef = React.useRef(new THREE.Quaternion());
 
   const multiGizmoCenter = React.useMemo(() => {
     if (!isMultiGizmoSelection || selectedTransformableModelIds.length === 0) return null;
@@ -3991,6 +4005,14 @@ export function SceneCanvas({
       const isEscapeJustPressed = isEscapePressed && !wasEscapePressed;
 
       if (isEscapeJustPressed) {
+        // A gizmo handle being dragged owns Escape: it calls the gesture off and
+        // puts back what it had changed. Dropping the selection instead pulled
+        // the tool out from under a live drag, which left it unable to end.
+        if (cancelActiveGizmoDrag()) {
+          wasEscapePressed = isEscapePressed;
+          return;
+        }
+
         if (!activeModelId && (!selectedModelIds || selectedModelIds.length === 0)) {
           wasEscapePressed = isEscapePressed;
           return;
@@ -4146,9 +4168,6 @@ export function SceneCanvas({
   const modifyToolActive = mode === 'prepare' && transformMode === 'transform';
   const navigationLodActive = isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive || isGizmoDragging || isGizmoRetargeting || isLayerScrubbing;
   const suppressSupportProxyPointerInteraction = supportCreationModeActive || suppressSupportSelectionAndHover || modifyToolActive;
-  const isSpotlightHighlightActive =
-    effectiveModelSelected
-    && selectionHighlightMode === 'spotlight';
 
   const updateOrbitControlSpeeds = React.useCallback(() => {
     const controls = orbitControlsRef.current;
@@ -5388,9 +5407,9 @@ export function SceneCanvas({
           safetyMarginMm={activeBuildVolumeSettings.safetyMarginMm}
           frontLabel={frontFaceLabel}
         />
-        <EnableLocalClipping enabled={clipLower != null || clipUpper != null || indicatorPlaneZ != null} />
+        <EnableLocalClipping enabled={clipLower != null || clipUpper != null || indicatorPlaneZ != null || !!organicCutKeyGizmo} />
         <CameraProvider cameraRef={cameraRef} />
-        <CameraProjectionController mode={cameraProjectionMode} />
+        <CameraProjectionController mode={cameraProjectionMode} perspectiveFov={perspectiveFov} />
         <CameraClipPlaneStabilizer />
         {/* GPU Picking Provider - wraps all pickable content when enabled */}
         <PickingProviderWrapper
@@ -5438,7 +5457,9 @@ export function SceneCanvas({
                   && duplicatePreviewModel
                   && model.id === duplicatePreviewModel.id,
                 );
-                const likelySupportGeometry = !!model.geometry.meshDefects?.nativeRepairReport?.likely_support_geometry;
+                const likelySupportGeometry = model.isSupportGeometry !== undefined
+                  ? model.isSupportGeometry
+                  : !!model.geometry.meshDefects?.nativeRepairReport?.likely_support_geometry;
                 const modelHoverTintColor = likelySupportGeometry ? likelySupportGeometryTintColor : hoverTintColor;
                 const modelSelectedTintColor = likelySupportGeometry ? likelySupportGeometryTintColor : selectedTintColor;
                 // Use live drag transform only during active/guarded gizmo interaction.
@@ -5487,8 +5508,10 @@ export function SceneCanvas({
                 // The native repair/classify routines end with a manifold_csg
                 // status check on the model section. When the CSG backend reports
                 // any non-manifold status, overlay a red stripe pattern on
-                // the model to flag it.
+                // the model to flag it. Suppressed in the support tab so it
+                // doesn't obscure support editing.
                 const modelIsNonManifold =
+                  mode !== 'support' &&
                   model.geometry.meshDefects?.nativeRepairReport?.model_is_manifold === false;
 
                 return (
@@ -5508,8 +5531,8 @@ export function SceneCanvas({
                       flatUseVertexColors={flatUseVertexColors}
                       toonSteps={toonSteps}
                       xrayOpacity={xrayOpacity}
-                      heatmapBlend={heatmapBlend}
-                      heatmapContrast={heatmapContrast}
+                      heatmapMinAngle={heatmapMinAngle}
+                      heatmapMaxAngle={heatmapMaxAngle}
                       heatmapColors={heatmapColors ?? emptyHeatmapColors}
                       interiorView={interiorView}
                       cavityGeometry={cavityGeometryByModelId?.get(model.id) ?? null}
@@ -5567,6 +5590,7 @@ export function SceneCanvas({
                       modelSectionGeometry={model.geometry.meshDefects?.modelSectionGeometry ?? null}
                       onHolePunchClick={onHolePunchClick}
                       onHolePunchHover={onHolePunchHover}
+                      onOrganicCutClick={onOrganicCutClick}
                     >
                       {useActiveModelAttachedSupportProxy && isActive && (
                         <group
@@ -6093,7 +6117,7 @@ export function SceneCanvas({
                     (isMultiGizmoSelection ? (multiGizmoCenter?.y ?? activeModelTransform?.position.y) : activeModelTransform?.position.y) ?? 0,
                     (isMultiGizmoSelection ? (multiGizmoCenter?.z ?? activeModelTransform?.position.z) : activeModelTransform?.position.z) ?? 0,
                   ]}
-                  rotation={[0, 0, 0]}
+                  rotation={gizmoFrameRotation}
                   enableMove
                   enableRotate={!isMultiGizmoSelection}
                   enableScale
@@ -6146,7 +6170,13 @@ export function SceneCanvas({
                       setActiveGizmoDragDescriptor({ operation: 'move', axis });
                     if (activeModelId && activeModel) {
                       const sourceTransform = transform ?? activeModel.transform;
-                      dragMoveLockZEnabledRef.current = axis !== 'z';
+                      // Dragging an in-plane arrow pins the height, so a sideways drag
+                      // can't drift off the plate. In the model's own frame those arrows
+                      // tilt out of the plate's plane, so ask the axis this drag actually
+                      // follows: pin the height only while it really is horizontal.
+                      dragMoveLockZEnabledRef.current = Math.abs(
+                        gizmoAxisWorldDirection(axis).z,
+                      ) < 1e-6;
                       dragMoveLockedZRef.current = sourceTransform.position.z;
                       const idsForCage = isMultiGizmoSelection
                         ? selectedTransformableModelIds
@@ -6282,6 +6312,9 @@ export function SceneCanvas({
                           : axis === 'y'
                             ? new THREE.Vector3(0, 1, 0)
                             : new THREE.Vector3(0, 0, 1);
+                      // In local space the ring's axis is the model's, so carry it into
+                      // world coordinates before turning about it.
+                      rotationAxis.applyQuaternion(gizmoRotationFrameRef.current);
                       const quaternion = new THREE.Quaternion().setFromAxisAngle(rotationAxis, -angle);
                       activeGroupRef.current.quaternion.premultiply(quaternion);
                       applySupportGroupDelta();
@@ -6303,6 +6336,7 @@ export function SceneCanvas({
                   onRotateStart={(axis) => {
                     stopActiveModelDropAnimation();
                     captureGizmoDragBeforeMatrix();
+                    gizmoRotationFrameRef.current.copy(gizmoFrameQuaternion);
                     const shouldProceed = onTransformStart?.('rotate', { axis });
                     if (shouldProceed === false) return false;
                     setActiveGizmoDragDescriptor({ operation: 'rotate', axis });
@@ -6541,6 +6575,11 @@ export function SceneCanvas({
                 />
               )}
 
+              {/* Cut-tool tenon aim/roll gizmo — rendered INSIDE the picking provider
+                  (like the main gizmo) so its handles are grabbable through the mesh
+                  via the GPU picking system. Supplied by the host (page.tsx). */}
+              {organicCutKeyGizmo}
+
               {selectedMarker && enableVolumeGlow && (
                 <IslandOverlay
                   markers={[selectedMarker]}
@@ -6658,17 +6697,6 @@ export function SceneCanvas({
             </React.Suspense>
           </SelectionProvider>
         </PickingProviderWrapper>
-        {/* Selection outline - renders when model is selected */}
-        <SelectionOutlineRenderer
-          meshRef={activeActualMeshRef as React.RefObject<THREE.Mesh>}
-          enabled={!thumbnailCaptureActive && effectiveModelSelected && selectionHighlightMode === 'fresnel'}
-          color="#82ccff"
-          intensity={0.38}
-          power={3.5}
-          rimMin={0.22}
-          rimMax={0.5}
-          alphaCut={0.03}
-        />
         {/* Selection spotlight - illuminates only the selected model via layers */}
         <SelectionSpotlight
           meshRef={activeActualMeshRef as React.RefObject<THREE.Mesh>}
@@ -6697,6 +6725,7 @@ export function SceneCanvas({
             && !isGizmoDragging
             && !isMarqueeSelecting
             && !isPlacementActive
+            && !organicCutDragging
           }
           onStart={handleOrbitStart}
           onChange={handleOrbitChange}
@@ -6779,7 +6808,6 @@ export function SceneCanvas({
         {mode === 'support' && supportPathfindingDebugState.enabled && (
           <SupportPathfindingDebugOverlay snapshot={supportPathfindingDebugState.snapshot} />
         )}
-        {/* Selection outline effect - rendered by SelectionOutlineRenderer inside SelectionProvider */}
         {children}
       </Canvas>
 

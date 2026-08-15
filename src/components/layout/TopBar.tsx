@@ -8,7 +8,6 @@ import { SettingsModal, type SettingsTabKey } from '@/components/settings/Settin
 import { ProfileSettingsModal } from '@/components/settings/ProfileSettingsModal';
 import type { SupportMode } from '@/supports/types';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
-import type { SelectionHighlightMode } from '@/components/selection';
 import { Button } from '@/components/atoms';
 import { Activity, AlertTriangle, Anchor, ChevronDown, FolderInput, FolderOpen, Lock, Maximize2, Minimize2, Power, Printer, Save, SaveAll, Square, Upload, X } from 'lucide-react';
 import {
@@ -58,16 +57,14 @@ interface TopBarProps {
   onMaterialRoughnessChange: (value: number) => void;
   xrayOpacity: number;
   onXrayOpacityChange: (value: number) => void;
-  heatmapBlend: number;
-  onHeatmapBlendChange: (value: number) => void;
-  heatmapContrast: number;
-  onHeatmapContrastChange: (value: number) => void;
+  heatmapMinAngle: number;
+  onHeatmapMinAngleChange: (value: number) => void;
+  heatmapMaxAngle: number;
+  onHeatmapMaxAngleChange: (value: number) => void;
   hoverTintStrength: number;
   onHoverTintStrengthChange: (value: number) => void;
   selectedTintStrength: number;
   onSelectedTintStrengthChange: (value: number) => void;
-  selectionHighlightMode: SelectionHighlightMode;
-  onSelectionHighlightModeChange: (mode: SelectionHighlightMode) => void;
   debugPrimitivesPanelVisible: boolean;
   onDebugPrimitivesPanelVisibleChange: (value: boolean) => void;
   view3dSettings: View3DSettings;
@@ -125,16 +122,14 @@ export function TopBar({
   onMaterialRoughnessChange,
   xrayOpacity,
   onXrayOpacityChange,
-  heatmapBlend,
-  onHeatmapBlendChange,
-  heatmapContrast,
-  onHeatmapContrastChange,
+  heatmapMinAngle,
+  onHeatmapMinAngleChange,
+  heatmapMaxAngle,
+  onHeatmapMaxAngleChange,
   hoverTintStrength,
   onHoverTintStrengthChange,
   selectedTintStrength,
   onSelectedTintStrengthChange,
-  selectionHighlightMode,
-  onSelectionHighlightModeChange,
   debugPrimitivesPanelVisible,
   onDebugPrimitivesPanelVisibleChange,
   view3dSettings,
@@ -186,10 +181,6 @@ export function TopBar({
     return window.matchMedia?.('(prefers-color-scheme: light)').matches ?? false;
   });
   const [printerThumbnailFailed, setPrinterThumbnailFailed] = useState(false);
-  const [windowMetrics, setWindowMetrics] = useState(() => ({
-    innerWidth: 0,
-    innerHeight: 0,
-  }));
   const topbarActionsDisabled = isSlicingBusy;
   const [isAppMenuOpen, setIsAppMenuOpen] = useState(false);
   const [appMenuPosition, setAppMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -261,26 +252,6 @@ export function TopBar({
 
     return () => {
       cancelled = true;
-    };
-  }, []);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const updateMetrics = () => {
-      setWindowMetrics({
-        innerWidth: window.innerWidth,
-        innerHeight: window.innerHeight,
-      });
-    };
-
-    updateMetrics();
-    window.addEventListener('resize', updateMetrics);
-    window.addEventListener('orientationchange', updateMetrics);
-
-    return () => {
-      window.removeEventListener('resize', updateMetrics);
-      window.removeEventListener('orientationchange', updateMetrics);
     };
   }, []);
 
@@ -658,10 +629,12 @@ export function TopBar({
   ];
 
   return (
-    <div
-      className="ui-topbar fixed top-0 left-0 right-0 z-50 flex items-center relative"
-      onMouseDownCapture={handleTopBarPointerDown}
-    >
+    <>
+      <div className="ui-topbar-blur" aria-hidden="true" />
+      <div
+        className="ui-topbar fixed top-0 left-0 right-0 z-50 flex items-center relative"
+        onMouseDownCapture={handleTopBarPointerDown}
+      >
       <div
         className={`flex flex-1 max-w-[430px] items-center gap-2.5 pl-0 pr-4 py-1.5 transition-opacity ${topbarActionsDisabled ? 'opacity-45 pointer-events-none' : ''}`}
         data-no-window-drag="false"
@@ -1060,7 +1033,7 @@ export function TopBar({
                   }}
                   disabled={nativeDisabled}
                   aria-disabled={disabled}
-                  className={`group relative flex cursor-pointer items-center gap-1.5 rounded-lg border px-1.5 py-2 transition-all duration-200 flex-1 min-w-[90px] max-w-[190px] h-[36px] ${
+                  className={`group relative flex cursor-pointer items-center gap-1.5 rounded-lg border px-1.5 py-1.5 transition-all duration-200 flex-1 min-w-[90px] max-w-[190px] h-[32px] ${
                     active
                       ? 'shadow-[0_6px_16px_rgba(0,0,0,0.25)]'
                       : 'hover:-translate-y-[1px] hover:shadow-[0_6px_14px_rgba(0,0,0,0.18)]'
@@ -1345,16 +1318,14 @@ export function TopBar({
         onMaterialRoughnessChange={onMaterialRoughnessChange}
         xrayOpacity={xrayOpacity}
         onXrayOpacityChange={onXrayOpacityChange}
-        heatmapBlend={heatmapBlend}
-        onHeatmapBlendChange={onHeatmapBlendChange}
-        heatmapContrast={heatmapContrast}
-        onHeatmapContrastChange={onHeatmapContrastChange}
+        heatmapMinAngle={heatmapMinAngle}
+        onHeatmapMinAngleChange={onHeatmapMinAngleChange}
+        heatmapMaxAngle={heatmapMaxAngle}
+        onHeatmapMaxAngleChange={onHeatmapMaxAngleChange}
         hoverTintStrength={hoverTintStrength}
         onHoverTintStrengthChange={onHoverTintStrengthChange}
         selectedTintStrength={selectedTintStrength}
         onSelectedTintStrengthChange={onSelectedTintStrengthChange}
-        selectionHighlightMode={selectionHighlightMode}
-        onSelectionHighlightModeChange={onSelectionHighlightModeChange}
         debugPrimitivesPanelVisible={debugPrimitivesPanelVisible}
         onDebugPrimitivesPanelVisibleChange={onDebugPrimitivesPanelVisibleChange}
         view3dSettings={view3dSettings}
@@ -1375,5 +1346,6 @@ export function TopBar({
         openMaterialAntiAliasingToken={profileModalOpenMaterialAntiAliasingToken}
       />
     </div>
+    </>
   );
 }

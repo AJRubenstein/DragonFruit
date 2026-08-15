@@ -82,7 +82,7 @@ export function FleetManagement({
     <div className="w-full max-w-[920px] rounded-xl border shadow-2xl ui-modal-panel-enter" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
         <div>
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+          <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
             {hasMultiplePrinters ? 'Fleet Management' : 'Network Settings'}
           </h3>
           <p className="ui-meta">{printerName}</p>
@@ -131,7 +131,7 @@ export function FleetManagement({
                         className="my-1.5 border-t pt-1"
                         style={{ borderColor: 'var(--border-subtle)' }}
                       >
-                        <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                        <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                           Other Printers
                         </div>
                       </div>
@@ -174,11 +174,11 @@ export function FleetManagement({
                             {device.displayName || device.hostName || device.ipAddress}
                           </div>
                         </div>
-                        <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                        <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
                           {device.ipAddress} • {isOnline ? 'Online' : 'Offline'}
                         </div>
                         {device.statusText && (
-                          <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
+                          <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
                             {device.statusText}
                           </div>
                         )}
@@ -189,7 +189,7 @@ export function FleetManagement({
                           <button
                             type="button"
                             onClick={() => onSelectManagedPrinter(device)}
-                            className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-[11px] rounded-md"
+                            className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs rounded-md"
                             style={{ color: 'var(--text-strong)' }}
                           >
                             Select
@@ -199,7 +199,7 @@ export function FleetManagement({
                           type="button"
                           onClick={() => onReconnectManagedPrinter(device)}
                           disabled={isNetworkConnecting}
-                          className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-[11px] rounded-md disabled:opacity-50"
+                          className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs rounded-md disabled:opacity-50"
                           style={{ color: 'var(--accent-secondary)' }}
                         >
                           {device.connected ? 'Refresh' : 'Connect'}
@@ -208,7 +208,7 @@ export function FleetManagement({
                           type="button"
                           onClick={() => onDisconnectManagedPrinter(device)}
                           disabled={!device.connected}
-                          className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-[11px] rounded-md disabled:opacity-45"
+                          className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs rounded-md disabled:opacity-45"
                           style={{ color: device.connected ? 'var(--text-strong)' : 'var(--text-muted)' }}
                         >
                           Disconnect
@@ -217,7 +217,7 @@ export function FleetManagement({
                           <button
                             type="button"
                             onClick={() => onRemoveManagedPrinter(device)}
-                            className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-[11px] rounded-md"
+                            className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs rounded-md"
                             style={{ color: 'var(--danger)' }}
                             title="Remove saved printer"
                           >
@@ -234,7 +234,7 @@ export function FleetManagement({
           )}
 
           <div className="mt-3 border-t pt-2.5 flex items-center justify-between gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
-            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
               {activePrinterSummary}
             </div>
             {!showAddPrinterFlow ? (
@@ -294,7 +294,7 @@ export function FleetManagement({
               </div>
 
               <div className="mt-2.5 flex items-center justify-between gap-2">
-                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   Find printers and connect to save them in this profile fleet.
                 </div>
                 <button
@@ -319,7 +319,7 @@ export function FleetManagement({
                     }}
                   />
                 </div>
-                <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   {isNetworkScanning
                     ? `${networkScanPhaseLabel || 'Scanning network…'} • ${Math.round(networkScanProgressPct)}%`
                     : networkScanPhaseLabel
@@ -360,7 +360,7 @@ export function FleetManagement({
                               {entry.name}
                               {isEntryActive ? ' • Active' : savedEntry ? ' • Saved' : ''}
                             </div>
-                            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                               {entry.ipAddress} • {entry.status === 'online' ? 'Online' : 'Offline'}
                             </div>
                           </div>
@@ -389,7 +389,7 @@ export function FleetManagement({
                   <button
                     type="button"
                     onClick={onToggleManualEntry}
-                    className="text-[11px] underline decoration-dotted underline-offset-2 hover:opacity-80 transition-opacity"
+                    className="text-xs underline decoration-dotted underline-offset-2 hover:opacity-80 transition-opacity"
                     style={{ color: 'var(--text-muted)' }}
                   >
                     {showManualNetworkEntry ? 'Hide manual IP entry' : 'Cannot find your machine?'}
@@ -412,7 +412,7 @@ export function FleetManagement({
                 </label>
 
                 <div className="mt-2 flex items-center justify-between gap-2">
-                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     Save and select a printer by connecting manually.
                   </div>
                   <button

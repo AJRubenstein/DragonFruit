@@ -1272,9 +1272,15 @@ async fn nanodlp_connect(payload: &Value) -> (u16, Value) {
                 .map(|model| matches_model_hint(model, requested_model_hint))
                 .unwrap_or(false);
 
+            // When a device reports a name that doesn't match any known Athena
+            // filter key (e.g. "athena" instead of "Athena2 16K"), it's likely
+            // reporting a generic/non-standard name. Allow the connection as a
+            // fallback rather than rejecting it as a model mismatch.
+            let device_has_unknown_filter = normalized_device_network_filter.is_none();
+
             if supported_model.is_none()
                 || explicit_known_filter_mismatch
-                || (!model_hint_matched && !network_filter_matched)
+                || (!model_hint_matched && !network_filter_matched && !device_has_unknown_filter)
             {
                 let reason = if supported_model.is_none() {
                     "unsupported-model"
@@ -1615,7 +1621,9 @@ async fn nanodlp_discover(payload: &Value) -> (u16, Value) {
                 .map(|known| known != normalized_expected)
                 .unwrap_or(false);
             let model_hint_fallback = device_matches_requested_model_hint(&device, requested_model_hint);
-            let accepted = matched || (!explicit_known_filter_mismatch && model_hint_fallback);
+            let device_has_unknown_filter = known_network_filter.is_none();
+            let accepted = matched
+                || (!explicit_known_filter_mismatch && (model_hint_fallback || device_has_unknown_filter));
             log_nanodlp_filter_debug(
                 if matched {
                     "discover/match"
@@ -1705,7 +1713,9 @@ async fn nanodlp_discover(payload: &Value) -> (u16, Value) {
                     .map(|known| known != normalized_expected)
                     .unwrap_or(false);
                 let model_hint_fallback = device_matches_requested_model_hint(&device, requested_model_hint);
-                let accepted = matched || (!explicit_known_filter_mismatch && model_hint_fallback);
+                let device_has_unknown_filter = known_network_filter.is_none();
+                let accepted = matched
+                    || (!explicit_known_filter_mismatch && (model_hint_fallback || device_has_unknown_filter));
                 log_nanodlp_filter_debug(
                     if matched {
                         "discover/match"
@@ -1832,7 +1842,9 @@ async fn nanodlp_discover(payload: &Value) -> (u16, Value) {
                     .map(|known| known != normalized_expected)
                     .unwrap_or(false);
                 let model_hint_fallback = device_matches_requested_model_hint(&device, requested_model_hint);
-                let accepted = matched || (!explicit_known_filter_mismatch && model_hint_fallback);
+                let device_has_unknown_filter = known_network_filter.is_none();
+                let accepted = matched
+                    || (!explicit_known_filter_mismatch && (model_hint_fallback || device_has_unknown_filter));
                 log_nanodlp_filter_debug(
                     if matched {
                         "discover/match"

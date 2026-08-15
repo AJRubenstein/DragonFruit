@@ -1391,7 +1391,7 @@ export function ProfileSettingsModal({
               </div>
             ) : (
               <div className="absolute inset-0 flex items-center justify-center px-2" style={{ color: 'var(--text-muted)' }}>
-                <div className="flex flex-col items-center justify-center gap-1 text-[10px] text-center leading-tight">
+                <div className="flex flex-col items-center justify-center gap-1 text-[11px] text-center leading-tight">
                   {imageFallback}
                 </div>
               </div>
@@ -1413,11 +1413,11 @@ export function ProfileSettingsModal({
             className="min-w-0 flex-1 text-left"
           >
             <div className="flex items-center gap-1.5">
-              <div className="text-[11px] leading-snug font-semibold truncate min-w-0" style={{ color: 'var(--text-strong)' }}>
+              <div className="text-xs leading-snug font-semibold truncate min-w-0" style={{ color: 'var(--text-strong)' }}>
                 {title}
               </div>
             </div>
-            <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
               {subtitle}
             </div>
           </button>
@@ -3386,12 +3386,12 @@ export function ProfileSettingsModal({
             {preset.name}
           </div>
           <div className="mt-0.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-            <div className="min-w-0 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <div className="min-w-0 truncate text-xs" style={{ color: 'var(--text-muted)' }}>
               {preset.manufacturer}
             </div>
             <span className="shrink-0 inline-flex min-w-[52px] items-center justify-end">
               <span
-                className="inline-flex h-[18px] min-w-[44px] items-center justify-center rounded border px-1.5 text-[10px]"
+                className="inline-flex h-[18px] min-w-[44px] items-center justify-center rounded border px-1.5 text-[11px]"
                 style={{
                   borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 35%)',
                   color: 'var(--accent-secondary)',
@@ -3518,7 +3518,7 @@ export function ProfileSettingsModal({
                     <Box className="w-4 h-4" />
                     {printerSectionTitle}
                   </h3>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                     {shouldRenderFleetRail
                       ? `Showing connected devices for ${selectedPrinter?.name ?? 'selected profile'}.`
                       : 'Each printer can store its own image and has a dedicated set of compatible material profiles.'}
@@ -3560,7 +3560,7 @@ export function ProfileSettingsModal({
                     <button
                       type="button"
                       onClick={handleAddPrinter}
-                      className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md shrink-0"
+                      className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md shrink-0"
                       style={shouldShowFleetSwitchAction
                         ? accentSecondaryActionStyle92
                         : accentSecondaryActionStyle93}
@@ -3800,7 +3800,7 @@ export function ProfileSettingsModal({
                           setIsNetworkSettingsOpen(true);
                         }}
                         aria-label={fleetCount > 0 ? `Open fleet view (${fleetCount})` : 'Add another networked device'}
-                        className="ui-button ui-button-secondary !h-7 !w-7 !px-0 !py-0 text-[11px] inline-flex items-center justify-center rounded-md shrink-0"
+                        className="ui-button ui-button-secondary !h-7 !w-7 !px-0 !py-0 text-sm inline-flex items-center justify-center rounded-md shrink-0"
                         style={fleetCount > 0
                           ? {
                               color: 'var(--text-strong)',
@@ -3846,7 +3846,7 @@ export function ProfileSettingsModal({
                       setShowManualNetworkEntry(false);
                       setIsNetworkSettingsOpen(true);
                     }}
-                    className="ui-button ui-button-secondary mt-2 !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md"
+                    className="ui-button ui-button-secondary mt-2 !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                     style={accentSecondaryActionStyle93}
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -3863,7 +3863,7 @@ export function ProfileSettingsModal({
                       <button
                         type="button"
                         onClick={() => setPrinterRailViewMode('profiles')}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md"
+                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                         style={accentSecondaryActionStyle93}
                       >
                         Return to Printers
@@ -3872,7 +3872,7 @@ export function ProfileSettingsModal({
                         type="button"
                         onClick={handleOpenNetworkSettings}
                         disabled={!hasPrinters || !selectedPrinter}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
                         style={{ color: 'var(--text-strong)' }}
                       >
                         <Search className="w-3.5 h-3.5" />
@@ -3882,7 +3882,7 @@ export function ProfileSettingsModal({
                         type="button"
                         onClick={handleOpenEditFleetUnitModal}
                         disabled={!activeManagedNetworkPrinter}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
                         style={{ color: 'var(--text-strong)' }}
                       >
                         <Edit3 className="w-3.5 h-3.5" />
@@ -3902,7 +3902,7 @@ export function ProfileSettingsModal({
                             handleOpenNetworkSettings();
                           }}
                           disabled={!hasPrinters || !selectedPrinter}
-                          className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                          className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
                           style={shouldShowFleetSwitchAction
                             ? accentSecondaryActionStyle92
                             : { color: 'var(--text-strong)' }}
@@ -3915,7 +3915,7 @@ export function ProfileSettingsModal({
                         <button
                           type="button"
                           onClick={() => setShowPrinterUpdateDiffModal(true)}
-                          className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md"
+                          className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                           style={accentSecondaryActionStyle92}
                           title={`Update v${selectedPrinterUpdate.currentVersion} to v${selectedPrinterUpdate.latestVersion}`}
                         >
@@ -3930,7 +3930,7 @@ export function ProfileSettingsModal({
                           setIsEditingPrinter(true);
                         }}
                         disabled={!hasPrinters}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md"
+                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                         style={{ color: 'var(--text-strong)' }}
                       >
                         Edit Printer
@@ -3939,7 +3939,7 @@ export function ProfileSettingsModal({
                         type="button"
                         onClick={handleImportSelectedPrinterBundle}
                         disabled={!hasPrinters}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
                         style={{ color: 'var(--text-strong)' }}
                       >
                         <Upload className="w-3.5 h-3.5" />
@@ -3949,7 +3949,7 @@ export function ProfileSettingsModal({
                         type="button"
                         onClick={handleExportSelectedPrinterBundle}
                         disabled={!hasPrinters}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
                         style={{ color: 'var(--text-strong)' }}
                       >
                         <Download className="w-3.5 h-3.5" />
@@ -3959,7 +3959,7 @@ export function ProfileSettingsModal({
                         type="button"
                         onClick={requestDeleteSelectedPrinter}
                         disabled={!hasPrinters}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45 ml-auto"
+                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45 ml-auto"
                         style={{ color: !hasPrinters ? 'var(--text-muted)' : 'var(--danger)' }}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -3989,7 +3989,7 @@ export function ProfileSettingsModal({
                     <FlaskConical className="w-4 h-4" />
                     Material Settings
                   </h3>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                     {shouldUseRemoteOnDeviceMaterials
                       ? <>Connected {selectedNetworkModeLabel} profiles are loaded directly from <span style={{ color: 'var(--text-strong)' }}>{selectedPrinter.name}</span>. Selection is read-only for now.</>
                       : shouldShowRemoteMaterialSelectedPrinterOfflineState
@@ -3999,7 +3999,7 @@ export function ProfileSettingsModal({
                           : <>Profiles below are bound to <span style={{ color: 'var(--text-strong)' }}>{selectedPrinter.name}</span> and follow the selected printer hardware.</>}
                   </p>
                   {selectedMaterialUpdate && (
-                    <p className="text-[11px] mt-1" style={{ color: 'var(--accent-secondary)' }}>
+                    <p className="text-xs mt-1" style={{ color: 'var(--accent-secondary)' }}>
                       Update available for selected material profile (v{selectedMaterialUpdate.currentVersion} → v{selectedMaterialUpdate.latestVersion}).
                     </p>
                   )}
@@ -4013,14 +4013,14 @@ export function ProfileSettingsModal({
                             type="button"
                             disabled
                             aria-label="Edit material (work in progress)"
-                            className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md opacity-35 cursor-not-allowed"
+                            className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md opacity-35 cursor-not-allowed"
                             style={{ color: 'var(--text-strong)', pointerEvents: 'none' }}
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                             Edit
                           </button>
                           <div
-                            className="pointer-events-none absolute right-0 top-full mt-2 z-[70] w-[220px] rounded-md border px-2.5 py-2 text-[10px] leading-tight opacity-0 -translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0"
+                            className="pointer-events-none absolute right-0 top-full mt-2 z-[70] w-[220px] rounded-md border px-2.5 py-2 text-[11px] leading-tight opacity-0 -translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0"
                             style={{
                               borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 35%)',
                               background: 'color-mix(in srgb, var(--surface-0), black 10%)',
@@ -4039,7 +4039,7 @@ export function ProfileSettingsModal({
                           type="button"
                           onClick={openRemoteMaterialEditDialog}
                           disabled={!selectedRemoteMaterial}
-                          className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                          className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
                           style={{ color: 'var(--text-strong)' }}
                         >
                           <Edit3 className="w-3.5 h-3.5" />
@@ -4064,7 +4064,7 @@ export function ProfileSettingsModal({
                       <button
                         type="button"
                         onClick={handleOpenMaterialLibrary}
-                        className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md"
+                        className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                         style={{
                           color: 'var(--accent)',
                           borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
@@ -4077,7 +4077,7 @@ export function ProfileSettingsModal({
                       <button
                         type="button"
                         onClick={handleAddMaterial}
-                        className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md"
+                        className="ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                         style={accentSecondaryActionStyle93}
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -4135,7 +4135,7 @@ export function ProfileSettingsModal({
                                       {chips.map((chip) => (
                                         <span
                                           key={`${material.id}-${chip}`}
-                                          className="text-[10px] rounded-full border px-1.5 py-0.5"
+                                          className="text-[11px] rounded-full border px-1.5 py-0.5"
                                           style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                                         >
                                           {chip}
@@ -4144,7 +4144,7 @@ export function ProfileSettingsModal({
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-[10px]" style={{ color: material.locked ? '#fbbf24' : 'var(--text-muted)' }}>
+                                <span className="text-[11px]" style={{ color: material.locked ? '#fbbf24' : 'var(--text-muted)' }}>
                                   {material.locked ? 'Locked' : 'On device'}
                                 </span>
                               </div>
@@ -4165,14 +4165,14 @@ export function ProfileSettingsModal({
                     <h4 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                       Printer Not Connected
                     </h4>
-                    <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    <p className="mt-1 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                       A network printer is configured, but it is not responding right now. Reconnect it in Fleet Management, then refresh to load on-device materials.
                     </p>
                     {selectedPrinterSupportsNetworkSettings && (
                       <button
                         type="button"
                         onClick={handleOpenNetworkSettings}
-                        className="ui-button ui-button-secondary mt-3 !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md"
+                        className="ui-button ui-button-secondary mt-3 !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                         style={accentSecondaryActionStyle93}
                       >
                         <Search className="w-3.5 h-3.5" />
@@ -4180,7 +4180,7 @@ export function ProfileSettingsModal({
                       </button>
                     )}
                     {remoteMaterialsError && (
-                      <div className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      <div className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                         {remoteMaterialsError}
                       </div>
                     )}
@@ -4195,14 +4195,14 @@ export function ProfileSettingsModal({
                     <h4 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                       Connect to a Machine
                     </h4>
-                    <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    <p className="mt-1 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
                       Connect to a machine to view on-device material profiles.
                     </p>
                     {selectedPrinterSupportsNetworkSettings && (
                       <button
                         type="button"
                         onClick={handleOpenNetworkSettings}
-                        className="ui-button ui-button-secondary mt-3 !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md"
+                        className="ui-button ui-button-secondary mt-3 !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                         style={accentSecondaryActionStyle93}
                       >
                         <Search className="w-3.5 h-3.5" />
@@ -4216,7 +4216,7 @@ export function ProfileSettingsModal({
               <div className="rounded-xl border overflow-hidden flex flex-col flex-1 min-h-0" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)' }}>
                 <div className="grid grid-cols-[1fr_1fr_1.25fr] flex-1 min-h-0 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
                   <div className="border-r min-h-0 flex flex-col" style={{ borderColor: 'var(--border-subtle)' }}>
-                    <div className="px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Manufacturer</div>
+                    <div className="px-2.5 py-2 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Manufacturer</div>
                     <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-1.5 space-y-1">
                       {availableManufacturers.map((manufacturer) => {
                         const active = selectedManufacturerValue === manufacturer;
@@ -4250,7 +4250,7 @@ export function ProfileSettingsModal({
                   </div>
 
                   <div className="border-r min-h-0 flex flex-col" style={{ borderColor: 'var(--border-subtle)' }}>
-                    <div className="px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Material Type</div>
+                    <div className="px-2.5 py-2 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Material Type</div>
                     <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-1.5 space-y-1">
                       {availableResinTypes.map((resinType) => {
                         const active = selectedResinFamilyValue === resinType;
@@ -4284,7 +4284,7 @@ export function ProfileSettingsModal({
                   </div>
 
                   <div className="min-h-0 flex flex-col">
-                    <div className="px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Profile</div>
+                    <div className="px-2.5 py-2 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Profile</div>
                     <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-1.5 space-y-1">
                       {filteredMaterialProfiles.map((material) => {
                         const active = selectedMaterial?.id === material.id;
@@ -4340,7 +4340,7 @@ export function ProfileSettingsModal({
                     <button
                       type="button"
                       onClick={handleApplySelectedMaterialOfficialUpdate}
-                      className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md"
+                      className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                       style={{
                         color: 'var(--accent-secondary)',
                         borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 42%)',
@@ -4356,7 +4356,7 @@ export function ProfileSettingsModal({
                     type="button"
                     onClick={openSelectedMaterialEditor}
                     disabled={!selectedMaterial}
-                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
                     style={{ color: 'var(--text-strong)' }}
                   >
                     <Edit3 className="w-3.5 h-3.5" />
@@ -4366,7 +4366,7 @@ export function ProfileSettingsModal({
                     type="button"
                     onClick={handleImportSelectedMaterialBundle}
                     disabled={!selectedPrinter}
-                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
                     style={{ color: 'var(--text-strong)' }}
                   >
                     <Upload className="w-3.5 h-3.5" />
@@ -4376,7 +4376,7 @@ export function ProfileSettingsModal({
                     type="button"
                     onClick={handleExportSelectedMaterialBundle}
                     disabled={!selectedMaterial}
-                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
                     style={{ color: 'var(--text-strong)' }}
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -4386,7 +4386,7 @@ export function ProfileSettingsModal({
                     type="button"
                     onClick={requestDeleteSelectedMaterial}
                     disabled={!selectedMaterial || printerMaterials.length <= 1}
-                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45 ml-auto"
+                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45 ml-auto"
                     style={{ color: !selectedMaterial || printerMaterials.length <= 1 ? 'var(--text-muted)' : 'var(--danger)' }}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -4427,7 +4427,7 @@ export function ProfileSettingsModal({
               <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div>
                   <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Edit Unit</h3>
-                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     Customize nickname and card thumbnail for this fleet unit in DragonFruit.
                   </p>
                 </div>
@@ -4460,7 +4460,7 @@ export function ProfileSettingsModal({
                       />
                     </div>
 
-                    <div className="mt-2 rounded-md border px-2 py-1.5 text-[11px]" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)', background: 'color-mix(in srgb, var(--surface-2), transparent 6%)' }}>
+                    <div className="mt-2 rounded-md border px-2 py-1.5 text-xs" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)', background: 'color-mix(in srgb, var(--surface-2), transparent 6%)' }}>
                       Reset will clear custom nickname + thumbnail and fall back to the device hostname/IP.
                     </div>
                   </div>
@@ -4471,7 +4471,7 @@ export function ProfileSettingsModal({
                       {editingFleetUnitImageDataUrl ? (
                         <AutoTrimmedImage src={editingFleetUnitImageDataUrl} alt={editingFleetUnitNickname || editingFleetUnit.displayName || 'Fleet unit'} className="h-full w-full object-cover" />
                       ) : (
-                        <div className="text-[11px] text-center px-3" style={{ color: 'var(--text-muted)' }}>
+                        <div className="text-xs text-center px-3" style={{ color: 'var(--text-muted)' }}>
                           No custom image
                         </div>
                       )}
@@ -4480,7 +4480,7 @@ export function ProfileSettingsModal({
                       <button
                         type="button"
                         onClick={() => fleetUnitImageUploadInputRef.current?.click()}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-md"
+                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-md"
                         style={{ color: 'var(--text-strong)' }}
                       >
                         <Upload className="w-3.5 h-3.5" />
@@ -4489,7 +4489,7 @@ export function ProfileSettingsModal({
                       <button
                         type="button"
                         onClick={() => setEditingFleetUnitImageDataUrl(null)}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-md"
+                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-md"
                         style={{ color: editingFleetUnitImageDataUrl ? 'var(--danger)' : 'var(--text-muted)' }}
                         disabled={!editingFleetUnitImageDataUrl}
                       >
@@ -4505,7 +4505,7 @@ export function ProfileSettingsModal({
                 <button
                   type="button"
                   onClick={handleResetFleetUnitDraft}
-                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-md"
+                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-md"
                   style={{ color: 'var(--danger)' }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -4522,7 +4522,7 @@ export function ProfileSettingsModal({
                 <button
                   type="button"
                   onClick={handleSaveFleetUnitEdits}
-                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-md"
+                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-md"
                   style={{
                     color: 'var(--accent-secondary)',
                     borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 42%)',
@@ -4564,7 +4564,7 @@ export function ProfileSettingsModal({
                   </span>
                   <div>
                     <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Printer Library</h3>
-                    <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Choose an official printer preset to add.</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Choose an official printer preset to add.</p>
                   </div>
                 </div>
                 <button
@@ -4636,7 +4636,7 @@ export function ProfileSettingsModal({
                               aria-hidden="true"
                             />
                             <span
-                              className="shrink-0 text-[11px] font-semibold tracking-[0.08em]"
+                              className="shrink-0 text-sm font-semibold tracking-[0.08em]"
                               style={{ color: 'var(--text-muted)' }}
                             >
                               {group.family}
@@ -4670,7 +4670,7 @@ export function ProfileSettingsModal({
                   type="button"
                   aria-disabled={selectedLibraryPresetIds.size === 0}
                   onClick={selectedLibraryPresetIds.size > 0 ? handleAddSelectedPrinterPresets : undefined}
-                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1.5 rounded-md aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
+                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1.5 rounded-md aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
                   style={selectedLibraryPresetIds.size > 0 ? accentSecondaryActionStyle92 : undefined}
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -4752,7 +4752,7 @@ export function ProfileSettingsModal({
                     setIsMaterialEditorOpen(false);
                   }}
                   disabled={!selectedMaterial || printerMaterials.length <= 1}
-                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-full disabled:opacity-45"
+                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-full disabled:opacity-45"
                   style={{ color: !selectedMaterial || printerMaterials.length <= 1 ? 'var(--text-muted)' : 'var(--danger)' }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -4769,7 +4769,7 @@ export function ProfileSettingsModal({
                   <button
                     type="button"
                     onClick={handleSaveMaterialEdits}
-                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-full"
+                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-full"
                     style={accentSecondaryActionStyle92}
                   >
                     <Check className="w-3.5 h-3.5" />
@@ -4825,7 +4825,7 @@ export function ProfileSettingsModal({
                         onClick={() => {
                           void handleDuplicateSelectedPrinterAsCustom();
                         }}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-md"
+                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-md"
                         style={accentSecondaryActionStyle92}
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -4860,7 +4860,7 @@ export function ProfileSettingsModal({
                             type="button"
                             onClick={() => triggerImageUpload(selectedPrinter.id)}
                             disabled={isSelectedPrinterOfficial}
-                            className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md"
+                            className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
                             style={{ color: isSelectedPrinterOfficial ? 'var(--text-muted)' : 'var(--text-strong)' }}
                           >
                             <Upload className="w-3.5 h-3.5" />
@@ -4873,14 +4873,14 @@ export function ProfileSettingsModal({
                               updatePrinterProfile(selectedPrinter.id, { imageDataUrl: undefined });
                             }}
                             disabled={isSelectedPrinterOfficial || !selectedPrinter.imageDataUrl}
-                            className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                            className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
                             style={{ color: selectedPrinter.imageDataUrl ? 'var(--danger)' : 'var(--text-muted)' }}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             Clear Image
                           </button>
                         </div>
-                        <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                           Tip: use a front/angled photo for faster visual identification.
                         </p>
                       </div>
@@ -4891,7 +4891,7 @@ export function ProfileSettingsModal({
                         {selectedPrinter.imageDataUrl ? (
                           <AutoTrimmedImage src={selectedPrinter.imageDataUrl} alt={selectedPrinter.name} className="h-full w-full object-contain" />
                         ) : (
-                          <div className="text-[11px] text-center px-3" style={{ color: 'var(--text-muted)' }}>
+                          <div className="text-xs text-center px-3" style={{ color: 'var(--text-muted)' }}>
                             <Printer className="w-5 h-5 mx-auto mb-1" />
                             No preview image
                           </div>
@@ -4911,10 +4911,10 @@ export function ProfileSettingsModal({
                     }}
                   >
                     <div>
-                      <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
+                      <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                         Auto-Calculate Width/Depth
                       </div>
-                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                         Uses Resolution × Pixel Size. Non-destructive: switching back restores previous manual width/depth.
                       </div>
                     </div>
@@ -5154,7 +5154,7 @@ export function ProfileSettingsModal({
                 <button
                   type="button"
                   onClick={() => setIsEditingPrinter(false)}
-                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-full"
+                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-full"
                   style={accentSecondaryActionStyle92}
                 >
                   <Check className="w-3.5 h-3.5" />
@@ -5194,7 +5194,7 @@ export function ProfileSettingsModal({
                   </span>
                   <div>
                     <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Material Library</h3>
-                    <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Choose an official material preset to add.</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Choose an official material preset to add.</p>
                   </div>
                 </div>
                 <button
@@ -5298,7 +5298,7 @@ export function ProfileSettingsModal({
                                 <div className="shrink-0 flex items-center gap-1.5">
                                   {showFamily && !isAlreadyAdded && !isSelected && (
                                     <span
-                                      className="text-[10px] rounded-full border px-1.5 py-0.5 font-medium whitespace-nowrap"
+                                      className="text-[11px] rounded-full border px-1.5 py-0.5 font-medium whitespace-nowrap"
                                       style={{ borderColor: `color-mix(in srgb, ${familyColor}, transparent 45%)`, color: familyColor, background: `color-mix(in srgb, ${familyColor}, var(--surface-0) 88%)` }}
                                     >
                                       {resinFamilyLabel}
@@ -5314,7 +5314,7 @@ export function ProfileSettingsModal({
                                   )}
                                   {isAlreadyAdded && (
                                     <span
-                                      className="text-[10px] rounded-full border px-1.5 py-0.5 font-semibold whitespace-nowrap"
+                                      className="text-[11px] rounded-full border px-1.5 py-0.5 font-semibold whitespace-nowrap"
                                       style={{ borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 35%)', color: 'var(--accent-secondary)' }}
                                     >
                                       Added
@@ -5323,7 +5323,7 @@ export function ProfileSettingsModal({
                                 </div>
                               </div>
                               <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                <span className="text-xs tabular-nums" style={{ color: 'var(--text-muted)' }}>
                                   {`${preset.layerHeightMm * 1000}μm · ${preset.normalExposureSec}s`}
                                 </span>
                               </div>
@@ -5349,7 +5349,7 @@ export function ProfileSettingsModal({
                           <section key={`${selectedMaterialPresetBrand}-${group.family}`}>
                             <div className="flex items-center gap-2 mb-1.5 px-0.5">
                               <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: familyColor }} />
-                              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: familyColor }}>
+                              <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: familyColor }}>
                                 {group.family}
                               </span>
                             </div>
@@ -5376,7 +5376,7 @@ export function ProfileSettingsModal({
                   type="button"
                   aria-disabled={selectedLibraryMaterialKeys.size === 0}
                   onClick={selectedLibraryMaterialKeys.size > 0 ? handleAddSelectedMaterialPresets : undefined}
-                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1.5 rounded-md aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
+                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1.5 rounded-md aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
                   style={selectedLibraryMaterialKeys.size > 0 ? accentSecondaryActionStyle92 : undefined}
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -5461,7 +5461,7 @@ export function ProfileSettingsModal({
                 <button
                   type="button"
                   onClick={handleCreateMaterial}
-                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-full"
+                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-full"
                   style={accentSecondaryActionStyle92}
                 >
                   <Check className="w-3.5 h-3.5" />
@@ -5566,7 +5566,7 @@ export function ProfileSettingsModal({
                   <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
                     Official Printer Update
                   </h3>
-                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     {selectedPrinter.name} • v{selectedPrinterUpdate.currentVersion} → v{selectedPrinterUpdate.latestVersion}
                   </p>
                 </div>
@@ -5588,7 +5588,7 @@ export function ProfileSettingsModal({
 
                 {selectedPrinterUpdateDiffItems.length > 0 ? (
                   <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                    <div className="grid grid-cols-[170px_minmax(0,1fr)_minmax(0,1fr)] gap-0 border-b text-[10px] font-semibold uppercase tracking-wide" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
+                    <div className="grid grid-cols-[170px_minmax(0,1fr)_minmax(0,1fr)] gap-0 border-b text-[11px] font-semibold uppercase tracking-wide" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
                       <div className="px-2.5 py-2" style={{ borderRight: '1px solid var(--border-subtle)' }}>Field</div>
                       <div className="px-2.5 py-2" style={{ borderRight: '1px solid var(--border-subtle)' }}>Current</div>
                       <div className="px-2.5 py-2">Update</div>
@@ -5624,7 +5624,7 @@ export function ProfileSettingsModal({
                     handleApplySelectedPrinterOfficialUpdate();
                     setShowPrinterUpdateDiffModal(false);
                   }}
-                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-md"
+                  className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-md"
                   style={accentSecondaryActionStyle92}
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -5673,7 +5673,7 @@ export function ProfileSettingsModal({
               </>
             )}
           >
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
               For safety reasons, official slicer profiles cannot be modified directly.
               <br />
               Choose <strong>Make Custom Copy</strong> to duplicate and edit safely.
@@ -5714,7 +5714,7 @@ export function ProfileSettingsModal({
             </>
           )}
         >
-          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
             Official material profiles cannot be edited directly.
             <br />
             Choose <strong>Make Custom Copy</strong> to duplicate and adjust exposure settings safely.
@@ -5760,7 +5760,7 @@ export function ProfileSettingsModal({
           )}
         >
           {deleteConfirmTarget ? (
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
               {deleteConfirmTarget.kind === 'printer'
                 ? <>Delete <strong style={{ color: 'var(--text-strong)' }}>{deleteConfirmTarget.name}</strong> and remove all material profiles linked to it?</>
                 : <>Delete material profile <strong style={{ color: 'var(--text-strong)' }}>{deleteConfirmTarget.name}</strong>?</>}
@@ -5842,7 +5842,7 @@ function RemoteMaterialEditDialog({
             <button
               type="button"
               onClick={() => onEditTabChange('basic')}
-              className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-[11px] rounded-md"
+              className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-xs rounded-md"
               style={editTab === 'basic'
                 ? { color: 'var(--accent-secondary)', borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 42%)' }
                 : { color: 'var(--text-muted)' }}
@@ -5852,7 +5852,7 @@ function RemoteMaterialEditDialog({
             <button
               type="button"
               onClick={() => onEditTabChange('advanced')}
-              className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-[11px] rounded-md"
+              className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-xs rounded-md"
               style={editTab === 'advanced'
                 ? { color: 'var(--accent-secondary)', borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 42%)' }
                 : { color: 'var(--text-muted)' }}
@@ -5873,7 +5873,7 @@ function RemoteMaterialEditDialog({
                     <span>{section.title}</span>
                     {section.id === 'timing' && isDynamicWaitEnabledState && (
                       <span
-                        className="text-[10px] rounded-full border px-2 py-0.5 normal-case tracking-normal"
+                        className="text-[11px] rounded-full border px-2 py-0.5 normal-case tracking-normal"
                         style={{
                           borderColor: 'color-mix(in srgb, #d97706, var(--border-subtle) 45%)',
                           background: 'color-mix(in srgb, #d97706, var(--surface-2) 88%)',
@@ -6003,7 +6003,7 @@ function RemoteMaterialEditDialog({
               type="button"
               onClick={onSave}
               disabled={isSaving}
-              className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs inline-flex items-center gap-1 rounded-full disabled:opacity-60"
+              className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-full disabled:opacity-60"
               style={{ color: 'var(--accent-secondary)' }}
             >
               {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}

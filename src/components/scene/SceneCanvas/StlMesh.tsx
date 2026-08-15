@@ -173,8 +173,8 @@ function StlMeshComponent({
   flatUseVertexColors,
   toonSteps,
   xrayOpacity,
-  heatmapBlend,
-  heatmapContrast,
+  heatmapMinAngle,
+  heatmapMaxAngle,
   heatmapColors,
   transform,
   mode,
@@ -184,6 +184,7 @@ function StlMeshComponent({
   onSupportClick,
   onHolePunchClick,
   onHolePunchHover,
+  onOrganicCutClick,
   onSupportHover,
   onActiveModelChange,
   disableRaycast,
@@ -238,8 +239,8 @@ function StlMeshComponent({
   flatUseVertexColors?: boolean;
   toonSteps?: number;
   xrayOpacity?: number;
-  heatmapBlend?: number;
-  heatmapContrast?: number;
+  heatmapMinAngle?: number;
+  heatmapMaxAngle?: number;
   heatmapColors?: string[];
   /** When true, overlays black edge lines on model geometry for better shape definition. */
   higherContrastModelEdges?: boolean;
@@ -258,6 +259,7 @@ function StlMeshComponent({
   onSupportClick?: (hit: THREE.Intersection) => void;
   onHolePunchClick?: (hit: THREE.Intersection) => void;
   onHolePunchHover?: (hit: THREE.Intersection | null) => void;
+  onOrganicCutClick?: (hit: THREE.Intersection) => void;
   onSupportHover?: (hit: THREE.Intersection | null) => void;
   onActiveModelChange?: (id: string | null, options?: { selectionMode?: 'single' | 'toggle' | 'add' }) => void;
   disableRaycast?: boolean;
@@ -313,6 +315,11 @@ function StlMeshComponent({
   const [isPointerHovered, setIsPointerHovered] = React.useState(false);
   const { camera } = useThree();
   const suppressNextHolePunchClickRef = React.useRef(false);
+  // Same idea as hole-punch: when a pointer-down lands on a not-yet-active model
+  // (a reselection click), suppress the FOLLOWING click so it only selects the
+  // model instead of also dropping a cut waypoint. Captured at pointer-down
+  // because by click time the model may already have become active.
+  const suppressNextOrganicCutClickRef = React.useRef(false);
 
   const smoothingScratchLocalPointRef = React.useRef(new THREE.Vector3());
   const supportDimCameraLocalPointRef = React.useRef(new THREE.Vector3());
@@ -389,6 +396,26 @@ function StlMeshComponent({
   // Edges geometry for Higher Contrast Model Edges overlay.
   // Pre-computed during geometry import — no render-time cost.
   const edgeLinesGeometry = edgeGeometry ?? null;
+
+  // Derive edge color from the selection accent color so edges read as a dark,
+  // saturated shade of the accent (e.g. pink accent → dark burgundy edges)
+  // instead of generic black. Proportional scaling preserves hue at low luminance.
+  const edgeLinesColor = React.useMemo(() => {
+    const base = selectedTintColor ?? '#ec2a77';
+    const hex = base.replace('#', '');
+    if (hex.length !== 6) return '#1a1a1a';
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    // Scale all channels proportionally to ~22% brightness — dark enough for
+    // edge contrast but the hue ratio is preserved so it reads as a tint of
+    // the accent, not generic black.
+    const scale = 0.22;
+    const dr = Math.round(r * scale).toString(16).padStart(2, '0');
+    const dg = Math.round(g * scale).toString(16).padStart(2, '0');
+    const db = Math.round(b * scale).toString(16).padStart(2, '0');
+    return `#${dr}${dg}${db}`;
+  }, [selectedTintColor]);
 
   // Internal ref for the mesh element to control raycasting
   const internalMeshRef = React.useRef<THREE.Mesh>(null);
@@ -942,6 +969,32 @@ if (uDitherAmount > 0.0) {
             return;
           }
 
+          if (mode === 'prepare' && transformMode === 'organicCut' && onOrganicCutClick) {
+            // Select-only when this click is a (re)selection rather than a draw:
+            // either the model isn't active yet, OR the pointer-down landed on a
+            // not-yet-active model (captured into the suppress ref) and selection
+            // made it active mid-gesture. Without the ref, reselecting a model
+            // would also drop a stray waypoint.
+            const shouldOnlySelect = suppressNextOrganicCutClickRef.current || !isActiveModel;
+            suppressNextOrganicCutClickRef.current = false;
+            if (shouldOnlySelect) {
+              e.stopPropagation();
+              if (onActiveModelChange) {
+                onActiveModelChange(modelId, { selectionMode: 'single' });
+              }
+              return;
+            }
+
+            const firstIsGizmo = e.intersections[0]?.object.userData?.isGizmoHandle === true;
+            if (isGizmoHoverCategory || firstIsGizmo) {
+              return;
+            }
+
+            e.stopPropagation();
+            onOrganicCutClick(e as unknown as THREE.Intersection);
+            return;
+          }
+
           if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchClick) {
             const shouldOnlySelect = suppressNextHolePunchClickRef.current || !isActiveModel;
             suppressNextHolePunchClickRef.current = false;
@@ -1260,6 +1313,12 @@ if (uDitherAmount > 0.0) {
               suppressNextHolePunchClickRef.current = false;
             }
 
+            if (transformMode === 'organicCut' && onOrganicCutClick) {
+              suppressNextOrganicCutClickRef.current = !isActiveModel;
+            } else {
+              suppressNextOrganicCutClickRef.current = false;
+            }
+
             // If the pointer is over a gizmo handle, do not consume the event at
             // the model layer; let gizmo drag interactions win.
             // GPU pick (isGizmoHoverCategory) handles the visual-overlap case.
@@ -1349,7 +1408,8 @@ if (uDitherAmount > 0.0) {
             materialRoughness={materialRoughness}
             clippingPlanes={planes}
             xrayOpacity={xrayOpacity}
-            heatmapContrast={heatmapContrast}
+            heatmapMinAngle={heatmapMinAngle}
+            heatmapMaxAngle={heatmapMaxAngle}
             heatmapColors={heatmapColors}
           />
         )}
@@ -1376,7 +1436,8 @@ if (uDitherAmount > 0.0) {
               materialRoughness={materialRoughness}
               clippingPlanes={planes}
               xrayOpacity={xrayOpacity}
-              heatmapContrast={heatmapContrast}
+              heatmapMinAngle={heatmapMinAngle}
+              heatmapMaxAngle={heatmapMaxAngle}
               heatmapColors={heatmapColors}
             />
           </mesh>
@@ -1391,7 +1452,7 @@ if (uDitherAmount > 0.0) {
 
       {!interiorView && higherContrastModelEdges && !showOpaqueWireOverlay && baseShaderType !== 'wireframe' && !blockerEditMode && edgeLinesGeometry && (
         <lineSegments geometry={edgeLinesGeometry} position={meshLocalOffset} renderOrder={2} raycast={() => null}>
-          <lineBasicMaterial color="#000000" transparent opacity={0.55} depthTest polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} clippingPlanes={planes} />
+          <lineBasicMaterial color={edgeLinesColor} transparent opacity={0.55} depthTest polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} clippingPlanes={planes} />
         </lineSegments>
       )}
 

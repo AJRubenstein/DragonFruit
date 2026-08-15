@@ -1,6 +1,6 @@
 [package]
 name = "dragonfruit-desktop"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2021"
 
 [build-dependencies]
@@ -31,13 +31,14 @@ if-addrs = "0.10"
 tungstenite = "0.24"
 base64 = "0.22"
 sha2 = "0.10"
-tokio = { version = "1", features = ["sync", "fs", "time"] }
+tokio = { version = "1", features = ["sync", "fs", "time", "rt"] }
 tokio-util = { version = "0.7", features = ["io"] }
 futures-util = "0.3"
 dragonfruit-slicing-engine = { path = "../rust/dragonfruit-slicing-engine" }
 dragonfruit-rtsp-relay = { path = "../rust/dragonfruit-rtsp-relay" }
 dragonfruit-islands = { path = "../rust/dragonfruit-islands" }
 dragonfruit-mesh-repair = { path = "../rust/dragonfruit-mesh-repair", features = ["manifold"] }
+dragonfruit-organic-cut = { path = "../rust/dragonfruit-organic-cut", features = ["manifold"] }
 dragonfruit-sdf = { path = "../rust/dragonfruit-sdf" }
 dragonfruit-astar = { path = "../rust/dragonfruit-astar" }
 flate2 = "1.1.9"

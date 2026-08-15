@@ -55,7 +55,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
             <MousePointer2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               3D Mouse Input
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -70,7 +70,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Enable 3D Mouse
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Uses browser gamepad input from supported 3D mouse devices.
               </div>
             </div>
@@ -103,7 +103,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
             </div>
           </div>
           {candidatePads.length === 0 ? (
-            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
               No compatible input devices detected. Ensure your 3D mouse driver is installed.
             </p>
           ) : (
@@ -133,11 +133,11 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
                         ) : (
                           <CheckCircle2 className="h-3 w-3 flex-shrink-0" style={{ color: isNamed ? 'var(--accent)' : '#fb923c' }} />
                         )}
-                        <span className="text-[11px] font-semibold truncate" style={{ color: 'var(--text-strong)' }}>
+                        <span className="text-xs font-semibold truncate" style={{ color: 'var(--text-strong)' }}>
                           {pad.id}
                         </span>
                       </div>
-                      <div className="text-[10px] mt-0.5 pl-4.5" style={{ color: 'var(--text-muted)' }}>
+                      <div className="text-[11px] mt-0.5 pl-4.5" style={{ color: 'var(--text-muted)' }}>
                         {pad.axes.length} axes ·{' '}
                         {isBlocked ? 'blocked' : isNamed ? 'recognized 3D mouse' : 'unrecognized — used as fallback'}
                       </div>
@@ -150,7 +150,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
                           : [...settings.blockedDeviceIds, pad.id];
                         onChange({ blockedDeviceIds: next });
                       }}
-                      className="flex-shrink-0 rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors"
+                      className="flex-shrink-0 rounded border px-2 py-1 text-[11px] font-semibold uppercase tracking-wide transition-colors"
                       style={isBlocked
                         ? { borderColor: 'var(--border-subtle)', color: 'var(--text-muted)', background: 'var(--surface-2)' }
                         : { borderColor: 'color-mix(in srgb, #f87171, var(--border-subtle) 50%)', color: '#f87171', background: 'color-mix(in srgb, #f87171, var(--surface-0) 92%)' }}
@@ -169,7 +169,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
             <label className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               Pivot mode
             </label>
-            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
               Auto picks selected/single/nearest model center. Camera Raycast picks the model center nearest your current view beam.
             </p>
             <Select
@@ -202,7 +202,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
             <SlidersHorizontal className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               Motion Tuning
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -287,7 +287,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
                 Dominant axis mode
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Prioritize strongest axis per translation/rotation group for steadier input.
               </div>
             </div>
@@ -331,7 +331,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
             <ArrowLeftRight className="h-4 w-4" style={{ color: 'var(--accent)' }} />
           </span>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
               Axis Inversion
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -368,7 +368,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           background: 'color-mix(in srgb, var(--surface-1), var(--accent) 4%)',
         }}
       >
-        <p className="text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
           Supports 3Dconnexion SpaceMouse devices. “SpaceMouse” is a trademark of 3Dconnexion.
         </p>
       </div>

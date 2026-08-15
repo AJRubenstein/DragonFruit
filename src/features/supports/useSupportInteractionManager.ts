@@ -140,11 +140,6 @@ function resolveSupportOwnerFromJointId(jointId: string): { category: 'brace'; i
   return null;
 }
 
-function getNativeEventSource(source: unknown): unknown {
-  if (!source || typeof source !== 'object') return null;
-  return (source as { nativeEvent?: unknown }).nativeEvent ?? null;
-}
-
 export function useSupportInteractionManager({ mode }: SupportInteractionOptions) {
   // V2 Trunk Placement
   const trunkPlacementV2 = useTrunkPlacementV2();
@@ -170,7 +165,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
 
   const selectedJointId = globalSelectedCategory === 'joint' ? globalSelectedId : null;
 
-  const resolvePlacementRouting = useCallback((source: unknown) => {
+  const resolvePlacementRouting = useCallback(() => {
     const bindings = resolveSupportPlacementHotkeyBindings(getHotkey);
     return resolveSupportPlacementRouting({
       bindings,
@@ -194,8 +189,6 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
 
   // Handler for MODEL hover (used for trunk placement preview, or branch tip preview)
   const onModelHover = useCallback((hit: THREE.Intersection | null) => {
-    const nativeEvent = getNativeEventSource(hit);
-
     if (isSupportEditInteractionActive()) {
       trunkPlacementV2.onSupportHover(null);
       branchPlacement.onModelHover(null);
@@ -232,7 +225,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       return;
     }
 
-    const routing = resolvePlacementRouting(nativeEvent ?? hit);
+    const routing = resolvePlacementRouting();
 
     if (routing.modelHoverOwner === 'leaf') {
       trunkPlacementV2.onSupportHover(null);
@@ -260,8 +253,6 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
 
   // Handler for MODEL click (trunk placement, or branch tip placement)
   const onModelClick = useCallback((hit: THREE.Intersection) => {
-    const nativeEvent = getNativeEventSource(hit);
-
     if (isSupportEditInteractionActive()) {
       return;
     }
@@ -276,7 +267,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       return;
     }
 
-    const routing = resolvePlacementRouting(nativeEvent ?? hit);
+    const routing = resolvePlacementRouting();
 
     if (routing.modelClickOwner === 'leaf') {
       leafPlacement.onModelClick(hit);
@@ -315,8 +306,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       return;
     }
 
-    const nativeEvent = getNativeEventSource(hit);
-    const routing = resolvePlacementRouting(nativeEvent ?? hit);
+    const routing = resolvePlacementRouting();
 
     if (routing.supportHoverOwner === 'leaf') {
       leafPlacement.onSupportHover(hit);
@@ -344,8 +334,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       return;
     }
 
-    const nativeEvent = getNativeEventSource(hit);
-    const routing = resolvePlacementRouting(nativeEvent ?? hit);
+    const routing = resolvePlacementRouting();
 
     if (routing.blocksDefaultSupportPlacement) {
       return;
@@ -741,11 +730,9 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         return;
       }
 
-      if (!metaKey && !ctrlKey && (key === 'Delete' || key === 'Backspace')) {
-        if (!canDeleteSelection()) return;
-        performDeleteSelection();
-        return;
-      }
+      // Deletion is handled centrally through the delete registry (registered
+      // below with priority 100), which honors the configurable GLOBAL.DELETE
+      // binding plus the fixed `Delete` secondary key. No inline delete here.
 
       if (key === 'Escape') {
         if (getSelectedId() || getResolvedPrimarySelection().selectedIds.length > 0) {

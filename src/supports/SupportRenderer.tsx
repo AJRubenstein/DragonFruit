@@ -463,8 +463,8 @@ function buildSupportPlacementPreviewBatch(
     if (preview.roots) {
         const root = preview.roots;
         const basePos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, root.transform.pos.z);
-        const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-        const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+        const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+        const verticalOffset = 0;
         const shaftDiameter = Math.max(0.001, preview.segments[0]?.diameter ?? root.diameter);
 
         roots.push({
@@ -1033,109 +1033,15 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const matchesInteriorContact = useMemo<InteriorContactFilter>(() => {
         if (!interiorView) return () => true;
 
-        const hasCavityGeometry = !!cavityGeometryByModelId && cavityGeometryByModelId.size > 0;
-        const thresholdMm = 0.3;
-        const rayHitEpsilonMm = 1e-5;
-        const rayDedupeEpsilonMm = 1e-4;
-        const tempVec = new THREE.Vector3();
-        const insideRaycaster = new THREE.Raycaster();
-        const insideRayDirection = new THREE.Vector3(1, 0.37139, 0.11317).normalize();
-        const cavityMeshByGeometry = new Map<THREE.BufferGeometry, THREE.Mesh>();
-        const queryTarget = { point: new THREE.Vector3(), distance: 0, faceIndex: -1 };
-
-        if (cavityGeometryByModelId) {
-            for (const geometry of cavityGeometryByModelId.values()) {
-                const geometryWithBvh = geometry as THREE.BufferGeometry & {
-                    boundsTree?: {
-                        closestPointToPoint: (
-                            point: THREE.Vector3,
-                            target: typeof queryTarget,
-                        ) => { distance: number } | null;
-                    };
-                    computeBoundsTree?: () => void;
-                };
-                if (!geometryWithBvh.boundsTree && typeof geometryWithBvh.computeBoundsTree === 'function') {
-                    geometryWithBvh.computeBoundsTree();
-                }
-                cavityMeshByGeometry.set(geometry, new THREE.Mesh(geometry));
-            }
-        }
-
-        const isPointInsideCavityVolume = (pointLocal: THREE.Vector3, geometry: THREE.BufferGeometry): boolean => {
-            const mesh = cavityMeshByGeometry.get(geometry);
-            if (!mesh) return false;
-
-            insideRaycaster.set(pointLocal, insideRayDirection);
-            const hits = insideRaycaster.intersectObject(mesh, false);
-            if (hits.length === 0) return false;
-
-            let crossingCount = 0;
-            let lastDistance = Number.NEGATIVE_INFINITY;
-            for (const hit of hits) {
-                if (hit.distance <= rayHitEpsilonMm) continue;
-                if (Math.abs(hit.distance - lastDistance) <= rayDedupeEpsilonMm) continue;
-                lastDistance = hit.distance;
-                crossingCount += 1;
-            }
-
-            return (crossingCount % 2) === 1;
-        };
-
-        const isPointOnCavitySurface = (pos: Vec3Like, modelId?: string): boolean => {
-            if (!cavityGeometryByModelId) return false;
-
-            const geometry = modelId ? cavityGeometryByModelId.get(modelId) : null;
-            if (!geometry && !modelId) {
-                for (const geom of cavityGeometryByModelId.values()) {
-                    const geometryWithBvh = geom as THREE.BufferGeometry & {
-                        boundsTree?: {
-                            closestPointToPoint: (
-                                point: THREE.Vector3,
-                                target: typeof queryTarget,
-                            ) => { distance: number } | null;
-                        };
-                    };
-                    tempVec.set(pos.x, pos.y, pos.z);
-                    if (geometryWithBvh.boundsTree) {
-                        queryTarget.distance = Infinity;
-                        const result = geometryWithBvh.boundsTree.closestPointToPoint(tempVec, queryTarget);
-                        if (result && result.distance < thresholdMm) return true;
-                    }
-                    if (isPointInsideCavityVolume(tempVec, geom)) return true;
-                }
-                return false;
-            }
-            if (!geometry) return false;
-
-            const geometryWithBvh = geometry as THREE.BufferGeometry & {
-                boundsTree?: {
-                    closestPointToPoint: (
-                        point: THREE.Vector3,
-                        target: typeof queryTarget,
-                    ) => { distance: number } | null;
-                };
-            };
-
-            tempVec.set(pos.x, pos.y, pos.z);
-            if (modelId && modelWorldInverseById) {
-                const inverseMatrix = modelWorldInverseById.get(modelId);
-                if (inverseMatrix) tempVec.applyMatrix4(inverseMatrix);
-            }
-
-            if (geometryWithBvh.boundsTree) {
-                queryTarget.distance = Infinity;
-                const result = geometryWithBvh.boundsTree.closestPointToPoint(tempVec, queryTarget);
-                if (result && result.distance < thresholdMm) return true;
-            }
-
-            return isPointInsideCavityVolume(tempVec, geometry);
-        };
-
-        return (contact, modelId) => {
+        return (contact, _modelId) => {
             if (!contact) return false;
             if (contact.placementSurface === 'interior') return true;
             if (contact.placementSurface === 'exterior') return false;
-            return hasCavityGeometry && isPointOnCavitySurface(contact.pos, modelId);
+            // placementSurface is undefined for imported (LYS) supports — show them
+            // in interior view so the user can see how all supports relate to the
+            // cavity. The BVH/raycasting tests are unreliable on non-watertight
+            // cavity meshes.
+            return true;
         };
     }, [interiorView, cavityGeometryByModelId, modelWorldInverseById]);
     const knotList = useMemo(() => Object.values(state.knots), [state.knots]);
@@ -2337,6 +2243,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         if (!replaced) result.push(activePreviewKickstand);
         return result;
     }, [kickstandList, activePreviewKickstand, interiorView]);
+
     const renderKnotList = useMemo(() => {
         if (!hasPreviewKnotOverrides) return knotList;
         return knotList.map((knot) => previewKnotOverrides[knot.id] ?? knot);
@@ -2364,8 +2271,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const shafts: InstancedShaft[] = [];
 
             const basePos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, root.transform.pos.z);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
             let currentStart = basePos.clone().add(new THREE.Vector3(0, 0, verticalOffset + effectiveDiskHeight + Math.max(0, root.coneHeight)));
 
             for (const segment of trunk.segments) {
@@ -2672,8 +2579,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             if (!root || !hostKnot) continue;
 
             const basePos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, root.transform.pos.z);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
             let currentStart = basePos.clone().add(new THREE.Vector3(0, 0, verticalOffset + effectiveDiskHeight + Math.max(0, root.coneHeight)));
 
             const shafts: InstancedShaft[] = [];
@@ -3375,8 +3282,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const shaftDiameter = Math.max(0.001, trunk.segments[0]?.diameter ?? 1.5);
             const topRadius = shaftDiameter / 2;
             const bottomRadius = Math.max(0.001, root.diameter / 2);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
 
             const color = resolveSceneSupportColor(trunk.modelId, trunk.id);
             const modelKey = `${trunk.modelId ?? '__unassigned__'}:${color}`;
@@ -3434,8 +3341,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             );
             const topRadius = shaftDiameter / 2;
             const bottomRadius = Math.max(0.001, root.diameter / 2);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
 
             const color = resolveSceneSupportColor(kickstand.modelId, kickstand.id);
             const modelKey = `${kickstand.modelId ?? '__unassigned__'}:${color}`;
@@ -3741,8 +3648,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const shaftDiameter = Math.max(0.001, trunk.segments[0]?.diameter ?? 1.5);
             const topRadius = shaftDiameter / 2;
             const bottomRadius = Math.max(0.001, root.diameter / 2);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
 
             return {
                 id: root.id,
@@ -3771,8 +3678,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             );
             const topRadius = shaftDiameter / 2;
             const bottomRadius = Math.max(0.001, root.diameter / 2);
-            const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-            const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+            const verticalOffset = 0;
 
             return {
                 id: root.id,

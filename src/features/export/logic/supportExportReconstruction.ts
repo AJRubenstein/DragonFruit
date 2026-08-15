@@ -20,6 +20,19 @@ import type {
   Vec3,
 } from '@/supports/types';
 import { SupportGeometryGenerator } from './SupportGeometryGenerator';
+import { getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
+import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
+
+function getGlobalPenetrationMm(): number {
+  const material = getActiveMaterialProfile();
+  const printer = getActivePrinterProfile();
+  if (material && printer) {
+    const pxX = printer.pixelSize?.x ? printer.pixelSize.x / 1000 : (printer.buildVolumeMm?.width ?? 143) / (printer.display?.resolutionX ?? 2560);
+    const pxY = printer.pixelSize?.y ? printer.pixelSize.y / 1000 : (printer.buildVolumeMm?.depth ?? 89) / (printer.display?.resolutionY ?? 1620);
+    return calculateTipOffset(material.antiAliasingSettings, material.layerHeightMm, pxX, pxY);
+  }
+  return 0;
+}
 
 export interface ScopedSupportPayload {
   roots: Roots[];
@@ -105,10 +118,11 @@ function addModelMetadata(object: THREE.Object3D, modelId: string | null | undef
 }
 
 function appendConeGeometry(group: THREE.Group, cone: Leaf['contactCone']) {
-  const coneGroup = SupportGeometryGenerator.generateConeMesh(cone);
+  const pen = getGlobalPenetrationMm();
+  const coneGroup = SupportGeometryGenerator.generateConeMesh(cone, pen);
   group.add(coneGroup);
 
-  const diskGroup = SupportGeometryGenerator.generateContactDiskMesh(cone);
+  const diskGroup = SupportGeometryGenerator.generateContactDiskMesh(cone, pen);
   if (diskGroup.children.length > 0) {
     group.add(diskGroup);
   }
@@ -293,6 +307,7 @@ function buildTwigGroup(twig: Twig, modelId: string | null | undefined): THREE.G
     currentStart = end;
   });
 
+  const pen = getGlobalPenetrationMm();
   const diskA = SupportGeometryGenerator.generateContactDiskMesh({
     pos: twig.contactDiskA.pos,
     normal: twig.contactDiskA.coneAxis,
@@ -300,7 +315,7 @@ function buildTwigGroup(twig: Twig, modelId: string | null | undefined): THREE.G
     diskLengthOverride: twig.contactDiskA.diskLengthOverride,
     profile: twig.contactDiskA.profile,
     contactDiameterMm: twig.contactDiskA.contactDiameterMm,
-  });
+  }, pen);
   const diskB = SupportGeometryGenerator.generateContactDiskMesh({
     pos: twig.contactDiskB.pos,
     normal: twig.contactDiskB.coneAxis,
@@ -308,7 +323,7 @@ function buildTwigGroup(twig: Twig, modelId: string | null | undefined): THREE.G
     diskLengthOverride: twig.contactDiskB.diskLengthOverride,
     profile: twig.contactDiskB.profile,
     contactDiameterMm: twig.contactDiskB.contactDiameterMm,
-  });
+  }, pen);
   if (diskA.children.length > 0) group.add(diskA);
   if (diskB.children.length > 0) group.add(diskB);
   return group;
@@ -334,8 +349,8 @@ function buildKickstandGroup(
 
   const hasSolidBottom = raftSettings?.bottomMode === 'solid';
   const raftThickness = raftSettings?.thickness ?? 0;
-  const effectiveDiskHeight = hasSolidBottom ? 0.05 : Math.max(0.001, root.diskHeight);
-  const verticalOffset = hasSolidBottom ? Math.max(raftThickness - effectiveDiskHeight, 0) : 0;
+  const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
+  const verticalOffset = 0;
   let currentStart: Vec3 = {
     x: root.transform.pos.x,
     y: root.transform.pos.y,
