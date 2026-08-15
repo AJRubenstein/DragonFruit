@@ -367,18 +367,34 @@ export function NativeSpaceMouseController({
     const box = modelBoxRef.current;
     const extents = computeOrthoExtents();
 
+    // navlib frames its pre-defined view commands (the SpaceMouse Top/Front/Right…
+    // buttons) on the CENTRE of `model.extents`. Re-centre the reported box on the
+    // build-plate centre so those presets land on the plate centre, expanding it
+    // symmetrically about that centre so the real model still fits inside the box
+    // (stays fully visible — we only move where the box is centred, not drop it).
+    let modelMin: [number, number, number] = [box.min.x, box.min.y, box.min.z];
+    let modelMax: [number, number, number] = [box.max.x, box.max.y, box.max.z];
+    const plate = fallbackPivot;
+    if (plate) {
+      const hx = Math.max(Math.abs(box.max.x - plate.x), Math.abs(plate.x - box.min.x));
+      const hy = Math.max(Math.abs(box.max.y - plate.y), Math.abs(plate.y - box.min.y));
+      const hz = Math.max(Math.abs(box.max.z - plate.z), Math.abs(plate.z - box.min.z));
+      modelMin = [plate.x - hx, plate.y - hy, plate.z - hz];
+      modelMax = [plate.x + hx, plate.y + hy, plate.z + hz];
+    }
+
     return {
       affine: Array.from(camera.matrixWorld.elements),
       fov,
       focusDistance: focusDistanceForNav,
       perspective: reportPerspective,
       target: [target.x, target.y, target.z],
-      modelMin: [box.min.x, box.min.y, box.min.z],
-      modelMax: [box.max.x, box.max.y, box.max.z],
+      modelMin,
+      modelMax,
       orthoMin: extents.min,
       orthoMax: extents.max,
     };
-  }, [camera, computeOrthoExtents, getTarget, refreshModelExtents]);
+  }, [camera, computeOrthoExtents, fallbackPivot, getTarget, refreshModelExtents]);
 
   useFrame(() => {
     if (!getNativeSpaceMouseActive() || !settings.enabled) return;
