@@ -160,6 +160,16 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     }
   }, [geom, transform]);
 
+  // World-space transform signature for the scan cache. Island coordinates are
+  // world-space, so a cached scan is only valid for the transform it was made
+  // under; rotating/repositioning the model must invalidate it.
+  const transformKey = [
+    transform.position.x, transform.position.y, transform.position.z,
+    transform.rotation.x, transform.rotation.y, transform.rotation.z,
+    transform.scale.x, transform.scale.y, transform.scale.z,
+  ].map((v) => v.toFixed(3)).join(',');
+  const cacheKey = sourcePath ? `${sourcePath}|${transformKey}` : null;
+
   /**
    * Run BOTH detectors on the same world-space positions (one shared transform →
    * one frame → directly comparable for Part C). Voxel uses the scanline worker
@@ -231,9 +241,9 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         }));
         setMinimaIslands(minimaMapped);
 
-        // Cache the scan results for this model
-        if (sourcePath) {
-          scanCacheRef.current.set(sourcePath, { voxel: voxelMapped, minima: minimaMapped });
+        // Cache the scan results for this model + transform
+        if (cacheKey) {
+          scanCacheRef.current.set(cacheKey, { voxel: voxelMapped, minima: minimaMapped });
         }
 
         usedSideload = true;
@@ -267,15 +277,15 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         try {
           const minima = await scanMeshMinima(world.positions, minimaK);
           setMinimaIslands(minima);
-          // Cache the scan results for this model
-          if (sourcePath) {
-            scanCacheRef.current.set(sourcePath, { voxel, minima });
+          // Cache the scan results for this model + transform
+          if (cacheKey) {
+            scanCacheRef.current.set(cacheKey, { voxel, minima });
           }
         } catch (err) {
           console.error('[Islands] mesh-minima scan failed', err);
           setMinimaIslands([]);
-          if (sourcePath) {
-            scanCacheRef.current.set(sourcePath, { voxel, minima: [] });
+          if (cacheKey) {
+            scanCacheRef.current.set(cacheKey, { voxel, minima: [] });
           }
         }
       } finally {
@@ -572,7 +582,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setSelectedMarkerId(null);
   }, []);
 
-  // Per-model scan cache: sourcePath → { voxel, minima }
+  // Per-model scan cache: (sourcePath + transform signature) → { voxel, minima }.
   const scanCacheRef = useRef<Map<string, { voxel: DetectedIsland[]; minima: DetectedIsland[] }>>(new Map());
   const prevSourcePathRef = useRef<string | null | undefined>(undefined);
 
@@ -582,7 +592,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     prevSourcePathRef.current = sourcePath;
     if (!sourcePath || prev === sourcePath) return;
 
-    const cached = scanCacheRef.current.get(sourcePath);
+    const cached = cacheKey ? scanCacheRef.current.get(cacheKey) : undefined;
     if (cached) {
       setVoxelIslands(cached.voxel);
       setMinimaIslands(cached.minima);
@@ -592,7 +602,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
 
     // No cache entry — clear for new model
     clear();
-  }, [sourcePath, clear]);
+  }, [sourcePath, cacheKey, clear]);
 
   // On transform/geom change: always clear (scan is invalidated)
   useEffect(() => {

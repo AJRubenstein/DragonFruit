@@ -28,7 +28,7 @@ export interface DetectedIsland {
   baseZ: number;
 
   // --- voxel-detector extras (undefined for minima) ---
-  /** Max cross-sectional contact area across the island's layers (mm^2). */
+  /** Contact footprint area at the island's base layer (mm^2). */
   areaMm2?: number;
   /** Inclusive [firstLayer, lastLayer] of the unsupported contact region. */
   layerSpan?: readonly [number, number];
