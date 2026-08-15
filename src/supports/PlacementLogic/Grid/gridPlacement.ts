@@ -20,10 +20,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { buildAnchorData } from '../../SupportTypes/Anchor/anchorBuilder';
 import { buildLeafData } from '../../SupportTypes/Leaf/leafBuilder';
 import { perfMark, perfMeasureWithSpike } from '../Pathfinding/pathfindingPerf';
+import {
+    ANCHOR_HEIGHT_THRESHOLD_MM,
+    MAX_AUTO_LEAF_SPAN_MM,
+} from '../../autoSupport/constants';
 
 const MIN_TRUNK_CLEARANCE_MM = 0.05;
-const ANCHOR_HEIGHT_THRESHOLD_MM = 5.0;
-const MAX_AUTO_LEAF_SPAN_MM = 2.5;
 
 function withResolvedSnappedRoute(
     candidate: TrunkBuildResult,

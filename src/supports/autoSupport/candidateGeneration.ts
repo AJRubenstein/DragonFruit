@@ -53,7 +53,6 @@ export function candidateFromIsland(island: DetectedIsland): CandidatePoint {
     // scored and prioritized alongside voxel islands.
     const area = island.areaMm2 ?? (island.source === 'minima' ? 0.05 : 0);
     const z = island.baseZ;
-    const overhangAngle = estimateOverhangAngle(island);
     const source: CandidatePoint['source'] =
         island.class === 'intersection' ? 'intersection' : island.source;
 
@@ -69,34 +68,8 @@ export function candidateFromIsland(island: DetectedIsland): CandidatePoint {
         source,
         islandAreaMm2: area,
         zHeight: z,
-        overhangAngleDeg: overhangAngle,
         priority: 0, // computed later
     };
-}
-
-/**
- * Estimate overhang angle from horizontal in degrees.
- * Uses layer span and area to approximate: flatter overhangs have
- * larger area relative to their layer span.
- * Falls back to 45° if insufficient data.
- */
-export function estimateOverhangAngle(island: DetectedIsland): number {
-    const area = island.areaMm2;
-    const span = island.layerSpan;
-    if (area != null && area > 0 && span != null && span[1] > span[0]) {
-        const layerCount = span[1] - span[0];
-        if (layerCount > 0) {
-            const layerHeightMm = 0.05; // typical resin layer height
-            const totalHeight = layerCount * layerHeightMm;
-            const equivalentRadius = Math.sqrt(area / Math.PI);
-            if (equivalentRadius > 0) {
-                const angleRad = Math.atan2(totalHeight, equivalentRadius);
-                const angleDeg = 90 - (angleRad * 180) / Math.PI;
-                return Math.min(90, Math.max(15, angleDeg));
-            }
-        }
-    }
-    return 45; // default
 }
 
 /**
@@ -122,8 +95,10 @@ function computePriority(
 
 /**
  * Deduplicate candidates using a spatial hash grid.
- * Candidates within tipInfluenceRadiusMm of a higher-priority candidate
- * are removed.
+ * Candidates within tipInfluenceRadiusMm (3D distance) of a higher-priority
+ * candidate are removed. The Z axis participates so vertically stacked
+ * overhangs at the same XY (staircases, shelves) keep their own supports
+ * instead of being merged into one.
  */
 export function deduplicateCandidates(
     candidates: CandidatePoint[],
@@ -131,14 +106,21 @@ export function deduplicateCandidates(
 ): CandidatePoint[] {
     if (candidates.length <= 1) return candidates;
 
-    const cellSize = settings.tipInfluenceRadiusMm;
-    const grid = new Map<string, CandidatePoint[]>();
+    const radius = settings.tipInfluenceRadiusMm;
+    if (radius <= 0) return [...candidates].sort((a, b) => b.priority - a.priority);
+    const radiusSq = radius * radius;
+    const cellSize = radius;
 
-    // Bucket by cell
-    for (const c of candidates) {
+    // Bucket by XY cell. Any candidate within `radius` of a cell's contents
+    // lives in that cell or one of its 8 neighbors.
+    const grid = new Map<string, CandidatePoint[]>();
+    const cellOf = (c: CandidatePoint): string => {
         const cx = Math.round(c.tipPos.x / cellSize);
         const cy = Math.round(c.tipPos.y / cellSize);
-        const key = `${cx},${cy}`;
+        return `${cx},${cy}`;
+    };
+    for (const c of candidates) {
+        const key = cellOf(c);
         const bucket = grid.get(key);
         if (bucket) {
             bucket.push(c);
@@ -147,52 +129,35 @@ export function deduplicateCandidates(
         }
     }
 
-    const retained = new Set<string>();
-    const allCells = [...grid.entries()];
+    const sorted = [...candidates].sort((a, b) => b.priority - a.priority);
+    const retained: CandidatePoint[] = [];
 
-    // Within each cell, keep only the highest-priority candidate
-    for (const [, cellCandidates] of allCells) {
-        cellCandidates.sort((a, b) => b.priority - a.priority);
-        retained.add(cellCandidates[0].id);
-    }
-
-    // Cross-cell dedup: check adjacent cells
-    const radiusSq = cellSize * cellSize;
-    for (const [key, cellCandidates] of allCells) {
-        const [cxStr, cyStr] = key.split(',');
+    for (const c of sorted) {
+        const [cxStr, cyStr] = cellOf(c).split(',');
         const cx = parseInt(cxStr);
         const cy = parseInt(cyStr);
 
-        const keeper = cellCandidates[0];
-        if (!retained.has(keeper.id)) continue;
-
-        // Check 8 neighbor cells
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-                if (dx === 0 && dy === 0) continue;
-                const neighborKey = `${cx + dx},${cy + dy}`;
-                const neighbors = grid.get(neighborKey);
-                if (!neighbors) continue;
-
-                for (const neighbor of neighbors) {
-                    if (!retained.has(neighbor.id)) continue;
-                    const distSq =
-                        (keeper.tipPos.x - neighbor.tipPos.x) ** 2 +
-                        (keeper.tipPos.y - neighbor.tipPos.y) ** 2;
-                    if (distSq <= radiusSq) {
-                        // Remove the lower-priority one
-                        if (keeper.priority >= neighbor.priority) {
-                            retained.delete(neighbor.id);
-                        } else {
-                            retained.delete(keeper.id);
-                        }
+        let duplicate = false;
+        for (let dx = -1; dx <= 1 && !duplicate; dx++) {
+            for (let dy = -1; dy <= 1 && !duplicate; dy++) {
+                const bucket = grid.get(`${cx + dx},${cy + dy}`);
+                if (!bucket) continue;
+                for (const r of retained) {
+                    // Only candidates bucketed here can be this close.
+                    if (!bucket.some((rr) => rr.id === r.id)) continue;
+                    const ddx = c.tipPos.x - r.tipPos.x;
+                    const ddy = c.tipPos.y - r.tipPos.y;
+                    const ddz = c.tipPos.z - r.tipPos.z;
+                    if (ddx * ddx + ddy * ddy + ddz * ddz <= radiusSq) {
+                        duplicate = true;
+                        break;
                     }
                 }
             }
         }
+
+        if (!duplicate) retained.push(c);
     }
 
-    return candidates
-        .filter(c => retained.has(c.id))
-        .sort((a, b) => b.priority - a.priority);
+    return retained.sort((a, b) => b.priority - a.priority);
 }

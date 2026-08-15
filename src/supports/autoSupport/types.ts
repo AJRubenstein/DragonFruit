@@ -1,4 +1,4 @@
-import type { Vec3, Knot } from '../types';
+import type { Vec3 } from '../types';
 
 /** A single support placement candidate derived from island/minima detection. */
 export interface CandidatePoint {
@@ -12,40 +12,12 @@ export interface CandidatePoint {
     modelId: string;
     /** Which detector produced this candidate. */
     source: 'voxel' | 'minima' | 'intersection';
-    /** Max cross-sectional area of the unsupported region (mm²). 0 for minima-only. */
+    /** Contact footprint area of the unsupported region (mm²). 0 for minima-only. */
     islandAreaMm2: number;
     /** Z-height above build plate (mm). */
     zHeight: number;
-    /** Estimated overhang angle from horizontal (degrees). 90 = flat ceiling. */
-    overhangAngleDeg: number;
     /** Computed placement priority. Higher = place first. */
     priority: number;
-}
-
-/** A cluster of spatially-close candidates that can share a core trunk. */
-export interface TreeCluster {
-    /** Unique cluster id. */
-    id: string;
-    /** All candidates in this cluster. */
-    candidates: CandidatePoint[];
-    /** The candidate selected as the core trunk (largest area, lowest Z). */
-    core: CandidatePoint;
-    /** Remaining candidates that will fan out as branches/leaves from the core. */
-    satellites: CandidatePoint[];
-}
-
-/** A complete support placement plan ready for execution. */
-export interface SupportPlan {
-    /** Trunks to place (each gets a root + shaft). */
-    trunks: Array<{ candidate: CandidatePoint; overrides?: Record<string, number> }>;
-    /** Anchors for tips < 5mm from the build plate. */
-    anchors: Array<{ candidate: CandidatePoint }>;
-    /** Branches fanning from existing trunk knots. Knot is pre-computed. */
-    branches: Array<{ candidate: CandidatePoint; parentKnot: Knot }>;
-    /** Leaves for tips within 2.5mm of a host knot. */
-    leaves: Array<{ candidate: CandidatePoint; parentKnot: Knot; hostDiameterMm: number }>;
-    /** Candidates that could not be placed (collision, no reachable host, etc.). */
-    rejectedCandidates: Array<{ candidate: CandidatePoint; reason: string }>;
 }
 
 /** Why a candidate was rejected. */

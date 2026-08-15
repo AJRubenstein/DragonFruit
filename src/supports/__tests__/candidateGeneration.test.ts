@@ -128,7 +128,6 @@ test('deduplicateCandidates removes candidates within tipInfluenceRadiusMm', () 
             source: 'voxel',
             islandAreaMm2: 0.1,
             zHeight: 5,
-            overhangAngleDeg: 45,
             priority: 0.9,
         },
         {
@@ -139,7 +138,6 @@ test('deduplicateCandidates removes candidates within tipInfluenceRadiusMm', () 
             source: 'voxel',
             islandAreaMm2: 0.1,
             zHeight: 5,
-            overhangAngleDeg: 45,
             priority: 0.7,
         },
         {
@@ -150,7 +148,6 @@ test('deduplicateCandidates removes candidates within tipInfluenceRadiusMm', () 
             source: 'voxel',
             islandAreaMm2: 0.1,
             zHeight: 5,
-            overhangAngleDeg: 45,
             priority: 0.5,
         },
     ];
@@ -165,6 +162,54 @@ test('deduplicateCandidates removes candidates within tipInfluenceRadiusMm', () 
     assert.ok(ids.includes('a'), 'higher-priority candidate at overlapping position kept');
     assert.ok(ids.includes('c'), 'far-away candidate kept');
     assert.ok(!ids.includes('b'), 'lower-priority candidate at same position removed');
+});
+
+test('deduplicateCandidates keeps vertically stacked overhangs (3D distance)', () => {
+    // Two candidates at the same XY but different Z are distinct overhangs
+    // (staircase/shelf geometry) and must NOT be deduped into one support.
+    const candidates: CandidatePoint[] = [
+        {
+            id: 'low',
+            tipPos: { x: 0, y: 0, z: 10 },
+            tipNormal: { x: 0, y: 0, z: -1 },
+            modelId: '',
+            source: 'voxel',
+            islandAreaMm2: 0.1,
+            zHeight: 10,
+            priority: 0.9,
+        },
+        {
+            id: 'high',
+            tipPos: { x: 0, y: 0, z: 20 },
+            tipNormal: { x: 0, y: 0, z: -1 },
+            modelId: '',
+            source: 'voxel',
+            islandAreaMm2: 0.1,
+            zHeight: 20,
+            priority: 0.8,
+        },
+        {
+            id: 'far',
+            tipPos: { x: 10, y: 0, z: 10 },
+            tipNormal: { x: 0, y: 0, z: -1 },
+            modelId: '',
+            source: 'voxel',
+            islandAreaMm2: 0.1,
+            zHeight: 10,
+            priority: 0.7,
+        },
+    ];
+    const settings = {
+        ...createDefaultAutoSupportSettings(),
+        tipInfluenceRadiusMm: 2.0,
+    };
+    const deduped = deduplicateCandidates(candidates, settings);
+
+    assert.equal(deduped.length, 3);
+    const ids = deduped.map((c) => c.id);
+    assert.ok(ids.includes('low'), 'lower stacked overhang kept');
+    assert.ok(ids.includes('high'), 'higher stacked overhang kept (old XY-only dedup dropped it)');
+    assert.ok(ids.includes('far'), 'distant candidate kept');
 });
 
 test('candidateFromIsland maps all fields correctly', () => {
