@@ -58,12 +58,13 @@ never import from `@/features/plugins/...` or other features into it.
 | `isExperimentEnabled(id)`                           | Whether the experiment is on (saved override, else `defaultEnabled`). |
 | `setExperimentEnabled(id, enabled)`                 | Persist the user's toggle and notify subscribers.        |
 | `subscribeToExperiments(listener)`                  | Subscribe to toggle changes; returns an unsubscribe fn.  |
+| `getEnabledExperimentIds()`                         | Ids of all currently enabled experiments.                 |
 | `getGatedPluginIdsForDisabledExperiments()`         | Plugin ids currently hidden by a disabled experiment.    |
 | `isPluginGatedByDisabledExperiment(pluginId)`       | Whether a plugin is hidden by a disabled experiment.     |
 
 User toggles persist to `localStorage` under `dragonfruit-experiments-enabled`.
 
-## Gating a regular in-app feature
+## Gating a regular in-app feature (TS code)
 
 At the feature's decision point, check `isExperimentEnabled(id)` and
 short-circuit when it returns `false`:
@@ -76,6 +77,93 @@ export function isNativeAutoSupportsAvailable(): boolean {
 }
 ```
 
+For a one-shot action the check is the whole gate — when the experiment is off,
+fall through to the released behavior (or return early):
+
+```ts
+export function handleApplyAutoSupports() {
+  if (!isExperimentEnabled('native-auto-supports')) {
+    // released fallback path
+    return;
+  }
+  runExperimentalAutoSupports();
+}
+```
+
+For a UI element that should disappear when the experiment is off, check at
+mount and resubscribe so a toggle made elsewhere is reflected:
+
+```ts
+export function ExperimentalAutoSupportsPanel() {
+  const [enabled, setEnabled] = React.useState(() => isExperimentEnabled('native-auto-supports'));
+
+  React.useEffect(() => subscribeToExperiments(() => {
+    setEnabled(isExperimentEnabled('native-auto-supports'));
+  }), []);
+
+  if (!enabled) return null;
+  return <Panel />;
+}
+```
+
+`subscribeToExperiments` returns an unsubscribe function — return it from the
+effect so the subscription is torn down on unmount (the Experiments Settings
+tab follows this same pattern).
+
+## Gating Rust code
+
+Experiment state lives in the webview's `localStorage` — **Rust can't read it
+directly**. The frontend mirrors the enabled set into Rust, and three patterns
+gate Rust behavior:
+
+**1. Don't call the gated command.** The simplest gate is a TS `isExperimentEnabled`
+check before the `invoke` — when the experiment is off, the Rust command is never
+reached and its work never runs.
+
+**2. Pass experiment-dependent state into the command as arguments.** When a
+command must *adapt* to the experiment state rather than be skipped, pass the
+relevant state or allowed-set from the frontend. This is how the native open
+dialog hides gated file types: the frontend passes `getNativeSceneDialogExtensions()`
+(which excludes `.chitubox` while the experiment is off) to `pick_open_files`,
+and Rust uses that list for the "Scene Files" filter instead of its compiled-in
+const.
+
+```ts
+// frontend — only the enabled scene extensions reach Rust
+await pickOpenFilesWithNativeDialog('scene', true, getNativeSceneDialogExtensions());
+```
+
+```rust
+// Rust honors the frontend-provided allow-list (falls back to the compiled const)
+fn build_open_dialog_with_filters(category: &str, scene_extensions: Option<&[String]>) { ... }
+```
+
+**3. Rust-side enforcement (defense in depth).** When a command must guard
+itself (e.g. it is reachable without a TS check), it checks the mirrored
+experiment state. The mirror happens automatically: `ExperimentsNativeSync`
+(mounted at the app root in `src/app/layout.tsx`) pushes `getEnabledExperimentIds()`
+to Rust on startup and whenever an experiment is toggled, via the
+`set_experiments_enabled` command. Rust stores the set in managed
+`ExperimentsState` (`src-tauri/src/experiments.rs`). A gated command takes the
+state and checks it at the top:
+
+```rust
+use tauri::State;
+use crate::experiments::{self, ExperimentsState};
+
+#[tauri::command]
+async fn gated_command(state: State<'_, ExperimentsState>, ...) -> Result<(), String> {
+    if !experiments::is_experiment_enabled(&state, "native-auto-supports") {
+        return Err("this feature is experimental and not enabled".to_string());
+    }
+    // ...
+}
+```
+
+To add a new gated Rust command: add it to the `generate_handler!` list in
+`src-tauri/src/main.rs` (the `ExperimentsState` is already managed) and take a
+`State<ExperimentsState>` argument to check.
+
 ## Gating a plugin
 
 Declare the plugin id(s) in the experiment's `gatedPlugins`. The plugin registry
@@ -86,10 +174,8 @@ getters then filter them automatically:
 
 Consumers must read through these getters, not the raw
 `GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS` const, or the gate is bypassed.
-The chitubox gate also hides `.chitubox` from the native open dialog: the
-frontend passes `getNativeSceneDialogExtensions()` (from
-`src/features/import-export/fileHandling.ts`) to the Rust `pick_open_files`
-command, which uses that list for the "Scene Files" filter.
+The chitubox gate also hides `.chitubox` from the native open dialog via the
+frontend-passed extension list — see *Gating Rust code* below for that pattern.
 
 ## Constraints
 

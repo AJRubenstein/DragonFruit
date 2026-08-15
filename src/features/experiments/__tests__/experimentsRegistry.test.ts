@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   computeGatedPluginIds,
   EXPERIMENTS_MANIFEST,
+  getEnabledExperimentIds,
   getExperimentDefinition,
   getExperimentDefinitions,
   isExperimentEnabled,
@@ -51,6 +52,16 @@ test('chitubox-import experiment is off by default and resolves via getExperimen
 
 test('isExperimentEnabled returns false for unknown experiment ids', () => {
   assert.equal(isExperimentEnabled('does-not-exist'), false);
+});
+
+test('getEnabledExperimentIds reflects default-enabled experiments when no window', () => {
+  const enabled = getEnabledExperimentIds();
+  assert.ok(Array.isArray(enabled));
+  // chitubox-import is off by default, so nothing is enabled without a window.
+  assert.ok(!enabled.includes('chitubox-import'));
+  for (const id of enabled) {
+    assert.equal(isExperimentEnabled(id), true);
+  }
 });
 
 test('computeGatedPluginIds collects gated plugins of disabled experiments only', () => {

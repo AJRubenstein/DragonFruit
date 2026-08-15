@@ -56,6 +56,7 @@ fn default_dither_device_gamma() -> f64 {
 }
 
 mod plugin_registry;
+mod experiments;
 mod window_state;
 
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -4120,6 +4121,7 @@ fn main() {
         let app_handle = app.handle().clone();
 
         app.manage(window_state::WindowStateTracker::default());
+        app.manage(experiments::ExperimentsState::default());
 
         // Defer main window creation to an async task so the splashscreen's
         // WebView2 instance fully initialises before the main window's does.
@@ -4235,6 +4237,7 @@ fn main() {
             save_print_file_from_path,
             pick_save_path,
             pick_open_files,
+            experiments::set_experiments_enabled,
             get_launch_scene_files,
             get_slicer_engine_version,
             notify_launch_scene_handoff,

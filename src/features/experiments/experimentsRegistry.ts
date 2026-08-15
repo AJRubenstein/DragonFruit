@@ -95,6 +95,12 @@ export function getExperimentDefinition(id: string): ExperimentDefinition | unde
   return EXPERIMENT_DEFINITIONS.find((definition) => definition.id === id);
 }
 
+/** Ids of all experiments currently enabled (saved override or default). */
+export function getEnabledExperimentIds(): string[] {
+  return EXPERIMENT_DEFINITIONS.filter((definition) => isExperimentEnabled(definition.id))
+    .map((definition) => definition.id);
+}
+
 let cachedEnabledRaw: string | null | undefined;
 let cachedEnabledRecord: Record<string, boolean> | null = null;
 
