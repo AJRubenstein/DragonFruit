@@ -10,6 +10,10 @@ This page summarizes the core engineering contracts of the support subsystem.
 - `PlacementLogic/`: policy and solver modules.
 - `Settings/`: persisted support/raft settings and preview integration.
 
+To introduce a new support type (Trunk, Branch, Leaf, …), follow the
+step-by-step walkthrough in `dev/support-type-extension.md` — the support system
+is not registry-driven and requires wiring through ~15 integration points.
+
 ## Placement and rendering parity
 
 When changing interaction behavior, maintain parity between:

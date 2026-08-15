@@ -87,6 +87,20 @@ What "fleshed out" means — cover at least:
 
 Reference example: `docs/dev/experiments-framework.md`.
 
+## Consult the developer docs first
+
+Before reverse-engineering how a system works from the source, check the
+developer docs — `docs/dev/` (frameworks, contracts, invariants) and
+`docs/reference/` (hotkeys, file formats, support anatomy). `docs/dev/index.md`
+is the index and the `mkdocs.yml` nav is the map.
+
+Most cross-cutting systems are documented: history/undo-redo, registration
+seams, state stores, config schemas, the Tauri IPC bridge, hotkeys, plugins,
+experiments, and the support system. Read the relevant page before grepping the
+codebase — it names the exact files and invariants you would otherwise spend
+time re-deriving. Only fall back to source reading when the docs don't answer
+the question.
+
 ## Agent skills
 
 ### Issue tracker
