@@ -4903,32 +4903,27 @@ export function ProfileSettingsModal({
 
               <div className="p-3 space-y-3 overflow-y-auto custom-scrollbar flex-1">
                 {isSelectedPrinterOfficial && (
-                  <div className="rounded-xl border p-3" style={{ borderColor: 'color-mix(in srgb, #d97706, var(--border-subtle) 36%)', background: 'color-mix(in srgb, #d97706, var(--surface-1) 92%)' }}>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <div className="text-sm font-semibold inline-flex items-center gap-1.5" style={{ color: 'var(--text-strong)' }}>
-                          <AlertTriangle className="w-4 h-4" style={{ color: '#d97706' }} />
-                          Official Profile — Edits Limited!
-                        </div>
-                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                          You can change Output Format, Network Support, Format Version, Webcam Support, and Webcam Rotation here. Everything else stays locked unless you make a custom copy.
-                        </div>
-                        <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                          <strong style={{ color: 'var(--text-strong)' }}>Warning:</strong> Custom, non-official profiles may increase the risk of print failure and can potentially damage the machine or cause personal injury.
-                        </div>
+                  <div className="rounded-xl border px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5" style={{ borderColor: 'color-mix(in srgb, #d97706, var(--border-subtle) 36%)', background: 'color-mix(in srgb, #d97706, var(--surface-1) 92%)' }}>
+                    <div className="flex-1 min-w-[240px]">
+                      <div className="text-sm font-semibold inline-flex items-center gap-1.5" style={{ color: 'var(--text-strong)' }}>
+                        <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: '#d97706' }} />
+                        Official Profile — Edits Limited
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleDuplicateSelectedPrinterAsCustom();
-                        }}
-                        className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-md"
-                        style={accentSecondaryActionStyle92}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        Create Custom Copy
-                      </button>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        Only some fields are editable here; everything else unlocks with a custom copy. Custom copies may increase the risk of print failure or injury.
+                      </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleDuplicateSelectedPrinterAsCustom();
+                      }}
+                      className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center gap-1 rounded-md shrink-0"
+                      style={accentSecondaryActionStyle92}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Create Custom Copy
+                    </button>
                   </div>
                 )}
 
