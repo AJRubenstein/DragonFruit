@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { AlertTriangle, Box, Check, ChevronLeft, ChevronRight, Copy, Download, Edit3, FlaskConical, ImagePlus, LayoutGrid, Loader2, Lock, Plus, Printer, RefreshCw, Search, Trash2, Unlock, Upload, Wifi, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, Box, Check, ChevronLeft, ChevronRight, Copy, Download, Edit3, FlaskConical, Frown, ImagePlus, LayoutGrid, Loader2, Lock, Plus, Printer, RefreshCw, Search, Trash2, Unlock, Upload, Wifi, WifiOff, X } from 'lucide-react';
 import FleetManagement from '@/components/settings/FleetManagement';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
@@ -5345,7 +5345,18 @@ export function ProfileSettingsModal({
                 </div>
 
                 <div className="py-2 px-2 overflow-y-auto custom-scrollbar min-h-0">
-                  {(() => {
+                  {availableMaterialPresets.length === 0 ? (
+                    <div className="h-full min-h-[320px] flex flex-col items-center justify-center text-center px-6">
+                      <Frown className="w-16 h-16 mb-3" style={{ color: 'var(--text-muted)' }} strokeWidth={1.5} />
+                      <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+                        No presets here yet
+                      </div>
+                      <p className="mt-1 text-xs leading-snug max-w-[340px]" style={{ color: 'var(--text-muted)' }}>
+                        We searched high and low, but there are no material presets for {selectedPrinter.name} yet. We're working on adding some soon.
+                      </p>
+                    </div>
+                  ) : (
+                  (() => {
                     const renderMaterialPresetRow = (preset: MaterialPreset, index: number, groupKey: string, showFamily = false) => {
                       const templateId = typeof preset.templateId === 'string' ? preset.templateId.trim() : '';
                       const selectionKey = templateId || `${preset.brand ?? 'Default'}::${preset.name}`;
@@ -5458,7 +5469,8 @@ export function ProfileSettingsModal({
                         })}
                       </div>
                     );
-                  })()}
+                  })()
+                  )}
                 </div>
               </div>
 
