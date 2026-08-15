@@ -14,6 +14,7 @@ This section documents DragonFruit internals for contributors and maintainers.
 - File format contracts (VOXL, LYS extraction)
 - Plugin framework contracts (simple vs complex)
 - Complex plugin contribution workflow
+- Experiments framework contracts and gating semantics
 - RTSP relay reclaim API behavior
 - Release process: branching, versioning, and channels
 

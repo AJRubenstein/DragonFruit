@@ -66,6 +66,27 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
+## New interfaces require dev documentation
+
+Any feature that ships **new developer-facing interfaces** — a framework,
+contract, registry, public module API, IPC command, or config schema — MUST
+also ship fleshed-out dev documentation explaining how to use it. The feature
+is not done until the docs are.
+
+Docs live under `docs/dev/` (framework/contract docs) or `docs/reference/`
+(user-facing contracts), are registered in `mkdocs.yml` under **Developer
+Guide**, and are updated alongside behavior changes (see `docs/dev/index.md`).
+
+What "fleshed out" means — cover at least:
+
+- What the interface is for and when to reach for it
+- The files/functions/types that form the public surface
+- A minimal usage example
+- Any constraints (leaf-module rules, reload semantics, boundaries)
+- Related pages
+
+Reference example: `docs/dev/experiments-framework.md`.
+
 ## Agent skills
 
 ### Issue tracker

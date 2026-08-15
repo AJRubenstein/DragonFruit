@@ -79,6 +79,7 @@ nav:
       - Architecture and Handoff: dev/architecture-and-handoff.md
       - Plugin Framework: dev/plugins-framework.md
       - Complex Plugin Contributing: dev/plugins-complex-contributing.md
+      - Experiments Framework: dev/experiments-framework.md
       - Support System: dev/support-system.md
       - Support Pathfinding V3: dev/support-pathfinding-v3.md
       - Branch Supports: dev/branch-supports.md
