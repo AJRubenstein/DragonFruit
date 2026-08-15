@@ -7,6 +7,7 @@ import {
   readPrintArtifactBytesFromPath,
 } from '@/features/slicing/tauri/nativeSlicerBridge';
 import type { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
+import { SCENE_FILE_EXTENSIONS, sceneFileInputAccept } from '@/features/plugins/pluginFileTypeExtensions';
 import {
   getFileExtension,
   getFileNameFromPath,
@@ -175,7 +176,7 @@ export function useImportExportManager({
     requestedCategory: 'mesh' | 'scene',
   ): Promise<{ meshFiles: File[]; sceneFiles: File[] }> => {
     const meshExts = new Set(['.stl', '.obj', '.3mf']);
-    const sceneExts = new Set(['.voxl', '.lys']);
+    const sceneExts = new Set(SCENE_FILE_EXTENSIONS.map((ext) => `.${ext}`));
     const oppositeCategory = requestedCategory === 'mesh' ? 'scene' : 'mesh';
 
     const readingLabel = 'Loading Archive…';
@@ -254,7 +255,7 @@ export function useImportExportManager({
     requestedCategory: 'mesh' | 'scene',
   ): Promise<{ meshFiles: File[]; sceneFiles: File[] }> => {
     const meshExts = new Set(['.stl', '.obj', '.3mf']);
-    const sceneExts = new Set(['.voxl', '.lys']);
+    const sceneExts = new Set(SCENE_FILE_EXTENSIONS.map((ext) => `.${ext}`));
 
     const meshFiles: File[] = [];
     const sceneFiles: File[] = [];
@@ -620,7 +621,7 @@ export function useImportExportManager({
       return;
     }
 
-    const webFiles = await pickFilesWithWebInput('.voxl,.lys,.zip', true);
+    const webFiles = await pickFilesWithWebInput(sceneFileInputAccept(), true);
     if (webFiles.length === 0) return;
     const expanded = await expandPickedFilesWithZip(webFiles, 'scene');
     if (expanded.sceneFiles.length > 0) {

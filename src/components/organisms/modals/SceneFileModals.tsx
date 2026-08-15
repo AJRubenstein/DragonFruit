@@ -232,7 +232,7 @@ export function SceneFileModals({
             }}
             role="dialog"
             aria-modal="true"
-            aria-label="LYS import experimental warning"
+            aria-label="Plugin import experimental warning"
           >
             <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="flex min-w-0 items-center gap-3">
@@ -249,7 +249,7 @@ export function SceneFileModals({
 
                 <div className="min-w-0 pr-2">
                   <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-                    LYS Import is Experimental
+                    Plugin Import is Experimental
                   </h2>
                   <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
                     This feature is still under development.
@@ -265,7 +265,7 @@ export function SceneFileModals({
                   background: 'var(--surface-1)',
                   color: 'var(--text-muted)',
                 }}
-                aria-label="Close LYS import warning"
+                aria-label="Close plugin import warning"
                 onClick={handleCancelPluginImportWarning}
               >
                 <X className="w-4 h-4" />

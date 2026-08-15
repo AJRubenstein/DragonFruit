@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { sceneFileExtensionLabels } from '@/features/plugins/pluginFileTypeExtensions';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { MessageDescriptor } from '@lingui/core';
@@ -7989,7 +7990,7 @@ export default function Home() {
     if (scene.pluginImportPhase === 'processing') {
       return {
         active: true,
-        label: 'Loading LYS Scene…',
+        label: 'Loading Scene…',
         detail: 'Converting support data and model metadata',
         progress: null as number | null,
       };
@@ -9957,8 +9958,8 @@ export default function Home() {
                 </div>
                 <div className="mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
                   {isPrepareDragUnsupported
-                    ? 'Please use: STL, OBJ, 3MF, LYS, VOXL'
-                    : 'Supported: STL, OBJ, 3MF, LYS, VOXL'}
+                    ? `Please use: ${['STL', 'OBJ', '3MF', ...sceneFileExtensionLabels()].join(', ')}`
+                    : `Supported: ${['STL', 'OBJ', '3MF', ...sceneFileExtensionLabels()].join(', ')}`}
                 </div>
               </div>
             </div>
