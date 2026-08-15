@@ -259,6 +259,7 @@ import {
   subscribeToWorkspaceCameraSettings,
 } from '@/components/settings/workspaceCameraPreferences';
 import { openProfileSettingsModal, PROFILE_SETTINGS_MODAL_OPEN_CHANGE_EVENT } from '@/components/settings/profileModalEvents';
+import { FirstRunOnboarding } from '@/components/layout/FirstRunOnboarding';
 import {
   getProfileMonitoringUiAdapter,
   getProfileNetworkUiAdapter,
@@ -601,6 +602,10 @@ export default function Home() {
   const activePrinterProfile = React.useMemo(() => getActivePrinterProfile(profileState), [profileState]);
   const activeMaterialProfile = React.useMemo(() => getActiveMaterialProfile(profileState), [profileState]);
   const hasActivePrinterProfile = Boolean(activePrinterProfile);
+  const hasPrinterProfiles = React.useMemo(
+    () => profileState.printerProfiles.length > 0,
+    [profileState.printerProfiles],
+  );
 
   // 2. Transform Management (needs geom for bounds)
   const transformMgr = useTransformManager({ geom: scene.geom });
@@ -976,6 +981,14 @@ export default function Home() {
   const [interiorView, setInteriorView] = React.useState(false);
   const isSupportSpotlightHoldActive = useActionActive('SUPPORTS', 'TEMP_SPOTLIGHT_HOLD');
   const [allowPrepareWithoutPrinter, setAllowPrepareWithoutPrinter] = React.useState(false);
+  // First-run onboarding. `mounted` avoids SSR/client mismatches: the wizard is
+  // only rendered after hydration. `wizardActive` latches the wizard open for
+  // the session once it starts, so it can play its finalization step after a
+  // printer is added instead of unmounting the moment a profile exists. It is
+  // (re)opened whenever there are no printer profiles, and by the debug
+  // Ctrl+Shift+O replay even when a printer already exists.
+  const [onboardingMounted, setOnboardingMounted] = React.useState(false);
+  const [wizardActive, setWizardActive] = React.useState(false);
   const [prepareSmoothingSettingsExpanded, setPrepareSmoothingSettingsExpanded] = React.useState(true);
   const [selectedHolePunchPlacementIds, setSelectedHolePunchPlacementIds] = React.useState<string[]>([]);
   const [hoveredHolePunchPlacementId, setHoveredHolePunchPlacementId] = React.useState<string | null>(null);
@@ -7055,6 +7068,36 @@ export default function Home() {
     setAllowPrepareWithoutPrinter(true);
   }, []);
 
+  // Mark the client as hydrated so the onboarding wizard (and top-bar chrome
+  // gating) only render after mount, avoiding SSR/client mismatches.
+  React.useEffect(() => {
+    setOnboardingMounted(true);
+  }, []);
+
+  // Reopen the wizard whenever there are no printer profiles. Once active it
+  // stays latched until onExit, so the finalization step can play after adding.
+  React.useEffect(() => {
+    if (onboardingMounted && !hasPrinterProfiles) {
+      setWizardActive(true);
+    }
+  }, [onboardingMounted, hasPrinterProfiles]);
+
+  // DEBUG: Ctrl+Shift+O re-runs the onboarding wizard. Lifts the session latch
+  // and drops this session's "use without printer" state so the wizard reappears
+  // even when a printer profile already exists.
+  React.useEffect(() => {
+    let wasActive = false;
+    const unsubscribe = hotkeyStore.subscribe(() => {
+      const isActive = isActionActiveSync('DEBUG', 'RE_RUN_ONBOARDING');
+      if (isActive && !wasActive) {
+        setWizardActive(true);
+        setAllowPrepareWithoutPrinter(false);
+      }
+      wasActive = isActive;
+    });
+    return unsubscribe;
+  }, []);
+
   // Temporary: LYS Ghost Viewer State
   const [ghostData, setGhostData] = React.useState<any>(null);
   const LysGhostOverlay = React.useMemo(
@@ -9675,6 +9718,7 @@ export default function Home() {
         interiorView={interiorView}
         onInteriorViewChange={setInteriorView}
         interiorViewAvailable={hasCavityGeometry}
+        hideWorkflowControls={onboardingMounted && wizardActive}
         heatmapColors={scene.heatmapColors}
         onHeatmapColorChange={scene.onHeatmapColorChange}
         isSlicingBusy={isSlicingBusy}
@@ -10701,6 +10745,12 @@ export default function Home() {
               : "Leaf Fanning: Click a support shaft to lock anchor knot"}
           </Toast>
         </ToastViewport>
+      )}
+
+      {onboardingMounted && wizardActive && (
+        <FirstRunOnboarding
+          onExit={() => setWizardActive(false)}
+        />
       )}
 
     </EditorLayout>

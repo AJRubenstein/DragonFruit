@@ -344,6 +344,15 @@ function sanitizeBitDepth(input: unknown): PrinterPreset['bitDepth'] {
   };
 }
 
+function sanitizeModelVariants(input: unknown): string[] | undefined {
+  if (!Array.isArray(input)) return undefined;
+  const ids = input
+    .slice(0, 32)
+    .map((value) => boundedString(value, 120))
+    .filter((value): value is string => value.length > 0);
+  return ids.length > 0 ? ids : undefined;
+}
+
 function resolveBuildDimensionMm(
   explicitValue: unknown,
   resolutionPx: number,
@@ -406,6 +415,10 @@ function sanitizePrinterPreset(input: unknown): PrinterPreset | null {
     platformBadge: sanitizePlatformBadge((value as any).platformBadge),
     pixelSize,
     bitDepth: sanitizeBitDepth((value as any).bitDepth),
+    modelVariants: sanitizeModelVariants((value as any).modelVariants),
+    modelVariantDetectPath: boundedString((value as any).modelVariantDetectPath, 240) || undefined,
+    libraryDisplayName: boundedString((value as any).libraryDisplayName, 120) || undefined,
+    isModelVariant: typeof value.isModelVariant === 'boolean' ? value.isModelVariant : undefined,
     buildDimensionMode,
     buildVolumeMm: {
       width: resolveBuildDimensionMm((value as any).buildVolumeMm?.width, resolutionX, pixelSize?.x, 143),

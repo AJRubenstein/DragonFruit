@@ -238,6 +238,25 @@ body {
   );
 }
 
+/* During first-run onboarding the top bar goes fully transparent so the
+   wizard backdrop shows through. Both surface layers fade out together. */
+.ui-topbar::before,
+.ui-topbar-blur {
+  transition: opacity 150ms ease;
+}
+
+.ui-topbar-transparent::before {
+  opacity: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.ui-topbar-blur-transparent {
+  opacity: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .ui-topbar-mode-idle {
   border-color: color-mix(in srgb, var(--topbar-accent), var(--border-subtle) 62%);
 }
@@ -677,9 +696,175 @@ input[type="number"].no-spinners {
   transform-origin: center;
 }
 
+@keyframes onboardingBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes onboardingPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes onboardingStepInForward {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes onboardingStepInBackward {
+  from {
+    opacity: 0;
+    transform: translateX(-32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Near-instant content fade used while the modal itself resizes. */
+@keyframes onboardingFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ui-onboarding-backdrop {
+  animation: onboardingBackdropIn 180ms ease-out;
+}
+
+.ui-onboarding-panel {
+  animation: onboardingPanelIn 240ms ease-out;
+  transform-origin: center;
+}
+
+/* Replays on every step change (the step container is keyed by step and
+   animated directionally: forward slides in from the right, back from the left). */
+.ui-onboarding-step-forward {
+  animation: onboardingStepInForward 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ui-onboarding-step-backward {
+  animation: onboardingStepInBackward 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Applied to the printer step content, which fades in while the modal inflates. */
+.ui-onboarding-fade {
+  animation: onboardingFadeIn 140ms ease-out;
+}
+
+/* First-run finalization: a springy success check that pops in, then the
+   title/copy/action fade up in sequence while the modal settles back down. */
+@keyframes onboardingSuccessCircleIn {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes onboardingSuccessContentIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ui-onboarding-success-circle {
+  animation: onboardingSuccessCircleIn 460ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ui-onboarding-success-title {
+  animation: onboardingSuccessContentIn 420ms 140ms ease-out both;
+}
+
+.ui-onboarding-success-subtitle {
+  animation: onboardingSuccessContentIn 420ms 240ms ease-out both;
+}
+
+.ui-onboarding-success-action {
+  animation: onboardingSuccessContentIn 420ms 340ms ease-out both;
+}
+
+/* Exit: the whole overlay dissolves like a cloud blown away from the center
+   outward, revealing the empty scene beneath. The mask's transparent core
+   grows until the overlay is fully gone, then the wizard unmounts. */
+@property --onboarding-reveal {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+@keyframes onboardingRevealOut {
+  from {
+    --onboarding-reveal: 0%;
+  }
+  to {
+    --onboarding-reveal: 135%;
+  }
+}
+
+.ui-onboarding-reveal {
+  animation: onboardingRevealOut 750ms ease-out forwards;
+  mask-image: radial-gradient(
+    circle at center,
+    transparent 0%,
+    transparent var(--onboarding-reveal),
+    black var(--onboarding-reveal),
+    black 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    circle at center,
+    transparent 0%,
+    transparent var(--onboarding-reveal),
+    black var(--onboarding-reveal),
+    black 100%
+  );
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-modal-backdrop-enter,
-  .ui-modal-panel-enter {
+  .ui-modal-panel-enter,
+  .ui-onboarding-backdrop,
+  .ui-onboarding-panel,
+  .ui-onboarding-step-forward,
+  .ui-onboarding-step-backward,
+  .ui-onboarding-fade,
+  .ui-onboarding-success-circle,
+  .ui-onboarding-success-title,
+  .ui-onboarding-success-subtitle,
+  .ui-onboarding-success-action,
+  .ui-onboarding-reveal {
     animation: none !important;
   }
 }

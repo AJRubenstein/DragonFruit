@@ -83,6 +83,29 @@ export type PrinterPreset = {
     pixelSize?: PrinterPixelSize;
     bitDepth?: PrinterBitDepth;
     buildDimensionMode?: PrinterBuildDimensionMode;
+    /**
+     * Concrete variant presetIds for a "family" preset (e.g. an Athena II 16K
+     * entry that resolves to separate 3-bit / 8-bit variants). When set, the
+     * library shows a single card that resolves to one variant on add.
+     */
+    modelVariants?: string[];
+    /**
+     * Optional cleaner display name shown on the library card for a family
+     * preset, e.g. "Athena II 16K" when `name` is "Athena II 16K · 8-bit".
+     * Variant contexts keep using `name`.
+     */
+    libraryDisplayName?: string;
+    /**
+     * Optional HTTP path a plugin network adapter can probe to auto-detect
+     * which variant a physical printer is running. Absent when the preset has
+     * no network-detectable variants.
+     */
+    modelVariantDetectPath?: string;
+    /**
+     * Marks a preset as a hidden variant of a family preset — not shown as a
+     * standalone library card, but still addable via its presetId.
+     */
+    isModelVariant?: boolean;
     buildVolumeMm: {
         width: number;
         depth: number;
@@ -1618,6 +1641,39 @@ export function addPrinterProfile(partial?: Partial<Omit<PrinterProfile, 'id'>>)
 export function getAvailablePrinterPresets(): PrinterPreset[] {
     ensureHydrated();
     return getAllPrinterPresets();
+}
+
+/**
+ * Presets shown as standalone cards in the printer library: the full set minus
+ * hidden variants (`isModelVariant`). Family presets that carry `modelVariants`
+ * remain, and resolve to a concrete variant via {@link getPrinterPresetVariants}.
+ */
+export function getLibraryPrinterPresets(): PrinterPreset[] {
+    ensureHydrated();
+    return getAllPrinterPresets().filter((preset) => preset.isModelVariant !== true);
+}
+
+/**
+ * Resolve the concrete variant presets of a family preset, ordered as declared
+ * in its `modelVariants`. Returns [] for non-family presets or unknown ids.
+ */
+export function getPrinterPresetVariants(presetId: string): PrinterPreset[] {
+    ensureHydrated();
+    const presets = getAllPrinterPresets();
+    const family = presets.find((preset) => preset.presetId === presetId);
+    if (!family?.modelVariants?.length) return [];
+    return family.modelVariants
+        .map((variantId) => presets.find((preset) => preset.presetId === variantId))
+        .filter((preset): preset is PrinterPreset => preset != null);
+}
+
+/**
+ * Match a detected bit-depth (e.g. from a plugin `printerData` probe) to a
+ * variant preset by comparing against each variant's declared `bitDepth.bits`.
+ */
+export function matchPrinterVariantByBitDepth(variants: PrinterPreset[], detectedBitDepth: number | null | undefined): PrinterPreset | null {
+    if (!Number.isFinite(detectedBitDepth)) return null;
+    return variants.find((variant) => variant.bitDepth?.bits === detectedBitDepth) ?? null;
 }
 
 export function addPrinterProfileFromPreset(presetId: string): string {
