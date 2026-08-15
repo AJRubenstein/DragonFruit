@@ -502,23 +502,32 @@ mod nav {
         m
     }
 
-    /// navlib `coordinateSystem`: maps navlib's canonical frame (X-right, Y-up,
-    /// Z-toward-viewer) onto DragonFruit's **Z-up** world. Columns are the images
-    /// of navlib's basis vectors in world space:
-    ///   navlib X (right)         → world  X   (1, 0, 0)
-    ///   navlib Y (up)            → world  Z   (0, 0, 1)
-    ///   navlib Z (toward viewer) → world −Y   (0,−1, 0)
+    /// navlib `coordinateSystem`. Per the SDK header this is the transform **from
+    /// the client's coordinate system TO navlib's** (world → navlib), NOT the other
+    /// way round — navlib's canonical frame is X-right, Y-up, Z-out-of-screen, and
+    /// this matrix lets us express every other property in DragonFruit's **Z-up**
+    /// world. Columns are the images of the WORLD basis vectors in navlib space:
+    ///   world X (right) → navlib  X   (1, 0, 0)
+    ///   world Y (depth) → navlib −Z   (0, 0,−1)
+    ///   world Z (up)    → navlib  Y   (0, 1, 0)   ← up maps to up
     /// Column-major (m[col*4 + row]), determinant +1 (proper rotation, no flip).
     ///
-    /// Without this navlib assumes a Y-up world and mis-decodes our Z-up
-    /// `view.affine`, swapping the pan/zoom axes and jumping the camera when it
-    /// takes over from another control. If orbit ends up mirrored, flip the sign
-    /// of the navlib-Z column (col2 → world +Y).
+    /// This is the INVERSE (transpose) of the matrix we shipped before, which was
+    /// written navlib→world and therefore mapped world-up onto navlib −Y (down).
+    /// Relative orbit tolerated that (the frame cancels in a read-compose-write
+    /// round-trip), but every ABSOLUTE orientation broke: the pre-defined view
+    /// commands (Top/Front/Right…) came out with Y and Z swapped, and the
+    /// keep-Y-up / Lock-Horizon algorithm locked the wrong axis. With up mapped
+    /// correctly navlib's default front reference is already right, so the preset
+    /// buttons resolve without needing an explicit `views.front`.
+    ///
+    /// If a specific axis ends up mirrored, flip the sign of the world-Y column
+    /// (col1) — that only rotates the front/back sense, leaving up intact.
     fn coordinate_system() -> [f64; 16] {
         [
-            1.0, 0.0, 0.0, 0.0, // col0: navlib X → world X
-            0.0, 0.0, 1.0, 0.0, // col1: navlib Y → world Z (up)
-            0.0, -1.0, 0.0, 0.0, // col2: navlib Z → world -Y
+            1.0, 0.0, 0.0, 0.0, // col0: world X → navlib X (right)
+            0.0, 0.0, -1.0, 0.0, // col1: world Y → navlib -Z (into screen)
+            0.0, 1.0, 0.0, 0.0, // col2: world Z → navlib Y (up)
             0.0, 0.0, 0.0, 1.0, // col3: origin
         ]
     }
