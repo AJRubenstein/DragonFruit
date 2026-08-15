@@ -388,6 +388,23 @@ export function NativeSpaceMouseController({
     if (!getNativeSpaceMouseActive() || !settings.enabled) return;
     if (!isOrbitLikeControls(controls)) return;
 
+    // Ignore SpaceMouse input unless our window is the active/focused window —
+    // mirrors SpaceMouseController's Gamepad-path guard. The 3Dconnexion driver
+    // keeps tracking the puck for background windows, so without this navlib
+    // would drive our camera while another app is in front. document.hasFocus()
+    // (unlike document.hidden / visibilitychange) is false whenever the window
+    // is not active, even while it stays visible. While unfocused we neither
+    // apply navlib's pose nor push ours to it, and we cleanly hand orbit back.
+    if (typeof document !== 'undefined' && typeof document.hasFocus === 'function' && !document.hasFocus()) {
+      if (prevMotionRef.current) {
+        prevMotionRef.current = false;
+        onNavigationActiveChange?.(false);
+      }
+      navHasPrevRef.current = false;
+      handBackToOrbit();
+      return;
+    }
+
     // 1. Apply navlib's latest camera (from the previous frame's sync).
     const out = latestOutRef.current;
     if (out) {
