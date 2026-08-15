@@ -14,6 +14,37 @@ export const PLUGIN_IMPORT_WARNING_DISMISSED_STORAGE_KEY =
   PLUGIN_SCENE_FILE_TYPES.find((ft) => ft.fileExtension === '.lys')?.importWarning?.storageKey
   ?? 'dragonfruit.lysImportWarningDismissed';
 
+/**
+ * The import warning declared by the plugin that owns this file's extension,
+ * or null when the extension is unknown or its plugin declares no warning.
+ *
+ * Each plugin supplies its own title, body and storageKey, so the dismissal is
+ * remembered per format rather than globally.
+ */
+export function getPluginImportWarningForFileName(name: string): {
+  title: string;
+  body: string;
+  storageKey: string;
+} | null {
+  const ext = getFileExtension(name);
+  if (!ext) return null;
+  const fileType = PLUGIN_SCENE_FILE_TYPES.find((ft) => ft.fileExtension.toLowerCase() === ext);
+  return fileType?.importWarning ?? null;
+}
+
+/** First plugin import warning among the given files, or null if none apply. */
+export function findPluginImportWarning(files: File[]): {
+  title: string;
+  body: string;
+  storageKey: string;
+} | null {
+  for (const file of files) {
+    const warning = getPluginImportWarningForFileName(file.name);
+    if (warning) return warning;
+  }
+  return null;
+}
+
 export function getFileExtension(name: string): string {
   const trimmed = name.trim().toLowerCase();
   const dotIndex = trimmed.lastIndexOf('.');

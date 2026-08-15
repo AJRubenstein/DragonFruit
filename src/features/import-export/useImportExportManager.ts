@@ -9,6 +9,7 @@ import {
 import type { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import { SCENE_FILE_EXTENSIONS, sceneFileInputAccept } from '@/features/plugins/pluginFileTypeExtensions';
 import {
+  getPluginImportWarningForFileName,
   getFileExtension,
   getFileNameFromPath,
   isSupportedPrepareDropName,
@@ -315,7 +316,7 @@ export function useImportExportManager({
     const entry = recentOpenedFiles.find((item) => item.id === entryId);
     if (!entry) return false;
 
-    if (entry.kind === 'scene' && entry.name.trim().toLowerCase().endsWith('.lys')) {
+    if (entry.kind === 'scene' && getPluginImportWarningForFileName(entry.name)) {
       const proceed = await maybeConfirmPluginImportWarning([
         new File([], entry.name, { type: 'application/octet-stream' }),
       ]);
@@ -855,7 +856,7 @@ export function useImportExportManager({
     });
     const sceneFiles = supportedFiles.filter((file) => {
       const ext = getFileExtension(file.name);
-      return ext === '.lys' || ext === '.voxl';
+      return SCENE_FILE_EXTENSIONS.some((sceneExt) => ext === `.${sceneExt}`);
     });
 
     const buildSyntheticFileChangeEvent = (nextFiles: File[]): React.ChangeEvent<HTMLInputElement> => {

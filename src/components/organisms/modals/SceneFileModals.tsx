@@ -20,6 +20,8 @@ export type SceneFileModalsProps = {
   handleSaveAndCloseProgram: () => void;
   hasUnsavedSceneChanges: boolean;
   pluginImportWarningSkipFuture: boolean;
+  pluginImportWarningTitle?: string | null;
+  pluginImportWarningBody?: string | null;
   resolveSceneSaveChoice: (choice: "overwrite" | "save_as" | "cancel") => void;
   scene: ReturnType<typeof useSceneCollectionManager>;
   sceneSaveChoiceFileName: string | null;
@@ -54,6 +56,8 @@ export function SceneFileModals({
   handleSaveAndCloseProgram,
   hasUnsavedSceneChanges,
   pluginImportWarningSkipFuture,
+  pluginImportWarningTitle,
+  pluginImportWarningBody,
   resolveSceneSaveChoice,
   scene,
   sceneSaveChoiceFileName,
@@ -249,7 +253,9 @@ export function SceneFileModals({
 
                 <div className="min-w-0 pr-2">
                   <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-                    Plugin Import is Experimental
+                    {pluginImportWarningTitle
+                      ? `${pluginImportWarningTitle} is Experimental`
+                      : 'Plugin Import is Experimental'}
                   </h2>
                   <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
                     This feature is still under development.
@@ -274,7 +280,8 @@ export function SceneFileModals({
 
             <div className="space-y-4 p-5">
               <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                Geometry, support placement, and transforms can import differently across `.lys` scene variants, so unforeseen results are still possible.
+                {pluginImportWarningBody
+                  ?? 'Geometry, support placement, and transforms can import differently across scene variants, so unforeseen results are still possible.'}
               </p>
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
