@@ -532,6 +532,33 @@ mod nav {
         ]
     }
 
+    /// navlib `views.front`: the orientation of DragonFruit's FRONT view, expressed
+    /// in our Z-up client coordinates (navlib converts it internally via
+    /// `coordinateSystem`). navlib queries this ONCE at connection creation and uses
+    /// it to resolve the pre-defined view commands — Front/Back/Right/Left/Top/Bottom
+    /// on the device and radial menu.
+    ///
+    /// DragonFruit's world is Z-up, X-right, **Y-back** (see ZUpGizmoViewcube), so
+    /// the front view looks along +Y with up +Z. Columns are the front-view camera
+    /// axes in world space (camera-to-world, column-major m[col*4 + row]):
+    ///   camera right (X_cam) → world  X   (1, 0, 0)
+    ///   camera up    (Y_cam) → world  Z   (0, 0, 1)
+    ///   camera back  (Z_cam) → world −Y   (0,−1, 0)   (look dir = +Y, into screen)
+    ///
+    /// Without it navlib falls back to a default front rotated 90° about world X
+    /// from ours, so every preset came out tilted (Front→Top, Top→Back, Right rolled
+    /// upright). If a specific pair is still swapped after this, negate the world-Y
+    /// (back) column — col2 here — to flip the front/back sense; the value only
+    /// affects the preset buttons, nothing else.
+    fn views_front() -> [f64; 16] {
+        [
+            1.0, 0.0, 0.0, 0.0, // col0: camera right → world X
+            0.0, 0.0, 1.0, 0.0, // col1: camera up    → world Z
+            0.0, -1.0, 0.0, 0.0, // col2: camera back  → world -Y (look = +Y)
+            0.0, 0.0, 0.0, 1.0, // col3: origin
+        ]
+    }
+
     /// Shadow of the live scene. JS keeps the app-authoritative fields fresh each
     /// frame; navlib's callbacks read them and write `affine`/`motion` back.
     struct NavState {
@@ -591,6 +618,8 @@ mod nav {
     const P_ACTIVE: &[u8] = b"active\0";
     const P_FOCUS: &[u8] = b"focus\0";
     const P_VIEW_EXTENTS: &[u8] = b"view.extents\0";
+    // Front-view reference for the pre-defined view (preset) commands.
+    const P_VIEWS_FRONT: &[u8] = b"views.front\0";
     // DIAGNOSTIC channels: pose targets Camera mode might drive that Object mode
     // doesn't. Registered setter-only (log & ignore) to find WHICH interface
     // Camera-mode pan writes to — navlib can only call a setter we registered.
@@ -637,6 +666,11 @@ mod nav {
             b"coordinateSystem" => {
                 v.type_ = MATRIX_TYPE;
                 v.value.matrix = MatrixT { m: coordinate_system() };
+            }
+            // Front-view orientation used to resolve the preset view commands.
+            b"views.front" => {
+                v.type_ = MATRIX_TYPE;
+                v.value.matrix = MatrixT { m: views_front() };
             }
             b"view.affine" => {
                 v.type_ = MATRIX_TYPE;
@@ -879,6 +913,8 @@ mod nav {
             // routes pan onto the box WIDTH (a zoom) while Object-mode pans via
             // view.affine. The guard prevents the width→0→NaN runaway.
             entry(P_VIEW_EXTENTS, true, true),
+            // Read-only front-view reference for the preset view buttons.
+            entry(P_VIEWS_FRONT, true, false),
             entry(P_MODEL_EXTENTS, true, false),
             entry(P_SELECTION_EMPTY, true, false),
             entry(P_PIVOT_POSITION, true, true),
