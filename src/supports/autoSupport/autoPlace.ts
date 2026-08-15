@@ -928,7 +928,7 @@ export function runAutoPlace(
         const makeSample = (area: number, z: number): CandidatePoint => ({
             id: 'dbg', tipPos: { x: 0, y: 0, z: 0 }, tipNormal: { x: 0, y: 0, z: -1 },
             modelId: '', source: 'voxel', islandAreaMm2: area,
-            zHeight: z, overhangAngleDeg: 45, priority: 0,
+            zHeight: z, priority: 0,
         });
         const sMin = sizeParameters(makeSample(minArea, 10), modelCtx, getSettings());
         const sMax = sizeParameters(makeSample(maxArea, zMax), modelCtx, getSettings());

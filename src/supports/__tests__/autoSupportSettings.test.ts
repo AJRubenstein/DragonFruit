@@ -43,14 +43,13 @@ test('normalize fills missing fields', () => {
 
 test('normalize drops legacy dead keys', () => {
     // Settings saved before the dead-knob removal (clusterRadiusMm and friends)
-    // must normalize cleanly to the live shape without errors.
+    // must normalize cleanly to the live shape without errors. Cast through any
+    // because the keys no longer exist on the type.
     const normalized = normalizeAutoSupportSettings({
-        // @ts-expect-error legacy key no longer in the type
         clusterRadiusMm: 30,
-        // @ts-expect-error legacy key no longer in the type
         debugClusterColorsEnabled: true,
         minIslandAreaMm2: 0.1,
-    });
+    } as unknown as Parameters<typeof normalizeAutoSupportSettings>[0]);
 
     assert.equal(normalized.minIslandAreaMm2, 0.1);
     assert.equal(normalized.tipInfluenceRadiusMm, AUTO_SUPPORT_CONSTRAINTS.tipInfluenceRadiusMm.defaultValue);
