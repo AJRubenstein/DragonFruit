@@ -24,6 +24,7 @@ interface InstancedRootsGroupProps {
     clippingPlanes?: THREE.Plane[] | null;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
     onRootClick?: (root: InstancedRoot, event: ThreeEvent<MouseEvent>) => void;
+    onRootPointerDown?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
     onRootPointerMove?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
     onRootPointerOut?: (root: InstancedRoot | null, event: ThreeEvent<PointerEvent>) => void;
 }
@@ -62,6 +63,7 @@ function RootBucketMesh({
     clippingPlanes,
     outOfBoundsMaterial,
     onRootClick,
+    onRootPointerDown,
     onRootPointerMove,
     onRootPointerOut,
 }: {
@@ -74,6 +76,7 @@ function RootBucketMesh({
     clippingPlanes: THREE.Plane[] | null;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
     onRootClick?: (root: InstancedRoot, event: ThreeEvent<MouseEvent>) => void;
+    onRootPointerDown?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
     onRootPointerMove?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
     onRootPointerOut?: (root: InstancedRoot | null, event: ThreeEvent<PointerEvent>) => void;
 }) {
@@ -146,6 +149,14 @@ function RootBucketMesh({
         onRootClick(root, event);
     };
 
+    const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
+        if (!onRootPointerDown) return;
+        event.stopPropagation();
+        const root = resolveRootFromEvent(event.instanceId);
+        if (!root) return;
+        onRootPointerDown(root, event);
+    };
+
     const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
         if (!onRootPointerMove) return;
         event.stopPropagation();
@@ -192,6 +203,7 @@ function RootBucketMesh({
                     frustumCulled={false}
                     renderOrder={100000}
                     onClick={onRootClick ? handleClick : undefined}
+                    onPointerDown={onRootPointerDown ? handlePointerDown : undefined}
                     onPointerMove={onRootPointerMove ? handlePointerMove : undefined}
                     onPointerOut={onRootPointerOut ? handlePointerOut : undefined}
                 >
@@ -215,6 +227,7 @@ function RootBucketMesh({
                     frustumCulled={false}
                     renderOrder={100000}
                     onClick={onRootClick ? handleClick : undefined}
+                    onPointerDown={onRootPointerDown ? handlePointerDown : undefined}
                     onPointerMove={onRootPointerMove ? handlePointerMove : undefined}
                     onPointerOut={onRootPointerOut ? handlePointerOut : undefined}
                 >
@@ -283,6 +296,7 @@ export function InstancedRootsGroup({
     clippingPlanes = null,
     outOfBoundsMaterial = null,
     onRootClick,
+    onRootPointerDown,
     onRootPointerMove,
     onRootPointerOut,
 }: InstancedRootsGroupProps) {
@@ -332,6 +346,7 @@ export function InstancedRootsGroup({
                     clippingPlanes={clippingPlanes}
                     outOfBoundsMaterial={outOfBoundsMaterial}
                     onRootClick={onRootClick}
+                    onRootPointerDown={onRootPointerDown}
                     onRootPointerMove={onRootPointerMove}
                     onRootPointerOut={onRootPointerOut}
                 />

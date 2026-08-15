@@ -84,18 +84,18 @@ export function useUpdateChecker() {
   const handleDownloadAndInstall = useCallback(async () => {
     setState({ status: 'downloading', progress: { contentLength: 0, downloaded: 0 } });
 
-    const success = await downloadAndInstall((progress: DownloadProgress) => {
-      setState({ status: 'downloading', progress });
-    });
-
-    if (success) {
+    try {
+      await downloadAndInstall((progress: DownloadProgress) => {
+        setState({ status: 'downloading', progress });
+      });
       // The app should relaunch — if we get here, show installed state.
       setState({ status: 'installed' });
-    } else {
-      setState({
-        status: 'error',
-        message: 'Download or install failed. Please try again.',
-      });
+    } catch (err) {
+      // Show what actually broke. A generic "check your connection" hides
+      // failures that have nothing to do with the network.
+      const message =
+        err instanceof Error ? err.message : 'Unknown error installing the update.';
+      setState({ status: 'error', message });
     }
   }, []);
 

@@ -247,6 +247,39 @@ async function fetchNanoDlpMachineName(
   }
 }
 
+/**
+ * Best-effort fetch of the Athena `printer_data` endpoint, which reports the
+ * printer's own friendly name (e.g. "Negotiator-Gourd"), bit depth, and screen
+ * metadata. Returns null on any failure so callers degrade gracefully.
+ */
+async function fetchNanoDlpPrinterData(
+  host: string,
+  port: number,
+  timeoutMs: number = 4000,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const response = await fetch(`${buildNanoDlpBaseUrl(host, port)}/athena-iot/dragonfruit/printer_data`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(Math.min(Math.max(timeoutMs, 1000), 5000)),
+    });
+
+    if (response.status !== 200) return null;
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    return payload && typeof payload === 'object' ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Prefer the friendly `printerName` from `printer_data` over the status name. */
+async function resolveFriendlyPrinterName(host: string, port: number, timeoutMs: number, statusName: string): Promise<string> {
+  const printerData = await fetchNanoDlpPrinterData(host, port, timeoutMs);
+  const reportedName = typeof printerData?.printerName === 'string' ? printerData.printerName.trim() : '';
+  return reportedName.length > 0 ? reportedName : statusName;
+}
+
 async function resolveRequestedNetworkFilter(payload: unknown): Promise<string | null> {
   const explicitFilter = typeof (payload as any)?.networkFilter === 'string'
     ? (payload as any).networkFilter.trim()
@@ -298,6 +331,7 @@ async function probeNanoDlp(
     }
 
     let networkFilterMatched = false;
+    let deviceHasUnknownFilter = true;
 
     if (requestedNetworkFilter) {
       const machineName = await resolveDeviceMachineName(hostOrIp, port, Math.max(1200, Math.min(timeoutMs, 4000)));
@@ -315,6 +349,7 @@ async function probeNanoDlp(
         if (normalizedMachineName !== normalizedRequestedFilter) {
           const knownNetworkFilter = resolveKnownNetworkFilter(machineName);
           const normalizedKnownNetworkFilter = knownNetworkFilter ? normalizeMachineName(knownNetworkFilter) : null;
+          deviceHasUnknownFilter = knownNetworkFilter === null;
           const explicitKnownFilterMismatch = Boolean(
             normalizedKnownNetworkFilter
             && normalizedKnownNetworkFilter !== normalizedRequestedFilter,
@@ -347,9 +382,11 @@ async function probeNanoDlp(
             normalizedRequestedFilter,
             printerModel: resolveNanoDlpPrinterModel(status),
             fallbackToModelHint: true,
+            deviceHasUnknownFilter,
           });
         } else {
           networkFilterMatched = true;
+          deviceHasUnknownFilter = false;
 
           logNanoDlpFilterDebug(debugFilter, 'probe/match', {
             hostOrIp,
@@ -362,7 +399,7 @@ async function probeNanoDlp(
     }
 
     const modelHintMatched = isSupportedAthenaModelMatch(supportedModel, requestedModelHint);
-    if (!modelHintMatched && !networkFilterMatched) {
+    if (!modelHintMatched && !networkFilterMatched && !deviceHasUnknownFilter) {
       logNanoDlpFilterDebug(debugFilter, 'probe/reject', {
         hostOrIp,
         port,
@@ -371,13 +408,26 @@ async function probeNanoDlp(
         requestedModelHint,
         modelHintMatched,
         networkFilterMatched,
+        deviceHasUnknownFilter,
         printerModel: resolveNanoDlpPrinterModel(status),
       });
       return null;
     }
 
+    logNanoDlpFilterDebug(debugFilter, deviceHasUnknownFilter && !networkFilterMatched && !modelHintMatched ? 'probe/fallback' : 'probe/accept', {
+      hostOrIp,
+      port,
+      reason: deviceHasUnknownFilter && !networkFilterMatched && !modelHintMatched ? 'unknown-filter-fallback' : undefined,
+      supportedModel,
+      requestedModelHint,
+      modelHintMatched,
+      networkFilterMatched,
+      deviceHasUnknownFilter,
+      printerModel: resolveNanoDlpPrinterModel(status),
+    });
+
     const hostName = resolveNanoDlpStatusHostName(status);
-    const printerName = resolveNanoDlpPrinterName(status);
+    const printerName = await resolveFriendlyPrinterName(hostOrIp, port, Math.min(Math.max(timeoutMs, 1000), 4000), resolveNanoDlpPrinterName(status));
     const printerModel = resolveNanoDlpPrinterModel(status);
     const resolvedAddress = resolveNanoDlpResolvedAddress(status, hostOrIp);
 
@@ -845,7 +895,13 @@ async function handleNanoDlpConnect(payload: unknown): Promise<HandlerResult> {
       && isSupportedAthenaModelMatch(supportedModel, requestedModelHint),
     );
 
-    if (!supportedModel || explicitKnownFilterMismatch || (!modelHintMatched && !networkFilterMatched)) {
+    // When a device reports a name that doesn't match any known Athena filter
+    // key (e.g. "athena" instead of "Athena2 16K"), it's likely reporting a
+    // generic/non-standard name. Allow the connection as a fallback rather than
+    // rejecting it as a model mismatch.
+    const deviceHasUnknownFilter = normalizedDeviceNetworkFilter === null;
+
+    if (!supportedModel || explicitKnownFilterMismatch || (!modelHintMatched && !networkFilterMatched && !deviceHasUnknownFilter)) {
       logNanoDlpFilterDebug(debugFilter, 'connect/reject', {
         host: parsedHost.host,
         port,
@@ -859,6 +915,7 @@ async function handleNanoDlpConnect(payload: unknown): Promise<HandlerResult> {
         modelHintMatched,
         networkFilterMatched,
         explicitKnownFilterMismatch,
+        deviceHasUnknownFilter,
         supportedModel,
         printerModel,
         deviceMachineName,
@@ -892,8 +949,20 @@ async function handleNanoDlpConnect(payload: unknown): Promise<HandlerResult> {
       };
     }
 
+    logNanoDlpFilterDebug(debugFilter, deviceHasUnknownFilter && !networkFilterMatched && !modelHintMatched ? 'connect/fallback' : 'connect/accept', {
+      host: parsedHost.host,
+      port,
+      reason: deviceHasUnknownFilter && !networkFilterMatched && !modelHintMatched ? 'unknown-filter-fallback' : undefined,
+      requestedNetworkFilter,
+      deviceMachineName,
+      deviceNetworkFilter,
+      supportedModel,
+      printerModel,
+      deviceHasUnknownFilter,
+    });
+
     const hostName = resolveNanoDlpStatusHostName(status);
-    const printerName = resolveNanoDlpPrinterName(status);
+    const printerName = await resolveFriendlyPrinterName(parsedHost.host, port, 3500, resolveNanoDlpPrinterName(status));
     const resolvedAddress = resolveNanoDlpResolvedAddress(status, parsedHost.host);
 
     logNanoDlpFilterDebug(debugFilter, 'connect/accept', {
@@ -1448,6 +1517,104 @@ async function handleNanoDlpJobImport(payload: unknown): Promise<HandlerResult> 
   }
 }
 
+/**
+ * Probe a printer's model-variant endpoint (e.g. `printer_data`) and return the
+ * detected bit-depth plus related display metadata. Used by the core model-
+ * variant picker to auto-select 8-bit vs 3-bit variants; see
+ * `PrinterPreset.modelVariantDetectPath` / `operations.printerData`.
+ */
+async function handleNanoDlpPrinterData(payload: unknown): Promise<HandlerResult> {
+  const rawHost = resolveNanoDlpRawHost(payload);
+  const parsedHost = parseNanoDlpHostAndPort(rawHost);
+  if (!parsedHost) {
+    return { status: 400, body: { ok: false, error: 'Invalid host or IP address' } };
+  }
+
+  const port = resolveNanoDlpPort((payload as any)?.port, parsedHost.port);
+  const pathRaw = typeof (payload as any)?.path === 'string' ? (payload as any).path.trim() : '';
+  const detectPath = pathRaw || '/athena-iot/dragonfruit/printer_data';
+  const baseUrl = buildNanoDlpBaseUrl(parsedHost.host, port).replace(/\/+$/, '');
+  const endpoint = `${baseUrl}${detectPath.startsWith('/') ? detectPath : `/${detectPath}`}`;
+
+  const asNumber = (value: unknown): number | null => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (response.status !== 200) {
+      return {
+        status: 200,
+        body: {
+          ok: false,
+          ipAddress: parsedHost.host,
+          port,
+          error: `HTTP ${response.status}`,
+        },
+      };
+    }
+
+    const decoded = await response.json().catch(() => null) as Record<string, unknown> | null;
+    if (!decoded || typeof decoded !== 'object') {
+      return {
+        status: 200,
+        body: {
+          ok: false,
+          ipAddress: parsedHost.host,
+          port,
+          error: 'Invalid printer data payload',
+        },
+      };
+    }
+
+    const pixelsize = decoded.pixelsize && typeof decoded.pixelsize === 'object'
+      ? {
+          x: asNumber((decoded.pixelsize as Record<string, unknown>).X ?? (decoded.pixelsize as Record<string, unknown>).x),
+          y: asNumber((decoded.pixelsize as Record<string, unknown>).Y ?? (decoded.pixelsize as Record<string, unknown>).y),
+        }
+      : undefined;
+    const resolution = decoded.resolution && typeof decoded.resolution === 'object'
+      ? {
+          x: asNumber((decoded.resolution as Record<string, unknown>).X ?? (decoded.resolution as Record<string, unknown>).x),
+          y: asNumber((decoded.resolution as Record<string, unknown>).Y ?? (decoded.resolution as Record<string, unknown>).y),
+        }
+      : undefined;
+
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        ipAddress: parsedHost.host,
+        port,
+        bitdepth: asNumber(decoded.bitdepth),
+        machineType: typeof decoded.machineType === 'string' ? decoded.machineType : undefined,
+        screentype: typeof decoded.screentype === 'string' ? decoded.screentype : undefined,
+        printerName: typeof decoded.printerName === 'string' ? decoded.printerName : undefined,
+        pixelsize,
+        resolution,
+      },
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch printer data';
+    return {
+      status: 200,
+      body: {
+        ok: false,
+        ipAddress: parsedHost.host,
+        port,
+        error: message,
+      },
+    };
+  }
+}
+
 export async function handleAthenaNetworkOperation(operationPath: string[], payload: unknown): Promise<HandlerResult> {
   // Athena currently exposes NanoDLP operations under `nanodlp/*`.
   if (operationPath.length === 0 || operationPath[0] !== 'nanodlp') {
@@ -1473,6 +1640,7 @@ export async function handleAthenaNetworkOperation(operationPath: string[], payl
     printerEmergencyStop: handleNanoDlpPrinterEmergencyStop,
     printerStatus: handleNanoDlpPrinterStatus,
     printerWebcamInfo: handleNanoDlpPrinterWebcamInfo,
+    printerData: handleNanoDlpPrinterData,
   });
 
   if (handled) return handled;

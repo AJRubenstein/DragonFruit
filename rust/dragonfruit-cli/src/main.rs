@@ -319,6 +319,33 @@ enum SliceCommands {
         /// Anti-aliasing mode (Coverage, Blur, 3daa)
         #[arg(long, default_value = "Blur")]
         anti_aliasing_mode: String,
+        /// 2D Blur brush radius in pixels
+        #[arg(long, default_value = "1")]
+        blur_brush_radius_px: u32,
+        /// 2D Blur brush kernel (gaussian, box)
+        #[arg(long, default_value = "gaussian")]
+        blur_brush_kernel: String,
+        /// 2D Blur sigma X
+        #[arg(long, default_value = "0.5")]
+        blur_brush_sigma_x: f32,
+        /// 2D Blur sigma Y
+        #[arg(long, default_value = "0.5")]
+        blur_brush_sigma_y: f32,
+        /// Z Blur radius in layers
+        #[arg(long, default_value = "0")]
+        z_blur_radius_layers: u32,
+        /// Z Blur kernel (box, gaussian)
+        #[arg(long, default_value = "box")]
+        z_blur_kernel: String,
+        /// Z Blur sigma
+        #[arg(long, default_value = "0.5")]
+        z_blur_sigma: f32,
+        /// Z Blend look-back depth in layers
+        #[arg(long, default_value = "2")]
+        z_blend_look_back: u32,
+        /// Apply AA to support geometry
+        #[arg(long)]
+        aa_on_supports: bool,
         /// X-axis sub-pixel packing mode.
         ///
         /// - `none` (default): raw grayscale at source resolution; width_px = source_width_px.
@@ -446,6 +473,12 @@ fn cmd_mesh_read_stl(input: &PathBuf, output: &PathBuf) -> Result<(), String> {
 fn cmd_mesh_info(input: &PathBuf, json_output: bool) -> Result<(), String> {
     let (flat, source) = if input.is_dir() {
         (read_positions_bin(&input.join("positions.bin"))?, "directory")
+    } else if is_voxl_file(input) {
+        let (positions, used_orig) = load_voxl_triangles(input)?;
+        if !json_output {
+            eprintln!("voxl info: used_orig_chunk={}", used_orig);
+        }
+        (positions, "voxl")
     } else {
         (load_binary_stl(input)?, "stl")
     };
@@ -632,7 +665,8 @@ fn cmd_track(input: &PathBuf, output: &PathBuf, overlap: i32, neighborhood: i32)
         let components: Vec<ComponentInfo> = read_json(&input.join("layers").join(format!("{:03}.components.json", l)))?;
 
         let prev_labels = if l > 0 { Some(&island_labels_all[l - 1]) } else { None };
-        let island_labels = tracker.process_layer(l as u32, &candidates, &components, prev_labels, &mask);
+        let is_top = l == num_layers.saturating_sub(1);
+        let island_labels = tracker.process_layer(l as u32, &candidates, &components, prev_labels, &mask, is_top);
 
         write_rle_labels_json(
             &output.join("layers").join(format!("{:03}.island-labels.rle.json", l)),
@@ -763,7 +797,8 @@ fn cmd_island_full(
 
     for (l, lr) in layer_results.iter().enumerate() {
         let prev_labels = if l > 0 { Some(&island_labels_all[l - 1]) } else { None };
-        let island_labels = tracker.process_layer(l as u32, &lr.labels, &lr.components, prev_labels, &lr.solid_mask);
+        let is_top = l == layer_results.len().saturating_sub(1);
+        let island_labels = tracker.process_layer(l as u32, &lr.labels, &lr.components, prev_labels, &lr.solid_mask, is_top);
         write_rle_labels_json(&output.join("layers").join(format!("{:03}.island-labels.rle.json", l)), &island_labels)?;
         let snap = tracker.get_islands();
         write_json(&output.join("tracker-state").join(format!("{:03}.islands.json", l)), &snap)?;
@@ -881,7 +916,8 @@ fn cmd_island_bench(
         let mut island_labels: Vec<RleLabels> = Vec::with_capacity(nl);
         for (l, lr) in layer_results.iter().enumerate() {
             let prev = if l > 0 { Some(&island_labels[l - 1]) } else { None };
-            let il = tracker.process_layer(l as u32, &lr.labels, &lr.components, prev, &lr.solid_mask);
+            let is_top = l == nl.saturating_sub(1);
+            let il = tracker.process_layer(l as u32, &lr.labels, &lr.components, prev, &lr.solid_mask, is_top);
             island_labels.push(il);
         }
         tracker.finalize_islands(nl.saturating_sub(1) as u32);
@@ -1023,6 +1059,15 @@ fn cmd_slice_run(
     png_compression: &str,
     anti_aliasing: &str,
     anti_aliasing_mode: &str,
+    blur_brush_radius_px: u32,
+    blur_brush_kernel: &str,
+    blur_brush_sigma_x: f32,
+    blur_brush_sigma_y: f32,
+    z_blur_radius_layers: u32,
+    z_blur_kernel: &str,
+    z_blur_sigma: f32,
+    z_blend_look_back: u32,
+    aa_on_supports: bool,
     x_packing_mode: &str,
     mirror_x: bool,
     mirror_y: bool,
@@ -1060,16 +1105,32 @@ fn cmd_slice_run(
 
     // Same flow as Tauri's slice_solid_native_to_temp_path:
     // load STL or positions.bin → build SliceJobV3 → dispatch to engine
+    // Load STL, positions.bin, or .voxl container
     let is_positions_bin = input.extension()
         .and_then(|e| e.to_str())
         .map(|e| e == "bin")
         .unwrap_or(false);
+    let is_voxl = is_voxl_file(input);
 
-    let flat = if is_positions_bin {
-        read_positions_bin(input)?
+    let (flat, model_tri_count, mesh_encoding) = if is_positions_bin {
+        let f = read_positions_bin(input)?;
+        let count = (f.len() / 9) as u32;
+        (f, count, "positions_bin".to_string())
+    } else if is_voxl {
+        let voxl = load_voxl(input)?;
+        if !json_output {
+            eprintln!(
+                "slice: read VOXL file with {} triangles (model_triangles={}, mesh_encoding={})",
+                voxl.total_triangle_count, voxl.model_triangle_count, voxl.mesh_encoding
+            );
+        }
+        (voxl.triangles_xyz, voxl.model_triangle_count as u32, voxl.mesh_encoding)
     } else {
-        load_binary_stl(input)?
+        let f = load_binary_stl(input)?;
+        let count = (f.len() / 9) as u32;
+        (f, count, "stl".to_string())
     };
+
     if flat.len() % 9 != 0 {
         return Err(format!("Invalid triangle buffer length: {}", flat.len()));
     }
@@ -1105,25 +1166,32 @@ fn cmd_slice_run(
         container_compression_level: 2,
         anti_aliasing_level: anti_aliasing.to_string(),
         anti_aliasing_mode: anti_aliasing_mode.to_string(),
-        blur_brush_radius_px: 1,
-        z_blur_radius_layers: 0,
-        aa_on_supports: false,
-        model_triangle_count: (flat.len() / 9) as u32,
+        blur_brush_radius_px,
+        blur_brush_kernel: blur_brush_kernel.to_string(),
+        blur_brush_sigma_x: blur_brush_sigma_x as f64,
+        blur_brush_sigma_y: blur_brush_sigma_y as f64,
+        z_blur_radius_layers,
+        z_blur_kernel: z_blur_kernel.to_string(),
+        z_blur_sigma: z_blur_sigma as f64,
+        aa_on_supports,
+        model_triangle_count: model_tri_count,
         mirror_x,
         mirror_y,
-        z_blend_look_back: 2,
-        z_blend_fade_px: 20,
-        z_blend_auto_fade: true,
+        z_blend_look_back,
         z_blend_minimum_alpha_percent: 0.0,
         z_blend_max_alpha_percent: 90.0,
         z_blend_custom_lut: None,
         zaa_kernel: None,
         zaa_pattern: None,
         zaa_duplicate_z: None,
+        dither_enabled: false,
+        dither_bit_depth: None,
+        dither_device_gamma: 3.0,
         triangles_xyz: flat,
         metadata_json: metadata_json.to_string(),
         format_version: format_version.clone(),
         minimum_aa_alpha_percent: min_aa_alpha,
+        ..Default::default()
     };
 
     let t0 = Instant::now();
@@ -1139,6 +1207,8 @@ fn cmd_slice_run(
         "build_width_mm": build_width_mm,
         "build_depth_mm": build_depth_mm,
         "resolution_px": [source_width_px, source_height_px],
+        "model_triangle_count": job.model_triangle_count,
+        "mesh_encoding": mesh_encoding,
         "total_s": perf.total_s(),
         "wall_s": wall_s,
         "layers_per_second": perf.layers_per_second(),
@@ -1536,6 +1606,8 @@ fn cmd_benchmark(
         anti_aliasing_mode: "Blur".to_string(),
         blur_brush_radius_px: 1,
         minimum_aa_alpha_percent: 35.0,
+        dither_enabled: false,
+        ..Default::default()
     };
 
     if !json_output {
@@ -1686,11 +1758,16 @@ fn main() {
         Commands::Slice { command } => match command {
             SliceCommands::Run { input, output, layer_height, build_width_mm, build_depth_mm,
                 source_width_px, source_height_px, png_compression, anti_aliasing,
-                anti_aliasing_mode, x_packing_mode, mirror_x, mirror_y, format_version, min_aa_alpha,
-                metadata_json, json } =>
+                anti_aliasing_mode, blur_brush_radius_px, blur_brush_kernel, blur_brush_sigma_x,
+                blur_brush_sigma_y, z_blur_radius_layers, z_blur_kernel, z_blur_sigma,
+                z_blend_look_back, aa_on_supports, x_packing_mode, mirror_x, mirror_y,
+                format_version, min_aa_alpha, metadata_json, json } =>
                 cmd_slice_run(&input, &output, layer_height, build_width_mm, build_depth_mm,
                     source_width_px, source_height_px, &png_compression, &anti_aliasing,
-                    &anti_aliasing_mode, &x_packing_mode, mirror_x, mirror_y, &format_version,
+                    &anti_aliasing_mode, blur_brush_radius_px, &blur_brush_kernel,
+                    blur_brush_sigma_x, blur_brush_sigma_y, z_blur_radius_layers,
+                    &z_blur_kernel, z_blur_sigma, z_blend_look_back, aa_on_supports,
+                    &x_packing_mode, mirror_x, mirror_y, &format_version,
                     min_aa_alpha, &metadata_json, json),
             SliceCommands::Formats => { cmd_slice_formats(); Ok(()) },
             SliceCommands::PreviewLayer { input, layer, output } =>

@@ -111,6 +111,28 @@ That's it — `release.yml` tags `v0.1.10`, builds, publishes a GitHub
 prerelease, and points `latest-dev.json` at it. Repeat for `0.1.11`,
 `0.1.12`, etc. No RC step required for dev releases.
 
+### Contributors
+
+`npm version` also runs `scripts/sync-contributors.mjs` (via the `postversion`
+hook), so `src/components/settings/contributors.json` is refreshed in the same
+release commit as the version bump — no separate step, no workflow side effect.
+This is intentionally a release-procedure action, not a GH workflow step or a
+dev-start hook.
+
+The sync merges two sources: the GitHub contributors API (which only reflects
+the default branch, `main`) plus a walk of the `dev` branch's commits — so a
+dev-line contributor is added at the next version bump after their first commit
+lands on `dev`, not held until their work is promoted to `main`. The one thing
+the API doesn't let us avoid is its own staleness (contributor data can lag by
+a few hours); later bumps re-run the sync, so stragglers are picked up on the
+next release anyway.
+
+New contributors are appended with the GitHub profile display name as their
+default `name` (falling back to their username when the profile has no name
+set), `role: "Contributor"` and `tone: "secondary"`. If you want a different
+display name, role, or tone — a founder, a maintainer — edit the entry right
+after the bump: the sync only ever appends, so your edit survives future runs.
+
 ### Promoting dev → main (odd → even transition)
 
 This is the one point where a branch cut is doing real work — `dev` needs to

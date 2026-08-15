@@ -8,7 +8,6 @@ import { SettingsModal, type SettingsTabKey } from '@/components/settings/Settin
 import { ProfileSettingsModal } from '@/components/settings/ProfileSettingsModal';
 import type { SupportMode } from '@/supports/types';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
-import type { SelectionHighlightMode } from '@/components/selection';
 import { Button } from '@/components/atoms';
 import { Activity, AlertTriangle, Anchor, ChevronDown, FolderInput, FolderOpen, Lock, Maximize2, Minimize2, Power, Printer, Save, SaveAll, Square, Upload, X } from 'lucide-react';
 import {
@@ -23,7 +22,6 @@ import {
   type ProfileSettingsTab,
 } from '@/components/settings/profileModalEvents';
 import { OPEN_SETTINGS_MODAL_EVENT } from '@/components/settings/settingsModalEvents';
-import { OPEN_SETTINGS_ABOUT_EVENT } from '@/features/updater/updateNotificationEvents';
 import {
   getActivePrinterProfile,
   getProfileStoreSnapshot,
@@ -59,16 +57,14 @@ interface TopBarProps {
   onMaterialRoughnessChange: (value: number) => void;
   xrayOpacity: number;
   onXrayOpacityChange: (value: number) => void;
-  heatmapBlend: number;
-  onHeatmapBlendChange: (value: number) => void;
-  heatmapContrast: number;
-  onHeatmapContrastChange: (value: number) => void;
+  heatmapMinAngle: number;
+  onHeatmapMinAngleChange: (value: number) => void;
+  heatmapMaxAngle: number;
+  onHeatmapMaxAngleChange: (value: number) => void;
   hoverTintStrength: number;
   onHoverTintStrengthChange: (value: number) => void;
   selectedTintStrength: number;
   onSelectedTintStrengthChange: (value: number) => void;
-  selectionHighlightMode: SelectionHighlightMode;
-  onSelectionHighlightModeChange: (mode: SelectionHighlightMode) => void;
   debugPrimitivesPanelVisible: boolean;
   onDebugPrimitivesPanelVisibleChange: (value: boolean) => void;
   view3dSettings: View3DSettings;
@@ -101,6 +97,9 @@ interface TopBarProps {
   printerReachabilityByDeviceId?: Record<string, boolean | null>;
   onOpenMonitor?: () => void;
   warnBeforeProfileSettingsOpen?: boolean;
+  /** During first-run onboarding, hide the workflow-mode steps and the
+   *  scene/view controls so the app bar reads as minimal chrome. */
+  hideWorkflowControls?: boolean;
 }
 
 export function TopBar({
@@ -126,16 +125,14 @@ export function TopBar({
   onMaterialRoughnessChange,
   xrayOpacity,
   onXrayOpacityChange,
-  heatmapBlend,
-  onHeatmapBlendChange,
-  heatmapContrast,
-  onHeatmapContrastChange,
+  heatmapMinAngle,
+  onHeatmapMinAngleChange,
+  heatmapMaxAngle,
+  onHeatmapMaxAngleChange,
   hoverTintStrength,
   onHoverTintStrengthChange,
   selectedTintStrength,
   onSelectedTintStrengthChange,
-  selectionHighlightMode,
-  onSelectionHighlightModeChange,
   debugPrimitivesPanelVisible,
   onDebugPrimitivesPanelVisibleChange,
   view3dSettings,
@@ -167,6 +164,7 @@ export function TopBar({
   printerReachabilityByDeviceId,
   onOpenMonitor,
   warnBeforeProfileSettingsOpen = false,
+  hideWorkflowControls = false,
 }: TopBarProps) {
   const { _ } = useLingui();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -187,10 +185,6 @@ export function TopBar({
     return window.matchMedia?.('(prefers-color-scheme: light)').matches ?? false;
   });
   const [printerThumbnailFailed, setPrinterThumbnailFailed] = useState(false);
-  const [windowMetrics, setWindowMetrics] = useState(() => ({
-    innerWidth: 0,
-    innerHeight: 0,
-  }));
   const topbarActionsDisabled = isSlicingBusy;
   const [isAppMenuOpen, setIsAppMenuOpen] = useState(false);
   const [appMenuPosition, setAppMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -262,26 +256,6 @@ export function TopBar({
 
     return () => {
       cancelled = true;
-    };
-  }, []);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const updateMetrics = () => {
-      setWindowMetrics({
-        innerWidth: window.innerWidth,
-        innerHeight: window.innerHeight,
-      });
-    };
-
-    updateMetrics();
-    window.addEventListener('resize', updateMetrics);
-    window.addEventListener('orientationchange', updateMetrics);
-
-    return () => {
-      window.removeEventListener('resize', updateMetrics);
-      window.removeEventListener('orientationchange', updateMetrics);
     };
   }, []);
 
@@ -505,21 +479,6 @@ export function TopBar({
     };
   }, []);
 
-  // Listen for event to open Settings → About tab (from update notification).
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const handleOpenSettingsAbout = () => {
-      setSettingsInitialTab('about');
-      setIsSettingsOpen(true);
-    };
-
-    window.addEventListener(OPEN_SETTINGS_ABOUT_EVENT, handleOpenSettingsAbout);
-    return () => {
-      window.removeEventListener(OPEN_SETTINGS_ABOUT_EVENT, handleOpenSettingsAbout);
-    };
-  }, []);
-
   const profileState = React.useSyncExternalStore(subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot);
   const activePrinterProfile = React.useMemo(() => getActivePrinterProfile(profileState), [profileState]);
 
@@ -629,7 +588,10 @@ export function TopBar({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // The steps container is unmounted while the workflow controls are hidden
+    // (onboarding), so re-observe it when they come back to avoid measuring a
+    // detached node (which pinned the icons hidden).
+  }, [hideWorkflowControls]);
 
   const steps: Array<{
     mode: SupportMode;
@@ -674,10 +636,12 @@ export function TopBar({
   ];
 
   return (
-    <div
-      className="ui-topbar fixed top-0 left-0 right-0 z-50 flex items-center relative"
-      onMouseDownCapture={handleTopBarPointerDown}
-    >
+    <>
+      <div className={`ui-topbar-blur ${hideWorkflowControls ? 'ui-topbar-blur-transparent' : ''}`} aria-hidden="true" />
+      <div
+        className={`ui-topbar fixed top-0 left-0 right-0 z-50 flex items-center relative ${hideWorkflowControls ? 'justify-between ui-topbar-transparent' : ''}`}
+        onMouseDownCapture={handleTopBarPointerDown}
+      >
       <div
         className={`flex flex-1 max-w-[430px] items-center gap-2.5 pl-0 pr-4 py-1.5 transition-opacity ${topbarActionsDisabled ? 'opacity-45 pointer-events-none' : ''}`}
         data-no-window-drag="false"
@@ -713,6 +677,8 @@ export function TopBar({
           />
         </button>
 
+        {!hideWorkflowControls && (
+        <>
         <div
           className="h-6 w-px mx-0.5 shrink-0"
           style={{ background: 'color-mix(in srgb, var(--border-subtle), transparent 24%)' }}
@@ -771,6 +737,8 @@ export function TopBar({
           </span>
           <ChevronDown className={`h-3.5 w-3.5 ml-auto shrink-0 transition-transform ${isPrinterQuickMenuOpen ? 'rotate-180' : ''}`} style={{ color: 'color-mix(in srgb, var(--text-muted), white 8%)' }} />
         </button>
+        </>
+        )}
 
         {showMonitorButton && (
           <button
@@ -834,7 +802,7 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <Save className="h-3.5 w-3.5" />
               </span>
-              <span>{_(msg`Save Scene`)}</span>
+              <span>{_(msg`Save scene`)}</span>
             </button>
 
             <button
@@ -854,7 +822,7 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <SaveAll className="h-3.5 w-3.5" />
               </span>
-              <span>{_(msg`Save Scene As…`)}</span>
+              <span>{_(msg`Save scene as…`)}</span>
             </button>
 
             <button
@@ -874,7 +842,7 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <FolderOpen className="h-3.5 w-3.5" />
               </span>
-              <span>{_(msg`Open Scene…`)}</span>
+              <span>{_(msg`Open scene…`)}</span>
             </button>
 
             <button
@@ -896,7 +864,7 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <Upload className="h-3.5 w-3.5" />
               </span>
-              <span>{_(msg`Import Mesh…`)}</span>
+              <span>{_(msg`Import mesh…`)}</span>
             </button>
 
             <button
@@ -918,7 +886,7 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <FolderInput className="h-3.5 w-3.5" />
               </span>
-              <span>{_(msg`Import Scene…`)}</span>
+              <span>{_(msg`Import scene…`)}</span>
             </button>
 
             <button
@@ -934,7 +902,7 @@ export function TopBar({
               <span className="inline-flex h-5 w-5 items-center justify-center rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <Power className="h-3.5 w-3.5" />
               </span>
-              <span>{_(msg`Close Program`)}</span>
+              <span>{_(msg`Close program`)}</span>
             </button>
           </div>
         </div>
@@ -970,7 +938,7 @@ export function TopBar({
           aria-label={_(msg({ message: 'Fleet quick switch', comment: '"Fleet" means the set of physical network printers discovered under the current printer profile, not a literal fleet of vehicles.' }))}
         >
           <div className="mb-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-            {_(msg({ message: 'Fleet Units', comment: 'Section heading above the list of network printers belonging to the current profile. "Units" = individual printers.' }))}
+            {_(msg({ message: 'Fleet units', comment: 'Section heading above the list of network printers belonging to the current profile. "Units" = individual printers.' }))}
           </div>
 
           <div className="max-h-[260px] overflow-y-auto custom-scrollbar space-y-0.5">
@@ -1046,12 +1014,13 @@ export function TopBar({
               role="menuitem"
             >
               <ChevronDown className="h-3.5 w-3.5 rotate-[-90deg]" />
-              {_(msg({ message: 'Show Manager', comment: 'Opens the Printer Manager screen (printer profile settings), reached from this quick-switch popover. "Manager" refers to that screen, kept as a menu-style label so it stays Title Case.' }))}
+              {_(msg({ message: 'Show manager', comment: 'Opens the printer manager screen (printer profile settings), reached from this quick-switch popover. "Manager" refers to that screen.' }))}
             </button>
           </div>
         </div>
       )}
 
+      {!hideWorkflowControls && (
       <div className="flex min-w-0 flex-1 justify-center px-2">
         <div
           className={`relative w-full transition-opacity ${topbarActionsDisabled ? 'opacity-45' : ''}`}
@@ -1076,7 +1045,7 @@ export function TopBar({
                   }}
                   disabled={nativeDisabled}
                   aria-disabled={disabled}
-                  className={`group relative flex cursor-pointer items-center gap-1.5 rounded-lg border px-1.5 py-2 transition-all duration-200 flex-1 min-w-[90px] max-w-[190px] h-[36px] ${
+                  className={`group relative flex cursor-pointer items-center gap-1.5 rounded-lg border px-1.5 py-1.5 transition-all duration-200 flex-1 min-w-[90px] max-w-[190px] h-[32px] ${
                     active
                       ? 'shadow-[0_6px_16px_rgba(0,0,0,0.25)]'
                       : 'hover:-translate-y-[1px] hover:shadow-[0_6px_14px_rgba(0,0,0,0.18)]'
@@ -1139,9 +1108,12 @@ export function TopBar({
           </div>
         </div>
       </div>
+      )}
 
       <div className="flex flex-1 max-w-[430px] items-center justify-end gap-2 pr-2">
         <div className={`flex items-center gap-2 transition-opacity ${topbarActionsDisabled ? 'opacity-45 pointer-events-none' : ''}`}>
+          {!hideWorkflowControls && (
+          <>
           <ViewTypeDropdown
             value={viewTypeOverride}
             onChange={onViewTypeOverrideChange}
@@ -1155,8 +1127,8 @@ export function TopBar({
             className="!p-2"
             onClick={() => onInteriorViewChange(!interiorView)}
             disabled={topbarActionsDisabled || !interiorViewAvailable}
-            title={interiorView ? _(msg({ message: 'Interior View: On', comment: 'Tooltip for a toggle button showing its current state, format "Feature name: state". Interior View is a 3D viewport mode that renders the inside of a hollowed model.' })) : interiorViewAvailable ? _(msg`Interior View: Off`) : _(msg`Interior View: Unavailable (apply hollowing first)`)}
-            aria-label={interiorView ? _(msg`Interior View: On`) : interiorViewAvailable ? _(msg`Interior View: Off`) : _(msg`Interior View: Unavailable`)}
+            title={interiorView ? _(msg({ message: 'Interior view: On', comment: 'Tooltip for a toggle button showing its current state, format "Feature name: state". Interior view is a 3D viewport mode that renders the inside of a hollowed model.' })) : interiorViewAvailable ? _(msg`Interior view: Off`) : _(msg`Interior view: Unavailable (apply hollowing first)`)}
+            aria-label={interiorView ? _(msg`Interior view: On`) : interiorViewAvailable ? _(msg`Interior view: Off`) : _(msg`Interior view: Unavailable`)}
             data-no-window-drag="true"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
@@ -1166,6 +1138,8 @@ export function TopBar({
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 11l-2 2m2-2l2 2m-2-2v3" />
             </svg>
           </Button>
+          </>
+          )}
             <Button
               type="button"
               variant="secondary"
@@ -1312,7 +1286,7 @@ export function TopBar({
                   className="ui-button ui-button-secondary !h-9 w-full px-3 text-xs"
                   onClick={() => setShowProfileChangeWarning(false)}
                 >
-                  {_(msg({ message: 'Keep Current Profiles', comment: 'Cancels the pending profile change and closes this warning dialog, leaving the previous profile selection untouched. Paired with the "Continue" button below.' }))}
+                  {_(msg({ message: 'Keep current profiles', comment: 'Cancels the pending profile change and closes this warning dialog, leaving the previous profile selection untouched. Paired with the "Continue" button below.' }))}
                 </button>
                 <button
                   type="button"
@@ -1327,7 +1301,7 @@ export function TopBar({
                     openProfileSettings(profileModalTab);
                   }}
                 >
-                  {_(msg({ message: 'Continue', comment: 'Confirms proceeding with the profile change despite the re-slice warning above (paired with "Keep Current Profiles", which cancels).' }))}
+                  {_(msg({ message: 'Continue', comment: 'Confirms proceeding with the profile change despite the re-slice warning above (paired with "Keep current profiles", which cancels).' }))}
                 </button>
               </div>
             </div>
@@ -1361,16 +1335,14 @@ export function TopBar({
         onMaterialRoughnessChange={onMaterialRoughnessChange}
         xrayOpacity={xrayOpacity}
         onXrayOpacityChange={onXrayOpacityChange}
-        heatmapBlend={heatmapBlend}
-        onHeatmapBlendChange={onHeatmapBlendChange}
-        heatmapContrast={heatmapContrast}
-        onHeatmapContrastChange={onHeatmapContrastChange}
+        heatmapMinAngle={heatmapMinAngle}
+        onHeatmapMinAngleChange={onHeatmapMinAngleChange}
+        heatmapMaxAngle={heatmapMaxAngle}
+        onHeatmapMaxAngleChange={onHeatmapMaxAngleChange}
         hoverTintStrength={hoverTintStrength}
         onHoverTintStrengthChange={onHoverTintStrengthChange}
         selectedTintStrength={selectedTintStrength}
         onSelectedTintStrengthChange={onSelectedTintStrengthChange}
-        selectionHighlightMode={selectionHighlightMode}
-        onSelectionHighlightModeChange={onSelectionHighlightModeChange}
         debugPrimitivesPanelVisible={debugPrimitivesPanelVisible}
         onDebugPrimitivesPanelVisibleChange={onDebugPrimitivesPanelVisibleChange}
         view3dSettings={view3dSettings}
@@ -1391,5 +1363,6 @@ export function TopBar({
         openMaterialAntiAliasingToken={profileModalOpenMaterialAntiAliasingToken}
       />
     </div>
+    </>
   );
 }
