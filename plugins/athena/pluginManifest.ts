@@ -187,6 +187,23 @@ export const ATHENA_PLUGIN_MANIFEST = {
       platformBadge: (preset as any).platformBadge,
       pixelSize: (preset as any).pixelSize,
       bitDepth: (preset as any).bitDepth,
+      modelVariants: Array.isArray((preset as any).modelVariants)
+        ? ((preset as any).modelVariants as unknown[])
+          .slice(0, 32)
+          .map((id) => String(id).trim())
+          .filter((id) => id.length > 0)
+        : undefined,
+      modelVariantDetectPath: typeof (preset as any).modelVariantDetectPath === 'string'
+        && (preset as any).modelVariantDetectPath.trim().length > 0
+        ? (preset as any).modelVariantDetectPath.trim()
+        : undefined,
+      libraryDisplayName: typeof (preset as any).libraryDisplayName === 'string'
+        && (preset as any).libraryDisplayName.trim().length > 0
+        ? (preset as any).libraryDisplayName.trim()
+        : undefined,
+      isModelVariant: typeof (preset as any).isModelVariant === 'boolean'
+        ? (preset as any).isModelVariant
+        : undefined,
       buildDimensionMode,
       buildVolumeMm: {
         width: resolveBuildDimensionMm(

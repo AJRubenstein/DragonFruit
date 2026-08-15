@@ -259,6 +259,7 @@ import {
   subscribeToWorkspaceCameraSettings,
 } from '@/components/settings/workspaceCameraPreferences';
 import { openProfileSettingsModal, PROFILE_SETTINGS_MODAL_OPEN_CHANGE_EVENT } from '@/components/settings/profileModalEvents';
+import { FirstRunOnboarding } from '@/components/layout/FirstRunOnboarding';
 import {
   getProfileMonitoringUiAdapter,
   getProfileNetworkUiAdapter,
@@ -601,6 +602,10 @@ export default function Home() {
   const activePrinterProfile = React.useMemo(() => getActivePrinterProfile(profileState), [profileState]);
   const activeMaterialProfile = React.useMemo(() => getActiveMaterialProfile(profileState), [profileState]);
   const hasActivePrinterProfile = Boolean(activePrinterProfile);
+  const hasPrinterProfiles = React.useMemo(
+    () => profileState.printerProfiles.length > 0,
+    [profileState.printerProfiles],
+  );
 
   // 2. Transform Management (needs geom for bounds)
   const transformMgr = useTransformManager({ geom: scene.geom });
@@ -976,12 +981,26 @@ export default function Home() {
   const [interiorView, setInteriorView] = React.useState(false);
   const isSupportSpotlightHoldActive = useActionActive('SUPPORTS', 'TEMP_SPOTLIGHT_HOLD');
   const [allowPrepareWithoutPrinter, setAllowPrepareWithoutPrinter] = React.useState(false);
+  // First-run onboarding. `mounted` avoids SSR/client mismatches: the wizard is
+  // only rendered after hydration. `wizardActive` latches the wizard open for
+  // the session once it starts, so it can play its finalization step after a
+  // printer is added instead of unmounting the moment a profile exists. It is
+  // (re)opened whenever there are no printer profiles, and by the debug
+  // Ctrl+Shift+O replay even when a printer already exists.
+  const [onboardingMounted, setOnboardingMounted] = React.useState(false);
+  const [wizardActive, setWizardActive] = React.useState(false);
   const [prepareSmoothingSettingsExpanded, setPrepareSmoothingSettingsExpanded] = React.useState(true);
   const [selectedHolePunchPlacementIds, setSelectedHolePunchPlacementIds] = React.useState<string[]>([]);
   const [hoveredHolePunchPlacementId, setHoveredHolePunchPlacementId] = React.useState<string | null>(null);
   const [holePunchHoverPlacement, setHolePunchHoverPlacement] = React.useState<HolePunchPlacementState | null>(null);
   const [isApplyingHolePunch, setIsApplyingHolePunch] = React.useState(false);
   const [pendingHolePunchAutoApplyModelId, setPendingHolePunchAutoApplyModelId] = React.useState<string | null>(null);
+  // Export-tab "Apply to All": sequential bake across every visible model with
+  // unapplied holes. The ref holds the remaining model ids after the current
+  // one; progress drives the blocking-overlay label. (Orchestration glue — see
+  // docs/page-tsx-refactor-handoff.md §5.)
+  const holePunchApplyAllQueueRef = React.useRef<string[]>([]);
+  const [applyAllHolePunchProgress, setApplyAllHolePunchProgress] = React.useState<{ done: number; total: number } | null>(null);
   const {
     isFinalizing,
     beginFinalizing,
@@ -1429,7 +1448,12 @@ export default function Home() {
   } = importExport;
 
   const [isExporting, setIsExporting] = React.useState(false);
-  const showModifierApplyBlockingOverlay = isApplyingHollowing || isApplyingHolePunch || isApplyingBlockersHollowing || pendingHolePunchAutoApplyModelId !== null || isFinalizing;
+  const showModifierApplyBlockingOverlay = isApplyingHollowing || isApplyingHolePunch || isApplyingBlockersHollowing || pendingHolePunchAutoApplyModelId !== null || applyAllHolePunchProgress !== null || isFinalizing;
+  // Sub-line under the blocking-overlay title. During "Apply to All" it reports
+  // sequence progress; otherwise it's the single-model default.
+  const modifierApplyProcessingLabel = applyAllHolePunchProgress
+    ? `Applying to model ${Math.min(applyAllHolePunchProgress.done + 1, applyAllHolePunchProgress.total)} of ${applyAllHolePunchProgress.total}`
+    : 'Processing 1 model';
   const [modifierApplyOverlayElapsedSec, setModifierApplyOverlayElapsedSec] = React.useState(0);
 
 
@@ -6751,10 +6775,17 @@ export default function Home() {
         slicing.setLayerIndex(clamped);
       }
       preservedNonPrintingLayerIndexRef.current = null;
+    } else if (previousMode === 'export' && currentMode !== 'export') {
+      // Export mode force-selects every visible model (for tinting). Collapse
+      // back to the active model when leaving by any route, so the next tool
+      // doesn't open with all meshes selected.
+      if (scene.activeModelId) {
+        scene.setSelectedModelIds([scene.activeModelId]);
+      }
     }
 
     previousSceneModeRef.current = currentMode;
-  }, [scene.mode, slicing.layerIndex, slicing.numLayers, slicing.setLayerIndex]);
+  }, [scene.mode, scene.activeModelId, scene.setSelectedModelIds, slicing.layerIndex, slicing.numLayers, slicing.setLayerIndex]);
 
   // Invalidate printing artifact if scene changed (detected via history events after the slice marker)
   React.useEffect(() => {
@@ -7035,6 +7066,36 @@ export default function Home() {
 
   const handleUseWithoutPrinter = React.useCallback(() => {
     setAllowPrepareWithoutPrinter(true);
+  }, []);
+
+  // Mark the client as hydrated so the onboarding wizard (and top-bar chrome
+  // gating) only render after mount, avoiding SSR/client mismatches.
+  React.useEffect(() => {
+    setOnboardingMounted(true);
+  }, []);
+
+  // Reopen the wizard whenever there are no printer profiles. Once active it
+  // stays latched until onExit, so the finalization step can play after adding.
+  React.useEffect(() => {
+    if (onboardingMounted && !hasPrinterProfiles) {
+      setWizardActive(true);
+    }
+  }, [onboardingMounted, hasPrinterProfiles]);
+
+  // DEBUG: Ctrl+Shift+O re-runs the onboarding wizard. Lifts the session latch
+  // and drops this session's "use without printer" state so the wizard reappears
+  // even when a printer profile already exists.
+  React.useEffect(() => {
+    let wasActive = false;
+    const unsubscribe = hotkeyStore.subscribe(() => {
+      const isActive = isActionActiveSync('DEBUG', 'RE_RUN_ONBOARDING');
+      if (isActive && !wasActive) {
+        setWizardActive(true);
+        setAllowPrepareWithoutPrinter(false);
+      }
+      wasActive = isActive;
+    });
+    return unsubscribe;
   }, []);
 
   // Temporary: LYS Ghost Viewer State
@@ -7650,18 +7711,39 @@ export default function Home() {
     scene.setMode('prepare');
   }, [scene.mode, scene.models.length, scene.setMode]);
 
+  // Visible models with unapplied hole punches. Hidden models are ignored
+  // entirely — they neither open the export warning nor get baked by
+  // "Apply to All".
+  const getVisibleModelIdsWithUnappliedHoles = React.useCallback((): string[] => {
+    return scene.models
+      .filter((model) => model.visible)
+      .filter((model) => {
+        const mm = scene.getModelMeshModifiers(model.id);
+        const punches = mm?.holePunches;
+        return Boolean(punches && punches.length > 0 && !mm?.holePunchesBakedIntoGeometry);
+      })
+      .map((model) => model.id);
+  }, [scene.models, scene.getModelMeshModifiers]);
+
   React.useEffect(() => {
     if (scene.mode !== 'export') return;
     if (scene.models.length === 0) return;
 
-    // Check for unapplied hole punches and warn the user.
-    const hasUnapplied = scene.models.some((model) => {
-      const mm = scene.getModelMeshModifiers(model.id);
-      const p = mm?.holePunches;
-      return p && p.length > 0 && !mm?.holePunchesBakedIntoGeometry;
-    });
-    if (hasUnapplied && unappliedHolePunchResolveRef.current === null) {
+    // Check for unapplied hole punches and warn the user. Suppressed while an
+    // "Apply to All" sequence is running — each bake mutates scene.models and
+    // re-runs this effect, and models still in the queue would otherwise
+    // re-open the modal on top of the progress overlay.
+    const unbakedHoleModelIds = getVisibleModelIdsWithUnappliedHoles();
+    if (unbakedHoleModelIds.length > 0 && unappliedHolePunchResolveRef.current === null && applyAllHolePunchProgress === null) {
       setShowUnappliedHolePunchModal(true);
+      // Make the first model with un-baked holes active so the modal's actions
+      // (and the user's next glance) land on a model that needs attention,
+      // rather than whichever model happened to be active on entering export.
+      // Only nudge when the active model isn't already one that needs baking, so
+      // this doesn't fight a deliberate selection or loop on re-run.
+      if (scene.activeModelId === null || !unbakedHoleModelIds.includes(scene.activeModelId)) {
+        scene.setActiveModelId(unbakedHoleModelIds[0]);
+      }
     }
 
     // In export mode, select all visible models for tinting
@@ -7680,7 +7762,54 @@ export default function Home() {
 
     // Select all visible models for export workspace tinting
     scene.setSelectedModelIds(visibleIds);
-  }, [scene.mode, scene.activeModelId, scene.models, scene.setActiveModelId]);
+  }, [scene.mode, scene.activeModelId, scene.models, scene.setActiveModelId, getVisibleModelIdsWithUnappliedHoles, applyAllHolePunchProgress]);
+
+  // Export-tab "Apply to All": bake holes into every visible model that has
+  // unapplied holes, one at a time. Each model is made active and handed to the
+  // manager's auto-apply effect via pendingHolePunchAutoApplyModelId; the
+  // advance effect below walks the queue as each bake settles.
+  const handleApplyAllHolePunches = React.useCallback(() => {
+    setShowUnappliedHolePunchModal(false);
+    const queue = getVisibleModelIdsWithUnappliedHoles();
+    if (queue.length === 0) return;
+    holePunchApplyAllQueueRef.current = queue.slice(1);
+    setApplyAllHolePunchProgress({ done: 0, total: queue.length });
+    scene.setActiveModelId(queue[0]);
+    setPendingHolePunchAutoApplyModelId(queue[0]);
+  }, [getVisibleModelIdsWithUnappliedHoles, scene.setActiveModelId]);
+
+  // Guide the user to the per-model hole-punch UI (Prepare → Hollow tool).
+  const handleGoToHollowTool = React.useCallback(() => {
+    setShowUnappliedHolePunchModal(false);
+    const firstWithHoles = getVisibleModelIdsWithUnappliedHoles()[0];
+    if (firstWithHoles) {
+      scene.setActiveModelId(firstWithHoles);
+    }
+    scene.setMode('prepare');
+    setTransformModeWithMirrorFinalize('hollowing');
+  }, [getVisibleModelIdsWithUnappliedHoles, scene.setActiveModelId, scene.setMode, setTransformModeWithMirrorFinalize]);
+
+  // Advance the "Apply to All" queue once the current model's bake settles.
+  // A model is done when it is no longer applying and the auto-apply handoff
+  // has cleared (the manager sets pendingHolePunchAutoApplyModelId back to null
+  // in the same batched tick it flips isApplyingHolePunch, so this never fires
+  // mid-bake).
+  React.useEffect(() => {
+    if (!applyAllHolePunchProgress) return;
+    if (isApplyingHolePunch) return;
+    if (pendingHolePunchAutoApplyModelId !== null) return;
+
+    const nextModelId = holePunchApplyAllQueueRef.current.shift();
+    if (!nextModelId) {
+      setApplyAllHolePunchProgress(null);
+      return;
+    }
+    setApplyAllHolePunchProgress((previous) => (
+      previous ? { ...previous, done: previous.done + 1 } : previous
+    ));
+    scene.setActiveModelId(nextModelId);
+    setPendingHolePunchAutoApplyModelId(nextModelId);
+  }, [applyAllHolePunchProgress, isApplyingHolePunch, pendingHolePunchAutoApplyModelId, scene.setActiveModelId]);
 
   // When entering arrange mode with exactly one visible model, auto-select it.
   React.useEffect(() => {
@@ -9589,6 +9718,7 @@ export default function Home() {
         interiorView={interiorView}
         onInteriorViewChange={setInteriorView}
         interiorViewAvailable={hasCavityGeometry}
+        hideWorkflowControls={onboardingMounted && wizardActive}
         heatmapColors={scene.heatmapColors}
         onHeatmapColorChange={scene.onHeatmapColorChange}
         isSlicingBusy={isSlicingBusy}
@@ -10461,13 +10591,15 @@ export default function Home() {
       />
 
       <ModifierModals
-        handleApplyHolePunch={handleApplyHolePunch}
+        handleApplyAllHolePunches={handleApplyAllHolePunches}
+        handleGoToHollowTool={handleGoToHollowTool}
         handleCancelDestructiveTransform={handleCancelDestructiveTransform}
         handleConfirmBlockerReset={handleConfirmBlockerReset}
         handleConfirmDestructiveTransform={handleConfirmDestructiveTransform}
         handleConfirmModifierReset={handleConfirmModifierReset}
         modifierApplyOverlayContent={modifierApplyOverlayContent}
         modifierApplyOverlayElapsedLabel={modifierApplyOverlayElapsedLabel}
+        modifierApplyProcessingLabel={modifierApplyProcessingLabel}
         pendingBlockerResetState={pendingBlockerResetState}
         pendingDestructiveTransform={pendingDestructiveTransform}
         pendingModifierResetAction={pendingModifierResetAction}
@@ -10613,6 +10745,12 @@ export default function Home() {
               : "Leaf Fanning: Click a support shaft to lock anchor knot"}
           </Toast>
         </ToastViewport>
+      )}
+
+      {onboardingMounted && wizardActive && (
+        <FirstRunOnboarding
+          onExit={() => setWizardActive(false)}
+        />
       )}
 
     </EditorLayout>

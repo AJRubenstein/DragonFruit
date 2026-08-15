@@ -5,7 +5,7 @@
  * Browser-mode calls return null gracefully.
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { relaunch } from '@tauri-apps/plugin-process';
 
 // ---------------------------------------------------------------------------
@@ -112,18 +112,46 @@ export async function fetchUpdateInfo(
 // Download + install (via Rust — uses cached Update)
 // ---------------------------------------------------------------------------
 
+/** Progress payload pushed by the Rust `perform_update` channel. */
+type PerformUpdateProgress = {
+  downloadedBytes: number;
+  totalBytes: number | null;
+  phase: string;
+};
+
 /**
  * Download and install the previously cached update.
  * The Rust side handles signature verification, installer launch, and exit.
+ *
+ * Throws with the real backend message on failure — the caller shows it.
  */
 export async function downloadAndInstall(
-  _onProgress?: (progress: DownloadProgress) => void,
-): Promise<boolean> {
+  onProgress?: (progress: DownloadProgress) => void,
+): Promise<void> {
+  if (!isTauriAvailable()) {
+    throw new Error('Updates are only available in the desktop app.');
+  }
+
+  // `perform_update` takes a Channel. Invoking without it fails argument
+  // deserialization before the command body runs at all, so the channel is
+  // what makes the call reach Rust — not just what reports progress.
+  const onChunk = new Channel<PerformUpdateProgress>();
+  onChunk.onmessage = ({ downloadedBytes, totalBytes, phase }) => {
+    console.log(`[updater] ${phase}: ${downloadedBytes}/${totalBytes ?? '?'} bytes`);
+    onProgress?.({ contentLength: totalBytes ?? 0, downloaded: downloadedBytes });
+  };
+
   try {
-    await invoke('perform_update');
+    await invoke('perform_update', { onChunk });
+  } catch (err) {
+    console.error('[updater] perform_update failed:', err);
+    throw err instanceof Error ? err : new Error(String(err));
+  }
+
+  try {
     await relaunch();
-    return true;
-  } catch {
-    return false;
+  } catch (err) {
+    console.error('[updater] relaunch after install failed:', err);
+    throw err instanceof Error ? err : new Error(String(err));
   }
 }

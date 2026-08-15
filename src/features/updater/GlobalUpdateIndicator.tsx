@@ -18,7 +18,7 @@ type IndicatorState =
   | { status: 'checking' }
   | { status: 'available'; info: UpdateInfo }
   | { status: 'downloading'; pct: number }
-  | { status: 'error' };
+  | { status: 'error'; message: string };
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -115,18 +115,20 @@ export function GlobalUpdateIndicator() {
     if (state.status !== 'available') return;
     setState({ status: 'downloading', pct: 0 });
 
-    const success = await downloadAndInstall((progress: DownloadProgress) => {
-      const pct =
-        progress.contentLength > 0
-          ? Math.round((progress.downloaded / progress.contentLength) * 100)
-          : 0;
-      setState({ status: 'downloading', pct });
-    });
-
-    if (!success) {
-      setState({ status: 'error' });
+    try {
+      await downloadAndInstall((progress: DownloadProgress) => {
+        const pct =
+          progress.contentLength > 0
+            ? Math.round((progress.downloaded / progress.contentLength) * 100)
+            : 0;
+        setState({ status: 'downloading', pct });
+      });
+      // On success the app relaunches.
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Unknown error installing the update.';
+      setState({ status: 'error', message });
     }
-    // On success the app relaunches.
   }, [state.status]);
 
   const handleDismiss = useCallback(() => {
@@ -153,12 +155,16 @@ export function GlobalUpdateIndicator() {
   const info = state.status === 'available' ? state.info : null;
   const isDownloading = state.status === 'downloading';
   const isError = state.status === 'error';
+  const errorMessage = state.status === 'error' ? state.message : null;
   const pct = state.status === 'downloading' ? state.pct : 0;
 
   // Format the release date in the app's own locale, not the browser's — the
   // language switcher must move the whole dialog, dates included.
-  const releaseDate = info?.date
-    ? new Date(info.date).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' })
+  // An unparseable date yields "Invalid Date" from toLocaleDateString, so drop
+  // the subtitle entirely rather than showing that to the user.
+  const parsedDate = info?.date ? new Date(info.date) : null;
+  const releaseDate = parsedDate && !Number.isNaN(parsedDate.getTime())
+    ? parsedDate.toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' })
     : null;
   const subtitle = releaseDate ? _(msg`Released ${releaseDate}`) : undefined;
   const version = info?.version ?? '?';
@@ -239,7 +245,10 @@ export function GlobalUpdateIndicator() {
             color: 'var(--danger)',
           }}
         >
-          <Trans>The update download or install failed. Please check your connection and try again.</Trans>
+          <Trans>The update download or install failed.</Trans>
+          {errorMessage && (
+            <div className="mt-1 font-mono text-[10px] opacity-80 break-all">{errorMessage}</div>
+          )}
         </div>
       )}
 

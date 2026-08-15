@@ -126,7 +126,11 @@ pub async fn check_updates(
             let version = update.version.clone();
             let current_version = update.current_version.clone();
             let body = update.body.clone();
-            let date = update.date.map(|d| d.to_string());
+            // RFC 3339, not Display: `time` renders as "2026-07-06 4:55:17.703
+            // +00:00:00", which `new Date()` on the frontend cannot parse.
+            let date = update
+                .date
+                .and_then(|d| d.format(&time::format_description::well_known::Rfc3339).ok());
             let download_url = Some(update.download_url.to_string());
 
             info!("[updater] Update available: current={current_version} → new={version} url={}", download_url.as_deref().unwrap_or("?"));
@@ -170,8 +174,14 @@ pub async fn perform_update(
     };
 
     let Some(update) = update else {
+        warn!("[updater] perform_update called with no cached update");
         return Err("No cached update. Call check_updates first.".into());
     };
+
+    info!(
+        "[updater] perform_update starting: version={} url={}",
+        update.version, update.download_url
+    );
 
     // Emit a Started progress event.
     let _ = on_chunk.send(PerformUpdateProgress {
@@ -180,18 +190,25 @@ pub async fn perform_update(
         phase: "downloading".into(),
     });
 
+    // The plugin reports the length of each chunk, not the running total.
+    let downloaded = std::sync::atomic::AtomicU64::new(0);
+
     // The plugin's Update::download_and_install handles the whole flow:
     // download → verify signature → launch installer → exit app.
     update
         .download_and_install(
             |chunk_len, total_len| {
+                let total = downloaded
+                    .fetch_add(chunk_len as u64, std::sync::atomic::Ordering::Relaxed)
+                    + chunk_len as u64;
                 let _ = on_chunk.send(PerformUpdateProgress {
-                    downloaded_bytes: chunk_len as u64,
+                    downloaded_bytes: total,
                     total_bytes: total_len,
                     phase: "downloading".into(),
                 });
             },
             || {
+                info!("[updater] download complete — installing");
                 let _ = on_chunk.send(PerformUpdateProgress {
                     downloaded_bytes: 0,
                     total_bytes: None,
@@ -200,8 +217,12 @@ pub async fn perform_update(
             },
         )
         .await
-        .map_err(|e| format!("Update failed: {e}"))?;
+        .map_err(|e| {
+            warn!("[updater] download_and_install failed: {e}");
+            format!("Update failed: {e}")
+        })?;
 
+    info!("[updater] update installed successfully");
     Ok("Update installed successfully".into())
 }
 

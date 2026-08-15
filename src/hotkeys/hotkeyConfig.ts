@@ -212,6 +212,11 @@ export const DEFAULT_KEYBINDINGS: HotkeyConfig = {
             key: 'k',
             modifier: 'ctrl+shift',
             description: 'Toggle cross section caps debug panel'
+        },
+        RE_RUN_ONBOARDING: {
+            key: 'o',
+            modifier: 'ctrl+shift',
+            description: 'Re-run the first-run onboarding wizard'
         }
     },
     MESH: {
