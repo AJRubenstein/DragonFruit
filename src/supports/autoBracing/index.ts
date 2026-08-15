@@ -1,7 +1,6 @@
 export {
     AUTO_BRACING_CONSTRAINTS,
     AUTO_BRACING_HARD_RULES,
-    AUTO_BRACING_PATTERN_OPTIONS,
     createDefaultAutoBracingSettings,
     normalizeAutoBracingSettings,
     applyAutoBracingSettingsPatch,

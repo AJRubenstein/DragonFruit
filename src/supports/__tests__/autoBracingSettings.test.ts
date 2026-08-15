@@ -32,7 +32,7 @@ test('normalizeAutoBracingSettings clamps numeric values and restores invalid pa
         seedJitterMm: 999,
         maxBraceLengthMm: -1,
         initialPattern: 'invalid-pattern' as any,
-        repeatingPattern: 'crossDiagonal',
+        repeatingPattern: 'crossDiagonal' as any,
         debugSectionColorsEnabled: 'yes' as any,
         debugVoronoiSeedsEnabled: 'yes' as any,
     });
@@ -44,7 +44,7 @@ test('normalizeAutoBracingSettings clamps numeric values and restores invalid pa
     assert.equal(normalized.seedJitterMm, AUTO_BRACING_CONSTRAINTS.seedJitterMm.max);
     assert.equal(normalized.maxBraceLengthMm, AUTO_BRACING_CONSTRAINTS.maxBraceLengthMm.min);
     assert.equal(normalized.initialPattern, 'singleDiagonal');
-    assert.equal(normalized.repeatingPattern, 'crossDiagonal');
+    assert.equal(normalized.repeatingPattern, 'singleDiagonal'); // legacy 'crossDiagonal' collapses
     assert.equal(normalized.debugSectionColorsEnabled, false);
     assert.equal(normalized.debugVoronoiSeedsEnabled, false);
 });
@@ -53,13 +53,13 @@ test('applyAutoBracingSettingsPatch keeps untouched fields and normalizes patche
     const base = createDefaultAutoBracingSettings();
     const patched = applyAutoBracingSettingsPatch(base, {
         seedSpacingMm: 8.6,
-        initialPattern: 'crossDiagonal',
+        initialPattern: 'crossDiagonal' as any,
         debugSectionColorsEnabled: true,
         debugVoronoiSeedsEnabled: true,
     });
 
     assert.equal(patched.seedSpacingMm, 8.5);
-    assert.equal(patched.initialPattern, 'crossDiagonal');
+    assert.equal(patched.initialPattern, 'singleDiagonal'); // legacy 'crossDiagonal' collapses
     assert.equal(patched.debugSectionColorsEnabled, true);
     assert.equal(patched.debugVoronoiSeedsEnabled, true);
     assert.equal(patched.repeatingPattern, base.repeatingPattern);

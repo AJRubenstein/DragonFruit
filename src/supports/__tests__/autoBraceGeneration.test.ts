@@ -226,7 +226,10 @@ test('buildAutoBracedSnapshot respects maxBraceLengthMm during grouping', () => 
     snapshot.trunks[trunk2.id] = trunk2;
     snapshot.trunks[trunk3.id] = trunk3;
 
-    const settings = { ...createDefaultAutoBracingSettings(), maxBraceLengthMm: 6 };
+    // seedSpacingMm is in mm (no grid scaling). 25mm puts Voronoi seed targets
+    // exactly on trunk-1 (x=0) and trunk-3 (x=25), so trunk-1/trunk-2 (5mm gap)
+    // share a cluster and trunk-3 is isolated by the 6mm max distance.
+    const settings = { ...createDefaultAutoBracingSettings(), maxBraceLengthMm: 6, seedSpacingMm: 25, seedJitterMm: 0 };
     const result = buildAutoBracedSnapshot(snapshot, settings);
 
     // trunk-1 and trunk-2 should have a brace. trunk-3 should have NONE.

@@ -34,18 +34,28 @@ const RAY_ORIGIN_EPS_MM = 0.02;
  * model → returns false (blocked).
  *
  * Uses the BVH-accelerated raycaster path (three-mesh-bvh) via the cached Mesh
- * in meshGeometryStore.
+ * in meshGeometryStore; meshes without a BVH fall back to the standard raycast.
  */
+
+const warnedNoMeshModelIds = new Set<string>();
+
 export function linePassesMeshClearance(posA: Vec3, posB: Vec3, modelId: string, diameterMm: number): boolean {
     const radius = diameterMm / 2;
     const meshEntries = getAllMeshEntriesForAutoBrace();
 
     const entry = meshEntries.get(modelId);
-    if (!entry) return true; // no mesh registered → can't check → allow
+    if (!entry) {
+        // No mesh registered → can't check → allow, but surface the silent pass once per model.
+        if (!warnedNoMeshModelIds.has(modelId)) {
+            warnedNoMeshModelIds.add(modelId);
+            console.warn(
+                `[AutoBrace] No mesh registered for model '${modelId}'; skipping mesh clearance check for its braces.`,
+            );
+        }
+        return true;
+    }
 
     const mesh = entry.mesh;
-    const bvh = (entry.geometry as any).boundsTree;
-    if (!bvh) return true; // no BVH → can't check → allow
 
     // Build direction and length
     const startVec = new THREE.Vector3(posA.x, posA.y, posA.z);

@@ -463,11 +463,9 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     }
 
     const trunkById = new Map(trunkSamples.map((trunk) => [trunk.supportId, trunk]));
-    const seedUnitMm = activeGridSettings.spacingMm > 0
-        ? activeGridSettings.spacingMm
-        : 1;
-    const effectiveSeedSpacingMm = settings.seedSpacingMm * seedUnitMm;
-    const effectiveSeedJitterMm = settings.seedJitterMm * seedUnitMm;
+    // seedSpacingMm / seedJitterMm are already mm — do not scale by grid spacing.
+    const effectiveSeedSpacingMm = settings.seedSpacingMm;
+    const effectiveSeedJitterMm = settings.seedJitterMm;
 
     const trunkGroupIds = partitionSupportsWithVoronoi(
         trunkSamples.map((trunk) => {
@@ -841,7 +839,6 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
 
         ladder.forEach((anchorZ, tierIndex) => {
             const isInitial = tierIndex === 0;
-            const pattern = isInitial ? settings.initialPattern : settings.repeatingPattern;
             const place = (lowS: SupportSample, highS: SupportSample, section: 'initial' | 'repeating') => {
                 const distanceOverride = pairDistanceOverrides.get(pairKey(lowS.supportId, highS.supportId));
                 const ignoreMaxDistance = Boolean(distanceOverride?.ignoreMaxDistance);
@@ -900,9 +897,9 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
             };
 
             if (isInitial) {
-                applyInitialPattern(pairs, pattern, place);
+                applyInitialPattern(pairs, place);
             } else {
-                applyRepeatingPattern(pairs, pattern, place);
+                applyRepeatingPattern(pairs, place);
             }
         });
     }
