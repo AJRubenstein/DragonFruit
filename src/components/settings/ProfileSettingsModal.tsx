@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { AlertTriangle, Box, Check, ChevronLeft, ChevronRight, Download, Edit3, FlaskConical, ImagePlus, LayoutGrid, Loader2, Lock, Plus, Printer, RefreshCw, Search, Trash2, Upload, Wifi, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, Box, Check, ChevronLeft, ChevronRight, Copy, Download, Edit3, FlaskConical, ImagePlus, LayoutGrid, Loader2, Lock, Plus, Printer, RefreshCw, Search, Trash2, Unlock, Upload, Wifi, WifiOff, X } from 'lucide-react';
 import FleetManagement from '@/components/settings/FleetManagement';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
@@ -34,6 +34,7 @@ import {
   movePrinterProfile,
   setActiveMaterialProfile,
   setActivePrinterProfile,
+  setMaterialProfileLocked,
   selectPrinterNetworkDevice,
   subscribeToProfileStore,
   upsertPrinterNetworkDevice,
@@ -335,6 +336,7 @@ export function ProfileSettingsModal({
   const [showOfficialLockDialog, setShowOfficialLockDialog] = React.useState(false);
   const [officialLockedProfileId, setOfficialLockedProfileId] = React.useState<string | null>(null);
   const [showOfficialMaterialLockDialog, setShowOfficialMaterialLockDialog] = React.useState(false);
+  const [materialLockDialogIsOfficial, setMaterialLockDialogIsOfficial] = React.useState(true);
   const [isNetworkSettingsOpen, setIsNetworkSettingsOpen] = React.useState(false);
   const [isAddingNetworkPrinter, setIsAddingNetworkPrinter] = React.useState(false);
   const [networkDiscoveryEnabled, setNetworkDiscoveryEnabled] = React.useState(true);
@@ -876,6 +878,8 @@ export function ProfileSettingsModal({
     if (!selectedMaterialId) return filteredMaterialProfiles[0];
     return filteredMaterialProfiles.find((material) => material.id === selectedMaterialId) ?? filteredMaterialProfiles[0];
   }, [filteredMaterialProfiles, selectedMaterialId]);
+  const isSelectedMaterialOfficial = typeof selectedMaterial?.officialTemplateId === 'string'
+    && selectedMaterial.officialTemplateId.trim().length > 0;
 
   const selectedPrinterUpdate = React.useMemo(() => {
     if (!selectedPrinter) return null;
@@ -1598,7 +1602,8 @@ export function ProfileSettingsModal({
     setSelectedResinFamily(activeMaterial?.resinFamily ?? null);
     if (shouldOpenMaterialAntiAliasing && activeMaterial) {
       const isOfficial = typeof activeMaterial.officialTemplateId === 'string' && activeMaterial.officialTemplateId.trim().length > 0;
-      if (isOfficial) {
+      if (isOfficial || activeMaterial.locked === true) {
+        setMaterialLockDialogIsOfficial(isOfficial);
         setShowOfficialMaterialLockDialog(true);
       } else {
         materialEditorInitialTabOverrideRef.current = 'anti-aliasing';
@@ -3036,7 +3041,8 @@ export function ProfileSettingsModal({
   const openSelectedMaterialEditor = React.useCallback(() => {
     if (!selectedMaterial) return;
     const isOfficial = typeof selectedMaterial.officialTemplateId === 'string' && selectedMaterial.officialTemplateId.trim().length > 0;
-    if (isOfficial) {
+    if (isOfficial || selectedMaterial.locked === true) {
+      setMaterialLockDialogIsOfficial(isOfficial);
       setShowOfficialMaterialLockDialog(true);
       return;
     }
@@ -3107,7 +3113,7 @@ export function ProfileSettingsModal({
     setIsEditingPrinter(true);
   }, [officialLockedProfileId, handlePickPrinter]);
 
-  const handleDuplicateMaterialAsCustom = React.useCallback(() => {
+  const duplicateSelectedMaterial = React.useCallback((openEditor: boolean) => {
     if (!selectedMaterial || !selectedPrinter) return;
     const baseName = selectedMaterial.name.includes('Custom') ? selectedMaterial.name : `${selectedMaterial.name} Custom`;
     const newId = addMaterialProfile(selectedPrinter.id, {
@@ -3130,12 +3136,31 @@ export function ProfileSettingsModal({
       localSettingsByOutput: selectedMaterial.localSettingsByOutput,
       officialTemplateId: undefined,
       officialTemplateVersion: undefined,
+      locked: false,
     });
     setSelectedMaterialId(newId);
     setActiveMaterialProfile(newId);
     setShowOfficialMaterialLockDialog(false);
-    setIsMaterialEditorOpen(true);
+    if (openEditor) {
+      materialEditorInitialTabOverrideRef.current = null;
+      setIsMaterialEditorOpen(true);
+    }
   }, [selectedMaterial, selectedPrinter]);
+
+  const handleDuplicateMaterialAsCustom = React.useCallback(() => {
+    duplicateSelectedMaterial(true);
+  }, [duplicateSelectedMaterial]);
+
+  const handleDuplicateSelectedMaterial = React.useCallback(() => {
+    duplicateSelectedMaterial(true);
+  }, [duplicateSelectedMaterial]);
+
+  const handleToggleMaterialLock = React.useCallback(() => {
+    if (!selectedMaterial) return;
+    const isOfficial = typeof selectedMaterial.officialTemplateId === 'string' && selectedMaterial.officialTemplateId.trim().length > 0;
+    if (isOfficial) return;
+    setMaterialProfileLocked(selectedMaterial.id, selectedMaterial.locked !== true);
+  }, [selectedMaterial]);
 
   const triggerImageUpload = React.useCallback((printerId: string) => {
     setUploadTargetPrinterId(printerId);
@@ -4326,6 +4351,7 @@ export function ProfileSettingsModal({
                       {filteredMaterialProfiles.map((material) => {
                         const active = selectedMaterial?.id === material.id;
                         const isOfficial = typeof material.officialTemplateId === 'string' && material.officialTemplateId.trim().length > 0;
+                        const isLocked = isOfficial || material.locked === true;
                         return (
                           <button
                             key={material.id}
@@ -4337,7 +4363,8 @@ export function ProfileSettingsModal({
                             onDoubleClick={() => {
                               setSelectedMaterialId(material.id);
                               setActiveMaterialProfile(material.id);
-                              if (isOfficial) {
+                              if (isLocked) {
+                                setMaterialLockDialogIsOfficial(isOfficial);
                                 setShowOfficialMaterialLockDialog(true);
                               } else {
                                 setIsMaterialEditorOpen(true);
@@ -4358,7 +4385,7 @@ export function ProfileSettingsModal({
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className="inline-flex min-w-0 items-center gap-1.5 truncate font-semibold">
-                                {isOfficial && <Lock className="w-3.5 h-3.5 shrink-0" />}
+                                {isLocked && <Lock className="w-3.5 h-3.5 shrink-0" />}
                                 <span className="truncate">{material.name}</span>
                               </span>
                               <span className="tabular-nums">{Math.round(material.layerHeightMm * 1000)} μm</span>
@@ -4401,6 +4428,17 @@ export function ProfileSettingsModal({
                   </button>
                   <button
                     type="button"
+                    onClick={handleDuplicateSelectedMaterial}
+                    disabled={!selectedMaterial}
+                    className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
+                    style={{ color: 'var(--text-strong)' }}
+                    title="Duplicate this material profile as a new editable copy"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Duplicate
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleImportSelectedMaterialBundle}
                     disabled={!selectedPrinter}
                     className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md disabled:opacity-45"
@@ -4419,6 +4457,19 @@ export function ProfileSettingsModal({
                     <Download className="w-3.5 h-3.5" />
                     Export
                   </button>
+                  {selectedMaterial && !isSelectedMaterialOfficial && (
+                    <button
+                      type="button"
+                      onClick={handleToggleMaterialLock}
+                      className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-sm inline-flex items-center justify-center gap-1 rounded-md"
+                      style={{ color: 'var(--text-strong)' }}
+                      title={selectedMaterial.locked === true ? 'Unlock this material profile' : 'Lock this material profile to prevent accidental edits'}
+                    >
+                      {selectedMaterial.locked === true
+                        ? <><Unlock className="w-3.5 h-3.5" /> Unlock</>
+                        : <><Lock className="w-3.5 h-3.5" /> Lock</>}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={requestDeleteSelectedMaterial}
@@ -5718,13 +5769,15 @@ export function ProfileSettingsModal({
 
         <StructuredDialogModal
           open={showOfficialMaterialLockDialog && Boolean(selectedMaterial)}
-          ariaLabel="Official material profile locked"
-          title="Official Profile Locked"
-          subtitle="Official material profiles can't be edited directly."
+          ariaLabel="Material profile locked"
+          title={materialLockDialogIsOfficial ? 'Official Profile Locked' : 'Profile Locked'}
+          subtitle={materialLockDialogIsOfficial
+            ? "Official material profiles can't be edited directly."
+            : 'This material profile is locked to prevent accidental edits.'}
           icon={<Lock className="h-4 w-4" />}
           iconTone="warning"
           zIndexClassName="z-[75]"
-          closeAriaLabel="Close official material profile lock dialog"
+          closeAriaLabel="Close material profile lock dialog"
           onClose={() => setShowOfficialMaterialLockDialog(false)}
           actions={(
             <>
@@ -5735,26 +5788,48 @@ export function ProfileSettingsModal({
               >
                 Cancel
               </button>
+              {!materialLockDialogIsOfficial && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleToggleMaterialLock();
+                    setShowOfficialMaterialLockDialog(false);
+                  }}
+                  className="ui-button ui-button-secondary !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
+                  style={accentSecondaryActionStyle92}
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  Unlock
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleDuplicateMaterialAsCustom}
                 className="ui-button ui-button-secondary !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
                 style={accentSecondaryActionStyle92}
               >
-                <Lock className="w-3.5 h-3.5" />
+                <Copy className="w-3.5 h-3.5" />
                 Make Custom Copy
               </button>
             </>
           )}
         >
-          <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
-            Official material profiles cannot be edited directly.
-            <br />
-            Choose <strong>Make Custom Copy</strong> to duplicate and adjust exposure settings safely.
-            <br />
-            <br />
-            <strong style={{ color: 'var(--danger)' }}>Warning:</strong> Custom exposure settings may affect print quality and could damage the machine or cause personal injury.
-          </p>
+          {materialLockDialogIsOfficial ? (
+            <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
+              Official material profiles cannot be edited directly.
+              <br />
+              Choose <strong>Make Custom Copy</strong> to duplicate and adjust exposure settings safely.
+              <br />
+              <br />
+              <strong style={{ color: 'var(--danger)' }}>Warning:</strong> Custom exposure settings may affect print quality and could damage the machine or cause personal injury.
+            </p>
+          ) : (
+            <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
+              This material profile is locked, so its settings are read-only.
+              <br />
+              Choose <strong>Unlock</strong> to edit it directly, or <strong>Make Custom Copy</strong> to duplicate it as a new editable profile.
+            </p>
+          )}
         </StructuredDialogModal>
 
         <StructuredDialogModal
