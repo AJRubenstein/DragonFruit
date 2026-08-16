@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal } from './types';
-import type { SupportState } from '../types';
+import type { SupportState, SupportOrigin } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
@@ -408,6 +408,42 @@ function placeOneCandidate(
     // independent supports, not a bush of branches off one shaft).
     let mergeHostFound = false;
     let fanRefusal: FanLeafRefusal | undefined;
+    if (!supportSettings.grid?.enabled) {
+        // Grid/poisson points fan into ISLAND trunks only (hosts not placed
+        // from gridPoint candidates). Only ORGANIC Poisson + coverage-fill
+        // points — flat-lattice grid infill and the anchor band stay
+        // standalone (peel distribution). A pillar standing next to an island
+        // trunk attaches as a leaf instead of duplicating it; grid points
+        // never attach to other grid trunks.
+        if (candidate.gridPoint && candidate.source === 'overhang' && gridTrunkIds
+            && !candidate.anchorPoint && !candidate.id.startsWith('grid-')) {
+            const auto = supportSettings.autoSupport ?? {};
+            const islandPool = collectFanShaftPoints(draft)
+                .filter((sp) => !gridTrunkIds.has(sp.trunkId));
+            if (islandPool.length > 0) {
+                const fan = fanLeafToTrunk(
+                    tipPos,
+                    candidate.modelId,
+                    islandPool,
+                    new Set(),
+                    `auto-fan-${candidate.id}`,
+                    auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM,
+                    GRID_HOST_FAN_RADIUS_MM,
+                    auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
+                    auto.maxAttachmentsPerTrunk ?? 12,
+                    draft,
+                    mesh,
+                    'overhang',
+                );
+                if (fan.ok) {
+                    console.log(LOG_PREFIX,
+                        `Leaf (grid→island) ${candidate.id} → trunk ${fan.trunkId} ` +
+                        `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
+                    return { kind: 'leaf', preset, draft: fan.draft };
+                }
+            }
+        }
+    }
     if (!supportSettings.grid?.enabled && !candidate.gridPoint) {
         // Overhang-derived candidates (sub-threshold, non-anchor regions)
         // attach via the regular leaf-fanning path — a standalone straight
@@ -427,6 +463,7 @@ function placeOneCandidate(
                 auto.maxAttachmentsPerTrunk ?? 12,
                 draft,
                 mesh,
+                'overhang',
             );
             if (fan.ok) {
                 console.log(LOG_PREFIX,
@@ -436,8 +473,14 @@ function placeOneCandidate(
             }
             fanRefusal = fan.reason;
         }
-
-        const host = findMergeHost(tipPos, candidate.modelId, draft);
+        let host = findMergeHost(tipPos, candidate.modelId, draft);
+        // Island candidates never merge INTO grid trunks: at a junction the
+        // island trunk should HOST the grid (the grid pillars convert to fan
+        // leaves on it in the consolidation pass), not the reverse — a pillar
+        // with a leaf still reads as a pillar.
+        if (host && gridTrunkIds?.has(host.trunkId)) {
+            host = null;
+        }
         if (host) {
             mergeHostFound = true;
             // Find the best attachment point on the host trunk's shaft,
@@ -532,6 +575,7 @@ function placeOneCandidate(
                                 // fall through to standalone trunk
                             } else {
                                 d = draftAddKnot(d, parentKnot);
+                                leaf.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
                                 d = draftAddLeaf(d, leaf);
                                 const la = (Math.atan2(hDist, vDist) * 180) / Math.PI;
                                 console.log(LOG_PREFIX,
@@ -551,7 +595,7 @@ function placeOneCandidate(
                 const mergeAngleDeg = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                 if (mergeAngleDeg > 50) {
                     console.log(LOG_PREFIX,
-                        `Merge skip ${candidate.id}: angle too steep (${mergeAngleDeg.toFixed(0)}° > 50°) span=${tipSpanMm.toFixed(1)}mm`);
+                        `Merge skip ${candidate.id}: angle too shallow (${mergeAngleDeg.toFixed(0)}° from vertical > 50°) span=${tipSpanMm.toFixed(1)}mm`);
                 } else try {
                     const { branch, supportData: sd } = buildBranchData({
                         tipPos, tipNormal, modelId: candidate.modelId, parentKnot, mesh,
@@ -567,6 +611,7 @@ function placeOneCandidate(
                             // fall through to standalone trunk
                         } else {
                             d = draftAddKnot(d, parentKnot);
+                            branch.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
                             d = draftAddBranch(d, branch);
                             const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                             console.log(LOG_PREFIX,
@@ -646,6 +691,9 @@ function placeOneCandidate(
     switch (decision.kind) {
         case 'place_trunk': {
             const trunkId = decision.trunkBuild.trunk.id;
+            decision.trunkBuild.trunk.origin = candidate.gridPoint
+                ? (candidate.anchorPoint ? 'anchor' : 'overhang')
+                : (candidate.source === 'overhang' ? 'standalone' : 'island');
             d = draftAddRoot(d, decision.trunkBuild.root);
             d = draftAddTrunk(d, decision.trunkBuild.trunk);
             console.log(LOG_PREFIX,
@@ -662,6 +710,9 @@ function placeOneCandidate(
         }
 
         case 'place_anchor':
+            decision.anchor.origin = candidate.gridPoint
+                ? (candidate.anchorPoint ? 'anchor' : 'overhang')
+                : (candidate.source === 'overhang' ? 'standalone' : 'island');
             d = draftAddAnchor(d, decision.anchor);
             console.log(LOG_PREFIX, `Anchor ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
             return { kind: 'anchor', preset, draft: d };
@@ -967,6 +1018,7 @@ export function fanLeafToTrunk(
     maxAttachments: number,
     draft: SupportState,
     mesh: THREE.Mesh | undefined,
+    origin?: SupportOrigin,
 ): FanLeafResult {
     // Single pass over the shaft pool: the nearest sample that is ELIGIBLE
     // (grid trunks host only up close) and geometrically VALID (not same-Z,
@@ -987,12 +1039,15 @@ export function fanLeafToTrunk(
         const dist2 = ddx * ddx + ddy * ddy + ddz * ddz;
         if (dist2 > limit * limit) continue;
 
-        const absVDist = Math.abs(ddz);
-        if (absVDist < 0.01) {
+        // The leaf must RISE: the host sample must sit below the target tip.
+        // absVDist here was the bug — it let leaves attach from a sample ABOVE
+        // the tip, hanging downward (upside-down leaves that read as shallow).
+        const vDist = target.z - sp.pos.z;
+        if (vDist < 0.01) {
             if (refusal === 'noHost') refusal = 'sameZ';
             continue;
         }
-        const angleDeg = (Math.atan2(Math.sqrt(ddx * ddx + ddy * ddy), absVDist) * 180) / Math.PI;
+        const angleDeg = (Math.atan2(Math.sqrt(ddx * ddx + ddy * ddy), vDist) * 180) / Math.PI;
         if (angleDeg > maxAngleDeg) {
             if (refusal === 'noHost') refusal = 'angle';
             continue;
@@ -1047,6 +1102,7 @@ export function fanLeafToTrunk(
     }
 
     const next = draftAddKnot(draft, parentKnot);
+    if (origin) leaf.origin = origin;
     return {
         ok: true,
         draft: draftAddLeaf(next, leaf),
@@ -1147,9 +1203,14 @@ export function computeAutoSupportPlan(
         let generated: CandidatePoint[] = [];
         try {
             for (const island of eligible) {
+                const flatness = distributionMode === 'auto' ? computeRegionFlatnessDeg(island) : 0;
                 const organic = distributionMode === 'auto'
-                    && computeRegionFlatnessDeg(island) > autoSettings.poissonFlatnessThresholdDeg;
+                    && flatness > autoSettings.poissonFlatnessThresholdDeg;
                 const usePoisson = distributionMode === 'poisson' || organic;
+                console.log(LOG_PREFIX,
+                    `Dispatch ${island.id}: flatness=${flatness.toFixed(1)}° ` +
+                    `(threshold ${autoSettings.poissonFlatnessThresholdDeg}°) → ${usePoisson ? 'poisson' : 'grid'} ` +
+                    `${anchorIds.has(island.id) ? 'anchor ' : ''}area=${(island.areaMm2 ?? 0).toFixed(0)}mm²`);
                 if (usePoisson) {
                     generated.push(...generatePoissonCandidates(
                         [island], autoSettings, anchorBands.scaleById, anchorIds,
@@ -1262,6 +1323,9 @@ export function computeAutoSupportPlan(
         fanRefusals: {},
         mergeRefusals: {},
     };
+    // Trunk id → origin kind, so the consolidation pass can adjust the tallies
+    // when it converts a standalone grid pillar into a fan leaf.
+    const trunkOriginById = new Map<string, 'poissonDisk' | 'gridInfill' | 'coverageFill'>();
 
     // Analytics accumulators
     const presets = { detail: 0, structure: 0, anchor: 0 };
@@ -1333,10 +1397,13 @@ export function computeAutoSupportPlan(
                 if (candidate.gridPoint) {
                     if (candidate.id.startsWith('perim-') || candidate.id.startsWith('poisson-')) {
                         diagnostics.trunksByKind.poissonDisk++;
+                        trunkOriginById.set(result.entityId, 'poissonDisk');
                     } else if (candidate.id.startsWith('fill-')) {
                         diagnostics.trunksByKind.coverageFill++;
+                        trunkOriginById.set(result.entityId, 'coverageFill');
                     } else {
                         diagnostics.trunksByKind.gridInfill++;
+                        trunkOriginById.set(result.entityId, 'gridInfill');
                     }
                 } else {
                     diagnostics.trunksByKind.standalone++;
@@ -1360,6 +1427,74 @@ export function computeAutoSupportPlan(
 
     for (const candidate of candidates) {
         placeOne(candidate);
+    }
+
+    // ── Overhang→tree consolidation (order-independent) ──────────────
+    // A BARE overhang-origin trunk (organic Poisson, coverage fill,
+    // sub-threshold single) whose tip is within the consolidation fan radius
+    // of a valid host is converted into a fan leaf — whether the host placed
+    // before or after it, the junction reads as a tree. The radius is wider
+    // than the regular fanning radius (8 mm) so overhang trunks 5–8 mm from
+    // an island trunk still merge; the ANGLE stays at the regular fan limit —
+    // a near-horizontal leaf is not a support. Same-height pillars (vDist ≈ 0)
+    // cannot fan at all and stay as their own trunks.
+    const CONSOLIDATION_FAN_RADIUS_MM = 8;
+    const conFanRadiusMm = Math.max(autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM, CONSOLIDATION_FAN_RADIUS_MM);
+    const conFanMaxAngleDeg = autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
+    let consolidated = 0;
+    for (let pass = 0; pass < 3; pass++) {
+        let convertedThisPass = 0;
+        for (const tid of Object.keys(draft.trunks)) {
+            // Convertible: organic Poisson disks, coverage fill, and
+            // sub-threshold overhang singles — the overhang forest should
+            // read as trees. Flat-lattice grid infill and the anchor band
+            // stay independent (peel distribution), islands keep their trunks.
+            const originKind = trunkOriginById.get(tid);
+            const isConvertible = originKind === 'poissonDisk' || originKind === 'coverageFill'
+                || draft.trunks[tid].origin === 'standalone';
+            if (!isConvertible) continue;
+            if (countAttachmentsOnTrunk(tid, draft) > 0) continue;
+            const trunk = draft.trunks[tid];
+            const tip = trunk.contactCone?.pos;
+            if (!tip) continue;
+            const pruned: SupportState = {
+                ...draft,
+                trunks: { ...draft.trunks },
+                roots: { ...draft.roots },
+            };
+            delete pruned.trunks[tid];
+            delete pruned.roots[trunk.rootId];
+            const pool = collectFanShaftPoints(pruned);
+            if (pool.length === 0) break;
+            const fan = fanLeafToTrunk(
+                tip,
+                modelId,
+                pool,
+                new Set(),
+                `auto-con-${tid}-p${pass}`,
+                conFanRadiusMm,
+                GRID_HOST_FAN_RADIUS_MM,
+                conFanMaxAngleDeg,
+                autoSettings.maxAttachmentsPerTrunk,
+                pruned,
+                resolvedMesh ?? undefined,
+                'overhang',
+            );
+            if (!fan.ok) continue;
+            draft = fan.draft;
+            gridTrunkIds.delete(tid);
+            const origin = originKind ?? 'standalone';
+            diagnostics.trunksByKind[origin]--;
+            placedTrunks--;
+            placedLeaves++;
+            consolidated++;
+            convertedThisPass++;
+        }
+        if (convertedThisPass === 0) break;
+    }
+    if (consolidated > 0) {
+        console.log(LOG_PREFIX,
+            `Overhang consolidation: ${consolidated} standalone trunks merged into fan trees`);
     }
 
     const fmtRefusals = (r: Record<string, number | undefined>): string => {
@@ -1560,6 +1695,7 @@ export function computeAutoSupportPlan(
                 autoSettings.maxAttachmentsPerTrunk,
                 draft,
                 resolvedMesh ?? undefined,
+                island.source === 'overhang' ? 'overhang' : 'island',
             );
             if (!fan.ok) {
                 if (fan.reason === 'noHost') skippedDist++;

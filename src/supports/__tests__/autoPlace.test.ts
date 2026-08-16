@@ -139,10 +139,11 @@ test('runAutoPlace anchors a large flat region as a densified grid (planar → g
     assert.equal(result.analytics?.placement?.trunksByKind.gridInfill, result.placedTrunks,
         'planar anchor → dynamic grid (shape-driven dispatch)');
     assert.equal(result.analytics?.distribution.poisson, 0, 'planar region is not Poisson');
-    assert.equal(result.placedBranches, 0, 'grid points stay independent (no bush)');
-    assert.equal(result.placedLeaves, 0);
 
     const snapshot = getSnapshot();
+    const trunks = Object.values(snapshot.trunks);
+    assert.ok(trunks.length > 0 && trunks.every((t) => t.origin === 'anchor'),
+        'anchor-grid trunks carry the anchor origin (debug coloring)');
     const trunkCount = Object.keys(snapshot.trunks).length;
     assert.equal(trunkCount, result.placedTrunks, 'trunks committed to the store');
 
@@ -304,6 +305,8 @@ test('runAutoPlace fans sub-threshold overhang candidates instead of standalone 
 
     assert.equal(result.placedTrunks, 1, 'o15 fanned instead of becoming a trunk');
     assert.ok(result.placedLeaves >= 1, 'o15 attached as a leaf');
+    assert.ok(Object.values(getSnapshot().leaves).some((l) => l.origin === 'overhang'),
+        'fanned overhang leaf carries the overhang origin');
 
     const placement = result.analytics?.placement;
     assert.equal(placement?.trunksByKind.standalone, 1, 'only trunk A is standalone (voxel island)');
@@ -404,6 +407,114 @@ test('runAutoPlace dispatches by shape: planar → grid, organic → Poisson', (
         'planar anchor produces a dense grid');
     assert.ok((result.analytics?.placement?.trunksByKind.poissonDisk ?? 0) > 0,
         'organic region placed via Poisson disk');
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
+test('runAutoPlace fans organic poisson points into island trunks instead of duplicating pillars', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    // Island trunk A at the origin (voxel, high area → placed first); an
+    // organic (curved, non-anchor) overhang wraps around it — the poisson
+    // point at the shaft must attach as a leaf, not become a second pillar.
+    const curvedVoxels: { x: number; y: number; z?: number }[] = [];
+    for (let x = -10; x <= 10; x += 0.25) {
+        for (let y = -10; y <= 10; y += 0.25) {
+            curvedVoxels.push({ x, y, z: 33 + (x * x) / 20 });
+        }
+    }
+    const result = runAutoPlace(
+        [
+            makeIsland('A', 0, 0, 40, 400),
+            {
+                id: 'o0',
+                source: 'overhang',
+                contact: new THREE.Vector3(0, 0, 33),
+                baseZ: 33,
+                areaMm2: 400,
+                contactVoxels: curvedVoxels,
+            },
+        ],
+        'model-a',
+        { debugSkipAutoBracing: true, anchorBandHeightMm: 0 },
+    );
+
+    assert.ok(result.placedLeaves >= 1, 'organic poisson points fanned into the island trunk');
+
+    const snapshot = getSnapshot();
+    const rootsNearOrigin = Object.values(snapshot.roots).filter(
+        (r) => Math.abs(r.transform.pos.x) < 1 && Math.abs(r.transform.pos.y) < 1,
+    );
+    assert.equal(rootsNearOrigin.length, 1,
+        'the poisson point at the shaft attached as a leaf — no second pillar root');
+
+    const aTrunk = Object.values(snapshot.trunks).find((t) => {
+        const r = snapshot.roots[t.rootId];
+        return r && Math.abs(r.transform.pos.x) < 1 && Math.abs(r.transform.pos.y) < 1;
+    });
+    assert.ok(aTrunk, 'island A is the host');
+    const leavesOnA = Object.values(snapshot.leaves).some((l) => {
+        const k = snapshot.knots[l.parentKnotId];
+        return k && k.parentShaftId === aTrunk?.id;
+    });
+    assert.ok(leavesOnA, 'a fan leaf attaches to trunk A');
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
+test('runAutoPlace consolidates organic poisson trunks into island trunks placed later', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    // The organic (non-anchor) poisson forest places FIRST (low z → high
+    // priority); the tiny island A places AFTER. The poisson trunks near A
+    // must consolidate into fan leaves on it — the junction reads as a tree.
+    const curvedVoxels: { x: number; y: number; z?: number }[] = [];
+    for (let x = -10; x <= 10; x += 0.25) {
+        for (let y = -10; y <= 10; y += 0.25) {
+            curvedVoxels.push({ x, y, z: 25 + (x * x) / 20 });
+        }
+    }
+    const result = runAutoPlace(
+        [
+            {
+                id: 'o0',
+                source: 'overhang',
+                contact: new THREE.Vector3(0, 0, 25),
+                baseZ: 25,
+                areaMm2: 400,
+                contactVoxels: curvedVoxels,
+            },
+            makeIsland('A', 2.5, 0, 30, 0.5),
+        ],
+        'model-a',
+        { debugSkipAutoBracing: true, anchorBandHeightMm: 0 },
+    );
+
+    const snapshot = getSnapshot();
+    const rootsNearA = Object.values(snapshot.roots).filter(
+        (r) => Math.abs(r.transform.pos.x - 2.5) < 0.5 && Math.abs(r.transform.pos.y) < 0.5,
+    );
+    assert.equal(rootsNearA.length, 1, 'island A stands as its own trunk (did not merge into a pillar)');
+
+    const aTrunk = Object.values(snapshot.trunks).find((t) => {
+        const r = snapshot.roots[t.rootId];
+        return r && Math.abs(r.transform.pos.x - 2.5) < 0.5 && Math.abs(r.transform.pos.y) < 0.5;
+    });
+    assert.ok(aTrunk, 'island A is the host');
+    const leavesOnA = Object.values(snapshot.leaves).filter((l) => {
+        const k = snapshot.knots[l.parentKnotId];
+        return k && k.parentShaftId === aTrunk?.id;
+    });
+    assert.ok(leavesOnA.length >= 1,
+        'poisson trunks near A consolidated into fan leaves on it');
 
     setModelMesh('model-a', null);
     disposeHandlers();

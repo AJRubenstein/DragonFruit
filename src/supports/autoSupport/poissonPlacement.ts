@@ -287,6 +287,7 @@ export function generatePoissonCandidates(
                 zHeight: s.z,
                 priority: 0,
                 gridPoint: true,
+                anchorPoint: isAnchor,
             });
         }
     }

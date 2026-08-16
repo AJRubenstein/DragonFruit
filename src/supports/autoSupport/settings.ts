@@ -56,6 +56,9 @@ export interface AutoSupportSettings {
     leafFanRadiusMm: number;
     /** Leaf fanning: max angle from vertical for a fan leaf (deg). */
     leafFanMaxAngleDeg: number;
+    /** Debug: color supports by placement origin (anchor/overhang/island/
+     *  standalone) in the scene instead of the model color. */
+    debugSupportOriginColors: boolean;
     debugSkipAutoBracing: boolean;
 }
 
@@ -157,6 +160,7 @@ export function createDefaultAutoSupportSettings(): AutoSupportSettings {
         coverageTargetPercent: AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent.defaultValue,
         leafFanRadiusMm: AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm.defaultValue,
         leafFanMaxAngleDeg: AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg.defaultValue,
+        debugSupportOriginColors: false,
         debugSkipAutoBracing: false,
     };
 }
@@ -188,6 +192,7 @@ export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings
         coverageTargetPercent: clampNumeric(source.coverageTargetPercent, AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent),
         leafFanRadiusMm: clampNumeric(source.leafFanRadiusMm, AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm),
         leafFanMaxAngleDeg: clampNumeric(source.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg),
+        debugSupportOriginColors: normalizeBoolean(source.debugSupportOriginColors, defaults.debugSupportOriginColors),
         debugSkipAutoBracing: normalizeBoolean(source.debugSkipAutoBracing, defaults.debugSkipAutoBracing),
     };
 }

@@ -105,23 +105,14 @@ const KNOBS: KnobDef[] = [
 ];
 
 const PRESETS = {
-  light: {
-    minIslandAreaMm2: 0.05, tipInfluenceRadiusMm: 2.0,
-    maxAttachmentsPerTrunk: 8,
-    // Density follows the built-in presets (detail = light / structure =
-    // medium / anchor = heavy) so the quick-select and the app presets agree.
-    areaPerSupportMm2: DETAIL_PRESET.settings.autoSupport.areaPerSupportMm2,
-  },
-  medium: {
-    minIslandAreaMm2: 0.02, tipInfluenceRadiusMm: 0.5,
-    maxAttachmentsPerTrunk: 12,
-    areaPerSupportMm2: STRUCTURE_PRESET.settings.autoSupport.areaPerSupportMm2,
-  },
-  heavy: {
-    minIslandAreaMm2: 0.0, tipInfluenceRadiusMm: 0.1,
-    maxAttachmentsPerTrunk: 20,
-    areaPerSupportMm2: ANCHOR_PRESET.settings.autoSupport.areaPerSupportMm2,
-  },
+    // Quick-select applies the FULL built-in preset autoSupport block (not a
+    // 4-key patch): selecting a preset deterministically reproduces the
+    // built-in density AND resets any stale keys from a previously loaded or
+    // persisted profile. Otherwise "medium" shown on load can differ from the
+    // medium reached by round-tripping light → medium.
+    light: { ...DETAIL_PRESET.settings.autoSupport },
+    medium: { ...STRUCTURE_PRESET.settings.autoSupport },
+    heavy: { ...ANCHOR_PRESET.settings.autoSupport },
 } satisfies Record<string, Partial<AutoSupportSettings>>;
 
 function SliderRow({ knob, draft, setDraft }: { knob: KnobDef; draft: AutoSupportSettings; setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>> }) {
@@ -147,7 +138,22 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
   const [showReplaceDialog, setShowReplaceDialog] = React.useState(false);
   const [showSizingDebug, setShowSizingDebug] = React.useState(false);
   const [sizingDebug, setSizingDebugState] = React.useState<SizingDebugInfo | null>(null);
-  const [activePreset, setActivePreset] = React.useState<string | null>('medium');
+  // Derive the quick-select label from the ACTUAL settings on mount — the
+  // loaded/persisted profile may not match the built-in medium preset, and a
+  // hardcoded 'medium' would lie about what the current settings are.
+  const [activePreset, setActivePreset] = React.useState<string | null>(() => {
+    const current = getSettings().autoSupport;
+    const matchesPreset = (block: Partial<AutoSupportSettings>): boolean => {
+      for (const key of Object.keys(block) as Array<keyof AutoSupportSettings>) {
+        if (current[key] !== block[key]) return false;
+      }
+      return true;
+    };
+    if (matchesPreset(DETAIL_PRESET.settings.autoSupport)) return 'light';
+    if (matchesPreset(STRUCTURE_PRESET.settings.autoSupport)) return 'medium';
+    if (matchesPreset(ANCHOR_PRESET.settings.autoSupport)) return 'heavy';
+    return 'medium';
+  });
 
   const settings = getSettings().autoSupport;
   const [draft, setDraft] = React.useState(settings);
@@ -519,6 +525,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
               {([
                 { key: 'enabled' as const, label: 'Enabled', title: 'Generate supports automatically on scan' },
                 { key: 'prioritizeIntersection' as const, label: 'Prioritize Dual', title: 'Islands found by BOTH the slice and mesh scans are placed first (they are the most certain)' },
+                { key: 'debugSupportOriginColors' as const, label: 'Origin Colors', title: 'Debug: color supports by origin — anchor (red), overhang (orange), island (blue), standalone (purple)' },
                 { key: 'debugSkipAutoBracing' as const, label: 'No Brace', title: 'Debug: skip automatic bracing for this run' },
               ]).map((t) => (
                 <button key={t.key} type="button" title={t.title}

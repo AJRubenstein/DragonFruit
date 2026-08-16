@@ -282,6 +282,7 @@ export function generateGridCandidates(
                 zHeight: z,
                 priority: 0,
                 gridPoint: true,
+                anchorPoint: anchorScale < 1,
             });
         };
 

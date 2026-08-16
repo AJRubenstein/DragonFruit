@@ -22,6 +22,8 @@ export interface CandidatePoint {
     /** Density-grid point: must become its own standalone trunk (never merged
      *  into a nearby host) so flat regions get independent supports. */
     gridPoint?: boolean;
+    /** Region is in an anchor band (debug origin coloring + diagnostics). */
+    anchorPoint?: boolean;
 }
 
 /** Why a candidate was rejected. */

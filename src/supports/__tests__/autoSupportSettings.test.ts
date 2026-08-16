@@ -106,6 +106,7 @@ test('defaults include distribution mode and perimeter factor', () => {
     assert.equal(defaults.distributionMode, 'auto');
     assert.equal(defaults.anchorPerimeterFactor, AUTO_SUPPORT_CONSTRAINTS.anchorPerimeterFactor.defaultValue);
     assert.equal(defaults.poissonFlatnessThresholdDeg, AUTO_SUPPORT_CONSTRAINTS.poissonFlatnessThresholdDeg.defaultValue);
+    assert.equal(defaults.debugSupportOriginColors, false);
 });
 
 test('normalize whitelists distribution mode and clamps the perimeter factor', () => {
