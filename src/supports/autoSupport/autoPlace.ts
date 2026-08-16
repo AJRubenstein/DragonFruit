@@ -206,7 +206,7 @@ function filterAlreadySupported(candidates: CandidatePoint[], draft: SupportStat
 // Nearby-trunk merge (works even without grid mode)
 // ---------------------------------------------------------------------------
 
-interface MergeHost {
+export interface MergeHost {
     trunkId: string;
     tipPos: { x: number; y: number; z: number };
 }
@@ -313,8 +313,10 @@ function isTrunkAtAttachmentCapacity(trunkId: string, limit: number, draft: Supp
 // Nearby-trunk merge
 // ---------------------------------------------------------------------------
 
-/** Find the closest existing trunk (shaft or tip) within merge radius. */
-function findMergeHost(
+/** Find the closest existing trunk (shaft or tip) within merge radius.
+ *  Anchor-origin trunks never host merges: anchors are load-bearing
+ *  standalone pillars, leaves are not. */
+export function findMergeHost(
     tipPos: { x: number; y: number; z: number },
     modelId: string,
     draft: SupportState,
@@ -326,6 +328,7 @@ function findMergeHost(
 
     for (const [id, trunk] of Object.entries(snapshot.trunks)) {
         if (trunk.modelId !== modelId) continue;
+        if (trunk.origin === 'anchor') continue;
 
         // Check trunk tip (contact cone).
         const tp = trunk.contactCone?.pos;
@@ -987,10 +990,13 @@ const SHAFT_SAMPLES_PER_SEGMENT = 10;
 /** Max leaf-fanning convergence passes. */
 const MAX_FANNING_PASSES = 5;
 
-/** Collect trunk shaft sample points from a snapshot — the fanning host pool. */
+/** Collect trunk shaft sample points from a snapshot — the fanning host pool.
+ *  Anchor-origin trunks are excluded: anchors are load-bearing standalone
+ *  pillars and never host fan leaves. */
 export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
     const shaftPoints: FanShaftPoint[] = [];
     for (const [tid, trunk] of Object.entries(draft.trunks)) {
+        if (trunk.origin === 'anchor') continue;
         for (const seg of trunk.segments) {
             const start = seg.bottomJoint?.pos ?? { x: 0, y: 0, z: 1.5 };
             const end = seg.topJoint?.pos;
@@ -1468,11 +1474,13 @@ export function computeAutoSupportPlan(
         for (const tid of Object.keys(draft.trunks)) {
             // Convertible: organic Poisson disks, coverage fill, and
             // sub-threshold overhang singles — the overhang forest should
-            // read as trees. Flat-lattice grid infill and the anchor band
-            // stay independent (peel distribution), islands keep their trunks.
+            // read as trees. Flat-lattice grid infill stays independent
+            // (peel distribution); anchors are load-bearing pillars and
+            // are NEVER converted into fan leaves; islands keep their trunks.
             const originKind = trunkOriginById.get(tid);
-            const isConvertible = originKind === 'poissonDisk' || originKind === 'coverageFill'
-                || draft.trunks[tid].origin === 'standalone';
+            const isConvertible = draft.trunks[tid].origin !== 'anchor'
+                && (originKind === 'poissonDisk' || originKind === 'coverageFill'
+                    || draft.trunks[tid].origin === 'standalone');
             if (!isConvertible) continue;
             if (countAttachmentsOnTrunk(tid, draft) > 0) continue;
             const trunk = draft.trunks[tid];
@@ -1518,104 +1526,11 @@ export function computeAutoSupportPlan(
             `Overhang consolidation: ${consolidated} standalone trunks merged into fan trees`);
     }
 
-    // ── Anchor tree merging ────────────────────────────────────────
-    // Professional reference (official models): the underside is anchored
-    // with ~4 mm root spacing and dense branching (118 tips / 28 roots),
-    // NOT a 1:1 pillar forest. Merge bare anchor trunks into branching
-    // trees — the nearest anchor host within the root spacing hosts the
-    // member's tip as a BRANCH rising from its shaft. Branches must be
-    // STEEP (≤ 30° from vertical = ≥ 60° above horizontal): the app's
-    // stability checker flags horizontal angles as unable to hold
-    // overhangs, and a 50°-shallow branch triggered exactly that.
-    // Capacity-bound; grid infill and islands untouched.
-    const ANCHOR_TREE_ROOT_SPACING_MM = 4.0;
-    const ANCHOR_TREE_MAX_ANGLE_DEG = 30;
-    let anchorMerged = 0;
-    for (let pass = 0; pass < 3; pass++) {
-        let mergedThisPass = 0;
-        for (const tid of Object.keys(draft.trunks)) {
-            if (draft.trunks[tid].origin !== 'anchor') continue;
-            if (countAttachmentsOnTrunk(tid, draft) > 0) continue;
-            const trunk = draft.trunks[tid];
-            const tip = trunk.contactCone?.pos;
-            if (!tip) continue;
-            const pruned: SupportState = {
-                ...draft,
-                trunks: { ...draft.trunks },
-                roots: { ...draft.roots },
-            };
-            delete pruned.trunks[tid];
-            delete pruned.roots[trunk.rootId];
-            const maxAttachments = autoSettings.maxAttachmentsPerTrunk;
-            let bestHost: string | null = null;
-            let bestSample: FanShaftPoint | null = null;
-            let bestScore = Infinity;
-            for (const [hid, host] of Object.entries(pruned.trunks)) {
-                if (host.origin !== 'anchor') continue;
-                if (maxAttachments > 0 && countAttachmentsOnTrunk(hid, pruned) >= maxAttachments) continue;
-                for (const seg of host.segments) {
-                    const start = seg.bottomJoint?.pos ?? { x: 0, y: 0, z: 1.5 };
-                    const end = seg.topJoint?.pos;
-                    if (!end) continue;
-                    const diameter = seg.diameter ?? 1.0;
-                    for (let i = 0; i <= 10; i++) {
-                        const t = i / 10;
-                        const sx = start.x + (end.x - start.x) * t;
-                        const sy = start.y + (end.y - start.y) * t;
-                        const sz = start.z + (end.z - start.z) * t;
-                        const vDist = tip.z - sz;
-                        if (vDist < 1.5) continue;
-                        const hDist = Math.hypot(tip.x - sx, tip.y - sy);
-                        if (hDist > ANCHOR_TREE_ROOT_SPACING_MM) continue;
-                        const ang = (Math.atan2(hDist, vDist) * 180) / Math.PI;
-                        if (ang > ANCHOR_TREE_MAX_ANGLE_DEG) continue;
-                        const dist = Math.hypot(hDist, vDist);
-                        if (dist < bestScore) {
-                            bestScore = dist;
-                            bestHost = hid;
-                            bestSample = { trunkId: hid, pos: { x: sx, y: sy, z: sz }, diameter };
-                        }
-                    }
-                }
-            }
-            if (!bestHost || !bestSample) continue;
-            const parentKnot = {
-                id: `auto-anchor-tree-${tid}-p${pass}`,
-                parentShaftId: bestHost,
-                pos: bestSample.pos,
-                diameter: bestSample.diameter + 0.1,
-            };
-            try {
-                const resolved = resolveSurfaceNormal(tip, resolvedMesh ?? undefined);
-                const { branch, supportData: sd } = buildBranchData({
-                    tipPos: resolved.point,
-                    tipNormal: resolved.normal,
-                    modelId,
-                    parentKnot,
-                    mesh: resolvedMesh ?? undefined,
-                });
-                if (sd.error) continue;
-                if (leafPathCrossesSupports(parentKnot.pos, branch.contactCone?.pos ?? tip, 0.25, pruned, bestHost)) continue;
-                draft = draftAddKnot(pruned, parentKnot);
-                branch.origin = 'anchor';
-                draft = draftAddBranch(draft, branch);
-                gridTrunkIds.delete(tid);
-                const kind = trunkOriginById.get(tid);
-                if (kind) diagnostics.trunksByKind[kind]--;
-                placedTrunks--;
-                placedBranches++;
-                anchorMerged++;
-                mergedThisPass++;
-            } catch {
-                continue;
-            }
-        }
-        if (mergedThisPass === 0) break;
-    }
-    if (anchorMerged > 0) {
-        console.log(LOG_PREFIX,
-            `Anchor tree merging: ${anchorMerged} pillar trunks merged into branching anchors (~4 mm roots)`);
-    }
+    // ── Anchor pass: none ──────────────────────────────────────────
+    // Anchors are load-bearing pillars — always standalone. They are never
+    // merged into branching trees, and the fan/merge host searches exclude
+    // anchor-origin trunks (leaves are not load-bearing). A flat region's
+    // grid infill therefore stays a 1:1 pillar forest.
 
     const fmtRefusals = (r: Record<string, number | undefined>): string => {
         const entries = Object.entries(r).filter(([, v]) => v !== undefined) as Array<[string, number]>;

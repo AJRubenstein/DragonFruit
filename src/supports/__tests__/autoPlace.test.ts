@@ -131,13 +131,13 @@ test('runAutoPlace anchors a large flat region as a densified grid (planar → g
     const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true });
 
     // Anchor density owns the flat end (no flat-boost/suction stacking):
-    // spacing = √8 × 0.7 ≈ 1.98 mm → ~121 tips, then the anchor-tree pass
-    // merges them into branching trunks at ~4 mm roots (pro reference:
-    // 118 tips / 28 roots) — the flat underside becomes trees, not pillars.
-    assert.ok(result.placedTrunks >= 40 && result.placedTrunks <= 80,
-        `placed ${result.placedTrunks} anchor trunks, expected ~58 after tree merge (was 121 pillars)`);
-    assert.ok(result.placedBranches >= 40,
-        `anchor tips preserved via branches (${result.placedBranches} branches)`);
+    // spacing = √8 × 0.7 ≈ 1.98 mm → ~121 tips. Anchors are load-bearing
+    // pillars and ALWAYS stay standalone — no anchor-tree merging, so the
+    // flat underside keeps its 1:1 pillar forest (no branches).
+    assert.ok(result.placedTrunks >= 100 && result.placedTrunks <= 150,
+        `placed ${result.placedTrunks} anchor trunks, expected ~121 standalone pillars (no tree merge)`);
+    assert.equal(result.placedBranches, 0,
+        'anchor trunks never merge into trees — standalone pillars only');
     assert.equal(result.placedLeaves, 0);
     assert.equal(result.analytics?.distribution.poisson, 0, 'planar region is not Poisson');
 
@@ -145,9 +145,8 @@ test('runAutoPlace anchors a large flat region as a densified grid (planar → g
     const trunks = Object.values(snapshot.trunks);
     assert.ok(trunks.length > 0 && trunks.every((t) => t.origin === 'anchor'),
         'anchor trunks carry the anchor origin (debug coloring)');
-    const branches = Object.values(snapshot.branches);
-    assert.ok(branches.length > 0 && branches.every((b) => b.origin === 'anchor'),
-        'anchor branches carry the anchor origin');
+    assert.equal(Object.keys(snapshot.branches).length, 0,
+        'no branches — the flat grid is a pure pillar forest');
     const trunkCount = Object.keys(snapshot.trunks).length;
     assert.equal(trunkCount, result.placedTrunks, 'trunks committed to the store');
 
@@ -567,6 +566,58 @@ test('runAutoPlace merges with a steep knot, not at the host junction', () => {
     // Higher-Z island B places first (priority order) and has no host;
     // A then merges into B — the merge itself never refuses.
     assert.deepEqual(placement?.mergeRefusals, { noHost: 1 }, 'only the first-placed island lacks a host');
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
+test('runAutoPlace keeps low undersides a standalone anchor pillar forest', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    // Two low overhang patches (one flat grid, one small) — both land in
+    // the anchor band (lowest cluster). Anchors are load-bearing pillars:
+    // no fanning, no merging, no anchor-tree merging — every candidate
+    // stands alone with no leaves or branches anywhere.
+    const contactVoxels: { x: number; y: number }[] = [];
+    for (let x = -4; x <= 4; x += 0.25) {
+        for (let y = -4; y <= 4; y += 0.25) {
+            contactVoxels.push({ x, y });
+        }
+    }
+    const result = runAutoPlace(
+        [
+            {
+                id: 'o0', source: 'overhang',
+                contact: new THREE.Vector3(0, 0, 6.5), baseZ: 6.5,
+                areaMm2: 64, contactVoxels,
+            },
+            {
+                id: 'o15', source: 'overhang',
+                contact: new THREE.Vector3(3, 0, 8), baseZ: 8,
+                areaMm2: 16,
+                contactVoxels: [
+                    { x: 2.75, y: -0.25 }, { x: 3, y: -0.25 }, { x: 3.25, y: -0.25 },
+                    { x: 2.75, y: 0 }, { x: 3, y: 0 }, { x: 3.25, y: 0 },
+                    { x: 2.75, y: 0.25 }, { x: 3, y: 0.25 }, { x: 3.25, y: 0.25 },
+                ],
+            },
+        ],
+        'model-a',
+        { debugSkipAutoBracing: true },
+    );
+
+    assert.equal(result.placedLeaves, 0, 'nothing fanned — anchors never host leaves');
+    assert.equal(result.placedBranches, 0, 'no anchor-tree merging — anchors standalone');
+
+    const snapshot = getSnapshot();
+    const trunks = Object.values(snapshot.trunks);
+    assert.ok(trunks.length >= 8, `both patches placed (${trunks.length} trunks)`);
+    assert.ok(trunks.every((t) => t.origin === 'anchor'),
+        'every low-face trunk is an anchor pillar');
+    assert.equal(Object.keys(snapshot.knots).length, 0, 'no merge knots — all standalone');
 
     setModelMesh('model-a', null);
     disposeHandlers();

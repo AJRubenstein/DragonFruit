@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { pickFanHost, leafPathCrossesSupports, collectFanShaftPoints, fanLeafToTrunk, type FanShaftPoint } from '../autoSupport/autoPlace';
+import { pickFanHost, leafPathCrossesSupports, collectFanShaftPoints, fanLeafToTrunk, findMergeHost, type FanShaftPoint } from '../autoSupport/autoPlace';
 import type { SupportState } from '../types';
 
 function emptySnapshot(): SupportState {
@@ -135,6 +135,50 @@ test('collectFanShaftPoints samples every segment endpoint', () => {
     const zs = points.map((p) => Math.round(p.pos.z * 10) / 10);
     assert.deepEqual(zs, [0, 1.9, 3.8, 5.7, 7.6, 9.5, 11.4, 13.3, 15.2, 17.1, 19]);
     assert.ok(points.every((p) => p.trunkId === 't1'));
+});
+
+test('collectFanShaftPoints excludes anchor-origin trunks', () => {
+    // Anchors are load-bearing standalone pillars — never fan hosts.
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    draft.trunks['anchor'] = {
+        id: 'anchor',
+        modelId: 'm',
+        rootId: 'r-anchor',
+        origin: 'anchor',
+        segments: [{
+            id: 'seg-anchor',
+            diameter: 1,
+            bottomJoint: { id: 'a-b', pos: { x: 10, y: 0, z: 0 }, diameter: 1.2 },
+            topJoint: { id: 'a-t', pos: { x: 10, y: 0, z: 19 }, diameter: 1.2 },
+        }],
+    };
+    const points = collectFanShaftPoints(draft);
+    assert.ok(points.length > 0, 'regular trunks still provide shaft points');
+    assert.ok(points.every((p) => p.trunkId === 'host'),
+        'anchor-origin trunks are not in the fan host pool');
+});
+
+test('findMergeHost never returns an anchor-origin trunk', () => {
+    // A tip 0.5 mm from the anchor shaft's bottom joint would merge without
+    // the exclusion (joint within the 4 mm radius) — with it, no host.
+    const draft = trunkWithShaft('island', 0, 0, 0, 19);
+    draft.trunks['anchor'] = {
+        id: 'anchor',
+        modelId: 'm',
+        rootId: 'r-anchor',
+        origin: 'anchor',
+        segments: [{
+            id: 'seg-anchor',
+            diameter: 1,
+            bottomJoint: { id: 'a-b', pos: { x: 10, y: 0, z: 0 }, diameter: 1.2 },
+            topJoint: { id: 'a-t', pos: { x: 10, y: 0, z: 19 }, diameter: 1.2 },
+        }],
+    };
+    assert.equal(findMergeHost({ x: 10.5, y: 0, z: 3 }, 'm', draft), null,
+        'anchor trunks are not merge hosts');
+    const islandHost = findMergeHost({ x: 0.5, y: 0, z: 3 }, 'm', draft);
+    assert.ok(islandHost && islandHost.trunkId === 'island',
+        'a regular island trunk in range still hosts merges');
 });
 
 test('fanLeafToTrunk attaches a leaf at reach beyond the merge radius', () => {
