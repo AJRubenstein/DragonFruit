@@ -42,6 +42,37 @@ function seedTrunk(id: string, segmentId: string, jointPos: { x: number; y: numb
     setSnapshot(snapshot);
 }
 
+test('updateTrunk re-anchors t-less knots when the shaft moves', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+
+    seedTrunk('t1', 's1', { x: 0, y: 0, z: 10 });
+    // An auto merge/fan knot: no `t`, mid-shaft.
+    const snap = getSnapshot();
+    snap.knots['k1'] = { id: 'k1', parentShaftId: 's1', pos: { x: 0, y: 0, z: 5 }, diameter: 1.125 };
+    setSnapshot(snap);
+
+    // Move the top joint — the shaft now runs (0,0,0) → (5,0,12).
+    const before = structuredClone(getSnapshot().trunks.t1);
+    const moved: Trunk = {
+        ...before,
+        segments: before.segments.map((s) => ({
+            ...s,
+            topJoint: s.topJoint ? { ...s.topJoint, pos: { x: 5, y: 0, z: 12 } } : s.topJoint,
+        })),
+    };
+    updateTrunk(moved);
+
+    const knot = getSnapshot().knots['k1'];
+    assert.ok(knot, 'knot survives');
+    // The t-less knot re-anchors onto the moved shaft (nearest-point
+    // projection) instead of staying behind — the leaf follows the trunk.
+    const d = Math.hypot(knot.pos.x, knot.pos.y, knot.pos.z - 5);
+    assert.ok(d > 0.5, `knot followed the moved shaft (now (${knot.pos.x.toFixed(2)},${knot.pos.z.toFixed(2)}))`);
+    assert.ok(Math.abs(knot.diameter! - 1.125) < 1e-9, 'knot keeps the joint-size diameter');
+});
+
 test('undo restores a moved trunk joint (SUPPORT_UPDATE_TRUNK)', () => {
     resetStore();
     resetKickstandStore();

@@ -2988,12 +2988,21 @@ export function updateTrunk(trunk: Trunk, options?: { skipDependentGeometry?: bo
 
             const seg = nextTrunk.segments[segIndex];
             const endpoints = getTrunkSegmentEndpoints(nextTrunk, seg, segIndex, root);
-            const nextDiameter = seg.diameter + 0.1;
+            // +0.125 (not the legacy +0.1): renders at the trunk-joint
+            // diameter; the legacy value rendered at the shaft — invisible.
+            const nextDiameter = seg.diameter + 0.125;
 
             let nextPos = knot.pos;
             let posChanged = false;
-            if (endpoints && knot.t !== undefined) {
-                const computed = calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, seg, knot.t);
+            if (endpoints) {
+                // Auto merge/fan knots carry no `t` — project their position
+                // onto the (possibly moved) segment so the leaf follows the
+                // shaft on a joint drag. With a stored `t` the position is
+                // recomputed from it directly.
+                const tForKnot = knot.t !== undefined
+                    ? knot.t
+                    : computeClosestTOnSegmentFromPoint(knot.pos, endpoints.start, endpoints.end, seg);
+                const computed = calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, seg, tForKnot);
                 if (computed.x !== knot.pos.x || computed.y !== knot.pos.y || computed.z !== knot.pos.z) {
                     nextPos = computed;
                     posChanged = true;
