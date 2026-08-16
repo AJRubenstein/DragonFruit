@@ -82,8 +82,9 @@ test('a trunk carrying four branches thickens below the branch knots', () => {
     const resized = computeForestDiameterProfile(s);
     const segments = resized.trunks['t1'].segments;
     assert.ok(segments.length >= 2, `shaft split at the branch knot (${segments.length} segments)`);
-    // Bottom segment (below the 1.0mm branch attachment) carries the load.
-    assert.equal(segments[0].diameter, 1.0, 'below the branch knots → branch diameter');
+    // Bottom segment (below the 1.0mm branch attachments) carries the load:
+    // 4 attachments × +10% growth → 1.0 × 1.3 = 1.3.
+    assert.equal(segments[0].diameter, 1.3, 'below the branch knots → branch demand with count growth');
     assert.equal(segments[segments.length - 1].diameter, 0.8, 'tip section stays at placed diameter');
 
     // The knot is rehosted onto the split segment at t=1 without moving.
@@ -91,6 +92,43 @@ test('a trunk carrying four branches thickens below the branch knots', () => {
     assert.ok(k, 'knot survives');
     assert.equal(k.t, 1);
     assert.deepEqual(k.pos, { x: 0, y: 0, z: 5.5 }, 'knot position unchanged');
+});
+
+test('a trunk hosting fan leaves thickens with the leaf count', () => {
+    const s = createEmptySnapshot();
+    s.roots['r1'] = createRoot('r1', 'm', 0);
+    s.trunks['t1'] = createTrunk('t1', 'm', 'r1', 'seg-1', 0, 0, 10, 0.8);
+
+    // Auto fan/merge knots carry no `t` — the demand must still apply to
+    // the knot's segment.
+    s.knots['k1'] = { id: 'k1', parentShaftId: 'seg-1', pos: { x: 0, y: 0, z: 5.5 }, diameter: 0.9 };
+    for (let i = 0; i < 4; i++) {
+        s.leaves[`l${i}`] = {
+            id: `l${i}`,
+            modelId: 'm',
+            parentKnotId: 'k1',
+            contactCone: {
+                id: `cone-${i}`,
+                pos: { x: 0, y: 0, z: 8 },
+                normal: { x: 0, y: 0, z: 1 },
+                profile: {
+                    type: 'disk',
+                    contactDiameterMm: 0.4,
+                    bodyDiameterMm: 1.0,
+                    lengthMm: 2.5,
+                    penetrationMm: 0,
+                    diskThicknessMm: 0.1,
+                    maxStandoffMm: 1.5,
+                    standoffAngleThreshold: Math.PI / 4,
+                },
+            },
+        };
+    }
+
+    const resized = computeForestDiameterProfile(s);
+    const trunk = resized.trunks['t1'];
+    assert.ok(trunk.segments.every((seg) => seg.diameter >= 1.3 - 1e-9),
+        `leaf host thickens (${trunk.segments[0].diameter} — 4 leaves × +10% growth)`);
 });
 
 test('forest resize is deterministic and pure', () => {

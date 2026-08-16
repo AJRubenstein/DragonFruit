@@ -30,6 +30,11 @@ function leafConeKey(leafId: string) {
     return `leafCone:${leafId}`;
 }
 
+/** Calibration: a trunk's member demand grows +10% per attachment beyond
+ *  the first — more fan leaves/branches carried → visibly stronger trunk.
+ *  Sub-linear and knob-free; no load model. */
+const ATTACHMENT_GROWTH_PER_MEMBER = 0.1;
+
 /**
  * Computes the maximum "member diameter" across the entire connected support graph
  * reachable from a given trunk.
@@ -386,6 +391,14 @@ export function computeAndApplyTrunkDiameterProfile(
         else branchesByParentKnotId.set(b.parentKnotId, [b]);
     }
 
+    const leavesByParentKnotId = new Map<string, Leaf[]>();
+    for (const l of Object.values(snapshot.leaves)) {
+        if (!l?.parentKnotId) continue;
+        const list = leavesByParentKnotId.get(l.parentKnotId);
+        if (list) list.push(l);
+        else leavesByParentKnotId.set(l.parentKnotId, [l]);
+    }
+
     const epsT = 1e-6;
     const isNearlyZero = (t: number) => t <= epsT;
     const isNearlyOne = (t: number) => t >= 1 - epsT;
@@ -482,17 +495,28 @@ export function computeAndApplyTrunkDiameterProfile(
         nextTrunk = trunkAfterSplit;
     }
 
-    // Demand at the top of each segment from any branch-attached knot anchored to that segment.
+    // Demand at the top of each segment from any branch/leaf-attached knot
+    // anchored to that segment. Auto merge/fan knots carry no `t` — the
+    // demand applies to the knot's own segment regardless (the stepwise
+    // running max thickens that segment and everything below it).
     const trunkSegIds = new Set(nextTrunk.segments.map((s) => s.id));
     const demandAtTopBySegId = new Map<string, number>();
     for (const knot of nextKnotById.values()) {
         if (!trunkSegIds.has(knot.parentShaftId)) continue;
-        const attached = branchesByParentKnotId.get(knot.id);
-        if (!attached || attached.length === 0) continue;
-        if (typeof knot.t !== 'number' || knot.t < 1 - epsT) continue;
+        const attachedBranches = branchesByParentKnotId.get(knot.id);
+        const attachedLeaves = leavesByParentKnotId.get(knot.id);
+        const n = (attachedBranches?.length ?? 0) + (attachedLeaves?.length ?? 0);
+        if (n === 0) continue;
 
-        let demand = 0;
-        for (const b of attached) demand = Math.max(demand, branchDemandDiameterMm(b));
+        let memberDemand = 0;
+        for (const b of attachedBranches ?? []) memberDemand = Math.max(memberDemand, branchDemandDiameterMm(b));
+        for (const l of attachedLeaves ?? []) memberDemand = Math.max(memberDemand, getLeafDiameter(l));
+
+        // More attachments → stronger trunk: the member demand grows
+        // sub-linearly with the attachment count (calibration, no load
+        // model). A lone leaf host keeps its placed diameter; a trunk
+        // carrying several fan leaves visibly thickens.
+        const demand = memberDemand * (1 + ATTACHMENT_GROWTH_PER_MEMBER * (n - 1));
 
         const prev = demandAtTopBySegId.get(knot.parentShaftId) ?? 0;
         if (demand > prev) demandAtTopBySegId.set(knot.parentShaftId, demand);

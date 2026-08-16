@@ -1931,7 +1931,7 @@ export function computeAutoSupportPlan(
             const resized = computeForestDiameterProfile(draft);
             if (resized !== draft) {
                 draft = resized;
-                console.log(LOG_PREFIX, 'Forest resize pass applied (branch-loaded trunks thickened).');
+                console.log(LOG_PREFIX, 'Forest resize pass applied (attachment-loaded trunks thickened).');
             }
         } catch (e) {
             console.warn(LOG_PREFIX,
