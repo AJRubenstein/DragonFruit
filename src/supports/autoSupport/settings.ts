@@ -99,7 +99,7 @@ export const AUTO_SUPPORT_CONSTRAINTS = {
     minIslandAreaMm2: { min: 0.01, max: 10, step: 0.01, defaultValue: 0.02 },
     tipInfluenceRadiusMm: { min: 0.1, max: 10, step: 0.1, defaultValue: 0.5 },
     maxAttachmentsPerTrunk: { min: 2, max: 50, step: 1, defaultValue: 12, integer: true },
-    areaPerSupportMm2: { min: 1, max: 30, step: 0.5, defaultValue: 8 },
+    areaPerSupportMm2: { min: 1, max: 30, step: 0.5, defaultValue: 10 },
     gridAreaThresholdMm2: { min: 5, max: 200, step: 5, defaultValue: 25 },
     overhangSelfSupportAngleDeg: { min: 20, max: 75, step: 5, defaultValue: 45 },
     sizeScale: { min: 0.5, max: 2, step: 0.05, defaultValue: 1 },

@@ -146,7 +146,7 @@ const DETAIL_PRESET: SupportPreset = {
             stickVsTwigCutoffMm: 5.0,
         },
         autoBracing: createDefaultAutoBracingSettings(),
-        autoSupport: { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 12 },
+        autoSupport: { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 16 },
         devToolsEnabled: false,
         devTools: createDefaultSettings().devTools,
     },

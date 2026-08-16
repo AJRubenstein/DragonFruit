@@ -7,8 +7,8 @@ import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
 import type { AutoSupportSettings } from '../autoSupport/settings';
 
 test('built-in presets carry distinct auto-support density (light/medium/heavy)', () => {
-    assert.equal(DETAIL_PRESET.settings.autoSupport.areaPerSupportMm2, 12, 'detail = light density');
-    assert.equal(STRUCTURE_PRESET.settings.autoSupport.areaPerSupportMm2, 8, 'structure = medium density');
+    assert.equal(DETAIL_PRESET.settings.autoSupport.areaPerSupportMm2, 16, 'detail = light density');
+    assert.equal(STRUCTURE_PRESET.settings.autoSupport.areaPerSupportMm2, 10, 'structure = medium density');
     assert.equal(ANCHOR_PRESET.settings.autoSupport.areaPerSupportMm2, 5, 'anchor = heavy density');
 });
 
@@ -24,10 +24,10 @@ test('switching the active preset applies its auto-support density', () => {
     assert.equal(getSettings().autoSupport.areaPerSupportMm2, 5, 'anchor = heavy density');
 
     setActivePreset('detail');
-    assert.equal(getSettings().autoSupport.areaPerSupportMm2, 12, 'detail = light density');
+    assert.equal(getSettings().autoSupport.areaPerSupportMm2, 16, 'detail = light density');
 
     setActivePreset('structure');
-    assert.equal(getSettings().autoSupport.areaPerSupportMm2, 8, 'structure = medium density');
+    assert.equal(getSettings().autoSupport.areaPerSupportMm2, 10, 'structure = medium density');
 });
 
 test('preset autoSupport blocks equal defaults except the density (quick-select determinism)', () => {
@@ -37,8 +37,8 @@ test('preset autoSupport blocks equal defaults except the density (quick-select 
     // medium (the stale-keys bug: "default medium" ≠ round-tripped medium).
     const defaults = createDefaultAutoSupportSettings();
     const cases: Array<[typeof STRUCTURE_PRESET, number]> = [
-        [DETAIL_PRESET, 12],
-        [STRUCTURE_PRESET, 8],
+        [DETAIL_PRESET, 16],
+        [STRUCTURE_PRESET, 10],
         [ANCHOR_PRESET, 5],
     ];
     for (const [preset, area] of cases) {

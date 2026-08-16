@@ -448,7 +448,9 @@ test('runAutoPlace fans organic poisson points into island trunks instead of dup
             },
         ],
         'model-a',
-        { debugSkipAutoBracing: true, anchorBandHeightMm: 0 },
+        // Explicit density: the assertion is about fanning geometry, not the
+        // preset density default — keep the layout stable across preset bumps.
+        { debugSkipAutoBracing: true, anchorBandHeightMm: 0, areaPerSupportMm2: 8 },
     );
 
     assert.ok(result.placedLeaves >= 1, 'organic poisson points fanned into the island trunk');
@@ -503,7 +505,9 @@ test('runAutoPlace consolidates organic poisson trunks into island trunks placed
             makeIsland('A', 2.5, 0, 30, 0.5),
         ],
         'model-a',
-        { debugSkipAutoBracing: true, anchorBandHeightMm: 0 },
+        // Explicit density: the assertion is about consolidation geometry, not
+        // the preset density default — keep the layout stable across bumps.
+        { debugSkipAutoBracing: true, anchorBandHeightMm: 0, areaPerSupportMm2: 8 },
     );
 
     const snapshot = getSnapshot();
