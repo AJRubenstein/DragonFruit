@@ -47,10 +47,15 @@ export function buildTwig(input: TwigBuildInput): TwigBuildResult {
     };
 
     // Twig sizing rule: each disk drives its own joint, and the shaft tapers
-    // between the two joints. Both disks use the global tip.contactDiameterMm
-    // until per-disk diameter editing exists.
-    const diskAContactDiameter = settings.tip.contactDiameterMm;
-    const diskBContactDiameter = settings.tip.contactDiameterMm;
+    // between the two joints. Both disks start slightly smaller than the
+    // global tip contact (twigs are short, low-span supports); the free (B)
+    // end scales further with the twig's span — a short twig carries less
+    // unsupported run, so its tip end can be thinner. Full diameter at
+    // ≥ 20 mm span, down to 60% for very short twigs (calibration).
+    const diskAContactDiameter = settings.tip.contactDiameterMm * 0.9;
+    const twigSpan = Math.hypot(bPos.x - aPos.x, bPos.y - aPos.y, bPos.z - aPos.z);
+    const tipScale = THREE.MathUtils.clamp(twigSpan / 20, 0.6, 1);
+    const diskBContactDiameter = diskAContactDiameter * tipScale;
 
     const jointDiameterA = twigJointDiameterForDisk(diskAContactDiameter);
     const jointDiameterB = twigJointDiameterForDisk(diskBContactDiameter);
@@ -58,7 +63,7 @@ export function buildTwig(input: TwigBuildInput): TwigBuildResult {
     // Legacy uniform value for slicer/proxy and any consumer that reads
     // segment.diameter. The actual visible taper is carried per-end by the
     // joints and applied by TwigRenderer.
-    const shaftDiameter = settings.tip.contactDiameterMm;
+    const shaftDiameter = diskAContactDiameter;
 
     _aVec.set(aPos.x, aPos.y, aPos.z);
     _bVec.set(bPos.x, bPos.y, bPos.z);
