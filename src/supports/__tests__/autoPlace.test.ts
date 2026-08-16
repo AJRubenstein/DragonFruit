@@ -529,6 +529,49 @@ test('runAutoPlace consolidates organic poisson trunks into island trunks placed
     disposeHandlers();
 });
 
+test('runAutoPlace merges with a steep knot, not at the host junction', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    // Island A sits 0.5 mm from trunk B's 40 mm shaft with its tip 1 mm
+    // below B's tip. The old code knotted at B's junction (top joint) — a
+    // shallow branch; the first steep fix snapped to the DEEPEST qualifying
+    // sample (kZ≈28, a near-parallel "floating" leaf); the knot must now be
+    // the HIGHEST sample meeting the 60°-above-horizontal minimum (kZ≈36).
+    // B places first (higher Z → higher priority) and stands alone; A then
+    // merges into B as a steep leaf.
+    const result = runAutoPlace(
+        [
+            makeIsland('A', 0.5, 0, 40, 60),
+            makeIsland('B', 0, 0, 41, 16),
+        ],
+        'model-a',
+        { debugSkipAutoBracing: true, anchorBandHeightMm: 0 },
+    );
+
+    assert.equal(result.placedTrunks, 1, 'one trunk — the merge never builds a second');
+    assert.ok(result.placedLeaves >= 1, 'A attached as a leaf');
+
+    const snapshot = getSnapshot();
+    const mergeKnot = Object.values(snapshot.knots).find((k) => k.id.startsWith('auto-merge-'));
+    assert.ok(mergeKnot, 'merge knot exists');
+    assert.ok(mergeKnot.pos.z >= 32 && mergeKnot.pos.z <= 38,
+        `knot snapped to the highest 60°-rise sample, not the base (kZ=${mergeKnot.pos.z.toFixed(1)})`);
+
+    const leaf = Object.values(snapshot.leaves).find((l) => l.origin === 'island');
+    assert.ok(leaf, 'merged leaf carries the island origin');
+
+    const placement = result.analytics?.placement;
+    // Higher-Z island B places first (priority order) and has no host;
+    // A then merges into B — the merge itself never refuses.
+    assert.deepEqual(placement?.mergeRefusals, { noHost: 1 }, 'only the first-placed island lacks a host');
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
 test('runAutoPlace with no viable candidates returns changed=false and pushes nothing', () => {
     resetStore();
     resetKickstandStore();

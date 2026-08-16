@@ -174,3 +174,24 @@ test('fanLeafToTrunk refuses steep angles', () => {
     assert.equal(fan.ok, false);
     if (!fan.ok) assert.equal(fan.reason, 'angle');
 });
+
+test('fanLeafToTrunk prefers the steepest sample over the nearest', () => {
+    // Two eligible samples on one shaft: a shallow one just below the tip
+    // (nearest — the old code picked this, the "knot at the junction" look)
+    // and a deep one at a steep rise. The steep one must win.
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const fan = fanLeafToTrunk(
+        { x: 2, y: 0, z: 15 }, 'm',
+        [sp('host', 0, 0, 13.7), sp('host', 0, 0, 11.0)],
+        new Set(), 'fan-test', 5, 2.5, 60, 12, draft, undefined,
+    );
+
+    assert.equal(fan.ok, true, 'steep sample is within the fan radius');
+    if (fan.ok) {
+        const knot = Object.values(fan.draft.knots)[0];
+        assert.ok(Math.abs(knot.pos.z - 11.0) < 1e-6,
+            `knot snapped to the steep sample (z=${knot.pos.z})`);
+        assert.ok(Math.abs(fan.angleDeg - 26.565) < 0.01,
+            `reports the steep angle (${fan.angleDeg.toFixed(2)}°)`);
+    }
+});

@@ -491,82 +491,135 @@ function placeOneCandidate(
             let bestKnotPos: { x: number; y: number; z: number } | null = null;
             let bestKnotSegmentId = '';
 
-            // Best attachment: the junction where the shaft meets the
-            // contact cone — the topJoint of the topmost segment.
-            // For straight trunks this is just below the tip; for routed
-            // trunks it's the socket joint before the cone.
-            if (hostTrunk && hostTrunk.segments.length > 0) {
-                const topSeg = hostTrunk.segments[hostTrunk.segments.length - 1];
-                const jp = topSeg.topJoint?.pos;
-                if (jp && jp.z < tipPos.z) {
-                    bestKnotPos = jp;
-                    bestKnotSegmentId = topSeg.id;
-                }
-            }
-            // Fallback: any shaft joint below the tip.
-            if (!bestKnotPos && hostTrunk) {
+            // Attachment point: snap the knot DOWN the host shaft only far
+            // enough to reach the 60°-above-horizontal steep minimum — the
+            // HIGHEST sample whose rise to the tip is ≥ 60°. A deeper knot
+            // makes the leaf nearly parallel to the shaft (a second pillar
+            // "floating" next to the trunk — the recent defect); a knot at
+            // the junction is the original shallow-branch bug.
+            const STEEP_MIN_RISE_DEG = 60;
+            const MAX_MERGE_ATTACH_SPAN_MM = 12;
+            let maxRiseDeg = 0;
+            if (hostTrunk) {
                 for (const seg of hostTrunk.segments) {
-                    const jp = seg.bottomJoint?.pos ?? seg.topJoint?.pos;
-                    if (jp && jp.z < tipPos.z) {
-                        if (!bestKnotPos || jp.z > bestKnotPos.z) {
-                            bestKnotPos = jp;
+                    const start = seg.bottomJoint?.pos ?? { x: 0, y: 0, z: 1.5 };
+                    const end = seg.topJoint?.pos;
+                    if (!end) continue;
+                    for (let i = 0; i <= 10; i++) {
+                        const t = i / 10;
+                        const sx = start.x + (end.x - start.x) * t;
+                        const sy = start.y + (end.y - start.y) * t;
+                        const sz = start.z + (end.z - start.z) * t;
+                        const vDist = tipPos.z - sz;
+                        if (vDist <= 0) continue;
+                        const hDist = Math.hypot(tipPos.x - sx, tipPos.y - sy);
+                        if (Math.hypot(hDist, vDist) > MAX_MERGE_ATTACH_SPAN_MM) continue;
+                        const riseDeg = (Math.atan2(vDist, hDist) * 180) / Math.PI;
+                        if (riseDeg > maxRiseDeg) maxRiseDeg = riseDeg;
+                        if (riseDeg < STEEP_MIN_RISE_DEG) continue;
+                        if (bestKnotPos === null || sz > bestKnotPos.z) {
+                            bestKnotPos = { x: sx, y: sy, z: sz };
                             bestKnotSegmentId = seg.id;
                         }
                     }
                 }
             }
-            const knotPos = bestKnotPos ?? host.tipPos;
-            let knotDiameter = 1.0;
-            if (hostTrunk && bestKnotSegmentId) {
-                const seg = hostTrunk.segments.find(s => s.id === bestKnotSegmentId);
-                if (seg?.diameter) knotDiameter = seg.diameter;
-            }
-            const parentKnot = {
-                id: `auto-merge-${candidate.id}`,
-                parentShaftId: bestKnotSegmentId || host.trunkId,
-                pos: knotPos,
-                diameter: knotDiameter + 0.1,
-            };
-            // Leaf decision: use tip-to-tip distance (host contact cone →
-            // candidate tip), not shaft-knot distance.  This is the visual
-            // span the leaf would bridge.
-            const hostTip = hostTrunk?.contactCone?.pos ?? knotPos;
-            const tipSpanMm = Math.sqrt(
-                (tipPos.x - hostTip.x) ** 2 +
-                (tipPos.y - hostTip.y) ** 2 +
-                (tipPos.z - hostTip.z) ** 2,
-            );
-            const MAX_AUTO_LEAF_SPAN_MM = 8.0;
-            if (tipSpanMm <= MAX_AUTO_LEAF_SPAN_MM) {
-                // Knot attachment is on the shaft; angle check uses the
-                // actual knot-to-tip geometry for the leaf cone.
-                const hDist = Math.sqrt(
-                    (tipPos.x - knotPos.x) ** 2 + (tipPos.y - knotPos.y) ** 2,
+            if (!bestKnotPos) {
+                console.log(LOG_PREFIX,
+                    `Merge skip ${candidate.id}: no steep attachment on host ${host.trunkId} ` +
+                    `(max rise ${maxRiseDeg.toFixed(0)}° < ${STEEP_MIN_RISE_DEG}° above horizontal)`);
+            } else {
+                const knotPos = bestKnotPos;
+                let knotDiameter = 1.0;
+                if (hostTrunk && bestKnotSegmentId) {
+                    const seg = hostTrunk.segments.find(s => s.id === bestKnotSegmentId);
+                    if (seg?.diameter) knotDiameter = seg.diameter;
+                }
+                const parentKnot = {
+                    id: `auto-merge-${candidate.id}`,
+                    parentShaftId: bestKnotSegmentId || host.trunkId,
+                    pos: knotPos,
+                    diameter: knotDiameter + 0.1,
+                };
+                // Leaf decision: use tip-to-tip distance (host contact cone →
+                // candidate tip), not shaft-knot distance.  This is the visual
+                // span the leaf would bridge.
+                const hostTip = hostTrunk?.contactCone?.pos ?? knotPos;
+                const tipSpanMm = Math.sqrt(
+                    (tipPos.x - hostTip.x) ** 2 +
+                    (tipPos.y - hostTip.y) ** 2 +
+                    (tipPos.z - hostTip.z) ** 2,
                 );
-                const vDist = tipPos.z - knotPos.z;
-                if (vDist <= 0) {
-                    console.log(LOG_PREFIX,
-                        `Merge skip ${candidate.id}: knot above tip (kZ=${knotPos.z.toFixed(1)} tZ=${tipPos.z.toFixed(1)})`);
-                } else if (vDist < 1.5) {
-                    // Too shallow — fall through to branch.
-                    console.log(LOG_PREFIX,
-                        `Leaf (merge) ${candidate.id}: too shallow (vDist=${vDist.toFixed(1)}mm), trying branch...`);
-                } else {
-                    try {
-                        const { leaf, supportData: sd } = buildLeafData({
-                            tipPos,
-                            surfaceNormal: tipNormal,
-                            modelId: candidate.modelId,
-                            parentKnot,
-                            hostDiameterMm: parentKnot.diameter ?? 1.0,
-                            mesh,
+                const MAX_AUTO_LEAF_SPAN_MM = 8.0;
+                if (tipSpanMm <= MAX_AUTO_LEAF_SPAN_MM) {
+                    // Knot attachment is on the shaft; angle check uses the
+                    // actual knot-to-tip geometry for the leaf cone.
+                    const hDist = Math.sqrt(
+                        (tipPos.x - knotPos.x) ** 2 + (tipPos.y - knotPos.y) ** 2,
+                    );
+                    const vDist = tipPos.z - knotPos.z;
+                    if (vDist <= 0) {
+                        console.log(LOG_PREFIX,
+                            `Merge skip ${candidate.id}: knot above tip (kZ=${knotPos.z.toFixed(1)} tZ=${tipPos.z.toFixed(1)})`);
+                    } else if (vDist < 1.5) {
+                        // Too shallow — fall through to branch.
+                        console.log(LOG_PREFIX,
+                            `Leaf (merge) ${candidate.id}: too shallow (vDist=${vDist.toFixed(1)}mm), trying branch...`);
+                    } else {
+                        try {
+                            const { leaf, supportData: sd } = buildLeafData({
+                                tipPos,
+                                surfaceNormal: tipNormal,
+                                modelId: candidate.modelId,
+                                parentKnot,
+                                hostDiameterMm: parentKnot.diameter ?? 1.0,
+                                mesh,
+                            });
+                            if (sd.error) {
+                                console.log(LOG_PREFIX,
+                                    `Leaf (merge) ${candidate.id}: sd.error, trying branch...`);
+                            } else if (mesh && leafConeCollides(parentKnot.pos, leaf.contactCone, mesh)) {
+                                console.log(LOG_PREFIX,
+                                    `Leaf (merge) ${candidate.id}: triangle collision, trying branch...`);
+                            } else {
+                                const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
+                                if (isTrunkAtAttachmentCapacity(host.trunkId, cap, draft)) {
+                                    console.log(LOG_PREFIX,
+                                        `Merge skip ${candidate.id}: host ${host.trunkId} at capacity (${cap} attachments)`);
+                                    // fall through to standalone trunk
+                                } else {
+                                    d = draftAddKnot(d, parentKnot);
+                                    leaf.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
+                                    d = draftAddLeaf(d, leaf);
+                                    const la = (Math.atan2(hDist, vDist) * 180) / Math.PI;
+                                    console.log(LOG_PREFIX,
+                                        `Leaf (merge) ${candidate.id} → host ${host.trunkId} ` +
+                                        `span=${tipSpanMm.toFixed(1)}mm angle=${la.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
+                                    return { kind: 'leaf', preset, draft: d };
+                                }
+                            }
+                        } catch {}
+                    }
+                } else if (tipSpanMm > MAX_AUTO_LEAF_SPAN_MM && candidate.source !== 'overhang') {
+                    // Branch: requires upward angle from knot to tip. Only ISLAND
+                    // candidates branch here — overhang fanning is leaves by rule,
+                    // so an overhang single beyond leaf reach falls through and
+                    // the consolidation pass attaches it as a leaf where possible.
+                    const hDist2 = Math.sqrt(
+                        (tipPos.x - knotPos.x) ** 2 + (tipPos.y - knotPos.y) ** 2,
+                    );
+                    const vDist2 = tipPos.z - knotPos.z;
+                    const mergeAngleDeg = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
+                    if (mergeAngleDeg > 50) {
+                        console.log(LOG_PREFIX,
+                            `Merge skip ${candidate.id}: angle too shallow (${mergeAngleDeg.toFixed(0)}° from vertical > 50°) span=${tipSpanMm.toFixed(1)}mm`);
+                    } else try {
+                        const { branch, supportData: sd } = buildBranchData({
+                            tipPos, tipNormal, modelId: candidate.modelId, parentKnot, mesh,
                         });
-                        if (sd.error) {
-                            console.log(LOG_PREFIX,
-                                `Leaf (merge) ${candidate.id}: sd.error, trying branch...`);
-                        } else if (mesh && leafConeCollides(parentKnot.pos, leaf.contactCone, mesh)) {
-                            console.log(LOG_PREFIX,
-                                `Leaf (merge) ${candidate.id}: triangle collision, trying branch...`);
+                        const collides = sd.error || (mesh && branchCollidesWithSDF(branch, mesh));
+                        if (collides) {
+                            console.log(LOG_PREFIX, `Branch (merge) ${candidate.id}: collision, falling back`);
                         } else {
                             const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
                             if (isTrunkAtAttachmentCapacity(host.trunkId, cap, draft)) {
@@ -575,60 +628,22 @@ function placeOneCandidate(
                                 // fall through to standalone trunk
                             } else {
                                 d = draftAddKnot(d, parentKnot);
-                                leaf.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
-                                d = draftAddLeaf(d, leaf);
-                                const la = (Math.atan2(hDist, vDist) * 180) / Math.PI;
+                                // Branch fallback is island-only (overhang fanning
+                                // is leaves) — the origin is always island here.
+                                branch.origin = 'island';
+                                d = draftAddBranch(d, branch);
+                                const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                                 console.log(LOG_PREFIX,
-                                    `Leaf (merge) ${candidate.id} → host ${host.trunkId} ` +
-                                    `span=${tipSpanMm.toFixed(1)}mm angle=${la.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
-                                return { kind: 'leaf', preset, draft: d };
+                                    `Branch (merge) ${candidate.id} → host ${host.trunkId} ` +
+                                    `span=${tipSpanMm.toFixed(1)}mm angle=${ma.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
+                                return { kind: 'branch', preset, draft: d };
                             }
                         }
-                    } catch (_) {}
-                }
-            } else if (tipSpanMm > MAX_AUTO_LEAF_SPAN_MM && candidate.source !== 'overhang') {
-                // Branch: requires upward angle from knot to tip. Only ISLAND
-                // candidates branch here — overhang fanning is leaves by rule,
-                // so an overhang single beyond leaf reach falls through and
-                // the consolidation pass attaches it as a leaf where possible.
-                const hDist2 = Math.sqrt(
-                    (tipPos.x - knotPos.x) ** 2 + (tipPos.y - knotPos.y) ** 2,
-                );
-                const vDist2 = tipPos.z - knotPos.z;
-                const mergeAngleDeg = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
-                if (mergeAngleDeg > 50) {
-                    console.log(LOG_PREFIX,
-                        `Merge skip ${candidate.id}: angle too shallow (${mergeAngleDeg.toFixed(0)}° from vertical > 50°) span=${tipSpanMm.toFixed(1)}mm`);
-                } else try {
-                    const { branch, supportData: sd } = buildBranchData({
-                        tipPos, tipNormal, modelId: candidate.modelId, parentKnot, mesh,
-                    });
-                    const collides = sd.error || (mesh && branchCollidesWithSDF(branch, mesh));
-                    if (collides) {
-                        console.log(LOG_PREFIX, `Branch (merge) ${candidate.id}: collision, falling back`);
-                    } else {
-                        const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
-                        if (isTrunkAtAttachmentCapacity(host.trunkId, cap, draft)) {
-                            console.log(LOG_PREFIX,
-                                `Merge skip ${candidate.id}: host ${host.trunkId} at capacity (${cap} attachments)`);
-                            // fall through to standalone trunk
-                        } else {
-                            d = draftAddKnot(d, parentKnot);
-                            // Branch fallback is island-only (overhang fanning
-                            // is leaves) — the origin is always island here.
-                            branch.origin = 'island';
-                            d = draftAddBranch(d, branch);
-                            const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
-                            console.log(LOG_PREFIX,
-                                `Branch (merge) ${candidate.id} → host ${host.trunkId} ` +
-                                `span=${tipSpanMm.toFixed(1)}mm angle=${ma.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
-                            return { kind: 'branch', preset, draft: d };
-                        }
+                    } catch (e) {
+                        console.log(LOG_PREFIX,
+                            `Merge branch failed for ${candidate.id}, falling back to trunk: ` +
+                            `${e instanceof Error ? e.message : String(e)}`);
                     }
-                } catch (e) {
-                    console.log(LOG_PREFIX,
-                        `Merge branch failed for ${candidate.id}, falling back to trunk: ` +
-                        `${e instanceof Error ? e.message : String(e)}`);
                 }
             }
         }
@@ -1025,14 +1040,14 @@ export function fanLeafToTrunk(
     mesh: THREE.Mesh | undefined,
     origin?: SupportOrigin,
 ): FanLeafResult {
-    // Single pass over the shaft pool: the nearest sample that is ELIGIBLE
+    // Single pass over the shaft pool: the STEEPEST sample that is ELIGIBLE
     // (grid trunks host only up close) and geometrically VALID (not same-Z,
     // within the max angle from vertical) wins. The nearest sample alone is
-    // not enough — it can sit at an unworkable angle while a slightly farther
-    // one is a perfect fan host.
+    // not enough — it sits at the shallowest valid angle (the "knot at the
+    // junction" look); the steepest sample in reach reads as a real branch.
     let best: FanShaftPoint | null = null;
     let bestDist2 = Infinity;
-    let bestAngleDeg = 0;
+    let bestAngleDeg = Infinity;
     let refusal: FanLeafRefusal = 'noHost';
 
     for (const sp of shaftPoints) {
@@ -1057,7 +1072,8 @@ export function fanLeafToTrunk(
             if (refusal === 'noHost') refusal = 'angle';
             continue;
         }
-        if (dist2 < bestDist2) {
+        // Steepest wins; distance only breaks ties among equally steep samples.
+        if (angleDeg < bestAngleDeg) {
             best = sp;
             bestDist2 = dist2;
             bestAngleDeg = angleDeg;
