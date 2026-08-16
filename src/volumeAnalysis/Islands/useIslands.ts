@@ -596,8 +596,14 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
       const area = island?.areaMm2 ?? 0;
       const radius = scaleMarkersWithArea && area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1;
 
-      if (island && contouredIds.has(island.id) && island.contactVoxels && island.contactVoxels.length > 0) {
-        const contour = generateContourMarkers(island.contactVoxels, pxMm, m.id, m.baseZ, consolidateVoxel ? 3 : 0);
+      const isOverhang = island?.source === 'overhang';
+      if (island && island.contactVoxels && island.contactVoxels.length > 0 && (isOverhang || contouredIds.has(island.id))) {
+        // Overhang regions always render as filled footprint blobs (a single
+        // disc at the region's lowest Z reads edge-on as a fat line, not a
+        // surface). Their voxels are at OVERHANG_FOOTPRINT_PX_MM spacing —
+        // pass that so the interior fill classifies neighbors correctly.
+        const contourPx = isOverhang ? OVERHANG_FOOTPRINT_PX_MM : pxMm;
+        const contour = generateContourMarkers(island.contactVoxels, contourPx, m.id, m.baseZ, 3);
         markers.push(...contour);
       } else {
         markers.push({ ...m, radius, type: consolidateVoxel ? 3 : 0, islandId: m.id });
