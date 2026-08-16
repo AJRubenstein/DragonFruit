@@ -24,6 +24,36 @@ const OVERHANG_SELF_SUPPORT_ANGLE_DEG = 45;
 const OVERHANG_FOOTPRINT_PX_MM = 0.25;
 
 /**
+ * True when a voxel island's contact sits inside an overhang region's
+ * projected footprint and their areas are comparable — the same physical
+ * surface flagged by both detectors (a floating model's entire bottom layer
+ * is "unsupported" per the growth rule). The overhang region is the
+ * surface-accurate representation, so the voxel duplicate is dropped.
+ */
+function overhangCoversVoxel(region: DetectedIsland, voxel: DetectedIsland): boolean {
+  const vox = region.contactVoxels;
+  if (!vox || vox.length === 0) return false;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of vox) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const cx = voxel.contact.x;
+  const cy = voxel.contact.y;
+  if (cx < minX || cx > maxX || cy < minY || cy > maxY) return false;
+  const regionArea = region.areaMm2 ?? 0;
+  const voxelArea = voxel.areaMm2 ?? 0;
+  if (regionArea <= 0) return false;
+  const ratio = voxelArea / regionArea;
+  return ratio >= 0.5 && ratio <= 2.0;
+}
+
+/**
  * Page-scope state hook for the unified Islands panel (PoC). Tab-agnostic and
  * free of any `src/supports/*` coupling — support-tip positions are injected.
  *
@@ -399,7 +429,32 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     });
   }, [finalVoxelIslands, minimaIslands, layerHeightMm]);
 
-  const allIslands = classifiedResult.islands;
+  // Merge overhang regions into the classified set (dedupe + inclusion):
+  // the mesh-normal classifier and the slice-growth detector flag the same
+  // underside surface, so a voxel island substantially covered by an overhang
+  // region is dropped in favor of the surface-accurate region. Overhang
+  // islands then flow through annotation, filtering, the list, and
+  // auto-support candidate generation.
+  const mergedIslands = useMemo(() => {
+    const classified = classifiedResult.islands;
+    if (overhangIslands.length === 0) return classified;
+    const covered = new Set<string>();
+    for (const v of classified) {
+      if (v.source !== 'voxel') continue;
+      for (const o of overhangIslands) {
+        if (overhangCoversVoxel(o, v)) {
+          covered.add(v.id);
+          break;
+        }
+      }
+    }
+    const remaining = covered.size === 0
+      ? classified
+      : classified.filter((v) => !covered.has(v.id));
+    return [...remaining, ...overhangIslands];
+  }, [classifiedResult, overhangIslands]);
+
+  const allIslands = mergedIslands;
   const stats = classifiedResult.stats;
 
   const mappedSupportTips = useMemo<TipInfo[]>(() => {
