@@ -282,6 +282,9 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
    */
   const onRunScan = useCallback(async () => {
     setScanning(true);
+    // Clear any progress left by a previous model's scan — the modal must
+    // not show the old "layer X of Y" until this scan reports its own.
+    setScanProgress(null);
     const epoch = scanEpochRef.current;
     // Yield immediately so React can flush the "scanning" state and show
     // the progress modal before we start expensive synchronous work.
@@ -318,9 +321,13 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         // inside the same command; no TS geometry round trip up front).
         const unlisten = await listen<{ done: number; total: number }>(
           'island-scan-progress',
-          (e) => setScanProgress({ done: e.payload.done, total: e.payload.total }),
+          (e) => {
+            if (scanEpochRef.current !== epoch) return;
+            setScanProgress({ done: e.payload.done, total: e.payload.total });
+          },
         );
 
+        if (scanEpochRef.current !== epoch) return;
         setScanProgress({ done: 0, total: 100 });
 
         console.log(`[Islands] Sideloading combined island scan from path: ${sourcePath}`);
@@ -418,6 +425,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         setOverhangIslands([]);
       }
 
+      if (scanEpochRef.current !== epoch) return;
       setScanProgress({
         done: 0,
         total: Math.max(1, Math.ceil((world.bbox.max.z - world.bbox.min.z) / layerHeightMm)),
@@ -429,9 +437,10 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
           connectivity,
           minAreaMm2,
         };
-        const voxel = await detectVoxelIslands(world, layerHeightMm, params, (done, total) =>
-          setScanProgress({ done, total }),
-        );
+        const voxel = await detectVoxelIslands(world, layerHeightMm, params, (done, total) => {
+          if (scanEpochRef.current !== epoch) return;
+          setScanProgress({ done, total });
+        });
         if (scanEpochRef.current !== epoch) return;
         setVoxelIslands(voxel);
 
@@ -804,6 +813,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     scanEpochRef.current += 1;
     clear();
     setScanning(false);
+    setScanProgress(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     geom,
