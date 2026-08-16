@@ -7,6 +7,7 @@ import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
 import { runAutoPlace } from '@/supports/autoSupport';
+import { DETAIL_PRESET, STRUCTURE_PRESET, ANCHOR_PRESET } from '@/supports/Settings/presets';
 import type { SizingDebugInfo, AutoSupportSettings } from '@/supports/autoSupport';
 import { getSettings, updateAutoSupportSettings } from '@/supports/Settings/state';
 import { getSnapshot, setSnapshot } from '@/supports/state';
@@ -76,14 +77,19 @@ const PRESETS = {
   light: {
     minIslandAreaMm2: 0.05, tipInfluenceRadiusMm: 2.0,
     maxAttachmentsPerTrunk: 8,
+    // Density follows the built-in presets (detail = light / structure =
+    // medium / anchor = heavy) so the quick-select and the app presets agree.
+    areaPerSupportMm2: DETAIL_PRESET.settings.autoSupport.areaPerSupportMm2,
   },
   medium: {
     minIslandAreaMm2: 0.02, tipInfluenceRadiusMm: 0.5,
     maxAttachmentsPerTrunk: 12,
+    areaPerSupportMm2: STRUCTURE_PRESET.settings.autoSupport.areaPerSupportMm2,
   },
   heavy: {
     minIslandAreaMm2: 0.0, tipInfluenceRadiusMm: 0.1,
     maxAttachmentsPerTrunk: 20,
+    areaPerSupportMm2: ANCHOR_PRESET.settings.autoSupport.areaPerSupportMm2,
   },
 } satisfies Record<string, Partial<AutoSupportSettings>>;
 
