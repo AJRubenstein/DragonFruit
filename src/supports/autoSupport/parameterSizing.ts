@@ -153,7 +153,10 @@ export function sizeParameters(
     const areaInput = Math.max(totalSupportedAreaMm2 ?? candidate.islandAreaMm2, 0.01);
 
     const zHeight = Math.max(candidate.zHeight, 1);
-    // Taller supports flex more under peel force — up to +25% at ≥ 70 mm.
+    // Empirical height band: taller supports get a modestly thicker shaft.
+    // Direction is physical (longer columns flex/buckle more — Euler ∝ L²), but
+    // this is a calibration curve, not a load calculation: linear +25% cap at
+    // ≥ 70 mm. No force inputs, no strength model.
     const heightFactor = 1 + clamp((zHeight - 20) / 200, 0, 0.25);
 
     const shaftDiameterMm = round(

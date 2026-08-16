@@ -104,14 +104,15 @@ test('runAutoPlace resolves the underside surface normal from the mesh', () => {
     disposeHandlers();
 });
 
-test('runAutoPlace grids a large flat overhang region into standalone trunks', () => {
+test('runAutoPlace anchors a large flat region as a densified grid (planar → grid)', () => {
     resetStore();
     resetKickstandStore();
     clearHistory();
     const disposeHandlers = registerSupportHistoryHandlers();
 
-    // 20×20 flat underside (the xyzCalibration cube bottom): the region
-    // becomes a density grid instead of one support.
+    // 20×20 flat underside (the xyzCalibration cube bottom): the region is
+    // in-band (lowest cluster → anchor density) AND planar → the shape-driven
+    // dispatch gives it the dynamic grid at anchor spacing, not Poisson.
     const contactVoxels: { x: number; y: number }[] = [];
     for (let x = -10; x <= 10; x += 0.25) {
         for (let y = -10; y <= 10; y += 0.25) {
@@ -129,11 +130,15 @@ test('runAutoPlace grids a large flat overhang region into standalone trunks', (
 
     const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true });
 
-    // 400 mm² flat anchor surface (angle 0°) at 8 mm²/support → base spacing
-    // 2.83 mm, densified 0.7× = 1.98 mm → boundary-aligned 11×11 ≈ 121
-    // standalone trunks (outer ring on the boundary).
-    assert.ok(result.placedTrunks >= 110 && result.placedTrunks <= 132,
-        `placed ${result.placedTrunks} grid trunks, expected ~121 (flat anchor grid)`);
+    // Anchor density owns the flat end (no flat-boost/suction stacking):
+    // spacing = √8 × 0.7 ≈ 1.98 mm → boundary-aligned 11×11 ≈ 121 trunks.
+    assert.ok(result.placedTrunks >= 105 && result.placedTrunks <= 135,
+        `placed ${result.placedTrunks} trunks, expected ~121 (anchor grid)`);
+    assert.equal(result.placedBranches, 0, 'grid points stay independent (no bush)');
+    assert.equal(result.placedLeaves, 0);
+    assert.equal(result.analytics?.placement?.trunksByKind.gridInfill, result.placedTrunks,
+        'planar anchor → dynamic grid (shape-driven dispatch)');
+    assert.equal(result.analytics?.distribution.poisson, 0, 'planar region is not Poisson');
     assert.equal(result.placedBranches, 0, 'grid points stay independent (no bush)');
     assert.equal(result.placedLeaves, 0);
 
@@ -230,6 +235,175 @@ test('runAutoPlace gap-fills under-covered regions (coverage convergence)', () =
     // Initial grid at 5.5mm spacing ≈ 16 points; convergence must add more.
     assert.ok(result.placedTrunks >= 20,
         `gap-fill added trunks beyond the sparse grid (placed ${result.placedTrunks})`);
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
+test('runAutoPlace densifies small anchor regions below the grid threshold', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    // A 4×4 mm foot (16 mm², under the 25 mm² grid threshold) is the model's
+    // lowest overhang → in-band anchor → must get a densified disk, not the
+    // single support the region phase would give a sub-threshold island.
+    const contactVoxels: { x: number; y: number }[] = [];
+    for (let x = -2; x <= 2; x += 0.25) {
+        for (let y = -2; y <= 2; y += 0.25) {
+            contactVoxels.push({ x, y });
+        }
+    }
+    const foot: DetectedIsland = {
+        id: 'o0',
+        source: 'overhang',
+        contact: new THREE.Vector3(0, 0, 6.5),
+        baseZ: 6.5,
+        areaMm2: 16,
+        contactVoxels,
+    };
+
+    const result = runAutoPlace([foot], 'model-a', { debugSkipAutoBracing: true });
+
+    assert.ok(result.placedTrunks >= 8,
+        `small anchor foot densified (${result.placedTrunks} trunks)`);
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
+test('runAutoPlace fans sub-threshold overhang candidates instead of standalone trunks', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    // Trunk A (voxel island) at the origin; overhang region o15 at (3,0,33)
+    // is sub-threshold and non-anchor (band off) → must attach as a fan leaf
+    // off A's shaft, not become a second straight trunk next to it.
+    const result = runAutoPlace(
+        [
+            makeIsland('A', 0, 0, 40, 30),
+            {
+                id: 'o15',
+                source: 'overhang',
+                contact: new THREE.Vector3(3, 0, 33),
+                baseZ: 33,
+                areaMm2: 16,
+                contactVoxels: [
+                    { x: 2.75, y: -0.25 }, { x: 3, y: -0.25 }, { x: 3.25, y: -0.25 },
+                    { x: 2.75, y: 0 }, { x: 3, y: 0 }, { x: 3.25, y: 0 },
+                    { x: 2.75, y: 0.25 }, { x: 3, y: 0.25 }, { x: 3.25, y: 0.25 },
+                ],
+            },
+        ],
+        'model-a',
+        { debugSkipAutoBracing: true, anchorBandHeightMm: 0 },
+    );
+
+    assert.equal(result.placedTrunks, 1, 'o15 fanned instead of becoming a trunk');
+    assert.ok(result.placedLeaves >= 1, 'o15 attached as a leaf');
+
+    const placement = result.analytics?.placement;
+    assert.equal(placement?.trunksByKind.standalone, 1, 'only trunk A is standalone (voxel island)');
+    assert.equal(placement?.candidatesByDistribution.single, 2, 'both candidates are single (non-grid)');
+    assert.deepEqual(placement?.fanRefusals, {}, 'o15 fanned — no refusal for it');
+    assert.deepEqual(placement?.mergeRefusals, { noHost: 1 }, 'trunk A had no host to merge into');
+
+    const snapshot = getSnapshot();
+    const leaf = Object.values(snapshot.leaves)[0];
+    const tip = leaf?.contactCone?.pos;
+    assert.ok(tip && Math.abs(tip.x - 3) < 0.6 && Math.abs(tip.z - 33) < 0.6,
+        `leaf tip lands on the overhang (x=${tip?.x.toFixed(1)}, z=${tip?.z.toFixed(1)})`);
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
+test('runAutoPlace falls back to a standalone trunk when no fan host exists', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    // 20 mm from any shaft: beyond both fan and merge reach — the overhang
+    // keeps a standalone trunk so the surface is still supported.
+    const result = runAutoPlace(
+        [
+            makeIsland('A', 0, 0, 40, 30),
+            {
+                id: 'o20',
+                source: 'overhang',
+                contact: new THREE.Vector3(20, 0, 30),
+                baseZ: 30,
+                areaMm2: 16,
+                contactVoxels: [{ x: 19.75, y: 0 }, { x: 20, y: 0 }, { x: 20.25, y: 0 }],
+            },
+        ],
+        'model-a',
+        { debugSkipAutoBracing: true, anchorBandHeightMm: 0 },
+    );
+
+    assert.equal(result.placedTrunks, 2, 'far overhang keeps its standalone trunk (coverage)');
+
+    const placement = result.analytics?.placement;
+    assert.equal(placement?.trunksByKind.standalone, 2, 'both became standalone trunks');
+    assert.deepEqual(placement?.fanRefusals, { noHost: 1 }, 'o20 found no shaft within the fan radius');
+    assert.deepEqual(placement?.mergeRefusals, { noHost: 2 }, 'neither had a host within the merge radius');
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
+test('runAutoPlace dispatches by shape: planar → grid, organic → Poisson', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    // Planar anchor facet at the origin (flat voxels) — lowest cluster, planar
+    // → dynamic grid at anchor density.
+    const planarVoxels: { x: number; y: number; z?: number }[] = [];
+    for (let x = -10; x <= 10; x += 0.25) {
+        for (let y = -10; y <= 10; y += 0.25) {
+            planarVoxels.push({ x, y, z: 6.5 });
+        }
+    }
+    const planar: DetectedIsland = {
+        id: 'o0',
+        source: 'overhang',
+        contact: new THREE.Vector3(0, 0, 6.5),
+        baseZ: 6.5,
+        areaMm2: 400,
+        contactVoxels: planarVoxels,
+    };
+
+    // Curved region (z = 6.5 + x²/20) offset far away, higher cluster →
+    // organic → Poisson disk.
+    const curvedVoxels: { x: number; y: number; z?: number }[] = [];
+    for (let x = 30; x <= 50; x += 0.25) {
+        for (let y = 30; y <= 50; y += 0.25) {
+            curvedVoxels.push({ x, y, z: 25 + ((x - 40) * (x - 40)) / 20 });
+        }
+    }
+    const organic: DetectedIsland = {
+        id: 'o1',
+        source: 'overhang',
+        contact: new THREE.Vector3(40, 40, 25),
+        baseZ: 25,
+        areaMm2: 400,
+        contactVoxels: curvedVoxels,
+    };
+
+    const result = runAutoPlace([planar, organic], 'model-a', { debugSkipAutoBracing: true });
+
+    assert.equal(result.analytics?.distribution.grid, 1, 'planar region gridded');
+    assert.equal(result.analytics?.distribution.poisson, 1, 'organic region poisson');
+    assert.ok((result.analytics?.placement?.trunksByKind.gridInfill ?? 0) >= 100,
+        'planar anchor produces a dense grid');
+    assert.ok((result.analytics?.placement?.trunksByKind.poissonDisk ?? 0) > 0,
+        'organic region placed via Poisson disk');
 
     setModelMesh('model-a', null);
     disposeHandlers();

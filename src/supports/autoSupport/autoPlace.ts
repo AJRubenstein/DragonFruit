@@ -1,14 +1,17 @@
 import * as THREE from 'three';
-import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan } from './types';
+import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal } from './types';
 import type { SupportState } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
 import { generateGridCandidates } from './gridPlacement';
+import { generatePoissonCandidates, computeRegionFlatnessDeg } from './poissonPlacement';
+import { buildAnchorBands } from './anchorBands';
 import {
     MAX_GAP_FILL_PASSES,
     buildGapFillCandidates,
     collectSupportTips,
+    computeRegionCoverage,
 } from './coverage';
 import { sizeParameters, presetForArea } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
@@ -379,7 +382,8 @@ function placeOneCandidate(
     draft: SupportState,
     _settingsOverride: Partial<AutoSupportSettings> | undefined,
     totalArea?: number,
-): { kind: string; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number } {
+    gridTrunkIds?: ReadonlySet<string>,
+): { kind: string; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected' } {
     const supportSettings = getSettings();
     const snapshot = draft;
     let d = draft;
@@ -402,9 +406,40 @@ function placeOneCandidate(
     // ── Gridless merge check ──────────────────────────────────────
     // Density-grid points force standalone trunks (a flat region needs
     // independent supports, not a bush of branches off one shaft).
+    let mergeHostFound = false;
+    let fanRefusal: FanLeafRefusal | undefined;
     if (!supportSettings.grid?.enabled && !candidate.gridPoint) {
+        // Overhang-derived candidates (sub-threshold, non-anchor regions)
+        // attach via the regular leaf-fanning path — a standalone straight
+        // trunk next to fan leaves reads as a misplaced island support. No
+        // host in fan range → fall through to the merge/trunk fallbacks.
+        if (candidate.source === 'overhang' && gridTrunkIds) {
+            const auto = supportSettings.autoSupport ?? {};
+            const fan = fanLeafToTrunk(
+                tipPos,
+                candidate.modelId,
+                collectFanShaftPoints(draft),
+                gridTrunkIds,
+                `auto-fan-${candidate.id}`,
+                auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM,
+                GRID_HOST_FAN_RADIUS_MM,
+                auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
+                auto.maxAttachmentsPerTrunk ?? 12,
+                draft,
+                mesh,
+            );
+            if (fan.ok) {
+                console.log(LOG_PREFIX,
+                    `Leaf (fan merge) ${candidate.id} → trunk ${fan.trunkId} ` +
+                    `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
+                return { kind: 'leaf', preset, draft: fan.draft };
+            }
+            fanRefusal = fan.reason;
+        }
+
         const host = findMergeHost(tipPos, candidate.modelId, draft);
         if (host) {
+            mergeHostFound = true;
             // Find the best attachment point on the host trunk's shaft,
             // below the candidate's tip.  This matches the W-key sprout
             // behaviour: leaves/branches fan from the shaft body, not
@@ -615,8 +650,15 @@ function placeOneCandidate(
             d = draftAddTrunk(d, decision.trunkBuild.trunk);
             console.log(LOG_PREFIX,
                 `Trunk ${candidate.id} (→ ${trunkId}) @ grid ${decision.nodeKey} ` +
-                `area=${candidate.islandAreaMm2.toFixed(2)}mm² Z=${candidate.zHeight.toFixed(1)}mm ${preset}`);
-            return { kind: 'trunk', preset, entityId: trunkId, draft: d };
+                `area=${candidate.islandAreaMm2.toFixed(2)}mm² Z=${candidate.zHeight.toFixed(1)}mm ${preset}` +
+                (fanRefusal ? ` fan:${fanRefusal}` : '') +
+                (mergeHostFound ? ' merge:rejected' : ''));
+            const mergeChecked = !supportSettings.grid?.enabled && !candidate.gridPoint;
+            return {
+                kind: 'trunk', preset, entityId: trunkId, draft: d,
+                fanRefusal,
+                mergeRefusal: mergeChecked ? (mergeHostFound ? 'rejected' : 'noHost') : undefined,
+            };
         }
 
         case 'place_anchor':
@@ -869,6 +911,151 @@ export function leafPathCrossesSupports(
     return false;
 }
 
+/** Shaft samples per segment for fanning host picking. */
+const SHAFT_SAMPLES_PER_SEGMENT = 10;
+/** Max leaf-fanning convergence passes. */
+const MAX_FANNING_PASSES = 5;
+
+/** Collect trunk shaft sample points from a snapshot — the fanning host pool. */
+export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
+    const shaftPoints: FanShaftPoint[] = [];
+    for (const [tid, trunk] of Object.entries(draft.trunks)) {
+        for (const seg of trunk.segments) {
+            const start = seg.bottomJoint?.pos ?? { x: 0, y: 0, z: 1.5 };
+            const end = seg.topJoint?.pos;
+            if (!end) continue;
+            const diameter = seg.diameter ?? 1.0;
+            for (let i = 0; i <= SHAFT_SAMPLES_PER_SEGMENT; i++) {
+                const t = i / SHAFT_SAMPLES_PER_SEGMENT;
+                shaftPoints.push({
+                    trunkId: tid,
+                    pos: {
+                        x: start.x + (end.x - start.x) * t,
+                        y: start.y + (end.y - start.y) * t,
+                        z: start.z + (end.z - start.z) * t,
+                    },
+                    diameter,
+                });
+            }
+        }
+    }
+    return shaftPoints;
+}
+
+export type FanLeafResult =
+    | { ok: true; draft: SupportState; trunkId: string; distMm: number; angleDeg: number }
+    | { ok: false; reason: FanLeafRefusal };
+
+/**
+ * Attach a fan leaf from the nearest trunk shaft to `target` — the SHARED
+ * fanning implementation. Used by the post-placement fanning pass (uncovered
+ * islands) and by overhang-derived candidates during placement (they should
+ * fan, not become standalone straight trunks).
+ *
+ * A fan leaf must never cross another support's shaft — the target stays
+ * unsupported rather than impale anything.
+ */
+export function fanLeafToTrunk(
+    target: { x: number; y: number; z: number },
+    modelId: string,
+    shaftPoints: FanShaftPoint[],
+    gridTrunkIds: ReadonlySet<string>,
+    knotIdPrefix: string,
+    fanRadiusMm: number,
+    gridHostFanRadiusMm: number,
+    maxAngleDeg: number,
+    maxAttachments: number,
+    draft: SupportState,
+    mesh: THREE.Mesh | undefined,
+): FanLeafResult {
+    // Single pass over the shaft pool: the nearest sample that is ELIGIBLE
+    // (grid trunks host only up close) and geometrically VALID (not same-Z,
+    // within the max angle from vertical) wins. The nearest sample alone is
+    // not enough — it can sit at an unworkable angle while a slightly farther
+    // one is a perfect fan host.
+    let best: FanShaftPoint | null = null;
+    let bestDist2 = Infinity;
+    let bestAngleDeg = 0;
+    let refusal: FanLeafRefusal = 'noHost';
+
+    for (const sp of shaftPoints) {
+        const isGrid = gridTrunkIds.has(sp.trunkId);
+        const limit = isGrid ? gridHostFanRadiusMm : fanRadiusMm;
+        const ddx = sp.pos.x - target.x;
+        const ddy = sp.pos.y - target.y;
+        const ddz = sp.pos.z - target.z;
+        const dist2 = ddx * ddx + ddy * ddy + ddz * ddz;
+        if (dist2 > limit * limit) continue;
+
+        const absVDist = Math.abs(ddz);
+        if (absVDist < 0.01) {
+            if (refusal === 'noHost') refusal = 'sameZ';
+            continue;
+        }
+        const angleDeg = (Math.atan2(Math.sqrt(ddx * ddx + ddy * ddy), absVDist) * 180) / Math.PI;
+        if (angleDeg > maxAngleDeg) {
+            if (refusal === 'noHost') refusal = 'angle';
+            continue;
+        }
+        if (dist2 < bestDist2) {
+            best = sp;
+            bestDist2 = dist2;
+            bestAngleDeg = angleDeg;
+        }
+    }
+    if (!best) return { ok: false, reason: refusal };
+
+    const sp = best;
+    const parentKnot = {
+        id: knotIdPrefix,
+        parentShaftId: sp.trunkId,
+        pos: sp.pos,
+        diameter: sp.diameter + 0.1,
+    };
+
+    // SDF collision check: the straight path from knot to tip must be clear.
+    if (mesh && isShaftBlocked(sp.pos, target, 0.2, mesh)) return { ok: false, reason: 'blocked' };
+
+    let leaf;
+    try {
+        const resolved = resolveSurfaceNormal(target, mesh ?? undefined);
+        const built = buildLeafData({
+            tipPos: resolved.point,
+            surfaceNormal: resolved.normal,
+            modelId,
+            parentKnot,
+            hostDiameterMm: sp.diameter,
+            mesh: mesh ?? undefined,
+        });
+        if (built.supportData.error) return { ok: false, reason: 'build' };
+        leaf = built.leaf;
+    } catch {
+        return { ok: false, reason: 'build' };
+    }
+
+    if (leafPathCrossesSupports(
+        parentKnot.pos,
+        leaf.contactCone?.pos ?? target,
+        0.25,
+        draft,
+        sp.trunkId,
+    )) {
+        return { ok: false, reason: 'cross' };
+    }
+    if (maxAttachments > 0 && isTrunkAtAttachmentCapacity(sp.trunkId, maxAttachments, draft)) {
+        return { ok: false, reason: 'capacity' };
+    }
+
+    const next = draftAddKnot(draft, parentKnot);
+    return {
+        ok: true,
+        draft: draftAddLeaf(next, leaf),
+        trunkId: sp.trunkId,
+        distMm: Math.sqrt(bestDist2),
+        angleDeg: bestAngleDeg,
+    };
+}
+
 export function computeAutoSupportPlan(
     islands: DetectedIsland[],
     modelId: string,
@@ -908,6 +1095,7 @@ export function computeAutoSupportPlan(
             presets: { detail: 0, structure: 0, anchor: 0 },
             rejectionReasons: {},
             areaCoverage: 0,
+            distribution: { grid: 0, poisson: 0 },
         },
         result,
     });
@@ -926,30 +1114,65 @@ export function computeAutoSupportPlan(
     let candidates = generateCandidates(islands, autoSettings);
     candidates = candidates.map((c): CandidatePoint => ({ ...c, modelId }));
 
-    // Grid phase: large flat overhang regions become density grids (the trunk
-    // forest). The region's own single candidate is replaced by its grid.
-    // A grid-generation failure must not kill the whole run — fall back to the
+    // Candidate generation phase: large flat overhang regions become density
+    // grids, anchor regions get the Poisson disk (dense perimeter + infill).
+    // Each region's own single candidate is replaced by its generated set.
+    // A generation failure must not kill the whole run — fall back to the
     // region's single candidate.
     const overhangIslands = islands.filter((i) => i.source === 'overhang');
-    if (overhangIslands.length > 0) {
-        let gridCandidates: CandidatePoint[] = [];
+
+    // Per-contact-patch anchor bands: regions within the band of their own
+    // Z-cluster's lowest member get the densified treatment — the first-printed
+    // underside of a fully-supported print (anchorBands.ts).
+    const anchorBands = buildAnchorBands(
+        overhangIslands,
+        autoSettings.anchorBandHeightMm,
+        autoSettings.anchorSpacingFactor,
+    );
+    const anchorIds = new Set(anchorBands.inBandIds);
+
+    // Distribution dispatch: shape-driven. 'auto' = planar regions → dynamic
+    // grid, organic/curved → Poisson disk (flatness metric); 'grid' / 'poisson'
+    // force one distribution. The anchor band governs DENSITY only (via
+    // anchorScaleById), never the distribution — a flat square underside is
+    // planar and belongs on the grid at anchor density.
+    const distributionMode = autoSettings.distributionMode;
+    const threshold = autoSettings.gridAreaThresholdMm2;
+    const eligible = overhangIslands.filter(
+        (i) => anchorIds.has(i.id) || (i.areaMm2 ?? 0) >= threshold,
+    );
+    let distributionCounts: { grid: number; poisson: number } = { grid: 0, poisson: 0 };
+
+    if (eligible.length > 0) {
+        let generated: CandidatePoint[] = [];
         try {
-            gridCandidates = generateGridCandidates(overhangIslands, autoSettings)
-                .map((c): CandidatePoint => ({ ...c, modelId }));
+            for (const island of eligible) {
+                const organic = distributionMode === 'auto'
+                    && computeRegionFlatnessDeg(island) > autoSettings.poissonFlatnessThresholdDeg;
+                const usePoisson = distributionMode === 'poisson' || organic;
+                if (usePoisson) {
+                    generated.push(...generatePoissonCandidates(
+                        [island], autoSettings, anchorBands.scaleById, anchorIds,
+                    ));
+                    distributionCounts.poisson++;
+                } else {
+                    generated.push(...generateGridCandidates(
+                        [island], autoSettings, anchorBands.scaleById, anchorIds,
+                    ));
+                    distributionCounts.grid++;
+                }
+            }
+            generated = generated.map((c): CandidatePoint => ({ ...c, modelId }));
         } catch (e) {
             console.error(LOG_PREFIX,
-                `Grid generation failed — falling back to per-region candidates.`,
+                `Candidate generation failed — falling back to per-region candidates.`,
                 e instanceof Error ? e.message : String(e));
         }
-        const griddedRegionIds = new Set(
-            overhangIslands
-                .filter((i) => (i.areaMm2 ?? 0) >= autoSettings.gridAreaThresholdMm2)
-                .map((i) => i.id),
-        );
-        if (gridCandidates.length > 0) {
+        const generatedRegionIds = new Set(eligible.map((i) => i.id));
+        if (generated.length > 0) {
             candidates = [
-                ...gridCandidates,
-                ...candidates.filter((c) => !griddedRegionIds.has(c.id)),
+                ...generated,
+                ...candidates.filter((c) => !generatedRegionIds.has(c.id)),
             ];
         }
     }
@@ -957,7 +1180,11 @@ export function computeAutoSupportPlan(
     console.log(LOG_PREFIX,
         `Step 1/3: ${candidates.length} candidates generated ` +
         `(filtered from ${islands.length} islands, min area ${autoSettings.minIslandAreaMm2}mm², ` +
-        `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold)`);
+        `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold)` +
+        (anchorBands.inBandIds.length > 0
+            ? ` | anchor: ${anchorBands.clusterCount} clusters, ${anchorBands.inBandIds.length}/${overhangIslands.length} regions @ ${autoSettings.anchorSpacingFactor}×`
+            : '') +
+        ` | distribution: ${distributionCounts.grid} grid, ${distributionCounts.poisson} poisson`);
 
     if (candidates.length === 0) {
         return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'No viable support candidates found.'));
@@ -1026,6 +1253,16 @@ export function computeAutoSupportPlan(
     let placedSticks = 0;
     let rejectedCount = 0;
 
+    // Placement-path diagnostics: where each placed trunk came from and why
+    // non-fanned candidates didn't fan/merge. Pure counts — no physics.
+    const diagnostics: PlacementDiagnostics = {
+        candidatesBySource: { voxel: 0, minima: 0, intersection: 0, overhang: 0 },
+        candidatesByDistribution: { grid: 0, poisson: 0, single: 0 },
+        trunksByKind: { poissonDisk: 0, gridInfill: 0, coverageFill: 0, standalone: 0 },
+        fanRefusals: {},
+        mergeRefusals: {},
+    };
+
     // Analytics accumulators
     const presets = { detail: 0, structure: 0, anchor: 0 };
     const rejectionReasons: Record<string, number> = {};
@@ -1059,7 +1296,7 @@ export function computeAutoSupportPlan(
     // (no store commit) so later candidates see earlier supports.
     const placeOne = (candidate: CandidatePoint): string => {
         try {
-            const result = placeOneCandidate(candidate, draft, settingsOverride, clusterTotal.get(candidate.id));
+            const result = placeOneCandidate(candidate, draft, settingsOverride, clusterTotal.get(candidate.id), gridTrunkIds);
             draft = result.draft;
             if (result.kickstand) kickstandDraft = result.kickstand;
             if (candidate.gridPoint && result.kind === 'trunk' && result.entityId) {
@@ -1079,6 +1316,38 @@ export function computeAutoSupportPlan(
                     break;
             }
             if (result.preset) presets[result.preset]++;
+
+            // Placement-path diagnostics: where each candidate ended up.
+            diagnostics.candidatesBySource[candidate.source] =
+                (diagnostics.candidatesBySource[candidate.source] ?? 0) + 1;
+            if (candidate.gridPoint) {
+                if (candidate.id.startsWith('perim-') || candidate.id.startsWith('poisson-')) {
+                    diagnostics.candidatesByDistribution.poisson++;
+                } else {
+                    diagnostics.candidatesByDistribution.grid++;
+                }
+            } else {
+                diagnostics.candidatesByDistribution.single++;
+            }
+            if (result.kind === 'trunk' && result.entityId) {
+                if (candidate.gridPoint) {
+                    if (candidate.id.startsWith('perim-') || candidate.id.startsWith('poisson-')) {
+                        diagnostics.trunksByKind.poissonDisk++;
+                    } else if (candidate.id.startsWith('fill-')) {
+                        diagnostics.trunksByKind.coverageFill++;
+                    } else {
+                        diagnostics.trunksByKind.gridInfill++;
+                    }
+                } else {
+                    diagnostics.trunksByKind.standalone++;
+                }
+            }
+            if (result.fanRefusal) {
+                diagnostics.fanRefusals[result.fanRefusal] = (diagnostics.fanRefusals[result.fanRefusal] ?? 0) + 1;
+            }
+            if (result.mergeRefusal) {
+                diagnostics.mergeRefusals[result.mergeRefusal] = (diagnostics.mergeRefusals[result.mergeRefusal] ?? 0) + 1;
+            }
             return result.kind;
         } catch (e) {
             rejectedCount++;
@@ -1092,6 +1361,15 @@ export function computeAutoSupportPlan(
     for (const candidate of candidates) {
         placeOne(candidate);
     }
+
+    const fmtRefusals = (r: Record<string, number | undefined>): string => {
+        const entries = Object.entries(r).filter(([, v]) => v !== undefined) as Array<[string, number]>;
+        return entries.length === 0 ? 'none' : entries.map(([k, v]) => `${k}=${v}`).join(', ');
+    };
+    console.log(LOG_PREFIX,
+        `Placement: ${diagnostics.trunksByKind.poissonDisk} poisson-disk, ${diagnostics.trunksByKind.gridInfill} grid-infill, ` +
+        `${diagnostics.trunksByKind.coverageFill} coverage-fill, ${diagnostics.trunksByKind.standalone} standalone trunks ` +
+        `| fan refusals: ${fmtRefusals(diagnostics.fanRefusals)} | merge refusals: ${fmtRefusals(diagnostics.mergeRefusals)}`);
 
     // ── Coverage convergence (gap-fill) ─────────────────────────────
     // Footprint-aware: an overhang region is covered when its projected
@@ -1147,23 +1425,30 @@ export function computeAutoSupportPlan(
     for (const island of islands) {
         const area = island.areaMm2 ?? 0;
         totalArea += area;
-        const cx = island.contact.x;
-        const cy = island.contact.y;
-        const cz = island.contact.z;
-        let covered = false;
-        for (const tip of allTips) {
-            const dx = cx - tip.x;
-            const dy = cy - tip.y;
-            const dz = cz - tip.z;
-            if (dx * dx + dy * dy + dz * dz <= covR2) {
-                covered = true;
-                break;
+        // FOOTPRINT coverage: the fraction of the region's contact voxels
+        // within the support radius of a tip (the gap-fill's own measure).
+        // The old centroid heuristic under-counted big regions — a 20×20
+        // grid read 1% covered — which sent the fanning pass after
+        // already-supported surfaces (redundant "floating" leaves).
+        let fraction: number;
+        if (island.contactVoxels && island.contactVoxels.length > 0) {
+            fraction = computeRegionCoverage(island, allTips, SUPPORT_COVERAGE_RADIUS_MM);
+        } else {
+            // No footprint (minima islands): centroid proximity fallback.
+            let hit = false;
+            for (const tip of allTips) {
+                const dx = island.contact.x - tip.x;
+                const dy = island.contact.y - tip.y;
+                const dz = island.contact.z - tip.z;
+                if (dx * dx + dy * dy + dz * dz <= covR2) {
+                    hit = true;
+                    break;
+                }
             }
+            fraction = hit ? 1 : 0;
         }
-        if (covered) {
-            supportedIds.add(island.id);
-            coveredArea += area;
-        }
+        coveredArea += area * fraction;
+        if (fraction >= 0.9) supportedIds.add(island.id);
     }
 
     // ── Sizing debug info ───────────────────────────────────────────
@@ -1189,9 +1474,27 @@ export function computeAutoSupportPlan(
             modelVolumeMm3: Math.round(modelCtx.modelVolumeMm3),
             estimatedWeightG: round2(weightG),
             totalCandidates: modelCtx.totalCandidates,
-            weightPerSupportG: round2(weightG * (zMax / 2) / zMax), // mid-height support
+            // Honest mass share: total model weight divided by the number of
+            // placed supports. A load share, not a force estimate.
+            weightPerSupportG: round2(placedTrunks > 0 ? weightG / placedTrunks : 0),
             avgIslandAreaMm2: round2(avgArea),
-            avgPeelForceN: round2(maxArea * 0.2), // worst-case peel force
+            // Anchor-layer stats (per-contact-patch bands, anchorBands.ts):
+            // counts and projected area only — no force/load values.
+            anchorClusterCount: anchorBands.clusterCount,
+            anchorInBandRegions: anchorBands.inBandIds.length,
+            anchorLayerAreaMm2: round2(
+                anchorBands.inBandIds.length > 0
+                    ? overhangIslands.reduce(
+                        (sum, i) => sum + (anchorBands.inBandIds.includes(i.id) ? (i.areaMm2 ?? 0) : 0),
+                        0,
+                    )
+                    : 0,
+            ),
+            distributionGridRegions: distributionCounts.grid,
+            distributionPoissonRegions: distributionCounts.poisson,
+            standaloneTrunks: diagnostics.trunksByKind.standalone,
+            poissonDiskTrunks: diagnostics.trunksByKind.poissonDisk,
+            gridInfillTrunks: diagnostics.trunksByKind.gridInfill + diagnostics.trunksByKind.coverageFill,
             shaftDiameterRange: {
                 min: round2(sMin.shaftDiameterMm ?? 0),
                 max: round2(sMax.shaftDiameterMm ?? 0),
@@ -1211,6 +1514,8 @@ export function computeAutoSupportPlan(
         presets,
         rejectionReasons,
         areaCoverage: totalArea > 0 ? coveredArea / totalArea : 0,
+        distribution: distributionCounts,
+        placement: diagnostics,
         sizingDebug,
     };
 
@@ -1219,8 +1524,6 @@ export function computeAutoSupportPlan(
         `${analytics.islandsUncovered} islands uncovered.`);
 
     // ── Post-placement leaf fanning (iterative convergence) ──────────
-    const MAX_FANNING_PASSES = 5;
-    const SHAFT_SAMPLES_PER_SEGMENT = 5;
     const fanRadiusMm = autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM;
     const fanMaxAngleDeg = autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
 
@@ -1229,137 +1532,50 @@ export function computeAutoSupportPlan(
         `Max ${MAX_FANNING_PASSES} passes, fan radius ${fanRadiusMm}mm, max angle ${fanMaxAngleDeg}°.`);
 
     for (let pass = 0; pass < MAX_FANNING_PASSES && analytics.islandsUncovered > 0; pass++) {
-        const snap = draft;
-
-        // Collect trunk shaft sample points from the current snapshot.
-        const shaftPoints: Array<{
-            trunkId: string; pos: { x: number; y: number; z: number }; diameter: number;
-        }> = [];
-        for (const [tid, trunk] of Object.entries(snap.trunks)) {
-            for (const seg of trunk.segments) {
-                const start = seg.bottomJoint?.pos
-                    ?? { x: 0, y: 0, z: 1.5 };
-                const end = seg.topJoint?.pos;
-                if (!end) continue;
-                const diameter = seg.diameter ?? 1.0;
-                for (let i = 0; i <= SHAFT_SAMPLES_PER_SEGMENT; i++) {
-                    const t = i / SHAFT_SAMPLES_PER_SEGMENT;
-                    shaftPoints.push({
-                        trunkId: tid,
-                        pos: {
-                            x: start.x + (end.x - start.x) * t,
-                            y: start.y + (end.y - start.y) * t,
-                            z: start.z + (end.z - start.z) * t,
-                        },
-                        diameter,
-                    });
-                }
-            }
-        }
-
+        const shaftPoints = collectFanShaftPoints(draft);
         if (shaftPoints.length === 0) {
             console.log(LOG_PREFIX, `Leaf fanning pass ${pass}: no shaft points — breaking.`);
             break;
         }
 
-        const maxAngleRad = (fanMaxAngleDeg * Math.PI) / 180;
         let fannedCount = 0;
 
         let skippedDist = 0;
         let skippedAngle = 0;
         let skippedSameZ = 0;
         let skippedCross = 0;
+        let skippedOther = 0;
 
         for (const island of islands) {
             if (supportedIds.has(island.id)) continue;
-            const cx = island.contact.x;
-            const cy = island.contact.y;
-            const cz = island.contact.z;
-
-            // Nearest shaft wins; grid trunks host only up close (tight
-            // radius), else the nearest regular trunk is used — long fan
-            // leaves must not sweep across the grid forest.
-            const picked = pickFanHost(
+            const fan = fanLeafToTrunk(
+                { x: island.contact.x, y: island.contact.y, z: island.contact.z },
+                modelId,
                 shaftPoints,
                 gridTrunkIds,
-                { x: cx, y: cy, z: cz },
+                `auto-fan-${island.id}-p${pass}`,
                 fanRadiusMm,
                 GRID_HOST_FAN_RADIUS_MM,
+                fanMaxAngleDeg,
+                autoSettings.maxAttachmentsPerTrunk,
+                draft,
+                resolvedMesh ?? undefined,
             );
-
-            if (!picked) {
-                skippedDist++;
+            if (!fan.ok) {
+                if (fan.reason === 'noHost') skippedDist++;
+                else if (fan.reason === 'angle') skippedAngle++;
+                else if (fan.reason === 'sameZ') skippedSameZ++;
+                else if (fan.reason === 'cross') skippedCross++;
+                else skippedOther++;
                 continue;
             }
-
-            const sp = picked.sp;
-            const bestDist2 = picked.dist2;
-            const hDist = Math.sqrt((cx - sp.pos.x) ** 2 + (cy - sp.pos.y) ** 2);
-            const vDist = cz - sp.pos.z;
-            const absVDist = Math.abs(vDist);
-            if (absVDist < 0.01) { skippedSameZ++; continue; }
-            const angleFromVertical = Math.atan2(hDist, absVDist);
-            if (angleFromVertical > maxAngleRad) { skippedAngle++; continue; }
-
-            const parentKnot = {
-                id: `auto-fan-${island.id}-p${pass}`,
-                parentShaftId: sp.trunkId,
-                pos: sp.pos,
-                diameter: sp.diameter + 0.1,
-            };
-
-            // SDF collision check: the straight path from knot to tip
-            // must be clear of the model.
-            const leafMesh = resolvedMesh;
-            if (leafMesh) {
-                const shaftRadius = 0.2; // leaf cone is thin
-                if (isShaftBlocked(sp.pos, { x: cx, y: cy, z: cz }, shaftRadius, leafMesh)) {
-                    continue;
-                }
-            }
-
-            try {
-                const resolved = resolveSurfaceNormal({ x: cx, y: cy, z: cz }, leafMesh ?? undefined);
-                const { leaf, supportData: sd } = buildLeafData({
-                    tipPos: resolved.point,
-                    surfaceNormal: resolved.normal,
-                    modelId,
-                    parentKnot,
-                    hostDiameterMm: sp.diameter,
-                    mesh: leafMesh ?? undefined,
-                });
-                if (sd.error) continue;
-
-                // A fan leaf must never cross another support's shaft — a
-                // leaf through a neighboring trunk reads as a puncture. The
-                // island stays uncovered rather than impale anything.
-                if (leafPathCrossesSupports(
-                    parentKnot.pos,
-                    leaf.contactCone?.pos ?? resolved.point,
-                    0.25,
-                    draft,
-                    sp.trunkId,
-                )) {
-                    skippedCross++;
-                    continue;
-                }
-
-                const fanCap = autoSettings.maxAttachmentsPerTrunk;
-                if (isTrunkAtAttachmentCapacity(sp.trunkId, fanCap, draft)) {
-                    // Trunk full — skip this island for this pass.
-                    continue;
-                }
-                draft = draftAddKnot(draft, parentKnot);
-                draft = draftAddLeaf(draft, leaf);
-                fannedCount++;
-                supportedIds.add(island.id);
-                coveredArea += (island.areaMm2 ?? 0);
-                console.log(LOG_PREFIX,
-                    `Leaf (fan p${pass}) ${island.id} → trunk ${sp.trunkId} ` +
-                    `dist=${Math.sqrt(bestDist2).toFixed(1)}mm angle=${(angleFromVertical * 180 / Math.PI).toFixed(0)}°`);
-            } catch (e) {
-                // Leaf build failed — island stays uncovered.
-            }
+            draft = fan.draft;
+            fannedCount++;
+            supportedIds.add(island.id);
+            coveredArea += (island.areaMm2 ?? 0);
+            console.log(LOG_PREFIX,
+                `Leaf (fan p${pass}) ${island.id} → trunk ${fan.trunkId} ` +
+                `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
         }
 
         if (fannedCount > 0) {
@@ -1376,7 +1592,8 @@ export function computeAutoSupportPlan(
                 `${skippedDist} too far (>${fanRadiusMm}mm), ` +
                 `${skippedAngle} angle too steep (>${LEAF_FAN_MAX_ANGLE_DEG}°), ` +
                 `${skippedSameZ} same Z (can't attach), ` +
-                `${skippedCross} crossing another support.`);
+                `${skippedCross} crossing another support, ` +
+                `${skippedOther} blocked/build/capacity.`);
             break;
         }
     }

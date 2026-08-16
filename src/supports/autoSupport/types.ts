@@ -45,8 +45,45 @@ export interface AutoPlaceAnalytics {
     rejectionReasons: Partial<Record<RejectReason, number>>;
     /** Area coverage: sum of covered island areas / total island area (0–1). */
     areaCoverage: number;
+    /** Regions generated per distribution (dynamic grid vs Poisson disk). */
+    distribution: { grid: number; poisson: number };
+    /** Placement-path breakdown — why trunks ended up where they did. */
+    placement?: PlacementDiagnostics;
     /** Debug sizing info from the physics calculations. */
     sizingDebug?: SizingDebugInfo;
+}
+
+/** Why a fan-leaf attempt was refused. */
+export type FanLeafRefusal =
+    | 'noHost'      // no shaft point within the fan radius
+    | 'sameZ'       // host and target at the same height (can't attach)
+    | 'angle'       // too steep from vertical
+    | 'blocked'     // straight path crosses the model
+    | 'build'       // leaf geometry failed
+    | 'cross'       // leaf would cross another support's shaft
+    | 'capacity';   // host trunk is at its attachment limit
+
+/** Why a trunk was placed standalone instead of fanning/merging. */
+export interface PlacementDiagnostics {
+    /** Candidate counts by detector source. */
+    candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number };
+    /** Candidate counts by distribution (dynamic grid / Poisson disk / single). */
+    candidatesByDistribution: { grid: number; poisson: number; single: number };
+    /** Placed trunks by origin. */
+    trunksByKind: {
+        /** Poisson-disk points (organic regions; dense perimeter + infill). */
+        poissonDisk: number;
+        /** Dynamic-grid points (planar regions, incl. flat anchors). */
+        gridInfill: number;
+        /** Coverage-convergence gap-fill points. */
+        coverageFill: number;
+        /** Non-gridPoint candidates that neither fanned nor merged. */
+        standalone: number;
+    };
+    /** Why overhang candidates failed to fan (leaf path). */
+    fanRefusals: Partial<Record<FanLeafRefusal, number>>;
+    /** Why candidates failed to merge (no host vs host rejected the attachment). */
+    mergeRefusals: Partial<Record<'noHost' | 'rejected', number>>;
 }
 
 /** Physics-based sizing debug data. */
@@ -56,7 +93,22 @@ export interface SizingDebugInfo {
     totalCandidates: number;
     weightPerSupportG: number;
     avgIslandAreaMm2: number;
-    avgPeelForceN: number;
+    /** Anchor clusters found (per-contact-patch Z bands). */
+    anchorClusterCount: number;
+    /** Regions inside an anchor band. */
+    anchorInBandRegions: number;
+    /** Projected area of in-band regions (mm²). */
+    anchorLayerAreaMm2: number;
+    /** Regions generated with the dynamic grid. */
+    distributionGridRegions: number;
+    /** Regions generated with the Poisson disk. */
+    distributionPoissonRegions: number;
+    /** Standalone trunks (neither fanned nor merged) — the over-supply signal. */
+    standaloneTrunks: number;
+    /** Trunks from Poisson disks (organic regions, incl. organic anchors). */
+    poissonDiskTrunks: number;
+    /** Trunks from the dynamic grid (planar regions) + coverage fill. */
+    gridInfillTrunks: number;
     shaftDiameterRange: { min: number; max: number; avg: number };
     tipContactRange: { min: number; max: number; avg: number };
 }

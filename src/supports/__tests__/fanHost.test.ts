@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { pickFanHost, leafPathCrossesSupports, type FanShaftPoint } from '../autoSupport/autoPlace';
+import { pickFanHost, leafPathCrossesSupports, collectFanShaftPoints, fanLeafToTrunk, type FanShaftPoint } from '../autoSupport/autoPlace';
 import type { SupportState } from '../types';
 
 function emptySnapshot(): SupportState {
@@ -125,4 +125,52 @@ test('host trunk itself is excluded from the crossing check', () => {
         false,
         'the leaf attaches to its own shaft — never flagged',
     );
+});
+
+test('collectFanShaftPoints samples every segment endpoint', () => {
+    const draft = trunkWithShaft('t1', 0, 0, 0, 19);
+    const points = collectFanShaftPoints(draft);
+
+    assert.equal(points.length, 11, '10 samples + the top endpoint');
+    const zs = points.map((p) => Math.round(p.pos.z * 10) / 10);
+    assert.deepEqual(zs, [0, 1.9, 3.8, 5.7, 7.6, 9.5, 11.4, 13.3, 15.2, 17.1, 19]);
+    assert.ok(points.every((p) => p.trunkId === 't1'));
+});
+
+test('fanLeafToTrunk attaches a leaf at reach beyond the merge radius', () => {
+    // Target 4.3 mm from the shaft: outside the 4 mm gridless merge radius,
+    // inside the 5 mm fan radius, valid angle — the fan path is the only way
+    // this becomes a leaf instead of a standalone trunk.
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const shaftPoints = [sp('host', 0, 0, 12.5)];
+    const target = { x: 4.3, y: 0, z: 15 };
+
+    const fan = fanLeafToTrunk(target, 'm', shaftPoints, new Set(), 'fan-test', 5, 2.5, 60, 12, draft, undefined);
+
+    assert.equal(fan.ok, true, 'fan succeeds (4.3 mm < 5 mm fan radius)');
+    if (fan.ok) {
+        assert.equal(fan.trunkId, 'host');
+        assert.equal(Object.keys(fan.draft.leaves).length, 1, 'one leaf attached');
+        assert.equal(Object.keys(fan.draft.knots).length, 1, 'knot attached to the shaft');
+    }
+});
+
+test('fanLeafToTrunk refuses when no shaft is in range', () => {
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const fan = fanLeafToTrunk(
+        { x: 20, y: 0, z: 15 }, 'm', [sp('host', 0, 0, 12.5)], new Set(), 'fan-test', 5, 2.5, 60, 12, draft, undefined,
+    );
+
+    assert.equal(fan.ok, false);
+    if (!fan.ok) assert.equal(fan.reason, 'noHost');
+});
+
+test('fanLeafToTrunk refuses steep angles', () => {
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const fan = fanLeafToTrunk(
+        { x: 4.3, y: 0, z: 13 }, 'm', [sp('host', 0, 0, 12.5)], new Set(), 'fan-test', 5, 2.5, 60, 12, draft, undefined,
+    );
+
+    assert.equal(fan.ok, false);
+    if (!fan.ok) assert.equal(fan.reason, 'angle');
 });

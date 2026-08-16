@@ -75,6 +75,11 @@ type NumericAutoSupportSettingKey =
   | 'sizeScale'
   | 'flatDensityBoost'
   | 'slopeRelaxFactor'
+  | 'anchorBandHeightMm'
+  | 'anchorSpacingFactor'
+  | 'suctionAreaExponent'
+  | 'anchorPerimeterFactor'
+  | 'poissonFlatnessThresholdDeg'
   | 'coverageTargetPercent'
   | 'leafFanRadiusMm'
   | 'leafFanMaxAngleDeg';
@@ -87,6 +92,11 @@ const KNOBS: KnobDef[] = [
   { key: 'gridAreaThresholdMm2',  label: 'Grid Threshold',       min: 5,    max: 200,  step: 5,   unit: 'mm²', hint: 'Flat regions at/above this area get a full grid; smaller regions get a single support' },
   { key: 'flatDensityBoost',      label: 'Flat Boost',           min: 0.5,  max: 1,    step: 0.05, unit: '×',   hint: 'Grid spacing on flat ceilings — lower = denser supports on anchor surfaces (0.7 = ~2× the supports)' },
   { key: 'slopeRelaxFactor',      label: 'Slope Relax',          min: 1,    max: 2,    step: 0.1,  unit: '×',   hint: 'Grid spacing on slopes at the self-support angle — higher = sparser' },
+  { key: 'anchorBandHeightMm',    label: 'Anchor Band',          min: 0,    max: 20,   step: 1,   unit: 'mm',  hint: 'Z-band above each contact patch\'s lowest point — the first-printed underside of a fully-supported print gets denser tips/roots. 0 = off' },
+  { key: 'anchorSpacingFactor',   label: 'Anchor Density',       min: 0.4,  max: 1,    step: 0.05, unit: '×',   hint: 'Spacing multiplier inside anchor bands — lower = denser anchoring where the model first touches its supports' },
+  { key: 'suctionAreaExponent',   label: 'Suction Scale',        min: 0,    max: 0.4,  step: 0.05, unit: '',   hint: 'How strongly flat density grows with region area — large shallow ceilings carry more peel. 0 = off' },
+  { key: 'anchorPerimeterFactor', label: 'Anchor Perimeter',     min: 0.6,  max: 1,    step: 0.05, unit: '×',   hint: 'Poisson perimeter spacing vs the interior — the boundary of an anchor region engages peel first, so its ring is denser. Lower = tighter ring' },
+  { key: 'poissonFlatnessThresholdDeg', label: 'Organic Threshold', min: 5,  max: 30,   step: 1,   unit: '°',   hint: 'Local surface-angle spread above which a region is organic → Poisson disk in Auto mode. Planar regions stay on the grid. Lower = more regions Poisson' },
   { key: 'sizeScale',             label: 'Support Size',         min: 0.5,  max: 2,    step: 0.05, unit: '×',   hint: 'Master multiplier over the preset sizing bands — thicker or thinner everywhere' },
   { key: 'coverageTargetPercent', label: 'Coverage Target',      min: 75,   max: 100,  step: 5,   unit: '%',   hint: 'How much of each region\'s footprint the grid must cover before gap-filling stops' },
   { key: 'leafFanRadiusMm',       label: 'Fan Reach',            min: 2,    max: 15,   step: 0.5, unit: 'mm',  hint: 'Max horizontal distance a fan-out leaf may span from a trunk shaft' },
@@ -120,7 +130,7 @@ function SliderRow({ knob, draft, setDraft }: { knob: KnobDef; draft: AutoSuppor
     <div>
       <div className="flex items-center justify-between mb-1">
         <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }} title={knob.hint}>{knob.label}</span>
-        <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{knob.step < 1 ? value.toFixed(1) : value}{knob.unit}</span>
+        <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{value.toFixed(knob.step < 0.1 ? 2 : knob.step < 1 ? 1 : 0)}{knob.unit}</span>
       </div>
       <input type="range" min={knob.min} max={knob.max} step={knob.step} value={value}
         onChange={(e) => setDraft((d) => ({ ...d, [knob.key]: parseFloat(e.target.value) }))}
@@ -459,7 +469,14 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
                     <div className="flex justify-between"><span>Candidates</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.totalCandidates}</span></div>
                     <div className="flex justify-between"><span>Weight / support</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.weightPerSupportG.toFixed(2)} g</span></div>
                     <div className="flex justify-between"><span>Avg island area</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.avgIslandAreaMm2.toFixed(2)} mm²</span></div>
-                    <div className="flex justify-between"><span>Peel force (max)</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.avgPeelForceN.toFixed(3)} N</span></div>
+                    <div className="flex justify-between"><span>Anchor clusters</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.anchorClusterCount}</span></div>
+                    <div className="flex justify-between"><span>Anchor regions</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.anchorInBandRegions}</span></div>
+                    <div className="flex justify-between"><span>Anchor layer area</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.anchorLayerAreaMm2.toFixed(0)} mm²</span></div>
+                    <div className="flex justify-between"><span>Grid regions</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.distributionGridRegions}</span></div>
+                    <div className="flex justify-between"><span>Poisson regions</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.distributionPoissonRegions}</span></div>
+                    <div className="flex justify-between"><span>Standalone trunks</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.standaloneTrunks}</span></div>
+                    <div className="flex justify-between"><span>Poisson trunks</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.poissonDiskTrunks}</span></div>
+                    <div className="flex justify-between"><span>Grid infill trunks</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.gridInfillTrunks}</span></div>
                     <div className="flex justify-between" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 2, marginTop: 2 }}>
                       <span>Shaft Ø range</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.shaftDiameterRange.min.toFixed(2)}–{sizingDebug.shaftDiameterRange.max.toFixed(2)} mm</span>
                     </div>
@@ -542,7 +559,31 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
               <div className="rounded-md border p-2.5" style={SECTION_CARD}>
                 <SectionHeader title="Density" />
                 <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['areaPerSupportMm2', 'gridAreaThresholdMm2', 'flatDensityBoost', 'slopeRelaxFactor'].includes(k.key)).map(knob => (
+                  {KNOBS.filter(k => ['areaPerSupportMm2', 'gridAreaThresholdMm2', 'flatDensityBoost', 'slopeRelaxFactor', 'anchorBandHeightMm', 'anchorSpacingFactor', 'suctionAreaExponent', 'anchorPerimeterFactor'].includes(k.key)).map(knob => (
+                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
+                <SectionHeader title="Distribution" />
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(['auto', 'grid', 'poisson'] as const).map((mode) => (
+                    <button key={mode} type="button"
+                      onClick={() => setDraft((d) => ({ ...d, distributionMode: mode }))}
+                      className="h-8 rounded-md border text-[11px] font-semibold capitalize transition-colors"
+                      title={mode === 'auto'
+                        ? 'Planar regions use the dynamic grid; organic/curved regions use Poisson disk (flatness threshold). Anchor regions get anchor density in either distribution'
+                        : mode === 'grid'
+                          ? 'All regions use the dynamic grid'
+                          : 'All regions use Poisson disk (perimeter + infill)'}
+                      style={draft.distributionMode === mode
+                        ? { borderColor: 'color-mix(in srgb, var(--accent), white 10%)', background: 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)', color: 'var(--accent)' }
+                        : { borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
+                    >{mode}</button>
+                  ))}
+                </div>
+                <div className="space-y-2.5 mt-2.5">
+                  {KNOBS.filter(k => k.key === 'poissonFlatnessThresholdDeg').map(knob => (
                     <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
                   ))}
                 </div>

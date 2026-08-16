@@ -19,7 +19,7 @@ const FOOTPRINT_TOLERANCE_MM = 0.25;
  * exactly; fill only where the boundary curves away from the lattice
  * (corners, holes, rotated edges) and no grid point is within `spacing`.
  */
-function buildBoundaryPoints(
+export function buildBoundaryPoints(
     voxels: Array<{ x: number; y: number; z?: number }>,
     spacing: number,
     fallbackZ: number,
@@ -60,6 +60,111 @@ function buildBoundaryPoints(
     return pts;
 }
 
+/** Absolute floor on grid/poisson spacing (mm) — no combination of factors may
+ *  push past proven commercial practice (heaviest documented preset ≈ 1.5 mm). */
+export const GRID_SPACING_FLOOR_MM = 1.2;
+
+/** Perimeter contact inset (mm): a support centered ON the region boundary
+ *  hangs half its contact disc past the edge — half attached to air. The
+ *  perimeter ring (and grid outer ring / boundary fill) is generated on the
+ *  footprint ERODED by this amount (1 mask pixel = 0.25 mm): covers the max
+ *  standard tip-contact radius (anchor 0.4 mm → 0.2 mm) plus a 0.05 mm
+ *  margin — fully on the surface, not over-inset. */
+export const PERIMETER_CONTACT_INSET_MM = 0.25;
+
+/** Mask pixels eroded per side = PERIMETER_CONTACT_INSET_MM / 0.25. */
+const PERIMETER_ERODE_PIXELS = 1;
+
+/**
+ * Interior voxels of a footprint: mask pixels whose 2-pixel neighborhood is
+ * fully present (morphological erosion). The region shrunken so a support
+ * centered on its boundary keeps its whole contact disc on the surface.
+ * Erosion (not centroid offsetting) so concave edges and holes inset in the
+ * correct local direction. Empty for regions thinner than the inset — callers
+ * fall back to the raw boundary.
+ */
+export function erodeFootprint(voxels: Array<{ x: number; y: number; z?: number }>): Array<{ x: number; y: number; z?: number }> {
+    const set = new Set<string>();
+    for (const p of voxels) set.add(`${Math.round(p.x * 4)},${Math.round(p.y * 4)}`);
+    const interior: Array<{ x: number; y: number; z?: number }> = [];
+    for (const p of voxels) {
+        const kx = Math.round(p.x * 4);
+        const ky = Math.round(p.y * 4);
+        let all = true;
+        for (let dx = -PERIMETER_ERODE_PIXELS; dx <= PERIMETER_ERODE_PIXELS && all; dx++) {
+            for (let dy = -PERIMETER_ERODE_PIXELS; dy <= PERIMETER_ERODE_PIXELS && all; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                if (!set.has(`${kx + dx},${ky + dy}`)) all = false;
+            }
+        }
+        if (all) interior.push(p);
+    }
+    return interior;
+}
+
+/** Floor on the Poisson PERIMETER ring spacing (mm). The perimeter is
+ *  deliberately tighter than the interior (edge supports engage peel first);
+ *  this floor is the only thing stopping it from fusing. */
+export const PERIMETER_SPACING_FLOOR_MM = 1.0;
+
+/** Per-region candidate cap: the placement pipeline pathfinds every candidate
+ *  synchronously, so densification must never silently exceed this. */
+export const MAX_GRID_CANDIDATES_PER_REGION = 800;
+
+/**
+ * Target spacing for a region — the shared density formula used by the grid
+ * phase (and later the Poisson sampler). Empirical curve, no load model:
+ *
+ *   spacing = max(floor, √areaPerSupport × (flat + angleT × (relax − flat)) × anchor)
+ *   flat    = flatDensityBoost × (threshold / area)^suctionAreaExponent   (area > threshold)
+ *
+ * - Angle term: flat ceilings (0°) densest, slopes at the self-support angle
+ *   sparsest — direction from peel physics (force ∝ cross-section), values are
+ *   calibration knobs.
+ * - Suction term: large shallow ceilings densify sublinearly with projected
+ *   area (peel grows with cross-section; direction physical, curve empirical).
+ * - Anchor term: per-contact-patch anchor bands (anchorBands.ts) densify the
+ *   first-printed underside of a fully-supported print.
+ */
+export function computeRegionSpacing(
+    island: DetectedIsland,
+    settings: AutoSupportSettings,
+    anchorScale: number,
+): number {
+    const baseSpacing = Math.sqrt(Math.max(settings.areaPerSupportMm2, 0.5));
+    const selfSupportAngleDeg = settings.overhangSelfSupportAngleDeg
+        ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG;
+    const angleT = Math.min(1, Math.max(0,
+        (island.overhangAngleDeg ?? 0) / selfSupportAngleDeg));
+    const minFactor = settings.flatDensityBoost ?? GRID_SPACING_MIN_FACTOR;
+    const maxFactor = settings.slopeRelaxFactor ?? GRID_SPACING_MAX_FACTOR;
+
+    if (anchorScale < 1) {
+        // Anchor regions: the anchor factor OWNS the flat-end density — it
+        // replaces flatDensityBoost and the suction area scale, so the user's
+        // preset density is respected instead of three sub-1 factors
+        // compounding into the floor (observed over-supply: light preset
+        // crushed to the 1.2 mm floor). The anchor treatment's extra density
+        // comes from the Poisson perimeter ring and the threshold bypass,
+        // not from stacking spacing factors.
+        const anchorFlat = settings.anchorSpacingFactor ?? minFactor;
+        const spacing = baseSpacing * (anchorFlat + angleT * (maxFactor - anchorFlat));
+        return Math.max(GRID_SPACING_FLOOR_MM, spacing);
+    }
+
+    const area = island.areaMm2 ?? 0;
+    const threshold = settings.gridAreaThresholdMm2;
+    const exponent = settings.suctionAreaExponent ?? 0;
+    const areaScale = exponent > 0 && area > threshold
+        ? Math.pow(threshold / area, exponent)
+        : 1;
+
+    const flatFactor = minFactor * areaScale;
+    const spacing = baseSpacing
+        * (flatFactor + angleT * (maxFactor - flatFactor));
+    return Math.max(GRID_SPACING_FLOOR_MM, spacing);
+}
+
 /**
  * Density-grid placement (redesign step 3 — the grid phase).
  *
@@ -90,6 +195,8 @@ function buildBoundaryPoints(
 export function generateGridCandidates(
     overhangIslands: DetectedIsland[],
     settings: AutoSupportSettings,
+    anchorScaleById?: ReadonlyMap<string, number>,
+    minAreaBypassIds?: ReadonlySet<string>,
 ): CandidatePoint[] {
     const baseSpacing = Math.sqrt(Math.max(settings.areaPerSupportMm2, 0.5));
     if (baseSpacing <= 0) return [];
@@ -100,19 +207,14 @@ export function generateGridCandidates(
     for (const island of overhangIslands) {
         if (island.source !== 'overhang') continue;
         const area = island.areaMm2 ?? 0;
-        if (area < threshold) continue;
+        // Anchor regions (in-band) bypass the grid threshold — a small foot is
+        // still a load-bearing anchor and must be densified, not single-supported.
+        if (area < threshold && !minAreaBypassIds?.has(island.id)) continue;
 
-        // Angle-aware density: anchor surfaces (flat ceilings — a model's
-        // feet / underside) are the densest; slopes near the self-support
-        // threshold are the sparsest. Spacing = √areaPerSupport × factor.
-        const selfSupportAngleDeg = settings.overhangSelfSupportAngleDeg
-            ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG;
-        const angleT = Math.min(1, Math.max(0,
-            (island.overhangAngleDeg ?? 0) / selfSupportAngleDeg));
-        const minFactor = settings.flatDensityBoost ?? GRID_SPACING_MIN_FACTOR;
-        const maxFactor = settings.slopeRelaxFactor ?? GRID_SPACING_MAX_FACTOR;
-        const spacing = baseSpacing
-            * (minFactor + angleT * (maxFactor - minFactor));
+        // Density factors: angle (flat = densest, self-support slope =
+        // sparsest), suction area scaling, and the per-patch anchor band.
+        const anchorScale = anchorScaleById?.get(island.id) ?? 1;
+        let spacing = computeRegionSpacing(island, settings, anchorScale);
 
         const voxels = island.contactVoxels;
         if (!voxels || voxels.length === 0) continue;
@@ -185,19 +287,40 @@ export function generateGridCandidates(
 
         // Dynamic spacing: adjust per axis so the grid spans the full region
         // with integer rows/columns — never cut off by a leftover margin.
+        // The lattice and boundary fill are INSET by the contact radius so a
+        // support never hangs half its contact disc past the region edge.
         const width = maxX - minX;
         const height = maxY - minY;
-        const nx = Math.max(1, Math.round(width / spacing));
-        const ny = Math.max(1, Math.round(height / spacing));
-        const spacingX = width / nx;
-        const spacingY = height / ny;
+        const inset = PERIMETER_CONTACT_INSET_MM;
+        const spanX = Math.max(0.5, width - 2 * inset);
+        const spanY = Math.max(0.5, height - 2 * inset);
+
+        // Candidate-cap guard: densification must never produce more than
+        // MAX_GRID_CANDIDATES_PER_REGION points per region (each one is
+        // pathfinded synchronously). On overflow, fall back to the base
+        // angle-only spacing (no anchor, no suction), then subsample evenly
+        // if it still overflows — never silently denser than the cap.
+        let stride = 1;
+        const estimate = (Math.floor(spanX / spacing) + 2) * (Math.floor(spanY / spacing) + 2);
+        if (estimate > MAX_GRID_CANDIDATES_PER_REGION) {
+            spacing = computeRegionSpacing(island, { ...settings, suctionAreaExponent: 0 }, 1);
+            const baseEstimate = (Math.floor(spanX / spacing) + 2) * (Math.floor(spanY / spacing) + 2);
+            if (baseEstimate > MAX_GRID_CANDIDATES_PER_REGION) {
+                stride = Math.ceil(baseEstimate / MAX_GRID_CANDIDATES_PER_REGION);
+            }
+        }
+
+        const nx = Math.max(1, Math.round(spanX / spacing));
+        const ny = Math.max(1, Math.round(spanY / spacing));
+        const spacingX = spanX / nx;
+        const spacingY = spanY / ny;
         const gridSpacing = Math.max(spacingX, spacingY);
 
         const lattice: Array<{ x: number; y: number; z: number }> = [];
-        for (let i = 0; i <= nx; i++) {
-            for (let j = 0; j <= ny; j++) {
-                const x = minX + i * spacingX;
-                const y = minY + j * spacingY;
+        for (let i = 0; i <= nx; i += stride) {
+            for (let j = 0; j <= ny; j += stride) {
+                const x = minX + inset + i * spacingX;
+                const y = minY + inset + j * spacingY;
                 const s = surfaceAt(x, y);
                 if (s) {
                     const pt = { x, y, z: s.z };
@@ -209,9 +332,11 @@ export function generateGridCandidates(
 
         // Boundary-fill: where the boundary curves away from the lattice
         // (corners, holes, rotated edges) and no grid point is within
-        // `gridSpacing`, add a support on the boundary itself.
+        // `gridSpacing`, add a support on the ERODED boundary — the contact
+        // disc stays fully on the surface.
         const spacingSq = gridSpacing * gridSpacing;
-        const boundary = buildBoundaryPoints(voxels, spacing, minZ);
+        const eroded = erodeFootprint(voxels);
+        const boundary = buildBoundaryPoints(eroded.length > 0 ? eroded : voxels, spacing * stride, minZ);
         for (const b of boundary) {
             let covered = false;
             for (const p of lattice) {

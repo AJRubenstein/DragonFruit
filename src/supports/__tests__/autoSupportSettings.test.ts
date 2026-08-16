@@ -80,6 +80,45 @@ test('normalize drops legacy dead keys', () => {
     assert.equal(normalized.tipInfluenceRadiusMm, AUTO_SUPPORT_CONSTRAINTS.tipInfluenceRadiusMm.defaultValue);
 });
 
+test('defaults include the densification knobs', () => {
+    const defaults = createDefaultAutoSupportSettings();
+
+    assert.equal(defaults.anchorBandHeightMm, AUTO_SUPPORT_CONSTRAINTS.anchorBandHeightMm.defaultValue);
+    assert.equal(defaults.anchorSpacingFactor, AUTO_SUPPORT_CONSTRAINTS.anchorSpacingFactor.defaultValue);
+    assert.equal(defaults.suctionAreaExponent, AUTO_SUPPORT_CONSTRAINTS.suctionAreaExponent.defaultValue);
+});
+
+test('normalize clamps the densification knobs', () => {
+    const normalized = normalizeAutoSupportSettings({
+        anchorBandHeightMm: 99,
+        anchorSpacingFactor: 0.1,
+        suctionAreaExponent: 9,
+    });
+
+    assert.equal(normalized.anchorBandHeightMm, AUTO_SUPPORT_CONSTRAINTS.anchorBandHeightMm.max);
+    assert.equal(normalized.anchorSpacingFactor, AUTO_SUPPORT_CONSTRAINTS.anchorSpacingFactor.min);
+    assert.equal(normalized.suctionAreaExponent, AUTO_SUPPORT_CONSTRAINTS.suctionAreaExponent.max);
+});
+
+test('defaults include distribution mode and perimeter factor', () => {
+    const defaults = createDefaultAutoSupportSettings();
+
+    assert.equal(defaults.distributionMode, 'auto');
+    assert.equal(defaults.anchorPerimeterFactor, AUTO_SUPPORT_CONSTRAINTS.anchorPerimeterFactor.defaultValue);
+    assert.equal(defaults.poissonFlatnessThresholdDeg, AUTO_SUPPORT_CONSTRAINTS.poissonFlatnessThresholdDeg.defaultValue);
+});
+
+test('normalize whitelists distribution mode and clamps the perimeter factor', () => {
+    assert.equal(normalizeAutoSupportSettings({ distributionMode: 'grid' as const }).distributionMode, 'grid');
+    assert.equal(normalizeAutoSupportSettings({ distributionMode: 'poisson' as const }).distributionMode, 'poisson');
+    assert.equal(normalizeAutoSupportSettings({ distributionMode: 'banana' as never }).distributionMode, 'auto');
+    assert.equal(normalizeAutoSupportSettings({ distributionMode: undefined }).distributionMode, 'auto');
+
+    const clamped = normalizeAutoSupportSettings({ anchorPerimeterFactor: 9, poissonFlatnessThresholdDeg: 99 });
+    assert.equal(clamped.anchorPerimeterFactor, AUTO_SUPPORT_CONSTRAINTS.anchorPerimeterFactor.max);
+    assert.equal(clamped.poissonFlatnessThresholdDeg, AUTO_SUPPORT_CONSTRAINTS.poissonFlatnessThresholdDeg.max);
+});
+
 test('patch merges partially', () => {
     const base = createDefaultAutoSupportSettings();
     const patched = applyAutoSupportSettingsPatch(base, {
