@@ -128,17 +128,14 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
   const pendingRef = React.useRef(false);
   const islandsRef = React.useRef(islands);
   islandsRef.current = islands;
-  const [lastResult, setLastResult] = React.useState<string | null>(null);
 
   const runAutoSupports = React.useCallback((list: UseIslandsReturn['filteredIslands']) => {
     if (!activeModelId) return;
     try {
       const result = runAutoPlace(list, activeModelId, getSettings().autoSupport);
-      setLastResult(result.message);
       if (result.analytics?.sizingDebug) setSizingDebugState(result.analytics.sizingDebug);
     } catch (e) {
       console.error('[AutoSupport] runAutoPlace failed:', e);
-      setLastResult(`Auto-support failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, [activeModelId]);
 
@@ -376,13 +373,6 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
             >
               {busy ? 'Running…' : 'Generate Supports'}
             </button>
-
-            {/* Last run outcome — diagnostics + UX */}
-            {lastResult && (
-              <div className="text-[10px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                {lastResult}
-              </div>
-            )}
 
             {/* Island counts */}
             <div className="rounded-md border p-2" style={SECTION_CARD}>

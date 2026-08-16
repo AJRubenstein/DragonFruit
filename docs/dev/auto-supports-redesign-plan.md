@@ -10,14 +10,18 @@ Progress:
       'overhang', contactVoxels from footprint, real angle). Visible in-app as pucks + list.
       Overhang regions merge into the pipeline (voxel duplicates dropped) and render as
       translucent surface-mesh highlights.
-- [x] Step 3 — density grid placement (grid phase): overhang regions ≥ gridAreaThresholdMm2
-      get supports at √areaPerSupportMm2 spacing (containment-tested, surface-snapped,
-      standalone trunks). `areaPerSupportMm2` is the density knob.
+- [x] Step 3 — density grid placement (grid phase): overhang regions ≥ gridAreaThresholdMm2 get a
+      DYNAMIC-SPACING grid — spacing adjusts per axis (nx = round(width/spacing)) so the lattice
+      spans the full region with integer rows/columns, perfectly uniform, never cut off; the
+      outer ring lands on the boundary (straight edges covered by the grid), and a
+      boundary-fill adds supports only where the boundary curves away (corners, holes, rotated
+      edges). `areaPerSupportMm2` is the density knob.
 - [x] Step 4 — footprint-aware coverage convergence: regions are covered when their projected
       footprint is covered (not just the centroid); under-covered regions get gap-fill trunks
       at uncovered footprint clusters, iterating to a 95% target. Regular-island placement
       proven at scale on a dragon figurine (44 trunks / 79 leaves / 212 braces).
-- [ ] Step 5 — forest resize pass.
+- [ ] Step 5 — forest resize pass (deferred with the sizing redo).
+- [ ] Step 6 — worker + plan-then-commit + preview (NEXT).
 - [ ] Step 5 — forest resize pass.
 - [ ] Step 6 — worker + plan-then-commit + preview.
 - [ ] Step 7 — validation corpus + tuning.
