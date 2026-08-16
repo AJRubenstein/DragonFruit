@@ -267,17 +267,35 @@ fn build_footprint_mask(
     let origin_x = xy_min[0] - px * 0.5;
     let origin_y = xy_min[1] - px * 0.5;
 
-    for py in 0..height {
-        let y = origin_y + (py as f32 + 0.5) * px;
-        for px_idx in 0..width {
-            let x = origin_x + (px_idx as f32 + 0.5) * px;
-            for &fi in triangle_ids {
-                let [a, b, c] = mesh.tri_positions(fi);
+    // Rasterize PER TRIANGLE: each triangle fills the pixels inside its own
+    // XY bbox. The naive loop tested every region triangle against every
+    // pixel — O(W*H*N) — which dominated the scan on large flat undersides
+    // (a 364 mm² face at 0.25 mm px ≈ 5.8k pixels × 10–50k triangles).
+    // Per-triangle work is O(sum of triangle bboxes) ≈ O(W*H) for a tiled
+    // region. First triangle in list order wins, as before — deterministic.
+    for &fi in triangle_ids {
+        let [a, b, c] = mesh.tri_positions(fi);
+        let tmin_x = a.x.min(b.x).min(c.x);
+        let tmax_x = a.x.max(b.x).max(c.x);
+        let tmin_y = a.y.min(b.y).min(c.y);
+        let tmax_y = a.y.max(b.y).max(c.y);
+
+        let px0 = (((tmin_x - origin_x) / px).floor() as i64).max(0) as u32;
+        let px1 = (((tmax_x - origin_x) / px).floor() as i64).min(width as i64 - 1) as u32;
+        let py0 = (((tmin_y - origin_y) / px).floor() as i64).max(0) as u32;
+        let py1 = (((tmax_y - origin_y) / px).floor() as i64).min(height as i64 - 1) as u32;
+
+        for py in py0..=py1 {
+            let y = origin_y + (py as f32 + 0.5) * px;
+            for px_idx in px0..=px1 {
+                let idx = (py * width + px_idx) as usize;
+                if data[idx] == 1 {
+                    continue;
+                }
+                let x = origin_x + (px_idx as f32 + 0.5) * px;
                 if point_in_triangle_2d(x, y, (a.x, a.y), (b.x, b.y), (c.x, c.y)) {
-                    let idx = (py * width + px_idx) as usize;
                     data[idx] = 1;
                     surface_z[idx] = barycentric_z(x, y, a, b, c);
-                    break;
                 }
             }
         }
