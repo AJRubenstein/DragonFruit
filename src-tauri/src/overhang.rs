@@ -148,19 +148,16 @@ pub fn classify_overhangs(
     }
 
     // Group by root (sorted for determinism).
-    let mut groups: Vec<(u32, Vec<u32>)> = Vec::new();
-    {
-        let mut by_root: HashMap<u32, Vec<u32>> = HashMap::new();
-        for fi in 0..tri_count as u32 {
-            if !is_overhang[fi as usize] {
-                continue;
-            }
-            let root = find(&mut parent, fi);
-            by_root.entry(root).or_default().push(fi);
+    let mut by_root: HashMap<u32, Vec<u32>> = HashMap::new();
+    for fi in 0..tri_count as u32 {
+        if !is_overhang[fi as usize] {
+            continue;
         }
-        groups = by_root.into_iter().collect();
-        groups.sort_by_key(|(root, _)| *root);
+        let root = find(&mut parent, fi);
+        by_root.entry(root).or_default().push(fi);
     }
+    let mut groups: Vec<(u32, Vec<u32>)> = by_root.into_iter().collect();
+    groups.sort_by_key(|(root, _)| *root);
 
     groups
         .into_iter()
