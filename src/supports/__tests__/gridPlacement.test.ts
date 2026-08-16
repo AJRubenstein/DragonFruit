@@ -56,23 +56,44 @@ function ringRegion(id: string, areaMm2: number): DetectedIsland {
 // Tests
 // ---------------------------------------------------------------------------
 
-test('grids a large flat region as a boundary-aligned lattice', () => {
-    // 20×20 face, density 8 mm²/support → spacing 2.83. The lattice starts
-    // ON the boundary (−10 + k·2.83): 8 per axis → 64, outer ring = perimeter.
+test('grids a large flat region as perimeter plus jittered-grid infill', () => {
+    // 20×20 face, density 8 mm²/support → spacing 2.83: a perimeter ring on
+    // the boundary + a deterministic jittered grid infill at the same density.
     const settings = { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 8, gridAreaThresholdMm2: 25 };
     const candidates = generateGridCandidates([rectRegion('o0', -10, 10, -10, 10, 400)], settings);
 
-    assert.ok(candidates.length >= 60 && candidates.length <= 68,
-        `lattice count ${candidates.length} ≈ 8×8 = 64`);
-    assert.ok(candidates.every((c) => c.gridPoint === true), 'grid points are standalone trunks');
+    assert.ok(candidates.length >= 50 && candidates.length <= 85,
+        `count ${candidates.length} ≈ perimeter (~28) + infill (~400/8)`);
+    assert.ok(candidates.every((c) => c.gridPoint === true), 'points are standalone trunks');
     assert.ok(candidates.every((c) => c.source === 'overhang'));
 
-    // The outer ring sits ON the boundary (the perimeter is the lattice ring).
-    const xs = [...new Set(candidates.map((c) => c.tipPos.x))].sort((a, b) => a - b);
-    assert.ok(Math.abs(xs[0] + 10) < 0.01, `lattice starts on the boundary (x=${xs[0].toFixed(2)})`);
-    assert.ok(Math.abs(xs[xs.length - 1] - 9.8) < 0.01, `last column near the far boundary (x=${xs[xs.length - 1].toFixed(2)})`);
-    const spacing = xs[1] - xs[0];
-    assert.ok(Math.abs(spacing - Math.sqrt(8)) < 0.01, `uniform spacing ${spacing} ≈ 2.83`);
+    // Perimeter first, sitting on the region boundary.
+    assert.ok(candidates[0].id.startsWith('perim-'), 'perimeter placed first');
+    assert.ok(Math.abs(Math.abs(candidates[0].tipPos.x) - 10) < 0.4
+        || Math.abs(Math.abs(candidates[0].tipPos.y) - 10) < 0.4,
+        'first perimeter point is on the boundary');
+
+    // The infill keeps its rows: consecutive points along an axis stay near
+    // the lattice spacing (± jitter), not scattered.
+    const infill = candidates.filter((c) => c.id.startsWith('infill-'));
+    assert.ok(infill.length >= 15, `infill exists (${infill.length})`);
+    const xs = infill.map((c) => c.tipPos.x).sort((a, b) => a - b);
+    let rowGaps = 0;
+    let rowJumps = 0;
+    for (let i = 1; i < xs.length; i++) {
+        const gap = xs[i] - xs[i - 1];
+        if (gap < 3.5 && gap > 0.01) rowGaps++;
+        else rowJumps++;
+    }
+    assert.ok(rowGaps > rowJumps, `infill is row-structured (${rowGaps} small gaps vs ${rowJumps} jumps)`);
+
+    // Deterministic: identical input → identical result.
+    const again = generateGridCandidates([rectRegion('o0', -10, 10, -10, 10, 400)], settings);
+    assert.deepEqual(
+        candidates.map((c) => c.tipPos),
+        again.map((c) => c.tipPos),
+        'jittered infill is stable across runs',
+    );
 });
 
 test('skips regions below the grid area threshold', () => {

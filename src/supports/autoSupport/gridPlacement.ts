@@ -6,6 +6,76 @@ import type { AutoSupportSettings } from './settings';
  *  this distance of a mask pixel counts as inside the region. */
 const FOOTPRINT_TOLERANCE_MM = 0.25;
 
+/** Fraction of `spacing` used as the infill jitter amplitude. */
+const INFILL_JITTER_SCALE = 0.15;
+/** Infill points stay at least this far from perimeter points. */
+const INFILL_PERIMETER_BAND_SCALE = 0.5;
+
+/** Deterministic PRNG (mulberry32) — infill is stable across runs. */
+function mulberry32(seed: number): () => number {
+    let a = seed >>> 0;
+    return () => {
+        a |= 0;
+        a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function hashString(s: string): number {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
+/**
+ * Jittered-grid infill: a regular lattice at `spacing` (half-cell inset),
+ * each point deterministically offset by ±0.15·spacing so rows stay visible
+ * but the strict alignment that caused edge-gap misses is gone. Points inside
+ * the perimeter band are dropped — the perimeter owns the edges.
+ */
+function jitteredGridInfill(
+    regionId: string,
+    perimeter: Array<{ x: number; y: number; z: number }>,
+    spacing: number,
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    surfaceAt: (x: number, y: number) => { z: number } | null,
+): Array<{ x: number; y: number; z: number }> {
+    const rand = mulberry32(hashString(`${regionId}:infill`));
+    const jitter = spacing * INFILL_JITTER_SCALE;
+    const perimBandSq = (spacing * INFILL_PERIMETER_BAND_SCALE)
+        * (spacing * INFILL_PERIMETER_BAND_SCALE);
+
+    const result: Array<{ x: number; y: number; z: number }> = [];
+    for (let x = minX + spacing / 2; x <= maxX; x += spacing) {
+        for (let y = minY + spacing / 2; y <= maxY; y += spacing) {
+            const jx = x + (rand() - 0.5) * 2 * jitter;
+            const jy = y + (rand() - 0.5) * 2 * jitter;
+            const s = surfaceAt(jx, jy);
+            if (!s) continue;
+            let nearPerim = false;
+            for (const p of perimeter) {
+                const dx = jx - p.x;
+                const dy = jy - p.y;
+                if (dx * dx + dy * dy < perimBandSq) {
+                    nearPerim = true;
+                    break;
+                }
+            }
+            if (nearPerim) continue;
+            result.push({ x: jx, y: jy, z: s.z });
+        }
+    }
+    return result;
+}
+
 /**
  * Boundary voxels of a region's footprint (mask voxel with a missing
  * 8-neighbor), in deterministic loop order (sorted by angle around the
@@ -58,12 +128,13 @@ function buildBoundaryPoints(
 /**
  * Density-grid placement (redesign step 3 — the grid phase).
  *
- * Large flat overhang regions get a single lattice at √areaPerSupportMm2
- * spacing starting ON the region's boundary (no inset): the outermost ring
- * IS the perimeter, so edge supports and infill spacing are identical and
- * uniform. Where the boundary curves away from the lattice (corners, holes,
- * rotated edges), a boundary-fill pass adds supports at boundary points with
- * no lattice support within `spacing`.
+ * Large flat overhang regions get supports in two passes:
+ *  1. PERIMETER — the region's boundary loops (outer edge + holes) traced at
+ *     √areaPerSupportMm2 spacing. Edges carry the most peel stress and are
+ *     always covered, regardless of the region's size vs the spacing.
+ *  2. INFILL — deterministic scatter (Poisson-disc style) at the same
+ *     spacing, avoiding the perimeter and each other. No fixed lattice, so
+ *     no alignment artifacts or edge-gap misses.
  *
  * Each point is:
  *  - contained: only points inside the region's footprint mask are emitted;
@@ -148,7 +219,7 @@ export function generateGridCandidates(
             return bestD2 <= tolSq ? { z: bestZ } : null;
         };
 
-        const emitPoint = (x: number, y: number, z: number, kind: 'grid' | 'fill') => {
+        const emitPoint = (x: number, y: number, z: number, kind: 'perim' | 'infill') => {
             candidates.push({
                 id: `${kind}-${island.id}-${x.toFixed(2)}-${y.toFixed(2)}`,
                 tipPos: { x, y, z },
@@ -162,34 +233,26 @@ export function generateGridCandidates(
             });
         };
 
-        // Pass 1: boundary-aligned lattice — the outer ring is the perimeter,
-        // so edge and infill spacing are identical.
-        const lattice: Array<{ x: number; y: number; z: number }> = [];
-        for (let x = minX; x <= maxX; x += spacing) {
-            for (let y = minY; y <= maxY; y += spacing) {
-                const s = surfaceAt(x, y);
-                if (s) lattice.push({ x, y, z: s.z });
-            }
-        }
-        for (const p of lattice) emitPoint(p.x, p.y, p.z, 'grid');
+        // Pass 1: full perimeter — boundary loops at spacing intervals.
+        // The outer ring covers the region edges (highest peel stress); holes
+        // and rotated edges are traced too. The perimeter ALWAYS exists.
+        const perimeter = buildBoundaryPoints(voxels, spacing, minZ);
+        for (const p of perimeter) emitPoint(p.x, p.y, p.z, 'perim');
 
-        // Pass 2: boundary-fill — where the boundary curves away from the
-        // lattice (corners, holes, rotated edges) and no lattice point is
-        // within `spacing`, add a support on the boundary itself.
-        const spacingSq = spacing * spacing;
-        const boundary = buildBoundaryPoints(voxels, spacing, minZ);
-        for (const b of boundary) {
-            let covered = false;
-            for (const p of lattice) {
-                const dx = b.x - p.x;
-                const dy = b.y - p.y;
-                if (dx * dx + dy * dy <= spacingSq) {
-                    covered = true;
-                    break;
-                }
-            }
-            if (!covered) emitPoint(b.x, b.y, b.z, 'fill');
-        }
+        // Pass 2: infill — a deterministic jittered grid at the same spacing,
+        // keeping rows visible but avoiding strict alignment; the perimeter
+        // owns the edges, so the infill drops its perimeter band.
+        const infill = jitteredGridInfill(
+            island.id,
+            perimeter,
+            spacing,
+            minX,
+            minY,
+            maxX,
+            maxY,
+            surfaceAt,
+        );
+        for (const p of infill) emitPoint(p.x, p.y, p.z, 'infill');
     }
 
     return candidates;
