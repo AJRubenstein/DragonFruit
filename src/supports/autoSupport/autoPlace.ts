@@ -363,6 +363,72 @@ export function findMergeHost(
     return best;
 }
 
+/** Consolidation fallback: when the straight fan leaf is blocked by the
+ *  model (or another support), attach the standalone trunk to the steepest
+ *  eligible host sample as a ROUTED BRANCH — its shaft and cone
+ *  re-placement can go around an obstruction a straight cone cannot. */
+export function buildConsolidationBranch(args: {
+    tip: { x: number; y: number; z: number };
+    tipNormal: { x: number; y: number; z: number };
+    modelId: string;
+    pool: FanShaftPoint[];
+    pruned: SupportState;
+    mesh: THREE.Mesh | undefined;
+    radiusMm: number;
+    maxAttachments: number;
+    knotId: string;
+}): { draft: SupportState } | null {
+    const { tip, tipNormal, modelId, pool, pruned, mesh, radiusMm, maxAttachments, knotId } = args;
+
+    // Steepest eligible host sample (≤ 50° from vertical — the branch
+    // steepness rule; the leaf fan's angle cap is looser).
+    let best: FanShaftPoint | null = null;
+    let bestAngleDeg = Infinity;
+    for (const sp of pool) {
+        const ddx = sp.pos.x - tip.x;
+        const ddy = sp.pos.y - tip.y;
+        const ddz = sp.pos.z - tip.z;
+        if (ddx * ddx + ddy * ddy + ddz * ddz > radiusMm * radiusMm) continue;
+        const vDist = tip.z - sp.pos.z;
+        if (vDist < 1.5) continue;
+        const angleDeg = (Math.atan2(Math.hypot(ddx, ddy), vDist) * 180) / Math.PI;
+        if (angleDeg > 50) continue;
+        if (angleDeg < bestAngleDeg) {
+            bestAngleDeg = angleDeg;
+            best = sp;
+        }
+    }
+    if (!best) return null;
+    if (maxAttachments > 0 && isTrunkAtAttachmentCapacity(best.trunkId, maxAttachments, pruned)) return null;
+
+    const parentKnot = {
+        id: knotId,
+        parentShaftId: best.trunkId,
+        pos: best.pos,
+        diameter: best.diameter + 0.125,
+    };
+
+    try {
+        const { branch, supportData: sd } = buildBranchData({
+            tipPos: tip,
+            tipNormal,
+            modelId,
+            parentKnot,
+            mesh,
+        });
+        if (sd.error) return null;
+        if (mesh && branchCollidesWithSDF(branch, mesh)) return null;
+        if (leafPathCrossesSupports(parentKnot.pos, branch.contactCone?.pos ?? tip, 0.25, pruned, best.trunkId)) return null;
+
+        let d = draftAddKnot(pruned, parentKnot);
+        branch.origin = 'overhang';
+        d = draftAddBranch(d, branch);
+        return { draft: d };
+    } catch {
+        return null;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Pipeline helpers
 // ---------------------------------------------------------------------------
@@ -1500,6 +1566,7 @@ export function computeAutoSupportPlan(
             const trunk = draft.trunks[tid];
             const tip = trunk.contactCone?.pos;
             if (!tip) continue;
+            const tipNormal = trunk.contactCone?.normal ?? { x: 0, y: 0, z: -1 };
             const pruned: SupportState = {
                 ...draft,
                 trunks: { ...draft.trunks },
@@ -1524,6 +1591,33 @@ export function computeAutoSupportPlan(
                 'overhang',
             );
             if (!fan.ok) {
+                // A straight leaf blocked by the model (or crossing another
+                // support) can be recovered as a ROUTED branch. Only count
+                // the refusal when the branch fallback also fails.
+                const branchResult = (fan.reason === 'blocked' || fan.reason === 'cross')
+                    ? buildConsolidationBranch({
+                        tip,
+                        tipNormal,
+                        modelId,
+                        pool,
+                        pruned,
+                        mesh: resolvedMesh ?? undefined,
+                        radiusMm: conFanRadiusMm,
+                        maxAttachments: autoSettings.maxAttachmentsPerTrunk,
+                        knotId: `auto-con-branch-${tid}`,
+                    })
+                    : null;
+                if (branchResult) {
+                    draft = branchResult.draft;
+                    gridTrunkIds.delete(tid);
+                    const origin = originKind ?? 'standalone';
+                    diagnostics.trunksByKind[origin]--;
+                    placedTrunks--;
+                    placedBranches++;
+                    consolidated++;
+                    convertedThisPass++;
+                    continue;
+                }
                 conRefusals[fan.reason] = (conRefusals[fan.reason] ?? 0) + 1;
                 continue;
             }

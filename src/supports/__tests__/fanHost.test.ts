@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { pickFanHost, leafPathCrossesSupports, collectFanShaftPoints, fanLeafToTrunk, findMergeHost, type FanShaftPoint } from '../autoSupport/autoPlace';
+import { pickFanHost, leafPathCrossesSupports, collectFanShaftPoints, fanLeafToTrunk, findMergeHost, buildConsolidationBranch, type FanShaftPoint } from '../autoSupport/autoPlace';
 import type { SupportState } from '../types';
 
 function emptySnapshot(): SupportState {
@@ -135,6 +135,29 @@ test('collectFanShaftPoints samples every segment endpoint', () => {
     const zs = points.map((p) => Math.round(p.pos.z * 10) / 10);
     assert.deepEqual(zs, [0, 1.9, 3.8, 5.7, 7.6, 9.5, 11.4, 13.3, 15.2, 17.1, 19]);
     assert.ok(points.every((p) => p.trunkId === 't1'));
+});
+
+test('buildConsolidationBranch attaches a routed branch to a host shaft', () => {
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const pool = collectFanShaftPoints(draft);
+    const result = buildConsolidationBranch({
+        tip: { x: 3, y: 0, z: 15 },
+        tipNormal: { x: 0, y: 0, z: -1 },
+        modelId: 'm',
+        pool,
+        pruned: draft,
+        mesh: undefined,
+        radiusMm: 8,
+        maxAttachments: 12,
+        knotId: 'con-branch-1',
+    });
+    assert.ok(result, 'branch built on the host shaft');
+    if (result) {
+        assert.equal(Object.keys(result.draft.branches).length, 1, 'one branch');
+        assert.equal(Object.keys(result.draft.knots).length, 1, 'one knot');
+        const branch = Object.values(result.draft.branches)[0];
+        assert.equal(branch.origin, 'overhang', 'branch carries the overhang origin');
+    }
 });
 
 test('collectFanShaftPoints excludes anchor-origin trunks', () => {
