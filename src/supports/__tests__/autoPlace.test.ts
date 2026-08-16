@@ -131,19 +131,23 @@ test('runAutoPlace anchors a large flat region as a densified grid (planar → g
     const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true });
 
     // Anchor density owns the flat end (no flat-boost/suction stacking):
-    // spacing = √8 × 0.7 ≈ 1.98 mm → boundary-aligned 11×11 ≈ 121 trunks.
-    assert.ok(result.placedTrunks >= 105 && result.placedTrunks <= 135,
-        `placed ${result.placedTrunks} trunks, expected ~121 (anchor grid)`);
-    assert.equal(result.placedBranches, 0, 'grid points stay independent (no bush)');
+    // spacing = √8 × 0.7 ≈ 1.98 mm → ~121 tips, then the anchor-tree pass
+    // merges them into branching trunks at ~4 mm roots (pro reference:
+    // 118 tips / 28 roots) — the flat underside becomes trees, not pillars.
+    assert.ok(result.placedTrunks >= 40 && result.placedTrunks <= 80,
+        `placed ${result.placedTrunks} anchor trunks, expected ~58 after tree merge (was 121 pillars)`);
+    assert.ok(result.placedBranches >= 40,
+        `anchor tips preserved via branches (${result.placedBranches} branches)`);
     assert.equal(result.placedLeaves, 0);
-    assert.equal(result.analytics?.placement?.trunksByKind.gridInfill, result.placedTrunks,
-        'planar anchor → dynamic grid (shape-driven dispatch)');
     assert.equal(result.analytics?.distribution.poisson, 0, 'planar region is not Poisson');
 
     const snapshot = getSnapshot();
     const trunks = Object.values(snapshot.trunks);
     assert.ok(trunks.length > 0 && trunks.every((t) => t.origin === 'anchor'),
-        'anchor-grid trunks carry the anchor origin (debug coloring)');
+        'anchor trunks carry the anchor origin (debug coloring)');
+    const branches = Object.values(snapshot.branches);
+    assert.ok(branches.length > 0 && branches.every((b) => b.origin === 'anchor'),
+        'anchor branches carry the anchor origin');
     const trunkCount = Object.keys(snapshot.trunks).length;
     assert.equal(trunkCount, result.placedTrunks, 'trunks committed to the store');
 
@@ -233,9 +237,10 @@ test('runAutoPlace gap-fills under-covered regions (coverage convergence)', () =
         gridAreaThresholdMm2: 25,
     });
 
-    // Initial grid at 5.5mm spacing ≈ 16 points; convergence must add more.
-    assert.ok(result.placedTrunks >= 20,
-        `gap-fill added trunks beyond the sparse grid (placed ${result.placedTrunks})`);
+    // Initial grid at 5.5mm spacing ≈ 16 points + gap-fill, then the
+    // anchor-tree pass merges trunks into branches — assert TIPS preserved.
+    assert.ok(result.placedTrunks + result.placedBranches >= 20,
+        `gap-fill + tree merge preserved tips (${result.placedTrunks}T + ${result.placedBranches}B)`);
 
     setModelMesh('model-a', null);
     disposeHandlers();
@@ -267,8 +272,10 @@ test('runAutoPlace densifies small anchor regions below the grid threshold', () 
 
     const result = runAutoPlace([foot], 'model-a', { debugSkipAutoBracing: true });
 
-    assert.ok(result.placedTrunks >= 8,
-        `small anchor foot densified (${result.placedTrunks} trunks)`);
+    // 4×4 foot → ~9 disk tips, then the anchor-tree pass merges them into a
+    // branching tree (1–2 roots). Tips are preserved even though trunks drop.
+    assert.ok(result.placedTrunks >= 1 && result.placedTrunks + result.placedBranches >= 8,
+        `small anchor foot densified as a tree (${result.placedTrunks}T + ${result.placedBranches}B)`);
 
     setModelMesh('model-a', null);
     disposeHandlers();
@@ -307,6 +314,8 @@ test('runAutoPlace fans sub-threshold overhang candidates instead of standalone 
     assert.ok(result.placedLeaves >= 1, 'o15 attached as a leaf');
     assert.ok(Object.values(getSnapshot().leaves).some((l) => l.origin === 'overhang'),
         'fanned overhang leaf carries the overhang origin');
+    assert.ok(Object.values(getSnapshot().branches).every((b) => b.origin !== 'overhang'),
+        'overhang fanning never branches — leaves only');
 
     const placement = result.analytics?.placement;
     assert.equal(placement?.trunksByKind.standalone, 1, 'only trunk A is standalone (voxel island)');
@@ -403,8 +412,8 @@ test('runAutoPlace dispatches by shape: planar → grid, organic → Poisson', (
 
     assert.equal(result.analytics?.distribution.grid, 1, 'planar region gridded');
     assert.equal(result.analytics?.distribution.poisson, 1, 'organic region poisson');
-    assert.ok((result.analytics?.placement?.trunksByKind.gridInfill ?? 0) >= 100,
-        'planar anchor produces a dense grid');
+    assert.ok((result.analytics?.placement?.trunksByKind.gridInfill ?? 0) > 0,
+        'planar anchor produces anchor trunks (some merged into trees)');
     assert.ok((result.analytics?.placement?.trunksByKind.poissonDisk ?? 0) > 0,
         'organic region placed via Poisson disk');
 

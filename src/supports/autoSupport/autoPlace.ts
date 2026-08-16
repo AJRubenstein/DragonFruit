@@ -586,8 +586,11 @@ function placeOneCandidate(
                         }
                     } catch (_) {}
                 }
-            } else if (tipSpanMm > MAX_AUTO_LEAF_SPAN_MM) {
-                // Branch: requires upward angle from knot to tip.
+            } else if (tipSpanMm > MAX_AUTO_LEAF_SPAN_MM && candidate.source !== 'overhang') {
+                // Branch: requires upward angle from knot to tip. Only ISLAND
+                // candidates branch here — overhang fanning is leaves by rule,
+                // so an overhang single beyond leaf reach falls through and
+                // the consolidation pass attaches it as a leaf where possible.
                 const hDist2 = Math.sqrt(
                     (tipPos.x - knotPos.x) ** 2 + (tipPos.y - knotPos.y) ** 2,
                 );
@@ -611,7 +614,9 @@ function placeOneCandidate(
                             // fall through to standalone trunk
                         } else {
                             d = draftAddKnot(d, parentKnot);
-                            branch.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
+                            // Branch fallback is island-only (overhang fanning
+                            // is leaves) — the origin is always island here.
+                            branch.origin = 'island';
                             d = draftAddBranch(d, branch);
                             const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                             console.log(LOG_PREFIX,
@@ -1497,6 +1502,105 @@ export function computeAutoSupportPlan(
             `Overhang consolidation: ${consolidated} standalone trunks merged into fan trees`);
     }
 
+    // ── Anchor tree merging ────────────────────────────────────────
+    // Professional reference (official models): the underside is anchored
+    // with ~4 mm root spacing and dense branching (118 tips / 28 roots),
+    // NOT a 1:1 pillar forest. Merge bare anchor trunks into branching
+    // trees — the nearest anchor host within the root spacing hosts the
+    // member's tip as a BRANCH rising from its shaft. Branches must be
+    // STEEP (≤ 30° from vertical = ≥ 60° above horizontal): the app's
+    // stability checker flags horizontal angles as unable to hold
+    // overhangs, and a 50°-shallow branch triggered exactly that.
+    // Capacity-bound; grid infill and islands untouched.
+    const ANCHOR_TREE_ROOT_SPACING_MM = 4.0;
+    const ANCHOR_TREE_MAX_ANGLE_DEG = 30;
+    let anchorMerged = 0;
+    for (let pass = 0; pass < 3; pass++) {
+        let mergedThisPass = 0;
+        for (const tid of Object.keys(draft.trunks)) {
+            if (draft.trunks[tid].origin !== 'anchor') continue;
+            if (countAttachmentsOnTrunk(tid, draft) > 0) continue;
+            const trunk = draft.trunks[tid];
+            const tip = trunk.contactCone?.pos;
+            if (!tip) continue;
+            const pruned: SupportState = {
+                ...draft,
+                trunks: { ...draft.trunks },
+                roots: { ...draft.roots },
+            };
+            delete pruned.trunks[tid];
+            delete pruned.roots[trunk.rootId];
+            const maxAttachments = autoSettings.maxAttachmentsPerTrunk;
+            let bestHost: string | null = null;
+            let bestSample: FanShaftPoint | null = null;
+            let bestScore = Infinity;
+            for (const [hid, host] of Object.entries(pruned.trunks)) {
+                if (host.origin !== 'anchor') continue;
+                if (maxAttachments > 0 && countAttachmentsOnTrunk(hid, pruned) >= maxAttachments) continue;
+                for (const seg of host.segments) {
+                    const start = seg.bottomJoint?.pos ?? { x: 0, y: 0, z: 1.5 };
+                    const end = seg.topJoint?.pos;
+                    if (!end) continue;
+                    const diameter = seg.diameter ?? 1.0;
+                    for (let i = 0; i <= 10; i++) {
+                        const t = i / 10;
+                        const sx = start.x + (end.x - start.x) * t;
+                        const sy = start.y + (end.y - start.y) * t;
+                        const sz = start.z + (end.z - start.z) * t;
+                        const vDist = tip.z - sz;
+                        if (vDist < 1.5) continue;
+                        const hDist = Math.hypot(tip.x - sx, tip.y - sy);
+                        if (hDist > ANCHOR_TREE_ROOT_SPACING_MM) continue;
+                        const ang = (Math.atan2(hDist, vDist) * 180) / Math.PI;
+                        if (ang > ANCHOR_TREE_MAX_ANGLE_DEG) continue;
+                        const dist = Math.hypot(hDist, vDist);
+                        if (dist < bestScore) {
+                            bestScore = dist;
+                            bestHost = hid;
+                            bestSample = { trunkId: hid, pos: { x: sx, y: sy, z: sz }, diameter };
+                        }
+                    }
+                }
+            }
+            if (!bestHost || !bestSample) continue;
+            const parentKnot = {
+                id: `auto-anchor-tree-${tid}-p${pass}`,
+                parentShaftId: bestHost,
+                pos: bestSample.pos,
+                diameter: bestSample.diameter + 0.1,
+            };
+            try {
+                const resolved = resolveSurfaceNormal(tip, resolvedMesh ?? undefined);
+                const { branch, supportData: sd } = buildBranchData({
+                    tipPos: resolved.point,
+                    tipNormal: resolved.normal,
+                    modelId,
+                    parentKnot,
+                    mesh: resolvedMesh ?? undefined,
+                });
+                if (sd.error) continue;
+                if (leafPathCrossesSupports(parentKnot.pos, branch.contactCone?.pos ?? tip, 0.25, pruned, bestHost)) continue;
+                draft = draftAddKnot(pruned, parentKnot);
+                branch.origin = 'anchor';
+                draft = draftAddBranch(draft, branch);
+                gridTrunkIds.delete(tid);
+                const kind = trunkOriginById.get(tid);
+                if (kind) diagnostics.trunksByKind[kind]--;
+                placedTrunks--;
+                placedBranches++;
+                anchorMerged++;
+                mergedThisPass++;
+            } catch {
+                continue;
+            }
+        }
+        if (mergedThisPass === 0) break;
+    }
+    if (anchorMerged > 0) {
+        console.log(LOG_PREFIX,
+            `Anchor tree merging: ${anchorMerged} pillar trunks merged into branching anchors (~4 mm roots)`);
+    }
+
     const fmtRefusals = (r: Record<string, number | undefined>): string => {
         const entries = Object.entries(r).filter(([, v]) => v !== undefined) as Array<[string, number]>;
         return entries.length === 0 ? 'none' : entries.map(([k, v]) => `${k}=${v}`).join(', ');
@@ -1830,6 +1934,8 @@ export function computeAutoSupportPlan(
                         if (isTrunkAtAttachmentCapacity(tid, ohCap, draft)) {
                             continue;
                         }
+                        // The tips are voxel-island footprints — island origin.
+                        branch.origin = 'island';
                         draft = draftAddKnot(draft, parentKnot);
                         draft = draftAddBranch(draft, branch);
                         overhangSupportsPlaced++;
