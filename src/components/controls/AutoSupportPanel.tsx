@@ -41,14 +41,6 @@ const SECTION_CARD: React.CSSProperties = {
   background: 'var(--surface-1)',
 };
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: 'var(--text-strong)' }}>
-      {title}
-    </div>
-  );
-}
-
 interface AutoSupportPanelProps {
   islands: UseIslandsReturn;
   hasGeometry: boolean;
@@ -137,6 +129,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [busy, setBusy] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
+  const [settingsTab, setSettingsTab] = React.useState<'detection' | 'distribution' | 'density'>('detection');
   const [showReplaceDialog, setShowReplaceDialog] = React.useState(false);
   const [showSizingDebug, setShowSizingDebug] = React.useState(false);
   const [sizingDebug, setSizingDebugState] = React.useState<SizingDebugInfo | null>(null);
@@ -162,6 +155,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
 
   const openSettings = React.useCallback(() => {
     setDraft(getSettings().autoSupport);
+    setSettingsTab('detection');
     setShowSettings(true);
   }, []);
 
@@ -572,41 +566,41 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
             </div>
           </div>
 
-          {/* ── Two-column settings body ─────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* LEFT COLUMN */}
-            <div className="space-y-3">
-              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-                <SectionHeader title="Detection" />
-                <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['overhangSelfSupportAngleDeg', 'minIslandAreaMm2', 'tipInfluenceRadiusMm'].includes(k.key)).map(knob => (
-                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-                <SectionHeader title="Coverage" />
-                <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['coverageTargetPercent', 'leafFanRadiusMm', 'leafFanMaxAngleDeg'].includes(k.key)).map(knob => (
-                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                  ))}
-                </div>
-              </div>
+          {/* ── Tabbed settings body ────────────────────────────── */}
+          <div className="rounded-md border p-2.5" style={SECTION_CARD}>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([
+                { key: 'detection' as const, label: 'Detection' },
+                { key: 'distribution' as const, label: 'Distribution' },
+                { key: 'density' as const, label: 'Density & Sizing' },
+              ]).map((tab) => (
+                <button key={tab.key} type="button"
+                  onClick={() => setSettingsTab(tab.key)}
+                  className="h-8 rounded-md border text-[11px] font-semibold uppercase tracking-wide transition-colors"
+                  title={tab.key === 'detection'
+                    ? 'What counts as a support-needing surface and how tightly regions merge'
+                    : tab.key === 'distribution'
+                      ? 'How points scatter (grid vs Poisson) and how leaves fan out from trunks'
+                      : 'How dense and thick the supports are'}
+                  style={settingsTab === tab.key
+                    ? { borderColor: 'color-mix(in srgb, var(--accent), white 10%)', background: 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)', color: 'var(--accent)' }
+                    : { borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
+                >{tab.label}</button>
+              ))}
             </div>
+          </div>
 
-            {/* RIGHT COLUMN */}
-            <div className="space-y-3">
-              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-                <SectionHeader title="Density" />
-                <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['areaPerSupportMm2', 'gridAreaThresholdMm2', 'flatDensityBoost', 'slopeRelaxFactor', 'anchorBandHeightMm', 'anchorSpacingFactor', 'suctionAreaExponent', 'anchorPerimeterFactor'].includes(k.key)).map(knob => (
-                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                  ))}
-                </div>
+          <div className="rounded-md border p-2.5" style={SECTION_CARD}>
+            {settingsTab === 'detection' && (
+              <div className="space-y-2.5">
+                {KNOBS.filter(k => ['overhangSelfSupportAngleDeg', 'minIslandAreaMm2', 'tipInfluenceRadiusMm', 'coverageTargetPercent'].includes(k.key)).map(knob => (
+                  <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
+                ))}
               </div>
-              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-                <SectionHeader title="Distribution" />
-                <div className="grid grid-cols-3 gap-1.5">
+            )}
+            {settingsTab === 'distribution' && (
+              <>
+                <div className="grid grid-cols-3 gap-1.5 mb-2.5">
                   {(['auto', 'grid', 'poisson'] as const).map((mode) => (
                     <button key={mode} type="button"
                       onClick={() => setDraft((d) => ({ ...d, distributionMode: mode }))}
@@ -622,29 +616,20 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
                     >{mode}</button>
                   ))}
                 </div>
-                <div className="space-y-2.5 mt-2.5">
-                  {KNOBS.filter(k => ['poissonFlatnessThresholdDeg', 'poissonSpacingFactor'].includes(k.key)).map(knob => (
-                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-                <SectionHeader title="Sizing" />
                 <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['sizeScale'].includes(k.key)).map(knob => (
+                  {KNOBS.filter(k => ['leafFanRadiusMm', 'leafFanMaxAngleDeg', 'poissonFlatnessThresholdDeg', 'poissonSpacingFactor'].includes(k.key)).map(knob => (
                     <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
                   ))}
                 </div>
+              </>
+            )}
+            {settingsTab === 'density' && (
+              <div className="space-y-2.5">
+                {KNOBS.filter(k => ['areaPerSupportMm2', 'gridAreaThresholdMm2', 'flatDensityBoost', 'slopeRelaxFactor', 'anchorBandHeightMm', 'anchorSpacingFactor', 'suctionAreaExponent', 'anchorPerimeterFactor', 'sizeScale', 'maxAttachmentsPerTrunk'].includes(k.key)).map(knob => (
+                  <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
+                ))}
               </div>
-              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-                <SectionHeader title="Attachment Limits" />
-                <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['maxAttachmentsPerTrunk'].includes(k.key)).map(knob => (
-                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                  ))}
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </StructuredDialogModal>
