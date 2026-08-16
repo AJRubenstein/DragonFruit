@@ -15,7 +15,9 @@ Progress:
       spans the full region with integer rows/columns, perfectly uniform, never cut off; the
       outer ring lands on the boundary (straight edges covered by the grid), and a
       boundary-fill adds supports only where the boundary curves away (corners, holes, rotated
-      edges). `areaPerSupportMm2` is the density knob.
+      edges). `areaPerSupportMm2` is the density knob. Spacing is angle-aware: flat anchor
+      surfaces (0° — a model's feet/underside) grid at 0.7× spacing (≈2× the supports), slopes
+      at the self-support threshold (45°) at 1.3× (≈0.6×).
 - [x] Step 4 — footprint-aware coverage convergence: regions are covered when their projected
       footprint is covered (not just the centroid); under-covered regions get gap-fill trunks
       at uncovered footprint clusters, iterating to a 95% target. Regular-island placement

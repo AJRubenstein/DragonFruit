@@ -22,3 +22,14 @@ export const LEAF_FAN_RADIUS_MM = 5.0;
 
 /** Leaf fanning: max angle from vertical for a fan leaf (deg). */
 export const LEAF_FAN_MAX_ANGLE_DEG = 60;
+
+/** Self-support threshold: surfaces flatter than this angle from horizontal
+ *  (deg) are flagged as overhang. Density modulation is normalized to it. */
+export const OVERHANG_SELF_SUPPORT_ANGLE_DEG = 45;
+
+/** Grid density modulation by surface angle. A flat ceiling (0° — an anchor
+ *  surface like a model's feet) is the densest: spacing × 0.7 (≈2× the
+ *  supports). A slope at the self-support threshold (45°) is the sparsest:
+ *  spacing × 1.3 (≈0.6×). */
+export const GRID_SPACING_MIN_FACTOR = 0.7;
+export const GRID_SPACING_MAX_FACTOR = 1.3;

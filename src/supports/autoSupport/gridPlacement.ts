@@ -1,6 +1,11 @@
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import type { CandidatePoint } from './types';
 import type { AutoSupportSettings } from './settings';
+import {
+    OVERHANG_SELF_SUPPORT_ANGLE_DEG,
+    GRID_SPACING_MIN_FACTOR,
+    GRID_SPACING_MAX_FACTOR,
+} from './constants';
 
 /** Footprint-mask pixels are emitted at 0.25 mm spacing; a grid point within
  *  this distance of a mask pixel counts as inside the region. */
@@ -59,12 +64,15 @@ function buildBoundaryPoints(
  * Density-grid placement (redesign step 3 — the grid phase).
  *
  * Large flat overhang regions get a DYNAMIC-SPACING grid: the target spacing
- * (√areaPerSupportMm2) is adjusted per axis so the grid spans the region's
- * full footprint with integer rows/columns — never cut off by a leftover
- * margin. The outer ring lands exactly on the region bbox boundary, so
- * straight edges are supported by the grid itself; a boundary-fill pass adds
- * supports only where the boundary curves away from the lattice (corners,
- * holes, rotated edges) and no grid point is within `spacing`.
+ * (√areaPerSupportMm2 × an angle factor) is adjusted per axis so the grid
+ * spans the region's full footprint with integer rows/columns — never cut off
+ * by a leftover margin. The spacing factor is angle-aware: flat anchor
+ * surfaces (0° — a model's feet/underside) grid at 0.7× spacing (≈2× the
+ * supports), slopes at the self-support threshold (45°) at 1.3× (≈0.6×). The
+ * outer ring lands exactly on the region bbox boundary, so straight edges are
+ * supported by the grid itself; a boundary-fill pass adds supports only where
+ * the boundary curves away from the lattice (corners, holes, rotated edges)
+ * and no grid point is within `spacing`.
  *
  * Each point is:
  *  - contained: only points inside the region's footprint mask are emitted;
@@ -83,8 +91,8 @@ export function generateGridCandidates(
     overhangIslands: DetectedIsland[],
     settings: AutoSupportSettings,
 ): CandidatePoint[] {
-    const spacing = Math.sqrt(Math.max(settings.areaPerSupportMm2, 0.5));
-    if (spacing <= 0) return [];
+    const baseSpacing = Math.sqrt(Math.max(settings.areaPerSupportMm2, 0.5));
+    if (baseSpacing <= 0) return [];
     const threshold = settings.gridAreaThresholdMm2;
 
     const candidates: CandidatePoint[] = [];
@@ -93,6 +101,15 @@ export function generateGridCandidates(
         if (island.source !== 'overhang') continue;
         const area = island.areaMm2 ?? 0;
         if (area < threshold) continue;
+
+        // Angle-aware density: anchor surfaces (flat ceilings — a model's
+        // feet / underside) are the densest; slopes near the self-support
+        // threshold are the sparsest. Spacing = √areaPerSupport × factor.
+        const angleT = Math.min(1, Math.max(0,
+            (island.overhangAngleDeg ?? 0) / OVERHANG_SELF_SUPPORT_ANGLE_DEG));
+        const spacing = baseSpacing
+            * (GRID_SPACING_MIN_FACTOR
+                + angleT * (GRID_SPACING_MAX_FACTOR - GRID_SPACING_MIN_FACTOR));
 
         const voxels = island.contactVoxels;
         if (!voxels || voxels.length === 0) continue;

@@ -129,10 +129,11 @@ test('runAutoPlace grids a large flat overhang region into standalone trunks', (
 
     const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true });
 
-    // 400 mm² at 8 mm²/support → 2.83 mm spacing → boundary-aligned 8×8 = 64
+    // 400 mm² flat anchor surface (angle 0°) at 8 mm²/support → base spacing
+    // 2.83 mm, densified 0.7× = 1.98 mm → boundary-aligned 11×11 ≈ 121
     // standalone trunks (outer ring on the boundary).
-    assert.ok(result.placedTrunks >= 55 && result.placedTrunks <= 75,
-        `placed ${result.placedTrunks} grid trunks, expected ~64`);
+    assert.ok(result.placedTrunks >= 110 && result.placedTrunks <= 132,
+        `placed ${result.placedTrunks} grid trunks, expected ~121 (flat anchor grid)`);
     assert.equal(result.placedBranches, 0, 'grid points stay independent (no bush)');
     assert.equal(result.placedLeaves, 0);
 
