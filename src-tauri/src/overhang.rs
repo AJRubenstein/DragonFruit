@@ -20,6 +20,21 @@ use dragonfruit_mesh_repair::{core::mesh::Vec3, IndexedMesh};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Binary raster of a region's XY-projected footprint — the containment test
+/// the density grid stage uses to place supports only inside the region.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FootprintMask {
+    pub width: u32,
+    pub height: u32,
+    /// World XY of the mask's top-left pixel center (mm).
+    pub origin_x: f32,
+    pub origin_y: f32,
+    pub px_mm: f32,
+    /// Row-major pixels (1 = inside the projected region), width×height.
+    pub data: Vec<u8>,
+}
+
 /// A connected patch of overhang triangles — the atomic unit the density
 /// placement stage consumes (grid for large flats, one tip for small ones).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +56,8 @@ pub struct OverhangRegion {
     /// overhang is at `min_z` (where peel starts).
     pub min_z: f32,
     pub max_z: f32,
+    /// Projected-footprint mask at the requested resolution.
+    pub footprint: FootprintMask,
 }
 
 /// Weld a world-space triangle soup (9 floats per triangle) and classify
@@ -48,13 +65,18 @@ pub struct OverhangRegion {
 pub fn classify_overhangs_from_soup(
     positions: &[f32],
     self_support_angle_deg: f32,
+    px_mm: f32,
 ) -> Vec<OverhangRegion> {
     let mesh = IndexedMesh::from_triangle_soup(positions, 1e-5);
-    classify_overhangs(&mesh, self_support_angle_deg)
+    classify_overhangs(&mesh, self_support_angle_deg, px_mm)
 }
 
 /// Classify overhang regions on an already-welded mesh.
-pub fn classify_overhangs(mesh: &IndexedMesh, self_support_angle_deg: f32) -> Vec<OverhangRegion> {
+pub fn classify_overhangs(
+    mesh: &IndexedMesh,
+    self_support_angle_deg: f32,
+    px_mm: f32,
+) -> Vec<OverhangRegion> {
     let tri_count = mesh.triangle_count();
     if tri_count == 0 {
         return Vec::new();
@@ -132,11 +154,16 @@ pub fn classify_overhangs(mesh: &IndexedMesh, self_support_angle_deg: f32) -> Ve
 
     groups
         .into_iter()
-        .map(|(_, triangle_ids)| build_region(mesh, &normal, triangle_ids))
+        .map(|(_, triangle_ids)| build_region(mesh, &normal, triangle_ids, px_mm))
         .collect()
 }
 
-fn build_region(mesh: &IndexedMesh, normal: &[Vec3], triangle_ids: Vec<u32>) -> OverhangRegion {
+fn build_region(
+    mesh: &IndexedMesh,
+    normal: &[Vec3],
+    triangle_ids: Vec<u32>,
+    px_mm: f32,
+) -> OverhangRegion {
     let mut area_mm2 = 0.0f32;
     let mut projected_area_mm2 = 0.0f32;
     let mut angle_weighted = 0.0f32;
@@ -169,6 +196,8 @@ fn build_region(mesh: &IndexedMesh, normal: &[Vec3], triangle_ids: Vec<u32>) -> 
         }
     }
 
+    let footprint = build_footprint_mask(mesh, &triangle_ids, xy_min, xy_max, px_mm);
+
     OverhangRegion {
         triangle_ids,
         area_mm2,
@@ -182,7 +211,92 @@ fn build_region(mesh: &IndexedMesh, normal: &[Vec3], triangle_ids: Vec<u32>) -> 
         xy_max,
         min_z,
         max_z,
+        footprint,
     }
+}
+
+/// Rasterize the region's XY-projected triangles into a containment mask.
+/// The mask is expanded by half a pixel on each side so edge pixels sample
+/// the region interior rather than falling just outside it.
+fn build_footprint_mask(
+    mesh: &IndexedMesh,
+    triangle_ids: &[u32],
+    xy_min: [f32; 2],
+    xy_max: [f32; 2],
+    px_mm: f32,
+) -> FootprintMask {
+    let px = px_mm.max(1e-4);
+    let width = (((xy_max[0] - xy_min[0]) / px).ceil() as u32).max(1);
+    let height = (((xy_max[1] - xy_min[1]) / px).ceil() as u32).max(1);
+
+    let mut data = vec![0u8; (width * height) as usize];
+    // Pixel centers, expanded by half a pixel outward from the bbox.
+    let origin_x = xy_min[0] - px * 0.5;
+    let origin_y = xy_min[1] - px * 0.5;
+
+    for py in 0..height {
+        let y = origin_y + (py as f32 + 0.5) * px;
+        for px_idx in 0..width {
+            let x = origin_x + (px_idx as f32 + 0.5) * px;
+            for &fi in triangle_ids {
+                let [a, b, c] = mesh.tri_positions(fi);
+                if point_in_triangle_2d(x, y, (a.x, a.y), (b.x, b.y), (c.x, c.y)) {
+                    data[(py * width + px_idx) as usize] = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    FootprintMask {
+        width,
+        height,
+        origin_x,
+        origin_y,
+        px_mm: px,
+        data,
+    }
+}
+
+/// Point-in-triangle test (2D, half-plane method).
+fn point_in_triangle_2d(
+    px: f32,
+    py: f32,
+    a: (f32, f32),
+    b: (f32, f32),
+    c: (f32, f32),
+) -> bool {
+    let sign = |x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32| {
+        (x1 - x3) * (y2 - y3) - (x2 - x3) * (y1 - y3)
+    };
+    let d1 = sign(px, py, a.0, a.1, b.0, b.1);
+    let d2 = sign(px, py, b.0, b.1, c.0, c.1);
+    let d3 = sign(px, py, c.0, c.1, a.0, a.1);
+    let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
+    let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
+    !(has_neg && has_pos)
+}
+
+/// Tauri IPC command: weld a world-space triangle soup (9 floats per triangle)
+/// and classify overhang regions with projected-footprint masks. Stateless —
+/// no model cache. Mirrors `scan_mesh_minima`'s shape.
+#[tauri::command]
+pub async fn scan_overhangs(
+    positions: Vec<f32>,
+    self_support_angle_deg: f32,
+    px_mm: f32,
+) -> Result<Vec<OverhangRegion>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let regions = classify_overhangs_from_soup(&positions, self_support_angle_deg, px_mm);
+        log::info!(
+            "[overhang] scan complete: {} regions from {} triangles",
+            regions.len(),
+            positions.len() / 9,
+        );
+        Ok(regions)
+    })
+    .await
+    .map_err(|e| format!("Overhang scan task panicked: {e}"))?
 }
 
 #[cfg(test)]
@@ -277,7 +391,7 @@ mod tests {
     #[test]
     fn flat_ceiling_is_overhang() {
         let soup = unit_cube_soup();
-        let regions = classify_overhangs_from_soup(&soup, 45.0);
+        let regions = classify_overhangs_from_soup(&soup, 45.0, 0.25);
         // Only the bottom face (2 triangles, 100 mm², angle 0°) is flagged.
         assert_region(&regions, 0.0, 100.0);
         assert_eq!(regions[0].triangle_ids.len(), 2);
@@ -293,7 +407,7 @@ mod tests {
         // one overhang region covering the WHOLE face, not just the lowest
         // vertex (which is all the minima detector would catch).
         let soup = rotate_x(&unit_cube_soup(), 30.0);
-        let regions = classify_overhangs_from_soup(&soup, 45.0);
+        let regions = classify_overhangs_from_soup(&soup, 45.0, 0.25);
         assert_region(&regions, 30.0, 100.0);
         assert_eq!(regions[0].triangle_ids.len(), 2, "whole face, not an edge");
         // Projected footprint of a 30° face: 100 × cos(30°) ≈ 86.6 mm².
@@ -304,11 +418,45 @@ mod tests {
         );
         // The lowest corner of the rotated cube (z = 0) belongs to this region.
         assert!((regions[0].min_z - 0.0).abs() < 1e-3);
+
+        // Footprint mask: the 30°-rotated face projects to a 10 × 8.66 mm
+        // rectangle (rotation about X compresses Y), fully covering its bbox.
+        let f = &regions[0].footprint;
+        assert!((f.width as f32 - 40.0).abs() <= 1.0, "width {}", f.width);
+        assert!((f.height as f32 - 35.0).abs() <= 1.0, "height {}", f.height);
+        assert!(f.data.iter().all(|&v| v == 1), "projection is a solid rectangle");
+        let mask_area = f.data.len() as f32 * 0.25 * 0.25;
+        assert!(
+            (mask_area - 86.6).abs() < 10.0,
+            "mask area {mask_area} ≈ projected 86.6"
+        );
+    }
+
+    #[test]
+    fn triangular_facet_mask_respects_containment() {
+        // A single right triangle (half of the 10×10 quad): pixels on the
+        // y > x side of the diagonal must be outside the mask.
+        let soup: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 10.0, 10.0, 0.0, 10.0, 0.0, 0.0, // normal -Z
+        ];
+        let regions = classify_overhangs_from_soup(&soup, 45.0, 0.25);
+        assert_eq!(regions.len(), 1);
+        assert!((regions[0].projected_area_mm2 - 50.0).abs() < 1.0);
+
+        let f = &regions[0].footprint;
+        // Pixel centers: x = origin_x + (col + 0.5)*px, origin_x = -0.125.
+        let idx = |x: f32, y: f32| -> usize {
+            let col = (((x + 0.125) / 0.25) - 0.5).round() as usize;
+            let row = (((y + 0.125) / 0.25) - 0.5).round() as usize;
+            row * f.width as usize + col
+        };
+        assert_eq!(f.data[idx(2.0, 1.0)], 1, "(2,1) is inside the triangle (y ≤ x)");
+        assert_eq!(f.data[idx(1.0, 2.0)], 0, "(1,2) is outside the triangle (y > x)");
     }
 
     #[test]
     fn vertical_wall_is_not_overhang() {
-        let regions = classify_overhangs_from_soup(&quad_at(90.0), 45.0);
+        let regions = classify_overhangs_from_soup(&quad_at(90.0), 45.0, 0.25);
         assert!(regions.is_empty(), "no overhang on a vertical wall: {regions:?}");
     }
 
@@ -316,9 +464,9 @@ mod tests {
     fn slope_steeper_than_threshold_is_self_supporting() {
         // 60° slope: self-supporting at the 45° threshold, flagged at 70°.
         let soup60 = quad_at(60.0);
-        let regions = classify_overhangs_from_soup(&soup60, 45.0);
+        let regions = classify_overhangs_from_soup(&soup60, 45.0, 0.25);
         assert!(regions.is_empty(), "60° slope must be self-supporting at 45°: {regions:?}");
-        let regions70 = classify_overhangs_from_soup(&soup60, 70.0);
+        let regions70 = classify_overhangs_from_soup(&soup60, 70.0, 0.25);
         assert_eq!(regions70.len(), 1, "60° slope flagged at 70° threshold");
         assert!((regions70[0].angle_deg - 60.0).abs() < 1.5);
     }
@@ -331,7 +479,7 @@ mod tests {
         for v in second.chunks_exact(3) {
             soup.extend_from_slice(&[v[0] + 100.0, v[1], v[2]]);
         }
-        let regions = classify_overhangs_from_soup(&soup, 45.0);
+        let regions = classify_overhangs_from_soup(&soup, 45.0, 0.25);
         assert_eq!(regions.len(), 2, "two disjoint slopes: {regions:?}");
         assert!((regions[0].angle_deg - 20.0).abs() < 1.5);
         assert!((regions[1].angle_deg - 20.0).abs() < 1.5);

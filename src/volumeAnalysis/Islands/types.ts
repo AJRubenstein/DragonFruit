@@ -10,7 +10,34 @@ import type * as THREE from 'three';
  */
 
 /** Which detector produced an island. */
-export type IslandSource = 'voxel' | 'minima';
+export type IslandSource = 'voxel' | 'minima' | 'overhang';
+
+/**
+ * Wire shape of the `scan_overhangs` Tauri command (mesh-normal overhang
+ * classification — catches shallow slopes the slice-growth detector cannot).
+ */
+export interface FootprintMask {
+  width: number;
+  height: number;
+  /** World XY of the mask's top-left pixel center (mm). */
+  originX: number;
+  originY: number;
+  pxMm: number;
+  /** Row-major pixels (1 = inside the projected region). */
+  data: number[];
+}
+
+export interface OverhangRegion {
+  triangleIds: number[];
+  areaMm2: number;
+  projectedAreaMm2: number;
+  angleDeg: number;
+  xyMin: [number, number];
+  xyMax: [number, number];
+  minZ: number;
+  maxZ: number;
+  footprint: FootprintMask;
+}
 
 /** Classification once the voxel and minima sets are intersected (Part C). */
 export type IslandClass = 'intersection' | 'voxelOnly' | 'minimaOnly';
@@ -30,6 +57,8 @@ export interface DetectedIsland {
   // --- voxel-detector extras (undefined for minima) ---
   /** Contact footprint area at the island's base layer (mm^2). */
   areaMm2?: number;
+  /** Mean surface angle from horizontal (degrees) — set by the overhang detector. */
+  overhangAngleDeg?: number;
   /** Inclusive [firstLayer, lastLayer] of the unsupported contact region. */
   layerSpan?: readonly [number, number];
   /** Contact voxel 2D positions (x, y coordinates in world mm) at the base layer. */

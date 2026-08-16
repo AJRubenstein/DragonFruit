@@ -4207,6 +4207,7 @@ fn main() {
             mesh_minima::scan_mesh_minima_from_path,
             mesh_minima::scan_voxel_islands_from_path,
             mesh_minima::scan_islands_from_path,
+            overhang::scan_overhangs,
             export_mesh_file,
             save_print_file,
             save_print_file_from_path,
