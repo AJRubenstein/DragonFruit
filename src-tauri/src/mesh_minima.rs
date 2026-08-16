@@ -19,6 +19,9 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashSet;
+use tauri::Emitter;
+
+use crate::overhang;
 
 /// A detected local vertical minimum: a vertex whose Z is strictly below all its
 /// graph neighbours, surviving the down-facing / even-odd interior filter.
@@ -604,6 +607,7 @@ pub async fn scan_voxel_islands_from_path(
 pub struct CombinedIslandScanResult {
     pub voxel_islands: Vec<VoxelIsland>,
     pub minima_islands: Vec<LocalMinimum>,
+    pub overhang_islands: Vec<overhang::OverhangRegion>,
 }
 
 /// Single Tauri command that loads the mesh once and runs both the voxel island
@@ -611,6 +615,7 @@ pub struct CombinedIslandScanResult {
 /// minima scan **concurrently**. Surface-snapping projections are also parallelized.
 #[tauri::command]
 pub async fn scan_islands_from_path(
+    app: tauri::AppHandle,
     file_path: String,
     matrix: [f32; 16],
     center: [f32; 3],
@@ -619,6 +624,8 @@ pub async fn scan_islands_from_path(
     support_buffer_mm: f64,
     connectivity: u8,
     k: Option<usize>,
+    overhang_self_support_angle_deg: Option<f32>,
+    overhang_px_mm: Option<f32>,
 ) -> Result<CombinedIslandScanResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         // ── 1. Load and transform mesh ONCE ──────────────────────────────
@@ -630,6 +637,7 @@ pub async fn scan_islands_from_path(
             "[islands-combined] Mesh loaded: {} triangles, {} vertices",
             tri_count, vert_count,
         );
+        let _ = app.emit("island-scan-progress", serde_json::json!({ "done": 5, "total": 100 }));
 
         let bbox = mesh.bbox();
         let soup = mesh.to_triangle_soup();
@@ -657,8 +665,14 @@ pub async fn scan_islands_from_path(
             candidate_only: true,
         };
 
-        // ── 2. Run voxel rasterization + scan AND minima scan CONCURRENTLY ──
-        let (scan_result, minima_islands) = std::thread::scope(|s| {
+        // ── 2. Run voxel rasterization + scan, minima scan, AND overhang
+        //       classification CONCURRENTLY (all share the loaded mesh) ──
+        let angle_deg = overhang_self_support_angle_deg.unwrap_or(45.0);
+        let oh_px_mm = overhang_px_mm.unwrap_or(0.25);
+        let app_a = app.clone();
+        let app_b = app.clone();
+        let app_c = app.clone();
+        let (scan_result, minima_islands, overhang_islands) = std::thread::scope(|s| {
             // Thread A: voxel rasterization + island scan
             let voxel_handle = s.spawn(|| {
                 log::info!(
@@ -675,6 +689,7 @@ pub async fn scan_islands_from_path(
                 );
                 let rasterize_sec = rasterize_start.elapsed().as_secs_f64();
                 log::info!("[islands-combined] Rasterized {} layers in {:.1}s", num_layers, rasterize_sec);
+                let _ = app_a.emit("island-scan-progress", serde_json::json!({ "done": 30, "total": 100 }));
 
                 log::info!("[islands-combined] Running island scan (batch pipeline)…");
                 let scan_start = std::time::Instant::now();
@@ -684,6 +699,7 @@ pub async fn scan_islands_from_path(
                     "[islands-combined] Island scan done in {:.1}s — {} islands (rasterize {:.1}s + scan {:.1}s = {:.1}s)",
                     scan_sec + rasterize_sec, result.islands.len(), rasterize_sec, scan_sec, rasterize_sec + scan_sec,
                 );
+                let _ = app_a.emit("island-scan-progress", serde_json::json!({ "done": 65, "total": 100 }));
                 result
             });
 
@@ -694,10 +710,31 @@ pub async fn scan_islands_from_path(
                 let minima = scan_minima_internal(&mesh, k);
                 let minima_sec = minima_start.elapsed().as_secs_f64();
                 log::info!("[islands-combined] Minima scan done in {:.1}s — {} minima", minima_sec, minima.len());
+                let _ = app_b.emit("island-scan-progress", serde_json::json!({ "done": 80, "total": 100 }));
                 minima
             });
 
-            (voxel_handle.join().unwrap(), minima_handle.join().unwrap())
+            // Thread C: overhang (mesh-normal) classification — the same mesh
+            // the voxel/minima paths use, so the TS side never round-trips
+            // geometry for it.
+            let overhang_handle = s.spawn(|| {
+                log::info!("[islands-combined] Running overhang classification (angle={}°)…", angle_deg);
+                let oh_start = std::time::Instant::now();
+                let regions = overhang::classify_overhangs(&mesh, angle_deg, oh_px_mm);
+                log::info!(
+                    "[islands-combined] Overhang classification done in {:.1}s — {} regions",
+                    oh_start.elapsed().as_secs_f64(),
+                    regions.len(),
+                );
+                let _ = app_c.emit("island-scan-progress", serde_json::json!({ "done": 90, "total": 100 }));
+                regions
+            });
+
+            (
+                voxel_handle.join().unwrap(),
+                minima_handle.join().unwrap(),
+                overhang_handle.join().unwrap(),
+            )
         });
 
         // ── 3. Build Z-bucket index for surface-snapping projections ──────
@@ -772,14 +809,18 @@ pub async fn scan_islands_from_path(
         );
 
         log::info!(
-            "[islands-combined] Complete: {} voxel islands, {} minima islands",
+            "[islands-combined] Complete: {} voxel islands, {} minima islands, {} overhang regions",
             voxel_islands.len(),
             minima_islands.len(),
+            overhang_islands.len(),
         );
+
+        let _ = app.emit("island-scan-progress", serde_json::json!({ "done": 100, "total": 100 }));
 
         Ok(CombinedIslandScanResult {
             voxel_islands,
             minima_islands,
+            overhang_islands,
         })
     })
     .await

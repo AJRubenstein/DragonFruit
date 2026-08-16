@@ -292,29 +292,10 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     // Catches shallow slopes the growth detector can't see (rotated-cube
     // undersides, 11°–45° surfaces). Non-fatal if the command is unavailable
     // (plain-browser context).
-    const overhangWorld = prepareWorldGeom();
-    if (overhangWorld) {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const regions = await invoke<OverhangRegion[]>('scan_overhangs', {
-          positions: Array.from(overhangWorld.positions),
-          // The self-support angle is a user knob (auto-support settings);
-          // falls back to the resin-standard 45° before the setting exists.
-          selfSupportAngleDeg: getSettings().autoSupport?.overhangSelfSupportAngleDeg
-            ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG,
-          pxMm: OVERHANG_FOOTPRINT_PX_MM,
-        });
-        mappedOverhangs = regions.map(overhangRegionToIsland);
-        setOverhangIslands(mappedOverhangs);
-      } catch (err) {
-        console.warn('[Islands] overhang scan failed (non-fatal)', err);
-        setOverhangIslands([]);
-      }
-    }
-
     if (sourcePath && geom) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
+        const { listen } = await import('@tauri-apps/api/event');
 
         if (!geom.geometry.boundingBox) {
           geom.geometry.computeBoundingBox();
@@ -331,10 +312,18 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         const matrixElements = Array.from(matrix.elements);
         const centerCoords = [center.x, center.y, center.z];
 
+        // The combined Rust scan emits phase progress — wire it into the
+        // progress modal so the bar moves immediately (the overhang pass runs
+        // inside the same command; no TS geometry round trip up front).
+        const unlisten = await listen<{ done: number; total: number }>(
+          'island-scan-progress',
+          (e) => setScanProgress({ done: e.payload.done, total: e.payload.total }),
+        );
+
         setScanProgress({ done: 0, total: 100 });
 
         console.log(`[Islands] Sideloading combined island scan from path: ${sourcePath}`);
-        const combined = await invoke<{ voxelIslands: any[]; minimaIslands: any[] }>(
+        const combined = await invoke<{ voxelIslands: any[]; minimaIslands: any[]; overhangIslands: any[] }>(
           'scan_islands_from_path',
           {
             filePath: sourcePath,
@@ -345,8 +334,13 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
             supportBufferMm: supportBufMm,
             connectivity,
             k: minimaK,
+            // Overhang classification runs inside the combined command on the
+            // already-loaded mesh (the self-support angle is a user knob).
+            overhangSelfSupportAngleDeg: getSettings().autoSupport?.overhangSelfSupportAngleDeg
+              ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG,
+            overhangPxMm: OVERHANG_FOOTPRINT_PX_MM,
           },
-        );
+        ).finally(() => unlisten());
 
         const voxelMapped: DetectedIsland[] = combined.voxelIslands
           .filter((v) => (v.areaMm2 ?? 0) >= minAreaMm2)
@@ -370,6 +364,9 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         }));
         setMinimaIslands(minimaMapped);
 
+        mappedOverhangs = (combined.overhangIslands ?? []).map(overhangRegionToIsland);
+        setOverhangIslands(mappedOverhangs);
+
         // Cache the scan results for this model + transform
         if (cacheKey) {
           scanCacheRef.current.set(cacheKey, { voxel: voxelMapped, minima: minimaMapped, overhang: mappedOverhangs });
@@ -387,6 +384,25 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         setScanning(false);
         return;
       }
+
+      // Overhang classification (Rust, positions-based) — the file sideload
+      // failed but this command may still be available. Reuses the same world
+      // geometry, so no double mesh prep.
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const regions = await invoke<OverhangRegion[]>('scan_overhangs', {
+          positions: Array.from(world.positions),
+          selfSupportAngleDeg: getSettings().autoSupport?.overhangSelfSupportAngleDeg
+            ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG,
+          pxMm: OVERHANG_FOOTPRINT_PX_MM,
+        });
+        mappedOverhangs = regions.map(overhangRegionToIsland);
+        setOverhangIslands(mappedOverhangs);
+      } catch (err) {
+        console.warn('[Islands] overhang scan failed (non-fatal)', err);
+        setOverhangIslands([]);
+      }
+
       setScanProgress({
         done: 0,
         total: Math.max(1, Math.ceil((world.bbox.max.z - world.bbox.min.z) / layerHeightMm)),
