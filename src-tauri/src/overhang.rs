@@ -1,0 +1,341 @@
+//! Mesh-normal overhang classification — auto-supports redesign, Step 1.
+//!
+//! Classifies down-facing mesh triangles whose surface is flatter than a
+//! configurable self-support angle into connected overhang REGIONS.
+//!
+//! Why this exists: the slice-growth detector (`current − dilate(prev, buffer)`)
+//! only flags surfaces whose per-layer cross-section expansion exceeds the
+//! support buffer — with 0.05 mm layers and a 0.25 mm buffer that is
+//! `arctan(0.05/0.25) ≈ 11.3°` from horizontal. The entire 11°–45° zone that
+//! resin printing wants supported (shallow slopes, rotated-cube undersides)
+//! is invisible to growth detection, and shallow slopes accumulate unsupported
+//! material without ever triggering the per-layer rule.
+//!
+//! A surface at angle θ from horizontal (0° = flat ceiling, 90° = vertical wall)
+//! is overhang when `θ < self_support_angle_deg`, i.e.
+//! `normal.z < -cos(self_support_angle_deg)`. Only genuinely down-facing
+//! triangles are eligible (the formula implies normal.z < 0).
+
+use dragonfruit_mesh_repair::{core::mesh::Vec3, IndexedMesh};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// A connected patch of overhang triangles — the atomic unit the density
+/// placement stage consumes (grid for large flats, one tip for small ones).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverhangRegion {
+    /// Triangle indices into `IndexedMesh::triangles`.
+    pub triangle_ids: Vec<u32>,
+    /// Sum of the 3D triangle areas (mm²).
+    pub area_mm2: f32,
+    /// Sum of the XY-projected triangle areas (mm²) — the supportable footprint
+    /// a density grid must cover (peel force scales with projected area).
+    pub projected_area_mm2: f32,
+    /// Area-weighted mean surface angle from horizontal (degrees).
+    pub angle_deg: f32,
+    /// XY bounding box of the region's vertices (mm).
+    pub xy_min: [f32; 2],
+    pub xy_max: [f32; 2],
+    /// Lowest / highest vertex Z of the region (mm) — the leading edge of the
+    /// overhang is at `min_z` (where peel starts).
+    pub min_z: f32,
+    pub max_z: f32,
+}
+
+/// Weld a world-space triangle soup (9 floats per triangle) and classify
+/// overhang regions. Mirrors `scan_mesh_minima`'s stateless IPC shape.
+pub fn classify_overhangs_from_soup(
+    positions: &[f32],
+    self_support_angle_deg: f32,
+) -> Vec<OverhangRegion> {
+    let mesh = IndexedMesh::from_triangle_soup(positions, 1e-5);
+    classify_overhangs(&mesh, self_support_angle_deg)
+}
+
+/// Classify overhang regions on an already-welded mesh.
+pub fn classify_overhangs(mesh: &IndexedMesh, self_support_angle_deg: f32) -> Vec<OverhangRegion> {
+    let tri_count = mesh.triangle_count();
+    if tri_count == 0 {
+        return Vec::new();
+    }
+
+    // A down-facing surface at angle θ from horizontal has normal.z = -cos(θ).
+    // Overhang iff θ < threshold ⟺ normal.z < -cos(threshold).
+    let threshold = -self_support_angle_deg.to_radians().cos();
+
+    let mut is_overhang = vec![false; tri_count];
+    let mut normal = vec![Vec3::ZERO; tri_count];
+    for fi in 0..tri_count {
+        let n = mesh.tri_normal(fi as u32);
+        normal[fi] = n;
+        is_overhang[fi] = n.z < threshold;
+    }
+
+    // Triangle adjacency through undirected edges (min, max vertex id).
+    let mut edge_tris: HashMap<(u32, u32), Vec<u32>> = HashMap::new();
+    for (fi, tri) in mesh.triangles.iter().enumerate() {
+        for pair in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
+            let key = if pair.0 < pair.1 { pair } else { (pair.1, pair.0) };
+            edge_tris.entry(key).or_default().push(fi as u32);
+        }
+    }
+
+    // Union-find over overhang triangles sharing an edge.
+    let mut parent: Vec<u32> = (0..tri_count as u32).collect();
+    fn find(parent: &mut [u32], x: u32) -> u32 {
+        let mut root = x;
+        while parent[root as usize] != root {
+            root = parent[root as usize];
+        }
+        let mut cur = x;
+        while parent[cur as usize] != root {
+            let next = parent[cur as usize];
+            parent[cur as usize] = root;
+            cur = next;
+        }
+        root
+    }
+    fn union(parent: &mut [u32], a: u32, b: u32) {
+        let ra = find(parent, a);
+        let rb = find(parent, b);
+        if ra != rb {
+            // Deterministic: smaller id wins as root.
+            let (keep, drop) = if ra < rb { (ra, rb) } else { (rb, ra) };
+            parent[drop as usize] = keep;
+        }
+    }
+
+    for tris in edge_tris.values() {
+        if tris.len() < 2 {
+            continue;
+        }
+        for w in tris.windows(2) {
+            union(&mut parent, w[0], w[1]);
+        }
+    }
+
+    // Group by root (sorted for determinism).
+    let mut groups: Vec<(u32, Vec<u32>)> = Vec::new();
+    {
+        let mut by_root: HashMap<u32, Vec<u32>> = HashMap::new();
+        for fi in 0..tri_count as u32 {
+            if !is_overhang[fi as usize] {
+                continue;
+            }
+            let root = find(&mut parent, fi);
+            by_root.entry(root).or_default().push(fi);
+        }
+        groups = by_root.into_iter().collect();
+        groups.sort_by_key(|(root, _)| *root);
+    }
+
+    groups
+        .into_iter()
+        .map(|(_, triangle_ids)| build_region(mesh, &normal, triangle_ids))
+        .collect()
+}
+
+fn build_region(mesh: &IndexedMesh, normal: &[Vec3], triangle_ids: Vec<u32>) -> OverhangRegion {
+    let mut area_mm2 = 0.0f32;
+    let mut projected_area_mm2 = 0.0f32;
+    let mut angle_weighted = 0.0f32;
+    let mut min_z = f32::INFINITY;
+    let mut max_z = f32::NEG_INFINITY;
+    let mut xy_min = [f32::INFINITY; 2];
+    let mut xy_max = [f32::NEG_INFINITY; 2];
+
+    for &fi in &triangle_ids {
+        let [a, b, c] = mesh.tri_positions(fi);
+        let area = mesh.tri_area(fi);
+        area_mm2 += area;
+
+        // XY-projected area of the triangle.
+        let cross2d = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        projected_area_mm2 += cross2d.abs() * 0.5;
+
+        let nz = normal[fi as usize].z.clamp(-1.0, 0.0);
+        // Surface angle from horizontal: normal.z = -cos(θ) → θ = acos(-nz).
+        let angle = (-nz).acos().to_degrees();
+        angle_weighted += area * angle;
+
+        for v in [a, b, c] {
+            min_z = min_z.min(v.z);
+            max_z = max_z.max(v.z);
+            xy_min[0] = xy_min[0].min(v.x);
+            xy_min[1] = xy_min[1].min(v.y);
+            xy_max[0] = xy_max[0].max(v.x);
+            xy_max[1] = xy_max[1].max(v.y);
+        }
+    }
+
+    OverhangRegion {
+        triangle_ids,
+        area_mm2,
+        projected_area_mm2,
+        angle_deg: if area_mm2 > 1e-9 {
+            angle_weighted / area_mm2
+        } else {
+            0.0
+        },
+        xy_min,
+        xy_max,
+        min_z,
+        max_z,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Rotate a triangle soup about the X axis by `angle_deg`.
+    fn rotate_x(positions: &[f32], angle_deg: f32) -> Vec<f32> {
+        let (s, c) = angle_deg.to_radians().sin_cos();
+        positions
+            .chunks_exact(3)
+            .flat_map(|v| {
+                let (x, y, z) = (v[0], v[1], v[2]);
+                [x, c * y - s * z, s * y + c * z]
+            })
+            .collect()
+    }
+
+    /// 10×10×10 cube, faces wound so normals point outward.
+    fn unit_cube_soup() -> Vec<f32> {
+        let mut out = Vec::new();
+        // v0(0,0,0) v1(10,0,0) v2(10,10,0) v3(0,10,0) v4(0,0,10) v5(10,0,10) v6(10,10,10) v7(0,10,10)
+        let v: [[f32; 3]; 8] = [
+            [0.0, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [10.0, 10.0, 0.0],
+            [0.0, 10.0, 0.0],
+            [0.0, 0.0, 10.0],
+            [10.0, 0.0, 10.0],
+            [10.0, 10.0, 10.0],
+            [0.0, 10.0, 10.0],
+        ];
+        // bottom (-Z): (v0,v3,v2),(v0,v2,v1)
+        // top (+Z):    (v4,v5,v6),(v4,v6,v7)
+        // front (-Y):  (v0,v5,v4),(v0,v1,v5)
+        // back (+Y):   (v3,v7,v6),(v3,v6,v2)
+        // left (-X):   (v0,v4,v7),(v0,v7,v3)
+        // right (+X):  (v1,v6,v5),(v1,v2,v6)
+        let tris: [[usize; 3]; 12] = [
+            [0, 3, 2],
+            [0, 2, 1],
+            [4, 5, 6],
+            [4, 6, 7],
+            [0, 5, 4],
+            [0, 1, 5],
+            [3, 7, 6],
+            [3, 6, 2],
+            [0, 4, 7],
+            [0, 7, 3],
+            [1, 6, 5],
+            [1, 2, 6],
+        ];
+        for t in tris {
+            for &i in &t {
+                out.extend_from_slice(&v[i]);
+            }
+        }
+        out
+    }
+
+    fn assert_region(
+        regions: &[OverhangRegion],
+        expected_angle_deg: f32,
+        expected_area_mm2: f32,
+    ) {
+        assert_eq!(regions.len(), 1, "expected exactly one region: {regions:?}");
+        let r = &regions[0];
+        assert!(
+            (r.angle_deg - expected_angle_deg).abs() < 1.5,
+            "angle {} vs expected {}",
+            r.angle_deg,
+            expected_angle_deg
+        );
+        assert!(
+            (r.area_mm2 - expected_area_mm2).abs() < 1.0,
+            "area {} vs expected {}",
+            r.area_mm2,
+            expected_area_mm2
+        );
+    }
+
+    /// Horizontal quad (10×10, normal −Z) rotated `angle_deg` about X — a
+    /// downward-facing surface at that angle from horizontal.
+    fn quad_at(angle_deg: f32) -> Vec<f32> {
+        let soup: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 10.0, 10.0, 0.0, 10.0, 0.0, 0.0, // tri 0 (normal -Z)
+            0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, // tri 1 (normal -Z)
+        ];
+        rotate_x(&soup, angle_deg)
+    }
+
+    #[test]
+    fn flat_ceiling_is_overhang() {
+        let soup = unit_cube_soup();
+        let regions = classify_overhangs_from_soup(&soup, 45.0);
+        // Only the bottom face (2 triangles, 100 mm², angle 0°) is flagged.
+        assert_region(&regions, 0.0, 100.0);
+        assert_eq!(regions[0].triangle_ids.len(), 2);
+        assert!((regions[0].projected_area_mm2 - 100.0).abs() < 1.0);
+        assert!((regions[0].min_z - 0.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn rotated_cube_underside_facet_is_single_region() {
+        // The user's canonical case: a cube rotated 30° about X. The former
+        // bottom face becomes a 30°-from-horizontal facet — invisible to the
+        // slice-growth detector (per-layer expansion < buffer) — and must be
+        // one overhang region covering the WHOLE face, not just the lowest
+        // vertex (which is all the minima detector would catch).
+        let soup = rotate_x(&unit_cube_soup(), 30.0);
+        let regions = classify_overhangs_from_soup(&soup, 45.0);
+        assert_region(&regions, 30.0, 100.0);
+        assert_eq!(regions[0].triangle_ids.len(), 2, "whole face, not an edge");
+        // Projected footprint of a 30° face: 100 × cos(30°) ≈ 86.6 mm².
+        assert!(
+            (regions[0].projected_area_mm2 - 86.6025).abs() < 1.0,
+            "projected {}",
+            regions[0].projected_area_mm2
+        );
+        // The lowest corner of the rotated cube (z = 0) belongs to this region.
+        assert!((regions[0].min_z - 0.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn vertical_wall_is_not_overhang() {
+        let regions = classify_overhangs_from_soup(&quad_at(90.0), 45.0);
+        assert!(regions.is_empty(), "no overhang on a vertical wall: {regions:?}");
+    }
+
+    #[test]
+    fn slope_steeper_than_threshold_is_self_supporting() {
+        // 60° slope: self-supporting at the 45° threshold, flagged at 70°.
+        let soup60 = quad_at(60.0);
+        let regions = classify_overhangs_from_soup(&soup60, 45.0);
+        assert!(regions.is_empty(), "60° slope must be self-supporting at 45°: {regions:?}");
+        let regions70 = classify_overhangs_from_soup(&soup60, 70.0);
+        assert_eq!(regions70.len(), 1, "60° slope flagged at 70° threshold");
+        assert!((regions70[0].angle_deg - 60.0).abs() < 1.5);
+    }
+
+    #[test]
+    fn two_disjoint_slopes_are_two_regions() {
+        // Two separate rotated cubes far apart → two distinct regions.
+        let mut soup = rotate_x(&unit_cube_soup(), 20.0);
+        let second = rotate_x(&unit_cube_soup(), 20.0);
+        for v in second.chunks_exact(3) {
+            soup.extend_from_slice(&[v[0] + 100.0, v[1], v[2]]);
+        }
+        let regions = classify_overhangs_from_soup(&soup, 45.0);
+        assert_eq!(regions.len(), 2, "two disjoint slopes: {regions:?}");
+        assert!((regions[0].angle_deg - 20.0).abs() < 1.5);
+        assert!((regions[1].angle_deg - 20.0).abs() < 1.5);
+        // Deterministic ordering: the two regions are ordered by root triangle id.
+        assert!(regions[0].xy_min[0] < regions[1].xy_min[0]);
+    }
+}

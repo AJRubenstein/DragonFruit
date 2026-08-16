@@ -4,6 +4,7 @@ mod astar;
 mod mesh_minima;
 mod mesh_repair;
 mod network;
+mod overhang;
 mod sdf;
 mod updater_channel;
 
