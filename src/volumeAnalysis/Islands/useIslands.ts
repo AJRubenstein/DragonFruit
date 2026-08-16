@@ -24,11 +24,38 @@ const OVERHANG_SELF_SUPPORT_ANGLE_DEG = 45;
 const OVERHANG_FOOTPRINT_PX_MM = 0.25;
 
 /**
+ * Merge overhang regions into the classified island set. The slice-growth
+ * detector and the mesh-normal classifier flag the same underside surface (a
+ * floating model's whole bottom layer is "unsupported" per the growth rule),
+ * so voxel islands substantially covered by an overhang region are dropped in
+ * favor of the surface-accurate region. Overhang regions without a voxel
+ * counterpart (e.g. lettering ledges below the growth buffer) are appended.
+ */
+export function mergeOverhangRegions(
+  classified: DetectedIsland[],
+  overhang: DetectedIsland[],
+): DetectedIsland[] {
+  if (overhang.length === 0) return classified;
+  const covered = new Set<string>();
+  for (const v of classified) {
+    if (v.source !== 'voxel') continue;
+    for (const o of overhang) {
+      if (overhangCoversVoxel(o, v)) {
+        covered.add(v.id);
+        break;
+      }
+    }
+  }
+  const remaining = covered.size === 0
+    ? classified
+    : classified.filter((v) => !covered.has(v.id));
+  return [...remaining, ...overhang];
+}
+
+/**
  * True when a voxel island's contact sits inside an overhang region's
  * projected footprint and their areas are comparable — the same physical
- * surface flagged by both detectors (a floating model's entire bottom layer
- * is "unsupported" per the growth rule). The overhang region is the
- * surface-accurate representation, so the voxel duplicate is dropped.
+ * surface detected by both detectors.
  */
 function overhangCoversVoxel(region: DetectedIsland, voxel: DetectedIsland): boolean {
   const vox = region.contactVoxels;
@@ -435,24 +462,10 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   // region is dropped in favor of the surface-accurate region. Overhang
   // islands then flow through annotation, filtering, the list, and
   // auto-support candidate generation.
-  const mergedIslands = useMemo(() => {
-    const classified = classifiedResult.islands;
-    if (overhangIslands.length === 0) return classified;
-    const covered = new Set<string>();
-    for (const v of classified) {
-      if (v.source !== 'voxel') continue;
-      for (const o of overhangIslands) {
-        if (overhangCoversVoxel(o, v)) {
-          covered.add(v.id);
-          break;
-        }
-      }
-    }
-    const remaining = covered.size === 0
-      ? classified
-      : classified.filter((v) => !covered.has(v.id));
-    return [...remaining, ...overhangIslands];
-  }, [classifiedResult, overhangIslands]);
+  const mergedIslands = useMemo(
+    () => mergeOverhangRegions(classifiedResult.islands, overhangIslands),
+    [classifiedResult, overhangIslands],
+  );
 
   const allIslands = mergedIslands;
   const stats = classifiedResult.stats;
