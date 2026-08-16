@@ -8,7 +8,11 @@ Progress:
       `src-tauri/src/overhang.rs`, 6/6 unit tests (rotated cube, wall, slopes, containment).
 - [x] Step 2 — `scan_overhangs` IPC + overhang regions in `useIslands` (DetectedIsland source
       'overhang', contactVoxels from footprint, real angle). Visible in-app as pucks + list.
-- [ ] Step 3 — density grid placement (grid phase) on large flat regions.
+      Overhang regions merge into the pipeline (voxel duplicates dropped) and render as
+      translucent surface-mesh highlights.
+- [x] Step 3 — density grid placement (grid phase): overhang regions ≥ gridAreaThresholdMm2
+      get supports at √areaPerSupportMm2 spacing (containment-tested, surface-snapped,
+      standalone trunks). `areaPerSupportMm2` is the density knob.
 - [ ] Step 4 — phased pipeline + coverage convergence.
 - [ ] Step 5 — forest resize pass.
 - [ ] Step 6 — worker + plan-then-commit + preview.
