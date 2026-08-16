@@ -49,6 +49,11 @@ export interface AutoSupportSettings {
      *  interior). The boundary of an anchor region engages peel first, so its
      *  perimeter is deliberately denser than its infill. */
     anchorPerimeterFactor: number;
+    /** Poisson-disk interior spacing multiplier. Organic regions carry the
+     *  slope-relax angle term (up to slopeRelaxFactor) on top of the shared
+     *  region spacing, so they read looser than the flat grid; this knob
+     *  re-tightens the disk independently of the grid. < 1 = denser. */
+    poissonSpacingFactor: number;
     /** Percentage of each region's projected footprint the auto grid must
      *  cover before gap-fill stops (75–100). */
     coverageTargetPercent: number;
@@ -85,6 +90,7 @@ type NumericAutoSupportSettingKey =
     | 'suctionAreaExponent'
     | 'anchorPerimeterFactor'
     | 'poissonFlatnessThresholdDeg'
+    | 'poissonSpacingFactor'
     | 'coverageTargetPercent'
     | 'leafFanRadiusMm'
     | 'leafFanMaxAngleDeg';
@@ -104,6 +110,7 @@ export const AUTO_SUPPORT_CONSTRAINTS = {
     suctionAreaExponent: { min: 0, max: 0.4, step: 0.05, defaultValue: 0.15 },
     anchorPerimeterFactor: { min: 0.6, max: 1, step: 0.05, defaultValue: 0.8 },
     poissonFlatnessThresholdDeg: { min: 5, max: 30, step: 1, defaultValue: 12, integer: true },
+    poissonSpacingFactor: { min: 0.5, max: 1.5, step: 0.05, defaultValue: 0.85 },
     coverageTargetPercent: { min: 75, max: 100, step: 5, defaultValue: 95, integer: true },
     leafFanRadiusMm: { min: 2, max: 15, step: 0.5, defaultValue: 5 },
     leafFanMaxAngleDeg: { min: 20, max: 80, step: 5, defaultValue: 60, integer: true },
@@ -157,6 +164,7 @@ export function createDefaultAutoSupportSettings(): AutoSupportSettings {
         distributionMode: 'auto',
         anchorPerimeterFactor: AUTO_SUPPORT_CONSTRAINTS.anchorPerimeterFactor.defaultValue,
         poissonFlatnessThresholdDeg: AUTO_SUPPORT_CONSTRAINTS.poissonFlatnessThresholdDeg.defaultValue,
+        poissonSpacingFactor: AUTO_SUPPORT_CONSTRAINTS.poissonSpacingFactor.defaultValue,
         coverageTargetPercent: AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent.defaultValue,
         leafFanRadiusMm: AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm.defaultValue,
         leafFanMaxAngleDeg: AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg.defaultValue,
@@ -189,6 +197,7 @@ export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings
             : defaults.distributionMode,
         anchorPerimeterFactor: clampNumeric(source.anchorPerimeterFactor, AUTO_SUPPORT_CONSTRAINTS.anchorPerimeterFactor),
         poissonFlatnessThresholdDeg: clampNumeric(source.poissonFlatnessThresholdDeg, AUTO_SUPPORT_CONSTRAINTS.poissonFlatnessThresholdDeg),
+        poissonSpacingFactor: clampNumeric(source.poissonSpacingFactor, AUTO_SUPPORT_CONSTRAINTS.poissonSpacingFactor),
         coverageTargetPercent: clampNumeric(source.coverageTargetPercent, AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent),
         leafFanRadiusMm: clampNumeric(source.leafFanRadiusMm, AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm),
         leafFanMaxAngleDeg: clampNumeric(source.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg),

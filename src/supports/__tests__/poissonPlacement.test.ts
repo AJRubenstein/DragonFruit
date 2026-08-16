@@ -82,8 +82,8 @@ test('anchor region below the grid threshold still gets a densified disk', () =>
 
 test('perimeter ring is retained and infill respects the min distance', () => {
     const settings = { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 30, gridAreaThresholdMm2: 25 };
-    // areaPerSupport 30, anchor factor owns the density → interior = √30 × 0.7 ≈ 3.83 mm;
-    // perimeter = 3.83 × 0.8 ≈ 3.07 mm.
+    // areaPerSupport 30, anchor factor owns the density → interior =
+    // √30 × 0.7 × poissonSpacingFactor ≈ 3.26 mm; perimeter = interior × 0.8.
     const region = rectRegion('o0', -10, 10, -10, 10, 400, 6.5, 0);
 
     const candidates = generatePoissonCandidates(
@@ -96,7 +96,8 @@ test('perimeter ring is retained and infill respects the min distance', () => {
     const isPerim = (i: number) => candidates[i].id.startsWith('perim-');
 
     // Interior (and perimeter-vs-interior) spacing ≥ interior radius − eps.
-    const interiorSq = 3.83 * 3.83 * 0.9;
+    const interior = Math.sqrt(30) * 0.7 * (settings.poissonSpacingFactor ?? 1);
+    const interiorSq = interior * interior * 0.9;
     for (let i = 0; i < pts.length; i++) {
         for (let j = i + 1; j < pts.length; j++) {
             if (isPerim(i) && isPerim(j)) continue;
@@ -105,6 +106,24 @@ test('perimeter ring is retained and infill respects the min distance', () => {
                 `infill spacing ≥ interior radius (d=${Math.sqrt(d2).toFixed(2)} mm)`);
         }
     }
+});
+
+test('poissonSpacingFactor tightens the disk independently of the grid', () => {
+    const base = { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 30, gridAreaThresholdMm2: 25 };
+    const region = rectRegion('o0', -10, 10, -10, 10, 400, 6.5, 0);
+
+    const loose = generatePoissonCandidates(
+        [region], { ...base, poissonSpacingFactor: 1.0 },
+        new Map([['o0', 0.7]]), new Set(['o0']),
+    );
+    const tight = generatePoissonCandidates(
+        [region], { ...base, poissonSpacingFactor: 0.6 },
+        new Map([['o0', 0.7]]), new Set(['o0']),
+    );
+
+    assert.ok(loose.length >= 8, 'loose disk still fills');
+    assert.ok(tight.length > loose.length,
+        `lower factor densifies (loose=${loose.length}, tight=${tight.length})`);
 });
 
 test('deterministic for identical inputs', () => {

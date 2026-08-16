@@ -133,7 +133,8 @@ export function generatePoissonCandidates(
         if (area < settings.gridAreaThresholdMm2 && !isAnchor) continue;
 
         const anchorScale = anchorScaleById.get(island.id) ?? 1;
-        const interiorSpacing = computeRegionSpacing(island, settings, anchorScale);
+        const interiorSpacing = computeRegionSpacing(island, settings, anchorScale)
+            * (settings.poissonSpacingFactor ?? 1);
         const perimeterSpacing = Math.max(
             PERIMETER_SPACING_FLOOR_MM,
             interiorSpacing * (isAnchor ? (settings.anchorPerimeterFactor ?? 0.8) : 1),

@@ -80,6 +80,7 @@ type NumericAutoSupportSettingKey =
   | 'suctionAreaExponent'
   | 'anchorPerimeterFactor'
   | 'poissonFlatnessThresholdDeg'
+  | 'poissonSpacingFactor'
   | 'coverageTargetPercent'
   | 'leafFanRadiusMm'
   | 'leafFanMaxAngleDeg';
@@ -97,6 +98,7 @@ const KNOBS: KnobDef[] = [
   { key: 'suctionAreaExponent',   label: 'Suction Scale',        min: 0,    max: 0.4,  step: 0.05, unit: '',   hint: 'How strongly flat density grows with region area — large shallow ceilings carry more peel. 0 = off' },
   { key: 'anchorPerimeterFactor', label: 'Anchor Perimeter',     min: 0.6,  max: 1,    step: 0.05, unit: '×',   hint: 'Poisson perimeter spacing vs the interior — the boundary of an anchor region engages peel first, so its ring is denser. Lower = tighter ring' },
   { key: 'poissonFlatnessThresholdDeg', label: 'Organic Threshold', min: 5,  max: 30,   step: 1,   unit: '°',   hint: 'Local surface-angle spread above which a region is organic → Poisson disk in Auto mode. Planar regions stay on the grid. Lower = more regions Poisson' },
+  { key: 'poissonSpacingFactor',  label: 'Disk Spacing',         min: 0.5, max: 1.5,  step: 0.05, unit: '×',   hint: 'Poisson-disk interior spacing vs the shared region spacing — organic regions carry the slope-relax term and read looser than the flat grid; lower tightens the disk independently of the grid' },
   { key: 'sizeScale',             label: 'Support Size',         min: 0.5,  max: 2,    step: 0.05, unit: '×',   hint: 'Master multiplier over the preset sizing bands — thicker or thinner everywhere' },
   { key: 'coverageTargetPercent', label: 'Coverage Target',      min: 75,   max: 100,  step: 5,   unit: '%',   hint: 'How much of each region\'s footprint the grid must cover before gap-filling stops' },
   { key: 'leafFanRadiusMm',       label: 'Fan Reach',            min: 2,    max: 15,   step: 0.5, unit: 'mm',  hint: 'Max horizontal distance a fan-out leaf may span from a trunk shaft' },
@@ -590,7 +592,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
                   ))}
                 </div>
                 <div className="space-y-2.5 mt-2.5">
-                  {KNOBS.filter(k => k.key === 'poissonFlatnessThresholdDeg').map(knob => (
+                  {KNOBS.filter(k => ['poissonFlatnessThresholdDeg', 'poissonSpacingFactor'].includes(k.key)).map(knob => (
                     <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
                   ))}
                 </div>
