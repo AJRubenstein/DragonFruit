@@ -89,6 +89,17 @@ const ROOTS_DISK_SAFETY_MM = COLLISION_AVOIDANCE_MM;
 const CONTACT_CONE_COLLISION_SAFETY_MM = 0.05;
 /** Ignore the first tip-adjacent region so contact attachment is still allowed. */
 const CONTACT_CONE_TIP_IGNORE_MM = 0.25;
+/**
+ * Extra SDF margin for the first cone sample. The cone is tangent to the
+ * surface at the tip, so the near-tip region is clear by construction — but
+ * the sphere approximation only clears if the sample depth exceeds its
+ * radius. With a fixed 0.25mm ignore, the first sample's radius (~0.24mm)
+ * leaves 0.015mm of clearance: pure SDF quantization noise, which flips to a
+ * false collision on sloped/rotated geometry (the overhang grid hit this:
+ * every trunk on a rotated cube rejected with COLLISION_WITH_MODEL). Scale
+ * the ignore with the tip radius so the margin is robust.
+ */
+const CONE_TIP_SDF_MARGIN_MM = 0.15;
 /** Target sampling stride for cone frustum checks (adaptive with SDF cell size). */
 const CONTACT_CONE_COLLISION_SAMPLE_STEP_MM = 0.2;
 
@@ -631,7 +642,15 @@ function contactConeBlocked(args: {
         Math.min(CONTACT_CONE_COLLISION_SAMPLE_STEP_MM, args.sdf.cellSize * 0.8),
         0.1,
     );
-    const startT = Math.min(1, CONTACT_CONE_TIP_IGNORE_MM / length);
+    // Skip the guaranteed-clear tip region: the cone is tangent to the
+    // surface at the tip, so samples there only false-positive against the
+    // sphere approximation. The ignore distance must exceed the tip radius +
+    // safety + SDF error, or sloped surfaces read as collisions.
+    const tipIgnore = Math.max(
+        CONTACT_CONE_TIP_IGNORE_MM,
+        cone.coneStartRadiusMm + CONTACT_CONE_COLLISION_SAFETY_MM + CONE_TIP_SDF_MARGIN_MM,
+    );
+    const startT = Math.min(1, tipIgnore / length);
     const sampleCount = Math.max(1, Math.ceil((1 - startT) * length / minStep));
 
     for (let i = 0; i <= sampleCount; i++) {

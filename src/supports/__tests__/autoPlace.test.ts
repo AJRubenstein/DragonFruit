@@ -143,6 +143,57 @@ test('runAutoPlace grids a large flat overhang region into standalone trunks', (
     disposeHandlers();
 });
 
+test('runAutoPlace places grid trunks on a rotated mesh via the region normal', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+    initializeBVH();
+
+    // Box rotated 30° about X: the underside face normal is (0, 0.5, -0.866)
+    // and its surface Z varies with y. This is the exact case the generic
+    // raycast got wrong (side face vs underside) — the region's own normal
+    // must be used instead.
+    const geometry = new THREE.BoxGeometry(20, 20, 20);
+    geometry.rotateX(THREE.MathUtils.degToRad(30));
+    geometry.translate(0, 0, 20);
+    accelerateGeometry(geometry);
+    const mesh = new THREE.Mesh(geometry);
+    mesh.updateMatrixWorld();
+    setModelMesh('model-a', mesh);
+
+    // Underside after rotateX(30) + translate(0,0,20): projected y in
+    // [-3.66, 13.66], x in [-10, 10], surface z(y) = 0.577y + 8.45, normal
+    // (0, 0.5, -sqrt(3)/2). (A plane through the cube's middle would put the
+    // tips inside the model — the fixture must match the real face.)
+    const normal = { x: 0, y: 0.5, z: -Math.sqrt(3) / 2 };
+    const contactVoxels: { x: number; y: number; z?: number }[] = [];
+    for (let x = -10; x <= 10; x += 0.25) {
+        for (let y = -3.66; y <= 13.66; y += 0.25) {
+            contactVoxels.push({ x, y, z: 0.577 * y + 8.45 });
+        }
+    }
+    const facet: DetectedIsland = {
+        id: 'o0',
+        source: 'overhang',
+        contact: new THREE.Vector3(0, 5, 11.33),
+        baseZ: 6.34,
+        areaMm2: 400 * (Math.sqrt(3) / 2), // projected area ≈ 346
+        surfaceNormal: normal,
+        contactVoxels,
+    };
+
+    const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true });
+
+    assert.ok(result.placedTrunks >= 15,
+        `placed ${result.placedTrunks} grid trunks on the rotated face`);
+    assert.equal(result.rejectedCandidates, 0,
+        'no rejections: the region normal keeps the cone clear');
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
 test('runAutoPlace with no viable candidates returns changed=false and pushes nothing', () => {
     resetStore();
     resetKickstandStore();

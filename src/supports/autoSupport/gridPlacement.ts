@@ -105,7 +105,10 @@ export function generateGridCandidates(
                 candidates.push({
                     id: `grid-${island.id}-${x.toFixed(2)}-${y.toFixed(2)}`,
                     tipPos: { x, y, z: tipZ },
-                    tipNormal: { x: 0, y: 0, z: -1 }, // caller raycasts the real normal
+                    // The region's own face normal (world space) — the
+                    // placement pipeline uses it directly instead of a
+                    // whole-mesh raycast that hits the wrong face on slopes.
+                    tipNormal: island.surfaceNormal ?? { x: 0, y: 0, z: -1 },
                     modelId: '', // caller fills in
                     source: 'overhang',
                     islandAreaMm2: settings.areaPerSupportMm2,

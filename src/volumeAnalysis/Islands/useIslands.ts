@@ -268,6 +268,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
       areaMm2: region.projectedAreaMm2,
       overhangAngleDeg: region.angleDeg,
       triangleIds: region.triangleIds,
+      surfaceNormal: { x: region.normal[0], y: region.normal[1], z: region.normal[2] },
       contactVoxels,
     };
   };

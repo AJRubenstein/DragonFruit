@@ -370,9 +370,13 @@ function placeOneCandidate(
     const snapshot = getSnapshot();
     const mesh = getModelMesh(candidate.modelId) ?? undefined;
 
-    // Resolve the real surface normal by raycasting against the mesh.
-    // candidateFromIsland sets tipNormal to {0,0,-1} as a placeholder.
-    const resolved = resolveSurfaceNormal(candidate.tipPos, mesh);
+    // Grid points carry the region's exact surface position and normal (from
+    // the classifier's own triangles, world space). Re-resolving via a
+    // whole-mesh raycast hits the wrong face on sloped geometry (side walls
+    // below the region face at the same XY), so trust the region data.
+    const resolved = candidate.gridPoint && candidate.tipNormal && candidate.tipNormal.z < 0
+        ? { point: candidate.tipPos, normal: candidate.tipNormal }
+        : resolveSurfaceNormal(candidate.tipPos, mesh);
     const tipPos = resolved.point;
     const tipNormal = resolved.normal;
 

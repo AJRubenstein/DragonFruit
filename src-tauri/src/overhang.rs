@@ -55,6 +55,10 @@ pub struct OverhangRegion {
     pub projected_area_mm2: f32,
     /// Area-weighted mean surface angle from horizontal (degrees).
     pub angle_deg: f32,
+    /// Area-weighted mean face normal (world space, points away from the model
+    /// interior — downward for undersides). Grid points use this instead of a
+    /// whole-mesh raycast, which hits the wrong face on sloped geometry.
+    pub normal: [f32; 3],
     /// XY bounding box of the region's vertices (mm).
     pub xy_min: [f32; 2],
     pub xy_max: [f32; 2],
@@ -178,10 +182,16 @@ fn build_region(
     let mut xy_min = [f32::INFINITY; 2];
     let mut xy_max = [f32::NEG_INFINITY; 2];
 
+    let mut normal_acc = [0f32; 3];
     for &fi in &triangle_ids {
         let [a, b, c] = mesh.tri_positions(fi);
         let area = mesh.tri_area(fi);
         area_mm2 += area;
+
+        let n = normal[fi as usize];
+        normal_acc[0] += n.x * area;
+        normal_acc[1] += n.y * area;
+        normal_acc[2] += n.z * area;
 
         // XY-projected area of the triangle.
         let cross2d = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -204,6 +214,21 @@ fn build_region(
 
     let footprint = build_footprint_mask(mesh, &triangle_ids, xy_min, xy_max, px_mm);
 
+    // Area-weighted mean normal, normalized.
+    let normal_len = (normal_acc[0] * normal_acc[0]
+        + normal_acc[1] * normal_acc[1]
+        + normal_acc[2] * normal_acc[2])
+        .sqrt();
+    let normal = if normal_len > 1e-9 {
+        [
+            normal_acc[0] / normal_len,
+            normal_acc[1] / normal_len,
+            normal_acc[2] / normal_len,
+        ]
+    } else {
+        [0.0, 0.0, -1.0]
+    };
+
     OverhangRegion {
         triangle_ids,
         area_mm2,
@@ -213,6 +238,7 @@ fn build_region(
         } else {
             0.0
         },
+        normal,
         xy_min,
         xy_max,
         min_z,
@@ -462,6 +488,12 @@ mod tests {
         };
         assert!((z_at(5.0, 0.5) - 0.0).abs() < 0.6, "low edge z {}", z_at(5.0, 0.5));
         assert!((z_at(5.0, 8.0) - 4.6).abs() < 0.6, "high edge z {}", z_at(5.0, 8.0));
+
+        // Region normal: the 30°-rotated bottom face has normal (0, 0.5, -0.866).
+        let n = regions[0].normal;
+        assert!((n[0]).abs() < 0.01, "nx {}", n[0]);
+        assert!((n[1] - 0.5).abs() < 0.01, "ny {}", n[1]);
+        assert!((n[2] + 0.8660).abs() < 0.01, "nz {}", n[2]);
     }
 
     #[test]

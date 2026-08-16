@@ -34,6 +34,8 @@ export interface OverhangRegion {
   areaMm2: number;
   projectedAreaMm2: number;
   angleDeg: number;
+  /** Area-weighted mean face normal (world space, points away from the model). */
+  normal: [number, number, number];
   xyMin: [number, number];
   xyMax: [number, number];
   minZ: number;
@@ -64,6 +66,10 @@ export interface DetectedIsland {
   overhangAngleDeg?: number;
   /** Model-triangle indices of the overhang region (for surface highlighting). */
   triangleIds?: number[];
+  /** Region mean surface normal (world space, away from the model) — lets the
+   *  placement pipeline skip whole-mesh raycasts that hit the wrong face on
+   *  sloped geometry. */
+  surfaceNormal?: { x: number; y: number; z: number };
   /** Inclusive [firstLayer, lastLayer] of the unsupported contact region. */
   layerSpan?: readonly [number, number];
   /** Contact voxel 2D positions (x, y coordinates in world mm) at the base layer.
