@@ -10,7 +10,7 @@ import {
     buildGapFillCandidates,
     collectSupportTips,
 } from './coverage';
-import { sizeParameters } from './parameterSizing';
+import { sizeParameters, presetForArea } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
 import { getSnapshot, setSnapshot } from '../state';
@@ -22,6 +22,7 @@ import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityStick } from '../SupportTypes/Trunk/useTrunkPlacement';
 import { applyTrunkReplacement, planTrunkReplacement } from '../SupportTypes/Trunk/TrunkReplacement';
+import { computeForestDiameterProfile } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
 import { buildBranchData } from '../SupportTypes/Branch/branchBuilder';
 import { buildLeafData } from '../SupportTypes/Leaf/leafBuilder';
 import { decideGridPlacement } from '../PlacementLogic/Grid/gridPlacement';
@@ -376,7 +377,6 @@ function placeOneCandidate(
     candidate: CandidatePoint,
     draft: SupportState,
     _settingsOverride: Partial<AutoSupportSettings> | undefined,
-    modelCtx?: ModelSizingContext,
     totalArea?: number,
 ): { kind: string; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number } {
     const supportSettings = getSettings();
@@ -394,9 +394,9 @@ function placeOneCandidate(
     const tipPos = resolved.point;
     const tipNormal = resolved.normal;
 
-    // Determine preset band for analytics.
+    // Determine preset band for analytics + empirical sizing.
     const area = candidate.islandAreaMm2;
-    const preset = area <= 0.15 ? 'detail' as const : area <= 0.50 ? 'structure' as const : 'anchor' as const;
+    const preset = presetForArea(area);
 
     // ── Gridless merge check ──────────────────────────────────────
     // Density-grid points force standalone trunks (a flat region needs
@@ -548,8 +548,14 @@ function placeOneCandidate(
         }
     }
 
-    // Dynamic physics-based sizing using model context + user settings.
-    const overrides = sizeParameters(candidate, modelCtx, supportSettings, totalArea);
+    // Empirical sizing: grid cells carry their own cell area (each grid point
+    // is a standalone trunk for one cell); merged clusters pass their summed
+    // area so the trunk that absorbs several islands gets a small bump.
+    const overrides = sizeParameters(
+        candidate,
+        supportSettings,
+        candidate.gridPoint ? candidate.islandAreaMm2 : totalArea,
+    );
 
     const trunkResult = buildTrunkData({
         tipPos,
@@ -884,14 +890,7 @@ export function computeAutoSupportPlan(
     console.log(LOG_PREFIX,
         `Grid mode: ${gridEnabled ? 'ENABLED (supports share grid nodes, branch/leaf fan-out active)' : 'DISABLED (all supports become standalone trunks)'}`);
 
-    // ── Model sizing context ────────────────────────────────────────
-    // Pre-sort candidates by Z for weight distribution counting.
-    const sortedByZ = [...candidates].sort((a, b) => a.zHeight - b.zHeight);
-    const belowCount = new Map<string, number>();
-    for (let i = 0; i < sortedByZ.length; i++) {
-        belowCount.set(sortedByZ[i].id, i + 1);
-    }
-
+    // ── Model sizing context (mesh volume/top-Z for the debug analytics) ──
     let modelCtx: ModelSizingContext | undefined;
     if (resolvedMesh) {
         const bbox = new THREE.Box3().setFromObject(resolvedMesh);
@@ -899,7 +898,6 @@ export function computeAutoSupportPlan(
             modelVolumeMm3: computeMeshVolumeMm3(resolvedMesh),
             modelZMaxMm: bbox.max.z,
             totalCandidates: candidates.length,
-            candidatesBelowZ: 0, // placeholder — filled per-candidate below
         };
     }
 
@@ -943,10 +941,7 @@ export function computeAutoSupportPlan(
     // (no store commit) so later candidates see earlier supports.
     const placeOne = (candidate: CandidatePoint): string => {
         try {
-            const ctx: ModelSizingContext | undefined = modelCtx
-                ? { ...modelCtx, candidatesBelowZ: belowCount.get(candidate.id) ?? candidates.length }
-                : undefined;
-            const result = placeOneCandidate(candidate, draft, settingsOverride, ctx, clusterTotal.get(candidate.id));
+            const result = placeOneCandidate(candidate, draft, settingsOverride, clusterTotal.get(candidate.id));
             draft = result.draft;
             if (result.kickstand) kickstandDraft = result.kickstand;
             switch (result.kind) {
@@ -1066,9 +1061,9 @@ export function computeAutoSupportPlan(
             modelId: '', source: 'voxel', islandAreaMm2: area,
             zHeight: z, priority: 0,
         });
-        const sMin = sizeParameters(makeSample(minArea, 10), modelCtx, getSettings());
-        const sMax = sizeParameters(makeSample(maxArea, zMax), modelCtx, getSettings());
-        const sAvg = sizeParameters(makeSample(avgArea, zMax / 2), modelCtx, getSettings());
+        const sMin = sizeParameters(makeSample(minArea, 10), getSettings());
+        const sMax = sizeParameters(makeSample(maxArea, zMax), getSettings());
+        const sAvg = sizeParameters(makeSample(avgArea, zMax / 2), getSettings());
         sizingDebug = {
             modelVolumeMm3: Math.round(modelCtx.modelVolumeMm3),
             estimatedWeightG: round2(weightG),
@@ -1377,7 +1372,26 @@ export function computeAutoSupportPlan(
         placedSticks > 0;
 
     // ------------------------------------------------------------------
-    // 4. Auto-bracing (draft-only, folded into the plan)
+    // 4. Forest resize pass — re-derive every trunk's stepwise diameter
+    //    profile from its final attachment tree (a trunk carrying four
+    //    branches gets thicker; a lone trunk stays at its placed diameter).
+    // ------------------------------------------------------------------
+
+    if (changed) {
+        try {
+            const resized = computeForestDiameterProfile(draft);
+            if (resized !== draft) {
+                draft = resized;
+                console.log(LOG_PREFIX, 'Forest resize pass applied (branch-loaded trunks thickened).');
+            }
+        } catch (e) {
+            console.warn(LOG_PREFIX,
+                `Forest resize failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 5. Auto-bracing (draft-only, folded into the plan)
     // ------------------------------------------------------------------
 
     if (changed && !autoSettings.debugSkipAutoBracing) {

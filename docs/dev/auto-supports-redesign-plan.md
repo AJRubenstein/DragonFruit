@@ -20,7 +20,13 @@ Progress:
       footprint is covered (not just the centroid); under-covered regions get gap-fill trunks
       at uncovered footprint clusters, iterating to a 95% target. Regular-island placement
       proven at scale on a dragon figurine (44 trunks / 79 leaves / 212 braces).
-- [x] Step 5 — forest resize pass (deferred with the sizing redo).
+- [x] Step 5 — empirical sizing redo + forest resize pass:
+      placement-time sizing is a preset table (detail 0.60 / structure 0.70 /
+      anchor 0.80 mm shaft) with mild height × carried-area × tip-angle
+      modulators — no physics formulas (grid cells were ~1.5 mm, now 0.80 mm).
+      Post-placement `computeForestDiameterProfile` re-derives every trunk's
+      stepwise taper from its attachment tree (four-branch trunk thickens
+      below the branch knots; lone trunk stays at its placed diameter).
 - [ ] Step 6 — worker + plan-then-commit + preview:
   - [x] Plan seam: the pipeline now computes against a local draft
         (`computeAutoSupportPlan` — base states + mesh as params, no store

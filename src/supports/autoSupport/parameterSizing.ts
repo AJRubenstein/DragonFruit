@@ -2,19 +2,45 @@ import type { CandidatePoint } from './types';
 import type { SupportSettings } from '../Settings/types';
 
 // ---------------------------------------------------------------------------
-// Physics constants
+// Empirical sizing presets (locked: no physics pretense)
 // ---------------------------------------------------------------------------
+//
+// Auto-supports are sized from a small table of empirical bands, not load
+// calculations. A density-grid cell (8 mm²) does not carry meaningful weight
+// or peel force — resin-print practice sizes such supports by feel, and the
+// physics-derived numbers were visibly oversized (~1.5 mm shafts for tiny
+// cells). The bands reuse the existing detail/structure/anchor vocabulary:
+//
+//   detail    — tiny point islands (< 0.15 mm²)
+//   structure — small regions (< 0.5 mm²)
+//   anchor    — density-grid cells + large flats
+//
+// Placement time stays flat and predictable: shaft = band × height × carried
+// area (both mild), tip = band × underside angle, root = band. The forest
+// resize pass (post-placement, before commit) thickens trunks that actually
+// carry branches — a trunk with four branches gets thicker, a lone trunk
+// stays at its placed diameter.
 
-/** Typical SLA resin density (g/mm³).  ~1.1 g/cm³. */
-const RESIN_DENSITY_G_PER_MM3 = 0.0011;
-/** Approximate peel force per mm² of cross-section (N/mm²).
- *  Real measured values are 0.1–0.5 N/mm² for typical resins. */
-const PEEL_FORCE_N_PER_MM2 = 0.2;
-/** Base shaft diameter floor (mm).  Supports thinner than this
- *  are too fragile for any practical load. */
-const MIN_SHAFT_DIAMETER_MM = 0.75;
-/** Maximum shaft diameter (mm). */
-const MAX_SHAFT_DIAMETER_MM = 2.5;
+export type SizingPreset = 'detail' | 'structure' | 'anchor';
+
+interface SizingBand {
+    shaftDiameterMm: number;
+    tipContactDiameterMm: number;
+    rootDiameterMm: number;
+}
+
+const SIZING_BANDS: Record<SizingPreset, SizingBand> = {
+    detail:    { shaftDiameterMm: 0.60, tipContactDiameterMm: 0.28, rootDiameterMm: 1.2 },
+    structure: { shaftDiameterMm: 0.70, tipContactDiameterMm: 0.32, rootDiameterMm: 1.4 },
+    anchor:    { shaftDiameterMm: 0.80, tipContactDiameterMm: 0.38, rootDiameterMm: 1.6 },
+};
+
+/** The preset band for a supported area (mm²). */
+export function presetForArea(areaMm2: number): SizingPreset {
+    if (areaMm2 <= 0.15) return 'detail';
+    if (areaMm2 <= 0.5) return 'structure';
+    return 'anchor';
+}
 
 // ---------------------------------------------------------------------------
 // Override type
@@ -35,13 +61,10 @@ export interface SizeOverrides {
 export interface ModelSizingContext {
     /** Estimated model volume in mm³ (from the mesh — exact tetrahedron sum). */
     modelVolumeMm3: number;
-    /** Model top Z (world mm). Used for the weight-above-Z fraction. */
+    /** Model top Z (world mm). */
     modelZMaxMm?: number;
     /** Total number of candidates being placed. */
     totalCandidates: number;
-    /** Number of candidates at or below this candidate's Z height.
-     *  These share the weight of layers above this Z. */
-    candidatesBelowZ: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,110 +72,60 @@ export interface ModelSizingContext {
 // ---------------------------------------------------------------------------
 
 /**
- * Compute support dimensions dynamically using physics-informed scaling.
+ * Empirical sizing for an auto-support candidate.
  *
- * Shaft diameter scales with estimated load (model weight per support +
- * peel force from island area).  Tip diameter scales with island area.
- * Root diameter and base flare scale with trunk height.
+ * - Shaft: preset band × height factor (taller supports flex more under peel,
+ *   up to +25% at ≥ 70 mm) × carried-area factor (a trunk merging several
+ *   islands gets a small bump, capped at +20%).
+ * - Tip contact: preset band × angle factor — a flat ceiling (normal straight
+ *   down, |z| ≈ 1) peels hardest and gets the largest contact; a steep slope
+ *   is closer to self-supporting and gets a smaller one.
+ * - Roots: preset band, flat.
  *
- * Falls back to preset-based sizing when no model context is available.
+ * Grid cells pass their own cell area (each grid point is a standalone trunk
+ * carrying one cell); merged clusters pass their summed area.
  *
- * @param candidate  - The island to size supports for.
- * @param ctx        - Optional model-level context for dynamic sizing.
- *                     When omitted, falls back to heuristic scaling from
- *                     island area alone.
- * @param baseSettings - The user's current support settings (baseline).
+ * @param candidate - The island to size supports for.
+ * @param baseSettings - The user's current support settings (tip length,
+ *                       penetration, root disk/cone heights).
+ * @param totalSupportedAreaMm2 - For core trunks: total area of all
+ *                       candidates this trunk supports. For standalone
+ *                       trunks: own area.
  */
 export function sizeParameters(
     candidate: CandidatePoint,
-    ctx?: ModelSizingContext,
     baseSettings?: SupportSettings,
-    /** For core trunks: total area of all candidates this trunk supports
-     *  (own area + branches + leaves).  For standalone trunks: own area. */
     totalSupportedAreaMm2?: number,
 ): SizeOverrides {
-    // ── Baseline from user settings ───────────────────────────────
-    const shaftBase = baseSettings?.shaft?.diameterMm ?? 1.0;
-    const tipContactBase = baseSettings?.tip?.contactDiameterMm ?? 0.3;
-    const tipLengthBase = baseSettings?.tip?.lengthMm ?? 2.5;
-    const tipPenBase = baseSettings?.tip?.penetrationMm ?? 0.1;
-    const rootsDiaBase = baseSettings?.roots?.diameterMm ?? 2.0;
+    const band = SIZING_BANDS[presetForArea(candidate.islandAreaMm2)];
 
-    if (!ctx) {
-        // No model context — use island-area-based heuristic scaling.
-        const area = Math.max(candidate.islandAreaMm2, 0.01);
-        const areaScale = clampStretch(area, 0.1, 2.0, 0.8, 1.5);
-        const shaft = round(shaftBase * areaScale, 3);
-        return {
-            shaftDiameterMm: shaft,
-            tipContactDiameterMm: round(clamp(tipContactBase * areaScale, shaft * 0.3, shaft * 0.6), 3),
-            tipBodyDiameterMm: shaft,
-            tipLengthMm: round(tipLengthBase, 3),
-            tipPenetrationMm: round(tipPenBase, 3),
-            rootsDiameterMm: round(rootsDiaBase * clamp(areaScale * 0.8, 1.0, 1.5), 3),
-            rootsDiskHeightMm: baseSettings?.roots?.diskHeightMm ?? 0.5,
-            rootsConeHeightMm: baseSettings?.roots?.coneHeightMm ?? 1.0,
-        };
-    }
-
-    // ── Dynamic physics-based sizing (upside-down printing) ───────
-    // In bottom-up SLA the model hangs from the build plate (Z=0).
-    // Supports at low Z are printed first and carry everything above.
-    //
-    // Weight is distributed simply: the N supports at or below Z
-    // share the weight of all layers remaining above Z.
-
-    const modelWeightG = ctx.modelVolumeMm3 * RESIN_DENSITY_G_PER_MM3;
     const zHeight = Math.max(candidate.zHeight, 1);
-    // Model top Z drives the weight-above-Z fraction. Falls back to a 30mm
-    // floor when the orchestrator didn't provide it (e.g. tests).
-    const modelZMax = Math.max(ctx.modelZMaxMm ?? 30, zHeight);
+    // Taller supports flex more under peel force — up to +25% at ≥ 70 mm.
+    const heightFactor = 1 + clamp((zHeight - 20) / 200, 0, 0.25);
 
-    // Count supports at or below this Z (including this one).
-    const supportsBelow = ctx.candidatesBelowZ ?? ctx.totalCandidates;
-    const weightFraction = (modelZMax - zHeight) / modelZMax;
-    const carriedWeightG = (modelWeightG * weightFraction) / Math.max(supportsBelow, 1);
+    // A trunk merging several islands carries their combined area; grid cells
+    // stay at 1.0 (own area). Capped so a merged cluster never balloons.
+    const carriedArea = Math.max(totalSupportedAreaMm2 ?? candidate.islandAreaMm2, 0.5);
+    const carriedFactor = clamp(Math.sqrt(carriedArea / 8), 1.0, 1.2);
 
-    // Peel force from the supported area.
-    const effArea = Math.max(totalSupportedAreaMm2 ?? candidate.islandAreaMm2, 0.01);
-    const peelForceN = effArea * PEEL_FORCE_N_PER_MM2;
+    const shaftDiameterMm = round(band.shaftDiameterMm * heightFactor * carriedFactor, 3);
 
-    // Total load.  Mesh minima are point contacts — 1.5× factor
-    // because peel stress concentrates at a single sharp tip.
-    const rawLoadN = carriedWeightG * 0.0098 + peelForceN;
-    const loadN = candidate.source === 'minima' ? rawLoadN * 1.5 : rawLoadN;
-
-    // Shaft diameter: scales with sqrt(load), floored at MIN.
-    const shaftDiameterMm = round(
-        clamp(shaftBase * clamp(Math.sqrt(loadN) * 1.2, 0.8, 2.0), MIN_SHAFT_DIAMETER_MM, MAX_SHAFT_DIAMETER_MM),
-    3);
-
-    // Tip contact: scaled by island area, but never thinner than 30%
-    // of the shaft — a thick shaft needs a decent tip to transfer load.
-    const ownArea = Math.max(candidate.islandAreaMm2, 0.01);
-    const tipScale = clampStretch(ownArea, 0.05, 1.0, 0.5, 1.2);
+    // Underside normal z = cos(angle from straight-down). Flat ceilings
+    // (|nz| ≈ 1) peel hardest → biggest contact; steep slopes are closer to
+    // self-supporting → smaller contact. Bounded to [0.7, 1.2]× band.
+    const nz = Math.abs(candidate.tipNormal?.z ?? -1);
+    const angleFactor = clamp(0.7 + 0.5 * nz, 0.7, 1.2);
     const tipContactDiameterMm = round(
-        clamp(tipContactBase * tipScale, shaftDiameterMm * 0.3, shaftDiameterMm * 0.6),
+        Math.max(band.tipContactDiameterMm * angleFactor, shaftDiameterMm * 0.3),
     3);
-    const tipBodyDiameterMm = shaftDiameterMm;
-
-    // Tip length: slightly longer for taller supports.
-    const tipLengthMm = round(tipLengthBase * clamp(1 + (zHeight - 10) / 100, 0.9, 1.3), 3);
-
-    // Penetration: proportional to tip size.
-    const tipPenetrationMm = round(Math.max(tipPenBase, tipContactDiameterMm * 0.25), 3);
-
-    // Root diameter: wider for taller/heavier supports.
-    const rootScale = clamp(Math.sqrt(loadN) * 0.6, 0.8, 1.8);
-    const rootsDiameterMm = round(clamp(rootsDiaBase * rootScale, rootsDiaBase, 4.0), 3);
 
     return {
         shaftDiameterMm,
         tipContactDiameterMm,
-        tipBodyDiameterMm,
-        tipLengthMm,
-        tipPenetrationMm,
-        rootsDiameterMm,
+        tipBodyDiameterMm: shaftDiameterMm,
+        tipLengthMm: round(baseSettings?.tip?.lengthMm ?? 2.5, 3),
+        tipPenetrationMm: round(baseSettings?.tip?.penetrationMm ?? 0.1, 3),
+        rootsDiameterMm: round(band.rootDiameterMm, 3),
         rootsDiskHeightMm: baseSettings?.roots?.diskHeightMm ?? 0.5,
         rootsConeHeightMm: baseSettings?.roots?.coneHeightMm ?? 1.0,
     };
@@ -164,16 +137,6 @@ export function sizeParameters(
 
 function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
-}
-
-/** Clamp a value after linear remapping from [loIn, hiIn] to [loOut, hiOut]. */
-function clampStretch(
-    value: number,
-    loIn: number, hiIn: number,
-    loOut: number, hiOut: number,
-): number {
-    const t = (value - loIn) / (hiIn - loIn);
-    return clamp(loOut + t * (hiOut - loOut), loOut, hiOut);
 }
 
 function round(value: number, decimals: number): number {

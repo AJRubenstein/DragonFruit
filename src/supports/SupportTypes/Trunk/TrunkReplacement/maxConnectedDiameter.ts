@@ -569,3 +569,34 @@ export function computeAndApplyTrunkDiameterProfile(
         knotUpdates,
     };
 }
+
+/**
+ * Forest-wide diameter resize (auto-support plan step 5).
+ *
+ * Re-derives every trunk's stepwise diameter profile from its final
+ * attachment tree, so a trunk carrying four branches gets thicker where it
+ * carries them while a lone trunk stays at its placed (empirical) diameter.
+ *
+ * Pure: returns an updated snapshot (trunks + rehosted knots). Trunks are
+ * processed sequentially so a later trunk sees the earlier rehosts; the
+ * per-trunk profile only touches that trunk's own segments/knots, so order
+ * does not change the result.
+ */
+export function computeForestDiameterProfile(snapshot: SupportState): SupportState {
+    let working = snapshot;
+    for (const trunkId of Object.keys(snapshot.trunks)) {
+        const applied = computeAndApplyTrunkDiameterProfile(working, trunkId);
+        if (!applied) continue;
+
+        let nextKnots = working.knots;
+        for (const u of applied.knotUpdates) {
+            nextKnots = { ...nextKnots, [u.after.id]: u.after };
+        }
+        working = {
+            ...working,
+            trunks: { ...working.trunks, [applied.trunk.id]: applied.trunk },
+            knots: nextKnots,
+        };
+    }
+    return working;
+}
