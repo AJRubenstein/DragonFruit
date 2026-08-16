@@ -282,6 +282,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
    */
   const onRunScan = useCallback(async () => {
     setScanning(true);
+    const epoch = scanEpochRef.current;
     // Yield immediately so React can flush the "scanning" state and show
     // the progress modal before we start expensive synchronous work.
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -342,6 +343,10 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
           },
         ).finally(() => unlisten());
 
+        // The model may have been deleted/replaced while the command ran —
+        // discard results that belong to a superseded scan.
+        if (scanEpochRef.current !== epoch) return;
+
         const voxelMapped: DetectedIsland[] = combined.voxelIslands
           .filter((v) => (v.areaMm2 ?? 0) >= minAreaMm2)
           .map((v) => ({
@@ -379,7 +384,16 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     }
 
     if (!usedSideload) {
-      const world = prepareWorldGeom();
+      // Mesh prep can throw on a stale/disposed geometry (model deleted or
+      // replaced mid-scan). It sits outside the scan's try/finally, so an
+      // uncaught throw would strand `scanning` true and freeze the
+      // auto-support busy chain. Guard it and cancel cleanly.
+      let world: { positions: Float32Array; bbox: THREE.Box3 } | null = null;
+      try {
+        world = prepareWorldGeom();
+      } catch (err) {
+        console.warn('[Islands] mesh prep failed; cancelling scan', err);
+      }
       if (!world) {
         setScanning(false);
         return;
@@ -396,6 +410,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
             ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG,
           pxMm: OVERHANG_FOOTPRINT_PX_MM,
         });
+        if (scanEpochRef.current !== epoch) return;
         mappedOverhangs = regions.map(overhangRegionToIsland);
         setOverhangIslands(mappedOverhangs);
       } catch (err) {
@@ -417,6 +432,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         const voxel = await detectVoxelIslands(world, layerHeightMm, params, (done, total) =>
           setScanProgress({ done, total }),
         );
+        if (scanEpochRef.current !== epoch) return;
         setVoxelIslands(voxel);
 
         try {
@@ -754,6 +770,10 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   // Per-model scan cache: (sourcePath + transform signature) → { voxel, minima, overhang }.
   const scanCacheRef = useRef<Map<string, { voxel: DetectedIsland[]; minima: DetectedIsland[]; overhang: DetectedIsland[] }>>(new Map());
   const prevSourcePathRef = useRef<string | null | undefined>(undefined);
+  // Bumped on every geom/transform change; an in-flight scan captures the
+  // epoch and discards its results if the model changed while it ran — a
+  // superseded scan must not commit the old model's islands.
+  const scanEpochRef = useRef(0);
 
   // On sourcePath change: restore from cache instead of clearing
   useEffect(() => {
@@ -774,9 +794,16 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     clear();
   }, [sourcePath, cacheKey, clear]);
 
-  // On transform/geom change: always clear (scan is invalidated)
+  // On transform/geom change: always clear (scan is invalidated) and release
+  // the scanning flag — an in-flight scan belongs to the old model. If the
+  // old scan's async work throws on the stale geometry, its own cleanup never
+  // runs, and a stuck `scanning` freezes the auto-support busy chain (the
+  // deferred effect waits forever, `autoSupportDrivingScan` stays set, and
+  // the Generating/scanning modals stop appearing for the new model).
   useEffect(() => {
+    scanEpochRef.current += 1;
     clear();
+    setScanning(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     geom,
