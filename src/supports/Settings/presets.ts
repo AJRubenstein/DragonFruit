@@ -553,9 +553,8 @@ export function setActivePreset(id: string | null): void {
         autoBracing: {
             ...current.autoBracing,
         },
-        autoSupport: {
-            ...current.autoSupport,
-        },
+        // autoSupport applies from the preset — it carries the per-preset
+        // auto-support density (detail 12 / structure 8 / anchor 5 mm²).
     });
 
     // Keep selected preset + persisted settings in sync across app restarts.
