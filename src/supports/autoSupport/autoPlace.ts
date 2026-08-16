@@ -1469,6 +1469,7 @@ export function computeAutoSupportPlan(
     const conFanRadiusMm = Math.max(autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM, CONSOLIDATION_FAN_RADIUS_MM);
     const conFanMaxAngleDeg = autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
     let consolidated = 0;
+    const conRefusals: Partial<Record<FanLeafRefusal, number>> = {};
     for (let pass = 0; pass < 3; pass++) {
         let convertedThisPass = 0;
         for (const tid of Object.keys(draft.trunks)) {
@@ -1509,7 +1510,10 @@ export function computeAutoSupportPlan(
                 resolvedMesh ?? undefined,
                 'overhang',
             );
-            if (!fan.ok) continue;
+            if (!fan.ok) {
+                conRefusals[fan.reason] = (conRefusals[fan.reason] ?? 0) + 1;
+                continue;
+            }
             draft = fan.draft;
             gridTrunkIds.delete(tid);
             const origin = originKind ?? 'standalone';
@@ -1539,7 +1543,8 @@ export function computeAutoSupportPlan(
     console.log(LOG_PREFIX,
         `Placement: ${diagnostics.trunksByKind.poissonDisk} poisson-disk, ${diagnostics.trunksByKind.gridInfill} grid-infill, ` +
         `${diagnostics.trunksByKind.coverageFill} coverage-fill, ${diagnostics.trunksByKind.standalone} standalone trunks ` +
-        `| fan refusals: ${fmtRefusals(diagnostics.fanRefusals)} | merge refusals: ${fmtRefusals(diagnostics.mergeRefusals)}`);
+        `| fan refusals: ${fmtRefusals(diagnostics.fanRefusals)} | merge refusals: ${fmtRefusals(diagnostics.mergeRefusals)} ` +
+        `| consolidation refusals: ${fmtRefusals(conRefusals)}`);
 
     // ── Coverage convergence (gap-fill) ─────────────────────────────
     // Footprint-aware: an overhang region is covered when its projected
