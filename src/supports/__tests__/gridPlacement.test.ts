@@ -56,44 +56,30 @@ function ringRegion(id: string, areaMm2: number): DetectedIsland {
 // Tests
 // ---------------------------------------------------------------------------
 
-test('grids a large flat region as perimeter plus jittered-grid infill', () => {
-    // 20×20 face, density 8 mm²/support → spacing 2.83: a perimeter ring on
-    // the boundary + a deterministic jittered grid infill at the same density.
+test('grids a large flat region with dynamic spacing (never cut off)', () => {
+    // 20×20 face, target density 8 mm²/support → spacing ≈ 2.83. The spacing
+    // adjusts per axis to span the full region: nx = round(20/2.83) = 7 →
+    // spacingX = 20/7 ≈ 2.857, 8 columns exactly from -10 to +10. The outer
+    // ring lands ON the boundary, so straight edges need no fill.
     const settings = { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 8, gridAreaThresholdMm2: 25 };
     const candidates = generateGridCandidates([rectRegion('o0', -10, 10, -10, 10, 400)], settings);
 
-    assert.ok(candidates.length >= 50 && candidates.length <= 85,
-        `count ${candidates.length} ≈ perimeter (~28) + infill (~400/8)`);
+    assert.ok(candidates.length >= 60 && candidates.length <= 68,
+        `dynamic grid count ${candidates.length} ≈ 8×8 = 64`);
     assert.ok(candidates.every((c) => c.gridPoint === true), 'points are standalone trunks');
     assert.ok(candidates.every((c) => c.source === 'overhang'));
+    assert.equal(candidates.filter((c) => c.id.startsWith('fill-')).length, 0,
+        'rectangle needs no boundary fill (outer ring covers it)');
 
-    // Perimeter first, sitting on the region boundary.
-    assert.ok(candidates[0].id.startsWith('perim-'), 'perimeter placed first');
-    assert.ok(Math.abs(Math.abs(candidates[0].tipPos.x) - 10) < 0.4
-        || Math.abs(Math.abs(candidates[0].tipPos.y) - 10) < 0.4,
-        'first perimeter point is on the boundary');
-
-    // The infill keeps its rows: consecutive points along an axis stay near
-    // the lattice spacing (± jitter), not scattered.
-    const infill = candidates.filter((c) => c.id.startsWith('infill-'));
-    assert.ok(infill.length >= 15, `infill exists (${infill.length})`);
-    const xs = infill.map((c) => c.tipPos.x).sort((a, b) => a - b);
-    let rowGaps = 0;
-    let rowJumps = 0;
+    // Equal spacing, spanning the full region — the far edge is not cut off.
+    const xs = [...new Set(candidates.filter((c) => c.id.startsWith('grid-')).map((c) => c.tipPos.x))].sort((a, b) => a - b);
+    assert.ok(Math.abs(xs[0] + 10) < 1e-9, `grid starts on the boundary (x=${xs[0]})`);
+    assert.ok(Math.abs(xs[xs.length - 1] - 10) < 1e-9, `grid reaches the far boundary (x=${xs[xs.length - 1]})`);
+    const spacingX = xs[1] - xs[0];
+    assert.ok(Math.abs(spacingX - 20 / 7) < 1e-9, `uniform spacing ${spacingX} = 20/7`);
     for (let i = 1; i < xs.length; i++) {
-        const gap = xs[i] - xs[i - 1];
-        if (gap < 3.5 && gap > 0.01) rowGaps++;
-        else rowJumps++;
+        assert.ok(Math.abs((xs[i] - xs[i - 1]) - spacingX) < 1e-9, 'spacing is perfectly uniform');
     }
-    assert.ok(rowGaps > rowJumps, `infill is row-structured (${rowGaps} small gaps vs ${rowJumps} jumps)`);
-
-    // Deterministic: identical input → identical result.
-    const again = generateGridCandidates([rectRegion('o0', -10, 10, -10, 10, 400)], settings);
-    assert.deepEqual(
-        candidates.map((c) => c.tipPos),
-        again.map((c) => c.tipPos),
-        'jittered infill is stable across runs',
-    );
 });
 
 test('skips regions below the grid area threshold', () => {
