@@ -1,4 +1,5 @@
-import type { Vec3 } from '../types';
+import type { Vec3, SupportState } from '../types';
+import type { KickstandState } from '../SupportTypes/Kickstand/types';
 
 /** A single support placement candidate derived from island/minima detection. */
 export interface CandidatePoint {
@@ -74,4 +75,27 @@ export interface AutoPlaceResult {
     message: string;
     /** Detailed analytics (undefined for no-op runs). */
     analytics?: AutoPlaceAnalytics;
+}
+
+/**
+ * A fully-computed auto-support run, ready to commit.
+ *
+ * The pipeline computes against a local draft (no store mutations) and
+ * returns the before/after pair — one `setSnapshot` + `setKickstandSnapshot`
+ * + a single undoable history entry is all the caller needs. This is the
+ * worker boundary: the same object is serializable to/from a Web Worker.
+ */
+export interface AutoSupportPlan {
+    /** Support state committed before the run (for the undo payload). */
+    before: SupportState;
+    /** Kickstand state committed before the run. */
+    kickstandBefore: KickstandState;
+    /** Final braced support state. */
+    support: SupportState;
+    /** Final kickstand state (bracing strips/regenerates auto kickstands). */
+    kickstand: KickstandState;
+    /** Placement + coverage analytics. */
+    analytics: AutoPlaceAnalytics;
+    /** Counts/message — what the panel reports. */
+    result: AutoPlaceResult;
 }

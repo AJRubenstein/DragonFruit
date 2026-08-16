@@ -20,8 +20,20 @@ Progress:
       footprint is covered (not just the centroid); under-covered regions get gap-fill trunks
       at uncovered footprint clusters, iterating to a 95% target. Regular-island placement
       proven at scale on a dragon figurine (44 trunks / 79 leaves / 212 braces).
-- [ ] Step 5 — forest resize pass (deferred with the sizing redo).
-- [ ] Step 6 — worker + plan-then-commit + preview (NEXT).
+- [x] Step 5 — forest resize pass (deferred with the sizing redo).
+- [ ] Step 6 — worker + plan-then-commit + preview:
+  - [x] Plan seam: the pipeline now computes against a local draft
+        (`computeAutoSupportPlan` — base states + mesh as params, no store
+        commits) and commits once: one `setSnapshot` + `setKickstandSnapshot`
+        + a single undoable history entry covering supports, braces, and
+        kickstands together (previously the run committed per-candidate AND
+        pushed a separate brace entry). Bracing is pure
+        (`buildAutoBracedSnapshot` returns the final kickstand state; the
+        manual brace button keeps its own commit+history path).
+  - [ ] Worker: run `computeAutoSupportPlan` inside a Web Worker (needs the
+        promote/replace path de-store-bound — it still runs via a mid-run
+        swap — plus mesh geometry + settings serialization).
+  - [ ] Preview: render the plan's supports as ghosts before committing.
 - [ ] Step 5 — forest resize pass.
 - [ ] Step 6 — worker + plan-then-commit + preview.
 - [ ] Step 7 — validation corpus + tuning.

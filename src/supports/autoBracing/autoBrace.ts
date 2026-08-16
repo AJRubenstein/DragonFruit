@@ -406,7 +406,7 @@ function buildGroupPairs(
     return result;
 }
 
-export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: AutoBracingSettings): BuildSnapshotResult {
+export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: AutoBracingSettings, kickstandBase?: KickstandState): BuildSnapshotResult {
     const settings = normalizeAutoBracingSettings(inputSettings);
     const activeGridSettings = getSettings().grid;
     const maxRun = maxHorizontalRunFromBraceLen(settings.maxBraceLengthMm);
@@ -415,6 +415,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     if (trunkSamples.length < AUTO_BRACING_HARD_RULES.minGroupSize) {
         return {
             snapshot,
+            kickstand: kickstandBase ?? getKickstandSnapshot(),
             generatedBraceCount: 0,
             removedBraceCount: 0,
             skippedSupportCount: trunkSamples.length,
@@ -423,7 +424,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         };
     }
 
-    let kickstandState = getKickstandSnapshot();
+    let kickstandState = kickstandBase ?? getKickstandSnapshot();
     {
         const nextKickstands: KickstandState['kickstands'] = {};
         const nextRoots: KickstandState['roots'] = {};
@@ -457,8 +458,6 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
                 knots: nextKnots,
                 selectedId,
             };
-
-            setKickstandSnapshot(kickstandState);
         }
     }
 
@@ -543,8 +542,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
             roots: nextRoots,
             knots: nextKnots
         };
-        
-        setKickstandSnapshot(kickstandState);
+
         generatedKickstandCount = generatedKickstands.length;
     }
 
@@ -914,6 +912,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
 
     return {
         snapshot: nextSnapshot,
+        kickstand: kickstandState,
         generatedBraceCount,
         removedBraceCount,
         skippedSupportCount: trunkSamples.length - groupedIds.size,
@@ -926,23 +925,22 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
 
 export function runAutoBracing(): AutoBraceResult {
     const before = structuredClone(getSnapshot());
-    // buildAutoBracedSnapshot mutates the kickstand store (strips/regenerates
-    // auto-generated kickstands), so both sides must be captured for undo/redo.
     const kickstandBefore = structuredClone(getKickstandSnapshot());
-    const built = buildAutoBracedSnapshot(before, getSettings().autoBracing);
+    const built = buildAutoBracedSnapshot(before, getSettings().autoBracing, kickstandBefore);
     if (!built.changed) return built;
 
     setSnapshot(built.snapshot);
+    setKickstandSnapshot(built.kickstand);
     pushSupportHistory({
         type: SUPPORT_AUTO_BRACE_REPLACE,
         payload: {
             before,
             after: built.snapshot,
             kickstandBefore,
-            kickstandAfter: structuredClone(getKickstandSnapshot()),
+            kickstandAfter: structuredClone(built.kickstand),
         },
     });
     return built;
 }
 
-type BuildSnapshotResult = AutoBraceResult & { snapshot: SupportState };
+type BuildSnapshotResult = AutoBraceResult & { snapshot: SupportState; kickstand: KickstandState };

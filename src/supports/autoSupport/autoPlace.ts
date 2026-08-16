@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason } from './types';
-
-function round2(v: number): number { return Math.round(v * 100) / 100; }
+import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan } from './types';
+import type { SupportState } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
@@ -14,7 +13,11 @@ import {
 import { sizeParameters } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
-import { getSnapshot, setSnapshot, addRoot, addTrunk, addBranch, addLeaf, addKnot, addAnchor, addStick, addTwig } from '../state';
+import { getSnapshot, setSnapshot } from '../state';
+import {
+    draftAddRoot, draftAddTrunk, draftAddBranch, draftAddLeaf,
+    draftAddKnot, draftAddAnchor, draftAddStick, draftAddTwig,
+} from './supportDraft';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityStick } from '../SupportTypes/Trunk/useTrunkPlacement';
@@ -24,10 +27,11 @@ import { buildLeafData } from '../SupportTypes/Leaf/leafBuilder';
 import { decideGridPlacement } from '../PlacementLogic/Grid/gridPlacement';
 import { calculateSmoothedNormal } from '../PlacementLogic/PlacementUtils';
 import { isShaftBlocked } from '../PlacementLogic/CollisionAvoidance';
-import { runAutoBracing } from '../autoBracing/autoBrace';
+import { buildAutoBracedSnapshot } from '../autoBracing/autoBrace';
 import { pushSupportHistory } from '../history/supportHistory';
 import { SUPPORT_AUTO_PLACE } from '../history/actionTypes';
 import { getKickstandSnapshot, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
+import type { KickstandState } from '../SupportTypes/Kickstand/types';
 import { getModelMesh } from './meshStore';
 import {
     ALREADY_SUPPORTED_RADIUS_MM,
@@ -37,6 +41,8 @@ import {
 } from './constants';
 
 const LOG_PREFIX = '[AutoSupport]';
+
+function round2(v: number): number { return Math.round(v * 100) / 100; }
 
 // ---------------------------------------------------------------------------
 // Mesh volume helper
@@ -160,8 +166,8 @@ function resolveSurfaceNormal(
  * existing support (any trunk / branch / leaf / anchor contact cone).
  * Prevents stacking duplicate supports on repeated runs.
  */
-function filterAlreadySupported(candidates: CandidatePoint[]): CandidatePoint[] {
-    const snapshot = getSnapshot();
+function filterAlreadySupported(candidates: CandidatePoint[], draft: SupportState): CandidatePoint[] {
+    const snapshot = draft;
     const existingTips: Array<{ x: number; y: number; z: number }> = [];
 
     for (const t of Object.values(snapshot.trunks)) {
@@ -274,8 +280,8 @@ function branchCollidesWithSDF(
  * Count how many knots (branches + leaves) are attached to a trunk.
  * Does NOT count brace knots (they use braceSegment: prefix).
  */
-function countAttachmentsOnTrunk(trunkId: string): number {
-    const snapshot = getSnapshot();
+function countAttachmentsOnTrunk(trunkId: string, draft: SupportState): number {
+    const snapshot = draft;
     const trunk = snapshot.trunks[trunkId];
     if (!trunk) return 0;
 
@@ -293,9 +299,9 @@ function countAttachmentsOnTrunk(trunkId: string): number {
 }
 
 /** Returns true if the trunk has reached its attachment capacity. */
-function isTrunkAtAttachmentCapacity(trunkId: string, limit: number): boolean {
+function isTrunkAtAttachmentCapacity(trunkId: string, limit: number, draft: SupportState): boolean {
     if (limit <= 0) return false;
-    return countAttachmentsOnTrunk(trunkId) >= limit;
+    return countAttachmentsOnTrunk(trunkId, draft) >= limit;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,8 +312,9 @@ function isTrunkAtAttachmentCapacity(trunkId: string, limit: number): boolean {
 function findMergeHost(
     tipPos: { x: number; y: number; z: number },
     modelId: string,
+    draft: SupportState,
 ): MergeHost | null {
-    const snapshot = getSnapshot();
+    const snapshot = draft;
     const r2 = GRIDLESS_MERGE_RADIUS_MM * GRIDLESS_MERGE_RADIUS_MM;
     let best: MergeHost | null = null;
     let bestDist2 = Infinity;
@@ -367,12 +374,14 @@ function findMergeHost(
  */
 function placeOneCandidate(
     candidate: CandidatePoint,
+    draft: SupportState,
     _settingsOverride: Partial<AutoSupportSettings> | undefined,
     modelCtx?: ModelSizingContext,
     totalArea?: number,
-): { kind: string; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number } {
+): { kind: string; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number } {
     const supportSettings = getSettings();
-    const snapshot = getSnapshot();
+    const snapshot = draft;
+    let d = draft;
     const mesh = getModelMesh(candidate.modelId) ?? undefined;
 
     // Grid points carry the region's exact surface position and normal (from
@@ -393,7 +402,7 @@ function placeOneCandidate(
     // Density-grid points force standalone trunks (a flat region needs
     // independent supports, not a bush of branches off one shaft).
     if (!supportSettings.grid?.enabled && !candidate.gridPoint) {
-        const host = findMergeHost(tipPos, candidate.modelId);
+        const host = findMergeHost(tipPos, candidate.modelId, draft);
         if (host) {
             // Find the best attachment point on the host trunk's shaft,
             // below the candidate's tip.  This matches the W-key sprout
@@ -481,18 +490,18 @@ function placeOneCandidate(
                                 `Leaf (merge) ${candidate.id}: triangle collision, trying branch...`);
                         } else {
                             const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
-                            if (isTrunkAtAttachmentCapacity(host.trunkId, cap)) {
+                            if (isTrunkAtAttachmentCapacity(host.trunkId, cap, draft)) {
                                 console.log(LOG_PREFIX,
                                     `Merge skip ${candidate.id}: host ${host.trunkId} at capacity (${cap} attachments)`);
                                 // fall through to standalone trunk
                             } else {
-                                addKnot(parentKnot);
-                                addLeaf(leaf);
+                                d = draftAddKnot(d, parentKnot);
+                                d = draftAddLeaf(d, leaf);
                                 const la = (Math.atan2(hDist, vDist) * 180) / Math.PI;
                                 console.log(LOG_PREFIX,
                                     `Leaf (merge) ${candidate.id} → host ${host.trunkId} ` +
                                     `span=${tipSpanMm.toFixed(1)}mm angle=${la.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
-                                return { kind: 'leaf', preset };
+                                return { kind: 'leaf', preset, draft: d };
                             }
                         }
                     } catch (_) {}
@@ -516,18 +525,18 @@ function placeOneCandidate(
                         console.log(LOG_PREFIX, `Branch (merge) ${candidate.id}: collision, falling back`);
                     } else {
                         const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
-                        if (isTrunkAtAttachmentCapacity(host.trunkId, cap)) {
+                        if (isTrunkAtAttachmentCapacity(host.trunkId, cap, draft)) {
                             console.log(LOG_PREFIX,
                                 `Merge skip ${candidate.id}: host ${host.trunkId} at capacity (${cap} attachments)`);
                             // fall through to standalone trunk
                         } else {
-                            addKnot(parentKnot);
-                            addBranch(branch);
+                            d = draftAddKnot(d, parentKnot);
+                            d = draftAddBranch(d, branch);
                             const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                             console.log(LOG_PREFIX,
                                 `Branch (merge) ${candidate.id} → host ${host.trunkId} ` +
                                 `span=${tipSpanMm.toFixed(1)}mm angle=${ma.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
-                            return { kind: 'branch', preset };
+                            return { kind: 'branch', preset, draft: d };
                         }
                     }
                 } catch (e) {
@@ -558,15 +567,15 @@ function placeOneCandidate(
             const cavityResult = buildCavityStick(tipPos, tipNormal, candidate.modelId, mesh);
             if (cavityResult) {
                 if (cavityResult.kind === 'stick') {
-                    addStick(cavityResult.stick);
+                    d = draftAddStick(d, cavityResult.stick);
                     console.log(LOG_PREFIX,
                         `Stick (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                    return { kind: 'stick', preset };
+                    return { kind: 'stick', preset, draft: d };
                 } else {
-                    addTwig(cavityResult.twig);
+                    d = draftAddTwig(d, cavityResult.twig);
                     console.log(LOG_PREFIX,
                         `Twig (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                    return { kind: 'twig', preset };
+                    return { kind: 'twig', preset, draft: d };
                 }
             }
         }
@@ -576,7 +585,7 @@ function placeOneCandidate(
             `tip=(${tipPos.x.toFixed(1)},${tipPos.y.toFixed(1)},${tipPos.z.toFixed(1)}) ` +
             `mesh=${mesh ? 'yes' : 'no'} ` +
             `bbox=${bbox ? `(${bbox.min.x.toFixed(0)},${bbox.min.y.toFixed(0)},${bbox.min.z.toFixed(0)})-(${bbox.max.x.toFixed(0)},${bbox.max.y.toFixed(0)},${bbox.max.z.toFixed(0)})` : 'none'}`);
-        return { kind: 'reject', rejectedReason: 'trunk_build_error', preset };
+        return { kind: 'reject', rejectedReason: 'trunk_build_error', preset, draft: d };
     }
 
     // Route through the standard grid placement engine.
@@ -595,47 +604,47 @@ function placeOneCandidate(
     switch (decision.kind) {
         case 'place_trunk': {
             const trunkId = decision.trunkBuild.trunk.id;
-            addRoot(decision.trunkBuild.root);
-            addTrunk(decision.trunkBuild.trunk);
+            d = draftAddRoot(d, decision.trunkBuild.root);
+            d = draftAddTrunk(d, decision.trunkBuild.trunk);
             console.log(LOG_PREFIX,
                 `Trunk ${candidate.id} (→ ${trunkId}) @ grid ${decision.nodeKey} ` +
                 `area=${candidate.islandAreaMm2.toFixed(2)}mm² Z=${candidate.zHeight.toFixed(1)}mm ${preset}`);
-            return { kind: 'trunk', preset, entityId: trunkId };
+            return { kind: 'trunk', preset, entityId: trunkId, draft: d };
         }
 
         case 'place_anchor':
-            addAnchor(decision.anchor);
+            d = draftAddAnchor(d, decision.anchor);
             console.log(LOG_PREFIX, `Anchor ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-            return { kind: 'anchor', preset };
+            return { kind: 'anchor', preset, draft: d };
 
         case 'place_branch': {
             const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
-            if (isTrunkAtAttachmentCapacity(decision.hostTrunkId, cap)) {
+            if (isTrunkAtAttachmentCapacity(decision.hostTrunkId, cap, draft)) {
                 console.log(LOG_PREFIX,
                     `Grid skip ${candidate.id}: host ${decision.hostTrunkId} at capacity (${cap})`);
-                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset };
+                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            addKnot(decision.knot);
-            addBranch(decision.branch);
+            d = draftAddKnot(d, decision.knot);
+            d = draftAddBranch(d, decision.branch);
             console.log(LOG_PREFIX,
                 `Branch ${candidate.id} → host ${decision.hostTrunkId} ` +
                 `grid ${decision.nodeKey}`);
-            return { kind: 'branch', preset };
+            return { kind: 'branch', preset, draft: d };
         }
 
         case 'place_leaf': {
             const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
-            if (isTrunkAtAttachmentCapacity(decision.hostTrunkId, cap)) {
+            if (isTrunkAtAttachmentCapacity(decision.hostTrunkId, cap, draft)) {
                 console.log(LOG_PREFIX,
                     `Grid skip ${candidate.id}: host ${decision.hostTrunkId} at capacity (${cap})`);
-                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset };
+                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            addKnot(decision.knot);
-            addLeaf(decision.leaf);
+            d = draftAddKnot(d, decision.knot);
+            d = draftAddLeaf(d, decision.leaf);
             console.log(LOG_PREFIX,
                 `Leaf ${candidate.id} → host ${decision.hostTrunkId} ` +
                 `grid ${decision.nodeKey}`);
-            return { kind: 'leaf', preset };
+            return { kind: 'leaf', preset, draft: d };
         }
 
         case 'replace_trunk': {
@@ -649,12 +658,12 @@ function placeOneCandidate(
             if (!promoteKnot || !promoteBranch) {
                 console.log(LOG_PREFIX,
                     `Replace skip ${candidate.id}: no promoted branch from grid engine`);
-                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset };
+                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            addKnot(promoteKnot);
-            addBranch(promoteBranch);
+            d = draftAddKnot(d, promoteKnot);
+            d = draftAddBranch(d, promoteBranch);
             const planned = planTrunkReplacement({
-                snapshot: getSnapshot(),
+                snapshot: d,
                 trunkIdToRemove: decision.hostTrunkId,
                 mode: 'grid_promote_candidate_to_trunk',
                 nodeKey: decision.nodeKey,
@@ -664,22 +673,33 @@ function placeOneCandidate(
             if (!plan) {
                 console.log(LOG_PREFIX,
                     `Replace skip ${candidate.id}: replacement planner failed (host ${decision.hostTrunkId})`);
-                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset };
+                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
+            // The replacement machinery (cascading rehosts, diameter profiles)
+            // is store-bound and shared with manual promote — the plan phase
+            // commits the draft so far, applies the replacement, and re-reads.
+            // The run-level rollback guard + single history entry keep this
+            // atomic for the user; a later worker pass will make it pure.
+            setSnapshot(d);
             const ok = applyTrunkReplacement(
                 { ...plan, trunkToAdd: decision.trunkBuild.trunk, rootToAdd: decision.trunkBuild.root },
                 undefined,
                 { skipHistory: true }, // the whole run is one undoable entry
             );
+            d = ok ? getSnapshot() : d;
             if (!ok) {
                 console.log(LOG_PREFIX,
                     `Replace skip ${candidate.id}: applyTrunkReplacement failed (host ${decision.hostTrunkId})`);
-                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset };
+                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
             console.log(LOG_PREFIX,
                 `Replace trunk @ ${decision.nodeKey}: ` +
                 `${candidate.id} (Z=${candidate.zHeight.toFixed(1)}) → host ${decision.hostTrunkId}`);
-            return { kind: 'trunk', preset, entityId: decision.trunkBuild.trunk.id };
+            return {
+                kind: 'trunk', preset, entityId: decision.trunkBuild.trunk.id, draft: d,
+                // the removal cascade can strip auto kickstands — re-sync the draft
+                kickstand: structuredClone(getKickstandSnapshot()),
+            };
         }
 
         case 'reject': {
@@ -688,7 +708,7 @@ function placeOneCandidate(
                 decision.reason === 'NO_VALID_ATTACHMENT' || decision.reason === 'KNOT_ABOVE_TIP' ? 'grid_reject_no_attachment' :
                 'grid_reject_other';
             console.log(LOG_PREFIX, `Rejected ${candidate.id}: ${decision.reason} (grid ${decision.nodeKey})`);
-            return { kind: 'reject', rejectedReason: reason, preset };
+            return { kind: 'reject', rejectedReason: reason, preset, draft: d };
         }
     }
 }
@@ -713,11 +733,29 @@ function placeOneCandidate(
  * preferred grid node is already occupied will automatically become a
  * branch or leaf of the existing trunk.
  */
-export function runAutoPlace(
+/**
+ * Compute the full auto-support pipeline against a LOCAL draft — no store
+ * commits, no notify() — and return the plan: before/after state pair plus
+ * analytics. This is the atomic-commit seam: the caller applies the plan with
+ * one `setSnapshot` + `setKickstandSnapshot` + a single history entry, and a
+ * later step can run this same function inside a Web Worker.
+ *
+ * The base states and mesh default to the live stores/model, but can be passed
+ * explicitly (worker deserialization); settings are read from the live store.
+ *
+ * NOTE: the one store-coupled path is the grid promote (`replace_trunk`), which
+ * runs the shared manual-promote machinery via a mid-run swap; the rollback
+ * guard below keeps that atomic. Everything else — placement, gap-fill,
+ * fanning, overhang coverage, bracing — is draft-only.
+ */
+export function computeAutoSupportPlan(
     islands: DetectedIsland[],
     modelId: string,
     settingsOverride?: Partial<AutoSupportSettings>,
-): AutoPlaceResult {
+    baseState?: SupportState,
+    baseKickstand?: KickstandState,
+    mesh?: THREE.Mesh,
+): AutoSupportPlan | null {
     // ------------------------------------------------------------------
     // 0. Settings
     // ------------------------------------------------------------------
@@ -725,16 +763,35 @@ export function runAutoPlace(
     const autoSettings = normalizeAutoSupportSettings(settingsOverride ?? undefined);
 
     if (!autoSettings.enabled) {
-        return makeResult(0, 0, 0, 0, 0, 0, false, 'Auto-support is disabled.');
+        return null;
     }
 
-    const beforeSnapshot = getSnapshot();
-    const kickstandBefore = structuredClone(getKickstandSnapshot());
+    const before = baseState ?? structuredClone(getSnapshot());
+    const kickstandBefore = baseKickstand ?? structuredClone(getKickstandSnapshot());
+    let draft: SupportState = before;
+    let kickstandDraft: KickstandState = kickstandBefore;
+
+    // Early-exit no-op plan (no candidates / nothing to place): the run
+    // reported as unchanged, so the caller commits nothing.
+    const noopPlan = (result: AutoPlaceResult): AutoSupportPlan => ({
+        before,
+        kickstandBefore,
+        support: draft,
+        kickstand: kickstandDraft,
+        analytics: {
+            islandsCovered: 0,
+            islandsUncovered: islands.length,
+            presets: { detail: 0, structure: 0, anchor: 0 },
+            rejectionReasons: {},
+            areaCoverage: 0,
+        },
+        result,
+    });
 
     // The model mesh is needed by the grid phase (surface snapping) and the
     // placement pipeline (pathfinding + collision).
-    const mesh: THREE.Mesh | undefined = getModelMesh(modelId) ?? undefined;
-    if (mesh) mesh.updateMatrixWorld();
+    const resolvedMesh: THREE.Mesh | undefined = mesh ?? (getModelMesh(modelId) ?? undefined);
+    if (resolvedMesh) resolvedMesh.updateMatrixWorld();
 
     // ------------------------------------------------------------------
     // 1. Generate candidates
@@ -779,7 +836,7 @@ export function runAutoPlace(
         `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold)`);
 
     if (candidates.length === 0) {
-        return makeResult(0, 0, 0, 0, 0, 0, false, 'No viable support candidates found.');
+        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'No viable support candidates found.'));
     }
 
     // ------------------------------------------------------------------
@@ -794,7 +851,7 @@ export function runAutoPlace(
         `(removed ${beforeDedup - candidates.length} within ${autoSettings.tipInfluenceRadiusMm}mm radius)`);
 
     if (candidates.length === 0) {
-        return makeResult(0, 0, 0, 0, 0, 0, false, 'All candidates deduplicated — nothing to place.');
+        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'All candidates deduplicated — nothing to place.'));
     }
 
     // ------------------------------------------------------------------
@@ -802,14 +859,14 @@ export function runAutoPlace(
     // ------------------------------------------------------------------
 
     const beforeSupportFilter = candidates.length;
-    candidates = filterAlreadySupported(candidates);
+    candidates = filterAlreadySupported(candidates, draft);
     console.log(LOG_PREFIX,
         `Step 2b: ${candidates.length} candidates after support filter ` +
         `(removed ${beforeSupportFilter - candidates.length} already supported within ${ALREADY_SUPPORTED_RADIUS_MM}mm)`);
 
     if (candidates.length === 0) {
-        return makeResult(0, 0, 0, 0, 0, 0, false,
-            'All candidate positions already have supports.');
+        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false,
+            'All candidate positions already have supports.'));
     }
 
     // ------------------------------------------------------------------
@@ -821,7 +878,7 @@ export function runAutoPlace(
     // tree fan-out via grid occupancy).
 
     console.log(LOG_PREFIX,
-        `Mesh for ${modelId}: ${mesh ? 'available (pathfinding + SDF active)' : 'UNAVAILABLE (supports route straight, no collision avoidance)'}`);
+        `Mesh for ${modelId}: ${resolvedMesh ? 'available (pathfinding + SDF active)' : 'UNAVAILABLE (supports route straight, no collision avoidance)'}`);
 
     const gridEnabled = getSettings().grid?.enabled;
     console.log(LOG_PREFIX,
@@ -836,10 +893,10 @@ export function runAutoPlace(
     }
 
     let modelCtx: ModelSizingContext | undefined;
-    if (mesh) {
-        const bbox = new THREE.Box3().setFromObject(mesh);
+    if (resolvedMesh) {
+        const bbox = new THREE.Box3().setFromObject(resolvedMesh);
         modelCtx = {
-            modelVolumeMm3: computeMeshVolumeMm3(mesh),
+            modelVolumeMm3: computeMeshVolumeMm3(resolvedMesh),
             modelZMaxMm: bbox.max.z,
             totalCandidates: candidates.length,
             candidatesBelowZ: 0, // placeholder — filled per-candidate below
@@ -882,13 +939,16 @@ export function runAutoPlace(
     let analytics!: AutoPlaceAnalytics;
     try {
     // Per-candidate placement, shared by the main pass and the coverage
-    // convergence (gap-fill) passes.
+    // convergence (gap-fill) passes. Each placement advances the local draft
+    // (no store commit) so later candidates see earlier supports.
     const placeOne = (candidate: CandidatePoint): string => {
         try {
             const ctx: ModelSizingContext | undefined = modelCtx
                 ? { ...modelCtx, candidatesBelowZ: belowCount.get(candidate.id) ?? candidates.length }
                 : undefined;
-            const result = placeOneCandidate(candidate, settingsOverride, ctx, clusterTotal.get(candidate.id));
+            const result = placeOneCandidate(candidate, draft, settingsOverride, ctx, clusterTotal.get(candidate.id));
+            draft = result.draft;
+            if (result.kickstand) kickstandDraft = result.kickstand;
             switch (result.kind) {
                 case 'trunk':   placedTrunks++; break;
                 case 'anchor':  placedAnchors++; break;
@@ -946,7 +1006,7 @@ export function runAutoPlace(
         `| presets: detail=${presets.detail} structure=${presets.structure} anchor=${presets.anchor}`);
 
     // ── Coverage analytics ────────────────────────────────────────
-    const snapshot = getSnapshot();
+    const snapshot = draft;
     const supportedIds = new Set<string>();
     const SUPPORT_COVERAGE_RADIUS_MM = 4.0;
     const covR2 = SUPPORT_COVERAGE_RADIUS_MM * SUPPORT_COVERAGE_RADIUS_MM;
@@ -1051,7 +1111,7 @@ export function runAutoPlace(
         `Max ${MAX_FANNING_PASSES} passes, fan radius ${LEAF_FAN_RADIUS_MM}mm, max angle ${LEAF_FAN_MAX_ANGLE_DEG}°.`);
 
     for (let pass = 0; pass < MAX_FANNING_PASSES && analytics.islandsUncovered > 0; pass++) {
-        const snap = getSnapshot();
+        const snap = draft;
 
         // Collect trunk shaft sample points from the current snapshot.
         const shaftPoints: Array<{
@@ -1130,7 +1190,7 @@ export function runAutoPlace(
 
             // SDF collision check: the straight path from knot to tip
             // must be clear of the model.
-            const leafMesh = getModelMesh(modelId);
+            const leafMesh = resolvedMesh;
             if (leafMesh) {
                 const shaftRadius = 0.2; // leaf cone is thin
                 if (isShaftBlocked(sp.pos, { x: cx, y: cy, z: cz }, shaftRadius, leafMesh)) {
@@ -1150,12 +1210,12 @@ export function runAutoPlace(
                 });
                 if (sd.error) continue;
                 const fanCap = autoSettings.maxAttachmentsPerTrunk;
-                if (isTrunkAtAttachmentCapacity(sp.trunkId, fanCap)) {
+                if (isTrunkAtAttachmentCapacity(sp.trunkId, fanCap, draft)) {
                     // Trunk full — skip this island for this pass.
                     continue;
                 }
-                addKnot(parentKnot);
-                addLeaf(leaf);
+                draft = draftAddKnot(draft, parentKnot);
+                draft = draftAddLeaf(draft, leaf);
                 fannedCount++;
                 supportedIds.add(island.id);
                 coveredArea += (island.areaMm2 ?? 0);
@@ -1195,7 +1255,7 @@ export function runAutoPlace(
     const islandById = new Map(islands.map(i => [i.id, i]));
     let overhangSupportsPlaced = 0;
 
-    for (const [tid, trunk] of Object.entries(snapshot.trunks)) {
+    for (const [tid, trunk] of Object.entries(draft.trunks)) {
         // Find which island this trunk was placed for by matching tip
         // proximity to island contact positions.
         const tip = trunk.contactCone?.pos;
@@ -1268,7 +1328,7 @@ export function runAutoPlace(
                         pos: knotPos,
                         diameter: (trunk.segments[trunk.segments.length - 1]?.diameter ?? 1.0) + 0.1,
                     };
-                    const bm: THREE.Mesh | undefined = mesh ?? undefined;
+                    const bm: THREE.Mesh | undefined = resolvedMesh ?? undefined;
                     const { branch, supportData: sd } = buildBranchData({
                         tipPos: resolved.point,
                         tipNormal: resolved.normal,
@@ -1278,11 +1338,11 @@ export function runAutoPlace(
                     });
                     if (!sd.error) {
                         const ohCap = autoSettings.maxAttachmentsPerTrunk;
-                        if (isTrunkAtAttachmentCapacity(tid, ohCap)) {
+                        if (isTrunkAtAttachmentCapacity(tid, ohCap, draft)) {
                             continue;
                         }
-                        addKnot(parentKnot);
-                        addBranch(branch);
+                        draft = draftAddKnot(draft, parentKnot);
+                        draft = draftAddBranch(draft, branch);
                         overhangSupportsPlaced++;
                         placedBranches++;
                     }
@@ -1298,13 +1358,15 @@ export function runAutoPlace(
         }
     }
     } catch (e) {
-        // Safety net: restore the pre-run snapshots and report failure.
+        // Safety net: the promote path can mid-run swap the store, so restore
+        // the pre-run snapshots on failure. Everything else never commits, so
+        // this is the only path that can leave anything behind.
         console.error(LOG_PREFIX,
             `Auto-support failed mid-run — rolling back.`,
             e instanceof Error ? e.message : String(e));
-        setSnapshot(beforeSnapshot);
+        setSnapshot(before);
         setKickstandSnapshot(kickstandBefore);
-        return makeResult(0, 0, 0, 0, 0, 0, false, 'Auto-support failed mid-run; changes rolled back.');
+        return null;
     }
 
     const changed =
@@ -1315,42 +1377,25 @@ export function runAutoPlace(
         placedSticks > 0;
 
     // ------------------------------------------------------------------
-    // 4. Auto-bracing + history
+    // 4. Auto-bracing (draft-only, folded into the plan)
     // ------------------------------------------------------------------
 
-    if (changed) {
-        if (!autoSettings.debugSkipAutoBracing) {
-            console.log(LOG_PREFIX, 'Running auto-brace...');
-            try {
-                const braceResult = runAutoBracing();
-                console.log(LOG_PREFIX, `Auto-brace: ${braceResult.message}`);
-            } catch (e) {
-                console.warn(LOG_PREFIX,
-                    `Auto-brace failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
-            }
-        } else {
-            console.log(LOG_PREFIX, 'Auto-brace skipped (debug setting).');
-        }
-
+    if (changed && !autoSettings.debugSkipAutoBracing) {
+        console.log(LOG_PREFIX, 'Running auto-brace...');
         try {
-            const afterSnapshot = getSnapshot();
-            pushSupportHistory({
-                type: SUPPORT_AUTO_PLACE,
-                payload: {
-                    before: beforeSnapshot,
-                    after: afterSnapshot,
-                    kickstandBefore,
-                    kickstandAfter: structuredClone(getKickstandSnapshot()),
-                },
-            });
-            console.log(LOG_PREFIX, 'History entry pushed — undo available.');
+            const braceResult = buildAutoBracedSnapshot(draft, getSettings().autoBracing, kickstandDraft);
+            draft = braceResult.snapshot;
+            kickstandDraft = braceResult.kickstand;
+            console.log(LOG_PREFIX, `Auto-brace: ${braceResult.message}`);
         } catch (e) {
             console.warn(LOG_PREFIX,
-                `History push failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+                `Auto-brace failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
         }
+    } else if (changed) {
+        console.log(LOG_PREFIX, 'Auto-brace skipped (debug setting).');
     }
 
-    return {
+    const result: AutoPlaceResult = {
         ...makeResult(
             placedTrunks,
             placedAnchors,
@@ -1364,4 +1409,51 @@ export function runAutoPlace(
         ),
         analytics,
     };
+
+    return {
+        before,
+        kickstandBefore,
+        support: draft,
+        kickstand: kickstandDraft,
+        analytics,
+        result,
+    };
+}
+
+/**
+ * Run auto-support end-to-end: compute the plan, then commit it as ONE
+ * atomic store update + ONE undoable history entry (supports + braces +
+ * kickstands together).
+ */
+export function runAutoPlace(
+    islands: DetectedIsland[],
+    modelId: string,
+    settingsOverride?: Partial<AutoSupportSettings>,
+): AutoPlaceResult {
+    const plan = computeAutoSupportPlan(islands, modelId, settingsOverride);
+    if (!plan) {
+        return makeResult(0, 0, 0, 0, 0, 0, false, 'Auto-support is disabled.');
+    }
+
+    if (plan.result.changed) {
+        setSnapshot(plan.support);
+        setKickstandSnapshot(plan.kickstand);
+        try {
+            pushSupportHistory({
+                type: SUPPORT_AUTO_PLACE,
+                payload: {
+                    before: plan.before,
+                    after: plan.support,
+                    kickstandBefore: plan.kickstandBefore,
+                    kickstandAfter: plan.kickstand,
+                },
+            });
+            console.log(LOG_PREFIX, 'History entry pushed — undo available.');
+        } catch (e) {
+            console.warn(LOG_PREFIX,
+                `History push failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+
+    return plan.result;
 }
