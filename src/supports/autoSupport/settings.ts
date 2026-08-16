@@ -11,6 +11,10 @@ export interface AutoSupportSettings {
     /** Overhang regions at or above this projected area (mm²) get a density
      *  grid; smaller regions get a single support. */
     gridAreaThresholdMm2: number;
+    /** Surface angle from horizontal (deg) at and below which a face counts
+     *  as an overhang needing supports. 0° = flat ceiling; the resin standard
+     *  is 45°. Steeper faces are considered self-supporting. */
+    overhangSelfSupportAngleDeg: number;
     debugSkipAutoBracing: boolean;
 }
 
@@ -27,7 +31,8 @@ type NumericAutoSupportSettingKey =
     | 'tipInfluenceRadiusMm'
     | 'maxAttachmentsPerTrunk'
     | 'areaPerSupportMm2'
-    | 'gridAreaThresholdMm2';
+    | 'gridAreaThresholdMm2'
+    | 'overhangSelfSupportAngleDeg';
 
 export const AUTO_SUPPORT_CONSTRAINTS = {
     minIslandAreaMm2: { min: 0.01, max: 10, step: 0.01, defaultValue: 0.02 },
@@ -35,6 +40,7 @@ export const AUTO_SUPPORT_CONSTRAINTS = {
     maxAttachmentsPerTrunk: { min: 2, max: 50, step: 1, defaultValue: 12, integer: true },
     areaPerSupportMm2: { min: 1, max: 30, step: 0.5, defaultValue: 8 },
     gridAreaThresholdMm2: { min: 5, max: 200, step: 5, defaultValue: 25 },
+    overhangSelfSupportAngleDeg: { min: 20, max: 75, step: 5, defaultValue: 45 },
 } satisfies Record<NumericAutoSupportSettingKey, NumericConstraint>;
 
 function precisionFromStep(step: number): number {
@@ -75,6 +81,7 @@ export function createDefaultAutoSupportSettings(): AutoSupportSettings {
         maxAttachmentsPerTrunk: AUTO_SUPPORT_CONSTRAINTS.maxAttachmentsPerTrunk.defaultValue,
         areaPerSupportMm2: AUTO_SUPPORT_CONSTRAINTS.areaPerSupportMm2.defaultValue,
         gridAreaThresholdMm2: AUTO_SUPPORT_CONSTRAINTS.gridAreaThresholdMm2.defaultValue,
+        overhangSelfSupportAngleDeg: AUTO_SUPPORT_CONSTRAINTS.overhangSelfSupportAngleDeg.defaultValue,
         debugSkipAutoBracing: false,
     };
 }
@@ -91,6 +98,7 @@ export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings
         maxAttachmentsPerTrunk: clampNumeric(source.maxAttachmentsPerTrunk, AUTO_SUPPORT_CONSTRAINTS.maxAttachmentsPerTrunk),
         areaPerSupportMm2: clampNumeric(source.areaPerSupportMm2, AUTO_SUPPORT_CONSTRAINTS.areaPerSupportMm2),
         gridAreaThresholdMm2: clampNumeric(source.gridAreaThresholdMm2, AUTO_SUPPORT_CONSTRAINTS.gridAreaThresholdMm2),
+        overhangSelfSupportAngleDeg: clampNumeric(source.overhangSelfSupportAngleDeg, AUTO_SUPPORT_CONSTRAINTS.overhangSelfSupportAngleDeg),
         debugSkipAutoBracing: normalizeBoolean(source.debugSkipAutoBracing, defaults.debugSkipAutoBracing),
     };
 }

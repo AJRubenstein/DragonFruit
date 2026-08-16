@@ -329,7 +329,7 @@ export function SceneCanvas({
   overlayColor,
   overlayOpacity,
   overlaySelectedIslandId,
-  enableVolumeGlow = true,
+  showOverhangs = true,
   materialRoughness,
   scanResults,
   layerHeightMm,
@@ -450,7 +450,7 @@ export function SceneCanvas({
   overlayColor?: string;
   overlayOpacity?: number;
   overlaySelectedIslandId?: number | null;
-  enableVolumeGlow?: boolean;
+  showOverhangs?: boolean;
   ambientIntensity?: number;
   directionalIntensity?: number;
   headlightIntensity?: number;
@@ -5965,7 +5965,7 @@ export function SceneCanvas({
                         />
                       )}
 
-                      {isActive && (mode === 'support' || mode === 'analysis') && overhangIslands && overhangIslands.length > 0 && (
+                      {isActive && (mode === 'support' || mode === 'analysis') && showOverhangs && overhangIslands && overhangIslands.length > 0 && (
                         <IslandOverhangOverlay
                           geometry={model.geometry.geometry}
                           regions={overhangIslands}
@@ -6912,7 +6912,7 @@ export function SceneCanvas({
                   via the GPU picking system. Supplied by the host (page.tsx). */}
               {organicCutKeyGizmo}
 
-              {selectedMarker && enableVolumeGlow && (
+              {selectedMarker && (
                 <IslandOverlay
                   markers={[selectedMarker]}
                   brushRadiusMm={overlayBrushRadius ?? 2}

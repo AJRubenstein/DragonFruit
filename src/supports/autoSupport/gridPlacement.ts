@@ -105,8 +105,10 @@ export function generateGridCandidates(
         // Angle-aware density: anchor surfaces (flat ceilings — a model's
         // feet / underside) are the densest; slopes near the self-support
         // threshold are the sparsest. Spacing = √areaPerSupport × factor.
+        const selfSupportAngleDeg = settings.overhangSelfSupportAngleDeg
+            ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG;
         const angleT = Math.min(1, Math.max(0,
-            (island.overhangAngleDeg ?? 0) / OVERHANG_SELF_SUPPORT_ANGLE_DEG));
+            (island.overhangAngleDeg ?? 0) / selfSupportAngleDeg));
         const spacing = baseSpacing
             * (GRID_SPACING_MIN_FACTOR
                 + angleT * (GRID_SPACING_MAX_FACTOR - GRID_SPACING_MIN_FACTOR));

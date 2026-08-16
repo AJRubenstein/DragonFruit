@@ -80,8 +80,8 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
     selectPrev,
     selectNext,
     tableStats,
-    enableVolumeGlow,
-    setEnableVolumeGlow,
+    showOverhangs,
+    setShowOverhangs,
     draftPxMm,
     setDraftPxMm,
     draftSupportBufMm,
@@ -287,7 +287,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                     <ToggleBtn label="Voxels" checked={showVoxelOnly} onChange={setShowVoxelOnly} color={ISLAND_LAYER_COLORS.voxel} hint="Slicing islands and suspended areas detected from layer contours" />
                     <ToggleBtn label="Minima" checked={showMinimaOnly} onChange={setShowMinimaOnly} color={ISLAND_LAYER_COLORS.minima} hint="Individual lowest-vertex triangles on the mesh surface" />
                     <ToggleBtn label="Coincident" checked={showIntersection} onChange={setShowIntersection} color={ISLAND_LAYER_COLORS.intersection} hint="Regions where both voxel and geometric islands overlap" />
-                    <ToggleBtn label="Glow" checked={enableVolumeGlow} onChange={setEnableVolumeGlow} color="#baf72e" hint="Volumetric selection glow around the active island" />
+                    <ToggleBtn label="Overhangs" checked={showOverhangs} onChange={setShowOverhangs} color="#ffa500" hint="Shallow surfaces detected by the mesh-normal classifier (the surfaces auto-supports grid)" />
                   </div>
                 </div>
 

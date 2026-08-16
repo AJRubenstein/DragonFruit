@@ -10011,7 +10011,7 @@ export default function Home() {
             overlaySelectedIslandId={
               scene.mode === 'support' ? islandsPoc.selectedMarkerId : islands.selectedIslandId
             }
-            enableVolumeGlow={islandsPoc.enableVolumeGlow}
+            showOverhangs={islandsPoc.showOverhangs}
             ambientIntensity={scene.ambientIntensity}
             directionalIntensity={scene.directionalIntensity}
             materialRoughness={scene.materialRoughness}

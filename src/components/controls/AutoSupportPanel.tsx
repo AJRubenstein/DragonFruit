@@ -56,7 +56,7 @@ interface AutoSupportPanelProps {
 }
 
 type KnobDef = {
-  key: string;
+  key: NumericAutoSupportSettingKey;
   label: string;
   min: number;
   max: number;
@@ -65,12 +65,21 @@ type KnobDef = {
   hint: string;
 };
 
+type NumericAutoSupportSettingKey =
+  | 'minIslandAreaMm2'
+  | 'tipInfluenceRadiusMm'
+  | 'maxAttachmentsPerTrunk'
+  | 'areaPerSupportMm2'
+  | 'gridAreaThresholdMm2'
+  | 'overhangSelfSupportAngleDeg';
+
 const KNOBS: KnobDef[] = [
-  { key: 'minIslandAreaMm2',     label: 'Min Island Area',       min: 0.01, max: 2,    step: 0.01, unit: 'mm²', hint: 'Skip islands smaller than this area' },
-  { key: 'tipInfluenceRadiusMm',  label: 'Tip Influence Radius',  min: 0.1,  max: 10,   step: 0.1,  unit: 'mm',  hint: 'Candidates within this 3D distance are merged' },
-  { key: 'maxAttachmentsPerTrunk',         label: 'Max Attachments / Trunk',   min: 2,  max: 50, step: 1,   unit: '',   hint: 'Max combined branches + leaves per trunk' },
-  { key: 'areaPerSupportMm2',     label: 'Area per Support',      min: 1,    max: 30,   step: 0.5, unit: 'mm²', hint: 'Projected area each grid support carries (density)' },
-  { key: 'gridAreaThresholdMm2',  label: 'Grid Min Area',         min: 5,    max: 200,  step: 5,   unit: 'mm²', hint: 'Regions at/above this area get a density grid' },
+  { key: 'overhangSelfSupportAngleDeg', label: 'Self-Support Angle',  min: 20,   max: 75,  step: 5,  unit: '°',   hint: 'Surfaces flatter than this angle get supports (resin standard: 45°). Higher = fewer, mostly on the steepest parts.' },
+  { key: 'areaPerSupportMm2',     label: 'Support Density',      min: 1,    max: 30,   step: 0.5, unit: 'mm²', hint: 'Projected area each support carries — smaller = more, tighter supports (grid spacing ≈ √value)' },
+  { key: 'gridAreaThresholdMm2',  label: 'Grid Threshold',       min: 5,    max: 200,  step: 5,   unit: 'mm²', hint: 'Flat regions at/above this area get a full grid; smaller regions get a single support' },
+  { key: 'minIslandAreaMm2',     label: 'Min Island Size',       min: 0.01, max: 2,    step: 0.01, unit: 'mm²', hint: 'Skip detected areas smaller than this — tiny specks rarely need supports' },
+  { key: 'tipInfluenceRadiusMm',  label: 'Merge Radius',  min: 0.1,  max: 10,   step: 0.1,  unit: 'mm',  hint: 'A candidate within this 3D distance of an existing support merges into it instead of starting a new trunk' },
+  { key: 'maxAttachmentsPerTrunk',         label: 'Branches per Column',   min: 2,  max: 50, step: 1,   unit: '',   hint: 'Max branches + leaves one trunk may carry before new trunks are started' },
 ];
 
 const PRESETS = {
@@ -94,7 +103,7 @@ const PRESETS = {
 } satisfies Record<string, Partial<AutoSupportSettings>>;
 
 function SliderRow({ knob, draft, setDraft }: { knob: KnobDef; draft: AutoSupportSettings; setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>> }) {
-  const value = (draft as any)[knob.key] as number;
+  const value = draft[knob.key];
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
@@ -479,14 +488,14 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
           <div className="rounded-md border p-2.5" style={SECTION_CARD}>
             <div className="grid grid-cols-4 gap-2">
               {([
-                { key: 'enabled' as const, label: 'Enabled' },
-                { key: 'prioritizeIntersection' as const, label: 'Prioritize Dual' },
-                { key: 'debugSkipAutoBracing' as const, label: 'Skip Brace' },
+                { key: 'enabled' as const, label: 'Enabled', title: 'Generate supports automatically on scan' },
+                { key: 'prioritizeIntersection' as const, label: 'Prioritize Dual', title: 'Islands found by BOTH the slice and mesh scans are placed first (they are the most certain)' },
+                { key: 'debugSkipAutoBracing' as const, label: 'No Brace', title: 'Debug: skip automatic bracing for this run' },
               ]).map((t) => (
-                <button key={t.key} type="button"
-                  onClick={() => setDraft((d) => ({ ...d, [t.key]: !(d as any)[t.key] }))}
+                <button key={t.key} type="button" title={t.title}
+                  onClick={() => setDraft((d) => ({ ...d, [t.key]: !d[t.key] }))}
                   className="min-h-[36px] w-full rounded-md border px-2 text-[11px] font-semibold uppercase tracking-wide transition-colors flex items-center justify-center"
-                  style={(draft as any)[t.key]
+                  style={draft[t.key]
                     ? { borderColor: 'color-mix(in srgb, var(--accent-secondary), white 10%)', background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 84%)', color: 'color-mix(in srgb, var(--accent-secondary), var(--text-strong) 25%)' }
                     : { borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
                 >{t.label}</button>
@@ -501,7 +510,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
               <div className="rounded-md border p-2.5" style={SECTION_CARD}>
                 <SectionHeader title="Detection" />
                 <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['minIslandAreaMm2', 'tipInfluenceRadiusMm'].includes(k.key)).map(knob => (
+                  {KNOBS.filter(k => ['overhangSelfSupportAngleDeg', 'minIslandAreaMm2', 'tipInfluenceRadiusMm'].includes(k.key)).map(knob => (
                     <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
                   ))}
                 </div>

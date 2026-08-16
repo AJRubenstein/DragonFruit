@@ -15,6 +15,7 @@ import { scanMeshMinima } from './meshMinima';
 import { type DetectedIsland, type TipInfo, type OverhangRegion, SUPPORTED_RADIUS_MM } from './types';
 import { classifyIntersection } from './intersection';
 import { getSnapshot } from '@/supports/state';
+import { getSettings } from '@/supports/Settings/state';
 import { SpatialHashGrid2D } from './spatialHashGrid2D';
 
 /** Self-support angle for mesh-normal overhang detection (surfaces flatter
@@ -151,7 +152,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const [consolidationDistance, setConsolidationDistance] = useState<number>(0.2);
   const [reduceIntersection, setReduceIntersection] = useState<boolean>(false);
   const [intersectionThreshold, setIntersectionThreshold] = useState<number>(0.5);
-  const [enableVolumeGlow, setEnableVolumeGlow] = useState<boolean>(false);
+  const [showOverhangs, setShowOverhangs] = useState<boolean>(true);
   const [scaleMarkersWithArea, setScaleMarkersWithArea] = useState<boolean>(true);
   const [enableContourRegions, setEnableContourRegions] = useState<boolean>(true);
   const [maxContourRegions, setMaxContourRegions] = useState<number>(20);
@@ -168,7 +169,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const [draftConsolidationDistance, setDraftConsolidationDistance] = useState<number>(0.2);
   const [draftReduceIntersection, setDraftReduceIntersection] = useState<boolean>(false);
   const [draftIntersectionThreshold, setDraftIntersectionThreshold] = useState<number>(0.5);
-  const [draftEnableVolumeGlow, setDraftEnableVolumeGlow] = useState<boolean>(false);
+  const [draftShowOverhangs, setDraftShowOverhangs] = useState<boolean>(true);
   const [draftScaleMarkersWithArea, setDraftScaleMarkersWithArea] = useState<boolean>(true);
   const [draftEnableContourRegions, setDraftEnableContourRegions] = useState<boolean>(true);
   const [draftMaxContourRegions, setDraftMaxContourRegions] = useState<number>(20);
@@ -297,7 +298,10 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         const { invoke } = await import('@tauri-apps/api/core');
         const regions = await invoke<OverhangRegion[]>('scan_overhangs', {
           positions: Array.from(overhangWorld.positions),
-          selfSupportAngleDeg: OVERHANG_SELF_SUPPORT_ANGLE_DEG,
+          // The self-support angle is a user knob (auto-support settings);
+          // falls back to the resin-standard 45° before the setting exists.
+          selfSupportAngleDeg: getSettings().autoSupport?.overhangSelfSupportAngleDeg
+            ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG,
           pxMm: OVERHANG_FOOTPRINT_PX_MM,
         });
         mappedOverhangs = regions.map(overhangRegionToIsland);
@@ -832,7 +836,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
       setConsolidationDistance(draftConsolidationDistance);
       setReduceIntersection(draftReduceIntersection);
       setIntersectionThreshold(draftIntersectionThreshold);
-      setEnableVolumeGlow(draftEnableVolumeGlow);
+      setShowOverhangs(draftShowOverhangs);
       setScaleMarkersWithArea(draftScaleMarkersWithArea);
       setEnableContourRegions(draftEnableContourRegions);
       setMaxContourRegions(draftMaxContourRegions);
@@ -850,7 +854,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     draftConsolidationDistance,
     draftReduceIntersection,
     draftIntersectionThreshold,
-    draftEnableVolumeGlow,
+    draftShowOverhangs,
     draftScaleMarkersWithArea,
     draftEnableContourRegions,
     draftMaxContourRegions,
@@ -868,7 +872,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setDraftConsolidationDistance(0.2);
     setDraftReduceIntersection(false);
     setDraftIntersectionThreshold(0.5);
-    setDraftEnableVolumeGlow(true);
+    setDraftShowOverhangs(true);
     setDraftScaleMarkersWithArea(true);
     setDraftEnableContourRegions(true);
     setDraftMaxContourRegions(20);
@@ -887,7 +891,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
       consolidationDistance !== draftConsolidationDistance ||
       reduceIntersection !== draftReduceIntersection ||
       intersectionThreshold !== draftIntersectionThreshold ||
-      enableVolumeGlow !== draftEnableVolumeGlow ||
+      showOverhangs !== draftShowOverhangs ||
       scaleMarkersWithArea !== draftScaleMarkersWithArea ||
       enableContourRegions !== draftEnableContourRegions ||
       maxContourRegions !== draftMaxContourRegions ||
@@ -904,7 +908,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     consolidationDistance, draftConsolidationDistance,
     reduceIntersection, draftReduceIntersection,
     intersectionThreshold, draftIntersectionThreshold,
-    enableVolumeGlow, draftEnableVolumeGlow,
+    showOverhangs, draftShowOverhangs,
     scaleMarkersWithArea, draftScaleMarkersWithArea,
     enableContourRegions, draftEnableContourRegions,
     maxContourRegions, draftMaxContourRegions,
@@ -958,8 +962,8 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setReduceIntersection,
     intersectionThreshold,
     setIntersectionThreshold,
-    enableVolumeGlow,
-    setEnableVolumeGlow,
+    showOverhangs,
+    setShowOverhangs,
     scaleMarkersWithArea,
     setScaleMarkersWithArea,
     enableContourRegions,
@@ -991,8 +995,8 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setDraftReduceIntersection,
     draftIntersectionThreshold,
     setDraftIntersectionThreshold,
-    draftEnableVolumeGlow,
-    setDraftEnableVolumeGlow,
+    draftShowOverhangs,
+    setDraftShowOverhangs,
     draftScaleMarkersWithArea,
     setDraftScaleMarkersWithArea,
     draftEnableContourRegions,
