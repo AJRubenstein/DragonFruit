@@ -193,7 +193,7 @@ const ANCHOR_PRESET: SupportPreset = {
         tip: {
             shape: 'cone',
             contactDiameterMm: 0.4,
-            bodyDiameterMm: 1.2,
+            bodyDiameterMm: 1.4,
             lengthMm: 2.5,
             penetrationMm: 0,
             coneAngleMode: 'adaptive',
@@ -203,14 +203,14 @@ const ANCHOR_PRESET: SupportPreset = {
         },
         shaft: {
             shape: 'cylinder',
-            diameterMm: 1.2,
-            secondaryDiameterMm: 1.2,
+            diameterMm: 1.4,
+            secondaryDiameterMm: 1.4,
             isStraight: true,
             maxAngleDeg: 80,
         },
         roots: {
             shape: 'cylinder',
-            diameterMm: 2.0,
+            diameterMm: 2.3,
             diskHeightMm: 0.5,
             coneHeightMm: 1.0,
             neckDiameterMm: 1.5,
@@ -218,11 +218,11 @@ const ANCHOR_PRESET: SupportPreset = {
         },
         baseFlare: {
             enabled: true,
-            diameterMm: 4.0,
+            diameterMm: 4.5,
             heightMm: 2.0,
         },
         joint: {
-            ballDiameterMm: 2.0,
+            ballDiameterMm: 2.2,
             maxRotationDeg: 45,
             maxSlideMm: 5,
         },
