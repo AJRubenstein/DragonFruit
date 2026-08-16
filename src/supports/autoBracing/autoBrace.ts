@@ -484,16 +484,6 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         },
     );
 
-    const preliminaryTrunkGroups: SupportSample[][] = [];
-    for (const groupIds of trunkGroupIds) {
-        const groupTrunks = groupIds
-            .map((id) => trunkById.get(id))
-            .filter((trunk): trunk is SupportSample => Boolean(trunk));
-        if (groupTrunks.length > 0) {
-            preliminaryTrunkGroups.push(groupTrunks);
-        }
-    }
-
     // -- PRELIMINARY BRACING SNAPSHOT (To detect trunks needing generative fallback) --
     // Use the same current-run pairing logic that this invocation will apply,
     // not legacy snapshot braces that are about to be replaced. Paired
