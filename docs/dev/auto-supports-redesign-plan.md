@@ -3,6 +3,17 @@
 Status: design agreed (2026-08-16). Audit fixes (section-5 list + undo/selection work) are
 landed on `feat/auto-supports-v1`; this is the rebuild plan that builds on the cleaned surface.
 
+Progress:
+- [x] Step 1 — Rust overhang classifier (mesh-normal, footprint mask, angle threshold).
+      `src-tauri/src/overhang.rs`, 6/6 unit tests (rotated cube, wall, slopes, containment).
+- [x] Step 2 — `scan_overhangs` IPC + overhang regions in `useIslands` (DetectedIsland source
+      'overhang', contactVoxels from footprint, real angle). Visible in-app as pucks + list.
+- [ ] Step 3 — density grid placement (grid phase) on large flat regions.
+- [ ] Step 4 — phased pipeline + coverage convergence.
+- [ ] Step 5 — forest resize pass.
+- [ ] Step 6 — worker + plan-then-commit + preview.
+- [ ] Step 7 — validation corpus + tuning.
+
 ## Problem summary (from the audit)
 
 - Detection only flags near-flat undersides: the growth rule `candidates = current − dilate(prev, buffer)`
