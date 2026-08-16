@@ -227,6 +227,10 @@ const ANCHOR_PRESET: SupportPreset = {
 
 // --- Store ---
 
+/** Built-in preset definitions — the canonical default detail/structure/
+ *  anchor values (auto-support sizing derives its bands from these). */
+export { DETAIL_PRESET, STRUCTURE_PRESET, ANCHOR_PRESET };
+
 const PRESET_STORAGE_KEY = 'support-presets-v1';
 const ACTIVE_PRESET_STORAGE_KEY = 'support-active-preset-id-v1';
 const SUPPORT_SETTINGS_STORAGE_KEY = 'support-settings';

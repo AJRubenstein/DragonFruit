@@ -553,7 +553,6 @@ function placeOneCandidate(
     // area so the trunk that absorbs several islands gets a small bump.
     const overrides = sizeParameters(
         candidate,
-        supportSettings,
         candidate.gridPoint ? candidate.islandAreaMm2 : totalArea,
     );
 
@@ -1061,9 +1060,9 @@ export function computeAutoSupportPlan(
             modelId: '', source: 'voxel', islandAreaMm2: area,
             zHeight: z, priority: 0,
         });
-        const sMin = sizeParameters(makeSample(minArea, 10), getSettings());
-        const sMax = sizeParameters(makeSample(maxArea, zMax), getSettings());
-        const sAvg = sizeParameters(makeSample(avgArea, zMax / 2), getSettings());
+        const sMin = sizeParameters(makeSample(minArea, 10));
+        const sMax = sizeParameters(makeSample(maxArea, zMax));
+        const sAvg = sizeParameters(makeSample(avgArea, zMax / 2));
         sizingDebug = {
             modelVolumeMm3: Math.round(modelCtx.modelVolumeMm3),
             estimatedWeightG: round2(weightG),
