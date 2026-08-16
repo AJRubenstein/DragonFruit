@@ -10,19 +10,26 @@ import type { SupportPreset } from '../Settings/types';
 // support presets — the curated "settings that work" — not load calculations.
 // A density-grid cell (8 mm²) does not carry meaningful weight or peel force,
 // and the physics-derived numbers were visibly oversized (~1.5 mm shafts for
-// tiny cells). The bands are read directly from the preset definitions, so
-// retuning the presets retunes auto supports:
+// tiny cells).
 //
-//   detail    — tiny point islands (< 0.15 mm²): shaft 0.8, tip 0.22
-//   structure — small regions (< 0.5 mm²):        shaft 1.0, tip 0.28
-//   anchor    — density-grid cells + large flats: shaft 1.2, tip 0.4
+// Shaft thickness is a continuous curve through the three preset values:
 //
-// Placement time stays flat and predictable: shaft = band × height × carried
-// area (both mild), tip = band × underside angle (flat ceilings get the full
-// band, steeper slopes a smaller contact), root = band. The forest resize
-// pass (post-placement, before commit) thickens trunks that actually carry
-// branches — a trunk with four branches gets thicker, a lone trunk stays at
-// its placed diameter.
+//   (0.15 mm², detail 0.8) → (0.5 mm², structure 1.0) → (8 mm², anchor 1.2)
+//
+// The anchor value is anchored at the density-cell area — the region each
+// grid support serves — so the lattice reads exactly anchor. Larger single
+// supports (a merged cluster, a big region carried by one trunk) extend
+// beyond anchor on a gentle log tail (100 mm² → ~1.5 mm, capped at 2.0).
+// Nothing ever goes below the detail value: the floor is 0.8 mm.
+//
+// Tip contact stays banded (detail 0.22 / structure 0.28 / anchor 0.4) ×
+// underside angle (flat ceilings get the full contact, steeper slopes less),
+// floored at 30% of the shaft so a thick shaft keeps a proportional tip.
+// Roots are the preset band (all three built-ins use 2.0).
+//
+// The forest resize pass (post-placement, before commit) thickens trunks
+// that actually carry branches — a trunk with four branches gets thicker, a
+// lone trunk stays at its placed diameter.
 
 export type SizingPreset = 'detail' | 'structure' | 'anchor';
 
@@ -57,11 +64,34 @@ const SIZING_BANDS: Record<SizingPreset, SizingBand> = {
     anchor: bandFromPreset(ANCHOR_PRESET),
 };
 
-/** The preset band for a supported area (mm²). */
+/** Area a density-grid cell assigns to each support (mm²). The shaft curve's
+ *  anchor value applies at this area — the reference point for the "one
+ *  support serves one cell" case. Matches the areaPerSupportMm2 default. */
+const CELL_REFERENCE_AREA_MM2 = 8;
+
+/** Maximum shaft diameter (mm) for very large single supports. */
+const MAX_SHAFT_DIAMETER_MM = 2.0;
+
+/** The preset band for a supported area (mm²) — tip/root band + analytics. */
 export function presetForArea(areaMm2: number): SizingPreset {
     if (areaMm2 <= 0.15) return 'detail';
     if (areaMm2 <= 0.5) return 'structure';
     return 'anchor';
+}
+
+/** Piecewise shaft curve: lerp through the preset values, then a gentle log
+ *  tail beyond the cell reference (sub-linear — strength grows with the
+ *  cross-section, not the area). Floored at the detail value. */
+function shaftDiameterForArea(areaMm2: number): number {
+    const a = Math.max(areaMm2, 0.01);
+    const d = SIZING_BANDS.detail.shaftDiameterMm;
+    const s = SIZING_BANDS.structure.shaftDiameterMm;
+    const an = SIZING_BANDS.anchor.shaftDiameterMm;
+
+    if (a <= 0.15) return d;
+    if (a <= 0.5) return lerp(0.15, 0.5, d, s, a);
+    if (a <= CELL_REFERENCE_AREA_MM2) return lerp(0.5, CELL_REFERENCE_AREA_MM2, s, an, a);
+    return Math.min(MAX_SHAFT_DIAMETER_MM, an + 0.12 * Math.log(a / CELL_REFERENCE_AREA_MM2));
 }
 
 // ---------------------------------------------------------------------------
@@ -96,16 +126,15 @@ export interface ModelSizingContext {
 /**
  * Empirical sizing for an auto-support candidate.
  *
- * - Shaft: preset band × height factor (taller supports flex more under peel,
- *   up to +25% at ≥ 70 mm) × carried-area factor (a trunk merging several
- *   islands gets a small bump, capped at +20%).
+ * - Shaft: the preset curve at the supported area × height factor (taller
+ *   supports flex more under peel, up to +25% at ≥ 70 mm). Grid cells use
+ *   their own cell area (exactly anchor); merged trunks pass their summed
+ *   area, which rides the tail above anchor.
  * - Tip contact: preset band × angle factor — a flat ceiling (normal straight
  *   down, |z| ≈ 1) gets the full preset contact; a steep slope is closer to
- *   self-supporting and gets a smaller one (down to 60%).
+ *   self-supporting and gets a smaller one (down to 60%). Floored at 30% of
+ *   the shaft.
  * - Roots / tip length / penetration: preset band, flat.
- *
- * Grid cells pass their own cell area (each grid point is a standalone trunk
- * carrying one cell); merged clusters pass their summed area.
  *
  * @param candidate - The island to size supports for.
  * @param totalSupportedAreaMm2 - For core trunks: total area of all
@@ -118,16 +147,17 @@ export function sizeParameters(
 ): SizeOverrides {
     const band = SIZING_BANDS[presetForArea(candidate.islandAreaMm2)];
 
+    // The area that drives thickness: merged trunks carry their cluster
+    // total; standalone/grid trunks carry their own supported area.
+    const areaInput = Math.max(totalSupportedAreaMm2 ?? candidate.islandAreaMm2, 0.01);
+
     const zHeight = Math.max(candidate.zHeight, 1);
     // Taller supports flex more under peel force — up to +25% at ≥ 70 mm.
     const heightFactor = 1 + clamp((zHeight - 20) / 200, 0, 0.25);
 
-    // A trunk merging several islands carries their combined area; grid cells
-    // stay at 1.0 (own area). Capped so a merged cluster never balloons.
-    const carriedArea = Math.max(totalSupportedAreaMm2 ?? candidate.islandAreaMm2, 0.5);
-    const carriedFactor = clamp(Math.sqrt(carriedArea / 8), 1.0, 1.2);
-
-    const shaftDiameterMm = round(band.shaftDiameterMm * heightFactor * carriedFactor, 3);
+    const shaftDiameterMm = round(
+        clamp(shaftDiameterForArea(areaInput) * heightFactor, 0.001, MAX_SHAFT_DIAMETER_MM),
+    3);
 
     // Underside normal z = cos(angle from straight-down). Flat ceilings
     // (|nz| ≈ 1) peel hardest → full preset contact; steep slopes are closer
@@ -153,6 +183,10 @@ export function sizeParameters(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function lerp(x0: number, x1: number, y0: number, y1: number, x: number): number {
+    return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+}
 
 function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));

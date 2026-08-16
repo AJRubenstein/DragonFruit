@@ -70,6 +70,26 @@ function normalizePresetSettings(
 
 // --- Built-in Presets ---
 
+/**
+ * Migration: the built-in presets now carry per-preset auto-support density
+ * (detail 12 / structure 8 / anchor 5 mm² per support). Presets persisted
+ * before that change stored the old flat default autoSupport block, which
+ * would silently override the new per-preset values on load — reapply the
+ * built-in block when the stored one is exactly the legacy default. A
+ * customized (non-default) autoSupport block is preserved as-is.
+ */
+function migrateLegacyPresetAutoSupport(
+    parsedSettings: SupportSettings,
+    fallbackSettings: SupportSettings,
+): SupportSettings {
+    const normalized = normalizePresetSettings(parsedSettings, fallbackSettings);
+    if (normalized.autoSupport
+        && JSON.stringify(normalized.autoSupport) === JSON.stringify(createDefaultAutoSupportSettings())) {
+        return { ...normalized, autoSupport: fallbackSettings.autoSupport };
+    }
+    return normalized;
+}
+
 const DETAIL_PRESET: SupportPreset = {
     id: 'detail',
     name: 'Detail',
@@ -126,7 +146,7 @@ const DETAIL_PRESET: SupportPreset = {
             stickVsTwigCutoffMm: 5.0,
         },
         autoBracing: createDefaultAutoBracingSettings(),
-        autoSupport: createDefaultAutoSupportSettings(),
+        autoSupport: { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 12 },
         devToolsEnabled: false,
         devTools: createDefaultSettings().devTools,
     },
@@ -217,7 +237,7 @@ const ANCHOR_PRESET: SupportPreset = {
             stickVsTwigCutoffMm: 5.0,
         },
         autoBracing: createDefaultAutoBracingSettings(),
-        autoSupport: createDefaultAutoSupportSettings(),
+        autoSupport: { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 5 },
         devToolsEnabled: false,
         devTools: createDefaultSettings().devTools,
     },
@@ -267,7 +287,7 @@ function loadPresetsFromStorage(): PresetCollection {
                         ...fallbackPreset,
                         name: parsedPreset.name || fallbackPreset.name,
                         pinnedSlot: parsedPreset.pinnedSlot ?? fallbackPreset.pinnedSlot,
-                        settings: normalizePresetSettings(
+                        settings: migrateLegacyPresetAutoSupport(
                             parsedPreset.settings,
                             fallbackPreset.settings,
                         ),
