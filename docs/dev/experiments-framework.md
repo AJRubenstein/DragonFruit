@@ -7,9 +7,9 @@ runtime behavior until the user opts in via **Settings → Experiments**.
 > **About the examples.** Throughout this document the examples use an imaginary
 > plugin, `df-solarlunar-import`, which lets DragonFruit import `.solarlunar`
 > files as scenes. It is an example only — it does not exist in the codebase —
-> used so the documented patterns don't get conflated with real plugins (e.g.
-> the actual `chitubox-import` plugin). Wherever an example is clearly marked as
-> such, the id, plugin name, and file extension are illustrative.
+> used so the documented patterns don't get conflated with the real plugins they
+> describe. Wherever an example is clearly marked as such, the id, plugin name,
+> and file extension are illustrative.
 
 The gate is general-purpose. It covers:
 
