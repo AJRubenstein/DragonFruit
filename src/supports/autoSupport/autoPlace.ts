@@ -542,7 +542,11 @@ function placeOneCandidate(
                     id: `auto-merge-${candidate.id}`,
                     parentShaftId: bestKnotSegmentId || host.trunkId,
                     pos: knotPos,
-                    diameter: knotDiameter + 0.1,
+                    // The knot must render as a visible junction ball: the
+                    // renderer subtracts the joint offset, so a shaft+0.1
+                    // knot renders AT the shaft diameter and vanishes inside
+                    // the trunk cylinder. +0.5 leaves a clear ball.
+                    diameter: knotDiameter + 0.5,
                 };
                 // Leaf decision: use tip-to-tip distance (host contact cone →
                 // candidate tip), not shaft-knot distance.  This is the visual
@@ -575,7 +579,10 @@ function placeOneCandidate(
                                 surfaceNormal: tipNormal,
                                 modelId: candidate.modelId,
                                 parentKnot,
-                                hostDiameterMm: parentKnot.diameter ?? 1.0,
+                                // Cone body = the HOST shaft, not the knot —
+                                // otherwise the cone's wide base swallows the
+                                // junction ball and the knot stays invisible.
+                                hostDiameterMm: knotDiameter,
                                 mesh,
                             });
                             if (sd.error) {
@@ -1092,7 +1099,11 @@ export function fanLeafToTrunk(
         id: knotIdPrefix,
         parentShaftId: sp.trunkId,
         pos: sp.pos,
-        diameter: sp.diameter + 0.1,
+        // Visible junction ball — a shaft+0.1 knot renders at the shaft
+        // diameter and vanishes inside the trunk cylinder (the renderer
+        // subtracts the joint offset). +0.5 leaves a clear ball at the
+        // leaf's base.
+        diameter: sp.diameter + 0.5,
     };
 
     // SDF collision check: the straight path from knot to tip must be clear.
