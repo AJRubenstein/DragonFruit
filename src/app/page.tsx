@@ -7038,7 +7038,7 @@ export default function Home() {
   // set. useSyncExternalStore re-subscribes when the subscribe function's
   // identity changes, so the Generating modal keeps working across HMR —
   // a `useEffect(..., [])` closure stays bound to the dead listener set.
-  const autoSupportBusy = React.useSyncExternalStore(subscribeAutoSupportBusy, getAutoSupportBusy);
+  const autoSupportBusy = React.useSyncExternalStore(subscribeAutoSupportBusy, getAutoSupportBusy, getAutoSupportBusy);
 
   const islandsPoc = useIslands({
     geom: scene.geom,
