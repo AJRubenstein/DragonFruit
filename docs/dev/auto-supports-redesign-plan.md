@@ -13,7 +13,11 @@ Progress:
 - [x] Step 3 — density grid placement (grid phase): overhang regions ≥ gridAreaThresholdMm2
       get supports at √areaPerSupportMm2 spacing (containment-tested, surface-snapped,
       standalone trunks). `areaPerSupportMm2` is the density knob.
-- [ ] Step 4 — phased pipeline + coverage convergence.
+- [x] Step 4 — footprint-aware coverage convergence: regions are covered when their projected
+      footprint is covered (not just the centroid); under-covered regions get gap-fill trunks
+      at uncovered footprint clusters, iterating to a 95% target. Regular-island placement
+      proven at scale on a dragon figurine (44 trunks / 79 leaves / 212 braces).
+- [ ] Step 5 — forest resize pass.
 - [ ] Step 5 — forest resize pass.
 - [ ] Step 6 — worker + plan-then-commit + preview.
 - [ ] Step 7 — validation corpus + tuning.
