@@ -17,6 +17,8 @@ import {
 } from '@/components/scene/CrossSectionStencilCap';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import IslandSurfaceDotsOverlay from '@/components/scene/IslandSurfaceDotsOverlay';
+import { IslandOverhangOverlay } from '@/components/scene/IslandOverhangOverlay';
+import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
 import { IslandVoxelVisualization } from '@/components/scene/IslandVoxelVisualization';
 import { IslandExpansionVisualization } from '@/components/scene/IslandExpansionVisualization';
 import { MeshClassificationRenderer } from '@/components/scene/MeshClassificationRenderer';
@@ -322,6 +324,7 @@ export function SceneCanvas({
   onCameraChange,
   onCameraEnd,
   islandMarkers,
+  overhangIslands,
   overlayBrushRadius,
   overlayColor,
   overlayOpacity,
@@ -442,6 +445,7 @@ export function SceneCanvas({
   onCameraChange?: () => void;
   onCameraEnd?: () => void;
   islandMarkers?: IslandMarker[];
+  overhangIslands?: DetectedIsland[];
   overlayBrushRadius?: number;
   overlayColor?: string;
   overlayOpacity?: number;
@@ -5958,6 +5962,13 @@ export function SceneCanvas({
                           clipUpper={clipUpper}
                           opacity={overlayOpacity ?? 0.9}
                           transform={transformToUse}
+                        />
+                      )}
+
+                      {isActive && (mode === 'support' || mode === 'analysis') && overhangIslands && overhangIslands.length > 0 && (
+                        <IslandOverhangOverlay
+                          geometry={model.geometry.geometry}
+                          regions={overhangIslands}
                         />
                       )}
                     </StlMesh>

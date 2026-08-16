@@ -57,8 +57,11 @@ export interface DetectedIsland {
   // --- voxel-detector extras (undefined for minima) ---
   /** Contact footprint area at the island's base layer (mm^2). */
   areaMm2?: number;
+  // --- overhang-detector extras (undefined for others) ---
   /** Mean surface angle from horizontal (degrees) — set by the overhang detector. */
   overhangAngleDeg?: number;
+  /** Model-triangle indices of the overhang region (for surface highlighting). */
+  triangleIds?: number[];
   /** Inclusive [firstLayer, lastLayer] of the unsupported contact region. */
   layerSpan?: readonly [number, number];
   /** Contact voxel 2D positions (x, y coordinates in world mm) at the base layer. */

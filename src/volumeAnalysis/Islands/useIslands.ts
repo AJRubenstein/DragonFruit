@@ -205,6 +205,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
       baseZ: region.minZ,
       areaMm2: region.projectedAreaMm2,
       overhangAngleDeg: region.angleDeg,
+      triangleIds: region.triangleIds,
       contactVoxels,
     };
   };
@@ -594,16 +595,16 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     voxelOnlyPucks.markers.forEach(m => {
       const island = voxelOnlyPucks.byMarkerId.get(m.id);
       const area = island?.areaMm2 ?? 0;
-      const radius = scaleMarkersWithArea && area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1;
-
       const isOverhang = island?.source === 'overhang';
-      if (island && island.contactVoxels && island.contactVoxels.length > 0 && (isOverhang || contouredIds.has(island.id))) {
-        // Overhang regions always render as filled footprint blobs (a single
-        // disc at the region's lowest Z reads edge-on as a fat line, not a
-        // surface). Their voxels are at OVERHANG_FOOTPRINT_PX_MM spacing —
-        // pass that so the interior fill classifies neighbors correctly.
-        const contourPx = isOverhang ? OVERHANG_FOOTPRINT_PX_MM : pxMm;
-        const contour = generateContourMarkers(island.contactVoxels, contourPx, m.id, m.baseZ, 3);
+      // Overhang regions are highlighted as surface meshes (see
+      // IslandOverhangOverlay); here they get a small centroid dot so
+      // selection/fly-to still works without a huge flat disc.
+      const radius = isOverhang
+        ? 0.1
+        : (scaleMarkersWithArea && area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1);
+
+      if (island && !isOverhang && contouredIds.has(island.id) && island.contactVoxels && island.contactVoxels.length > 0) {
+        const contour = generateContourMarkers(island.contactVoxels, pxMm, m.id, m.baseZ, consolidateVoxel ? 3 : 0);
         markers.push(...contour);
       } else {
         markers.push({ ...m, radius, type: consolidateVoxel ? 3 : 0, islandId: m.id });
