@@ -197,8 +197,8 @@ test('fanLeafToTrunk attaches a leaf at reach beyond the merge radius', () => {
         assert.equal(Object.keys(fan.draft.leaves).length, 1, 'one leaf attached');
         assert.equal(Object.keys(fan.draft.knots).length, 1, 'knot attached to the shaft');
         const knot = Object.values(fan.draft.knots)[0];
-        assert.ok(knot.diameter !== undefined && knot.diameter > 1.0 + 0.2,
-            `knot renders as a visible junction ball (diameter ${knot.diameter} vs shaft 1.0)`);
+        assert.ok(knot.diameter !== undefined && Math.abs(knot.diameter - (1.0 + 0.125)) < 1e-9,
+            `knot data sizes to render at the trunk-joint diameter (${knot.diameter}, renders 1.025)`);
     }
 });
 

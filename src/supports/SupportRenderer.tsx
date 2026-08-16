@@ -4701,8 +4701,12 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 if (!knot) return null;
 
                 const effectiveSelected = selectedLeafIds.has(leaf.id);
-                if (!effectiveSelected) return null;
-                const showKnots = !hideUnselectedKnots || effectiveSelected;
+                // Unselected leaves still mount the LeafRenderer so their
+                // base knot (the junction ball on the host shaft) renders in
+                // the scene — matching branches. The cone stays scene-batched
+                // via deferContactConesToSceneBatch. The base knot always
+                // renders, selected or not.
+                const showKnots = true;
 
                 return (
                     <group key={leaf.id} userData={{ noClipping: true }}>

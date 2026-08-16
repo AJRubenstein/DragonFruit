@@ -542,11 +542,12 @@ function placeOneCandidate(
                     id: `auto-merge-${candidate.id}`,
                     parentShaftId: bestKnotSegmentId || host.trunkId,
                     pos: knotPos,
-                    // The knot must render as a visible junction ball: the
-                    // renderer subtracts the joint offset, so a shaft+0.1
-                    // knot renders AT the shaft diameter and vanishes inside
-                    // the trunk cylinder. +0.5 leaves a clear ball.
-                    diameter: knotDiameter + 0.5,
+                    // The knot renders at exactly the trunk-joint size when
+                    // unselected: the KnotRenderer subtracts the full joint
+                    // offset (0.1), while the JointRenderer subtracts 0.075
+                    // from a shaft+0.1 joint — so shaft + 0.125 renders at
+                    // shaft + 0.025, the joint's own rendered diameter.
+                    diameter: knotDiameter + 0.125,
                 };
                 // Leaf decision: use tip-to-tip distance (host contact cone →
                 // candidate tip), not shaft-knot distance.  This is the visual
@@ -1099,11 +1100,12 @@ export function fanLeafToTrunk(
         id: knotIdPrefix,
         parentShaftId: sp.trunkId,
         pos: sp.pos,
-        // Visible junction ball — a shaft+0.1 knot renders at the shaft
-        // diameter and vanishes inside the trunk cylinder (the renderer
-        // subtracts the joint offset). +0.5 leaves a clear ball at the
-        // leaf's base.
-        diameter: sp.diameter + 0.5,
+        // The knot renders at exactly the trunk-joint size when unselected:
+        // the KnotRenderer subtracts the full joint offset (0.1), while the
+        // JointRenderer subtracts 0.075 from a shaft+0.1 joint — so
+        // shaft + 0.125 renders at shaft + 0.025, the joint's own rendered
+        // diameter.
+        diameter: sp.diameter + 0.125,
     };
 
     // SDF collision check: the straight path from knot to tip must be clear.
