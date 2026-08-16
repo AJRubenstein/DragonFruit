@@ -56,20 +56,23 @@ function ringRegion(id: string, areaMm2: number): DetectedIsland {
 // Tests
 // ---------------------------------------------------------------------------
 
-test('grids a large flat region at sqrt(areaPerSupport) spacing', () => {
-    // 20×20 face, area 400, density 8 mm²/support → spacing 2.83 → ~49 points.
+test('grids a large flat region as a boundary-aligned lattice', () => {
+    // 20×20 face, density 8 mm²/support → spacing 2.83. The lattice starts
+    // ON the boundary (−10 + k·2.83): 8 per axis → 64, outer ring = perimeter.
     const settings = { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 8, gridAreaThresholdMm2: 25 };
     const candidates = generateGridCandidates([rectRegion('o0', -10, 10, -10, 10, 400)], settings);
 
-    assert.ok(candidates.length >= 40 && candidates.length <= 60,
-        `grid count ${candidates.length} ≈ 400/8 = 50`);
+    assert.ok(candidates.length >= 60 && candidates.length <= 68,
+        `lattice count ${candidates.length} ≈ 8×8 = 64`);
     assert.ok(candidates.every((c) => c.gridPoint === true), 'grid points are standalone trunks');
     assert.ok(candidates.every((c) => c.source === 'overhang'));
 
-    // Spacing between consecutive points along each axis ≈ √8 ≈ 2.83.
+    // The outer ring sits ON the boundary (the perimeter is the lattice ring).
     const xs = [...new Set(candidates.map((c) => c.tipPos.x))].sort((a, b) => a - b);
+    assert.ok(Math.abs(xs[0] + 10) < 0.01, `lattice starts on the boundary (x=${xs[0].toFixed(2)})`);
+    assert.ok(Math.abs(xs[xs.length - 1] - 9.8) < 0.01, `last column near the far boundary (x=${xs[xs.length - 1].toFixed(2)})`);
     const spacing = xs[1] - xs[0];
-    assert.ok(Math.abs(spacing - Math.sqrt(8)) < 0.01, `spacing ${spacing} ≈ 2.83`);
+    assert.ok(Math.abs(spacing - Math.sqrt(8)) < 0.01, `uniform spacing ${spacing} ≈ 2.83`);
 });
 
 test('skips regions below the grid area threshold', () => {

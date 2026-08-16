@@ -7,21 +7,73 @@ import type { AutoSupportSettings } from './settings';
 const FOOTPRINT_TOLERANCE_MM = 0.25;
 
 /**
+ * Boundary voxels of a region's footprint (mask voxel with a missing
+ * 8-neighbor), in deterministic loop order (sorted by angle around the
+ * footprint centroid), sub-sampled at `spacing` intervals. Used by the
+ * boundary-fill pass: lattice points ON the boundary already cover straight
+ * edges at exactly `spacing`; fill only where the boundary curves away
+ * (corners, holes, rotated edges) and no lattice point is within `spacing`.
+ */
+function buildBoundaryPoints(
+    voxels: Array<{ x: number; y: number; z?: number }>,
+    spacing: number,
+    fallbackZ: number,
+): Array<{ x: number; y: number; z: number }> {
+    if (voxels.length === 0) return [];
+    const set = new Set<string>();
+    let sumX = 0;
+    let sumY = 0;
+    for (const v of voxels) {
+        set.add(`${Math.round(v.x * 4)},${Math.round(v.y * 4)}`);
+        sumX += v.x;
+        sumY += v.y;
+    }
+    const cx = sumX / voxels.length;
+    const cy = sumY / voxels.length;
+
+    const boundary: Array<{ x: number; y: number; z?: number }> = [];
+    for (const v of voxels) {
+        const kx = Math.round(v.x * 4);
+        const ky = Math.round(v.y * 4);
+        let onEdge = false;
+        for (let dx = -1; dx <= 1 && !onEdge; dx++) {
+            for (let dy = -1; dy <= 1 && !onEdge; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                if (!set.has(`${kx + dx},${ky + dy}`)) onEdge = true;
+            }
+        }
+        if (onEdge) boundary.push(v);
+    }
+    if (boundary.length === 0) return [];
+
+    boundary.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+    const step = Math.max(1, Math.round(spacing / 0.25));
+    const pts: Array<{ x: number; y: number; z: number }> = [];
+    for (let i = 0; i < boundary.length; i += step) {
+        pts.push({ x: boundary[i].x, y: boundary[i].y, z: boundary[i].z ?? fallbackZ });
+    }
+    return pts;
+}
+
+/**
  * Density-grid placement (redesign step 3 — the grid phase).
  *
- * Large flat overhang regions get a grid of supports at √areaPerSupportMm2
- * spacing across their projected footprint. Each grid point is:
+ * Large flat overhang regions get a single lattice at √areaPerSupportMm2
+ * spacing starting ON the region's boundary (no inset): the outermost ring
+ * IS the perimeter, so edge supports and infill spacing are identical and
+ * uniform. Where the boundary curves away from the lattice (corners, holes,
+ * rotated edges), a boundary-fill pass adds supports at boundary points with
+ * no lattice support within `spacing`.
+ *
+ * Each point is:
  *  - contained: only points inside the region's footprint mask are emitted;
  *  - given the region's TRUE surface Z (from the classifier's per-pixel
- *    `surfaceZ`, which is interpolated on the region's own triangles — NOT a
- *    raycast against the whole model, which hits the wrong face on sloped
- *    geometry);
+ *    `surfaceZ`, interpolated on the region's own triangles);
  *  - a standalone trunk candidate (`gridPoint: true`).
  *
  * From there the regular placement pipeline takes over unchanged:
- * `resolveSurfaceNormal` finds the real surface normal from just below the
- * true Z, `buildTrunkData` (SmartPlacementV2) pathfinds the shaft to the
- * plate with collision avoidance, and `decideGridPlacement` commits it.
+ * `buildTrunkData` (SmartPlacementV2) pathfinds the shaft to the plate, and
+ * `decideGridPlacement` commits it.
  *
  * Regions below `gridAreaThresholdMm2` are skipped — they get a single
  * support via the regular per-island candidate path (the region phase).
@@ -69,54 +121,74 @@ export function generateGridCandidates(
 
         const minZ = island.baseZ;
         const tolSq = FOOTPRINT_TOLERANCE_MM * FOOTPRINT_TOLERANCE_MM;
+        const surfaceNormal = island.surfaceNormal ?? { x: 0, y: 0, z: -1 };
 
-        // Axis-aligned grid over the footprint, offset by half a cell so edge
-        // points sit inside the region rather than on its boundary.
-        const startX = minX + spacing / 2;
-        const startY = minY + spacing / 2;
-        for (let x = startX; x <= maxX; x += spacing) {
-            for (let y = startY; y <= maxY; y += spacing) {
-                // Containment + nearest voxel (carries the surface Z).
-                const gx = Math.floor(x / cellSize);
-                const gy = Math.floor(y / cellSize);
-                let tipZ = minZ;
-                let inside = false;
-                let bestDist2 = Infinity;
-                for (let dx = -1; dx <= 1; dx++) {
-                    for (let dy = -1; dy <= 1; dy++) {
-                        const bucket = hash.get(`${gx + dx},${gy + dy}`);
-                        if (!bucket) continue;
-                        for (const p of bucket) {
-                            const ddx = x - p.x;
-                            const ddy = y - p.y;
-                            const d2 = ddx * ddx + ddy * ddy;
-                            if (d2 <= tolSq) {
-                                inside = true;
-                                if (p.z != null && d2 < bestDist2) {
-                                    bestDist2 = d2;
-                                    tipZ = p.z;
-                                }
-                            }
+        // Resolve the region surface Z at a lattice point via the nearest
+        // footprint voxel. Returns null when the point is outside the region.
+        const surfaceAt = (x: number, y: number): { z: number } | null => {
+            const gx = Math.floor(x / cellSize);
+            const gy = Math.floor(y / cellSize);
+            let bestD2 = Infinity;
+            let bestZ = minZ;
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    const bucket = hash.get(`${gx + dx},${gy + dy}`);
+                    if (!bucket) continue;
+                    for (const p of bucket) {
+                        const ddx = x - p.x;
+                        const ddy = y - p.y;
+                        const d2 = ddx * ddx + ddy * ddy;
+                        if (d2 <= tolSq && d2 < bestD2) {
+                            bestD2 = d2;
+                            if (p.z != null) bestZ = p.z;
                         }
                     }
                 }
-                if (!inside) continue;
-
-                candidates.push({
-                    id: `grid-${island.id}-${x.toFixed(2)}-${y.toFixed(2)}`,
-                    tipPos: { x, y, z: tipZ },
-                    // The region's own face normal (world space) — the
-                    // placement pipeline uses it directly instead of a
-                    // whole-mesh raycast that hits the wrong face on slopes.
-                    tipNormal: island.surfaceNormal ?? { x: 0, y: 0, z: -1 },
-                    modelId: '', // caller fills in
-                    source: 'overhang',
-                    islandAreaMm2: settings.areaPerSupportMm2,
-                    zHeight: tipZ,
-                    priority: 0,
-                    gridPoint: true,
-                });
             }
+            return bestD2 <= tolSq ? { z: bestZ } : null;
+        };
+
+        const emitPoint = (x: number, y: number, z: number, kind: 'grid' | 'fill') => {
+            candidates.push({
+                id: `${kind}-${island.id}-${x.toFixed(2)}-${y.toFixed(2)}`,
+                tipPos: { x, y, z },
+                tipNormal: surfaceNormal,
+                modelId: '',
+                source: 'overhang',
+                islandAreaMm2: settings.areaPerSupportMm2,
+                zHeight: z,
+                priority: 0,
+                gridPoint: true,
+            });
+        };
+
+        // Pass 1: boundary-aligned lattice — the outer ring is the perimeter,
+        // so edge and infill spacing are identical.
+        const lattice: Array<{ x: number; y: number; z: number }> = [];
+        for (let x = minX; x <= maxX; x += spacing) {
+            for (let y = minY; y <= maxY; y += spacing) {
+                const s = surfaceAt(x, y);
+                if (s) lattice.push({ x, y, z: s.z });
+            }
+        }
+        for (const p of lattice) emitPoint(p.x, p.y, p.z, 'grid');
+
+        // Pass 2: boundary-fill — where the boundary curves away from the
+        // lattice (corners, holes, rotated edges) and no lattice point is
+        // within `spacing`, add a support on the boundary itself.
+        const spacingSq = spacing * spacing;
+        const boundary = buildBoundaryPoints(voxels, spacing, minZ);
+        for (const b of boundary) {
+            let covered = false;
+            for (const p of lattice) {
+                const dx = b.x - p.x;
+                const dy = b.y - p.y;
+                if (dx * dx + dy * dy <= spacingSq) {
+                    covered = true;
+                    break;
+                }
+            }
+            if (!covered) emitPoint(b.x, b.y, b.z, 'fill');
         }
     }
 
