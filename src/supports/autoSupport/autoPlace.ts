@@ -6,6 +6,11 @@ import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
 import { generateGridCandidates } from './gridPlacement';
+import {
+    MAX_GAP_FILL_PASSES,
+    buildGapFillCandidates,
+    collectSupportTips,
+} from './coverage';
 import { sizeParameters } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
@@ -876,7 +881,9 @@ export function runAutoPlace(
     // the store with no history entry to undo them.
     let analytics!: AutoPlaceAnalytics;
     try {
-    for (const candidate of candidates) {
+    // Per-candidate placement, shared by the main pass and the coverage
+    // convergence (gap-fill) passes.
+    const placeOne = (candidate: CandidatePoint): string => {
         try {
             const ctx: ModelSizingContext | undefined = modelCtx
                 ? { ...modelCtx, candidatesBelowZ: belowCount.get(candidate.id) ?? candidates.length }
@@ -896,12 +903,42 @@ export function runAutoPlace(
                     break;
             }
             if (result.preset) presets[result.preset]++;
+            return result.kind;
         } catch (e) {
             rejectedCount++;
             rejectionReasons['exception'] = (rejectionReasons['exception'] ?? 0) + 1;
             console.warn(LOG_PREFIX,
                 `Exception placing ${candidate.id}: ${e instanceof Error ? e.message : String(e)}`);
+            return 'reject';
         }
+    };
+
+    for (const candidate of candidates) {
+        placeOne(candidate);
+    }
+
+    // ── Coverage convergence (gap-fill) ─────────────────────────────
+    // Footprint-aware: an overhang region is covered when its projected
+    // footprint is covered by tips, not just its centroid. Under-covered
+    // regions get additional standalone trunks at uncovered footprint
+    // clusters (the gridPoint path — region normal, no wrong-face raycast),
+    // iterating until the coverage target is met or nothing more places.
+    let gapFilledTrunks = 0;
+    for (let pass = 0; pass < MAX_GAP_FILL_PASSES; pass++) {
+        const tips = collectSupportTips(getSnapshot());
+        const gapCandidates = buildGapFillCandidates(overhangIslands, autoSettings, tips)
+            .map((c): CandidatePoint => ({ ...c, modelId }));
+        if (gapCandidates.length === 0) break;
+        let placedThisPass = 0;
+        for (const c of gapCandidates) {
+            const kind = placeOne(c);
+            if (kind === 'trunk' || kind === 'anchor') placedThisPass++;
+        }
+        gapFilledTrunks += placedThisPass;
+        if (placedThisPass === 0) break;
+    }
+    if (gapFilledTrunks > 0) {
+        console.log(LOG_PREFIX, `Coverage convergence: ${gapFilledTrunks} gap-fill trunks placed`);
     }
 
     console.log(LOG_PREFIX,

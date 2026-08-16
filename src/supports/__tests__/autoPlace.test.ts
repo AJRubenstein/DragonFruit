@@ -194,6 +194,45 @@ test('runAutoPlace places grid trunks on a rotated mesh via the region normal', 
     disposeHandlers();
 });
 
+test('runAutoPlace gap-fills under-covered regions (coverage convergence)', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    // 20×20 facet at a SPARSE density (30 mm²/support → ~5.5mm spacing):
+    // the initial grid's 3mm coverage discs leave bands uncovered, so the
+    // convergence pass must add more trunks.
+    const contactVoxels: { x: number; y: number; z?: number }[] = [];
+    for (let x = -10; x <= 10; x += 0.25) {
+        for (let y = -10; y <= 10; y += 0.25) {
+            contactVoxels.push({ x, y, z: 6.5 });
+        }
+    }
+    const facet: DetectedIsland = {
+        id: 'o0',
+        source: 'overhang',
+        contact: new THREE.Vector3(0, 0, 6.5),
+        baseZ: 6.5,
+        areaMm2: 400,
+        surfaceNormal: { x: 0, y: 0, z: -1 },
+        contactVoxels,
+    };
+
+    const result = runAutoPlace([facet], 'model-a', {
+        debugSkipAutoBracing: true,
+        areaPerSupportMm2: 30,
+        gridAreaThresholdMm2: 25,
+    });
+
+    // Initial grid at 5.5mm spacing ≈ 16 points; convergence must add more.
+    assert.ok(result.placedTrunks >= 20,
+        `gap-fill added trunks beyond the sparse grid (placed ${result.placedTrunks})`);
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
 test('runAutoPlace with no viable candidates returns changed=false and pushes nothing', () => {
     resetStore();
     resetKickstandStore();
