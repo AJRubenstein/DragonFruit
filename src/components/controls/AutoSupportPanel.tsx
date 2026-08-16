@@ -11,7 +11,7 @@ import { DETAIL_PRESET, STRUCTURE_PRESET, ANCHOR_PRESET } from '@/supports/Setti
 import type { SizingDebugInfo, AutoSupportSettings } from '@/supports/autoSupport';
 import { getSettings, updateAutoSupportSettings } from '@/supports/Settings/state';
 import { getSnapshot, setSnapshot } from '@/supports/state';
-import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
+import { getKickstandSnapshot, setKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import type { Knot } from '@/supports/types';
 
 /** Set to true while auto-support is busy (scanning or placing).
@@ -275,6 +275,37 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
       }
       for (const l of Object.values(next.leaves)) {
         survivingSegmentIds.add(`leafCone:${l.id}`);
+      }
+      // The model's kickstands are supports too — drop them from the
+      // kickstand store. They used to leak into the next run: stale roots
+      // occupied grid nodes and their axes fed the axis-mixing, which
+      // flipped a regenerated kickstand between the two sides of its axis.
+      {
+        const ks = getKickstandSnapshot();
+        const removedIds = new Set<string>();
+        for (const k of Object.values(ks.kickstands)) {
+          if (k.modelId === activeModelId) removedIds.add(k.id);
+        }
+        if (removedIds.size > 0) {
+          const kickstands: typeof ks.kickstands = {};
+          const roots: typeof ks.roots = {};
+          const knots: typeof ks.knots = {};
+          for (const [id, k] of Object.entries(ks.kickstands)) {
+            if (removedIds.has(id)) continue;
+            kickstands[id] = k;
+            const root = ks.roots[k.rootId];
+            if (root) roots[root.id] = root;
+            const knot = ks.knots[k.hostKnotId];
+            if (knot) knots[knot.id] = knot;
+          }
+          setKickstandSnapshot({
+            ...ks,
+            kickstands,
+            roots,
+            knots,
+            selectedId: ks.selectedId && !removedIds.has(ks.selectedId) ? ks.selectedId : null,
+          });
+        }
       }
       const kickstandKnotIds = new Set<string>();
       const kickstandSnap = getKickstandSnapshot();
