@@ -7033,8 +7033,12 @@ export default function Home() {
     return subscribeSupportState(updateSupportTips);
   }, [scene.activeModel?.id]);
 
-  const [autoSupportBusy, setAutoSupportBusyState] = React.useState(() => getAutoSupportBusy());
-  React.useEffect(() => subscribeAutoSupportBusy(() => setAutoSupportBusyState(getAutoSupportBusy())), []);
+  // useSyncExternalStore, not a one-shot effect: the module-level busy flag
+  // lives in AutoSupportPanel, and a hot reload swaps the module's listener
+  // set. useSyncExternalStore re-subscribes when the subscribe function's
+  // identity changes, so the Generating modal keeps working across HMR —
+  // a `useEffect(..., [])` closure stays bound to the dead listener set.
+  const autoSupportBusy = React.useSyncExternalStore(subscribeAutoSupportBusy, getAutoSupportBusy);
 
   const islandsPoc = useIslands({
     geom: scene.geom,
