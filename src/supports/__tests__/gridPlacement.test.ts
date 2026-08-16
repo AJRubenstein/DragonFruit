@@ -92,24 +92,38 @@ test('respects footprint containment (no supports in the hole)', () => {
     }
 });
 
-test('surface-snaps grid points onto the model face', () => {
-    // Box with underside at z = 20; region baseZ = 20. Points inside the face
-    // resolve tipZ ≈ 20 (sloped/offset surfaces get their real Z).
-    const geometry = new THREE.BoxGeometry(10, 10, 10);
-    geometry.translate(0, 0, 25); // underside at z=20
-    const mesh = new THREE.Mesh(geometry);
+test('uses the region surface Z at each grid point (sloped facet)', () => {
+    // A 45°-sloped facet: the surface Z at a grid point must come from the
+    // region's own footprint voxels, not a whole-mesh raycast (which hits the
+    // wrong face on slopes). Voxels carry their true Z.
+    const contactVoxels: { x: number; y: number; z?: number }[] = [];
+    for (let x = -10; x <= 10; x += 0.25) {
+        for (let y = -10; y <= 10; y += 0.25) {
+            contactVoxels.push({ x, y, z: 6.5 + (y + 10) * 0.7 }); // slope
+        }
+    }
+    const sloped: DetectedIsland = {
+        id: 'o0',
+        source: 'overhang',
+        contact: new THREE.Vector3(0, 0, 6.5),
+        baseZ: 6.5,
+        areaMm2: 400,
+        contactVoxels,
+    };
 
     const settings = { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 8, gridAreaThresholdMm2: 25 };
-    const candidates = generateGridCandidates([rectRegion('o0', -4, 4, -4, 4, 64, 20)], settings, mesh);
+    const candidates = generateGridCandidates([sloped], settings);
 
     assert.ok(candidates.length > 0);
     for (const c of candidates) {
-        assert.ok(Math.abs(c.tipPos.z - 20) < 0.6,
-            `tip z ${c.tipPos.z.toFixed(2)} ≈ underside 20`);
+        // At y = -10 the slope Z is 6.5; at y = 10 it is 20.5.
+        const expected = 6.5 + (c.tipPos.y + 10) * 0.7;
+        assert.ok(Math.abs(c.tipPos.z - expected) < 0.3,
+            `tip z ${c.tipPos.z.toFixed(2)} ≈ slope z ${expected.toFixed(2)} at y=${c.tipPos.y.toFixed(1)}`);
     }
 });
 
-test('falls back to region baseZ without a mesh', () => {
+test('falls back to region baseZ when voxels carry no Z', () => {
     const settings = { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 8, gridAreaThresholdMm2: 25 };
     const candidates = generateGridCandidates([rectRegion('o0', -10, 10, -10, 10, 400, 6.5)], settings);
     assert.ok(candidates.length > 0);

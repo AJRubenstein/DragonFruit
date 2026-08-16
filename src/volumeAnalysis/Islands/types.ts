@@ -25,6 +25,8 @@ export interface FootprintMask {
   pxMm: number;
   /** Row-major pixels (1 = inside the projected region). */
   data: number[];
+  /** Row-major surface Z (mm) on the region's own triangles (parallel to data). */
+  surfaceZ: number[];
 }
 
 export interface OverhangRegion {
@@ -64,8 +66,9 @@ export interface DetectedIsland {
   triangleIds?: number[];
   /** Inclusive [firstLayer, lastLayer] of the unsupported contact region. */
   layerSpan?: readonly [number, number];
-  /** Contact voxel 2D positions (x, y coordinates in world mm) at the base layer. */
-  contactVoxels?: { x: number; y: number }[];
+  /** Contact voxel 2D positions (x, y coordinates in world mm) at the base layer.
+   *  Overhang regions also carry the surface Z at each voxel. */
+  contactVoxels?: { x: number; y: number; z?: number }[];
 
   // --- minima-detector extras (undefined for voxel) ---
   /** Source mesh vertex index. */

@@ -738,10 +738,19 @@ export function runAutoPlace(
 
     // Grid phase: large flat overhang regions become density grids (the trunk
     // forest). The region's own single candidate is replaced by its grid.
+    // A grid-generation failure must not kill the whole run — fall back to the
+    // region's single candidate.
     const overhangIslands = islands.filter((i) => i.source === 'overhang');
     if (overhangIslands.length > 0) {
-        const gridCandidates = generateGridCandidates(overhangIslands, autoSettings, mesh)
-            .map((c): CandidatePoint => ({ ...c, modelId }));
+        let gridCandidates: CandidatePoint[] = [];
+        try {
+            gridCandidates = generateGridCandidates(overhangIslands, autoSettings)
+                .map((c): CandidatePoint => ({ ...c, modelId }));
+        } catch (e) {
+            console.error(LOG_PREFIX,
+                `Grid generation failed — falling back to per-region candidates.`,
+                e instanceof Error ? e.message : String(e));
+        }
         const griddedRegionIds = new Set(
             overhangIslands
                 .filter((i) => (i.areaMm2 ?? 0) >= autoSettings.gridAreaThresholdMm2)

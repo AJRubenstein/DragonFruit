@@ -242,12 +242,17 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
    * do containment tests against the exact region shape.
    */
   const overhangRegionToIsland = (region: OverhangRegion, i: number): DetectedIsland => {
-    const { width, height, originX, originY, pxMm, data } = region.footprint;
-    const contactVoxels: { x: number; y: number }[] = [];
+    const { width, height, originX, originY, pxMm, data, surfaceZ } = region.footprint;
+    const contactVoxels: { x: number; y: number; z?: number }[] = [];
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
-        if (data[row * width + col]) {
-          contactVoxels.push({ x: originX + (col + 0.5) * pxMm, y: originY + (row + 0.5) * pxMm });
+        const idx = row * width + col;
+        if (data[idx]) {
+          contactVoxels.push({
+            x: originX + (col + 0.5) * pxMm,
+            y: originY + (row + 0.5) * pxMm,
+            z: surfaceZ[idx],
+          });
         }
       }
     }

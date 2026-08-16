@@ -33,6 +33,12 @@ pub struct FootprintMask {
     pub px_mm: f32,
     /// Row-major pixels (1 = inside the projected region), width×height.
     pub data: Vec<u8>,
+    /// Row-major surface Z (mm) on the region's own triangles, parallel to
+    /// `data` — the exact face height at each pixel. The placement pipeline
+    /// uses this so tips land on the region surface (not whatever other face
+    /// happens to be below it on sloped geometry) and the regular
+    /// normal-resolution/pathfinding then works unchanged.
+    pub surface_z: Vec<f32>,
 }
 
 /// A connected patch of overhang triangles — the atomic unit the density
@@ -230,6 +236,7 @@ fn build_footprint_mask(
     let height = (((xy_max[1] - xy_min[1]) / px).ceil() as u32).max(1);
 
     let mut data = vec![0u8; (width * height) as usize];
+    let mut surface_z = vec![0f32; (width * height) as usize];
     // Pixel centers, expanded by half a pixel outward from the bbox.
     let origin_x = xy_min[0] - px * 0.5;
     let origin_y = xy_min[1] - px * 0.5;
@@ -241,7 +248,9 @@ fn build_footprint_mask(
             for &fi in triangle_ids {
                 let [a, b, c] = mesh.tri_positions(fi);
                 if point_in_triangle_2d(x, y, (a.x, a.y), (b.x, b.y), (c.x, c.y)) {
-                    data[(py * width + px_idx) as usize] = 1;
+                    let idx = (py * width + px_idx) as usize;
+                    data[idx] = 1;
+                    surface_z[idx] = barycentric_z(x, y, a, b, c);
                     break;
                 }
             }
@@ -255,7 +264,20 @@ fn build_footprint_mask(
         origin_y,
         px_mm: px,
         data,
+        surface_z,
     }
+}
+
+/// Surface Z of a triangle at a projected XY via barycentric interpolation.
+fn barycentric_z(px: f32, py: f32, a: Vec3, b: Vec3, c: Vec3) -> f32 {
+    let denom = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+    if denom.abs() < 1e-9 {
+        return (a.z + b.z + c.z) / 3.0;
+    }
+    let w_a = ((b.y - c.y) * (px - c.x) + (c.x - b.x) * (py - c.y)) / denom;
+    let w_b = ((c.y - a.y) * (px - c.x) + (a.x - c.x) * (py - c.y)) / denom;
+    let w_c = 1.0 - w_a - w_b;
+    w_a * a.z + w_b * b.z + w_c * c.z
 }
 
 /// Point-in-triangle test (2D, half-plane method).
@@ -430,6 +452,16 @@ mod tests {
             (mask_area - 86.6).abs() < 10.0,
             "mask area {mask_area} ≈ projected 86.6"
         );
+
+        // Surface Z follows the slope: low edge ≈ 0, high edge ≈ 5 (the 10×10
+        // face at 30° spans z 0..5 across its y-extent).
+        let z_at = |x: f32, y: f32| -> f32 {
+            let col = (((x + 0.125) / 0.25) - 0.5).round() as usize;
+            let row = (((y + 0.125) / 0.25) - 0.5).round() as usize;
+            f.surface_z[row * f.width as usize + col]
+        };
+        assert!((z_at(5.0, 0.5) - 0.0).abs() < 0.6, "low edge z {}", z_at(5.0, 0.5));
+        assert!((z_at(5.0, 8.0) - 4.6).abs() < 0.6, "high edge z {}", z_at(5.0, 8.0));
     }
 
     #[test]
