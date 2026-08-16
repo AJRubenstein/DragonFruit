@@ -20,6 +20,11 @@ export const GRIDLESS_MERGE_RADIUS_MM = 4.0;
 /** Leaf fanning: max distance from a trunk shaft sample to an uncovered island (mm). */
 export const LEAF_FAN_RADIUS_MM = 5.0;
 
+/** Leaf fanning: max distance from a DENSITY-GRID trunk shaft (mm). Grid
+ *  supports are fanning hosts only up close — a tight threshold keeps fan
+ *  leaves from sweeping across the grid forest (and puncturing grid shafts). */
+export const GRID_HOST_FAN_RADIUS_MM = 2.5;
+
 /** Leaf fanning: max angle from vertical for a fan leaf (deg). */
 export const LEAF_FAN_MAX_ANGLE_DEG = 60;
 

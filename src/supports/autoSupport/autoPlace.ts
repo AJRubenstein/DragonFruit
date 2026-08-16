@@ -38,6 +38,7 @@ import {
     ALREADY_SUPPORTED_RADIUS_MM,
     GRIDLESS_MERGE_RADIUS_MM,
     LEAF_FAN_RADIUS_MM,
+    GRID_HOST_FAN_RADIUS_MM,
     LEAF_FAN_MAX_ANGLE_DEG,
 } from './constants';
 
@@ -754,6 +755,55 @@ function placeOneCandidate(
  * guard below keeps that atomic. Everything else — placement, gap-fill,
  * fanning, overhang coverage, bracing — is draft-only.
  */
+
+export type FanShaftPoint = {
+    trunkId: string;
+    pos: { x: number; y: number; z: number };
+    diameter: number;
+};
+
+/**
+ * Pick the fanning host for an uncovered island.
+ *
+ * The nearest shaft point wins, but density-grid trunks are hosts only up
+ * close (tight grid-host radius) — a long leaf from a grid shaft would sweep
+ * across the grid forest and puncture sibling grid shafts. When the nearest
+ * host is a grid trunk beyond the tight radius, fall back to the nearest
+ * regular trunk (within the regular fan radius).
+ */
+export function pickFanHost(
+    shaftPoints: FanShaftPoint[],
+    gridTrunkIds: ReadonlySet<string>,
+    target: { x: number; y: number; z: number },
+    fanRadiusMm: number,
+    gridHostFanRadiusMm: number,
+): { sp: FanShaftPoint; dist2: number } | null {
+    let best: FanShaftPoint | null = null;
+    let bestDist2 = Infinity;
+    let bestRegular: FanShaftPoint | null = null;
+    let bestRegularDist2 = Infinity;
+
+    for (const sp of shaftPoints) {
+        const dx = target.x - sp.pos.x;
+        const dy = target.y - sp.pos.y;
+        const dz = target.z - sp.pos.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < bestDist2) { bestDist2 = d2; best = sp; }
+        if (!gridTrunkIds.has(sp.trunkId) && d2 < bestRegularDist2) {
+            bestRegularDist2 = d2;
+            bestRegular = sp;
+        }
+    }
+
+    if (best && gridTrunkIds.has(best.trunkId) && bestDist2 > gridHostFanRadiusMm * gridHostFanRadiusMm) {
+        best = bestRegular;
+        bestDist2 = bestRegularDist2;
+    }
+
+    if (!best || bestDist2 > fanRadiusMm * fanRadiusMm) return null;
+    return { sp: best, dist2: bestDist2 };
+}
+
 export function computeAutoSupportPlan(
     islands: DetectedIsland[],
     modelId: string,
@@ -776,6 +826,9 @@ export function computeAutoSupportPlan(
     const kickstandBefore = baseKickstand ?? structuredClone(getKickstandSnapshot());
     let draft: SupportState = before;
     let kickstandDraft: KickstandState = kickstandBefore;
+
+    // Trunks placed from density-grid cells — fanning hosts only up close.
+    const gridTrunkIds = new Set<string>();
 
     // Early-exit no-op plan (no candidates / nothing to place): the run
     // reported as unchanged, so the caller commits nothing.
@@ -944,6 +997,9 @@ export function computeAutoSupportPlan(
             const result = placeOneCandidate(candidate, draft, settingsOverride, clusterTotal.get(candidate.id));
             draft = result.draft;
             if (result.kickstand) kickstandDraft = result.kickstand;
+            if (candidate.gridPoint && result.kind === 'trunk' && result.entityId) {
+                gridTrunkIds.add(result.entityId);
+            }
             switch (result.kind) {
                 case 'trunk':   placedTrunks++; break;
                 case 'anchor':  placedAnchors++; break;
@@ -1141,7 +1197,6 @@ export function computeAutoSupportPlan(
             break;
         }
 
-        const fanR2 = fanRadiusMm * fanRadiusMm;
         const maxAngleRad = (fanMaxAngleDeg * Math.PI) / 180;
         let fannedCount = 0;
 
@@ -1155,22 +1210,24 @@ export function computeAutoSupportPlan(
             const cy = island.contact.y;
             const cz = island.contact.z;
 
-            let bestDist2 = Infinity;
-            let bestSP: typeof shaftPoints[0] | null = null;
-            for (const sp of shaftPoints) {
-                const dx = cx - sp.pos.x;
-                const dy = cy - sp.pos.y;
-                const dz = cz - sp.pos.z;
-                const d2 = dx * dx + dy * dy + dz * dz;
-                if (d2 < bestDist2) { bestDist2 = d2; bestSP = sp; }
-            }
+            // Nearest shaft wins; grid trunks host only up close (tight
+            // radius), else the nearest regular trunk is used — long fan
+            // leaves must not sweep across the grid forest.
+            const picked = pickFanHost(
+                shaftPoints,
+                gridTrunkIds,
+                { x: cx, y: cy, z: cz },
+                fanRadiusMm,
+                GRID_HOST_FAN_RADIUS_MM,
+            );
 
-            if (!bestSP || bestDist2 > fanR2) {
-                if (bestSP) skippedDist++;
+            if (!picked) {
+                skippedDist++;
                 continue;
             }
 
-            const sp = bestSP;
+            const sp = picked.sp;
+            const bestDist2 = picked.dist2;
             const hDist = Math.sqrt((cx - sp.pos.x) ** 2 + (cy - sp.pos.y) ** 2);
             const vDist = cz - sp.pos.z;
             const absVDist = Math.abs(vDist);
