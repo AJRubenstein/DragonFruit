@@ -3,13 +3,17 @@ import test from 'node:test';
 
 import {
   computeGatedPluginIds,
+  EXPERIMENTS_ENABLED_STORAGE_KEY,
   EXPERIMENTS_MANIFEST,
+  EXPERIMENTS_OPT_OUT_MARKER,
   getEnabledExperimentIds,
   getExperimentDefinition,
   getExperimentDefinitions,
   getExperimentOverrides,
   getGatedPluginIdsForDisabledExperiments,
   isExperimentEnabled,
+  resolveExperimentEnabled,
+  setExperimentEnabled,
   type ExperimentDefinition,
 } from '@/features/experiments/experimentsRegistry';
 import complexPluginAllowlist from '@/config/complex-plugin-allowlist.json';
@@ -95,4 +99,81 @@ test('computeGatedPluginIds collects gated plugins of disabled experiments only'
 
   const allEnabled = computeGatedPluginIds(experiments, () => true);
   assert.equal(allEnabled.size, 0);
+});
+
+test('resolveExperimentEnabled implements the promotion contract', () => {
+  const def = (defaultEnabled: boolean): ExperimentDefinition => ({
+    id: 'example',
+    name: 'Example',
+    description: 'example',
+    defaultEnabled,
+  });
+
+  const disabled = def(false);
+  const promoted = def(true);
+
+  // default-disabled experiment: absent follows the default, `true` opts in
+  assert.equal(resolveExperimentEnabled(disabled, {}), false);
+  assert.equal(resolveExperimentEnabled(disabled, { example: true }), true);
+
+  // promoted (default-enabled) experiment: everyone is enabled unless they
+  // explicitly opted out of the promoted state with the opt-out marker
+  assert.equal(resolveExperimentEnabled(promoted, {}), true);
+  assert.equal(resolveExperimentEnabled(promoted, { example: true }), true);
+  assert.equal(resolveExperimentEnabled(promoted, { example: EXPERIMENTS_OPT_OUT_MARKER }), false);
+});
+
+function installMockWindow(initialRaw: string | null): void {
+  let stored = initialRaw;
+  const mockWindow = {
+    localStorage: {
+      getItem: (key: string) => (key === EXPERIMENTS_ENABLED_STORAGE_KEY ? stored : null),
+      setItem: (key: string, value: string) => {
+        if (key === EXPERIMENTS_ENABLED_STORAGE_KEY) stored = value;
+      },
+    },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => true,
+  };
+  (globalThis as unknown as Record<string, unknown>).window = mockWindow;
+}
+
+function removeMockWindow(): void {
+  delete (globalThis as unknown as Record<string, unknown>).window;
+}
+
+test('toggling a default-disabled experiment on stores true and syncs an override', () => {
+  installMockWindow(null);
+  try {
+    setExperimentEnabled('chitubox-import', true);
+    assert.equal(isExperimentEnabled('chitubox-import'), true);
+    assert.deepEqual(getExperimentOverrides(), { 'chitubox-import': true });
+  } finally {
+    removeMockWindow();
+  }
+});
+
+test('toggling a default-disabled experiment back off removes the override', () => {
+  installMockWindow(null);
+  try {
+    setExperimentEnabled('chitubox-import', true);
+    setExperimentEnabled('chitubox-import', false);
+    assert.equal(isExperimentEnabled('chitubox-import'), false);
+    assert.deepEqual(getExperimentOverrides(), {});
+  } finally {
+    removeMockWindow();
+  }
+});
+
+test('a stale false in storage behaves like no saved value', () => {
+  // `false` predates the promotion contract; it must be dropped so the
+  // experiment follows its manifest default instead of being pinned off.
+  installMockWindow(JSON.stringify({ 'chitubox-import': false }));
+  try {
+    assert.equal(isExperimentEnabled('chitubox-import'), false); // default is false
+    assert.deepEqual(getExperimentOverrides(), {});
+  } finally {
+    removeMockWindow();
+  }
 });

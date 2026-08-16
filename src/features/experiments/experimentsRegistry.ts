@@ -32,6 +32,22 @@ export type ExperimentsManifestFile = {
 export const EXPERIMENTS_ENABLED_STORAGE_KEY = 'dragonfruit-experiments-enabled';
 export const EXPERIMENTS_CHANGED_EVENT = 'dragonfruit-experiments-changed';
 
+/**
+ * localStorage marker stored when a user explicitly disables an experiment
+ * whose manifest `defaultEnabled` is `true` (a promoted experiment). Plain
+ * `false` cannot express this: it is indistinguishable from a value saved while
+ * the experiment was still default-disabled, and releases that promote an
+ * experiment (`false` → `true`) must force-enable it for everyone. Users who
+ * opt out of a *promoted* experiment get the marker so their choice survives,
+ * while everyone else — including users who disabled it pre-promotion — is
+ * re-enabled by the new default. See "Promotion semantics" in
+ * `docs/dev/experiments-framework.md`.
+ */
+export const EXPERIMENTS_OPT_OUT_MARKER = 'off-when-default-on';
+
+/** Saved override values: `true` (explicit opt-in) or the opt-out marker. */
+export type ExperimentOverrideValue = true | typeof EXPERIMENTS_OPT_OUT_MARKER;
+
 function assertValidExperimentsManifest(input: unknown): asserts input is ExperimentsManifestFile {
   if (!input || typeof input !== 'object') {
     throw new Error('[Experiments] experiments.json must be an object.');
@@ -103,25 +119,28 @@ export function getEnabledExperimentIds(): string[] {
 
 /**
  * The user's explicit experiment toggles, keyed by id — only experiments whose
- * saved state differs from the manifest `defaultEnabled`. This is the minimal
- * delta pushed to Rust: it embeds the same manifest itself and just needs the
- * user's overrides to compute the effective enabled state.
+ * effective state deviates from the manifest `defaultEnabled`. This is the
+ * minimal delta pushed to Rust: it embeds the same manifest itself and just
+ * needs the user's overrides to compute the effective enabled state. A `false`
+ * override means the user opted out of a default-enabled experiment with the
+ * `EXPERIMENTS_OPT_OUT_MARKER`; a `true` override means they enabled a
+ * default-disabled one.
  */
 export function getExperimentOverrides(): Record<string, boolean> {
   const record = readEnabledRecord() ?? {};
   const overrides: Record<string, boolean> = {};
   for (const definition of EXPERIMENT_DEFINITIONS) {
-    if (definition.id in record) {
-      overrides[definition.id] = record[definition.id];
+    if (definition.id in record && resolveExperimentEnabled(definition, record) !== definition.defaultEnabled) {
+      overrides[definition.id] = record[definition.id] === true;
     }
   }
   return overrides;
 }
 
 let cachedEnabledRaw: string | null | undefined;
-let cachedEnabledRecord: Record<string, boolean> | null = null;
+let cachedEnabledRecord: Record<string, ExperimentOverrideValue> | null = null;
 
-function readEnabledRecord(): Record<string, boolean> | null {
+function readEnabledRecord(): Record<string, ExperimentOverrideValue> | null {
   if (typeof window === 'undefined') return null;
 
   let raw: string | null = null;
@@ -143,10 +162,14 @@ function readEnabledRecord(): Record<string, boolean> | null {
 
   try {
     const parsed = JSON.parse(raw) as unknown;
-    const record: Record<string, boolean> = {};
+    const record: Record<string, ExperimentOverrideValue> = {};
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof value === 'boolean') {
+        // `true` = explicit opt-in; the marker = explicit opt-out of a
+        // default-enabled experiment. Plain `false` is a stale value from
+        // before the promotion contract: it means "follow the manifest
+        // default", which is exactly what an absent entry does, so drop it.
+        if (value === true || value === EXPERIMENTS_OPT_OUT_MARKER) {
           record[key] = value;
         }
       }
@@ -161,23 +184,47 @@ function readEnabledRecord(): Record<string, boolean> | null {
   }
 }
 
-export function isExperimentEnabled(id: string): boolean {
-  const definition = getExperimentDefinition(id);
-  if (!definition) return false;
-
-  const record = readEnabledRecord();
-  if (record && id in record) {
-    return record[id];
+/**
+ * Effective enabled state of one experiment given the saved override record.
+ * Saved `true` forces on, the opt-out marker forces off, and an absent entry
+ * follows the manifest default — so a promoted (default-on) experiment is
+ * enabled for everyone who did not explicitly opt out of the *promoted* state.
+ * Exported as a pure helper so the promotion contract is unit-testable without
+ * a window; `isExperimentEnabled` is this plus a manifest lookup.
+ */
+export function resolveExperimentEnabled(
+  definition: ExperimentDefinition,
+  record: Readonly<Record<string, ExperimentOverrideValue>>,
+): boolean {
+  if (definition.id in record) {
+    return record[definition.id] === true;
   }
   return definition.defaultEnabled;
 }
 
+export function isExperimentEnabled(id: string): boolean {
+  const definition = getExperimentDefinition(id);
+  if (!definition) return false;
+
+  return resolveExperimentEnabled(definition, readEnabledRecord() ?? {});
+}
+
 export function setExperimentEnabled(id: string, enabled: boolean): void {
   if (typeof window === 'undefined') return;
-  if (!getExperimentDefinition(id)) return;
+  const definition = getExperimentDefinition(id);
+  if (!definition) return;
 
   const record = { ...(readEnabledRecord() ?? {}) };
-  record[id] = enabled;
+  if (enabled === definition.defaultEnabled) {
+    // Matching the manifest default: the manifest rules on its own, so drop any
+    // saved override. A later promotion (default `false` → `true`) then reaches
+    // this user instead of being pinned by a stale choice.
+    delete record[id];
+  } else {
+    // Deviating from the default: opt-in stores `true`, an opt-out of a
+    // default-enabled experiment stores the opt-out marker.
+    record[id] = enabled ? true : EXPERIMENTS_OPT_OUT_MARKER;
+  }
   const serialized = JSON.stringify(record);
   cachedEnabledRaw = serialized;
   cachedEnabledRecord = record;

@@ -37,8 +37,22 @@ static MANIFEST: OnceLock<ExperimentManifest> = OnceLock::new();
 
 fn manifest() -> &'static ExperimentManifest {
     MANIFEST.get_or_init(|| {
-        let parsed: RawManifest = serde_json::from_str(EXPERIMENTS_MANIFEST_JSON)
-            .expect("embedded experiments.json must be valid JSON");
+        let parsed: RawManifest = match serde_json::from_str(EXPERIMENTS_MANIFEST_JSON) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                // The manifest is embedded at compile time, so a parse failure
+                // means `experiments.json` was hand-edited into an invalid
+                // state. Log it and degrade to an empty manifest rather than
+                // panicking: every gate closes and only released behavior runs.
+                log::error!(
+                    "[experiments] failed to parse embedded experiments.json ({error}); treating all experiments as disabled"
+                );
+                return ExperimentManifest {
+                    known_ids: HashSet::new(),
+                    default_enabled: HashSet::new(),
+                };
+            }
+        };
         let mut known_ids = HashSet::new();
         let mut default_enabled = HashSet::new();
         for entry in parsed.experiments {

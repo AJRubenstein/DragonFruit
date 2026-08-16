@@ -4,13 +4,20 @@ DragonFruit ships unfinished or early-access features behind an **Experiments**
 gate. A feature gated behind a disabled experiment is hidden from the UI and
 runtime behavior until the user opts in via **Settings → Experiments**.
 
+> **About the examples.** Throughout this document the examples use an imaginary
+> plugin, `df-solarlunar-import`, which lets DragonFruit import `.solarlunar`
+> files as scenes. It is an example only — it does not exist in the codebase —
+> used so the documented patterns don't get conflated with real plugins (e.g.
+> the actual `chitubox-import` plugin). Wherever an example is clearly marked as
+> such, the id, plugin name, and file extension are illustrative.
+
 The gate is general-purpose. It covers:
 
 - **Regular in-app features** (e.g. a future native auto-support engine), which
   check `isExperimentEnabled(id)` at their own decision points.
-- **Plugin-gated features** (e.g. the `chitubox-import` plugin), which declare
-  their plugin ids in the manifest's `gatedPlugins` field and are filtered out
-  of the plugin registries automatically.
+- **Plugin-gated features** (e.g. the `df-solarlunar-import` plugin), which
+  declare their plugin ids in the manifest's `gatedPlugins` field and are
+  filtered out of the plugin registries automatically.
 
 ## Declaring an experiment
 
@@ -30,11 +37,11 @@ into the build at compile time. Fields:
   "version": 1,
   "experiments": [
     {
-      "id": "chitubox-import",
-      "name": "Chitubox File Import",
-      "description": "Enable importing .chitubox project files. Lacks comprehensive testing and may not work with all files.",
+      "id": "df-solarlunar-import",
+      "name": "Solarlunar File Import",
+      "description": "Enable importing .solarlunar scene files. Lacks comprehensive testing and may not work with all files.",
       "defaultEnabled": false,
-      "gatedPlugins": ["chitubox-import"]
+      "gatedPlugins": ["df-solarlunar-import"]
     }
   ]
 }
@@ -64,6 +71,28 @@ never import from `@/features/plugins/...` or other features into it.
 | `isPluginGatedByDisabledExperiment(pluginId)`       | Whether a plugin is hidden by a disabled experiment.     |
 
 User toggles persist to `localStorage` under `dragonfruit-experiments-enabled`.
+
+## Promotion semantics
+
+Experiments progress through a `defaultEnabled: false` → `true` → released
+lifecycle. A release that flips an experiment to default-on must reach users who
+previously opted out, so the saved override is interpreted *relative to the
+manifest default*:
+
+| Manifest `defaultEnabled` | Saved value            | Effective state |
+| ------------------------- | ---------------------- | --------------- |
+| `false`                   | (none)                 | disabled        |
+| `false`                   | `true`                 | enabled (explicit opt-in) |
+| `true`                    | (none)                 | enabled         |
+| `true`                    | `false` (stale)        | enabled         |
+| `true`                    | `"off-when-default-on"` | disabled (explicit opt-out) |
+
+`setExperimentEnabled` never stores a value that matches the default — it
+removes the entry instead — so a promotion re-enables everyone except users who
+explicitly opted out of the *promoted* experiment (saved
+`"off-when-default-on"`). Stale `false` values from before the promotion behave
+like "no saved value" and follow the new default. Only ids whose effective state
+deviates from the default are pushed to Rust as overrides.
 
 ## Gating a regular in-app feature (TS code)
 
@@ -129,9 +158,9 @@ reached and its work never runs.
 command must *adapt* to the experiment state rather than be skipped, pass the
 relevant state or allowed-set from the frontend. This is how the native open
 dialog hides gated file types: the frontend passes `getNativeSceneDialogExtensions()`
-(which excludes `.chitubox` while the experiment is off) to `pick_open_files`,
-and Rust uses that list for the "Scene Files" filter instead of its compiled-in
-const.
+(which excludes `.solarlunar` while the example experiment is off) to
+`pick_open_files`, and Rust uses that list for the "Scene Files" filter instead
+of its compiled-in const.
 
 ```ts
 // frontend — only the enabled scene extensions reach Rust
@@ -182,10 +211,11 @@ getters then filter them automatically:
 
 Consumers must read through these getters, not the raw
 `GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS` const, or the gate is bypassed.
-The chitubox gate also keeps `.chitubox` out of the import surfaces that list
-extensions: the native open dialog (frontend-passed `sceneExtensions`) and the
-browser scene picker (`getWebSceneAcceptString()`, which reflects enabled
-experiments). The native-dialog side is *Gating Rust code* below.
+The example `df-solarlunar-import` gate also keeps `.solarlunar` out of the
+import surfaces that list extensions: the native open dialog (frontend-passed
+`sceneExtensions`) and the browser scene picker (`getWebSceneAcceptString()`,
+which reflects enabled experiments). The native-dialog side is *Gating Rust
+code* below.
 
 ## Constraints
 

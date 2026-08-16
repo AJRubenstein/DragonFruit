@@ -106,6 +106,7 @@ nav:
           - State and Stores: dev/state-and-stores.md
           - Config Schemas: dev/config-schemas.md
           - Tauri IPC and Native Bridge: dev/tauri-ipc-bridge.md
+          - Hotkeys: dev/hotkeys.md
       - Support System:
           - Support System: dev/support-system.md
           - Adding a New Support Type: dev/support-type-extension.md
