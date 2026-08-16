@@ -29,6 +29,7 @@ interface InstancedContactConeGroupProps {
     clippingPlanes?: THREE.Plane[] | null;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
+    onConePointerDown?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
     onConePointerMove?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
     onConePointerOut?: (cone: InstancedContactCone | null, event: ThreeEvent<PointerEvent>) => void;
 }
@@ -69,6 +70,7 @@ function ConeBucketMesh({
     clippingPlanes,
     outOfBoundsMaterial,
     onConeClick,
+    onConePointerDown,
     onConePointerMove,
     onConePointerOut,
     resolvePenetration,
@@ -83,6 +85,7 @@ function ConeBucketMesh({
     clippingPlanes?: THREE.Plane[] | null;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
+    onConePointerDown?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
     onConePointerMove?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
     onConePointerOut?: (cone: InstancedContactCone | null, event: ThreeEvent<PointerEvent>) => void;
     resolvePenetration: (cone: InstancedContactCone) => number;
@@ -221,6 +224,14 @@ function ConeBucketMesh({
         onConeClick(cone, event);
     };
 
+    const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
+        if (!onConePointerDown) return;
+        event.stopPropagation();
+        const cone = resolveCone(event.instanceId);
+        if (!cone) return;
+        onConePointerDown(cone, event);
+    };
+
     const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
         if (!onConePointerMove) return;
         event.stopPropagation();
@@ -239,6 +250,7 @@ function ConeBucketMesh({
 
     const sharedHandlers = {
         onClick: onConeClick ? handleClick : undefined,
+        onPointerDown: onConePointerDown ? handlePointerDown : undefined,
         onPointerMove: onConePointerMove ? handlePointerMove : undefined,
         onPointerOut: onConePointerOut ? handlePointerOut : undefined,
     };
@@ -357,6 +369,7 @@ export function InstancedContactConeGroup({
     clippingPlanes = null,
     outOfBoundsMaterial = null,
     onConeClick,
+    onConePointerDown,
     onConePointerMove,
     onConePointerOut,
 }: InstancedContactConeGroupProps) {
@@ -457,6 +470,7 @@ export function InstancedContactConeGroup({
                     clippingPlanes={clippingPlanes}
                     outOfBoundsMaterial={outOfBoundsMaterial}
                     onConeClick={onConeClick}
+                    onConePointerDown={onConePointerDown}
                     onConePointerMove={onConePointerMove}
                     onConePointerOut={onConePointerOut}
                     resolvePenetration={resolvePenetration}
