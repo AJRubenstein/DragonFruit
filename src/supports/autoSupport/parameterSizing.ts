@@ -1,31 +1,23 @@
 import type { CandidatePoint } from './types';
-import { DETAIL_PRESET, STRUCTURE_PRESET, ANCHOR_PRESET } from '../Settings/presets';
-import type { SupportPreset } from '../Settings/types';
+import { getSettings } from '../Settings/state';
 
 // ---------------------------------------------------------------------------
-// Empirical sizing presets (locked: no physics pretense)
+// Empirical sizing (locked: no physics pretense)
 // ---------------------------------------------------------------------------
 //
-// Auto-supports are sized from the app's built-in detail/structure/anchor
-// support presets — the curated "settings that work" — not load calculations.
-// A density-grid cell (8 mm²) does not carry meaningful weight or peel force,
-// and the physics-derived numbers were visibly oversized (~1.5 mm shafts for
-// tiny cells).
+// Light / Medium / Heavy are HARDCODED profiles: switching a profile loads
+// the hardcoded settings block, and the sizing follows that block. The old
+// area-derived shaft curve inverted the profiles — a light 16 mm² cell sized
+// THICKER (1.28 mm) than a heavy 5 mm² cell (1.12 mm) because the curve
+// rose with the cell area. The band now comes from the active settings
+// (detail ≈ 0.8 / structure ≈ 1.0 / anchor ≈ 1.2 shafts); session overrides
+// apply until the next profile switch; the merged-cluster tail and the
+// height factor ride on top of the profile band.
 //
-// Shaft thickness is a continuous curve through the three preset values:
-//
-//   (0.15 mm², detail 0.8) → (0.5 mm², structure 1.0) → (8 mm², anchor 1.2)
-//
-// The anchor value is anchored at the density-cell area — the region each
-// grid support serves — so the lattice reads exactly anchor. Larger single
-// supports (a merged cluster, a big region carried by one trunk) extend
-// beyond anchor on a gentle log tail (100 mm² → ~1.5 mm, capped at 2.0).
-// Nothing ever goes below the detail value: the floor is 0.8 mm.
-//
-// Tip contact stays banded (detail 0.22 / structure 0.28 / anchor 0.4) ×
-// underside angle (flat ceilings get the full contact, steeper slopes less),
-// floored at 30% of the shaft so a thick shaft keeps a proportional tip.
-// Roots are the preset band (all three built-ins use 2.0).
+// Tip contact: profile band × underside angle (flat ceilings get the full
+// contact, steeper slopes less), floored at 30% of the shaft so a thick
+// shaft keeps a proportional tip. Roots / tip length / penetration: profile
+// band, flat.
 //
 // The forest resize pass (post-placement, before commit) thickens trunks
 // that actually carry branches — a trunk with four branches gets thicker, a
@@ -43,30 +35,24 @@ interface SizingBand {
     rootConeHeightMm: number;
 }
 
-function bandFromPreset(preset: SupportPreset): SizingBand {
-    const tip = preset.settings.tip;
-    const shaft = preset.settings.shaft;
-    const roots = preset.settings.roots;
+/** The active profile's band — read from the current settings, which carry
+ *  the hardcoded profile when one is active (plus any session overrides). */
+function bandFromCurrentSettings(): SizingBand {
+    const s = getSettings();
     return {
-        shaftDiameterMm: shaft.diameterMm,
-        tipContactDiameterMm: tip.contactDiameterMm,
-        tipLengthMm: tip.lengthMm,
-        tipPenetrationMm: tip.penetrationMm ?? 0,
-        rootDiameterMm: roots.diameterMm,
-        rootDiskHeightMm: roots.diskHeightMm,
-        rootConeHeightMm: roots.coneHeightMm,
+        shaftDiameterMm: s.shaft.diameterMm,
+        tipContactDiameterMm: s.tip.contactDiameterMm,
+        tipLengthMm: s.tip.lengthMm,
+        tipPenetrationMm: s.tip.penetrationMm ?? 0,
+        rootDiameterMm: s.roots.diameterMm,
+        rootDiskHeightMm: s.roots.diskHeightMm,
+        rootConeHeightMm: s.roots.coneHeightMm,
     };
 }
 
-const SIZING_BANDS: Record<SizingPreset, SizingBand> = {
-    detail: bandFromPreset(DETAIL_PRESET),
-    structure: bandFromPreset(STRUCTURE_PRESET),
-    anchor: bandFromPreset(ANCHOR_PRESET),
-};
-
-/** Area a density-grid cell assigns to each support (mm²). The shaft curve's
- *  anchor value applies at this area — the reference point for the "one
- *  support serves one cell" case. Matches the areaPerSupportMm2 default. */
+/** Area a merged cluster must exceed before the shaft tail engages (mm²).
+ *  Grid cells sit FLAT at the profile band — the lattice reads exactly the
+ *  profile, whatever its density. */
 const CELL_REFERENCE_AREA_MM2 = 8;
 
 /** Maximum shaft diameter (mm) for very large single supports. */
@@ -79,19 +65,16 @@ export function presetForArea(areaMm2: number): SizingPreset {
     return 'anchor';
 }
 
-/** Piecewise shaft curve: lerp through the preset values, then a gentle log
- *  tail beyond the cell reference (sub-linear — strength grows with the
- *  cross-section, not the area). Floored at the detail value. */
-function shaftDiameterForArea(areaMm2: number): number {
+/** Shaft diameter: the profile band, then a gentle log tail beyond the cell
+ *  reference for merged clusters (sub-linear — strength grows with the
+ *  cross-section, not the area). A grid cell is FLAT at the profile band —
+ *  the lattice reads exactly the profile, whatever its density. */
+function shaftDiameterForArea(baseDiameterMm: number, areaMm2: number): number {
     const a = Math.max(areaMm2, 0.01);
-    const d = SIZING_BANDS.detail.shaftDiameterMm;
-    const s = SIZING_BANDS.structure.shaftDiameterMm;
-    const an = SIZING_BANDS.anchor.shaftDiameterMm;
-
-    if (a <= 0.15) return d;
-    if (a <= 0.5) return lerp(0.15, 0.5, d, s, a);
-    if (a <= CELL_REFERENCE_AREA_MM2) return lerp(0.5, CELL_REFERENCE_AREA_MM2, s, an, a);
-    return Math.min(MAX_SHAFT_DIAMETER_MM, an + 0.12 * Math.log(a / CELL_REFERENCE_AREA_MM2));
+    const tail = a > CELL_REFERENCE_AREA_MM2
+        ? 0.12 * Math.log(a / CELL_REFERENCE_AREA_MM2)
+        : 0;
+    return Math.min(MAX_SHAFT_DIAMETER_MM, baseDiameterMm + tail);
 }
 
 // ---------------------------------------------------------------------------
@@ -126,15 +109,16 @@ export interface ModelSizingContext {
 /**
  * Empirical sizing for an auto-support candidate.
  *
- * - Shaft: the preset curve at the supported area × height factor (taller
- *   supports flex more under peel, up to +25% at ≥ 70 mm). Grid cells use
- *   their own cell area (exactly anchor); merged trunks pass their summed
- *   area, which rides the tail above anchor.
- * - Tip contact: preset band × angle factor — a flat ceiling (normal straight
- *   down, |z| ≈ 1) gets the full preset contact; a steep slope is closer to
- *   self-supporting and gets a smaller one (down to 60%). Floored at 30% of
- *   the shaft.
- * - Roots / tip length / penetration: preset band, flat.
+ * - Shaft: the ACTIVE PROFILE's band (hardcoded profile / session override)
+ *   × height factor (taller supports flex more under peel, up to +25% at
+ *   ≥ 70 mm). Grid cells sit flat at the band — the lattice reads exactly
+ *   the profile; merged trunks pass their summed area, which rides a gentle
+ *   tail above the band.
+ * - Tip contact: profile band × angle factor — a flat ceiling (normal
+ *   straight down, |z| ≈ 1) gets the full preset contact; a steep slope is
+ *   closer to self-supporting and gets a smaller one (down to 60%). Floored
+ *   at 30% of the shaft.
+ * - Roots / tip length / penetration: profile band, flat.
  *
  * @param candidate - The island to size supports for.
  * @param totalSupportedAreaMm2 - For core trunks: total area of all
@@ -146,7 +130,7 @@ export function sizeParameters(
     totalSupportedAreaMm2?: number,
     sizeScale = 1,
 ): SizeOverrides {
-    const band = SIZING_BANDS[presetForArea(candidate.islandAreaMm2)];
+    const band = bandFromCurrentSettings();
 
     // The area that drives thickness: merged trunks carry their cluster
     // total; standalone/grid trunks carry their own supported area.
@@ -160,7 +144,7 @@ export function sizeParameters(
     const heightFactor = 1 + clamp((zHeight - 20) / 200, 0, 0.25);
 
     const shaftDiameterMm = round(
-        clamp(shaftDiameterForArea(areaInput) * heightFactor, 0.001, MAX_SHAFT_DIAMETER_MM)
+        clamp(shaftDiameterForArea(band.shaftDiameterMm, areaInput) * heightFactor, 0.001, MAX_SHAFT_DIAMETER_MM)
         * sizeScale,
     3);
 
@@ -188,10 +172,6 @@ export function sizeParameters(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function lerp(x0: number, x1: number, y0: number, y1: number, x: number): number {
-    return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
-}
 
 function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
