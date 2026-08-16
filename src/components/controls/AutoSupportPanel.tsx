@@ -68,6 +68,8 @@ const KNOBS: KnobDef[] = [
   { key: 'minIslandAreaMm2',     label: 'Min Island Area',       min: 0.01, max: 2,    step: 0.01, unit: 'mm²', hint: 'Skip islands smaller than this area' },
   { key: 'tipInfluenceRadiusMm',  label: 'Tip Influence Radius',  min: 0.1,  max: 10,   step: 0.1,  unit: 'mm',  hint: 'Candidates within this 3D distance are merged' },
   { key: 'maxAttachmentsPerTrunk',         label: 'Max Attachments / Trunk',   min: 2,  max: 50, step: 1,   unit: '',   hint: 'Max combined branches + leaves per trunk' },
+  { key: 'areaPerSupportMm2',     label: 'Area per Support',      min: 1,    max: 30,   step: 0.5, unit: 'mm²', hint: 'Projected area each grid support carries (density)' },
+  { key: 'gridAreaThresholdMm2',  label: 'Grid Min Area',         min: 5,    max: 200,  step: 5,   unit: 'mm²', hint: 'Regions at/above this area get a density grid' },
 ];
 
 const PRESETS = {
@@ -498,6 +500,14 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
 
             {/* RIGHT COLUMN */}
             <div className="space-y-3">
+              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
+                <SectionHeader title="Density" />
+                <div className="space-y-2.5">
+                  {KNOBS.filter(k => ['areaPerSupportMm2', 'gridAreaThresholdMm2'].includes(k.key)).map(knob => (
+                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
+                  ))}
+                </div>
+              </div>
               <div className="rounded-md border p-2.5" style={SECTION_CARD}>
                 <SectionHeader title="Attachment Limits" />
                 <div className="space-y-2.5">

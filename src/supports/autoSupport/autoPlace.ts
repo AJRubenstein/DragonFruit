@@ -5,6 +5,7 @@ function round2(v: number): number { return Math.round(v * 100) / 100; }
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
+import { generateGridCandidates } from './gridPlacement';
 import { sizeParameters } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
@@ -380,7 +381,9 @@ function placeOneCandidate(
     const preset = area <= 0.15 ? 'detail' as const : area <= 0.50 ? 'structure' as const : 'anchor' as const;
 
     // ── Gridless merge check ──────────────────────────────────────
-    if (!supportSettings.grid?.enabled) {
+    // Density-grid points force standalone trunks (a flat region needs
+    // independent supports, not a bush of branches off one shaft).
+    if (!supportSettings.grid?.enabled && !candidate.gridPoint) {
         const host = findMergeHost(tipPos, candidate.modelId);
         if (host) {
             // Find the best attachment point on the host trunk's shaft,
@@ -719,6 +722,11 @@ export function runAutoPlace(
     const beforeSnapshot = getSnapshot();
     const kickstandBefore = structuredClone(getKickstandSnapshot());
 
+    // The model mesh is needed by the grid phase (surface snapping) and the
+    // placement pipeline (pathfinding + collision).
+    const mesh: THREE.Mesh | undefined = getModelMesh(modelId) ?? undefined;
+    if (mesh) mesh.updateMatrixWorld();
+
     // ------------------------------------------------------------------
     // 1. Generate candidates
     // ------------------------------------------------------------------
@@ -728,9 +736,29 @@ export function runAutoPlace(
     let candidates = generateCandidates(islands, autoSettings);
     candidates = candidates.map((c): CandidatePoint => ({ ...c, modelId }));
 
+    // Grid phase: large flat overhang regions become density grids (the trunk
+    // forest). The region's own single candidate is replaced by its grid.
+    const overhangIslands = islands.filter((i) => i.source === 'overhang');
+    if (overhangIslands.length > 0) {
+        const gridCandidates = generateGridCandidates(overhangIslands, autoSettings, mesh)
+            .map((c): CandidatePoint => ({ ...c, modelId }));
+        const griddedRegionIds = new Set(
+            overhangIslands
+                .filter((i) => (i.areaMm2 ?? 0) >= autoSettings.gridAreaThresholdMm2)
+                .map((i) => i.id),
+        );
+        if (gridCandidates.length > 0) {
+            candidates = [
+                ...gridCandidates,
+                ...candidates.filter((c) => !griddedRegionIds.has(c.id)),
+            ];
+        }
+    }
+
     console.log(LOG_PREFIX,
         `Step 1/3: ${candidates.length} candidates generated ` +
-        `(filtered from ${islands.length} islands, min area ${autoSettings.minIslandAreaMm2}mm²)`);
+        `(filtered from ${islands.length} islands, min area ${autoSettings.minIslandAreaMm2}mm², ` +
+        `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold)`);
 
     if (candidates.length === 0) {
         return makeResult(0, 0, 0, 0, 0, 0, false, 'No viable support candidates found.');
@@ -774,8 +802,6 @@ export function runAutoPlace(
     // subsequent candidates see existing supports (enabling organic
     // tree fan-out via grid occupancy).
 
-    const mesh: THREE.Mesh | undefined = getModelMesh(modelId) ?? undefined;
-    if (mesh) mesh.updateMatrixWorld();
     console.log(LOG_PREFIX,
         `Mesh for ${modelId}: ${mesh ? 'available (pathfinding + SDF active)' : 'UNAVAILABLE (supports route straight, no collision avoidance)'}`);
 
@@ -1134,6 +1160,10 @@ export function runAutoPlace(
             if (d2 < bestDist2) { bestDist2 = d2; bestIsland = island; }
         }
         if (!bestIsland) continue;
+
+        // Overhang regions are gridded by the grid phase — the legacy
+        // overhang-coverage pass is for flat voxel islands only.
+        if (bestIsland.source === 'overhang') continue;
 
         const area = bestIsland.areaMm2 ?? 0;
         const voxels = bestIsland.contactVoxels;

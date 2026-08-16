@@ -104,6 +104,45 @@ test('runAutoPlace resolves the underside surface normal from the mesh', () => {
     disposeHandlers();
 });
 
+test('runAutoPlace grids a large flat overhang region into standalone trunks', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    // 20×20 flat underside (the xyzCalibration cube bottom): the region
+    // becomes a density grid instead of one support.
+    const contactVoxels: { x: number; y: number }[] = [];
+    for (let x = -10; x <= 10; x += 0.25) {
+        for (let y = -10; y <= 10; y += 0.25) {
+            contactVoxels.push({ x, y });
+        }
+    }
+    const facet: DetectedIsland = {
+        id: 'o0',
+        source: 'overhang',
+        contact: new THREE.Vector3(0, 0, 6.5),
+        baseZ: 6.5,
+        areaMm2: 400,
+        contactVoxels,
+    };
+
+    const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true });
+
+    // 400 mm² at 8 mm²/support → 2.83 mm spacing → 7×7 = 49 standalone trunks.
+    assert.ok(result.placedTrunks >= 40 && result.placedTrunks <= 60,
+        `placed ${result.placedTrunks} grid trunks, expected ~49`);
+    assert.equal(result.placedBranches, 0, 'grid points stay independent (no bush)');
+    assert.equal(result.placedLeaves, 0);
+
+    const snapshot = getSnapshot();
+    const trunkCount = Object.keys(snapshot.trunks).length;
+    assert.equal(trunkCount, result.placedTrunks, 'trunks committed to the store');
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
+
 test('runAutoPlace with no viable candidates returns changed=false and pushes nothing', () => {
     resetStore();
     resetKickstandStore();

@@ -18,6 +18,9 @@ export interface CandidatePoint {
     zHeight: number;
     /** Computed placement priority. Higher = place first. */
     priority: number;
+    /** Density-grid point: must become its own standalone trunk (never merged
+     *  into a nearby host) so flat regions get independent supports. */
+    gridPoint?: boolean;
 }
 
 /** Why a candidate was rejected. */

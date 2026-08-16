@@ -5,6 +5,12 @@ export interface AutoSupportSettings {
     prioritizeIntersection: boolean;
     /** Max combined leaves + branches that can attach to a single trunk. */
     maxAttachmentsPerTrunk: number;
+    /** Projected surface area each grid support carries (mm²) — the density knob.
+     *  Grid spacing = √areaPerSupportMm2. */
+    areaPerSupportMm2: number;
+    /** Overhang regions at or above this projected area (mm²) get a density
+     *  grid; smaller regions get a single support. */
+    gridAreaThresholdMm2: number;
     debugSkipAutoBracing: boolean;
 }
 
@@ -19,12 +25,16 @@ type NumericConstraint = {
 type NumericAutoSupportSettingKey =
     | 'minIslandAreaMm2'
     | 'tipInfluenceRadiusMm'
-    | 'maxAttachmentsPerTrunk';
+    | 'maxAttachmentsPerTrunk'
+    | 'areaPerSupportMm2'
+    | 'gridAreaThresholdMm2';
 
 export const AUTO_SUPPORT_CONSTRAINTS = {
     minIslandAreaMm2: { min: 0.01, max: 10, step: 0.01, defaultValue: 0.02 },
     tipInfluenceRadiusMm: { min: 0.1, max: 10, step: 0.1, defaultValue: 0.5 },
     maxAttachmentsPerTrunk: { min: 2, max: 50, step: 1, defaultValue: 12, integer: true },
+    areaPerSupportMm2: { min: 1, max: 30, step: 0.5, defaultValue: 8 },
+    gridAreaThresholdMm2: { min: 5, max: 200, step: 5, defaultValue: 25 },
 } satisfies Record<NumericAutoSupportSettingKey, NumericConstraint>;
 
 function precisionFromStep(step: number): number {
@@ -63,6 +73,8 @@ export function createDefaultAutoSupportSettings(): AutoSupportSettings {
         tipInfluenceRadiusMm: AUTO_SUPPORT_CONSTRAINTS.tipInfluenceRadiusMm.defaultValue,
         prioritizeIntersection: false,
         maxAttachmentsPerTrunk: AUTO_SUPPORT_CONSTRAINTS.maxAttachmentsPerTrunk.defaultValue,
+        areaPerSupportMm2: AUTO_SUPPORT_CONSTRAINTS.areaPerSupportMm2.defaultValue,
+        gridAreaThresholdMm2: AUTO_SUPPORT_CONSTRAINTS.gridAreaThresholdMm2.defaultValue,
         debugSkipAutoBracing: false,
     };
 }
@@ -77,6 +89,8 @@ export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings
         tipInfluenceRadiusMm: clampNumeric(source.tipInfluenceRadiusMm, AUTO_SUPPORT_CONSTRAINTS.tipInfluenceRadiusMm),
         prioritizeIntersection: normalizeBoolean(source.prioritizeIntersection, defaults.prioritizeIntersection),
         maxAttachmentsPerTrunk: clampNumeric(source.maxAttachmentsPerTrunk, AUTO_SUPPORT_CONSTRAINTS.maxAttachmentsPerTrunk),
+        areaPerSupportMm2: clampNumeric(source.areaPerSupportMm2, AUTO_SUPPORT_CONSTRAINTS.areaPerSupportMm2),
+        gridAreaThresholdMm2: clampNumeric(source.gridAreaThresholdMm2, AUTO_SUPPORT_CONSTRAINTS.gridAreaThresholdMm2),
         debugSkipAutoBracing: normalizeBoolean(source.debugSkipAutoBracing, defaults.debugSkipAutoBracing),
     };
 }
