@@ -15,6 +15,21 @@ export interface AutoSupportSettings {
      *  as an overhang needing supports. 0° = flat ceiling; the resin standard
      *  is 45°. Steeper faces are considered self-supporting. */
     overhangSelfSupportAngleDeg: number;
+    /** Master multiplier over the preset sizing bands (shaft/tip/root). */
+    sizeScale: number;
+    /** Grid spacing multiplier on flat ceilings (0°) — the densest case.
+     *  <1 = denser than the area setting implies. */
+    flatDensityBoost: number;
+    /** Grid spacing multiplier at the self-support angle — the sparsest case.
+     *  >1 = sparser than the area setting implies. */
+    slopeRelaxFactor: number;
+    /** Percentage of each region's projected footprint the auto grid must
+     *  cover before gap-fill stops (75–100). */
+    coverageTargetPercent: number;
+    /** Leaf fanning: max horizontal reach from a trunk shaft (mm). */
+    leafFanRadiusMm: number;
+    /** Leaf fanning: max angle from vertical for a fan leaf (deg). */
+    leafFanMaxAngleDeg: number;
     debugSkipAutoBracing: boolean;
 }
 
@@ -32,7 +47,13 @@ type NumericAutoSupportSettingKey =
     | 'maxAttachmentsPerTrunk'
     | 'areaPerSupportMm2'
     | 'gridAreaThresholdMm2'
-    | 'overhangSelfSupportAngleDeg';
+    | 'overhangSelfSupportAngleDeg'
+    | 'sizeScale'
+    | 'flatDensityBoost'
+    | 'slopeRelaxFactor'
+    | 'coverageTargetPercent'
+    | 'leafFanRadiusMm'
+    | 'leafFanMaxAngleDeg';
 
 export const AUTO_SUPPORT_CONSTRAINTS = {
     minIslandAreaMm2: { min: 0.01, max: 10, step: 0.01, defaultValue: 0.02 },
@@ -41,6 +62,12 @@ export const AUTO_SUPPORT_CONSTRAINTS = {
     areaPerSupportMm2: { min: 1, max: 30, step: 0.5, defaultValue: 8 },
     gridAreaThresholdMm2: { min: 5, max: 200, step: 5, defaultValue: 25 },
     overhangSelfSupportAngleDeg: { min: 20, max: 75, step: 5, defaultValue: 45 },
+    sizeScale: { min: 0.5, max: 2, step: 0.05, defaultValue: 1 },
+    flatDensityBoost: { min: 0.5, max: 1, step: 0.05, defaultValue: 0.7 },
+    slopeRelaxFactor: { min: 1, max: 2, step: 0.1, defaultValue: 1.3 },
+    coverageTargetPercent: { min: 75, max: 100, step: 5, defaultValue: 95, integer: true },
+    leafFanRadiusMm: { min: 2, max: 15, step: 0.5, defaultValue: 5 },
+    leafFanMaxAngleDeg: { min: 20, max: 80, step: 5, defaultValue: 60, integer: true },
 } satisfies Record<NumericAutoSupportSettingKey, NumericConstraint>;
 
 function precisionFromStep(step: number): number {
@@ -82,6 +109,12 @@ export function createDefaultAutoSupportSettings(): AutoSupportSettings {
         areaPerSupportMm2: AUTO_SUPPORT_CONSTRAINTS.areaPerSupportMm2.defaultValue,
         gridAreaThresholdMm2: AUTO_SUPPORT_CONSTRAINTS.gridAreaThresholdMm2.defaultValue,
         overhangSelfSupportAngleDeg: AUTO_SUPPORT_CONSTRAINTS.overhangSelfSupportAngleDeg.defaultValue,
+        sizeScale: AUTO_SUPPORT_CONSTRAINTS.sizeScale.defaultValue,
+        flatDensityBoost: AUTO_SUPPORT_CONSTRAINTS.flatDensityBoost.defaultValue,
+        slopeRelaxFactor: AUTO_SUPPORT_CONSTRAINTS.slopeRelaxFactor.defaultValue,
+        coverageTargetPercent: AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent.defaultValue,
+        leafFanRadiusMm: AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm.defaultValue,
+        leafFanMaxAngleDeg: AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg.defaultValue,
         debugSkipAutoBracing: false,
     };
 }
@@ -99,6 +132,12 @@ export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings
         areaPerSupportMm2: clampNumeric(source.areaPerSupportMm2, AUTO_SUPPORT_CONSTRAINTS.areaPerSupportMm2),
         gridAreaThresholdMm2: clampNumeric(source.gridAreaThresholdMm2, AUTO_SUPPORT_CONSTRAINTS.gridAreaThresholdMm2),
         overhangSelfSupportAngleDeg: clampNumeric(source.overhangSelfSupportAngleDeg, AUTO_SUPPORT_CONSTRAINTS.overhangSelfSupportAngleDeg),
+        sizeScale: clampNumeric(source.sizeScale, AUTO_SUPPORT_CONSTRAINTS.sizeScale),
+        flatDensityBoost: clampNumeric(source.flatDensityBoost, AUTO_SUPPORT_CONSTRAINTS.flatDensityBoost),
+        slopeRelaxFactor: clampNumeric(source.slopeRelaxFactor, AUTO_SUPPORT_CONSTRAINTS.slopeRelaxFactor),
+        coverageTargetPercent: clampNumeric(source.coverageTargetPercent, AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent),
+        leafFanRadiusMm: clampNumeric(source.leafFanRadiusMm, AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm),
+        leafFanMaxAngleDeg: clampNumeric(source.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg),
         debugSkipAutoBracing: normalizeBoolean(source.debugSkipAutoBracing, defaults.debugSkipAutoBracing),
     };
 }

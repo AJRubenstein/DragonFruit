@@ -16,7 +16,32 @@ test('defaults match constraints', () => {
     assert.equal(defaults.tipInfluenceRadiusMm, AUTO_SUPPORT_CONSTRAINTS.tipInfluenceRadiusMm.defaultValue);
     assert.equal(defaults.prioritizeIntersection, false);
     assert.equal(defaults.maxAttachmentsPerTrunk, AUTO_SUPPORT_CONSTRAINTS.maxAttachmentsPerTrunk.defaultValue);
+    assert.equal(defaults.areaPerSupportMm2, AUTO_SUPPORT_CONSTRAINTS.areaPerSupportMm2.defaultValue);
+    assert.equal(defaults.overhangSelfSupportAngleDeg, AUTO_SUPPORT_CONSTRAINTS.overhangSelfSupportAngleDeg.defaultValue);
+    assert.equal(defaults.sizeScale, 1);
+    assert.equal(defaults.flatDensityBoost, AUTO_SUPPORT_CONSTRAINTS.flatDensityBoost.defaultValue);
+    assert.equal(defaults.slopeRelaxFactor, AUTO_SUPPORT_CONSTRAINTS.slopeRelaxFactor.defaultValue);
+    assert.equal(defaults.coverageTargetPercent, AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent.defaultValue);
+    assert.equal(defaults.leafFanRadiusMm, AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm.defaultValue);
+    assert.equal(defaults.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg.defaultValue);
     assert.equal(defaults.debugSkipAutoBracing, false);
+});
+
+test('normalize clamps the new knobs', () => {
+    const normalized = normalizeAutoSupportSettings({
+        sizeScale: 9,
+        flatDensityBoost: 0.1,
+        slopeRelaxFactor: 5,
+        coverageTargetPercent: 50,
+        leafFanRadiusMm: 100,
+        leafFanMaxAngleDeg: 200,
+    });
+    assert.equal(normalized.sizeScale, AUTO_SUPPORT_CONSTRAINTS.sizeScale.max);
+    assert.equal(normalized.flatDensityBoost, AUTO_SUPPORT_CONSTRAINTS.flatDensityBoost.min);
+    assert.equal(normalized.slopeRelaxFactor, AUTO_SUPPORT_CONSTRAINTS.slopeRelaxFactor.max);
+    assert.equal(normalized.coverageTargetPercent, AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent.min);
+    assert.equal(normalized.leafFanRadiusMm, AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm.max);
+    assert.equal(normalized.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg.max);
 });
 
 test('normalize clamps high values', () => {

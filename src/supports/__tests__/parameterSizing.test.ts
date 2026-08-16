@@ -78,6 +78,13 @@ test('flat ceilings get the full preset contact, steep slopes less', () => {
     assert.equal(flat.tipContactDiameterMm, 0.4, 'flat never exceeds the preset contact');
 });
 
+test('size scale multiplies the bands', () => {
+    const base = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }))!;
+    const scaled = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }), undefined, 1.5)!;
+    assert.ok(Math.abs(scaled.shaftDiameterMm! - base.shaftDiameterMm! * 1.5) < 1e-9, 'shaft scales');
+    assert.ok(Math.abs(scaled.rootsDiameterMm! - base.rootsDiameterMm! * 1.5) < 1e-9, 'roots scale');
+});
+
 test('sizing is deterministic', () => {
     const a = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 25, tipNormal: { x: 0.2, y: 0.3, z: -0.93 } }));
     const b = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 25, tipNormal: { x: 0.2, y: 0.3, z: -0.93 } }));

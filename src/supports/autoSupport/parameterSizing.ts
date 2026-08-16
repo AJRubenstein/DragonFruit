@@ -144,6 +144,7 @@ export interface ModelSizingContext {
 export function sizeParameters(
     candidate: CandidatePoint,
     totalSupportedAreaMm2?: number,
+    sizeScale = 1,
 ): SizeOverrides {
     const band = SIZING_BANDS[presetForArea(candidate.islandAreaMm2)];
 
@@ -156,7 +157,8 @@ export function sizeParameters(
     const heightFactor = 1 + clamp((zHeight - 20) / 200, 0, 0.25);
 
     const shaftDiameterMm = round(
-        clamp(shaftDiameterForArea(areaInput) * heightFactor, 0.001, MAX_SHAFT_DIAMETER_MM),
+        clamp(shaftDiameterForArea(areaInput) * heightFactor, 0.001, MAX_SHAFT_DIAMETER_MM)
+        * sizeScale,
     3);
 
     // Underside normal z = cos(angle from straight-down). Flat ceilings
@@ -174,7 +176,7 @@ export function sizeParameters(
         tipBodyDiameterMm: shaftDiameterMm,
         tipLengthMm: round(band.tipLengthMm, 3),
         tipPenetrationMm: round(band.tipPenetrationMm, 3),
-        rootsDiameterMm: round(band.rootDiameterMm, 3),
+        rootsDiameterMm: round(band.rootDiameterMm * sizeScale, 3),
         rootsDiskHeightMm: band.rootDiskHeightMm,
         rootsConeHeightMm: band.rootConeHeightMm,
     };

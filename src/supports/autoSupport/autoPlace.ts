@@ -554,6 +554,7 @@ function placeOneCandidate(
     const overrides = sizeParameters(
         candidate,
         candidate.gridPoint ? candidate.islandAreaMm2 : totalArea,
+        supportSettings.autoSupport?.sizeScale ?? 1,
     );
 
     const trunkResult = buildTrunkData({
@@ -1060,9 +1061,9 @@ export function computeAutoSupportPlan(
             modelId: '', source: 'voxel', islandAreaMm2: area,
             zHeight: z, priority: 0,
         });
-        const sMin = sizeParameters(makeSample(minArea, 10));
-        const sMax = sizeParameters(makeSample(maxArea, zMax));
-        const sAvg = sizeParameters(makeSample(avgArea, zMax / 2));
+        const sMin = sizeParameters(makeSample(minArea, 10), undefined, getSettings().autoSupport?.sizeScale ?? 1);
+        const sMax = sizeParameters(makeSample(maxArea, zMax), undefined, getSettings().autoSupport?.sizeScale ?? 1);
+        const sAvg = sizeParameters(makeSample(avgArea, zMax / 2), undefined, getSettings().autoSupport?.sizeScale ?? 1);
         sizingDebug = {
             modelVolumeMm3: Math.round(modelCtx.modelVolumeMm3),
             estimatedWeightG: round2(weightG),
@@ -1099,10 +1100,12 @@ export function computeAutoSupportPlan(
     // ── Post-placement leaf fanning (iterative convergence) ──────────
     const MAX_FANNING_PASSES = 5;
     const SHAFT_SAMPLES_PER_SEGMENT = 5;
+    const fanRadiusMm = autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM;
+    const fanMaxAngleDeg = autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
 
     console.log(LOG_PREFIX,
         `Leaf fanning: ${analytics.islandsUncovered} uncovered islands, ${placedTrunks} trunks available. ` +
-        `Max ${MAX_FANNING_PASSES} passes, fan radius ${LEAF_FAN_RADIUS_MM}mm, max angle ${LEAF_FAN_MAX_ANGLE_DEG}°.`);
+        `Max ${MAX_FANNING_PASSES} passes, fan radius ${fanRadiusMm}mm, max angle ${fanMaxAngleDeg}°.`);
 
     for (let pass = 0; pass < MAX_FANNING_PASSES && analytics.islandsUncovered > 0; pass++) {
         const snap = draft;
@@ -1138,8 +1141,8 @@ export function computeAutoSupportPlan(
             break;
         }
 
-        const fanR2 = LEAF_FAN_RADIUS_MM * LEAF_FAN_RADIUS_MM;
-        const maxAngleRad = (LEAF_FAN_MAX_ANGLE_DEG * Math.PI) / 180;
+        const fanR2 = fanRadiusMm * fanRadiusMm;
+        const maxAngleRad = (fanMaxAngleDeg * Math.PI) / 180;
         let fannedCount = 0;
 
         let skippedDist = 0;
@@ -1232,7 +1235,7 @@ export function computeAutoSupportPlan(
         } else {
             console.log(LOG_PREFIX,
                 `Leaf fanning pass ${pass}: 0 leaves — ` +
-                `${skippedDist} too far (>${LEAF_FAN_RADIUS_MM}mm), ` +
+                `${skippedDist} too far (>${fanRadiusMm}mm), ` +
                 `${skippedAngle} angle too steep (>${LEAF_FAN_MAX_ANGLE_DEG}°), ` +
                 `${skippedSameZ} same Z (can't attach).`);
             break;

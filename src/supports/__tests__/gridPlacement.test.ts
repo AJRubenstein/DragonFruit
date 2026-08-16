@@ -85,6 +85,22 @@ test('grids a large flat region with dynamic spacing (never cut off)', () => {
     }
 });
 
+test('flat boost and slope relax knobs modulate the angle density', () => {
+    // Flat boost = 1 (no densification) → the flat grid falls back to the
+    // plain √areaPerSupport spacing (~8×8 = 64 at 8 mm²), not the 0.7×
+    // densified 11×11.
+    const settings = { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 8, gridAreaThresholdMm2: 25, flatDensityBoost: 1 };
+    const flat = generateGridCandidates([rectRegion('o0', -10, 10, -10, 10, 400, 6.5, 0)], settings);
+    assert.ok(flat.length >= 55 && flat.length <= 70,
+        `flat boost 1 → plain grid (${flat.length} ≈ 64)`);
+
+    // Default boost (0.7) densifies the flat grid; slope relax relaxes the
+    // steep end.
+    const defaultSettings = { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 8, gridAreaThresholdMm2: 25 };
+    const densified = generateGridCandidates([rectRegion('o0', -10, 10, -10, 10, 400, 6.5, 0)], defaultSettings);
+    assert.ok(densified.length > flat.length, 'default flat boost densifies');
+});
+
 test('angle-aware density: flat anchor surfaces grid denser than slopes', () => {
     // Same 20×20 region, same density setting — only the surface angle
     // differs. Flat (0°) → spacing 2.83×0.7 ≈ 1.98 → ~11×11.

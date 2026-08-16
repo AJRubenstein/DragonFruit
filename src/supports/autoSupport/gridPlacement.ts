@@ -109,9 +109,10 @@ export function generateGridCandidates(
             ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG;
         const angleT = Math.min(1, Math.max(0,
             (island.overhangAngleDeg ?? 0) / selfSupportAngleDeg));
+        const minFactor = settings.flatDensityBoost ?? GRID_SPACING_MIN_FACTOR;
+        const maxFactor = settings.slopeRelaxFactor ?? GRID_SPACING_MAX_FACTOR;
         const spacing = baseSpacing
-            * (GRID_SPACING_MIN_FACTOR
-                + angleT * (GRID_SPACING_MAX_FACTOR - GRID_SPACING_MIN_FACTOR));
+            * (minFactor + angleT * (maxFactor - minFactor));
 
         const voxels = island.contactVoxels;
         if (!voxels || voxels.length === 0) continue;

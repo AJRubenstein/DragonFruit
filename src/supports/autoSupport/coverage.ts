@@ -173,10 +173,11 @@ export function buildGapFillCandidates(
     tips: Array<{ x: number; y: number; z: number }>,
 ): CandidatePoint[] {
     const out: CandidatePoint[] = [];
+    const coverageTarget = (settings.coverageTargetPercent ?? 95) / 100;
     for (const region of overhangIslands) {
         if (region.source !== 'overhang') continue;
         if (!region.contactVoxels || region.contactVoxels.length === 0) continue;
-        if (computeRegionCoverage(region, tips) >= REGION_COVERAGE_TARGET) continue;
+        if (computeRegionCoverage(region, tips) >= coverageTarget) continue;
 
         const clusters = findUncoveredClusters(region, tips);
         for (const c of clusters) {

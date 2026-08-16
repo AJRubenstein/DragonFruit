@@ -71,14 +71,26 @@ type NumericAutoSupportSettingKey =
   | 'maxAttachmentsPerTrunk'
   | 'areaPerSupportMm2'
   | 'gridAreaThresholdMm2'
-  | 'overhangSelfSupportAngleDeg';
+  | 'overhangSelfSupportAngleDeg'
+  | 'sizeScale'
+  | 'flatDensityBoost'
+  | 'slopeRelaxFactor'
+  | 'coverageTargetPercent'
+  | 'leafFanRadiusMm'
+  | 'leafFanMaxAngleDeg';
 
 const KNOBS: KnobDef[] = [
   { key: 'overhangSelfSupportAngleDeg', label: 'Self-Support Angle',  min: 20,   max: 75,  step: 5,  unit: '°',   hint: 'Surfaces flatter than this angle get supports (resin standard: 45°). Higher = fewer, mostly on the steepest parts.' },
-  { key: 'areaPerSupportMm2',     label: 'Support Density',      min: 1,    max: 30,   step: 0.5, unit: 'mm²', hint: 'Projected area each support carries — smaller = more, tighter supports (grid spacing ≈ √value)' },
-  { key: 'gridAreaThresholdMm2',  label: 'Grid Threshold',       min: 5,    max: 200,  step: 5,   unit: 'mm²', hint: 'Flat regions at/above this area get a full grid; smaller regions get a single support' },
   { key: 'minIslandAreaMm2',     label: 'Min Island Size',       min: 0.01, max: 2,    step: 0.01, unit: 'mm²', hint: 'Skip detected areas smaller than this — tiny specks rarely need supports' },
   { key: 'tipInfluenceRadiusMm',  label: 'Merge Radius',  min: 0.1,  max: 10,   step: 0.1,  unit: 'mm',  hint: 'A candidate within this 3D distance of an existing support merges into it instead of starting a new trunk' },
+  { key: 'areaPerSupportMm2',     label: 'Support Density',      min: 1,    max: 30,   step: 0.5, unit: 'mm²', hint: 'Projected area each support carries — smaller = more, tighter supports (grid spacing ≈ √value)' },
+  { key: 'gridAreaThresholdMm2',  label: 'Grid Threshold',       min: 5,    max: 200,  step: 5,   unit: 'mm²', hint: 'Flat regions at/above this area get a full grid; smaller regions get a single support' },
+  { key: 'flatDensityBoost',      label: 'Flat Boost',           min: 0.5,  max: 1,    step: 0.05, unit: '×',   hint: 'Grid spacing on flat ceilings — lower = denser supports on anchor surfaces (0.7 = ~2× the supports)' },
+  { key: 'slopeRelaxFactor',      label: 'Slope Relax',          min: 1,    max: 2,    step: 0.1,  unit: '×',   hint: 'Grid spacing on slopes at the self-support angle — higher = sparser' },
+  { key: 'sizeScale',             label: 'Support Size',         min: 0.5,  max: 2,    step: 0.05, unit: '×',   hint: 'Master multiplier over the preset sizing bands — thicker or thinner everywhere' },
+  { key: 'coverageTargetPercent', label: 'Coverage Target',      min: 75,   max: 100,  step: 5,   unit: '%',   hint: 'How much of each region\'s footprint the grid must cover before gap-filling stops' },
+  { key: 'leafFanRadiusMm',       label: 'Fan Reach',            min: 2,    max: 15,   step: 0.5, unit: 'mm',  hint: 'Max horizontal distance a fan-out leaf may span from a trunk shaft' },
+  { key: 'leafFanMaxAngleDeg',    label: 'Fan Angle',            min: 20,   max: 80,   step: 5,   unit: '°',   hint: 'Max angle from vertical for fan-out leaves' },
   { key: 'maxAttachmentsPerTrunk',         label: 'Branches per Column',   min: 2,  max: 50, step: 1,   unit: '',   hint: 'Max branches + leaves one trunk may carry before new trunks are started' },
 ];
 
@@ -515,6 +527,14 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
                   ))}
                 </div>
               </div>
+              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
+                <SectionHeader title="Coverage" />
+                <div className="space-y-2.5">
+                  {KNOBS.filter(k => ['coverageTargetPercent', 'leafFanRadiusMm', 'leafFanMaxAngleDeg'].includes(k.key)).map(knob => (
+                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* RIGHT COLUMN */}
@@ -522,7 +542,15 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
               <div className="rounded-md border p-2.5" style={SECTION_CARD}>
                 <SectionHeader title="Density" />
                 <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['areaPerSupportMm2', 'gridAreaThresholdMm2'].includes(k.key)).map(knob => (
+                  {KNOBS.filter(k => ['areaPerSupportMm2', 'gridAreaThresholdMm2', 'flatDensityBoost', 'slopeRelaxFactor'].includes(k.key)).map(knob => (
+                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-md border p-2.5" style={SECTION_CARD}>
+                <SectionHeader title="Sizing" />
+                <div className="space-y-2.5">
+                  {KNOBS.filter(k => ['sizeScale'].includes(k.key)).map(knob => (
                     <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
                   ))}
                 </div>
