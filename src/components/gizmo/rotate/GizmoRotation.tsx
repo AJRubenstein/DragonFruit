@@ -4,7 +4,7 @@ import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react'
 import * as THREE from 'three';
 import { ThreeEvent, useThree, useFrame } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
-import { GIZMO_COLORS, GIZMO_SIZES, GIZMO_LIGHTING } from '../constants';
+import { GIZMO_COLORS, GIZMO_DIAL_COLORS, GIZMO_SIZES, GIZMO_LIGHTING } from '../constants';
 import { beginGizmoDrag } from '../gizmoDragRegistry';
 import {
   DIAL_ANATOMY,
@@ -765,7 +765,7 @@ export function GizmoRotation({
       {dialVisible && (
         <group rotation={[0, 0, dialZero]}>
           <RotationDial
-            color={ringColors.ring}
+            color={GIZMO_DIAL_COLORS[axis]}
             opacity={0.9 * opacityScale}
             sweepGroupRef={sweepGroupRef}
             held={heldMark}

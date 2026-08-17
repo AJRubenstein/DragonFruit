@@ -1,11 +1,12 @@
-import { GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS } from './generatedBuiltinComplexPlugins';
+import { getBuiltinComplexPluginDefinitions } from './builtinComplexPlugins';
 
 /**
  * File extensions contributed by built-in fileType plugins (without leading dot, lowercase).
- * Derived at module load time from the auto-generated plugin registry.
+ * Derived at module load time from the auto-generated plugin registry (filtered
+ * to exclude plugins gated behind disabled experiments).
  */
 export const PLUGIN_CONTRIBUTED_FILE_EXTENSIONS: readonly string[] = Object.freeze(
-  GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS.flatMap((def) => def.fileTypes ?? []).map((ft) =>
+  getBuiltinComplexPluginDefinitions().flatMap((def) => def.fileTypes ?? []).map((ft) =>
     ft.fileExtension.replace(/^\./, '').toLowerCase(),
   ),
 );

@@ -147,6 +147,7 @@ import {
   toggleSupportPathfindingDebugTuningEnabled,
 } from '@/supports/PlacementLogic/Pathfinding/pathfindingDebugState';
 import { applyScaleFactor } from '@/components/gizmo/scale/applyScaleFactor';
+import { createWheelDeviceClassifier, type WheelDevice } from '@/components/scene/SceneCanvas/wheelDeviceClassifier';
 
 const Canvas = dynamic(() => import('@react-three/fiber').then(m => m.Canvas), { ssr: false });
 
@@ -158,39 +159,19 @@ type GhostPreviewTransform = {
 
 type TrackpadGestureAction = 'pan' | 'orbit';
 
-function isLikelyTrackpadWheelEvent(event: WheelEvent): boolean {
-  // Use numeric DOM_DELTA_PIXEL (=0) to avoid relying on global WheelEvent in all runtimes.
-  if (event.deltaMode !== 0) return false;
-  if (event.ctrlKey) return true;
-
-  const absX = Math.abs(event.deltaX);
-  const absY = Math.abs(event.deltaY);
-  const dominantDelta = Math.max(absX, absY);
-  const recessiveDelta = Math.min(absX, absY);
-
-  if (dominantDelta <= 0) return false;
-
-  // Exclude typical mouse wheel events: one axis nearly zero, other large.
-  // This prevents regular mouse scroll from triggering trackpad gestures.
-  if (recessiveDelta < 2 && dominantDelta > 16) return false;
-
-  if (absX > 0) return true;
-  if (!Number.isInteger(event.deltaX) || !Number.isInteger(event.deltaY)) return true;
-  return dominantDelta <= 16;
-}
-
 function isTrackpadModifierPressed(event: WheelEvent, modifierKey: CameraTrackpadModifierKey): boolean {
   return modifierKey === 'shift' ? event.shiftKey : event.altKey;
 }
 
 function resolveTrackpadGestureAction(
   event: WheelEvent,
+  device: WheelDevice,
   primaryAction: CameraTrackpadPrimaryAction,
   modifierKey: CameraTrackpadModifierKey,
 ): TrackpadGestureAction | null {
   if (primaryAction === 'off') return null;
   if (event.ctrlKey || event.metaKey) return null;
-  if (!isLikelyTrackpadWheelEvent(event)) return null;
+  if (device !== 'trackpad') return null;
 
   const modifierPressed = isTrackpadModifierPressed(event, modifierKey);
   if (!modifierPressed) return primaryAction;
@@ -1162,6 +1143,9 @@ export function SceneCanvas({
   const wheelZoomInteractionActiveRef = React.useRef(false);
   const trackpadGestureEndTimeoutRef = React.useRef<number | null>(null);
   const trackpadGestureActionRef = React.useRef<TrackpadGestureAction | null>(null);
+  // One classifier for both wheel handlers: they see the same events, and its
+  // verdict is only stable if it watches the whole stream.
+  const wheelDeviceClassifierRef = React.useRef(createWheelDeviceClassifier());
   const navigationResumeDelayRef = React.useRef(0);
   const benchmarkRunIdRef = React.useRef<string | null>(null);
   const [isOrbitInteracting, setIsOrbitInteracting] = React.useState(false);
@@ -4450,13 +4434,16 @@ export function SceneCanvas({
       if (!container.contains(event.target as Node | null)) return;
       const controls = orbitControlsRef.current;
       if (!controls || controls.enabled === false) return;
+      const device = wheelDeviceClassifierRef.current.classify(event, event.timeStamp);
       // Trackpad: allow zoom only for pinch gestures (ctrlKey).
       // Regular two-finger scroll should never trigger zoom.
-      if (isLikelyTrackpadWheelEvent(event) && !event.ctrlKey) {
+      // An 'unknown' verdict zooms: a wheel must always zoom, and that is the
+      // reading a bare wheel event gets everywhere else.
+      if (device === 'trackpad' && !event.ctrlKey) {
         return;
       }
       try {
-        if (resolveTrackpadGestureAction(event, cameraTrackpadSettings, cameraTrackpadModifierKey) !== null) {
+        if (resolveTrackpadGestureAction(event, device, cameraTrackpadSettings, cameraTrackpadModifierKey) !== null) {
           return;
         }
       } catch (error) {
@@ -4998,6 +4985,7 @@ export function SceneCanvas({
       try {
         const action = resolveTrackpadGestureAction(
           event,
+          wheelDeviceClassifierRef.current.classify(event, event.timeStamp),
           cameraTrackpadSettings,
           cameraTrackpadModifierKey,
         );

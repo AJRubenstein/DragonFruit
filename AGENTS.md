@@ -66,6 +66,41 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
+## New interfaces require dev documentation
+
+Any feature that ships **new developer-facing interfaces** — a framework,
+contract, registry, public module API, IPC command, or config schema — MUST
+also ship fleshed-out dev documentation explaining how to use it. The feature
+is not done until the docs are.
+
+Docs live under `docs/dev/` (framework/contract docs) or `docs/reference/`
+(user-facing contracts), are registered in `mkdocs.yml` under **Developer
+Guide**, and are updated alongside behavior changes (see `docs/dev/index.md`).
+
+What "fleshed out" means — cover at least:
+
+- What the interface is for and when to reach for it
+- The files/functions/types that form the public surface
+- A minimal usage example
+- Any constraints (leaf-module rules, reload semantics, boundaries)
+- Related pages
+
+Reference example: `docs/dev/experiments-framework.md`.
+
+## Consult the developer docs first
+
+Before reverse-engineering how a system works from the source, check the
+developer docs — `docs/dev/` (frameworks, contracts, invariants) and
+`docs/reference/` (hotkeys, file formats, support anatomy). `docs/dev/index.md`
+is the index and the `mkdocs.yml` nav is the map.
+
+Most cross-cutting systems are documented: history/undo-redo, registration
+seams, state stores, config schemas, the Tauri IPC bridge, hotkeys, plugins,
+experiments, and the support system. Read the relevant page before grepping the
+codebase — it names the exact files and invariants you would otherwise spend
+time re-deriving. Only fall back to source reading when the docs don't answer
+the question.
+
 ## Agent skills
 
 ### Issue tracker
@@ -108,3 +143,20 @@ Two invariants that mimicry won't teach — get either wrong and undo breaks **s
 - **Everything pushed to the stack needs a handler** — even a marker with no undo behaviour
   needs a pass-through (`() => true`), or an unhandled entry strands the stack (see
   `SCENE_SLICED`). A handler returning `false` means "unrecoverable"; the entry is discarded.
+
+## Rust crate version bumps
+
+The native crates under `rust/` (`dragonfruit-islands`, `dragonfruit-sdf`,
+`dragonfruit-mesh-core`, …) are **standalone crates** — there is no workspace
+root — consumed by the Tauri shell via path dependencies in
+`src-tauri/Cargo.toml`. Because path deps always resolve, a stale `version` is
+invisible locally but breaks the lock file, caches, and any versioned consumer.
+
+Whenever you change one of these crates, **bump its `version`** in that crate's
+`Cargo.toml`:
+
+- `patch` for bug fixes, `minor` for new features (semver).
+- If another crate or the shell pins it by version, update that requirement to
+  match.
+- Run `cargo check` (or `cargo build`) afterwards so `Cargo.lock` picks up the
+  bump before committing.

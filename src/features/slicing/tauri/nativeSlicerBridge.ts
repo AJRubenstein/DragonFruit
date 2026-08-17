@@ -534,6 +534,7 @@ export async function pickDirectoryWithNativeDialog(currentPath?: string): Promi
 export async function pickOpenFilesWithNativeDialog(
   category: NativeOpenDialogCategory,
   multiple = false,
+  sceneExtensions?: string[],
 ): Promise<NativePickedOpenFile[]> {
   const core = await loadTauriCore();
   if (!core) {
@@ -544,6 +545,7 @@ export async function pickOpenFilesWithNativeDialog(
     args: {
       category,
       multiple,
+      ...(sceneExtensions !== undefined ? { sceneExtensions } : {}),
     },
   });
 }
