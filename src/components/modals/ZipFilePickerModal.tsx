@@ -3,9 +3,10 @@
 import React from 'react';
 import { ArchiveRestore, FileArchive, X } from 'lucide-react';
 import { getFileExtensionLower } from '@/utils/zipImport';
+import { SCENE_FILE_EXTENSIONS } from '@/features/plugins/pluginFileTypeExtensions';
 
 const MESH_EXTS = new Set(['.stl', '.obj', '.3mf']);
-const SCENE_EXTS = new Set(['.voxl', '.lys']);
+const SCENE_EXTS = new Set(SCENE_FILE_EXTENSIONS.map((ext) => `.${ext}`));
 
 type ZipFilePickerModalProps = {
   zipName: string;

@@ -5340,9 +5340,9 @@ export function useSceneCollectionManager() {
       const data = await res.json();
       applyImportDefaultsToRaftState();
       loadFromImportFormat(data);
-      console.log('Loaded LYS data:', data);
+      console.log('Loaded support JSON:', data);
     } catch (e) {
-      console.error('Failed to load LYS data:', e);
+      console.error('Failed to load support JSON:', e);
     }
   };
 
@@ -5362,7 +5362,7 @@ export function useSceneCollectionManager() {
       emitSceneImportReport('Imported support data.', 'success');
 
     } catch (err) {
-      console.error('[SceneCollection] Failed to import LYS file:', err);
+      console.error('[SceneCollection] Failed to import support JSON:', err);
       emitSceneImportReport('Support import failed.', 'error');
     }
   }, [emitSceneImportReport]);

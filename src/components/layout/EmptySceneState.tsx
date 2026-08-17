@@ -7,6 +7,7 @@ import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import type { RecentOpenedFileEntry } from '@/features/scene/useSceneCollectionManager';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { SCENE_FILE_EXTENSIONS, sceneFileExtensionLabels, sceneFileInputAccept } from '@/features/plugins/pluginFileTypeExtensions';
 
 const BUILD_CHANNEL = (process.env.NEXT_PUBLIC_BUILD_CHANNEL ?? '').toLowerCase();
 const APP_VERSION = (process.env.NEXT_PUBLIC_APP_VERSION ?? '').toLowerCase();
@@ -128,9 +129,14 @@ function getFileExtension(name: string): string {
   return trimmed.slice(dotIndex);
 }
 
+const MESH_DROP_EXTENSIONS = ['.stl', '.obj', '.3mf'];
+
 function isSupportedDropName(name: string): boolean {
   const ext = getFileExtension(name);
-  return ext === '.stl' || ext === '.obj' || ext === '.3mf' || ext === '.voxl' || ext === '.lys';
+  if (MESH_DROP_EXTENSIONS.includes(ext)) return true;
+  // Scene formats come from the plugin registry, so a newly registered plugin
+  // is droppable without touching this list.
+  return SCENE_FILE_EXTENSIONS.some((sceneExt) => ext === `.${sceneExt}`);
 }
 
 function getDropSupportStateFromDataTransfer(dataTransfer: DataTransfer | null): 'supported' | 'unsupported' | 'unknown' {
@@ -735,12 +741,13 @@ export function EmptySceneState({
                         : '1px solid color-mix(in srgb, var(--accent), var(--border-subtle) 56%)',
                     }}
                   >
-                    STL • OBJ • 3MF • VOXL • LYS
+                    {['STL', 'OBJ', '3MF', ...sceneFileExtensionLabels()].join(' • ')}
                   </span>
                 </div>
                 {isDropUnsupported && (
                   <div className="mt-1 text-[11px]" style={{ color: 'var(--danger)' }}>
-                    {_(msg`Unsupported format detected. Please drop STL, OBJ, 3MF, VOXL, or LYS files.`)}
+                    {_(msg`Unsupported format detected.`)}{' '}
+                    {['STL', 'OBJ', '3MF', ...sceneFileExtensionLabels()].join(', ')}
                   </div>
                 )}
               </div>
@@ -761,7 +768,7 @@ export function EmptySceneState({
           <input
             id="empty-state-scene-file-input"
             type="file"
-            accept=".voxl,.lys,.zip"
+            accept={sceneFileInputAccept()}
             multiple
             onChange={onImportSceneChange}
             className="hidden"
