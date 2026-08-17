@@ -8,6 +8,8 @@ import { CameraSettingsTab } from '@/components/settings/CameraSettingsTab';
 import { HotkeysSettingsTab } from '@/components/settings/HotkeysSettingsTab';
 import { MeshSettingsTab } from '@/components/settings/MeshSettingsTab';
 import { PluginsSettingsTab } from '@/components/settings/PluginsSettingsTab';
+import { ExperimentsSettingsTab } from '@/components/settings/ExperimentsSettingsTab';
+import { getEnabledExperimentIds } from '@/features/experiments/experimentsRegistry';
 import { LocalBackupsSettingsTab } from '@/components/settings/LocalBackupsSettingsTab';
 import { SceneAutosaveSettingsTab } from '@/components/settings/SceneAutosaveSettingsTab';
 import { UvToolsSettingsTab } from '@/components/settings/UvToolsSettingsTab';
@@ -18,7 +20,7 @@ import { UpdatesSettingsTab } from '@/features/updater/UpdatesSettingsTab';
 import { getUpdateChannel, type UpdateChannel } from '@/features/updater/updateBridge';
 import { WorkspacesSettingsTab } from '@/components/settings/WorkspacesSettingsTab';
 import { PerformanceSettingsTab, type SlicingThumbnailRenderSettings } from '@/components/settings/PerformanceSettingsTab';
-import { AlertTriangle, Check, CloudDownload, Edit3, ExternalLink, Gamepad2, Github, HardDrive, Info, Keyboard, MonitorCog, Palette, Plug, RotateCcw, Save, Settings2, Trash2, X, Camera, Grid3x3, ArchiveRestore, ScrollText } from 'lucide-react';
+import { AlertTriangle, Check, CloudDownload, Edit3, ExternalLink, FlaskConical, Gamepad2, Github, HardDrive, Info, Keyboard, MonitorCog, Palette, Plug, RotateCcw, Save, Settings2, Trash2, X, Camera, Grid3x3, ArchiveRestore, ScrollText } from 'lucide-react';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
 import {
   applyThemeCustomColors,
@@ -206,7 +208,7 @@ type SettingsModalProps = {
   initialTab?: SettingsTabKey;
 };
 
-export type SettingsTabKey = 'general' | 'camera' | 'workspaces' | 'mesh' | 'performance' | 'spacemouse' | 'plugins' | 'sceneAutosave' | 'backups' | 'uvtools' | 'ui' | 'hotkeys' | 'logging' | 'updates' | 'about';
+export type SettingsTabKey = 'general' | 'camera' | 'workspaces' | 'mesh' | 'performance' | 'spacemouse' | 'plugins' | 'experiments' | 'sceneAutosave' | 'backups' | 'uvtools' | 'ui' | 'hotkeys' | 'logging' | 'updates' | 'about';
 type SettingsTabTone = 'primary' | 'secondary';
 
 export function SettingsModal({
@@ -254,6 +256,45 @@ export function SettingsModal({
   initialTab,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabKey>(initialTab ?? 'general');
+  // The modal stays mounted while closed (isOpen toggles visibility), so activeTab
+  // would otherwise persist across open/close. Reset it to the caller's requested
+  // tab each time the modal opens — the normal open path passes 'general', so
+  // closing on Experiments reopens to General rather than the last-active tab.
+  const wasOpenRef = React.useRef(isOpen);
+  // Snapshot of enabled experiments at open; if it differs when the user closes
+  // the modal, they toggled an experiment this session and we prompt to reload.
+  const experimentsSnapshotRef = React.useRef<string>(getEnabledExperimentIds().sort().join(','));
+  const [showReloadPrompt, setShowReloadPrompt] = useState(false);
+  React.useEffect(() => {
+    if (isOpen && !wasOpenRef.current) {
+      setActiveTab(initialTab ?? 'general');
+      setShowReloadPrompt(false);
+      experimentsSnapshotRef.current = getEnabledExperimentIds().sort().join(',');
+    }
+    wasOpenRef.current = isOpen;
+  }, [isOpen, initialTab]);
+
+  const requestClose = React.useCallback(() => {
+    const currentKey = getEnabledExperimentIds().sort().join(',');
+    if (currentKey !== experimentsSnapshotRef.current) {
+      setShowReloadPrompt(true);
+      return;
+    }
+    onClose();
+  }, [onClose]);
+
+  const reloadToApplyExperiments = React.useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  }, []);
+  // Tracks the tab active before the current one, so the Experiments disclaimer
+  // can return the user where they were if they decline to acknowledge.
+  const previousTabRef = React.useRef<SettingsTabKey>(initialTab ?? 'general');
+  const handleSelectTab = React.useCallback((tab: SettingsTabKey) => {
+    previousTabRef.current = activeTab;
+    setActiveTab(tab);
+  }, [activeTab]);
 
   const [copied, setCopied] = useState(false);
   const handleCopyBuildInfo = React.useCallback(async () => {
@@ -705,8 +746,8 @@ export function SettingsModal({
     didCommitThemeDraftRef.current = false;
     restoreSavedThemePreview();
     resetDraftFromProps();
-    onClose();
-  }, [onClose, resetDraftFromProps, restoreSavedThemePreview]);
+    requestClose();
+  }, [requestClose, resetDraftFromProps, restoreSavedThemePreview]);
 
   const applyRestoreDefaultsToDraft = React.useCallback(() => {
     setDraftMeshColor(DEFAULT_MESH_COLOR);
@@ -847,7 +888,7 @@ export function SettingsModal({
     }
 
     didCommitThemeDraftRef.current = true;
-    onClose();
+    requestClose();
   }, [
     applyLocale,
     draftLocale,
@@ -893,6 +934,7 @@ export function SettingsModal({
     draftLogLevel,
     onAmbientIntensityChange,
     onClose,
+    requestClose,
     onDirectionalIntensityChange,
     onFlatUseVertexColorsChange,
     onMatcapVariantChange,
@@ -1117,6 +1159,12 @@ export function SettingsModal({
       icon: Plug,
       tone: 'secondary',
     },
+    experiments: {
+      label: 'Experiments',
+      description: 'Early-access and experimental features',
+      icon: FlaskConical,
+      tone: 'secondary',
+    },
     sceneAutosave: {
       label: 'Scene Autosave',
       description: 'Autosave and crash recovery behavior',
@@ -1156,7 +1204,7 @@ export function SettingsModal({
   };
 
   const sidebarTopTabs: SettingsTabKey[] = ['general', 'camera', 'workspaces', 'mesh', 'performance', 'spacemouse', 'ui', 'hotkeys'];
-  const sidebarBottomTabs: SettingsTabKey[] = ['plugins', 'sceneAutosave', 'backups', 'uvtools', 'logging', 'updates', 'about'];
+  const sidebarBottomTabs: SettingsTabKey[] = ['plugins', 'experiments', 'sceneAutosave', 'backups', 'uvtools', 'logging', 'updates', 'about'];
 
 
   const ActiveTabIcon = tabMeta[activeTab].icon;
@@ -1252,7 +1300,7 @@ export function SettingsModal({
                     <button
                       key={tab}
                       type="button"
-                      onClick={() => setActiveTab(tab)}
+                      onClick={() => handleSelectTab(tab)}
                       className="w-full rounded-lg border px-3 py-2 text-left transition-all duration-150"
                       style={active
                         ? {
@@ -1305,7 +1353,7 @@ export function SettingsModal({
                       key={tab}
                       type="button"
                       aria-disabled={false}
-                      onClick={() => setActiveTab(tab)}
+                      onClick={() => handleSelectTab(tab)}
                       className="w-full rounded-lg border px-3 py-2 text-left transition-all duration-150"
                       style={{
                         ...(active
@@ -1476,6 +1524,14 @@ export function SettingsModal({
                 />
               )}
               {activeTab === 'plugins' && <PluginsSettingsTab />}
+              {activeTab === 'experiments' && (
+                <ExperimentsSettingsTab
+                  // Declining the disclaimer returns to the tab the user came
+                  // from — unless they deep-linked straight here, in which case
+                  // fall back to General rather than re-showing the gate.
+                  onExit={() => setActiveTab(previousTabRef.current === 'experiments' ? 'general' : previousTabRef.current)}
+                />
+              )}
               {activeTab === 'sceneAutosave' && <SceneAutosaveSettingsTab />}
               {activeTab === 'backups' && <LocalBackupsSettingsTab />}
               {activeTab === 'uvtools' && (
@@ -1803,6 +1859,86 @@ export function SettingsModal({
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Restore Defaults
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReloadPrompt && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 backdrop-blur-sm p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowReloadPrompt(false);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-xl border shadow-2xl"
+            style={{
+              background: 'var(--surface-0)',
+              borderColor: 'var(--border-subtle)',
+              boxShadow: '0 24px 46px rgba(0,0,0,0.42)',
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Apply experiments"
+          >
+            <div className="flex items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: 'var(--border-subtle)' }}>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border"
+                  style={{
+                    borderColor: 'color-mix(in srgb, #d97706, var(--border-subtle) 50%)',
+                    background: 'color-mix(in srgb, #d97706, var(--surface-1) 85%)',
+                    color: '#d97706',
+                  }}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
+                    Apply Experiments
+                  </h2>
+                  <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+                    Experiment changes take effect after a restart.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowReloadPrompt(false)}
+                className="ui-button ui-button-secondary inline-flex items-center justify-center leading-none !h-8 !w-8 !p-0"
+                aria-label="Close restart prompt"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
+                Reload DragonFruit now to apply your experiment changes? Any unsaved changes to the current scene will be lost.
+              </p>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowReloadPrompt(false); onClose(); }}
+                  className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+                >
+                  Not Now
+                </button>
+                <button
+                  type="button"
+                  onClick={reloadToApplyExperiments}
+                  className="ui-button !h-9 px-3 text-xs inline-flex items-center gap-1.5"
+                  style={accentSecondaryActionStyle92}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reload Now
                 </button>
               </div>
             </div>

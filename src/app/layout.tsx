@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { HotkeyProvider } from "@/hotkeys/HotkeyContext";
 import { HotkeyRegistryManager } from "@/hotkeys/HotkeyRegistryManager";
+import { ExperimentsNativeSync } from "@/features/experiments/ExperimentsNativeSync";
 import { RendererCrashDiagnostics } from "@/components/debug/RendererCrashDiagnostics";
 import { DevIndicatorPosition } from "@/components/debug/DevIndicatorPosition";
 import { AppLogger } from "@/components/AppLogger";
@@ -49,6 +50,7 @@ export default function RootLayout({
         <I18nClientProvider>
           <HotkeyProvider>
             <HotkeyRegistryManager />
+            <ExperimentsNativeSync />
             <AppLogger />
             <RendererCrashDiagnostics />
             <DevIndicatorPosition />
