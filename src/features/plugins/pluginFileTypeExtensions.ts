@@ -17,7 +17,7 @@ export const PLUGIN_CONTRIBUTED_FILE_EXTENSIONS: readonly string[] = Object.free
  * host routes through a plugin handler rather than loading as a plain mesh.
  */
 export const PLUGIN_SCENE_FILE_EXTENSIONS: readonly string[] = Object.freeze(
-  GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS
+  getBuiltinComplexPluginDefinitions()
     .flatMap((def) => def.fileTypes ?? [])
     .filter((ft) => ft.isSceneFile)
     .map((ft) => ft.fileExtension.replace(/^\./, '').toLowerCase()),
