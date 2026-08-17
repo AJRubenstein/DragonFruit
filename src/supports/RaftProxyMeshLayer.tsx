@@ -28,6 +28,9 @@ interface RaftProxyMeshLayerProps {
   ghostOpacity?: number;
   ghostRenderOrder?: number;
   onModelPointerSelect?: (modelId: string) => void;
+  /** In Select mode, a pointer-down on a raft reports a potential model XY-drag
+   *  start (model + screen coords). The scene owns the drag. */
+  onModelPointerDragStart?: (modelId: string, clientX: number, clientY: number) => void;
   enablePointerSelection?: boolean;
   colorized?: boolean;
   hoverized?: boolean;
@@ -181,6 +184,7 @@ export function RaftProxyMeshLayer({
   ghostOpacity = 1,
   ghostRenderOrder = 0,
   onModelPointerSelect,
+  onModelPointerDragStart,
   enablePointerSelection = true,
   colorized = true,
   hoverized = false,
@@ -409,7 +413,7 @@ export function RaftProxyMeshLayer({
   const handleClick = React.useCallback((event: any, modelId?: string) => {
     if (!pointerEnabled) return;
     if (!modelId || !onModelPointerSelect) return;
-    
+
     // Don't select model if a gizmo handle is being interacted with
     if (hit.category === 'gizmo') return;
 
@@ -421,6 +425,16 @@ export function RaftProxyMeshLayer({
 
     onModelPointerSelect(modelId);
   }, [hit.category, onModelPointerSelect, pointerEnabled]);
+
+  const handlePointerDown = React.useCallback((event: any, modelId?: string) => {
+    if (!pointerEnabled || !onModelPointerDragStart) return;
+    if (!modelId) return;
+    if (hit.category === 'gizmo') return;
+    const native = event.nativeEvent as PointerEvent | undefined;
+    if (native?.ctrlKey || native?.metaKey || native?.shiftKey) return;
+    if (event.button !== 0) return;
+    onModelPointerDragStart(modelId, event.clientX, event.clientY);
+  }, [hit.category, onModelPointerDragStart, pointerEnabled]);
 
   const handlePointerMove = React.useCallback((event: any, modelId?: string) => {
     if (!pointerEnabled) return;
@@ -452,6 +466,7 @@ export function RaftProxyMeshLayer({
               geometry={entry.bottomGeometry}
               renderOrder={ghostRenderOrder}
               onClick={pointerEnabled ? (event) => handleClick(event, entry.modelId) : undefined}
+              onPointerDown={pointerEnabled && onModelPointerDragStart ? (event) => handlePointerDown(event, entry.modelId) : undefined}
               onPointerMove={pointerEnabled ? (event) => handlePointerMove(event, entry.modelId) : undefined}
               onPointerOut={pointerEnabled ? handlePointerOut : undefined}
             >
@@ -474,6 +489,7 @@ export function RaftProxyMeshLayer({
               geometry={entry.wallGeometry}
               renderOrder={ghostRenderOrder}
               onClick={pointerEnabled ? (event) => handleClick(event, entry.modelId) : undefined}
+              onPointerDown={pointerEnabled && onModelPointerDragStart ? (event) => handlePointerDown(event, entry.modelId) : undefined}
               onPointerMove={pointerEnabled ? (event) => handlePointerMove(event, entry.modelId) : undefined}
               onPointerOut={pointerEnabled ? handlePointerOut : undefined}
             >

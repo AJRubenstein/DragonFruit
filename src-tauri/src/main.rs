@@ -56,6 +56,7 @@ fn default_dither_device_gamma() -> f64 {
     3.0
 }
 
+mod experiments;
 mod plugin_registry;
 mod window_state;
 
@@ -260,7 +261,11 @@ fn commit_scene_file_atomic(
 fn is_voxl_autosave_target(path: &std::path::Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| ext.trim().trim_start_matches('.').eq_ignore_ascii_case("voxl"))
+        .map(|ext| {
+            ext.trim()
+                .trim_start_matches('.')
+                .eq_ignore_ascii_case("voxl")
+        })
         .unwrap_or(false)
 }
 
@@ -2134,6 +2139,10 @@ struct WriteBytesToPathArgs {
 struct PickOpenFilesArgs {
     category: String,
     multiple: bool,
+    /// Optional override for the "Scene Files" filter extension list. When set,
+    /// the dialog uses exactly these extensions (e.g. so gated file types like
+    /// .chitubox behind a disabled experiment are hidden from the filter).
+    scene_extensions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2618,7 +2627,9 @@ pub(crate) fn build_scene_autosave_manifest(
             voxl_path: write
                 .voxl_path
                 .or_else(|| previous.and_then(|m| m.voxl_path.clone())),
-            origin: write.origin.or_else(|| previous.and_then(|m| m.origin.clone())),
+            origin: write
+                .origin
+                .or_else(|| previous.and_then(|m| m.origin.clone())),
             project_path: write
                 .project_path
                 .or_else(|| previous.and_then(|m| m.project_path.clone())),
@@ -2722,10 +2733,7 @@ fn is_sidecar_autosave_file(path: &std::path::Path) -> bool {
 /// The deletion gate. Only a file this policy could itself have produced â€” a
 /// `<stem>_autosave.voxl` sidecar, or the generic recovery payload â€” may be
 /// removed through any of the cleanup seams. The user's project never qualifies.
-fn is_deletable_autosave_payload(
-    recovery_dir: &std::path::Path,
-    path: &std::path::Path,
-) -> bool {
+fn is_deletable_autosave_payload(recovery_dir: &std::path::Path, path: &std::path::Path) -> bool {
     is_sidecar_autosave_file(path)
         || autosave_paths_equal(path, &recovery_dir.join(SCENE_AUTOSAVE_LEGACY_VOXL_FILE))
 }
@@ -2763,7 +2771,9 @@ fn delete_sidecar_for_project(project: &std::path::Path) -> Result<(), String> {
 /// Returns `None` when the directory is usable, or the `fallback_reason` to
 /// record in the manifest when it is not.
 fn probe_directory_writable(sidecar: &std::path::Path) -> Option<&'static str> {
-    let parent = sidecar.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let parent = sidecar
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
     if !parent.as_os_str().is_empty() && !parent.is_dir() {
         return Some("parent-missing");
     }
@@ -2826,7 +2836,8 @@ fn scene_autosave_recovery_candidates(
             .map(str::trim)
             .filter(|value| !value.is_empty())
         {
-            if let Some(sidecar) = sidecar_autosave_path_for_project(std::path::Path::new(project)) {
+            if let Some(sidecar) = sidecar_autosave_path_for_project(std::path::Path::new(project))
+            {
                 candidates.push(sidecar);
             }
         }
@@ -3133,8 +3144,10 @@ async fn scene_autosave_write_manifest(
             .and_then(|content| serde_json::from_str(&content).ok());
 
         if delete_payload.unwrap_or(false) {
-            let mut targets: Vec<std::path::PathBuf> =
-                vec![dir.join(SCENE_AUTOSAVE_LEGACY_VOXL_FILE), dir.join(SCENE_AUTOSAVE_VOXL_FILE)];
+            let mut targets: Vec<std::path::PathBuf> = vec![
+                dir.join(SCENE_AUTOSAVE_LEGACY_VOXL_FILE),
+                dir.join(SCENE_AUTOSAVE_VOXL_FILE),
+            ];
             for advertised in [
                 previous.as_ref().and_then(|m| m.voxl_path.clone()),
                 voxl_path.clone(),
@@ -3339,13 +3352,27 @@ struct SceneFileHandoffPayload {
     source: String,
 }
 
-fn build_open_dialog_with_filters(category: &str) -> rfd::FileDialog {
+fn build_open_dialog_with_filters(
+    category: &str,
+    scene_extensions: Option<&[String]>,
+) -> rfd::FileDialog {
     let mut dialog = rfd::FileDialog::new();
 
-    // Build scene extension list: voxl + all plugin-registered extensions + zip (for bundles)
-    let mut scene_exts: Vec<&str> = vec!["voxl"];
-    scene_exts.extend_from_slice(BUILTIN_PLUGIN_SCENE_EXTENSIONS);
-    scene_exts.push("zip");
+    // Build scene extension list: the frontend-provided override when present
+    // (so gated file types are hidden), otherwise voxl + all plugin-registered
+    // extensions + zip (for bundles).
+    let scene_exts: Vec<&str> = match scene_extensions {
+        Some(extensions) => extensions
+            .iter()
+            .map(|extension| extension.as_str())
+            .collect(),
+        None => {
+            let mut fallback = vec!["voxl"];
+            fallback.extend_from_slice(BUILTIN_PLUGIN_SCENE_EXTENSIONS);
+            fallback.push("zip");
+            fallback
+        }
+    };
 
     let normalized = category.trim().to_ascii_lowercase();
     dialog = match normalized.as_str() {
@@ -3480,7 +3507,8 @@ async fn write_bytes_to_path(args: WriteBytesToPathArgs) -> Result<String, Strin
 #[tauri::command]
 async fn pick_open_files(args: PickOpenFilesArgs) -> Result<Vec<PickedOpenFile>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let dialog = build_open_dialog_with_filters(&args.category);
+        let dialog =
+            build_open_dialog_with_filters(&args.category, args.scene_extensions.as_deref());
 
         let picked_paths: Vec<std::path::PathBuf> = if args.multiple {
             dialog.pick_files().unwrap_or_default()
@@ -3831,19 +3859,15 @@ async fn open_external_url(url: String) -> Result<(), String> {
         .args(["/c", "start", &url])
         .spawn();
     #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open")
-        .arg(&url)
-        .spawn();
+    let result = std::process::Command::new("open").arg(&url).spawn();
     #[cfg(target_os = "linux")]
-    let result = std::process::Command::new("xdg-open")
-        .arg(&url)
-        .spawn();
+    let result = std::process::Command::new("xdg-open").arg(&url).spawn();
 
     result.map_err(|e| format!("Failed to open URL in browser: {e}"))?;
     Ok(())
 }
 
-        #[tauri::command]
+#[tauri::command]
 async fn launch_external_process(exe_path: String, file_arg: String) -> Result<(), String> {
     let exe_path = exe_path.trim().to_string();
     let file_arg = file_arg.trim().to_string();
@@ -4109,6 +4133,7 @@ fn main() {
         let app_handle = app.handle().clone();
 
         app.manage(window_state::WindowStateTracker::default());
+        app.manage(experiments::ExperimentsState::default());
 
         // Defer main window creation to an async task so the splashscreen's
         // WebView2 instance fully initialises before the main window's does.
@@ -4224,6 +4249,7 @@ fn main() {
             save_print_file_from_path,
             pick_save_path,
             pick_open_files,
+            experiments::set_experiment_overrides,
             get_launch_scene_files,
             get_slicer_engine_version,
             notify_launch_scene_handoff,
@@ -4372,7 +4398,9 @@ mod tests {
     ) -> Result<(), String> {
         let temp = super::sibling_commit_temp_path(target)?;
         let temp_text = temp.to_string_lossy().to_string();
-        let cut = interrupt_after_bytes.unwrap_or(bytes.len()).min(bytes.len());
+        let cut = interrupt_after_bytes
+            .unwrap_or(bytes.len())
+            .min(bytes.len());
 
         super::stage_append_chunk(&temp_text, &bytes[..cut], true)?;
         if interrupt_after_bytes.is_some() {
@@ -4679,7 +4707,10 @@ mod tests {
 
     /// Builds a project folder with a real scene file in it, plus a separate
     /// recovery dir, mirroring the two real locations at runtime.
-    fn autosave_fixture(tag: &str, project_file: &str) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+    fn autosave_fixture(
+        tag: &str,
+        project_file: &str,
+    ) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
         let root = unique_test_dir(tag);
         let project_dir = root.join("projects");
         let recovery_dir = root.join("recovery");
@@ -4779,8 +4810,7 @@ mod tests {
             Some("   ".to_string()),
             None,
         ] {
-            let target =
-                super::resolve_scene_autosave_target(&recovery_dir, preferred.as_deref());
+            let target = super::resolve_scene_autosave_target(&recovery_dir, preferred.as_deref());
             let name = target
                 .voxl_path
                 .file_name()
@@ -4855,8 +4885,10 @@ mod tests {
 
         // Parent directory does not exist (deleted folder / unreachable share).
         let missing = root.join("gone/MyPrint.voxl");
-        let target =
-            super::resolve_scene_autosave_target(&recovery_dir, Some(missing.to_string_lossy().as_ref()));
+        let target = super::resolve_scene_autosave_target(
+            &recovery_dir,
+            Some(missing.to_string_lossy().as_ref()),
+        );
         assert_eq!(target.voxl_path, generic);
         assert_eq!(target.origin, super::SCENE_AUTOSAVE_ORIGIN_RECOVERY_DIR);
         assert_eq!(target.fallback_reason, Some("parent-missing"));
@@ -4942,7 +4974,11 @@ mod tests {
         //    sidecar derived from `projectPath` (project moved, or an older build
         //    wrote no `voxlPath` at all).
         let mut stale = manifest.clone();
-        stale.voxl_path = Some(root.join("gone/MyPrint_autosave.voxl").to_string_lossy().to_string());
+        stale.voxl_path = Some(
+            root.join("gone/MyPrint_autosave.voxl")
+                .to_string_lossy()
+                .to_string(),
+        );
         let found = super::resolve_scene_autosave_recovery(&recovery_dir, Some(&stale))
             .expect("no recovery candidate found via project path");
         assert_eq!(found.voxl_path, sidecar);
@@ -5129,7 +5165,10 @@ mod tests {
         // With the age gate satisfied, only other processes' temps go.
         assert_eq!(super::sweep_stale_scene_commit_temps(&root, 0), 1);
         assert!(!stale.exists(), "a stale foreign temp survived the sweep");
-        assert!(ours.exists(), "the sweep deleted this process's own live temp");
+        assert!(
+            ours.exists(),
+            "the sweep deleted this process's own live temp"
+        );
         assert!(innocent.exists(), "the sweep deleted a real scene file");
         assert!(lookalike.exists(), "the sweep deleted a non-matching file");
 
@@ -5222,7 +5261,10 @@ mod tests {
             },
         );
 
-        assert_eq!(next.last_error, None, "a healthy autosave kept reporting a stale error");
+        assert_eq!(
+            next.last_error, None,
+            "a healthy autosave kept reporting a stale error"
+        );
         assert_eq!(next.saved_at, "2026-07-26T12:00:00.000Z");
         assert_eq!(next.payload_bytes, Some(999));
     }
@@ -5246,6 +5288,9 @@ mod tests {
         );
 
         assert!(next.clean);
-        assert_eq!(next.voxl_path, None, "a cleaned manifest advertised a file it had deleted");
+        assert_eq!(
+            next.voxl_path, None,
+            "a cleaned manifest advertised a file it had deleted"
+        );
     }
 }

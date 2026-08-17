@@ -11,7 +11,7 @@ import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { createTypedHistory } from '@/history/typedHistory';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 import type { DragonfruitImportFormat, SupportMode, SupportState } from '@/supports/types';
-import { GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS } from '@/features/plugins/generatedBuiltinComplexPlugins';
+import { getBuiltinComplexPluginDefinitions } from '@/features/plugins/builtinComplexPlugins';
 import { getBuiltinComplexPluginFileTypeHandlers } from '@/features/plugins/builtinComplexPluginFileTypeHandlers';
 import type { PluginFileTypeDefinition } from '@/features/plugins/complexPluginContracts';
 import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBridge';
@@ -1095,7 +1095,7 @@ export function useSceneCollectionManager() {
   const getSceneExtension = useCallback((name: string): string | null => {
     const normalized = name.trim().toLowerCase();
     if (normalized.endsWith('.voxl')) return '.voxl';
-    for (const def of GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS) {
+    for (const def of getBuiltinComplexPluginDefinitions()) {
       for (const ft of def.fileTypes ?? []) {
         if (ft.isSceneFile && normalized.endsWith(ft.fileExtension)) {
           return ft.fileExtension;
@@ -1112,7 +1112,7 @@ export function useSceneCollectionManager() {
 
     const out = new Map<string, ScenePluginImportEntry>();
 
-    for (const definition of GENERATED_BUILTIN_COMPLEX_PLUGIN_DEFINITIONS) {
+    for (const definition of getBuiltinComplexPluginDefinitions()) {
       for (const fileType of definition.fileTypes ?? []) {
         if (!fileType.isSceneFile) continue;
 
@@ -5340,9 +5340,9 @@ export function useSceneCollectionManager() {
       const data = await res.json();
       applyImportDefaultsToRaftState();
       loadFromImportFormat(data);
-      console.log('Loaded LYS data:', data);
+      console.log('Loaded support JSON:', data);
     } catch (e) {
-      console.error('Failed to load LYS data:', e);
+      console.error('Failed to load support JSON:', e);
     }
   };
 
@@ -5362,7 +5362,7 @@ export function useSceneCollectionManager() {
       emitSceneImportReport('Imported support data.', 'success');
 
     } catch (err) {
-      console.error('[SceneCollection] Failed to import LYS file:', err);
+      console.error('[SceneCollection] Failed to import support JSON:', err);
       emitSceneImportReport('Support import failed.', 'error');
     }
   }, [emitSceneImportReport]);

@@ -33,6 +33,7 @@ import {
 
 import type { View3DSettings } from '@/components/settings/view3dPreferences';
 import type { SlicingThumbnailRenderSettings } from '@/components/settings/PerformanceSettingsTab';
+import { sceneFileInputAccept } from '@/features/plugins/pluginFileTypeExtensions';
 
 interface TopBarProps {
   meshColor: string;
@@ -919,7 +920,7 @@ export function TopBar({
       <input
         id="topbar-scene-input"
         type="file"
-        accept=".voxl,.lys,.zip"
+        accept={sceneFileInputAccept()}
         onChange={onImportSceneChange}
         className="hidden"
       />

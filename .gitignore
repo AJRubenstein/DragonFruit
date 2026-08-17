@@ -23,6 +23,13 @@ src-tauri/gen/
 # generated artifacts
 **/generated*
 
+# mkdocs Material social-plugin cache (fonts + generated card images).
+# A stale/empty font cache here breaks `mkdocs build` (infinite recursion in the
+# social plugin), so never commit it.
+/.cache/
+# mkdocs build output
+/site/
+
 # environment files (can opt-in for committing if needed)
 .env*
 !.env.example

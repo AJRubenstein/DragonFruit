@@ -14,6 +14,15 @@ This section documents DragonFruit internals for contributors and maintainers.
 - File format contracts (VOXL, LYS extraction)
 - Plugin framework contracts (simple vs complex)
 - Complex plugin contribution workflow
+- Experiments framework contracts and gating semantics
+- History and undo/redo invariants (typed façade, dispatch semantics)
+- Registration seams (delete registry, mesh geometry store)
+- Hotkey system rules (listener hygiene, press-edge toggles, specificity suppression, raw event contract)
+- State and store patterns (module stores, preferences modules)
+- Config schema contracts and where each is validated
+- Tauri IPC and native-bridge conventions
+- Adding a new support type walkthrough
+- Known gotchas, temporary rules, and desired refactors (backlog)
 - RTSP relay reclaim API behavior
 - Release process: branching, versioning, and channels
 

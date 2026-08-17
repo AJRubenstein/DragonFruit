@@ -23,6 +23,7 @@ interface InstancedShaftGroupProps {
     radialSegments?: number;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
     onShaftClick?: (shaft: InstancedShaft, event: ThreeEvent<MouseEvent>) => void;
+    onShaftPointerDown?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
     onShaftPointerMove?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
     onShaftPointerOut?: (shaft: InstancedShaft | null, event: ThreeEvent<PointerEvent>) => void;
 }
@@ -40,6 +41,7 @@ export function InstancedShaftGroup({
     radialSegments = 12,
     outOfBoundsMaterial = null,
     onShaftClick,
+    onShaftPointerDown,
     onShaftPointerMove,
     onShaftPointerOut,
 }: InstancedShaftGroupProps) {
@@ -111,6 +113,16 @@ export function InstancedShaftGroup({
         onShaftClick(shaft, event);
     };
 
+    const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
+        if (!onShaftPointerDown) return;
+        event.stopPropagation();
+        const instanceId = event.instanceId;
+        if (instanceId == null) return;
+        const shaft = validShafts[instanceId];
+        if (!shaft) return;
+        onShaftPointerDown(shaft, event);
+    };
+
     const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
         if (!onShaftPointerMove) return;
         event.stopPropagation();
@@ -137,6 +149,7 @@ export function InstancedShaftGroup({
                 frustumCulled={false}
                 renderOrder={100000}
                 onClick={onShaftClick ? handleClick : undefined}
+                onPointerDown={onShaftPointerDown ? handlePointerDown : undefined}
                 onPointerMove={onShaftPointerMove ? handlePointerMove : undefined}
                 onPointerOut={onShaftPointerOut ? handlePointerOut : undefined}
             >

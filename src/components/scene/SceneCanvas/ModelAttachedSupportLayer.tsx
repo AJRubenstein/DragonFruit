@@ -33,6 +33,9 @@ export type ModelAttachedSupportLayerProps = {
   raftColorized?: boolean;
   raftHoverized?: boolean;
   onModelPointerSelect?: (modelId: string) => void;
+  /** In Select mode, a pointer-down on a support/raft reports a potential model
+   *  XY-drag start (model + screen coords). The scene owns the drag. */
+  onModelPointerDragStart?: (modelId: string, clientX: number, clientY: number) => void;
   ghostOpacity?: number;
   ghostRenderOrder?: number;
   supportRendererRef?: React.Ref<THREE.Group>;
@@ -83,6 +86,7 @@ export function ModelAttachedSupportLayer({
   raftColorized = true,
   raftHoverized = false,
   onModelPointerSelect,
+  onModelPointerDragStart,
   ghostOpacity,
   ghostRenderOrder,
   supportRendererRef,
@@ -122,6 +126,7 @@ export function ModelAttachedSupportLayer({
           ghostOpacity={ghostOpacity}
           ghostRenderOrder={ghostRenderOrder}
           onModelPointerSelect={onModelPointerSelect}
+          onModelPointerDragStart={onModelPointerDragStart}
           enablePointerSelection={proxyPointerSelectionEnabled}
           colorized={raftColorized}
           hoverized={raftHoverized}
@@ -189,6 +194,7 @@ export function ModelAttachedSupportLayer({
             outOfBoundsMax={outOfBoundsMax}
             outOfBoundsStripeColor={outOfBoundsStripeColor}
             onModelPointerSelect={onModelPointerSelect}
+            onModelPointerDragStart={onModelPointerDragStart}
             enablePointerSelection={proxyPointerSelectionEnabled}
             includeDetailedPrimitives={proxyIncludeDetailedPrimitives}
             interiorView={interiorView}
