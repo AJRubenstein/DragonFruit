@@ -3756,16 +3756,12 @@ export function calculateSmartPlacementV2(
                 : socketPos;
             const _directTarget = finalBase.rootTopTarget;
             if (segmentSatisfiesLengthAwareMaxAngleFromVertical(_prevPt, _directTarget, maxSegmentAngleFromVerticalDeg)) {
-                // Try full clearance first, then half clearance
-                let _canRemove = !segmentBlockedBetween(_prevPt, _directTarget);
-                if (!_canRemove) {
-                    _canRemove = !sdf.segmentBlocked(
-                        _prevPt.x, _prevPt.y, _prevPt.z,
-                        _directTarget.x, _directTarget.y, _directTarget.z,
-                        clearance * 0.4,
-                    );
-                }
-                if (_canRemove) {
+                // Remove only when the direct chord clears at FULL clearance.
+                // A relaxed retry (the previous 0.4x fallback) could drop the
+                // waypoint that keeps the chord clear of nearby geometry; the
+                // final chain validation still enforces full clearance, so the
+                // whole placement then fails instead of keeping the joint.
+                if (!segmentBlockedBetween(_prevPt, _directTarget)) {
                     finalJoints = finalJoints.slice(0, -1);
                 }
             }
