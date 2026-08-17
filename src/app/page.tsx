@@ -199,6 +199,7 @@ import {
   type SceneFileHandoffPayload,
 } from '@/features/import-export/fileHandling';
 import { getPluginSceneOverlayLoader } from '@/features/plugins/pluginRegistry';
+import { isExperimentEnabled, subscribeToExperiments } from '@/features/experiments/experimentsRegistry';
 import {
   type HullCacheEntry,
   type ArrangeModel as HighPrecisionArrangeModel,
@@ -590,6 +591,12 @@ export default function Home() {
   const recentOpenedFiles = scene.recentOpenedFiles;
   const reopenRecentOpenedFile = scene.reopenRecentOpenedFile;
   const profileState = React.useSyncExternalStore(subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot);
+  const autoSupportsExperimentEnabled = React.useSyncExternalStore(
+    subscribeToExperiments,
+    () => isExperimentEnabled('auto-supports'),
+    // SSR: no localStorage → the manifest default (disabled).
+    () => false,
+  );
   const sceneAutosaveSettings = React.useSyncExternalStore(
     subscribeToSceneAutosaveSettings,
     getSceneAutosaveSettingsSnapshot,
@@ -9832,12 +9839,14 @@ export default function Home() {
         ) : scene.mode === 'support' ? (
           <>
             <SupportSidebar key="support-settings" />
-            <AutoSupportPanel
-              key="support-auto"
-              islands={islandsPoc}
-              hasGeometry={!!scene.geom}
-              activeModelId={scene.activeModelId ?? undefined}
-            />
+            {autoSupportsExperimentEnabled && (
+              <AutoSupportPanel
+                key="support-auto"
+                islands={islandsPoc}
+                hasGeometry={!!scene.geom}
+                activeModelId={scene.activeModelId ?? undefined}
+              />
+            )}
             <IslandsPanel
               key="support-islands"
               islands={islandsPoc}
