@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "experiments": [
+    {
+      "id": "chitubox-import",
+      "name": "Chitubox File Import",
+      "description": "Enable importing .chitubox project files. Lacks comprehensive testing and may not work with all files.",
+      "defaultEnabled": false,
+      "gatedPlugins": ["chitubox-import"]
+    }
+  ]
+}

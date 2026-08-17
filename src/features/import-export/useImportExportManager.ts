@@ -20,6 +20,8 @@ import {
   isLikelyFileDragPayload,
   getPrepareDropSupportStateFromDataTransfer,
   buildDroppedFilesSignature,
+  getNativeSceneDialogExtensions,
+  getWebSceneAcceptString,
   type LaunchSceneFileEntry,
   type SceneFileHandoffPayload,
 } from '@/features/import-export/fileHandling';
@@ -404,7 +406,10 @@ export function useImportExportManager({
     if (!deps.current.isDesktopRuntime()) return null;
 
     try {
-      const picked = await pickOpenFilesWithNativeDialog(category, multiple);
+      // Pass the currently available scene extensions so gated file types
+      // (e.g. chitubox behind a disabled experiment) are hidden from the filter.
+      const sceneExtensions = category === 'scene' ? getNativeSceneDialogExtensions() : undefined;
+      const picked = await pickOpenFilesWithNativeDialog(category, multiple, sceneExtensions);
       if (!picked || picked.length === 0) return [];
 
       const core = await import('@tauri-apps/api/core');
@@ -501,7 +506,7 @@ export function useImportExportManager({
     if (!deps.current.isDesktopRuntime()) return null;
 
     try {
-      const picked = await pickOpenFilesWithNativeDialog('scene', true);
+      const picked = await pickOpenFilesWithNativeDialog('scene', true, getNativeSceneDialogExtensions());
       if (!picked || picked.length === 0) return [];
 
       const core = await import('@tauri-apps/api/core');
@@ -622,7 +627,7 @@ export function useImportExportManager({
       return;
     }
 
-    const webFiles = await pickFilesWithWebInput(sceneFileInputAccept(), true);
+    const webFiles = await pickFilesWithWebInput(getWebSceneAcceptString(), true);
     if (webFiles.length === 0) return;
     const expanded = await expandPickedFilesWithZip(webFiles, 'scene');
     if (expanded.sceneFiles.length > 0) {
