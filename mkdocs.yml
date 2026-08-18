@@ -32,6 +32,10 @@ extra_javascript:
   - javascripts/homepage-release-feed.js
   - javascripts/mathjax.js
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+# Internal docs are versioned but never published. See docs/internal/README.md.
+exclude_docs: |
+  internal/
+
 plugins:
   - search
   - meta
@@ -120,6 +124,10 @@ nav:
           - Formats: dev/formats.md
           - VOXL Format Spec: dev/voxl-format-spec.md
           - LYS Mesh Extraction Spec: dev/lys-mesh-extraction-spec.md
+      - Decision Records:
+          - Stream CTB Layer Payloads to Disk: adr/0036-stream-ctb-layer-payloads-to-disk.md
+          - Cut the Surface, Not a Volume: adr/0037-cut-the-surface-not-a-volume.md
+          - Organic Cut Surface Redesign: dev/organic-cut-surface-redesign.md
       - Integration and Operations:
           - RTSP Relay: dev/rtsp-relay.md
           - Release Process: dev/releases.md

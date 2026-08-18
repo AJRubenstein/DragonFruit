@@ -23,6 +23,7 @@ This section documents DragonFruit internals for contributors and maintainers.
 - Tauri IPC and native-bridge conventions
 - Adding a new support type walkthrough
 - Known gotchas, temporary rules, and desired refactors (backlog)
+- Decision records: why a load-bearing choice was made, and what was ruled out
 - RTSP relay reclaim API behavior
 - Release process: branching, versioning, and channels
 

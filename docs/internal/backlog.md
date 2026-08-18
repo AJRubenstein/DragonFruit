@@ -1,0 +1,191 @@
+# Findings inbox (internal)
+
+> **Not to be confused with `docs/dev/backlog.md`**, which is the *published*
+> record of known gotchas, temporary rules, and desired architectural
+> directions. This file is not published and is a different thing: a short-lived
+> inbox. A rule you must follow from now on goes there; a finding somebody will
+> pick up some day goes here.
+
+> **Instructions for the agent (read before touching this file).**
+>
+> **What this is.** A low-friction inbox for incidental findings that turn up
+> *in the middle of another task* — dead code, unused imports, redundant
+> functions, refactor and toolchain ideas. It is NOT a formal tracker (that is
+> GitHub Issues) and it is NOT a graveyard. It is the in-tray.
+>
+> **What it is for.** Two things: (1) getting findings out of a human's head so
+> they stop spending attention remembering them; (2) **preserving analysis
+> already paid for** (processing time + tokens) so nobody has to re-investigate
+> when they come back to it.
+>
+> **The golden rule: capture and carry on.** When something turns up while you
+> are working on something else, add it here and **continue with the current
+> task**. No rabbit holes. A branch or PR is born only when a human
+> *deliberately* chooses to pull an item out of here. Don't open speculative
+> branches on disk: they rot.
+>
+> **How to write an entry.** Just enough to pick it up cold, not one line more.
+> By tier:
+> - Trivial/mechanical → 1-3 lines and the location. No essay.
+> - Meaty/structural → *what* + *cost/risk* briefly, plus a **pointer** to the
+>   full context (an ADR in `docs/adr/`, a page under `docs/dev/`, an issue)
+>   instead of duplicating the expensive reasoning. Write *"do not
+>   re-investigate"*.
+> - Point only at things everyone can read. An agent's own memory is not a
+>   citation — anything load-bearing has to be written down somewhere in the
+>   repo, or it does not exist for the next reader.
+> - No entry should run past ~6 lines. If it needs more, it is really a GitHub
+>   Issue or an ADR, not an inbox entry.
+> - Dedup before adding. If the exact listing can go stale (e.g. dead imports),
+>   record *how to regenerate it* rather than freezing it.
+>
+> **Entry format:**
+> ```
+> ### [area] Title — <S|M|L> · <low|medium|high risk>
+> - Where: file:line(s)
+> - What: one-line description
+> - Why: impact / why it is worth doing
+> - Context: pointer to ADR/doc/issue (omit if trivial)
+> ```
+> Usual areas: `cleanup`, `refactor`, `toolchain`, `i18n`, `ci`, `dx`, `perf`,
+> `docs`.
+>
+> **Lifecycle.** This file lists only what is OPEN. When an item is done or
+> promoted to a GitHub Issue (`needs-triage`/`ready-for-agent`), **delete** it
+> from here (git keeps the history); if promoted, leave the issue number in the
+> commit message. Keep the list short and actionable — inbox, not graveyard.
+
+---
+
+## Open
+
+### [cleanup] Dead imports and components in the page.tsx header — S · low risk
+- Where: src/app/page.tsx, lines ~7-59 (import header).
+- What: ~30 symbols imported and unused — lucide icons, several panels/cards
+  (`IslandScanCard`, `ModelManagerPanel`, `TransformControls`, `LayerSlider`,
+  `VisualSettingsPanel`…) and 2 entirely unused imports (lines 50 and 56).
+- Why: noise; the LSP flags them (TS 6133/6192). Mechanical, low-risk cleanup.
+- Context: already unused at HEAD (confirmed against `git stash`), not from the
+  i18n fix. Regenerate the exact list with `npx tsc --noEmit` (or ESLint
+  no-unused-vars) before touching anything — don't trust this frozen listing.
+
+### [toolchain] Root-cause fix for the Lingui × React Compiler bug — L · medium risk
+- Where: next.config.ts (`swcPlugins` + `reactCompiler`); affects every `msg`
+  interpolation inside components/hooks.
+- What: move Lingui to the **Babel** macro
+  (`@lingui/babel-plugin-lingui-macro`) ordered BEFORE react-compiler, to kill
+  the whole bug class instead of patching site by site.
+- Cost: loses SWC speed and probably drops dev out of Turbopack. Keeps the SAME
+  RC implementation → no regression from RC itself.
+- Note: the rule that stands while this is undone (interpolations live in
+  module-scope helpers) is in `docs/dev/backlog.md`. If this lands, retire it there.
+- Context: the `@swc/react-compiler` spike (all-SWC at no cost) was already
+  ruled out — it is a gate + linter, not a transform. Do not re-investigate.
+
+### [i18n] Guardrail: fail loudly on uncatalogued messages — S · low risk
+- Where: src/i18n.ts (the `i18n` init).
+- What: subscribe to `i18n.on('missing', …)` so dev/test blows up (or warns
+  loudly) when an `id` is not in the catalog.
+- Why: this event fires in dev AND prod (it is not gated on NODE_ENV). It would
+  have caught the card bug on day one instead of in a release DMG.
+- Context: see the Lingui section of `docs/dev/backlog.md`.
+
+### [ci] Guardrail: production-shaped build before release — M · low risk
+- Where: CI (release.yml / pr-check-build.yml) or a local smoke test.
+- What: get a production build (`next build` + launch, or the Tauri bundle) into
+  the loop before publishing. Today `tauri:dev` is not a faithful preview of
+  prod for i18n, which is why the failure only showed up in the DMG.
+- Why: turns prod-only failures (like the Lingui one) into something visible
+  before signing a release.
+
+### [refactor] Scattered, overlapping duration formatters — M · medium risk
+- Where: src/app/page.tsx (`formatApproxPrintTimeLabel`,
+  `formatProcessingElapsedLabel`, `formatEstimatedPrintTimeLabel`),
+  src/features/printing/printingMonitorFormat.ts,
+  src/components/layout/EmptySceneState.tsx.
+- What: ~3 places format durations with similar but divergent templates
+  (`{hours} h {minutes} min`, `{hours} h {paddedMinutes} min`, `~{mins} min`,
+  `{minutes} min {paddedSeconds} s`, relative `{deltaMin} min`…). Seconds are
+  zero-padded in some, rounded in others, absent in others.
+- Why: consolidate the mechanics into one duration-formatting module — and
+  translate one string instead of several.
+- Careful: the *message shapes* differ deliberately by context (estimated /
+  elapsed / relative / approximate). Do not merge messages bluntly: that would
+  change catalog ids and drop translations. Consolidate the mechanics, keep the
+  templates.
+
+### [cleanup] Pre-existing ESLint errors in src/hotkeys — S · low risk
+- Where: src/hotkeys/ (confirmed in `__tests__/hotkeyStore.test.ts` and
+  `HotkeyContext.tsx`). Regenerate with `npx eslint src/hotkeys/` — don't freeze
+  line numbers.
+- What: (a) test mocks use `any`/`Function` and `let` where `const` belongs;
+  (b) HotkeyContext.tsx uses `any` in `deepMerge`/`stripStaleActions` and calls
+  `setState` inside the localStorage-loading effect (`react-hooks/set-state-in-effect`).
+- Why: `npm run lint` (= `eslint`, tests not ignored) already flags these. They
+  don't block today (no husky/lint-staged), but they will the moment CI requires
+  lint — which is why lint cannot go into CI before this is cleared. Predates #435.
+- Careful: (b) is not mechanical — typing the merge touches the shape of the
+  persisted config.
+
+### [cleanup] CRLF line endings in the plugin submodules — M · medium risk
+- Where: plugins/ (git submodules). Detect with
+  `find plugins -type f | xargs grep -lU $'\r' | head` (~51+ files with CRLF).
+- What: several files in the submodule repos use Windows carriage returns;
+  normalize to LF.
+- Why: inconsistent line endings → diff noise and possible tooling/patching
+  failures.
+- Careful: these are submodules → the change belongs in THEIR repos, not this
+  one. Also add a `.gitattributes` (`* text=auto eol=lf`) per plugin so it does
+  not come back.
+
+### [ci] Run the Rust tests in CI — M · medium risk
+- Where: .github/workflows/ (a new `cargo test` job, or inside an existing one).
+- What: `cargo test` does NOT run in CI. 155+ `#[test]` functions across the
+  `rust/` crates (plus `src-tauri/`) with no automated net. Same gap already
+  closed for the TS suite (see `test.yml`), one layer down.
+- Cost: heavier than the TS one — Rust toolchain plus compile time; probably
+  needs the `plugins/*/rust` submodules. Lean on `warm-rust-cache.yml`.
+- Note: cargo discovers tests through the compiler (`#[test]`/`#[cfg(test)]`),
+  not by glob, so nothing from the TS suite-exposure fix affects it.
+
+### [refactor] Move createTypedHistory into historyStore.ts — M · medium risk
+- Where: src/history/typedHistory.ts + src/history/historyStore.ts.
+- What: fold the factory into historyStore.ts and stop exporting
+  `pushHistory`/`registerHistoryHandler` (module-private) → the typed façade
+  becomes the only path. `undo`/`redo`/`subscribe*`/`clearHistory` stay public.
+- Why: the boundary is conventional today; a future contributor can call the raw
+  store and reintroduce the type↔payload drift we removed.
+- Cheaper alternative: a lint guardrail (in the style of
+  `scripts/check-plugin-boundaries.mjs`) restricting imports of those two
+  functions to typedHistory.ts.
+- Context: branch fix/history-undo-seam; `docs/dev/history-and-undo-redo.md`
+  documents the façade this would enforce.
+
+### [fix] Esc does not close every modal — M · low risk
+- Where: src/components/modals/ and src/hotkeys/ (HotkeyRegistryManager already
+  special-cases Escape: see the comment about "Escape closing the Settings modal").
+- What: Escape closes some modals and not others. Spotted on the history debugger
+  (Cmd+Shift+C on macOS), which stays open. Audit them all and give them one
+  default behaviour instead of wiring it modal by modal.
+- Why: it is the universal convention, and today it depends on whether someone
+  remembered. The decision to make is where the default lives: in a base modal
+  component, or in the hotkey registry.
+
+### [fix] Show continuous Euler angles in the Transform panel — M · medium risk
+- Where: the gizmo drag applies rotation as quaternion deltas
+  (src/components/scene/SceneCanvas/SceneCanvas.tsx, onRotate:
+  `setFromAxisAngle(rotationAxis, -angle)` premultiplied onto the model
+  quaternion); the panel reads Euler angles back off that quaternion via THREE's
+  `setFromQuaternion(q, 'XYZ')`. At 180° the XYZ decomposition has two equivalent
+  forms and THREE picks the (-180, 0, -180) one.
+- What: make the displayed Euler triple continuous — when converting the model
+  quaternion to Euler for display, pick the decomposition closest to the triple
+  currently shown, so the fields stop jumping between equivalent representations.
+- Why: rotating a model exactly 180° about Y makes the ROTATE fields read
+  X=-180, Y=0, Z=-180 instead of Y=180. Both describe the same orientation
+  (verified: quaternions differ by 0°, all three basis vectors map identically),
+  so this is Euler decomposition degeneracy, not a wrong rotation.
+- Careful: the same Euler values feed undo/redo snapshots, scene persistence and
+  export, so the display-side choice must not change the stored orientation.
+  Confirm with an exact 180° rotation on each axis, and with a drag crossing 180°
+  continuously.
