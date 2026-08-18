@@ -6,9 +6,9 @@ import { Card, CardHeader, IconButton, Button } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
-import { runAutoPlace } from '@/supports/autoSupport';
+import { runAutoPlace, forestReportToText } from '@/supports/autoSupport';
 import { DETAIL_PRESET, STRUCTURE_PRESET, ANCHOR_PRESET } from '@/supports/Settings/presets';
-import type { SizingDebugInfo, AutoSupportSettings } from '@/supports/autoSupport';
+import type { SizingDebugInfo, AutoSupportSettings, ForestReport } from '@/supports/autoSupport';
 import { getSettings, updateAutoSupportSettings } from '@/supports/Settings/state';
 import { getSnapshot, setSnapshot } from '@/supports/state';
 import { getKickstandSnapshot, setKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
@@ -133,6 +133,8 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
   const [showReplaceDialog, setShowReplaceDialog] = React.useState(false);
   const [showSizingDebug, setShowSizingDebug] = React.useState(false);
   const [sizingDebug, setSizingDebugState] = React.useState<SizingDebugInfo | null>(null);
+  const [showForestReport, setShowForestReport] = React.useState(false);
+  const [forestReport, setForestReportState] = React.useState<ForestReport | null>(null);
   // Derive the quick-select label from the ACTUAL settings on mount — the
   // loaded/persisted profile may not match the built-in medium preset, and a
   // hardcoded 'medium' would lie about what the current settings are.
@@ -173,6 +175,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
     try {
       const result = runAutoPlace(list, activeModelId, getSettings().autoSupport);
       if (result.analytics?.sizingDebug) setSizingDebugState(result.analytics.sizingDebug);
+      if (result.analytics?.forestReport) setForestReportState(result.analytics.forestReport);
     } catch (e) {
       console.error('[AutoSupport] runAutoPlace failed:', e);
     }
@@ -519,6 +522,21 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
               </div>
             )}
 
+            {/* Forest Report */}
+            {forestReport && (
+              <button
+                type="button"
+                onClick={() => setShowForestReport(true)}
+                className="w-full rounded-md border px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide flex items-center justify-between"
+                style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
+              >
+                <span>Forest Report</span>
+                <span className="text-[9px] normal-case tracking-normal">
+                  {forestReport.trunkCount}T {forestReport.leafCount}L {forestReport.branchCount}B · {forestReport.trees.length} trees
+                </span>
+              </button>
+            )}
+
             {!hasGeometry && (
               <div className="text-[10px] italic text-center" style={{ color: 'var(--text-muted)' }}>
                 Load a model and scan for islands.
@@ -527,6 +545,42 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
           </div>
         )}
       </Card>
+
+      {/* Forest Report Modal */}
+      <StructuredDialogModal
+        open={showForestReport}
+        ariaLabel="Forest report"
+        title="Forest Report"
+        subtitle="Every placed support with its size and fan-out groups"
+        iconTone="neutral"
+        maxWidthClassName="max-w-2xl"
+        onClose={() => setShowForestReport(false)}
+        onBackdropClick={() => setShowForestReport(false)}
+        actions={
+          <>
+            <Button
+              onClick={() => {
+                if (forestReport) {
+                  void navigator.clipboard?.writeText(forestReportToText(forestReport));
+                }
+              }}
+              variant="secondary" size="sm" className="!h-9 text-[12px]"
+            >Copy</Button>
+            <Button onClick={() => setShowForestReport(false)} variant="primary" size="sm" className="!h-9 text-[12px]">Close</Button>
+          </>
+        }
+      >
+        {forestReport && (
+          <div className="rounded-md border overflow-hidden" style={SECTION_CARD}>
+            <pre
+              className="px-3 py-2 text-[10px] leading-relaxed whitespace-pre-wrap break-words tabular-nums overflow-y-auto"
+              style={{ color: 'var(--text-muted)', maxHeight: '70vh' }}
+            >
+              {forestReportToText(forestReport)}
+            </pre>
+          </div>
+        )}
+      </StructuredDialogModal>
 
       {/* Settings Modal */}
       <StructuredDialogModal

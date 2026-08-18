@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal } from './types';
+import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree } from './types';
 import type { SupportState, SupportOrigin } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
@@ -13,7 +13,7 @@ import {
     collectSupportTips,
     computeRegionCoverage,
 } from './coverage';
-import { sizeParameters, presetForArea } from './parameterSizing';
+import { sizeParameters, presetForArea, ANCHOR_SHAFT_MULTIPLIER, type SizingPreset } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
 import { getSnapshot, setSnapshot } from '../state';
@@ -46,6 +46,19 @@ import {
 } from './constants';
 
 const LOG_PREFIX = '[AutoSupport]';
+
+// Per-entity placement logging (Trunk/Leaf/Merge lines) is OFF by default —
+// the Forest Report at the end of each run replaces the per-support spam.
+// Re-enable via setAutoSupportVerboseLogging(true) for debugging.
+let verboseLogging = false;
+
+export function setAutoSupportVerboseLogging(enabled: boolean): void {
+    verboseLogging = enabled;
+}
+
+function logPlacement(message: string): void {
+    if (verboseLogging) console.log(LOG_PREFIX, message);
+}
 
 function round2(v: number): number { return Math.round(v * 100) / 100; }
 
@@ -377,7 +390,7 @@ export function buildConsolidationBranch(args: {
     radiusMm: number;
     maxAttachments: number;
     knotId: string;
-}): { draft: SupportState } | null {
+}): { draft: SupportState; branchId: string } | null {
     const { tip, tipNormal, modelId, pool, pruned, mesh, radiusMm, maxAttachments, knotId } = args;
 
     // Steepest eligible host sample (≤ 50° from vertical — the branch
@@ -423,7 +436,7 @@ export function buildConsolidationBranch(args: {
         let d = draftAddKnot(pruned, parentKnot);
         branch.origin = 'overhang';
         d = draftAddBranch(d, branch);
-        return { draft: d };
+        return { draft: d, branchId: branch.id };
     } catch {
         return null;
     }
@@ -450,7 +463,6 @@ function placeOneCandidate(
     candidate: CandidatePoint,
     draft: SupportState,
     _settingsOverride: Partial<AutoSupportSettings> | undefined,
-    totalArea?: number,
     gridTrunkIds?: ReadonlySet<string>,
 ): { kind: string; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected' } {
     const supportSettings = getSettings();
@@ -505,10 +517,10 @@ function placeOneCandidate(
                     'overhang',
                 );
                 if (fan.ok) {
-                    console.log(LOG_PREFIX,
+                    logPlacement(
                         `Leaf (grid→island) ${candidate.id} → trunk ${fan.trunkId} ` +
                         `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
-                    return { kind: 'leaf', preset, draft: fan.draft };
+                    return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.leafId };
                 }
             }
         }
@@ -535,10 +547,10 @@ function placeOneCandidate(
                 'overhang',
             );
             if (fan.ok) {
-                console.log(LOG_PREFIX,
+                logPlacement(
                     `Leaf (fan merge) ${candidate.id} → trunk ${fan.trunkId} ` +
                     `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
-                return { kind: 'leaf', preset, draft: fan.draft };
+                return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.leafId };
             }
             fanRefusal = fan.reason;
         }
@@ -594,7 +606,7 @@ function placeOneCandidate(
                 }
             }
             if (!bestKnotPos) {
-                console.log(LOG_PREFIX,
+                logPlacement(
                     `Merge skip ${candidate.id}: no steep attachment on host ${host.trunkId} ` +
                     `(max rise ${maxRiseDeg.toFixed(0)}° < ${STEEP_MIN_RISE_DEG}° above horizontal)`);
             } else {
@@ -633,11 +645,11 @@ function placeOneCandidate(
                     );
                     const vDist = tipPos.z - knotPos.z;
                     if (vDist <= 0) {
-                        console.log(LOG_PREFIX,
+                        logPlacement(
                             `Merge skip ${candidate.id}: knot above tip (kZ=${knotPos.z.toFixed(1)} tZ=${tipPos.z.toFixed(1)})`);
                     } else if (vDist < 1.5) {
                         // Too shallow — fall through to branch.
-                        console.log(LOG_PREFIX,
+                        logPlacement(
                             `Leaf (merge) ${candidate.id}: too shallow (vDist=${vDist.toFixed(1)}mm), trying branch...`);
                     } else {
                         try {
@@ -653,15 +665,15 @@ function placeOneCandidate(
                                 mesh,
                             });
                             if (sd.error) {
-                                console.log(LOG_PREFIX,
+                                logPlacement(
                                     `Leaf (merge) ${candidate.id}: sd.error, trying branch...`);
                             } else if (mesh && leafConeCollides(parentKnot.pos, leaf.contactCone, mesh)) {
-                                console.log(LOG_PREFIX,
+                                logPlacement(
                                     `Leaf (merge) ${candidate.id}: triangle collision, trying branch...`);
                             } else {
                                 const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
                                 if (isTrunkAtAttachmentCapacity(host.trunkId, cap, draft)) {
-                                    console.log(LOG_PREFIX,
+                                    logPlacement(
                                         `Merge skip ${candidate.id}: host ${host.trunkId} at capacity (${cap} attachments)`);
                                     // fall through to standalone trunk
                                 } else {
@@ -669,10 +681,10 @@ function placeOneCandidate(
                                     leaf.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
                                     d = draftAddLeaf(d, leaf);
                                     const la = (Math.atan2(hDist, vDist) * 180) / Math.PI;
-                                    console.log(LOG_PREFIX,
+                                    logPlacement(
                                         `Leaf (merge) ${candidate.id} → host ${host.trunkId} ` +
                                         `span=${tipSpanMm.toFixed(1)}mm angle=${la.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
-                                    return { kind: 'leaf', preset, draft: d };
+                                    return { kind: 'leaf', preset, draft: d, entityId: leaf.id };
                                 }
                             }
                         } catch {}
@@ -688,7 +700,7 @@ function placeOneCandidate(
                     const vDist2 = tipPos.z - knotPos.z;
                     const mergeAngleDeg = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                     if (mergeAngleDeg > 50) {
-                        console.log(LOG_PREFIX,
+                        logPlacement(
                             `Merge skip ${candidate.id}: angle too shallow (${mergeAngleDeg.toFixed(0)}° from vertical > 50°) span=${tipSpanMm.toFixed(1)}mm`);
                     } else try {
                         const { branch, supportData: sd } = buildBranchData({
@@ -696,11 +708,11 @@ function placeOneCandidate(
                         });
                         const collides = sd.error || (mesh && branchCollidesWithSDF(branch, mesh));
                         if (collides) {
-                            console.log(LOG_PREFIX, `Branch (merge) ${candidate.id}: collision, falling back`);
+                            logPlacement(`Branch (merge) ${candidate.id}: collision, falling back`);
                         } else {
                             const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
                             if (isTrunkAtAttachmentCapacity(host.trunkId, cap, draft)) {
-                                console.log(LOG_PREFIX,
+                                logPlacement(
                                     `Merge skip ${candidate.id}: host ${host.trunkId} at capacity (${cap} attachments)`);
                                 // fall through to standalone trunk
                             } else {
@@ -710,14 +722,14 @@ function placeOneCandidate(
                                 branch.origin = 'island';
                                 d = draftAddBranch(d, branch);
                                 const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
-                                console.log(LOG_PREFIX,
+                                logPlacement(
                                     `Branch (merge) ${candidate.id} → host ${host.trunkId} ` +
                                     `span=${tipSpanMm.toFixed(1)}mm angle=${ma.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
-                                return { kind: 'branch', preset, draft: d };
+                                return { kind: 'branch', preset, draft: d, entityId: branch.id };
                             }
                         }
                     } catch (e) {
-                        console.log(LOG_PREFIX,
+                        logPlacement(
                             `Merge branch failed for ${candidate.id}, falling back to trunk: ` +
                             `${e instanceof Error ? e.message : String(e)}`);
                     }
@@ -726,12 +738,11 @@ function placeOneCandidate(
         }
     }
 
-    // Empirical sizing: grid cells carry their own cell area (each grid point
-    // is a standalone trunk for one cell); merged clusters pass their summed
-    // area so the trunk that absorbs several islands gets a small bump.
+    // Empirical sizing: the candidate's own island area drives the tail over
+    // the active profile band. No merge-radius cluster summing — dense
+    // regions would double-count the same area onto every trunk.
     const overrides = sizeParameters(
         candidate,
-        candidate.gridPoint ? candidate.islandAreaMm2 : totalArea,
         supportSettings.autoSupport?.sizeScale ?? 1,
     );
 
@@ -752,19 +763,19 @@ function placeOneCandidate(
             if (cavityResult) {
                 if (cavityResult.kind === 'stick') {
                     d = draftAddStick(d, cavityResult.stick);
-                    console.log(LOG_PREFIX,
+                    logPlacement(
                         `Stick (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                    return { kind: 'stick', preset, draft: d };
+                    return { kind: 'stick', preset, draft: d, entityId: cavityResult.stick.id };
                 } else {
                     d = draftAddTwig(d, cavityResult.twig);
-                    console.log(LOG_PREFIX,
+                    logPlacement(
                         `Twig (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                    return { kind: 'twig', preset, draft: d };
+                    return { kind: 'twig', preset, draft: d, entityId: cavityResult.twig.id };
                 }
             }
         }
         const bbox = mesh ? new THREE.Box3().setFromObject(mesh) : null;
-        console.log(LOG_PREFIX,
+        logPlacement(
             `Rejected ${candidate.id}: trunk build error \"${trunkResult.error}\" ` +
             `tip=(${tipPos.x.toFixed(1)},${tipPos.y.toFixed(1)},${tipPos.z.toFixed(1)}) ` +
             `mesh=${mesh ? 'yes' : 'no'} ` +
@@ -793,7 +804,7 @@ function placeOneCandidate(
                 : (candidate.source === 'overhang' ? 'standalone' : 'island');
             d = draftAddRoot(d, decision.trunkBuild.root);
             d = draftAddTrunk(d, decision.trunkBuild.trunk);
-            console.log(LOG_PREFIX,
+            logPlacement(
                 `Trunk ${candidate.id} (→ ${trunkId}) @ grid ${decision.nodeKey} ` +
                 `area=${candidate.islandAreaMm2.toFixed(2)}mm² Z=${candidate.zHeight.toFixed(1)}mm ${preset}` +
                 (fanRefusal ? ` fan:${fanRefusal}` : '') +
@@ -811,37 +822,37 @@ function placeOneCandidate(
                 ? (candidate.anchorPoint ? 'anchor' : 'overhang')
                 : (candidate.source === 'overhang' ? 'standalone' : 'island');
             d = draftAddAnchor(d, decision.anchor);
-            console.log(LOG_PREFIX, `Anchor ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-            return { kind: 'anchor', preset, draft: d };
+            logPlacement(`Anchor ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
+            return { kind: 'anchor', preset, draft: d, entityId: decision.anchor.id };
 
         case 'place_branch': {
             const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
             if (isTrunkAtAttachmentCapacity(decision.hostTrunkId, cap, draft)) {
-                console.log(LOG_PREFIX,
+                logPlacement(
                     `Grid skip ${candidate.id}: host ${decision.hostTrunkId} at capacity (${cap})`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
             d = draftAddKnot(d, decision.knot);
             d = draftAddBranch(d, decision.branch);
-            console.log(LOG_PREFIX,
+            logPlacement(
                 `Branch ${candidate.id} → host ${decision.hostTrunkId} ` +
                 `grid ${decision.nodeKey}`);
-            return { kind: 'branch', preset, draft: d };
+            return { kind: 'branch', preset, draft: d, entityId: decision.branch.id };
         }
 
         case 'place_leaf': {
             const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
             if (isTrunkAtAttachmentCapacity(decision.hostTrunkId, cap, draft)) {
-                console.log(LOG_PREFIX,
+                logPlacement(
                     `Grid skip ${candidate.id}: host ${decision.hostTrunkId} at capacity (${cap})`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
             d = draftAddKnot(d, decision.knot);
             d = draftAddLeaf(d, decision.leaf);
-            console.log(LOG_PREFIX,
+            logPlacement(
                 `Leaf ${candidate.id} → host ${decision.hostTrunkId} ` +
                 `grid ${decision.nodeKey}`);
-            return { kind: 'leaf', preset, draft: d };
+            return { kind: 'leaf', preset, draft: d, entityId: decision.leaf.id };
         }
 
         case 'replace_trunk': {
@@ -853,7 +864,7 @@ function placeOneCandidate(
             const promoteKnot = decision.promoteKnot;
             const promoteBranch = decision.promoteBranch;
             if (!promoteKnot || !promoteBranch) {
-                console.log(LOG_PREFIX,
+                logPlacement(
                     `Replace skip ${candidate.id}: no promoted branch from grid engine`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
@@ -868,7 +879,7 @@ function placeOneCandidate(
             });
             const plan = planned?.plan;
             if (!plan) {
-                console.log(LOG_PREFIX,
+                logPlacement(
                     `Replace skip ${candidate.id}: replacement planner failed (host ${decision.hostTrunkId})`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
@@ -885,11 +896,11 @@ function placeOneCandidate(
             );
             d = ok ? getSnapshot() : d;
             if (!ok) {
-                console.log(LOG_PREFIX,
+                logPlacement(
                     `Replace skip ${candidate.id}: applyTrunkReplacement failed (host ${decision.hostTrunkId})`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            console.log(LOG_PREFIX,
+            logPlacement(
                 `Replace trunk @ ${decision.nodeKey}: ` +
                 `${candidate.id} (Z=${candidate.zHeight.toFixed(1)}) → host ${decision.hostTrunkId}`);
             return {
@@ -904,7 +915,7 @@ function placeOneCandidate(
                 decision.reason === 'COLLISION_WITH_MODEL' ? 'grid_reject_collision' :
                 decision.reason === 'NO_VALID_ATTACHMENT' || decision.reason === 'KNOT_ABOVE_TIP' ? 'grid_reject_no_attachment' :
                 'grid_reject_other';
-            console.log(LOG_PREFIX, `Rejected ${candidate.id}: ${decision.reason} (grid ${decision.nodeKey})`);
+            logPlacement(`Rejected ${candidate.id}: ${decision.reason} (grid ${decision.nodeKey})`);
             return { kind: 'reject', rejectedReason: reason, preset, draft: d };
         }
     }
@@ -1094,7 +1105,7 @@ export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
 }
 
 export type FanLeafResult =
-    | { ok: true; draft: SupportState; trunkId: string; distMm: number; angleDeg: number }
+    | { ok: true; draft: SupportState; trunkId: string; leafId: string; distMm: number; angleDeg: number }
     | { ok: false; reason: FanLeafRefusal };
 
 /**
@@ -1213,9 +1224,163 @@ export function fanLeafToTrunk(
         ok: true,
         draft: draftAddLeaf(next, leaf),
         trunkId: sp.trunkId,
+        leafId: leaf.id,
         distMm: Math.sqrt(bestDist2),
         angleDeg: bestAngleDeg,
     };
+}
+
+// ---------------------------------------------------------------------------
+// Forest Report
+// ---------------------------------------------------------------------------
+// A structured per-run summary of the placed forest: every support's id, size,
+// and sizing reasoning, plus the fan-out groups (host trunk → attached leaves
+// and branches). Shown in the Auto Supports panel after a run; the per-entity
+// placement log spam is off by default (see setAutoSupportVerboseLogging).
+
+function clamp01(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+}
+
+/** The sizing reasoning for one placed support: island area + active band + height factor. */
+export function forestSizingNote(entry: ForestLedgerEntry, actualShaftMm: number): string {
+    const heightFactor = 1 + clamp01((entry.zHeight - 20) / 200, 0, 0.25);
+    const areaInput = Math.max(entry.areaMm2, 0.01);
+    return `area ${areaInput.toFixed(2)}mm² · base Ø${entry.bandShaftMm.toFixed(2)} · h${heightFactor.toFixed(2)}` +
+        (entry.anchorGirth ? ` · ×${ANCHOR_SHAFT_MULTIPLIER} anchor girth` : '') +
+        ` → Ø${actualShaftMm.toFixed(2)}mm`;
+}
+
+export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry[]): ForestReport {
+    const displayByEntity = new Map<string, string>();
+    const entryByEntity = new Map<string, ForestLedgerEntry>();
+    for (const entry of ledger) {
+        displayByEntity.set(entry.entityId, entry.displayId);
+        entryByEntity.set(entry.entityId, entry);
+    }
+
+    const memberById = new Map<string, { id: string; kind: 'leaf' | 'branch'; spanMm: number; angleDeg: number }>();
+    const membersByHost = new Map<string, ForestTree['members']>();
+
+    // Knots reference their host SEGMENT (or the trunk directly for legacy
+    // data) — normalize to the trunk id for grouping.
+    const trunkIdByShaftId = new Map<string, string>();
+    for (const trunk of Object.values(draft.trunks)) {
+        trunkIdByShaftId.set(trunk.id, trunk.id);
+        for (const seg of trunk.segments) trunkIdByShaftId.set(seg.id, trunk.id);
+    }
+
+    const pushMember = (
+        entityId: string,
+        kind: 'leaf' | 'branch',
+        hostShaftId: string,
+        tipPos: { x: number; y: number; z: number } | undefined,
+        knotPos: { x: number; y: number; z: number } | undefined,
+    ) => {
+        const hostTrunkId = trunkIdByShaftId.get(hostShaftId) ?? hostShaftId;
+        const hDist = knotPos && tipPos ? Math.hypot(tipPos.x - knotPos.x, tipPos.y - knotPos.y) : 0;
+        const vDist = knotPos && tipPos ? tipPos.z - knotPos.z : 0;
+        const spanMm = knotPos && tipPos
+            ? Math.hypot(tipPos.x - knotPos.x, tipPos.y - knotPos.y, tipPos.z - knotPos.z)
+            : 0;
+        const angleDeg = vDist > 0.01 ? (Math.atan2(hDist, vDist) * 180) / Math.PI : 90;
+        const member = { id: displayByEntity.get(entityId) ?? entityId.slice(0, 8), kind, spanMm, angleDeg };
+        memberById.set(entityId, member);
+        const list = membersByHost.get(hostTrunkId);
+        if (list) list.push(member);
+        else membersByHost.set(hostTrunkId, [member]);
+    };
+
+    for (const leaf of Object.values(draft.leaves)) {
+        const knot = draft.knots[leaf.parentKnotId];
+        if (!knot) continue;
+        pushMember(leaf.id, 'leaf', knot.parentShaftId, leaf.contactCone?.pos, knot.pos);
+    }
+    for (const branch of Object.values(draft.branches)) {
+        const knot = draft.knots[branch.parentKnotId];
+        if (!knot) continue;
+        pushMember(branch.id, 'branch', knot.parentShaftId, branch.contactCone?.pos, knot.pos);
+    }
+
+    const trees: ForestTree[] = [];
+    const bareTrunks: ForestReport['bareTrunks'] = [];
+
+    for (const trunk of Object.values(draft.trunks)) {
+        const shaftMm = trunk.segments[0]?.diameter ?? 0;
+        const entry = entryByEntity.get(trunk.id);
+        const members = membersByHost.get(trunk.id);
+        if (members && members.length > 0) {
+            trees.push({
+                hostId: displayByEntity.get(trunk.id) ?? trunk.id.slice(0, 8),
+                hostZ: trunk.contactCone?.pos?.z ?? 0,
+                shaftDiameterMm: shaftMm,
+                sizingNote: entry ? forestSizingNote(entry, shaftMm) : '',
+                members,
+            });
+        } else {
+            bareTrunks.push({
+                id: displayByEntity.get(trunk.id) ?? trunk.id.slice(0, 8),
+                z: trunk.contactCone?.pos?.z ?? 0,
+                shaftDiameterMm: shaftMm,
+                sizingNote: entry ? forestSizingNote(entry, shaftMm) : '',
+            });
+        }
+    }
+
+    trees.sort((a, b) => b.members.length - a.members.length);
+    bareTrunks.sort((a, b) => a.z - b.z);
+
+    return {
+        trunkCount: Object.keys(draft.trunks).length,
+        anchorCount: Object.keys(draft.anchors).length,
+        leafCount: Object.keys(draft.leaves).length,
+        branchCount: Object.keys(draft.branches).length,
+        stickCount: Object.keys(draft.sticks).length,
+        twigCount: Object.keys(draft.twigs).length,
+        trees,
+        bareTrunks,
+    };
+}
+
+/** Plain-text rendering of the forest report (copy-to-clipboard format). */
+export function forestReportToText(report: ForestReport): string {
+    const lines: string[] = [];
+    lines.push('FOREST REPORT');
+    lines.push('─────────────');
+    const s = report.scan;
+    if (s) {
+        lines.push('SCAN');
+        lines.push(`  ${s.islands} islands ` +
+            `(voxel ${s.bySource.voxel} · minima ${s.bySource.minima} · intersection ${s.bySource.intersection} · overhang ${s.bySource.overhang}) ` +
+            `→ ${s.candidates} candidates · ${s.overhangRegions} overhang regions · ` +
+            `${s.anchorClusters} anchor cluster(s), ${s.anchorRegions} in-band · ` +
+            `coverage ${s.coveragePercent.toFixed(0)}% of ${s.totalAreaMm2.toFixed(0)}mm² (${s.uncoveredIslands} uncovered) · ${s.rejected} rejected`);
+        lines.push('');
+    }
+    lines.push(`${report.trunkCount} trunks · ${report.leafCount} leaves · ${report.branchCount} branches · ` +
+        `${report.stickCount} sticks · ${report.twigCount} twigs | ${report.trees.length} fan-out trees, ` +
+        `${report.bareTrunks.length} bare trunks`);
+    if (report.trees.length > 0) {
+        lines.push('');
+        lines.push('FAN-OUT GROUPS');
+        for (const tree of report.trees) {
+            const members = tree.members
+                .map((m) => `${m.id}(${m.kind === 'leaf' ? 'L' : 'B'} ${m.spanMm.toFixed(1)}mm/${m.angleDeg.toFixed(0)}°)`)
+                .join(' ');
+            lines.push(`  ${tree.hostId} @ Z=${tree.hostZ.toFixed(1)}mm Ø${tree.shaftDiameterMm.toFixed(2)}mm ` +
+                (tree.sizingNote ? `[${tree.sizingNote}] ` : '') +
+                `→ ${tree.members.length}: ${members}`);
+        }
+    }
+    if (report.bareTrunks.length > 0) {
+        lines.push('');
+        lines.push('STANDALONE TRUNKS');
+        for (const trunk of report.bareTrunks) {
+            lines.push(`  ${trunk.id} @ Z=${trunk.z.toFixed(1)}mm Ø${trunk.shaftDiameterMm.toFixed(2)}mm ` +
+                (trunk.sizingNote ? `[${trunk.sizingNote}]` : ''));
+        }
+    }
+    return lines.join('\n');
 }
 
 export function computeAutoSupportPlan(
@@ -1432,29 +1597,12 @@ export function computeAutoSupportPlan(
     // Trunk id → origin kind, so the consolidation pass can adjust the tallies
     // when it converts a standalone grid pillar into a fan leaf.
     const trunkOriginById = new Map<string, 'poissonDisk' | 'gridInfill' | 'coverageFill'>();
+    // Per-placed-entity ledger for the Forest Report (display id, sizing inputs).
+    const forestLedger: ForestLedgerEntry[] = [];
 
     // Analytics accumulators
     const presets = { detail: 0, structure: 0, anchor: 0 };
     const rejectionReasons: Record<string, number> = {};
-
-    // Pre-compute cluster totals: for each candidate, sum the areas
-    // of all candidates within merge radius.  Core trunks get sized
-    // for their full cluster, not just their own tiny island.
-    const clusterTotal = new Map<string, number>();
-    const mergeR2 = GRIDLESS_MERGE_RADIUS_MM * GRIDLESS_MERGE_RADIUS_MM;
-    for (const c of candidates) {
-        let total = c.islandAreaMm2;
-        for (const other of candidates) {
-            if (other.id === c.id) continue;
-            const dx = c.tipPos.x - other.tipPos.x;
-            const dy = c.tipPos.y - other.tipPos.y;
-            const dz = c.tipPos.z - other.tipPos.z;
-            if (dx * dx + dy * dy + dz * dz <= mergeR2) {
-                total += other.islandAreaMm2;
-            }
-        }
-        clusterTotal.set(c.id, total);
-    }
 
     // Step 3 is wrapped in a rollback guard: state is committed per-candidate,
     // so an uncaught failure mid-run would otherwise leave partial supports in
@@ -1466,7 +1614,7 @@ export function computeAutoSupportPlan(
     // (no store commit) so later candidates see earlier supports.
     const placeOne = (candidate: CandidatePoint): string => {
         try {
-            const result = placeOneCandidate(candidate, draft, settingsOverride, clusterTotal.get(candidate.id), gridTrunkIds);
+            const result = placeOneCandidate(candidate, draft, settingsOverride, gridTrunkIds);
             draft = result.draft;
             if (result.kickstand) kickstandDraft = result.kickstand;
             if (candidate.gridPoint && result.kind === 'trunk' && result.entityId) {
@@ -1520,6 +1668,18 @@ export function computeAutoSupportPlan(
             }
             if (result.mergeRefusal) {
                 diagnostics.mergeRefusals[result.mergeRefusal] = (diagnostics.mergeRefusals[result.mergeRefusal] ?? 0) + 1;
+            }
+            if (result.kind !== 'reject' && result.entityId) {
+                forestLedger.push({
+                    displayId: candidate.id,
+                    kind: result.kind as ForestLedgerEntry['kind'],
+                    entityId: result.entityId,
+                    areaMm2: candidate.islandAreaMm2,
+                    zHeight: candidate.zHeight,
+                    preset: result.preset ?? presetForArea(candidate.islandAreaMm2),
+                    bandShaftMm: getSettings().shaft.diameterMm,
+                    anchorGirth: !!candidate.anchorPoint,
+                });
             }
             return result.kind;
         } catch (e) {
@@ -1616,6 +1776,10 @@ export function computeAutoSupportPlan(
                     placedBranches++;
                     consolidated++;
                     convertedThisPass++;
+                    const trunkEntry = forestLedger.find((e) => e.entityId === tid);
+                    if (trunkEntry) {
+                        forestLedger.push({ ...trunkEntry, kind: 'branch', entityId: branchResult.branchId });
+                    }
                     continue;
                 }
                 conRefusals[fan.reason] = (conRefusals[fan.reason] ?? 0) + 1;
@@ -1629,6 +1793,10 @@ export function computeAutoSupportPlan(
             placedLeaves++;
             consolidated++;
             convertedThisPass++;
+            const trunkEntry = forestLedger.find((e) => e.entityId === tid);
+            if (trunkEntry) {
+                forestLedger.push({ ...trunkEntry, kind: 'leaf', entityId: fan.leafId });
+            }
         }
         if (convertedThisPass === 0) break;
     }
@@ -1749,9 +1917,9 @@ export function computeAutoSupportPlan(
             modelId: '', source: 'voxel', islandAreaMm2: area,
             zHeight: z, priority: 0,
         });
-        const sMin = sizeParameters(makeSample(minArea, 10), undefined, getSettings().autoSupport?.sizeScale ?? 1);
-        const sMax = sizeParameters(makeSample(maxArea, zMax), undefined, getSettings().autoSupport?.sizeScale ?? 1);
-        const sAvg = sizeParameters(makeSample(avgArea, zMax / 2), undefined, getSettings().autoSupport?.sizeScale ?? 1);
+        const sMin = sizeParameters(makeSample(minArea, 10), getSettings().autoSupport?.sizeScale ?? 1);
+        const sMax = sizeParameters(makeSample(maxArea, zMax), getSettings().autoSupport?.sizeScale ?? 1);
+        const sAvg = sizeParameters(makeSample(avgArea, zMax / 2), getSettings().autoSupport?.sizeScale ?? 1);
         sizingDebug = {
             modelVolumeMm3: Math.round(modelCtx.modelVolumeMm3),
             estimatedWeightG: round2(weightG),
@@ -1856,6 +2024,16 @@ export function computeAutoSupportPlan(
             fannedCount++;
             supportedIds.add(island.id);
             coveredArea += (island.areaMm2 ?? 0);
+            forestLedger.push({
+                displayId: island.id,
+                kind: 'leaf',
+                entityId: fan.leafId,
+                areaMm2: island.areaMm2 ?? 0,
+                zHeight: island.contact.z,
+                preset: presetForArea(island.areaMm2 ?? 0),
+                bandShaftMm: getSettings().shaft.diameterMm,
+                anchorGirth: false,
+            });
             console.log(LOG_PREFIX,
                 `Leaf (fan p${pass}) ${island.id} → trunk ${fan.trunkId} ` +
                 `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
@@ -2027,6 +2205,34 @@ export function computeAutoSupportPlan(
                 draft = resized;
                 console.log(LOG_PREFIX, 'Forest resize pass applied (attachment-loaded trunks thickened).');
             }
+
+            // ── Forest Report ───────────────────────────────────────
+            // Structured per-run summary: every placed support's id, size,
+            // and sizing reasoning, plus the fan-out groups. Shown in the
+            // Auto Supports panel; the log gets a one-line summary only.
+            const forestReport = buildForestReport(draft, forestLedger);
+            const bySource = { voxel: 0, minima: 0, intersection: 0, overhang: 0 };
+            for (const island of islands) {
+                bySource[island.source] = (bySource[island.source] ?? 0) + 1;
+            }
+            const scanTotalAreaMm2 = islands.reduce((sum, island) => sum + (island.areaMm2 ?? 0), 0);
+            forestReport.scan = {
+                islands: islands.length,
+                bySource,
+                overhangRegions: overhangIslands.length,
+                anchorClusters: anchorBands.clusterCount,
+                anchorRegions: anchorBands.inBandIds.length,
+                candidates: candidates.length,
+                totalAreaMm2: scanTotalAreaMm2,
+                coveragePercent: analytics.areaCoverage * 100,
+                uncoveredIslands: analytics.islandsUncovered,
+                rejected: rejectedCount,
+            };
+            analytics.forestReport = forestReport;
+            console.log(LOG_PREFIX,
+                `Forest report: ${forestReport.trunkCount} trunks, ${forestReport.leafCount} leaves, ` +
+                `${forestReport.branchCount} branches, ${forestReport.stickCount} sticks — ` +
+                `${forestReport.trees.length} fan-out trees, ${forestReport.bareTrunks.length} bare trunks`);
         } catch (e) {
             console.warn(LOG_PREFIX,
                 `Forest resize failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);

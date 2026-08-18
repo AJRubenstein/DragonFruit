@@ -2232,7 +2232,7 @@ export function calculateSmartPlacementV2(
                 message: `Mixed rescue accepted (${mixedSocketRescue.joints.length} joint${mixedSocketRescue.joints.length === 1 ? '' : 's'})`,
                 details: `base=(${mixedSocketRescue.base.basePos.x.toFixed(2)}, ${mixedSocketRescue.base.basePos.y.toFixed(2)})`,
             }));
-            if (!isPreview) {
+            if (debugEnabled && !isPreview) {
                 console.log(
                     `[SmartPlacementV2] MIXED socket rescue fallback — socket=(${mixedSocketRescue.socketPos.x.toFixed(2)},${mixedSocketRescue.socketPos.y.toFixed(2)},${mixedSocketRescue.socketPos.z.toFixed(2)}) joints=[${mixedSocketRescue.joints.map((joint) => `(${joint.x.toFixed(2)},${joint.y.toFixed(2)},${joint.z.toFixed(2)})`).join(' ')}] base=(${mixedSocketRescue.base.basePos.x.toFixed(2)},${mixedSocketRescue.base.basePos.y.toFixed(2)},${mixedSocketRescue.base.basePos.z.toFixed(2)})`,
                 );
@@ -2267,7 +2267,7 @@ export function calculateSmartPlacementV2(
             message: 'Straight rescue accepted',
             details: `socket shift=${distanceXY(straightRescue.socketPos, nominalSocketPos).toFixed(2)}mm`,
         }));
-        if (!isPreview) {
+        if (debugEnabled && !isPreview) {
             console.log(
                 `[SmartPlacementV2] STRAIGHT rescue fallback — socket=(${straightRescue.socketPos.x.toFixed(2)},${straightRescue.socketPos.y.toFixed(2)},${straightRescue.socketPos.z.toFixed(2)}) base=(${straightRescue.base.basePos.x.toFixed(2)},${straightRescue.base.basePos.y.toFixed(2)},${straightRescue.base.basePos.z.toFixed(2)})`,
             );
@@ -2309,7 +2309,7 @@ export function calculateSmartPlacementV2(
                 message: 'Cone-blocked placement rescued with a shaft bend',
                 details: `joints=${mixedSocketRescue.joints.length}`,
             }));
-            if (!isPreview) {
+            if (debugEnabled && !isPreview) {
                 console.log(
                     `[SmartPlacementV2] cone-blocked mixed rescue — socket=(${mixedSocketRescue.socketPos.x.toFixed(2)},${mixedSocketRescue.socketPos.y.toFixed(2)},${mixedSocketRescue.socketPos.z.toFixed(2)}) joints=[${mixedSocketRescue.joints.map((joint) => `(${joint.x.toFixed(2)},${joint.y.toFixed(2)},${joint.z.toFixed(2)})`).join(' ')}] base=(${mixedSocketRescue.base.basePos.x.toFixed(2)},${mixedSocketRescue.base.basePos.y.toFixed(2)},${mixedSocketRescue.base.basePos.z.toFixed(2)})`,
                 );
@@ -2347,7 +2347,7 @@ export function calculateSmartPlacementV2(
                 spacingMm: settings.grid.spacingMm,
             });
             ({ maxTotalLateralMm, rescueSweepRadiiMm } = applyDebugTunedSearchEnvelope(rescuedEnvelope, debugAutoTuneProfile));
-            if (!isPreview) {
+            if (debugEnabled && !isPreview) {
                 console.log(
                     `[SmartPlacementV2] cone-clear seed — nominal=(${nominalSocketPos.x.toFixed(2)},${nominalSocketPos.y.toFixed(2)},${nominalSocketPos.z.toFixed(2)}) seed=(${socketPos.x.toFixed(2)},${socketPos.y.toFixed(2)},${socketPos.z.toFixed(2)}) addedLength=${coneClearSeed?.addedLengthMm.toFixed(2) ?? '0.00'} shift=${coneClearSeed?.socketShiftMm.toFixed(2) ?? '0.00'}`,
                 );
@@ -2395,7 +2395,7 @@ export function calculateSmartPlacementV2(
     rootsFitStandard = !rootsDiskBlockedAt(baseXY.x, baseXY.y);
     perfMeasureWithSpike('trunk:preflight', 'trunk:preflight');
 
-    if (!isPreview) {
+    if (debugEnabled && !isPreview) {
         console.log(`[SmartPlacementV2] called — nominalSocket=(${nominalSocketPos.x.toFixed(2)},${nominalSocketPos.y.toFixed(2)},${nominalSocketPos.z.toFixed(2)}) activeSocket=(${socketPos.x.toFixed(2)},${socketPos.y.toFixed(2)},${socketPos.z.toFixed(2)}) rootTopZ=${rootTopZ.toFixed(2)} nominalConeClear=${coneClear} activeConeClear=${activeConeClear} straightClear=${straightClear} rootsFit=${rootsFitStandard}`);
     }
     recordDebugEvent(() => ({
@@ -2406,7 +2406,7 @@ export function calculateSmartPlacementV2(
     }));
 
     if (activeConeClear && straightClear && rootsFitStandard) {
-        if (!isPreview) console.log(`[SmartPlacementV2] STRAIGHT path — no routing needed`);
+        if (debugEnabled && !isPreview) console.log(`[SmartPlacementV2] STRAIGHT path — no routing needed`);
         setDebugOutcome('straight', 'straight path clear');
         if (debugEnabled) {
             debugBasePos = baseXY;
@@ -3243,7 +3243,7 @@ export function calculateSmartPlacementV2(
             if (_finalJoints.length >= 2) {
                 const _routingSpan = socketPos.z - _finalJoints[_finalJoints.length - 1].z;
                 if (_routingSpan < minRoutingZSpanMm) {
-                    if (!isPreview) {
+                    if (debugEnabled && !isPreview) {
                         console.log(
                             `[SmartPlacementV2] WIDE-STEP rejected — tight crack (routingSpan=${_routingSpan.toFixed(2)}mm < ${minRoutingZSpanMm.toFixed(2)}mm with ${_finalJoints.length} joints)`,
                         );
@@ -3281,7 +3281,7 @@ export function calculateSmartPlacementV2(
                 if (!isPreview && _isExcessive) {
                     const _rescue = buildStraightRescueFallback();
                     if (_rescue) {
-                        if (!isPreview) {
+                        if (debugEnabled && !isPreview) {
                             console.log(
                                 `[SmartPlacementV2] WIDE-STEP rejected — excessive complexity (joints=${_finalJoints.length} firstDrop=${_firstDrop.toFixed(2)}mm), falling back to rescue`,
                             );
@@ -3299,14 +3299,16 @@ export function calculateSmartPlacementV2(
                         return `  seg${i}: (${p.x.toFixed(2)},${p.y.toFixed(2)},${p.z.toFixed(2)})→(${q.x.toFixed(2)},${q.y.toFixed(2)},${q.z.toFixed(2)}) dz=${dz.toFixed(2)} dxy=${dxy.toFixed(2)} ${dir}`;
                     });
                     const _wideHasRise = _wideChain.slice(0,-1).some((p,i)=>_wideChain[i+1].z>p.z+0.001);
-                    console.log(
-                        `[SmartPlacementV2] WIDE-STEP result — ${_finalJoints.length} joint(s) (raw=${_rawJoints.length} simplified=${_simplifiedJoints.length})${_wideHasRise?' ⚠️ HAS UPWARD SEGMENTS':' ✅ monotonic'}\n` +
-                        `  socket: (${socketPos.x.toFixed(2)},${socketPos.y.toFixed(2)},${socketPos.z.toFixed(2)})\n` +
-                        `  finalJoints: [${_finalJoints.map((p: Vec3)=>`(${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)})`).join(' ')}]\n` +
-                        `  base: (${_finalBase.basePos.x.toFixed(2)},${_finalBase.basePos.y.toFixed(2)}) rootTopZ=${rootTopZ.toFixed(2)}\n` +
-                        (_oneJointStats ? `  oneJointSearch: ${_oneJointStats}\n` : '') +
-                        _wideSegs.join('\n'),
-                    );
+                    if (debugEnabled) {
+                        console.log(
+                            `[SmartPlacementV2] WIDE-STEP result — ${_finalJoints.length} joint(s) (raw=${_rawJoints.length} simplified=${_simplifiedJoints.length})${_wideHasRise?' ⚠️ HAS UPWARD SEGMENTS':' ✅ monotonic'}\n` +
+                            `  socket: (${socketPos.x.toFixed(2)},${socketPos.y.toFixed(2)},${socketPos.z.toFixed(2)})\n` +
+                            `  finalJoints: [${_finalJoints.map((p: Vec3)=>`(${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)})`).join(' ')}]\n` +
+                            `  base: (${_finalBase.basePos.x.toFixed(2)},${_finalBase.basePos.y.toFixed(2)}) rootTopZ=${rootTopZ.toFixed(2)}\n` +
+                            (_oneJointStats ? `  oneJointSearch: ${_oneJointStats}\n` : '') +
+                            _wideSegs.join('\n'),
+                        );
+                    }
                 }
                 publishPathfindingDebugSnapshot();
                 return {
@@ -3880,7 +3882,7 @@ export function calculateSmartPlacementV2(
         details: `joints=${finalJoints.length} base=(${finalBase.basePos.x.toFixed(2)}, ${finalBase.basePos.y.toFixed(2)})`,
     }));
 
-    if (!isPreview) {
+    if (debugEnabled && !isPreview) {
         // Build the full chain for logging: socket → joints → rootTop
         const logChain = [socketPos, ...finalJoints, finalBase.rootTopTarget];
         const segmentLog = logChain.slice(0, -1).map((pt, i) => {
@@ -3913,7 +3915,7 @@ export function calculateSmartPlacementV2(
         if (!isPreview && _isExcessive) {
             const _rescue = buildStraightRescueFallback();
             if (_rescue) {
-                if (!isPreview) {
+                if (debugEnabled && !isPreview) {
                     console.log(
                         `[SmartPlacementV2] PLACED support rejected — excessive complexity (joints=${finalJoints.length} firstDrop=${_firstDrop.toFixed(2)}mm), falling back to rescue`,
                     );

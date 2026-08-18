@@ -35,6 +35,66 @@ export type RejectReason =
     | 'already_supported'
     | 'exception';
 
+/** Per-placed-entity entry in the Forest Report ledger. */
+export interface ForestLedgerEntry {
+    displayId: string;
+    kind: 'trunk' | 'anchor' | 'leaf' | 'branch' | 'stick' | 'twig';
+    entityId: string;
+    areaMm2: number;
+    zHeight: number;
+    preset: 'detail' | 'structure' | 'anchor';
+    /** The active profile band's shaft Ø at placement (mm). */
+    bandShaftMm: number;
+    /** Anchor-band point: the shaft carries the anchor girth multiplier. */
+    anchorGirth: boolean;
+}
+
+/** One fan-out group in the Forest Report: a host trunk + its attachments. */
+export interface ForestTree {
+    hostId: string;
+    hostZ: number;
+    shaftDiameterMm: number;
+    sizingNote: string;
+    members: Array<{ id: string; kind: 'leaf' | 'branch'; spanMm: number; angleDeg: number }>;
+}
+
+/** Input-side metrics from the island/overhang scan for the Forest Report. */
+export interface ForestScanMetrics {
+    /** Islands fed into the run (all sources). */
+    islands: number;
+    bySource: { voxel: number; minima: number; intersection: number; overhang: number };
+    /** Overhang regions from the Rust scan (the organic/grid generators' input). */
+    overhangRegions: number;
+    /** Z-clusters of overhang regions; the lowest is the anchor band. */
+    anchorClusters: number;
+    /** Overhang regions inside the anchor band. */
+    anchorRegions: number;
+    /** Candidates after dedup + support filtering. */
+    candidates: number;
+    /** Sum of the island areas (mm²). */
+    totalAreaMm2: number;
+    /** Fraction of the island area covered by tips (0–100). */
+    coveragePercent: number;
+    /** Islands still without a nearby support at the end of the run. */
+    uncoveredIslands: number;
+    /** Candidates rejected during placement. */
+    rejected: number;
+}
+
+/** Structured per-run summary of the placed forest. */
+export interface ForestReport {
+    trunkCount: number;
+    anchorCount: number;
+    leafCount: number;
+    branchCount: number;
+    stickCount: number;
+    twigCount: number;
+    trees: ForestTree[];
+    bareTrunks: Array<{ id: string; z: number; shaftDiameterMm: number; sizingNote: string }>;
+    /** Input-side island/overhang scan metrics (set by the orchestrator). */
+    scan?: ForestScanMetrics;
+}
+
 /** Detailed analytics from an auto-place run. */
 export interface AutoPlaceAnalytics {
     /** Number of islands that had at least one support placed near them. */
@@ -53,6 +113,8 @@ export interface AutoPlaceAnalytics {
     placement?: PlacementDiagnostics;
     /** Debug sizing info from the physics calculations. */
     sizingDebug?: SizingDebugInfo;
+    /** Per-run forest summary: every support's id, size, and fan groups. */
+    forestReport?: ForestReport;
 }
 
 /** Why a fan-leaf attempt was refused. */

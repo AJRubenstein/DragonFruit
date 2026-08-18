@@ -4,6 +4,9 @@ export type {
   AutoPlaceAnalytics,
   SizingDebugInfo,
   RejectReason,
+  ForestReport,
+  ForestTree,
+  ForestLedgerEntry,
 } from "./types";
 
 export {
@@ -23,5 +26,5 @@ export {
 export { sizeParameters } from "./parameterSizing";
 export type { SizeOverrides } from "./parameterSizing";
 
-export { runAutoPlace } from "./autoPlace";
+export { runAutoPlace, forestReportToText } from "./autoPlace";
 export { setModelMesh, getModelMesh } from "./meshStore";

@@ -55,6 +55,16 @@ test('density-grid cell sits FLAT at the active profile band', () => {
     });
 });
 
+test('anchor-band points get the anchor girth multiplier', () => {
+    withBand({ shaft: 1.0, tip: 0.4, roots: 2.0 }, () => {
+        const flat = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }));
+        assert.equal(flat.shaftDiameterMm, 1.0, 'ordinary cell sits at the band');
+        const anchor = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10, anchorPoint: true }));
+        assert.equal(anchor.shaftDiameterMm, 1.25, 'anchor cell carries the girth multiplier');
+        assert.equal(anchor.tipBodyDiameterMm, 1.25, 'tip body follows the thicker shaft');
+    });
+});
+
 test('the band follows the hardcoded profile (light < medium < heavy)', () => {
     // The regression: the old area-derived curve sized a light 16 mm² cell
     // THICKER than a heavy 5 mm² cell. The band must come from the profile.
@@ -71,10 +81,13 @@ test('shafts never go below the active band', () => {
     assert.equal(s.shaftDiameterMm, 1.0, 'floor = the active (default) band');
 });
 
-test('merged clusters extend beyond the band on the log tail', () => {
-    const shaftAt = (areaMm2: number) => sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }), areaMm2).shaftDiameterMm!;
-    assert.ok(shaftAt(100) > 1.0, `100 mm² trunk is thicker than the band (${shaftAt(100)})`);
-    assert.ok(Math.abs(shaftAt(100) - 1.303) < 0.01, `100 mm² → ~1.303 (${shaftAt(100)})`);
+test('big islands extend beyond the band on the log tail', () => {
+    const shaftAt = (areaMm2: number) => sizeParameters(makeCandidate({ islandAreaMm2: areaMm2, zHeight: 10 })).shaftDiameterMm!;
+    assert.ok(shaftAt(100) > 1.0, `100 mm² island is thicker than the band (${shaftAt(100)})`);
+    assert.ok(Math.abs(shaftAt(100) - 1.152) < 0.01, `100 mm² → ~1.152 (${shaftAt(100)})`);
+    // The halved slope keeps the tail below the anchor girth at realistic sizes:
+    // 0.06·ln(area/8) crosses ×1.25 only beyond ~516 mm².
+    assert.ok(shaftAt(100) < 1.25, 'tail stays under the anchor girth at 100 mm²');
     assert.ok(shaftAt(10000) <= 2.0, 'tail caps at 2.0');
 });
 
@@ -99,7 +112,7 @@ test('flat ceilings get the full profile contact, steep slopes less', () => {
 
 test('size scale multiplies the bands', () => {
     const base = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }))!;
-    const scaled = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }), undefined, 1.5)!;
+    const scaled = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }), 1.5)!;
     assert.ok(Math.abs(scaled.shaftDiameterMm! - base.shaftDiameterMm! * 1.5) < 1e-9, 'shaft scales');
     assert.ok(Math.abs(scaled.rootsDiameterMm! - base.rootsDiameterMm! * 1.5) < 1e-9, 'roots scale');
 });

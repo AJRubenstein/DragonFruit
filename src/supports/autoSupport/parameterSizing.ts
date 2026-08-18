@@ -58,6 +58,15 @@ const CELL_REFERENCE_AREA_MM2 = 8;
 /** Maximum shaft diameter (mm) for very large single supports. */
 const MAX_SHAFT_DIAMETER_MM = 2.0;
 
+/**
+ * Anchor-region shafts get this multiplier over the band: the first-printed
+ * underside of a fully-supported print takes the peel, and the anchors are
+ * load-bearing pillars — "nice and thick" (user rule). Applied after the
+ * area tail and height factor; grid/anchor cells otherwise sit FLAT at the
+ * band and would read as the thinnest supports in the forest.
+ */
+export const ANCHOR_SHAFT_MULTIPLIER = 1.25;
+
 /** The preset band for a supported area (mm²) — tip/root band + analytics. */
 export function presetForArea(areaMm2: number): SizingPreset {
     if (areaMm2 <= 0.15) return 'detail';
@@ -68,11 +77,14 @@ export function presetForArea(areaMm2: number): SizingPreset {
 /** Shaft diameter: the profile band, then a gentle log tail beyond the cell
  *  reference for merged clusters (sub-linear — strength grows with the
  *  cross-section, not the area). A grid cell is FLAT at the profile band —
- *  the lattice reads exactly the profile, whatever its density. */
+ *  the lattice reads exactly the profile, whatever its density. The slope is
+ *  deliberately shallow (0.06): at realistic cluster sizes the tail must not
+ *  out-thicken the anchor girth (×1.25) — the load-bearing ring stays the
+ *  thickest family. The old 0.12 slope crossed the girth at ~60mm². */
 function shaftDiameterForArea(baseDiameterMm: number, areaMm2: number): number {
     const a = Math.max(areaMm2, 0.01);
     const tail = a > CELL_REFERENCE_AREA_MM2
-        ? 0.12 * Math.log(a / CELL_REFERENCE_AREA_MM2)
+        ? 0.06 * Math.log(a / CELL_REFERENCE_AREA_MM2)
         : 0;
     return Math.min(MAX_SHAFT_DIAMETER_MM, baseDiameterMm + tail);
 }
@@ -111,9 +123,10 @@ export interface ModelSizingContext {
  *
  * - Shaft: the ACTIVE PROFILE's band (hardcoded profile / session override)
  *   × height factor (taller supports flex more under peel, up to +25% at
- *   ≥ 70 mm). Grid cells sit flat at the band — the lattice reads exactly
- *   the profile; merged trunks pass their summed area, which rides a gentle
- *   tail above the band.
+ *   ≥ 70 mm). The candidate's OWN island area rides a gentle log tail above
+ *   the band (sub-linear — strength grows with the cross-section, not the
+ *   area). The tail deliberately stays below the anchor girth at realistic
+ *   areas (0.06 slope crosses ×1.25 only beyond ~516 mm²).
  * - Tip contact: profile band × angle factor — a flat ceiling (normal
  *   straight down, |z| ≈ 1) gets the full preset contact; a steep slope is
  *   closer to self-supporting and gets a smaller one (down to 60%). Floored
@@ -121,20 +134,18 @@ export interface ModelSizingContext {
  * - Roots / tip length / penetration: profile band, flat.
  *
  * @param candidate - The island to size supports for.
- * @param totalSupportedAreaMm2 - For core trunks: total area of all
- *                       candidates this trunk supports. For standalone
- *                       trunks: own area.
  */
 export function sizeParameters(
     candidate: CandidatePoint,
-    totalSupportedAreaMm2?: number,
     sizeScale = 1,
 ): SizeOverrides {
     const band = bandFromCurrentSettings();
 
-    // The area that drives thickness: merged trunks carry their cluster
-    // total; standalone/grid trunks carry their own supported area.
-    const areaInput = Math.max(totalSupportedAreaMm2 ?? candidate.islandAreaMm2, 0.01);
+    // The area that drives thickness: the candidate's own supported island.
+    // No merge-radius cluster summing — dense regions would double-count
+    // the same area onto every trunk (the old 4mm-radius sum inflated a
+    // single trunk to 63% of the whole scan).
+    const areaInput = Math.max(candidate.islandAreaMm2, 0.01);
 
     const zHeight = Math.max(candidate.zHeight, 1);
     // Empirical height band: taller supports get a modestly thicker shaft.
@@ -142,9 +153,11 @@ export function sizeParameters(
     // this is a calibration curve, not a load calculation: linear +25% cap at
     // ≥ 70 mm. No force inputs, no strength model.
     const heightFactor = 1 + clamp((zHeight - 20) / 200, 0, 0.25);
+    // Anchor-band points are load-bearing pillars — thicker than the band.
+    const anchorFactor = candidate.anchorPoint ? ANCHOR_SHAFT_MULTIPLIER : 1;
 
     const shaftDiameterMm = round(
-        clamp(shaftDiameterForArea(band.shaftDiameterMm, areaInput) * heightFactor, 0.001, MAX_SHAFT_DIAMETER_MM)
+        clamp(shaftDiameterForArea(band.shaftDiameterMm, areaInput) * heightFactor * anchorFactor, 0.001, MAX_SHAFT_DIAMETER_MM)
         * sizeScale,
     3);
 
