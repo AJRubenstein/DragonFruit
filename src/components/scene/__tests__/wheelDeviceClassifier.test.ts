@@ -6,7 +6,14 @@ import {
   type WheelDevice,
   type WheelSample,
 } from '../SceneCanvas/wheelDeviceClassifier';
-import { MOUSE_FAST, MOUSE_SLOW, TRACKPAD_PINCH, TRACKPAD_SCROLL } from './wheelCaptures.fixture';
+import {
+  MOUSE_FAST,
+  MOUSE_SLOW,
+  MOUSE_W10_FAST,
+  MOUSE_W10_SLOW,
+  TRACKPAD_PINCH,
+  TRACKPAD_SCROLL,
+} from './wheelCaptures.fixture';
 
 /** Mirrors INHERIT_MAX_EVENTS in the classifier. */
 const INHERIT_MAX_EVENTS_IN_TEST = 3;
@@ -44,10 +51,6 @@ test('ctrlKey pinch is a trackpad', () => {
 
 test('both axes in one event is a trackpad', () => {
   assert.deepEqual(replay([{ t: 0, dx: 3, dy: 12 }]), ['trackpad']);
-});
-
-test('fractional deltas are a trackpad', () => {
-  assert.deepEqual(replay([{ t: 0, dx: 0, dy: -12.5 }]), ['trackpad']);
 });
 
 test('off-axis leak anywhere in the gesture makes it a drag', () => {
@@ -173,6 +176,25 @@ test('a hard wheel spin right after a trackpad drag stops panning within a few f
     verdicts.slice(INHERIT_MAX_EVENTS_IN_TEST).every((verdict) => verdict !== 'trackpad'),
     'the spin must stop inheriting the trackpad verdict once the gesture stays silent',
   );
+});
+
+test('captured Windows wheel never reads as a trackpad', () => {
+  // Reported in the wild: a G502 on Windows panned instead of zooming, because
+  // display scaling makes every notch fractional (111.11111405455044).
+  for (const [label, rows] of [
+    ['slow', MOUSE_W10_SLOW],
+    ['fast', MOUSE_W10_FAST],
+  ] as const) {
+    const verdicts = replay(rows.map(([t, dy, wdy]) => ({ t, dx: 0, dy, wdy })));
+    assert.ok(
+      verdicts.every((verdict) => verdict !== 'trackpad'),
+      `${label} Windows wheel produced a trackpad verdict, which would pan instead of zoom`,
+    );
+  }
+});
+
+test('a fractional delta on its own proves nothing', () => {
+  assert.deepEqual(replay([{ t: 0, dx: 0, dy: -12.5 }]), ['unknown']);
 });
 
 test('the same event object classifies once', () => {
