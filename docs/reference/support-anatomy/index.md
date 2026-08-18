@@ -11,6 +11,7 @@ If you want the quick naming summary, start with [Support Types](../support-type
 - [Joint](joint.md)
 - [Knot](knot.md)
 - [Contact Cone](contact-cone.md)
+- [Contact Disk](contact-disk.md)
 
 ## Support types
 

@@ -25,7 +25,7 @@ Both span model to model. A **twig** is one continuous body between two contacts
 _Avoid_: bridge, span, Y-support
 
 **contact cone** vs **contact disk**:
-Not two spellings of one thing. The **contact cone** is the terminal piece on trunks, branches and leaves. The **contact disk** (`ContactDisk`, `contactDiskA`/`contactDiskB`) is what twigs and sticks meet the model with — and it is the one primitive with no page under `support-anatomy/`.
+Not two spellings of one thing. The **contact cone** is the tapered terminal on trunks, branches and leaves — and on sticks, which carry two. The **contact disk** (`ContactDisk`, "the nib") is a flat standoff pad, and **twigs are the only type that uses it**. Overloaded on purpose in the code: `ContactDiskProfile` is also a tip shape a cone can wear, so read which sense is meant.
 _Avoid_: calling either one "the tip" (the tip is only the small contact face at a cone's end)
 
 **Roots**:
