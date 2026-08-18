@@ -9,7 +9,7 @@ DragonFruit is a desktop slicer (Tauri + Rust) for resin 3D printers: mesh repai
 Definitions live in **[`docs/reference/support-anatomy/`](docs/reference/support-anatomy/index.md)** — one page per piece, with geometry, behaviour and constraints. Don't restate them here. What follows is only what a glossary adds on top: the distinctions people get wrong in prose, and the places the code spells a term differently.
 
 **primitive** vs **support type**:
-Primitives are the reusable geometry pieces every support is assembled from (Roots, shaft, joint, knot, contact cone, contact disk). Support types are the named things a user places (trunk, branch, brace, kickstand, leaf, twig, stick). A type is a legal arrangement of primitives, not a subclass — the same shaft and joint appear in most of them.
+Primitives are the reusable geometry pieces every support is assembled from (Roots, shaft, joint, knot, contact cone, contact disk). Support types are the named things a user places (trunk, branch, brace, kickstand, leaf, twig, stick, anchor). A type is a legal arrangement of primitives, not a subclass — the same shaft and joint appear in most of them. In code the line is drawn by `extends SupportEntity` in `src/supports/types.ts`: types do, primitives don't — `Knot` is a plain interface.
 _Avoid_: element, part, component (all three get used for either level, which is what makes support discussions drift)
 
 **knot** vs **joint**:
@@ -32,8 +32,12 @@ _Avoid_: calling either one "the tip" (the tip is only the small contact face at
 The grounded base of a trunk, and never anything else's base — a branch's base is a knot, a kickstand's is Roots. Roots do **not** include the shaft above them; that is the trunk.
 _Avoid_: base, foot, pad (their generic use is exactly the collision)
 
+**anchor**:
+A support type in its own right, not a synonym for anything: a minimal near-plate support for contact points below 5 mm that bypasses the grid system entirely, built as frustum root → joint → one segment → contact cone. Branches, leaves and braces cannot target it. Beware the collision: the doc comment on the unrelated `Knot` interface reads "Knot (Anchor)", so the word names two different things in the same file.
+_Avoid_: knot (a knot is a primitive that attaches supports to a shaft; an anchor is a placeable support)
+
 **doc term → code identifier**:
-The code predates parts of this vocabulary and has not caught up. When grepping, expect: knot → `Knot`, but also `'anchor'` as a selection category (the source comment reads "Knot (Anchor)"); shaft → `'segment'`; Roots → `'root'`, singular; contact disk → `contactDisk`. Selection and hover categories are unions in `src/supports/types.ts`.
+The code predates parts of this vocabulary and has not caught up. When grepping, expect: shaft → `'segment'`; Roots → `'root'`, singular; contact disk → `contactDisk`. Selection and hover categories are unions in `src/supports/types.ts`. Most entity interfaces live there, but `Kickstand` lives in `src/supports/SupportTypes/Kickstand/types.ts`.
 _Avoid_: renaming these in passing — they are persisted in scenes and matched by string.
 
 ### Slicing and 3DAA

@@ -138,6 +138,17 @@
   one. Also add a `.gitattributes` (`* text=auto eol=lf`) per plugin so it does
   not come back.
 
+### [ci] `guard:plugin-boundaries` exists but never runs — S · low risk
+- Where: package.json (`guard:plugin-boundaries`), scripts/check-plugin-boundaries.mjs,
+  .github/workflows/.
+- What: the script enforces that core `src/` files don't import plugin internals
+  directly, but no workflow invokes it. `plugin-registry-guardrails.yml` runs the
+  generator and the two allowlist checks, not this one.
+- Why: a guardrail nobody runs is a guardrail that has already stopped working.
+  Cheapest fix is one more step in the guardrails workflow.
+- Context: found while auditing `docs/dev/config-schemas.md`, which also
+  mis-attributed the simple-plugin allowlist validation to this script.
+
 ### [ci] Run the Rust tests in CI — M · medium risk
 - Where: .github/workflows/ (a new `cargo test` job, or inside an existing one).
 - What: `cargo test` does NOT run in CI. 155+ `#[test]` functions across the

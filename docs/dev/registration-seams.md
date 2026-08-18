@@ -38,13 +38,27 @@ export function triggerDelete(): boolean;   // runs the highest-priority enabled
 
 `useDeleteHotkey` (`src/features/delete/useDeleteHotkey.ts`) bridges the
 configurable `GLOBAL.DELETE` binding (default Backspace) and the fixed `Delete`
-key to `triggerDelete()`. Priority wins over registration order. Examples:
+key to `triggerDelete()`.
 
-- Cut tool seam: `ORGANIC_CUT_DELETE_PRIORITY = 200` (`useOrganicCutHotkeys.ts`)
-  so Delete edits the cut seam instead of deleting the model.
-- Delete selected models in prepare mode: priority `30`.
-- "Select all models" deletion: priority `20`.
-- Dispose a blob URL in the scene manager: priority `10`.
+Every claimant currently registered, highest first — check this ladder before
+choosing a number, because the middle of the range is occupied:
+
+| Priority | Claimant | Registered in |
+| -------: | -------- | ------------- |
+| 200 | Cut tool seam edit — Delete edits the seam instead of deleting the model (`ORGANIC_CUT_DELETE_PRIORITY`) | `src/hotkeys/useOrganicCutHotkeys.ts` |
+| 100 | Support interaction manager | `src/features/supports/useSupportInteractionManager.ts` |
+| 50 | Hole punching | `src/features/hole-punching/useHolePunchManager.ts` |
+| 30 | Delete selected models in prepare mode | `src/app/page.tsx` |
+| 20 | "Select all models" deletion | `src/app/page.tsx` |
+| 10 | Delete the active model | `src/features/scene/useSceneCollectionManager.ts` |
+| 10 | Dispose a blob URL | `src/features/scene/useSceneManager.ts` |
+
+**Ties fall back to registration order.** Dispatch keeps a winner only when
+`entry.priority > winner.priority` — strictly greater — and the registry is an
+insertion-ordered `Set`, so on an equal priority the *first* registration wins.
+The two claimants at `10` above are both gated on prepare mode and differ only
+in their predicates; do not add a third at that number expecting a defined
+outcome. Pick a distinct priority instead.
 
 Delete is deliberately **not** history-tied: every Cut edit is pushed to the app
 history, so the normal global undo/redo inverts it.

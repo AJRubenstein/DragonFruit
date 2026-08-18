@@ -14,7 +14,9 @@ Three reference shapes, by complexity:
 - **Leaf** — the canonical *fully placeable* template: renderer + builder +
   placement-state store + page-level placement hook + canvas controller.
 - **Kickstand** — the "owns its own store + barrel" template (`kickstandStore.ts`,
-  `SupportTypes/Kickstand/index.ts`).
+  `SupportTypes/Kickstand/index.ts`). Note it also keeps its entity interface in
+  `SupportTypes/Kickstand/types.ts` rather than the central `types.ts`; copy the
+  rest of its shape, but follow step 1 and declare yours centrally.
 
 This page walks through adding a new type `Gadget` (avoid the existing names).
 Every numbered step below is required unless marked *optional*.
