@@ -35,6 +35,7 @@ extra_javascript:
 # Internal docs are versioned but never published. See docs/internal/README.md.
 exclude_docs: |
   internal/
+  reference/DEPRECATED_hotkeys.md
 
 plugins:
   - search

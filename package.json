@@ -11,6 +11,7 @@
     "generate:plugin-registry": "node scripts/generate-plugin-registry.mjs",
     "check:plugin-allowlist": "node scripts/check-complex-plugin-allowlist.mjs",
     "check:generated-plugin-registry": "node scripts/verify-generated-plugin-registry.mjs",
+    "check:docs": "node scripts/check-docs-accuracy.mjs",
     "predev:once": "node scripts/build-thumbnail-providers.mjs",
     "predev": "npm run generate:plugin-registry && npm run generate:builtin-simple-plugins",
     "prebuild": "npm run generate:plugin-registry && npm run generate:builtin-simple-plugins",

@@ -1,0 +1,32 @@
+{
+      "_comment": "Deliberate exceptions for scripts/check-docs-accuracy.mjs. Every entry needs a reason — an unexplained entry is how a checker stops catching things.",
+      "symbols": [
+            "registerX", "subscribeX", "getXSnapshot", "getXServerSnapshot",
+            "useGadgetPlacement", "GadgetPlacementController", "renderGadgetList",
+            "selectedGadgetIds", "SUPPORT_ADD_GADGET", "SUPPORT_REMOVE_GADGET",
+            "addGadget", "removeGadget", "updateGadget",
+
+            "n_coords",
+            "version_comparator",
+            "kerf_mm",
+
+            "useEditorHotkeys", "useHistoryControls", "fieldDeterministicSolver",
+            "potentialFieldSolver", "packageManager"
+      ],
+      "paths": [
+            "src/features/plugins/generatedBuiltinComplexPlugins.ts",
+            "src/features/plugins/generatedBuiltinComplexPluginNetworkHandlers.ts",
+            "src/features/plugins/generatedBuiltinComplexPluginUploadHandlers.ts",
+            "src/features/plugins/generatedBuiltinComplexPluginFileTypeHandlers.ts",
+            "src-tauri/src/generated_builtin_plugins.rs",
+            "src-tauri/generated_crate_requirements.toml",
+            "rust/dragonfruit-slicing-engine/src/encoders/generated_plugin_encoders.rs"
+      ],
+      "_reasons": {
+            "schematic names": "registerX/subscribeX/getX* and the Gadget* family are invented stand-ins in walkthroughs (registration-seams.md, state-and-stores.md, support-type-extension.md), not real symbols.",
+            "external symbols": "n_coords is a field of the third-party LYS format; version_comparator is a tauri-plugin-updater API.",
+            "deliberately removed": "kerf_mm is named in organic-cut-surface-redesign.md precisely to record that it is gone.",
+            "aspirational": "page-tsx-refactor-handoff.md is a refactor plan; its symbols name extractions not yet made. packageManager is a package.json key npm has not adopted here.",
+            "generated at build time": "the paths are produced by scripts/generate-plugin-registry.mjs and are gitignored (**/generated*), so they are absent from a clean checkout."
+      }
+}

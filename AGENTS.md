@@ -87,6 +87,13 @@ What "fleshed out" means — cover at least:
 
 Reference example: `docs/dev/experiments-framework.md`.
 
+Run `npm run check:docs` before you push. It verifies that every path and code
+symbol a document cites still exists, that no page pins a line number (they
+drift within a week), and that the MkDocs nav matches what is on disk. It runs
+in CI. Deliberate exceptions — schematic names, external APIs, symbols named
+precisely because they were removed — go in
+`scripts/docs-accuracy-allowlist.json` **with a reason**.
+
 ## Consult the developer docs first
 
 Before reverse-engineering how a system works from the source, check the

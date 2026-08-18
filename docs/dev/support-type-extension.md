@@ -24,11 +24,11 @@ Every numbered step below is required unless marked *optional*.
 There is no single `SupportType` union. Each entity is its own interface extending
 `SupportEntity` (the base `{ id, modelId, settingsCodeHex }`).
 
-- Add the entity interface near `types.ts:215`. It must be **JSON-serializable**
+- Add the entity interface next to the other support entity interfaces in `src/supports/types.ts`. It must be **JSON-serializable**
   (it round-trips through save/load).
-- `SupportState` (`types.ts:218`): add a `Record<string, Gadget>` keyed field
+- `SupportState` (`src/supports/types.ts`): add a `Record<string, Gadget>` keyed field
   plus the new id in the `selectedCategory` string union.
-- `DragonfruitImportFormat` (`types.ts:237`): this is a **flat, non-discriminated**
+- `DragonfruitImportFormat` (`src/supports/types.ts`): this is a **flat, non-discriminated**
   structure — one plain array per type. `roots`, `trunks`, `branches`, `leaves`,
   `braces`, `knots` are required; the others optional. Add `gadgets?: Gadget[]`.
 
