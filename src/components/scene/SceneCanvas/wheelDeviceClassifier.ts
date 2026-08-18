@@ -32,7 +32,13 @@ export type WheelSample = {
  *   wheel moves in the other, never in both. A trackpad is a 2D surface, so a
  *   drag leaks into the off-axis. Checked per event *and* across the gesture,
  *   since the leak may show up only in some frames.
- * - **Fractional deltas.** Wheel notches are whole numbers everywhere.
+ * Fractional deltas used to count as trackpad evidence here, on the assumption
+ * that wheel notches are whole numbers. They are not: with Windows display
+ * scaling, Chrome divides the notch through and a G502 reports deltaY
+ * 111.11111405455044 (120 * 10/9) forever. That rule classified plain mice as
+ * trackpads and made them pan instead of zoom. It also bought nothing — in the
+ * macOS captures trackpad *scrolling* is whole-numbered too, and the one
+ * fractional trackpad case, pinch, is already caught by ctrlKey.
  * - **Quantised `wheelDeltaY`.** Multiples of 120 are wheel notches. Only
  *   trusted when two consecutive events agree, because macOS acceleration can
  *   land a trackpad delta on a multiple by chance.
@@ -71,10 +77,6 @@ const WHEEL_DELTA_QUANTUM = 120;
  * half: it caps the damage at the first few frames.
  */
 const INHERIT_MAX_EVENTS = 3;
-
-function hasFractionalDelta(sample: WheelSample): boolean {
-  return !Number.isInteger(sample.deltaX) || !Number.isInteger(sample.deltaY);
-}
 
 function isQuantisedWheelDelta(sample: WheelSample): boolean {
   const raw = sample.wheelDeltaY;
@@ -129,7 +131,6 @@ export function createWheelDeviceClassifier() {
     if (sample.deltaMode !== 0) return 'wheel';
     if (sample.ctrlKey) return 'trackpad';
     if (sample.deltaX !== 0 && sample.deltaY !== 0) return 'trackpad';
-    if (hasFractionalDelta(sample)) return 'trackpad';
     // Both axes have moved at some point in this gesture: a drag, not a turn.
     if (gestureSawX && gestureSawY) return 'trackpad';
     if (isQuantisedWheelDelta(sample) && previousWasQuantised) return 'wheel';
