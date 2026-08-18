@@ -1381,6 +1381,8 @@ dependencies = [
  "dragonfruit-slicing-engine",
  "flate2",
  "futures-util",
+ "if-addrs",
+ "libloading 0.8.9",
  "if-addrs 0.10.2",
  "log",
  "mdns-sd",
