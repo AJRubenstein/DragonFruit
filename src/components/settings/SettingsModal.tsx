@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { GeneralSettingsTab } from '@/components/settings/GeneralSettingsTab';
 import { useLocale } from '@/components/I18nClientProvider';
 import contributors from '@/components/settings/contributors.json';
@@ -309,6 +311,7 @@ export function SettingsModal({
 
   // Language is a draft like every other setting: changing the switcher only
   // updates draftLocale; the actual loadLocale happens in handleApply.
+  const { _ } = useLingui();
   const { locale: activeLocale, setLocale: applyLocale } = useLocale();
   const [draftLocale, setDraftLocale] = useState(activeLocale);
 
@@ -1106,98 +1109,98 @@ export function SettingsModal({
 
   const tabMeta: Record<SettingsTabKey, { label: string; description: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; tone: SettingsTabTone }> = {
     general: {
-      label: 'General',
-      description: 'Workspace behavior and panel layout',
+      label: _(msg`General`),
+      description: _(msg`Workspace behavior and panel layout`),
       icon: Settings2,
       tone: 'primary',
     },
     camera: {
-      label: 'Camera',
-      description: 'Projection and navigation behavior',
+      label: _(msg`Camera`),
+      description: _(msg`Projection and navigation behavior`),
       icon: Camera,
       tone: 'primary',
     },
     mesh: {
-      label: 'Mesh',
-      description: 'Shader, rendering options, and selection behavior',
+      label: _(msg`Mesh`),
+      description: _(msg`Shader, rendering options, and selection behavior`),
       icon: Grid3x3,
       tone: 'primary',
     },
     performance: {
-      label: 'Slicing',
-      description: 'PNG compression and engine metadata',
+      label: _(msg`Slicing`),
+      description: _(msg`PNG compression and engine metadata`),
       icon: MonitorCog,
       tone: 'primary',
     },
     workspaces: {
-      label: 'Workspaces',
-      description: 'Per-workspace camera defaults',
+      label: _(msg`Workspaces`),
+      description: _(msg`Per-workspace camera defaults`),
       icon: MonitorCog,
       tone: 'primary',
     },
     ui: {
-      label: 'UI & Theme',
-      description: 'Theme and custom UI token customization',
+      label: _(msg`UI & Theme`),
+      description: _(msg`Theme and custom UI token customization`),
       icon: Palette,
       tone: 'primary',
     },
     hotkeys: {
-      label: 'Hotkeys',
-      description: 'Keyboard bindings and presets',
+      label: _(msg`Hotkeys`),
+      description: _(msg`Keyboard bindings and presets`),
       icon: Keyboard,
       tone: 'primary',
     },
     spacemouse: {
-      label: '3D Mouse',
-      description: '3D mouse navigation controls',
+      label: _(msg`3D Mouse`),
+      description: _(msg`3D mouse navigation controls`),
       icon: Gamepad2,
       tone: 'primary',
     },
     plugins: {
-      label: 'Plugins',
-      description: 'Load vendor profile plugins',
+      label: _(msg`Plugins`),
+      description: _(msg`Load vendor profile plugins`),
       icon: Plug,
       tone: 'secondary',
     },
     experiments: {
-      label: 'Experiments',
-      description: 'Early-access and experimental features',
+      label: _(msg`Experiments`),
+      description: _(msg`Early-access and experimental features`),
       icon: FlaskConical,
       tone: 'secondary',
     },
     sceneAutosave: {
-      label: 'Scene Autosave',
-      description: 'Autosave and crash recovery behavior',
+      label: _(msg`Scene Autosave`),
+      description: _(msg`Autosave and crash recovery behavior`),
       icon: HardDrive,
       tone: 'secondary',
     },
     backups: {
-      label: 'Backups',
-      description: 'Local on-disk backup snapshots',
+      label: _(msg`Backups`),
+      description: _(msg`Local on-disk backup snapshots`),
       icon: ArchiveRestore,
       tone: 'secondary',
     },
     uvtools: {
-      label: 'UVTools',
-      description: 'Send sliced files to UVTools for analysis',
+      label: _(msg`UVTools`),
+      description: _(msg`Send sliced files to UVTools for analysis`),
       icon: ExternalLink,
       tone: 'secondary',
     },
     logging: {
-      label: 'Logging',
-      description: 'Log file location and verbosity',
+      label: _(msg`Logging`),
+      description: _(msg`Log file location and verbosity`),
       icon: ScrollText,
       tone: 'secondary',
     },
     updates: {
-      label: 'Updates',
-      description: 'Check for new versions and manage channels',
+      label: _(msg`Updates`),
+      description: _(msg`Check for new versions and manage channels`),
       icon: CloudDownload,
       tone: 'secondary',
     },
     about: {
-      label: 'About',
-      description: 'Version info and project details',
+      label: _(msg`About`),
+      description: _(msg`Version info and project details`),
       icon: Info,
       tone: 'secondary',
     },
