@@ -97,6 +97,12 @@ async function loadCodebase() {
                   // absent in an external doc-set audit
             }
       }
+      // A doc may name a file rather than an identifier (`potentialFieldSolver`
+      // is a test file, not a symbol inside one), so basenames count too.
+      for (const filePath of paths) {
+            const base = path.basename(filePath).split('.')[0];
+            if (base) blob.push(base);
+      }
       return { text: blob.join('\n'), paths };
 }
 

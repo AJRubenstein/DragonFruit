@@ -1,17 +1,27 @@
 {
-      "_comment": "Deliberate exceptions for scripts/check-docs-accuracy.mjs. Every entry needs a reason — an unexplained entry is how a checker stops catching things.",
+      "_comment": "Deliberate exceptions for scripts/check-docs-accuracy.mjs. Every entry needs a reason \u2014 an unexplained entry is how a checker stops catching things.",
       "symbols": [
-            "registerX", "subscribeX", "getXSnapshot", "getXServerSnapshot",
-            "useGadgetPlacement", "GadgetPlacementController", "renderGadgetList",
-            "selectedGadgetIds", "SUPPORT_ADD_GADGET", "SUPPORT_REMOVE_GADGET",
-            "addGadget", "removeGadget", "updateGadget",
-
+            "registerX",
+            "subscribeX",
+            "getXSnapshot",
+            "getXServerSnapshot",
+            "useGadgetPlacement",
+            "GadgetPlacementController",
+            "renderGadgetList",
+            "selectedGadgetIds",
+            "SUPPORT_ADD_GADGET",
+            "SUPPORT_REMOVE_GADGET",
+            "addGadget",
+            "removeGadget",
+            "updateGadget",
             "n_coords",
             "version_comparator",
             "kerf_mm",
-
-            "useEditorHotkeys", "useHistoryControls", "fieldDeterministicSolver",
-            "potentialFieldSolver", "packageManager"
+            "useEditorHotkeys",
+            "useHistoryControls",
+            "packageManager",
+            "island_replay",
+            "pushToast"
       ],
       "paths": [
             "src/features/plugins/generatedBuiltinComplexPlugins.ts",
@@ -27,6 +37,7 @@
             "external symbols": "n_coords is a field of the third-party LYS format; version_comparator is a tauri-plugin-updater API.",
             "deliberately removed": "kerf_mm is named in organic-cut-surface-redesign.md precisely to record that it is gone.",
             "aspirational": "page-tsx-refactor-handoff.md is a refactor plan; its symbols name extractions not yet made. packageManager is a package.json key npm has not adopted here.",
-            "generated at build time": "the paths are produced by scripts/generate-plugin-registry.mjs and are gitignored (**/generated*), so they are absent from a clean checkout."
+            "generated at build time": "the paths are produced by scripts/generate-plugin-registry.mjs and are gitignored (**/generated*), so they are absent from a clean checkout.",
+            "proposed, not built": "island_replay is the name ADR-0025 proposes for a capability not yet folded in; pushToast is named in notifications.md precisely to state that no such API exists."
       }
 }

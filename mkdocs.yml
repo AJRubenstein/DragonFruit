@@ -133,7 +133,11 @@ nav:
           - DFST Decimation Protocol: adr/0027-dfst-decimation-protocol.md
           - Voxel Hollowing Architecture: adr/0029-voxel-hollowing-architecture.md
           - Plugin Format Architecture: adr/0031-plugin-format-architecture.md
+          - Organic Cut Tenon Registration: adr/0026-organic-cut-tenon-registration.md
+          - Potential-Gradient Pathfinding: adr/0028-potential-gradient-pathfinding.md
+          - Camera FOV and Projection Switching: adr/0032-camera-fov-projection-switching.md
           - VOXL Binary Container Format: adr/0034-voxl-binary-container-format.md
+          - Client-Side Persistence: adr/0035-client-side-persistence-architecture.md
           - Auto-Support Roads Not Taken: adr/0038-auto-support-placement-roads-not-taken.md
           - Stream CTB Layer Payloads to Disk: adr/0036-stream-ctb-layer-payloads-to-disk.md
           - Cut the Surface, Not a Volume: adr/0037-cut-the-surface-not-a-volume.md
