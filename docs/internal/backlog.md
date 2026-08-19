@@ -138,6 +138,26 @@
   one. Also add a `.gitattributes` (`* text=auto eol=lf`) per plugin so it does
   not come back.
 
+### [fix] Delete does nothing on a selected anchor — S · low risk
+- Where: src/features/supports/useSupportInteractionManager.ts, `canDeleteSelection`.
+- What: the single-selection gate lists `joint | trunk | leaf | branch | twig |
+  stick | brace` and omits `anchor`, while `deleteSelectionByCategoryAndId`
+  handles anchors fine. So Delete silently no-ops on a selected anchor.
+  Multi-selection is unaffected (it returns early on `selectedIds.length > 0`).
+- Why: one missing string in a gate; the delete path underneath already works.
+- Context: documented as a known bug in `docs/dev/support-type-extension.md` and
+  in `docs/reference/support-anatomy/anchor.md`. Retire both notes when fixed.
+
+### [docs] "Anchor" names three unrelated things — M · medium risk
+- Where: src/supports/types.ts (`Anchor` support type, and the `Knot` doc comment
+  reading "Knot (Anchor)"), src/supports/autoSupport/anchorBands.ts ("anchor band").
+- What: a placeable support type, a legacy alias for the knot primitive, and the
+  auto-support densification band over the first-printed surface — one word.
+- Why: costs a code read every time. Cheapest fix is dropping the "(Anchor)" from
+  the `Knot` comment, which is the only one of the three that is purely vestigial.
+- Context: recorded in CONTEXT.md; do not rename the type or the bands, both are
+  load-bearing (`selectedCategory` strings persist in saved scenes).
+
 ### [ci] `guard:plugin-boundaries` exists but never runs — S · low risk
 - Where: package.json (`guard:plugin-boundaries`), scripts/check-plugin-boundaries.mjs,
   .github/workflows/.

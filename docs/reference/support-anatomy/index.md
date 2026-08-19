@@ -15,6 +15,7 @@ If you want the quick naming summary, start with [Support Types](../support-type
 
 ## Support types
 
+- [Anchor](anchor.md)
 - [Trunk](trunk.md)
 - [Branch](branch.md)
 - [Brace](brace.md)
