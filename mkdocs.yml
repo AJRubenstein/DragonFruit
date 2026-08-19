@@ -127,6 +127,9 @@ nav:
           - VOXL Format Spec: dev/voxl-format-spec.md
           - LYS Mesh Extraction Spec: dev/lys-mesh-extraction-spec.md
       - Decision Records:
+          - Universal macOS Distribution: adr/0005-macos-universal-distribution.md
+          - Potential-Gradient Pathfinding: adr/0028-potential-gradient-pathfinding.md
+          - Camera FOV and Projection Switching: adr/0032-camera-fov-projection-switching.md
           - Stream CTB Layer Payloads to Disk: adr/0036-stream-ctb-layer-payloads-to-disk.md
           - Cut the Surface, Not a Volume: adr/0037-cut-the-surface-not-a-volume.md
           - Organic Cut Surface Redesign: dev/organic-cut-surface-redesign.md
