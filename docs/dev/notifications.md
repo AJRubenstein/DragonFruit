@@ -17,14 +17,18 @@
 | Scene import | `isSceneImportToastVisible` (content read from `sceneImportReport`) |
 | Export success | `exportSuccessToast` + `isExportSuccessToastVisible` |
 | Export error | `exportErrorToast` + `isExportErrorToastVisible` |
-| Save / autosave | `isSaveToastVisible` + `isSaveToastAnimatedVisible` + `saveToastLabel` |
+| Save / autosave | `isSaveToastVisible` + `isSaveToastAnimatedVisible` + `saveToastMode` |
 | Printing monitor error | `printingMonitorErrorToast` + `isPrintingMonitorErrorToastVisible` |
 
 The hook returns every setter under its original name; the things that *trigger* a toast — the export flow, undo/redo, autosave, the print monitor, scene import — still live in `page.tsx` and call those setters.
 
 **2. Support mode** — `src/components/ui/SupportToasts.tsx`, eighteen lines. Error tone only, a CSS `fadeIn` animation, and **no timer at all**: the caller owns how long `message` stays non-null.
 
-**3. Inline, per-component** — e.g. `AutoBracingSettingsCard.tsx` renders its own `<ToastViewport><Toast>` directly.
+**3. Inline, per-component** — `AutoBracingSettingsCard.tsx` and `page.tsx` render their own `<ToastViewport><Toast>` directly.
+
+### Keep rendered strings out of toast state
+
+The save toast holds a **mode** (`'saving' | 'autosaving'`), not a label; `NotificationStack` picks the message at render time with `_(msg\`Saving…\`)`. It used to store the finished string. Storing rendered text in state puts it outside the catalog and freezes it in whatever locale was active when the toast fired — so a new toast carries the state it needs to *choose* its message, never the message.
 
 All three bottom out in the same two primitives, `Toast` and `ToastViewport` (`src/components/atoms/Toast.tsx`), which is the one piece that *is* shared.
 
@@ -50,7 +54,7 @@ That is the whole collision-avoidance strategy: one hardcoded two-case rule for 
 
 ## Adding a toast today
 
-1. Add the content + visibility `useState` pair in `useEditorToasts.ts`.
+1. Add the content + visibility `useState` pair in `useEditorToasts.ts` — content being whatever the message is chosen *from*, not the message.
 2. Add fade and clear timeout refs, and clear them on unmount.
 3. Write the show/hide effect, copying an existing one and picking durations.
 4. Return the setters, and call them from the trigger site (usually `page.tsx`).
