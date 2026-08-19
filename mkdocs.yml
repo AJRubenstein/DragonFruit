@@ -35,7 +35,6 @@ extra_javascript:
 # Internal docs are versioned but never published. See docs/internal/README.md.
 exclude_docs: |
   internal/
-  reference/DEPRECATED_hotkeys.md
 
 plugins:
   - search
@@ -91,6 +90,7 @@ nav:
           - Kickstand: reference/support-anatomy/kickstand.md
           - Contact Tip Research: reference/support-anatomy/contact-tip-research.md
       - Hotkeys: reference/hotkeys.md
+      - Support Placement Modifiers: reference/support-placement-modifiers.md
       - Support Types: reference/support-types.md
       - File Formats: reference/file-formats.md
   - Troubleshooting:
@@ -99,7 +99,6 @@ nav:
       - Architecture and Conventions:
           - Overview: dev/index.md
           - Architecture: dev/architecture-overview.md
-          - Architecture and Handoff: dev/architecture-and-handoff.md
           - page.tsx Refactor Handoff: dev/page-tsx-refactor-handoff.md
           - Contributing: dev/contributing.md
           - Backlog and Known Gotchas: dev/backlog.md
@@ -118,7 +117,6 @@ nav:
           - Support System: dev/support-system.md
           - Adding a New Support Type: dev/support-type-extension.md
           - Support Pathfinding V3: dev/support-pathfinding-v3.md
-          - Branch Supports: dev/branch-supports.md
           - Grid and Branching: dev/grid-and-branching.md
           - Raft Geometry: dev/raft-geometry.md
           - Scan Positioning: dev/scan-positioning.md
