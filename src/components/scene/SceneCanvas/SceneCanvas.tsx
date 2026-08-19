@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { hotkeyStore, useActionActive } from '@/hotkeys/hotkeyStore';
 import dynamic from 'next/dynamic';
 import * as THREE from 'three';
@@ -170,6 +171,20 @@ type GhostPreviewTransform = {
 };
 
 type TrackpadGestureAction = 'pan' | 'orbit';
+
+// Interpolated and pluralized, so it follows the house rule: a static ICU
+// pattern in a module-level formatter with the value passed to `translate`.
+// Inline template literals get their placeholders renamed by the React
+// Compiler, and the renamed id then misses the catalog in production builds.
+function formatOutOfBoundsLabel(
+  translate: (descriptor: MessageDescriptor, values?: Record<string, unknown>) => string,
+  count: number,
+): string {
+  return translate(msg({
+    message: '{count, plural, one {# model out of build volume} other {# models out of build volume}}',
+    comment: 'Warning badge over the viewport when models stick out of the printer build volume.',
+  }), { count });
+}
 
 function isTrackpadModifierPressed(event: WheelEvent, modifierKey: CameraTrackpadModifierKey): boolean {
   return modifierKey === 'shift' ? event.shiftKey : event.altKey;
@@ -1412,7 +1427,7 @@ export function SceneCanvas({
     text: '#f8fafc',
     accent: '#baf72e',
   });
-  // Orientation labels are resolved out here, in the React tree, and handed to
+    // Orientation labels are resolved out here, in the React tree, and handed to
   // the 3D helpers as props — those live inside the r3f reconciler, where the
   // i18n provider is not in scope. "Front" is shared with the build plate's
   // front-edge marker so both always read the same word.
@@ -7444,7 +7459,7 @@ export function SceneCanvas({
           title={outOfBoundsModels.map((m) => m.name).join(', ')}
         >
           <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-          <span>{outOfBoundsModels.length} model{outOfBoundsModels.length === 1 ? '' : 's'} out of build volume</span>
+          <span>{formatOutOfBoundsLabel(_, outOfBoundsModels.length)}</span>
         </div>
       )}
     </div>

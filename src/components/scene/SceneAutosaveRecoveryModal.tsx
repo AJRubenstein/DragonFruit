@@ -1,6 +1,9 @@
 'use client';
 
 import React from 'react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { AlertTriangle, ArchiveRestore, Trash2, X } from 'lucide-react';
 
 type Props = {
@@ -14,8 +17,11 @@ type Props = {
 };
 
 export function SceneAutosaveRecoveryModal({ savedAt, voxlPath, origin, onRestore, onDiscard }: Props) {
+  const { _, i18n } = useLingui();
   const [busy, setBusy] = React.useState<'none' | 'restore' | 'discard'>('none');
 
+  // Formatted against the app locale, not the OS one: a Spanish UI showing an
+  // English timestamp is the tell that the recovery dialog was never localized.
   const formattedDate = React.useMemo(() => {
     const ts = Date.parse(savedAt);
     if (!Number.isFinite(ts)) return savedAt;
@@ -25,8 +31,8 @@ export function SceneAutosaveRecoveryModal({ savedAt, voxlPath, origin, onRestor
       d.getFullYear() === now.getFullYear() &&
       d.getMonth() === now.getMonth() &&
       d.getDate() === now.getDate();
-    return sameDay ? d.toLocaleTimeString() : d.toLocaleString();
-  }, [savedAt]);
+    return sameDay ? d.toLocaleTimeString(i18n.locale) : d.toLocaleString(i18n.locale);
+  }, [savedAt, i18n.locale]);
 
   const handleRestore = async () => {
     setBusy('restore');
@@ -59,7 +65,7 @@ export function SceneAutosaveRecoveryModal({ savedAt, voxlPath, origin, onRestor
         }}
         role="dialog"
         aria-modal="true"
-        aria-label="Recover unsaved scene"
+        aria-label={_(msg`Recover unsaved scene`)}
       >
         {/* Header */}
         <div
@@ -79,10 +85,10 @@ export function SceneAutosaveRecoveryModal({ savedAt, voxlPath, origin, onRestor
             </span>
             <div className="min-w-0 pr-2">
               <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-                Unsaved Scene Found
+                <Trans>Unsaved Scene Found</Trans>
               </h2>
               <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                DragonFruit autosaved a scene at {formattedDate}
+                <Trans>DragonFruit autosaved a scene at {formattedDate}</Trans>
               </p>
             </div>
           </div>
@@ -95,7 +101,7 @@ export function SceneAutosaveRecoveryModal({ savedAt, voxlPath, origin, onRestor
               background: 'var(--surface-1)',
               color: 'var(--text-muted)',
             }}
-            aria-label="Dismiss"
+            aria-label={_(msg`Dismiss`)}
             disabled={busy !== 'none'}
             onClick={() => { void handleDiscard(); }}
           >
@@ -106,7 +112,7 @@ export function SceneAutosaveRecoveryModal({ savedAt, voxlPath, origin, onRestor
         {/* Body */}
         <div className="space-y-4 p-5">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            It looks like DragonFruit quit before you saved your last session. You can restore the autosaved scene or discard it and start fresh.
+            <Trans>It looks like DragonFruit quit before you saved your last session. You can restore the autosaved scene or discard it and start fresh.</Trans>
           </p>
 
           <div
@@ -117,7 +123,7 @@ export function SceneAutosaveRecoveryModal({ savedAt, voxlPath, origin, onRestor
             }}
           >
             <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-              Last autosave
+              <Trans>Last autosave</Trans>
             </div>
             <div className="mt-1 text-sm font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
               {formattedDate}
@@ -125,7 +131,9 @@ export function SceneAutosaveRecoveryModal({ savedAt, voxlPath, origin, onRestor
             {voxlPath && (
               <>
                 <div className="mt-2.5 text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                  {origin === 'sidecar' ? 'Saved beside your project' : 'Saved in the recovery folder'}
+                  {origin === 'sidecar'
+                    ? _(msg`Saved beside your project`)
+                    : _(msg`Saved in the recovery folder`)}
                 </div>
                 <div
                   className="mt-1 break-all text-[11px] leading-snug"
@@ -146,7 +154,7 @@ export function SceneAutosaveRecoveryModal({ savedAt, voxlPath, origin, onRestor
               onClick={() => { void handleDiscard(); }}
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Discard
+              <Trans>Discard</Trans>
             </button>
             <button
               type="button"
@@ -160,7 +168,7 @@ export function SceneAutosaveRecoveryModal({ savedAt, voxlPath, origin, onRestor
               onClick={() => { void handleRestore(); }}
             >
               <ArchiveRestore className="h-3.5 w-3.5" />
-              Restore Scene
+              <Trans>Restore Scene</Trans>
             </button>
           </div>
         </div>

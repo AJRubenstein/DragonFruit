@@ -1,9 +1,29 @@
 import React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { Check, Loader2, Plus, Printer, RefreshCw, Search, Trash2, Unplug, X } from 'lucide-react';
 import { ManualIpEntryCard, SetupMethodChooser, SetupModeButton } from '@/components/printers/SetupMethodChooser';
 import type { PrinterNetworkDevice } from '@/features/profiles/profileStore';
+
+type Translate = (descriptor: MessageDescriptor, values?: Record<string, unknown>) => string;
+
+// Counts carry plurals, so they go through static ICU patterns in module-level
+// formatters rather than inline interpolation — same rule as the printer picker.
+function formatFleetCountsLabel(translate: Translate, saved: number, online: number): string {
+  return translate(msg({
+    message: '{saved, plural, one {# saved} other {# saved}} • {online, plural, one {# online} other {# online}}',
+    comment: 'Counter above the managed printer list: how many printers are saved and how many are reachable.',
+  }), { saved, online });
+}
+
+function formatDiscoveredCountLabel(translate: Translate, count: number): string {
+  return translate(msg({
+    message: '{count, plural, one {# found} other {# found}}',
+    comment: 'Badge counting the printers the network scan turned up.',
+  }), { count });
+}
 
 type DiscoveredNetworkPrinter = {
   id: string;
@@ -82,7 +102,7 @@ export function FleetManagement({
       <div className="flex shrink-0 items-center justify-between gap-4 border-b px-4 py-3" style={{ borderColor: 'var(--border-subtle)' }}>
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-            {hasMultiplePrinters ? 'Fleet Management' : 'Network Settings'}
+            {hasMultiplePrinters ? _(msg`Fleet Management`) : _(msg`Network Settings`)}
           </h3>
           <p className="ui-meta truncate">{printerName}</p>
         </div>
@@ -91,7 +111,7 @@ export function FleetManagement({
           onClick={onClose}
           className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors"
           style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
-          aria-label="Close network settings"
+          aria-label={_(msg`Close network settings`)}
         >
           <X className="h-4 w-4" />
         </button>
@@ -102,19 +122,21 @@ export function FleetManagement({
         <div className="rounded-xl border p-3.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
           <div className="flex items-center justify-between gap-3">
             <h5 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-              Managed Printers
+              <Trans>Managed Printers</Trans>
             </h5>
             <div className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-              {managedPrinters.length} saved • {connectedCount} online
+              {formatFleetCountsLabel(_, managedPrinters.length, connectedCount)}
             </div>
           </div>
           <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-            {hasMultiplePrinters ? 'Your fleet for this profile.' : 'Primary printer assigned to this profile.'}
+            {hasMultiplePrinters
+              ? _(msg`Your fleet for this profile.`)
+              : _(msg`Primary printer assigned to this profile.`)}
           </p>
 
           {managedPrinters.length === 0 ? (
             <div className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-              No printers saved yet. Add one below to start.
+              <Trans>No printers saved yet. Add one below to start.</Trans>
             </div>
           ) : (
             <div className="mt-2.5 space-y-2 max-h-[328px] overflow-y-auto custom-scrollbar pr-1">
@@ -153,8 +175,8 @@ export function FleetManagement({
                       <span
                         className="absolute left-1.5 top-1/2 -translate-y-1/2 inline-flex items-center justify-center pointer-events-none"
                         style={{ color: cardBackground }}
-                        aria-label={isOnline ? 'Printer online' : 'Printer offline'}
-                        title={isOnline ? 'Online' : 'Offline'}
+                        aria-label={isOnline ? _(msg`Printer online`) : _(msg`Printer offline`)}
+                        title={isOnline ? _(msg`Online`) : _(msg`Offline`)}
                       >
                         {isOnline
                           ? <Check className="h-[18px] w-[18px]" strokeWidth={3} />
@@ -167,7 +189,7 @@ export function FleetManagement({
                             {device.displayName || device.hostName || device.ipAddress}
                           </div>
                           <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                            {device.ipAddress} • {isOnline ? 'Online' : 'Offline'}
+                            {device.ipAddress} • {isOnline ? _(msg`Online`) : _(msg`Offline`)}
                           </div>
                           {device.statusText && (
                             <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
@@ -184,7 +206,7 @@ export function FleetManagement({
                               className="ui-button ui-button-secondary !h-7 !px-2.5 !py-0 text-xs rounded-full"
                               style={{ color: 'var(--text-strong)' }}
                             >
-                              Select
+                              <Trans>Select</Trans>
                             </button>
                           )}
                           <button
@@ -193,8 +215,8 @@ export function FleetManagement({
                             disabled={isNetworkConnecting}
                             className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-45"
                             style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--accent-secondary)' }}
-                            title={device.connected ? 'Refresh' : 'Connect'}
-                            aria-label={device.connected ? 'Refresh' : 'Connect'}
+                            title={device.connected ? _(msg`Refresh`) : _(msg`Connect`)}
+                            aria-label={device.connected ? _(msg`Refresh`) : _(msg`Connect`)}
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
                           </button>
@@ -204,8 +226,8 @@ export function FleetManagement({
                             disabled={!device.connected}
                             className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-45"
                             style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: device.connected ? 'var(--text-strong)' : 'var(--text-muted)' }}
-                            title="Disconnect"
-                            aria-label="Disconnect"
+                            title={_(msg`Disconnect`)}
+                            aria-label={_(msg`Disconnect`)}
                           >
                             <Unplug className="h-3.5 w-3.5" />
                           </button>
@@ -215,8 +237,8 @@ export function FleetManagement({
                               onClick={() => onRemoveManagedPrinter(device)}
                               className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors"
                               style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--danger)' }}
-                              title="Remove saved printer"
-                              aria-label="Remove"
+                              title={_(msg`Remove saved printer`)}
+                              aria-label={_(msg`Remove`)}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -242,7 +264,7 @@ export function FleetManagement({
                 style={{ color: 'var(--accent-secondary)' }}
               >
                 <Plus className="h-3.5 w-3.5" />
-                Add Printer
+                <Trans>Add Printer</Trans>
               </button>
             ) : (
               managedPrinters.length > 0 && (
@@ -252,7 +274,7 @@ export function FleetManagement({
                   className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs rounded-full"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  Done Adding
+                  <Trans>Done Adding</Trans>
                 </button>
               )
             )}
@@ -294,7 +316,7 @@ export function FleetManagement({
                         />
                       </div>
                       <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        {networkScanPhaseLabel || 'Scanning network…'}
+                        {networkScanPhaseLabel || _(msg`Scanning network…`)}
                       </span>
                     </div>
                   ) : (
@@ -322,10 +344,10 @@ export function FleetManagement({
                   <div className="rounded-xl border p-3.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                     <div className="flex items-center justify-between gap-2">
                       <h5 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                        Discovered Printers
+                        <Trans>Discovered Printers</Trans>
                       </h5>
                       <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold tabular-nums" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
-                        {discoveredPrinters.length} found
+                        {formatDiscoveredCountLabel(_, discoveredPrinters.length)}
                       </span>
                     </div>
 
@@ -357,7 +379,7 @@ export function FleetManagement({
                             {isEntryConnected ? (
                               <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold" style={{ color: '#22c55e' }}>
                                 <Check className="h-3.5 w-3.5" />
-                                Connected
+                                <Trans>Connected</Trans>
                               </span>
                             ) : (
                               <button
@@ -368,7 +390,7 @@ export function FleetManagement({
                                 style={{ color: 'var(--accent-secondary)' }}
                               >
                                 {isNetworkConnecting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                                {isNetworkConnecting ? 'Connecting…' : 'Connect'}
+                                {isNetworkConnecting ? _(msg`Connecting…`) : _(msg`Connect`)}
                               </button>
                             )}
                           </div>
@@ -411,7 +433,7 @@ export function FleetManagement({
             onClick={onClose}
             className="ui-button ui-button-secondary !h-8 !px-3 !py-0 text-xs rounded-full"
           >
-            Cancel
+            <Trans>Cancel</Trans>
           </button>
         </div>
       )}

@@ -559,8 +559,21 @@ function isTransformMode(value: string): value is TransformMode {
   return (HISTORY_TRANSFORM_MODES as readonly string[]).includes(value);
 }
 
+// Static ICU pattern in a module-level formatter (see PrinterVariantPickerModal):
+// inline interpolation loses its placeholder names to the React Compiler in
+// production builds, leaving the raw {timestamp} on screen.
+function formatLastSuccessfulAutosave(
+  translate: (descriptor: MessageDescriptor, values?: Record<string, unknown>) => string,
+  timestamp: string,
+): string {
+  return translate(msg({
+    message: 'Last successful autosave: {timestamp}. Save your project manually.',
+    comment: '{timestamp} is a locale-formatted date and time.',
+  }), { timestamp });
+}
+
 export default function Home() {
-  const { _ } = useLingui();
+  const { _, i18n } = useLingui();
   const { stage, sproutParentingLockHeld } = useLeafPlacementState();
   // Supports undo/redo handlers register for the lifetime of the app root, not
   // for the lifetime of a scene renderer. Otherwise Ctrl+Z depends on which
@@ -933,16 +946,16 @@ export default function Home() {
     const onAutosaveFailed = (event: Event) => {
       const detail = (event as CustomEvent<{ message?: string; lastSuccessAt?: string | null }>).detail;
       setSceneSaveError({
-        title: 'Autosave is not working',
-        message: detail?.message ?? 'The background recovery save failed repeatedly.',
+        title: _(msg`Autosave is not working`),
+        message: detail?.message ?? _(msg`The background recovery save failed repeatedly.`),
         detail: detail?.lastSuccessAt
-          ? `Last successful autosave: ${new Date(detail.lastSuccessAt).toLocaleString()}. Save your project manually.`
-          : 'No autosave has succeeded this session. Save your project manually.',
+          ? formatLastSuccessfulAutosave(_, new Date(detail.lastSuccessAt).toLocaleString(i18n.locale))
+          : _(msg`No autosave has succeeded this session. Save your project manually.`),
       });
     };
     window.addEventListener(SCENE_AUTOSAVE_FAILED_EVENT, onAutosaveFailed);
     return () => window.removeEventListener(SCENE_AUTOSAVE_FAILED_EVENT, onAutosaveFailed);
-  }, []);
+  }, [_, i18n.locale, setSceneSaveError]);
 
   const dismissSceneSaveError = React.useCallback(() => setSceneSaveError(null), []);
 
@@ -968,8 +981,8 @@ export default function Home() {
     setIsSaveToastVisible,
     isSaveToastAnimatedVisible,
     setIsSaveToastAnimatedVisible,
-    saveToastLabel,
-    setSaveToastLabel,
+    saveToastMode,
+    setSaveToastMode,
     historyActionToastFadeTimeoutRef,
     historyActionToastClearTimeoutRef,
     printingMonitorErrorToastFadeTimeoutRef,
@@ -4274,8 +4287,8 @@ export default function Home() {
     setAutosaveRecovery(null);
     setNativePickerPreparationState({
       active: true,
-      label: 'Loading Scene…',
-      detail: 'Reading autosaved scene…',
+      label: _(msg`Loading Scene…`),
+      detail: _(msg`Reading autosaved scene…`),
       progress: null,
     });
 
@@ -4306,9 +4319,9 @@ export default function Home() {
         await clearAutosave();
       } else {
         setSceneSaveError({
-          title: 'Restore Failed',
-          message: 'The autosaved recovery file is corrupted or unreadable.',
-          detail: 'The scene importer rejected or could not parse the autosave data.',
+          title: _(msg`Restore Failed`),
+          message: _(msg`The autosaved recovery file is corrupted or unreadable.`),
+          detail: _(msg`The scene importer rejected or could not parse the autosave data.`),
         });
         await clearAutosave();
       }
@@ -4317,10 +4330,10 @@ export default function Home() {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isMissing = errorMessage.includes('No autosaved scene file found') || errorMessage.includes('does not exist');
       setSceneSaveError({
-        title: 'Restore Failed',
+        title: _(msg`Restore Failed`),
         message: isMissing
-          ? 'The autosave recovery file could not be found.'
-          : 'The autosaved recovery file is corrupted or unreadable.',
+          ? _(msg`The autosave recovery file could not be found.`)
+          : _(msg`The autosaved recovery file is corrupted or unreadable.`),
         detail: errorMessage,
       });
       await clearAutosave();
@@ -4332,7 +4345,7 @@ export default function Home() {
         progress: null,
       });
     }
-  }, [autosaveRecovery, clearAutosave, importSceneFile, setSceneSaveError]);
+  }, [autosaveRecovery, clearAutosave, importSceneFile, setSceneSaveError, _]);
 
   const handleAutosaveDiscard = React.useCallback(async () => {
     setAutosaveRecovery(null);
@@ -10690,7 +10703,7 @@ export default function Home() {
       <NotificationStack
         isSaveToastVisible={isSaveToastVisible}
         isSaveToastAnimatedVisible={isSaveToastAnimatedVisible}
-        saveToastLabel={saveToastLabel}
+        saveToastMode={saveToastMode}
         historyActionToast={historyActionToast}
         isHistoryActionToastVisible={isHistoryActionToastVisible}
         printingMonitorErrorToast={printingMonitorErrorToast}
