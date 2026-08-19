@@ -213,6 +213,76 @@ type SettingsModalProps = {
 export type SettingsTabKey = 'general' | 'camera' | 'workspaces' | 'mesh' | 'performance' | 'spacemouse' | 'plugins' | 'experiments' | 'sceneAutosave' | 'backups' | 'uvtools' | 'ui' | 'hotkeys' | 'logging' | 'updates' | 'about';
 type SettingsTabTone = 'primary' | 'secondary';
 
+/**
+ * A sidebar description line that only offers a tooltip when it is actually
+ * clipped. Translated descriptions run much longer than the English ones — the
+ * Spanish "Comportamiento del espacio de trabajo y disposición de los paneles"
+ * is more than twice "Workspace behavior and panel layout" — so the truncation
+ * that never triggered in English hides most of the sentence in other locales.
+ *
+ * Two traps this deliberately avoids:
+ *
+ * 1. Measuring the truncating span itself. `Tooltip` renders no wrapper at all
+ *    when its content is falsy, so a measurement taken on the span reacts to
+ *    the very wrapper it decides to add — the element measures, gets wrapped,
+ *    measures differently, gets unwrapped. The reference box here is the outer
+ *    span, whose width is set by the sidebar and never by this decision, and
+ *    the text is measured through a Range, which reports the full laid-out
+ *    width regardless of what clips it.
+ * 2. Measuring once. A late webfont changes text metrics after the first pass,
+ *    and the outer box never resizes, so a ResizeObserver alone would keep a
+ *    stale answer forever. Hence the `fonts.ready` re-measure.
+ */
+function TabDescription({ text }: { text: string }) {
+  const outerRef = React.useRef<HTMLSpanElement>(null);
+  const textRef = React.useRef<HTMLSpanElement>(null);
+  const [isClipped, setIsClipped] = useState(false);
+
+  useEffect(() => {
+    const outer = outerRef.current;
+    const textEl = textRef.current;
+    if (!outer || !textEl) return;
+
+    let disposed = false;
+
+    const measure = () => {
+      if (disposed) return;
+      const range = document.createRange();
+      range.selectNodeContents(textEl);
+      const textWidth = range.getBoundingClientRect().width;
+      range.detach();
+      // The 1px slack absorbs sub-pixel rounding, which otherwise reports a
+      // one-pixel overflow on text that visibly fits.
+      setIsClipped(textWidth > outer.clientWidth + 1);
+    };
+
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(outer);
+    void document.fonts?.ready.then(measure);
+
+    return () => {
+      disposed = true;
+      observer.disconnect();
+    };
+  }, [text]);
+
+  return (
+    <span ref={outerRef} className="block min-w-0">
+      <Tooltip content={isClipped ? text : null} fullWidth maxWidth={280}>
+        <span
+          ref={textRef}
+          className="block min-w-0 flex-1 truncate text-xs"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          {text}
+        </span>
+      </Tooltip>
+    </span>
+  );
+}
+
 export function SettingsModal({
   isOpen,
   onClose,
@@ -1334,9 +1404,7 @@ export function SettingsModal({
                           <span className="block text-sm font-semibold" style={{ color: active ? 'var(--text-strong)' : 'var(--text-strong)' }}>
                             {meta.label}
                           </span>
-                          <span className="block text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                            {meta.description}
-                          </span>
+                          <TabDescription text={meta.description} />
                         </span>
                       </div>
                     </button>
@@ -1389,9 +1457,7 @@ export function SettingsModal({
                           <span className="block text-sm font-semibold" style={{ color: active ? 'var(--text-strong)' : 'var(--text-strong)' }}>
                             {meta.label}
                           </span>
-                          <span className="block text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                            {meta.description}
-                          </span>
+                          <TabDescription text={meta.description} />
                         </span>
                       </div>
                     </button>
