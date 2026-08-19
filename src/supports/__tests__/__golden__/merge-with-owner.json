@@ -1,0 +1,978 @@
+{
+  "anchors": {
+    "anchor-a": {
+      "contactCone": {
+        "id": "cone-aa",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 7
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "anchor-a",
+      "joint": {
+        "diameter": 1,
+        "id": "anchor-a-joint",
+        "pos": {
+          "x": 5,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "modelId": "owner-model",
+      "rootBaseDiameter": 2,
+      "rootHeight": 1,
+      "rootPos": {
+        "x": 5,
+        "y": 0,
+        "z": 0
+      },
+      "rootTopDiameter": 1,
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "seg-aa-bot",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 1
+            }
+          },
+          "diameter": 1,
+          "id": "seg-aa",
+          "topJoint": {
+            "diameter": 1,
+            "id": "seg-aa-top",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 6
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    }
+  },
+  "braces": {
+    "brace-a": {
+      "endKnotId": "knot-b",
+      "id": "brace-a",
+      "modelId": "model-a",
+      "profile": {
+        "diameter": 0.8
+      },
+      "startKnotId": "knot-a"
+    },
+    "uuid-33": {
+      "endKnotId": "uuid-34",
+      "id": "uuid-33",
+      "modelId": "owner-model",
+      "profile": {
+        "diameter": 0.8
+      },
+      "startKnotId": "uuid-14"
+    }
+  },
+  "branches": {
+    "branch-a": {
+      "contactCone": {
+        "id": "cone-ba",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 16
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "branch-a",
+      "modelId": "model-a",
+      "parentKnotId": "knot-a",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "seg-ba-bot",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 6
+            }
+          },
+          "diameter": 1,
+          "id": "seg-ba",
+          "topJoint": {
+            "diameter": 1,
+            "id": "seg-ba-top",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 11
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    },
+    "uuid-13": {
+      "contactCone": {
+        "id": "uuid-18",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 16
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "uuid-13",
+      "modelId": "owner-model",
+      "parentKnotId": "uuid-14",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "uuid-16",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 6
+            }
+          },
+          "diameter": 1,
+          "id": "uuid-15",
+          "topJoint": {
+            "diameter": 1,
+            "id": "uuid-17",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 11
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    }
+  },
+  "knots": {
+    "knot-a": {
+      "diameter": 1.1,
+      "id": "knot-a",
+      "parentShaftId": "seg-ta",
+      "pos": {
+        "x": 0,
+        "y": 0,
+        "z": 4.5
+      },
+      "t": 0.5
+    },
+    "knot-b": {
+      "diameter": 1.1,
+      "id": "knot-b",
+      "parentShaftId": "seg-tb",
+      "pos": {
+        "x": 0,
+        "y": 0,
+        "z": 4.5
+      },
+      "t": 0.5
+    },
+    "uuid-14": {
+      "diameter": 1.1,
+      "id": "uuid-14",
+      "parentShaftId": "uuid-4",
+      "pos": {
+        "x": 0,
+        "y": 0,
+        "z": 4.5
+      },
+      "t": 0.5
+    },
+    "uuid-34": {
+      "diameter": 1.1,
+      "id": "uuid-34",
+      "parentShaftId": "uuid-9",
+      "pos": {
+        "x": 0,
+        "y": 0,
+        "z": 4.5
+      },
+      "t": 0.5
+    }
+  },
+  "leaves": {
+    "leaf-a": {
+      "contactCone": {
+        "id": "cone-la",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 14
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "leaf-a",
+      "modelId": "model-a",
+      "parentKnotId": "knot-a"
+    },
+    "uuid-19": {
+      "contactCone": {
+        "id": "uuid-20",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 14
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "uuid-19",
+      "modelId": "owner-model",
+      "parentKnotId": "uuid-14"
+    }
+  },
+  "roots": {
+    "root-a": {
+      "coneHeight": 1.5,
+      "diameter": 3,
+      "diskHeight": 0.5,
+      "id": "root-a",
+      "modelId": "model-a",
+      "transform": {
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rot": {
+          "w": 1,
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    },
+    "root-b": {
+      "coneHeight": 1.5,
+      "diameter": 3,
+      "diskHeight": 0.5,
+      "id": "root-b",
+      "modelId": "model-b",
+      "transform": {
+        "pos": {
+          "x": 20,
+          "y": 0,
+          "z": 0
+        },
+        "rot": {
+          "w": 1,
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    },
+    "uuid-1": {
+      "coneHeight": 1.5,
+      "diameter": 3,
+      "diskHeight": 0.5,
+      "id": "uuid-1",
+      "modelId": "owner-model",
+      "transform": {
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rot": {
+          "w": 1,
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    },
+    "uuid-2": {
+      "coneHeight": 1.5,
+      "diameter": 3,
+      "diskHeight": 0.5,
+      "id": "uuid-2",
+      "modelId": "owner-model",
+      "transform": {
+        "pos": {
+          "x": 20,
+          "y": 0,
+          "z": 0
+        },
+        "rot": {
+          "w": 1,
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    }
+  },
+  "sticks": {
+    "stick-a": {
+      "contactConeA": {
+        "id": "cone-sa1",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 9
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "contactConeB": {
+        "id": "cone-sa2",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 14
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "stick-a",
+      "modelId": "model-a",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "seg-sa-bot",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 9
+            }
+          },
+          "diameter": 1,
+          "id": "seg-sa",
+          "topJoint": {
+            "diameter": 1,
+            "id": "seg-sa-top",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 14
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    },
+    "uuid-27": {
+      "contactConeA": {
+        "id": "uuid-31",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 9
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "contactConeB": {
+        "id": "uuid-32",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 14
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "uuid-27",
+      "modelId": "owner-model",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "uuid-29",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 9
+            }
+          },
+          "diameter": 1,
+          "id": "uuid-28",
+          "topJoint": {
+            "diameter": 1,
+            "id": "uuid-30",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 14
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    }
+  },
+  "trunks": {
+    "trunk-a": {
+      "contactCone": {
+        "id": "cone-ta",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 12
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "trunk-a",
+      "modelId": "model-a",
+      "rootId": "root-a",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "seg-ta-bot",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 2
+            }
+          },
+          "diameter": 1,
+          "id": "seg-ta",
+          "topJoint": {
+            "diameter": 1,
+            "id": "seg-ta-top",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 7
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    },
+    "trunk-b": {
+      "contactCone": {
+        "id": "cone-tb",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 12
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "trunk-b",
+      "modelId": "model-b",
+      "rootId": "root-b",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "seg-tb-bot",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 2
+            }
+          },
+          "diameter": 1,
+          "id": "seg-tb",
+          "topJoint": {
+            "diameter": 1,
+            "id": "seg-tb-top",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 7
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    },
+    "uuid-3": {
+      "contactCone": {
+        "id": "uuid-7",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 12
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "uuid-3",
+      "modelId": "owner-model",
+      "rootId": "uuid-1",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "uuid-5",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 2
+            }
+          },
+          "diameter": 1,
+          "id": "uuid-4",
+          "topJoint": {
+            "diameter": 1,
+            "id": "uuid-6",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 7
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    },
+    "uuid-8": {
+      "contactCone": {
+        "id": "uuid-12",
+        "normal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 12
+        },
+        "profile": {
+          "bodyDiameterMm": 1.2,
+          "contactDiameterMm": 0.4,
+          "diskThicknessMm": 0.1,
+          "lengthMm": 2.5,
+          "maxStandoffMm": 1.5,
+          "penetrationMm": 0.1,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "uuid-8",
+      "modelId": "owner-model",
+      "rootId": "uuid-2",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "uuid-10",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 2
+            }
+          },
+          "diameter": 1,
+          "id": "uuid-9",
+          "topJoint": {
+            "diameter": 1,
+            "id": "uuid-11",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 7
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    }
+  },
+  "twigs": {
+    "twig-a": {
+      "contactDiskA": {
+        "coneAxis": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "contactDiameterMm": 0.4,
+        "id": "disk-wa1",
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 8
+        },
+        "profile": {
+          "diskThicknessMm": 0.1,
+          "maxStandoffMm": 1.5,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "contactDiskB": {
+        "coneAxis": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "contactDiameterMm": 0.4,
+        "id": "disk-wa2",
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 13
+        },
+        "profile": {
+          "diskThicknessMm": 0.1,
+          "maxStandoffMm": 1.5,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "twig-a",
+      "modelId": "model-a",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "seg-wa-bot",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 8
+            }
+          },
+          "diameter": 1,
+          "id": "seg-wa",
+          "topJoint": {
+            "diameter": 1,
+            "id": "seg-wa-top",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 13
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    },
+    "uuid-21": {
+      "contactDiskA": {
+        "coneAxis": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "contactDiameterMm": 0.4,
+        "id": "uuid-25",
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 8
+        },
+        "profile": {
+          "diskThicknessMm": 0.1,
+          "maxStandoffMm": 1.5,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "contactDiskB": {
+        "coneAxis": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "contactDiameterMm": 0.4,
+        "id": "uuid-26",
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 13
+        },
+        "profile": {
+          "diskThicknessMm": 0.1,
+          "maxStandoffMm": 1.5,
+          "standoffAngleThreshold": 0.785398,
+          "type": "disk"
+        },
+        "surfaceNormal": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        }
+      },
+      "id": "uuid-21",
+      "modelId": "owner-model",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "uuid-23",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 8
+            }
+          },
+          "diameter": 1,
+          "id": "uuid-22",
+          "topJoint": {
+            "diameter": 1,
+            "id": "uuid-24",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 13
+            }
+          },
+          "type": "straight"
+        }
+      ]
+    }
+  }
+}
