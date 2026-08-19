@@ -28,6 +28,11 @@ msgstr ""
 msgid "{count, plural, one {# found} other {# found}}"
 msgstr ""
 
+#. Warning badge over the viewport when models stick out of the printer build volume.
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:183
+msgid "{count, plural, one {# model out of build volume} other {# models out of build volume}}"
+msgstr ""
+
 #. How many matching printers the network scan discovered. {count} is a positive integer.
 #: src/components/printers/PrinterVariantPickerModal.tsx:40
 msgid "{count, plural, one {# printer found} other {# printers found}}"
@@ -96,11 +101,11 @@ msgstr "~{hours} h {mins} min"
 msgid "~{mins} min"
 msgstr "~{mins} min"
 
-#: src/components/settings/SettingsModal.tsx:1154
+#: src/components/settings/SettingsModal.tsx:1224
 msgid "3D Mouse"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1155
+#: src/components/settings/SettingsModal.tsx:1225
 msgid "3D mouse navigation controls"
 msgstr ""
 
@@ -109,7 +114,7 @@ msgstr ""
 msgid "A recovery copy is written beside each saved project, as <name>_autosave.voxl. It uses roughly as much disk as the project itself."
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1202
+#: src/components/settings/SettingsModal.tsx:1272
 msgid "About"
 msgstr ""
 
@@ -182,7 +187,7 @@ msgstr ""
 msgid "Automatically saves a crash-recovery .voxl scene in the background and offers restore on next launch."
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1173
+#: src/components/settings/SettingsModal.tsx:1243
 msgid "Autosave and crash recovery behavior"
 msgstr ""
 
@@ -214,10 +219,14 @@ msgstr ""
 msgid "Autosave status refreshed."
 msgstr ""
 
+#: src/components/organisms/NotificationStack.tsx:55
+msgid "Autosaving…"
+msgstr ""
+
 #. View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.
 #: src/components/layout/FirstRunOnboarding.tsx:269
 #: src/components/layout/OnboardingPrinterLibrary.tsx:279
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1423
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1438
 msgid "Back"
 msgstr ""
 
@@ -225,12 +234,12 @@ msgstr ""
 msgid "Back to setup step"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1178
+#: src/components/settings/SettingsModal.tsx:1248
 msgid "Backups"
 msgstr ""
 
 #. View cube face (seen from below), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1427
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1442
 msgid "Bottom"
 msgstr ""
 
@@ -251,7 +260,7 @@ msgstr "Stützen erstellen und anpassen"
 msgid "cached"
 msgstr "zwischengespeichert"
 
-#: src/components/settings/SettingsModal.tsx:1118
+#: src/components/settings/SettingsModal.tsx:1188
 msgid "Camera"
 msgstr ""
 
@@ -272,7 +281,7 @@ msgstr "Das Ändern der Druckeinstellungen macht die aktuell geslicte Datei ung�
 msgid "Changing printer profile requires re-slice"
 msgstr "Ein Wechsel des Druckerprofils erfordert erneutes Slicen"
 
-#: src/components/settings/SettingsModal.tsx:1197
+#: src/components/settings/SettingsModal.tsx:1267
 msgid "Check for new versions and manage channels"
 msgstr ""
 
@@ -546,7 +555,7 @@ msgstr "DragonFruit-Menü"
 msgid "Drop supported files"
 msgstr "Unterstützte Dateien ablegen"
 
-#: src/components/settings/SettingsModal.tsx:1167
+#: src/components/settings/SettingsModal.tsx:1237
 msgid "Early-access and experimental features"
 msgstr ""
 
@@ -599,7 +608,7 @@ msgstr ""
 msgid "Expand folder"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1166
+#: src/components/settings/SettingsModal.tsx:1236
 msgid "Experiments"
 msgstr ""
 
@@ -658,11 +667,11 @@ msgid "From the community, for the community. Free to use, open to contribute, a
 msgstr ""
 
 #. Orientation label, rendered uppercase on the view cube and on the build plate's front edge. Keep it as short as possible — long words are auto-shrunk to fit and become hard to read.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1419
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1434
 msgid "Front"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1112
+#: src/components/settings/SettingsModal.tsx:1182
 msgid "General"
 msgstr ""
 
@@ -691,7 +700,7 @@ msgstr ""
 msgid "Hollow"
 msgstr "Aushöhlen"
 
-#: src/components/settings/SettingsModal.tsx:1148
+#: src/components/settings/SettingsModal.tsx:1218
 msgid "Hotkeys"
 msgstr ""
 
@@ -780,7 +789,7 @@ msgstr "Aktuelle Profile behalten"
 msgid "Keep going without a printer. You can add one later."
 msgstr "Ohne Drucker fortfahren. Sie können später einen hinzufügen."
 
-#: src/components/settings/SettingsModal.tsx:1149
+#: src/components/settings/SettingsModal.tsx:1219
 msgid "Keyboard bindings and presets"
 msgstr ""
 
@@ -818,7 +827,7 @@ msgid "Layers:"
 msgstr ""
 
 #. View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1425
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1440
 msgid "Left"
 msgstr ""
 
@@ -834,7 +843,7 @@ msgstr "Laden Sie ein Modell in Vorbereiten, um diese Phase freizuschalten"
 msgid "Load Mesh"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1161
+#: src/components/settings/SettingsModal.tsx:1231
 msgid "Load vendor profile plugins"
 msgstr ""
 
@@ -851,15 +860,15 @@ msgstr ""
 msgid "loading…"
 msgstr "wird geladen…"
 
-#: src/components/settings/SettingsModal.tsx:1179
+#: src/components/settings/SettingsModal.tsx:1249
 msgid "Local on-disk backup snapshots"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1191
+#: src/components/settings/SettingsModal.tsx:1261
 msgid "Log file location and verbosity"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1190
+#: src/components/settings/SettingsModal.tsx:1260
 msgid "Logging"
 msgstr ""
 
@@ -919,7 +928,7 @@ msgstr ""
 
 #. File type badge on the recent files list. Noun — labels a mesh file (.stl, .obj, .3mf).
 #: src/components/layout/EmptySceneState.tsx:678
-#: src/components/settings/SettingsModal.tsx:1124
+#: src/components/settings/SettingsModal.tsx:1194
 msgid "Mesh"
 msgstr "Mesh"
 
@@ -1157,7 +1166,7 @@ msgstr ""
 msgid "Paste"
 msgstr "Einfügen"
 
-#: src/components/settings/SettingsModal.tsx:1137
+#: src/components/settings/SettingsModal.tsx:1207
 msgid "Per-workspace camera defaults"
 msgstr ""
 
@@ -1169,11 +1178,11 @@ msgstr ""
 msgid "Please hang tight while we prepare your scene."
 msgstr "Bitte haben Sie einen Moment Geduld, während wir Ihre Szene vorbereiten."
 
-#: src/components/settings/SettingsModal.tsx:1160
+#: src/components/settings/SettingsModal.tsx:1230
 msgid "Plugins"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1131
+#: src/components/settings/SettingsModal.tsx:1201
 msgid "PNG compression and engine metadata"
 msgstr ""
 
@@ -1236,7 +1245,7 @@ msgstr ""
 msgid "Printing"
 msgstr "Drucken"
 
-#: src/components/settings/SettingsModal.tsx:1119
+#: src/components/settings/SettingsModal.tsx:1189
 msgid "Projection and navigation behavior"
 msgstr ""
 
@@ -1348,7 +1357,7 @@ msgid "Restore window"
 msgstr "Fenster wiederherstellen"
 
 #. View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1424
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1439
 msgid "Right"
 msgstr ""
 
@@ -1375,6 +1384,10 @@ msgstr ""
 
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:136
 msgid "Saved in the recovery folder"
+msgstr ""
+
+#: src/components/organisms/NotificationStack.tsx:55
+msgid "Saving…"
 msgstr ""
 
 #: src/components/printers/PrinterVariantPickerModal.tsx:514
@@ -1405,7 +1418,7 @@ msgid "Scene"
 msgstr "Szene"
 
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:165
-#: src/components/settings/SettingsModal.tsx:1172
+#: src/components/settings/SettingsModal.tsx:1242
 msgid "Scene Autosave"
 msgstr ""
 
@@ -1463,7 +1476,7 @@ msgstr "Profil auswählen"
 msgid "Selected printer is offline"
 msgstr "Ausgewählter Drucker ist offline"
 
-#: src/components/settings/SettingsModal.tsx:1185
+#: src/components/settings/SettingsModal.tsx:1255
 msgid "Send sliced files to UVTools for analysis"
 msgstr ""
 
@@ -1472,7 +1485,7 @@ msgstr ""
 msgid "Settings"
 msgstr "Einstellungen"
 
-#: src/components/settings/SettingsModal.tsx:1125
+#: src/components/settings/SettingsModal.tsx:1195
 msgid "Shader, rendering options, and selection behavior"
 msgstr ""
 
@@ -1499,7 +1512,7 @@ msgstr ""
 msgid "Show restore/discard prompt if a dirty autosave is detected at startup."
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1130
+#: src/components/settings/SettingsModal.tsx:1200
 msgid "Slicing"
 msgstr ""
 
@@ -1602,7 +1615,7 @@ msgstr "Das Spice muss fließen. Das Harz muss aushärten."
 msgid "The update download or install failed."
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1143
+#: src/components/settings/SettingsModal.tsx:1213
 msgid "Theme and custom UI token customization"
 msgstr ""
 
@@ -1632,7 +1645,7 @@ msgid "Toon"
 msgstr ""
 
 #. View cube face (seen from above), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1426
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1441
 msgid "Top"
 msgstr ""
 
@@ -1644,7 +1657,7 @@ msgstr ""
 msgid "Try again"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1142
+#: src/components/settings/SettingsModal.tsx:1212
 msgid "UI & Theme"
 msgstr ""
 
@@ -1690,7 +1703,7 @@ msgstr ""
 msgid "Update failed"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1196
+#: src/components/settings/SettingsModal.tsx:1266
 msgid "Updates"
 msgstr ""
 
@@ -1698,11 +1711,11 @@ msgstr ""
 msgid "Use without printer"
 msgstr "Ohne Drucker verwenden"
 
-#: src/components/settings/SettingsModal.tsx:1184
+#: src/components/settings/SettingsModal.tsx:1254
 msgid "UVTools"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1203
+#: src/components/settings/SettingsModal.tsx:1273
 msgid "Version info and project details"
 msgstr ""
 
@@ -1759,11 +1772,11 @@ msgstr ""
 msgid "With great resin comes great responsibility."
 msgstr "Mit großem Harz kommt große Verantwortung."
 
-#: src/components/settings/SettingsModal.tsx:1113
+#: src/components/settings/SettingsModal.tsx:1183
 msgid "Workspace behavior and panel layout"
 msgstr ""
 
-#: src/components/settings/SettingsModal.tsx:1136
+#: src/components/settings/SettingsModal.tsx:1206
 msgid "Workspaces"
 msgstr ""
 

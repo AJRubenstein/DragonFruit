@@ -981,8 +981,8 @@ export default function Home() {
     setIsSaveToastVisible,
     isSaveToastAnimatedVisible,
     setIsSaveToastAnimatedVisible,
-    saveToastLabel,
-    setSaveToastLabel,
+    saveToastMode,
+    setSaveToastMode,
     historyActionToastFadeTimeoutRef,
     historyActionToastClearTimeoutRef,
     printingMonitorErrorToastFadeTimeoutRef,
@@ -10703,7 +10703,7 @@ export default function Home() {
       <NotificationStack
         isSaveToastVisible={isSaveToastVisible}
         isSaveToastAnimatedVisible={isSaveToastAnimatedVisible}
-        saveToastLabel={saveToastLabel}
+        saveToastMode={saveToastMode}
         historyActionToast={historyActionToast}
         isHistoryActionToastVisible={isHistoryActionToastVisible}
         printingMonitorErrorToast={printingMonitorErrorToast}
