@@ -138,6 +138,25 @@
   one. Also add a `.gitattributes` (`* text=auto eol=lf`) per plugin so it does
   not come back.
 
+### [ci] TS-vs-Rust island conformance has never actually run — M · medium risk
+- Where: rust/dragonfruit-islands/src/bin/{island_harness,island_diff}.rs; the live
+  TS path in src/volumeAnalysis/IslandScan/; `/fixtures/` in .gitignore.
+- What: two island-detection implementations ship side by side, and the only
+  thing checking they agree is a harness/diff pair that reads
+  `fixtures/island-scan/<case>/` — a directory that is gitignored and untracked,
+  so it exists on one developer's machine. The guarantee has never been enforced.
+- Why: a dual implementation with no conformance check drifts silently, and the
+  TS path is wired into production UI, not hidden behind a native-only switch.
+- Fix: commit fixtures and convert the pair into an integration test.
+- Context: ADR-0025 (`docs/adr/`) records the full audit and disposition; it is
+  `status: proposed` and this is its unexecuted phase 1. Do not re-derive.
+
+### [cleanup] Stale DFST header size in a doc comment — S · low risk
+- Where: src-tauri/src/mesh_repair.rs, the comment above the DFST spec.
+- What: one comment says "a 16-byte `DFST` header"; the spec below it and
+  `STL_RESPONSE_HEADER_BYTES` both say 64. The constant is right.
+- Why: trivial, but it is the kind of thing someone trusts while writing a reader.
+
 ### [docs] Candidate ADR: empirical sizing over physics-based — S · low risk
 - Where: src/supports/autoSupport/parameterSizing.ts (header comment), and the
   reverted physics work in the auto-supports history.

@@ -129,6 +129,12 @@ nav:
           - LYS Mesh Extraction Spec: dev/lys-mesh-extraction-spec.md
       - Decision Records:
           - Universal macOS Distribution: adr/0005-macos-universal-distribution.md
+          - CLI Binary Consolidation: adr/0025-cli-binary-consolidation.md
+          - DFST Decimation Protocol: adr/0027-dfst-decimation-protocol.md
+          - Voxel Hollowing Architecture: adr/0029-voxel-hollowing-architecture.md
+          - Plugin Format Architecture: adr/0031-plugin-format-architecture.md
+          - VOXL Binary Container Format: adr/0034-voxl-binary-container-format.md
+          - Auto-Support Roads Not Taken: adr/0038-auto-support-placement-roads-not-taken.md
           - Stream CTB Layer Payloads to Disk: adr/0036-stream-ctb-layer-payloads-to-disk.md
           - Cut the Surface, Not a Volume: adr/0037-cut-the-surface-not-a-volume.md
           - Organic Cut Surface Redesign: dev/organic-cut-surface-redesign.md
