@@ -86,12 +86,17 @@ msgstr "~{hours} h {mins} min"
 msgid "~{mins} min"
 msgstr "~{mins} min"
 
+#. <name> is a literal placeholder in the filename, not markup — leave it as-is.
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:370
+msgid "A recovery copy is written beside each saved project, as <name>_autosave.voxl. It uses roughly as much disk as the project itself."
+msgstr "Junto a cada proyecto guardado se escribe una copia de recuperación con el nombre <name>_autosave.voxl. Ocupa en disco más o menos lo mismo que el propio proyecto."
+
 #. Badge next to the currently-selected printer in the fleet list (adjective describing the device, e.g. "the active one").
 #: src/components/layout/TopBar.tsx:1001
 msgid "Active"
 msgstr "Activo"
 
-#: src/app/page.tsx:2188
+#: src/app/page.tsx:2201
 msgid "Add joint"
 msgstr "Añadir unión"
 
@@ -146,6 +151,38 @@ msgstr "Distribuir modelos en la placa automáticamente"
 #: src/components/controls/ModelStatsCard.tsx:609
 msgid "Auto-repaired — {0} errors"
 msgstr "Reparado automáticamente — {0} errores"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:167
+msgid "Automatically saves a crash-recovery .voxl scene in the background and offers restore on next launch."
+msgstr "Guarda en segundo plano una escena .voxl de recuperación y ofrece restaurarla en el siguiente arranque."
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:327
+msgid "Autosave files are available in the DragonFruit desktop build."
+msgstr "Los archivos de guardado automático solo existen en la versión de escritorio de DragonFruit."
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:208
+msgid "Autosave idle delay"
+msgstr "Espera antes de guardar"
+
+#: src/app/page.tsx:939
+msgid "Autosave is not working"
+msgstr "El guardado automático no funciona"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:122
+msgid "Autosave recovery state marked clean."
+msgstr "Estado de recuperación marcado como limpio."
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:364
+msgid "Autosave scene file"
+msgstr "Archivo de escena del guardado automático"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:308
+msgid "Autosave Status"
+msgstr "Estado del guardado automático"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:99
+msgid "Autosave status refreshed."
+msgstr "Estado del guardado automático actualizado."
 
 #. View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.
 #: src/components/layout/FirstRunOnboarding.tsx:269
@@ -207,6 +244,10 @@ msgstr "Elige un perfil oficial de impresora para añadirlo."
 #: src/components/layout/FirstRunOnboarding.tsx:193
 msgid "Choose your theme"
 msgstr "Elige tu tema"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:342
+msgid "Clean (no pending recovery)"
+msgstr "Limpio (nada que recuperar)"
 
 #: src/components/layout/EmptySceneState.tsx:622
 msgid "Clear"
@@ -298,6 +339,11 @@ msgstr "No se han podido leer los datos de la impresora."
 msgid "Could not reopen this file from cache."
 msgstr "No se pudo reabrir este archivo desde la caché."
 
+#. {reason} is a technical filesystem error, passed through untranslated.
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:51
+msgid "Could not write beside the project ({reason}), so the default location is being used."
+msgstr "No se ha podido escribir junto al proyecto ({reason}), así que se usa la ubicación predeterminada."
+
 #. Network connect failed for the given printer host/IP. {host} is the address.
 #: src/components/printers/PrinterVariantPickerModal.tsx:55
 msgid "Couldn't connect to {host}."
@@ -308,9 +354,17 @@ msgstr "No se ha podido conectar con {host}."
 msgid "Count"
 msgstr "Total"
 
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:274
+msgid "Crash Recovery"
+msgstr "Recuperación tras un fallo"
+
 #: src/components/controls/TransformToolbar.tsx:33
 msgid "Create cavity or open-face shell"
 msgstr "Crear cavidad o carcasa de cara abierta"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:176
+msgid "Creates recovery snapshots while editing."
+msgstr "Crea instantáneas de recuperación mientras editas."
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:284
 msgid "Current version"
@@ -351,6 +405,10 @@ msgstr "Eliminar"
 msgid "Delete waypoint"
 msgstr "Eliminar punto"
 
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:310
+msgid "Desktop-only diagnostics for autosave files and recovery state."
+msgstr "Diagnóstico de los archivos de guardado automático y del estado de recuperación (solo en escritorio)."
+
 #. Auto-detection found a bit depth with no matching variant. {bitsLabel} is the detected bit depth, {presetName} the printer family name.
 #: src/components/printers/PrinterVariantPickerModal.tsx:48
 msgid "Detected a {bitsLabel} screen that doesn't match any known variant of {presetName}."
@@ -364,6 +422,14 @@ msgstr "Detectada: {variantName}"
 #: src/components/printers/PrinterVariantPickerModal.tsx:475
 msgid "Detecting model…"
 msgstr "Detectando el modelo…"
+
+#: src/components/scene/SceneAutosaveRecoveryModal.tsx:157
+msgid "Discard"
+msgstr "Descartar"
+
+#: src/components/scene/SceneAutosaveRecoveryModal.tsx:104
+msgid "Dismiss"
+msgstr "Cerrar"
 
 #. Paraphrase of Yoda's line from Star Wars: The Empire Strikes Back (1980): "Do or do not. There is no try."
 #: src/components/layout/EmptySceneState.tsx:84
@@ -391,6 +457,10 @@ msgstr "Arrastra un archivo. La plataforma te está juzgando."
 msgid "DragonFruit app menu"
 msgstr "Menú de aplicación de DragonFruit"
 
+#: src/components/scene/SceneAutosaveRecoveryModal.tsx:91
+msgid "DragonFruit autosaved a scene at {formattedDate}"
+msgstr "DragonFruit guardó automáticamente una escena: {formattedDate}"
+
 #: src/components/layout/FirstRunOnboarding.tsx:98
 msgid "DragonFruit first-time setup"
 msgstr "Configuración inicial de DragonFruit"
@@ -408,7 +478,7 @@ msgstr "Menú de DragonFruit"
 msgid "Drop supported files"
 msgstr "Suelta archivos compatibles"
 
-#: src/app/page.tsx:2194
+#: src/app/page.tsx:2207
 #: src/components/ui/EditorContextMenu.tsx:126
 msgid "Editor"
 msgstr "Editor"
@@ -421,6 +491,10 @@ msgstr "Menú contextual del editor"
 #: src/components/layout/EmptySceneState.tsx:95
 msgid "Elementary, my dear user — load a model."
 msgstr "Elemental, querido usuario: carga un modelo."
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:175
+msgid "Enable scene autosave"
+msgstr "Activar el guardado automático"
 
 #: src/components/printers/SetupMethodChooser.tsx:85
 msgid "Enter your printer's IP address"
@@ -461,6 +535,18 @@ msgstr "Exportar"
 msgid "Exposure:"
 msgstr "Exposición:"
 
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:85
+msgid "Failed to load autosave status."
+msgstr "No se ha podido cargar el estado del guardado automático."
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:124
+msgid "Failed to mark autosave as clean."
+msgstr "No se ha podido marcar el guardado automático como limpio."
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:148
+msgid "Failed to open autosave location."
+msgstr "No se ha podido abrir la ubicación del guardado automático."
+
 #: src/components/layout/TopBar.tsx:626
 msgid "Finalize and export output"
 msgstr "Finalizar y exportar el resultado"
@@ -482,6 +568,10 @@ msgstr "Unidades de la flota"
 #: src/components/controls/ModelStatsCard.tsx:467
 msgid "Flip model stats card"
 msgstr "Girar la tarjeta de datos del modelo"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:243
+msgid "For continuous edits, save at least this often."
+msgstr "Si editas sin parar, guarda al menos con esta frecuencia."
 
 #: src/components/layout/FirstRunOnboarding.tsx:174
 msgid "From the community, for the community. Free to use, open to contribute, and shaped by the people who print with it."
@@ -580,6 +670,10 @@ msgstr "Vista interior: no disponible"
 msgid "Interior view: Unavailable (apply hollowing first)"
 msgstr "Vista interior: no disponible (aplica primero el vaciado)"
 
+#: src/components/scene/SceneAutosaveRecoveryModal.tsx:115
+msgid "It looks like DragonFruit quit before you saved your last session. You can restore the autosaved scene or discard it and start fresh."
+msgstr "Parece que DragonFruit se cerró antes de que guardaras la última sesión. Puedes restaurar la escena que se guardó automáticamente o descartarla y empezar de cero."
+
 #. Paraphrase of Admiral Ackbar's line from Star Wars: Return of the Jedi (1983): "It's a trap!"
 #: src/components/layout/EmptySceneState.tsx:93
 msgid "It's a trap! ...just kidding, drop your STL."
@@ -598,6 +692,14 @@ msgstr "Mantener perfiles actuales"
 msgid "Keep going without a printer. You can add one later."
 msgstr "Continúa sin impresora. Puedes añadir una más adelante."
 
+#: src/components/scene/SceneAutosaveRecoveryModal.tsx:126
+msgid "Last autosave"
+msgstr "Último guardado automático"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:348
+msgid "Last autosave timestamp"
+msgstr "Fecha del último guardado"
+
 #: src/components/layout/EmptySceneState.tsx:687
 msgid "last opened {period} ago"
 msgstr "abierto hace {period}"
@@ -606,6 +708,11 @@ msgstr "abierto hace {period}"
 #: src/components/layout/EmptySceneState.tsx:686
 msgid "last opened just now"
 msgstr "abierto ahora mismo"
+
+#. {timestamp} is a locale-formatted date and time.
+#: src/app/page.tsx:569
+msgid "Last successful autosave: {timestamp}. Save your project manually."
+msgstr "Último guardado automático correcto: {timestamp}. Guarda tu proyecto a mano."
 
 #: src/components/layout/EmptySceneState.tsx:100
 msgid "Layer 0 of 0. Living dangerously."
@@ -636,6 +743,14 @@ msgstr "Carga un modelo en Preparar para desbloquear esta etapa"
 msgid "Load Mesh"
 msgstr "Cargar malla"
 
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:332
+msgid "Loading autosave status…"
+msgstr "Cargando el estado del guardado automático…"
+
+#: src/app/page.tsx:4275
+msgid "Loading Scene…"
+msgstr "Cargando escena…"
+
 #. Shown in place of file size while a recent file is being reopened. Keep it short.
 #: src/components/layout/EmptySceneState.tsx:693
 msgid "loading…"
@@ -662,6 +777,10 @@ msgstr "Marcar como geometría del modelo"
 msgid "Mark as Support Geometry"
 msgstr "Marcar como geometría de soporte"
 
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:390
+msgid "Mark Recovery Clean"
+msgstr "Marcar la recuperación como limpia"
+
 #: src/components/organisms/modals/PrintingModals.tsx:1836
 msgid "Material profile unavailable"
 msgstr "Perfil de material no disponible"
@@ -678,6 +797,10 @@ msgstr "Maximizar"
 msgid "Maximize window"
 msgstr "Maximizar ventana"
 
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:242
+msgid "Maximum autosave interval"
+msgstr "Intervalo máximo de guardado"
+
 #. Context-menu command that re-attaches the support scaffolding back to the model.
 #: src/components/ui/EditorContextMenu.tsx:86
 msgid "Merge supports"
@@ -691,6 +814,11 @@ msgstr "Malla"
 #: src/components/layout/EmptySceneState.tsx:580
 msgid "Mesh files (.stl, .obj, .3mf)"
 msgstr "Archivos de malla (.stl, .obj, .3mf)"
+
+#. Unit suffix after a minutes input box. Keep it abbreviated.
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:262
+msgid "min"
+msgstr "min"
 
 #: src/components/layout/TopBar.tsx:1180
 msgid "Minimize"
@@ -767,6 +895,14 @@ msgstr "No se han encontrado impresoras {presetName} en la red."
 msgid "No active printer"
 msgstr "Sin impresora activa"
 
+#: src/app/page.tsx:943
+msgid "No autosave has succeeded this session. Save your project manually."
+msgstr "Ningún guardado automático ha funcionado en esta sesión. Guarda tu proyecto a mano."
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:340
+msgid "No autosave manifest found"
+msgstr "No hay ningún manifiesto de guardado automático"
+
 #: src/components/layout/TopBar.tsx:996
 msgid "No IP"
 msgstr "Sin IP"
@@ -815,10 +951,20 @@ msgstr "No todos los laminadores son iguales. ¡Este es gratis!"
 msgid "Nothing to see here. Yet."
 msgstr "Nada que ver aquí. Todavía."
 
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:195
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:300
+msgid "OFF"
+msgstr "NO"
+
 #: src/components/layout/TopBar.tsx:538
 #: src/components/layout/TopBar.tsx:996
 msgid "Offline"
 msgstr "Sin conexión"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:195
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:300
+msgid "ON"
+msgstr "SÍ"
 
 #. Toolbar button label. Short for "lay the model flat on a selected face"; keep it terse so the toolbar pill stays narrow.
 #: src/components/controls/TransformToolbar.tsx:31
@@ -838,6 +984,10 @@ msgstr "En línea"
 #: src/features/shaders/mesh/types.ts:41
 msgid "Opaque wire mesh"
 msgstr "Malla de alambre opaca"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:399
+msgid "Open Autosave Location"
+msgstr "Abrir la ubicación del guardado"
 
 #. "DragonFruit" is the product name and should stay untranslated/unchanged.
 #: src/components/layout/TopBar.tsx:669
@@ -943,6 +1093,10 @@ msgstr "Imprimir"
 msgid "Re-slice required after profile change"
 msgstr "Es necesario volver a laminar tras cambiar de perfil"
 
+#: src/app/page.tsx:4276
+msgid "Reading autosaved scene…"
+msgstr "Leyendo la escena guardada automáticamente…"
+
 #: src/components/layout/EmptySceneState.tsx:67
 msgid "Ready for your next adventure?"
 msgstr "¿Todo listo para tu próxima aventura?"
@@ -950,6 +1104,30 @@ msgstr "¿Todo listo para tu próxima aventura?"
 #: src/components/layout/EmptySceneState.tsx:613
 msgid "Recent files"
 msgstr "Archivos recientes"
+
+#: src/components/scene/SceneAutosaveRecoveryModal.tsx:68
+msgid "Recover unsaved scene"
+msgstr "Recuperar una escena sin guardar"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:343
+msgid "Recovery available"
+msgstr "Hay una recuperación disponible"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:374
+msgid "Recovery copies are written to the app data folder above."
+msgstr "Las copias de recuperación se escriben en la carpeta de datos indicada arriba."
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:282
+msgid "Recovery prompt on startup"
+msgstr "Avisar al arrancar"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:337
+msgid "Recovery state"
+msgstr "Estado de recuperación"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:320
+msgid "Refresh"
+msgstr "Actualizar"
 
 #. placeholder {0}: info.version
 #: src/features/updater/GlobalUpdateIndicator.tsx:365
@@ -994,6 +1172,15 @@ msgstr "Reparar la malla…"
 msgid "Restore"
 msgstr "Restaurar"
 
+#: src/app/page.tsx:4307
+#: src/app/page.tsx:4318
+msgid "Restore Failed"
+msgstr "Error al restaurar"
+
+#: src/components/scene/SceneAutosaveRecoveryModal.tsx:171
+msgid "Restore Scene"
+msgstr "Restaurar escena"
+
 #: src/components/layout/TopBar.tsx:1199
 msgid "Restore window"
 msgstr "Restaurar ventana"
@@ -1020,6 +1207,14 @@ msgstr "Guardar escena"
 msgid "Save scene as…"
 msgstr "Guardar escena como…"
 
+#: src/components/scene/SceneAutosaveRecoveryModal.tsx:135
+msgid "Saved beside your project"
+msgstr "Guardado junto a tu proyecto"
+
+#: src/components/scene/SceneAutosaveRecoveryModal.tsx:136
+msgid "Saved in the recovery folder"
+msgstr "Guardado en la carpeta de recuperación"
+
 #: src/components/printers/PrinterVariantPickerModal.tsx:514
 #: src/components/settings/FleetManagement.tsx:314
 msgid "Scan again"
@@ -1043,6 +1238,10 @@ msgstr "Buscando impresoras {presetName} en tu red…"
 msgid "Scene"
 msgstr "Escena"
 
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:165
+msgid "Scene Autosave"
+msgstr "Guardado automático de escenas"
+
 #: src/components/layout/EmptySceneState.tsx:599
 msgid "Scene files (.voxl, .lys)"
 msgstr "Archivos de escena (.voxl, .lys)"
@@ -1054,6 +1253,11 @@ msgstr "Esculpir y suavizar la superficie"
 #: src/components/layout/OnboardingPrinterLibrary.tsx:313
 msgid "Search printers"
 msgstr "Buscar impresoras"
+
+#. Unit suffix after a seconds input box. Keep it abbreviated.
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:229
+msgid "sec"
+msgstr "s"
 
 #: src/components/controls/TransformToolbar.tsx:29
 msgid "Select"
@@ -1115,6 +1319,10 @@ msgstr "Mostrar gestor"
 msgid "Show release notes"
 msgstr "Ver las notas de la versión"
 
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:276
+msgid "Show restore/discard prompt if a dirty autosave is detected at startup."
+msgstr "Muestra el aviso de restaurar o descartar si al arrancar hay un guardado automático pendiente."
+
 #: src/components/layout/TopBar.tsx:1069
 msgid "Slicing in progress. Topbar actions are temporarily disabled."
 msgstr "Laminado en curso. Las acciones de la barra superior están temporalmente deshabilitadas."
@@ -1142,6 +1350,10 @@ msgstr "Dividir el modelo por una costura dibujada"
 msgid "Split to bodies"
 msgstr "Dividir en cuerpos"
 
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:358
+msgid "Standing Autosave Error"
+msgstr "Error persistente de guardado automático"
+
 #: src/components/layout/FirstRunOnboarding.tsx:316
 msgid "Start using DragonFruit"
 msgstr "Empezar a usar DragonFruit"
@@ -1154,7 +1366,7 @@ msgstr "Tamaño del STL:"
 msgid "Support"
 msgstr "Soportes"
 
-#: src/app/page.tsx:2194
+#: src/app/page.tsx:2207
 msgid "Supports"
 msgstr "Soportes"
 
@@ -1166,6 +1378,19 @@ msgstr "Soportes del modelo"
 #: src/components/layout/EmptySceneState.tsx:75
 msgid "Suspiciously empty in here."
 msgstr "Sospechosamente vacío aquí dentro."
+
+#: src/app/page.tsx:4320
+msgid "The autosave recovery file could not be found."
+msgstr "No se encuentra el archivo de recuperación."
+
+#: src/app/page.tsx:4308
+#: src/app/page.tsx:4321
+msgid "The autosaved recovery file is corrupted or unreadable."
+msgstr "El archivo de recuperación está dañado o no se puede leer."
+
+#: src/app/page.tsx:940
+msgid "The background recovery save failed repeatedly."
+msgstr "El guardado de recuperación en segundo plano ha fallado varias veces seguidas."
 
 #: src/components/layout/EmptySceneState.tsx:68
 msgid "The build plate awaits."
@@ -1183,6 +1408,10 @@ msgstr "La impresora ha informado de esta variante."
 #: src/components/layout/EmptySceneState.tsx:78
 msgid "The resin is ready. Are you?"
 msgstr "La resina está lista. ¿Y tú?"
+
+#: src/app/page.tsx:4309
+msgid "The scene importer rejected or could not parse the autosave data."
+msgstr "El importador de escenas rechazó los datos del guardado automático o no pudo interpretarlos."
 
 #. Paraphrase of "The spice must flow" from Dune (novel by Frank Herbert, 1965; films 1984 and 2021).
 #: src/components/layout/EmptySceneState.tsx:94
@@ -1209,7 +1438,7 @@ msgstr "Esta escena está agresivamente desocupada."
 msgid "Time to make something real."
 msgstr "Es hora de crear algo real."
 
-#: src/app/page.tsx:2183
+#: src/app/page.tsx:2196
 msgid "Toggle curve"
 msgstr "Alternar curva"
 
@@ -1231,6 +1460,11 @@ msgstr "Triángulos:"
 msgid "Try again"
 msgstr "Reintentar"
 
+#. Placeholder when the autosave file path could not be resolved.
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:366
+msgid "Unavailable"
+msgstr "No disponible"
+
 #: src/components/controls/ModelManagerPanel.tsx:819
 msgid "Ungroup folder"
 msgstr "Desagrupar la carpeta"
@@ -1238,6 +1472,15 @@ msgstr "Desagrupar la carpeta"
 #: src/components/controls/ModelManagerPanel.tsx:768
 msgid "Ungroup selected"
 msgstr "Desagrupar la selección"
+
+#. Placeholder when the autosave timestamp could not be read.
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:352
+msgid "Unknown"
+msgstr "Desconocida"
+
+#: src/components/scene/SceneAutosaveRecoveryModal.tsx:88
+msgid "Unsaved Scene Found"
+msgstr "Hay una escena sin guardar"
 
 #: src/components/layout/EmptySceneState.tsx:729
 msgid "Unsupported file type"
@@ -1270,6 +1513,10 @@ msgstr "Modo de vista"
 #: src/components/controls/ViewTypeDropdown.tsx:85
 msgid "View type"
 msgstr "Tipo de vista"
+
+#: src/components/settings/SceneAutosaveSettingsTab.tsx:209
+msgid "Wait this long after edits before autosaving."
+msgstr "Tiempo que espera tras una edición antes de guardar automáticamente."
 
 #: src/components/layout/EmptySceneState.tsx:98
 msgid "Waiting for first layer adhesion... to reality."
