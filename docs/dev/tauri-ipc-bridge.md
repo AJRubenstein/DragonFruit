@@ -76,6 +76,28 @@ grep -rhoE '\binvoke(<[^>]*>)?\(' src plugins --include=*.ts --include=*.tsx \
   a cancel command (`cancel_slicing`, …). Always offer cancellation for anything
   that runs longer than a second.
 
+## The Rust side of the seam
+
+Where the TS side is a set of wrappers, the native side keeps its cross-command
+state in process-wide `OnceLock` statics in `main.rs`:
+
+- `SLICER_POOL: OnceLock<ThreadPool>` — the Rayon pool jobs run on.
+- `CANCEL_FLAG: OnceLock<Arc<AtomicBool>>` — shared with the worker, checked in
+  hot loops; the cancel command just flips it.
+- `STAGED_MESH`, `STAGED_MESH_STATS`, `STAGED_MESH_FILE_PATH`,
+  `STAGED_MESH_FILE_APPENDER` — the staging protocol's buffer, counters,
+  scratch path and appender.
+
+That the staging state is a **process-wide singleton, not per-call**, is the
+reason writers must be single-flight: two overlapping stage sequences share
+these statics.
+
+**The runtime backend is a compile-time choice.** `src-tauri/Cargo.toml` builds
+Tauri with `default-features = false` and selects the backend by feature —
+`tauri-wry` or `tauri-cef` (`tauri-cef = ["tauri/cef"]`, used for Linux CEF
+builds). `main.rs` branches on `#[cfg(feature = "tauri-cef")]`, so anything
+touching the app handle type has to compile under both.
+
 ## Dialog helpers
 
 Native pickers are wrapped with explicit filter control:
