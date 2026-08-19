@@ -138,6 +138,40 @@
   one. Also add a `.gitattributes` (`* text=auto eol=lf`) per plugin so it does
   not come back.
 
+### [fix] Support placement modifiers ignore the macOS primary modifier — M · medium risk
+- Where: src/supports/interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver.ts
+  (`parseBindingModifiers`, `hasModifier`); contrast with `getRequiredKeys` in
+  src/hotkeys/hotkeyStore.ts, which maps a binding's `ctrl` through
+  `getPrimaryModifierKey()` (→ `meta` on macOS).
+- What: the placement resolver tests `ctrlKey` literally, so on macOS kickstand
+  placement needs physical Control and leaf placement needs Control+Option,
+  while every other `ctrl` binding in the app is Cmd. And since matching is on
+  an exact modifier set, the Cmd combination a Mac user would try (`{meta, alt}`)
+  matches nothing at all — not even the Alt-only branch family, because two
+  modifiers are held.
+- Why: silently wrong on one of the three supported platforms, in a core
+  interaction. Fix is to route the resolver's modifier comparison through
+  `getPrimaryModifierKey()` like the main hotkey path already does.
+- Careful: the exact-set match is deliberate (it is what keeps Ctrl+Alt from
+  falling through to Alt); preserve it, only translate `ctrl` → primary.
+- Context: documented in `docs/reference/support-placement-modifiers.md`; retire
+  that warning when fixed.
+
+### [cleanup] `releaseShouldCancel` is always false and nobody reads it — S · low risk
+- Where: src/supports/interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver.ts
+  (`resolveSupportPlacementHotkeyIntent`) and its type in
+  `supportPlacementHotkeyTypes.ts`.
+- What: every return path sets `releaseShouldCancel: false`, and no consumer
+  outside the module reads the field. The behaviour it would control — releasing
+  the modifier cancelling an in-flight placement — is instead settled by
+  `resolveSupportPlacementRouting` checking the `*Awaiting*` state first.
+- Why: a field that never varies reads like a live switch. Either drop it, or
+  make it mean something if cancel-on-release is ever wanted (the current
+  behaviour, not cancelling, is the sensible one — a started two-click placement
+  should survive letting go of the key).
+- Context: the retired DEPRECATED_hotkeys page claimed release *does* cancel,
+  which is where the discrepancy surfaced.
+
 ### [fix] Delete does nothing on a selected anchor — S · low risk
 - Where: src/features/supports/useSupportInteractionManager.ts, `canDeleteSelection`.
 - What: the single-selection gate lists `joint | trunk | leaf | branch | twig |

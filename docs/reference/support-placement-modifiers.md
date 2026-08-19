@@ -14,6 +14,17 @@ In support mode, held modifier keys decide *which kind* of support a click place
 
 Bindings are configurable — these are the defaults from `SUPPORTS` in `src/hotkeys/hotkeyConfig.ts` (`BRANCH_PLACEMENT`, `LEAF_PLACEMENT`, `KICKSTAND_PLACEMENT`). A contact below 5 mm gets an [anchor](support-anatomy/anchor.md) rather than a trunk, decided by height, not by modifier.
 
+!!! warning "On macOS these are the literal keys, not Cmd"
+    Everywhere else in the app a binding that declares `ctrl` is matched against
+    the *primary modifier*, which `getPrimaryModifierKey()` maps to Cmd on macOS
+    — so Ctrl+Z is Cmd+Z. The placement resolver does not do that mapping: it
+    tests `ctrlKey` literally. On a Mac, kickstand placement therefore needs the
+    physical **Control** key and leaf placement needs **Control+Option**, not
+    Cmd. Worse, because matching is on an exact modifier set, pressing the Cmd
+    combination a Mac user would expect places **nothing at all** — `{meta, alt}`
+    matches no binding, and the two keys held rule out the Alt-only branch
+    family too. Tracked as a bug; see the internal backlog.
+
 ## How a family is chosen: exact match, not precedence
 
 It is tempting to read the table as a precedence ladder — "`Ctrl`+`Alt` is more specific, so it beats `Alt`". That is **not** the mechanism, and the difference is observable.
