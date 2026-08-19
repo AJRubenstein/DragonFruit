@@ -6,6 +6,7 @@ import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactC
 import { calculateDiskThickness } from './SupportPrimitives/ContactDisk/contactDiskUtils';
 import { emitSupportInteractionReset } from './interaction/supportInteractionReset';
 import { getJointDiameter, JOINT_DIAMETER_OFFSET_MM } from './constants';
+import { mapImportPayloadEntities, mapSupportEntities } from './supportCollections';
 import { addKickstand, getKickstandSnapshot, reassignAllKickstandModelIds, removeKickstand, resetKickstandStore, setKickstandSnapshot, transformAllKickstands, transformKickstandsForModel, updateKickstand } from './SupportTypes/Kickstand/kickstandStore';
 import type { Kickstand, KickstandBuildResult, KickstandRemoveResult } from './SupportTypes/Kickstand/types';
 import * as THREE from 'three';
@@ -1381,100 +1382,15 @@ export function getSnapshot() {
 export function reassignAllSupportModelIds(modelId: string): boolean {
     if (!modelId) return false;
 
-    let changed = false;
-    let nextRoots = state.roots;
-    let nextTrunks = state.trunks;
-    let nextBranches = state.branches;
-    let nextLeaves = state.leaves;
-    let nextTwigs = state.twigs;
-    let nextSticks = state.sticks;
-    let nextBraces = state.braces;
-    let nextAnchors = state.anchors;
-
-    for (const root of Object.values(state.roots)) {
-        if (root.modelId === modelId) continue;
-        if (!changed) {
-            nextRoots = { ...state.roots };
-            changed = true;
-        }
-        nextRoots[root.id] = { ...root, modelId };
-    }
-
-    for (const trunk of Object.values(state.trunks)) {
-        if (trunk.modelId === modelId) continue;
-        if (!changed) {
-            nextTrunks = { ...state.trunks };
-            changed = true;
-        }
-        nextTrunks[trunk.id] = { ...trunk, modelId };
-    }
-
-    for (const branch of Object.values(state.branches)) {
-        if (branch.modelId === modelId) continue;
-        if (!changed) {
-            nextBranches = { ...state.branches };
-            changed = true;
-        }
-        nextBranches[branch.id] = { ...branch, modelId };
-    }
-
-    for (const leaf of Object.values(state.leaves)) {
-        if (leaf.modelId === modelId) continue;
-        if (!changed) {
-            nextLeaves = { ...state.leaves };
-            changed = true;
-        }
-        nextLeaves[leaf.id] = { ...leaf, modelId };
-    }
-
-    for (const twig of Object.values(state.twigs)) {
-        if (twig.modelId === modelId) continue;
-        if (!changed) {
-            nextTwigs = { ...state.twigs };
-            changed = true;
-        }
-        nextTwigs[twig.id] = { ...twig, modelId };
-    }
-
-    for (const stick of Object.values(state.sticks)) {
-        if (stick.modelId === modelId) continue;
-        if (!changed) {
-            nextSticks = { ...state.sticks };
-            changed = true;
-        }
-        nextSticks[stick.id] = { ...stick, modelId };
-    }
-
-    for (const brace of Object.values(state.braces)) {
-        if (brace.modelId === modelId) continue;
-        if (!changed) {
-            nextBraces = { ...state.braces };
-            changed = true;
-        }
-        nextBraces[brace.id] = { ...brace, modelId };
-    }
-
-    for (const anchor of Object.values(state.anchors)) {
-        if (anchor.modelId === modelId) continue;
-        if (!changed) {
-            nextAnchors = { ...state.anchors };
-            changed = true;
-        }
-        nextAnchors[anchor.id] = { ...anchor, modelId };
-    }
+    // Was eight near-identical blocks, one per collection, each with its own
+    // `next*` accumulator. Driven from SUPPORT_ENTITY_COLLECTIONS instead, so a
+    // future support type cannot be silently left un-reassigned.
+    const { collections, changed } = mapSupportEntities(state, (entity) => (
+        entity.modelId === modelId ? entity : { ...entity, modelId }
+    ));
 
     if (changed) {
-        state = {
-            ...state,
-            roots: nextRoots,
-            trunks: nextTrunks,
-            branches: nextBranches,
-            leaves: nextLeaves,
-            twigs: nextTwigs,
-            sticks: nextSticks,
-            braces: nextBraces,
-            anchors: nextAnchors,
-        };
+        state = { ...state, ...collections };
         notify();
     }
 
@@ -2828,19 +2744,10 @@ function reconcileSupportModelIds(
         if (entity.modelId && entity.modelId !== ownerModelId) mismatched.add(entity.modelId);
         return entity.modelId === ownerModelId ? entity : { ...entity, modelId: ownerModelId };
     };
-    const stampAll = <T extends { modelId?: string }>(list: T[] | undefined): T[] | undefined =>
-        list ? list.map(stamp) : list;
-
+    // Kickstands are nested (kickstands[].kickstand / .root) rather than a flat
+    // collection, so they are stamped separately from the descriptor-driven walk.
     const next: DragonfruitImportFormat = {
-        ...data,
-        roots: stampAll(data.roots) ?? data.roots,
-        trunks: stampAll(data.trunks) ?? data.trunks,
-        branches: stampAll(data.branches) ?? data.branches,
-        leaves: stampAll(data.leaves) ?? data.leaves,
-        twigs: stampAll(data.twigs),
-        sticks: stampAll(data.sticks),
-        braces: stampAll(data.braces) ?? data.braces,
-        anchors: stampAll(data.anchors),
+        ...mapImportPayloadEntities(data, stamp),
         kickstands: data.kickstands?.map((build) => ({
             ...build,
             kickstand: stamp(build.kickstand),
