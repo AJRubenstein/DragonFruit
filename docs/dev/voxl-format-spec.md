@@ -72,7 +72,7 @@ V2 layout:
 Header requirements:
 
 - `magic = VOXL`
-- `version = 2` (container-major; V2.0, V2.1, and V2.2 all use this — semantic revisions do not bump the header. Identical-geometry dedup bumps it to `3`; the two are orthogonal.)
+- `version = 2` (container-major; V2.0, V2.1, and V2.2 all use this — semantic revisions do not bump the header.)
 - little-endian integer fields
 
 Compression codes:
