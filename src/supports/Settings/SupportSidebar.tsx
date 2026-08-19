@@ -16,6 +16,7 @@ import {
     updateRootsProfile,
     updateGridSettings,
     updateAutoBracingSettings,
+    updateAutoSupportSettings,
     updateDevToolsEnabled,
 } from './state';
 import {
@@ -84,9 +85,10 @@ const KIND_META: Record<SupportKind, { label: string; icon: typeof Pickaxe }> = 
     raft: { label: 'Raft', icon: Sailboat },
     grid: { label: 'Grid', icon: Grid3X3 },
     stick: { label: 'Bracing', icon: WandSparkles },
+    auto: { label: 'Auto', icon: Sparkles },
 };
 
-const OVERFLOW_COMPACT_KIND_SET = new Set<SupportKind>(['trunk', 'raft', 'grid', 'stick']);
+const OVERFLOW_COMPACT_KIND_SET = new Set<SupportKind>(['trunk', 'raft', 'grid', 'stick', 'auto']);
 const POPUP_PREVIEW_KIND_SET = new Set<SupportKind>(['trunk']);
 
 function normalizeTabKind(kind: SupportKind): SupportKind {
@@ -1327,6 +1329,9 @@ export function SupportSidebar() {
                                                             },
                                                             autoBracing: {
                                                                 ...current.autoBracing,
+                                                            },
+                                                            autoSupport: {
+                                                                ...current.autoSupport,
                                                             },
                                                         };
                                                         editSessionLatestSettingsRef.current = nextSettings;

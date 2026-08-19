@@ -17,6 +17,8 @@ import {
 } from '@/components/scene/CrossSectionStencilCap';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import IslandSurfaceDotsOverlay from '@/components/scene/IslandSurfaceDotsOverlay';
+import { IslandOverhangOverlay } from '@/components/scene/IslandOverhangOverlay';
+import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
 import { IslandVoxelVisualization } from '@/components/scene/IslandVoxelVisualization';
 import { IslandExpansionVisualization } from '@/components/scene/IslandExpansionVisualization';
 import { MeshClassificationRenderer } from '@/components/scene/MeshClassificationRenderer';
@@ -102,6 +104,7 @@ import { PickingProviderWrapper, SelectionSync, useInteractionWarning } from './
 import { CameraClipPlaneStabilizer, CameraProvider, EnableLocalClipping, Helpers, Lights, SceneMoodOverlay } from './SceneEnvironment';
 import { StlMesh } from './StlMesh';
 import { setClipBounds } from './clipBoundsStore';
+import { setModelMesh } from '@/supports/autoSupport/meshStore';
 import { useIsLinux } from '@/hooks/usePlatform';
 import {
   DEFAULT_CAMERA_PROJECTION_SETTINGS,
@@ -314,11 +317,12 @@ export function SceneCanvas({
   onCameraChange,
   onCameraEnd,
   islandMarkers,
+  overhangIslands,
   overlayBrushRadius,
   overlayColor,
   overlayOpacity,
   overlaySelectedIslandId,
-  enableVolumeGlow = true,
+  showOverhangs = true,
   materialRoughness,
   scanResults,
   layerHeightMm,
@@ -434,11 +438,12 @@ export function SceneCanvas({
   onCameraChange?: () => void;
   onCameraEnd?: () => void;
   islandMarkers?: IslandMarker[];
+  overhangIslands?: DetectedIsland[];
   overlayBrushRadius?: number;
   overlayColor?: string;
   overlayOpacity?: number;
   overlaySelectedIslandId?: number | null;
-  enableVolumeGlow?: boolean;
+  showOverhangs?: boolean;
   ambientIntensity?: number;
   directionalIntensity?: number;
   headlightIntensity?: number;
@@ -5761,6 +5766,7 @@ export function SceneCanvas({
                 const actualMeshRefCallback = actualMeshRefCallbacks.current[model.id]
                   ?? ((node: THREE.Mesh | null) => {
                     actualMeshRefs.current[model.id] = node;
+                    setModelMesh(model.id, node);
                   });
                 if (!actualMeshRefCallbacks.current[model.id]) {
                   actualMeshRefCallbacks.current[model.id] = actualMeshRefCallback;
@@ -5964,6 +5970,13 @@ export function SceneCanvas({
                           clipUpper={clipUpper}
                           opacity={overlayOpacity ?? 0.9}
                           transform={transformToUse}
+                        />
+                      )}
+
+                      {isActive && (mode === 'support' || mode === 'analysis') && showOverhangs && overhangIslands && overhangIslands.length > 0 && (
+                        <IslandOverhangOverlay
+                          geometry={model.geometry.geometry}
+                          regions={overhangIslands}
                         />
                       )}
                     </StlMesh>
@@ -6907,7 +6920,7 @@ export function SceneCanvas({
                   via the GPU picking system. Supplied by the host (page.tsx). */}
               {organicCutKeyGizmo}
 
-              {selectedMarker && enableVolumeGlow && (
+              {selectedMarker && (
                 <IslandOverlay
                   markers={[selectedMarker]}
                   brushRadiusMm={overlayBrushRadius ?? 2}

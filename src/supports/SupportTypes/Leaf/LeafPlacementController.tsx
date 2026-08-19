@@ -630,7 +630,10 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                         const hostDiameterMm = snapTarget.hostDiameterMm ?? getSettings().shaft.diameterMm;
                         const committedKnotDiameter = committedKnotIsOnTwig
                             ? twigJointDiameterForLocalDiameter(hostDiameterMm)
-                            : hostDiameterMm + 0.1;
+                            // +0.125 renders at the trunk-joint diameter (the
+                            // KnotRenderer subtracts the full joint offset); the
+                            // legacy +0.1 rendered at the shaft — invisible.
+                            : hostDiameterMm + 0.125;
 
                         const newKnot: Knot = {
                             id: newKnotId,

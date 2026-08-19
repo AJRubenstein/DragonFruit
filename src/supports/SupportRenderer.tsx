@@ -29,7 +29,7 @@ import { JointCreationManager } from './SupportPrimitives/Joint/JointCreationMan
 import { JointGizmo } from './SupportPrimitives/Joint/JointGizmo';
 import { KnotGizmo } from './SupportPrimitives/Knot/KnotGizmo';
 import { BezierGizmoManager } from './Curves/BezierGizmo/BezierGizmoManager';
-import { ContactDisk, SupportMode, BezierSegment, type Brace, type Knot, type Leaf, type Twig } from './types';
+import { ContactDisk, SupportMode, BezierSegment, type Brace, type Knot, type Leaf, type Twig, type SupportOrigin } from './types';
 import { resolveTwigDiameterAtSegmentT } from './SupportTypes/Twig/twigTaper';
 import { bezierToLineSegments, calculateAdaptiveBezierResolution } from './Curves/BezierUtils';
 import type { SupportData } from './rendering';
@@ -348,6 +348,18 @@ const BATCHED_JOINT_WIDTH_SEGMENTS = 12;
 const BATCHED_JOINT_HEIGHT_SEGMENTS = 10;
 const MULTI_SELECTION_DETAIL_THRESHOLD = 24;
 const BULK_MULTI_SELECTED_COLOR = '#80fffd';
+/** Debug origin coloring (AutoSupport "Origin Colors" toggle): red = anchor
+ *  band, orange = overhang (grid infill / organic Poisson / fanned overhang),
+ *  blue = island (voxel/minima), purple = standalone overhang trunks. */
+const ORIGIN_COLORS: Record<SupportOrigin, string> = {
+    anchor: '#ff3b30',
+    overhang: '#ff9f0a',
+    island: '#0a84ff',
+    standalone: '#bf5af2',
+};
+/** Origin coloring: gray = entity generated before origin stamping existed —
+ * regenerate the supports to get colors. */
+const ORIGIN_NO_ORIGIN_COLOR = '#8e8e93';
 const SCENE_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
 const EMPTY_SUPPORT_ID_LIST: readonly string[] = Object.freeze([]);
 
@@ -1669,13 +1681,38 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         };
     }, [effectiveHoverModelId, selectedModelIdSet]);
 
+    const debugOriginColors = !!settings.autoSupport?.debugSupportOriginColors;
+
+    // Support id → origin lookup for the debug origin coloring.
+    const originById = useMemo(() => {
+        const map = new Map<string, SupportOrigin>();
+        for (const t of trunkList) if (t.origin) map.set(t.id, t.origin);
+        for (const b of branchList) if (b.origin) map.set(b.id, b.origin);
+        for (const l of leafList) if (l.origin) map.set(l.id, l.origin);
+        for (const a of anchorList) if (a.origin) map.set(a.id, a.origin);
+        return map;
+    }, [trunkList, branchList, leafList, anchorList]);
+
+    const originColorFor = React.useCallback((supportId: string): string | null => {
+        if (!debugOriginColors) return null;
+        const origin = originById.get(supportId);
+        return origin ? ORIGIN_COLORS[origin] : ORIGIN_NO_ORIGIN_COLOR;
+    }, [debugOriginColors, originById]);
+
     const resolveSceneSupportColor = React.useCallback((modelId: string | undefined, supportId: string) => {
         if (hasSupportMultiSelection && !useMultiSelectionDetail && selectedSupportIdSet.has(supportId)) {
             return BULK_MULTI_SELECTED_COLOR;
         }
 
+        // Debug origin coloring: anchor / overhang / island / standalone
+        // (gray = pre-stamping entity → regenerate). originColorFor is
+        // non-null whenever the mode is on.
+        if (debugOriginColors) {
+            return originColorFor(supportId) ?? ORIGIN_NO_ORIGIN_COLOR;
+        }
+
         return dimNonSelected ? '#666666' : resolveBaseColor(modelId);
-    }, [hasSupportMultiSelection, useMultiSelectionDetail, selectedSupportIdSet, dimNonSelected, resolveBaseColor]);
+    }, [hasSupportMultiSelection, useMultiSelectionDetail, selectedSupportIdSet, dimNonSelected, resolveBaseColor, debugOriginColors, originColorFor]);
 
     const resolveModelDropOffsetZ = React.useCallback((modelId?: string) => {
         if (!modelId) return 0;
@@ -4592,7 +4629,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         selectedId={effectiveSelected ? selectedId : null}
                         dimNonSelected={dimNonSelected}
                         isHovered={isTrunkHovered}
-                        baseColor={resolveBaseColor(trunk.modelId)}
+                        baseColor={originColorFor(trunk.id) ?? resolveBaseColor(trunk.modelId)}
                         suppressHover={suppressHover}
                         isInteractable={isInteractable}
                         deferStraightShaftsToSceneBatch={!effectiveSelected}
@@ -4645,7 +4682,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         selectedId={effectiveSelected ? selectedId : null}
                         dimNonSelected={dimNonSelected}
                         isHovered={isBranchHovered}
-                        baseColor={resolveBaseColor(branch.modelId)}
+                        baseColor={originColorFor(branch.id) ?? resolveBaseColor(branch.modelId)}
                         showKnots={showKnots}
                         suppressHover={suppressHover}
                         isInteractable={isInteractable}
@@ -4664,8 +4701,12 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 if (!knot) return null;
 
                 const effectiveSelected = selectedLeafIds.has(leaf.id);
-                if (!effectiveSelected) return null;
-                const showKnots = !hideUnselectedKnots || effectiveSelected;
+                // Unselected leaves still mount the LeafRenderer so their
+                // base knot (the junction ball on the host shaft) renders in
+                // the scene — matching branches. The cone stays scene-batched
+                // via deferContactConesToSceneBatch. The base knot always
+                // renders, selected or not.
+                const showKnots = true;
 
                 return (
                     <group key={leaf.id} userData={{ noClipping: true }}>
@@ -4676,7 +4717,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         selectedId={selectedId}
                         isSelected={effectiveSelected}
                         dimNonSelected={dimNonSelected}
-                        baseColor={resolveBaseColor(leaf.modelId)}
+                        baseColor={originColorFor(leaf.id) ?? resolveBaseColor(leaf.modelId)}
                         showKnots={showKnots}
                         suppressHover={suppressHover}
                         isInteractable={isInteractable}
@@ -4911,7 +4952,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         selectedId={effectiveSelected ? selectedId : null}
                         dimNonSelected={dimNonSelected}
                         isHovered={isAnchorHovered}
-                        baseColor={resolveBaseColor(anchor.modelId)}
+                        baseColor={originColorFor(anchor.id) ?? resolveBaseColor(anchor.modelId)}
                         suppressHover={suppressHover}
                         isInteractable={isInteractable}
                     />

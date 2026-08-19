@@ -42,6 +42,11 @@ import {
   storeModelMeshModifiers,
 } from '@/features/mesh-modifiers/meshModifierStore';
 import { splitClassifiedSupportGeometry } from '@/features/scene/splitClassifiedSupports';
+import {
+  applyModelGrouping,
+  applyModelGroupUngrouping,
+  applyModelUngrouping,
+} from '@/features/scene/modelGroupingHistory';
 
 type PersistedMeshAppearance = {
   v: 1;
@@ -3157,65 +3162,67 @@ export function useSceneCollectionManager() {
   }, []);
 
   const groupModels = useCallback((modelIds: string[], groupName?: string) => {
-    const ids = Array.from(new Set(modelIds));
-    if (ids.length === 0) return null;
-
-    let resolvedGroupId: string | null = null;
-    let resolvedGroupName: string | null = null;
-
-    setModels((prev) => {
-      const selected = prev.filter((model) => ids.includes(model.id));
-      if (selected.length === 0) return prev;
-
-      const commonGroupId = selected.every((model) => model.groupId && model.groupId === selected[0].groupId)
-        ? (selected[0].groupId ?? null)
-        : null;
-
-      resolvedGroupId = commonGroupId ?? `group-${uuidv4()}`;
-      const rawName = groupName?.trim();
-      resolvedGroupName = rawName && rawName.length > 0
-        ? rawName
-        : (selected.find((model) => model.groupName?.trim())?.groupName ?? selected[0].name);
-
-      return prev.map((model) => {
-        if (!ids.includes(model.id)) return model;
-        return {
-          ...model,
-          groupId: resolvedGroupId ?? undefined,
-          groupName: resolvedGroupName ?? undefined,
-        };
-      });
+    const currentModels = modelsRef.current;
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
+    const transition = applyModelGrouping({
+      models: currentModels,
+      modelIds,
+      groupId: `group-${uuidv4()}`,
+      groupName,
+      activeModelId: currentActiveModelId,
+      selectedModelIds: currentSelectedModelIds,
     });
 
-    if (resolvedGroupId) {
-      setSelectedModelIds((prev) => {
-        const next = Array.from(new Set([...prev, ...ids]));
-        return next;
-      });
-      setActiveModelId((prev) => prev ?? ids[0] ?? null);
-    }
+    if (!transition.changed) return transition.groupId ?? null;
 
-    return resolvedGroupId;
-  }, []);
+    setModels(transition.models);
+    setActiveModelId(transition.activeModelId);
+    setSelectedModelIds(transition.selectedModelIds);
+
+    const after = captureSceneSnapshot(transition.models, transition.activeModelId, transition.selectedModelIds);
+    pushSceneSnapshotHistory(before, after, transition.description);
+    return transition.groupId ?? null;
+  }, [pushSceneSnapshotHistory]);
 
   const ungroupModels = useCallback((modelIds: string[]) => {
-    const ids = new Set(modelIds);
-    if (ids.size === 0) return;
+    const currentModels = modelsRef.current;
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
+    const transition = applyModelUngrouping({
+      models: currentModels,
+      modelIds,
+      activeModelId: currentActiveModelId,
+      selectedModelIds: currentSelectedModelIds,
+    });
 
-    setModels((prev) => prev.map((model) => (
-      ids.has(model.id)
-        ? { ...model, groupId: undefined, groupName: undefined }
-        : model
-    )));
-  }, []);
+    if (!transition.changed) return;
+
+    setModels(transition.models);
+    const after = captureSceneSnapshot(transition.models, transition.activeModelId, transition.selectedModelIds);
+    pushSceneSnapshotHistory(before, after, transition.description);
+  }, [pushSceneSnapshotHistory]);
 
   const ungroupGroup = useCallback((groupId: string) => {
-    setModels((prev) => prev.map((model) => (
-      model.groupId === groupId
-        ? { ...model, groupId: undefined, groupName: undefined }
-        : model
-    )));
-  }, []);
+    const currentModels = modelsRef.current;
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
+    const transition = applyModelGroupUngrouping({
+      models: currentModels,
+      groupId,
+      activeModelId: currentActiveModelId,
+      selectedModelIds: currentSelectedModelIds,
+    });
+
+    if (!transition.changed) return;
+
+    setModels(transition.models);
+    const after = captureSceneSnapshot(transition.models, transition.activeModelId, transition.selectedModelIds);
+    pushSceneSnapshotHistory(before, after, transition.description);
+  }, [pushSceneSnapshotHistory]);
 
   /** Splits a multi-body 3MF model into independent models using the
    *  pre-processed `splitBodies` geometries. Instant — no reprocessing. */

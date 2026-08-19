@@ -717,6 +717,24 @@ export function SupportProxyMeshLayer({
 
         currentStart = end;
       }
+
+      // The branch's parent knot renders as a sphere on the host shaft
+      // (BranchRenderer draws it always) — the proxy must carry it too.
+      if (includeDetailedPrimitives) {
+        pushJoint(
+          {
+            id: parentKnot.id,
+            pos: parentKnot.pos,
+            diameter: parentKnot.diameter ?? 1.2,
+            supportId: branch.id,
+            modelId: branch.modelId,
+          },
+          undefined,
+          // KnotRenderer blends the FULL joint offset; the segment joints
+          // use the ×0.75 proxy blend.
+          JOINT_DIAMETER_OFFSET_MM,
+        );
+      }
     }
 
     if (includeDetailedPrimitives) {
@@ -746,6 +764,19 @@ export function SupportProxyMeshLayer({
             end: parentKnot.pos,
             diameter: rodDiameter,
           });
+
+          // The leaf base knot sphere (LeafRenderer draws it always).
+          pushJoint(
+            {
+              id: parentKnot.id,
+              pos: parentKnot.pos,
+              diameter: parentKnot.diameter ?? 1.2,
+              supportId: leaf.id,
+              modelId: leaf.modelId,
+            },
+            undefined,
+            JOINT_DIAMETER_OFFSET_MM,
+          );
         }
       }
     }
@@ -915,9 +946,11 @@ export function SupportProxyMeshLayer({
       });
     }
 
-    // Knots are interaction affordances (branch/brace attachment point drag handles) rendered
-    // only for selected supports in the full SupportRenderer. Omitting them from the proxy
-    // avoids visible hemisphere bumps at every trunk segment split point.
+    // Knots that the scene renders always (leaf base knots and branch parent
+    // knots on host shafts) are emitted as spheres above. The knots still
+    // omitted here — brace endpoints and kickstand host knots — are
+    // selection-only interaction affordances in SupportRenderer, so leaving
+    // them out keeps the proxy geometry clean.
 
     // Anchors: root + contact cone, no shafts
     const supportAnchors = supportState.anchors;

@@ -121,7 +121,7 @@ function markTwigPlacementSurface(twig: Twig, surface?: PlacementSurface): Twig 
  * cavity floor by raycasting straight down.  Returns a buildStick result +
  * a SupportData preview object, or null if no lower surface is found.
  */
-function buildCavityStick(
+export function buildCavityStick(
     tipPos: { x: number; y: number; z: number },
     tipNormal: { x: number; y: number; z: number },
     modelId: string,
@@ -199,6 +199,13 @@ function buildCavityStick(
 
     const { stick } = buildStick({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal });
 
+    // Sticks are only useful as vertical bridges; a shaft that cants off
+    // vertical (standoffs + sloped surfaces shoving the sockets sideways)
+    // is a crammed stick. Reject it — the caller's trunk fallback applies.
+    if (stickShaftVerticalCos(stick) < Math.cos((CAVITY_STICK_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
+        return null;
+    }
+
     const supportData: SupportData = {
         id: stick.id,
         segments: stick.segments,
@@ -209,6 +216,29 @@ function buildCavityStick(
 }
 
 type CavityStickBuildResult = NonNullable<ReturnType<typeof buildCavityStick>>;
+
+/**
+ * |cos| of the shaft's deviation from vertical, 1 = perfectly vertical.
+ * The stick's visible shaft runs between its two socket joints — the
+ * surface-normal standoffs can shove those sideways on sloped surfaces,
+ * which is exactly the "crammed diagonal stick" look to avoid.
+ */
+export function stickShaftVerticalCos(stick: { segments: { bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null }[] }): number {
+    const seg = stick.segments[0];
+    const a = seg?.bottomJoint?.pos;
+    const b = seg?.topJoint?.pos;
+    if (!a || !b) return 1;
+    const vx = b.x - a.x;
+    const vy = b.y - a.y;
+    const vz = b.z - a.z;
+    const len = Math.hypot(vx, vy, vz);
+    if (len < 1e-6) return 1;
+    return Math.abs(vz) / len;
+}
+
+// A cavity stick bridges straight down; a shaft that cants more than this
+// from vertical is a wedged stick, not a bridge (calibration knob).
+export const CAVITY_STICK_MAX_SHAFT_ANGLE_DEG = 20;
 
 export function useTrunkPlacementV2() {
     // Debounce tuned for human hand drift (~1-2mm) and 60fps target.

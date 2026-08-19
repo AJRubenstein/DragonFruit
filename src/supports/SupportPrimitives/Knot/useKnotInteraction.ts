@@ -1426,7 +1426,11 @@ export function useKnotInteraction(enabled: boolean = true) {
 
         // Update diameter when crossing into a segment with a different diameter
         if (host.containerType === 'trunk' || host.containerType === 'branch' || host.containerType === 'twig' || host.containerType === 'stick' || host.containerType === 'brace' || host.containerType === 'kickstand') {
-            finalKnot.diameter = bestDiameter + 0.1;
+            // +0.125 (not the legacy +0.1): the KnotRenderer subtracts the
+            // full joint offset, so shaft + 0.125 renders at shaft + 0.025 —
+            // the same diameter as a trunk's joint spheres. A moved auto
+            // leaf knot otherwise shrinks to the shaft and disappears.
+            finalKnot.diameter = bestDiameter + 0.125;
         }
 
         // Twig override: a knot on a twig live-tracks the twig's continuous
