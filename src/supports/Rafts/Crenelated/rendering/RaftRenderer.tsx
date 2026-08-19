@@ -258,7 +258,6 @@ export default function RaftRenderer({
         if (meshes.wallMesh) group.add(meshes.wallMesh);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raftMeshes]);
 
   React.useEffect(() => {

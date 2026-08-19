@@ -68,7 +68,6 @@ export async function computePrecomputedSDF(
     // Copy response bytes into a standalone ArrayBuffer for parsing.
     const buf: ArrayBuffer = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(buf).set(bytes);
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     const grid = PrecomputedSDFGrid.fromBytes(buf as ArrayBuffer);
 
     if (!grid) {

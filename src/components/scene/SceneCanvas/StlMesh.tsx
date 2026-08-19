@@ -623,7 +623,6 @@ if (uDitherAmount > 0.0) {
     };
     return mat;
   // dimmedBaseOpacity is always 0.5 at runtime but included for correctness.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSupportDimmed, meshColor, dimmedBaseOpacity]);
 
   // Keep supportDimMaterialRef in sync (used by useFrame) and update clipping planes.

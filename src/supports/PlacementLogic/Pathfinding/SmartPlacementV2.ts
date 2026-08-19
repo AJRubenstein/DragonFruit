@@ -749,9 +749,9 @@ function findContactConeClearSocketSeed(args: {
         }
 
         // 3. Move candidate position
-        let px = currentPos.x + fx;
-        let py = currentPos.y + fy;
-        let pz = currentPos.z + fz;
+        const px = currentPos.x + fx;
+        const py = currentPos.y + fy;
+        const pz = currentPos.z + fz;
 
         // 4. Project relative to tip
         const uVec = new THREE.Vector3(px - T.x, py - T.y, pz - T.z);
@@ -776,7 +776,7 @@ function findContactConeClearSocketSeed(args: {
         }
 
         // Clamp length
-        let newLen = uVec.length();
+        const newLen = uVec.length();
         if (newLen < L_nominal) {
             uVec.normalize().multiplyScalar(L_nominal);
         } else if (newLen > L_max) {

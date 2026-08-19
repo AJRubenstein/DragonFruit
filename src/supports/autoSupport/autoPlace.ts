@@ -1468,7 +1468,7 @@ export function computeAutoSupportPlan(
     const eligible = overhangIslands.filter(
         (i) => anchorIds.has(i.id) || (i.areaMm2 ?? 0) >= threshold,
     );
-    let distributionCounts: { grid: number; poisson: number } = { grid: 0, poisson: 0 };
+    const distributionCounts: { grid: number; poisson: number } = { grid: 0, poisson: 0 };
 
     if (eligible.length > 0) {
         let generated: CandidatePoint[] = [];

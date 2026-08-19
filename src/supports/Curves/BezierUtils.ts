@@ -161,7 +161,7 @@ export const calculateOptimalResolution = (
     
     // Base segments per mm of length?
     // e.g., 1 segment every 2mm?
-    let segments = Math.ceil(dist / 2);
+    const segments = Math.ceil(dist / 2);
     
     // Clamp resolution
     const MIN_RES = 8;
@@ -268,7 +268,7 @@ export const validateBezierConstraints = (
         sampleCount = 10
     } = options;
 
-    let maxK = 0; // Max curvature found
+    const maxK = 0; // Max curvature found
     let maxAngle = 0; // Max overhang angle found from vertical
     
     const up = new THREE.Vector3(0, 0, 1); // Assuming Z is up for printing? Or Y? 

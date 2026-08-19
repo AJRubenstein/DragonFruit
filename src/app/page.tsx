@@ -2363,7 +2363,7 @@ export default function Home() {
   ]);
 
   const printingPreviewTargetResolution = React.useMemo(() => {
-    let printerWidth = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionX ?? 0));
+    const printerWidth = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionX ?? 0));
     const printerHeight = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionY ?? 0));
     const pixelSizeX = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.x ?? 1));
     const pixelSizeY = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.y ?? 1));
@@ -9546,14 +9546,12 @@ export default function Home() {
     commitParts: React.useCallback((parts: THREE.BufferGeometry[]) => {
       const target = scene.activeModel;
       if (!target) {
-        // eslint-disable-next-line no-console
         console.warn('[organicCut] commitParts: no active model');
         return false;
       }
       // ONE atomic split — replacing + adding as separate calls races on stale
       // state and deletes a piece. A multi-loop cut may hand us >2 parts.
       const newIds = scene.splitModelIntoParts(target.id, parts, 'Organic Cut');
-      // eslint-disable-next-line no-console
       console.info(`[organicCut] commitParts OK | parts=${parts.length} newModelIds=${newIds?.join(',') ?? 'null'}`);
       return newIds != null;
     }, [scene]),

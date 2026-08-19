@@ -4924,7 +4924,6 @@ export function useSceneCollectionManager() {
           meshDataBytes = decodeVoxlEmbeddedMeshBytes(meshRef);
         }
 
-        let url = '';
         try {
           const bytes = meshDataBytes;
 
@@ -5085,10 +5084,6 @@ export function useSceneCollectionManager() {
         } catch (error) {
           console.error(`[SceneCollection] Failed importing embedded VOXL mesh for model "${model.name}"`, error);
           skippedModels += 1;
-        } finally {
-          if (url) {
-            URL.revokeObjectURL(url);
-          }
         }
       }
 

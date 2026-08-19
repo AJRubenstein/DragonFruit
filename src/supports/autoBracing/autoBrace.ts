@@ -615,7 +615,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     const nextKnots: Record<string, Knot> = {};
     for (const [id, k] of Object.entries(snapshot.knots)) { if (!braceKnotIds.has(id) || preservedKnotIds.has(id)) nextKnots[id] = k; }
 
-    let nextSnapshot: SupportState = { ...snapshot, braces: {}, knots: nextKnots, selectedId: (snapshot.selectedId && snapshot.braces[snapshot.selectedId.replace('braceSegment:', '')]) ? null : snapshot.selectedId };
+    const nextSnapshot: SupportState = { ...snapshot, braces: {}, knots: nextKnots, selectedId: (snapshot.selectedId && snapshot.braces[snapshot.selectedId.replace('braceSegment:', '')]) ? null : snapshot.selectedId };
 
     const braceIds = new Set<string>(Object.keys(nextSnapshot.braces));
     const knotIds = new Set<string>(Object.keys(nextSnapshot.knots));

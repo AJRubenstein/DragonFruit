@@ -434,6 +434,7 @@ export function applyTintPrisms(
       );
       writeColorAt(arrCol, idx, tmpColor.r, tmpColor.g, tmpColor.b, useByteColors);
     }
+    painted++;
   }
 
   col.needsUpdate = true;
