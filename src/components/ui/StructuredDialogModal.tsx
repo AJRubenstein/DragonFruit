@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 type DialogIconTone = 'warning' | 'danger' | 'accent' | 'neutral';
@@ -80,7 +81,7 @@ export function StructuredDialogModal({
     onClose?.();
   };
 
-  return (
+  return createPortal(
     <div
       className={`fixed inset-0 ${zIndexClassName} flex items-center justify-center bg-black/55 backdrop-blur-sm px-3`}
       onMouseDown={handleBackdropMouseDown}
@@ -142,6 +143,7 @@ export function StructuredDialogModal({
           {actions ? <div className={actionsClassName}>{actions}</div> : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

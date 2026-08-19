@@ -80,8 +80,8 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
     selectPrev,
     selectNext,
     tableStats,
-    enableVolumeGlow,
-    setEnableVolumeGlow,
+    showOverhangs,
+    setShowOverhangs,
     draftPxMm,
     setDraftPxMm,
     draftSupportBufMm,
@@ -237,9 +237,8 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                   </div>
                 </div>
 
-                {/* Navigation */}
+                {/* Navigation (no header label — arrows + counter are self-explanatory) */}
                 <div className="rounded-md border p-2" style={SECTION_CARD}>
-                  <SectionHeader title="Navigate" />
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -280,47 +279,18 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                   </div>
                 </div>
 
-                {/* Display toggles */}
+                {/* Display toggles (no header label — the chips are self-explanatory) */}
                 <div className="rounded-md border p-2" style={SECTION_CARD}>
-                  <SectionHeader title="Display" />
                   <div className="grid grid-cols-2 gap-1.5">
                     <ToggleBtn label="Voxels" checked={showVoxelOnly} onChange={setShowVoxelOnly} color={ISLAND_LAYER_COLORS.voxel} hint="Slicing islands and suspended areas detected from layer contours" />
                     <ToggleBtn label="Minima" checked={showMinimaOnly} onChange={setShowMinimaOnly} color={ISLAND_LAYER_COLORS.minima} hint="Individual lowest-vertex triangles on the mesh surface" />
                     <ToggleBtn label="Coincident" checked={showIntersection} onChange={setShowIntersection} color={ISLAND_LAYER_COLORS.intersection} hint="Regions where both voxel and geometric islands overlap" />
-                    <ToggleBtn label="Glow" checked={enableVolumeGlow} onChange={setEnableVolumeGlow} color="#baf72e" hint="Volumetric selection glow around the active island" />
+                    <ToggleBtn label="Overhangs" checked={showOverhangs} onChange={setShowOverhangs} color="#ffa500" hint="Shallow surfaces detected by the mesh-normal classifier (the surfaces auto-supports grid)" />
                   </div>
                 </div>
 
-                {/* Filter toggles */}
-                <div className="rounded-md border p-2" style={SECTION_CARD}>
-                  <SectionHeader title="Filters" />
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      { label: 'Supported', key: 'supported', checked: filterToggles.showAlreadySupported, onChange: (v: boolean) => setFilterToggles({ ...filterToggles, showAlreadySupported: v }) },
-                      { label: 'Plate', key: 'plate', checked: filterToggles.showPlateContact, onChange: (v: boolean) => setFilterToggles({ ...filterToggles, showPlateContact: v }) },
-                    ].map(b => (
-                      <button
-                        key={b.key}
-                        type="button"
-                        onClick={() => b.onChange(!b.checked)}
-                        className="min-h-[36px] rounded-md border px-2 text-[11px] font-semibold uppercase tracking-wide transition-colors flex items-center justify-center gap-1.5"
-                        style={b.checked
-                          ? {
-                              borderColor: 'color-mix(in srgb, var(--accent), white 10%)',
-                              background: 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)',
-                              color: 'color-mix(in srgb, var(--accent), var(--text-strong) 25%)',
-                            }
-                          : {
-                              borderColor: 'var(--border-subtle)',
-                              background: 'var(--surface-1)',
-                              color: 'var(--text-muted)',
-                            }}
-                      >
-                        {b.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {/* Filter toggles live in Scan Settings (supported + plate) */}
+
               </>
             )}
 
@@ -390,6 +360,31 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                 </div>
                 <input type="range" min="0" max="1" step="0.05" value={draftSupportBufMm} onChange={(e) => setDraftSupportBufMm(parseFloat(e.target.value))} disabled={scanning} className="ui-range w-full" />
               </div>
+            </div>
+          </div>
+
+          {/* Filters section */}
+          <div className="rounded-md border p-2.5" style={SECTION_CARD}>
+            <SectionHeader title="Filters" />
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={filterToggles.showAlreadySupported}
+                  onChange={(e) => setFilterToggles({ ...filterToggles, showAlreadySupported: e.target.checked })}
+                  className="ui-checkbox !w-4 !h-4"
+                />
+                <span className="text-[11px] font-medium" style={{ color: 'var(--text-strong)' }}>Show already-supported islands</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={filterToggles.showPlateContact}
+                  onChange={(e) => setFilterToggles({ ...filterToggles, showPlateContact: e.target.checked })}
+                  className="ui-checkbox !w-4 !h-4"
+                />
+                <span className="text-[11px] font-medium" style={{ color: 'var(--text-strong)' }}>Show plate-contact islands</span>
+              </label>
             </div>
           </div>
 

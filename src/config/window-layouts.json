@@ -361,6 +361,10 @@
         "support-islands": {
           "to": "support-settings",
           "side": "left-edge"
+        },
+        "support-auto": {
+          "to": "support-islands",
+          "side": "below"
         }
       }
     },

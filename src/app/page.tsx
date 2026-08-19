@@ -201,6 +201,7 @@ import {
   type SceneFileHandoffPayload,
 } from '@/features/import-export/fileHandling';
 import { getPluginSceneOverlayLoader } from '@/features/plugins/pluginRegistry';
+import { isExperimentEnabled, subscribeToExperiments } from '@/features/experiments/experimentsRegistry';
 import {
   type HullCacheEntry,
   type ArrangeModel as HighPrecisionArrangeModel,
@@ -220,6 +221,7 @@ import { useIslandManager } from '@/volumeAnalysis/IslandScan/useIslandManager';
 // agents/Claude/20260613-1404-Implementation-dev-islands-islands-panel-...md.
 import { useIslands } from '@/volumeAnalysis/Islands/useIslands';
 import { IslandsPanel } from '@/components/controls/IslandsPanel';
+import { AutoSupportPanel, getAutoSupportBusy, subscribeAutoSupportBusy, autoSupportDrivingScan } from '@/components/controls/AutoSupportPanel';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import { useSupportInteractionManager } from '@/features/supports/useSupportInteractionManager';
 import { useUndoRedoHotkeys } from '@/hotkeys/useUndoRedoHotkeys';
@@ -591,6 +593,12 @@ export default function Home() {
   const recentOpenedFiles = scene.recentOpenedFiles;
   const reopenRecentOpenedFile = scene.reopenRecentOpenedFile;
   const profileState = React.useSyncExternalStore(subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot);
+  const autoSupportsExperimentEnabled = React.useSyncExternalStore(
+    subscribeToExperiments,
+    () => isExperimentEnabled('auto-supports'),
+    // SSR: no localStorage → the manifest default (disabled).
+    () => false,
+  );
   const sceneAutosaveSettings = React.useSyncExternalStore(
     subscribeToSceneAutosaveSettings,
     getSceneAutosaveSettingsSnapshot,
@@ -7049,6 +7057,13 @@ export default function Home() {
     return subscribeSupportState(updateSupportTips);
   }, [scene.activeModel?.id]);
 
+  // useSyncExternalStore, not a one-shot effect: the module-level busy flag
+  // lives in AutoSupportPanel, and a hot reload swaps the module's listener
+  // set. useSyncExternalStore re-subscribes when the subscribe function's
+  // identity changes, so the Generating modal keeps working across HMR —
+  // a `useEffect(..., [])` closure stays bound to the dead listener set.
+  const autoSupportBusy = React.useSyncExternalStore(subscribeAutoSupportBusy, getAutoSupportBusy, getAutoSupportBusy);
+
   const islandsPoc = useIslands({
     geom: scene.geom,
     transform: transformMgr.transform,
@@ -9841,6 +9856,14 @@ export default function Home() {
         ) : scene.mode === 'support' ? (
           <>
             <SupportSidebar key="support-settings" />
+            {autoSupportsExperimentEnabled && (
+              <AutoSupportPanel
+                key="support-auto"
+                islands={islandsPoc}
+                hasGeometry={!!scene.geom}
+                activeModelId={scene.activeModelId ?? undefined}
+              />
+            )}
             <IslandsPanel
               key="support-islands"
               islands={islandsPoc}
@@ -10009,13 +10032,16 @@ export default function Home() {
                 ? islandsPoc.islandMarkers
                 : (islands.overlayEnabled ? islands.islandMarkers : [])
             }
+            overhangIslands={
+              scene.mode === 'support' ? islandsPoc.overhangIslands : []
+            }
             overlayBrushRadius={islands.overlayBrushRadius}
             overlayColor={islands.overlayColor}
             overlayOpacity={islands.overlayOpacity}
             overlaySelectedIslandId={
               scene.mode === 'support' ? islandsPoc.selectedMarkerId : islands.selectedIslandId
             }
-            enableVolumeGlow={islandsPoc.enableVolumeGlow}
+            showOverhangs={islandsPoc.showOverhangs}
             ambientIntensity={scene.ambientIntensity}
             directionalIntensity={scene.directionalIntensity}
             materialRoughness={scene.materialRoughness}
@@ -10664,7 +10690,7 @@ export default function Home() {
         isExportErrorToastVisible={isExportErrorToastVisible}
       />
 
-      {islandsPoc.scanning && (
+      {islandsPoc.scanning && !autoSupportDrivingScan && (
         <div className="absolute inset-0 z-[121] flex items-center justify-center bg-black/45 backdrop-blur-[1px]">
           <div
             className="w-[min(520px,92vw)] rounded-xl border px-5 py-4 shadow-xl"
@@ -10703,6 +10729,35 @@ export default function Home() {
                 className="ui-loading-indicator"
                 style={{ background: 'linear-gradient(90deg, var(--accent), #ff79c6)' }}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {autoSupportBusy && (
+        <div className="absolute inset-0 z-[122] flex items-center justify-center bg-black/45 backdrop-blur-[1px]">
+          <div
+            className="w-[min(520px,92vw)] rounded-xl border px-5 py-4 shadow-xl"
+            style={{ background: 'color-mix(in srgb, var(--surface-0), black 10%)', borderColor: 'var(--border-subtle)' }}
+            role="dialog" aria-modal="true" aria-live="polite"
+          >
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+              Generating Supports
+            </div>
+            <div className="mt-1 space-y-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              <p>{islandsPoc.scanning ? 'Scanning islands & minima…' : 'Placing and bracing supports…'}</p>
+              {islandsPoc.scanProgress && islandsPoc.scanProgress.total > 100 && (
+                <p>Layer {islandsPoc.scanProgress.done} of {islandsPoc.scanProgress.total}</p>
+              )}
+            </div>
+            <div className="mt-2 text-[11px] font-medium tracking-wide" style={{ color: 'var(--accent)' }}>
+              Elapsed: {islandsPoc.scanning ? islandsPoc.elapsedLabel : '…'}
+            </div>
+            <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              Processing 1 model
+            </div>
+            <div className="ui-loading-track mt-3 h-2.5 w-full rounded-full" style={{ background: 'color-mix(in srgb, var(--surface-2), black 20%)' }}>
+              <div className="ui-loading-indicator" style={{ background: 'linear-gradient(90deg, var(--accent), #ff79c6)' }} />
             </div>
           </div>
         </div>

@@ -12,10 +12,74 @@ import {
 import { clusterWalkOrder } from './ordering';
 import { buildIslandPucks, markerIdFor } from './islandPuckMarkers';
 import { scanMeshMinima } from './meshMinima';
-import { type DetectedIsland, type TipInfo, SUPPORTED_RADIUS_MM } from './types';
+import { type DetectedIsland, type TipInfo, type OverhangRegion, SUPPORTED_RADIUS_MM } from './types';
 import { classifyIntersection } from './intersection';
 import { getSnapshot } from '@/supports/state';
+import { getSettings } from '@/supports/Settings/state';
 import { SpatialHashGrid2D } from './spatialHashGrid2D';
+
+/** Self-support angle for mesh-normal overhang detection (surfaces flatter
+ *  than this from horizontal get supports). Tunable per resin later. */
+const OVERHANG_SELF_SUPPORT_ANGLE_DEG = 45;
+/** Resolution of the projected-footprint masks emitted by the classifier. */
+const OVERHANG_FOOTPRINT_PX_MM = 0.25;
+
+/**
+ * Merge overhang regions into the classified island set. The slice-growth
+ * detector and the mesh-normal classifier flag the same underside surface (a
+ * floating model's whole bottom layer is "unsupported" per the growth rule),
+ * so voxel islands substantially covered by an overhang region are dropped in
+ * favor of the surface-accurate region. Overhang regions without a voxel
+ * counterpart (e.g. lettering ledges below the growth buffer) are appended.
+ */
+export function mergeOverhangRegions(
+  classified: DetectedIsland[],
+  overhang: DetectedIsland[],
+): DetectedIsland[] {
+  if (overhang.length === 0) return classified;
+  const covered = new Set<string>();
+  for (const v of classified) {
+    if (v.source !== 'voxel') continue;
+    for (const o of overhang) {
+      if (overhangCoversVoxel(o, v)) {
+        covered.add(v.id);
+        break;
+      }
+    }
+  }
+  const remaining = covered.size === 0
+    ? classified
+    : classified.filter((v) => !covered.has(v.id));
+  return [...remaining, ...overhang];
+}
+
+/**
+ * True when a voxel island's contact sits inside an overhang region's
+ * projected footprint and their areas are comparable — the same physical
+ * surface detected by both detectors.
+ */
+function overhangCoversVoxel(region: DetectedIsland, voxel: DetectedIsland): boolean {
+  const vox = region.contactVoxels;
+  if (!vox || vox.length === 0) return false;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of vox) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const cx = voxel.contact.x;
+  const cy = voxel.contact.y;
+  if (cx < minX || cx > maxX || cy < minY || cy > maxY) return false;
+  const regionArea = region.areaMm2 ?? 0;
+  const voxelArea = voxel.areaMm2 ?? 0;
+  if (regionArea <= 0) return false;
+  const ratio = voxelArea / regionArea;
+  return ratio >= 0.5 && ratio <= 2.0;
+}
 
 /**
  * Page-scope state hook for the unified Islands panel (PoC). Tab-agnostic and
@@ -55,6 +119,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null);
   const [voxelIslands, setVoxelIslands] = useState<DetectedIsland[]>([]);
   const [minimaIslands, setMinimaIslands] = useState<DetectedIsland[]>([]);
+  const [overhangIslands, setOverhangIslands] = useState<DetectedIsland[]>([]);
   
   const [elapsedSec, setElapsedSec] = useState(0);
 
@@ -87,7 +152,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const [consolidationDistance, setConsolidationDistance] = useState<number>(0.2);
   const [reduceIntersection, setReduceIntersection] = useState<boolean>(false);
   const [intersectionThreshold, setIntersectionThreshold] = useState<number>(0.5);
-  const [enableVolumeGlow, setEnableVolumeGlow] = useState<boolean>(false);
+  const [showOverhangs, setShowOverhangs] = useState<boolean>(true);
   const [scaleMarkersWithArea, setScaleMarkersWithArea] = useState<boolean>(true);
   const [enableContourRegions, setEnableContourRegions] = useState<boolean>(true);
   const [maxContourRegions, setMaxContourRegions] = useState<number>(20);
@@ -104,7 +169,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const [draftConsolidationDistance, setDraftConsolidationDistance] = useState<number>(0.2);
   const [draftReduceIntersection, setDraftReduceIntersection] = useState<boolean>(false);
   const [draftIntersectionThreshold, setDraftIntersectionThreshold] = useState<number>(0.5);
-  const [draftEnableVolumeGlow, setDraftEnableVolumeGlow] = useState<boolean>(false);
+  const [draftShowOverhangs, setDraftShowOverhangs] = useState<boolean>(true);
   const [draftScaleMarkersWithArea, setDraftScaleMarkersWithArea] = useState<boolean>(true);
   const [draftEnableContourRegions, setDraftEnableContourRegions] = useState<boolean>(true);
   const [draftMaxContourRegions, setDraftMaxContourRegions] = useState<number>(20);
@@ -160,6 +225,55 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     }
   }, [geom, transform]);
 
+  // World-space transform signature for the scan cache. Island coordinates are
+  // world-space, so a cached scan is only valid for the transform it was made
+  // under; rotating/repositioning the model must invalidate it.
+  const transformKey = [
+    transform.position.x, transform.position.y, transform.position.z,
+    transform.rotation.x, transform.rotation.y, transform.rotation.z,
+    transform.scale.x, transform.scale.y, transform.scale.z,
+  ].map((v) => v.toFixed(3)).join(',');
+  const cacheKey = sourcePath ? `${sourcePath}|${transformKey}` : null;
+
+  /**
+   * Map a Rust overhang region to a unified DetectedIsland (source 'overhang').
+   * Contact = projected-footprint centroid at the region's lowest Z; the
+   * placement pipeline raycasts the real surface point from there anyway.
+   * contactVoxels come from the footprint mask so the density grid stage can
+   * do containment tests against the exact region shape.
+   */
+  const overhangRegionToIsland = (region: OverhangRegion, i: number): DetectedIsland => {
+    const { width, height, originX, originY, pxMm, data, surfaceZ } = region.footprint;
+    const contactVoxels: { x: number; y: number; z?: number }[] = [];
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        const idx = row * width + col;
+        if (data[idx]) {
+          contactVoxels.push({
+            x: originX + (col + 0.5) * pxMm,
+            y: originY + (row + 0.5) * pxMm,
+            z: surfaceZ[idx],
+          });
+        }
+      }
+    }
+    return {
+      id: `o${i}`,
+      source: 'overhang' as const,
+      contact: new THREE.Vector3(
+        originX + (width * pxMm) / 2,
+        originY + (height * pxMm) / 2,
+        region.minZ,
+      ),
+      baseZ: region.minZ,
+      areaMm2: region.projectedAreaMm2,
+      overhangAngleDeg: region.angleDeg,
+      triangleIds: region.triangleIds,
+      surfaceNormal: { x: region.normal[0], y: region.normal[1], z: region.normal[2] },
+      contactVoxels,
+    };
+  };
+
   /**
    * Run BOTH detectors on the same world-space positions (one shared transform →
    * one frame → directly comparable for Part C). Voxel uses the scanline worker
@@ -168,14 +282,24 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
    */
   const onRunScan = useCallback(async () => {
     setScanning(true);
+    // Clear any progress left by a previous model's scan — the modal must
+    // not show the old "layer X of Y" until this scan reports its own.
+    setScanProgress(null);
+    const epoch = scanEpochRef.current;
     // Yield immediately so React can flush the "scanning" state and show
     // the progress modal before we start expensive synchronous work.
     await new Promise((resolve) => setTimeout(resolve, 0));
     let usedSideload = false;
+    let mappedOverhangs: DetectedIsland[] = [];
 
+    // Overhang classification (mesh-normal) — independent of the slice path.
+    // Catches shallow slopes the growth detector can't see (rotated-cube
+    // undersides, 11°–45° surfaces). Non-fatal if the command is unavailable
+    // (plain-browser context).
     if (sourcePath && geom) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
+        const { listen } = await import('@tauri-apps/api/event');
 
         if (!geom.geometry.boundingBox) {
           geom.geometry.computeBoundingBox();
@@ -192,10 +316,22 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         const matrixElements = Array.from(matrix.elements);
         const centerCoords = [center.x, center.y, center.z];
 
+        // The combined Rust scan emits phase progress — wire it into the
+        // progress modal so the bar moves immediately (the overhang pass runs
+        // inside the same command; no TS geometry round trip up front).
+        const unlisten = await listen<{ done: number; total: number }>(
+          'island-scan-progress',
+          (e) => {
+            if (scanEpochRef.current !== epoch) return;
+            setScanProgress({ done: e.payload.done, total: e.payload.total });
+          },
+        );
+
+        if (scanEpochRef.current !== epoch) return;
         setScanProgress({ done: 0, total: 100 });
 
         console.log(`[Islands] Sideloading combined island scan from path: ${sourcePath}`);
-        const combined = await invoke<{ voxelIslands: any[]; minimaIslands: any[] }>(
+        const combined = await invoke<{ voxelIslands: any[]; minimaIslands: any[]; overhangIslands: any[] }>(
           'scan_islands_from_path',
           {
             filePath: sourcePath,
@@ -206,8 +342,17 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
             supportBufferMm: supportBufMm,
             connectivity,
             k: minimaK,
+            // Overhang classification runs inside the combined command on the
+            // already-loaded mesh (the self-support angle is a user knob).
+            overhangSelfSupportAngleDeg: getSettings().autoSupport?.overhangSelfSupportAngleDeg
+              ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG,
+            overhangPxMm: OVERHANG_FOOTPRINT_PX_MM,
           },
-        );
+        ).finally(() => unlisten());
+
+        // The model may have been deleted/replaced while the command ran —
+        // discard results that belong to a superseded scan.
+        if (scanEpochRef.current !== epoch) return;
 
         const voxelMapped: DetectedIsland[] = combined.voxelIslands
           .filter((v) => (v.areaMm2 ?? 0) >= minAreaMm2)
@@ -231,9 +376,12 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         }));
         setMinimaIslands(minimaMapped);
 
-        // Cache the scan results for this model
-        if (sourcePath) {
-          scanCacheRef.current.set(sourcePath, { voxel: voxelMapped, minima: minimaMapped });
+        mappedOverhangs = (combined.overhangIslands ?? []).map(overhangRegionToIsland);
+        setOverhangIslands(mappedOverhangs);
+
+        // Cache the scan results for this model + transform
+        if (cacheKey) {
+          scanCacheRef.current.set(cacheKey, { voxel: voxelMapped, minima: minimaMapped, overhang: mappedOverhangs });
         }
 
         usedSideload = true;
@@ -243,11 +391,41 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     }
 
     if (!usedSideload) {
-      const world = prepareWorldGeom();
+      // Mesh prep can throw on a stale/disposed geometry (model deleted or
+      // replaced mid-scan). It sits outside the scan's try/finally, so an
+      // uncaught throw would strand `scanning` true and freeze the
+      // auto-support busy chain. Guard it and cancel cleanly.
+      let world: { positions: Float32Array; bbox: THREE.Box3 } | null = null;
+      try {
+        world = prepareWorldGeom();
+      } catch (err) {
+        console.warn('[Islands] mesh prep failed; cancelling scan', err);
+      }
       if (!world) {
         setScanning(false);
         return;
       }
+
+      // Overhang classification (Rust, positions-based) — the file sideload
+      // failed but this command may still be available. Reuses the same world
+      // geometry, so no double mesh prep.
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const regions = await invoke<OverhangRegion[]>('scan_overhangs', {
+          positions: Array.from(world.positions),
+          selfSupportAngleDeg: getSettings().autoSupport?.overhangSelfSupportAngleDeg
+            ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG,
+          pxMm: OVERHANG_FOOTPRINT_PX_MM,
+        });
+        if (scanEpochRef.current !== epoch) return;
+        mappedOverhangs = regions.map(overhangRegionToIsland);
+        setOverhangIslands(mappedOverhangs);
+      } catch (err) {
+        console.warn('[Islands] overhang scan failed (non-fatal)', err);
+        setOverhangIslands([]);
+      }
+
+      if (scanEpochRef.current !== epoch) return;
       setScanProgress({
         done: 0,
         total: Math.max(1, Math.ceil((world.bbox.max.z - world.bbox.min.z) / layerHeightMm)),
@@ -259,23 +437,25 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
           connectivity,
           minAreaMm2,
         };
-        const voxel = await detectVoxelIslands(world, layerHeightMm, params, (done, total) =>
-          setScanProgress({ done, total }),
-        );
+        const voxel = await detectVoxelIslands(world, layerHeightMm, params, (done, total) => {
+          if (scanEpochRef.current !== epoch) return;
+          setScanProgress({ done, total });
+        });
+        if (scanEpochRef.current !== epoch) return;
         setVoxelIslands(voxel);
 
         try {
           const minima = await scanMeshMinima(world.positions, minimaK);
           setMinimaIslands(minima);
-          // Cache the scan results for this model
-          if (sourcePath) {
-            scanCacheRef.current.set(sourcePath, { voxel, minima });
+          // Cache the scan results for this model + transform
+          if (cacheKey) {
+            scanCacheRef.current.set(cacheKey, { voxel, minima, overhang: mappedOverhangs });
           }
         } catch (err) {
           console.error('[Islands] mesh-minima scan failed', err);
           setMinimaIslands([]);
-          if (sourcePath) {
-            scanCacheRef.current.set(sourcePath, { voxel, minima: [] });
+          if (cacheKey) {
+            scanCacheRef.current.set(cacheKey, { voxel, minima: [], overhang: mappedOverhangs });
           }
         }
       } finally {
@@ -327,7 +507,18 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     });
   }, [finalVoxelIslands, minimaIslands, layerHeightMm]);
 
-  const allIslands = classifiedResult.islands;
+  // Merge overhang regions into the classified set (dedupe + inclusion):
+  // the mesh-normal classifier and the slice-growth detector flag the same
+  // underside surface, so a voxel island substantially covered by an overhang
+  // region is dropped in favor of the surface-accurate region. Overhang
+  // islands then flow through annotation, filtering, the list, and
+  // auto-support candidate generation.
+  const mergedIslands = useMemo(
+    () => mergeOverhangRegions(classifiedResult.islands, overhangIslands),
+    [classifiedResult, overhangIslands],
+  );
+
+  const allIslands = mergedIslands;
   const stats = classifiedResult.stats;
 
   const mappedSupportTips = useMemo<TipInfo[]>(() => {
@@ -460,6 +651,12 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     () => buildIslandPucks(
       showVoxelOnly 
         ? annotatedIslands.filter((i) => {
+            // Overhang regions render as voxel-style pucks (class stays
+            // undefined; only genuine voxel islands must be voxelOnly).
+            if (i.source === 'overhang') {
+              if (i.grounded && !filterToggles.showPlateContact) return false;
+              return !i.supported;
+            }
             if (i.source !== 'voxel' || i.class !== 'voxelOnly') return false;
             if (i.grounded && !filterToggles.showPlateContact) return false;
             
@@ -517,9 +714,15 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     voxelOnlyPucks.markers.forEach(m => {
       const island = voxelOnlyPucks.byMarkerId.get(m.id);
       const area = island?.areaMm2 ?? 0;
-      const radius = scaleMarkersWithArea && area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1;
+      const isOverhang = island?.source === 'overhang';
+      // Overhang regions are highlighted as surface meshes (see
+      // IslandOverhangOverlay); here they get a small centroid dot so
+      // selection/fly-to still works without a huge flat disc.
+      const radius = isOverhang
+        ? 0.1
+        : (scaleMarkersWithArea && area > 0 ? Math.max(0.1, Math.sqrt(area / Math.PI)) : 0.1);
 
-      if (island && contouredIds.has(island.id) && island.contactVoxels && island.contactVoxels.length > 0) {
+      if (island && !isOverhang && contouredIds.has(island.id) && island.contactVoxels && island.contactVoxels.length > 0) {
         const contour = generateContourMarkers(island.contactVoxels, pxMm, m.id, m.baseZ, consolidateVoxel ? 3 : 0);
         markers.push(...contour);
       } else {
@@ -569,12 +772,17 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const clear = useCallback(() => {
     setVoxelIslands([]);
     setMinimaIslands([]);
+    setOverhangIslands([]);
     setSelectedMarkerId(null);
   }, []);
 
-  // Per-model scan cache: sourcePath → { voxel, minima }
-  const scanCacheRef = useRef<Map<string, { voxel: DetectedIsland[]; minima: DetectedIsland[] }>>(new Map());
+  // Per-model scan cache: (sourcePath + transform signature) → { voxel, minima, overhang }.
+  const scanCacheRef = useRef<Map<string, { voxel: DetectedIsland[]; minima: DetectedIsland[]; overhang: DetectedIsland[] }>>(new Map());
   const prevSourcePathRef = useRef<string | null | undefined>(undefined);
+  // Bumped on every geom/transform change; an in-flight scan captures the
+  // epoch and discards its results if the model changed while it ran — a
+  // superseded scan must not commit the old model's islands.
+  const scanEpochRef = useRef(0);
 
   // On sourcePath change: restore from cache instead of clearing
   useEffect(() => {
@@ -582,21 +790,30 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     prevSourcePathRef.current = sourcePath;
     if (!sourcePath || prev === sourcePath) return;
 
-    const cached = scanCacheRef.current.get(sourcePath);
+    const cached = cacheKey ? scanCacheRef.current.get(cacheKey) : undefined;
     if (cached) {
       setVoxelIslands(cached.voxel);
       setMinimaIslands(cached.minima);
+      setOverhangIslands(cached.overhang ?? []);
       setSelectedMarkerId(null);
       return;
     }
 
     // No cache entry — clear for new model
     clear();
-  }, [sourcePath, clear]);
+  }, [sourcePath, cacheKey, clear]);
 
-  // On transform/geom change: always clear (scan is invalidated)
+  // On transform/geom change: always clear (scan is invalidated) and release
+  // the scanning flag — an in-flight scan belongs to the old model. If the
+  // old scan's async work throws on the stale geometry, its own cleanup never
+  // runs, and a stuck `scanning` freezes the auto-support busy chain (the
+  // deferred effect waits forever, `autoSupportDrivingScan` stays set, and
+  // the Generating/scanning modals stop appearing for the new model).
   useEffect(() => {
+    scanEpochRef.current += 1;
     clear();
+    setScanning(false);
+    setScanProgress(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     geom,
@@ -672,7 +889,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
       setConsolidationDistance(draftConsolidationDistance);
       setReduceIntersection(draftReduceIntersection);
       setIntersectionThreshold(draftIntersectionThreshold);
-      setEnableVolumeGlow(draftEnableVolumeGlow);
+      setShowOverhangs(draftShowOverhangs);
       setScaleMarkersWithArea(draftScaleMarkersWithArea);
       setEnableContourRegions(draftEnableContourRegions);
       setMaxContourRegions(draftMaxContourRegions);
@@ -690,7 +907,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     draftConsolidationDistance,
     draftReduceIntersection,
     draftIntersectionThreshold,
-    draftEnableVolumeGlow,
+    draftShowOverhangs,
     draftScaleMarkersWithArea,
     draftEnableContourRegions,
     draftMaxContourRegions,
@@ -708,7 +925,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setDraftConsolidationDistance(0.2);
     setDraftReduceIntersection(false);
     setDraftIntersectionThreshold(0.5);
-    setDraftEnableVolumeGlow(true);
+    setDraftShowOverhangs(true);
     setDraftScaleMarkersWithArea(true);
     setDraftEnableContourRegions(true);
     setDraftMaxContourRegions(20);
@@ -727,7 +944,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
       consolidationDistance !== draftConsolidationDistance ||
       reduceIntersection !== draftReduceIntersection ||
       intersectionThreshold !== draftIntersectionThreshold ||
-      enableVolumeGlow !== draftEnableVolumeGlow ||
+      showOverhangs !== draftShowOverhangs ||
       scaleMarkersWithArea !== draftScaleMarkersWithArea ||
       enableContourRegions !== draftEnableContourRegions ||
       maxContourRegions !== draftMaxContourRegions ||
@@ -744,7 +961,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     consolidationDistance, draftConsolidationDistance,
     reduceIntersection, draftReduceIntersection,
     intersectionThreshold, draftIntersectionThreshold,
-    enableVolumeGlow, draftEnableVolumeGlow,
+    showOverhangs, draftShowOverhangs,
     scaleMarkersWithArea, draftScaleMarkersWithArea,
     enableContourRegions, draftEnableContourRegions,
     maxContourRegions, draftMaxContourRegions,
@@ -760,6 +977,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     elapsedLabel,
     voxelIslands,
     minimaIslands,
+    overhangIslands,
     filteredIslands,
     orderedIslands,
     voxelOnlyPucks,
@@ -797,8 +1015,8 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setReduceIntersection,
     intersectionThreshold,
     setIntersectionThreshold,
-    enableVolumeGlow,
-    setEnableVolumeGlow,
+    showOverhangs,
+    setShowOverhangs,
     scaleMarkersWithArea,
     setScaleMarkersWithArea,
     enableContourRegions,
@@ -830,8 +1048,8 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setDraftReduceIntersection,
     draftIntersectionThreshold,
     setDraftIntersectionThreshold,
-    draftEnableVolumeGlow,
-    setDraftEnableVolumeGlow,
+    draftShowOverhangs,
+    setDraftShowOverhangs,
     draftScaleMarkersWithArea,
     setDraftScaleMarkersWithArea,
     draftEnableContourRegions,

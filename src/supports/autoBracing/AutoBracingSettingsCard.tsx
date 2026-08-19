@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { NumberInput } from '@/components/ui/NumberInput';
-import { Button } from '@/components/atoms';
+import { Button, Toast, ToastViewport } from '@/components/atoms';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import {
     AUTO_BRACING_PATTERN_OPTIONS,
@@ -187,26 +187,16 @@ export function AutoBracingSettingsCard({
             </label>
 
             {status && (
-                <div
-                    className="rounded-md border px-2.5 py-2 text-[11px] leading-snug"
-                    style={{
-                        borderColor:
-                            status.kind === 'success'
-                                ? '#34d399'
-                                : status.kind === 'warning'
-                                    ? '#f59e0b'
-                                    : '#f87171',
-                        color:
-                            status.kind === 'success'
-                                ? '#34d399'
-                                : status.kind === 'warning'
-                                    ? '#f59e0b'
-                                    : '#f87171',
-                        background: 'color-mix(in srgb, var(--surface-0), transparent 6%)',
-                    }}
-                >
-                    {status.message}
-                </div>
+                <ToastViewport zIndex={126} offset="1.25rem">
+                    <Toast
+                        tone={status.kind === 'success' ? 'success' : status.kind === 'warning' ? 'warning' : 'error'}
+                        animated
+                        visible
+                        className="flex items-center gap-2"
+                    >
+                        {status.message}
+                    </Toast>
+                </ToastViewport>
             )}
 
             <div className="h-2" />
