@@ -138,6 +138,19 @@
   one. Also add a `.gitattributes` (`* text=auto eol=lf`) per plugin so it does
   not come back.
 
+### [docs] Candidate ADR: empirical sizing over physics-based — S · low risk
+- Where: src/supports/autoSupport/parameterSizing.ts (header comment), and the
+  reverted physics work in the auto-supports history.
+- What: physics-derived shaft sizing was implemented and then removed because an
+  area-derived curve inverted the profiles (a light 16 mm² cell sized 1.28 mm
+  against a heavy 5 mm² cell at 1.12 mm). Sizing is now hardcoded profile bands.
+- Why it may deserve an ADR: it passes the three-part bar — the naming left
+  behind (`SizingDebugInfo`) and the obvious appeal of "size it by load" mean
+  someone will propose physics sizing again, and the rejection is measured, not
+  aesthetic. Currently that reasoning survives only in a source comment.
+- Context: summarized in `docs/dev/auto-supports.md`; promote to `docs/adr/` if
+  the user agrees it clears the bar.
+
 ### [refactor] Consolidate toasts into a queue with one lifetime — M · medium risk
 - Where: src/features/notifications/useEditorToasts.ts (12 useState + 11 timer
   refs for six toasts), src/components/organisms/NotificationStack.tsx (literal

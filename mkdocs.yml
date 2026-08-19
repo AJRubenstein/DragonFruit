@@ -116,6 +116,7 @@ nav:
           - Notifications and Toasts: dev/notifications.md
       - Support System:
           - Support System: dev/support-system.md
+          - Auto-Supports: dev/auto-supports.md
           - Adding a New Support Type: dev/support-type-extension.md
           - Support Pathfinding V3: dev/support-pathfinding-v3.md
           - Grid and Branching: dev/grid-and-branching.md
