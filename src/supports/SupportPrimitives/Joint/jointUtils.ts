@@ -447,7 +447,7 @@ export function findClosestSegment(trunk: Trunk, root: Roots, point: Vec3): { se
         }
 
         let dist: number;
-        let closest = new THREE.Vector3();
+        const closest = new THREE.Vector3();
         let tVal = 0;
 
         if (seg.type === 'bezier') {

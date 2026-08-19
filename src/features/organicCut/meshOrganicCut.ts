@@ -362,7 +362,6 @@ export async function computeMembranePreview(
       tenonFrame: report.tenonFrame ?? null,
     };
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error('[organicCut] membrane preview command failed', err);
     return empty;
   }
@@ -435,7 +434,6 @@ export async function computePlaneTenonPreview(
       tenonFrame: report.tenonFrame ?? null,
     };
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error('[organicCut] plane tenon preview command failed', err);
     return empty;
   }

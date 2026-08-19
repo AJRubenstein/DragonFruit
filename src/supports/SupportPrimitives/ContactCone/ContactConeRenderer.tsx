@@ -142,7 +142,7 @@ export function ContactConeRenderer({
             if (surfaceNormalVec.lengthSq() < 0.000001) surfaceNormalVec.set(0, 0, 1);
             surfaceNormalVec.normalize();
 
-            let axis = new THREE.Vector3(renderNormal.x, renderNormal.y, renderNormal.z);
+            const axis = new THREE.Vector3(renderNormal.x, renderNormal.y, renderNormal.z);
             if (axis.lengthSq() < 0.000001) {
                 axis.copy(socketPos).sub(contactPos);
             }

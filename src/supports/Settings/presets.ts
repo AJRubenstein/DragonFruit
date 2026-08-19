@@ -256,7 +256,7 @@ const ACTIVE_PRESET_STORAGE_KEY = 'support-active-preset-id-v1';
 const SUPPORT_SETTINGS_STORAGE_KEY = 'support-settings';
 const LEGACY_CUSTOM_IDS = new Set(['custom1', 'custom2', 'custom3']);
 
-let presets: PresetCollection = loadPresetsFromStorage();
+const presets: PresetCollection = loadPresetsFromStorage();
 
 function loadPresetsFromStorage(): PresetCollection {
     const defaults: PresetCollection = {

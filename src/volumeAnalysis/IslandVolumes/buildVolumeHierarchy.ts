@@ -112,8 +112,8 @@ export function buildVolumeHierarchy(
     const continueNodeIds: number[] = [];
     const mergeNodeIds: number[] = [];
 
-    let incoming: Map<number, Set<number>> = new Map();
-    let outgoing: Map<number, Set<number>> = new Map();
+    const incoming: Map<number, Set<number>> = new Map();
+    const outgoing: Map<number, Set<number>> = new Map();
 
     if (prevLabels) {
       const overlap = computeOverlapCounts(prevLabels, currLabels, overlapNeighborhoodPx);
