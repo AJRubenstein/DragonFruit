@@ -138,6 +138,25 @@
   one. Also add a `.gitattributes` (`* text=auto eol=lf`) per plugin so it does
   not come back.
 
+### [refactor] Consolidate toasts into a queue with one lifetime — M · medium risk
+- Where: src/features/notifications/useEditorToasts.ts (12 useState + 11 timer
+  refs for six toasts), src/components/organisms/NotificationStack.tsx (literal
+  z-indexes and a hardcoded offset conditional), src/components/ui/SupportToasts.tsx
+  (a second path, no timer), plus inline `<ToastViewport>` uses such as
+  AutoBracingSettingsCard.tsx (a third).
+- What: replace the repeated fade/clear timer pair with a module store holding a
+  queue and one timer — `pushToast({ tone, text, durationMs })` — and let the
+  stack compute its own offsets instead of a two-case conditional.
+- Why: adding one message today is five steps across four files plus a judgement
+  call about overlap, and the durations are per-toast literals (2200/2600,
+  3800/4500, duration-400). Three independent paths means three behaviours for
+  the same UI element.
+- Careful: `Toast`/`ToastViewport` are already shared and fine — this is about
+  what drives them. The save toast has three pieces of state, not two (a
+  minimum-visible-time animation), so it is the one that constrains the API.
+- Context: current state documented in `docs/dev/notifications.md`; retire that
+  page's "there is no notification system" warning when this lands.
+
 ### [fix] Support placement modifiers ignore the macOS primary modifier — M · medium risk
 - Where: src/supports/interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver.ts
   (`parseBindingModifiers`, `hasModifier`); contrast with `getRequiredKeys` in

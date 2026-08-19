@@ -9,6 +9,7 @@ Internals of DragonFruit, for people changing them. Start with [Architecture Ove
 | Understand the shape of the whole thing | [Architecture Overview](architecture-overview.md) |
 | Add a UI feature with state | [State and Stores](state-and-stores.md), [Registration Seams](registration-seams.md) |
 | Make something undoable | [History and Undo/Redo](history-and-undo-redo.md) |
+| Show the user a message | [Notifications and Toasts](notifications.md) |
 | Bind a key | [Hotkeys](hotkeys.md), [Support Placement Modifiers](../reference/support-placement-modifiers.md) |
 | Call native code | [Tauri IPC and Native Bridge](tauri-ipc-bridge.md) |
 | Ship something unfinished | [Experiments Framework](experiments-framework.md) |
