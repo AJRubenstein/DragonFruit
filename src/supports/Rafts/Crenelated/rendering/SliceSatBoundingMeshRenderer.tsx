@@ -9,6 +9,7 @@ import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { convexHull2d } from '../geometry/convexHull2d';
+import { signedArea2d } from '../geometry/signedArea2d';
 
 interface SliceSatBoundingMeshRendererProps {
   modelGeometry: GeometryWithBounds | null;
@@ -271,17 +272,6 @@ function cloneRingPoints(points: THREE.Vector2[]): THREE.Vector2[] {
   return points.map((p) => p.clone());
 }
 
-function signedArea2D(points: THREE.Vector2[]): number {
-  if (points.length < 3) return 0;
-  let area = 0;
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    area += a.x * b.y - b.x * a.y;
-  }
-  return 0.5 * area;
-}
-
 function rotateRing(points: THREE.Vector2[], offset: number): THREE.Vector2[] {
   const n = points.length;
   if (n === 0) return [];
@@ -296,8 +286,8 @@ function rotateRing(points: THREE.Vector2[], offset: number): THREE.Vector2[] {
 function alignRingToReference(ring: THREE.Vector2[], reference: THREE.Vector2[]): THREE.Vector2[] {
   if (ring.length !== reference.length || ring.length < 3) return ring;
 
-  const refWinding = Math.sign(signedArea2D(reference));
-  const ringWinding = Math.sign(signedArea2D(ring));
+  const refWinding = Math.sign(signedArea2d(reference));
+  const ringWinding = Math.sign(signedArea2d(ring));
   let candidate = ring;
 
   if (refWinding !== 0 && ringWinding !== 0 && refWinding !== ringWinding) {
@@ -343,7 +333,7 @@ function normalizeRingSequence(rings: SliceRing[]): SliceRing[] {
 }
 
 function ringAreaAbs(points: THREE.Vector2[]): number {
-  return Math.abs(signedArea2D(points));
+  return Math.abs(signedArea2d(points));
 }
 
 function addFeatureEndMarginSlices(rings: SliceRing[]): SliceRing[] {
