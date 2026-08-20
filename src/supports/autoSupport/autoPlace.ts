@@ -10,7 +10,7 @@ import { quantizeToScale } from '@/utils/math';
  * that land exactly halfway, which authored 0.001-grid dimensions often do.
  */
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
-import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree } from './types';
+import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo } from './types';
 import type { SupportState, SupportOrigin } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
@@ -427,7 +427,8 @@ export function buildConsolidationBranch(args: {
 
     const parentKnot = {
         id: knotId,
-        parentShaftId: best.trunkId,
+        parentShaftId: best.segmentId ?? best.trunkId,
+        t: best.t,
         pos: best.pos,
         diameter: best.diameter + 0.125,
     };
@@ -967,9 +968,10 @@ function placeOneCandidate(
  * guard below keeps that atomic. Everything else — placement, gap-fill,
  * fanning, overhang coverage, bracing — is draft-only.
  */
-
 export type FanShaftPoint = {
     trunkId: string;
+    segmentId?: string;
+    t?: number;
     pos: { x: number; y: number; z: number };
     diameter: number;
 };
@@ -1102,6 +1104,8 @@ export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
                 const t = i / SHAFT_SAMPLES_PER_SEGMENT;
                 shaftPoints.push({
                     trunkId: tid,
+                    segmentId: seg.id,
+                    t,
                     pos: {
                         x: start.x + (end.x - start.x) * t,
                         y: start.y + (end.y - start.y) * t,
@@ -1118,6 +1122,193 @@ export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
 export type FanLeafResult =
     | { ok: true; draft: SupportState; trunkId: string; leafId: string; distMm: number; angleDeg: number }
     | { ok: false; reason: FanLeafRefusal };
+
+// ---------------------------------------------------------------------------
+// Fanning orphan detection & legacy rehost
+// ---------------------------------------------------------------------------
+
+function pointToSegmentDistanceSq(
+    p: { x: number; y: number; z: number },
+    a: { x: number; y: number; z: number },
+    b: { x: number; y: number; z: number },
+): number {
+    const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+    const apx = p.x - a.x, apy = p.y - a.y, apz = p.z - a.z;
+    const ab2 = abx * abx + aby * aby + abz * abz;
+    if (ab2 < 1e-9) return apx * apx + apy * apy + apz * apz;
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / ab2));
+    const cx = a.x + abx * t, cy = a.y + aby * t, cz = a.z + abz * t;
+    const dx = p.x - cx, dy = p.y - cy, dz = p.z - cz;
+    return dx * dx + dy * dy + dz * dz;
+}
+
+function findHostSegment(
+    draft: SupportState,
+    parentShaftId: string,
+): { trunkId: string; segment: { id: string; bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null } } | null {
+    for (const [tid, trunk] of Object.entries(draft.trunks)) {
+        for (const seg of trunk.segments) {
+            if (seg.id === parentShaftId) return { trunkId: tid, segment: seg };
+        }
+        if (tid === parentShaftId) {
+            // Legacy: knot parent was trunkId, pick the segment closest to knot.pos later
+            // For validation we treat this as missingSegment so it gets rehosted
+            return null;
+        }
+    }
+    return null;
+}
+
+/** Rehost knots whose parentShaftId is a trunkId (legacy fan leaves/branches) to the nearest segment of that trunk. */
+export function rehostLegacyKnots(draft: SupportState): SupportState {
+    let nextKnots = draft.knots;
+    let changed = false;
+    for (const [kid, knot] of Object.entries(draft.knots)) {
+        if (draft.trunks[knot.parentShaftId]) {
+            const trunk = draft.trunks[knot.parentShaftId];
+            let bestSeg: typeof trunk.segments[0] | null = null;
+            let bestDist2 = Infinity;
+            let bestT = 0;
+            for (const seg of trunk.segments) {
+                const start = seg.bottomJoint?.pos ?? { x: 0, y: 0, z: 0 };
+                const end = seg.topJoint?.pos;
+                if (!end) continue;
+                // Compute t of projection of knot.pos onto segment
+                const abx = end.x - start.x, aby = end.y - start.y, abz = end.z - start.z;
+                const apx = knot.pos.x - start.x, apy = knot.pos.y - start.y, apz = knot.pos.z - start.z;
+                const ab2 = abx * abx + aby * aby + abz * abz;
+                const t = ab2 < 1e-9 ? 0 : Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / ab2));
+                const cx = start.x + abx * t, cy = start.y + aby * t, cz = start.z + abz * t;
+                const d2 = (knot.pos.x - cx) ** 2 + (knot.pos.y - cy) ** 2 + (knot.pos.z - cz) ** 2;
+                if (d2 < bestDist2) {
+                    bestDist2 = d2;
+                    bestSeg = seg as typeof trunk.segments[0];
+                    bestT = t;
+                }
+            }
+            if (bestSeg) {
+                const updated: typeof knot = { ...knot, parentShaftId: bestSeg.id, t: bestT };
+                nextKnots = { ...nextKnots, [kid]: updated };
+                changed = true;
+            }
+        }
+    }
+    return changed ? { ...draft, knots: nextKnots } : draft;
+}
+
+/** Validate leaves/branches host attachment after forest resize; cull orphans and return them for reporting. */
+export function validateAndCullOrphans(
+    draft: SupportState,
+    mesh: THREE.Mesh | undefined,
+): { draft: SupportState; orphans: OrphanInfo[] } {
+    const orphans: OrphanInfo[] = [];
+    const DRIFT_TOL_SQ = 0.25; // 0.5mm
+    let nextDraft: SupportState = draft;
+    const knotsToRemove = new Set<string>();
+
+    const checkAttachment = (
+        id: string,
+        kind: 'leaf' | 'branch',
+        parentKnotId: string | undefined,
+        tipPos: { x: number; y: number; z: number } | undefined,
+    ) => {
+        if (!parentKnotId) {
+            orphans.push({ id, kind, reason: 'missingKnot', detail: 'no parentKnotId' });
+            return false;
+        }
+        const knot = nextDraft.knots[parentKnotId];
+        if (!knot) {
+            orphans.push({ id, kind, reason: 'missingKnot', knotId: parentKnotId, detail: 'knot not in draft' });
+            return false;
+        }
+        const host = findHostSegment(nextDraft, knot.parentShaftId);
+        if (!host) {
+            // parentShaftId is trunkId or missing segment (legacy or deleted host)
+            const trunkExists = !!nextDraft.trunks[knot.parentShaftId];
+            const reason = trunkExists ? 'missingSegment' as const : 'missingHost' as const;
+            orphans.push({ id, kind, reason, hostId: knot.parentShaftId, knotId: knot.id, detail: `knot ${knot.id} parent ${knot.parentShaftId}` });
+            return false;
+        }
+        const seg = host.segment;
+        const start = seg.bottomJoint?.pos;
+        const end = seg.topJoint?.pos;
+        if (!start || !end) {
+            orphans.push({ id, kind, reason: 'missingHost', hostId: host.trunkId, knotId: knot.id, detail: 'segment missing joints' });
+            return false;
+        }
+        const drift2 = pointToSegmentDistanceSq(knot.pos, start, end);
+        if (drift2 > DRIFT_TOL_SQ) {
+            orphans.push({ id, kind, reason: 'drift', hostId: host.trunkId, knotId: knot.id, detail: `drift ${(Math.sqrt(drift2)).toFixed(2)}mm from shaft` });
+            return false;
+        }
+        if (tipPos) {
+            if (mesh && isShaftBlocked(knot.pos, tipPos, 0.2, mesh)) {
+                orphans.push({ id, kind, reason: 'blocked', hostId: host.trunkId, knotId: knot.id, detail: 'knot→tip blocked by mesh' });
+                return true;
+            }
+            if (leafPathCrossesSupports(knot.pos, tipPos, 0.25, nextDraft, host.trunkId)) {
+                orphans.push({ id, kind, reason: 'cross', hostId: host.trunkId, knotId: knot.id, detail: 'leaf/branch crosses another shaft after thickening' });
+                return true;
+            }
+        }
+        return true;
+    };
+
+    const leavesToRemove = new Set<string>();
+    for (const [lid, leaf] of Object.entries(nextDraft.leaves)) {
+        const tipPos = leaf.contactCone?.pos;
+        const ok = checkAttachment(lid, 'leaf', leaf.parentKnotId, tipPos);
+        if (!ok) leavesToRemove.add(lid);
+    }
+    const branchesToRemove = new Set<string>();
+    for (const [bid, branch] of Object.entries(nextDraft.branches)) {
+        const tipPos = branch.contactCone?.pos;
+        const ok = checkAttachment(bid, 'branch', branch.parentKnotId, tipPos);
+        if (!ok) branchesToRemove.add(bid);
+    }
+
+    if (leavesToRemove.size === 0 && branchesToRemove.size === 0) {
+        return { draft: nextDraft, orphans };
+    }
+
+    // Collect knots that are only used by culled leaves/branches
+    const remainingKnotUsers = new Map<string, number>();
+    for (const leaf of Object.values(nextDraft.leaves)) {
+        if (leavesToRemove.has(leaf.id)) continue;
+        const kid = leaf.parentKnotId;
+        if (kid) remainingKnotUsers.set(kid, (remainingKnotUsers.get(kid) ?? 0) + 1);
+    }
+    for (const branch of Object.values(nextDraft.branches)) {
+        if (branchesToRemove.has(branch.id)) continue;
+        const kid = branch.parentKnotId;
+        if (kid) remainingKnotUsers.set(kid, (remainingKnotUsers.get(kid) ?? 0) + 1);
+    }
+    // Brace knots are separate — never cull a knot that is a brace endpoint
+    for (const brace of Object.values(nextDraft.braces)) {
+        remainingKnotUsers.set(brace.startKnotId, (remainingKnotUsers.get(brace.startKnotId) ?? 0) + 1);
+        remainingKnotUsers.set(brace.endKnotId, (remainingKnotUsers.get(brace.endKnotId) ?? 0) + 1);
+    }
+
+    for (const lid of leavesToRemove) {
+        const leaf = nextDraft.leaves[lid];
+        const kid = leaf.parentKnotId;
+        if (kid && !remainingKnotUsers.has(kid)) knotsToRemove.add(kid);
+    }
+    for (const bid of branchesToRemove) {
+        const branch = nextDraft.branches[bid];
+        const kid = branch.parentKnotId;
+        if (kid && !remainingKnotUsers.has(kid)) knotsToRemove.add(kid);
+    }
+    const nextLeaves = { ...nextDraft.leaves };
+    for (const id of leavesToRemove) delete nextLeaves[id];
+    const nextBranches = { ...nextDraft.branches };
+    for (const id of branchesToRemove) delete nextBranches[id];
+    const nextKnots = { ...nextDraft.knots };
+    for (const id of knotsToRemove) delete nextKnots[id];
+
+    nextDraft = { ...nextDraft, leaves: nextLeaves, branches: nextBranches, knots: nextKnots };
+    return { draft: nextDraft, orphans };
+}
 
 /**
  * Attach a fan leaf from the nearest trunk shaft to `target` — the SHARED
@@ -1186,7 +1377,8 @@ export function fanLeafToTrunk(
     const sp = best;
     const parentKnot = {
         id: knotIdPrefix,
-        parentShaftId: sp.trunkId,
+        parentShaftId: sp.segmentId ?? sp.trunkId,
+        t: sp.t,
         pos: sp.pos,
         // The knot renders at exactly the trunk-joint size when unselected:
         // the KnotRenderer subtracts the full joint offset (0.1), while the
@@ -1195,8 +1387,6 @@ export function fanLeafToTrunk(
         // diameter.
         diameter: sp.diameter + 0.125,
     };
-
-    // SDF collision check: the straight path from knot to tip must be clear.
     if (mesh && isShaftBlocked(sp.pos, target, 0.2, mesh)) return { ok: false, reason: 'blocked' };
 
     let leaf;
@@ -1374,6 +1564,13 @@ export function forestReportToText(report: ForestReport): string {
         lines.push(`  ${b.anchorRegions} anchor surfaces: ${b.gridWins} grid wins · ${b.poissonWins} poisson wins · avg margin ${(b.avgWinnerMargin * 100).toFixed(1)}%`);
         for (const d of b.details) {
             lines.push(`    ${d.regionId}: ${d.winner} (grid ${d.gridCoverage.toFixed(3)} ${d.gridCount} vs poisson ${d.poissonCoverage.toFixed(3)} ${d.poissonCount} Δ=${d.delta.toFixed(3)})`);
+        }
+        lines.push('');
+    }
+    if (report.orphans && report.orphans.length > 0) {
+        lines.push('ORPHANS CULLED');
+        for (const o of report.orphans) {
+            lines.push(`  ${o.id} (${o.kind}) ${o.reason}${o.hostId ? ` @${o.hostId.slice(0, 8)}` : ''}${o.knotId ? ` knot ${o.knotId.slice(0, 8)}` : ''}${o.detail ? ` — ${o.detail}` : ''}`);
         }
         lines.push('');
     }
@@ -2280,6 +2477,26 @@ export function computeAutoSupportPlan(
                 draft = resized;
                 console.log(LOG_PREFIX, 'Forest resize pass applied (attachment-loaded trunks thickened).');
             }
+            // Legacy fan knots used trunkId as parentShaftId — rehost to the nearest segment so
+            // diameter demands and drift checks use segment ids.
+            const rehosted = rehostLegacyKnots(draft);
+            if (rehosted !== draft) {
+                draft = rehosted;
+                console.log(LOG_PREFIX, 'Legacy knot rehost: trunkId → segmentId');
+            }
+            // Post-resize validation: drift (>0.5mm), cross after thickening, or missing host.
+            // This is where the "leaf attached to nowhere" shows up in the report.
+            let orphanInfos: OrphanInfo[] = [];
+            try {
+                const culled = validateAndCullOrphans(draft, resolvedMesh ?? undefined);
+                if (culled.orphans.length > 0) {
+                    draft = culled.draft;
+                    orphanInfos = culled.orphans;
+                    console.log(LOG_PREFIX, `Orphan cull: ${culled.orphans.length} leaves/branches removed — ${culled.orphans.map((o) => `${o.id}:${o.reason}${o.hostId ? `@${o.hostId.slice(0,8)}` : ''}`).join(', ')}`);
+                }
+            } catch (e) {
+                console.warn(LOG_PREFIX, `Orphan validation failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+            }
 
             // ── Forest Report ───────────────────────────────────────
             // Structured per-run summary: every placed support's id, size,
@@ -2288,7 +2505,7 @@ export function computeAutoSupportPlan(
             const forestReport = buildForestReport(draft, forestLedger);
             const bySource = { voxel: 0, minima: 0, intersection: 0, overhang: 0 };
             for (const island of islands) {
-                bySource[island.source] = (bySource[island.source] ?? 0) + 1;
+                (bySource as Record<string, number>)[island.source] = ((bySource as Record<string, number>)[island.source] ?? 0) + 1;
             }
             const scanTotalAreaMm2 = islands.reduce((sum, island) => sum + (island.areaMm2 ?? 0), 0);
             forestReport.scan = {
@@ -2314,11 +2531,15 @@ export function computeAutoSupportPlan(
                     details: competitiveDetails,
                 };
             }
+            if (orphanInfos.length > 0) {
+                forestReport.orphans = orphanInfos;
+            }
             analytics.forestReport = forestReport;
             console.log(LOG_PREFIX,
                 `Forest report: ${forestReport.trunkCount} trunks, ${forestReport.leafCount} leaves, ` +
                 `${forestReport.branchCount} branches, ${forestReport.stickCount} sticks — ` +
-                `${forestReport.trees.length} fan-out trees, ${forestReport.bareTrunks.length} bare trunks`);
+                `${forestReport.trees.length} fan-out trees, ${forestReport.bareTrunks.length} bare trunks` +
+                (orphanInfos.length > 0 ? ` — ${orphanInfos.length} orphans culled` : ''));
         } catch (e) {
             console.warn(LOG_PREFIX,
                 `Forest resize failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);

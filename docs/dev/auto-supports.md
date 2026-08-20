@@ -74,10 +74,11 @@ Tip contact is the profile band scaled by underside angle — flat ceilings get 
 
 - **Anchors are standalone.** A contact below `ANCHOR_HEIGHT_THRESHOLD_MM` (5 mm) becomes an [anchor](../reference/support-anatomy/anchor.md), which never merges into a branching tree and never hosts a fan or merge leaf — it is load-bearing. A flat region's grid infill stays a 1:1 pillar forest.
 - **Grid trunks are fanning hosts only up close.** `GRID_HOST_FAN_RADIUS_MM` (2.5 mm) is deliberately tighter than the general `LEAF_FAN_RADIUS_MM` (5 mm), so fan leaves do not sweep across the grid forest and puncture its shafts.
+- **Fanning attaches to segments, not trunks.** `collectFanShaftPoints` samples per-segment (`segmentId` + `t`) and `fanLeafToTrunk`/`buildConsolidationBranch` create knots with `parentShaftId: segmentId, t` — not `trunkId`. Legacy `trunkId` knots are rehosted to the nearest segment before `computeForestDiameterProfile` so diameter demands include fan leaves and drift checks use segment geometry. `countAttachmentsOnTrunk` handles both for backward compat.
+- **Orphan validation after resize.** After `computeForestDiameterProfile` the pipeline rehosts legacy knots and runs `validateAndCullOrphans` (drift >0.5 mm, missing host/segment culled; `cross`/`blocked` reported but kept). Culled leaves/branches and their orphan knots are removed, `ForestReport.orphans[]` lists `id/kind/reason/hostId/knotId/detail`, and `forestReportToText` emits `ORPHANS CULLED`. This is where the "leaf attached to nowhere" (drifted knot after a host trunk’s diameter split) is caught — check the report before the render.
 - **A candidate within `ALREADY_SUPPORTED_RADIUS_MM` (3 mm) of an existing tip is already supported** and is skipped.
 - **Gridless runs still merge**: candidates within `GRIDLESS_MERGE_RADIUS_MM` (4 mm) of an existing trunk join it.
 - Every shared radius and span lives in `autoSupport/constants.ts`, which exists because these previously had inconsistent copies in `autoPlace.ts` and `gridPlacement.ts`. Add new ones there.
-
 ## Settings and reporting
 
 `settings.ts` declares roughly twenty knobs with `AUTO_SUPPORT_CONSTRAINTS` giving each a min/max/step/default — including two debug switches (`debugSupportOriginColors`, `debugSkipAutoBracing`, the latter for faster iteration). Use `normalizeAutoSupportSettings` / `applyAutoSupportSettingsPatch` rather than building the object by hand.
@@ -85,6 +86,8 @@ Tip contact is the profile band scaled by underside angle — flat ceilings get 
 A run returns `AutoPlaceAnalytics` and a `ForestReport`; `forestReportToText` renders it for the placement summary, including refusals with a `RejectReason`.
 
 **Bake-off reporting (v1.5):** `AutoPlaceAnalytics.competitive` aggregates anchor bake-offs (`anchorRegions`, `gridWins`, `poissonWins`, `avgWinnerMargin`). `ForestReport.bakeoff` mirrors the aggregate plus `details[]` per anchor (`regionId`, `winner`, `gridCoverage`/`poissonCoverage`, `gridCount`/`poissonCount`, `delta`) and `forestReportToText` emits a `DISTRIBUTION BAKE-OFF (anchors)` block. Check `src/supports/autoSupport/types.ts` (`CompetitiveBakeoffAnalytics`, `BakeoffDetail`, `CompetitiveBakeoffReport`) for the surface.
+**Orphan reporting (v1.5):** post-resize `rehostLegacyKnots` + `validateAndCullOrphans` cull `drift`/`missingHost`/`missingSegment` (orphan knot >0.5 mm off its host segment) and report `cross`/`blocked` without culling. `ForestReport.orphans[]` (`OrphanInfo`) and `forestReportToText` `ORPHANS CULLED` surface them. Drift is the "leaf attached to nowhere" case — host segment split rehost failed or knot was placed on a trunk that later split.
+
 
 ## Related pages
 

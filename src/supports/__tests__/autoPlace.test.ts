@@ -470,7 +470,7 @@ test('runAutoPlace fans organic poisson points into island trunks instead of dup
     assert.ok(aTrunk, 'island A is the host');
     const leavesOnA = Object.values(snapshot.leaves).some((l) => {
         const k = snapshot.knots[l.parentKnotId];
-        return k && k.parentShaftId === aTrunk?.id;
+        return k && (k.parentShaftId === aTrunk?.id || !!aTrunk?.segments.some((s) => s.id === k.parentShaftId));
     });
     assert.ok(leavesOnA, 'a fan leaf attaches to trunk A');
 
@@ -524,7 +524,7 @@ test('runAutoPlace consolidates organic poisson trunks into island trunks placed
     assert.ok(aTrunk, 'island A is the host');
     const leavesOnA = Object.values(snapshot.leaves).filter((l) => {
         const k = snapshot.knots[l.parentKnotId];
-        return k && k.parentShaftId === aTrunk?.id;
+        return k && (k.parentShaftId === aTrunk?.id || !!aTrunk?.segments.some((s) => s.id === k.parentShaftId));
     });
     assert.ok(leavesOnA.length >= 1,
         'poisson trunks near A consolidated into fan leaves on it');

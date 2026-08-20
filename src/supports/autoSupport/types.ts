@@ -95,6 +95,18 @@ export interface ForestReport {
     scan?: ForestScanMetrics;
     /** Competitive bake-off outcome per anchor surface (when auto + anchor). */
     bakeoff?: CompetitiveBakeoffReport;
+    /** Leaves/branches whose host knot drifted, crossed, or lost its host segment. */
+    orphans?: OrphanInfo[];
+}
+
+/** One orphaned leaf/branch — host knot missing, drifted, or path now crosses a thickened shaft. */
+export interface OrphanInfo {
+    id: string;
+    kind: 'leaf' | 'branch';
+    reason: 'missingKnot' | 'missingHost' | 'missingSegment' | 'drift' | 'cross' | 'blocked';
+    hostId?: string;
+    knotId?: string;
+    detail?: string;
 }
 
 /** One anchor region's bake-off decision. */
