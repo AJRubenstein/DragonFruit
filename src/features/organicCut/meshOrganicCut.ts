@@ -8,6 +8,7 @@
  * several pieces) rather than one modified mesh: the report carries `partCount` and
  * each part is read back by index via `mesh_organic_cut_read_part`.
  */
+import { isTauriRuntime } from '@/utils/tauriRuntime';
 import * as THREE from 'three';
 import type { TenonPreviewFrame, OrganicCutLoopPoint, OrganicCutOptions, OrganicCutReport, OrganicCutResult } from './types';
 
@@ -29,10 +30,6 @@ let stagedCutSourceKey: string | null = null;
 // reusing the stale captured source.
 let stagedCutSourceGeometry: THREE.BufferGeometry | null = null;
 
-export function isTauriRuntime(): boolean {
-  if (typeof window === 'undefined') return false;
-  return '__TAURI_INTERNALS__' in window;
-}
 
 async function loadTauriCore(): Promise<TauriCoreModule | null> {
   if (!isTauriRuntime()) return null;

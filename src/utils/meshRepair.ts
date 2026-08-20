@@ -16,6 +16,7 @@
  * In the browser (non-Tauri) this module is inert — call sites fall back to
  * the WASM Manifold repair path.
  */
+import { isTauriRuntime } from './tauriRuntime';
 import * as THREE from 'three';
 
 export interface MeshAnalysisJson {
@@ -226,10 +227,6 @@ function normalizeMeshHealthReport(input: unknown): MeshHealthReport {
   };
 }
 
-export function isTauriRuntime(): boolean {
-  if (typeof window === 'undefined') return false;
-  return '__TAURI_INTERNALS__' in window;
-}
 
 async function loadTauriCore(): Promise<TauriCoreModule | null> {
   if (!isTauriRuntime()) return null;

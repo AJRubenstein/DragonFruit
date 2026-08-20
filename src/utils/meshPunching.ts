@@ -1,3 +1,4 @@
+import { isTauriRuntime } from './tauriRuntime';
 import * as THREE from 'three';
 
 type TauriInvoke = <T>(cmd: string, args?: Record<string, unknown> | ArrayBuffer | ArrayBufferView, opts?: { headers?: Record<string, string> }) => Promise<T>;
@@ -33,10 +34,6 @@ export interface PunchResult {
   positions: Float32Array;
 }
 
-export function isTauriRuntime(): boolean {
-  if (typeof window === 'undefined') return false;
-  return '__TAURI_INTERNALS__' in window;
-}
 
 async function loadTauriCore(): Promise<TauriCoreModule | null> {
   if (!isTauriRuntime()) return null;
