@@ -583,6 +583,7 @@ function placeOneCandidate(
             const hostTrunk = snapshot.trunks[host.trunkId];
             let bestKnotPos: { x: number; y: number; z: number } | null = null;
             let bestKnotSegmentId = '';
+            let bestKnotT = 0;
 
             // Attachment point: snap the knot DOWN the host shaft only far
             // enough to reach the 60°-above-horizontal steep minimum — the
@@ -613,6 +614,7 @@ function placeOneCandidate(
                         if (bestKnotPos === null || sz > bestKnotPos.z) {
                             bestKnotPos = { x: sx, y: sy, z: sz };
                             bestKnotSegmentId = seg.id;
+                            bestKnotT = t;
                         }
                     }
                 }
@@ -631,6 +633,7 @@ function placeOneCandidate(
                 const parentKnot = {
                     id: `auto-merge-${candidate.id}`,
                     parentShaftId: bestKnotSegmentId || host.trunkId,
+                    t: bestKnotT,
                     pos: knotPos,
                     // The knot renders at exactly the trunk-joint size when
                     // unselected: the KnotRenderer subtracts the full joint
@@ -1274,7 +1277,27 @@ export function validateAndCullOrphans(
             return false;
         }
         if (tipPos) {
-            if (mesh && isShaftBlocked(knot.pos, tipPos, 0.2, mesh)) {
+            let blocked = false;
+            if (kind === 'leaf') {
+                const leafObj = nextDraft.leaves[id];
+                const cone = leafObj?.contactCone;
+                if (cone && mesh) {
+                    const normal = cone.normal ?? { x: 0, y: 0, z: -1 };
+                    const surfaceNormal = cone.surfaceNormal;
+                    blocked = leafConeCollides(knot.pos, { pos: cone.pos, normal, surfaceNormal }, mesh);
+                } else if (mesh) {
+                    blocked = isShaftBlocked(knot.pos, tipPos, 0.2, mesh);
+                }
+            } else {
+                const branchObj = nextDraft.branches[id];
+                if (branchObj && mesh) {
+                    // @ts-ignore — Branch satisfies {segments}
+                    blocked = branchCollidesWithSDF(branchObj, mesh);
+                } else if (mesh) {
+                    blocked = isShaftBlocked(knot.pos, tipPos, 0.2, mesh);
+                }
+            }
+            if (blocked) {
                 orphans.push({ id, kind, reason: 'blocked', hostId: host.trunkId, knotId: knot.id, detail: 'knot→tip blocked by mesh' });
                 return false;
             }
