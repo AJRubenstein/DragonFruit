@@ -1244,7 +1244,7 @@ export function validateAndCullOrphans(
         if (tipPos) {
             if (mesh && isShaftBlocked(knot.pos, tipPos, 0.2, mesh)) {
                 orphans.push({ id, kind, reason: 'blocked', hostId: host.trunkId, knotId: knot.id, detail: 'knot→tip blocked by mesh' });
-                return true;
+                return false;
             }
             if (leafPathCrossesSupports(knot.pos, tipPos, 0.25, nextDraft, host.trunkId)) {
                 orphans.push({ id, kind, reason: 'cross', hostId: host.trunkId, knotId: knot.id, detail: 'leaf/branch crosses another shaft after thickening' });
