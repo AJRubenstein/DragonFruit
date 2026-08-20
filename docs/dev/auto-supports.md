@@ -83,11 +83,34 @@ Tip contact is the profile band scaled by underside angle — flat ceilings get 
 
 `settings.ts` declares roughly twenty knobs with `AUTO_SUPPORT_CONSTRAINTS` giving each a min/max/step/default — including two debug switches (`debugSupportOriginColors`, `debugSkipAutoBracing`, the latter for faster iteration). Use `normalizeAutoSupportSettings` / `applyAutoSupportSettingsPatch` rather than building the object by hand.
 
-A run returns `AutoPlaceAnalytics` and a `ForestReport`; `forestReportToText` renders it for the placement summary, including refusals with a `RejectReason`.
+A run returns `AutoPlaceAnalytics` and a `ForestReport`; `forestReportToText` renders it for the placement summary. The report is the primary debugging surface — every decision includes a *why*.
+
+### Report sections (v1.5)
+
+`ForestReport` lives in `src/supports/autoSupport/types.ts` (`ForestReport`, `ForestScanMetrics`, `CompetitiveBakeoffReport`, `OrphanInfo`, `ForestTree`). `forestReportToText` in `src/supports/autoSupport/autoPlace.ts` is the copy-paste renderer. `AutoPlaceAnalytics` mirrors the bake-off aggregate for programmatic use.
+
+- **SCAN** — `209 islands (voxel …) → 187 candidates · 1 overhang` plus `coverage 100% of 438mm²`. Second line justifies: candidates after dedup/filter, anchor surfaces are *lowest Z-cluster* (first-printed layer, densified at `anchorSpacingFactor 0.7×`), coverage is `computeRegionCoverage` footprint fraction @3mm.
+- **DISTRIBUTION BAKE-OFF (anchors)** — `grid 0.964 44 vs poisson 0.994 139 Δ=0.029` plus per-region reasoning:
+  - `|Δ|<1%` → tie, shape heuristic (`computeRegionFlatnessDeg` vs `poissonFlatnessThresholdDeg`, planar→grid)
+  - `both ≥95% & |Δ|<5%` → fewer wins (efficiency: gap-fill closes small hole with 2–3 clusters, not 95 extra pillars — the `44 vs 139` case)
+  - otherwise higher coverage wins. Avg margin is the mean `|Δ|` across anchor bake-offs.
+- **ORPHANS CULLED** — grouped by `reason` with counts and human-readable help, then per-entity `id (kind) reason @host knot … — detail`:
+  - `trunkBlocked` — shaft pierces mesh (would print through model, SDF `distance < radius` on `isShaftBlocked`)
+  - `blocked` — `knot→tip` ray hits mesh (`leafConeCollides` offset ray, tip-0.5mm, not straight segment; `branchCollidesWithSDF` for branches)
+  - `missingHost`/`missingSegment`/`missingKnot` — knot points to segment/trunk that has no joints or was culled (legacy `trunkId` before `segmentId+t` rehost)
+  - `drift` — knot >0.5mm from host shaft (split offset, `pointToSegmentDistanceSq >0.25`)
+  - `cross` — leaf/branch crosses another shaft after thickening (`leafPathCrossesSupports` `radius 0.25`, kept but flagged)
+  - `host trunk culled (blocked)` — leaf on a trunk that was itself `trunkBlocked`
+- **PLACEMENT DIAGNOSTICS** — `Trunks by kind: poisson 2 (organic disk), grid 28 (planar infill), gap-fill 2, standalone 54 (sub-threshold, no host)`; `Candidates by distribution: grid 28 · poisson 0 · single 54`; `Candidates by source`; `Fan refusals: noHost=39 … (too far >5mm/2.5mm grid, angle >60°, sameZ|cross|blocked|capacity)`; `Merge refusals: noHost=35 (no trunk within 4mm), rejected=6 (host at capacity/collision)`. Sourced from `diagnostics` captured in `computeAutoSupportPlan`.
+- **Counts** — `56 trunks · 70 leaves … | 16 trees, 40 bare` — `trees` are hosts with members, `bare` are 1:1 pillars.
+- **FAN-OUT GROUPS** — `v115 @ Z=26.6mm Ø1.03mm [area 0.53mm² …] → 12: v116(L 2.8mm/20°) …` with header `(host trunk → leaves/branches within 5mm fan radius, 2.5mm for grid hosts, <60° from vertical, not blocked/crossing, not at capacity)`. `spanMm`/`angleDeg` are `knot→tip` distance and angle from vertical.
+- **STANDALONE TRUNKS** — `grid-o0-… @ Z=6.4mm Ø1.27mm [area 10mm² … ×1.25 anchor girth]` plus `— anchor grid infill (lowest Z-cluster, densified)` or `— poisson disk (organic or anchor perimeter)` or `— standalone voxel/minima (below threshold or no fan host)` based on `id` prefix.
 
 **Bake-off reporting (v1.5):** `AutoPlaceAnalytics.competitive` aggregates anchor bake-offs (`anchorRegions`, `gridWins`, `poissonWins`, `avgWinnerMargin`). `ForestReport.bakeoff` mirrors the aggregate plus `details[]` per anchor (`regionId`, `winner`, `gridCoverage`/`poissonCoverage`, `gridCount`/`poissonCount`, `delta`) and `forestReportToText` emits a `DISTRIBUTION BAKE-OFF (anchors)` block. Check `src/supports/autoSupport/types.ts` (`CompetitiveBakeoffAnalytics`, `BakeoffDetail`, `CompetitiveBakeoffReport`) for the surface.
+
 **Orphan reporting (v1.5):** post-resize `rehostLegacyKnots` + `validateAndCullOrphans` cull `drift`/`missingHost`/`missingSegment` (orphan knot >0.5 mm off its host segment) and report `cross`/`blocked` without culling. `ForestReport.orphans[]` (`OrphanInfo`) and `forestReportToText` `ORPHANS CULLED` surface them. Drift is the "leaf attached to nowhere" case — host segment split rehost failed or knot was placed on a trunk that later split.
 
+**Diagnostics reporting (v1.5):** `ForestReport.diagnostics` captures `diagnostics.candidatesBySource/Distribution`, `trunksByKind`, `fanRefusals`, `mergeRefusals` so the text report can explain *why* a candidate became a trunk/leaf/standalone vs fanned/merged.
 
 ## Related pages
 

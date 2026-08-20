@@ -97,6 +97,14 @@ export interface ForestReport {
     bakeoff?: CompetitiveBakeoffReport;
     /** Leaves/branches whose host knot drifted, crossed, or lost its host segment. */
     orphans?: OrphanInfo[];
+    /** Placement diagnostics: why trunks are where they are, fan/merge refusal counts */
+    diagnostics?: {
+        candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number };
+        candidatesByDistribution: { grid: number; poisson: number; single: number };
+        trunksByKind: { poissonDisk: number; gridInfill: number; coverageFill: number; standalone: number };
+        fanRefusals: Partial<Record<string, number>>;
+        mergeRefusals: Partial<Record<string, number>>;
+    };
 }
 
 /** One orphaned leaf/branch — host knot missing, drifted, or path now crosses a thickened shaft. */

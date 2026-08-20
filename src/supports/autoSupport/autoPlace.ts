@@ -1652,21 +1652,72 @@ export function forestReportToText(report: ForestReport): string {
             `→ ${s.candidates} candidates · ${s.overhangRegions} overhang regions · ` +
             `${s.anchorClusters} anchor cluster(s), ${s.anchorRegions} in-band · ` +
             `coverage ${s.coveragePercent.toFixed(0)}% of ${s.totalAreaMm2.toFixed(0)}mm² (${s.uncoveredIslands} uncovered) · ${s.rejected} rejected`);
+        // Justification: what scan means
+        lines.push(`  → ${s.candidates} candidates after dedup/filter from ${s.islands} islands; ${s.anchorRegions} anchor surfaces are the lowest Z-cluster (first-printed layer, densified)`);
         lines.push('');
     }
     if (report.bakeoff) {
         const b = report.bakeoff;
         lines.push('DISTRIBUTION BAKE-OFF (anchors)');
         lines.push(`  ${b.anchorRegions} anchor surfaces: ${b.gridWins} grid wins · ${b.poissonWins} poisson wins · avg margin ${(b.avgWinnerMargin * 100).toFixed(1)}%`);
+        lines.push(`  Reasoning: footprint coverage @3mm (computeRegionCoverage) picks higher; |Δ|<1% → shape heuristic (planar→grid), both ≥95% & |Δ|<5% → fewer wins (efficiency: gap-fill closes small hole with 2–3 clusters, not 95 extra pillars)`);
         for (const d of b.details) {
-            lines.push(`    ${d.regionId}: ${d.winner} (grid ${d.gridCoverage.toFixed(3)} ${d.gridCount} vs poisson ${d.poissonCoverage.toFixed(3)} ${d.poissonCount} Δ=${d.delta.toFixed(3)})`);
+            const bothMeet = d.gridCoverage >= 0.95 && d.poissonCoverage >= 0.95;
+            const winnerMargin = Math.abs(d.delta);
+            let reason = '';
+            if (bothMeet && winnerMargin < 0.05 && winnerMargin >= 0.01) {
+                reason = ` — both ≥95%, margin ${(winnerMargin * 100).toFixed(1)}% <5% → fewer wins (efficiency gate)`;
+            } else if (winnerMargin < 0.01) {
+                reason = ` — margin ${(winnerMargin * 100).toFixed(1)}% <1% → tie, shape heuristic (planar→grid)`;
+            } else {
+                reason = ` — higher coverage wins`;
+            }
+            lines.push(`    ${d.regionId}: ${d.winner} (grid ${d.gridCoverage.toFixed(3)} ${d.gridCount} vs poisson ${d.poissonCoverage.toFixed(3)} ${d.poissonCount} Δ=${d.delta.toFixed(3)})${reason}`);
         }
         lines.push('');
     }
     if (report.orphans && report.orphans.length > 0) {
         lines.push('ORPHANS CULLED');
+        // Group by reason with justification
+        const byReason = new Map<string, typeof report.orphans>();
         for (const o of report.orphans) {
-            lines.push(`  ${o.id} (${o.kind}) ${o.reason}${o.hostId ? ` @${o.hostId.slice(0, 8)}` : ''}${o.knotId ? ` knot ${o.knotId.slice(0, 8)}` : ''}${o.detail ? ` — ${o.detail}` : ''}`);
+            const list = byReason.get(o.reason);
+            if (list) list.push(o);
+            else byReason.set(o.reason, [o]);
+        }
+        const reasonHelp: Record<string, string> = {
+            trunkBlocked: 'shaft pierces mesh (vertical pillar would print through model)',
+            blocked: 'knot→tip ray hits mesh (leaf/branch would go through model)',
+            missingHost: 'host segment has no joints (single-segment anchor with no top joint)',
+            missingSegment: 'knot points to trunkId not segmentId (legacy, rehost failed)',
+            missingKnot: 'parent knot not in draft (deleted host)',
+            drift: 'knot drifted >0.5mm from host shaft (split offset)',
+            cross: 'leaf/branch crosses another shaft after thickening (kept but flagged)',
+        };
+        for (const [reason, list] of byReason) {
+            const help = reasonHelp[reason] ?? '';
+            lines.push(`  ${list.length}× ${reason}${help ? ` — ${help}` : ''}`);
+        }
+        for (const o of report.orphans) {
+            lines.push(`    ${o.id} (${o.kind}) ${o.reason}${o.hostId ? ` @${o.hostId.slice(0, 8)}` : ''}${o.knotId ? ` knot ${o.knotId.slice(0, 8)}` : ''}${o.detail ? ` — ${o.detail}` : ''}`);
+        }
+        lines.push('');
+    }
+    if (report.diagnostics) {
+        const d = report.diagnostics;
+        lines.push('PLACEMENT DIAGNOSTICS');
+        lines.push(`  Trunks by kind: poisson ${d.trunksByKind.poissonDisk} (organic disk), grid ${d.trunksByKind.gridInfill} (planar infill), gap-fill ${d.trunksByKind.coverageFill}, standalone ${d.trunksByKind.standalone} (sub-threshold overhang, no host)`);
+        lines.push(`  Candidates by distribution: grid ${d.candidatesByDistribution.grid} · poisson ${d.candidatesByDistribution.poisson} · single ${d.candidatesByDistribution.single} (single = below threshold, one pillar)`);
+        lines.push(`  Candidates by source: voxel ${d.candidatesBySource.voxel} · minima ${d.candidatesBySource.minima} · intersection ${d.candidatesBySource.intersection} · overhang ${d.candidatesBySource.overhang}`);
+        const fanEntries = Object.entries(d.fanRefusals).filter(([, v]) => v);
+        const mergeEntries = Object.entries(d.mergeRefusals).filter(([, v]) => v);
+        if (fanEntries.length > 0 || mergeEntries.length > 0) {
+            const fanStr = fanEntries.length > 0 ? fanEntries.map(([k, v]) => `${k}=${v}`).join(', ') : 'none';
+            const mergeStr = mergeEntries.length > 0 ? mergeEntries.map(([k, v]) => `${k}=${v}`).join(', ') : 'none';
+            lines.push(`  Fan refusals: ${fanStr} (noHost=too far >5mm/2.5mm grid, angle=>60° too flat, sameZ|cross|blocked|capacity=host full)`);
+            lines.push(`  Merge refusals: ${mergeStr} (noHost=no trunk within 4mm, rejected=host at capacity or collision)`);
+        } else {
+            lines.push(`  Fan/Merge refusals: none (all fanned or standalone)`);
         }
         lines.push('');
     }
@@ -1676,6 +1727,7 @@ export function forestReportToText(report: ForestReport): string {
     if (report.trees.length > 0) {
         lines.push('');
         lines.push('FAN-OUT GROUPS');
+        lines.push(`  (host trunk → leaves/branches within 5mm fan radius, 2.5mm for grid hosts, <60° from vertical, not blocked/crossing, not at capacity)`);
         for (const tree of report.trees) {
             const members = tree.members
                 .map((m) => `${m.id}(${m.kind === 'leaf' ? 'L' : 'B'} ${m.spanMm.toFixed(1)}mm/${m.angleDeg.toFixed(0)}°)`)
@@ -1688,9 +1740,15 @@ export function forestReportToText(report: ForestReport): string {
     if (report.bareTrunks.length > 0) {
         lines.push('');
         lines.push('STANDALONE TRUNKS');
+        lines.push(`  (no host within fan radius or anchor — 1:1 pillar; grid/poisson prefix = distribution, perim/poisson=perimeter ring, fill=gap-fill)`);
         for (const trunk of report.bareTrunks) {
+            const id = trunk.id;
+            let why = '';
+            if (id.startsWith('grid-o0') || id.startsWith('fill-o0')) why = ' — anchor grid infill (lowest Z-cluster, densified)';
+            else if (id.startsWith('perim-') || id.startsWith('poisson-')) why = ' — poisson disk (organic or anchor perimeter)';
+            else if (id.startsWith('v') || id.startsWith('m')) why = ' — standalone voxel/minima (below threshold or no fan host)';
             lines.push(`  ${trunk.id} @ Z=${trunk.z.toFixed(1)}mm Ø${trunk.shaftDiameterMm.toFixed(2)}mm ` +
-                (trunk.sizingNote ? `[${trunk.sizingNote}]` : ''));
+                (trunk.sizingNote ? `[${trunk.sizingNote}]` : '') + why);
         }
     }
     return lines.join('\n');
@@ -2630,6 +2688,13 @@ export function computeAutoSupportPlan(
             if (orphanInfos.length > 0) {
                 forestReport.orphans = orphanInfos;
             }
+            forestReport.diagnostics = {
+                candidatesBySource: diagnostics.candidatesBySource,
+                candidatesByDistribution: diagnostics.candidatesByDistribution,
+                trunksByKind: diagnostics.trunksByKind,
+                fanRefusals: { ...diagnostics.fanRefusals },
+                mergeRefusals: { ...diagnostics.mergeRefusals },
+            };
             analytics.forestReport = forestReport;
             console.log(LOG_PREFIX,
                 `Forest report: ${forestReport.trunkCount} trunks, ${forestReport.leafCount} leaves, ` +
