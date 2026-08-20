@@ -46,13 +46,13 @@ For `distributionMode === 'auto'`, anchor surfaces (`anchorBands.inBandIds` — 
 - **Module:** `src/supports/autoSupport/distributionBakeoff.ts`
 - **Entry:** `pickBestDistributionForRegion(region, settings, scaleById, anchorIds)` → `{ candidates, winner, metrics }`; batch helper `bakeoffAnchorRegions()`
 - **Scoring:** `computeRegionCoverage(region, tips, TIP_COVERAGE_RADIUS_MM)` — fraction of `contactVoxels` within 3 mm of a tip (same metric the gap-fill loop iterates on). Higher wins.
-- **Tie-break:** `|Δ| < BAKEOFF_COVERAGE_EPSILON` (1%) falls back to the shape heuristic (`computeRegionFlatnessDeg` vs `poissonFlatnessThresholdDeg`) so a flat anchor stays gridded and an organic anchor stays Poisson — not just "fewer points wins" which would flip a planar square to Poisson on a 1-point margin. Explicit `grid`/`poisson` modes bypass the bake-off entirely.
+- **Tie-break:** `|Δ| < BAKEOFF_COVERAGE_EPSILON` (1%) falls back to the shape heuristic (`computeRegionFlatnessDeg` vs `poissonFlatnessThresholdDeg`) so a flat anchor stays gridded — not "fewer wins" on a 1-point margin. Explicit `grid`/`poisson` modes bypass the bake-off entirely.
+- **Efficiency gate (1–5% margin):** if `|Δ| >=1% && |Δ| < BAKEOFF_EFFICIENCY_MARGIN` (5%) and both sides already meet `REGION_COVERAGE_TARGET` (95%), fewer candidates wins — gap-fill closes the 4.7% hole (44 vs 162) with 2–3 clusters, not 118 extra trunks. Below 1% the tie-break applies; above 5% pure coverage wins.
 - **Cost:** double generation on anchors only (typically 1–5 regions); coverage check is `O(voxels)` with no pathfinding. Non-anchor regions keep the single-generator heuristic.
 - **Analytics:** `AutoPlaceAnalytics.competitive?: { anchorRegions, gridWins, poissonWins, avgWinnerMargin }` (`src/supports/autoSupport/types.ts`) and `distribution: {grid, poisson}` counts the wins; also logged per region (`Bakeoff o0: grid=… vs poisson=… → winner`).
 
 ```ts
 import { pickBestDistributionForRegion } from './distributionBakeoff';
-const bakeoff = pickBestDistributionForRegion(island, settings, anchorBands.scaleById, anchorIds);
 // bakeoff.winner === 'grid' | 'poisson', bakeoff.candidates is the chosen set
 // bakeoff.metrics: { gridCoverage, poissonCoverage, gridCount, poissonCount, delta, winnerMargin }
 ```

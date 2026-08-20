@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
 
-import { pickBestDistributionForRegion, bakeoffAnchorRegions, BAKEOFF_COVERAGE_EPSILON } from '../autoSupport/distributionBakeoff';
+import { pickBestDistributionForRegion, bakeoffAnchorRegions, BAKEOFF_COVERAGE_EPSILON, decideBakeoffWinner, BAKEOFF_EFFICIENCY_MARGIN } from '../autoSupport/distributionBakeoff';
 import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
 import { computeRegionFlatnessDeg } from '../autoSupport/poissonPlacement';
 import { forestReportToText } from '../autoSupport/autoPlace';
@@ -160,6 +160,25 @@ test('bakeoff tie-break: within epsilon winner follows shape heuristic (planar�
         assert.equal(result.winner, expected, `tie within epsilon: shape heuristic (${expected}) should win (grid ${result.metrics.gridCount} vs poisson ${result.metrics.poissonCount}, flatness ${flatness.toFixed(1)}°)`);
     }
     assert.ok(true);
+});
+
+test('bakeoff efficiency gate: 44@95.3% vs 162@100% picks fewer (grid) despite 4.7% win', () => {
+    // Synthetic: the exact 44 vs 162 case from the pasted forest report.
+    // Both clear 95%, margin 4.7% <5% → efficiency gate chooses fewer (grid).
+    const gridCoverage = 0.953;
+    const poissonCoverage = 1.0;
+    const gridCount = 44;
+    const poissonCount = 162;
+    const flatness = 0; // planar
+    const threshold = 12;
+    const winner = decideBakeoffWinner(gridCoverage, poissonCoverage, gridCount, poissonCount, flatness, threshold);
+    assert.equal(winner, 'grid', `fewer should win when both >=95% and margin ${((poissonCoverage-gridCoverage)*100).toFixed(1)}% <5% (grid ${gridCount} vs poisson ${poissonCount})`);
+    // Pure coverage would have picked poisson — verify the gate flips it.
+    assert.ok(poissonCoverage > gridCoverage, 'poisson higher coverage');
+    assert.ok(Math.abs(poissonCoverage - gridCoverage) < BAKEOFF_EFFICIENCY_MARGIN, 'within efficiency margin');
+    // When margin exceeds 5%, higher coverage should still win even if many more points.
+    const winnerBigMargin = decideBakeoffWinner(0.90, 1.0, 44, 162, 0, 12);
+    assert.equal(winnerBigMargin, 'poisson', 'poisson should win when margin 10% >5% despite count');
 });
 
 test('computeAutoSupportPlan surfaces bake-off in analytics and forest report for anchors', () => {
