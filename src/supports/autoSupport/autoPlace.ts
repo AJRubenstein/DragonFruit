@@ -1205,6 +1205,38 @@ export function validateAndCullOrphans(
     const DRIFT_TOL_SQ = 0.25; // 0.5mm
     let nextDraft: SupportState = draft;
     const knotsToRemove = new Set<string>();
+    const trunksToRemove = new Set<string>();
+
+    // Trunk shafts that pierce the mesh (zig-zag trunks that crash) — cull the whole pillar
+    if (mesh) {
+        for (const [tid, trunk] of Object.entries(nextDraft.trunks)) {
+            // Anchor trunks are vertical pillars — any segment that is blocked (excluding the tip contact itself)
+            // is a mis-placed pillar that would print through the model.
+            let blocked = false;
+            for (const seg of trunk.segments) {
+                const start = seg.bottomJoint?.pos;
+                const end = seg.topJoint?.pos;
+                if (!start || !end) continue;
+                const radius = (seg.diameter ?? 1.0) / 2;
+                // Offset the check slightly inward from the tip so the contact itself is not counted as blocked
+                const tip = trunk.contactCone?.pos ?? end;
+                const checkEnd = {
+                    x: end.x * 0.9 + tip.x * 0.1,
+                    y: end.y * 0.9 + tip.y * 0.1,
+                    z: end.z * 0.9 + tip.z * 0.1,
+                };
+                // Use a slightly larger radius for the check to catch near-misses that render as crash
+                if (isShaftBlocked(start, checkEnd, radius + 0.15, mesh)) {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (blocked) {
+                orphans.push({ id: tid, kind: 'trunk', reason: 'trunkBlocked', detail: 'trunk shaft pierces mesh' });
+                trunksToRemove.add(tid);
+            }
+        }
+    }
 
     const checkAttachment = (
         id: string,
@@ -1266,8 +1298,35 @@ export function validateAndCullOrphans(
         const ok = checkAttachment(bid, 'branch', branch.parentKnotId, tipPos);
         if (!ok) branchesToRemove.add(bid);
     }
+    // Leaves/branches whose host trunk was culled (trunkBlocked) are also orphaned
+    for (const [lid, leaf] of Object.entries(nextDraft.leaves)) {
+        if (leavesToRemove.has(lid)) continue;
+        const knot = nextDraft.knots[leaf.parentKnotId];
+        if (!knot) continue;
+        const host = findHostSegment(nextDraft, knot.parentShaftId);
+        if (host && trunksToRemove.has(host.trunkId)) {
+            orphans.push({ id: lid, kind: 'leaf', reason: 'missingHost', hostId: host.trunkId, knotId: knot.id, detail: 'host trunk culled (blocked)' });
+            leavesToRemove.add(lid);
+        } else if (trunksToRemove.has(knot.parentShaftId)) {
+            orphans.push({ id: lid, kind: 'leaf', reason: 'missingHost', hostId: knot.parentShaftId, knotId: knot.id, detail: 'host trunk culled (blocked)' });
+            leavesToRemove.add(lid);
+        }
+    }
+    for (const [bid, branch] of Object.entries(nextDraft.branches)) {
+        if (branchesToRemove.has(bid)) continue;
+        const knot = nextDraft.knots[branch.parentKnotId];
+        if (!knot) continue;
+        const host = findHostSegment(nextDraft, knot.parentShaftId);
+        if (host && trunksToRemove.has(host.trunkId)) {
+            orphans.push({ id: bid, kind: 'branch', reason: 'missingHost', hostId: host.trunkId, knotId: knot.id, detail: 'host trunk culled (blocked)' });
+            branchesToRemove.add(bid);
+        } else if (trunksToRemove.has(knot.parentShaftId)) {
+            orphans.push({ id: bid, kind: 'branch', reason: 'missingHost', hostId: knot.parentShaftId, knotId: knot.id, detail: 'host trunk culled (blocked)' });
+            branchesToRemove.add(bid);
+        }
+    }
 
-    if (leavesToRemove.size === 0 && branchesToRemove.size === 0) {
+    if (leavesToRemove.size === 0 && branchesToRemove.size === 0 && trunksToRemove.size === 0) {
         return { draft: nextDraft, orphans };
     }
 
@@ -1299,26 +1358,40 @@ export function validateAndCullOrphans(
         const kid = branch.parentKnotId;
         if (kid && !remainingKnotUsers.has(kid)) knotsToRemove.add(kid);
     }
+    // Knots on removed trunks
+    const segmentIdsToRemove = new Set<string>();
+    for (const tid of trunksToRemove) {
+        const trunk = nextDraft.trunks[tid];
+        if (trunk) for (const seg of trunk.segments) segmentIdsToRemove.add(seg.id);
+    }
+    for (const [kid, knot] of Object.entries(nextDraft.knots)) {
+        if (segmentIdsToRemove.has(knot.parentShaftId) || trunksToRemove.has(knot.parentShaftId)) {
+            if (!remainingKnotUsers.has(kid)) knotsToRemove.add(kid);
+        }
+    }
+
     const nextLeaves = { ...nextDraft.leaves };
     for (const id of leavesToRemove) delete nextLeaves[id];
     const nextBranches = { ...nextDraft.branches };
     for (const id of branchesToRemove) delete nextBranches[id];
     const nextKnots = { ...nextDraft.knots };
     for (const id of knotsToRemove) delete nextKnots[id];
+    const nextTrunks: SupportState['trunks'] = { ...nextDraft.trunks };
+    for (const id of trunksToRemove) delete (nextTrunks as Record<string, unknown>)[id];
+    const nextRoots: SupportState['roots'] = { ...nextDraft.roots } as SupportState['roots'];
+    for (const tid of trunksToRemove) {
+        const trunk = draft.trunks[tid];
+        const rootId = trunk?.rootId;
+        if (rootId && (nextRoots as Record<string, unknown>)[rootId]) {
+            const stillUsed = Object.values(nextTrunks).some((t) => t.rootId === rootId);
+            if (!stillUsed) delete (nextRoots as Record<string, unknown>)[rootId];
+        }
+    }
 
-    nextDraft = { ...nextDraft, leaves: nextLeaves, branches: nextBranches, knots: nextKnots };
+    nextDraft = { ...nextDraft, leaves: nextLeaves, branches: nextBranches, knots: nextKnots, trunks: nextTrunks, roots: nextRoots } as SupportState;
     return { draft: nextDraft, orphans };
 }
 
-/**
- * Attach a fan leaf from the nearest trunk shaft to `target` — the SHARED
- * fanning implementation. Used by the post-placement fanning pass (uncovered
- * islands) and by overhang-derived candidates during placement (they should
- * fan, not become standalone straight trunks).
- *
- * A fan leaf must never cross another support's shaft — the target stays
- * unsupported rather than impale anything.
- */
 export function fanLeafToTrunk(
     target: { x: number; y: number; z: number },
     modelId: string,

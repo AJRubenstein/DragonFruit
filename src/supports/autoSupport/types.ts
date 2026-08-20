@@ -102,8 +102,8 @@ export interface ForestReport {
 /** One orphaned leaf/branch — host knot missing, drifted, or path now crosses a thickened shaft. */
 export interface OrphanInfo {
     id: string;
-    kind: 'leaf' | 'branch';
-    reason: 'missingKnot' | 'missingHost' | 'missingSegment' | 'drift' | 'cross' | 'blocked';
+    kind: 'leaf' | 'branch' | 'trunk';
+    reason: 'missingKnot' | 'missingHost' | 'missingSegment' | 'drift' | 'cross' | 'blocked' | 'trunkBlocked';
     hostId?: string;
     knotId?: string;
     detail?: string;
