@@ -17,6 +17,7 @@ import { normalizeAutoSupportSettings } from './settings';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
 import { generateGridCandidates } from './gridPlacement';
 import { generatePoissonCandidates, computeRegionFlatnessDeg } from './poissonPlacement';
+import { pickBestDistributionForRegion } from './distributionBakeoff';
 import { buildAnchorBands } from './anchorBands';
 import {
     MAX_GAP_FILL_PASSES,
@@ -1367,6 +1368,15 @@ export function forestReportToText(report: ForestReport): string {
             `coverage ${s.coveragePercent.toFixed(0)}% of ${s.totalAreaMm2.toFixed(0)}mm² (${s.uncoveredIslands} uncovered) · ${s.rejected} rejected`);
         lines.push('');
     }
+    if (report.bakeoff) {
+        const b = report.bakeoff;
+        lines.push('DISTRIBUTION BAKE-OFF (anchors)');
+        lines.push(`  ${b.anchorRegions} anchor surfaces: ${b.gridWins} grid wins · ${b.poissonWins} poisson wins · avg margin ${(b.avgWinnerMargin * 100).toFixed(1)}%`);
+        for (const d of b.details) {
+            lines.push(`    ${d.regionId}: ${d.winner} (grid ${d.gridCoverage.toFixed(3)} ${d.gridCount} vs poisson ${d.poissonCoverage.toFixed(3)} ${d.poissonCount} Δ=${d.delta.toFixed(3)})`);
+        }
+        lines.push('');
+    }
     lines.push(`${report.trunkCount} trunks · ${report.leafCount} leaves · ${report.branchCount} branches · ` +
         `${report.stickCount} sticks · ${report.twigCount} twigs | ${report.trees.length} fan-out trees, ` +
         `${report.bareTrunks.length} bare trunks`);
@@ -1470,20 +1480,61 @@ export function computeAutoSupportPlan(
 
     // Distribution dispatch: shape-driven. 'auto' = planar regions → dynamic
     // grid, organic/curved → Poisson disk (flatness metric); 'grid' / 'poisson'
-    // force one distribution. The anchor band governs DENSITY only (via
-    // anchorScaleById), never the distribution — a flat square underside is
-    // planar and belongs on the grid at anchor density.
+    // force one distribution. For ANCHOR surfaces in 'auto' mode the flatness
+    // heuristic is replaced by a competitive bake-off: both generators run and
+    // footprint coverage (computeRegionCoverage @ TIP_COVERAGE_RADIUS_MM) picks
+    // the winner per region — gambling is the wrong tool on the peel-critical
+    // first layer. Non-anchor regions keep the heuristic; explicit modes bypass
+    // the bake-off entirely.
     const distributionMode = autoSettings.distributionMode;
     const threshold = autoSettings.gridAreaThresholdMm2;
     const eligible = overhangIslands.filter(
         (i) => anchorIds.has(i.id) || (i.areaMm2 ?? 0) >= threshold,
     );
     const distributionCounts: { grid: number; poisson: number } = { grid: 0, poisson: 0 };
-
+    // Competitive bake-off tallies (anchor-only, auto mode).
+    let competitiveGridWins = 0;
+    let competitivePoissonWins = 0;
+    let competitiveMargins: number[] = [];
+    const competitiveDetails: Array<{ regionId: string; winner: 'grid' | 'poisson'; gridCoverage: number; poissonCoverage: number; gridCount: number; poissonCount: number; delta: number; winnerMargin: number }> = [];
     if (eligible.length > 0) {
         let generated: CandidatePoint[] = [];
         try {
             for (const island of eligible) {
+                const isAnchorBakeoff = distributionMode === 'auto' && anchorIds.has(island.id);
+                if (isAnchorBakeoff) {
+                    const bakeoff = pickBestDistributionForRegion(
+                        island,
+                        autoSettings,
+                        anchorBands.scaleById,
+                        anchorIds,
+                    );
+                    generated.push(...bakeoff.candidates);
+                    if (bakeoff.winner === 'poisson') {
+                        distributionCounts.poisson++;
+                        competitivePoissonWins++;
+                    } else {
+                        distributionCounts.grid++;
+                        competitiveGridWins++;
+                    }
+                    competitiveMargins.push(bakeoff.metrics.winnerMargin);
+                    competitiveDetails.push({
+                        regionId: island.id,
+                        winner: bakeoff.winner,
+                        gridCoverage: bakeoff.metrics.gridCoverage,
+                        poissonCoverage: bakeoff.metrics.poissonCoverage,
+                        gridCount: bakeoff.metrics.gridCount,
+                        poissonCount: bakeoff.metrics.poissonCount,
+                        delta: bakeoff.metrics.delta,
+                        winnerMargin: bakeoff.metrics.winnerMargin,
+                    });
+                    console.log(LOG_PREFIX,
+                        `Bakeoff ${island.id}: grid=${bakeoff.metrics.gridCoverage.toFixed(3)} (${bakeoff.metrics.gridCount}) vs ` +
+                        `poisson=${bakeoff.metrics.poissonCoverage.toFixed(3)} (${bakeoff.metrics.poissonCount}) → ${bakeoff.winner} ` +
+                        `Δ=${bakeoff.metrics.delta.toFixed(3)} margin=${bakeoff.metrics.winnerMargin.toFixed(3)} ` +
+                        `anchor area=${(island.areaMm2 ?? 0).toFixed(0)}mm²`);
+                    continue;
+                }
                 const flatness = distributionMode === 'auto' ? computeRegionFlatnessDeg(island) : 0;
                 const organic = distributionMode === 'auto'
                     && flatness > autoSettings.poissonFlatnessThresholdDeg;
@@ -1526,8 +1577,11 @@ export function computeAutoSupportPlan(
         (anchorBands.inBandIds.length > 0
             ? ` | anchor: ${anchorBands.clusterCount} clusters, ${anchorBands.inBandIds.length}/${overhangIslands.length} regions @ ${autoSettings.anchorSpacingFactor}×`
             : '') +
-        ` | distribution: ${distributionCounts.grid} grid, ${distributionCounts.poisson} poisson`);
-
+        ` | distribution: ${distributionCounts.grid} grid, ${distributionCounts.poisson} poisson` +
+        (competitiveGridWins + competitivePoissonWins > 0
+            ? ` | bakeoff: ${competitiveGridWins} grid wins, ${competitivePoissonWins} poisson wins ` +
+              `(avg margin ${(competitiveMargins.reduce((a,b)=>a+b,0)/(competitiveMargins.length||1)*100).toFixed(1)}%)`
+            : ''));
     if (candidates.length === 0) {
         return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'No viable support candidates found.'));
     }
@@ -1975,10 +2029,19 @@ export function computeAutoSupportPlan(
         rejectionReasons,
         areaCoverage: totalArea > 0 ? coveredArea / totalArea : 0,
         distribution: distributionCounts,
+        competitive: competitiveGridWins + competitivePoissonWins > 0
+            ? {
+                anchorRegions: competitiveGridWins + competitivePoissonWins,
+                gridWins: competitiveGridWins,
+                poissonWins: competitivePoissonWins,
+                avgWinnerMargin: competitiveMargins.length > 0
+                    ? competitiveMargins.reduce((a, b) => a + b, 0) / competitiveMargins.length
+                    : 0,
+            }
+            : undefined,
         placement: diagnostics,
         sizingDebug,
     };
-
     console.log(LOG_PREFIX,
         `Coverage: ${analytics.islandsCovered}/${islands.length} islands (${(analytics.areaCoverage * 100).toFixed(0)}% of area). ` +
         `${analytics.islandsUncovered} islands uncovered.`);
@@ -2240,6 +2303,17 @@ export function computeAutoSupportPlan(
                 uncoveredIslands: analytics.islandsUncovered,
                 rejected: rejectedCount,
             };
+            if (competitiveDetails.length > 0) {
+                forestReport.bakeoff = {
+                    anchorRegions: competitiveGridWins + competitivePoissonWins,
+                    gridWins: competitiveGridWins,
+                    poissonWins: competitivePoissonWins,
+                    avgWinnerMargin: competitiveMargins.length > 0
+                        ? competitiveMargins.reduce((a, b) => a + b, 0) / competitiveMargins.length
+                        : 0,
+                    details: competitiveDetails,
+                };
+            }
             analytics.forestReport = forestReport;
             console.log(LOG_PREFIX,
                 `Forest report: ${forestReport.trunkCount} trunks, ${forestReport.leafCount} leaves, ` +

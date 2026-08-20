@@ -194,3 +194,35 @@ test('forestReportToText renders the copyable plain-text report', () => {
     assert.ok(text.includes('184 islands (voxel 150 · minima 30 · intersection 0 · overhang 4)'));
     assert.ok(text.includes('coverage 100% of 1280mm² (5 uncovered) · 10 rejected'));
 });
+
+test('forestReportToText renders distribution bake-off decisions per anchor', () => {
+    const report = buildForestReport(emptySnapshot(), []);
+    report.scan = {
+        islands: 5,
+        bySource: { voxel: 1, minima: 0, intersection: 0, overhang: 2 },
+        overhangRegions: 2,
+        anchorClusters: 1,
+        anchorRegions: 2,
+        candidates: 150,
+        totalAreaMm2: 800,
+        coveragePercent: 96,
+        uncoveredIslands: 0,
+        rejected: 2,
+    };
+    report.bakeoff = {
+        anchorRegions: 2,
+        gridWins: 1,
+        poissonWins: 1,
+        avgWinnerMargin: 0.04,
+        details: [
+            { regionId: 'o0', winner: 'grid', gridCoverage: 0.98, poissonCoverage: 0.92, gridCount: 80, poissonCount: 77, delta: -0.06, winnerMargin: 0.06 },
+            { regionId: 'o1', winner: 'poisson', gridCoverage: 0.88, poissonCoverage: 0.95, gridCount: 70, poissonCount: 73, delta: 0.07, winnerMargin: 0.07 },
+        ],
+    };
+
+    const text = forestReportToText(report);
+    assert.ok(text.includes('DISTRIBUTION BAKE-OFF (anchors)'), 'bake-off header');
+    assert.ok(text.includes('2 anchor surfaces: 1 grid wins · 1 poisson wins · avg margin 4.0%'), 'aggregate');
+    assert.ok(text.includes('o0: grid (grid 0.980 80 vs poisson 0.920 77'), 'o0 detail');
+    assert.ok(text.includes('o1: poisson (grid 0.880 70 vs poisson 0.950 73'), 'o1 detail');
+});

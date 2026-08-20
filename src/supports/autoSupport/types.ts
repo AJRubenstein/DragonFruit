@@ -93,6 +93,38 @@ export interface ForestReport {
     bareTrunks: Array<{ id: string; z: number; shaftDiameterMm: number; sizingNote: string }>;
     /** Input-side island/overhang scan metrics (set by the orchestrator). */
     scan?: ForestScanMetrics;
+    /** Competitive bake-off outcome per anchor surface (when auto + anchor). */
+    bakeoff?: CompetitiveBakeoffReport;
+}
+
+/** One anchor region's bake-off decision. */
+export interface BakeoffDetail {
+    regionId: string;
+    winner: 'grid' | 'poisson';
+    gridCoverage: number;
+    poissonCoverage: number;
+    gridCount: number;
+    poissonCount: number;
+    delta: number;
+    winnerMargin: number;
+}
+
+/** Competitive bake-off report (aggregate + per-region details). */
+export interface CompetitiveBakeoffReport extends CompetitiveBakeoffAnalytics {
+    details: BakeoffDetail[];
+}
+
+
+/** Competitive distribution bake-off result for anchor surfaces. */
+export interface CompetitiveBakeoffAnalytics {
+    /** Anchor regions that went through the bake-off. */
+    anchorRegions: number;
+    /** Anchor regions where grid won. */
+    gridWins: number;
+    /** Anchor regions where Poisson won. */
+    poissonWins: number;
+    /** Mean winner margin (absolute coverage delta) across bake-offs. */
+    avgWinnerMargin: number;
 }
 
 /** Detailed analytics from an auto-place run. */
@@ -109,6 +141,8 @@ export interface AutoPlaceAnalytics {
     areaCoverage: number;
     /** Regions generated per distribution (dynamic grid vs Poisson disk). */
     distribution: { grid: number; poisson: number };
+    /** Competitive bake-off outcome for anchor surfaces (only when auto + anchor). */
+    competitive?: CompetitiveBakeoffAnalytics;
     /** Placement-path breakdown — why trunks ended up where they did. */
     placement?: PlacementDiagnostics;
     /** Debug sizing info from the physics calculations. */

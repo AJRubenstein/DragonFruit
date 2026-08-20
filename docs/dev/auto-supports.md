@@ -39,6 +39,26 @@ Grid spacing is modulated by surface angle, normalized against `OVERHANG_SELF_SU
 
 **Anchor bands** densify the first-printed underside. Eligible regions are clustered by Z-gap and only the **lowest cluster** is treated as the anchor layer; higher clusters — shelves, ledges, mid-model flats — are suction surfaces and keep scale 1. Anchoring every cluster was tried and over-supplied: with per-patch clustering nearly every region is its own cluster minimum, so the band stopped discriminating.
 
+### Competitive bake-off on anchors (v1.5)
+
+For `distributionMode === 'auto'`, anchor surfaces (`anchorBands.inBandIds` — the lowest Z-cluster) do **not** gamble on flatness. Both generators run and footprint coverage picks the winner per region:
+
+- **Module:** `src/supports/autoSupport/distributionBakeoff.ts`
+- **Entry:** `pickBestDistributionForRegion(region, settings, scaleById, anchorIds)` → `{ candidates, winner, metrics }`; batch helper `bakeoffAnchorRegions()`
+- **Scoring:** `computeRegionCoverage(region, tips, TIP_COVERAGE_RADIUS_MM)` — fraction of `contactVoxels` within 3 mm of a tip (same metric the gap-fill loop iterates on). Higher wins.
+- **Tie-break:** `|Δ| < BAKEOFF_COVERAGE_EPSILON` (1%) falls back to the shape heuristic (`computeRegionFlatnessDeg` vs `poissonFlatnessThresholdDeg`) so a flat anchor stays gridded and an organic anchor stays Poisson — not just "fewer points wins" which would flip a planar square to Poisson on a 1-point margin. Explicit `grid`/`poisson` modes bypass the bake-off entirely.
+- **Cost:** double generation on anchors only (typically 1–5 regions); coverage check is `O(voxels)` with no pathfinding. Non-anchor regions keep the single-generator heuristic.
+- **Analytics:** `AutoPlaceAnalytics.competitive?: { anchorRegions, gridWins, poissonWins, avgWinnerMargin }` (`src/supports/autoSupport/types.ts`) and `distribution: {grid, poisson}` counts the wins; also logged per region (`Bakeoff o0: grid=… vs poisson=… → winner`).
+
+```ts
+import { pickBestDistributionForRegion } from './distributionBakeoff';
+const bakeoff = pickBestDistributionForRegion(island, settings, anchorBands.scaleById, anchorIds);
+// bakeoff.winner === 'grid' | 'poisson', bakeoff.candidates is the chosen set
+// bakeoff.metrics: { gridCoverage, poissonCoverage, gridCount, poissonCount, delta, winnerMargin }
+```
+
+Constraints — mutating the bake-off must keep: deterministic (seeded PRNG in `poissonPlacement.ts`), cap `MAX_GRID_CANDIDATES_PER_REGION` (800), footprint containment via the same `surfaceAt` hash, and `TIP_COVERAGE_RADIUS_MM` as single source of truth (`coverage.ts` / `constants.ts`).
+
 ## Coverage and gap filling
 
 A tip covers surface within `TIP_COVERAGE_RADIUS_MM` (3 mm). A region needs no gap filling once `REGION_COVERAGE_TARGET` (95%) is met; uncovered clusters below `MIN_GAP_CLUSTER_MM2` (2 mm²) are not worth filling, and there are at most `MAX_GAP_FILL_PASSES` (3) passes per run.
@@ -63,6 +83,8 @@ Tip contact is the profile band scaled by underside angle — flat ceilings get 
 `settings.ts` declares roughly twenty knobs with `AUTO_SUPPORT_CONSTRAINTS` giving each a min/max/step/default — including two debug switches (`debugSupportOriginColors`, `debugSkipAutoBracing`, the latter for faster iteration). Use `normalizeAutoSupportSettings` / `applyAutoSupportSettingsPatch` rather than building the object by hand.
 
 A run returns `AutoPlaceAnalytics` and a `ForestReport`; `forestReportToText` renders it for the placement summary, including refusals with a `RejectReason`.
+
+**Bake-off reporting (v1.5):** `AutoPlaceAnalytics.competitive` aggregates anchor bake-offs (`anchorRegions`, `gridWins`, `poissonWins`, `avgWinnerMargin`). `ForestReport.bakeoff` mirrors the aggregate plus `details[]` per anchor (`regionId`, `winner`, `gridCoverage`/`poissonCoverage`, `gridCount`/`poissonCount`, `delta`) and `forestReportToText` emits a `DISTRIBUTION BAKE-OFF (anchors)` block. Check `src/supports/autoSupport/types.ts` (`CompetitiveBakeoffAnalytics`, `BakeoffDetail`, `CompetitiveBakeoffReport`) for the surface.
 
 ## Related pages
 
