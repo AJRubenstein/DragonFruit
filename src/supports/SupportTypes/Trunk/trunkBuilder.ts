@@ -110,7 +110,6 @@ function buildTipProfile(
         standoffAngleThreshold: settings.tip.standoffAngleThreshold ?? (Math.PI / 4),
     };
 }
-
 export interface TrunkBuildInput {
     tipPos: Vec3;
     tipNormal: Vec3;
@@ -129,8 +128,9 @@ export interface TrunkBuildInput {
         tipLengthMm?: number;
         tipDiskLengthOverrideMm?: number;
     };
+    /** Small islands (voxel/minima <5mm² or z<15) bypass SDF — true straight, no central joint */
+    isSmallIsland?: boolean;
 }
-
 export interface TrunkBuildResult {
     root: Roots;
     trunk: Trunk;
@@ -246,11 +246,13 @@ export function buildTrunkData(input: TrunkBuildInput): TrunkBuildResult {
         tipPos,
         tipNormal,
         tipProfile,
-        rootsTopZ
+        rootsTopZ,
+        isSmallIsland: input.isSmallIsland,
     };
 
     let placement: TrunkPlacementResult;
-    if (mesh) {
+    if (mesh && !input.isSmallIsland) {
+        // Small islands bypass SDF — true straight
         // V2 grid A* pathfinder (SDF-backed).
         // Both preview and click use FULL collision checks to ensure consistent safety.
         // Preview uses lower budget (800 expansions) for responsiveness.
@@ -365,8 +367,9 @@ export function buildTrunkDataFromPlacement(input: TrunkBuildInput, placement: T
     });
     const routeJoints = normalizedAuthoredChains.routeJoints;
     const isStraightSupport = routeJoints.length === 0;
-    const initialConstructionJoints = normalizedAuthoredChains.constructionJoints;
-    const fallbackConstructionJoints = isStraightSupport
+    // Small islands: no central joint at all — true straight 1 segment even if grid offset 1mm is slanted slightly
+    const initialConstructionJoints = input.isSmallIsland ? [] : normalizedAuthoredChains.constructionJoints;
+    const fallbackConstructionJoints = isStraightSupport && !input.isSmallIsland
         ? withCentralStraightSupportJoint({
             basePos: placement.basePos,
             rootTopZ: rootsTopZ,

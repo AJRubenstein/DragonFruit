@@ -760,7 +760,7 @@ function placeOneCandidate(
         candidate,
         supportSettings.autoSupport?.sizeScale ?? 1,
     );
-
+    const isSmallIsland = (candidate.source !== 'overhang' && (candidate.islandAreaMm2 ?? 0) < 5) || candidate.zHeight < 15;
     const trunkResult = buildTrunkData({
         tipPos,
         tipNormal,
@@ -768,8 +768,8 @@ function placeOneCandidate(
         mesh,
         overrides,
         isPreview: false,
+        isSmallIsland,
     });
-
     if (trunkResult.error) {
         // Cavity fallback: if the trunk can't reach the build plate, try
         // bridging to a lower surface with a Stick (model-to-model).
