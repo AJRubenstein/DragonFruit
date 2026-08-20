@@ -615,7 +615,7 @@ pub struct CombinedIslandScanResult {
 /// minima scan **concurrently**. Surface-snapping projections are also parallelized.
 #[tauri::command]
 pub async fn scan_islands_from_path(
-    app: tauri::AppHandle,
+    app: crate::DragonFruitAppHandle,
     file_path: String,
     matrix: [f32; 16],
     center: [f32; 3],
