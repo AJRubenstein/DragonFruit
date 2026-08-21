@@ -55,7 +55,7 @@ export async function detectVoxelIslands(
   input: VoxelDetectInput,
   layerHeightMm: number,
   params: VoxelDetectParams,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: (done: number, total: number, phase: string) => void,
 ): Promise<DetectedIsland[]> {
   const px = params.pxMm;
   const bb = input.bbox;
@@ -140,7 +140,7 @@ async function sliceCandidateLayers(
   numLayers: number,
   layerHeightMm: number,
   opts: { px_mm: number; support_buffer_mm: number; connectivity: 4 | 8 },
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: (done: number, total: number, phase: string) => void,
 ): Promise<RleLabels[]> {
   const candidateLayers: RleLabels[] = new Array(numLayers);
 
@@ -175,7 +175,7 @@ async function sliceCandidateLayers(
               w.removeEventListener('message', onMessage);
               candidateLayers[idx] = msg.result!.islandLabelsRle;
               done++;
-              onProgress?.(done, numLayers);
+              onProgress?.(done, numLayers, 'Slicing');
               runNext();
             };
             w.addEventListener('message', onMessage);

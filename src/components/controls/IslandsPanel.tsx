@@ -196,7 +196,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
               }}
             >
               {scanning
-                ? `Scanning… ${scanProgress?.done ?? 0}/${scanProgress?.total ?? 0}`
+                ? `${scanProgress?.phase ?? 'Scanning'}… ${scanProgress?.done ?? 0}/${scanProgress?.total ?? 0}`
                 : 'Scan Islands'}
             </button>
 

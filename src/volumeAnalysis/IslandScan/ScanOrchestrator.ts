@@ -43,11 +43,34 @@ export type ScanParams = {
   useSurfaceContiguity?: boolean; // If true, favors surface connectivity (neighbors) over internal volume proximity
 };
 
+/**
+ * Progress reporting for the whole scan, not just the slicing phase. `phase`
+ * names the pass so the modal can say which of the four is running — the bar
+ * restarts at zero for each.
+ */
+export type ScanProgressCallback = (done: number, total: number, phase: string) => void;
+
+/** Layers processed between yields in the single-threaded passes. */
+const YIELD_INTERVAL_LAYERS = 64;
+
+/**
+ * Hands the thread back so React can paint and input can be handled.
+ *
+ * The passes below are inherently sequential — island ids propagate from one
+ * layer to the next — so they cannot be split across workers, and they run as a
+ * microtask continuation of the last worker message, which puts them squarely
+ * on the main thread. Without yielding, a tall model freezes the window for the
+ * length of each pass with the progress bar stuck on the last painted value.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, 0); });
+}
+
 export async function runIslandScan(
   geom: { geometry: THREE.BufferGeometry; bbox: THREE.Box3 },
   layerHeightMm: number,
   params: ScanParams,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: ScanProgressCallback,
 ): Promise<ScanResults> {
   return runScanInternal(
     geom,
@@ -62,7 +85,7 @@ export async function runScanlineScan(
   geom: { geometry: THREE.BufferGeometry; bbox: THREE.Box3 },
   layerHeightMm: number,
   params: ScanParams,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: ScanProgressCallback,
 ): Promise<ScanResults> {
   return runScanInternal(
     geom,
@@ -78,7 +101,7 @@ async function runScanInternal(
   layerHeightMm: number,
   params: ScanParams,
   createWorker: () => Worker,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: ScanProgressCallback,
 ): Promise<ScanResults> {
   const bb = geom.bbox;
   const minX = bb.min.x, maxX = bb.max.x;
@@ -135,7 +158,7 @@ async function runScanInternal(
 
         workerResults[idx] = { islandMaskRle, solidMaskRle, islandCount, islandLabelsRle, components, territoryLabelsRle };
         done++;
-        onProgress?.(done, numLayers);
+        onProgress?.(done, numLayers, 'Slicing');
         runNext();
       };
       w.addEventListener('message', onMessage);
@@ -163,6 +186,10 @@ async function runScanInternal(
 
   // Process layers sequentially to propagate island IDs
   for (let L = 0; L < numLayers; L++) {
+    if (L % YIELD_INTERVAL_LAYERS === 0) {
+      onProgress?.(L, numLayers, 'Tracking islands');
+      await yieldToEventLoop();
+    }
     const workerResult = workerResults[L];
 
     const prevIslandLabels = L > 0 ? islandLabelsPerLayer[L - 1] : null;
@@ -190,6 +217,10 @@ async function runScanInternal(
   let prevTerritoryMap: RleLabels | null = null;
 
   for (let L = 0; L < numLayers; L++) {
+    if (L % YIELD_INTERVAL_LAYERS === 0) {
+      onProgress?.(L, numLayers, 'Tracking territories');
+      await yieldToEventLoop();
+    }
     const workerResult = workerResults[L];
 
     // Decode RLE solid mask to dense grid for TerritoryTracker -- NO LONGER NEEDED (RLE LOGIC)
@@ -243,6 +274,10 @@ async function runScanInternal(
 
   // Optimized RLE iteration for firstHit/lastHit and baseLabels
   for (let L = 0; L < results.length; L++) {
+    if (L % YIELD_INTERVAL_LAYERS === 0) {
+      onProgress?.(L, results.length, 'Compiling results');
+      await yieldToEventLoop();
+    }
     const rleLabels = results[L].islandLabels;
     // Iterate RLE rows
     for (let y = 0; y < rleLabels.height; y++) {

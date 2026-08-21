@@ -10743,7 +10743,7 @@ export default function Home() {
               <p>Slicing and analysis in progress...</p>
               {islandsPoc.scanProgress && islandsPoc.scanProgress.total > 100 && (
                 <p>
-                  Layer {islandsPoc.scanProgress.done} of {islandsPoc.scanProgress.total}
+                  {islandsPoc.scanProgress.phase ?? 'Layer'} {islandsPoc.scanProgress.done} of {islandsPoc.scanProgress.total}
                 </p>
               )}
             </div>
@@ -10781,7 +10781,7 @@ export default function Home() {
             <div className="mt-1 space-y-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               <p>{islandsPoc.scanning ? 'Scanning islands & minima…' : 'Placing and bracing supports…'}</p>
               {islandsPoc.scanProgress && islandsPoc.scanProgress.total > 100 && (
-                <p>Layer {islandsPoc.scanProgress.done} of {islandsPoc.scanProgress.total}</p>
+                <p>{islandsPoc.scanProgress.phase ?? 'Layer'} {islandsPoc.scanProgress.done} of {islandsPoc.scanProgress.total}</p>
               )}
             </div>
             <div className="mt-2 text-[11px] font-medium tracking-wide" style={{ color: 'var(--accent)' }}>
