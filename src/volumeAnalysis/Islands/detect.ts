@@ -51,6 +51,24 @@ interface GridRef {
  * voxels. (An earlier draft ran the point-in-polygon rasterizer on the main
  * thread — far slower; replaced.)
  */
+/** Layers processed between yields while unioning candidate voxels. */
+const YIELD_INTERVAL_LAYERS = 64;
+
+/** Voxels flooded between yields while building components. */
+const YIELD_INTERVAL_VOXELS = 200_000;
+
+/**
+ * Hands the thread back so React can paint and input can be handled.
+ *
+ * Everything after the worker pool finishes runs on the main thread: unioning
+ * the candidate voxels and the 3D flood fill are both single-threaded walks
+ * over the whole model, and without yielding they freeze the window with the
+ * progress bar stuck on the last layer it managed to paint.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, 0); });
+}
+
 export async function detectVoxelIslands(
   input: VoxelDetectInput,
   layerHeightMm: number,
@@ -96,6 +114,10 @@ export async function detectVoxelIslands(
   const codec = gridCodec(width, height);
   const candidates = new Set<number>();
   for (let L = 0; L < numLayers; L++) {
+    if (L % YIELD_INTERVAL_LAYERS === 0) {
+      onProgress?.(L, numLayers, 'Collecting voxels');
+      await yieldToEventLoop();
+    }
     const labels = candidateLayers[L];
     if (!labels) continue;
     for (let y = 0; y < labels.height; y++) {
@@ -114,11 +136,12 @@ export async function detectVoxelIslands(
   console.log(`[Islands] candidate (unsupported) voxels: ${candidates.size.toLocaleString()}`);
 
   console.time('[Islands] 3D connected-components');
-  const allIslands = buildIslands(
+  const allIslands = await buildIslands(
     candidates,
     codec,
     { originX, originZ, px, minZ, layerHeightMm },
     params.diagonal3D !== false,
+    onProgress,
   );
   console.timeEnd('[Islands] 3D connected-components');
   const result = allIslands.filter(
@@ -199,19 +222,31 @@ interface GridGeom {
 }
 
 /** 3D connected components over the candidate voxel set → contact-region islands. */
-function buildIslands(
+async function buildIslands(
   candidates: Set<number>,
   codec: GridCodec,
   geom: GridGeom,
   diagonal: boolean,
-): DetectedIsland[] {
+  onProgress?: (done: number, total: number, phase: string) => void,
+): Promise<DetectedIsland[]> {
   const offsets = neighbourOffsets(diagonal);
   const visited = new Set<number>();
   const islands: DetectedIsland[] = [];
   let idx = 0;
+  const total = candidates.size;
+  let sinceYield = 0;
 
   for (const startKey of candidates) {
     if (visited.has(startKey)) continue;
+
+    // Yielding between components rather than inside a flood keeps the walk
+    // itself untouched; a single component can still be large, so this bounds
+    // responsiveness by the largest island, not by the whole model.
+    if (sinceYield >= YIELD_INTERVAL_VOXELS) {
+      sinceYield = 0;
+      onProgress?.(visited.size, total, 'Connecting islands');
+      await yieldToEventLoop();
+    }
 
     // Flood this component.
     const comp: number[] = [];
@@ -220,11 +255,12 @@ function buildIslands(
     while (stack.length) {
       const k = stack.pop()!;
       comp.push(k);
+      sinceYield++;
       const { col, row, layer } = codec.unpack(k);
-      for (const [dc, dr, dl] of offsets) {
-        const nc = col + dc;
-        const nr = row + dr;
-        const nl = layer + dl;
+      for (let o = 0; o < offsets.length; o += 3) {
+        const nc = col + offsets[o];
+        const nr = row + offsets[o + 1];
+        const nl = layer + offsets[o + 2];
         if (nc < 0 || nc >= codec.width || nr < 0 || nr >= codec.height || nl < 0) continue;
         const nk = codec.pack(nc, nr, nl);
         if (candidates.has(nk) && !visited.has(nk)) {
@@ -299,22 +335,30 @@ function gridCodec(width: number, height: number): GridCodec {
 }
 
 /** 6- or 26-connectivity neighbour offsets (excluding the origin). */
-function neighbourOffsets(diagonal: boolean): Array<readonly [number, number, number]> {
+/**
+ * Neighbour deltas flattened into one array of triples, read by index.
+ *
+ * The obvious shape is an array of `[dc, dr, dl]` tuples, but the flood fill
+ * destructures it once per neighbour per voxel — 26 array iterators per voxel
+ * at 26-connectivity, each one an allocation. Sampling a scan of a tall model
+ * put 8,090 samples in `operationNewArrayIterator` alone.
+ */
+function neighbourOffsets(diagonal: boolean): Int8Array {
   if (!diagonal) {
-    return [
-      [1, 0, 0], [-1, 0, 0],
-      [0, 1, 0], [0, -1, 0],
-      [0, 0, 1], [0, 0, -1],
-    ];
+    return Int8Array.from([
+      1, 0, 0, -1, 0, 0,
+      0, 1, 0, 0, -1, 0,
+      0, 0, 1, 0, 0, -1,
+    ]);
   }
-  const out: Array<readonly [number, number, number]> = [];
+  const out: number[] = [];
   for (let dc = -1; dc <= 1; dc++) {
     for (let dr = -1; dr <= 1; dr++) {
       for (let dl = -1; dl <= 1; dl++) {
         if (dc === 0 && dr === 0 && dl === 0) continue;
-        out.push([dc, dr, dl]);
+        out.push(dc, dr, dl);
       }
     }
   }
-  return out;
+  return Int8Array.from(out);
 }
