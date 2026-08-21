@@ -113,8 +113,8 @@ fn offer_reload(app: crate::DragonFruitAppHandle) {
             .set_level(rfd::MessageLevel::Error)
             .set_title("DragonFruit stopped responding")
             .set_description(
-                "The display process ran out of memory and was shut down by the system. \
-                 Reloading restores the window, but unsaved changes to the scene are lost.\n\n\
+                "The window's display process stopped and had to be shut down. \
+                 Reloading brings the window back, but unsaved changes to the scene are lost.\n\n\
                  Reload now?",
             )
             .set_buttons(rfd::MessageButtons::YesNo)
@@ -129,9 +129,20 @@ fn offer_reload(app: crate::DragonFruitAppHandle) {
             log::error!("[webview-watchdog] No 'main' window to reload.");
             return;
         };
-        match window.eval("window.location.reload()") {
-            Ok(()) => log::info!("[webview-watchdog] Reload requested."),
-            Err(error) => log::error!("[webview-watchdog] Reload failed: {error}"),
+        // Navigate, never eval. With the content process gone there is no
+        // JavaScript context left to run `location.reload()` in — the call
+        // returns Ok and does nothing, which is exactly the false success this
+        // used to report. Navigation is native and spawns a fresh process.
+        let url = match window.url() {
+            Ok(url) => url,
+            Err(error) => {
+                log::error!("[webview-watchdog] Could not read the window URL: {error}");
+                return;
+            }
+        };
+        match window.navigate(url.clone()) {
+            Ok(()) => log::info!("[webview-watchdog] Reloaded via navigation to {url}."),
+            Err(error) => log::error!("[webview-watchdog] Navigation failed: {error}"),
         }
     });
 
