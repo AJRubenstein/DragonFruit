@@ -38,3 +38,22 @@ export function yieldToEventLoop(): Promise<void> {
         channel!.port2.postMessage(null);
     });
 }
+
+/**
+ * Rate limiter for progress callbacks.
+ *
+ * Yielding is cheap; telling React about it is not. A progress report is a
+ * state update, and a state update re-renders a tree with a 3D scene in it, so
+ * reporting on every yield turned a 38-second scan into well over a minute.
+ * Chunks still yield as often as they like — the UI just hears about it at a
+ * human rate.
+ */
+export function createProgressThrottle(minIntervalMs = 250) {
+    let lastReportMs = 0;
+    return function report(emit: () => void, force = false): void {
+        const now = performance.now();
+        if (!force && now - lastReportMs < minIntervalMs) return;
+        lastReportMs = now;
+        emit();
+    };
+}

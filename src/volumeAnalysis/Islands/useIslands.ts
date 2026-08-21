@@ -1437,7 +1437,16 @@ function computeContourMarkers(
       }
       if (!isInterior) break;
     }
-    return { x: vx, y: vy, isInterior, covered: false };
+    return {
+      x: vx,
+      y: vy,
+      isInterior,
+      covered: false,
+      // Filled in with the bucket keys below, so marking a voxel covered can
+      // decrement the per-bucket tallies instead of forcing a rescan.
+      largeKey: 0,
+      smallKey: 0,
+    };
   });
 
   // Build spatial grid with cell size = R_small for O(1) coverage marking
@@ -1453,6 +1462,39 @@ function computeContourMarkers(
       grid.set(key, list);
     }
     list.push(v);
+  }
+
+  /**
+   * Uncovered voxels per placement bucket, kept current as coverage spreads.
+   *
+   * Choosing where to put the next marker means finding the bucket with the
+   * most uncovered voxels. Recomputing that by walking every voxel on every
+   * step cost up to forty-five full passes over the island — 11 seconds of
+   * frozen UI across a model's islands. Maintaining the tallies turns each
+   * step into a walk over buckets, of which there are orders of magnitude
+   * fewer.
+   */
+  const largeUncovered = new Map<number, number>();
+  const smallUncovered = new Map<number, number>();
+
+  function decrementBucket(tally: Map<number, number>, key: number): void {
+    const count = tally.get(key);
+    if (count === undefined) return;
+    if (count <= 1) tally.delete(key);
+    else tally.set(key, count - 1);
+  }
+
+  /** Bucket key with the highest tally, or null when everything is covered. */
+  function bestBucket(tally: Map<number, number>): { key: number; count: number } | null {
+    let bestKey: number | null = null;
+    let bestCount = 0;
+    for (const [key, count] of tally) {
+      if (count > bestCount) {
+        bestCount = count;
+        bestKey = key;
+      }
+    }
+    return bestKey === null ? null : { key: bestKey, count: bestCount };
   }
 
   // Helper to mark voxels as covered within a radius in O(1) time
@@ -1475,6 +1517,8 @@ function computeContourMarkers(
           if (dx * dx + dy * dy <= r2) {
             v.covered = true;
             newlyCovered++;
+            decrementBucket(largeUncovered, v.largeKey);
+            decrementBucket(smallUncovered, v.smallKey);
           }
         }
       }
@@ -1500,28 +1544,17 @@ function computeContourMarkers(
       largeGrid.set(key, list);
     }
     list.push(v);
+    v.largeKey = key;
+    largeUncovered.set(key, (largeUncovered.get(key) ?? 0) + 1);
   }
 
   for (let step = 0; step < maxLargeMarkers; step++) {
-    let bestKey: number | null = null;
-    let bestCount = 0;
-
-    for (const [key, list] of largeGrid.entries()) {
-      let count = 0;
-      for (const v of list) {
-        if (!v.covered) count++;
-      }
-      if (count > bestCount) {
-        bestCount = count;
-        bestKey = key;
-      }
-    }
-
-    if (bestCount === 0 || bestKey === null) {
+    const best = bestBucket(largeUncovered);
+    if (best === null) {
       break;
     }
 
-    const list = largeGrid.get(bestKey)!;
+    const list = largeGrid.get(best.key)!;
     let sumX = 0;
     let sumY = 0;
     let count = 0;
@@ -1565,29 +1598,22 @@ function computeContourMarkers(
       smallGrid.set(key, list);
     }
     list.push(v);
+    v.smallKey = key;
+    // Built after the large pass has already covered part of the island, so
+    // only voxels still uncovered may count towards the tally.
+    if (!v.covered) {
+      smallUncovered.set(key, (smallUncovered.get(key) ?? 0) + 1);
+    }
   }
 
   const maxSmallSteps = maxTotalMarkers - markers.length;
   for (let step = 0; step < maxSmallSteps; step++) {
-    let bestKey: number | null = null;
-    let bestCount = 0;
-
-    for (const [key, list] of smallGrid.entries()) {
-      let count = 0;
-      for (const v of list) {
-        if (!v.covered) count++;
-      }
-      if (count > bestCount) {
-        bestCount = count;
-        bestKey = key;
-      }
-    }
-
-    if (bestCount === 0 || bestKey === null) {
+    const best = bestBucket(smallUncovered);
+    if (best === null) {
       break;
     }
 
-    const list = smallGrid.get(bestKey)!;
+    const list = smallGrid.get(best.key)!;
     let sumX = 0;
     let sumY = 0;
     let count = 0;

@@ -1,4 +1,4 @@
-import { yieldToEventLoop } from '@/utils/yieldToEventLoop';
+import { createProgressThrottle, yieldToEventLoop } from '@/utils/yieldToEventLoop';
 import * as THREE from 'three';
 import { type DetectedIsland } from './types';
 import { VoxelFootprintBuilder } from './voxelFootprint';
@@ -121,11 +121,12 @@ export async function detectVoxelIslands(
   );
 
   // Union of all unsupported candidate voxels.
+  const reportProgress = createProgressThrottle();
   const codec = gridCodec(width, height);
   const candidates = new Set<number>();
   for (let L = 0; L < numLayers; L++) {
     if (L % YIELD_INTERVAL_LAYERS === 0) {
-      onProgress?.(L, numLayers, 'Collecting voxels');
+      reportProgress(() => onProgress?.(L, numLayers, 'Collecting voxels'));
       await yieldToEventLoop();
     }
     const labels = candidateLayers[L];
@@ -227,6 +228,7 @@ async function sliceCandidateLayers(
   const cores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency || 4) : 4;
   const concurrency = Math.min(Math.max(2, cores), numLayers);
 
+  const reportSliceProgress = createProgressThrottle();
   const workers: Worker[] = Array.from(
     { length: concurrency },
     () => new Worker(new URL('@/volumeAnalysis/IslandScan/scanlineScan.worker.ts', import.meta.url), { type: 'module' }),
@@ -255,7 +257,7 @@ async function sliceCandidateLayers(
               w.removeEventListener('message', onMessage);
               candidateLayers[idx] = msg.result!.islandLabelsRle;
               done++;
-              onProgress?.(done, numLayers, 'Slicing');
+              reportSliceProgress(() => onProgress?.(done, numLayers, 'Slicing'));
               runNext();
             };
             w.addEventListener('message', onMessage);
@@ -296,6 +298,7 @@ async function buildIslands(
   const islands: DetectedIsland[] = [];
   let idx = 0;
   const total = candidates.size;
+  const reportProgress = createProgressThrottle();
   let flooded = 0;
   let sinceYield = 0;
 
@@ -313,7 +316,7 @@ async function buildIslands(
     // responsiveness by the largest island, not by the whole model.
     if (sinceYield >= YIELD_INTERVAL_VOXELS) {
       sinceYield = 0;
-      onProgress?.(flooded, total, 'Connecting islands');
+      reportProgress(() => onProgress?.(flooded, total, 'Connecting islands'));
       await yieldToEventLoop();
     }
 

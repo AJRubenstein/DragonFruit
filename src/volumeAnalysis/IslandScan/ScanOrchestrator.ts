@@ -1,4 +1,4 @@
-import { yieldToEventLoop } from '@/utils/yieldToEventLoop';
+import { createProgressThrottle, yieldToEventLoop } from '@/utils/yieldToEventLoop';
 import * as THREE from 'three';
 import { IslandTracker } from './islandTracker';
 import { type RleMask, type RleLabels, rleDecode, rleEncodeLabels } from './rle';
@@ -126,6 +126,7 @@ async function runScanInternal(
   let nextIndex = 0;
   let done = 0;
 
+  const reportProgress = createProgressThrottle();
   console.time('Total Scan');
   console.time('Slicing & Worker Dispatch');
 
@@ -147,7 +148,7 @@ async function runScanInternal(
 
         workerResults[idx] = { islandMaskRle, solidMaskRle, islandCount, islandLabelsRle, components, territoryLabelsRle };
         done++;
-        onProgress?.(done, numLayers, 'Slicing');
+        reportProgress(() => onProgress?.(done, numLayers, 'Slicing'));
         runNext();
       };
       w.addEventListener('message', onMessage);
@@ -176,7 +177,7 @@ async function runScanInternal(
   // Process layers sequentially to propagate island IDs
   for (let L = 0; L < numLayers; L++) {
     if (L % YIELD_INTERVAL_LAYERS === 0) {
-      onProgress?.(L, numLayers, 'Tracking islands');
+      reportProgress(() => onProgress?.(L, numLayers, 'Tracking islands'));
       await yieldToEventLoop();
     }
     const workerResult = workerResults[L];
@@ -207,7 +208,7 @@ async function runScanInternal(
 
   for (let L = 0; L < numLayers; L++) {
     if (L % YIELD_INTERVAL_LAYERS === 0) {
-      onProgress?.(L, numLayers, 'Tracking territories');
+      reportProgress(() => onProgress?.(L, numLayers, 'Tracking territories'));
       await yieldToEventLoop();
     }
     const workerResult = workerResults[L];
@@ -264,7 +265,7 @@ async function runScanInternal(
   // Optimized RLE iteration for firstHit/lastHit and baseLabels
   for (let L = 0; L < results.length; L++) {
     if (L % YIELD_INTERVAL_LAYERS === 0) {
-      onProgress?.(L, results.length, 'Compiling results');
+      reportProgress(() => onProgress?.(L, results.length, 'Compiling results'));
       await yieldToEventLoop();
     }
     const rleLabels = results[L].islandLabels;
