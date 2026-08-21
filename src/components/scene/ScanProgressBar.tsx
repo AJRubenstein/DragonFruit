@@ -38,8 +38,12 @@ export function ScanProgressBar({ progress }: { progress: ScanProgress | null })
         </span>
       </div>
 
+      {/* ui-loading-track is what makes this the positioning context. The
+          indeterminate stripe is absolutely positioned, so without it the
+          stripe lays itself out against the modal and sweeps across the whole
+          screen as a giant ellipse. */}
       <div
-        className="h-2.5 w-full overflow-hidden rounded-full"
+        className="ui-loading-track h-2.5 w-full rounded-full"
         style={{ background: 'color-mix(in srgb, var(--surface-2), black 20%)' }}
         role="progressbar"
         aria-valuemin={0}
