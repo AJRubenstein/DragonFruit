@@ -29,7 +29,8 @@
             "WindowEventLoop",
             "updateRendering",
             "waitForSyncReply",
-            "operationMapHash"
+            "operationMapHash",
+            "MessageChannel"
       ],
       "paths": [
             "src/features/plugins/generatedBuiltinComplexPlugins.ts",

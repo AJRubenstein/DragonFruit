@@ -132,6 +132,46 @@ selector that applies without restarting, a live log viewer, and buttons to
 reveal or open the log file. Ask the user to set the level to `debug`, reproduce
 the problem, and send `dragonfruit.log`.
 
+## Measuring without lying to yourself
+
+Every one of these cost a wasted test cycle before it was understood.
+
+**`console.log` from the webview never reaches `dragonfruit.log`.** `attachConsole`
+mirrors Rust records *into* the webview console; nothing travels the other way.
+Measurements meant for a log file must go through `@tauri-apps/plugin-log`.
+
+**`Physical footprint (peak)` is reset** when WebKit relieves memory pressure, so
+reading it with `vmmap` after the fact reports a peak lower than the real one —
+in one case 7.2 GB against an actual 14.0 GB. Sample continuously during the
+run instead, and note that `vmmap` on a multi-gigabyte process takes long enough
+that a "once per second" loop really samples every two.
+
+**A late timer is not a blocked thread.** WebKit aligns and throttles timers when
+the window loses focus. One session logged 959 stalls that a `sample` showed to
+be an idle process. Corroborate with the animation frame clock, which is not
+aligned, and treat gaps beyond a minute as the machine sleeping.
+
+**Yielding with a timer stops working in the background**, throttled to about
+1 Hz, which turns eighty yields per pass into eighty seconds. A message channel is a macrotask
+that is not a timer and is not throttled, which is what the shared yield helper
+in the island scan uses.
+
+**Yielding is cheap; telling React is not.** A progress report is a state update
+that re-renders a tree with the 3D scene in it. Reporting on every yield added
+roughly twenty seconds to a forty-second scan. Yield as often as the work needs;
+report at a human rate.
+
+**Two detectors will find each other.** `RendererCrashDiagnostics` patches
+`console.warn` and `console.error` to collect breadcrumbs, and `attachConsole`
+feeds it every Rust log record. Anything logged from a hot path arrives there
+too. Check what already exists before adding an instrument.
+
+**The observer is a suspect.** In one session the Web Inspector killed the
+process, editing the worktree restarted the app under a running test, the stall
+detector invented hundreds of freezes, and the progress reporting doubled the
+runtime. When a measurement surprises you, question the instrument before the
+code.
+
 ## External profilers
 
 ### macOS: `sample` and flame graphs
