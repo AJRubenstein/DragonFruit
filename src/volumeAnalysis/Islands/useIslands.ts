@@ -16,7 +16,7 @@ import { type DetectedIsland, type TipInfo, type OverhangRegion, SUPPORTED_RADIU
 import { classifyIntersection } from './intersection';
 import { getSnapshot } from '@/supports/state';
 import { getSettings } from '@/supports/Settings/state';
-import { SpatialHashGrid2D } from './spatialHashGrid2D';
+import { SpatialHashGrid2D, cellKey } from './spatialHashGrid2D';
 
 /** Self-support angle for mesh-normal overhang detection (surfaces flatter
  *  than this from horizontal get supports). Tunable per resin later. */
@@ -1327,8 +1327,11 @@ export function generateContourMarkers(
   const R_small2 = R_small * R_small;
   const R_large2 = R_large * R_large;
 
-  // Map voxels to a coordinate lookup Set for classification
-  const voxelSet = new Set(voxels.map((v) => `${Math.round(v.x / pxMm)},${Math.round(v.y / pxMm)}`));
+  // Map voxels to a coordinate lookup Set for classification. Numeric keys, not
+  // `"gx,gy"` strings: this Set is probed nine times per voxel just below, and
+  // each template literal would allocate a rope string destined straight for the
+  // garbage collector.
+  const voxelSet = new Set(voxels.map((v) => cellKey(Math.round(v.x / pxMm), Math.round(v.y / pxMm))));
 
   // Classify into interior vs boundary
   const classified = voxels.map((v) => {
@@ -1338,7 +1341,7 @@ export function generateContourMarkers(
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         if (dx === 0 && dy === 0) continue;
-        if (!voxelSet.has(`${gx + dx},${gy + dy}`)) {
+        if (!voxelSet.has(cellKey(gx + dx, gy + dy))) {
           isInterior = false;
           break;
         }
@@ -1350,11 +1353,11 @@ export function generateContourMarkers(
 
   // Build spatial grid with cell size = R_small for O(1) coverage marking
   const cellSize = R_small;
-  const grid = new Map<string, typeof classified[number][]>();
+  const grid = new Map<number, typeof classified[number][]>();
   for (const v of classified) {
     const cx = Math.floor(v.x / cellSize);
     const cy = Math.floor(v.y / cellSize);
-    const key = `${cx},${cy}`;
+    const key = cellKey(cx, cy);
     let list = grid.get(key);
     if (!list) {
       list = [];
@@ -1374,8 +1377,7 @@ export function generateContourMarkers(
     let newlyCovered = 0;
     for (let cx = cxStart; cx <= cxEnd; cx++) {
       for (let cy = cyStart; cy <= cyEnd; cy++) {
-        const key = `${cx},${cy}`;
-        const list = grid.get(key);
+        const list = grid.get(cellKey(cx, cy));
         if (!list) continue;
         for (const v of list) {
           if (v.covered) continue;
@@ -1397,12 +1399,12 @@ export function generateContourMarkers(
   const maxLargeMarkers = 15;
 
   // Pass 1: Place large circles centered on uncovered interior voxels using large cells
-  const largeGrid = new Map<string, typeof classified[number][]>();
+  const largeGrid = new Map<number, typeof classified[number][]>();
   for (const v of classified) {
     if (!v.isInterior) continue;
     const cx = Math.floor(v.x / R_large);
     const cy = Math.floor(v.y / R_large);
-    const key = `${cx},${cy}`;
+    const key = cellKey(cx, cy);
     let list = largeGrid.get(key);
     if (!list) {
       list = [];
@@ -1412,7 +1414,7 @@ export function generateContourMarkers(
   }
 
   for (let step = 0; step < maxLargeMarkers; step++) {
-    let bestKey = '';
+    let bestKey: number | null = null;
     let bestCount = 0;
 
     for (const [key, list] of largeGrid.entries()) {
@@ -1426,7 +1428,7 @@ export function generateContourMarkers(
       }
     }
 
-    if (bestCount === 0 || bestKey === '') {
+    if (bestCount === 0 || bestKey === null) {
       break;
     }
 
@@ -1463,11 +1465,11 @@ export function generateContourMarkers(
   }
 
   // Pass 2: Place small circles centered on uncovered voxels using small cells
-  const smallGrid = new Map<string, typeof classified[number][]>();
+  const smallGrid = new Map<number, typeof classified[number][]>();
   for (const v of classified) {
     const cx = Math.floor(v.x / R_small);
     const cy = Math.floor(v.y / R_small);
-    const key = `${cx},${cy}`;
+    const key = cellKey(cx, cy);
     let list = smallGrid.get(key);
     if (!list) {
       list = [];
@@ -1478,7 +1480,7 @@ export function generateContourMarkers(
 
   const maxSmallSteps = maxTotalMarkers - markers.length;
   for (let step = 0; step < maxSmallSteps; step++) {
-    let bestKey = '';
+    let bestKey: number | null = null;
     let bestCount = 0;
 
     for (const [key, list] of smallGrid.entries()) {
@@ -1492,7 +1494,7 @@ export function generateContourMarkers(
       }
     }
 
-    if (bestCount === 0 || bestKey === '') {
+    if (bestCount === 0 || bestKey === null) {
       break;
     }
 
