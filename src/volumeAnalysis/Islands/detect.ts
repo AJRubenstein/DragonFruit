@@ -70,6 +70,24 @@ function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, 0); });
 }
 
+/**
+ * Writes to the app log file, not just the devtools console.
+ *
+ * `attachConsole` mirrors Rust records INTO the webview console; nothing goes
+ * the other way, so a console.log here is invisible to anyone reading
+ * dragonfruit.log — including us, when the measurement is the whole point.
+ */
+async function logToFile(message: string): Promise<void> {
+  console.log(message);
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+  try {
+    const { info } = await import('@tauri-apps/plugin-log');
+    await info(message);
+  } catch {
+    // Not a Tauri context, or the plugin is unavailable: the console line stands.
+  }
+}
+
 export async function detectVoxelIslands(
   input: VoxelDetectInput,
   layerHeightMm: number,
@@ -100,6 +118,7 @@ export async function detectVoxelIslands(
     connectivity: params.connectivity ?? 4,
   };
 
+  await logToFile(`[Islands] phase=slice-start grid=${width}x${height} layers=${numLayers}`);
   console.time('[Islands] slice + candidate extraction');
   const candidateLayers = await sliceCandidateLayers(
     input.positions,
@@ -149,10 +168,11 @@ export async function detectVoxelIslands(
       rleDataBytes += row.byteLength;
     }
   }
-  console.log(
-    `[Islands] candidate RLE: ${rleRowCount.toLocaleString()} typed arrays, `
-    + `${(rleDataBytes / 1048576).toFixed(1)} MiB of data `
-    + `(+ roughly ${(rleRowCount * 128 / 1048576).toFixed(0)} MiB of per-array overhead)`,
+  await logToFile(
+    `[Islands] phase=union-done layers=${numLayers} rleArrays=${rleRowCount} `
+    + `rleDataMiB=${(rleDataBytes / 1048576).toFixed(1)} `
+    + `rleOverheadMiB≈${(rleRowCount * 128 / 1048576).toFixed(0)} `
+    + `candidates=${candidates.size}`,
   );
 
   // Release them before the flood fill. The union above is their last reader,
@@ -161,6 +181,7 @@ export async function detectVoxelIslands(
   // resident — while the 3D walk builds its own structures on top.
   candidateLayers.length = 0;
 
+  await logToFile('[Islands] phase=flood-start');
   console.time('[Islands] 3D connected-components');
   const allIslands = await buildIslands(
     candidates,
@@ -172,6 +193,18 @@ export async function detectVoxelIslands(
   console.timeEnd('[Islands] 3D connected-components');
   const result = allIslands.filter(
     (island) => (island.areaMm2 ?? 0) >= (params.minAreaMm2 ?? 0.02)
+  );
+
+  let footprintBytes = 0;
+  for (const island of allIslands) {
+    if (island.contactVoxels) {
+      footprintBytes += island.contactVoxels.xy.byteLength
+        + (island.contactVoxels.z?.byteLength ?? 0);
+    }
+  }
+  await logToFile(
+    `[Islands] phase=flood-done islands=${allIslands.length} kept=${result.length} `
+    + `footprintMiB=${(footprintBytes / 1048576).toFixed(1)}`,
   );
   console.log(`[Islands] islands detected (pre-filter): ${allIslands.length}, post-filter: ${result.length}`);
   return result;
