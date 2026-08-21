@@ -9,11 +9,10 @@ import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
 import { runAutoPlace, forestReportToText } from '@/supports/autoSupport';
 import { DETAIL_PRESET, STRUCTURE_PRESET, ANCHOR_PRESET } from '@/supports/Settings/presets';
 import type { SizingDebugInfo, AutoSupportSettings, ForestReport } from '@/supports/autoSupport';
-import { getSettings, updateAutoSupportSettings } from '@/supports/Settings/state';
+import { getSettings, updateAutoSupportSettings, subscribeToSettings, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
 import { getSnapshot, setSnapshot } from '@/supports/state';
 import { getKickstandSnapshot, setKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import type { Knot } from '@/supports/types';
-
 /** Set to true while auto-support is busy (scanning or placing).
  *  Page-level overlay reads this to show the "Generating Supports"
  *  full-screen modal, matching the native island-scan modal style. */
@@ -151,6 +150,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
     if (matchesPreset(ANCHOR_PRESET.settings.autoSupport)) return 'heavy';
     return 'medium';
   });
+  const debugSimpleRender = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings).debugSimpleSupportRender;
 
   const settings = getSettings().autoSupport;
   const [draft, setDraft] = React.useState(settings);
@@ -684,6 +684,15 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
                 ))}
               </div>
             )}
+            <label className="flex items-center gap-2 pt-2 border-t mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <input
+                type="checkbox"
+                checked={debugSimpleRender}
+                onChange={(e) => updateDebugSimpleSupportRender(e.target.checked)}
+                className="h-3 w-3"
+              />
+              Simple support render (disk/cone + line)
+            </label>
           </div>
         </div>
       </StructuredDialogModal>
