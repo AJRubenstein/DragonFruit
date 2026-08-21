@@ -9,7 +9,7 @@ you point at your own machine when you need a call stack.
 ### Main-thread stall detector
 
 `src/utils/debug/mainThreadHeartbeat.ts` is the UI's equivalent of a database
-slow query log. A timer that should fire every 250 ms measures how late it
+slow query log. A timer that should fire every 100 ms measures how late it
 actually woke up. The main thread is single-threaded, so a timer that is 12
 seconds late means the thread was held for 12 seconds and the window was frozen
 for exactly that long.
@@ -19,6 +19,12 @@ Reports land in `dragonfruit.log` at `WARN`:
 ```
 [stall] Main thread blocked for 12340 ms (threshold 500 ms) — pointer: canvas (12358 ms ago), hotkey: s (4.2 s ago)
 ```
+
+Because a stall is only noticed once a tick is late by the full threshold, a
+block starting just after a tick gets one tick for free: with a 100 ms tick and
+a 500 ms threshold, blocks up to 600 ms can go unreported, and a reported figure
+understates the real block by up to 100 ms. It is a floor, not an exact
+duration.
 
 The threshold defaults to 500 ms and is read once at startup from the
 `df.debug.stallThresholdMs` key in `localStorage`. Values below one tick are

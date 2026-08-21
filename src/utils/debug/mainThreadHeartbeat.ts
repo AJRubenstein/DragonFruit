@@ -17,9 +17,14 @@
 
 import { attachHeartbeatContext, describeHeartbeatContext } from './heartbeatContext';
 
-/** How often the heartbeat wakes up. Well below the threshold so a stall is
- *  attributed to a narrow window rather than a whole tick. */
-const TICK_MS = 250;
+/** How often the heartbeat wakes up.
+ *
+ *  This is the measurement granularity, and it cuts twice: a stall is only
+ *  noticed once a tick is `threshold` ms late, so a block starting right after
+ *  a tick gets one free tick before the clock starts, and the reported duration
+ *  understates the real block by up to one tick. Keeping it well below the
+ *  threshold bounds both errors. A no-op timer at 10 Hz costs nothing. */
+const TICK_MS = 100;
 
 /** Default lateness before a tick is considered a stall. Analogous to MySQL's
  *  `long_query_time`: low enough to catch what a user notices, high enough that
