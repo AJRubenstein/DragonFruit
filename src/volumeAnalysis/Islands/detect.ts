@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type DetectedIsland } from './types';
+import { VoxelFootprintBuilder } from './voxelFootprint';
 // PORTABILITY: analysis-domain dependencies are confined to this file — the
 // scanline island worker (the fast RLE engine the Analysis-tab voxel rescan
 // uses) and the RleLabels type. If that infra is removed, this is the one
@@ -282,7 +283,7 @@ async function buildIslands(
     let sumX = 0;
     let sumY = 0;
     let baseCount = 0;
-    const contactVoxels: { x: number; y: number }[] = [];
+    const contactVoxels = new VoxelFootprintBuilder(Math.min(comp.length, 1024));
     for (const k of comp) {
       const { col, row, layer } = codec.unpack(k);
       if (layer !== minLayer) continue;
@@ -291,7 +292,7 @@ async function buildIslands(
       sumX += vx;
       sumY += vy;
       baseCount++;
-      contactVoxels.push({ x: vx, y: vy });
+      contactVoxels.push(vx, vy);
     }
 
     const contactX = sumX / baseCount;
@@ -305,7 +306,7 @@ async function buildIslands(
       baseZ,
       areaMm2: baseCount * geom.px * geom.px,
       layerSpan: [minLayer, maxLayer],
-      contactVoxels,
+      contactVoxels: contactVoxels.build(),
     });
   }
 
