@@ -233,6 +233,7 @@ import { useCameraProjectionHotkey } from '@/hotkeys/useCameraProjectionHotkey';
 import { useInteriorViewHotkey } from '@/hotkeys/useInteriorViewHotkey';
 import { usePrepareTransformHotkeys } from '@/hotkeys/usePrepareTransformHotkeys';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { matchesConfiguredHotkeyDown, matchesConfiguredHotkeyUp } from '@/hotkeys/hotkeyConfig';
 import {
   clearHistory,
@@ -7102,6 +7103,12 @@ export default function Home() {
     sourcePath: scene.activeModel?.sourcePath,
     activeTab: scene.mode,
   });
+
+  // Blocking progress overlays are modal: while one is up it owns Escape, so
+  // the key never reaches whatever is behind it.
+  useEscapeToClose(islandsPoc.scanning && !autoSupportDrivingScan, undefined);
+  useEscapeToClose(autoSupportBusy, undefined);
+  useEscapeToClose(isExporting, undefined);
 
   // 5. Supports
   const supports = useSupportInteractionManager({ mode: scene.mode });

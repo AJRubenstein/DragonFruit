@@ -50,6 +50,7 @@ import {
   type SavedCustomThemeProfile,
 } from '@/components/settings/themeCustomizations';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { Tooltip } from '@/components/ui/Tooltip';
 import {
   DEFAULT_SPACEMOUSE_SETTINGS,
@@ -1103,44 +1104,28 @@ export function SettingsModal({
     };
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const onKeyDown = (e: CustomEvent) => {
-      if (e.detail.key !== 'Escape') return;
-      if (showThemeDeleteConfirm) {
-        handleCancelThemeDeleteConfirm();
-        return;
-      }
-      if (showThemeRenameDialog) {
-        handleCancelThemeRenameDialog();
-        return;
-      }
-      if (showThemeSaveConfirm) {
-        handleCancelThemeSaveConfirm();
-        return;
-      }
-      if (showRestoreDefaultsConfirm) {
-        handleCancelRestoreDefaults();
-        return;
-      }
-      handleCancel();
-    };
-
-    window.addEventListener('app-hotkey-keydown', onKeyDown as EventListener);
-    return () => window.removeEventListener('app-hotkey-keydown', onKeyDown as EventListener);
-  }, [
-    isOpen,
-    handleCancel,
-    handleCancelRestoreDefaults,
-    handleCancelThemeDeleteConfirm,
-    handleCancelThemeRenameDialog,
-    handleCancelThemeSaveConfirm,
-    showRestoreDefaultsConfirm,
-    showThemeDeleteConfirm,
-    showThemeRenameDialog,
-    showThemeSaveConfirm,
-  ]);
+  // Nested dialogs rendered through StructuredDialogModal register their own
+  // Escape handler and take precedence; the cascade here covers the inline
+  // restore-defaults confirmation, which does not.
+  useEscapeToClose(isOpen, () => {
+    if (showThemeDeleteConfirm) {
+      handleCancelThemeDeleteConfirm();
+      return;
+    }
+    if (showThemeRenameDialog) {
+      handleCancelThemeRenameDialog();
+      return;
+    }
+    if (showThemeSaveConfirm) {
+      handleCancelThemeSaveConfirm();
+      return;
+    }
+    if (showRestoreDefaultsConfirm) {
+      handleCancelRestoreDefaults();
+      return;
+    }
+    handleCancel();
+  });
 
   const handleSpaceMouseChange = React.useCallback((partial: Partial<SpaceMouseSettings>) => {
     setDraftSpaceMouseSettings((prev) => normalizeSpaceMouseSettings({ ...prev, ...partial }));
