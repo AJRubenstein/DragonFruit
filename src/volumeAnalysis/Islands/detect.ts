@@ -136,6 +136,31 @@ export async function detectVoxelIslands(
   console.timeEnd('[Islands] slice + candidate extraction');
   console.log(`[Islands] candidate (unsupported) voxels: ${candidates.size.toLocaleString()}`);
 
+  // What the per-layer RLE actually costs. `rows` is one Int32Array per row per
+  // layer, so a tall model holds millions of small typed arrays, each with its
+  // own object and buffer overhead — memory that lives outside the GC heap and
+  // never showed up in the object counts we were chasing.
+  let rleRowCount = 0;
+  let rleDataBytes = 0;
+  for (const labels of candidateLayers) {
+    if (!labels) continue;
+    for (const row of labels.rows) {
+      rleRowCount++;
+      rleDataBytes += row.byteLength;
+    }
+  }
+  console.log(
+    `[Islands] candidate RLE: ${rleRowCount.toLocaleString()} typed arrays, `
+    + `${(rleDataBytes / 1048576).toFixed(1)} MiB of data `
+    + `(+ roughly ${(rleRowCount * 128 / 1048576).toFixed(0)} MiB of per-array overhead)`,
+  );
+
+  // Release them before the flood fill. The union above is their last reader,
+  // but the binding stays in scope for the rest of the function, so without
+  // this the whole per-layer set is still reachable — and therefore still
+  // resident — while the 3D walk builds its own structures on top.
+  candidateLayers.length = 0;
+
   console.time('[Islands] 3D connected-components');
   const allIslands = await buildIslands(
     candidates,
