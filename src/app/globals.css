@@ -672,32 +672,6 @@ input[type="number"].no-spinners {
   }
 }
 
-/**
- * Narrow bouncing dot for a bar that has no percentage yet.
- *
- * Unlike .ui-loading-indicator, which is a third of the track wide and travels
- * by multiples of its own width, this one is a few pixels and travels the
- * track. A wide sweeping block on a progress bar reads as the value itself
- * growing and then collapsing.
- */
-@keyframes uiLoadingDot {
-  0% {
-    left: -14px;
-  }
-  100% {
-    left: 100%;
-  }
-}
-
-.ui-loading-dot {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 14px;
-  border-radius: 9999px;
-  animation: uiLoadingDot 1.05s ease-in-out infinite alternate;
-}
-
 .ui-loading-track {
   position: relative;
   overflow: hidden;
