@@ -149,6 +149,7 @@ const DETAIL_PRESET: SupportPreset = {
         autoSupport: { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 16 },
         devToolsEnabled: false,
         devTools: createDefaultSettings().devTools,
+        debugSimpleSupportRender: false,
     },
 };
 
@@ -240,6 +241,7 @@ const ANCHOR_PRESET: SupportPreset = {
         autoSupport: { ...createDefaultAutoSupportSettings(), areaPerSupportMm2: 5 },
         devToolsEnabled: false,
         devTools: createDefaultSettings().devTools,
+        debugSimpleSupportRender: false,
     },
 };
 
