@@ -65,6 +65,64 @@ export function buildBoundaryPoints(
  *  push past proven commercial practice (heaviest documented preset ≈ 1.5 mm). */
 export const GRID_SPACING_FLOOR_MM = 1.2;
 
+/**
+ * Sample triangle-accurate perimeter loops at uniform spacing.
+ * Loops are already inset by 0.25 mm (Rust) so no erosion is needed.
+ * Each loop is closed — segment n-1 wraps to 0. Returns points with
+ * interpolated Z.
+ */
+export function samplePerimeterLoops(
+    loops: Array<Array<[number, number, number]>>,
+    spacing: number,
+    minZ: number,
+): Array<{ x: number; y: number; z: number }> {
+    const out: Array<{ x: number; y: number; z: number }> = [];
+    if (!loops || loops.length === 0 || spacing <= 0) return out;
+    for (const loop of loops) {
+        if (!loop || loop.length < 2) continue;
+        // Compute total length (XY Euclidean — overhangs are shallow, Z drift small)
+        let total = 0;
+        const segLen: number[] = [];
+        for (let i = 0; i < loop.length; i++) {
+            const a = loop[i];
+            const b = loop[(i + 1) % loop.length];
+            const dx = b[0] - a[0];
+            const dy = b[1] - a[1];
+            const dz = b[2] - a[2];
+            const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            segLen.push(len);
+            total += len;
+        }
+        if (total < 1e-6) {
+            // Degenerate — emit centroid
+            const a = loop[0];
+            out.push({ x: a[0], y: a[1], z: a[2] ?? minZ });
+            continue;
+        }
+        const steps = Math.max(1, Math.round(total / spacing));
+        const stepDist = total / steps;
+        let segIdx = 0;
+        let segStart = 0;
+        let segEnd = segLen[0];
+        for (let s = 0; s < steps; s++) {
+            const target = s * stepDist;
+            while (target > segEnd + 1e-9 && segIdx + 1 < segLen.length) {
+                segIdx++;
+                segStart = segEnd;
+                segEnd += segLen[segIdx];
+            }
+            const a = loop[segIdx];
+            const b = loop[(segIdx + 1) % loop.length];
+            const t = segLen[segIdx] > 1e-9 ? (target - segStart) / segLen[segIdx] : 0;
+            const x = a[0] + (b[0] - a[0]) * t;
+            const y = a[1] + (b[1] - a[1]) * t;
+            const z = (a[2] ?? minZ) + ((b[2] ?? minZ) - (a[2] ?? minZ)) * t;
+            out.push({ x, y, z });
+        }
+    }
+    return out;
+}
+
 /** Perimeter contact inset (mm): a support centered ON the region boundary
  *  hangs half its contact disc past the edge — half attached to air. The
  *  perimeter ring (and grid outer ring / boundary fill) is generated on the
@@ -211,7 +269,6 @@ export function generateGridCandidates(
         // Anchor regions (in-band) bypass the grid threshold — a small foot is
         // still a load-bearing anchor and must be densified, not single-supported.
         if (area < threshold && !minAreaBypassIds?.has(island.id)) continue;
-
         // Density factors: angle (flat = densest, self-support slope =
         // sparsest), suction area scaling, and the per-patch anchor band.
         const anchorScale = anchorScaleById?.get(island.id) ?? 1;
@@ -337,12 +394,21 @@ export function generateGridCandidates(
 
         // Boundary-fill: where the boundary curves away from the lattice
         // (corners, holes, rotated edges) and no grid point is within
-        // `gridSpacing`, add a support on the ERODED boundary — the contact
-        // disc stays fully on the surface.
+        // `gridSpacing`, add a support on the boundary.
+        // Prefer triangle loops only for anchors (organic foot) — voxel
+        // erosion is correct for non-anchor and keeps small islands sparse.
         const spacingSq = gridSpacing * gridSpacing;
         const voxelPoints = footprintToPoints(voxels);
-        const eroded = erodeFootprint(voxelPoints);
-        const boundary = buildBoundaryPoints(eroded.length > 0 ? eroded : voxelPoints, spacing * stride, minZ);
+        const triLoops = island.perimeterLoops;
+        const isAnchor = anchorScale < 1;
+        const hasTri = isAnchor && !!triLoops && triLoops.length > 0 && triLoops.some(l => l.length >= 2);
+        const boundary = hasTri
+            ? samplePerimeterLoops(triLoops!, spacing * stride, minZ)
+            : buildBoundaryPoints(
+                (() => { const e = erodeFootprint(voxelPoints); return e.length > 0 ? e : voxelPoints; })(),
+                spacing * stride,
+                minZ,
+            );
         for (const b of boundary) {
             let covered = false;
             for (const p of lattice) {

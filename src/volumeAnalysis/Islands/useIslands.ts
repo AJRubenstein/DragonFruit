@@ -12,7 +12,7 @@ import {
 import { clusterWalkOrder } from './ordering';
 import { buildIslandPucks, markerIdFor } from './islandPuckMarkers';
 import { scanMeshMinima } from './meshMinima';
-import { type DetectedIsland, type TipInfo, type OverhangRegion, SUPPORTED_RADIUS_MM } from './types';
+import { type DetectedIsland, type TipInfo, type OverhangRegion, type Vec3Loop, SUPPORTED_RADIUS_MM } from './types';
 import { classifyIntersection } from './intersection';
 import { getSnapshot } from '@/supports/state';
 import { getSettings } from '@/supports/Settings/state';
@@ -314,6 +314,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
       triangleIds: region.triangleIds,
       surfaceNormal: { x: region.normal[0], y: region.normal[1], z: region.normal[2] },
       contactVoxels: contactVoxels.build(),
+      perimeterLoops: region.perimeterLoops,
     };
   };
 

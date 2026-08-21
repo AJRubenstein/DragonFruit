@@ -7,10 +7,10 @@ import {
     computeRegionSpacing,
     buildBoundaryPoints,
     erodeFootprint,
+    samplePerimeterLoops,
     PERIMETER_SPACING_FLOOR_MM,
     MAX_GRID_CANDIDATES_PER_REGION,
 } from './gridPlacement';
-
 /** Footprint-mask pixels are emitted at 0.25 mm spacing; a point within this
  *  distance of a mask pixel counts as inside the region. */
 const FOOTPRINT_TOLERANCE_MM = 0.25;
@@ -227,14 +227,25 @@ export function generatePoissonCandidates(
             accepted.push(s);
             bg.set(`${Math.floor(s.x / gridCell)},${Math.floor(s.y / gridCell)}`, accepted.length - 1);
         };
-
         // 1. Perimeter ring — guaranteed retained (denser than the interior).
-        //    Generated on the ERODED footprint so the contact disc sits fully
-        //    on the surface, not half past the region edge (half in air).
+        //    Prefer triangle-accurate loops (Rust, inset by 0.25 mm) for
+        //    organic ANCHOR surfaces — that's where voxel 0.25 mm erases
+        //    curves. Non-anchor overhangs keep the voxel erosion path to
+        //    avoid densification explosion on small islands.
+        //    Erode the PACKED footprint (converted to points) so the contact
+        //    disc sits fully on the surface, not half past the region edge.
         const voxelPoints = footprintToPoints(voxels);
-        const eroded = erodeFootprint(voxelPoints);
-        for (const b of buildBoundaryPoints(eroded.length > 0 ? eroded : voxelPoints, perimeterSpacing, minZ)) {
-            insert({ x: b.x, y: b.y, z: b.z, kind: 'perimeter' });
+        const triLoops = island.perimeterLoops;
+        const hasTriPerimeter = isAnchor && !!triLoops && triLoops.length > 0 && triLoops.some(l => l.length >= 2);
+        if (hasTriPerimeter) {
+            for (const b of samplePerimeterLoops(triLoops!, perimeterSpacing, minZ)) {
+                insert({ x: b.x, y: b.y, z: b.z, kind: 'perimeter' });
+            }
+        } else {
+            const eroded = erodeFootprint(voxelPoints);
+            for (const b of buildBoundaryPoints(eroded.length > 0 ? eroded : voxelPoints, perimeterSpacing, minZ)) {
+                insert({ x: b.x, y: b.y, z: b.z, kind: 'perimeter' });
+            }
         }
 
         // 2. Interior Poisson-disk infill (Bridson). Seeds: the region

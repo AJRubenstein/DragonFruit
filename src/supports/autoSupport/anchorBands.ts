@@ -1,4 +1,5 @@
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
+import { ANCHOR_MIN_AREA_MM2, ANCHOR_MIN_XY_MM } from './constants';
 
 /**
  * Per-contact-patch anchor bands — densification for the first-printed
@@ -61,14 +62,38 @@ export function buildAnchorBands(
     let clusterMinZ = NaN;
     let prevZ = NaN;
     let clusterCount = 0;
-
     for (const island of eligible) {
         if (Number.isNaN(prevZ) || island.baseZ - prevZ > bandHeightMm) {
             clusterMinZ = island.baseZ;
             clusterCount++;
         }
         const inLowestCluster = clusterCount === 1;
-        if (inLowestCluster && island.baseZ <= clusterMinZ + bandHeightMm) {
+        const inBandZ = inLowestCluster && island.baseZ <= clusterMinZ + bandHeightMm;
+        // Tiny slivers (thin rings 20×1–2 mm) hammer the first layer with
+        // hundreds of pillars but are not load-bearing feet. Require both
+        // XY extents and area to be above thresholds to be an anchor.
+        let isTiny = false;
+        if (inBandZ) {
+            const area = island.areaMm2 ?? 0;
+            if (area > 0 && area < ANCHOR_MIN_AREA_MM2) {
+                isTiny = true;
+            } else {
+                const voxels = island.contactVoxels;
+                if (voxels && voxels.length > 0) {
+                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                    for (const v of voxels) {
+                        if (v.x < minX) minX = v.x;
+                        if (v.x > maxX) maxX = v.x;
+                        if (v.y < minY) minY = v.y;
+                        if (v.y > maxY) maxY = v.y;
+                    }
+                    const w = maxX - minX;
+                    const h = maxY - minY;
+                    if (w < ANCHOR_MIN_XY_MM || h < ANCHOR_MIN_XY_MM) isTiny = true;
+                }
+            }
+        }
+        if (inBandZ && !isTiny) {
             scaleById.set(island.id, factor);
             inBandIds.push(island.id);
         } else {
