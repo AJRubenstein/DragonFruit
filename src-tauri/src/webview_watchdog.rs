@@ -25,6 +25,11 @@ const GRACE_PERIOD: Duration = Duration::from_secs(90);
 /// How often the watchdog looks at the clock.
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
+/// A poll that arrives this much later than scheduled means the machine slept
+/// or the app was suspended, not that anything died. Everything stopped in that
+/// window — including the webview — so the silence proves nothing.
+const SUSPENSION_SLACK: Duration = Duration::from_secs(20);
+
 #[derive(Default)]
 pub struct WebviewLiveness {
     /// Milliseconds since the epoch of the last ping; 0 before the first one.
@@ -72,8 +77,28 @@ pub async fn webview_heartbeat(
 /// Starts the watchdog. Safe to call once, from `setup()`.
 pub fn spawn(app: crate::DragonFruitAppHandle) {
     tauri::async_runtime::spawn(async move {
+        let mut last_poll_ms = now_ms();
         loop {
             tokio::time::sleep(POLL_INTERVAL).await;
+
+            // The watchdog's own clock is the sleep detector: this task is
+            // suspended alongside everything else, so a poll that took far
+            // longer than it asked for means the machine was not running. Start
+            // the grace period again rather than alarming on a gap nobody was
+            // awake for.
+            let polled_at = now_ms();
+            let poll_gap_ms = polled_at.saturating_sub(last_poll_ms);
+            last_poll_ms = polled_at;
+            if poll_gap_ms > (POLL_INTERVAL + SUSPENSION_SLACK).as_millis() as u64 {
+                if let Some(state) = app.try_state::<WebviewLiveness>() {
+                    log::info!(
+                        "[webview-watchdog] Woke after {} s of suspension; restarting the grace period.",
+                        poll_gap_ms / 1000
+                    );
+                    state.record_ping();
+                }
+                continue;
+            }
 
             use tauri::Manager;
             let Some(state) = app.try_state::<WebviewLiveness>() else {
