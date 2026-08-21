@@ -159,7 +159,7 @@ async function reportSlowStep(label: string, elapsedMs: number): Promise<void> {
 
 export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ = 0, sourcePath, activeTab }: UseIslandsInput) {
   const [scanning, setScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState<{ done: number; total: number; phase?: string } | null>(null);
+  const [scanProgress, setScanProgress] = useState<{ done: number; total: number; phase?: string; phaseNumber?: number; phaseCount?: number } | null>(null);
   const [voxelIslands, setVoxelIslands] = useState<DetectedIsland[]>([]);
   const [minimaIslands, setMinimaIslands] = useState<DetectedIsland[]>([]);
   const [overhangIslands, setOverhangIslands] = useState<DetectedIsland[]>([]);
@@ -480,10 +480,15 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
           connectivity,
           minAreaMm2,
         };
-        const voxel = await detectVoxelIslands(world, layerHeightMm, params, (done, total, phase) => {
-          if (scanEpochRef.current !== epoch) return;
-          setScanProgress({ done, total, phase });
-        });
+        const voxel = await detectVoxelIslands(
+          world,
+          layerHeightMm,
+          params,
+          (done, total, phase, phaseNumber, phaseCount) => {
+            if (scanEpochRef.current !== epoch) return;
+            setScanProgress({ done, total, phase, phaseNumber, phaseCount });
+          },
+        );
         if (scanEpochRef.current !== epoch) return;
         setVoxelIslands(voxel);
 

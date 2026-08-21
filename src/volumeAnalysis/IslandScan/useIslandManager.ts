@@ -21,7 +21,7 @@ interface IslandManagerProps {
 export function useIslandManager({ geom, transform, layerHeightMm }: IslandManagerProps) {
   // Scanning State
   const [scanning, setScanning] = useState<boolean>(false);
-  const [scanProgress, setScanProgress] = useState<{ done: number; total: number; phase?: string } | null>(null);
+  const [scanProgress, setScanProgress] = useState<{ done: number; total: number; phase?: string; phaseNumber?: number; phaseCount?: number } | null>(null);
   const [scanData, setScanData] = useState<ScanResults | null>(null);
   const [scanBBox, setScanBBox] = useState<THREE.Box3 | null>(null);
 
@@ -115,7 +115,7 @@ export function useIslandManager({ geom, transform, layerHeightMm }: IslandManag
           overlap_neighborhood_px: overlapNeighborhoodPx,
           useSurfaceContiguity,
         },
-        (done, total, phase) => setScanProgress({ done, total, phase })
+        (done, total, phase, phaseNumber, phaseCount) => setScanProgress({ done, total, phase, phaseNumber, phaseCount })
       );
       setScanData(res);
     } finally {
@@ -148,7 +148,7 @@ export function useIslandManager({ geom, transform, layerHeightMm }: IslandManag
           overlap_neighborhood_px: overlapNeighborhoodPx,
           useSurfaceContiguity,
         },
-        (done, total, phase) => setScanProgress({ done, total, phase })
+        (done, total, phase, phaseNumber, phaseCount) => setScanProgress({ done, total, phase, phaseNumber, phaseCount })
       );
       const endTime = performance.now();
       console.log(`Scanline Scan took ${(endTime - startTime).toFixed(2)}ms`);

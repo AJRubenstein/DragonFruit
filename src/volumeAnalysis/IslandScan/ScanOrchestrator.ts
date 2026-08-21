@@ -49,7 +49,21 @@ export type ScanParams = {
  * names the pass so the modal can say which of the four is running — the bar
  * restarts at zero for each.
  */
-export type ScanProgressCallback = (done: number, total: number, phase: string) => void;
+export type ScanProgressCallback = (
+  done: number,
+  total: number,
+  phase: string,
+  phaseNumber: number,
+  phaseCount: number,
+) => void;
+
+/** This path's phases, in order. See the note on ScanProgressCallback. */
+const SCAN_PHASES = ['Slicing', 'Tracking islands', 'Tracking territories', 'Compiling results'] as const;
+
+function orchestratorPhaseNumber(phase: string): number {
+  const index = SCAN_PHASES.indexOf(phase as typeof SCAN_PHASES[number]);
+  return index < 0 ? 1 : index + 1;
+}
 
 /** Layers processed between yields in the single-threaded passes. */
 const YIELD_INTERVAL_LAYERS = 64;
@@ -148,7 +162,7 @@ async function runScanInternal(
 
         workerResults[idx] = { islandMaskRle, solidMaskRle, islandCount, islandLabelsRle, components, territoryLabelsRle };
         done++;
-        reportProgress(() => onProgress?.(done, numLayers, 'Slicing'));
+        reportProgress(() => onProgress?.(done, numLayers, 'Slicing', orchestratorPhaseNumber('Slicing'), SCAN_PHASES.length));
         runNext();
       };
       w.addEventListener('message', onMessage);
@@ -177,7 +191,7 @@ async function runScanInternal(
   // Process layers sequentially to propagate island IDs
   for (let L = 0; L < numLayers; L++) {
     if (L % YIELD_INTERVAL_LAYERS === 0) {
-      reportProgress(() => onProgress?.(L, numLayers, 'Tracking islands'));
+      reportProgress(() => onProgress?.(L, numLayers, 'Tracking islands', orchestratorPhaseNumber('Tracking islands'), SCAN_PHASES.length));
       await yieldToEventLoop();
     }
     const workerResult = workerResults[L];
@@ -208,7 +222,7 @@ async function runScanInternal(
 
   for (let L = 0; L < numLayers; L++) {
     if (L % YIELD_INTERVAL_LAYERS === 0) {
-      reportProgress(() => onProgress?.(L, numLayers, 'Tracking territories'));
+      reportProgress(() => onProgress?.(L, numLayers, 'Tracking territories', orchestratorPhaseNumber('Tracking territories'), SCAN_PHASES.length));
       await yieldToEventLoop();
     }
     const workerResult = workerResults[L];
@@ -265,7 +279,7 @@ async function runScanInternal(
   // Optimized RLE iteration for firstHit/lastHit and baseLabels
   for (let L = 0; L < results.length; L++) {
     if (L % YIELD_INTERVAL_LAYERS === 0) {
-      reportProgress(() => onProgress?.(L, results.length, 'Compiling results'));
+      reportProgress(() => onProgress?.(L, results.length, 'Compiling results', orchestratorPhaseNumber('Compiling results'), SCAN_PHASES.length));
       await yieldToEventLoop();
     }
     const rleLabels = results[L].islandLabels;

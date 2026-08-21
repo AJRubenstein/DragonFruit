@@ -1,4 +1,5 @@
 import { createProgressThrottle, yieldToEventLoop } from '@/utils/yieldToEventLoop';
+import type { ScanProgressCallback } from '@/volumeAnalysis/IslandScan/ScanOrchestrator';
 import * as THREE from 'three';
 import { type DetectedIsland } from './types';
 import { VoxelFootprintBuilder } from './voxelFootprint';
@@ -53,6 +54,18 @@ interface GridRef {
  * voxels. (An earlier draft ran the point-in-polygon rasterizer on the main
  * thread — far slower; replaced.)
  */
+/**
+ * The scan's phases, in order. The count travels with every progress report so
+ * the UI can render "2 of 3" without hard-coding a number that differs between
+ * the two scan paths.
+ */
+const PHASES = ['Slicing', 'Collecting voxels', 'Connecting islands'] as const;
+
+function phaseNumber(phase: string): number {
+  const index = PHASES.indexOf(phase as typeof PHASES[number]);
+  return index < 0 ? 1 : index + 1;
+}
+
 /** Layers processed between yields while unioning candidate voxels. */
 const YIELD_INTERVAL_LAYERS = 64;
 
@@ -82,7 +95,7 @@ export async function detectVoxelIslands(
   input: VoxelDetectInput,
   layerHeightMm: number,
   params: VoxelDetectParams,
-  onProgress?: (done: number, total: number, phase: string) => void,
+  onProgress?: ScanProgressCallback,
 ): Promise<DetectedIsland[]> {
   const px = params.pxMm;
   const bb = input.bbox;
@@ -126,7 +139,7 @@ export async function detectVoxelIslands(
   const candidates = new Set<number>();
   for (let L = 0; L < numLayers; L++) {
     if (L % YIELD_INTERVAL_LAYERS === 0) {
-      reportProgress(() => onProgress?.(L, numLayers, 'Collecting voxels'));
+      reportProgress(() => onProgress?.(L, numLayers, 'Collecting voxels', phaseNumber('Collecting voxels'), PHASES.length));
       await yieldToEventLoop();
     }
     const labels = candidateLayers[L];
@@ -150,30 +163,6 @@ export async function detectVoxelIslands(
   // layer, so a tall model holds millions of small typed arrays, each with its
   // own object and buffer overhead — memory that lives outside the GC heap and
   // never showed up in the object counts we were chasing.
-  // Count rows that hold data, not row slots: the empty ones all point at the
-  // same shared array, so the slot count says nothing about how many objects
-  // actually exist. That distinction was invisible in the first version of this
-  // measurement, which made the sharing look like it had changed nothing.
-  let rowSlots = 0;
-  let nonEmptyRows = 0;
-  let rleDataBytes = 0;
-  for (const labels of candidateLayers) {
-    if (!labels) continue;
-    for (const row of labels.rows) {
-      rowSlots++;
-      if (row.length > 0) {
-        nonEmptyRows++;
-        rleDataBytes += row.byteLength;
-      }
-    }
-  }
-  await logToFile(
-    `[Islands] phase=union-done layers=${numLayers} rowSlots=${rowSlots} `
-    + `liveRowArrays=${nonEmptyRows} `
-    + `rleDataMiB=${(rleDataBytes / 1048576).toFixed(1)} `
-    + `candidates=${candidates.size}`,
-  );
-
   // Release them before the flood fill. The union above is their last reader,
   // but the binding stays in scope for the rest of the function, so without
   // this the whole per-layer set is still reachable — and therefore still
@@ -221,7 +210,7 @@ async function sliceCandidateLayers(
   numLayers: number,
   layerHeightMm: number,
   opts: { px_mm: number; support_buffer_mm: number; connectivity: 4 | 8 },
-  onProgress?: (done: number, total: number, phase: string) => void,
+  onProgress?: ScanProgressCallback,
 ): Promise<RleLabels[]> {
   const candidateLayers: RleLabels[] = new Array(numLayers);
 
@@ -257,7 +246,7 @@ async function sliceCandidateLayers(
               w.removeEventListener('message', onMessage);
               candidateLayers[idx] = msg.result!.islandLabelsRle;
               done++;
-              reportSliceProgress(() => onProgress?.(done, numLayers, 'Slicing'));
+              reportSliceProgress(() => onProgress?.(done, numLayers, 'Slicing', phaseNumber('Slicing'), PHASES.length));
               runNext();
             };
             w.addEventListener('message', onMessage);
@@ -292,7 +281,7 @@ async function buildIslands(
   codec: GridCodec,
   geom: GridGeom,
   diagonal: boolean,
-  onProgress?: (done: number, total: number, phase: string) => void,
+  onProgress?: ScanProgressCallback,
 ): Promise<DetectedIsland[]> {
   const offsets = neighbourOffsets(diagonal);
   const islands: DetectedIsland[] = [];
@@ -316,7 +305,7 @@ async function buildIslands(
     // responsiveness by the largest island, not by the whole model.
     if (sinceYield >= YIELD_INTERVAL_VOXELS) {
       sinceYield = 0;
-      reportProgress(() => onProgress?.(flooded, total, 'Connecting islands'));
+      reportProgress(() => onProgress?.(flooded, total, 'Connecting islands', phaseNumber('Connecting islands'), PHASES.length));
       await yieldToEventLoop();
     }
 
