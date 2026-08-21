@@ -22,20 +22,30 @@ export function decideBakeoffWinner(
     poissonCount: number,
     flatnessDeg: number,
     poissonThresholdDeg: number,
+    isAnchor = false,
 ): 'grid' | 'poisson' {
     const delta = poissonCoverage - gridCoverage;
     const winnerMargin = Math.abs(delta);
-    // Tie (<1%): shape heuristic so planar stays grid.
+    const bothMeetTarget = gridCoverage >= REGION_COVERAGE_TARGET && poissonCoverage >= REGION_COVERAGE_TARGET;
+    // Tie (<1%): shape heuristic so planar stays grid. For ANCHORS the tie
+    // normally goes to higher coverage (edge peel), BUT when one side blows
+    // out — >3× the pillars for <1% more coverage while BOTH already clear
+    // the target (the foot: grid 59 @99.6% vs poisson 1151 @100%) — the peel
+    // gain is not worth 20× the first-layer hammering. Fewer wins.
     if (winnerMargin < BAKEOFF_COVERAGE_EPSILON) {
-        const organic = flatnessDeg > poissonThresholdDeg;
         if (gridCount === 0) return 'poisson';
         if (poissonCount === 0) return 'grid';
+        if (isAnchor && bothMeetTarget
+            && Math.max(gridCount, poissonCount) > Math.min(gridCount, poissonCount) * 3) {
+            return gridCount < poissonCount ? 'grid' : 'poisson';
+        }
+        const organic = flatnessDeg > poissonThresholdDeg;
         return organic ? 'poisson' : 'grid';
     }
     // Efficiency gate: both already clear 95% and the win is small (<5%)
     // → fewer pillars wins (the 44@95.3% vs 162@100% case).
-    const bothMeetTarget = gridCoverage >= REGION_COVERAGE_TARGET && poissonCoverage >= REGION_COVERAGE_TARGET;
-    if (bothMeetTarget && winnerMargin < BAKEOFF_EFFICIENCY_MARGIN && gridCount !== poissonCount) {
+    const bothClear = bothMeetTarget;
+    if (bothClear && winnerMargin < BAKEOFF_EFFICIENCY_MARGIN && gridCount !== poissonCount) {
         return gridCount < poissonCount ? 'grid' : 'poisson';
     }
     return delta > 0 ? 'poisson' : 'grid';
@@ -116,6 +126,7 @@ export function pickBestDistributionForRegion(
         poissonCandidates.length,
         flatness,
         settings.poissonFlatnessThresholdDeg ?? 12,
+        anchorIds.has(region.id),
     );
 
     // Fallback when one generator produced nothing (e.g. capped region).

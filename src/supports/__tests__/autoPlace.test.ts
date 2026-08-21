@@ -582,9 +582,10 @@ test('runAutoPlace keeps low undersides a standalone anchor pillar forest', () =
     clearHistory();
     const disposeHandlers = registerSupportHistoryHandlers();
 
-    // Two low overhang patches (one flat grid, one small) — both land in
-    // the anchor band (lowest cluster). Anchors are load-bearing pillars:
-    // no fanning, no merging, no anchor-tree merging — every candidate
+    // Two low overhang patches: o0 (flat 8×8 grid) lands in the anchor band;
+    // o15 is a 3×0.5 mm sliver — the ANCHOR_MIN_XY_MM filter excludes it from
+    // anchoring, so it stays a standalone non-anchor pillar. Anchors are
+    // load-bearing pillars: no fanning, no merging — every anchor candidate
     // stands alone with no leaves or branches anywhere.
     const contactVoxels: { x: number; y: number }[] = [];
     for (let x = -4; x <= 4; x += 0.25) {
@@ -620,8 +621,9 @@ test('runAutoPlace keeps low undersides a standalone anchor pillar forest', () =
     const snapshot = getSnapshot();
     const trunks = Object.values(snapshot.trunks);
     assert.ok(trunks.length >= 8, `both patches placed (${trunks.length} trunks)`);
-    assert.ok(trunks.every((t) => t.origin === 'anchor'),
-        'every low-face trunk is an anchor pillar');
+    assert.ok(trunks.some((t) => t.origin === 'anchor'), 'anchor trunks carry the anchor origin');
+    assert.ok(trunks.some((t) => t.origin === 'standalone'),
+        'the o15 sliver stays a standalone non-anchor pillar (ANCHOR_MIN_XY_MM filter)');
     assert.equal(Object.keys(snapshot.knots).length, 0, 'no merge knots — all standalone');
 
     setModelMesh('model-a', null);

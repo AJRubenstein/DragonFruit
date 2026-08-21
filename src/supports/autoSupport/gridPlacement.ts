@@ -395,13 +395,15 @@ export function generateGridCandidates(
         // Boundary-fill: where the boundary curves away from the lattice
         // (corners, holes, rotated edges) and no grid point is within
         // `gridSpacing`, add a support on the boundary.
-        // Prefer triangle loops only for anchors (organic foot) — voxel
-        // erosion is correct for non-anchor and keeps small islands sparse.
+        // Triangle-accurate loops whenever the classifier supplied them —
+        // voxel 0.25 mm quantization erases organic curves for anchors AND
+        // leaves stair-step fill on rotated/curved non-anchor edges. The
+        // samples are spaced at the grid spacing and then deduped against
+        // the lattice, so this cannot densify past one ring.
         const spacingSq = gridSpacing * gridSpacing;
         const voxelPoints = footprintToPoints(voxels);
         const triLoops = island.perimeterLoops;
-        const isAnchor = anchorScale < 1;
-        const hasTri = isAnchor && !!triLoops && triLoops.length > 0 && triLoops.some(l => l.length >= 2);
+        const hasTri = !!triLoops && triLoops.length > 0 && triLoops.some(l => l.length >= 2);
         const boundary = hasTri
             ? samplePerimeterLoops(triLoops!, spacing * stride, minZ)
             : buildBoundaryPoints(

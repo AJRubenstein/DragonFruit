@@ -290,6 +290,11 @@ export function generatePoissonCandidates(
             : 1;
 
         let infillSeen = 0;
+        // Per-point anchor flag: only points within the anchor band of the
+        // region's own base carry the anchor treatment (girth, fan-merge
+        // eligibility). A tall region's upper points are NOT first-layer —
+        // girth there produced massive pillars halfway up the model.
+        const bandTop = island.baseZ + (settings.anchorBandHeightMm ?? 5) + 1e-6;
         for (const s of accepted) {
             if (s.kind === 'infill') {
                 infillSeen++;
@@ -305,7 +310,7 @@ export function generatePoissonCandidates(
                 zHeight: s.z,
                 priority: 0,
                 gridPoint: true,
-                anchorPoint: isAnchor,
+                anchorPoint: isAnchor && s.z <= bandTop,
             });
         }
     }
