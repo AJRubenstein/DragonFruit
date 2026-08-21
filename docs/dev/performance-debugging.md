@@ -67,6 +67,43 @@ The same rule applies to the element description recorded on `pointerdown`: only
 `data-testid`, `aria-label` and `title` are read, never text content, which would
 carry users' model and file names into a log they are about to email you.
 
+### The 16 GB ceiling, and the watchdog
+
+WebKit gives each content process a hard memory limit — 16 GB on macOS — and
+kills it when it cannot shrink below it. This is not system memory pressure and
+not jetsam: WebKit does it to itself, and it logs the whole thing through the
+app process:
+
+```
+Current memory footprint: 27351 MB
+Process is above the memory kill threshold. Trying to shrink down.
+New memory footprint: 16630 MB
+Unable to shrink memory footprint of process (16630 MB) below the kill thresold (16384 MB). Killed
+```
+
+The app process survives, so the window stays open and grey with nothing to
+explain it. To confirm this is what happened:
+
+```bash
+log show --last 10m --predicate 'eventMessage CONTAINS[c] "memory kill threshold"' --style compact
+```
+
+WebKit dumps its own counters as it dies — `javascript_gc_object_count` is
+usually the one that names the culprit; a scan that kept one object per contact
+voxel showed 99,593,201 live objects there. `vmmap -summary <pid>` on a running
+process gives the same picture earlier: look at *WebKit Malloc* and at
+*Physical footprint (peak)*, which remembers the spike long after the heap has
+settled.
+
+`webview_watchdog.rs` and `webviewHeartbeat.ts` handle the aftermath. The
+webview pings the native side every five seconds; ninety seconds of silence
+means the process is presumed dead and the user is offered a reload.
+
+Recovery is deliberately **not** automatic. Silence from a blocked main thread
+and silence from a dead process look identical from the native side, and
+reloading a merely busy webview would throw away the user's scene. A webview
+that catches up and pings again re-arms the watchdog and nothing happens.
+
 ### Startup header
 
 Written once per run, in two halves, each on the side that has the information.

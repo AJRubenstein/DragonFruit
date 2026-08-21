@@ -59,6 +59,7 @@ fn default_dither_device_gamma() -> f64 {
 
 mod experiments;
 mod plugin_registry;
+mod webview_watchdog;
 mod window_state;
 
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -4147,6 +4148,8 @@ fn main() {
         log_startup_header();
 
         app.manage(window_state::WindowStateTracker::default());
+        app.manage(webview_watchdog::WebviewLiveness::default());
+        webview_watchdog::spawn(app_handle.clone());
         app.manage(experiments::ExperimentsState::default());
 
         // Defer main window creation to an async task so the splashscreen's
@@ -4241,6 +4244,7 @@ fn main() {
 
     builder
         .invoke_handler(tauri::generate_handler![
+            webview_watchdog::webview_heartbeat,
             stage_mesh_binary_start,
             allocate_mesh_stage_path,
             append_mesh_stage_chunk,

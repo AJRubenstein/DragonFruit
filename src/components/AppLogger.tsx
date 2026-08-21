@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { startMainThreadHeartbeat } from "@/utils/debug/mainThreadHeartbeat";
 import { logStartupHeader } from "@/utils/debug/startupHeader";
+import { startWebviewHeartbeat } from "@/utils/debug/webviewHeartbeat";
 
 /**
  * Attaches the native Tauri log plugin to the browser console so that all
@@ -23,11 +24,13 @@ export function AppLogger() {
       "__TAURI_INTERNALS__" in window;
 
     const stopHeartbeat = startMainThreadHeartbeat();
+    const stopWebviewHeartbeat = startWebviewHeartbeat();
 
     if (!isTauri) {
       logStartupHeader((message) => console.info(message));
       return () => {
         stopHeartbeat();
+        stopWebviewHeartbeat();
       };
     }
 
@@ -51,6 +54,7 @@ export function AppLogger() {
     return () => {
       detach?.();
       stopHeartbeat();
+      stopWebviewHeartbeat();
     };
   }, []);
 
