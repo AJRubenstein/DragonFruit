@@ -329,7 +329,9 @@ async function buildIslands(
       comp.push(k);
       flooded++;
       sinceYield++;
-      const { col, row, layer } = codec.unpack(k);
+      const col = codec.colOf(k);
+      const row = codec.rowOf(k);
+      const layer = codec.layerOf(k);
       for (let o = 0; o < offsets.length; o += 3) {
         const nc = col + offsets[o];
         const nr = row + offsets[o + 1];
@@ -348,7 +350,7 @@ async function buildIslands(
     let minLayer = Infinity;
     let maxLayer = -Infinity;
     for (const k of comp) {
-      const { layer } = codec.unpack(k);
+      const layer = codec.layerOf(k);
       if (layer < minLayer) minLayer = layer;
       if (layer > maxLayer) maxLayer = layer;
     }
@@ -358,8 +360,10 @@ async function buildIslands(
     let baseCount = 0;
     const contactVoxels = new VoxelFootprintBuilder(Math.min(comp.length, 1024));
     for (const k of comp) {
-      const { col, row, layer } = codec.unpack(k);
+      const layer = codec.layerOf(k);
       if (layer !== minLayer) continue;
+      const col = codec.colOf(k);
+      const row = codec.rowOf(k);
       const vx = geom.originX + col * geom.px + geom.px * VOXEL_OFFSET_X;
       const vy = -(geom.originZ + row * geom.px - geom.px * VOXEL_OFFSET_Y);
       sumX += vx;
@@ -391,6 +395,17 @@ interface GridCodec {
   height: number;
   pack: (col: number, row: number, layer: number) => number;
   unpack: (key: number) => { col: number; row: number; layer: number };
+  /**
+   * Component accessors, for the hot loops.
+   *
+   * `unpack` returns a fresh object, and the flood fill calls it once per voxel
+   * as it walks plus twice more per voxel in the passes that follow — around
+   * thirty million throwaway objects for a ten-million-voxel scan, all of it
+   * allocation and collection for three numbers.
+   */
+  colOf: (key: number) => number;
+  rowOf: (key: number) => number;
+  layerOf: (key: number) => number;
 }
 
 function gridCodec(width: number, height: number): GridCodec {
@@ -405,6 +420,9 @@ function gridCodec(width: number, height: number): GridCodec {
       const layer = (rest - row) / height;
       return { col, row, layer };
     },
+    colOf: (key) => key % width,
+    rowOf: (key) => Math.floor(key / width) % height,
+    layerOf: (key) => Math.floor(key / (width * height)),
   };
 }
 
