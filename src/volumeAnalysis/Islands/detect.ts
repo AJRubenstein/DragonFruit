@@ -1,3 +1,4 @@
+import { yieldToEventLoop } from '@/utils/yieldToEventLoop';
 import * as THREE from 'three';
 import { type DetectedIsland } from './types';
 import { VoxelFootprintBuilder } from './voxelFootprint';
@@ -58,17 +59,6 @@ const YIELD_INTERVAL_LAYERS = 64;
 /** Voxels flooded between yields while building components. */
 const YIELD_INTERVAL_VOXELS = 200_000;
 
-/**
- * Hands the thread back so React can paint and input can be handled.
- *
- * Everything after the worker pool finishes runs on the main thread: unioning
- * the candidate voxels and the 3D flood fill are both single-threaded walks
- * over the whole model, and without yielding they freeze the window with the
- * progress bar stuck on the last layer it managed to paint.
- */
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => { setTimeout(resolve, 0); });
-}
 
 /**
  * Writes to the app log file, not just the devtools console.

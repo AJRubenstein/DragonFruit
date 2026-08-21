@@ -1,3 +1,4 @@
+import { yieldToEventLoop } from '@/utils/yieldToEventLoop';
 import * as THREE from 'three';
 import { IslandTracker } from './islandTracker';
 import { type RleMask, type RleLabels, rleDecode, rleEncodeLabels } from './rle';
@@ -53,18 +54,6 @@ export type ScanProgressCallback = (done: number, total: number, phase: string) 
 /** Layers processed between yields in the single-threaded passes. */
 const YIELD_INTERVAL_LAYERS = 64;
 
-/**
- * Hands the thread back so React can paint and input can be handled.
- *
- * The passes below are inherently sequential — island ids propagate from one
- * layer to the next — so they cannot be split across workers, and they run as a
- * microtask continuation of the last worker message, which puts them squarely
- * on the main thread. Without yielding, a tall model freezes the window for the
- * length of each pass with the progress bar stuck on the last painted value.
- */
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => { setTimeout(resolve, 0); });
-}
 
 export async function runIslandScan(
   geom: { geometry: THREE.BufferGeometry; bbox: THREE.Box3 },
