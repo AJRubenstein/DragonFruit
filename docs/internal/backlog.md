@@ -277,16 +277,6 @@
 - Context: branch fix/history-undo-seam; `docs/dev/history-and-undo-redo.md`
   documents the façade this would enforce.
 
-### [fix] Esc does not close every modal — M · low risk
-- Where: src/components/modals/ and src/hotkeys/ (HotkeyRegistryManager already
-  special-cases Escape: see the comment about "Escape closing the Settings modal").
-- What: Escape closes some modals and not others. Spotted on the history debugger
-  (Cmd+Shift+C on macOS), which stays open. Audit them all and give them one
-  default behaviour instead of wiring it modal by modal.
-- Why: it is the universal convention, and today it depends on whether someone
-  remembered. The decision to make is where the default lives: in a base modal
-  component, or in the hotkey registry.
-
 ### [fix] Show continuous Euler angles in the Transform panel — M · medium risk
 - Where: the gizmo drag applies rotation as quaternion deltas
   (src/components/scene/SceneCanvas/SceneCanvas.tsx, onRotate:

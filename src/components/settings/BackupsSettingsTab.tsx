@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { ArchiveRestore, CheckCircle2, CircleHelp, Eye, Github, Loader2, RefreshCcw, ShieldCheck, ShieldX, Trash2, UploadCloud, X } from 'lucide-react';
 import { getProfileStoreSnapshot } from '@/features/profiles/profileStore';
 import { NumberInput } from '@/components/ui/NumberInput';
@@ -414,6 +415,8 @@ export function BackupsSettingsTab() {
   const [selectedStorageKey, setSelectedStorageKey] = React.useState<string | null>(null);
   const [selectedProfilesPrinterId, setSelectedProfilesPrinterId] = React.useState<string | null>(null);
   const [showOAuthSetupModal, setShowOAuthSetupModal] = React.useState(false);
+  useEscapeToClose(showSnapshotModal, () => setShowSnapshotModal(false));
+  useEscapeToClose(showOAuthSetupModal, () => setShowOAuthSetupModal(false));
   const [oauthCookieSecretDraft, setOauthCookieSecretDraft] = React.useState<string>(() => {
     if (typeof window === 'undefined') return '';
     return window.localStorage.getItem('dragonfruit-backups:oauth-cookie-secret-draft') ?? '';

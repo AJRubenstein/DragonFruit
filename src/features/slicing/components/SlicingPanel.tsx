@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ChevronDown, CircleHelp, Cpu, Download, Edit3, ExternalLink, Layers3, Loader2, Play, Printer, Timer, X } from 'lucide-react';
 import { MouseTooltip } from '@/components/ui/MouseTooltip';
@@ -851,6 +852,12 @@ export function SlicingPanel({
   const [sessionAaOverrideDraft, setSessionAaOverrideDraft] = useState<MaterialDraft | null>(null);
   const [editingSessionAaOverrideDraft, setEditingSessionAaOverrideDraft] = useState<MaterialDraft | null>(null);
   const [isSessionAaOverrideOpen, setIsSessionAaOverrideOpen] = useState(false);
+
+  // Escape closes both anti-aliasing editors; the slicing progress modal is
+  // blocking, so it swallows the key instead of letting it through.
+  useEscapeToClose(isMaterialAaEditorOpen, () => setIsMaterialAaEditorOpen(false));
+  useEscapeToClose(isSessionAaOverrideOpen, () => setIsSessionAaOverrideOpen(false));
+  useEscapeToClose(showSlicingModal, undefined);
   const [zBlendResinType, setZBlendResinType] = useState<'opaque' | 'clear' | 'custom'>(resolveInitialZBlendResinType);
   const [savedCurves, setSavedCurves] = useState<SavedCurve[]>(() => resolveInitialSavedCurves());
   const [selectedCurveId, setSelectedCurveId] = useState<string>(() => resolveInitialSelectedCurveId(resolveInitialSavedCurves()));
