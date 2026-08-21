@@ -3904,6 +3904,30 @@ fn resolve_log_level_pref_path() -> std::path::PathBuf {
     }
 }
 
+/// Fixed header written once per run, as the first thing in the log file.
+///
+/// Every performance report needs an anchor: a 12-second freeze means nothing
+/// until you know the version, the platform and how many cores it had. The
+/// webview logs its own half (GPU, viewport) from `startupHeader.ts`.
+///
+/// Must run inside `setup()` — the log plugin attaches the `log` facade during
+/// plugin setup, so records emitted before that are dropped on the floor.
+fn log_startup_header() {
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    log::info!(
+        "[header] DragonFruit {} (debug={}) os={} arch={} cores={} log_level={}",
+        env!("CARGO_PKG_VERSION"),
+        cfg!(debug_assertions),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        cores,
+        log::max_level(),
+    );
+}
+
 fn read_log_level_pref() -> log::LevelFilter {
     let content = std::fs::read_to_string(resolve_log_level_pref_path()).unwrap_or_default();
     match content.trim() {
@@ -4075,11 +4099,10 @@ fn main() {
         }
     }
 
-    log::info!(
-        "DragonFruit {} starting (debug={})",
-        env!("CARGO_PKG_VERSION"),
-        cfg!(debug_assertions)
-    );
+    // NOTE: nothing may be logged before this point. `tauri-plugin-log` attaches
+    // the `log` facade during its plugin setup, so any record emitted earlier is
+    // silently dropped. The startup header lives in `log_startup_header()`,
+    // called from `setup()`, for exactly this reason.
 
     let _log_level = read_log_level_pref();
     // Log plugin disabled on CEF — it pulls tauri/wry transitively, causing
@@ -4120,6 +4143,8 @@ fn main() {
     let builder = builder.plugin(log_plugin);
     let builder = builder.setup(|app| {
         let app_handle = app.handle().clone();
+
+        log_startup_header();
 
         app.manage(window_state::WindowStateTracker::default());
         app.manage(experiments::ExperimentsState::default());
