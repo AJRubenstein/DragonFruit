@@ -223,6 +223,12 @@ interface GridGeom {
 }
 
 /** 3D connected components over the candidate voxel set → contact-region islands. */
+/**
+ * Groups candidate voxels into islands by 3D flood fill.
+ *
+ * Consumes `candidates`: the Set is emptied as the walk proceeds and must not
+ * be read afterwards.
+ */
 async function buildIslands(
   candidates: Set<number>,
   codec: GridCodec,
@@ -231,31 +237,38 @@ async function buildIslands(
   onProgress?: (done: number, total: number, phase: string) => void,
 ): Promise<DetectedIsland[]> {
   const offsets = neighbourOffsets(diagonal);
-  const visited = new Set<number>();
   const islands: DetectedIsland[] = [];
   let idx = 0;
   const total = candidates.size;
+  let flooded = 0;
   let sinceYield = 0;
 
+  // `candidates` IS the unvisited set: each voxel is deleted as it is flooded,
+  // so no second Set of the same ten million boxed numbers has to exist beside
+  // it. That pair was most of a 17.5 GB peak, against WebKit's 16 GB ceiling.
+  //
+  // Deleting during iteration is well defined — entries removed before the
+  // iterator reaches them are skipped, which is exactly the "already visited"
+  // check this used to perform. The caller must treat the Set as consumed.
   for (const startKey of candidates) {
-    if (visited.has(startKey)) continue;
 
     // Yielding between components rather than inside a flood keeps the walk
     // itself untouched; a single component can still be large, so this bounds
     // responsiveness by the largest island, not by the whole model.
     if (sinceYield >= YIELD_INTERVAL_VOXELS) {
       sinceYield = 0;
-      onProgress?.(visited.size, total, 'Connecting islands');
+      onProgress?.(flooded, total, 'Connecting islands');
       await yieldToEventLoop();
     }
 
     // Flood this component.
     const comp: number[] = [];
     const stack = [startKey];
-    visited.add(startKey);
+    candidates.delete(startKey);
     while (stack.length) {
       const k = stack.pop()!;
       comp.push(k);
+      flooded++;
       sinceYield++;
       const { col, row, layer } = codec.unpack(k);
       for (let o = 0; o < offsets.length; o += 3) {
@@ -264,8 +277,9 @@ async function buildIslands(
         const nl = layer + offsets[o + 2];
         if (nc < 0 || nc >= codec.width || nr < 0 || nr >= codec.height || nl < 0) continue;
         const nk = codec.pack(nc, nr, nl);
-        if (candidates.has(nk) && !visited.has(nk)) {
-          visited.add(nk);
+        // `delete` reports whether it was there, so claiming a neighbour is one
+        // hash lookup rather than the previous three.
+        if (candidates.delete(nk)) {
           stack.push(nk);
         }
       }
