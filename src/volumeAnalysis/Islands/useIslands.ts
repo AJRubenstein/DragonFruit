@@ -581,9 +581,12 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     });
   }, [supportTips]);
 
+  // Depends on the islands alone, so it survives every support placement.
+  const islandContactGrid = useMemo(() => buildIslandContactGrid(allIslands), [allIslands]);
+
   const annotatedIslands = useMemo(() => {
-    return annotateAndCountSupports(allIslands, mappedSupportTips, plateZ, areaPerSupport, layerHeightMm);
-  }, [allIslands, mappedSupportTips, plateZ, areaPerSupport, layerHeightMm]);
+    return annotateAndCountSupports(allIslands, islandContactGrid, mappedSupportTips, plateZ, areaPerSupport, layerHeightMm);
+  }, [allIslands, islandContactGrid, mappedSupportTips, plateZ, areaPerSupport, layerHeightMm]);
 
   const tableStats = useMemo(() => {
     const voxelTotal = annotatedIslands.filter(i => i.class === 'voxelOnly' && i.source === 'voxel').length;
@@ -1312,6 +1315,18 @@ interface ContourMarker {
   islandId: number;
 }
 
+/**
+ * Contours are a pure function of an island's own voxels and the four scalars
+ * below — never of the support tips, the visibility toggles or the other
+ * islands. But they were being regenerated inside the marker memo, so flipping
+ * any island checkbox re-contoured every island from scratch.
+ *
+ * Keyed by the voxel array's identity so a rescan invalidates naturally: a new
+ * scan produces new arrays, and the old entries die with them. Island ids alone
+ * would be unsafe, since a rescan reuses them for different geometry.
+ */
+const contourCache = new WeakMap<{ x: number; y: number }[], Map<string, ContourMarker[]>>();
+
 export function generateContourMarkers(
   voxels: { x: number; y: number }[],
   pxMm: number,
@@ -1319,8 +1334,34 @@ export function generateContourMarkers(
   baseZ: number,
   type: number
 ): ContourMarker[] {
+  if (voxels.length === 0) return [];
+
+  const variantKey = `${pxMm}|${islandId}|${baseZ}|${type}`;
+  let variants = contourCache.get(voxels);
+  const cached = variants?.get(variantKey);
+  // Copied out: at most 30 markers, and callers are free to mutate what they
+  // get without corrupting the cache.
+  if (cached) return cached.map((marker) => ({ ...marker }));
+
+  const markers = computeContourMarkers(voxels, pxMm, islandId, baseZ, type);
+
+  if (!variants) {
+    variants = new Map();
+    contourCache.set(voxels, variants);
+  }
+  variants.set(variantKey, markers);
+
+  return markers.map((marker) => ({ ...marker }));
+}
+
+function computeContourMarkers(
+  voxels: { x: number; y: number }[],
+  pxMm: number,
+  islandId: number,
+  baseZ: number,
+  type: number
+): ContourMarker[] {
   const markers: ContourMarker[] = [];
-  if (voxels.length === 0) return markers;
 
   const R_small = Math.max(0.12, pxMm * 1.5);
   const R_large = pxMm * 3.5;
@@ -1533,8 +1574,40 @@ export function generateContourMarkers(
   return markers;
 }
 
+interface IslandGridEntry {
+  islandIndex: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
+/**
+ * Indexes every contact voxel of every island for tip proximity queries.
+ *
+ * Kept separate from {@link annotateAndCountSupports} because it depends only on
+ * the islands: placing a single support changes the tips, not the geometry, and
+ * rebuilding this grid over hundreds of thousands of voxels on every placement
+ * was the bulk of the freeze after each click. Entry indices refer to positions
+ * in `islands`, which `annotateAndCountSupports` preserves.
+ */
+function buildIslandContactGrid(islands: DetectedIsland[]): SpatialHashGrid2D<IslandGridEntry> {
+  const grid = new SpatialHashGrid2D<IslandGridEntry>(1.0);
+  islands.forEach((island, islandIndex) => {
+    const z = island.contact.z;
+    if (island.contactVoxels && island.contactVoxels.length > 0) {
+      for (const vox of island.contactVoxels) {
+        grid.insert(vox.x, vox.y, { islandIndex, x: vox.x, y: vox.y, z });
+      }
+    } else {
+      grid.insert(island.contact.x, island.contact.y, { islandIndex, x: island.contact.x, y: island.contact.y, z });
+    }
+  });
+  return grid;
+}
+
 function annotateAndCountSupports(
   islands: DetectedIsland[],
+  grid: SpatialHashGrid2D<IslandGridEntry>,
   supportTips: TipInfo[],
   plateZ: number,
   areaPerSupport: number,
@@ -1545,26 +1618,6 @@ function annotateAndCountSupports(
   for (const island of annotated) {
     island.supportCount = 0;
   }
-
-  interface IslandGridEntry {
-    islandIndex: number;
-    x: number;
-    y: number;
-    z: number;
-  }
-
-  // Build spatial grid over islands
-  const grid = new SpatialHashGrid2D<IslandGridEntry>(1.0);
-  annotated.forEach((island, islandIndex) => {
-    const z = island.contact.z;
-    if (island.contactVoxels && island.contactVoxels.length > 0) {
-      for (const vox of island.contactVoxels) {
-        grid.insert(vox.x, vox.y, { islandIndex, x: vox.x, y: vox.y, z });
-      }
-    } else {
-      grid.insert(island.contact.x, island.contact.y, { islandIndex, x: island.contact.x, y: island.contact.y, z });
-    }
-  });
 
   const supportedIslandsThisTip = new Set<number>();
   const zTolerance = layerHeightMm ? 2 * layerHeightMm : 0.5;
