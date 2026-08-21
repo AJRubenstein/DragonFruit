@@ -124,6 +124,39 @@ export interface UseIslandsInput {
 
 export type UseIslandsReturn = ReturnType<typeof useIslands>;
 
+/**
+ * Times a derived computation and reports the slow ones to the app log.
+ *
+ * The scan phases are instrumented in `detect.ts`, but the stretch *after* the
+ * scan — the memo cascade that turns raw islands into markers — was invisible,
+ * and measurement puts the peak memory and a good fifteen seconds of frozen UI
+ * right there. Only slow computations are reported, so the log stays readable.
+ */
+function timed<T>(label: string, compute: () => T): T {
+  const startedAt = performance.now();
+  const result = compute();
+  const elapsedMs = performance.now() - startedAt;
+  if (elapsedMs >= SLOW_STEP_MS) {
+    void reportSlowStep(label, elapsedMs);
+  }
+  return result;
+}
+
+/** Below this a step is not worth a log line. */
+const SLOW_STEP_MS = 150;
+
+async function reportSlowStep(label: string, elapsedMs: number): Promise<void> {
+  const message = `[Islands] step=${label} ms=${Math.round(elapsedMs)}`;
+  console.log(message);
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+  try {
+    const { info } = await import('@tauri-apps/plugin-log');
+    await info(message);
+  } catch {
+    // Console line stands.
+  }
+}
+
 export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ = 0, sourcePath, activeTab }: UseIslandsInput) {
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState<{ done: number; total: number; phase?: string } | null>(null);
@@ -477,10 +510,10 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   }, [geom, transform, sourcePath, prepareWorldGeom, layerHeightMm, pxMm, supportBufMm, connectivity, minAreaMm2, minimaK]);
 
   // Pass 1: Proposed consolidation & classification
-  const proposedConsolidated = useMemo(() => {
+  const proposedConsolidated = useMemo(() => timed('proposedConsolidated', () => {
     if (!consolidateVoxel) return voxelIslands;
     return consolidateVoxelIslands(voxelIslands, consolidationDistance, pxMm);
-  }, [voxelIslands, consolidateVoxel, consolidationDistance, pxMm]);
+  }), [voxelIslands, consolidateVoxel, consolidationDistance, pxMm]);
 
   const proposedClassified = useMemo(() => {
     return classifyIntersection(proposedConsolidated, minimaIslands, {
@@ -490,11 +523,11 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   }, [proposedConsolidated, minimaIslands, layerHeightMm]);
 
   // Determine contoured IDs based on proposed list
-  const contouredIds = useMemo(() => {
+  const contouredIds = useMemo(() => timed('contouredIds', () => {
     return enableContourRegions
       ? determineContourThreshold(proposedClassified.islands, pxMm, maxContourRegions)
       : new Set<string>();
-  }, [proposedClassified.islands, enableContourRegions, pxMm, maxContourRegions]);
+  }), [proposedClassified.islands, enableContourRegions, pxMm, maxContourRegions]);
 
   // Pass 2: Revert non-contoured consolidated islands back to single voxel islands
   const finalVoxelIslands = useMemo(() => {
@@ -510,12 +543,12 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     return list;
   }, [proposedConsolidated, contouredIds]);
 
-  const classifiedResult = useMemo(() => {
+  const classifiedResult = useMemo(() => timed('classifiedResult', () => {
     return classifyIntersection(finalVoxelIslands, minimaIslands, {
       xyToleranceMm: 0.5,
       zBandMm: layerHeightMm,
     });
-  }, [finalVoxelIslands, minimaIslands, layerHeightMm]);
+  }), [finalVoxelIslands, minimaIslands, layerHeightMm]);
 
   // Merge overhang regions into the classified set (dedupe + inclusion):
   // the mesh-normal classifier and the slice-growth detector flag the same
@@ -594,9 +627,9 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   // Depends on the islands alone, so it survives every support placement.
   const islandContactGrid = useMemo(() => buildIslandContactGrid(allIslands), [allIslands]);
 
-  const annotatedIslands = useMemo(() => {
+  const annotatedIslands = useMemo(() => timed('annotatedIslands', () => {
     return annotateAndCountSupports(allIslands, islandContactGrid, mappedSupportTips, plateZ, areaPerSupport, layerHeightMm);
-  }, [allIslands, islandContactGrid, mappedSupportTips, plateZ, areaPerSupport, layerHeightMm]);
+  }), [allIslands, islandContactGrid, mappedSupportTips, plateZ, areaPerSupport, layerHeightMm]);
 
   const tableStats = useMemo(() => {
     const voxelTotal = annotatedIslands.filter(i => i.class === 'voxelOnly' && i.source === 'voxel').length;
@@ -721,7 +754,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     return merged;
   }, [voxelOnlyPucks, minimaOnlyPucks, intersectionPucks, showIntersection, showVoxelOnly]);
 
-  const islandMarkers = useMemo(() => {
+  const islandMarkers = useMemo(() => timed('islandMarkers', () => {
     const markers: any[] = [];
 
     voxelOnlyPucks.markers.forEach(m => {
@@ -769,7 +802,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     });
 
     return markers;
-  }, [
+  }), [
     voxelOnlyPucks,
     minimaOnlyPucks,
     intersectionPucks,

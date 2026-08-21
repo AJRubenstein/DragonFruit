@@ -149,19 +149,27 @@ export async function detectVoxelIslands(
   // layer, so a tall model holds millions of small typed arrays, each with its
   // own object and buffer overhead — memory that lives outside the GC heap and
   // never showed up in the object counts we were chasing.
-  let rleRowCount = 0;
+  // Count rows that hold data, not row slots: the empty ones all point at the
+  // same shared array, so the slot count says nothing about how many objects
+  // actually exist. That distinction was invisible in the first version of this
+  // measurement, which made the sharing look like it had changed nothing.
+  let rowSlots = 0;
+  let nonEmptyRows = 0;
   let rleDataBytes = 0;
   for (const labels of candidateLayers) {
     if (!labels) continue;
     for (const row of labels.rows) {
-      rleRowCount++;
-      rleDataBytes += row.byteLength;
+      rowSlots++;
+      if (row.length > 0) {
+        nonEmptyRows++;
+        rleDataBytes += row.byteLength;
+      }
     }
   }
   await logToFile(
-    `[Islands] phase=union-done layers=${numLayers} rleArrays=${rleRowCount} `
+    `[Islands] phase=union-done layers=${numLayers} rowSlots=${rowSlots} `
+    + `liveRowArrays=${nonEmptyRows} `
     + `rleDataMiB=${(rleDataBytes / 1048576).toFixed(1)} `
-    + `rleOverheadMiB≈${(rleRowCount * 128 / 1048576).toFixed(0)} `
     + `candidates=${candidates.size}`,
   );
 
