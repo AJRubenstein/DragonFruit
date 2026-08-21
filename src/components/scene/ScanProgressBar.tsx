@@ -52,7 +52,7 @@ export function ScanProgressBar({ progress }: { progress: ScanProgress | null })
         aria-label={progress?.phase ?? 'Scan progress'}
       >
         {percent === null ? (
-          <div className="ui-loading-indicator" style={{ background: 'linear-gradient(90deg, var(--accent), #ff79c6)' }} />
+          <div className="ui-loading-dot" style={{ background: 'var(--accent)' }} />
         ) : (
           <div
             className="h-full rounded-full transition-[width] duration-200"
