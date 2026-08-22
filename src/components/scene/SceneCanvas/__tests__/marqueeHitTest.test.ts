@@ -101,6 +101,36 @@ test('a box touching along one edge counts as crossed', () => {
   assert.equal(boxHitsMarquee(rect, boxCorners(200, 120, 300, 180), 'crossing'), true);
 });
 
+test('a crossing drag misses a box whose silhouette clears the corner', () => {
+  // A rotated box projects to a diamond: its axis-aligned bounds reach the
+  // marquee, its silhouette does not.
+  const diamond = [
+    { x: 150, y: 300 },
+    { x: 300, y: 150 },
+    { x: 450, y: 300 },
+    { x: 300, y: 450 },
+  ];
+
+  assert.equal(boxHitsMarquee(rect, diamond, 'crossing'), false);
+});
+
+test('a crossing drag takes a diamond it does reach into', () => {
+  const diamond = [
+    { x: 100, y: 250 },
+    { x: 250, y: 100 },
+    { x: 400, y: 250 },
+    { x: 250, y: 400 },
+  ];
+
+  assert.equal(boxHitsMarquee(rect, diamond, 'crossing'), true);
+});
+
+test('a box seen edge-on is still crossed', () => {
+  const edgeOn = [{ x: 40, y: 150 }, { x: 300, y: 150 }, { x: 170, y: 150 }];
+
+  assert.equal(boxHitsMarquee(rect, edgeOn, 'crossing'), true);
+});
+
 test('a box with no projectable corners is never hit', () => {
   assert.equal(boxHitsMarquee(rect, [null, null], 'crossing'), false);
   assert.equal(boxHitsMarquee(rect, [], 'window'), false);

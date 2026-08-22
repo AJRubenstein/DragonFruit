@@ -35,7 +35,8 @@ import type { ScanResults } from '@/volumeAnalysis/islandVolume/steps/voxelizati
 import type { BasinFillSimulator } from '@/volumeAnalysis/islandVolume/steps/expansion/BasinFillSimulator';
 import type { BasinFillProxy } from '@/volumeAnalysis/islandVolume/steps/expansion/BasinFillProxy';
 import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
-import type { SupportMode } from '@/supports/types';
+import type { Segment, SupportMode } from '@/supports/types';
+import type { ContactCone } from '@/supports/SupportPrimitives/ContactCone/types';
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { getModelIdForSupportEntityId } from '@/supports/state';
@@ -90,6 +91,7 @@ import { useExportThumbnailCapture, type ExportThumbnailRenderOptions } from './
 import {
   buildBoxWireframePositions,
   buildEmptyCornerOnlyWireframePositions,
+  getBoxCorners,
   writeCornerOnlyWireframePositions,
 } from './SceneCanvasGeometry';
 import { ModelAttachedSupportLayer } from './ModelAttachedSupportLayer';
@@ -192,6 +194,31 @@ function formatOutOfBoundsLabel(
     message: '{count, plural, one {# model out of build volume} other {# models out of build volume}}',
     comment: 'Warning badge over the viewport when models stick out of the printer build volume.',
   }), { count });
+}
+
+/**
+ * Projects support positions to container pixels for the marquee hit test.
+ * Points that fall outside clip space come back as null.
+ */
+function makeSupportPointProjector(rect: DOMRect, camera: THREE.Camera) {
+  const point = new THREE.Vector3();
+  const projected = new THREE.Vector3();
+
+  return (positions: Array<{ x: number; y: number; z: number }>): Array<MarqueePoint | null> => (
+    positions.map((position) => {
+      projected.copy(point.set(position.x, position.y, position.z)).project(camera);
+
+      if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || !Number.isFinite(projected.z)) {
+        return null;
+      }
+      if (projected.z < -1 || projected.z > 1) return null;
+
+      return {
+        x: ((projected.x + 1) * 0.5) * rect.width,
+        y: ((1 - projected.y) * 0.5) * rect.height,
+      };
+    })
+  );
 }
 
 function isTrackpadModifierPressed(event: WheelEvent, modifierKey: CameraTrackpadModifierKey): boolean {
@@ -2582,6 +2609,165 @@ export function SceneCanvas({
     return map;
   }, [models]);
 
+  // World-space corners of the box each model's own mesh occupies. The marquee
+  // cannot reuse `modelWorldBounds`: that one is unioned with the raft and the
+  // support forest, which on screen reach far past the model itself.
+  const modelMeshCornersById = React.useMemo(() => {
+    const map = new Map<string, THREE.Vector3[]>();
+
+    for (const model of models) {
+      if (!model.visible) continue;
+
+      const localBounds = model.geometry.bbox;
+      if (!localBounds || localBounds.isEmpty()) continue;
+
+      const t = (model.id === activeTransformOverrideModelId && transform) ? transform : model.transform;
+      const matrix = new THREE.Matrix4().compose(
+        t.position,
+        quaternionFromGlobalEuler(t.rotation),
+        t.scale,
+      );
+
+      // Geometry is rendered centred on its own origin, so the box has to lose
+      // that offset before the model transform is applied to it.
+      const centered = localBounds.clone().translate(model.geometry.center.clone().negate());
+
+      map.set(model.id, getBoxCorners(centered).map((corner) => corner.applyMatrix4(matrix)));
+    }
+
+    return map;
+  }, [activeTransformOverrideModelId, models, transform]);
+
+  // Every support drawn as the polyline that runs along it: root or host knot,
+  // each joint in order, and the contact cone at the tip. Built once per state
+  // change — the marquee walks this on every pointer move. A curved segment is
+  // approximated by its chord.
+  const supportMarqueeShapes = React.useMemo(() => {
+    type SupportPoint = { x: number; y: number; z: number };
+
+    const shapes: Array<{
+      id: string;
+      modelId: string;
+      points: SupportPoint[];
+      struts: MarqueeSegment[];
+    }> = [];
+
+    const chain = (id: string, modelId: string, positions: Array<SupportPoint | null | undefined>) => {
+      if (!id) return;
+
+      const points: SupportPoint[] = [];
+      for (const position of positions) {
+        if (!position) continue;
+        const previous = points[points.length - 1];
+        // Consecutive segments share a joint; keep it once.
+        if (previous && previous.x === position.x && previous.y === position.y && previous.z === position.z) {
+          continue;
+        }
+        points.push(position);
+      }
+
+      if (points.length === 0) return;
+
+      const struts: MarqueeSegment[] = [];
+      for (let i = 1; i < points.length; i += 1) {
+        struts.push([i - 1, i]);
+      }
+
+      shapes.push({ id, modelId, points, struts });
+    };
+
+    const jointPositions = (segments: Segment[]) => segments.flatMap((segment) => [
+      segment.bottomJoint?.pos,
+      segment.topJoint?.pos,
+    ]);
+
+    const conePositions = (cone: ContactCone) => [getFinalSocketPosition(cone), cone.pos];
+
+    for (const root of Object.values(supportStateForBounds.roots)) {
+      chain(root.id, root.modelId, [root.transform.pos]);
+    }
+
+    for (const trunk of Object.values(supportStateForBounds.trunks)) {
+      const root = supportStateForBounds.roots[trunk.rootId];
+      chain(trunk.id, trunk.modelId, [
+        root?.transform.pos,
+        ...jointPositions(trunk.segments),
+        ...(trunk.contactCone ? conePositions(trunk.contactCone) : []),
+      ]);
+    }
+
+    for (const branch of Object.values(supportStateForBounds.branches)) {
+      chain(branch.id, branch.modelId, [
+        supportStateForBounds.knots[branch.parentKnotId]?.pos,
+        ...jointPositions(branch.segments),
+        ...(branch.contactCone ? conePositions(branch.contactCone) : []),
+      ]);
+    }
+
+    for (const leaf of Object.values(supportStateForBounds.leaves)) {
+      if (!leaf.contactCone) continue;
+      chain(leaf.id, leaf.modelId, [
+        supportStateForBounds.knots[leaf.parentKnotId]?.pos,
+        ...conePositions(leaf.contactCone),
+      ]);
+    }
+
+    for (const twig of Object.values(supportStateForBounds.twigs)) {
+      chain(twig.id, twig.modelId, [
+        twig.contactDiskA.pos,
+        ...jointPositions(twig.segments),
+        twig.contactDiskB.pos,
+      ]);
+    }
+
+    for (const stick of Object.values(supportStateForBounds.sticks)) {
+      chain(stick.id, stick.modelId, [
+        stick.contactConeA.pos,
+        getFinalSocketPosition(stick.contactConeA),
+        ...jointPositions(stick.segments),
+        getFinalSocketPosition(stick.contactConeB),
+        stick.contactConeB.pos,
+      ]);
+    }
+
+    for (const brace of Object.values(supportStateForBounds.braces)) {
+      chain(brace.id, brace.modelId, [
+        supportStateForBounds.knots[brace.startKnotId]?.pos,
+        supportStateForBounds.knots[brace.endKnotId]?.pos,
+      ]);
+    }
+
+    for (const anchor of Object.values(supportStateForBounds.anchors)) {
+      chain(anchor.id, anchor.modelId, [
+        anchor.rootPos,
+        anchor.joint?.pos,
+        ...jointPositions(anchor.segments),
+        ...(anchor.contactCone ? conePositions(anchor.contactCone) : []),
+      ]);
+    }
+
+    for (const kickstand of Object.values(kickstandStateForBounds.kickstands)) {
+      chain(kickstand.id, kickstand.modelId, [
+        kickstandStateForBounds.roots[kickstand.rootId]?.transform.pos,
+        ...jointPositions(kickstand.segments),
+        supportStateForBounds.knots[kickstand.hostKnotId]?.pos
+          ?? kickstandStateForBounds.knots[kickstand.hostKnotId]?.pos,
+      ]);
+    }
+
+    return shapes;
+  }, [kickstandStateForBounds, supportStateForBounds]);
+
+  const supportMarqueeShapesByModelId = React.useMemo(() => {
+    const map = new Map<string, typeof supportMarqueeShapes>();
+    for (const shape of supportMarqueeShapes) {
+      const forModel = map.get(shape.modelId);
+      if (forModel) forModel.push(shape);
+      else map.set(shape.modelId, [shape]);
+    }
+    return map;
+  }, [supportMarqueeShapes]);
+
   const resolveMarqueeSelectedIds = React.useCallback((selection: {
     start: { x: number; y: number };
     current: { x: number; y: number };
@@ -2616,33 +2802,44 @@ export function SceneCanvas({
 
     const marqueeRect = marqueeRectForDrag(selection.start, selection.current);
     const marqueeMode = marqueeModeForDrag(selection.start, selection.current);
+    const projectSupportPoints = makeSupportPointProjector(rect, camera);
 
-    const corner = new THREE.Vector3();
     const selectedIds: string[] = [];
 
     for (const model of models) {
       if (!model.visible) continue;
 
-      const bounds = modelWorldBounds.get(model.id) ?? computeModelWorldBounds(model, model.transform, buildVolumeBounds);
-      if (bounds.isEmpty()) continue;
+      const meshCorners = modelMeshCornersById.get(model.id);
+      if (!meshCorners) continue;
 
-      const corners: Array<MarqueePoint | null> = [];
-      for (let i = 0; i < 8; i += 1) {
-        corner.set(
-          (i & 1) ? bounds.max.x : bounds.min.x,
-          (i & 2) ? bounds.max.y : bounds.min.y,
-          (i & 4) ? bounds.max.z : bounds.min.z,
-        );
-        corners.push(projectWorldPoint(corner));
-      }
+      const corners: Array<MarqueePoint | null> = meshCorners.map(projectWorldPoint);
+      const boxHit = boxHitsMarquee(marqueeRect, corners, marqueeMode);
 
-      if (boxHitsMarquee(marqueeRect, corners, marqueeMode)) {
+      // A model is selected together with its supports: they are on screen, so
+      // a drag has to enclose them too, and touching one touches the model.
+      const supportShapes = supportMarqueeShapesByModelId.get(model.id) ?? [];
+      const supportHit = marqueeMode === 'window'
+        ? supportShapes.every((shape) => shapeHitsMarquee(
+          marqueeRect,
+          projectSupportPoints(shape.points),
+          shape.struts,
+          'window',
+        ))
+        : supportShapes.some((shape) => shapeHitsMarquee(
+          marqueeRect,
+          projectSupportPoints(shape.points),
+          shape.struts,
+          'crossing',
+        ));
+
+      const hit = marqueeMode === 'window' ? (boxHit && supportHit) : (boxHit || supportHit);
+      if (hit) {
         selectedIds.push(model.id);
       }
     }
 
     return selectedIds;
-  }, [buildVolumeBounds, computeModelWorldBounds, customPrepareMarqueeSelection, modelWorldBounds, models]);
+  }, [customPrepareMarqueeSelection, modelMeshCornersById, models, supportMarqueeShapesByModelId]);
 
   const resolveMarqueeSelectedSupportIds = React.useCallback((selection: {
     start: { x: number; y: number };
@@ -2654,134 +2851,18 @@ export function SceneCanvas({
 
     const marqueeRect = marqueeRectForDrag(selection.start, selection.current);
     const marqueeMode = marqueeModeForDrag(selection.start, selection.current);
+    const projectSupportPoints = makeSupportPointProjector(rect, camera);
 
-    const point = new THREE.Vector3();
-    const projected = new THREE.Vector3();
     const selectedSupportIds: string[] = [];
 
-    // A support is a chain of thin struts, so it is hit tested as the points
-    // it is built from plus the struts joining them — exact for both modes.
-    type SupportPoint = { x: number; y: number; z: number };
-    type SupportShape = { points: SupportPoint[]; struts: MarqueeSegment[] };
-
-    const emptyShape = (): SupportShape => ({ points: [], struts: [] });
-
-    const addStrut = (shape: SupportShape, from: SupportPoint, to: SupportPoint) => {
-      shape.struts.push([shape.points.length, shape.points.length + 1]);
-      shape.points.push(from, to);
-    };
-
-    const pushIfHit = (id: string, shape: SupportShape) => {
-      if (!id || shape.points.length === 0) return;
-
-      const projectedPoints = shape.points.map((p) => {
-        projected.copy(point.set(p.x, p.y, p.z)).project(camera);
-
-        if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || !Number.isFinite(projected.z)) {
-          return null;
-        }
-        if (projected.z < -1 || projected.z > 1) return null;
-
-        return {
-          x: ((projected.x + 1) * 0.5) * rect.width,
-          y: ((1 - projected.y) * 0.5) * rect.height,
-        };
-      });
-
-      if (shapeHitsMarquee(marqueeRect, projectedPoints, shape.struts, marqueeMode)) {
-        selectedSupportIds.push(id);
+    for (const shape of supportMarqueeShapes) {
+      if (shapeHitsMarquee(marqueeRect, projectSupportPoints(shape.points), shape.struts, marqueeMode)) {
+        selectedSupportIds.push(shape.id);
       }
-    };
-
-    const shapeFromSegments = (segments: Array<{
-      topJoint?: { pos?: { x: number; y: number; z: number } };
-      bottomJoint?: { pos?: { x: number; y: number; z: number } };
-    }>) => {
-      const shape = emptyShape();
-      for (const segment of segments) {
-        const top = segment.topJoint?.pos;
-        const bottom = segment.bottomJoint?.pos;
-        if (top && bottom) {
-          addStrut(shape, top, bottom);
-        } else if (top) {
-          shape.points.push(top);
-        } else if (bottom) {
-          shape.points.push(bottom);
-        }
-      }
-      return shape;
-    };
-
-    for (const root of Object.values(supportStateForBounds.roots)) {
-      pushIfHit(root.id, { points: [root.transform.pos], struts: [] });
-    }
-
-    for (const trunk of Object.values(supportStateForBounds.trunks)) {
-      const shape = shapeFromSegments(trunk.segments);
-      if (trunk.contactCone) {
-        addStrut(shape, trunk.contactCone.pos, getFinalSocketPosition(trunk.contactCone));
-      }
-      pushIfHit(trunk.id, shape);
-    }
-
-    for (const branch of Object.values(supportStateForBounds.branches)) {
-      const shape = shapeFromSegments(branch.segments);
-      if (branch.contactCone) {
-        addStrut(shape, branch.contactCone.pos, getFinalSocketPosition(branch.contactCone));
-      }
-      pushIfHit(branch.id, shape);
-    }
-
-    for (const leaf of Object.values(supportStateForBounds.leaves)) {
-      if (!leaf.contactCone) continue;
-      const shape = emptyShape();
-      addStrut(shape, leaf.contactCone.pos, getFinalSocketPosition(leaf.contactCone));
-      pushIfHit(leaf.id, shape);
-    }
-
-    for (const twig of Object.values(supportStateForBounds.twigs)) {
-      const shape = shapeFromSegments(twig.segments);
-      shape.points.push(twig.contactDiskA.pos, twig.contactDiskB.pos);
-      pushIfHit(twig.id, shape);
-    }
-
-    for (const stick of Object.values(supportStateForBounds.sticks)) {
-      const shape = shapeFromSegments(stick.segments);
-      addStrut(shape, stick.contactConeA.pos, getFinalSocketPosition(stick.contactConeA));
-      addStrut(shape, stick.contactConeB.pos, getFinalSocketPosition(stick.contactConeB));
-      pushIfHit(stick.id, shape);
-    }
-
-    for (const brace of Object.values(supportStateForBounds.braces)) {
-      const startKnot = supportStateForBounds.knots[brace.startKnotId];
-      const endKnot = supportStateForBounds.knots[brace.endKnotId];
-      const shape = emptyShape();
-      if (startKnot?.pos && endKnot?.pos) {
-        addStrut(shape, startKnot.pos, endKnot.pos);
-      } else if (startKnot?.pos) {
-        shape.points.push(startKnot.pos);
-      } else if (endKnot?.pos) {
-        shape.points.push(endKnot.pos);
-      }
-      pushIfHit(brace.id, shape);
-    }
-
-    for (const anchor of Object.values(supportStateForBounds.anchors)) {
-      const shape = emptyShape();
-      if (anchor.contactCone) {
-        addStrut(shape, anchor.rootPos, anchor.contactCone.pos);
-      } else {
-        shape.points.push(anchor.rootPos);
-      }
-      pushIfHit(anchor.id, shape);
-    }
-
-    for (const kickstand of Object.values(kickstandStateForBounds.kickstands)) {
-      pushIfHit(kickstand.id, shapeFromSegments(kickstand.segments));
     }
 
     return selectedSupportIds;
-  }, [kickstandStateForBounds.kickstands, supportStateForBounds]);
+  }, [supportMarqueeShapes]);
 
   const {
     marqueeSelection,

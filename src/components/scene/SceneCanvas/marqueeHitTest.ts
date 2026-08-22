@@ -106,11 +106,77 @@ export function shapeHitsMarquee(
   return false;
 }
 
+/** Andrew's monotone chain, counter-clockwise, without collinear points. */
+function convexHull(points: MarqueePoint[]): MarqueePoint[] {
+  if (points.length < 3) return points.slice();
+
+  const sorted = points.slice().sort((a, b) => (a.x - b.x) || (a.y - b.y));
+  const turn = (o: MarqueePoint, a: MarqueePoint, b: MarqueePoint) => (
+    ((a.x - o.x) * (b.y - o.y)) - ((a.y - o.y) * (b.x - o.x))
+  );
+
+  const half = (ordered: MarqueePoint[]) => {
+    const chain: MarqueePoint[] = [];
+    for (const point of ordered) {
+      while (chain.length >= 2 && turn(chain[chain.length - 2], chain[chain.length - 1], point) <= 0) {
+        chain.pop();
+      }
+      chain.push(point);
+    }
+    chain.pop();
+    return chain;
+  };
+
+  return half(sorted).concat(half(sorted.slice().reverse()));
+}
+
+/** Separating axis test between a convex polygon and the marquee rectangle. */
+function convexHullIntersectsMarquee(rect: MarqueeRect, hull: MarqueePoint[]): boolean {
+  const rectCorners = [
+    { x: rect.minX, y: rect.minY },
+    { x: rect.maxX, y: rect.minY },
+    { x: rect.maxX, y: rect.maxY },
+    { x: rect.minX, y: rect.maxY },
+  ];
+
+  const axes: MarqueePoint[] = [{ x: 1, y: 0 }, { x: 0, y: 1 }];
+  for (let i = 0; i < hull.length; i += 1) {
+    const from = hull[i];
+    const to = hull[(i + 1) % hull.length];
+    axes.push({ x: -(to.y - from.y), y: to.x - from.x });
+  }
+
+  for (const axis of axes) {
+    let hullMin = Infinity;
+    let hullMax = -Infinity;
+    for (const point of hull) {
+      const distance = (point.x * axis.x) + (point.y * axis.y);
+      hullMin = Math.min(hullMin, distance);
+      hullMax = Math.max(hullMax, distance);
+    }
+
+    let rectMin = Infinity;
+    let rectMax = -Infinity;
+    for (const corner of rectCorners) {
+      const distance = (corner.x * axis.x) + (corner.y * axis.y);
+      rectMin = Math.min(rectMin, distance);
+      rectMax = Math.max(rectMax, distance);
+    }
+
+    if (hullMax < rectMin || rectMax < hullMin) return false;
+  }
+
+  return true;
+}
+
 /**
- * Hit test for a model, from the eight projected corners of its world bounding
- * box. A crossing drag compares screen-space bounding boxes, so a long
- * diagonal model reports a hit slightly before the rectangle reaches its
- * surface — the box covers empty space around it.
+ * Hit test for a model, from the eight projected corners of the bounding box
+ * that its own mesh occupies in world space.
+ *
+ * A crossing drag tests the silhouette of that box — the convex hull of the
+ * projected corners — not the axis-aligned rectangle around it, which for a
+ * model seen at an angle covers a great deal of empty canvas. The box is still
+ * a box: a drag can catch a corner of it that the model itself does not fill.
  */
 export function boxHitsMarquee(
   rect: MarqueeRect,
@@ -123,20 +189,14 @@ export function boxHitsMarquee(
     return corners.every((corner) => corner !== null && isPointInsideMarquee(rect, corner));
   }
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+  const projectedCorners = corners.filter((corner): corner is MarqueePoint => corner !== null);
+  if (projectedCorners.length === 0) return false;
 
-  for (const corner of corners) {
-    if (!corner) continue;
-    minX = Math.min(minX, corner.x);
-    maxX = Math.max(maxX, corner.x);
-    minY = Math.min(minY, corner.y);
-    maxY = Math.max(maxY, corner.y);
-  }
+  const hull = convexHull(projectedCorners);
 
-  if (minX > maxX || minY > maxY) return false;
+  // A box seen edge-on projects to a segment, and a single corner to a point.
+  if (hull.length === 1) return isPointInsideMarquee(rect, hull[0]);
+  if (hull.length === 2) return segmentIntersectsMarquee(rect, hull[0], hull[1]);
 
-  return minX <= rect.maxX && maxX >= rect.minX && minY <= rect.maxY && maxY >= rect.minY;
+  return convexHullIntersectsMarquee(rect, hull);
 }
