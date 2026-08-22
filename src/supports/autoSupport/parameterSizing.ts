@@ -1,4 +1,4 @@
-import { clamp } from '@/utils/math';
+import { clamp, round } from '@/utils/math';
 import type { CandidatePoint } from './types';
 import { getSettings } from '../Settings/state';
 
@@ -183,11 +183,3 @@ export function sizeParameters(
     };
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-
-function round(value: number, decimals: number): number {
-    return Number(value.toFixed(decimals));
-}
