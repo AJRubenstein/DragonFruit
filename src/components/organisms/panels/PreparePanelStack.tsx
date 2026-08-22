@@ -45,6 +45,8 @@ export type PreparePanelStackProps = {
   requestDestructiveTransformSupportDeletion: (operationLabel: string) => boolean;
   handleRotationComplete: () => void;
   handleAutoLiftChange: (enabled: boolean) => void;
+  handleLiftSelectedModels: () => void;
+  handleDropSelectedModels: () => void;
   scheduleCommitPendingTransformHistory: (frameDelay?: number) => void;
   uniformScaling: boolean;
   setUniformScaling: (value: boolean) => void;
@@ -88,6 +90,8 @@ export function PreparePanelStack({
   requestDestructiveTransformSupportDeletion,
   handleRotationComplete,
   handleAutoLiftChange,
+  handleLiftSelectedModels,
+  handleDropSelectedModels,
   scheduleCommitPendingTransformHistory,
   uniformScaling,
   setUniformScaling,
@@ -272,14 +276,8 @@ export function PreparePanelStack({
           onAutoLiftChange={handleAutoLiftChange}
           liftDistance={transformMgr.liftDistance}
           onLiftDistanceChange={transformMgr.setLiftDistance}
-          onLift={() => {
-            const lowestWorldZ = transformMgr.getLowestWorldZ();
-            if (lowestWorldZ !== null) transformMgr.transformHook.snapToLift(lowestWorldZ, transformMgr.liftDistance);
-          }}
-          onDrop={() => {
-            const lowestWorldZ = transformMgr.getLowestWorldZ();
-            if (lowestWorldZ !== null) transformMgr.transformHook.snapToPlatform(lowestWorldZ);
-          }}
+          onLift={handleLiftSelectedModels}
+          onDrop={handleDropSelectedModels}
           onTransformCommit={scheduleCommitPendingTransformHistory}
         />
       )}

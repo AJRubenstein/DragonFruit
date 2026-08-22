@@ -77,6 +77,7 @@ import {
   dispatchDeleteModelAction,
   resolveModelActionTargetIds,
 } from '@/features/scene/modelActionTargets';
+import { buildLiftDropUpdates } from '@/features/scene/selectionLiftDrop';
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
@@ -8522,6 +8523,41 @@ export default function Home() {
     transformMgr.setAutoLift(enabled);
   }, [scene, transformMgr]);
 
+  const placeSelectedModelsAtWorldZ = React.useCallback((targetLowestWorldZ: number) => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    const updates = buildLiftDropUpdates(scene.models, targetIds, targetLowestWorldZ);
+    if (updates.length === 0) return;
+
+    invalidatePendingTransformHistory();
+    const result = scene.updateModelTransforms(updates);
+    if (!result.updated) return;
+
+    const activeUpdate = scene.activeModelId
+      ? updates.find((update) => update.id === scene.activeModelId)
+      : undefined;
+    if (activeUpdate) {
+      suppressTransformPersistenceCycles();
+      const { position, rotation, scale } = activeUpdate.transform;
+      transformMgr.transformHook.setPosition(position.x, position.y, position.z);
+      transformMgr.transformHook.setRotation(rotation.x, rotation.y, rotation.z);
+      transformMgr.transformHook.setScale(scale.x, scale.y, scale.z);
+    }
+
+    setSupportRenderRefreshNonce((value) => value + 1);
+  }, [invalidatePendingTransformHistory, scene, suppressTransformPersistenceCycles, transformMgr.transformHook]);
+
+  const handleLiftSelectedModels = React.useCallback(() => {
+    placeSelectedModelsAtWorldZ(transformMgr.liftDistance);
+  }, [placeSelectedModelsAtWorldZ, transformMgr.liftDistance]);
+
+  const handleDropSelectedModels = React.useCallback(() => {
+    placeSelectedModelsAtWorldZ(0);
+  }, [placeSelectedModelsAtWorldZ]);
+
   const disableAutoLiftForManualZMove = React.useCallback(() => {
     if (!scene.activeModelId) return;
     scene.setModelManualZMoveOverride(scene.activeModelId, true);
@@ -9851,6 +9887,8 @@ export default function Home() {
               requestDestructiveTransformSupportDeletion: requestDestructiveTransformSupportDeletion,
               handleRotationComplete: handleRotationComplete,
               handleAutoLiftChange: handleAutoLiftChange,
+              handleLiftSelectedModels: handleLiftSelectedModels,
+              handleDropSelectedModels: handleDropSelectedModels,
               scheduleCommitPendingTransformHistory: scheduleCommitPendingTransformHistory,
               uniformScaling: uniformScaling,
               setUniformScaling: setUniformScaling,
