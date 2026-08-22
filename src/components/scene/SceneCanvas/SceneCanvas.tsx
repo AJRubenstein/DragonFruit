@@ -2989,11 +2989,7 @@ export function SceneCanvas({
     isPostGizmoInteractionGuardActive,
     hoveredModelId,
     supportHoveredCategory: supportStateForBounds.hoveredCategory,
-    onActiveModelChange,
-    activeModelId,
     selectedModelIds,
-    isOrbitInteracting,
-    spaceMouseNavigationActive,
     onMarqueeSelectionChange: customPrepareMarqueeSelection?.enabled
       ? customPrepareMarqueeSelection.onSelectionChange
       : onMarqueeSelectionChange,
