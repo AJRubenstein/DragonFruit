@@ -72,6 +72,10 @@ import { ScanProgressBar } from '@/components/scene/ScanProgressBar';
 import { SliceMetricsDebugModal } from '@/features/slicing/components/SliceMetricsDebugModal';
 import { MeshSmoothingSettingsPanel } from '@/features/mesh-smoothing/MeshSmoothingSettingsPanel';
 import { MeshSmoothingBrushCursor } from '@/features/mesh-smoothing/MeshSmoothingBrushCursor';
+import {
+  dispatchDeleteModelAction,
+  resolveModelActionTargetIds,
+} from '@/features/scene/modelActionTargets';
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
@@ -2233,7 +2237,11 @@ export default function Home() {
     const canSplitSupports = !!activeModel?.geometry.meshDefects?.nativeRepairReport?.model_triangle_count;
     const canMergeSupports = scene.selectedModelIds.length === 2;
 
-    const hasTargetModel = !!scene.activeModelId || scene.selectedModelIds.length > 0;
+    const hasTargetModel = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    }).length > 0;
     const canLink = scene.selectedModelIds.length >= 2;
     const selectedOrActiveModels = scene.selectedModelIds.length > 0
       ? scene.models.filter((m) => scene.selectedModelIds.includes(m.id))
@@ -2241,7 +2249,8 @@ export default function Home() {
     const canUnlink = selectedOrActiveModels.some((m) => !!m.linkGroupId);
 
     return [
-      ...(!scene.activeModelId ? (['delete', 'cut', 'copy', 'repair'] as const) : []),
+      ...(!hasTargetModel ? (['delete'] as const) : []),
+      ...(!scene.activeModelId ? (['cut', 'copy', 'repair'] as const) : []),
       ...(!hasTargetModel ? (['mark-as-support-geometry', 'mark-as-model-geometry'] as const) : []),
       ...(!canLink ? (['link-models'] as const) : []),
       ...(!canUnlink ? (['unlink-models'] as const) : []),
@@ -5930,9 +5939,11 @@ export default function Home() {
         return;
       }
       case 'delete':
-        if (scene.activeModelId) {
-          scene.deleteModel(scene.activeModelId);
-        }
+        dispatchDeleteModelAction({
+          modelIds: scene.models.map((model) => model.id),
+          selectedModelIds: scene.selectedModelIds,
+          activeModelId: scene.activeModelId,
+        }, scene.deleteModels);
         break;
       case 'copy':
         if (scene.selectedModelIds.length > 0) {
