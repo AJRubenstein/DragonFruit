@@ -2,7 +2,6 @@ import * as THREE from 'three';
 
 import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import type { ModelTransform } from '@/hooks/useModelTransform';
-import { computePreciseModelWorldBounds } from '@/utils/modelBounds';
 
 export type SelectionPositionModel = {
   id: string;
@@ -10,21 +9,32 @@ export type SelectionPositionModel = {
   transform: ModelTransform;
 };
 
+export function getSelectionGizmoCenter(
+  targetIds: readonly string[],
+  getPosition: (modelId: string) => THREE.Vector3 | undefined,
+): THREE.Vector3 | null {
+  const center = new THREE.Vector3();
+  let count = 0;
+
+  targetIds.forEach((modelId) => {
+    const position = getPosition(modelId);
+    if (!position) return;
+    center.add(position);
+    count += 1;
+  });
+
+  return count > 0 ? center.multiplyScalar(1 / count) : null;
+}
+
 export function getSelectionPositionOrigin(
   models: readonly SelectionPositionModel[],
   targetIds: readonly string[],
 ): THREE.Vector3 | null {
-  const targetIdSet = new Set(targetIds);
-  const selectionBounds = new THREE.Box3().makeEmpty();
-
-  models.forEach((model) => {
-    if (!targetIdSet.has(model.id)) return;
-    selectionBounds.union(computePreciseModelWorldBounds(model.geometry, model.transform));
-  });
-
-  return selectionBounds.isEmpty()
-    ? null
-    : selectionBounds.getCenter(new THREE.Vector3());
+  const modelById = new Map(models.map((model) => [model.id, model]));
+  return getSelectionGizmoCenter(
+    targetIds,
+    (modelId) => modelById.get(modelId)?.transform.position,
+  );
 }
 
 function translateModels(

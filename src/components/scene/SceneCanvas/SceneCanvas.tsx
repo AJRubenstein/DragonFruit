@@ -174,6 +174,7 @@ import {
 } from '@/supports/PlacementLogic/Pathfinding/pathfindingDebugState';
 import { applyScaleFactor } from '@/components/gizmo/scale/applyScaleFactor';
 import { createWheelDeviceClassifier, type WheelDevice } from '@/components/scene/SceneCanvas/wheelDeviceClassifier';
+import { getSelectionGizmoCenter } from '@/features/scene/selectionPosition';
 
 const Canvas = dynamic(() => import('@react-three/fiber').then(m => m.Canvas), { ssr: false });
 
@@ -2596,19 +2597,10 @@ export function SceneCanvas({
   const multiGizmoAnchorRef = React.useRef<THREE.Group | null>(null);
 
   const computeCenterFromTransforms = React.useCallback((byModelId: Record<string, ModelTransform>) => {
-    const ids = selectedTransformableModelIds;
-    if (ids.length === 0) return null;
-
-    const sum = new THREE.Vector3();
-    let count = 0;
-    for (const modelId of ids) {
-      const t = byModelId[modelId];
-      if (!t) continue;
-      sum.add(t.position);
-      count += 1;
-    }
-    if (count === 0) return null;
-    return sum.multiplyScalar(1 / count);
+    return getSelectionGizmoCenter(
+      selectedTransformableModelIds,
+      (modelId) => byModelId[modelId]?.position,
+    );
   }, [selectedTransformableModelIds]);
 
   const setMultiGizmoAnchorPosition = React.useCallback((position: THREE.Vector3 | null) => {
@@ -3566,28 +3558,17 @@ export function SceneCanvas({
   const multiGizmoCenter = React.useMemo(() => {
     if (!isMultiGizmoSelection || selectedTransformableModelIds.length === 0) return null;
 
-    const sum = new THREE.Vector3();
-    let count = 0;
-
-    for (const modelId of selectedTransformableModelIds) {
+    return getSelectionGizmoCenter(selectedTransformableModelIds, (modelId) => {
       const preview = multiGizmoPreviewTransformsById[modelId];
-      if (preview) {
-        sum.add(preview.position);
-        count += 1;
-        continue;
-      }
+      if (preview) return preview.position;
 
       const model = models.find((entry) => entry.id === modelId);
-      if (!model) continue;
+      if (!model) return undefined;
       const sourceTransform = (modelId === activeModelId && liveActiveTransformForMultiPreview)
         ? liveActiveTransformForMultiPreview
         : model.transform;
-      sum.add(sourceTransform.position);
-      count += 1;
-    }
-
-    if (count === 0) return null;
-    return sum.multiplyScalar(1 / count);
+      return sourceTransform.position;
+    });
   }, [
     activeModelId,
     isMultiGizmoSelection,
