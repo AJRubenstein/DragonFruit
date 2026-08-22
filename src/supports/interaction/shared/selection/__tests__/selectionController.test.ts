@@ -4,6 +4,7 @@ import test from 'node:test';
 import { clearHistory, getUndoCount, undo } from '@/history/historyStore';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '@/supports/history/supportEditHistory';
 import { registerSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
+import { handleContactDiskClick } from '@/supports/interaction/clickHandlers';
 import { applySettingsToSelectedSupports } from '@/supports/Settings/applySettingsToSelectedSupports';
 import { createDefaultSettings } from '@/supports/Settings/types';
 import type { Roots, SupportState, Trunk } from '@/supports/types';
@@ -61,7 +62,7 @@ function seedTrunks(...ids: string[]) {
     setSnapshot(snapshot);
 }
 
-test('Shift-click keeps the last clicked support as the editable representative', () => {
+test('Shift-click adds a support and keeps it as the editable representative', () => {
     resetStore();
     clearSupportSelection();
     seedTrunks('trunk-a', 'trunk-b');
@@ -78,6 +79,23 @@ test('Shift-click keeps the last clicked support as the editable representative'
     resetStore();
 });
 
+test('normal click replaces the selection set with the clicked support', () => {
+    resetStore();
+    clearSupportSelection();
+    seedTrunks('trunk-a', 'trunk-b');
+
+    selectSupportById('trunk-a', false);
+    selectSupportById('trunk-b', true);
+    selectSupportById('trunk-a', false);
+
+    const selection = getResolvedPrimarySelection();
+    assert.deepEqual(selection.selectedIds, ['trunk-a']);
+    assert.equal(selection.selectedId, 'trunk-a');
+    assert.equal(selection.selectedCategory, 'trunk');
+
+    clearSupportSelection();
+    resetStore();
+});
 
 test('a settings edit changes every Shift-click-selected support in one undo step', async () => {
     resetStore();
@@ -115,7 +133,7 @@ test('a settings edit changes every Shift-click-selected support in one undo ste
     }
 });
 
-test('Shift-click removal promotes a remaining support as the editable representative', () => {
+test('Shift-clicking a selected support removes only that support from the selection set', () => {
     resetStore();
     clearSupportSelection();
     seedTrunks('trunk-a', 'trunk-b');
@@ -128,6 +146,31 @@ test('Shift-click removal promotes a remaining support as the editable represent
     assert.deepEqual(selection.selectedIds, ['trunk-a']);
     assert.equal(selection.selectedId, 'trunk-a');
     assert.equal(selection.selectedCategory, 'trunk');
+
+    clearSupportSelection();
+    resetStore();
+});
+
+test('Shift-click on a selected primitive defers to the parent support toggle', () => {
+    resetStore();
+    clearSupportSelection();
+    seedTrunks('trunk-a', 'trunk-b');
+
+    selectSupportById('trunk-a', false);
+    selectSupportById('trunk-b', true);
+
+    let propagationStopped = false;
+    handleContactDiskClick({
+        stopPropagation: () => { propagationStopped = true; },
+        nativeEvent: {
+            shiftKey: true,
+            stopPropagation: () => { propagationStopped = true; },
+            stopImmediatePropagation: () => { propagationStopped = true; },
+        },
+    }, 'contact-disk-b', true, true, false);
+
+    assert.equal(propagationStopped, false);
+    assert.deepEqual(getResolvedPrimarySelection().selectedIds, ['trunk-a', 'trunk-b']);
 
     clearSupportSelection();
     resetStore();

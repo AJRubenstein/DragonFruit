@@ -34,7 +34,7 @@ function initializeHoverGuards() {
     document.addEventListener('visibilitychange', markOrbitInactiveFromPointer);
 }
 
-function isShiftActiveFromEvent(e: any) {
+export function isSupportSelectionShiftActive(e: any) {
     return !!(
         e?.shiftKey
         || e?.nativeEvent?.shiftKey
@@ -80,7 +80,7 @@ export function emitSupportModelPointerSelect(modelId: string | null) {
  * Enforces interactability check and stops DOM propagation to prevent canvas deselection.
  */
 export function handleSupportClick(e: any, id: string, isInteractable: boolean) {
-    const shiftDown = isShiftActiveFromEvent(e);
+    const shiftDown = isSupportSelectionShiftActive(e);
 
     if (!isInteractable) {
         return;
@@ -115,6 +115,7 @@ export function handleJointClick(
     onSelect?: (id: string) => void
 ) {
     if (!isInteractable) return;
+    if (isSupportSelectionShiftActive(e)) return;
     
     // If parent is NOT selected and THIS joint is NOT selected, 
     // let the click bubble to the parent (Trunk/Branch) to select the support first.
@@ -147,6 +148,7 @@ export function handleKnotClick(
     onSelect?: (id: string) => void
  ) {
     if (!isInteractable) return;
+    if (isSupportSelectionShiftActive(e)) return;
 
     if (!isParentSelected && !isKnotSelected) {
         return;
@@ -195,6 +197,7 @@ export function handleContactDiskClick(
     onSelect?: (id: string) => void
 ) {
     if (!isInteractable) return;
+    if (isSupportSelectionShiftActive(e)) return;
 
     if (!isParentSelected && !isContactDiskSelected) {
         return;

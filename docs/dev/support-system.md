@@ -48,6 +48,10 @@ before/after support edit snapshot around the editing session, so undo restores
 the whole selection in one step. Selection controllers must therefore keep a
 primary selected support alongside the selected-ID set; clearing the primary
 representative makes the sidebar non-editable even when IDs remain selected.
+Shift-click toggles one support without disturbing the rest of the set. Detailed
+primitive renderers must let Shift-click bubble to the parent support instead
+of selecting a shaft, joint, knot, or contact cone and clearing support
+multi-selection.
 
 ## Placing supports
 
