@@ -78,6 +78,10 @@ import {
   resolveModelActionTargetIds,
 } from '@/features/scene/modelActionTargets';
 import { buildLiftDropUpdates } from '@/features/scene/selectionLiftDrop';
+import {
+  buildCenterSelectionUpdates,
+  buildSelectionPositionUpdates,
+} from '@/features/scene/selectionPosition';
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
@@ -8523,6 +8527,63 @@ export default function Home() {
     transformMgr.setAutoLift(enabled);
   }, [scene, transformMgr]);
 
+  const applySelectionPositionUpdates = React.useCallback((updates: Array<{ id: string; transform: ModelTransform }>) => {
+    if (updates.length === 0) return;
+
+    invalidatePendingTransformHistory();
+    const result = scene.updateModelTransforms(updates);
+    if (!result.updated) return;
+
+    const activeUpdate = scene.activeModelId
+      ? updates.find((update) => update.id === scene.activeModelId)
+      : undefined;
+    if (activeUpdate) {
+      suppressTransformPersistenceCycles();
+      const { position, rotation, scale } = activeUpdate.transform;
+      transformMgr.transformHook.setPosition(position.x, position.y, position.z);
+      transformMgr.transformHook.setRotation(rotation.x, rotation.y, rotation.z);
+      transformMgr.transformHook.setScale(scale.x, scale.y, scale.z);
+    }
+
+    setSupportRenderRefreshNonce((value) => value + 1);
+  }, [invalidatePendingTransformHistory, scene, suppressTransformPersistenceCycles, transformMgr.transformHook]);
+
+  const handlePositionSelectedModels = React.useCallback((x: number, y: number, z: number) => {
+    if (!scene.activeModelId) return;
+
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    applySelectionPositionUpdates(buildSelectionPositionUpdates(
+      scene.models,
+      targetIds,
+      scene.activeModelId,
+      new THREE.Vector3(x, y, z),
+    ));
+  }, [applySelectionPositionUpdates, scene.activeModelId, scene.models, scene.selectedModelIds]);
+
+  const handleCenterSelectedModels = React.useCallback(() => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    const targetCenter = scene.view3dSettings.originMode === 'front_left'
+      ? new THREE.Vector2(scene.view3dSettings.widthMm * 0.5, scene.view3dSettings.depthMm * 0.5)
+      : new THREE.Vector2(0, 0);
+    applySelectionPositionUpdates(buildCenterSelectionUpdates(scene.models, targetIds, targetCenter));
+  }, [
+    applySelectionPositionUpdates,
+    scene.activeModelId,
+    scene.models,
+    scene.selectedModelIds,
+    scene.view3dSettings.depthMm,
+    scene.view3dSettings.originMode,
+    scene.view3dSettings.widthMm,
+  ]);
+
   const placeSelectedModelsAtWorldZ = React.useCallback((targetLowestWorldZ: number) => {
     const targetIds = resolveModelActionTargetIds({
       modelIds: scene.models.map((model) => model.id),
@@ -9887,6 +9948,8 @@ export default function Home() {
               requestDestructiveTransformSupportDeletion: requestDestructiveTransformSupportDeletion,
               handleRotationComplete: handleRotationComplete,
               handleAutoLiftChange: handleAutoLiftChange,
+              handlePositionSelectedModels: handlePositionSelectedModels,
+              handleCenterSelectedModels: handleCenterSelectedModels,
               handleLiftSelectedModels: handleLiftSelectedModels,
               handleDropSelectedModels: handleDropSelectedModels,
               scheduleCommitPendingTransformHistory: scheduleCommitPendingTransformHistory,

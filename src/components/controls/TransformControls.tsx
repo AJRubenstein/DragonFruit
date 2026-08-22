@@ -21,6 +21,7 @@ interface TransformControlsProps {
   // Position
   position: THREE.Vector3;
   onPositionChange: (x: number, y: number, z: number) => void;
+  deferPositionChanges?: boolean;
   onCenter: () => void;
   onPlatform: (bbox: THREE.Box3) => void;
   
@@ -57,6 +58,7 @@ interface TransformControlsProps {
 export function TransformControls({
   position,
   onPositionChange,
+  deferPositionChanges = false,
   onCenter,
   onPlatform,
   rotation,
@@ -167,6 +169,14 @@ export function TransformControls({
     onPositionChange(newPos.x, newPos.y, newPos.z);
   };
 
+  const handlePositionBlur = (axis: 'x' | 'y' | 'z', event: React.FocusEvent<HTMLInputElement>) => {
+    if (deferPositionChanges) {
+      const value = Number.parseFloat(event.currentTarget.value);
+      if (Number.isFinite(value)) handlePositionChange(axis, value);
+    }
+    onTransformCommit?.();
+  };
+
   // Rotation handlers
   const handleRotationChange = (axis: 'x' | 'y' | 'z', value: number) => {
     const radians = toRadians(wrapRotationDegrees(value));
@@ -228,8 +238,10 @@ export function TransformControls({
                     <div className="relative">
                       <NumberInput
                         value={parseFloat(position.x.toFixed(2))}
-                        onChange={(val) => handlePositionChange('x', val)}
-                        onBlur={() => onTransformCommit?.()}
+                        onChange={(val) => {
+                          if (!deferPositionChanges) handlePositionChange('x', val);
+                        }}
+                        onBlur={(event) => handlePositionBlur('x', event)}
                         className={valueInputClass}
                         showStepper={false}
                       />
@@ -241,8 +253,10 @@ export function TransformControls({
                     <div className="relative">
                       <NumberInput
                         value={parseFloat(position.y.toFixed(2))}
-                        onChange={(val) => handlePositionChange('y', val)}
-                        onBlur={() => onTransformCommit?.()}
+                        onChange={(val) => {
+                          if (!deferPositionChanges) handlePositionChange('y', val);
+                        }}
+                        onBlur={(event) => handlePositionBlur('y', event)}
                         className={valueInputClass}
                         showStepper={false}
                       />
@@ -254,8 +268,10 @@ export function TransformControls({
                     <div className="relative">
                       <NumberInput
                         value={parseFloat(position.z.toFixed(2))}
-                        onChange={(val) => handlePositionChange('z', val)}
-                        onBlur={() => onTransformCommit?.()}
+                        onChange={(val) => {
+                          if (!deferPositionChanges) handlePositionChange('z', val);
+                        }}
+                        onBlur={(event) => handlePositionBlur('z', event)}
                         className={valueInputClass}
                         showStepper={false}
                       />
@@ -263,6 +279,14 @@ export function TransformControls({
                     </div>
                   </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={onCenter}
+                  className={compactButtonClass + ' w-full'}
+                >
+                  Center Selection
+                </button>
 
               </div>
           </div>

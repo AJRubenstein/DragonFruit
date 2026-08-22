@@ -45,6 +45,8 @@ export type PreparePanelStackProps = {
   requestDestructiveTransformSupportDeletion: (operationLabel: string) => boolean;
   handleRotationComplete: () => void;
   handleAutoLiftChange: (enabled: boolean) => void;
+  handlePositionSelectedModels: (x: number, y: number, z: number) => void;
+  handleCenterSelectedModels: () => void;
   handleLiftSelectedModels: () => void;
   handleDropSelectedModels: () => void;
   scheduleCommitPendingTransformHistory: (frameDelay?: number) => void;
@@ -90,6 +92,8 @@ export function PreparePanelStack({
   requestDestructiveTransformSupportDeletion,
   handleRotationComplete,
   handleAutoLiftChange,
+  handlePositionSelectedModels,
+  handleCenterSelectedModels,
   handleLiftSelectedModels,
   handleDropSelectedModels,
   scheduleCommitPendingTransformHistory,
@@ -223,8 +227,11 @@ export function PreparePanelStack({
         <TransformControls
           key="prepare-transform-controls"
           position={transformMgr.transform.position}
-          onPositionChange={transformMgr.transformHook.setPosition}
-          onCenter={transformMgr.transformHook.centerXY}
+          onPositionChange={scene.selectedModelIds.length > 1
+            ? handlePositionSelectedModels
+            : transformMgr.transformHook.setPosition}
+          deferPositionChanges={scene.selectedModelIds.length > 1}
+          onCenter={handleCenterSelectedModels}
           onPlatform={transformMgr.transformHook.setPlatformZ}
           rotation={transformMgr.transform.rotation}
           onRotationChange={(x, y, z) => {
