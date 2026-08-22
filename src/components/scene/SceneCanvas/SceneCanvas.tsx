@@ -2647,12 +2647,16 @@ export function SceneCanvas({
 
     const shapes: Array<{
       id: string;
-      modelId: string;
+      modelId: string | undefined;
       points: SupportPoint[];
       struts: MarqueeSegment[];
     }> = [];
 
-    const chain = (id: string, modelId: string, positions: Array<SupportPoint | null | undefined>) => {
+    const chain = (
+      id: string,
+      modelId: string | undefined,
+      positions: Array<SupportPoint | null | undefined>,
+    ) => {
       if (!id) return;
 
       const points: SupportPoint[] = [];
@@ -2747,7 +2751,9 @@ export function SceneCanvas({
     }
 
     for (const kickstand of Object.values(kickstandStateForBounds.kickstands)) {
-      chain(kickstand.id, kickstand.modelId, [
+      const kickstandModelId = kickstand.modelId
+        ?? kickstandStateForBounds.roots[kickstand.rootId]?.modelId;
+      chain(kickstand.id, kickstandModelId, [
         kickstandStateForBounds.roots[kickstand.rootId]?.transform.pos,
         ...jointPositions(kickstand.segments),
         supportStateForBounds.knots[kickstand.hostKnotId]?.pos
@@ -2761,6 +2767,7 @@ export function SceneCanvas({
   const supportMarqueeShapesByModelId = React.useMemo(() => {
     const map = new Map<string, typeof supportMarqueeShapes>();
     for (const shape of supportMarqueeShapes) {
+      if (!shape.modelId) continue;
       const forModel = map.get(shape.modelId);
       if (forModel) forModel.push(shape);
       else map.set(shape.modelId, [shape]);
@@ -2855,14 +2862,19 @@ export function SceneCanvas({
 
     const selectedSupportIds: string[] = [];
 
+    // Support mode only draws the active model's supports (SupportRenderer's
+    // `restrictToActiveModel`), so the marquee must not reach the rest.
+    const restrictedToModelId = activeModelId || null;
+
     for (const shape of supportMarqueeShapes) {
+      if (restrictedToModelId && shape.modelId !== restrictedToModelId) continue;
       if (shapeHitsMarquee(marqueeRect, projectSupportPoints(shape.points), shape.struts, marqueeMode)) {
         selectedSupportIds.push(shape.id);
       }
     }
 
     return selectedSupportIds;
-  }, [supportMarqueeShapes]);
+  }, [activeModelId, supportMarqueeShapes]);
 
   const {
     marqueeSelection,
