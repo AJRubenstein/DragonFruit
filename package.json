@@ -102,6 +102,8 @@
     "typescript": "^5"
   },
   "overrides": {
-    "minimatch": "^10.2.2"
+    "minimatch": "^10.2.2",
+    "postcss": "^8.5.26",
+    "sharp": "^0.35.3"
   }
 }

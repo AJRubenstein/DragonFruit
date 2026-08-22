@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { AlertTriangle, ArchiveRestore, CheckCircle2, Eye, FolderOpen, HardDrive, Loader2, RefreshCcw, Trash2, UploadCloud, X } from 'lucide-react';
 import { getProfileStoreSnapshot } from '@/features/profiles/profileStore';
 import { NumberInput } from '@/components/ui/NumberInput';
@@ -338,7 +339,9 @@ export function LocalBackupsSettingsTab() {
   const [selectedHistoryId, setSelectedHistoryId] = React.useState<string | null>(null);
   const [selectedHistoryDocument, setSelectedHistoryDocument] = React.useState<SelectedHistoryDocument | null>(null);
   const [showSnapshotModal, setShowSnapshotModal] = React.useState(false);
+  useEscapeToClose(showSnapshotModal, () => setShowSnapshotModal(false));
   const [confirmRestoreId, setConfirmRestoreId] = React.useState<string | null>(null);
+  useEscapeToClose(confirmRestoreId !== null, () => setConfirmRestoreId(null));
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
   const [snapshotModalTab, setSnapshotModalTab] = React.useState<SnapshotModalTab>('overview');
   const [selectedStorageKey, setSelectedStorageKey] = React.useState<string | null>(null);
