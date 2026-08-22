@@ -36,3 +36,13 @@ export function dispatchDeleteModelAction(
   void deleteModels(targetIds);
   return true;
 }
+
+export function dispatchCutModelAction(
+  targets: ModelActionTargetInput,
+  cutSelectedModels: (ids: string[]) => boolean,
+): boolean {
+  const targetIds = resolveModelActionTargetIds(targets);
+  if (targetIds.length === 0) return false;
+
+  return cutSelectedModels(targetIds);
+}

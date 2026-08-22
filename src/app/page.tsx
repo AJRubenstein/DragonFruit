@@ -73,6 +73,7 @@ import { SliceMetricsDebugModal } from '@/features/slicing/components/SliceMetri
 import { MeshSmoothingSettingsPanel } from '@/features/mesh-smoothing/MeshSmoothingSettingsPanel';
 import { MeshSmoothingBrushCursor } from '@/features/mesh-smoothing/MeshSmoothingBrushCursor';
 import {
+  dispatchCutModelAction,
   dispatchDeleteModelAction,
   resolveModelActionTargetIds,
 } from '@/features/scene/modelActionTargets';
@@ -5953,9 +5954,11 @@ export default function Home() {
         }
         break;
       case 'cut':
-        if (scene.activeModelId) {
-          scene.cutModel(scene.activeModelId);
-        }
+        dispatchCutModelAction({
+          modelIds: scene.models.map((model) => model.id),
+          selectedModelIds: scene.selectedModelIds,
+          activeModelId: scene.activeModelId,
+        }, scene.cutSelectedModels);
         break;
       case 'paste': {
         const pastedIds = scene.pasteCopiedModelsAutoArrange(arrangeSpacingMm);

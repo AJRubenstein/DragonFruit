@@ -47,6 +47,7 @@ import {
   applyModelGroupUngrouping,
   applyModelUngrouping,
 } from '@/features/scene/modelGroupingHistory';
+import { performModelCut, selectModelsForClipboard } from '@/features/scene/modelCut';
 
 type PersistedMeshAppearance = {
   v: 1;
@@ -3932,10 +3933,10 @@ export function useSceneCollectionManager() {
   }, [models]);
 
   const copySelectedModels = useCallback((ids?: string[]) => {
-    const idSet = new Set((ids && ids.length > 0) ? ids : selectedModelIds);
-    if (idSet.size === 0) return false;
+    const targetIds = (ids && ids.length > 0) ? ids : selectedModelIds;
+    if (targetIds.length === 0) return false;
 
-    const selected = models.filter((m) => idSet.has(m.id));
+    const selected = selectModelsForClipboard(models, targetIds);
     if (selected.length === 0) return false;
 
     setModelClipboard(selected.map((source) => {
@@ -3962,12 +3963,13 @@ export function useSceneCollectionManager() {
     return true;
   }, [models, selectedModelIds]);
 
+  const cutSelectedModels = useCallback((ids: string[]) => {
+    return performModelCut(ids, copySelectedModels, deleteModels);
+  }, [copySelectedModels, deleteModels]);
+
   const cutModel = useCallback((id: string) => {
-    const copied = copyModel(id);
-    if (!copied) return false;
-    deleteModel(id);
-    return true;
-  }, [copyModel, deleteModel]);
+    return cutSelectedModels([id]);
+  }, [cutSelectedModels]);
 
   const pasteModel = useCallback(() => {
     if (modelClipboard.length === 0) return null;
@@ -5774,6 +5776,7 @@ export function useSceneCollectionManager() {
     deleteSupportsForModels,
     copyModel,
     copySelectedModels,
+    cutSelectedModels,
     cutModel,
     pasteModel,
     pasteCopiedModelsAutoArrange,

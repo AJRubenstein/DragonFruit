@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  dispatchCutModelAction,
   dispatchDeleteModelAction,
   resolveModelActionTargetIds,
 } from '@/features/scene/modelActionTargets';
@@ -64,6 +65,44 @@ test('single-selection Delete uses one fallback and missing targets do not dispa
     selectedModelIds: ['missing'],
     activeModelId: 'missing',
   }, deleteModels), false);
+
+  assert.deepEqual(calls, [['model-a']]);
+});
+
+test('multi-selection Cut invokes one ordered batch command', () => {
+  const calls: string[][] = [];
+
+  const dispatched = dispatchCutModelAction({
+    modelIds: ['model-a', 'model-b', 'model-c'],
+    selectedModelIds: ['model-c', 'model-a'],
+    activeModelId: 'model-a',
+  }, (ids) => {
+    calls.push(ids);
+    return true;
+  });
+
+  assert.equal(dispatched, true);
+  assert.deepEqual(calls, [['model-c', 'model-a']]);
+});
+
+test('single-selection Cut uses one fallback and missing targets do not dispatch', () => {
+  const calls: string[][] = [];
+  const cutSelectedModels = (ids: string[]) => {
+    calls.push(ids);
+    return true;
+  };
+
+  assert.equal(dispatchCutModelAction({
+    modelIds: ['model-a'],
+    selectedModelIds: [],
+    activeModelId: 'model-a',
+  }, cutSelectedModels), true);
+
+  assert.equal(dispatchCutModelAction({
+    modelIds: ['model-a'],
+    selectedModelIds: ['missing'],
+    activeModelId: 'missing',
+  }, cutSelectedModels), false);
 
   assert.deepEqual(calls, [['model-a']]);
 });
