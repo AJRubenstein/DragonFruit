@@ -2814,6 +2814,12 @@ export function SceneCanvas({
     suppressNextCanvasClickRef,
   });
 
+  const marqueeMode = React.useMemo(
+    () => (marqueeSelection ? marqueeModeForDrag(marqueeSelection.start, marqueeSelection.current) : null),
+    [marqueeSelection],
+  );
+  const marqueeHue = marqueeMode === 'crossing' ? 'var(--accent)' : 'var(--accent-secondary)';
+
   const marqueeCandidateIdSet = React.useMemo(() => {
     if (!marqueeSelection || mode !== 'prepare') return new Set<string>();
 
@@ -7441,9 +7447,11 @@ export function SceneCanvas({
             top: Math.min(marqueeSelection.start.y, marqueeSelection.current.y),
             width: Math.abs(marqueeSelection.current.x - marqueeSelection.start.x),
             height: Math.abs(marqueeSelection.current.y - marqueeSelection.start.y),
-            border: '1px solid color-mix(in srgb, var(--accent), white 18%)',
-            background: 'color-mix(in srgb, var(--accent), transparent 82%)',
-            boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--accent-secondary), transparent 68%)',
+            // Green for a window drag, magenta for a crossing one. The dashed
+            // border is the same in both: the app draws one kind of marquee.
+            border: `1px dashed color-mix(in srgb, ${marqueeHue}, white 18%)`,
+            background: `color-mix(in srgb, ${marqueeHue}, transparent 82%)`,
+            boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${marqueeHue}, transparent 62%)`,
             borderRadius: 6,
             pointerEvents: 'none',
             zIndex: 45,
