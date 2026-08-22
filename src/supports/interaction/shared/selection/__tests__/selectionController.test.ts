@@ -4,7 +4,7 @@ import test from 'node:test';
 import { clearHistory, getUndoCount, undo } from '@/history/historyStore';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '@/supports/history/supportEditHistory';
 import { registerSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
-import { handleContactDiskClick } from '@/supports/interaction/clickHandlers';
+import { handleContactDiskClick, handleSupportClick } from '@/supports/interaction/clickHandlers';
 import { applySettingsToSelectedSupports } from '@/supports/Settings/applySettingsToSelectedSupports';
 import { createDefaultSettings } from '@/supports/Settings/types';
 import type { Roots, SupportState, Trunk } from '@/supports/types';
@@ -171,6 +171,45 @@ test('Shift-click on a selected primitive defers to the parent support toggle', 
 
     assert.equal(propagationStopped, false);
     assert.deepEqual(getResolvedPrimarySelection().selectedIds, ['trunk-a', 'trunk-b']);
+
+    clearSupportSelection();
+    resetStore();
+});
+
+test('normal click exits a selection set before Shift starts a new set', () => {
+    resetStore();
+    clearSupportSelection();
+    seedTrunks('trunk-a', 'trunk-b', 'trunk-c');
+
+    selectSupportById('trunk-a', false);
+    selectSupportById('trunk-b', true);
+
+    let propagationStopped = false;
+    const normalClickEvent = {
+        stopPropagation: () => { propagationStopped = true; },
+        nativeEvent: {
+            shiftKey: false,
+            stopPropagation: () => { propagationStopped = true; },
+            stopImmediatePropagation: () => { propagationStopped = true; },
+        },
+    };
+    handleContactDiskClick(normalClickEvent, 'contact-disk-a', true, true, false);
+    assert.equal(propagationStopped, false);
+    handleSupportClick(normalClickEvent, 'trunk-a', true);
+
+    handleSupportClick({
+        stopPropagation: () => undefined,
+        nativeEvent: {
+            shiftKey: true,
+            stopPropagation: () => undefined,
+            stopImmediatePropagation: () => undefined,
+        },
+    }, 'trunk-c', true);
+
+    const selection = getResolvedPrimarySelection();
+    assert.deepEqual(selection.selectedIds, ['trunk-a', 'trunk-c']);
+    assert.equal(selection.selectedId, 'trunk-c');
+    assert.equal(selection.selectedCategory, 'trunk');
 
     clearSupportSelection();
     resetStore();

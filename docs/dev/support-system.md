@@ -49,9 +49,10 @@ the whole selection in one step. Selection controllers must therefore keep a
 primary selected support alongside the selected-ID set; clearing the primary
 representative makes the sidebar non-editable even when IDs remain selected.
 Shift-click toggles one support without disturbing the rest of the set. Detailed
-primitive renderers must let Shift-click bubble to the parent support instead
-of selecting a shaft, joint, knot, or contact cone and clearing support
-multi-selection.
+primitive renderers must defer to the parent support while a multi-selection is
+active: a normal click replaces the set with that support, while Shift-click
+toggles only that support. Selecting a shaft, joint, knot, or contact cone in
+either case would clear the support selection set.
 
 ## Placing supports
 
