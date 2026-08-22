@@ -2,21 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  boxHitsMarquee,
   marqueeModeForDrag,
   marqueeRectForDrag,
+  meshHitsMarquee,
   shapeHitsMarquee,
 } from '../marqueeHitTest';
 
 /** A 100x100 rectangle with its top-left corner at (100, 100). */
 const rect = marqueeRectForDrag({ x: 100, y: 100 }, { x: 200, y: 200 });
-
-const boxCorners = (minX: number, minY: number, maxX: number, maxY: number) => [
-  { x: minX, y: minY },
-  { x: maxX, y: minY },
-  { x: minX, y: maxY },
-  { x: maxX, y: maxY },
-];
 
 test('drag direction picks the mode, whatever the vertical direction', () => {
   assert.equal(marqueeModeForDrag({ x: 10, y: 10 }, { x: 90, y: 90 }), 'window');
@@ -82,56 +75,40 @@ test('an unprojectable point sinks a window drag but not a crossing one', () => 
   assert.equal(shapeHitsMarquee(rect, partlyProjected, [[0, 1]], 'crossing'), true);
 });
 
-test('a window drag takes only a box that fits entirely', () => {
-  assert.equal(boxHitsMarquee(rect, boxCorners(120, 120, 180, 180), 'window'), true);
-  assert.equal(boxHitsMarquee(rect, boxCorners(120, 120, 260, 180), 'window'), false);
+const meshOf = (points: Array<[number, number]>, dropped = false) => ({
+  xs: Float32Array.from(points.map(([x]) => x)),
+  ys: Float32Array.from(points.map(([, y]) => y)),
+  count: points.length,
+  bounds: points.length === 0 ? null : {
+    minX: Math.min(...points.map(([x]) => x)),
+    maxX: Math.max(...points.map(([x]) => x)),
+    minY: Math.min(...points.map(([, y]) => y)),
+    maxY: Math.max(...points.map(([, y]) => y)),
+  },
+  dropped,
 });
 
-test('a crossing drag takes a box that overlaps at all', () => {
-  assert.equal(boxHitsMarquee(rect, boxCorners(190, 190, 400, 400), 'crossing'), true);
-  assert.equal(boxHitsMarquee(rect, boxCorners(300, 300, 400, 400), 'crossing'), false);
+test('a window drag takes a mesh whose every vertex is inside', () => {
+  assert.equal(meshHitsMarquee(rect, meshOf([[120, 120], [180, 180], [150, 160]]), 'window'), true);
+  assert.equal(meshHitsMarquee(rect, meshOf([[120, 120], [260, 180]]), 'window'), false);
 });
 
-test('a crossing drag inside a large box still takes it', () => {
-  assert.equal(boxHitsMarquee(rect, boxCorners(0, 0, 500, 500), 'crossing'), true);
-  assert.equal(boxHitsMarquee(rect, boxCorners(0, 0, 500, 500), 'window'), false);
+test('a window drag refuses a mesh with vertices off screen', () => {
+  assert.equal(meshHitsMarquee(rect, meshOf([[120, 120], [180, 180]], true), 'window'), false);
 });
 
-test('a box touching along one edge counts as crossed', () => {
-  assert.equal(boxHitsMarquee(rect, boxCorners(200, 120, 300, 180), 'crossing'), true);
+test('a crossing drag takes a mesh with one vertex inside', () => {
+  assert.equal(meshHitsMarquee(rect, meshOf([[40, 40], [150, 150], [400, 400]]), 'crossing'), true);
 });
 
-test('a crossing drag misses a box whose silhouette clears the corner', () => {
-  // A rotated box projects to a diamond: its axis-aligned bounds reach the
-  // marquee, its silhouette does not.
-  const diamond = [
-    { x: 150, y: 300 },
-    { x: 300, y: 150 },
-    { x: 450, y: 300 },
-    { x: 300, y: 450 },
-  ];
+test('a crossing drag leaves a mesh that surrounds the rectangle without entering', () => {
+  // The four vertices straddle the marquee: its bounds overlap, no vertex is in.
+  const straddling = meshOf([[40, 40], [400, 40], [40, 400], [400, 400]]);
 
-  assert.equal(boxHitsMarquee(rect, diamond, 'crossing'), false);
+  assert.equal(meshHitsMarquee(rect, straddling, 'crossing'), false);
 });
 
-test('a crossing drag takes a diamond it does reach into', () => {
-  const diamond = [
-    { x: 100, y: 250 },
-    { x: 250, y: 100 },
-    { x: 400, y: 250 },
-    { x: 250, y: 400 },
-  ];
-
-  assert.equal(boxHitsMarquee(rect, diamond, 'crossing'), true);
-});
-
-test('a box seen edge-on is still crossed', () => {
-  const edgeOn = [{ x: 40, y: 150 }, { x: 300, y: 150 }, { x: 170, y: 150 }];
-
-  assert.equal(boxHitsMarquee(rect, edgeOn, 'crossing'), true);
-});
-
-test('a box with no projectable corners is never hit', () => {
-  assert.equal(boxHitsMarquee(rect, [null, null], 'crossing'), false);
-  assert.equal(boxHitsMarquee(rect, [], 'window'), false);
+test('a mesh with no vertices is never hit', () => {
+  assert.equal(meshHitsMarquee(rect, meshOf([]), 'crossing'), false);
+  assert.equal(meshHitsMarquee(rect, meshOf([]), 'window'), false);
 });

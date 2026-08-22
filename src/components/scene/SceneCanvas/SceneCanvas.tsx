@@ -91,7 +91,6 @@ import { useExportThumbnailCapture, type ExportThumbnailRenderOptions } from './
 import {
   buildBoxWireframePositions,
   buildEmptyCornerOnlyWireframePositions,
-  getBoxCorners,
   writeCornerOnlyWireframePositions,
 } from './SceneCanvasGeometry';
 import { ModelAttachedSupportLayer } from './ModelAttachedSupportLayer';
@@ -102,12 +101,13 @@ import {
 } from './SceneCanvasCameraControllers';
 import { useMarqueeSelectionHandlers } from './useMarqueeSelectionHandlers';
 import {
-  boxHitsMarquee,
   marqueeModeForDrag,
   marqueeRectForDrag,
+  meshHitsMarquee,
   shapeHitsMarquee,
   type MarqueePoint,
   type MarqueeSegment,
+  type ProjectedMesh,
 } from './marqueeHitTest';
 import { PickingEmptySpaceHoverResetter, SceneRenderBindings } from './SceneCanvasInteractionBits';
 
@@ -161,6 +161,7 @@ import {
 } from '@/utils/modelBounds';
 import { computeLowestZ } from '@/utils/geometry';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
+import { getCenteredPositions } from '@/utils/modelBounds';
 import { emitImmediateModelHover } from '@/supports/interaction/pointerOcclusion';
 import { SupportPathfindingDebugHud, SupportPathfindingDebugOverlay } from '@/components/scene/SupportPathfindingDebugOverlay';
 import {
@@ -194,6 +195,70 @@ function formatOutOfBoundsLabel(
     message: '{count, plural, one {# model out of build volume} other {# models out of build volume}}',
     comment: 'Warning badge over the viewport when models stick out of the printer build volume.',
   }), { count });
+}
+
+/**
+ * Projects a model's mesh to container pixels for the marquee hit test. Runs
+ * once per drag — the camera cannot move while the marquee is up — and the
+ * result is reused for every pointer move.
+ */
+function projectModelMesh(
+  positions: Float32Array,
+  modelMatrix: THREE.Matrix4,
+  camera: THREE.Camera,
+  rect: DOMRect,
+): ProjectedMesh {
+  const clip = new THREE.Matrix4()
+    .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    .multiply(modelMatrix);
+  const m = clip.elements;
+
+  const count = positions.length / 3;
+  const xs = new Float32Array(count);
+  const ys = new Float32Array(count);
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let dropped = false;
+
+  for (let i = 0; i < count; i += 1) {
+    const px = positions[i * 3];
+    const py = positions[(i * 3) + 1];
+    const pz = positions[(i * 3) + 2];
+
+    const w = (m[3] * px) + (m[7] * py) + (m[11] * pz) + m[15];
+    if (w <= 0) {
+      // Behind the camera: no screen position to compare against.
+      xs[i] = NaN;
+      ys[i] = NaN;
+      dropped = true;
+      continue;
+    }
+
+    const ndcX = ((m[0] * px) + (m[4] * py) + (m[8] * pz) + m[12]) / w;
+    const ndcY = ((m[1] * px) + (m[5] * py) + (m[9] * pz) + m[13]) / w;
+
+    const x = ((ndcX + 1) * 0.5) * rect.width;
+    const y = ((1 - ndcY) * 0.5) * rect.height;
+
+    xs[i] = x;
+    ys[i] = y;
+
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+
+  return {
+    xs,
+    ys,
+    count,
+    bounds: minX > maxX ? null : { minX, minY, maxX, maxY },
+    dropped,
+  };
 }
 
 /**
@@ -2609,34 +2674,62 @@ export function SceneCanvas({
     return map;
   }, [models]);
 
-  // World-space corners of the box each model's own mesh occupies. The marquee
-  // cannot reuse `modelWorldBounds`: that one is unioned with the raft and the
-  // support forest, which on screen reach far past the model itself.
-  const modelMeshCornersById = React.useMemo(() => {
-    const map = new Map<string, THREE.Vector3[]>();
+  // Model matrices for the marquee, rebuilt whenever a model moves.
+  const modelMarqueeMatrices = React.useMemo(() => {
+    const map = new Map<string, THREE.Matrix4>();
 
     for (const model of models) {
       if (!model.visible) continue;
 
-      const localBounds = model.geometry.bbox;
-      if (!localBounds || localBounds.isEmpty()) continue;
-
       const t = (model.id === activeTransformOverrideModelId && transform) ? transform : model.transform;
-      const matrix = new THREE.Matrix4().compose(
+      map.set(model.id, new THREE.Matrix4().compose(
         t.position,
         quaternionFromGlobalEuler(t.rotation),
         t.scale,
-      );
-
-      // Geometry is rendered centred on its own origin, so the box has to lose
-      // that offset before the model transform is applied to it.
-      const centered = localBounds.clone().translate(model.geometry.center.clone().negate());
-
-      map.set(model.id, getBoxCorners(centered).map((corner) => corner.applyMatrix4(matrix)));
+      ));
     }
 
     return map;
   }, [activeTransformOverrideModelId, models, transform]);
+
+  // Projected meshes are heavy to build and identical for every pointer move of
+  // one drag, so they are cached until the camera, the viewport or a model
+  // transform makes them stale.
+  const projectedModelMeshesRef = React.useRef<{
+    matrices: Map<string, THREE.Matrix4>;
+    cameraKey: string;
+    viewportKey: string;
+    meshes: Map<string, ProjectedMesh>;
+  } | null>(null);
+
+  const getProjectedModelMeshes = React.useCallback((rect: DOMRect, camera: THREE.Camera) => {
+    const cameraKey = `${camera.projectionMatrix.elements.join(',')}|${camera.matrixWorldInverse.elements.join(',')}`;
+    const viewportKey = `${rect.width}x${rect.height}`;
+    const cached = projectedModelMeshesRef.current;
+
+    if (
+      cached
+      && cached.matrices === modelMarqueeMatrices
+      && cached.cameraKey === cameraKey
+      && cached.viewportKey === viewportKey
+    ) {
+      return cached.meshes;
+    }
+
+    const meshes = new Map<string, ProjectedMesh>();
+    for (const model of models) {
+      if (!model.visible) continue;
+
+      const matrix = modelMarqueeMatrices.get(model.id);
+      const positions = getCenteredPositions(model.geometry);
+      if (!matrix || !positions) continue;
+
+      meshes.set(model.id, projectModelMesh(positions, matrix, camera, rect));
+    }
+
+    projectedModelMeshesRef.current = { matrices: modelMarqueeMatrices, cameraKey, viewportKey, meshes };
+    return meshes;
+  }, [modelMarqueeMatrices, models]);
 
   // Every support drawn as the polyline that runs along it: root or host knot,
   // each joint in order, and the contact cone at the tip. Built once per state
@@ -2810,17 +2903,17 @@ export function SceneCanvas({
     const marqueeRect = marqueeRectForDrag(selection.start, selection.current);
     const marqueeMode = marqueeModeForDrag(selection.start, selection.current);
     const projectSupportPoints = makeSupportPointProjector(rect, camera);
+    const projectedMeshes = getProjectedModelMeshes(rect, camera);
 
     const selectedIds: string[] = [];
 
     for (const model of models) {
       if (!model.visible) continue;
 
-      const meshCorners = modelMeshCornersById.get(model.id);
-      if (!meshCorners) continue;
+      const mesh = projectedMeshes.get(model.id);
+      if (!mesh) continue;
 
-      const corners: Array<MarqueePoint | null> = meshCorners.map(projectWorldPoint);
-      const boxHit = boxHitsMarquee(marqueeRect, corners, marqueeMode);
+      const meshHit = meshHitsMarquee(marqueeRect, mesh, marqueeMode);
 
       // A model is selected together with its supports: they are on screen, so
       // a drag has to enclose them too, and touching one touches the model.
@@ -2839,14 +2932,14 @@ export function SceneCanvas({
           'crossing',
         ));
 
-      const hit = marqueeMode === 'window' ? (boxHit && supportHit) : (boxHit || supportHit);
+      const hit = marqueeMode === 'window' ? (meshHit && supportHit) : (meshHit || supportHit);
       if (hit) {
         selectedIds.push(model.id);
       }
     }
 
     return selectedIds;
-  }, [customPrepareMarqueeSelection, modelMeshCornersById, models, supportMarqueeShapesByModelId]);
+  }, [customPrepareMarqueeSelection, getProjectedModelMeshes, models, supportMarqueeShapesByModelId]);
 
   const resolveMarqueeSelectedSupportIds = React.useCallback((selection: {
     start: { x: number; y: number };
@@ -2906,6 +2999,12 @@ export function SceneCanvas({
     resolveMarqueeSelectedSupportIds,
     suppressNextCanvasClickRef,
   });
+
+  // The projected meshes are worth a few MB per model, and only a live drag
+  // reads them.
+  React.useEffect(() => {
+    if (!marqueeSelection) projectedModelMeshesRef.current = null;
+  }, [marqueeSelection]);
 
   const marqueeMode = React.useMemo(
     () => (marqueeSelection ? marqueeModeForDrag(marqueeSelection.start, marqueeSelection.current) : null),
