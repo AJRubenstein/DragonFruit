@@ -33,10 +33,10 @@ function model(
   };
 }
 
-test('Position translates the selection by its shared origin delta', () => {
+test('Position translates the selection by its precise combined-bounds center delta', () => {
   const models = [
     model('model-a', new THREE.BoxGeometry(2, 2, 2), new THREE.Vector3(4, 7, 10)),
-    model('model-b', new THREE.BoxGeometry(2, 2, 2), new THREE.Vector3(14, 27, 30)),
+    model('model-b', new THREE.BoxGeometry(6, 6, 6), new THREE.Vector3(14, 27, 30)),
     model('model-c', new THREE.BoxGeometry(2, 2, 2), new THREE.Vector3(40, 50, 60)),
   ];
   const targetIds = ['model-b', 'model-a'];
@@ -47,18 +47,18 @@ test('Position translates the selection by its shared origin delta', () => {
     new THREE.Vector3(20, 25, 35),
   );
 
-  assert.deepEqual(getSelectionPositionOrigin(models, targetIds)?.toArray(), [9, 17, 20]);
+  assert.deepEqual(getSelectionPositionOrigin(models, targetIds)?.toArray(), [10, 18, 21]);
   assert.deepEqual(updates.map((update) => update.id), ['model-a', 'model-b']);
-  assert.deepEqual(updates[0].transform.position.toArray(), [15, 15, 25]);
-  assert.deepEqual(updates[1].transform.position.toArray(), [25, 35, 45]);
+  assert.deepEqual(updates[0].transform.position.toArray(), [14, 14, 24]);
+  assert.deepEqual(updates[1].transform.position.toArray(), [24, 34, 44]);
 
   const updatedModels = models.map((entry) => {
     const update = updates.find((candidate) => candidate.id === entry.id);
     return update ? { ...entry, transform: update.transform } : entry;
   });
   const nextUpdates = buildSelectionPositionUpdates(updatedModels, targetIds, new THREE.Vector3(21, 25, 35));
-  assert.deepEqual(nextUpdates[0].transform.position.toArray(), [16, 15, 25]);
-  assert.deepEqual(nextUpdates[1].transform.position.toArray(), [26, 35, 45]);
+  assert.deepEqual(nextUpdates[0].transform.position.toArray(), [15, 14, 24]);
+  assert.deepEqual(nextUpdates[1].transform.position.toArray(), [25, 34, 44]);
 });
 
 test('Center moves the combined transformed bounds to the plate center as one set', () => {

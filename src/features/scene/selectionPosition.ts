@@ -15,16 +15,16 @@ export function getSelectionPositionOrigin(
   targetIds: readonly string[],
 ): THREE.Vector3 | null {
   const targetIdSet = new Set(targetIds);
-  const origin = new THREE.Vector3();
-  let count = 0;
+  const selectionBounds = new THREE.Box3().makeEmpty();
 
   models.forEach((model) => {
     if (!targetIdSet.has(model.id)) return;
-    origin.add(model.transform.position);
-    count += 1;
+    selectionBounds.union(computePreciseModelWorldBounds(model.geometry, model.transform));
   });
 
-  return count > 0 ? origin.multiplyScalar(1 / count) : null;
+  return selectionBounds.isEmpty()
+    ? null
+    : selectionBounds.getCenter(new THREE.Vector3());
 }
 
 function translateModels(
@@ -74,15 +74,8 @@ export function buildCenterSelectionUpdates(
     );
   }
 
-  const selectionBounds = new THREE.Box3().makeEmpty();
-
-  targetModels.forEach((model) => {
-    selectionBounds.union(computePreciseModelWorldBounds(model.geometry, model.transform));
-  });
-
-  if (selectionBounds.isEmpty()) return [];
-
-  const currentCenter = selectionBounds.getCenter(new THREE.Vector3());
+  const currentCenter = getSelectionPositionOrigin(models, targetIds);
+  if (!currentCenter) return [];
   return translateModels(
     models,
     targetIds,
