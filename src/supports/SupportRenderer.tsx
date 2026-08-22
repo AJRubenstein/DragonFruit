@@ -66,6 +66,8 @@ interface SupportRendererProps {
     selectedTintStrength?: number;
     activeModelId?: string | null;
     selectedModelIds?: string[];
+    /** Models the marquee would take if the drag ended now. */
+    marqueeCandidateModelIds?: readonly string[];
     hoverModelId?: string | null;
     modelDropOffsetsById?: Record<string, number>;
     modelFilterId?: string | null;
@@ -902,7 +904,7 @@ export function SupportPlacementPreviewLayer({
     );
 }
 
-export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, trunkPlacementPreview = null, branchPlacementPreview = null, leafPlacementPreview = null, bracePlacementPreview = null, kickstandPlacementPreview = null, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
+export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], marqueeCandidateModelIds = EMPTY_SUPPORT_ID_LIST, hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, trunkPlacementPreview = null, branchPlacementPreview = null, leafPlacementPreview = null, bracePlacementPreview = null, kickstandPlacementPreview = null, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
     const state = useSyncExternalStore(subscribe, getSnapshot);
     const resolvedSelection = useResolvedSelectionState();
     const settings = useSyncExternalStore(subscribeToSettings, getSettingsSnapshot, getSettingsSnapshot);
@@ -966,6 +968,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const ghostOpacityClamped = Math.max(0.05, Math.min(1, ghostOpacity));
     const ghostTransparent = ghostOpacityClamped < 0.999;
     const selectedModelIdSet = useMemo(() => new Set(selectedModelIds), [selectedModelIds]);
+    const marqueeCandidateModelIdSet = useMemo(() => new Set(marqueeCandidateModelIds), [marqueeCandidateModelIds]);
     const excludedModelIdSet = useMemo(() => new Set(excludeModelIds.filter((id): id is string => Boolean(id))), [excludeModelIds]);
     const hidePlateContactPrimitivesEffective = hidePlateContactPrimitives;
     const restrictToActiveModel = mode === 'support' && !!activeModelId;
@@ -1677,9 +1680,13 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const isHoveredModelSupport = !!effectiveHoverModelId && !!modelId && modelId === effectiveHoverModelId;
             if (isHoveredModelSupport) return hoveredColor;
 
+            // A model the marquee is about to take reads as hovered, so its
+            // supports tint with it instead of waiting for the drag to end.
+            if (!!modelId && marqueeCandidateModelIdSet.has(modelId)) return hoveredColor;
+
             return baseHex;
         };
-    }, [effectiveHoverModelId, selectedModelIdSet]);
+    }, [effectiveHoverModelId, marqueeCandidateModelIdSet, selectedModelIdSet]);
 
     const debugOriginColors = !!settings.autoSupport?.debugSupportOriginColors;
 

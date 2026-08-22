@@ -305,6 +305,8 @@ function resolveTrackpadGestureAction(
   return primaryAction === 'pan' ? 'orbit' : 'pan';
 }
 
+const EMPTY_MODEL_ID_LIST: readonly string[] = Object.freeze([]);
+
 const FLOATING_PANEL_RIGHT_INSET_PX = 12;
 // Drei GizmoHelper positions by gizmo center, not right edge.
 // GizmoViewcube renders at scale [60,60,60] on a unit box, so half-extent is 30px.
@@ -3022,6 +3024,13 @@ export function SceneCanvas({
 
     return new Set(resolveMarqueeSelectedIds(marqueeSelection));
   }, [marqueeSelection, mode, resolveMarqueeSelectedIds]);
+
+  // Models the marquee would take if the drag ended now, so their supports can
+  // tint along with them.
+  const marqueeCandidateModelIds = React.useMemo(
+    () => (isMarqueeSelecting ? Array.from(marqueeCandidateIdSet) : EMPTY_MODEL_ID_LIST),
+    [isMarqueeSelecting, marqueeCandidateIdSet],
+  );
 
   const supportMarqueeCandidateIdSet = React.useMemo(() => {
     if (!marqueeSelection || mode !== 'support') return new Set<string>();
@@ -6173,7 +6182,8 @@ export function SceneCanvas({
                             selectedTintStrength={selectedTintStrength}
                             activeModelId={activeModelId}
                             selectedModelIds={selectedModelIds}
-                            hoverModelId={supportHoverModelId}
+                            marqueeCandidateModelIds={marqueeCandidateModelIds}
+                  hoverModelId={supportHoverModelId}
                             modelDropOffsetsById={entryDropOffsets}
                             navigationLodActive={navigationLodActive}
                             disableSelectionAndHover={suppressSupportProxyPointerInteraction}
@@ -6492,6 +6502,7 @@ export function SceneCanvas({
                   selectedTintStrength={selectedTintStrength}
                   activeModelId={activeModelId}
                   selectedModelIds={selectedModelIds}
+                  marqueeCandidateModelIds={marqueeCandidateModelIds}
                   hoverModelId={supportHoverModelId}
                   modelDropOffsetsById={entryDropOffsets}
                   navigationLodActive={navigationLodActive}
@@ -6616,6 +6627,7 @@ export function SceneCanvas({
                   selectedTintStrength={selectedTintStrength}
                   activeModelId={activeModelId}
                   selectedModelIds={selectedModelIds}
+                  marqueeCandidateModelIds={marqueeCandidateModelIds}
                   hoverModelId={supportHoverModelId}
                   modelDropOffsetsById={entryDropOffsets}
                   navigationLodActive={transformMode !== 'select'}
@@ -6658,6 +6670,7 @@ export function SceneCanvas({
                         selectedTintStrength={selectedTintStrength}
                         activeModelId={activeModelId}
                         selectedModelIds={selectedModelIds}
+                        marqueeCandidateModelIds={marqueeCandidateModelIds}
                         hoverModelId={supportHoverModelId}
                         modelDropOffsetsById={entryDropOffsets}
                         modelFilterId={modelId}

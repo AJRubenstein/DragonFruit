@@ -22,6 +22,8 @@ interface RaftProxyMeshLayerProps {
   activeModelId?: string | null;
   selectedModelIds?: string[];
   hoverModelId?: string | null;
+  /** Models the marquee would take if the drag ended now. */
+  marqueeCandidateModelIds?: readonly string[];
   modelFilterId?: string | null;
   excludeModelId?: string | null;
   excludeModelIds?: string[];
@@ -63,6 +65,7 @@ type RaftProxyCacheEntry = {
 };
 
 let raftProxyCache: RaftProxyCacheEntry | null = null;
+const EMPTY_RAFT_MARQUEE_CANDIDATES: readonly string[] = Object.freeze([]);
 const RAFT_BASE_COLOR = '#a3a3a3';
 const SOLID_BOTTOM_TINT_COLOR = '#3b82f6';
 const LINE_BOTTOM_TINT_COLOR = '#f97316';
@@ -178,6 +181,7 @@ export function RaftProxyMeshLayer({
   activeModelId = null,
   selectedModelIds = [],
   hoverModelId = null,
+  marqueeCandidateModelIds = EMPTY_RAFT_MARQUEE_CANDIDATES,
   modelFilterId = null,
   excludeModelId = null,
   excludeModelIds = [],
@@ -213,6 +217,10 @@ export function RaftProxyMeshLayer({
   }, [clipLower, clipUpper]);
 
   const effectiveHoverModelId = passive ? null : hoverModelId;
+  const marqueeCandidateModelIdSet = React.useMemo(
+    () => new Set(passive ? [] : marqueeCandidateModelIds),
+    [marqueeCandidateModelIds, passive],
+  );
 
   const hasSelectedModels = selectedModelIdSet.size > 0;
   const raftSignature = React.useMemo(() => buildRaftSignature(raft), [raft]);
@@ -309,6 +317,8 @@ export function RaftProxyMeshLayer({
       if (!modelId) return colorized ? (hoverized ? 0.5 : 1) : 0;
       if (!colorized) return 0;
       if (selectedModelIdSet.has(modelId)) return 1;
+      // A model the marquee is about to take tints like a hovered one.
+      if (marqueeCandidateModelIdSet.has(modelId)) return 0.5;
       if (effectiveHoverModelId) return modelId === effectiveHoverModelId ? 0.5 : 0;
       if (hasSelectedModels) return 0;
       return hoverized ? 0.5 : 1;
@@ -353,6 +363,7 @@ export function RaftProxyMeshLayer({
     geometriesByModel,
     hasSelectedModels,
     hoverized,
+    marqueeCandidateModelIdSet,
     modelFilterId,
     selectedModelIdSet,
   ]);

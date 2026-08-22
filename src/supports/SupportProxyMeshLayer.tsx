@@ -52,6 +52,8 @@ interface SupportProxyMeshLayerProps {
   supportColorsByModelId?: Record<string, string>;
   activeModelId?: string | null;
   selectedModelIds?: string[];
+  /** Models the marquee would take if the drag ended now. */
+  marqueeCandidateModelIds?: readonly string[];
   hoverModelId?: string | null;
   hoverTintColor?: string;
   hoverTintStrength?: number;
@@ -84,6 +86,7 @@ interface SupportProxyMeshLayerProps {
 
 const DEFAULT_SUPPORT_COLOR = '#9a9a9a';
 const ACTIVE_SUPPORT_COLOR = '#c8752a';
+const EMPTY_MARQUEE_CANDIDATES: readonly string[] = Object.freeze([]);
 const PROXY_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
 
 type ProxyModelGeometry = {
@@ -155,6 +158,7 @@ export function SupportProxyMeshLayer({
   clipUpper,
   activeModelId = null,
   selectedModelIds = [],
+  marqueeCandidateModelIds = EMPTY_MARQUEE_CANDIDATES,
   hoverModelId = null,
   hoverTintColor = '#d18a4a',
   hoverTintStrength = 0.35,
@@ -1235,23 +1239,40 @@ export function SupportProxyMeshLayer({
     scheduleSupportHoverClear();
   }, [pointerHoverEnabled, scheduleSupportHoverClear]);
 
-  const hoveredOverlayEntry = React.useMemo(() => {
-    if (!effectiveHoverModelId) return null;
-    if (highlightedModelIdSet.has(effectiveHoverModelId)) return null;
-    if (!resolveModelVisible(effectiveHoverModelId)) return null;
+  // The hover tint also covers the models a marquee drag is about to take, so
+  // their supports light up with the model instead of after the mouse is up.
+  const hoveredOverlayEntries = React.useMemo(() => {
+    const modelIds = new Set<string>();
+    if (effectiveHoverModelId) modelIds.add(effectiveHoverModelId);
+    for (const modelId of marqueeCandidateModelIds) modelIds.add(modelId);
 
-    const modelKey = toModelKey(effectiveHoverModelId);
-    const geometry = baseProxyByModel.get(modelKey);
-    if (!geometry) return null;
+    const entries: Array<{
+      modelId: string;
+      modelKey: string;
+      zOffset: number;
+      geometry: NonNullable<ReturnType<typeof baseProxyByModel.get>>;
+    }> = [];
 
-    return {
-      modelId: effectiveHoverModelId,
-      modelKey,
-      zOffset: modelDropOffsetsById?.[effectiveHoverModelId] ?? 0,
-      geometry,
-    };
+    for (const modelId of modelIds) {
+      if (highlightedModelIdSet.has(modelId)) continue;
+      if (!resolveModelVisible(modelId)) continue;
+
+      const modelKey = toModelKey(modelId);
+      const geometry = baseProxyByModel.get(modelKey);
+      if (!geometry) continue;
+
+      entries.push({
+        modelId,
+        modelKey,
+        zOffset: modelDropOffsetsById?.[modelId] ?? 0,
+        geometry,
+      });
+    }
+
+    return entries;
   }, [
     effectiveHoverModelId,
+    marqueeCandidateModelIds,
     highlightedModelIdSet,
     resolveModelVisible,
     baseProxyByModel,
@@ -1461,7 +1482,7 @@ export function SupportProxyMeshLayer({
         </group>
       )}
 
-      {hoveredOverlayEntry && (
+      {hoveredOverlayEntries.map((hoveredOverlayEntry) => (
         <group
           key={`proxy-hover:${hoveredOverlayEntry.modelKey}`}
           userData={{ modelId: hoveredOverlayEntry.modelId ?? null }}
@@ -1532,7 +1553,7 @@ export function SupportProxyMeshLayer({
             />
           )}
         </group>
-      )}
+      ))}
     </group>
   );
 }
