@@ -99,6 +99,14 @@ import {
   OrbitPivotIndicator,
 } from './SceneCanvasCameraControllers';
 import { useMarqueeSelectionHandlers } from './useMarqueeSelectionHandlers';
+import {
+  boxHitsMarquee,
+  marqueeModeForDrag,
+  marqueeRectForDrag,
+  shapeHitsMarquee,
+  type MarqueePoint,
+  type MarqueeSegment,
+} from './marqueeHitTest';
 import { PickingEmptySpaceHoverResetter, SceneRenderBindings } from './SceneCanvasInteractionBits';
 
 import { PickingProviderWrapper, SelectionSync, useInteractionWarning } from './SceneSelectionAndPicking';
@@ -2582,36 +2590,34 @@ export function SceneCanvas({
     const camera = cameraRef.current;
     if (!rect || !camera) return [] as string[];
 
-    if (customPrepareMarqueeSelection?.enabled) {
-      const projected = new THREE.Vector3();
-      return customPrepareMarqueeSelection.resolveSelection(selection, {
-        projectWorldPoint: (point: THREE.Vector3) => {
-          projected.copy(point).project(camera);
-          if (
-            !Number.isFinite(projected.x)
-            || !Number.isFinite(projected.y)
-            || !Number.isFinite(projected.z)
-            || projected.z < -1
-            || projected.z > 1
-          ) {
-            return null;
-          }
+    const projected = new THREE.Vector3();
+    const projectWorldPoint = (point: THREE.Vector3) => {
+      projected.copy(point).project(camera);
+      if (
+        !Number.isFinite(projected.x)
+        || !Number.isFinite(projected.y)
+        || !Number.isFinite(projected.z)
+        || projected.z < -1
+        || projected.z > 1
+      ) {
+        return null;
+      }
 
-          return {
-            x: ((projected.x + 1) * 0.5) * rect.width,
-            y: ((1 - projected.y) * 0.5) * rect.height,
-            z: projected.z,
-          };
-        },
-      });
+      return {
+        x: ((projected.x + 1) * 0.5) * rect.width,
+        y: ((1 - projected.y) * 0.5) * rect.height,
+        z: projected.z,
+      };
+    };
+
+    if (customPrepareMarqueeSelection?.enabled) {
+      return customPrepareMarqueeSelection.resolveSelection(selection, { projectWorldPoint });
     }
 
-    const minX = Math.min(selection.start.x, selection.current.x);
-    const maxX = Math.max(selection.start.x, selection.current.x);
-    const minY = Math.min(selection.start.y, selection.current.y);
-    const maxY = Math.max(selection.start.y, selection.current.y);
+    const marqueeRect = marqueeRectForDrag(selection.start, selection.current);
+    const marqueeMode = marqueeModeForDrag(selection.start, selection.current);
 
-    const projected = new THREE.Vector3();
+    const corner = new THREE.Vector3();
     const selectedIds: string[] = [];
 
     for (const model of models) {
@@ -2620,20 +2626,17 @@ export function SceneCanvas({
       const bounds = modelWorldBounds.get(model.id) ?? computeModelWorldBounds(model, model.transform, buildVolumeBounds);
       if (bounds.isEmpty()) continue;
 
-      projected.copy(bounds.getCenter(new THREE.Vector3()));
-      projected.project(camera);
-
-      if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || !Number.isFinite(projected.z)) {
-        continue;
+      const corners: Array<MarqueePoint | null> = [];
+      for (let i = 0; i < 8; i += 1) {
+        corner.set(
+          (i & 1) ? bounds.max.x : bounds.min.x,
+          (i & 2) ? bounds.max.y : bounds.min.y,
+          (i & 4) ? bounds.max.z : bounds.min.z,
+        );
+        corners.push(projectWorldPoint(corner));
       }
 
-      // Skip centers outside clip space.
-      if (projected.z < -1 || projected.z > 1) continue;
-
-      const sx = ((projected.x + 1) * 0.5) * rect.width;
-      const sy = ((1 - projected.y) * 0.5) * rect.height;
-
-      if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
+      if (boxHitsMarquee(marqueeRect, corners, marqueeMode)) {
         selectedIds.push(model.id);
       }
     }
@@ -2649,114 +2652,132 @@ export function SceneCanvas({
     const camera = cameraRef.current;
     if (!rect || !camera) return [] as string[];
 
-    const minX = Math.min(selection.start.x, selection.current.x);
-    const maxX = Math.max(selection.start.x, selection.current.x);
-    const minY = Math.min(selection.start.y, selection.current.y);
-    const maxY = Math.max(selection.start.y, selection.current.y);
+    const marqueeRect = marqueeRectForDrag(selection.start, selection.current);
+    const marqueeMode = marqueeModeForDrag(selection.start, selection.current);
 
     const point = new THREE.Vector3();
     const projected = new THREE.Vector3();
     const selectedSupportIds: string[] = [];
 
-    const pushIfProjectedInside = (id: string, points: Array<{ x: number; y: number; z: number }>) => {
-      if (!id || points.length === 0) return;
+    // A support is a chain of thin struts, so it is hit tested as the points
+    // it is built from plus the struts joining them — exact for both modes.
+    type SupportPoint = { x: number; y: number; z: number };
+    type SupportShape = { points: SupportPoint[]; struts: MarqueeSegment[] };
 
-      point.set(0, 0, 0);
-      for (const p of points) {
-        point.x += p.x;
-        point.y += p.y;
-        point.z += p.z;
-      }
+    const emptyShape = (): SupportShape => ({ points: [], struts: [] });
 
-      point.multiplyScalar(1 / points.length);
-      projected.copy(point).project(camera);
+    const addStrut = (shape: SupportShape, from: SupportPoint, to: SupportPoint) => {
+      shape.struts.push([shape.points.length, shape.points.length + 1]);
+      shape.points.push(from, to);
+    };
 
-      if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || !Number.isFinite(projected.z)) {
-        return;
-      }
-      if (projected.z < -1 || projected.z > 1) return;
+    const pushIfHit = (id: string, shape: SupportShape) => {
+      if (!id || shape.points.length === 0) return;
 
-      const sx = ((projected.x + 1) * 0.5) * rect.width;
-      const sy = ((1 - projected.y) * 0.5) * rect.height;
-      if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
+      const projectedPoints = shape.points.map((p) => {
+        projected.copy(point.set(p.x, p.y, p.z)).project(camera);
+
+        if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || !Number.isFinite(projected.z)) {
+          return null;
+        }
+        if (projected.z < -1 || projected.z > 1) return null;
+
+        return {
+          x: ((projected.x + 1) * 0.5) * rect.width,
+          y: ((1 - projected.y) * 0.5) * rect.height,
+        };
+      });
+
+      if (shapeHitsMarquee(marqueeRect, projectedPoints, shape.struts, marqueeMode)) {
         selectedSupportIds.push(id);
       }
     };
 
-    const segmentPoints = (segments: Array<{
+    const shapeFromSegments = (segments: Array<{
       topJoint?: { pos?: { x: number; y: number; z: number } };
       bottomJoint?: { pos?: { x: number; y: number; z: number } };
     }>) => {
-      const points: Array<{ x: number; y: number; z: number }> = [];
+      const shape = emptyShape();
       for (const segment of segments) {
         const top = segment.topJoint?.pos;
         const bottom = segment.bottomJoint?.pos;
-        if (top) points.push(top);
-        if (bottom) points.push(bottom);
+        if (top && bottom) {
+          addStrut(shape, top, bottom);
+        } else if (top) {
+          shape.points.push(top);
+        } else if (bottom) {
+          shape.points.push(bottom);
+        }
       }
-      return points;
+      return shape;
     };
 
     for (const root of Object.values(supportStateForBounds.roots)) {
-      pushIfProjectedInside(root.id, [root.transform.pos]);
+      pushIfHit(root.id, { points: [root.transform.pos], struts: [] });
     }
 
     for (const trunk of Object.values(supportStateForBounds.trunks)) {
-      const points = segmentPoints(trunk.segments);
+      const shape = shapeFromSegments(trunk.segments);
       if (trunk.contactCone) {
-        points.push(trunk.contactCone.pos);
-        points.push(getFinalSocketPosition(trunk.contactCone));
+        addStrut(shape, trunk.contactCone.pos, getFinalSocketPosition(trunk.contactCone));
       }
-      pushIfProjectedInside(trunk.id, points);
+      pushIfHit(trunk.id, shape);
     }
 
     for (const branch of Object.values(supportStateForBounds.branches)) {
-      const points = segmentPoints(branch.segments);
+      const shape = shapeFromSegments(branch.segments);
       if (branch.contactCone) {
-        points.push(branch.contactCone.pos);
-        points.push(getFinalSocketPosition(branch.contactCone));
+        addStrut(shape, branch.contactCone.pos, getFinalSocketPosition(branch.contactCone));
       }
-      pushIfProjectedInside(branch.id, points);
+      pushIfHit(branch.id, shape);
     }
 
     for (const leaf of Object.values(supportStateForBounds.leaves)) {
       if (!leaf.contactCone) continue;
-      pushIfProjectedInside(leaf.id, [leaf.contactCone.pos, getFinalSocketPosition(leaf.contactCone)]);
+      const shape = emptyShape();
+      addStrut(shape, leaf.contactCone.pos, getFinalSocketPosition(leaf.contactCone));
+      pushIfHit(leaf.id, shape);
     }
 
     for (const twig of Object.values(supportStateForBounds.twigs)) {
-      const points = segmentPoints(twig.segments);
-      points.push(twig.contactDiskA.pos, twig.contactDiskB.pos);
-      pushIfProjectedInside(twig.id, points);
+      const shape = shapeFromSegments(twig.segments);
+      shape.points.push(twig.contactDiskA.pos, twig.contactDiskB.pos);
+      pushIfHit(twig.id, shape);
     }
 
     for (const stick of Object.values(supportStateForBounds.sticks)) {
-      const points = segmentPoints(stick.segments);
-      points.push(stick.contactConeA.pos, stick.contactConeB.pos);
-      points.push(getFinalSocketPosition(stick.contactConeA), getFinalSocketPosition(stick.contactConeB));
-      pushIfProjectedInside(stick.id, points);
+      const shape = shapeFromSegments(stick.segments);
+      addStrut(shape, stick.contactConeA.pos, getFinalSocketPosition(stick.contactConeA));
+      addStrut(shape, stick.contactConeB.pos, getFinalSocketPosition(stick.contactConeB));
+      pushIfHit(stick.id, shape);
     }
 
     for (const brace of Object.values(supportStateForBounds.braces)) {
       const startKnot = supportStateForBounds.knots[brace.startKnotId];
       const endKnot = supportStateForBounds.knots[brace.endKnotId];
-      const points: Array<{ x: number; y: number; z: number }> = [];
-      if (startKnot?.pos) points.push(startKnot.pos);
-      if (endKnot?.pos) points.push(endKnot.pos);
-      pushIfProjectedInside(brace.id, points);
+      const shape = emptyShape();
+      if (startKnot?.pos && endKnot?.pos) {
+        addStrut(shape, startKnot.pos, endKnot.pos);
+      } else if (startKnot?.pos) {
+        shape.points.push(startKnot.pos);
+      } else if (endKnot?.pos) {
+        shape.points.push(endKnot.pos);
+      }
+      pushIfHit(brace.id, shape);
     }
 
     for (const anchor of Object.values(supportStateForBounds.anchors)) {
-      const points: Array<{ x: number; y: number; z: number }> = [anchor.rootPos];
+      const shape = emptyShape();
       if (anchor.contactCone) {
-        points.push(anchor.contactCone.pos);
+        addStrut(shape, anchor.rootPos, anchor.contactCone.pos);
+      } else {
+        shape.points.push(anchor.rootPos);
       }
-      pushIfProjectedInside(anchor.id, points);
+      pushIfHit(anchor.id, shape);
     }
 
     for (const kickstand of Object.values(kickstandStateForBounds.kickstands)) {
-      const points = segmentPoints(kickstand.segments);
-      pushIfProjectedInside(kickstand.id, points);
+      pushIfHit(kickstand.id, shapeFromSegments(kickstand.segments));
     }
 
     return selectedSupportIds;
