@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import {
   buildCenterSelectionUpdates,
   buildSelectionPositionUpdates,
+  getSelectionPositionOrigin,
   type SelectionPositionModel,
 } from '@/features/scene/selectionPosition';
 import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
@@ -32,23 +33,32 @@ function model(
   };
 }
 
-test('Position translates the selection by the active model delta', () => {
+test('Position translates the selection by its shared origin delta', () => {
   const models = [
     model('model-a', new THREE.BoxGeometry(2, 2, 2), new THREE.Vector3(4, 7, 10)),
     model('model-b', new THREE.BoxGeometry(2, 2, 2), new THREE.Vector3(14, 27, 30)),
     model('model-c', new THREE.BoxGeometry(2, 2, 2), new THREE.Vector3(40, 50, 60)),
   ];
+  const targetIds = ['model-b', 'model-a'];
 
   const updates = buildSelectionPositionUpdates(
     models,
-    ['model-b', 'model-a'],
-    'model-b',
+    targetIds,
     new THREE.Vector3(20, 25, 35),
   );
 
+  assert.deepEqual(getSelectionPositionOrigin(models, targetIds)?.toArray(), [9, 17, 20]);
   assert.deepEqual(updates.map((update) => update.id), ['model-a', 'model-b']);
-  assert.deepEqual(updates[0].transform.position.toArray(), [10, 5, 15]);
-  assert.deepEqual(updates[1].transform.position.toArray(), [20, 25, 35]);
+  assert.deepEqual(updates[0].transform.position.toArray(), [15, 15, 25]);
+  assert.deepEqual(updates[1].transform.position.toArray(), [25, 35, 45]);
+
+  const updatedModels = models.map((entry) => {
+    const update = updates.find((candidate) => candidate.id === entry.id);
+    return update ? { ...entry, transform: update.transform } : entry;
+  });
+  const nextUpdates = buildSelectionPositionUpdates(updatedModels, targetIds, new THREE.Vector3(21, 25, 35));
+  assert.deepEqual(nextUpdates[0].transform.position.toArray(), [16, 15, 25]);
+  assert.deepEqual(nextUpdates[1].transform.position.toArray(), [26, 35, 45]);
 });
 
 test('Center moves the combined transformed bounds to the plate center as one set', () => {

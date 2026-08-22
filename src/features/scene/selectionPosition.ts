@@ -10,6 +10,23 @@ export type SelectionPositionModel = {
   transform: ModelTransform;
 };
 
+export function getSelectionPositionOrigin(
+  models: readonly SelectionPositionModel[],
+  targetIds: readonly string[],
+): THREE.Vector3 | null {
+  const targetIdSet = new Set(targetIds);
+  const origin = new THREE.Vector3();
+  let count = 0;
+
+  models.forEach((model) => {
+    if (!targetIdSet.has(model.id)) return;
+    origin.add(model.transform.position);
+    count += 1;
+  });
+
+  return count > 0 ? origin.multiplyScalar(1 / count) : null;
+}
+
 function translateModels(
   models: readonly SelectionPositionModel[],
   targetIds: readonly string[],
@@ -32,13 +49,12 @@ function translateModels(
 export function buildSelectionPositionUpdates(
   models: readonly SelectionPositionModel[],
   targetIds: readonly string[],
-  activeModelId: string,
-  nextActivePosition: THREE.Vector3,
+  nextSelectionOrigin: THREE.Vector3,
 ): Array<{ id: string; transform: ModelTransform }> {
-  const activeModel = models.find((model) => model.id === activeModelId && targetIds.includes(model.id));
-  if (!activeModel) return [];
+  const currentOrigin = getSelectionPositionOrigin(models, targetIds);
+  if (!currentOrigin) return [];
 
-  const delta = nextActivePosition.clone().sub(activeModel.transform.position);
+  const delta = nextSelectionOrigin.clone().sub(currentOrigin);
   return translateModels(models, targetIds, delta);
 }
 

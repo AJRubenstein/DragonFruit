@@ -81,6 +81,7 @@ import { buildLiftDropUpdates } from '@/features/scene/selectionLiftDrop';
 import {
   buildCenterSelectionUpdates,
   buildSelectionPositionUpdates,
+  getSelectionPositionOrigin,
 } from '@/features/scene/selectionPosition';
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
@@ -795,6 +796,12 @@ export default function Home() {
     supportAfter?: ReturnType<typeof getSupportSnapshot>;
     kickstandBefore?: ReturnType<typeof getKickstandSnapshot>;
     kickstandAfter?: ReturnType<typeof getKickstandSnapshot>;
+  } | null>(null);
+  const pendingSelectionPositionHistoryRef = React.useRef<{
+    targetIdsKey: string;
+    beforeTransforms: Array<{ id: string; transform: ModelTransform }>;
+    supportBefore: ReturnType<typeof getSupportSnapshot>;
+    kickstandBefore: ReturnType<typeof getKickstandSnapshot>;
   } | null>(null);
   const transformHistoryCommitRequestedRef = React.useRef(false);
   const transformHistoryCommitNonceRef = React.useRef(0);
@@ -8527,11 +8534,33 @@ export default function Home() {
     transformMgr.setAutoLift(enabled);
   }, [scene, transformMgr]);
 
-  const applySelectionPositionUpdates = React.useCallback((updates: Array<{ id: string; transform: ModelTransform }>) => {
+  const commitPendingSelectionPositionHistory = React.useCallback(() => {
+    const pending = pendingSelectionPositionHistoryRef.current;
+    if (!pending) return;
+
+    pendingSelectionPositionHistoryRef.current = null;
+    const afterSupportSnapshot = captureTransformSupportSnapshot();
+    scene.commitModelTransformsHistory(
+      pending.beforeTransforms,
+      'Move Selected Models',
+      {
+        includeSupportState: true,
+        supportBefore: pending.supportBefore,
+        supportAfter: afterSupportSnapshot.support,
+        kickstandBefore: pending.kickstandBefore,
+        kickstandAfter: afterSupportSnapshot.kickstand,
+      },
+    );
+  }, [captureTransformSupportSnapshot, scene]);
+
+  const applySelectionPositionUpdates = React.useCallback((
+    updates: Array<{ id: string; transform: ModelTransform }>,
+    options?: { pushHistory?: boolean },
+  ) => {
     if (updates.length === 0) return;
 
-    invalidatePendingTransformHistory();
-    const result = scene.updateModelTransforms(updates);
+    if (options?.pushHistory !== false) invalidatePendingTransformHistory();
+    const result = scene.updateModelTransforms(updates, options);
     if (!result.updated) return;
 
     const activeUpdate = scene.activeModelId
@@ -8549,20 +8578,62 @@ export default function Home() {
   }, [invalidatePendingTransformHistory, scene, suppressTransformPersistenceCycles, transformMgr.transformHook]);
 
   const handlePositionSelectedModels = React.useCallback((x: number, y: number, z: number) => {
-    if (!scene.activeModelId) return;
-
     const targetIds = resolveModelActionTargetIds({
       modelIds: scene.models.map((model) => model.id),
       selectedModelIds: scene.selectedModelIds,
       activeModelId: scene.activeModelId,
     });
+    if (targetIds.length === 0) return;
+
+    const targetIdsKey = targetIds.join('\0');
+    if (
+      pendingSelectionPositionHistoryRef.current
+      && pendingSelectionPositionHistoryRef.current.targetIdsKey !== targetIdsKey
+    ) {
+      commitPendingSelectionPositionHistory();
+    }
+    if (!pendingSelectionPositionHistoryRef.current) {
+      invalidatePendingTransformHistory();
+      const beforeSupportSnapshot = captureTransformSupportSnapshot();
+      pendingSelectionPositionHistoryRef.current = {
+        targetIdsKey,
+        beforeTransforms: scene.models.map((model) => ({
+          id: model.id,
+          transform: {
+            position: model.transform.position.clone(),
+            rotation: model.transform.rotation.clone(),
+            scale: model.transform.scale.clone(),
+          },
+        })),
+        supportBefore: beforeSupportSnapshot.support,
+        kickstandBefore: beforeSupportSnapshot.kickstand,
+      };
+    }
+
     applySelectionPositionUpdates(buildSelectionPositionUpdates(
       scene.models,
       targetIds,
-      scene.activeModelId,
       new THREE.Vector3(x, y, z),
-    ));
-  }, [applySelectionPositionUpdates, scene.activeModelId, scene.models, scene.selectedModelIds]);
+    ), { pushHistory: false });
+  }, [
+    applySelectionPositionUpdates,
+    captureTransformSupportSnapshot,
+    commitPendingSelectionPositionHistory,
+    invalidatePendingTransformHistory,
+    scene.activeModelId,
+    scene.models,
+    scene.selectedModelIds,
+  ]);
+
+  const selectionPositionOrigin = React.useMemo(() => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    return getSelectionPositionOrigin(scene.models, targetIds)
+      ?? transformMgr.transform.position;
+  }, [scene.activeModelId, scene.models, scene.selectedModelIds, transformMgr.transform.position]);
 
   const handleCenterSelectedModels = React.useCallback(() => {
     const targetIds = resolveModelActionTargetIds({
@@ -9948,7 +10019,9 @@ export default function Home() {
               requestDestructiveTransformSupportDeletion: requestDestructiveTransformSupportDeletion,
               handleRotationComplete: handleRotationComplete,
               handleAutoLiftChange: handleAutoLiftChange,
+              selectionPositionOrigin: selectionPositionOrigin,
               handlePositionSelectedModels: handlePositionSelectedModels,
+              commitPendingSelectionPositionHistory: commitPendingSelectionPositionHistory,
               handleCenterSelectedModels: handleCenterSelectedModels,
               handleLiftSelectedModels: handleLiftSelectedModels,
               handleDropSelectedModels: handleDropSelectedModels,

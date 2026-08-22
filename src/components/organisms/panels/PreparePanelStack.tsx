@@ -45,7 +45,9 @@ export type PreparePanelStackProps = {
   requestDestructiveTransformSupportDeletion: (operationLabel: string) => boolean;
   handleRotationComplete: () => void;
   handleAutoLiftChange: (enabled: boolean) => void;
+  selectionPositionOrigin: React.ComponentProps<typeof TransformControls>['position'];
   handlePositionSelectedModels: (x: number, y: number, z: number) => void;
+  commitPendingSelectionPositionHistory: () => void;
   handleCenterSelectedModels: () => void;
   handleLiftSelectedModels: () => void;
   handleDropSelectedModels: () => void;
@@ -92,7 +94,9 @@ export function PreparePanelStack({
   requestDestructiveTransformSupportDeletion,
   handleRotationComplete,
   handleAutoLiftChange,
+  selectionPositionOrigin,
   handlePositionSelectedModels,
+  commitPendingSelectionPositionHistory,
   handleCenterSelectedModels,
   handleLiftSelectedModels,
   handleDropSelectedModels,
@@ -226,11 +230,15 @@ export function PreparePanelStack({
       {scene.geom && transformMgr.transformMode === 'transform' && (
         <TransformControls
           key="prepare-transform-controls"
-          position={transformMgr.transform.position}
+          position={scene.selectedModelIds.length > 1
+            ? selectionPositionOrigin
+            : transformMgr.transform.position}
           onPositionChange={scene.selectedModelIds.length > 1
             ? handlePositionSelectedModels
             : transformMgr.transformHook.setPosition}
-          deferPositionChanges={scene.selectedModelIds.length > 1}
+          onPositionCommit={scene.selectedModelIds.length > 1
+            ? commitPendingSelectionPositionHistory
+            : scheduleCommitPendingTransformHistory}
           onCenter={handleCenterSelectedModels}
           onPlatform={transformMgr.transformHook.setPlatformZ}
           rotation={transformMgr.transform.rotation}
