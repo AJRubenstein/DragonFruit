@@ -364,6 +364,11 @@ const ORIGIN_COLORS: Record<SupportOrigin, string> = {
  * regenerate the supports to get colors. */
 const ORIGIN_NO_ORIGIN_COLOR = '#8e8e93';
 const SCENE_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
+/** Leaf base knots rendered in the scene batch: KnotRenderer subtracts the
+ *  full JOINT_DIAMETER_OFFSET_MM from the knot diameter while the batch
+ *  subtracts only SCENE_JOINT_DIAMETER_BLEND_MM (×0.75), so batched entries
+ *  pre-compensate to keep the exact KnotRenderer sphere size. */
+const KNOT_BATCH_DIAMETER_PRECOMPENSATION_MM = SCENE_JOINT_DIAMETER_BLEND_MM - JOINT_DIAMETER_OFFSET_MM;
 const EMPTY_SUPPORT_ID_LIST: readonly string[] = Object.freeze([]);
 const EMPTY_KNOT_DRAG_BRANCH_SEGMENTS_BY_ID: Record<string, never> = Object.freeze({});
 
@@ -3068,6 +3073,36 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return result;
     }, [renderKickstandList, isModelVisible]);
 
+    /** Unselected leaf base knots as batch-ready joints: one instanced draw
+     *  instead of a mounted KnotRenderer per leaf. Read through
+     *  renderKnotsById so knot-drag previews keep moving these balls.
+     *  Diameter is pre-compensated for pushJoints' smaller blend — see
+     *  KNOT_BATCH_DIAMETER_PRECOMPENSATION_MM. */
+    const leafJointsBySupport = useMemo(() => {
+        const result = new Map<string, SupportJointSet>();
+
+        for (const leaf of renderLeafList) {
+            if (!isModelVisible(leaf.modelId, leaf.id)) continue;
+            const knot = renderKnotsById[leaf.parentKnotId];
+            if (!knot?.pos) continue;
+
+            const modelId = leaf.modelId ?? modelIdByKnotId.get(leaf.parentKnotId);
+            result.set(leaf.id, {
+                supportId: leaf.id,
+                modelId,
+                joints: [{
+                    id: knot.id,
+                    pos: knot.pos,
+                    diameter: Math.max(0.001, (knot.diameter ?? 1.2) + KNOT_BATCH_DIAMETER_PRECOMPENSATION_MM),
+                    supportId: leaf.id,
+                    modelId,
+                }],
+            });
+        }
+
+        return result;
+    }, [renderLeafList, isModelVisible, renderKnotsById, modelIdByKnotId]);
+
     const sceneBatchedJointGroups = useMemo(() => {
         const grouped = new Map<string, { modelId: string | null; color: string; joints: InstancedJoint[] }>();
 
@@ -3136,6 +3171,16 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             pushJoints(kickstand.modelId ?? null, color, jointSet.joints);
         }
 
+        for (const leaf of renderLeafList) {
+            if (!isModelVisible(leaf.modelId, leaf.id)) continue;
+            if (selectedLeafIds.has(leaf.id)) continue;
+            const jointSet = leafJointsBySupport.get(leaf.id);
+            if (!jointSet) continue;
+
+            const color = resolveSceneSupportColor(jointSet.modelId, leaf.id);
+            pushJoints(jointSet.modelId ?? null, color, jointSet.joints);
+        }
+
         return Array.from(grouped.values());
     }, [
         disableSelectionAndHover,
@@ -3155,6 +3200,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         twigJointsBySupport,
         stickJointsBySupport,
         kickstandJointsBySupport,
+        leafJointsBySupport,
+        selectedLeafIds,
+        renderLeafList,
         applyDropToVec3Like,
         dimNonSelected,
         resolveSceneSupportColor,
@@ -3684,6 +3732,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         const kickstandSet = kickstandJointsBySupport.get(hoveredSupportId);
         if (kickstandSet) return kickstandSet;
 
+        const leafSet = leafJointsBySupport.get(hoveredSupportId);
+        if (leafSet) return leafSet;
+
         return null;
     }, [
         isInteractable,
@@ -3694,6 +3745,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         twigJointsBySupport,
         stickJointsBySupport,
         kickstandJointsBySupport,
+        leafJointsBySupport,
     ]);
 
     const hoveredSupportOverlayJoints = useMemo(() => {
@@ -3847,6 +3899,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 ?? twigJointsBySupport.get(supportId)
                 ?? stickJointsBySupport.get(supportId)
                 ?? kickstandJointsBySupport.get(supportId)
+                ?? leafJointsBySupport.get(supportId)
                 ?? null;
             if (!jointSet) continue;
             overlays.push(...jointSet.joints.map((joint) => ({
@@ -3856,7 +3909,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             })));
         }
         return overlays;
-    }, [additionalMarqueeHoveredSupportIds, trunkJointsBySupport, branchJointsBySupport, twigJointsBySupport, stickJointsBySupport, kickstandJointsBySupport, applyDropToVec3Like]);
+    }, [additionalMarqueeHoveredSupportIds, trunkJointsBySupport, branchJointsBySupport, twigJointsBySupport, stickJointsBySupport, kickstandJointsBySupport, leafJointsBySupport, applyDropToVec3Like]);
 
     const marqueeHoveredOverlayRoots = useMemo(() => {
         if (hidePlateContactPrimitivesEffective) return [] as InstancedRoot[];
@@ -4738,12 +4791,13 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 if (!knot) return null;
 
                 const effectiveSelected = selectedLeafIds.has(leaf.id);
-                // Unselected leaves still mount the LeafRenderer so their
-                // base knot (the junction ball on the host shaft) renders in
-                // the scene — matching branches. The cone stays scene-batched
-                // via deferContactConesToSceneBatch. The base knot always
-                // renders, selected or not.
-                const showKnots = simpleRender ? false : true;
+                // Only the selected leaf mounts LeafRenderer. Unselected
+                // leaves are fully scene-batched: cones via
+                // deferContactConesToSceneBatch, base knots via
+                // leafJointsBySupport → sceneBatchedJointGroups (the junction
+                // ball stays visible without a per-leaf KnotRenderer).
+                if (!effectiveSelected) return null;
+                const showKnots = !simpleRender;
 
                 return (
                     <group key={leaf.id} userData={{ noClipping: true }}>
