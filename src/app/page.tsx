@@ -7918,6 +7918,17 @@ export default function Home() {
   }, [scene.mode, transformMgr.transformMode, scene.models, scene.activeModelId, scene.selectedModelIds, scene.selectModel]);
 
   React.useEffect(() => {
+    if (scene.mode !== 'prepare') return;
+    if (transformMgr.transformMode !== 'mirror') return;
+    if (!scene.activeModelId) return;
+    if (
+      scene.selectedModelIds.length === 1
+      && scene.selectedModelIds[0] === scene.activeModelId
+    ) return;
+    scene.selectModel(scene.activeModelId, 'single');
+  }, [scene.mode, transformMgr.transformMode, scene.activeModelId, scene.selectedModelIds, scene.selectModel]);
+
+  React.useEffect(() => {
     if (!hasActivePrinterProfile) return;
     if (!allowPrepareWithoutPrinter) return;
     setAllowPrepareWithoutPrinter(false);
