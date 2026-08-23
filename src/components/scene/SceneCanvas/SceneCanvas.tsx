@@ -161,6 +161,7 @@ import {
 } from '@/utils/modelBounds';
 import { computeLowestZ } from '@/utils/geometry';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
+import { Toast } from '@/components/atoms';
 import { getCenteredPositions } from '@/utils/modelBounds';
 import { emitImmediateModelHover } from '@/supports/interaction/pointerOcclusion';
 import { SupportPathfindingDebugHud, SupportPathfindingDebugOverlay } from '@/components/scene/SupportPathfindingDebugOverlay';
@@ -3009,6 +3010,15 @@ export function SceneCanvas({
     [marqueeSelection],
   );
   const marqueeHue = marqueeMode === 'crossing' ? 'var(--accent)' : 'var(--accent-secondary)';
+  const marqueeModeLabel = marqueeMode === 'crossing'
+    ? _(msg({
+      message: 'Selection Mode: Contact (Right to Left)',
+      comment: 'Shown while dragging a selection rectangle right to left, which takes every object the rectangle touches. Mirrors the CAD convention; keep it on one short line.',
+    }))
+    : _(msg({
+      message: 'Selection Mode: Enclosed (Left to Right)',
+      comment: 'Shown while dragging a selection rectangle left to right, which takes only the objects the rectangle fully encloses. Mirrors the CAD convention; keep it on one short line.',
+    }));
 
   const marqueeCandidateIdSet = React.useMemo(() => {
     if (!marqueeSelection || mode !== 'prepare') return new Set<string>();
@@ -7658,6 +7668,20 @@ export function SceneCanvas({
             zIndex: 45,
           }}
         />
+      )}
+
+      {marqueeSelection && (
+        <div className="pointer-events-none absolute bottom-6 left-1/2 z-50 -translate-x-1/2">
+          <Toast
+            tone="neutral"
+            style={{
+              borderColor: `color-mix(in srgb, ${marqueeHue}, var(--border-subtle) 40%)`,
+              color: `color-mix(in srgb, ${marqueeHue}, var(--text-strong) 40%)`,
+            }}
+          >
+            {marqueeModeLabel}
+          </Toast>
+        </div>
       )}
 
       {prepareLassoPath && prepareLassoPath.length > 1 && (
