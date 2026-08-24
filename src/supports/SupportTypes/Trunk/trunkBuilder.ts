@@ -14,6 +14,7 @@ import { calculateDiskThickness } from '../../SupportPrimitives/ContactDisk/cont
 import { recomputeContactConeForMovedDisk } from '../../SupportPrimitives/ContactDisk';
 import { getJointDiameter } from '../../constants';
 import { getSettings } from '../../Settings';
+import { applySizingOverridesToSettings } from '../../autoSupport/parameterSizing';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import { calculateStandardPlacement, type TrunkPlacementResult } from '../../PlacementLogic/StandardPlacement';
 import { calculateSmartPlacementV2 } from '../../PlacementLogic/Pathfinding';
@@ -297,7 +298,10 @@ export function buildTrunkData(input: TrunkBuildInput): TrunkBuildResult {
 export function buildTrunkDataFromPlacement(input: TrunkBuildInput, placement: TrunkPlacementResult): TrunkBuildResult {
     const { tipPos, tipNormal, modelId, overrides, mesh } = input;
     const settings = getSettings();
-    const settingsCodeHex = encodeSupportSettingsHex(settings);
+    // Hex must describe the geometry actually built — tier overrides applied
+    // (auto supports) — or Support Studio loads the global parameters instead
+    // of the support's own.
+    const settingsCodeHex = encodeSupportSettingsHex(applySizingOverridesToSettings(settings, overrides));
     const tipProfile = buildTipProfile(settings, overrides);
     const tipDiskLengthOverrideMm = overrides?.tipDiskLengthOverrideMm;
     const shaftDiameter = overrides?.shaftDiameterMm ?? settings.shaft.diameterMm;

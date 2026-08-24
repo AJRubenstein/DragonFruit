@@ -4,6 +4,7 @@ import type { ContactCone, SupportTipProfile } from '../../SupportPrimitives/Con
 import { recomputeContactConeForMovedDisk } from '../../SupportPrimitives/ContactDisk';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import { getSettings } from '../../Settings';
+import { applySizingOverridesToSettings } from '../../autoSupport/parameterSizing';
 import { encodeSupportSettingsHex } from '../../Settings/supportSettingsCodec';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -64,7 +65,10 @@ export function buildLeafData(input: LeafBuildInput): LeafBuildResult {
     const settings = getSettings();
     // Auto-support tier override — absent for manual placement (global band).
     const tipContactDiameterMm = input.tipContactDiameterMm ?? settings.tip.contactDiameterMm;
-    const settingsCodeHex = encodeSupportSettingsHex(settings);
+    const settingsCodeHex = encodeSupportSettingsHex(applySizingOverridesToSettings(settings, {
+        tipContactDiameterMm: input.tipContactDiameterMm,
+        tipBodyDiameterMm: input.hostDiameterMm,
+    }));
 
     const baseProfile: SupportTipProfile = {
         type: 'disk',

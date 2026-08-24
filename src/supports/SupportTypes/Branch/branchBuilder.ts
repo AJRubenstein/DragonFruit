@@ -7,6 +7,7 @@ import { calculateDiskThickness } from '../../SupportPrimitives/ContactDisk/cont
 import { recomputeContactConeForMovedDisk } from '../../SupportPrimitives/ContactDisk';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import { getSettings } from '../../Settings';
+import { applySizingOverridesToSettings } from '../../autoSupport/parameterSizing';
 import { getJointDiameter } from '../../constants';
 import { resolveConeAxisPolicy, normalizeVectorOrFallback } from '../../PlacementLogic/ConeAxisPolicy';
 import { encodeSupportSettingsHex } from '../../Settings/supportSettingsCodec';
@@ -274,7 +275,11 @@ export function buildBranchData(input: BranchBuildInput): BranchBuildResult {
     const { tipPos, tipNormal, modelId, parentKnot, mesh } = input;
 
     const settings = getSettings();
-    const settingsCodeHex = encodeSupportSettingsHex(settings);
+    const settingsCodeHex = encodeSupportSettingsHex(applySizingOverridesToSettings(settings, {
+        shaftDiameterMm: input.shaftDiameterMm,
+        tipContactDiameterMm: input.tipContactDiameterMm,
+        rootsDiameterMm: input.rootsDiameterMm,
+    }));
     const coneAngleMode = settings.tip.coneAngleMode ?? 'normal';
     const adaptiveConeAngleOffsetDeg = settings.tip.adaptiveConeAngleOffsetDeg ?? 30;
 

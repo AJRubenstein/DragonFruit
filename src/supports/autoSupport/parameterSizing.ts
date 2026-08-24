@@ -1,6 +1,7 @@
 import { clamp, round } from '@/utils/math';
 import type { CandidatePoint } from './types';
 import { getSettings } from '../Settings/state';
+import type { SupportSettings } from '../Settings/types';
 
 // ---------------------------------------------------------------------------
 // Empirical sizing (locked: no physics pretense)
@@ -72,6 +73,38 @@ const SIZING_BANDS: Record<SizingPreset, SizingBand> = {
         rootConeHeightMm: 1.0,
     },
 };
+
+/** Merge sizing overrides into a settings snapshot. The settingsCodeHex
+ *  stamped on a placed support must describe the geometry ACTUALLY built
+ *  (tier band after overrides), not the global band — otherwise Support
+ *  Studio loads the wrong parameters for the selected support and any edit
+ *  clobbers the sized geometry. */
+export function applySizingOverridesToSettings(
+    settings: SupportSettings,
+    overrides?: Partial<SizeOverrides>,
+): SupportSettings {
+    if (!overrides) return settings;
+    return {
+        ...settings,
+        shaft: {
+            ...settings.shaft,
+            diameterMm: overrides.shaftDiameterMm ?? settings.shaft.diameterMm,
+        },
+        tip: {
+            ...settings.tip,
+            contactDiameterMm: overrides.tipContactDiameterMm ?? settings.tip.contactDiameterMm,
+            bodyDiameterMm: overrides.tipBodyDiameterMm ?? settings.tip.bodyDiameterMm,
+            lengthMm: overrides.tipLengthMm ?? settings.tip.lengthMm,
+            penetrationMm: overrides.tipPenetrationMm ?? settings.tip.penetrationMm,
+        },
+        roots: {
+            ...settings.roots,
+            diameterMm: overrides.rootsDiameterMm ?? settings.roots.diameterMm,
+            diskHeightMm: overrides.rootsDiskHeightMm ?? settings.roots.diskHeightMm,
+            coneHeightMm: overrides.rootsConeHeightMm ?? settings.roots.coneHeightMm,
+        },
+    };
+}
 
 /** The auto-support tier's band. */
 export function activeSizingBand(): SizingBand {
