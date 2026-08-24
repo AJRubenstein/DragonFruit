@@ -16,9 +16,6 @@ import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
 import { generateGridCandidates } from './gridPlacement';
-import { generatePoissonCandidates, computeRegionFlatnessDeg } from './poissonPlacement';
-import { pickBestDistributionForRegion } from './distributionBakeoff';
-import { buildAnchorBands } from './anchorBands';
 import {
     MAX_GAP_FILL_PASSES,
     buildGapFillCandidates,
@@ -509,7 +506,7 @@ function placeOneCandidate(
         // trunk attaches as a leaf instead of duplicating it; grid points
         // never attach to other grid trunks.
         if (candidate.gridPoint && candidate.source === 'overhang' && gridTrunkIds
-            && !candidate.anchorPoint && !candidate.id.startsWith('grid-')) {
+            && !candidate.id.startsWith('grid-')) {
             const auto = supportSettings.autoSupport ?? {};
             const islandPool = collectFanShaftPoints(draft)
                 .filter((sp) => !gridTrunkIds.has(sp.trunkId));
@@ -815,7 +812,7 @@ function placeOneCandidate(
         case 'place_trunk': {
             const trunkId = decision.trunkBuild.trunk.id;
             decision.trunkBuild.trunk.origin = candidate.gridPoint
-                ? (candidate.anchorPoint ? 'anchor' : 'overhang')
+                ? 'overhang'
                 : (candidate.source === 'overhang' ? 'standalone' : 'island');
             d = draftAddRoot(d, decision.trunkBuild.root);
             d = draftAddTrunk(d, decision.trunkBuild.trunk);
@@ -834,7 +831,7 @@ function placeOneCandidate(
 
         case 'place_anchor':
             decision.anchor.origin = candidate.gridPoint
-                ? (candidate.anchorPoint ? 'anchor' : 'overhang')
+                ? 'overhang'
                 : (candidate.source === 'overhang' ? 'standalone' : 'island');
             d = draftAddAnchor(d, decision.anchor);
             logPlacement(`Anchor ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
@@ -1099,9 +1096,11 @@ export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
     for (const [tid, trunk] of Object.entries(draft.trunks)) {
         if (trunk.origin === 'anchor') continue;
         for (const seg of trunk.segments) {
-            const start = seg.bottomJoint?.pos ?? { x: 0, y: 0, z: 1.5 };
+            // Both joints must exist: a knot attached to a joint-less segment
+            // is culled later as missingHost — never offer such a segment.
+            const start = seg.bottomJoint?.pos;
             const end = seg.topJoint?.pos;
-            if (!end) continue;
+            if (!start || !end) continue;
             const diameter = seg.diameter ?? 1.0;
             for (let i = 0; i <= SHAFT_SAMPLES_PER_SEGMENT; i++) {
                 const t = i / SHAFT_SAMPLES_PER_SEGMENT;
@@ -1235,7 +1234,9 @@ export function validateAndCullOrphans(
                 }
             }
             if (blocked) {
-                orphans.push({ id: tid, kind: 'trunk', reason: 'trunkBlocked', detail: 'trunk shaft pierces mesh' });
+                const tip = trunk.contactCone?.pos;
+                const where = tip ? ` @ (${tip.x.toFixed(1)}, ${tip.y.toFixed(1)}, Z${tip.z.toFixed(1)})` : '';
+                orphans.push({ id: tid, kind: 'trunk', reason: 'trunkBlocked', detail: `trunk shaft pierces mesh${where}` });
                 trunksToRemove.add(tid);
             }
         }
@@ -1452,7 +1453,10 @@ export function fanLeafToTrunk(
         // absVDist here was the bug — it let leaves attach from a sample ABOVE
         // the tip, hanging downward (upside-down leaves that read as shallow).
         const vDist = target.z - sp.pos.z;
-        if (vDist < 0.01) {
+        if (vDist < 0.4) {
+            // A real vertical drop is required. The ANGLE limit is the real
+            // shallowness guard (75° needs drop ≥ 0.27 × lateral); this floor
+            // only rejects same-height neighbours whose drop rounds to zero.
             if (refusal === 'noHost') refusal = 'sameZ';
             continue;
         }
@@ -1544,7 +1548,6 @@ export function forestSizingNote(entry: ForestLedgerEntry, actualShaftMm: number
     const heightFactor = 1 + clamp01((entry.zHeight - 20) / 200, 0, 0.25);
     const areaInput = Math.max(entry.areaMm2, 0.01);
     return `area ${areaInput.toFixed(2)}mm² · base Ø${entry.bandShaftMm.toFixed(2)} · h${heightFactor.toFixed(2)}` +
-        (entry.anchorGirth ? ` · ×${ANCHOR_SHAFT_MULTIPLIER} anchor girth` : '') +
         ` → Ø${actualShaftMm.toFixed(2)}mm`;
 }
 
@@ -1650,30 +1653,9 @@ export function forestReportToText(report: ForestReport): string {
         lines.push(`  ${s.islands} islands ` +
             `(voxel ${s.bySource.voxel} · minima ${s.bySource.minima} · intersection ${s.bySource.intersection} · overhang ${s.bySource.overhang}) ` +
             `→ ${s.candidates} candidates · ${s.overhangRegions} overhang regions · ` +
-            `${s.anchorClusters} anchor cluster(s), ${s.anchorRegions} in-band · ` +
             `coverage ${s.coveragePercent.toFixed(0)}% of ${s.totalAreaMm2.toFixed(0)}mm² (${s.uncoveredIslands} uncovered) · ${s.rejected} rejected`);
         // Justification: what scan means
-        lines.push(`  → ${s.candidates} candidates after dedup/filter from ${s.islands} islands; ${s.anchorRegions} anchor surfaces are the lowest Z-cluster (first-printed layer, densified)`);
-        lines.push('');
-    }
-    if (report.bakeoff) {
-        const b = report.bakeoff;
-        lines.push('DISTRIBUTION BAKE-OFF (anchors)');
-        lines.push(`  ${b.anchorRegions} anchor surfaces: ${b.gridWins} grid wins · ${b.poissonWins} poisson wins · avg margin ${(b.avgWinnerMargin * 100).toFixed(1)}%`);
-        lines.push(`  Reasoning: footprint coverage @3mm (computeRegionCoverage) picks higher; |Δ|<1% → shape heuristic (planar→grid), both ≥95% & |Δ|<5% → fewer wins (efficiency: gap-fill closes small hole with 2–3 clusters, not 95 extra pillars)`);
-        for (const d of b.details) {
-            const bothMeet = d.gridCoverage >= 0.95 && d.poissonCoverage >= 0.95;
-            const winnerMargin = Math.abs(d.delta);
-            let reason = '';
-            if (bothMeet && winnerMargin < 0.05 && winnerMargin >= 0.01) {
-                reason = ` — both ≥95%, margin ${(winnerMargin * 100).toFixed(1)}% <5% → fewer wins (efficiency gate)`;
-            } else if (winnerMargin < 0.01) {
-                reason = ` — margin ${(winnerMargin * 100).toFixed(1)}% <1% → tie, shape heuristic (planar→grid)`;
-            } else {
-                reason = ` — higher coverage wins`;
-            }
-            lines.push(`    ${d.regionId}: ${d.winner} (grid ${d.gridCoverage.toFixed(3)} ${d.gridCount} vs poisson ${d.poissonCoverage.toFixed(3)} ${d.poissonCount} Δ=${d.delta.toFixed(3)})${reason}`);
-        }
+        lines.push(`  → ${s.candidates} candidates after dedup/filter from ${s.islands} islands (fixed-density ring + grid infill)`);
         lines.push('');
     }
     if (report.orphans && report.orphans.length > 0) {
@@ -1706,8 +1688,7 @@ export function forestReportToText(report: ForestReport): string {
     if (report.diagnostics) {
         const d = report.diagnostics;
         lines.push('PLACEMENT DIAGNOSTICS');
-        lines.push(`  Trunks by kind: poisson ${d.trunksByKind.poissonDisk} (organic disk), grid ${d.trunksByKind.gridInfill} (planar infill), gap-fill ${d.trunksByKind.coverageFill}, standalone ${d.trunksByKind.standalone} (sub-threshold overhang, no host)`);
-        lines.push(`  Candidates by distribution: grid ${d.candidatesByDistribution.grid} · poisson ${d.candidatesByDistribution.poisson} · single ${d.candidatesByDistribution.single} (single = below threshold, one pillar)`);
+        lines.push(`  Trunks by kind: grid ${d.trunksByKind.gridInfill} (ring + infill), gap-fill ${d.trunksByKind.coverageFill}, standalone ${d.trunksByKind.standalone} (sub-threshold overhang, no host)`);
         lines.push(`  Candidates by source: voxel ${d.candidatesBySource.voxel} · minima ${d.candidatesBySource.minima} · intersection ${d.candidatesBySource.intersection} · overhang ${d.candidatesBySource.overhang}`);
         const fanEntries = Object.entries(d.fanRefusals).filter(([, v]) => v);
         const mergeEntries = Object.entries(d.mergeRefusals).filter(([, v]) => v);
@@ -1715,6 +1696,11 @@ export function forestReportToText(report: ForestReport): string {
             const fanStr = fanEntries.length > 0 ? fanEntries.map(([k, v]) => `${k}=${v}`).join(', ') : 'none';
             const mergeStr = mergeEntries.length > 0 ? mergeEntries.map(([k, v]) => `${k}=${v}`).join(', ') : 'none';
             lines.push(`  Fan refusals: ${fanStr} (noHost=too far >5mm/2.5mm grid, angle=>60° too flat, sameZ|cross|blocked|capacity=host full)`);
+        const conEntries = Object.entries(d.consolidationRefusals ?? {}).filter(([, v]) => v);
+        if (conEntries.length > 0) {
+            const conStr = conEntries.map(([k, v]) => `${k}=${v}`).join(', ');
+            lines.push(`  Consolidation refusals: ${conStr} (sameZ=surface too flat for side-leaves — chunking needs ≥0.4 mm neighbour height rise)`);
+        }
             lines.push(`  Merge refusals: ${mergeStr} (noHost=no trunk within 4mm, rejected=host at capacity or collision)`);
         } else {
             lines.push(`  Fan/Merge refusals: none (all fanned or standalone)`);
@@ -1740,13 +1726,12 @@ export function forestReportToText(report: ForestReport): string {
     if (report.bareTrunks.length > 0) {
         lines.push('');
         lines.push('STANDALONE TRUNKS');
-        lines.push(`  (no host within fan radius or anchor — 1:1 pillar; grid/poisson prefix = distribution, perim/poisson=perimeter ring, fill=gap-fill)`);
+        lines.push(`  (no host within fan radius — 1:1 pillar; grid-/fill- = region ring + infill, v/m = standalone voxel/minima)`);
         for (const trunk of report.bareTrunks) {
             const id = trunk.id;
             let why = '';
-            if (id.startsWith('grid-o0') || id.startsWith('fill-o0')) why = ' — anchor grid infill (lowest Z-cluster, densified)';
-            else if (id.startsWith('perim-') || id.startsWith('poisson-')) why = ' — poisson disk (organic or anchor perimeter)';
-            else if (id.startsWith('v') || id.startsWith('m')) why = ' — standalone voxel/minima (below threshold or no fan host)';
+            if (id.startsWith('grid-') || id.startsWith('fill-')) why = ' — region ring + grid infill';
+            else if (id.startsWith('v') || id.startsWith('m')) why = ' — standalone voxel/minima (below threshold or consolidated)';
             lines.push(`  ${trunk.id} @ Z=${trunk.z.toFixed(1)}mm Ø${trunk.shaftDiameterMm.toFixed(2)}mm ` +
                 (trunk.sizingNote ? `[${trunk.sizingNote}]` : '') + why);
         }
@@ -1793,7 +1778,6 @@ export function computeAutoSupportPlan(
             presets: { detail: 0, structure: 0, anchor: 0 },
             rejectionReasons: {},
             areaCoverage: 0,
-            distribution: { grid: 0, poisson: 0 },
         },
         result,
     });
@@ -1812,101 +1796,19 @@ export function computeAutoSupportPlan(
     let candidates = generateCandidates(islands, autoSettings);
     candidates = candidates.map((c): CandidatePoint => ({ ...c, modelId }));
 
-    // Candidate generation phase: large flat overhang regions become density
-    // grids, anchor regions get the Poisson disk (dense perimeter + infill).
-    // Each region's own single candidate is replaced by its generated set.
-    // A generation failure must not kill the whole run — fall back to the
+    // Candidate generation phase: every overhang region above the threshold
+    // gets the unified fixed-density distribution (2D-projected boundary ring
+    // + grid infill). Shape decides the degenerate cases — slivers get a ring
+    // only, small patches stay on the single-candidate path below. A
+    // generation failure must not kill the whole run — fall back to the
     // region's single candidate.
     const overhangIslands = islands.filter((i) => i.source === 'overhang');
-
-    // Per-contact-patch anchor bands: regions within the band of their own
-    // Z-cluster's lowest member get the densified treatment — the first-printed
-    // underside of a fully-supported print (anchorBands.ts).
-    const anchorBands = buildAnchorBands(
-        overhangIslands,
-        autoSettings.anchorBandHeightMm,
-        autoSettings.anchorSpacingFactor,
-    );
-    const anchorIds = new Set(anchorBands.inBandIds);
-
-    // Distribution dispatch: shape-driven. 'auto' = planar regions → dynamic
-    // grid, organic/curved → Poisson disk (flatness metric); 'grid' / 'poisson'
-    // force one distribution. For ANCHOR surfaces in 'auto' mode the flatness
-    // heuristic is replaced by a competitive bake-off: both generators run and
-    // footprint coverage (computeRegionCoverage @ TIP_COVERAGE_RADIUS_MM) picks
-    // the winner per region — gambling is the wrong tool on the peel-critical
-    // first layer. Non-anchor regions keep the heuristic; explicit modes bypass
-    // the bake-off entirely.
-    const distributionMode = autoSettings.distributionMode;
-    const threshold = autoSettings.gridAreaThresholdMm2;
-    const eligible = overhangIslands.filter(
-        (i) => anchorIds.has(i.id) || (i.areaMm2 ?? 0) >= threshold,
-    );
-    const distributionCounts: { grid: number; poisson: number } = { grid: 0, poisson: 0 };
-    // Competitive bake-off tallies (anchor-only, auto mode).
-    let competitiveGridWins = 0;
-    let competitivePoissonWins = 0;
-    let competitiveMargins: number[] = [];
-    const competitiveDetails: Array<{ regionId: string; winner: 'grid' | 'poisson'; gridCoverage: number; poissonCoverage: number; gridCount: number; poissonCount: number; delta: number; winnerMargin: number }> = [];
+    const eligible = overhangIslands.filter((i) => (i.areaMm2 ?? 0) >= autoSettings.gridAreaThresholdMm2);
     if (eligible.length > 0) {
         let generated: CandidatePoint[] = [];
         try {
-            for (const island of eligible) {
-                const isAnchorBakeoff = distributionMode === 'auto' && anchorIds.has(island.id);
-                if (isAnchorBakeoff) {
-                    const bakeoff = pickBestDistributionForRegion(
-                        island,
-                        autoSettings,
-                        anchorBands.scaleById,
-                        anchorIds,
-                    );
-                    generated.push(...bakeoff.candidates);
-                    if (bakeoff.winner === 'poisson') {
-                        distributionCounts.poisson++;
-                        competitivePoissonWins++;
-                    } else {
-                        distributionCounts.grid++;
-                        competitiveGridWins++;
-                    }
-                    competitiveMargins.push(bakeoff.metrics.winnerMargin);
-                    competitiveDetails.push({
-                        regionId: island.id,
-                        winner: bakeoff.winner,
-                        gridCoverage: bakeoff.metrics.gridCoverage,
-                        poissonCoverage: bakeoff.metrics.poissonCoverage,
-                        gridCount: bakeoff.metrics.gridCount,
-                        poissonCount: bakeoff.metrics.poissonCount,
-                        delta: bakeoff.metrics.delta,
-                        winnerMargin: bakeoff.metrics.winnerMargin,
-                    });
-                    console.log(LOG_PREFIX,
-                        `Bakeoff ${island.id}: grid=${bakeoff.metrics.gridCoverage.toFixed(3)} (${bakeoff.metrics.gridCount}) vs ` +
-                        `poisson=${bakeoff.metrics.poissonCoverage.toFixed(3)} (${bakeoff.metrics.poissonCount}) → ${bakeoff.winner} ` +
-                        `Δ=${bakeoff.metrics.delta.toFixed(3)} margin=${bakeoff.metrics.winnerMargin.toFixed(3)} ` +
-                        `anchor area=${(island.areaMm2 ?? 0).toFixed(0)}mm²`);
-                    continue;
-                }
-                const flatness = distributionMode === 'auto' ? computeRegionFlatnessDeg(island) : 0;
-                const organic = distributionMode === 'auto'
-                    && flatness > autoSettings.poissonFlatnessThresholdDeg;
-                const usePoisson = distributionMode === 'poisson' || organic;
-                console.log(LOG_PREFIX,
-                    `Dispatch ${island.id}: flatness=${flatness.toFixed(1)}° ` +
-                    `(threshold ${autoSettings.poissonFlatnessThresholdDeg}°) → ${usePoisson ? 'poisson' : 'grid'} ` +
-                    `${anchorIds.has(island.id) ? 'anchor ' : ''}area=${(island.areaMm2 ?? 0).toFixed(0)}mm²`);
-                if (usePoisson) {
-                    generated.push(...generatePoissonCandidates(
-                        [island], autoSettings, anchorBands.scaleById, anchorIds,
-                    ));
-                    distributionCounts.poisson++;
-                } else {
-                    generated.push(...generateGridCandidates(
-                        [island], autoSettings, anchorBands.scaleById, anchorIds,
-                    ));
-                    distributionCounts.grid++;
-                }
-            }
-            generated = generated.map((c): CandidatePoint => ({ ...c, modelId }));
+            generated = generateGridCandidates(eligible, autoSettings, resolvedMesh)
+                .map((c): CandidatePoint => ({ ...c, modelId }));
         } catch (e) {
             console.error(LOG_PREFIX,
                 `Candidate generation failed — falling back to per-region candidates.`,
@@ -1924,15 +1826,7 @@ export function computeAutoSupportPlan(
     console.log(LOG_PREFIX,
         `Step 1/3: ${candidates.length} candidates generated ` +
         `(filtered from ${islands.length} islands, min area ${autoSettings.minIslandAreaMm2}mm², ` +
-        `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold)` +
-        (anchorBands.inBandIds.length > 0
-            ? ` | anchor: ${anchorBands.clusterCount} clusters, ${anchorBands.inBandIds.length}/${overhangIslands.length} regions @ ${autoSettings.anchorSpacingFactor}×`
-            : '') +
-        ` | distribution: ${distributionCounts.grid} grid, ${distributionCounts.poisson} poisson` +
-        (competitiveGridWins + competitivePoissonWins > 0
-            ? ` | bakeoff: ${competitiveGridWins} grid wins, ${competitivePoissonWins} poisson wins ` +
-              `(avg margin ${(competitiveMargins.reduce((a,b)=>a+b,0)/(competitiveMargins.length||1)*100).toFixed(1)}%)`
-            : ''));
+        `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold)`);
     if (candidates.length === 0) {
         return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'No viable support candidates found.'));
     }
@@ -2004,14 +1898,16 @@ export function computeAutoSupportPlan(
     // non-fanned candidates didn't fan/merge. Pure counts — no physics.
     const diagnostics: PlacementDiagnostics = {
         candidatesBySource: { voxel: 0, minima: 0, intersection: 0, overhang: 0 },
-        candidatesByDistribution: { grid: 0, poisson: 0, single: 0 },
-        trunksByKind: { poissonDisk: 0, gridInfill: 0, coverageFill: 0, standalone: 0 },
+        trunksByKind: { gridInfill: 0, coverageFill: 0, standalone: 0 },
         fanRefusals: {},
         mergeRefusals: {},
     };
+    // Consolidation (chunk fanning) refusal tallies — hoisted so the forest
+    // report can surface them even when the resize pass re-scopes.
+    const conRefusals: Partial<Record<FanLeafRefusal, number>> = {};
     // Trunk id → origin kind, so the consolidation pass can adjust the tallies
     // when it converts a standalone grid pillar into a fan leaf.
-    const trunkOriginById = new Map<string, 'poissonDisk' | 'gridInfill' | 'coverageFill'>();
+    const trunkOriginById = new Map<string, 'gridInfill' | 'coverageFill'>();
     // Per-placed-entity ledger for the Forest Report (display id, sizing inputs).
     const forestLedger: ForestLedgerEntry[] = [];
 
@@ -2053,24 +1949,9 @@ export function computeAutoSupportPlan(
             // Placement-path diagnostics: where each candidate ended up.
             diagnostics.candidatesBySource[candidate.source] =
                 (diagnostics.candidatesBySource[candidate.source] ?? 0) + 1;
-            if (candidate.gridPoint) {
-                if (candidate.id.startsWith('perim-') || candidate.id.startsWith('poisson-')) {
-                    diagnostics.candidatesByDistribution.poisson++;
-                } else {
-                    diagnostics.candidatesByDistribution.grid++;
-                }
-            } else {
-                diagnostics.candidatesByDistribution.single++;
-            }
             if (result.kind === 'trunk' && result.entityId) {
                 if (candidate.gridPoint) {
-                    if (candidate.id.startsWith('perim-') || candidate.id.startsWith('poisson-')) {
-                        diagnostics.trunksByKind.poissonDisk++;
-                        trunkOriginById.set(result.entityId, 'poissonDisk');
-                    } else if (candidate.id.startsWith('fill-')) {
-                        diagnostics.trunksByKind.coverageFill++;
-                        trunkOriginById.set(result.entityId, 'coverageFill');
-                    } else {
+                    {
                         diagnostics.trunksByKind.gridInfill++;
                         trunkOriginById.set(result.entityId, 'gridInfill');
                     }
@@ -2093,7 +1974,6 @@ export function computeAutoSupportPlan(
                     zHeight: candidate.zHeight,
                     preset: result.preset ?? presetForArea(candidate.islandAreaMm2),
                     bandShaftMm: getSettings().shaft.diameterMm,
-                    anchorGirth: !!candidate.anchorPoint,
                 });
             }
             return result.kind;
@@ -2116,25 +1996,38 @@ export function computeAutoSupportPlan(
     // of a valid host is converted into a fan leaf — whether the host placed
     // before or after it, the junction reads as a tree. The radius is wider
     // than the regular fanning radius (8 mm) so overhang trunks 5–8 mm from
-    // an island trunk still merge; the ANGLE stays at the regular fan limit —
-    // a near-horizontal leaf is not a support. Same-height pillars (vDist ≈ 0)
-    // cannot fan at all and stay as their own trunks.
+    // an island trunk still merge, and the angle is relaxed to 75° so
+    // neighbours on shallow surfaces can chunk (see below). Same-height
+    // pillars (vDist ≈ 0) still cannot fan and stay as their own trunks.
     const CONSOLIDATION_FAN_RADIUS_MM = 8;
+    // Routed consolidation branches only above this height — near the plate
+    // they read as a zig-zag spiderweb; high up they read as trees.
+    const CONSOLIDATION_BRANCH_MIN_HEIGHT_MM = 10;
     const conFanRadiusMm = Math.max(autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM, CONSOLIDATION_FAN_RADIUS_MM);
-    const conFanMaxAngleDeg = autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
+    // Chunk links may be shallower than placement fans (75° vs 60° from
+    // vertical): on a surface sloped <30° from horizontal, neighbouring
+    // pillars can NEVER satisfy the 60° rule (the link angle is always
+    // 90° − surface slope), so chunking would be geometrically impossible.
+    // The chunk's interior hosts carry the load; the shallow links are the
+    // connective tissue that makes supports release in chunks.
+    const conFanMaxAngleDeg = Math.max(
+        autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
+        75,
+    );
     let consolidated = 0;
-    const conRefusals: Partial<Record<FanLeafRefusal, number>> = {};
     for (let pass = 0; pass < 3; pass++) {
         let convertedThisPass = 0;
         for (const tid of Object.keys(draft.trunks)) {
-            // Convertible: organic Poisson disks, coverage fill, and
-            // sub-threshold overhang singles — the overhang forest should
-            // read as trees. Flat-lattice grid infill stays independent
-            // (peel distribution); anchors are load-bearing pillars and
-            // are NEVER converted into fan leaves; islands keep their trunks.
+            // Convertible: ring + grid infill, coverage fill, and
+            // sub-threshold overhang singles — the overhang forest reads as
+            // TREES: neighbouring pillars fan into each other so supports
+            // release in chunks (one plate contact per chunk). Chunk size is
+            // bounded by maxAttachmentsPerTrunk; anchors (near-plate) and
+            // island trunks are never converted.
             const originKind = trunkOriginById.get(tid);
             const isConvertible = draft.trunks[tid].origin !== 'anchor'
-                && (originKind === 'poissonDisk' || originKind === 'coverageFill'
+                && (originKind === 'gridInfill'
+                    || originKind === 'coverageFill'
                     || draft.trunks[tid].origin === 'standalone');
             if (!isConvertible) continue;
             if (countAttachmentsOnTrunk(tid, draft) > 0) continue;
@@ -2166,10 +2059,16 @@ export function computeAutoSupportPlan(
                 'overhang',
             );
             if (!fan.ok) {
-                // A straight leaf blocked by the model (or crossing another
-                // support) can be recovered as a ROUTED branch. Only count
-                // the refusal when the branch fallback also fails.
-                const branchResult = (fan.reason === 'blocked' || fan.reason === 'cross')
+                // Routed-branch fallback, HEIGHT-GATED: a straight leaf can be
+                // impossible between same-height or concave-surface pillars
+                // (the leaf must rise; a horizontal link is not a support),
+                // and that is exactly where chunking is still wanted — tall
+                // pillar forests like an under-arm row. A routed branch high
+                // above the plate reads as a tree; near the plate it reads as
+                // a zig-zag spiderweb, so only tips at
+                // ≥ CONSOLIDATION_BRANCH_MIN_HEIGHT_MM qualify.
+                const branchResult = (tip.z >= CONSOLIDATION_BRANCH_MIN_HEIGHT_MM
+                    && (fan.reason === 'blocked' || fan.reason === 'cross' || fan.reason === 'sameZ'))
                     ? buildConsolidationBranch({
                         tip,
                         tipNormal,
@@ -2221,17 +2120,15 @@ export function computeAutoSupportPlan(
     }
 
     // ── Anchor pass: none ──────────────────────────────────────────
-    // Anchors are load-bearing pillars — always standalone. They are never
-    // merged into branching trees, and the fan/merge host searches exclude
-    // anchor-origin trunks (leaves are not load-bearing). A flat region's
-    // grid infill therefore stays a 1:1 pillar forest.
+    // Near-plate contacts place as anchor primitives upstream (tip Z below
+    // ANCHOR_HEIGHT_THRESHOLD_MM) and stay standalone.
 
     const fmtRefusals = (r: Record<string, number | undefined>): string => {
         const entries = Object.entries(r).filter(([, v]) => v !== undefined) as Array<[string, number]>;
         return entries.length === 0 ? 'none' : entries.map(([k, v]) => `${k}=${v}`).join(', ');
     };
     console.log(LOG_PREFIX,
-        `Placement: ${diagnostics.trunksByKind.poissonDisk} poisson-disk, ${diagnostics.trunksByKind.gridInfill} grid-infill, ` +
+        `Placement: ${diagnostics.trunksByKind.gridInfill} ring+infill, ` +
         `${diagnostics.trunksByKind.coverageFill} coverage-fill, ${diagnostics.trunksByKind.standalone} standalone trunks ` +
         `| fan refusals: ${fmtRefusals(diagnostics.fanRefusals)} | merge refusals: ${fmtRefusals(diagnostics.mergeRefusals)} ` +
         `| consolidation refusals: ${fmtRefusals(conRefusals)}`);
@@ -2343,22 +2240,7 @@ export function computeAutoSupportPlan(
             // placed supports. A load share, not a force estimate.
             weightPerSupportG: round2Mm(placedTrunks > 0 ? weightG / placedTrunks : 0),
             avgIslandAreaMm2: round2Mm(avgArea),
-            // Anchor-layer stats (per-contact-patch bands, anchorBands.ts):
-            // counts and projected area only — no force/load values.
-            anchorClusterCount: anchorBands.clusterCount,
-            anchorInBandRegions: anchorBands.inBandIds.length,
-            anchorLayerAreaMm2: round2Mm(
-                anchorBands.inBandIds.length > 0
-                    ? overhangIslands.reduce(
-                        (sum, i) => sum + (anchorBands.inBandIds.includes(i.id) ? (i.areaMm2 ?? 0) : 0),
-                        0,
-                    )
-                    : 0,
-            ),
-            distributionGridRegions: distributionCounts.grid,
-            distributionPoissonRegions: distributionCounts.poisson,
             standaloneTrunks: diagnostics.trunksByKind.standalone,
-            poissonDiskTrunks: diagnostics.trunksByKind.poissonDisk,
             gridInfillTrunks: diagnostics.trunksByKind.gridInfill + diagnostics.trunksByKind.coverageFill,
             shaftDiameterRange: {
                 min: round2Mm(sMin.shaftDiameterMm ?? 0),
@@ -2379,17 +2261,6 @@ export function computeAutoSupportPlan(
         presets,
         rejectionReasons,
         areaCoverage: totalArea > 0 ? coveredArea / totalArea : 0,
-        distribution: distributionCounts,
-        competitive: competitiveGridWins + competitivePoissonWins > 0
-            ? {
-                anchorRegions: competitiveGridWins + competitivePoissonWins,
-                gridWins: competitiveGridWins,
-                poissonWins: competitivePoissonWins,
-                avgWinnerMargin: competitiveMargins.length > 0
-                    ? competitiveMargins.reduce((a, b) => a + b, 0) / competitiveMargins.length
-                    : 0,
-            }
-            : undefined,
         placement: diagnostics,
         sizingDebug,
     };
@@ -2456,7 +2327,6 @@ export function computeAutoSupportPlan(
                 zHeight: island.contact.z,
                 preset: presetForArea(island.areaMm2 ?? 0),
                 bandShaftMm: getSettings().shaft.diameterMm,
-                anchorGirth: false,
             });
             console.log(LOG_PREFIX,
                 `Leaf (fan p${pass}) ${island.id} → trunk ${fan.trunkId} ` +
@@ -2666,34 +2536,23 @@ export function computeAutoSupportPlan(
                 islands: islands.length,
                 bySource,
                 overhangRegions: overhangIslands.length,
-                anchorClusters: anchorBands.clusterCount,
-                anchorRegions: anchorBands.inBandIds.length,
+                anchorClusters: 0,
+                anchorRegions: 0,
                 candidates: candidates.length,
                 totalAreaMm2: scanTotalAreaMm2,
                 coveragePercent: analytics.areaCoverage * 100,
                 uncoveredIslands: analytics.islandsUncovered,
                 rejected: rejectedCount,
             };
-            if (competitiveDetails.length > 0) {
-                forestReport.bakeoff = {
-                    anchorRegions: competitiveGridWins + competitivePoissonWins,
-                    gridWins: competitiveGridWins,
-                    poissonWins: competitivePoissonWins,
-                    avgWinnerMargin: competitiveMargins.length > 0
-                        ? competitiveMargins.reduce((a, b) => a + b, 0) / competitiveMargins.length
-                        : 0,
-                    details: competitiveDetails,
-                };
-            }
             if (orphanInfos.length > 0) {
                 forestReport.orphans = orphanInfos;
             }
             forestReport.diagnostics = {
                 candidatesBySource: diagnostics.candidatesBySource,
-                candidatesByDistribution: diagnostics.candidatesByDistribution,
                 trunksByKind: diagnostics.trunksByKind,
                 fanRefusals: { ...diagnostics.fanRefusals },
                 mergeRefusals: { ...diagnostics.mergeRefusals },
+                consolidationRefusals: { ...conRefusals },
             };
             analytics.forestReport = forestReport;
             console.log(LOG_PREFIX,

@@ -1,3 +1,7 @@
+> **SUPERSEDED (unified fixed-density distribution):** the bake-off, Poisson
+> generator, and anchor-band machinery described below were removed. Kept as
+> history only.
+
 # Auto-Supports v1.5 — Findings & State (2026-08-21)
 
 Working notes from the `feat/auto-supports-v1.5` session. Unpublished
@@ -72,14 +76,10 @@ Backups of discarded work:
 ## Key files
 
 - `src-tauri/src/overhang.rs` — classifier, footprint mask, perimeter loops
-- `src/supports/autoSupport/anchorBands.ts` — lowest-cluster selection + sliver filters
 - `src/supports/autoSupport/gridPlacement.ts` — grid spacing, boundary fill, `samplePerimeterLoops`
-- `src/supports/autoSupport/poissonPlacement.ts` — Bridson disk, per-ring/infill cap
-- `src/supports/autoSupport/distributionBakeoff.ts` — winner decision (`decideBakeoffWinner`)
-- `src/supports/autoSupport/constants.ts` — all tuning knobs incl. `ANCHOR_MAX_FAN_LEAVES` (backup)
 
 ## Verification status at push
 
 - `cargo test overhang` 6/6 (at baseline)
 - tsc clean
-- 70/70 across autoPlace/fanHost/distributionBakeoff/anchorBands/poisson/grid suites
+- (v1.5 numbers superseded by the unified fixed-density distribution)

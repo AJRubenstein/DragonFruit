@@ -154,11 +154,8 @@ export function sizeParameters(
     // this is a calibration curve, not a load calculation: linear +25% cap at
     // ≥ 70 mm. No force inputs, no strength model.
     const heightFactor = 1 + clamp((zHeight - 20) / 200, 0, 0.25);
-    // Anchor-band points are load-bearing pillars — thicker than the band.
-    const anchorFactor = candidate.anchorPoint ? ANCHOR_SHAFT_MULTIPLIER : 1;
-
     const shaftDiameterMm = round(
-        clamp(shaftDiameterForArea(band.shaftDiameterMm, areaInput) * heightFactor * anchorFactor, 0.001, MAX_SHAFT_DIAMETER_MM)
+        clamp(shaftDiameterForArea(band.shaftDiameterMm, areaInput) * heightFactor, 0.001, MAX_SHAFT_DIAMETER_MM)
         * sizeScale,
     3);
 

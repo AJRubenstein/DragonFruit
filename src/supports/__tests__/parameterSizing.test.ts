@@ -55,16 +55,6 @@ test('density-grid cell sits FLAT at the active profile band', () => {
     });
 });
 
-test('anchor-band points get the anchor girth multiplier', () => {
-    withBand({ shaft: 1.0, tip: 0.4, roots: 2.0 }, () => {
-        const flat = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }));
-        assert.equal(flat.shaftDiameterMm, 1.0, 'ordinary cell sits at the band');
-        const anchor = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10, anchorPoint: true }));
-        assert.equal(anchor.shaftDiameterMm, 1.25, 'anchor cell carries the girth multiplier');
-        assert.equal(anchor.tipBodyDiameterMm, 1.25, 'tip body follows the thicker shaft');
-    });
-});
-
 test('the band follows the hardcoded profile (light < medium < heavy)', () => {
     // The regression: the old area-derived curve sized a light 16 mm² cell
     // THICKER than a heavy 5 mm² cell. The band must come from the profile.

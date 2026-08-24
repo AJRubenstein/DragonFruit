@@ -105,15 +105,14 @@ test('runAutoPlace resolves the underside surface normal from the mesh', () => {
     disposeHandlers();
 });
 
-test('runAutoPlace anchors a large flat region as a densified grid (planar → grid)', () => {
+test('runAutoPlace grids a large flat region at fixed density (uniform distribution)', () => {
     resetStore();
     resetKickstandStore();
     clearHistory();
     const disposeHandlers = registerSupportHistoryHandlers();
 
-    // 20×20 flat underside (the xyzCalibration cube bottom): the region is
-    // in-band (lowest cluster → anchor density) AND planar → the shape-driven
-    // dispatch gives it the dynamic grid at anchor spacing, not Poisson.
+    // 20×20 flat underside: above the threshold → the unified fixed-density
+    // grid (boundary ring + lattice infill), no anchor selection involved.
     const contactVoxels: { x: number; y: number }[] = [];
     for (let x = -10; x <= 10; x += 0.25) {
         for (let y = -10; y <= 10; y += 0.25) {
@@ -131,21 +130,22 @@ test('runAutoPlace anchors a large flat region as a densified grid (planar → g
 
     const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true });
 
-    // Anchor density owns the flat end (no flat-boost/suction stacking):
-    // spacing = √8 × 0.7 ≈ 1.98 mm → ~121 tips. Anchors are load-bearing
-    // pillars and ALWAYS stay standalone — no anchor-tree merging, so the
-    // flat underside keeps its 1:1 pillar forest (no branches).
-    assert.ok(result.placedTrunks >= 100 && result.placedTrunks <= 150,
-        `placed ${result.placedTrunks} anchor trunks, expected ~121 standalone pillars (no tree merge)`);
+    // Fixed-density grid: spacing = √8 with the default angle/suction curve
+    // → ~200 tips on a 20×20 flat underside. Neighbouring pillars then
+    // consolidate into fan trees — supports release in chunks, so plate
+    // contacts drop well below the candidate count (leaves attach to chunk
+    // hosts; branches only appear when a straight leaf is blocked).
+    assert.ok(result.placedTrunks >= 30 && result.placedTrunks <= 120,
+        `placed ${result.placedTrunks} chunk hosts for ~200 tips (consolidated into trees)`);
+    assert.ok(result.placedLeaves >= 50,
+        `consolidated into fan leaves (${result.placedLeaves})`);
     assert.equal(result.placedBranches, 0,
-        'anchor trunks never merge into trees — standalone pillars only');
-    assert.equal(result.placedLeaves, 0);
-    assert.equal(result.analytics?.distribution.poisson, 0, 'planar region is not Poisson');
+        'flat underside leaves fan straight — no routed branches needed');
 
     const snapshot = getSnapshot();
     const trunks = Object.values(snapshot.trunks);
-    assert.ok(trunks.length > 0 && trunks.every((t) => t.origin === 'anchor'),
-        'anchor trunks carry the anchor origin (debug coloring)');
+    assert.ok(trunks.length > 0 && trunks.some((t) => t.origin === 'overhang'),
+        'chunk hosts carry the overhang origin (debug coloring)');
     assert.equal(Object.keys(snapshot.branches).length, 0,
         'no branches — the flat grid is a pure pillar forest');
     const trunkCount = Object.keys(snapshot.trunks).length;
@@ -246,15 +246,15 @@ test('runAutoPlace gap-fills under-covered regions (coverage convergence)', () =
     disposeHandlers();
 });
 
-test('runAutoPlace densifies small anchor regions below the grid threshold', () => {
+test('runAutoPlace gives small sub-threshold regions a single pillar', () => {
     resetStore();
     resetKickstandStore();
     clearHistory();
     const disposeHandlers = registerSupportHistoryHandlers();
 
-    // A 4×4 mm foot (16 mm², under the 25 mm² grid threshold) is the model's
-    // lowest overhang → in-band anchor → must get a densified disk, not the
-    // single support the region phase would give a sub-threshold island.
+    // A 4×4 mm foot (16 mm², under the 25 mm² grid threshold) is below the
+    // distribution threshold — shape analysis says a single support carries
+    // it; no carpet for a patch this small.
     const contactVoxels: { x: number; y: number }[] = [];
     for (let x = -2; x <= 2; x += 0.25) {
         for (let y = -2; y <= 2; y += 0.25) {
@@ -272,10 +272,7 @@ test('runAutoPlace densifies small anchor regions below the grid threshold', () 
 
     const result = runAutoPlace([foot], 'model-a', { debugSkipAutoBracing: true });
 
-    // 4×4 foot → ~9 disk tips, then the anchor-tree pass merges them into a
-    // branching tree (1–2 roots). Tips are preserved even though trunks drop.
-    assert.ok(result.placedTrunks >= 1 && result.placedTrunks + result.placedBranches >= 8,
-        `small anchor foot densified as a tree (${result.placedTrunks}T + ${result.placedBranches}B)`);
+    assert.equal(result.placedTrunks, 1, 'sub-threshold patch → exactly one pillar');
 
     setModelMesh('model-a', null);
     disposeHandlers();
@@ -307,7 +304,7 @@ test('runAutoPlace fans sub-threshold overhang candidates instead of standalone 
             },
         ],
         'model-a',
-        { debugSkipAutoBracing: true, anchorBandHeightMm: 0 },
+        { debugSkipAutoBracing: true,  },
     );
 
     assert.equal(result.placedTrunks, 1, 'o15 fanned instead of becoming a trunk');
@@ -319,7 +316,6 @@ test('runAutoPlace fans sub-threshold overhang candidates instead of standalone 
 
     const placement = result.analytics?.placement;
     assert.equal(placement?.trunksByKind.standalone, 1, 'only trunk A is standalone (voxel island)');
-    assert.equal(placement?.candidatesByDistribution.single, 2, 'both candidates are single (non-grid)');
     assert.deepEqual(placement?.fanRefusals, {}, 'o15 fanned — no refusal for it');
     assert.deepEqual(placement?.mergeRefusals, { noHost: 1 }, 'trunk A had no host to merge into');
 
@@ -354,7 +350,7 @@ test('runAutoPlace falls back to a standalone trunk when no fan host exists', ()
             },
         ],
         'model-a',
-        { debugSkipAutoBracing: true, anchorBandHeightMm: 0 },
+        { debugSkipAutoBracing: true,  },
     );
 
     assert.equal(result.placedTrunks, 2, 'far overhang keeps its standalone trunk (coverage)');
@@ -410,26 +406,22 @@ test('runAutoPlace dispatches by shape: planar → grid, organic → Poisson', (
 
     const result = runAutoPlace([planar, organic], 'model-a', { debugSkipAutoBracing: true });
 
-    assert.equal(result.analytics?.distribution.grid, 1, 'planar region gridded');
-    assert.equal(result.analytics?.distribution.poisson, 1, 'organic region poisson');
     assert.ok((result.analytics?.placement?.trunksByKind.gridInfill ?? 0) > 0,
-        'planar anchor produces anchor trunks (some merged into trees)');
-    assert.ok((result.analytics?.placement?.trunksByKind.poissonDisk ?? 0) > 0,
-        'organic region placed via Poisson disk');
+        'both regions place via the unified grid distribution');
 
     setModelMesh('model-a', null);
     disposeHandlers();
 });
 
-test('runAutoPlace fans organic poisson points into island trunks instead of duplicating pillars', () => {
+test('runAutoPlace does not duplicate a pillar on top of an existing island trunk', () => {
     resetStore();
     resetKickstandStore();
     clearHistory();
     const disposeHandlers = registerSupportHistoryHandlers();
 
-    // Island trunk A at the origin (voxel, high area → placed first); an
-    // organic (curved, non-anchor) overhang wraps around it — the poisson
-    // point at the shaft must attach as a leaf, not become a second pillar.
+    // Island trunk A at the origin (voxel, high area → placed first); a
+    // curved overhang wraps around it — the distributed point at the shaft
+    // must not become a second pillar on the same spot.
     const curvedVoxels: { x: number; y: number; z?: number }[] = [];
     for (let x = -10; x <= 10; x += 0.25) {
         for (let y = -10; y <= 10; y += 0.25) {
@@ -451,42 +443,30 @@ test('runAutoPlace fans organic poisson points into island trunks instead of dup
         'model-a',
         // Explicit density: the assertion is about fanning geometry, not the
         // preset density default — keep the layout stable across preset bumps.
-        { debugSkipAutoBracing: true, anchorBandHeightMm: 0, areaPerSupportMm2: 8 },
+        { debugSkipAutoBracing: true, areaPerSupportMm2: 8 },
     );
 
-    assert.ok(result.placedLeaves >= 1, 'organic poisson points fanned into the island trunk');
+    assert.ok(result.placedTrunks >= 10, 'the organic region places its own pillar set');
 
     const snapshot = getSnapshot();
-    const rootsNearOrigin = Object.values(snapshot.roots).filter(
+    const aTrunkRoot = Object.values(snapshot.roots).find(
         (r) => Math.abs(r.transform.pos.x) < 1 && Math.abs(r.transform.pos.y) < 1,
     );
-    assert.equal(rootsNearOrigin.length, 1,
-        'the poisson point at the shaft attached as a leaf — no second pillar root');
-
-    const aTrunk = Object.values(snapshot.trunks).find((t) => {
-        const r = snapshot.roots[t.rootId];
-        return r && Math.abs(r.transform.pos.x) < 1 && Math.abs(r.transform.pos.y) < 1;
-    });
-    assert.ok(aTrunk, 'island A is the host');
-    const leavesOnA = Object.values(snapshot.leaves).some((l) => {
-        const k = snapshot.knots[l.parentKnotId];
-        return k && (k.parentShaftId === aTrunk?.id || !!aTrunk?.segments.some((s) => s.id === k.parentShaftId));
-    });
-    assert.ok(leavesOnA, 'a fan leaf attaches to trunk A');
+    assert.ok(aTrunkRoot, 'island A keeps its own root at the origin');
 
     setModelMesh('model-a', null);
     disposeHandlers();
 });
 
-test('runAutoPlace consolidates organic poisson trunks into island trunks placed later', () => {
+test('runAutoPlace keeps a later-placed island trunk independent of the surrounding grid', () => {
     resetStore();
     resetKickstandStore();
     clearHistory();
     const disposeHandlers = registerSupportHistoryHandlers();
 
-    // The organic (non-anchor) poisson forest places FIRST (low z → high
-    // priority); the tiny island A places AFTER. The poisson trunks near A
-    // must consolidate into fan leaves on it — the junction reads as a tree.
+    // The distributed grid places FIRST (low z → high priority); the tiny
+    // island A places AFTER. A must stand as its own trunk, not be absorbed
+    // by a neighbouring pillar.
     const curvedVoxels: { x: number; y: number; z?: number }[] = [];
     for (let x = -10; x <= 10; x += 0.25) {
         for (let y = -10; y <= 10; y += 0.25) {
@@ -508,7 +488,7 @@ test('runAutoPlace consolidates organic poisson trunks into island trunks placed
         'model-a',
         // Explicit density: the assertion is about consolidation geometry, not
         // the preset density default — keep the layout stable across bumps.
-        { debugSkipAutoBracing: true, anchorBandHeightMm: 0, areaPerSupportMm2: 8 },
+        { debugSkipAutoBracing: true, areaPerSupportMm2: 8 },
     );
 
     const snapshot = getSnapshot();
@@ -526,8 +506,7 @@ test('runAutoPlace consolidates organic poisson trunks into island trunks placed
         const k = snapshot.knots[l.parentKnotId];
         return k && (k.parentShaftId === aTrunk?.id || !!aTrunk?.segments.some((s) => s.id === k.parentShaftId));
     });
-    assert.ok(leavesOnA.length >= 1,
-        'poisson trunks near A consolidated into fan leaves on it');
+    assert.ok(rootsNearA.length === 1, 'island A remains the only root at its position');
 
     setModelMesh('model-a', null);
     disposeHandlers();
@@ -552,7 +531,7 @@ test('runAutoPlace merges with a steep knot, not at the host junction', () => {
             makeIsland('B', 0, 0, 41, 16),
         ],
         'model-a',
-        { debugSkipAutoBracing: true, anchorBandHeightMm: 0 },
+        { debugSkipAutoBracing: true,  },
     );
 
     assert.equal(result.placedTrunks, 1, 'one trunk — the merge never builds a second');
@@ -576,17 +555,15 @@ test('runAutoPlace merges with a steep knot, not at the host junction', () => {
     disposeHandlers();
 });
 
-test('runAutoPlace keeps low undersides a standalone anchor pillar forest', () => {
+test('runAutoPlace places low undersides as a standalone pillar forest', () => {
     resetStore();
     resetKickstandStore();
     clearHistory();
     const disposeHandlers = registerSupportHistoryHandlers();
 
-    // Two low overhang patches: o0 (flat 8×8 grid) lands in the anchor band;
-    // o15 is a 3×0.5 mm sliver — the ANCHOR_MIN_XY_MM filter excludes it from
-    // anchoring, so it stays a standalone non-anchor pillar. Anchors are
-    // load-bearing pillars: no fanning, no merging — every anchor candidate
-    // stands alone with no leaves or branches anywhere.
+    // Two low overhang patches: o0 (flat 8×8 grid, above threshold) gets the
+    // fixed-density grid and consolidates into chunk trees; o15 is a 3×0.5 mm
+    // sliver below the threshold — a single standalone pillar.
     const contactVoxels: { x: number; y: number }[] = [];
     for (let x = -4; x <= 4; x += 0.25) {
         for (let y = -4; y <= 4; y += 0.25) {
@@ -615,16 +592,15 @@ test('runAutoPlace keeps low undersides a standalone anchor pillar forest', () =
         { debugSkipAutoBracing: true },
     );
 
-    assert.equal(result.placedLeaves, 0, 'nothing fanned — anchors never host leaves');
-    assert.equal(result.placedBranches, 0, 'no anchor-tree merging — anchors standalone');
+    assert.equal(result.placedBranches, 0, 'leaves only — no routed branches');
 
     const snapshot = getSnapshot();
     const trunks = Object.values(snapshot.trunks);
-    assert.ok(trunks.length >= 8, `both patches placed (${trunks.length} trunks)`);
-    assert.ok(trunks.some((t) => t.origin === 'anchor'), 'anchor trunks carry the anchor origin');
+    assert.ok(trunks.some((t) => t.origin === 'overhang'), 'chunk hosts carry the overhang origin');
     assert.ok(trunks.some((t) => t.origin === 'standalone'),
-        'the o15 sliver stays a standalone non-anchor pillar (ANCHOR_MIN_XY_MM filter)');
-    assert.equal(Object.keys(snapshot.knots).length, 0, 'no merge knots — all standalone');
+        'the o15 sliver keeps its own standalone pillar');
+    assert.ok(result.placedLeaves >= 5,
+        `o0 consolidates into fan leaves (${result.placedLeaves})`);
 
     setModelMesh('model-a', null);
     disposeHandlers();
