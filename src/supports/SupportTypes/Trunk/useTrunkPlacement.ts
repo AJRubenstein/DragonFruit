@@ -126,6 +126,7 @@ export function buildCavityStick(
     tipNormal: { x: number; y: number; z: number },
     modelId: string,
     mesh: THREE.Mesh,
+    sizing?: { tipContactDiameterMm: number; shaftDiameterMm: number },
 ): (
     | { kind: 'stick'; supportData: SupportData; stick: ReturnType<typeof buildStick>['stick'] }
     | { kind: 'twig'; supportData: SupportData; twig: ReturnType<typeof buildTwig>['twig'] }
@@ -188,7 +189,7 @@ export function buildCavityStick(
     const kind: 'twig' | 'stick' = dist > cutoff ? 'stick' : 'twig';
 
     if (kind === 'twig') {
-        const { twig } = buildTwig({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal });
+        const { twig } = buildTwig({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal, tipContactDiameterMm: sizing?.tipContactDiameterMm });
         const supportData: SupportData = {
             id: twig.id,
             segments: twig.segments,
@@ -197,7 +198,7 @@ export function buildCavityStick(
         return { kind, twig, supportData };
     }
 
-    const { stick } = buildStick({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal });
+    const { stick } = buildStick({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal, shaftDiameterMm: sizing?.shaftDiameterMm, tipContactDiameterMm: sizing?.tipContactDiameterMm });
 
     // Sticks are only useful as vertical bridges; a shaft that cants off
     // vertical (standoffs + sloped surfaces shoving the sockets sideways)

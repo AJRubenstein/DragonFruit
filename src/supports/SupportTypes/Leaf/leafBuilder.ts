@@ -13,6 +13,8 @@ export interface LeafBuildInput {
     modelId: string;
     parentKnot: Knot;
     hostDiameterMm: number;
+    /** Auto-support tier tip contact — absent for manual placement. */
+    tipContactDiameterMm?: number;
     mesh?: THREE.Mesh;
 }
 
@@ -59,13 +61,14 @@ function computeLeafConeAxisAndLength(
 
 export function buildLeafData(input: LeafBuildInput): LeafBuildResult {
     const { tipPos, surfaceNormal, modelId, parentKnot, hostDiameterMm, mesh } = input;
-
     const settings = getSettings();
+    // Auto-support tier override — absent for manual placement (global band).
+    const tipContactDiameterMm = input.tipContactDiameterMm ?? settings.tip.contactDiameterMm;
     const settingsCodeHex = encodeSupportSettingsHex(settings);
 
     const baseProfile: SupportTipProfile = {
         type: 'disk',
-        contactDiameterMm: settings.tip.contactDiameterMm,
+        contactDiameterMm: tipContactDiameterMm,
         bodyDiameterMm: hostDiameterMm,
         lengthMm: settings.tip.lengthMm,
         penetrationMm: settings.tip.penetrationMm,

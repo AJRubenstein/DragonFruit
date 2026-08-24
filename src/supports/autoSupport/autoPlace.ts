@@ -432,12 +432,16 @@ export function buildConsolidationBranch(args: {
     };
 
     try {
+        const band = activeSizingBand();
         const { branch, supportData: sd } = buildBranchData({
             tipPos: tip,
             tipNormal,
             modelId,
             parentKnot,
             mesh,
+            shaftDiameterMm: band.shaftDiameterMm,
+            tipContactDiameterMm: band.tipContactDiameterMm,
+            rootsDiameterMm: band.rootDiameterMm,
         });
         if (sd.error) return null;
         if (mesh && branchCollidesWithSDF(branch, mesh)) return null;
@@ -675,6 +679,7 @@ function placeOneCandidate(
                                 // otherwise the cone's wide base swallows the
                                 // junction ball and the knot stays invisible.
                                 hostDiameterMm: knotDiameter,
+                                tipContactDiameterMm: activeSizingBand().tipContactDiameterMm,
                                 mesh,
                             });
                             if (sd.error) {
@@ -716,8 +721,12 @@ function placeOneCandidate(
                         logPlacement(
                             `Merge skip ${candidate.id}: angle too shallow (${mergeAngleDeg.toFixed(0)}° from vertical > 50°) span=${tipSpanMm.toFixed(1)}mm`);
                     } else try {
+                        const band = activeSizingBand();
                         const { branch, supportData: sd } = buildBranchData({
                             tipPos, tipNormal, modelId: candidate.modelId, parentKnot, mesh,
+                            shaftDiameterMm: band.shaftDiameterMm,
+                            tipContactDiameterMm: band.tipContactDiameterMm,
+                            rootsDiameterMm: band.rootDiameterMm,
                         });
                         const collides = sd.error || (mesh && branchCollidesWithSDF(branch, mesh));
                         if (collides) {
@@ -772,7 +781,8 @@ function placeOneCandidate(
         // Cavity fallback: if the trunk can't reach the build plate, try
         // bridging to a lower surface with a Stick (model-to-model).
         if (trunkResult.error === 'COLLISION_WITH_MODEL' && mesh) {
-            const cavityResult = buildCavityStick(tipPos, tipNormal, candidate.modelId, mesh);
+            const band = activeSizingBand();
+            const cavityResult = buildCavityStick(tipPos, tipNormal, candidate.modelId, mesh, band);
             if (cavityResult) {
                 if (cavityResult.kind === 'stick') {
                     d = draftAddStick(d, cavityResult.stick);
@@ -1499,6 +1509,7 @@ export function fanLeafToTrunk(
             modelId,
             parentKnot,
             hostDiameterMm: sp.diameter,
+            tipContactDiameterMm: activeSizingBand().tipContactDiameterMm,
             mesh: mesh ?? undefined,
         });
         if (built.supportData.error) return { ok: false, reason: 'build' };
@@ -2446,6 +2457,9 @@ export function computeAutoSupportPlan(
                         modelId,
                         parentKnot,
                         mesh: bm,
+                        shaftDiameterMm: activeSizingBand().shaftDiameterMm,
+                        tipContactDiameterMm: activeSizingBand().tipContactDiameterMm,
+                        rootsDiameterMm: activeSizingBand().rootDiameterMm,
                     });
                     if (!sd.error) {
                         const ohCap = autoSettings.maxAttachmentsPerTrunk;

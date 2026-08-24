@@ -21,6 +21,8 @@ export interface TwigBuildInput {
     bPos: Vec3;
     bNormal: Vec3;
     mesh?: THREE.Mesh;
+    /** Auto-support tier tip contact — absent for manual placement. */
+    tipContactDiameterMm?: number;
 }
 
 export interface TwigBuildResult {
@@ -53,7 +55,7 @@ export function buildTwig(input: TwigBuildInput): TwigBuildResult {
     // equal ends is the intended geometry (the taper machinery in
     // twigTaper.ts still works — with equal ends it degenerates to a
     // cylinder).
-    const diskAContactDiameter = settings.tip.contactDiameterMm * 0.9;
+    const diskAContactDiameter = (input.tipContactDiameterMm ?? settings.tip.contactDiameterMm) * 0.9;
     const diskBContactDiameter = diskAContactDiameter;
 
     const jointDiameterA = twigJointDiameterForDisk(diskAContactDiameter);
