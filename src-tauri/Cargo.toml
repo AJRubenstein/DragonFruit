@@ -13,9 +13,10 @@ tauri-build = { git = "https://github.com/tauri-apps/tauri", tag = "tauri-cef-v3
 [dependencies]
 # default-features = false — runtime backend chosen via tauri-wry / tauri-cef features.
 tauri = { git = "https://github.com/tauri-apps/tauri", tag = "tauri-cef-v3.0.0-alpha.22", default-features = false, features = ["compression", "dynamic-acl"] }
-# Optional: pulled in by tauri-wry feature. On CEF builds these are excluded
-# to avoid E0252 collision (they pull tauri with default wry feature).
+# Enabled by the `logging` feature on every backend: tauri-plugin-log declares
+# tauri with default-features = false, so it does not pull in wry.
 tauri-plugin-log = { version = "2", optional = true }
+# wry-only: not yet validated against the CEF runtime.
 tauri-plugin-single-instance = { version = "2", optional = true }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
@@ -61,8 +62,10 @@ custom-protocol = ["tauri/custom-protocol"]
 # Runtime backend features — mutually exclusive.
 # Default: tauri-wry (WebKitGTK/WebView2/WebKit)
 # Linux CEF: --no-default-features --features custom-protocol,tauri-cef
-tauri-wry = ["tauri/wry", "dep:tauri-plugin-log", "dep:tauri-plugin-single-instance"]
-tauri-cef = ["tauri/cef"]
+tauri-wry = ["tauri/wry", "logging", "dep:tauri-plugin-single-instance"]
+tauri-cef = ["tauri/cef", "logging"]
+# File/stdout/webview logging via tauri-plugin-log. Backend-agnostic.
+logging = ["dep:tauri-plugin-log"]
 
 # Redirect all transitive tauri crate deps to the feat/cef branch so Cargo
 # resolves a single tauri version tree. Safe for macOS/Windows since wry
