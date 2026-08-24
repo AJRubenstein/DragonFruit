@@ -31,6 +31,11 @@ export interface AutoSupportSettings {
             /** Percentage of each region's projected footprint the auto grid must
      *  cover before gap-fill stops (75–100). */
     coverageTargetPercent: number;
+    /** Auto-support sizing tier — the hardcoded shaft/tip/roots band auto
+     *  supports are sized with. Independent of the active trunk preset
+     *  (which is for manual placement only). Default 'structure' = the
+     *  loaded defaults that already work well. */
+    sizingPreset: 'detail' | 'structure' | 'anchor';
     /** Leaf fanning: max horizontal reach from a trunk shaft (mm). */
     leafFanRadiusMm: number;
     /** Leaf fanning: max angle from vertical for a fan leaf (deg). */
@@ -61,6 +66,7 @@ type NumericAutoSupportSettingKey =
     | 'slopeRelaxFactor'
         | 'suctionAreaExponent'
           | 'coverageTargetPercent'
+    | 'sizingPreset'
     | 'leafFanRadiusMm'
     | 'leafFanMaxAngleDeg';
 
@@ -76,6 +82,7 @@ export const AUTO_SUPPORT_CONSTRAINTS = {
     slopeRelaxFactor: { min: 1, max: 2, step: 0.1, defaultValue: 1.3 },
     suctionAreaExponent: { min: 0, max: 0.4, step: 0.05, defaultValue: 0.15 },
     coverageTargetPercent: { min: 75, max: 100, step: 5, defaultValue: 95, integer: true },
+    sizingPreset: { min: 0, max: 2, step: 1, defaultValue: 1 },
     leafFanRadiusMm: { min: 2, max: 15, step: 0.5, defaultValue: 5 },
     leafFanMaxAngleDeg: { min: 20, max: 80, step: 5, defaultValue: 60, integer: true },
 } satisfies Record<NumericAutoSupportSettingKey, NumericConstraint>;
@@ -124,6 +131,7 @@ export function createDefaultAutoSupportSettings(): AutoSupportSettings {
         slopeRelaxFactor: AUTO_SUPPORT_CONSTRAINTS.slopeRelaxFactor.defaultValue,
         suctionAreaExponent: AUTO_SUPPORT_CONSTRAINTS.suctionAreaExponent.defaultValue,
         coverageTargetPercent: AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent.defaultValue,
+        sizingPreset: 'structure',
         leafFanRadiusMm: AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm.defaultValue,
         leafFanMaxAngleDeg: AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg.defaultValue,
         debugSupportOriginColors: false,
@@ -149,6 +157,9 @@ export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings
         slopeRelaxFactor: clampNumeric(source.slopeRelaxFactor, AUTO_SUPPORT_CONSTRAINTS.slopeRelaxFactor),
         suctionAreaExponent: clampNumeric(source.suctionAreaExponent, AUTO_SUPPORT_CONSTRAINTS.suctionAreaExponent),
         coverageTargetPercent: clampNumeric(source.coverageTargetPercent, AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent),
+        sizingPreset: source.sizingPreset === 'detail' || source.sizingPreset === 'anchor'
+            ? source.sizingPreset
+            : 'structure',
         leafFanRadiusMm: clampNumeric(source.leafFanRadiusMm, AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm),
         leafFanMaxAngleDeg: clampNumeric(source.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg),
         debugSupportOriginColors: normalizeBoolean(source.debugSupportOriginColors, defaults.debugSupportOriginColors),

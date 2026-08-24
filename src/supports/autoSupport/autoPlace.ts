@@ -14,6 +14,7 @@ import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason,
 import type { SupportState, SupportOrigin } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
+import { activeSizingBand } from './parameterSizing';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
 import { generateGridCandidates } from './gridPlacement';
 import {
@@ -1973,7 +1974,7 @@ export function computeAutoSupportPlan(
                     areaMm2: candidate.islandAreaMm2,
                     zHeight: candidate.zHeight,
                     preset: result.preset ?? presetForArea(candidate.islandAreaMm2),
-                    bandShaftMm: getSettings().shaft.diameterMm,
+                    bandShaftMm: activeSizingBand().shaftDiameterMm,
                 });
             }
             return result.kind;
@@ -2326,7 +2327,7 @@ export function computeAutoSupportPlan(
                 areaMm2: island.areaMm2 ?? 0,
                 zHeight: island.contact.z,
                 preset: presetForArea(island.areaMm2 ?? 0),
-                bandShaftMm: getSettings().shaft.diameterMm,
+                bandShaftMm: activeSizingBand().shaftDiameterMm,
             });
             console.log(LOG_PREFIX,
                 `Leaf (fan p${pass}) ${island.id} → trunk ${fan.trunkId} ` +

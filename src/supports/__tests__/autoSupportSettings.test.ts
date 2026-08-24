@@ -100,6 +100,12 @@ test('defaults include distribution mode and perimeter factor', () => {
     assert.equal(defaults.debugSupportOriginColors, false);
 });
 
+test('normalize whitelists the sizing tier (trunk presets never own it)', () => {
+    assert.equal(normalizeAutoSupportSettings({}).sizingPreset, 'structure');
+    assert.equal(normalizeAutoSupportSettings({ sizingPreset: 'detail' as const }).sizingPreset, 'detail');
+    assert.equal(normalizeAutoSupportSettings({ sizingPreset: 'banana' as never }).sizingPreset, 'structure');
+});
+
 test('patch merges partially', () => {
     const base = createDefaultAutoSupportSettings();
     const patched = applyAutoSupportSettingsPatch(base, {

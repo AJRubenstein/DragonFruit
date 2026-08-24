@@ -47,11 +47,14 @@ test('preset autoSupport blocks equal defaults except the density (quick-select 
         [STRUCTURE_PRESET, 10],
         [ANCHOR_PRESET, 5],
     ];
+    const tiers: Record<string, string> = { detail: 'detail', structure: 'structure', anchor: 'anchor' };
     for (const [preset, area] of cases) {
         const block = preset.settings.autoSupport;
         for (const key of Object.keys(defaults) as Array<keyof AutoSupportSettings>) {
             if (key === 'areaPerSupportMm2') {
                 assert.equal(block.areaPerSupportMm2, area, `${preset.id} density`);
+            } else if (key === 'sizingPreset') {
+                assert.equal(block.sizingPreset, tiers[preset.id], `${preset.id} sizing tier`);
             } else {
                 assert.equal(block[key], defaults[key], `${key} matches defaults for ${preset.id}`);
             }

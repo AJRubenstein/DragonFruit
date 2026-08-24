@@ -36,19 +36,47 @@ interface SizingBand {
     rootConeHeightMm: number;
 }
 
-/** The active profile's band — read from the current settings, which carry
- *  the hardcoded profile when one is active (plus any session overrides). */
-function bandFromCurrentSettings(): SizingBand {
-    const s = getSettings();
-    return {
-        shaftDiameterMm: s.shaft.diameterMm,
-        tipContactDiameterMm: s.tip.contactDiameterMm,
-        tipLengthMm: s.tip.lengthMm,
-        tipPenetrationMm: s.tip.penetrationMm ?? 0,
-        rootDiameterMm: s.roots.diameterMm,
-        rootDiskHeightMm: s.roots.diskHeightMm,
-        rootConeHeightMm: s.roots.coneHeightMm,
-    };
+/** Hardcoded auto-support bands. Auto supports are sized by THEIR OWN tier
+ *  (autoSupport.sizingPreset, set by the panel's light/medium/heavy
+ *  quick-select) — NEVER by the active trunk preset. Trunk presets are for
+ *  manual placement; selecting Detail in Support Studio must not thin the
+ *  next auto run. Values mirror the factory trunk presets' shaft/tip/roots
+ *  bands so the tiers stay visually consistent with their manual
+ *  counterparts. */
+const SIZING_BANDS: Record<SizingPreset, SizingBand> = {
+    detail: {
+        shaftDiameterMm: 0.8,
+        tipContactDiameterMm: 0.22,
+        tipLengthMm: 2.5,
+        tipPenetrationMm: 0,
+        rootDiameterMm: 2.0,
+        rootDiskHeightMm: 0.5,
+        rootConeHeightMm: 1.0,
+    },
+    structure: {
+        shaftDiameterMm: 1.0,
+        tipContactDiameterMm: 0.28,
+        tipLengthMm: 2.5,
+        tipPenetrationMm: 0,
+        rootDiameterMm: 2.0,
+        rootDiskHeightMm: 0.5,
+        rootConeHeightMm: 1.0,
+    },
+    anchor: {
+        shaftDiameterMm: 1.4,
+        tipContactDiameterMm: 0.4,
+        tipLengthMm: 2.5,
+        tipPenetrationMm: 0,
+        rootDiameterMm: 2.3,
+        rootDiskHeightMm: 0.5,
+        rootConeHeightMm: 1.0,
+    },
+};
+
+/** The auto-support tier's band. */
+export function activeSizingBand(): SizingBand {
+    const preset = getSettings().autoSupport?.sizingPreset ?? 'structure';
+    return SIZING_BANDS[preset];
 }
 
 /** Area a merged cluster must exceed before the shaft tail engages (mm²).
@@ -140,7 +168,7 @@ export function sizeParameters(
     candidate: CandidatePoint,
     sizeScale = 1,
 ): SizeOverrides {
-    const band = bandFromCurrentSettings();
+    const band = activeSizingBand();
 
     // The area that drives thickness: the candidate's own supported island.
     // No merge-radius cluster summing — dense regions would double-count

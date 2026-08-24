@@ -461,8 +461,9 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
                 {(['light', 'medium', 'heavy'] as const).map((key) => (
                   <button key={key} type="button"
                     onClick={() => {
+                      // Density + sizing tier only — the trunk preset
+                      // (manual placement) is deliberately not touched.
                       updateAutoSupportSettings(PRESETS[key]);
-                      setActivePreset(key);
                     }}
                     className="h-8 rounded-md border text-[11px] font-semibold capitalize transition-colors"
                     style={activePreset === key
