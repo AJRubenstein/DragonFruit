@@ -88,7 +88,7 @@ Tip contact is the profile band scaled by underside angle — flat ceilings get 
 
 A run returns `AutoPlaceAnalytics` and a `ForestReport`; `forestReportToText` renders it for the placement summary. The report is the primary debugging surface — every decision includes a *why*.
 
-### Report sections (v1.5)
+### Report sections
 
 `ForestReport` lives in `src/supports/autoSupport/types.ts` (`ForestReport`, `ForestScanMetrics`, `OrphanInfo`, `ForestTree`). `forestReportToText` in `src/supports/autoSupport/autoPlace.ts` is the copy-paste renderer.
 
@@ -100,14 +100,14 @@ A run returns `AutoPlaceAnalytics` and a `ForestReport`; `forestReportToText` re
   - `drift` — knot >0.5mm from host shaft (split offset, `pointToSegmentDistanceSq >0.25`)
   - `cross` — leaf/branch crosses another shaft after thickening (`leafPathCrossesSupports` `radius 0.25`, kept but flagged)
   - `host trunk culled (blocked)` — leaf on a trunk that was itself `trunkBlocked`
-- **PLACEMENT DIAGNOSTICS** — `Trunks by kind: poisson 2 (organic disk), grid 28 (planar infill), gap-fill 2, standalone 54 (sub-threshold, no host)`; `Candidates by distribution: grid 28 · poisson 0 · single 54`; `Candidates by source`; `Fan refusals: noHost=39 … (too far >5mm/2.5mm grid, angle >60°, sameZ|cross|blocked|capacity)`; `Merge refusals: noHost=35 (no trunk within 4mm), rejected=6 (host at capacity/collision)`. Sourced from `diagnostics` captured in `computeAutoSupportPlan`.
+- **PLACEMENT DIAGNOSTICS** — `Trunks by kind: grid 44 (ring + infill), gap-fill 0, standalone 41 (sub-threshold overhang, no host)`; `Candidates by source: voxel 49 · minima 21 · intersection 47 · overhang 98`; `Fan refusals: noHost=1 (too far >5mm/2.5mm grid, angle >60°, sameZ|cross|blocked|capacity)`; `Merge refusals: noHost=22, rejected=20`; `Consolidation refusals: blocked=99, cross=3 (sameZ=surface too flat for side-leaves — chunking needs ≥0.4 mm neighbour height rise)`. Sourced from `diagnostics` captured in `computeAutoSupportPlan`.
 - **Counts** — `56 trunks · 70 leaves … | 16 trees, 40 bare` — `trees` are hosts with members, `bare` are 1:1 pillars.
 - **FAN-OUT GROUPS** — `v115 @ Z=26.6mm Ø1.03mm [area 0.53mm² …] → 12: v116(L 2.8mm/20°) …` with header `(host trunk → leaves/branches within 5mm fan radius, 2.5mm for grid hosts, <60° from vertical, not blocked/crossing, not at capacity)`. `spanMm`/`angleDeg` are `knot→tip` distance and angle from vertical.
-- **STANDALONE TRUNKS** — `grid-o0-… @ Z=6.4mm Ø1.27mm [area 10mm² … ×1.25 anchor girth]` plus `— anchor grid infill (lowest Z-cluster, densified)` or `— poisson disk (organic or anchor perimeter)` or `— standalone voxel/minima (below threshold or no fan host)` based on `id` prefix.
+- **STANDALONE TRUNKS** — `grid-o0-… @ Z=5.1mm Ø1.21mm [area 10mm² …]` plus `— region ring + grid infill` or `— standalone voxel/minima (below threshold or consolidated)` based on `id` prefix.
 
-**Orphan reporting (v1.5):** post-resize `rehostLegacyKnots` + `validateAndCullOrphans` cull `drift`/`missingHost`/`missingSegment` (orphan knot >0.5 mm off its host segment) and report `cross`/`blocked` without culling. `ForestReport.orphans[]` (`OrphanInfo`) and `forestReportToText` `ORPHANS CULLED` surface them. Drift is the "leaf attached to nowhere" case — host segment split rehost failed or knot was placed on a trunk that later split.
+**Orphan reporting:** post-resize `rehostLegacyKnots` + `validateAndCullOrphans` cull `drift`/`missingHost`/`missingSegment` (orphan knot >0.5 mm off its host segment) and report `cross`/`blocked` without culling. `ForestReport.orphans[]` (`OrphanInfo`) and `forestReportToText` `ORPHANS CULLED` surface them. Drift is the "leaf attached to nowhere" case — host segment split rehost failed or knot was placed on a trunk that later split.
 
-**Diagnostics reporting (v1.5):** `ForestReport.diagnostics` captures `diagnostics.candidatesBySource/Distribution`, `trunksByKind`, `fanRefusals`, `mergeRefusals` so the text report can explain *why* a candidate became a trunk/leaf/standalone vs fanned/merged.
+**Diagnostics reporting:** `ForestReport.diagnostics` captures `diagnostics.candidatesBySource`, `trunksByKind`, `fanRefusals`, `mergeRefusals`, and `consolidationRefusals` so the text report can explain *why* a candidate became a trunk/leaf/standalone vs fanned/merged — and why a region did not chunk (`sameZ` = surface too flat for side-leaves).
 
 ## Related pages
 
