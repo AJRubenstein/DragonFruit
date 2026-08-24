@@ -60,9 +60,11 @@ cheap geometric proxies computed once per candidate:
   plate (high overhangs need taller supports).
 - **Painted-face feasibility**: not a score term — painted "no supports"
   faces are pruned by constraint before scoring (see below).
-- **Trapped volume estimate**: ray-parity classification of enclosed
-  cavities for the current orientation (coarse voxel parity, the island
-  scanner already does this per layer).
+- **Trapped volume estimate** (hollowed models only): ray-parity
+  classification of enclosed cavities for the current orientation. The
+  hollowing engine already produces the cavity geometry (ADR-0029), so
+  the term scores the EXISTING cavity against each candidate
+  orientation, not a hypothetical one.
 
 All terms are weighted; weights start calibrated, exposed as advanced
 sliders later only if the calibration proves insufficient.
@@ -136,8 +138,15 @@ tier band remains the base; peel exposure modulates it.
   consumes the oriented mesh unchanged. Longer term, the orientation
   scorer should call the support pipeline's candidate generator on the
   top-K orientations so support cost is measured, not proxied.
-- **Hollowing**: drain-hole viability check per candidate once the
-  hollowing modifier exposes drain paths.
+- **Hollowing**: drainage is circular with orientation — rotating the
+  model changes which cavity regions sit below the drain path. The
+  resolution: score the existing hollowing result per candidate
+  (every cavity point must connect to a drain via a downward path —
+  computable with the island scanner's per-layer connectivity), and
+  after the orientation is chosen, suggest drain-hole positions at the
+  cavity's lowest reachable points. Hollowing after orientation is the
+  supported workflow; orienting an already-hollowed model re-scores
+  drainage per candidate.
 
 ### Determinism and performance
 
