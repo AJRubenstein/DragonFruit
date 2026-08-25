@@ -86,6 +86,14 @@ function ensureCenteredPositionBuffer(geometryData: GeometryLike): GeometryCache
   return next;
 }
 
+/**
+ * Mesh vertices with the geometry's own centre offset already removed, so the
+ * model transform alone places them in world space. Cached per geometry.
+ */
+export function getCenteredPositions(geometryData: GeometryLike): Float32Array | null {
+  return ensureCenteredPositionBuffer(geometryData)?.centeredPositions ?? null;
+}
+
 export function shouldUsePreciseBoundsForTransform(transform: TransformLike, angleEpsilon = 1e-4): boolean {
   const snapStep = Math.PI * 0.5;
   const isNearRightAngle = (angle: number) => {
