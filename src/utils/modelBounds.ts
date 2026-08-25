@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
+import { quantizeToScale } from '@/utils/math';
 
 type TransformLike = {
   position: THREE.Vector3;
@@ -26,15 +27,11 @@ const quaternionScratch = new THREE.Quaternion();
 const centeredBoxScratch = new THREE.Box3();
 const centerOffsetScratch = new THREE.Vector3();
 
-function quantize(n: number): number {
-  return Math.round(n * QUANTIZE) / QUANTIZE;
-}
-
 function makeTransformKey(t: TransformLike): string {
   return [
-    quantize(t.position.x), quantize(t.position.y), quantize(t.position.z),
-    quantize(t.rotation.x), quantize(t.rotation.y), quantize(t.rotation.z),
-    quantize(t.scale.x), quantize(t.scale.y), quantize(t.scale.z),
+    quantizeToScale(t.position.x, QUANTIZE), quantizeToScale(t.position.y, QUANTIZE), quantizeToScale(t.position.z, QUANTIZE),
+    quantizeToScale(t.rotation.x, QUANTIZE), quantizeToScale(t.rotation.y, QUANTIZE), quantizeToScale(t.rotation.z, QUANTIZE),
+    quantizeToScale(t.scale.x, QUANTIZE), quantizeToScale(t.scale.y, QUANTIZE), quantizeToScale(t.scale.z, QUANTIZE),
   ].join('|');
 }
 

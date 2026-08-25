@@ -1,5 +1,15 @@
 import { footprintX, footprintY } from '@/volumeAnalysis/Islands/voxelFootprint';
 import * as THREE from 'three';
+import { quantizeToScale } from '@/utils/math';
+
+/**
+ * Diagnostics are reported to 2dp. `quantizeToScale` is the shared form of the
+ * `Math.round(v * 100) / 100` this file used to define locally, so the numbers
+ * are unchanged. Note it is NOT interchangeable with `round(v, 2)` from the same
+ * module: that rounds the decimal representation and the two disagree on values
+ * that land exactly halfway, which authored 0.001-grid dimensions often do.
+ */
+const round2Mm = (v: number): number => quantizeToScale(v, 100);
 import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree } from './types';
 import type { SupportState, SupportOrigin } from '../types';
 import type { AutoSupportSettings } from './settings';
@@ -61,7 +71,6 @@ function logPlacement(message: string): void {
     if (verboseLogging) console.log(LOG_PREFIX, message);
 }
 
-function round2(v: number): number { return Math.round(v * 100) / 100; }
 
 // ---------------------------------------------------------------------------
 // Mesh volume helper
@@ -1923,17 +1932,17 @@ export function computeAutoSupportPlan(
         const sAvg = sizeParameters(makeSample(avgArea, zMax / 2), getSettings().autoSupport?.sizeScale ?? 1);
         sizingDebug = {
             modelVolumeMm3: Math.round(modelCtx.modelVolumeMm3),
-            estimatedWeightG: round2(weightG),
+            estimatedWeightG: round2Mm(weightG),
             totalCandidates: modelCtx.totalCandidates,
             // Honest mass share: total model weight divided by the number of
             // placed supports. A load share, not a force estimate.
-            weightPerSupportG: round2(placedTrunks > 0 ? weightG / placedTrunks : 0),
-            avgIslandAreaMm2: round2(avgArea),
+            weightPerSupportG: round2Mm(placedTrunks > 0 ? weightG / placedTrunks : 0),
+            avgIslandAreaMm2: round2Mm(avgArea),
             // Anchor-layer stats (per-contact-patch bands, anchorBands.ts):
             // counts and projected area only — no force/load values.
             anchorClusterCount: anchorBands.clusterCount,
             anchorInBandRegions: anchorBands.inBandIds.length,
-            anchorLayerAreaMm2: round2(
+            anchorLayerAreaMm2: round2Mm(
                 anchorBands.inBandIds.length > 0
                     ? overhangIslands.reduce(
                         (sum, i) => sum + (anchorBands.inBandIds.includes(i.id) ? (i.areaMm2 ?? 0) : 0),
@@ -1947,14 +1956,14 @@ export function computeAutoSupportPlan(
             poissonDiskTrunks: diagnostics.trunksByKind.poissonDisk,
             gridInfillTrunks: diagnostics.trunksByKind.gridInfill + diagnostics.trunksByKind.coverageFill,
             shaftDiameterRange: {
-                min: round2(sMin.shaftDiameterMm ?? 0),
-                max: round2(sMax.shaftDiameterMm ?? 0),
-                avg: round2(sAvg.shaftDiameterMm ?? 0),
+                min: round2Mm(sMin.shaftDiameterMm ?? 0),
+                max: round2Mm(sMax.shaftDiameterMm ?? 0),
+                avg: round2Mm(sAvg.shaftDiameterMm ?? 0),
             },
             tipContactRange: {
-                min: round2(sMin.tipContactDiameterMm ?? 0),
-                max: round2(sMax.tipContactDiameterMm ?? 0),
-                avg: round2(sAvg.tipContactDiameterMm ?? 0),
+                min: round2Mm(sMin.tipContactDiameterMm ?? 0),
+                max: round2Mm(sMax.tipContactDiameterMm ?? 0),
+                avg: round2Mm(sAvg.tipContactDiameterMm ?? 0),
             },
         };
     }
