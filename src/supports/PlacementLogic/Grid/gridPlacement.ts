@@ -487,6 +487,24 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
     // Near-plate contacts get a minimal anchor support instead of trunk/branch
     if (tipPos.z < ANCHOR_HEIGHT_THRESHOLD_MM) {
         const { anchor, supportData } = buildAnchorData({ tipPos, tipNormal, modelId, mesh });
+        // The cone body spans contact disk → socket and must never dip below
+        // the root joint: a tip lower than the root (or an over-long cone on a
+        // downward axis) would push the shaft below the root, into -Z.
+        const jointZ = anchor.joint.pos.z;
+        const lowestShaftZ = Math.min(
+            anchor.contactCone.pos.z,
+            getFinalSocketPosition(anchor.contactCone).z,
+        );
+        if (lowestShaftZ < jointZ - 1e-3) {
+            // Ghost-preview the invalid anchor (red, with the reason as
+            // `error`) so the hover tooltip explains the rejection.
+            return {
+                kind: 'reject',
+                nodeKey: '',
+                reason: 'ANCHOR_BELOW_ROOT',
+                supportData: { ...supportData, error: 'ANCHOR_BELOW_ROOT' },
+            };
+        }
         return { kind: 'place_anchor', anchor, supportData };
     }
 

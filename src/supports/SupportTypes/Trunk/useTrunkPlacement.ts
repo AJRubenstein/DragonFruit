@@ -12,6 +12,7 @@ import type { ContactCone } from '../../SupportPrimitives/ContactCone/types';
 import { calculateSmoothedNormal } from '../../PlacementLogic/PlacementUtils';
 import { getSettings } from '../../Settings';
 import { decideGridPlacement } from '../../PlacementLogic/Grid';
+import { ANCHOR_HEIGHT_THRESHOLD_MM } from '../../autoSupport/constants';
 import { clearSupportSelection } from '../../interaction/shared/selection/selectionController';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
 import { perfMark, perfMeasureWithSpike, perfEndFrame } from '../../PlacementLogic/Pathfinding/pathfindingPerf';
@@ -466,8 +467,11 @@ export function useTrunkPlacementV2() {
         }
 
         // When grid is disabled, the trunk candidate is already final — skip
-        // the grid snapping/branch logic entirely.
-        if (!isGridMode) {
+        // the grid snapping/branch logic entirely. Near-plate tips are the
+        // exception: decideGridPlacement owns the anchor decision in BOTH
+        // modes (its validation also previews the rejection ghost), so they
+        // must not take this early out.
+        if (!isGridMode && tipPos.z >= ANCHOR_HEIGHT_THRESHOLD_MM) {
             setPreviewData(result.supportData);
             setPreviewError(forcePlaceOverrideRef.current ? null : (result.error || null));
             setPreviewWarning(result.warning || null);
@@ -554,6 +558,17 @@ export function useTrunkPlacementV2() {
             }
         }
 
+        // Rejections that already built geometry (anchor validation) preview
+        // the invalid support as a red ghost; the `error` on the SupportData
+        // drives the "Cannot Place Support" tooltip.
+        if (decision.kind === 'reject' && decision.supportData) {
+            setPreviewData(decision.supportData);
+            setPreviewError(forcePlaceOverrideRef.current ? null : (decision.supportData.error ?? null));
+            setPreviewWarning(null);
+            perfEndFrame();
+            return;
+        }
+
         if (decision.trunkBuild) {
             setPreviewData(decision.trunkBuild.supportData);
             setPreviewError(forcePlaceOverrideRef.current ? null : (decision.trunkBuild.error || null));
@@ -567,9 +582,11 @@ export function useTrunkPlacementV2() {
             ? null
             : decision.reason === 'KNOT_ABOVE_TIP'
                 ? 'KNOT_ABOVE_TIP'
-                : decision.reason === 'COLLISION_WITH_MODEL'
-                    ? 'COLLISION_WITH_MODEL'
-                    : null
+                : decision.reason === 'ANCHOR_BELOW_ROOT'
+                    ? 'ANCHOR_BELOW_ROOT'
+                    : decision.reason === 'COLLISION_WITH_MODEL'
+                        ? 'COLLISION_WITH_MODEL'
+                        : null
         );
         setPreviewWarning((prev) => (prev === null ? prev : null));
         perfEndFrame();
