@@ -53,6 +53,7 @@ import { isJointHoverCategory, resolveHoveredSupportOwnerId, resolveHoveredSuppo
 import { setSceneHoveredSupportId as setSharedSceneHoveredSupportId, useSceneHoveredSupportId } from './interaction/shared/hover/sceneHoverStore';
 import { useSupportRenderLookup } from './interaction/useSupportRenderLookup';
 import { setInteriorSupportInteractionActive } from './interaction/pointerOcclusion';
+import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 
 interface SupportRendererProps {
     mode?: SupportMode;
@@ -1672,6 +1673,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         const selectedHex = '#c8752a';
         const hoverTintHex = '#d18a4a';
         const hoveredColor = new THREE.Color(baseHex).lerp(new THREE.Color(hoverTintHex), 0.35).getStyle();
+        const candidateColor = new THREE.Color(baseHex)
+            .lerp(new THREE.Color(hoverTintHex), 0.35 * MARQUEE_CANDIDATE_TINT_FACTOR)
+            .getStyle();
 
         return (modelId?: string) => {
             const isSelectedModelSupport = !!modelId && selectedModelIdSet.has(modelId);
@@ -1681,8 +1685,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             if (isHoveredModelSupport) return hoveredColor;
 
             // A model the marquee is about to take reads as hovered, so its
-            // supports tint with it instead of waiting for the drag to end.
-            if (!!modelId && marqueeCandidateModelIdSet.has(modelId)) return hoveredColor;
+            // supports tint with it instead of waiting for the drag to end —
+            // lighter than a hover, since the whole rig lights up at once.
+            if (!!modelId && marqueeCandidateModelIdSet.has(modelId)) return candidateColor;
 
             return baseHex;
         };

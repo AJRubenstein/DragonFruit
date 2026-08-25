@@ -15,6 +15,7 @@ import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactC
 import { calculateDiskThickness } from './SupportPrimitives/ContactDisk/contactDiskUtils';
 import { emitSupportModelPointerHover } from './interaction/clickHandlers';
 import type { ContactDisk, Vec3 } from './types';
+import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 
 // Tapered straight shaft type (kept for data flow, no longer creates per-item meshes -
 // all proxy shafts go through InstancedShaftGroup now).
@@ -1251,6 +1252,7 @@ export function SupportProxyMeshLayer({
       modelKey: string;
       zOffset: number;
       geometry: NonNullable<ReturnType<typeof baseProxyByModel.get>>;
+      opacity: number;
     }> = [];
 
     for (const modelId of modelIds) {
@@ -1266,6 +1268,11 @@ export function SupportProxyMeshLayer({
         modelKey,
         zOffset: modelDropOffsetsById?.[modelId] ?? 0,
         geometry,
+        // A candidate tints lighter than a hover, so a marquee lighting up
+        // model, supports and raft at once still reads apart from a selection.
+        opacity: modelId === effectiveHoverModelId
+          ? hoverOverlayOpacity
+          : hoverOverlayOpacity * MARQUEE_CANDIDATE_TINT_FACTOR,
       });
     }
 
@@ -1277,6 +1284,7 @@ export function SupportProxyMeshLayer({
     resolveModelVisible,
     baseProxyByModel,
     modelDropOffsetsById,
+    hoverOverlayOpacity,
   ]);
 
   // Flatten all visible model geometries into two batched groups (base + highlighted) so the
@@ -1495,7 +1503,7 @@ export function SupportProxyMeshLayer({
               emissive={hoveredOverlayColor}
               emissiveIntensity={0.1}
               transparent={hoverOverlayTransparent}
-              opacity={hoverOverlayOpacity}
+              opacity={hoveredOverlayEntry.opacity}
               radialSegments={10}
               clippingPlanes={clippingPlanes}
               onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
@@ -1512,7 +1520,7 @@ export function SupportProxyMeshLayer({
               emissive={hoveredOverlayColor}
               emissiveIntensity={0.1}
               transparent={hoverOverlayTransparent}
-              opacity={hoverOverlayOpacity}
+              opacity={hoveredOverlayEntry.opacity}
               clippingPlanes={clippingPlanes}
               onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
               onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
@@ -1528,7 +1536,7 @@ export function SupportProxyMeshLayer({
               emissive={hoveredOverlayColor}
               emissiveIntensity={0.1}
               transparent={hoverOverlayTransparent}
-              opacity={hoverOverlayOpacity}
+              opacity={hoveredOverlayEntry.opacity}
               clippingPlanes={clippingPlanes}
               onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
               onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
@@ -1544,7 +1552,7 @@ export function SupportProxyMeshLayer({
               emissive={hoveredOverlayColor}
               emissiveIntensity={0.1}
               transparent={hoverOverlayTransparent}
-              opacity={hoverOverlayOpacity}
+              opacity={hoveredOverlayEntry.opacity}
               clippingPlanes={clippingPlanes}
               onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
               onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}

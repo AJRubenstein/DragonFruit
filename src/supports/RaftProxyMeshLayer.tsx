@@ -9,6 +9,7 @@ import { getRaftSettings, subscribeToRaftStore } from './Rafts/Crenelated/RaftSt
 import type { RaftSettings } from './Rafts/Crenelated/RaftTypes';
 import { buildSolidRaftPreviewMeshes } from './Settings/AnatomyPreview/PreviewTypes/Raft/buildSolidRaftPreviewMeshes';
 import { buildLineRaftPreviewMeshes } from './Settings/AnatomyPreview/PreviewTypes/Raft/buildLineRaftPreviewMeshes';
+import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 import {
   collectRaftBaseCirclesByModel,
   fromRaftModelKey,
@@ -317,8 +318,9 @@ export function RaftProxyMeshLayer({
       if (!modelId) return colorized ? (hoverized ? 0.5 : 1) : 0;
       if (!colorized) return 0;
       if (selectedModelIdSet.has(modelId)) return 1;
-      // A model the marquee is about to take tints like a hovered one.
-      if (marqueeCandidateModelIdSet.has(modelId)) return 0.5;
+      // A model the marquee is about to take tints like a hovered one, but
+      // lighter: model, supports and raft all light up together.
+      if (marqueeCandidateModelIdSet.has(modelId)) return 0.5 * MARQUEE_CANDIDATE_TINT_FACTOR;
       if (effectiveHoverModelId) return modelId === effectiveHoverModelId ? 0.5 : 0;
       if (hasSelectedModels) return 0;
       return hoverized ? 0.5 : 1;
