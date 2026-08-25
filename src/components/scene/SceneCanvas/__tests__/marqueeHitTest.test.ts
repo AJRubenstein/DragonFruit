@@ -5,6 +5,7 @@ import {
   marqueeModeForDrag,
   marqueeRectForDrag,
   meshHitsMarquee,
+  ringHitsMarquee,
   shapeHitsMarquee,
 } from '../marqueeHitTest';
 
@@ -111,4 +112,53 @@ test('a crossing drag leaves a mesh that surrounds the rectangle without enterin
 test('a mesh with no vertices is never hit', () => {
   assert.equal(meshHitsMarquee(rect, meshOf([]), 'crossing'), false);
   assert.equal(meshHitsMarquee(rect, meshOf([]), 'window'), false);
+});
+
+const bigRing = [
+  { x: 0, y: 0 },
+  { x: 900, y: 0 },
+  { x: 900, y: 900 },
+  { x: 0, y: 900 },
+];
+
+test('a crossing drag inside a raft outline still takes it', () => {
+  assert.equal(ringHitsMarquee(rect, bigRing, 'crossing'), true);
+});
+
+test('a crossing drag outside a raft outline leaves it', () => {
+  const faraway = [
+    { x: 500, y: 500 },
+    { x: 900, y: 500 },
+    { x: 900, y: 900 },
+    { x: 500, y: 900 },
+  ];
+
+  assert.equal(ringHitsMarquee(rect, faraway, 'crossing'), false);
+});
+
+test('a crossing drag over the edge of an outline takes it', () => {
+  const overlapping = [
+    { x: 150, y: 150 },
+    { x: 900, y: 150 },
+    { x: 900, y: 900 },
+    { x: 150, y: 900 },
+  ];
+
+  assert.equal(ringHitsMarquee(rect, overlapping, 'crossing'), true);
+});
+
+test('a window drag needs the whole outline inside', () => {
+  const small = [
+    { x: 120, y: 120 },
+    { x: 180, y: 120 },
+    { x: 180, y: 180 },
+    { x: 120, y: 180 },
+  ];
+
+  assert.equal(ringHitsMarquee(rect, small, 'window'), true);
+  assert.equal(ringHitsMarquee(rect, bigRing, 'window'), false);
+});
+
+test('an outline with too few points is never hit', () => {
+  assert.equal(ringHitsMarquee(rect, [{ x: 150, y: 150 }, { x: 160, y: 160 }], 'crossing'), false);
 });

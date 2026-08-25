@@ -104,6 +104,7 @@ import {
   marqueeModeForDrag,
   marqueeRectForDrag,
   meshHitsMarquee,
+  ringHitsMarquee,
   shapeHitsMarquee,
   type MarqueePoint,
   type MarqueeSegment,
@@ -2734,6 +2735,53 @@ export function SceneCanvas({
     return meshes;
   }, [modelMarqueeMatrices, models]);
 
+  // The outline of each model's raft, at the plate and at its top, so a drag
+  // can catch the raft the same way it catches the model and its supports.
+  const raftMarqueeRingsByModelId = React.useMemo(() => {
+    const map = new Map<string, Array<Array<{ x: number; y: number; z: number }>>>();
+    if (raftSettingsForBounds.bottomMode === 'off') return map;
+
+    const circlesByModelId = new Map<string, SupportBaseCircle[]>();
+    const collectRoot = (modelId: string | undefined, pos: { x: number; y: number }, diameter: number) => {
+      if (!modelId) return;
+      const circles = circlesByModelId.get(modelId) ?? [];
+      circles.push({ x: pos.x, y: pos.y, r: diameter / 2 });
+      circlesByModelId.set(modelId, circles);
+    };
+
+    for (const root of Object.values(supportStateForBounds.roots)) {
+      collectRoot(root.modelId, root.transform.pos, root.diameter);
+    }
+    for (const root of Object.values(kickstandStateForBounds.roots)) {
+      collectRoot(root.modelId, root.transform.pos, root.diameter);
+    }
+
+    const thickness = raftSettingsForBounds.bottomMode === 'line'
+      ? raftSettingsForBounds.lineHeightMm
+      : raftSettingsForBounds.thickness;
+    const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsForBounds.chamferAngle))));
+    const wallInset = raftSettingsForBounds.wallEnabled ? Math.max(0, raftSettingsForBounds.wallThickness) : 0;
+    const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
+    const raftMaxZ = thickness + (raftSettingsForBounds.wallEnabled ? raftSettingsForBounds.wallHeight : 0);
+
+    for (const [modelId, circles] of circlesByModelId) {
+      const baseProfile = computeFootprint(circles, { marginMm: dynamicMargin, samplesPerCircle: 24 });
+      if (!baseProfile || baseProfile.length < 3) continue;
+
+      const outerProfile = raftSettingsForBounds.wallEnabled
+        ? computeRaftOuterBoundary(baseProfile, raftSettingsForBounds)
+        : baseProfile;
+      if (!outerProfile || outerProfile.length < 3) continue;
+
+      map.set(modelId, [
+        outerProfile.map((p) => ({ x: p.x, y: p.y, z: 0 })),
+        outerProfile.map((p) => ({ x: p.x, y: p.y, z: raftMaxZ })),
+      ]);
+    }
+
+    return map;
+  }, [kickstandStateForBounds.roots, raftSettingsForBounds, supportStateForBounds.roots]);
+
   // Every support drawn as the polyline that runs along it: root or host knot,
   // each joint in order, and the contact cone at the tip. Built once per state
   // change — the marquee walks this on every pointer move. A curved segment is
@@ -2935,14 +2983,27 @@ export function SceneCanvas({
           'crossing',
         ));
 
-      const hit = marqueeMode === 'window' ? (meshHit && supportHit) : (meshHit || supportHit);
+      const raftRings = raftMarqueeRingsByModelId.get(model.id) ?? [];
+      const raftHit = marqueeMode === 'window'
+        ? raftRings.every((ring) => ringHitsMarquee(marqueeRect, projectSupportPoints(ring), 'window'))
+        : raftRings.some((ring) => ringHitsMarquee(marqueeRect, projectSupportPoints(ring), 'crossing'));
+
+      const hit = marqueeMode === 'window'
+        ? (meshHit && supportHit && raftHit)
+        : (meshHit || supportHit || raftHit);
       if (hit) {
         selectedIds.push(model.id);
       }
     }
 
     return selectedIds;
-  }, [customPrepareMarqueeSelection, getProjectedModelMeshes, models, supportMarqueeShapesByModelId]);
+  }, [
+    customPrepareMarqueeSelection,
+    getProjectedModelMeshes,
+    models,
+    raftMarqueeRingsByModelId,
+    supportMarqueeShapesByModelId,
+  ]);
 
   const resolveMarqueeSelectedSupportIds = React.useCallback((selection: {
     start: { x: number; y: number };

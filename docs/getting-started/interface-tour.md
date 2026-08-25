@@ -30,6 +30,8 @@ DragonFruit combines a central 3D workspace with mode-specific controls.
   rectangle previews what it would take.
 - A marquee only ever adds to the selection, and a drag that catches nothing
   leaves it untouched. To clear a selection, click an empty spot on the canvas.
+- A model counts together with its supports and its raft: touching any of them
+  takes the model, and enclosing it means enclosing all three.
 - The direction of the drag picks the rule, as CAD applications do:
     - **Left to right** draws a green rectangle and takes only what it encloses
       completely.

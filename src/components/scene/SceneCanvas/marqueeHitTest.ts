@@ -106,6 +106,54 @@ export function shapeHitsMarquee(
   return false;
 }
 
+/** Ray casting: whether a projected polygon encloses a point. */
+function ringContainsPoint(ring: MarqueePoint[], point: MarqueePoint): boolean {
+  let inside = false;
+
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const a = ring[i];
+    const b = ring[j];
+
+    const straddles = (a.y > point.y) !== (b.y > point.y);
+    if (!straddles) continue;
+
+    const crossingX = a.x + (((point.y - a.y) / (b.y - a.y)) * (b.x - a.x));
+    if (point.x < crossingX) inside = !inside;
+  }
+
+  return inside;
+}
+
+/**
+ * Hit test for a closed outline, such as the profile of a raft. Unlike a run of
+ * struts, an outline has an inside: a rectangle that fits entirely within it
+ * touches no edge, and is still over the raft.
+ */
+export function ringHitsMarquee(
+  rect: MarqueeRect,
+  ring: Array<MarqueePoint | null>,
+  mode: MarqueeMode,
+): boolean {
+  if (ring.length < 3) return false;
+
+  if (mode === 'window') {
+    return ring.every((point) => point !== null && isPointInsideMarquee(rect, point));
+  }
+
+  const projected = ring.filter((point): point is MarqueePoint => point !== null);
+  if (projected.length < 3) return false;
+
+  for (const point of projected) {
+    if (isPointInsideMarquee(rect, point)) return true;
+  }
+
+  for (let i = 0, j = projected.length - 1; i < projected.length; j = i, i += 1) {
+    if (segmentIntersectsMarquee(rect, projected[j], projected[i])) return true;
+  }
+
+  return ringContainsPoint(projected, { x: rect.minX, y: rect.minY });
+}
+
 /**
  * A model's mesh as projected pixels: one entry per vertex, plus the bounds
  * they span. `dropped` marks vertices that fell outside clip space.
