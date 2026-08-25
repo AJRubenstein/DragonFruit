@@ -1,3 +1,4 @@
+import { footprintX, footprintY } from '@/volumeAnalysis/Islands/voxelFootprint';
 import * as THREE from 'three';
 import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree } from './types';
 import type { SupportState, SupportOrigin } from '../types';
@@ -1881,7 +1882,7 @@ export function computeAutoSupportPlan(
         // grid read 1% covered — which sent the fanning pass after
         // already-supported surfaces (redundant "floating" leaves).
         let fraction: number;
-        if (island.contactVoxels && island.contactVoxels.length > 0) {
+        if (island.contactVoxels && island.contactVoxels.count > 0) {
             fraction = computeRegionCoverage(island, allTips, SUPPORT_COVERAGE_RADIUS_MM);
         } else {
             // No footprint (minima islands): centroid proximity fallback.
@@ -2091,15 +2092,17 @@ export function computeAutoSupportPlan(
 
         const area = bestIsland.areaMm2 ?? 0;
         const voxels = bestIsland.contactVoxels;
-        if (area < OVERHANG_AREA_THRESHOLD_MM2 || !voxels || voxels.length < 3) continue;
+        if (area < OVERHANG_AREA_THRESHOLD_MM2 || !voxels || voxels.count < 3) continue;
 
         // Compute bounding box of contact voxels.
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        for (const v of voxels) {
-            if (v.x < minX) minX = v.x;
-            if (v.y < minY) minY = v.y;
-            if (v.x > maxX) maxX = v.x;
-            if (v.y > maxY) maxY = v.y;
+        for (let vi = 0; vi < voxels.count; vi++) {
+            const vx = footprintX(voxels, vi);
+            const vy = footprintY(voxels, vi);
+            if (vx < minX) minX = vx;
+            if (vy < minY) minY = vy;
+            if (vx > maxX) maxX = vx;
+            if (vy > maxY) maxY = vy;
         }
         const width = maxX - minX;
         const height = maxY - minY;
@@ -2117,9 +2120,9 @@ export function computeAutoSupportPlan(
                 // Check if this grid point is within the voxel footprint
                 // (simple containment: near any contact voxel).
                 let inFootprint = false;
-                for (const v of voxels) {
-                    const dx = gx - v.x;
-                    const dy = gy - v.y;
+                for (let vi = 0; vi < voxels.count; vi++) {
+                    const dx = gx - footprintX(voxels, vi);
+                    const dy = gy - footprintY(voxels, vi);
                     if (dx * dx + dy * dy <= OVERHANG_GRID_SPACING_MM * OVERHANG_GRID_SPACING_MM) {
                         inFootprint = true;
                         break;

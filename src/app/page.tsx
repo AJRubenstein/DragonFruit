@@ -68,6 +68,7 @@ import { SlicingPanel, type SliceIntent } from '@/features/slicing/components/Sl
 import { PrintingPanel } from '@/features/printing/components/PrintingPanel';
 import { usePrintingPreviewManager, type PrintingPreviewManagerDeps } from '@/features/printing/usePrintingPreviewManager';
 import { useEditorToasts } from '@/features/notifications/useEditorToasts';
+import { ScanProgressBar } from '@/components/scene/ScanProgressBar';
 import { SliceMetricsDebugModal } from '@/features/slicing/components/SliceMetricsDebugModal';
 import { MeshSmoothingSettingsPanel } from '@/features/mesh-smoothing/MeshSmoothingSettingsPanel';
 import { MeshSmoothingBrushCursor } from '@/features/mesh-smoothing/MeshSmoothingBrushCursor';
@@ -10741,11 +10742,6 @@ export default function Home() {
             </div>
             <div className="mt-1 space-y-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               <p>Slicing and analysis in progress...</p>
-              {islandsPoc.scanProgress && islandsPoc.scanProgress.total > 100 && (
-                <p>
-                  Layer {islandsPoc.scanProgress.done} of {islandsPoc.scanProgress.total}
-                </p>
-              )}
             </div>
 
             <div className="mt-2 text-[11px] font-medium tracking-wide" style={{ color: 'var(--accent)' }}>
@@ -10755,15 +10751,7 @@ export default function Home() {
               Processing 1 model
             </div>
 
-            <div
-              className="ui-loading-track mt-3 h-2.5 w-full rounded-full"
-              style={{ background: 'color-mix(in srgb, var(--surface-2), black 20%)' }}
-            >
-              <div
-                className="ui-loading-indicator"
-                style={{ background: 'linear-gradient(90deg, var(--accent), #ff79c6)' }}
-              />
-            </div>
+            <ScanProgressBar progress={islandsPoc.scanProgress} />
           </div>
         </div>
       )}
@@ -10780,9 +10768,6 @@ export default function Home() {
             </div>
             <div className="mt-1 space-y-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               <p>{islandsPoc.scanning ? 'Scanning islands & minima…' : 'Placing and bracing supports…'}</p>
-              {islandsPoc.scanProgress && islandsPoc.scanProgress.total > 100 && (
-                <p>Layer {islandsPoc.scanProgress.done} of {islandsPoc.scanProgress.total}</p>
-              )}
             </div>
             <div className="mt-2 text-[11px] font-medium tracking-wide" style={{ color: 'var(--accent)' }}>
               Elapsed: {islandsPoc.scanning ? islandsPoc.elapsedLabel : '…'}
@@ -10790,9 +10775,7 @@ export default function Home() {
             <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
               Processing 1 model
             </div>
-            <div className="ui-loading-track mt-3 h-2.5 w-full rounded-full" style={{ background: 'color-mix(in srgb, var(--surface-2), black 20%)' }}>
-              <div className="ui-loading-indicator" style={{ background: 'linear-gradient(90deg, var(--accent), #ff79c6)' }} />
-            </div>
+            <ScanProgressBar progress={islandsPoc.scanning ? islandsPoc.scanProgress : null} />
           </div>
         </div>
       )}
