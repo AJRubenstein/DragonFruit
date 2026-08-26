@@ -1365,10 +1365,25 @@ export function validateAndCullOrphans(
                 const where = tip ? ` @ (${tip.x.toFixed(1)}, ${tip.y.toFixed(1)}, Z${tip.z.toFixed(1)})` : '';
                 orphans.push({ id: tid, kind: 'trunk', reason: 'trunkBlocked', detail: `trunk shaft pierces mesh${where}` });
                 trunksToRemove.add(tid);
+            } else {
+                // Side-wall guard: trunks whose contact points sideways (normal
+                // near-horizontal) are not overhangs — they were islands from a
+                // vertical wall and read as a 90° cone on a vertical shaft.
+                const n = trunk.contactCone?.normal ?? trunk.contactCone?.surfaceNormal;
+                if (n) {
+                    const hz = Math.hypot(n.x, n.y);
+                    const nz = Math.abs(n.z);
+                    const angleDeg = (Math.atan2(hz, Math.max(0.001, nz)) * 180) / Math.PI;
+                    if (angleDeg > 80) {
+                        const tip = trunk.contactCone?.pos;
+                        const where = tip ? ` @ (${tip.x.toFixed(1)}, ${tip.y.toFixed(1)}, Z${tip.z.toFixed(1)})` : '';
+                        orphans.push({ id: tid, kind: 'trunk', reason: 'blocked', detail: `side-wall trunk too shallow ${angleDeg.toFixed(1)}° > 80°${where}` });
+                        trunksToRemove.add(tid);
+                    }
+                }
             }
         }
     }
-
     const checkAttachment = (
         id: string,
         kind: 'leaf' | 'branch',
@@ -1429,11 +1444,11 @@ export function validateAndCullOrphans(
                 orphans.push({ id, kind, reason: 'blocked', hostId: host.trunkId, knotId: knot.id, detail: 'knot→tip blocked by mesh' });
                 return false;
             }
-            // Shallow leaf guard: after resize/rehost a leaf can drift to ~90°
+            // Shallow leaf/branch guard: after resize/rehost a leaf can drift to ~90°
             // from vertical (knot and tip end up at similar height). That reads
             // as a horizontal arm and prints poorly — cull it as "too shallow"
             // so it shows in the report instead of as a visible shallow leaf.
-            if (kind === 'leaf' && tipPos) {
+            if (tipPos) {
                 const vDist = tipPos.z - knot.pos.z;
                 const hDist = Math.hypot(tipPos.x - knot.pos.x, tipPos.y - knot.pos.y);
                 const angleDeg = (Math.atan2(hDist, Math.max(0.001, vDist)) * 180) / Math.PI;
