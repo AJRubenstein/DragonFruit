@@ -1,3 +1,4 @@
+import { footprintToPoints } from '@/volumeAnalysis/Islands/voxelFootprint';
 import * as THREE from 'three';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import type { CandidatePoint } from './types';
@@ -411,7 +412,8 @@ export function generateGridCandidates(
         let maxX = -Infinity;
         let maxY = -Infinity;
         const cellSize = Math.max(spacing, 1.0);
-        for (const p of voxels) {
+        const voxelPoints = footprintToPoints(voxels);
+        for (const p of voxelPoints) {
             if (p.x < minX) minX = p.x;
             if (p.y < minY) minY = p.y;
             if (p.x > maxX) maxX = p.x;
@@ -423,7 +425,7 @@ export function generateGridCandidates(
         // Triangle-accurate surface resolution when the mesh + region
         // triangles are available; voxel nearest-neighbor is the fallback.
         const surfaceAt = createTriangleSurfaceAt(island, mesh)
-            ?? createVoxelSurfaceAt(voxels, cellSize, island.baseZ);
+            ?? createVoxelSurfaceAt(voxelPoints, cellSize, island.baseZ);
         const minZ = island.baseZ;
 
         const emitPoint = (x: number, y: number, z: number, kind: 'grid' | 'fill') => {
@@ -441,7 +443,7 @@ export function generateGridCandidates(
         };
 
         // Sliver test: nothing survives footprint erosion → ring only.
-        const eroded = erodeFootprint(voxels);
+        const eroded = erodeFootprint(voxelPoints);
         const isSliver = eroded.length === 0;
 
         // Candidate-cap guard: on overflow, fall back to the angle-only
@@ -494,7 +496,7 @@ export function generateGridCandidates(
         const ringCoverageSq = (ringSpacing * 0.5) * (ringSpacing * 0.5);
         const boundary = sampleBoundary2D(island.perimeterLoops, ringSpacing, surfaceAt)
             ?? buildBoundaryPoints(
-                eroded.length > 0 ? eroded : voxels,
+                eroded.length > 0 ? eroded : voxelPoints,
                 ringSpacing,
                 minZ,
             );

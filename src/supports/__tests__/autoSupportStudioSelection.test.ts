@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
+import { footprintFromPoints } from '../../volumeAnalysis/Islands/voxelFootprint';
 import { runAutoPlace } from '../autoSupport/autoPlace';
 import { resetStore, getSnapshot, setSelectedId } from '../state';
 import { resetKickstandStore } from '../SupportTypes/Kickstand/kickstandStore';
@@ -23,7 +24,7 @@ test('selected auto trunk loads its own sized parameters, not the global band', 
     const facet = {
         id: 'o0', source: 'overhang' as const,
         contact: new THREE.Vector3(0, 0, 6.5), baseZ: 6.5,
-        areaMm2: 400, contactVoxels,
+        areaMm2: 400, contactVoxels: footprintFromPoints(contactVoxels),
     };
     const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true });
     assert.ok(result.placedTrunks > 0, 'trunks placed');

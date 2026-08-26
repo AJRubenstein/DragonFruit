@@ -7,6 +7,7 @@ import {
     createTriangleSurfaceAt,
     createVoxelSurfaceAt,
 } from '../autoSupport/gridPlacement';
+import { footprintFromPoints, footprintToPoints } from '../../volumeAnalysis/Islands/voxelFootprint';
 import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 
@@ -53,7 +54,7 @@ function slopedRegion(id: string, triangleIds?: number[]): DetectedIsland {
         areaMm2: 400,
         overhangAngleDeg: 11,
         surfaceNormal: { x: 0, y: 0.196, z: -0.98 },
-        contactVoxels,
+        contactVoxels: footprintFromPoints(contactVoxels),
         ...(triangleIds ? { triangleIds } : {}),
     };
 }
@@ -77,7 +78,7 @@ test('triangle sampler resolves exact plane height where the voxel mask is quant
     const island = slopedRegion('o0', [0, 1]);
 
     const tri = createTriangleSurfaceAt(island, mesh)!;
-    const voxel = createVoxelSurfaceAt(island.contactVoxels!, Math.max(settings.areaPerSupportMm2, 1) ** 0.5, island.baseZ);
+    const voxel = createVoxelSurfaceAt(footprintToPoints(island.contactVoxels!), Math.max(settings.areaPerSupportMm2, 1) ** 0.5, island.baseZ);
 
     assert.ok(Math.abs(tri(3.1, -2.7)!.z - PLANE_Z(3.1)) < 1e-9, 'triangle sampler is exact');
     assert.ok(
