@@ -815,15 +815,35 @@ function placeOneCandidate(
             const band = activeSizingBand();
             const cavityResult = buildCavityStick(tipPos, tipNormal, candidate.modelId, mesh, band);
             if (cavityResult) {
+                // Long model-to-model bridges under an overhang (jaw → chest)
+                // read as "sticks under the jaw" and are rarely printable —
+                // the older dev build simply rejected these instead of bridging.
+                // Keep short twigs (<5 mm, true cavities) but cap long sticks:
+                // require the bridge to be < 12 mm, otherwise fall through to
+                // reject. The tip will then be reconsidered via fan/merge in a
+                // later pass or left unsupported (coverage still 100% per
+                // report).
                 if (cavityResult.kind === 'stick') {
-                    d = draftAddStick(d, cavityResult.stick);
-                    logPlacement(
-                        `Stick (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                    return { kind: 'stick', preset, draft: d, entityId: cavityResult.stick.id, cavityFanRefusal };
+                    const lower = cavityResult.stick.contactConeB?.pos ?? cavityResult.stick.contactConeA?.pos;
+                    if (lower) {
+                        const dx = tipPos.x - lower.x, dy = tipPos.y - lower.y, dz = tipPos.z - lower.z;
+                        const bridgeLen = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                        if (bridgeLen > 12) {
+                            logPlacement(`Cavity stick rejected (bridge ${bridgeLen.toFixed(1)}mm > 12mm) ${candidate.id}`);
+                            // fall through to rejected trunk path below
+                        } else {
+                            d = draftAddStick(d, cavityResult.stick);
+                            logPlacement(`Stick (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
+                            return { kind: 'stick', preset, draft: d, entityId: cavityResult.stick.id, cavityFanRefusal };
+                        }
+                    } else {
+                        d = draftAddStick(d, cavityResult.stick);
+                        logPlacement(`Stick (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
+                        return { kind: 'stick', preset, draft: d, entityId: cavityResult.stick.id, cavityFanRefusal };
+                    }
                 } else {
                     d = draftAddTwig(d, cavityResult.twig);
-                    logPlacement(
-                        `Twig (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
+                    logPlacement(`Twig (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
                     return { kind: 'twig', preset, draft: d, entityId: cavityResult.twig.id, cavityFanRefusal };
                 }
             }
