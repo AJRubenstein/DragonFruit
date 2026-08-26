@@ -13,6 +13,10 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1662
+msgid ".env template"
+msgstr "Plantilla de .env"
+
 #. placeholder {0}: model.polygonCount
 #: src/components/controls/ModelManagerPanel.tsx:89
 msgid "{0, plural, one {{compactTriangles} triangle} other {{compactTriangles} triangles}}"
@@ -28,8 +32,15 @@ msgstr "{0, plural, one {# modelo cargado} other {# modelos cargados}}"
 msgid "{count, plural, one {# found} other {# found}}"
 msgstr "{count, plural, one {Encontrada #} other {Encontradas #}}"
 
+#. Counter under a printer profile in a backup snapshot: how many materials belong to it.
+#. Counter under a printer profile in a backup snapshot: how many materials belong to it.
+#: src/components/settings/BackupsSettingsTab.tsx:28
+#: src/components/settings/LocalBackupsSettingsTab.tsx:21
+msgid "{count, plural, one {# material} other {# materials}}"
+msgstr "{count, plural, one {# material} other {# materiales}}"
+
 #. Warning badge over the viewport when models stick out of the printer build volume.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:195
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:196
 msgid "{count, plural, one {# model out of build volume} other {# models out of build volume}}"
 msgstr "{count, plural, one {# modelo fuera del volumen de impresión} other {# modelos fuera del volumen de impresión}}"
 
@@ -50,7 +61,7 @@ msgstr "{deltaHours} h"
 msgid "{deltaMin} min"
 msgstr "{deltaMin} min"
 
-#: src/app/page.tsx:435
+#: src/app/page.tsx:436
 #: src/components/controls/ModelStatsCard.tsx:209
 msgid "{hours} h {minutes} min"
 msgstr "{hours} h {minutes} min"
@@ -59,12 +70,20 @@ msgstr "{hours} h {minutes} min"
 msgid "{hours} h {paddedMinutes} min"
 msgstr "{hours} h {paddedMinutes} min"
 
+#: src/features/slicing/components/SlicingPanel.tsx:143
+msgid "{materialId} (Remote ID)"
+msgstr "{materialId} (ID remoto)"
+
+#: src/features/slicing/components/SlicingPanel.tsx:139
+msgid "{materialName} ({sourceName})"
+msgstr "{materialName} ({sourceName})"
+
 #: src/features/printing/printingMonitorFormat.ts:21
 msgid "{minutes} min"
 msgstr "{minutes} min"
 
-#: src/app/page.tsx:427
-#: src/app/page.tsx:436
+#: src/app/page.tsx:428
+#: src/app/page.tsx:437
 #: src/components/controls/ModelStatsCard.tsx:210
 msgid "{minutes} min {seconds} s"
 msgstr "{minutes} min {seconds} s"
@@ -72,6 +91,18 @@ msgstr "{minutes} min {seconds} s"
 #: src/features/updater/GlobalUpdateIndicator.tsx:270
 msgid "{pct}% — Downloading update, please wait…"
 msgstr "{pct} % — Descargando la actualización, espera…"
+
+#: src/features/slicing/components/SlicingPanel.tsx:131
+msgid "{pixels}px Edge Blur"
+msgstr "{pixels} px de desenfoque de borde"
+
+#: src/features/slicing/components/SlicingPanel.tsx:127
+msgid "{pixels}px XY · {layers}L Z"
+msgstr "{pixels} px en XY · {layers} capas en Z"
+
+#: src/features/slicing/components/SlicingPanel.tsx:211
+msgid "{rate} layers/s"
+msgstr "{rate} capas/s"
 
 #. Counter above the managed printer list: how many printers are saved and how many are reachable.
 #: src/components/settings/FleetManagement.tsx:15
@@ -86,20 +117,32 @@ msgstr "{seconds} s"
 msgid "{shells, plural, one {# shell} other {# shells}}"
 msgstr "{shells, plural, one {# cascarón} other {# cascarones}}"
 
+#: src/features/slicing/components/SlicingPanel.tsx:123
+msgid "{steps}x Coverage"
+msgstr "Cobertura {steps}×"
+
+#: src/features/slicing/components/SlicingPanel.tsx:119
+msgid "{steps}x ZAA Samples"
+msgstr "{steps}× muestras ZAA"
+
 #. Shown when the estimated print time rounds down to under one minute. Keep the "<" comparison symbol.
 #: src/features/printing/printingMonitorFormat.ts:24
 msgid "< 1 min"
 msgstr "< 1 min"
 
 #. Approximate estimated print time (the "~" marks it as a rough estimate). {hours}/{mins} are whole-number quantities.
-#: src/app/page.tsx:419
+#: src/app/page.tsx:420
 msgid "~{hours} h {mins} min"
 msgstr "~{hours} h {mins} min"
 
 #. Approximate estimated print time under an hour (the "~" marks it as a rough estimate).
-#: src/app/page.tsx:420
+#: src/app/page.tsx:421
 msgid "~{mins} min"
 msgstr "~{mins} min"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1581
+msgid "2D Blur"
+msgstr "Desenfoque 2D"
 
 #: src/components/settings/SettingsModal.tsx:1209
 msgid "3D Mouse"
@@ -120,10 +163,18 @@ msgstr "Acerca de"
 
 #. Badge next to the currently-selected printer in the fleet list (adjective describing the device, e.g. "the active one").
 #: src/components/layout/TopBar.tsx:1003
+#: src/features/slicing/components/SlicingPanel.tsx:2815
 msgid "Active"
 msgstr "Activo"
 
-#: src/app/page.tsx:2213
+#: src/components/settings/BackupsSettingsTab.tsx:1518
+#: src/components/settings/BackupsSettingsTab.tsx:1571
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1297
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1350
+msgid "ACTIVE"
+msgstr "ACTIVO"
+
+#: src/app/page.tsx:2214
 msgid "Add joint"
 msgstr "Añadir unión"
 
@@ -149,9 +200,21 @@ msgstr "Añadir punto aquí"
 msgid "Added"
 msgstr "Añadida"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1009
+msgid "After updating .env, restart the app, then click “I configured it”."
+msgstr "Después de actualizar el .env, reinicia la aplicación y pulsa «Ya lo he configurado»."
+
+#: src/features/slicing/components/SlicingPanel.tsx:2637
+msgid "Anti-Aliasing"
+msgstr "Antialiasing"
+
 #: src/components/layout/EmptySceneState.tsx:101
 msgid "Anti-aliasing: nothing to anti-alias."
 msgstr "Antialiasing: nada que suavizar."
+
+#: src/features/slicing/components/SlicingPanel.tsx:3896
+msgid "Apply for Session"
+msgstr "Aplicar a la sesión"
 
 #. Cross-sectional area stats for the current print layer: "Area Σ" = total/summed solid area (Σ is the mathematical summation symbol, usually kept as-is); "Min"/"Max" = smallest/largest single contiguous area, abbreviating "Minimum"/"Maximum".
 #: src/components/organisms/modals/PrintingModals.tsx:1873
@@ -166,9 +229,18 @@ msgstr "Distribuir"
 msgid "Arrange model and transforms"
 msgstr "Colocar el modelo y aplicar transformaciones"
 
+#: src/components/settings/BackupsSettingsTab.tsx:975
+msgid "Authorize DragonFruit so backups can be saved into your private repository."
+msgstr "Autoriza a DragonFruit para que pueda guardar las copias en tu repositorio privado."
+
 #: src/components/printers/SetupMethodChooser.tsx:25
+#: src/features/slicing/components/SlicingPanel.tsx:2643
 msgid "Auto"
 msgstr "Automático"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2638
+msgid "Auto derives slice settings from your printer resolution and material layer height. Expert lets you jump to material AA settings or apply a temporary session override."
+msgstr "«Automático» deduce los ajustes de laminado de la resolución de tu impresora y de la altura de capa del material. «Experto» te lleva a los ajustes de antialiasing del material o te deja aplicar una anulación temporal de sesión."
 
 #: src/components/printers/SetupMethodChooser.tsx:61
 msgid "Auto Detect"
@@ -187,6 +259,23 @@ msgstr "Reparado automáticamente — {0} errores"
 msgid "Automatically saves a crash-recovery .voxl scene in the background and offers restore on next launch."
 msgstr "Guarda en segundo plano una escena .voxl de recuperación y ofrece restaurarla en el siguiente arranque."
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:718
+msgid "Automatically saves snapshots of your settings and profiles to a folder on your computer."
+msgstr "Guarda automáticamente instantáneas de tus ajustes y perfiles en una carpeta de tu ordenador."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1207
+msgid "Automatically sync to your private GitHub backup on an interval."
+msgstr "Sincroniza cada cierto tiempo con tu copia privada de GitHub."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:845
+msgid "Automatically write snapshots to local disk on an interval."
+msgstr "Escribe instantáneas en el disco local cada cierto tiempo."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1202
+#: src/components/settings/LocalBackupsSettingsTab.tsx:840
+msgid "Automation"
+msgstr "Automatización"
+
 #: src/components/settings/SettingsModal.tsx:1228
 msgid "Autosave and crash recovery behavior"
 msgstr "Guardado automático y recuperación tras un fallo"
@@ -199,7 +288,7 @@ msgstr "Los archivos de guardado automático solo existen en la versión de escr
 msgid "Autosave idle delay"
 msgstr "Espera antes de guardar"
 
-#: src/app/page.tsx:950
+#: src/app/page.tsx:951
 msgid "Autosave is not working"
 msgstr "El guardado automático no funciona"
 
@@ -226,7 +315,7 @@ msgstr "Guardando automáticamente…"
 #. View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.
 #: src/components/layout/FirstRunOnboarding.tsx:273
 #: src/components/layout/OnboardingPrinterLibrary.tsx:279
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1541
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1542
 msgid "Back"
 msgstr "Atrás"
 
@@ -234,12 +323,89 @@ msgstr "Atrás"
 msgid "Back to setup step"
 msgstr "Volver al paso de configuración"
 
+#: src/features/slicing/components/SlicingPanel.tsx:3932
+msgid "Background Pipeline"
+msgstr "Proceso en segundo plano"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1122
+#: src/components/settings/LocalBackupsSettingsTab.tsx:804
+msgid "Backup Management"
+msgstr "Gestión de copias"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1141
+#: src/components/settings/LocalBackupsSettingsTab.tsx:824
+msgid "Backup Now"
+msgstr "Copiar ahora"
+
+#: src/components/settings/BackupsSettingsTab.tsx:601
+msgid "Backup repository is ready."
+msgstr "El repositorio de copias está listo."
+
+#: src/components/settings/BackupsSettingsTab.tsx:676
+msgid "Backup restored. Run \"Restore Remote\" in conflict mode or sync this device if needed."
+msgstr "Copia restaurada. Usa «Restaurar la remota» en modo conflicto o sincroniza este dispositivo si hace falta."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:446
+msgid "Backup saved to local disk."
+msgstr "Copia guardada en el disco local."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1349
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1121
+msgid "Backup Snapshot Content"
+msgstr "Contenido de la instantánea"
+
+#: src/components/settings/BackupsSettingsTab.tsx:661
+#: src/components/settings/LocalBackupsSettingsTab.tsx:545
+msgid "Backup snapshot deleted."
+msgstr "Instantánea eliminada."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:28
+msgid "Backup snapshot from {timestamp} will be permanently removed from disk."
+msgstr "La instantánea del {timestamp} se borrará del disco para siempre."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:516
+msgid "Backup snapshot is malformed."
+msgstr "La instantánea está mal formada."
+
+#: src/components/settings/BackupsSettingsTab.tsx:546
+#: src/components/settings/BackupsSettingsTab.tsx:561
+msgid "Backup sync failed."
+msgstr "Falló la sincronización de la copia."
+
+#: src/components/settings/BackupsSettingsTab.tsx:558
+msgid "Backup synced to GitHub repository."
+msgstr "Copia sincronizada con el repositorio de GitHub."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1639
+msgid "BACKUP_COOKIE_SECRET helper"
+msgstr "Ayuda para BACKUP_COOKIE_SECRET"
+
 #: src/components/settings/SettingsModal.tsx:1233
 msgid "Backups"
 msgstr "Copias de seguridad"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1077
+msgid "Backups are not configured on this build yet. Add GitHub OAuth env values to enable this tab."
+msgstr "Esta compilación aún no tiene configuradas las copias. Añade las variables de OAuth de GitHub para habilitar esta pestaña."
+
+#: src/components/settings/BackupsSettingsTab.tsx:945
+msgid "Backups are stored in your own private GitHub repository. DragonFruit does not run a central backup server and does not keep a copy of your backup data outside your repository."
+msgstr "Las copias se guardan en tu propio repositorio privado de GitHub. DragonFruit no tiene un servidor central de copias ni guarda tus datos fuera de ese repositorio."
+
+#: src/features/slicing/components/SlicingPanel.tsx:782
+msgid "Balanced"
+msgstr "Equilibrado"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1566
+msgid "Binary Base"
+msgstr "Base binaria"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2751
+msgid "Blur"
+msgstr "Desenfoque"
+
 #. View cube face (seen from below), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1545
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1546
 msgid "Bottom"
 msgstr "Abajo"
 
@@ -255,10 +421,26 @@ msgstr "Carga una malla o escena para empezar a preparar, analizar, añadir sopo
 msgid "Build and tune supports"
 msgstr "Crear y ajustar soportes"
 
+#. placeholder {0}: selectedProfilesPrinter.buildVolumeMm?.width ?? '-'
+#. placeholder {1}: selectedProfilesPrinter.buildVolumeMm?.depth ?? '-'
+#. placeholder {2}: selectedProfilesPrinter.buildVolumeMm?.height ?? '-'
+#: src/components/settings/BackupsSettingsTab.tsx:1544
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1323
+msgid "Build: {0} × {1} × {2} mm"
+msgstr "Volumen: {0} × {1} × {2} mm"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2797
+msgid "Bypassed"
+msgstr "Omitido"
+
 #. Shown in place of file size when the file is in cache but its size is unknown. Adjective/state label.
 #: src/components/layout/EmptySceneState.tsx:694
 msgid "cached"
 msgstr "en caché"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2737
+msgid "Calculating AA profile…"
+msgstr "Calculando el perfil de antialiasing…"
 
 #: src/components/settings/SettingsModal.tsx:1173
 msgid "Camera"
@@ -270,8 +452,31 @@ msgstr "Modo de vista de la cámara: {currentLabel}"
 
 #: src/components/printers/PrinterVariantPickerModal.tsx:701
 #: src/components/settings/FleetManagement.tsx:436
+#: src/components/settings/LocalBackupsSettingsTab.tsx:990
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1083
 msgid "Cancel"
 msgstr "Cancelar"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:982
+msgid "Cancel delete"
+msgstr "Cancelar el borrado"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1066
+msgid "Cancel restore"
+msgstr "Cancelar la restauración"
+
+#: src/features/slicing/components/SlicingPanel.tsx:4042
+msgid "Cancel Slicing"
+msgstr "Cancelar el laminado"
+
+#: src/features/slicing/components/SlicingPanel.tsx:158
+#: src/features/slicing/components/SlicingPanel.tsx:3964
+msgid "Cancelled"
+msgstr "Cancelado"
+
+#: src/features/slicing/components/SlicingPanel.tsx:159
+msgid "Cancelling"
+msgstr "Cancelando"
 
 #: src/components/layout/TopBar.tsx:1261
 msgid "Changing print settings invalidates the current sliced file."
@@ -285,6 +490,10 @@ msgstr "Cambiar el perfil de impresora requiere volver a laminar"
 msgid "Check for new versions and manage channels"
 msgstr "Busca versiones nuevas y gestiona los canales"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:418
+msgid "Choose a local backup directory before syncing."
+msgstr "Elige una carpeta local de copias antes de sincronizar."
+
 #: src/components/layout/OnboardingPrinterLibrary.tsx:393
 msgid "Choose a printer to add"
 msgstr "Elige una impresora para añadir"
@@ -292,6 +501,14 @@ msgstr "Elige una impresora para añadir"
 #: src/components/layout/OnboardingPrinterLibrary.tsx:298
 msgid "Choose an official printer preset to add."
 msgstr "Elige un perfil oficial de impresora para añadirlo."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:780
+msgid "Choose Folder"
+msgstr "Elegir carpeta"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3685
+msgid "Choose slice action"
+msgstr "Elegir la acción de laminado"
 
 #: src/components/layout/FirstRunOnboarding.tsx:197
 msgid "Choose your theme"
@@ -302,8 +519,17 @@ msgid "Clean (no pending recovery)"
 msgstr "Limpio (nada que recuperar)"
 
 #: src/components/layout/EmptySceneState.tsx:622
+#: src/features/slicing/components/SlicingPanel.tsx:1059
 msgid "Clear"
 msgstr "Borrar"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3870
+msgid "Clear Override"
+msgstr "Quitar la anulación"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2835
+msgid "Clear Session Override"
+msgstr "Quitar la anulación de sesión"
 
 #: src/components/controls/ModelStatsCard.tsx:616
 msgid "Click card to return to print settings"
@@ -317,15 +543,32 @@ msgstr "Pulsa la tarjeta para ver los detalles del modelo"
 msgid "Click to copy build info"
 msgstr "Haz clic para copiar la información de compilación"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1433
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1205
+msgid "Client ID"
+msgstr "ID de cliente"
+
 #: src/components/layout/TopBar.tsx:1222
 #: src/components/printers/PrinterVariantPickerModal.tsx:422
 #: src/features/updater/GlobalUpdateIndicator.tsx:197
 msgid "Close"
 msgstr "Cerrar"
 
+#: src/features/slicing/components/SlicingPanel.tsx:3768
+msgid "Close material anti-aliasing settings"
+msgstr "Cerrar los ajustes de antialiasing del material"
+
 #: src/components/settings/FleetManagement.tsx:114
 msgid "Close network settings"
 msgstr "Cerrar los ajustes de red"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1623
+msgid "Close OAuth setup"
+msgstr "Cerrar la configuración de OAuth"
+
+#: src/features/slicing/components/SlicingPanel.tsx:4051
+msgid "Close Plate"
+msgstr "Cerrar la placa"
 
 #: src/components/layout/TopBar.tsx:908
 msgid "Close program"
@@ -334,6 +577,15 @@ msgstr "Cerrar programa"
 #: src/features/updater/GlobalUpdateIndicator.tsx:378
 msgid "Close release notes"
 msgstr "Cerrar las notas de la versión"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3838
+msgid "Close session anti-aliasing override"
+msgstr "Cerrar la anulación de antialiasing de la sesión"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1375
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1147
+msgid "Close snapshot details"
+msgstr "Cerrar el detalle de la instantánea"
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:187
 msgid "Close update dialog"
@@ -348,6 +600,8 @@ msgid "Close window"
 msgstr "Cerrar ventana"
 
 #: src/components/controls/ModelManagerPanel.tsx:379
+#: src/features/slicing/components/SlicingPanel.tsx:2468
+#: src/features/slicing/components/SlicingPanel.tsx:2506
 msgid "Collapse card"
 msgstr "Plegar la tarjeta"
 
@@ -363,12 +617,32 @@ msgstr "Lista compacta"
 msgid "Configure Networking Later"
 msgstr "Configurar la red más tarde"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:975
+msgid "Confirm delete snapshot"
+msgstr "Confirmar el borrado de la instantánea"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1035
+msgid "Confirm restore snapshot"
+msgstr "Confirmar la restauración de la instantánea"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1168
+msgid "Conflict detected"
+msgstr "Conflicto detectado"
+
 #: src/components/printers/SetupMethodChooser.tsx:111
 #: src/components/settings/FleetManagement.tsx:218
 #: src/components/settings/FleetManagement.tsx:219
 #: src/components/settings/FleetManagement.tsx:393
 msgid "Connect"
 msgstr "Conectar"
+
+#: src/components/settings/BackupsSettingsTab.tsx:993
+msgid "Connect GitHub now"
+msgstr "Conectar GitHub ahora"
+
+#: src/components/settings/BackupsSettingsTab.tsx:971
+msgid "Connect your GitHub account"
+msgstr "Conecta tu cuenta de GitHub"
 
 #: src/components/settings/FleetManagement.tsx:382
 msgid "Connected"
@@ -378,6 +652,10 @@ msgstr "Conectada"
 #: src/components/settings/FleetManagement.tsx:393
 msgid "Connecting…"
 msgstr "Conectando…"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1082
+msgid "Connection"
+msgstr "Conexión"
 
 #. Confirms proceeding with the profile change despite the re-slice warning above (paired with "Keep current profiles", which cancels).
 #: src/components/layout/FirstRunOnboarding.tsx:280
@@ -393,6 +671,14 @@ msgstr "Frío"
 #: src/components/ui/EditorContextMenu.tsx:82
 msgid "Copy"
 msgstr "Copiar"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1670
+msgid "Copy template"
+msgstr "Copiar la plantilla"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1634
+msgid "Copy the Client ID and Client Secret into your local <0>.env</0>."
+msgstr "Copia el Client ID y el Client Secret en tu <0>.env</0> local."
 
 #: src/components/printers/PrinterVariantPickerModal.tsx:338
 msgid "Could not read printer data."
@@ -418,17 +704,49 @@ msgstr "No se ha podido conectar con {host}."
 msgid "Count"
 msgstr "Total"
 
+#: src/features/slicing/components/SlicingPanel.tsx:1580
+msgid "Coverage"
+msgstr "Cobertura"
+
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:274
 msgid "Crash Recovery"
 msgstr "Recuperación tras un fallo"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1031
+msgid "Create {suggestedNewRepoName}"
+msgstr "Crear {suggestedNewRepoName}"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:814
+msgid "Create a snapshot now and refresh history."
+msgstr "Crea una instantánea ahora y actualiza el historial."
 
 #: src/components/controls/TransformToolbar.tsx:33
 msgid "Create cavity or open-face shell"
 msgstr "Crear cavidad o carcasa de cara abierta"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1048
+msgid "Create your first backup snapshot"
+msgstr "Crea tu primera instantánea"
+
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:176
 msgid "Creates recovery snapshots while editing."
 msgstr "Crea instantáneas de recuperación mientras editas."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1043
+msgid "Creating and configuring repository…"
+msgstr "Creando y configurando el repositorio…"
+
+#: src/components/settings/BackupsSettingsTab.tsx:24
+msgid "Creating new repository: {repoName}"
+msgstr "Creando el repositorio nuevo: {repoName}"
+
+#: src/features/slicing/components/SlicingPanel.tsx:781
+msgid "Crisp text and details."
+msgstr "Texto y detalles nítidos."
+
+#: src/features/slicing/components/SlicingPanel.tsx:3830
+msgid "Current material"
+msgstr "Material actual"
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:284
 msgid "Current version"
@@ -447,6 +765,10 @@ msgstr "Cortar"
 msgid "Dark"
 msgstr "Oscuro"
 
+#: src/features/slicing/components/SlicingPanel.tsx:2619
+msgid "Decrease offline layer height"
+msgstr "Reducir la altura de capa sin conexión"
+
 #. View mode dropdown: the shader inherited from the project setting.
 #: src/components/controls/ViewTypeDropdown.tsx:62
 msgid "Default"
@@ -456,14 +778,32 @@ msgstr "Por defecto"
 msgid "Default (project setting)"
 msgstr "Por defecto (ajuste del proyecto)"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:732
+msgid "Default directory"
+msgstr "Carpeta por defecto"
+
 #. placeholder {0}: model.geometry.meshDefects.repairedFloats
 #: src/components/controls/ModelStatsCard.tsx:610
 msgid "Defective — {0} errors"
 msgstr "Defectuoso — {0} errores"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1005
 #: src/components/ui/EditorContextMenu.tsx:80
 msgid "Delete"
 msgstr "Eliminar"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:976
+msgid "Delete Backup Snapshot"
+msgstr "Eliminar la instantánea"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1319
+#: src/components/settings/LocalBackupsSettingsTab.tsx:959
+msgid "Delete snapshot"
+msgstr "Eliminar la instantánea"
+
+#: src/components/settings/BackupsSettingsTab.tsx:645
+msgid "Delete this backup snapshot from GitHub history? This cannot be undone."
+msgstr "¿Eliminar esta instantánea del historial de GitHub? No se puede deshacer."
 
 #: src/components/ui/EditorContextMenu.tsx:73
 msgid "Delete waypoint"
@@ -487,14 +827,23 @@ msgstr "Detectada: {variantName}"
 msgid "Detecting model…"
 msgstr "Detectando el modelo…"
 
+#: src/features/slicing/components/SlicingPanel.tsx:780
+msgid "Disabled"
+msgstr "Desactivado"
+
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:161
 msgid "Discard"
 msgstr "Descartar"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1161
 #: src/components/settings/FleetManagement.tsx:229
 #: src/components/settings/FleetManagement.tsx:230
 msgid "Disconnect"
 msgstr "Desconectar"
+
+#: src/components/settings/BackupsSettingsTab.tsx:615
+msgid "Disconnected GitHub account."
+msgstr "Cuenta de GitHub desconectada."
 
 #: src/components/settings/FleetManagement.tsx:347
 msgid "Discovered Printers"
@@ -504,10 +853,23 @@ msgstr "Impresoras encontradas"
 msgid "Dismiss"
 msgstr "Cerrar"
 
+#. placeholder {0}: selectedProfilesPrinter.display?.resolutionX ?? '-'
+#. placeholder {1}: selectedProfilesPrinter.display?.resolutionY ?? '-'
+#. placeholder {2}: selectedProfilesPrinter.display?.outputFormat ? ` (${selectedProfilesPrinter.display.outputFormat})` : ''
+#: src/components/settings/BackupsSettingsTab.tsx:1547
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1326
+msgid "Display: {0} × {1}{2}"
+msgstr "Pantalla: {0} × {1}{2}"
+
 #. Paraphrase of Yoda's line from Star Wars: The Empire Strikes Back (1980): "Do or do not. There is no try."
 #: src/components/layout/EmptySceneState.tsx:84
 msgid "Do or do not. There is no try... oh wait, just click Load mesh."
 msgstr "Hazlo, o no lo hagas. Pero no lo intentes... espera, sólo haz clic en Cargar malla."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1429
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1201
+msgid "Document Updated"
+msgstr "Documento actualizado"
 
 #: src/components/settings/FleetManagement.tsx:277
 msgid "Done Adding"
@@ -542,6 +904,10 @@ msgstr "DragonFruit guardó automáticamente una escena: {formattedDate}"
 msgid "DragonFruit first-time setup"
 msgstr "Configuración inicial de DragonFruit"
 
+#: src/components/settings/BackupsSettingsTab.tsx:964
+msgid "DragonFruit handles setup automatically and uses only your own private GitHub repository."
+msgstr "DragonFruit se encarga de la configuración y usa solo tu repositorio privado de GitHub."
+
 #: src/components/layout/FirstRunOnboarding.tsx:175
 msgid "DragonFruit is a free, open-source slicer for resin 3D printing. Load a model, orient it, add supports, and slice it for your printer."
 msgstr "DragonFruit es un laminador libre y de código abierto para impresión 3D en resina. Carga un modelo, oriéntalo, añade soportes y lamínalo para tu impresora."
@@ -551,6 +917,10 @@ msgstr "DragonFruit es un laminador libre y de código abierto para impresión 3
 msgid "DragonFruit menu"
 msgstr "Menú de DragonFruit"
 
+#: src/components/settings/BackupsSettingsTab.tsx:954
+msgid "DragonFruit stores backups in your own private GitHub repository. We intentionally avoid ORA-hosted cloud storage and we do not operate a DragonFruit backup server."
+msgstr "DragonFruit guarda las copias en tu propio repositorio privado de GitHub. Evitamos a propósito el almacenamiento en la nube de ORA y no tenemos ningún servidor de copias."
+
 #: src/components/layout/EmptySceneState.tsx:729
 msgid "Drop supported files"
 msgstr "Suelta archivos compatibles"
@@ -559,7 +929,19 @@ msgstr "Suelta archivos compatibles"
 msgid "Early-access and experimental features"
 msgstr "Funciones experimentales y de acceso anticipado"
 
-#: src/app/page.tsx:2219
+#: src/features/slicing/components/SlicingPanel.tsx:2797
+msgid "Edit"
+msgstr "Editar"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2555
+msgid "Edit material profile"
+msgstr "Editar el perfil de material"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2537
+msgid "Edit printer profile"
+msgstr "Editar el perfil de impresora"
+
+#: src/app/page.tsx:2220
 #: src/components/ui/EditorContextMenu.tsx:126
 msgid "Editor"
 msgstr "Editor"
@@ -568,23 +950,52 @@ msgstr "Editor"
 msgid "Editor context menu"
 msgstr "Menú contextual del editor"
 
+#: src/features/slicing/components/SlicingPanel.tsx:4031
+msgid "Elapsed {slicingElapsedLabel}"
+msgstr "Transcurrido {slicingElapsedLabel}"
+
 #. Paraphrase of "Elementary, my dear Watson", the line associated with Sherlock Holmes (Arthur Conan Doyle stories; multiple film and TV adaptations).
 #: src/components/layout/EmptySceneState.tsx:95
 msgid "Elementary, my dear user — load a model."
 msgstr "Elemental, querido usuario: carga un modelo."
 
+#: src/components/settings/BackupsSettingsTab.tsx:1206
+#: src/components/settings/LocalBackupsSettingsTab.tsx:844
+msgid "Enable automatic backups"
+msgstr "Activar las copias automáticas"
+
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:175
 msgid "Enable scene autosave"
 msgstr "Activar el guardado automático"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1223
+msgid "Encoded Layers"
+msgstr "Capas codificadas"
+
+#: src/features/slicing/components/SlicingPanel.tsx:155
+msgid "Encoding"
+msgstr "Codificando"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2593
+msgid "Engine"
+msgstr "Motor"
 
 #: src/components/printers/SetupMethodChooser.tsx:85
 msgid "Enter your printer's IP address"
 msgstr "Introduce la dirección IP de tu impresora"
 
+#: src/components/settings/BackupsSettingsTab.tsx:902
+msgid "Env config required"
+msgstr "Falta configurar el entorno"
+
 #. "Est." abbreviates "Estimated", qualifying the print-time figure that follows it (e.g. "Est. 2h 05m • 12.50 ml"), not an abbreviation of anything else.
 #: src/components/organisms/modals/PrintingModals.tsx:1865
 msgid "Est. {estimatedTimeLabel} • {usedMaterialLabel}"
 msgstr "Est. {estimatedTimeLabel} • {usedMaterialLabel}"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2583
+msgid "Est. Print Time"
+msgstr "Tiempo est."
 
 #. Row label on the printer card. "Est." is short for "estimated"; keep the abbreviation terse — the label column is narrow.
 #: src/components/controls/ModelStatsCard.tsx:546
@@ -596,11 +1007,21 @@ msgstr "Tiempo est.:"
 msgid "Est. resin:"
 msgstr "Resina est.:"
 
+#: src/features/slicing/components/SlicingPanel.tsx:2579
+msgid "Est. Volume"
+msgstr "Volumen est."
+
 #: src/components/layout/EmptySceneState.tsx:71
 msgid "Every great print starts with an empty scene."
 msgstr "Toda gran impresión empieza con una escena vacía."
 
+#: src/components/settings/BackupsSettingsTab.tsx:1014
+msgid "Existing backup repository detected"
+msgstr "Ya existe un repositorio de copias"
+
 #: src/components/controls/ModelManagerPanel.tsx:379
+#: src/features/slicing/components/SlicingPanel.tsx:2468
+#: src/features/slicing/components/SlicingPanel.tsx:2506
 msgid "Expand card"
 msgstr "Desplegar la tarjeta"
 
@@ -612,6 +1033,10 @@ msgstr "Desplegar la carpeta"
 msgid "Experiments"
 msgstr "Experimentos"
 
+#: src/features/slicing/components/SlicingPanel.tsx:2643
+msgid "Expert"
+msgstr "Experto"
+
 #: src/components/layout/TopBar.tsx:625
 msgid "Export"
 msgstr "Exportar"
@@ -620,9 +1045,60 @@ msgstr "Exportar"
 msgid "Exposure:"
 msgstr "Exposición:"
 
+#: src/features/slicing/components/SlicingPanel.tsx:3965
+msgid "Failed"
+msgstr "Falló"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:469
+msgid "Failed to choose local backup directory."
+msgstr "No se pudo elegir la carpeta local de copias."
+
+#: src/components/settings/BackupsSettingsTab.tsx:886
+msgid "Failed to copy OAuth template. Copy it manually from the setup dialog."
+msgstr "No se pudo copiar la plantilla de OAuth. Cópiala a mano desde el diálogo de configuración."
+
+#: src/components/settings/BackupsSettingsTab.tsx:651
+#: src/components/settings/BackupsSettingsTab.tsx:663
+#: src/components/settings/LocalBackupsSettingsTab.tsx:547
+msgid "Failed to delete backup snapshot."
+msgstr "No se pudo eliminar la instantánea."
+
+#: src/components/settings/BackupsSettingsTab.tsx:618
+msgid "Failed to disconnect GitHub account."
+msgstr "No se pudo desconectar la cuenta de GitHub."
+
+#: src/components/settings/BackupsSettingsTab.tsx:600
+#: src/components/settings/BackupsSettingsTab.tsx:604
+msgid "Failed to ensure repository."
+msgstr "No se pudo preparar el repositorio."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:601
+msgid "Failed to initialize local backups."
+msgstr "No se pudieron iniciar las copias locales."
+
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:85
 msgid "Failed to load autosave status."
 msgstr "No se ha podido cargar el estado del guardado automático."
+
+#: src/components/settings/BackupsSettingsTab.tsx:522
+#: src/components/settings/BackupsSettingsTab.tsx:526
+msgid "Failed to load backup history."
+msgstr "No se pudo cargar el historial de copias."
+
+#: src/components/settings/BackupsSettingsTab.tsx:634
+#: src/components/settings/BackupsSettingsTab.tsx:638
+#: src/components/settings/LocalBackupsSettingsTab.tsx:521
+msgid "Failed to load backup snapshot."
+msgstr "No se pudo cargar la instantánea."
+
+#: src/components/settings/BackupsSettingsTab.tsx:507
+#: src/components/settings/BackupsSettingsTab.tsx:508
+msgid "Failed to load backup status."
+msgstr "No se pudo cargar el estado de las copias."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:409
+msgid "Failed to load local backup history."
+msgstr "No se pudo cargar el historial de copias locales."
 
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:124
 msgid "Failed to mark autosave as clean."
@@ -632,6 +1108,24 @@ msgstr "No se ha podido marcar el guardado automático como limpio."
 msgid "Failed to open autosave location."
 msgstr "No se ha podido abrir la ubicación del guardado automático."
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:492
+msgid "Failed to open folder in file manager."
+msgstr "No se pudo abrir la carpeta en el explorador de archivos."
+
+#: src/components/settings/BackupsSettingsTab.tsx:673
+#: src/components/settings/BackupsSettingsTab.tsx:679
+#: src/components/settings/LocalBackupsSettingsTab.tsx:572
+msgid "Failed to restore backup snapshot."
+msgstr "No se pudo restaurar la instantánea."
+
+#: src/components/settings/BackupsSettingsTab.tsx:373
+msgid "Failed to start GitHub OAuth."
+msgstr "No se pudo iniciar OAuth de GitHub."
+
+#: src/components/settings/BackupsSettingsTab.tsx:584
+msgid "Failed to start OAuth."
+msgstr "No se pudo iniciar OAuth."
+
 #: src/components/layout/TopBar.tsx:628
 msgid "Finalize and export output"
 msgstr "Finalizar y exportar el resultado"
@@ -639,6 +1133,10 @@ msgstr "Finalizar y exportar el resultado"
 #: src/components/printers/SetupMethodChooser.tsx:64
 msgid "Find your printer on the network"
 msgstr "Encuentra tu impresora en la red"
+
+#: src/features/slicing/components/SlicingPanel.tsx:4042
+msgid "Finishing…"
+msgstr "Terminando…"
 
 #: src/components/settings/FleetManagement.tsx:105
 msgid "Fleet Management"
@@ -662,18 +1160,34 @@ msgstr "Girar la tarjeta de datos del modelo"
 msgid "For continuous edits, save at least this often."
 msgstr "Si editas sin parar, guarda al menos con esta frecuencia."
 
+#: src/components/settings/BackupsSettingsTab.tsx:1195
+msgid "Force Push Local"
+msgstr "Forzar el envío local"
+
 #: src/components/layout/FirstRunOnboarding.tsx:178
 msgid "From the community, for the community. Free to use, open to contribute, and shaped by the people who print with it."
 msgstr "De la comunidad y para la comunidad. Libre de usar, abierto a contribuciones y moldeado por quienes imprimen con él."
 
 #. Orientation label, rendered uppercase on the view cube and on the build plate's front edge. Keep it as short as possible — long words are auto-shrunk to fit and become hard to read.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1537
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1538
 msgid "Front"
 msgstr "Frente"
 
 #: src/components/settings/SettingsModal.tsx:1167
 msgid "General"
 msgstr "General"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1656
+msgid "Generate"
+msgstr "Generar"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1641
+msgid "Generate a local secret (at least 32 chars) and use it in your .env."
+msgstr "Genera un secreto local (de 32 caracteres como mínimo) y úsalo en tu .env."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1649
+msgid "Generate a secret…"
+msgstr "Genera un secreto…"
 
 #: src/components/layout/EmptySceneState.tsx:516
 msgid "Get started"
@@ -682,6 +1196,14 @@ msgstr "Empezar"
 #: src/components/layout/FirstRunOnboarding.tsx:187
 msgid "Get Started"
 msgstr "Empezar"
+
+#: src/components/settings/BackupsSettingsTab.tsx:571
+msgid "GitHub OAuth popup opened."
+msgstr "Ventana de OAuth de GitHub abierta."
+
+#: src/features/slicing/components/SlicingPanel.tsx:2752
+msgid "Grey"
+msgstr "Gris"
 
 #: src/components/controls/ModelManagerPanel.tsx:753
 msgid "Group selected"
@@ -709,15 +1231,33 @@ msgstr "Atajos de teclado"
 msgid "I am the one who slices."
 msgstr "Yo soy el que lamina."
 
+#: src/components/settings/BackupsSettingsTab.tsx:1002
+msgid "I configured it"
+msgstr "Ya lo he configurado"
+
 #. Paraphrase of the Terminator's line from The Terminator (1984): "I'll be back."
 #: src/components/layout/EmptySceneState.tsx:92
 msgid "I'll be back. (Drop a file and I really will be.)"
 msgstr "Volveré. (Suelta un archivo y de verdad que volveré.)"
 
+#. placeholder {0}: item.id
+#: src/components/settings/BackupsSettingsTab.tsx:1301
+#: src/components/settings/LocalBackupsSettingsTab.tsx:941
+msgid "ID {0}"
+msgstr "ID {0}"
+
+#: src/features/slicing/components/SlicingPanel.tsx:153
+msgid "Idle"
+msgstr "Inactivo"
+
 #. Adaptation of the English proverb "Idle hands are the devil's workshop".
 #: src/components/layout/EmptySceneState.tsx:80
 msgid "Idle hands do no slicing."
 msgstr "Las manos ociosas no laminan."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1125
+msgid "If GitHub has a newer backup, DragonFruit pauses sync and asks whether to restore remote or force-push local."
+msgstr "Si GitHub tiene una copia más reciente, DragonFruit detiene la sincronización y te pregunta si restaurar la remota o forzar el envío de la local."
 
 #: src/components/layout/TopBar.tsx:870
 msgid "Import mesh…"
@@ -739,6 +1279,10 @@ msgstr "Importando tu archivo…"
 #: src/components/layout/EmptySceneState.tsx:85
 msgid "In space, no one can hear you slice."
 msgstr "En el espacio, nadie puede oírte laminar."
+
+#: src/features/slicing/components/SlicingPanel.tsx:2620
+msgid "Increase offline layer height"
+msgstr "Aumentar la altura de capa sin conexión"
 
 #: src/components/printers/PrinterVariantPickerModal.tsx:413
 msgid "Initial Setup"
@@ -780,6 +1324,10 @@ msgstr "¡Es una trampa! ...es broma, suelta tu STL."
 msgid "Join the Open Resin Alliance!"
 msgstr "¡Únete a la Open Resin Alliance!"
 
+#: src/features/slicing/components/SlicingPanel.tsx:3659
+msgid "Just Slice"
+msgstr "Solo laminar"
+
 #. Cancels the pending profile change and closes this warning dialog, leaving the previous profile selection untouched. Paired with the "Continue" button below.
 #: src/components/layout/TopBar.tsx:1292
 msgid "Keep current profiles"
@@ -801,6 +1349,21 @@ msgstr "Último guardado automático"
 msgid "Last autosave timestamp"
 msgstr "Fecha del último guardado"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:746
+msgid "Last backup on disk"
+msgstr "Última copia en disco"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1107
+#: src/components/settings/LocalBackupsSettingsTab.tsx:753
+msgid "Last local sync"
+msgstr "Última sincronización local"
+
+#. placeholder {0}: lastLocalSyncAt ? new Date(lastLocalSyncAt).toLocaleString() : _(msg`never`)
+#: src/components/settings/BackupsSettingsTab.tsx:1261
+#: src/components/settings/LocalBackupsSettingsTab.tsx:899
+msgid "Last local sync: {0}"
+msgstr "Última sincronización local: {0}"
+
 #: src/components/layout/EmptySceneState.tsx:687
 msgid "last opened {period} ago"
 msgstr "abierto hace {period}"
@@ -810,25 +1373,50 @@ msgstr "abierto hace {period}"
 msgid "last opened just now"
 msgstr "abierto ahora mismo"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1100
+msgid "Last remote backup"
+msgstr "Última copia remota"
+
 #. {timestamp} is a locale-formatted date and time.
-#: src/app/page.tsx:570
+#: src/app/page.tsx:571
 msgid "Last successful autosave: {timestamp}. Save your project manually."
 msgstr "Último guardado automático correcto: {timestamp}. Guarda tu proyecto a mano."
+
+#. placeholder {0}: material.layerHeightMm ?? '-'
+#. placeholder {1}: material.normalExposureSec ?? '-'
+#. placeholder {2}: material.bottomExposureSec ?? '-'
+#. placeholder {3}: material.bottomLayerCount ?? '-'
+#: src/components/settings/BackupsSettingsTab.tsx:1577
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1356
+msgid "Layer {0} mm • Normal {1}s • Bottom {2}s × {3}"
+msgstr "Capa {0} mm • Normal {1} s • Base {2} s × {3}"
+
+#: src/features/slicing/components/SlicingPanel.tsx:147
+msgid "Layer {layer} preview"
+msgstr "Vista previa de la capa {layer}"
 
 #: src/components/layout/EmptySceneState.tsx:100
 msgid "Layer 0 of 0. Living dangerously."
 msgstr "Capa 0 de 0. Viviendo al límite."
 
+#: src/features/slicing/components/SlicingPanel.tsx:2573
+msgid "Layer Height"
+msgstr "Altura de capa"
+
 #: src/components/controls/ModelStatsCard.tsx:528
 msgid "Layer profile:"
 msgstr "Perfil de capa:"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2569
+msgid "Layers"
+msgstr "Capas"
 
 #: src/components/controls/ModelStatsCard.tsx:541
 msgid "Layers:"
 msgstr "Capas:"
 
 #. View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1543
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1544
 msgid "Left"
 msgstr "Izq."
 
@@ -852,18 +1440,63 @@ msgstr "Carga complementos de perfiles de fabricante"
 msgid "Loading autosave status…"
 msgstr "Cargando el estado del guardado automático…"
 
-#: src/app/page.tsx:4291
+#: src/components/settings/BackupsSettingsTab.tsx:1073
+#: src/components/settings/LocalBackupsSettingsTab.tsx:727
+msgid "Loading backup status…"
+msgstr "Cargando el estado de las copias…"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1901
+msgid "Loading remote material…"
+msgstr "Cargando el material remoto…"
+
+#: src/app/page.tsx:4292
 msgid "Loading Scene…"
 msgstr "Cargando escena…"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1387
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1159
+msgid "Loading snapshot content…"
+msgstr "Cargando el contenido de la instantánea…"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1354
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1126
+msgid "Loading snapshot..."
+msgstr "Cargando la instantánea..."
 
 #. Shown in place of file size while a recent file is being reopened. Keep it short.
 #: src/components/layout/EmptySceneState.tsx:693
 msgid "loading…"
 msgstr "cargando…"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:467
+msgid "Local backup directory updated."
+msgstr "Carpeta local de copias actualizada."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:449
+msgid "Local backup sync failed."
+msgstr "Falló la copia local."
+
 #: src/components/settings/SettingsModal.tsx:1234
 msgid "Local on-disk backup snapshots"
 msgstr "Instantáneas de copia de seguridad en disco"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:716
+msgid "Local On-Disk Backups"
+msgstr "Copias locales en disco"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:691
+msgid "Local on-disk backups are currently available in the DragonFruit desktop build only."
+msgstr "Las copias locales en disco solo existen por ahora en la versión de escritorio de DragonFruit."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1395
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1167
+msgid "Local Storage"
+msgstr "Almacenamiento local"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1437
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1209
+msgid "LocalStorage Keys"
+msgstr "Claves de LocalStorage"
 
 #: src/components/settings/SettingsModal.tsx:1246
 msgid "Log file location and verbosity"
@@ -876,6 +1509,15 @@ msgstr "Registro"
 #: src/components/layout/FirstRunOnboarding.tsx:229
 msgid "Low-glare surfaces for late-night printing."
 msgstr "Superficies sin reflejos para imprimir de madrugada."
+
+#: src/features/slicing/components/SlicingPanel.tsx:135
+msgid "LUT: {curveName}"
+msgstr "LUT: {curveName}"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1268
+#: src/components/settings/LocalBackupsSettingsTab.tsx:906
+msgid "Manage Backups"
+msgstr "Gestionar las copias"
 
 #: src/components/settings/FleetManagement.tsx:125
 msgid "Managed Printers"
@@ -902,6 +1544,22 @@ msgstr "Marcar como geometría de soporte"
 msgid "Mark Recovery Clean"
 msgstr "Marcar la recuperación como limpia"
 
+#: src/features/slicing/components/SlicingPanel.tsx:2558
+msgid "Material"
+msgstr "Material"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3752
+msgid "Material anti-aliasing settings"
+msgstr "Ajustes de antialiasing del material"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3757
+msgid "Material Anti-Aliasing Settings"
+msgstr "Ajustes de antialiasing del material"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2795
+msgid "Material Profile Settings"
+msgstr "Ajustes del perfil de material"
+
 #: src/components/organisms/modals/PrintingModals.tsx:1859
 msgid "Material profile unavailable"
 msgstr "Perfil de material no disponible"
@@ -909,6 +1567,12 @@ msgstr "Perfil de material no disponible"
 #: src/components/controls/ModelStatsCard.tsx:513
 msgid "Material:"
 msgstr "Material:"
+
+#. placeholder {0}: filteredMaterialsForSelectedPrinter.length
+#: src/components/settings/BackupsSettingsTab.tsx:1553
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1332
+msgid "Materials for this printer ({0})"
+msgstr "Materiales de esta impresora ({0})"
 
 #: src/components/layout/TopBar.tsx:1200
 msgid "Maximize"
@@ -938,6 +1602,8 @@ msgid "Mesh files (.stl, .obj, .3mf)"
 msgstr "Archivos de malla (.stl, .obj, .3mf)"
 
 #. Unit suffix after a minutes input box. Keep it abbreviated.
+#: src/components/settings/BackupsSettingsTab.tsx:1255
+#: src/components/settings/LocalBackupsSettingsTab.tsx:893
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:262
 msgid "min"
 msgstr "min"
@@ -950,6 +1616,14 @@ msgstr "Minimizar"
 msgid "Minimize window"
 msgstr "Minimizar ventana"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:878
+msgid "Minutes between automatic local backups."
+msgstr "Minutos entre copias locales automáticas."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1240
+msgid "Minutes between automatic sync attempts."
+msgstr "Minutos entre intentos de sincronización automática."
+
 #: src/components/controls/TransformToolbar.tsx:32
 msgid "Mirror"
 msgstr "Reflejar"
@@ -957,6 +1631,10 @@ msgstr "Reflejar"
 #: src/components/controls/TransformToolbar.tsx:32
 msgid "Mirror across X, Y, or Z"
 msgstr "Reflejar en X, Y o Z"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2749
+msgid "Mode"
+msgstr "Modo"
 
 #: src/components/controls/ModelManagerPanel.tsx:886
 msgid "Model actions…"
@@ -1001,10 +1679,26 @@ msgstr "El escaneo de la red ha fallado."
 msgid "Network Settings"
 msgstr "Ajustes de red"
 
+#: src/features/slicing/components/SlicingPanel.tsx:2625
+msgid "Network unavailable."
+msgstr "Red no disponible."
+
 #. Matcap lighting preset: neither warm nor cool.
 #: src/features/shaders/mesh/types.ts:26
 msgid "Neutral"
 msgstr "Neutro"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1261
+#: src/components/settings/LocalBackupsSettingsTab.tsx:899
+msgid "never"
+msgstr "nunca"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1102
+#: src/components/settings/BackupsSettingsTab.tsx:1109
+#: src/components/settings/LocalBackupsSettingsTab.tsx:748
+#: src/components/settings/LocalBackupsSettingsTab.tsx:755
+msgid "Never"
+msgstr "Nunca"
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:299
 msgid "New version"
@@ -1015,13 +1709,17 @@ msgstr "Versión nueva"
 msgid "No {presetName} printers found on the network."
 msgstr "No se han encontrado impresoras {presetName} en la red."
 
+#: src/features/slicing/components/SlicingPanel.tsx:1564
+msgid "No AA"
+msgstr "Sin antialiasing"
+
 #: src/components/layout/TopBar.tsx:517
 #: src/components/layout/TopBar.tsx:524
 #: src/components/layout/TopBar.tsx:532
 msgid "No active printer"
 msgstr "Sin impresora activa"
 
-#: src/app/page.tsx:954
+#: src/app/page.tsx:955
 msgid "No autosave has succeeded this session. Save your project manually."
 msgstr "Ningún guardado automático ha funcionado en esta sesión. Guarda tu proyecto a mano."
 
@@ -1029,9 +1727,44 @@ msgstr "Ningún guardado automático ha funcionado en esta sesión. Guarda tu pr
 msgid "No autosave manifest found"
 msgstr "No hay ningún manifiesto de guardado automático"
 
+#: src/features/slicing/components/SlicingPanel.tsx:1571
+#: src/features/slicing/components/SlicingPanel.tsx:1573
+msgid "No Edge Blur"
+msgstr "Sin desenfoque de borde"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1583
+msgid "No Gray Map"
+msgstr "Sin mapa de grises"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:925
+msgid "No history snapshots found in this folder."
+msgstr "No hay instantáneas en esta carpeta."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1286
+msgid "No history snapshots yet. New syncs will appear here."
+msgstr "Todavía no hay instantáneas. Las nuevas sincronizaciones aparecerán aquí."
+
 #: src/components/layout/TopBar.tsx:998
 msgid "No IP"
 msgstr "Sin IP"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1448
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1220
+msgid "No LocalStorage keys found."
+msgstr "No se encontraron claves de LocalStorage."
+
+#: src/features/slicing/components/SlicingPanel.tsx:1909
+msgid "No material selected"
+msgstr "Ningún material seleccionado"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1557
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1336
+msgid "No materials linked to this printer."
+msgstr "No hay materiales asociados a esta impresora."
+
+#: src/features/slicing/components/SlicingPanel.tsx:2491
+msgid "No meshes loaded yet. Import a model first, then return to Slicing."
+msgstr "Todavía no hay mallas cargadas. Importa un modelo y vuelve al laminado."
 
 #: src/components/controls/ModelStatsCard.tsx:573
 #: src/components/controls/ModelStatsCard.tsx:574
@@ -1045,6 +1778,16 @@ msgstr "No hay modelos cargados"
 #: src/components/controls/ModelStatsCard.tsx:439
 msgid "No printer connected"
 msgstr "Sin impresora conectada"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1496
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1275
+msgid "No printer profiles."
+msgstr "No hay perfiles de impresora."
+
+#: src/features/slicing/components/SlicingPanel.tsx:2541
+#: src/features/slicing/components/SlicingPanel.tsx:2542
+msgid "No printer selected"
+msgstr "Ninguna impresora seleccionada"
 
 #: src/components/printers/PrinterVariantPickerModal.tsx:501
 #: src/components/settings/FleetManagement.tsx:327
@@ -1063,9 +1806,17 @@ msgstr "Todavía no has guardado ninguna impresora. Añade una abajo para empeza
 msgid "No recent files"
 msgstr "No hay archivos recientes"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:926
+msgid "No snapshots yet. Run \"Backup Now\" to create your first local snapshot."
+msgstr "Todavía no hay instantáneas. Usa «Copiar ahora» para crear la primera copia local."
+
 #: src/components/layout/EmptySceneState.tsx:99
 msgid "No supports needed for an empty scene."
 msgstr "No se necesitan soportes para una escena vacía."
+
+#: src/features/slicing/components/SlicingPanel.tsx:2054
+msgid "No visible models available for slicing."
+msgstr "No hay modelos visibles que laminar."
 
 #. View mode that colours the surface by its normal vector, for debugging. "Normal" is the geometry term, not the opposite of "unusual".
 #: src/features/shaders/mesh/types.ts:39
@@ -1077,10 +1828,32 @@ msgstr "Normales (depuración)"
 msgid "Not all slicers are created equal. This one's free!"
 msgstr "No todos los laminadores son iguales. ¡Este es gratis!"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1085
+msgid "Not connected"
+msgstr "Sin conectar"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1095
+msgid "Not created yet"
+msgstr "Aún sin crear"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:741
+msgid "Not selected"
+msgstr "Sin seleccionar"
+
 #: src/components/layout/EmptySceneState.tsx:73
 msgid "Nothing to see here. Yet."
 msgstr "Nada que ver aquí. Todavía."
 
+#: src/components/settings/BackupsSettingsTab.tsx:884
+msgid "OAuth .env template copied to clipboard."
+msgstr "Plantilla de .env para OAuth copiada al portapapeles."
+
+#: src/components/settings/BackupsSettingsTab.tsx:928
+msgid "OAuth setup"
+msgstr "Configurar OAuth"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1226
+#: src/components/settings/LocalBackupsSettingsTab.tsx:864
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:195
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:300
 msgid "OFF"
@@ -1093,6 +1866,16 @@ msgstr "NO"
 msgid "Offline"
 msgstr "Sin conexión"
 
+#: src/features/slicing/components/SlicingPanel.tsx:2604
+msgid "Offline Layer Height"
+msgstr "Altura de capa sin conexión"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2618
+msgid "Offline layer height override in micrometers"
+msgstr "Altura de capa sin conexión, en micrómetros"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1226
+#: src/components/settings/LocalBackupsSettingsTab.tsx:864
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:195
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:300
 msgid "ON"
@@ -1102,6 +1885,10 @@ msgstr "SÍ"
 #: src/components/controls/TransformToolbar.tsx:31
 msgid "On-Face"
 msgstr "Sobre cara"
+
+#: src/components/settings/BackupsSettingsTab.tsx:961
+msgid "Onboarding"
+msgstr "Primeros pasos"
 
 #. Paraphrase of Boromir's line from The Lord of the Rings: The Fellowship of the Ring (2001): "One does not simply walk into Mordor."
 #: src/components/layout/EmptySceneState.tsx:91
@@ -1113,6 +1900,10 @@ msgstr "No se importa una malla sin más... aunque en realidad sí, solo hay que
 #: src/components/settings/FleetManagement.tsx:192
 msgid "Online"
 msgstr "En línea"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1059
+msgid "Opaque"
+msgstr "Opaca"
 
 #. View mode: mesh edges drawn over a solid surface, so back edges stay hidden.
 #: src/features/shaders/mesh/types.ts:41
@@ -1128,7 +1919,16 @@ msgstr "Abrir la ubicación del guardado"
 msgid "Open DragonFruit menu"
 msgstr "Abrir menú de DragonFruit"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:790
+msgid "Open Folder"
+msgstr "Abrir la carpeta"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1631
+msgid "Open GitHub Developer Settings and create a new OAuth App."
+msgstr "Abre los ajustes de desarrollador de GitHub y crea una aplicación OAuth nueva."
+
 #: src/components/controls/ModelStatsCard.tsx:523
+#: src/features/slicing/components/SlicingPanel.tsx:2556
 msgid "Open material profiles"
 msgstr "Abrir los perfiles de material"
 
@@ -1142,6 +1942,7 @@ msgid "Open printer monitor"
 msgstr "Abrir monitor de impresora"
 
 #: src/components/controls/ModelStatsCard.tsx:508
+#: src/features/slicing/components/SlicingPanel.tsx:2538
 msgid "Open printer profiles"
 msgstr "Abrir los perfiles de impresora"
 
@@ -1149,9 +1950,17 @@ msgstr "Abrir los perfiles de impresora"
 msgid "Open scene…"
 msgstr "Abrir escena…"
 
+#: src/features/slicing/components/SlicingPanel.tsx:157
+msgid "Opening"
+msgstr "Abriendo"
+
 #: src/components/controls/TransformToolbar.tsx:31
 msgid "Orient flat against plate"
 msgstr "Orientar plano sobre la placa"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2587
+msgid "Output"
+msgstr "Salida"
 
 #. Name of the automatic folder collecting models that sit outside the build plate.
 #: src/components/controls/ModelManagerPanel.tsx:225
@@ -1162,6 +1971,15 @@ msgstr "Fuera de la plataforma"
 #: src/features/shaders/mesh/types.ts:43
 msgid "Overhang heatmap"
 msgstr "Mapa de calor de voladizos"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2797
+msgid "Override On"
+msgstr "Anulación activa"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1394
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1166
+msgid "Overview"
+msgstr "Resumen"
 
 #: src/components/ui/EditorContextMenu.tsx:83
 msgid "Paste"
@@ -1174,6 +1992,18 @@ msgstr "Valores de cámara por espacio de trabajo"
 #: src/components/layout/FirstRunOnboarding.tsx:200
 msgid "Pick what fits your workspace. You can change it anytime in Settings."
 msgstr "Elige el que mejor le vaya a tu espacio. Puedes cambiarlo cuando quieras en los ajustes."
+
+#: src/features/slicing/components/SlicingPanel.tsx:3972
+msgid "Pipeline Stage"
+msgstr "Fase del proceso"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1224
+msgid "Pipeline Units"
+msgstr "Unidades del proceso"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3996
+msgid "Plate preview · Layer {previewSelectedLayer}/{previewTotalLayers}"
+msgstr "Vista previa de la placa · Capa {previewSelectedLayer}/{previewTotalLayers}"
 
 #: src/components/layout/EmptySceneState.tsx:494
 msgid "Please hang tight while we prepare your scene."
@@ -1191,12 +2021,29 @@ msgstr "Compresión PNG y metadatos del motor"
 msgid "Prepare"
 msgstr "Preparar"
 
+#: src/features/slicing/components/SlicingPanel.tsx:154
+msgid "Preparing"
+msgstr "Preparando"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1037
+msgid "Preparing things…"
+msgstr "Preparando las cosas…"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1039
+msgid "Preparing your repository <0>{selectedBackupRepoName}</0>. This usually takes a moment."
+msgstr "Preparando tu repositorio <0>{selectedBackupRepoName}</0>. Suele tardar un momento."
+
+#: src/features/slicing/components/SlicingPanel.tsx:4015
+msgid "Preview for this layer is not available."
+msgstr "No hay vista previa de esta capa."
+
 #: src/components/settings/FleetManagement.tsx:134
 msgid "Primary printer assigned to this profile."
 msgstr "Impresora principal asignada a este perfil."
 
 #. Static field-label shown above the printer name in the topbar badge (like "Printer: <name>"), not an instruction. Only shown when a profile has a single printer, so there is no fleet to pick from.
 #: src/components/layout/TopBar.tsx:513
+#: src/features/slicing/components/SlicingPanel.tsx:2540
 msgid "Printer"
 msgstr "Impresora"
 
@@ -1238,6 +2085,16 @@ msgstr "Perfil de impresora: {0}"
 msgid "Printer profile: {profileName} • Active printer: {printerName}"
 msgstr "Perfil de impresora: {profileName} • Impresora activa: {printerName}"
 
+#. placeholder {0}: parsedProfiles.printerProfiles.length
+#: src/components/settings/BackupsSettingsTab.tsx:1492
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1271
+msgid "Printer Profiles ({0})"
+msgstr "Perfiles de impresora ({0})"
+
+#: src/features/slicing/components/SlicingPanel.tsx:782
+msgid "Printer-aware smoothing."
+msgstr "Suavizado según la impresora."
+
 #: src/components/controls/ModelStatsCard.tsx:498
 msgid "Printer:"
 msgstr "Impresora:"
@@ -1246,18 +2103,58 @@ msgstr "Impresora:"
 msgid "Printing"
 msgstr "Imprimir"
 
+#: src/components/settings/BackupsSettingsTab.tsx:921
+msgid "Private GitHub Backups"
+msgstr "Copias privadas en GitHub"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1095
+msgid "Private repo ready"
+msgstr "Repositorio privado listo"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1396
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1168
+msgid "Profiles"
+msgstr "Perfiles"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3674
+msgid "Profiling AA…"
+msgstr "Perfilando el antialiasing…"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3982
+msgid "Progress"
+msgstr "Progreso"
+
 #: src/components/settings/SettingsModal.tsx:1174
 msgid "Projection and navigation behavior"
 msgstr "Proyección y comportamiento de la navegación"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1129
+#: src/components/settings/LocalBackupsSettingsTab.tsx:812
+msgid "Quick actions"
+msgstr "Acciones rápidas"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1397
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1169
+msgid "Raw JSON"
+msgstr "JSON en crudo"
+
+#: src/features/slicing/components/SlicingPanel.tsx:780
+msgid "Raw masks only."
+msgstr "Solo máscaras en crudo."
 
 #. "Slice"/"re-slice" is the 3D-printing step that converts a model into printer instructions (G-code). This dialog warns that switching printer profile invalidates the already-sliced file.
 #: src/components/layout/TopBar.tsx:1258
 msgid "Re-slice required after profile change"
 msgstr "Es necesario volver a laminar tras cambiar de perfil"
 
-#: src/app/page.tsx:4292
+#: src/app/page.tsx:4293
 msgid "Reading autosaved scene…"
 msgstr "Leyendo la escena guardada automáticamente…"
+
+#: src/features/slicing/components/SlicingPanel.tsx:156
+#: src/features/slicing/components/SlicingPanel.tsx:3962
+msgid "Ready"
+msgstr "Listo"
 
 #: src/components/layout/EmptySceneState.tsx:67
 msgid "Ready for your next adventure?"
@@ -1287,11 +2184,17 @@ msgstr "Avisar al arrancar"
 msgid "Recovery state"
 msgstr "Estado de recuperación"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1278
 #: src/components/settings/FleetManagement.tsx:218
 #: src/components/settings/FleetManagement.tsx:219
+#: src/components/settings/LocalBackupsSettingsTab.tsx:916
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:320
 msgid "Refresh"
 msgstr "Actualizar"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:834
+msgid "Refresh History"
+msgstr "Actualizar el historial"
 
 #. placeholder {0}: info.version
 #: src/features/updater/GlobalUpdateIndicator.tsx:365
@@ -1305,6 +2208,22 @@ msgstr "Publicada el {releaseDate}"
 #: src/features/updater/GlobalUpdateIndicator.tsx:226
 msgid "Remind me later"
 msgstr "Recordármelo más tarde"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1902
+msgid "Remote"
+msgstr "Remoto"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1170
+msgid "Remote backup is newer than your local snapshot. Choose how to resolve this sync."
+msgstr "La copia remota es más reciente que tu instantánea local. Elige cómo resolver la sincronización."
+
+#: src/components/settings/BackupsSettingsTab.tsx:551
+msgid "Remote backup is newer. Choose restore or force sync."
+msgstr "La copia remota es más reciente. Elige restaurar o forzar la sincronización."
+
+#: src/features/slicing/components/SlicingPanel.tsx:2607
+msgid "Remote material unavailable."
+msgstr "Material remoto no disponible."
 
 #: src/components/settings/FleetManagement.tsx:241
 msgid "Remove"
@@ -1340,25 +2259,61 @@ msgstr "Reparar"
 msgid "Repair mesh…"
 msgstr "Reparar la malla…"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1090
+msgid "Repository"
+msgstr "Repositorio"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1050
+msgid "Repository <0>{selectedBackupRepoName}</0> is ready. Run your first backup to finish onboarding."
+msgstr "El repositorio <0>{selectedBackupRepoName}</0> está listo. Haz tu primera copia para terminar."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1615
+msgid "Required for self-compiled builds that do not ship with backup OAuth env values."
+msgstr "Necesario en compilaciones propias que no traen las variables de OAuth para las copias."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:734
+msgid "Resolving..."
+msgstr "Resolviendo..."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1635
+msgid "Restart DragonFruit, then click <0>I configured it</0>."
+msgstr "Reinicia DragonFruit y pulsa <0>Ya lo he configurado</0>."
+
 #: src/components/layout/TopBar.tsx:1200
 msgid "Restore"
 msgstr "Restaurar"
 
-#: src/app/page.tsx:4323
-#: src/app/page.tsx:4334
+#: src/components/settings/BackupsSettingsTab.tsx:1367
+msgid "Restore as Current"
+msgstr "Restaurar como actual"
+
+#: src/app/page.tsx:4324
+#: src/app/page.tsx:4335
 msgid "Restore Failed"
 msgstr "Error al restaurar"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1184
+msgid "Restore Remote"
+msgstr "Restaurar la remota"
 
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:175
 msgid "Restore Scene"
 msgstr "Restaurar escena"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1051
+msgid "Restore Snapshot"
+msgstr "Restaurar la instantánea"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1139
+msgid "Restore to App"
+msgstr "Restaurar en la aplicación"
 
 #: src/components/layout/TopBar.tsx:1201
 msgid "Restore window"
 msgstr "Restaurar ventana"
 
 #. View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1542
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1543
 msgid "Right"
 msgstr "Dcha."
 
@@ -1367,9 +2322,29 @@ msgstr "Dcha."
 msgid "Roads? Where we're printing, we don't need roads."
 msgstr "¿Carreteras? Donde imprimimos, no necesitamos carreteras."
 
+#: src/components/settings/BackupsSettingsTab.tsx:1131
+msgid "Run a sync, verify repository readiness, or disconnect this GitHub account."
+msgstr "Sincroniza, comprueba que el repositorio esté listo o desconecta esta cuenta de GitHub."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1060
+msgid "Run first backup now"
+msgstr "Hacer la primera copia ahora"
+
 #: src/components/layout/TopBar.tsx:1074
 msgid "Run slicing in Export to unlock Printing preview"
 msgstr "Lamina en Exportar para desbloquear la vista previa de Impresión"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3960
+msgid "Running"
+msgstr "En curso"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2750
+msgid "Samples"
+msgstr "Muestras"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3803
+msgid "Save Material"
+msgstr "Guardar el material"
 
 #: src/components/layout/TopBar.tsx:808
 msgid "Save scene"
@@ -1378,6 +2353,10 @@ msgstr "Guardar escena"
 #: src/components/layout/TopBar.tsx:828
 msgid "Save scene as…"
 msgstr "Guardar escena como…"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:806
+msgid "Save snapshots to your local backup folder, then review and restore any point-in-time snapshot in-app."
+msgstr "Guarda instantáneas en tu carpeta local de copias y revisa o restaura cualquiera de ellas desde la propia aplicación."
 
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:139
 msgid "Saved beside your project"
@@ -1445,6 +2424,33 @@ msgstr "s"
 msgid "Select"
 msgstr "Seleccionar"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1476
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1248
+msgid "Select a key"
+msgstr "Elige una clave"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1481
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1260
+msgid "Select a LocalStorage key from the left to view its value."
+msgstr "Elige una clave de LocalStorage a la izquierda para ver su valor."
+
+#: src/features/slicing/components/SlicingPanel.tsx:2626
+msgid "Select a matching material during import instead."
+msgstr "Elige un material equivalente al importar."
+
+#: src/features/slicing/components/SlicingPanel.tsx:2048
+msgid "Select a material profile first."
+msgstr "Elige antes un perfil de material."
+
+#: src/features/slicing/components/SlicingPanel.tsx:2043
+msgid "Select a printer profile first."
+msgstr "Elige antes un perfil de impresora."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1534
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1313
+msgid "Select a printer profile to view details."
+msgstr "Elige un perfil de impresora para ver los detalles."
+
 #: src/components/printers/PrinterVariantPickerModal.tsx:495
 msgid "Select a printer to detect its model."
 msgstr "Selecciona una impresora para detectar su modelo."
@@ -1472,24 +2478,69 @@ msgstr "Seleccionar perfil de impresora"
 msgid "Select profile"
 msgstr "Seleccionar perfil"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:739
+msgid "Selected directory"
+msgstr "Carpeta elegida"
+
 #: src/components/layout/TopBar.tsx:756
 #: src/components/layout/TopBar.tsx:757
 msgid "Selected printer is offline"
 msgstr "La impresora seleccionada está sin conexión"
 
 #. Shown while dragging a selection rectangle right to left, which takes every object the rectangle touches. Mirrors the CAD convention; keep it on one short line.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3014
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3075
 msgid "Selection Mode: Contact (Right to Left)"
 msgstr "Modo de selección: contacto (de derecha a izquierda)"
 
 #. Shown while dragging a selection rectangle left to right, which takes only the objects the rectangle fully encloses. Mirrors the CAD convention; keep it on one short line.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3018
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3079
 msgid "Selection Mode: Enclosed (Left to Right)"
 msgstr "Modo de selección: volumen completo (de izquierda a derecha)"
 
 #: src/components/settings/SettingsModal.tsx:1240
 msgid "Send sliced files to UVTools for analysis"
 msgstr "Envía los archivos laminados a UVTools para analizarlos"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3658
+msgid "Send to UVTools"
+msgstr "Enviar a UVTools"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3822
+msgid "Session anti-aliasing override"
+msgstr "Anulación de antialiasing de la sesión"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3827
+msgid "Session Anti-Aliasing Override"
+msgstr "Anulación de antialiasing de la sesión"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1064
+msgid "Session Override active"
+msgstr "Anulación de sesión activa"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2813
+msgid "Session Overrides"
+msgstr "Anulaciones de sesión"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1633
+msgid "Set <0>Authorization callback URL</0> to <1>{oauthCallbackUrl}</1>."
+msgstr "Pon <1>{oauthCallbackUrl}</1> en <0>Authorization callback URL</0>."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1632
+msgid "Set <0>Homepage URL</0> to <1>{oauthHomepageUrl}</1>."
+msgstr "Pon <1>{oauthHomepageUrl}</1> en <0>Homepage URL</0>."
+
+#: src/components/settings/BackupsSettingsTab.tsx:971
+#: src/components/settings/BackupsSettingsTab.tsx:1613
+msgid "Set up GitHub OAuth"
+msgstr "Configurar OAuth de GitHub"
+
+#: src/components/settings/BackupsSettingsTab.tsx:993
+msgid "Set up OAuth"
+msgstr "Configurar OAuth"
+
+#: src/components/settings/BackupsSettingsTab.tsx:962
+msgid "Set up private backups"
+msgstr "Configura las copias privadas"
 
 #: src/components/layout/TopBar.tsx:1152
 #: src/components/layout/TopBar.tsx:1153
@@ -1499,6 +2550,10 @@ msgstr "Ajustes"
 #: src/components/settings/SettingsModal.tsx:1180
 msgid "Shader, rendering options, and selection behavior"
 msgstr "Sombreado, opciones de renderizado y selección"
+
+#: src/features/slicing/components/SlicingPanel.tsx:781
+msgid "Sharp"
+msgstr "Nítido"
 
 #. Row label on the model details card: number of separate connected surfaces ("shells"/bodies) in the mesh.
 #: src/components/controls/ModelStatsCard.tsx:584
@@ -1523,7 +2578,25 @@ msgstr "Ver las notas de la versión"
 msgid "Show restore/discard prompt if a dirty autosave is detected at startup."
 msgstr "Muestra el aviso de restaurar o descartar si al arrancar hay un guardado automático pendiente."
 
+#: src/features/slicing/components/SlicingPanel.tsx:3657
+msgid "Slice & Print"
+msgstr "Laminar e imprimir"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3656
+msgid "Slice & Upload"
+msgstr "Laminar y subir"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3655
+msgid "Slice to File"
+msgstr "Laminar a fichero"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1221
+msgid "Sliced Layers"
+msgstr "Capas laminadas"
+
 #: src/components/settings/SettingsModal.tsx:1185
+#: src/features/slicing/components/SlicingPanel.tsx:2484
+#: src/features/slicing/components/SlicingPanel.tsx:2522
 msgid "Slicing"
 msgstr "Laminado"
 
@@ -1531,14 +2604,55 @@ msgstr "Laminado"
 msgid "Slicing in progress. Topbar actions are temporarily disabled."
 msgstr "Laminado en curso. Las acciones de la barra superior están temporalmente deshabilitadas."
 
+#: src/features/slicing/components/SlicingPanel.tsx:3935
+msgid "Slicing Plate"
+msgstr "Laminando la placa"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3916
+msgid "Slicing progress"
+msgstr "Progreso del laminado"
+
+#: src/features/slicing/components/SlicingPanel.tsx:3674
+msgid "Slicing…"
+msgstr "Laminando…"
+
 #: src/components/controls/TransformToolbar.tsx:35
+#: src/features/slicing/components/SlicingPanel.tsx:783
 msgid "Smooth"
 msgstr "Suavizar"
+
+#. placeholder {0}: new Date(Number(selectedHistoryId)).toLocaleString()
+#: src/components/settings/BackupsSettingsTab.tsx:1353
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1125
+msgid "Snapshot {0}"
+msgstr "Instantánea del {0}"
+
+#. placeholder {0}: confirmRestoreId ? new Date(Number(confirmRestoreId)).toLocaleString() : ''
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1054
+msgid "Snapshot from {0}"
+msgstr "Instantánea del {0}"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1425
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1197
+msgid "Snapshot ID"
+msgstr "ID de la instantánea"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:570
+msgid "Snapshot restored to current local backup state."
+msgstr "Instantánea restaurada como estado actual de la copia local."
 
 #. View mode: matte clay-like surface with scene lighting.
 #: src/features/shaders/mesh/types.ts:37
 msgid "Soft clay (lit)"
 msgstr "Arcilla suave (iluminada)"
+
+#: src/features/slicing/components/SlicingPanel.tsx:783
+msgid "Soft organic curves."
+msgstr "Curvas orgánicas suaves."
+
+#: src/features/slicing/components/SlicingPanel.tsx:3987
+msgid "Speed"
+msgstr "Velocidad"
 
 #. Context-menu command that detaches the generated support scaffolding at the clicked point. "Supports" = the temporary print scaffolding structures, not customer support.
 #: src/components/ui/EditorContextMenu.tsx:85
@@ -1570,7 +2684,7 @@ msgstr "Tamaño del STL:"
 msgid "Support"
 msgstr "Soportes"
 
-#: src/app/page.tsx:2219
+#: src/app/page.tsx:2220
 msgid "Supports"
 msgstr "Soportes"
 
@@ -1583,16 +2697,25 @@ msgstr "Soportes del modelo"
 msgid "Suspiciously empty in here."
 msgstr "Sospechosamente vacío aquí dentro."
 
-#: src/app/page.tsx:4336
+#: src/components/settings/BackupsSettingsTab.tsx:1239
+#: src/components/settings/LocalBackupsSettingsTab.tsx:877
+msgid "Sync interval"
+msgstr "Intervalo de sincronización"
+
+#: src/features/slicing/components/SlicingPanel.tsx:2815
+msgid "Temporary"
+msgstr "Temporal"
+
+#: src/app/page.tsx:4337
 msgid "The autosave recovery file could not be found."
 msgstr "No se encuentra el archivo de recuperación."
 
-#: src/app/page.tsx:4324
-#: src/app/page.tsx:4337
+#: src/app/page.tsx:4325
+#: src/app/page.tsx:4338
 msgid "The autosaved recovery file is corrupted or unreadable."
 msgstr "El archivo de recuperación está dañado o no se puede leer."
 
-#: src/app/page.tsx:951
+#: src/app/page.tsx:952
 msgid "The background recovery save failed repeatedly."
 msgstr "El guardado de recuperación en segundo plano ha fallado varias veces seguidas."
 
@@ -1613,9 +2736,13 @@ msgstr "La impresora ha informado de esta variante."
 msgid "The resin is ready. Are you?"
 msgstr "La resina está lista. ¿Y tú?"
 
-#: src/app/page.tsx:4325
+#: src/app/page.tsx:4326
 msgid "The scene importer rejected or could not parse the autosave data."
 msgstr "El importador de escenas rechazó los datos del guardado automático o no pudo interpretarlos."
+
+#: src/features/slicing/components/SlicingPanel.tsx:3643
+msgid "The selected Machine does not support AA at this time."
+msgstr "La máquina elegida no admite antialiasing por ahora."
 
 #. Paraphrase of "The spice must flow" from Dune (novel by Frank Herbert, 1965; films 1984 and 2021).
 #: src/components/layout/EmptySceneState.tsx:94
@@ -1630,6 +2757,14 @@ msgstr "Ha fallado la descarga o la instalación de la actualización."
 msgid "Theme and custom UI token customization"
 msgstr "Tema y personalización de los colores de la interfaz"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:977
+msgid "This action cannot be undone."
+msgstr "Esta acción no se puede deshacer."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1013
+msgid "This backup snapshot will be permanently removed from disk."
+msgstr "Esta instantánea se borrará del disco para siempre."
+
 #: src/components/printers/PrinterVariantPickerModal.tsx:461
 msgid "This model is already added."
 msgstr "Este modelo ya está añadido."
@@ -1642,11 +2777,19 @@ msgstr "Esta impresora no tiene opciones de configuración."
 msgid "This scene is aggressively unoccupied."
 msgstr "Esta escena está agresivamente desocupada."
 
+#: src/components/settings/BackupsSettingsTab.tsx:976
+msgid "This self-compiled build needs your own GitHub OAuth app in .env before sign-in can work."
+msgstr "Esta compilación propia necesita tu propia aplicación OAuth de GitHub en el .env antes de poder iniciar sesión."
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1075
+msgid "This will overwrite your current app settings and profiles with the data from this snapshot, then reload the app. This action cannot be undone."
+msgstr "Esto sobrescribirá tus ajustes y perfiles actuales con los datos de esta instantánea y recargará la aplicación. No se puede deshacer."
+
 #: src/components/layout/EmptySceneState.tsx:70
 msgid "Time to make something real."
 msgstr "Es hora de crear algo real."
 
-#: src/app/page.tsx:2208
+#: src/app/page.tsx:2209
 msgid "Toggle curve"
 msgstr "Alternar curva"
 
@@ -1656,7 +2799,7 @@ msgid "Toon"
 msgstr "Dibujo animado"
 
 #. View cube face (seen from above), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1544
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1545
 msgid "Top"
 msgstr "Arriba"
 
@@ -1690,6 +2833,18 @@ msgstr "Desagrupar la selección"
 msgid "Unknown"
 msgstr "Desconocida"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1574
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1353
+msgid "Unknown brand"
+msgstr "Marca desconocida"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1521
+#: src/components/settings/BackupsSettingsTab.tsx:1540
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1300
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1319
+msgid "Unknown manufacturer"
+msgstr "Fabricante desconocido"
+
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:92
 msgid "Unsaved Scene Found"
 msgstr "Hay una escena sin guardar"
@@ -1718,13 +2873,37 @@ msgstr "Actualización fallida"
 msgid "Updates"
 msgstr "Actualizaciones"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:770
+msgid "Use Default Path"
+msgstr "Usar la ruta por defecto"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1024
+msgid "Use existing repo"
+msgstr "Usar el que ya existe"
+
 #: src/components/layout/EmptySceneState.tsx:550
 msgid "Use without printer"
 msgstr "Usar sin impresora"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:481
+msgid "Using default local backup directory."
+msgstr "Usando la carpeta local de copias por defecto."
+
+#: src/components/settings/BackupsSettingsTab.tsx:20
+msgid "Using existing repository: {repoName}"
+msgstr "Usando el repositorio existente: {repoName}"
+
+#: src/features/slicing/components/SlicingPanel.tsx:1066
+msgid "Using Material Settings"
+msgstr "Usando los ajustes del material"
+
 #: src/components/settings/SettingsModal.tsx:1239
 msgid "UVTools"
 msgstr "UVTools"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1151
+msgid "Verify Repo"
+msgstr "Comprobar el repositorio"
 
 #: src/components/settings/SettingsModal.tsx:1258
 msgid "Version info and project details"
@@ -1734,9 +2913,26 @@ msgstr "Versión y detalles del proyecto"
 msgid "View mode"
 msgstr "Modo de vista"
 
+#: src/components/settings/BackupsSettingsTab.tsx:936
+msgid "View privacy commitments"
+msgstr "Ver los compromisos de privacidad"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1310
+#: src/components/settings/LocalBackupsSettingsTab.tsx:950
+msgid "View snapshot"
+msgstr "Ver la instantánea"
+
 #: src/components/controls/ViewTypeDropdown.tsx:85
 msgid "View type"
 msgstr "Tipo de vista"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:907
+msgid "View, restore, or delete older snapshots from disk."
+msgstr "Consulta, restaura o elimina instantáneas antiguas del disco."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1269
+msgid "View, restore, or delete older snapshots from your private repository."
+msgstr "Consulta, restaura o elimina instantáneas antiguas de tu repositorio privado."
 
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:209
 msgid "Wait this long after edits before autosaving."
@@ -1746,10 +2942,22 @@ msgstr "Tiempo que espera tras una edición antes de guardar automáticamente."
 msgid "Waiting for first layer adhesion... to reality."
 msgstr "Esperando la adhesión de la primera capa... a la realidad."
 
+#: src/components/settings/BackupsSettingsTab.tsx:1043
+msgid "Waiting for repository check…"
+msgstr "Esperando la comprobación del repositorio…"
+
 #. Matcap lighting preset with a warm (orange) tint.
 #: src/features/shaders/mesh/types.ts:28
 msgid "Warm"
 msgstr "Cálido"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1016
+msgid "We found <0>{defaultRepoName}</0>. Choose whether to keep using it or create a fresh repository."
+msgstr "Hemos encontrado <0>{defaultRepoName}</0>. Elige si quieres seguir usándolo o crear uno nuevo."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1008
+msgid "We’ll open a secure GitHub popup to connect your account."
+msgstr "Abriremos una ventana segura de GitHub para conectar tu cuenta."
 
 #. Paraphrase of Chief Brody's line from Jaws (1975): "You're gonna need a bigger boat."
 #: src/components/layout/EmptySceneState.tsx:90
@@ -1796,9 +3004,17 @@ msgstr "Espacios de trabajo"
 msgid "X-ray"
 msgstr "Rayos X"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1098
+msgid "Yes, restore"
+msgstr "Sí, restaurar"
+
 #: src/components/layout/TopBar.tsx:1283
 msgid "You can continue to adjust profiles, but you’ll be prompted to re-slice before printing with the updated settings."
 msgstr "Puedes seguir ajustando los perfiles, pero se te pedirá que vuelvas a laminar antes de imprimir con los ajustes actualizados."
+
+#: src/components/settings/BackupsSettingsTab.tsx:948
+msgid "You can disconnect GitHub at any time. OAuth access is used only for repository checks and syncing backup files."
+msgstr "Puedes desconectar GitHub cuando quieras. El acceso OAuth solo se usa para comprobar el repositorio y sincronizar los ficheros de copia."
 
 #. Paraphrase of Gandalf's line from The Lord of the Rings: The Fellowship of the Ring (2001): "You shall not pass!"
 #: src/components/layout/EmptySceneState.tsx:86
