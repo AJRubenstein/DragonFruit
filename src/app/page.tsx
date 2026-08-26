@@ -72,6 +72,17 @@ import { ScanProgressBar } from '@/components/scene/ScanProgressBar';
 import { SliceMetricsDebugModal } from '@/features/slicing/components/SliceMetricsDebugModal';
 import { MeshSmoothingSettingsPanel } from '@/features/mesh-smoothing/MeshSmoothingSettingsPanel';
 import { MeshSmoothingBrushCursor } from '@/features/mesh-smoothing/MeshSmoothingBrushCursor';
+import {
+  dispatchCutModelAction,
+  dispatchDeleteModelAction,
+  resolveModelActionTargetIds,
+} from '@/features/scene/modelActionTargets';
+import { buildLiftDropUpdates } from '@/features/scene/selectionLiftDrop';
+import {
+  buildCenterSelectionUpdates,
+  buildSelectionPositionUpdates,
+  getSelectionPositionOrigin,
+} from '@/features/scene/selectionPosition';
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
@@ -785,6 +796,12 @@ export default function Home() {
     supportAfter?: ReturnType<typeof getSupportSnapshot>;
     kickstandBefore?: ReturnType<typeof getKickstandSnapshot>;
     kickstandAfter?: ReturnType<typeof getKickstandSnapshot>;
+  } | null>(null);
+  const pendingSelectionPositionHistoryRef = React.useRef<{
+    targetIdsKey: string;
+    beforeTransforms: Array<{ id: string; transform: ModelTransform }>;
+    supportBefore: ReturnType<typeof getSupportSnapshot>;
+    kickstandBefore: ReturnType<typeof getKickstandSnapshot>;
   } | null>(null);
   const transformHistoryCommitRequestedRef = React.useRef(false);
   const transformHistoryCommitNonceRef = React.useRef(0);
@@ -2233,7 +2250,11 @@ export default function Home() {
     const canSplitSupports = !!activeModel?.geometry.meshDefects?.nativeRepairReport?.model_triangle_count;
     const canMergeSupports = scene.selectedModelIds.length === 2;
 
-    const hasTargetModel = !!scene.activeModelId || scene.selectedModelIds.length > 0;
+    const hasTargetModel = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    }).length > 0;
     const canLink = scene.selectedModelIds.length >= 2;
     const selectedOrActiveModels = scene.selectedModelIds.length > 0
       ? scene.models.filter((m) => scene.selectedModelIds.includes(m.id))
@@ -2241,7 +2262,8 @@ export default function Home() {
     const canUnlink = selectedOrActiveModels.some((m) => !!m.linkGroupId);
 
     return [
-      ...(!scene.activeModelId ? (['delete', 'cut', 'copy', 'repair'] as const) : []),
+      ...(!hasTargetModel ? (['delete'] as const) : []),
+      ...(!scene.activeModelId ? (['cut', 'copy', 'repair'] as const) : []),
       ...(!hasTargetModel ? (['mark-as-support-geometry', 'mark-as-model-geometry'] as const) : []),
       ...(!canLink ? (['link-models'] as const) : []),
       ...(!canUnlink ? (['unlink-models'] as const) : []),
@@ -5930,9 +5952,11 @@ export default function Home() {
         return;
       }
       case 'delete':
-        if (scene.activeModelId) {
-          scene.deleteModel(scene.activeModelId);
-        }
+        dispatchDeleteModelAction({
+          modelIds: scene.models.map((model) => model.id),
+          selectedModelIds: scene.selectedModelIds,
+          activeModelId: scene.activeModelId,
+        }, scene.deleteModels);
         break;
       case 'copy':
         if (scene.selectedModelIds.length > 0) {
@@ -5942,9 +5966,11 @@ export default function Home() {
         }
         break;
       case 'cut':
-        if (scene.activeModelId) {
-          scene.cutModel(scene.activeModelId);
-        }
+        dispatchCutModelAction({
+          modelIds: scene.models.map((model) => model.id),
+          selectedModelIds: scene.selectedModelIds,
+          activeModelId: scene.activeModelId,
+        }, scene.cutSelectedModels);
         break;
       case 'paste': {
         const pastedIds = scene.pasteCopiedModelsAutoArrange(arrangeSpacingMm);
@@ -7892,6 +7918,17 @@ export default function Home() {
   }, [scene.mode, transformMgr.transformMode, scene.models, scene.activeModelId, scene.selectedModelIds, scene.selectModel]);
 
   React.useEffect(() => {
+    if (scene.mode !== 'prepare') return;
+    if (transformMgr.transformMode !== 'mirror') return;
+    if (!scene.activeModelId) return;
+    if (
+      scene.selectedModelIds.length === 1
+      && scene.selectedModelIds[0] === scene.activeModelId
+    ) return;
+    scene.selectModel(scene.activeModelId, 'single');
+  }, [scene.mode, transformMgr.transformMode, scene.activeModelId, scene.selectedModelIds, scene.selectModel]);
+
+  React.useEffect(() => {
     if (!hasActivePrinterProfile) return;
     if (!allowPrepareWithoutPrinter) return;
     setAllowPrepareWithoutPrinter(false);
@@ -8507,6 +8544,162 @@ export default function Home() {
     }
     transformMgr.setAutoLift(enabled);
   }, [scene, transformMgr]);
+
+  const commitPendingSelectionPositionHistory = React.useCallback(() => {
+    const pending = pendingSelectionPositionHistoryRef.current;
+    if (!pending) return;
+
+    pendingSelectionPositionHistoryRef.current = null;
+    const afterSupportSnapshot = captureTransformSupportSnapshot();
+    scene.commitModelTransformsHistory(
+      pending.beforeTransforms,
+      'Move Selected Models',
+      {
+        includeSupportState: true,
+        supportBefore: pending.supportBefore,
+        supportAfter: afterSupportSnapshot.support,
+        kickstandBefore: pending.kickstandBefore,
+        kickstandAfter: afterSupportSnapshot.kickstand,
+      },
+    );
+  }, [captureTransformSupportSnapshot, scene]);
+
+  const applySelectionPositionUpdates = React.useCallback((
+    updates: Array<{ id: string; transform: ModelTransform }>,
+    options?: { pushHistory?: boolean },
+  ) => {
+    if (updates.length === 0) return;
+
+    if (options?.pushHistory !== false) invalidatePendingTransformHistory();
+    const result = scene.updateModelTransforms(updates, options);
+    if (!result.updated) return;
+
+    const activeUpdate = scene.activeModelId
+      ? updates.find((update) => update.id === scene.activeModelId)
+      : undefined;
+    if (activeUpdate) {
+      suppressTransformPersistenceCycles();
+      const { position, rotation, scale } = activeUpdate.transform;
+      transformMgr.transformHook.setPosition(position.x, position.y, position.z);
+      transformMgr.transformHook.setRotation(rotation.x, rotation.y, rotation.z);
+      transformMgr.transformHook.setScale(scale.x, scale.y, scale.z);
+    }
+
+    setSupportRenderRefreshNonce((value) => value + 1);
+  }, [invalidatePendingTransformHistory, scene, suppressTransformPersistenceCycles, transformMgr.transformHook]);
+
+  const handlePositionSelectedModels = React.useCallback((x: number, y: number, z: number) => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    if (targetIds.length === 0) return;
+
+    const targetIdsKey = targetIds.join('\0');
+    if (
+      pendingSelectionPositionHistoryRef.current
+      && pendingSelectionPositionHistoryRef.current.targetIdsKey !== targetIdsKey
+    ) {
+      commitPendingSelectionPositionHistory();
+    }
+    if (!pendingSelectionPositionHistoryRef.current) {
+      invalidatePendingTransformHistory();
+      const beforeSupportSnapshot = captureTransformSupportSnapshot();
+      pendingSelectionPositionHistoryRef.current = {
+        targetIdsKey,
+        beforeTransforms: scene.models.map((model) => ({
+          id: model.id,
+          transform: {
+            position: model.transform.position.clone(),
+            rotation: model.transform.rotation.clone(),
+            scale: model.transform.scale.clone(),
+          },
+        })),
+        supportBefore: beforeSupportSnapshot.support,
+        kickstandBefore: beforeSupportSnapshot.kickstand,
+      };
+    }
+
+    applySelectionPositionUpdates(buildSelectionPositionUpdates(
+      scene.models,
+      targetIds,
+      new THREE.Vector3(x, y, z),
+    ), { pushHistory: false });
+  }, [
+    applySelectionPositionUpdates,
+    captureTransformSupportSnapshot,
+    commitPendingSelectionPositionHistory,
+    invalidatePendingTransformHistory,
+    scene.activeModelId,
+    scene.models,
+    scene.selectedModelIds,
+  ]);
+
+  const selectionPositionOrigin = React.useMemo(() => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    return getSelectionPositionOrigin(scene.models, targetIds)
+      ?? transformMgr.transform.position;
+  }, [scene.activeModelId, scene.models, scene.selectedModelIds, transformMgr.transform.position]);
+
+  const handleCenterSelectedModels = React.useCallback(() => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    const targetCenter = scene.view3dSettings.originMode === 'front_left'
+      ? new THREE.Vector2(scene.view3dSettings.widthMm * 0.5, scene.view3dSettings.depthMm * 0.5)
+      : new THREE.Vector2(0, 0);
+    applySelectionPositionUpdates(buildCenterSelectionUpdates(scene.models, targetIds, targetCenter));
+  }, [
+    applySelectionPositionUpdates,
+    scene.activeModelId,
+    scene.models,
+    scene.selectedModelIds,
+    scene.view3dSettings.depthMm,
+    scene.view3dSettings.originMode,
+    scene.view3dSettings.widthMm,
+  ]);
+
+  const placeSelectedModelsAtWorldZ = React.useCallback((targetLowestWorldZ: number) => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    const updates = buildLiftDropUpdates(scene.models, targetIds, targetLowestWorldZ);
+    if (updates.length === 0) return;
+
+    invalidatePendingTransformHistory();
+    const result = scene.updateModelTransforms(updates);
+    if (!result.updated) return;
+
+    const activeUpdate = scene.activeModelId
+      ? updates.find((update) => update.id === scene.activeModelId)
+      : undefined;
+    if (activeUpdate) {
+      suppressTransformPersistenceCycles();
+      const { position, rotation, scale } = activeUpdate.transform;
+      transformMgr.transformHook.setPosition(position.x, position.y, position.z);
+      transformMgr.transformHook.setRotation(rotation.x, rotation.y, rotation.z);
+      transformMgr.transformHook.setScale(scale.x, scale.y, scale.z);
+    }
+
+    setSupportRenderRefreshNonce((value) => value + 1);
+  }, [invalidatePendingTransformHistory, scene, suppressTransformPersistenceCycles, transformMgr.transformHook]);
+
+  const handleLiftSelectedModels = React.useCallback(() => {
+    placeSelectedModelsAtWorldZ(transformMgr.liftDistance);
+  }, [placeSelectedModelsAtWorldZ, transformMgr.liftDistance]);
+
+  const handleDropSelectedModels = React.useCallback(() => {
+    placeSelectedModelsAtWorldZ(0);
+  }, [placeSelectedModelsAtWorldZ]);
 
   const disableAutoLiftForManualZMove = React.useCallback(() => {
     if (!scene.activeModelId) return;
@@ -9837,6 +10030,12 @@ export default function Home() {
               requestDestructiveTransformSupportDeletion: requestDestructiveTransformSupportDeletion,
               handleRotationComplete: handleRotationComplete,
               handleAutoLiftChange: handleAutoLiftChange,
+              selectionPositionOrigin: selectionPositionOrigin,
+              handlePositionSelectedModels: handlePositionSelectedModels,
+              commitPendingSelectionPositionHistory: commitPendingSelectionPositionHistory,
+              handleCenterSelectedModels: handleCenterSelectedModels,
+              handleLiftSelectedModels: handleLiftSelectedModels,
+              handleDropSelectedModels: handleDropSelectedModels,
               scheduleCommitPendingTransformHistory: scheduleCommitPendingTransformHistory,
               uniformScaling: uniformScaling,
               setUniformScaling: setUniformScaling,
