@@ -588,12 +588,13 @@ function placeOneCandidate(
             let bestKnotT = 0;
 
             // Attachment point: snap the knot DOWN the host shaft only far
-            // enough to reach the 60°-above-horizontal steep minimum — the
-            // HIGHEST sample whose rise to the tip is ≥ 60°. A deeper knot
+            // enough to reach the 45°-above-horizontal steep minimum — the
+            // HIGHEST sample whose rise to the tip is ≥ 45°. A deeper knot
             // makes the leaf nearly parallel to the shaft (a second pillar
             // "floating" next to the trunk — the recent defect); a knot at
-            // the junction is the original shallow-branch bug.
-            const STEEP_MIN_RISE_DEG = 60;
+            // the junction is the original shallow-branch bug. 45° matches
+            // the relaxed leafFanMaxAngleDeg default (was 60°).
+            const STEEP_MIN_RISE_DEG = 45;
             const MAX_MERGE_ATTACH_SPAN_MM = 12;
             let maxRiseDeg = 0;
             if (hostTrunk) {
@@ -1707,7 +1708,8 @@ export function forestReportToText(report: ForestReport): string {
         if (fanEntries.length > 0 || mergeEntries.length > 0) {
             const fanStr = fanEntries.length > 0 ? fanEntries.map(([k, v]) => `${k}=${v}`).join(', ') : 'none';
             const mergeStr = mergeEntries.length > 0 ? mergeEntries.map(([k, v]) => `${k}=${v}`).join(', ') : 'none';
-            lines.push(`  Fan refusals: ${fanStr} (noHost=too far >5mm/2.5mm grid, angle=>60° too flat, sameZ|cross|blocked|capacity=host full)`);
+            const fanMaxDeg = getSettings().autoSupport?.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
+            lines.push(`  Fan refusals: ${fanStr} (noHost=too far >5mm/2.5mm grid, angle=>${fanMaxDeg}° too flat, sameZ|cross|blocked|capacity=host full)`);
         const conEntries = Object.entries(d.consolidationRefusals ?? {}).filter(([, v]) => v);
         if (conEntries.length > 0) {
             const conStr = conEntries.map(([k, v]) => `${k}=${v}`).join(', ');
@@ -1725,7 +1727,7 @@ export function forestReportToText(report: ForestReport): string {
     if (report.trees.length > 0) {
         lines.push('');
         lines.push('FAN-OUT GROUPS');
-        lines.push(`  (host trunk → leaves/branches within 5mm fan radius, 2.5mm for grid hosts, <60° from vertical, not blocked/crossing, not at capacity)`);
+        lines.push(`  (host trunk → leaves/branches within 5mm fan radius, 2.5mm for grid hosts, <${getSettings().autoSupport?.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG}° from vertical, not blocked/crossing, not at capacity)`);
         for (const tree of report.trees) {
             const members = tree.members
                 .map((m) => `${m.id}(${m.kind === 'leaf' ? 'L' : 'B'} ${m.spanMm.toFixed(1)}mm/${m.angleDeg.toFixed(0)}°)`)
@@ -2016,10 +2018,11 @@ export function computeAutoSupportPlan(
     // they read as a zig-zag spiderweb; high up they read as trees.
     const CONSOLIDATION_BRANCH_MIN_HEIGHT_MM = 10;
     const conFanRadiusMm = Math.max(autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM, CONSOLIDATION_FAN_RADIUS_MM);
-    // Chunk links may be shallower than placement fans (75° vs 60° from
-    // vertical): on a surface sloped <30° from horizontal, neighbouring
-    // pillars can NEVER satisfy the 60° rule (the link angle is always
-    // 90° − surface slope), so chunking would be geometrically impossible.
+    // Chunk links may be shallower than placement fans (75° floor vs the
+    // leafFanMaxAngleDeg gate, now 45° from vertical): on a surface sloped
+    // <45° from horizontal, neighbouring pillars can NEVER satisfy the fan
+    // rule (the link angle is always 90° − surface slope), so chunking would
+    // be geometrically impossible.
     // The chunk's interior hosts carry the load; the shallow links are the
     // connective tissue that makes supports release in chunks.
     const conFanMaxAngleDeg = Math.max(

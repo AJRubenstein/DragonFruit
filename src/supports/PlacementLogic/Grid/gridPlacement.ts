@@ -25,7 +25,13 @@ import {
     MAX_AUTO_LEAF_SPAN_MM,
 } from '../../autoSupport/constants';
 
-const MIN_TRUNK_CLEARANCE_MM = 0.05;
+/**
+ * Matches `validateAndCullOrphans`' post-thickening trunk check
+ * (segment diameter/2 + 0.15). A trunk that passes the placement gate must
+ * not die in the cull — a thinner gate here placed straight pillars that the
+ * cull then removed, stripping whole regions of supports (Puck jaw/mouth).
+ */
+const MIN_TRUNK_CLEARANCE_MM = 0.15;
 
 function withResolvedSnappedRoute(
     candidate: TrunkBuildResult,
@@ -455,7 +461,13 @@ function trunkCollidesWithMesh(
 ): boolean {
     const trunk = candidate.trunk;
     const root = candidate.root;
-    const collisionRadius = settings.shaft.diameterMm / 2 + MIN_TRUNK_CLEARANCE_MM;
+    // Gate at the trunk's own (tier-sized) shaft, not the global setting —
+    // auto-sized tiers build fatter shafts than settings.shaft.
+    let maxSegDiameter = settings.shaft.diameterMm;
+    for (const seg of trunk.segments) {
+        maxSegDiameter = Math.max(maxSegDiameter, seg.diameter ?? 0);
+    }
+    const collisionRadius = maxSegDiameter / 2 + MIN_TRUNK_CLEARANCE_MM;
 
     for (let segIndex = 0; segIndex < trunk.segments.length; segIndex++) {
         const endpoints = getTrunkSegmentEndpointsWithSettings(trunk, root, segIndex, settings);

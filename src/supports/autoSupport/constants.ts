@@ -37,8 +37,10 @@ export const LEAF_FAN_RADIUS_MM = 5.0;
  *  leaves from sweeping across the grid forest (and puncturing grid shafts). */
 export const GRID_HOST_FAN_RADIUS_MM = 2.5;
 
-/** Leaf fanning: max angle from vertical for a fan leaf (deg). */
-export const LEAF_FAN_MAX_ANGLE_DEG = 60;
+/** Leaf fanning: max angle from vertical for a fan leaf (deg). 45° is
+ *  shallower than it used to be (60°) but prints reliably and lets leaves
+ *  reach overhangs on low-slope surfaces the old gate refused. */
+export const LEAF_FAN_MAX_ANGLE_DEG = 45;
 
 /** Self-support threshold: surfaces flatter than this angle from horizontal
  *  (deg) are flagged as overhang. Density modulation is normalized to it. */

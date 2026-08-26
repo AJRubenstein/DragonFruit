@@ -84,7 +84,7 @@ export const AUTO_SUPPORT_CONSTRAINTS = {
     coverageTargetPercent: { min: 75, max: 100, step: 5, defaultValue: 95, integer: true },
     sizingPreset: { min: 0, max: 2, step: 1, defaultValue: 1 },
     leafFanRadiusMm: { min: 2, max: 15, step: 0.5, defaultValue: 5 },
-    leafFanMaxAngleDeg: { min: 20, max: 80, step: 5, defaultValue: 60, integer: true },
+    leafFanMaxAngleDeg: { min: 20, max: 80, step: 5, defaultValue: 45, integer: true },
 } satisfies Record<NumericAutoSupportSettingKey, NumericConstraint>;
 
 function precisionFromStep(step: number): number {

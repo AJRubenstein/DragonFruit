@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
 
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clearHistory, undo, registerHistoryHandler } from '../../history/historyStore';
 import { SUPPORT_AUTO_PLACE } from '../history/actionTypes';
 import { registerSupportHistoryHandlers } from '../history/useSupportHistoryHandlers';
@@ -12,6 +13,9 @@ import { resetStore, getSnapshot, setSnapshot } from '../state';
 import { resetKickstandStore } from '../SupportTypes/Kickstand/kickstandStore';
 import { initializeBVH, accelerateGeometry } from '@/utils/bvh';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
+import { isShaftBlocked } from '../PlacementLogic/CollisionAvoidance';
+import { getSettings, setSettings } from '../Settings/state';
+import { createDefaultSettings } from '../Settings/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -205,6 +209,77 @@ test('runAutoPlace places grid trunks on a rotated mesh via the region normal', 
     setModelMesh('model-a', null);
     disposeHandlers();
 });
+
+test('elevated small overhang routes a trunk around the body instead of a culled pillar', () => {
+    const cleanup = elevatedJawScenario(false);
+    cleanup();
+});
+
+test('elevated small overhang also routes with the density grid enabled', () => {
+    const cleanup = elevatedJawScenario(true);
+    cleanup();
+});
+
+function elevatedJawScenario(gridEnabled: boolean): () => void {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+    initializeBVH();
+
+    const previousSettings = getSettings();
+    if (gridEnabled) {
+        const settings = createDefaultSettings();
+        settings.grid.enabled = true;
+        settings.grid.spacingMm = 4;
+        setSettings(settings);
+    }
+
+    // Body slab spanning x ∈ [-20, 5], z ∈ [0, 10]; a small jaw chip (4×4×2)
+    // overhangs PAST the body's top edge, underside at z = 16, centred at
+    // x = 3.5 — its vertical drop pierces the body corner. The island is
+    // small (2 mm²) and elevated: exactly the shape that used to bypass the
+    // pathfinder as a "small island", get placed as a straight pillar, and
+    // then be culled for piercing the mesh (Puck jaw/mouth).
+    const body = new THREE.BoxGeometry(25, 20, 10);
+    body.translate(-7.5, 0, 5);
+    const jaw = new THREE.BoxGeometry(4, 4, 2);
+    jaw.translate(3.5, 0, 17);
+    const geometry = mergeGeometries([body, jaw])!;
+    accelerateGeometry(geometry);
+    const mesh = new THREE.Mesh(geometry);
+    mesh.updateMatrixWorld();
+    setModelMesh('model-a', mesh);
+
+    const island = makeIsland('jaw', 3.5, 0, 16, 2);
+    const result = runAutoPlace([island], 'model-a', { debugSkipAutoBracing: true });
+
+    const snapshot = getSnapshot();
+    const trunks = Object.values(snapshot.trunks);
+    const jawTrunk = trunks.find((t) => t.contactCone && Math.abs(t.contactCone.pos.x - 3.5) < 1.5
+        && Math.abs(t.contactCone.pos.y) < 1.5 && Math.abs(t.contactCone.pos.z - 16) < 1.5);
+    assert.ok(jawTrunk, 'jaw tip is carried by a plate-rooted trunk');
+    assert.equal(result.rejectedCandidates, 0,
+        `nothing rejected (${result.rejectedCandidates})`);
+    assert.equal(result.placedSticks, 0,
+        'no cavity stick — the routed trunk made the bridge unnecessary');
+    // The routed shaft must actually clear the body: every segment passes
+    // the same post-thickening check the orphan cull applies.
+    const root = snapshot.roots[jawTrunk!.rootId];
+    assert.ok(root, 'trunk has a root');
+    for (const seg of jawTrunk!.segments) {
+        const start = seg.bottomJoint?.pos ?? root.transform.pos;
+        const end = seg.topJoint?.pos;
+        assert.ok(end, 'segment has endpoints');
+        assert.equal(isShaftBlocked(start, end, (seg.diameter ?? 1) / 2 + 0.15, mesh), false,
+            'routed shaft clears the mesh at cull clearance');
+    }
+
+    setModelMesh('model-a', null);
+    if (gridEnabled) setSettings(previousSettings);
+    disposeHandlers();
+    return () => {};
+}
 
 test('runAutoPlace gap-fills under-covered regions (coverage convergence)', () => {
     resetStore();

@@ -252,8 +252,12 @@ export function buildTrunkData(input: TrunkBuildInput): TrunkBuildResult {
     };
 
     let placement: TrunkPlacementResult;
-    if (mesh && !input.isSmallIsland) {
-        // Small islands bypass SDF — true straight
+    // Small islands keep the construction-joint bypass below, but they no
+    // longer bypass the pathfinder: an elevated small feature (a jaw overhang
+    // above the chest) dropped as a straight pillar either pierces the model
+    // or clears so tightly that the post-thickening cull kills it (#591
+    // follow-up: Puck jaw/mouth lost all supports this way).
+    if (mesh) {
         // V2 grid A* pathfinder (SDF-backed).
         // Both preview and click use FULL collision checks to ensure consistent safety.
         // Preview uses lower budget (800 expansions) for responsiveness.
