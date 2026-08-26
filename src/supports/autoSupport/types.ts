@@ -105,7 +105,7 @@ export interface ForestReport {
          *  model-to-model instead (cavity stick/twig). Tip position = where
          *  the bridge starts; each entry is a candidate for elimination by
          *  better routing. */
-        cavityFallbacks: Array<{ id: string; kind: 'stick' | 'twig'; tip: { x: number; y: number; z: number } }>;
+        cavityFallbacks: Array<{ id: string; kind: 'stick' | 'twig'; tip: { x: number; y: number; z: number }; fanRefusal?: string }>;
     };
 }
 
@@ -183,7 +183,7 @@ export interface PlacementDiagnostics {
     /** Candidates whose trunk could not reach the plate and were bridged
      *  model-to-model instead (cavity stick/twig). Tip = where the bridge
      *  starts; each entry is a candidate for elimination by better routing. */
-    cavityFallbacks: Array<{ id: string; kind: 'stick' | 'twig'; tip: { x: number; y: number; z: number } }>;
+    cavityFallbacks: Array<{ id: string; kind: 'stick' | 'twig'; tip: { x: number; y: number; z: number }; fanRefusal?: string }>;
 }
 
 /** Physics-based sizing debug data. */

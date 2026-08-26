@@ -539,7 +539,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
         title="Forest Report"
         subtitle="Every placed support with its size and fan-out groups"
         iconTone="neutral"
-        maxWidthClassName="max-w-2xl"
+        maxWidthClassName="max-w-[72rem]"
         onClose={() => setShowForestReport(false)}
         onBackdropClick={() => setShowForestReport(false)}
         actions={

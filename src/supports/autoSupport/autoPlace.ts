@@ -479,7 +479,7 @@ function placeOneCandidate(
     draft: SupportState,
     _settingsOverride: Partial<AutoSupportSettings> | undefined,
     gridTrunkIds?: ReadonlySet<string>,
-): { kind: string; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected' } {
+): { kind: string; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected'; cavityFanRefusal?: FanLeafRefusal } {
     const supportSettings = getSettings();
     const snapshot = draft;
     let d = draft;
@@ -789,6 +789,7 @@ function placeOneCandidate(
             // reads as a regular tree, not a "stick under the jaw". The trunk
             // build's COLLISION_WITH_MODEL means "no plate route found", not
             // "nowhere to attach".
+            let cavityFanRefusal: FanLeafRefusal | undefined;
             try {
                 const auto = getSettings().autoSupport ?? {};
                 const fan = fanLeafToTrunk(
@@ -809,6 +810,7 @@ function placeOneCandidate(
                     logPlacement(`Leaf (cavity-fan) ${candidate.id} → trunk ${fan.trunkId} dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
                     return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.leafId };
                 }
+                cavityFanRefusal = fan.reason;
             } catch {}
             const band = activeSizingBand();
             const cavityResult = buildCavityStick(tipPos, tipNormal, candidate.modelId, mesh, band);
@@ -817,12 +819,12 @@ function placeOneCandidate(
                     d = draftAddStick(d, cavityResult.stick);
                     logPlacement(
                         `Stick (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                    return { kind: 'stick', preset, draft: d, entityId: cavityResult.stick.id };
+                    return { kind: 'stick', preset, draft: d, entityId: cavityResult.stick.id, cavityFanRefusal };
                 } else {
                     d = draftAddTwig(d, cavityResult.twig);
                     logPlacement(
                         `Twig (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                    return { kind: 'twig', preset, draft: d, entityId: cavityResult.twig.id };
+                    return { kind: 'twig', preset, draft: d, entityId: cavityResult.twig.id, cavityFanRefusal };
                 }
             }
         }
@@ -1815,7 +1817,8 @@ export function forestReportToText(report: ForestReport): string {
         if (d.cavityFallbacks && d.cavityFallbacks.length > 0) {
             lines.push(`  Cavity fallbacks: ${d.cavityFallbacks.length} — trunk could not reach the plate (bridged model-to-model)`);
             for (const fb of d.cavityFallbacks.slice(0, 20)) {
-                lines.push(`    ${fb.id} (${fb.kind}) @ (${fb.tip.x.toFixed(1)}, ${fb.tip.y.toFixed(1)}, Z${fb.tip.z.toFixed(1)})`);
+                const fanNote = fb.fanRefusal ? ` fan:${fb.fanRefusal}` : ' fan:—';
+                lines.push(`    ${fb.id} (${fb.kind}) @ (${fb.tip.x.toFixed(1)}, ${fb.tip.y.toFixed(1)}, Z${fb.tip.z.toFixed(1)})${fanNote}`);
             }
         }
         lines.push('');
@@ -2058,6 +2061,7 @@ export function computeAutoSupportPlan(
                         id: candidate.id,
                         kind: result.kind,
                         tip: candidate.tipPos,
+                        fanRefusal: (result as { cavityFanRefusal?: string }).cavityFanRefusal,
                     });
                     if (result.kind === 'stick') placedSticks++;
                     break;
