@@ -868,8 +868,10 @@ function placeOneCandidate(
         if (n) {
             const hz = Math.hypot(n.x, n.y);
             const angleDeg = (Math.atan2(hz, Math.max(0.001, Math.abs(n.z))) * 180) / Math.PI;
-            if (angleDeg > 85) {
-                logPlacement(`Rejected ${candidate.id}: side-wall trunk too shallow ${angleDeg.toFixed(1)}° > 85°`);
+            const isMinima = candidate.source === 'minima' || candidate.source === 'intersection';
+            const threshold = isMinima ? 85 : 75;
+            if (angleDeg > threshold) {
+                logPlacement(`Rejected ${candidate.id}: side-wall trunk too shallow ${angleDeg.toFixed(1)}° > ${threshold}°`);
                 return { kind: 'reject', rejectedReason: 'trunk_build_error', preset, draft: d };
             }
         }
