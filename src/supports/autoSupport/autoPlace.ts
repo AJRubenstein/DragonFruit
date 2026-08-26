@@ -1429,6 +1429,24 @@ export function validateAndCullOrphans(
                 orphans.push({ id, kind, reason: 'blocked', hostId: host.trunkId, knotId: knot.id, detail: 'knot→tip blocked by mesh' });
                 return false;
             }
+            // Shallow leaf guard: after resize/rehost a leaf can drift to ~90°
+            // from vertical (knot and tip end up at similar height). That reads
+            // as a horizontal arm and prints poorly — cull it as "too shallow"
+            // so it shows in the report instead of as a visible shallow leaf.
+            if (kind === 'leaf' && tipPos) {
+                const vDist = tipPos.z - knot.pos.z;
+                const hDist = Math.hypot(tipPos.x - knot.pos.x, tipPos.y - knot.pos.y);
+                const angleDeg = (Math.atan2(hDist, Math.max(0.001, vDist)) * 180) / Math.PI;
+                // Post-resize drift can push a leaf to ~90° (horizontal). Use a
+                // permissive 75° ceiling here (same as chunk consolidation) so
+                // a leaf that was valid at placement (≤45°) and drifted to ~63°
+                // stays as "cross" (kept), while a true 90° shallow leaf is culled.
+                const maxAngle = 75;
+                if (vDist < 0.4 || angleDeg > maxAngle + 1e-6) {
+                    orphans.push({ id, kind, reason: 'blocked', hostId: host.trunkId, knotId: knot.id, detail: `too shallow ${angleDeg.toFixed(1)}° > ${maxAngle}° (h=${hDist.toFixed(1)} v=${vDist.toFixed(1)})` });
+                    return false;
+                }
+            }
             if (leafPathCrossesSupports(knot.pos, tipPos, 0.25, nextDraft, host.trunkId)) {
                 orphans.push({ id, kind, reason: 'cross', hostId: host.trunkId, knotId: knot.id, detail: 'leaf/branch crosses another shaft after thickening' });
                 return true;
