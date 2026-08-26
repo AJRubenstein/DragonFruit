@@ -18,6 +18,7 @@ import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacemen
 import { perfMark, perfMeasureWithSpike, perfEndFrame } from '../../PlacementLogic/Pathfinding/pathfindingPerf';
 import { buildStick } from '../Stick/stickBuilder';
 import { buildTwig } from '../Twig/twigBuilder';
+import { isShaftBlocked } from '../../PlacementLogic/CollisionAvoidance';
 import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { getSupportPathfindingDebugEnabled, setSupportPathfindingDebugSnapshot } from '../../PlacementLogic/Pathfinding/pathfindingDebugState';
 
@@ -191,6 +192,16 @@ export function buildCavityStick(
 
     if (kind === 'twig') {
         const { twig } = buildTwig({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal, tipContactDiameterMm: sizing?.tipContactDiameterMm });
+        // Ensure the twig shaft does not pierce the model. Matches the trunk
+        // post-cull clearance (radius + 0.15mm) and catches the "sticks that
+        // shoot right through geometry" seen in auto supports.
+        {
+            const seg = twig.segments[0];
+            const start = seg?.bottomJoint?.pos ?? bPos;
+            const end = seg?.topJoint?.pos ?? tipPos;
+            const radius = (seg?.diameter ?? 1) / 2 + 0.15;
+            if (isShaftBlocked(start, end, radius, mesh)) return null;
+        }
         const supportData: SupportData = {
             id: twig.id,
             segments: twig.segments,
@@ -206,6 +217,17 @@ export function buildCavityStick(
     // is a crammed stick. Reject it — the caller's trunk fallback applies.
     if (stickShaftVerticalCos(stick) < Math.cos((CAVITY_STICK_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
         return null;
+    }
+
+    // SDF/raycast: stick shaft must not pierce the model. This is the
+    // missing check that let auto supports place sticks straight through
+    // the Puck's chest. Uses the same shaft clearance as trunks.
+    {
+        const seg = stick.segments[0];
+        const start = seg?.bottomJoint?.pos ?? bPos;
+        const end = seg?.topJoint?.pos ?? tipPos;
+        const radius = (seg?.diameter ?? sizing?.shaftDiameterMm ?? 1) / 2 + 0.15;
+        if (isShaftBlocked(start, end, radius, mesh)) return null;
     }
 
     const supportData: SupportData = {
