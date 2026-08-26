@@ -1542,9 +1542,7 @@ export function fanLeafToTrunk(
     // within the max angle from vertical) wins. The nearest sample alone is
     // not enough — it sits at the shallowest valid angle (the "knot at the
     // junction" look); the steepest sample in reach reads as a real branch.
-    let best: FanShaftPoint | null = null;
-    let bestDist2 = Infinity;
-    let bestAngleDeg = Infinity;
+    const candidates: Array<{ sp: FanShaftPoint; dist2: number; angleDeg: number }> = [];
     let refusal: FanLeafRefusal = 'noHost';
 
     for (const sp of shaftPoints) {
@@ -1572,71 +1570,77 @@ export function fanLeafToTrunk(
             if (refusal === 'noHost') refusal = 'angle';
             continue;
         }
-        // Steepest wins; distance only breaks ties among equally steep samples.
-        if (angleDeg < bestAngleDeg) {
-            best = sp;
-            bestDist2 = dist2;
-            bestAngleDeg = angleDeg;
+        candidates.push({ sp, dist2, angleDeg });
+    }
+    if (candidates.length === 0) return { ok: false, reason: refusal };
+
+    // Steepest first; distance breaks ties.
+    candidates.sort((a, b) => a.angleDeg - b.angleDeg || a.dist2 - b.dist2);
+
+    // Try each candidate until one clears blocked/cross/capacity/build.
+    let lastBlockedReason: FanLeafRefusal | null = null;
+    for (const { sp, dist2, angleDeg } of candidates) {
+        const parentKnot = {
+            id: knotIdPrefix,
+            parentShaftId: sp.segmentId ?? sp.trunkId,
+            t: sp.t,
+            pos: sp.pos,
+            diameter: sp.diameter + 0.125,
+        };
+        if (mesh && isShaftBlocked(sp.pos, target, 0.2, mesh)) {
+            lastBlockedReason = 'blocked';
+            continue;
         }
-    }
-    if (!best) return { ok: false, reason: refusal };
 
-    const sp = best;
-    const parentKnot = {
-        id: knotIdPrefix,
-        parentShaftId: sp.segmentId ?? sp.trunkId,
-        t: sp.t,
-        pos: sp.pos,
-        // The knot renders at exactly the trunk-joint size when unselected:
-        // the KnotRenderer subtracts the full joint offset (0.1), while the
-        // JointRenderer subtracts 0.075 from a shaft+0.1 joint — so
-        // shaft + 0.125 renders at shaft + 0.025, the joint's own rendered
-        // diameter.
-        diameter: sp.diameter + 0.125,
-    };
-    if (mesh && isShaftBlocked(sp.pos, target, 0.2, mesh)) return { ok: false, reason: 'blocked' };
+        let leaf;
+        try {
+            const resolved = resolveSurfaceNormal(target, mesh ?? undefined);
+            const built = buildLeafData({
+                tipPos: resolved.point,
+                surfaceNormal: resolved.normal,
+                modelId,
+                parentKnot,
+                hostDiameterMm: sp.diameter,
+                tipContactDiameterMm: activeSizingBand().tipContactDiameterMm,
+                mesh: mesh ?? undefined,
+            });
+            if (built.supportData.error) {
+                lastBlockedReason = 'build';
+                continue;
+            }
+            leaf = built.leaf;
+        } catch {
+            lastBlockedReason = 'build';
+            continue;
+        }
 
-    let leaf;
-    try {
-        const resolved = resolveSurfaceNormal(target, mesh ?? undefined);
-        const built = buildLeafData({
-            tipPos: resolved.point,
-            surfaceNormal: resolved.normal,
-            modelId,
-            parentKnot,
-            hostDiameterMm: sp.diameter,
-            tipContactDiameterMm: activeSizingBand().tipContactDiameterMm,
-            mesh: mesh ?? undefined,
-        });
-        if (built.supportData.error) return { ok: false, reason: 'build' };
-        leaf = built.leaf;
-    } catch {
-        return { ok: false, reason: 'build' };
-    }
+        if (leafPathCrossesSupports(
+            parentKnot.pos,
+            leaf.contactCone?.pos ?? target,
+            0.25,
+            draft,
+            sp.trunkId,
+        )) {
+            lastBlockedReason = 'cross';
+            continue;
+        }
+        if (maxAttachments > 0 && isTrunkAtAttachmentCapacity(sp.trunkId, maxAttachments, draft)) {
+            lastBlockedReason = 'capacity';
+            continue;
+        }
 
-    if (leafPathCrossesSupports(
-        parentKnot.pos,
-        leaf.contactCone?.pos ?? target,
-        0.25,
-        draft,
-        sp.trunkId,
-    )) {
-        return { ok: false, reason: 'cross' };
+        const next = draftAddKnot(draft, parentKnot);
+        if (origin) leaf.origin = origin;
+        return {
+            ok: true,
+            draft: draftAddLeaf(next, leaf),
+            trunkId: sp.trunkId,
+            leafId: leaf.id,
+            distMm: Math.sqrt(dist2),
+            angleDeg,
+        };
     }
-    if (maxAttachments > 0 && isTrunkAtAttachmentCapacity(sp.trunkId, maxAttachments, draft)) {
-        return { ok: false, reason: 'capacity' };
-    }
-
-    const next = draftAddKnot(draft, parentKnot);
-    if (origin) leaf.origin = origin;
-    return {
-        ok: true,
-        draft: draftAddLeaf(next, leaf),
-        trunkId: sp.trunkId,
-        leafId: leaf.id,
-        distMm: Math.sqrt(bestDist2),
-        angleDeg: bestAngleDeg,
-    };
+    return { ok: false, reason: lastBlockedReason ?? refusal };
 }
 
 // ---------------------------------------------------------------------------
