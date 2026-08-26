@@ -858,14 +858,14 @@ function placeOneCandidate(
     }
 
     // Side-wall guard at placement time: do not build a trunk whose contact
-    // points sideways. The previous post-resize cull removed the trunk after
-    // leaves were already attached, orphaning them. Rejecting at placement
-    // prevents the trunk and its dependent leaves from ever being created.
-    // Minima are exempt — a local minimum can be side-wall-like but still
-    // needs a pillar.
+    // points sideways. Previously this was a post-resize cull that orphaned
+    // leaves; rejecting at placement prevents the trunk and its leaves from
+    // ever being created. Applies to all sources — even minima side-walls at
+    // 80.8° are now kept (threshold 85°) while true 90° horizontal cones are
+    // rejected.
     {
         const n = trunkResult.trunk.contactCone?.normal ?? trunkResult.trunk.contactCone?.surfaceNormal;
-        if (n && candidate.source !== 'minima' && candidate.source !== 'intersection') {
+        if (n) {
             const hz = Math.hypot(n.x, n.y);
             const angleDeg = (Math.atan2(hz, Math.max(0.001, Math.abs(n.z))) * 180) / Math.PI;
             if (angleDeg > 85) {
@@ -876,6 +876,7 @@ function placeOneCandidate(
     }
 
     // Route through the standard grid placement engine.
+    // This handles grid snapping, SDF collision checks, host-trunk
     // attachment (branch/leaf), anchor short-circuit, and rejection.
     const decision = decideGridPlacement({
         settings: supportSettings,
