@@ -1374,10 +1374,10 @@ export function validateAndCullOrphans(
                     const hz = Math.hypot(n.x, n.y);
                     const nz = Math.abs(n.z);
                     const angleDeg = (Math.atan2(hz, Math.max(0.001, nz)) * 180) / Math.PI;
-                    if (angleDeg > 80) {
+                    if (angleDeg > 85) {
                         const tip = trunk.contactCone?.pos;
                         const where = tip ? ` @ (${tip.x.toFixed(1)}, ${tip.y.toFixed(1)}, Z${tip.z.toFixed(1)})` : '';
-                        orphans.push({ id: tid, kind: 'trunk', reason: 'blocked', detail: `side-wall trunk too shallow ${angleDeg.toFixed(1)}° > 80°${where}` });
+                        orphans.push({ id: tid, kind: 'trunk', reason: 'blocked', detail: `side-wall trunk too shallow ${angleDeg.toFixed(1)}° > 85°${where}` });
                         trunksToRemove.add(tid);
                     }
                 }
