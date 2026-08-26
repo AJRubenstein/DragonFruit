@@ -857,8 +857,25 @@ function placeOneCandidate(
         return { kind: 'reject', rejectedReason: 'trunk_build_error', preset, draft: d };
     }
 
+    // Side-wall guard at placement time: do not build a trunk whose contact
+    // points sideways. The previous post-resize cull removed the trunk after
+    // leaves were already attached, orphaning them. Rejecting at placement
+    // prevents the trunk and its dependent leaves from ever being created.
+    // Minima are exempt — a local minimum can be side-wall-like but still
+    // needs a pillar.
+    {
+        const n = trunkResult.trunk.contactCone?.normal ?? trunkResult.trunk.contactCone?.surfaceNormal;
+        if (n && candidate.source !== 'minima' && candidate.source !== 'intersection') {
+            const hz = Math.hypot(n.x, n.y);
+            const angleDeg = (Math.atan2(hz, Math.max(0.001, Math.abs(n.z))) * 180) / Math.PI;
+            if (angleDeg > 85) {
+                logPlacement(`Rejected ${candidate.id}: side-wall trunk too shallow ${angleDeg.toFixed(1)}° > 85°`);
+                return { kind: 'reject', rejectedReason: 'trunk_build_error', preset, draft: d };
+            }
+        }
+    }
+
     // Route through the standard grid placement engine.
-    // This handles grid snapping, SDF collision checks, host-trunk
     // attachment (branch/leaf), anchor short-circuit, and rejection.
     const decision = decideGridPlacement({
         settings: supportSettings,
@@ -1365,22 +1382,6 @@ export function validateAndCullOrphans(
                 const where = tip ? ` @ (${tip.x.toFixed(1)}, ${tip.y.toFixed(1)}, Z${tip.z.toFixed(1)})` : '';
                 orphans.push({ id: tid, kind: 'trunk', reason: 'trunkBlocked', detail: `trunk shaft pierces mesh${where}` });
                 trunksToRemove.add(tid);
-            } else {
-                // Side-wall guard: trunks whose contact points sideways (normal
-                // near-horizontal) are not overhangs — they were islands from a
-                // vertical wall and read as a 90° cone on a vertical shaft.
-                const n = trunk.contactCone?.normal ?? trunk.contactCone?.surfaceNormal;
-                if (n) {
-                    const hz = Math.hypot(n.x, n.y);
-                    const nz = Math.abs(n.z);
-                    const angleDeg = (Math.atan2(hz, Math.max(0.001, nz)) * 180) / Math.PI;
-                    if (angleDeg > 85) {
-                        const tip = trunk.contactCone?.pos;
-                        const where = tip ? ` @ (${tip.x.toFixed(1)}, ${tip.y.toFixed(1)}, Z${tip.z.toFixed(1)})` : '';
-                        orphans.push({ id: tid, kind: 'trunk', reason: 'blocked', detail: `side-wall trunk too shallow ${angleDeg.toFixed(1)}° > 85°${where}` });
-                        trunksToRemove.add(tid);
-                    }
-                }
             }
         }
     }
