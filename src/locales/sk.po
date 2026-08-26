@@ -18,6 +18,10 @@ msgstr ""
 "X-Crowdin-File: /dev/src/locales/en.po\n"
 "X-Crowdin-File-ID: 22\n"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1662
+msgid ".env template"
+msgstr ""
+
 #. placeholder {0}: model.polygonCount
 #: src/components/controls/ModelManagerPanel.tsx:89
 msgid "{0, plural, one {{compactTriangles} triangle} other {{compactTriangles} triangles}}"
@@ -33,8 +37,15 @@ msgstr ""
 msgid "{count, plural, one {# found} other {# found}}"
 msgstr ""
 
+#. Counter under a printer profile in a backup snapshot: how many materials belong to it.
+#. Counter under a printer profile in a backup snapshot: how many materials belong to it.
+#: src/components/settings/BackupsSettingsTab.tsx:28
+#: src/components/settings/LocalBackupsSettingsTab.tsx:21
+msgid "{count, plural, one {# material} other {# materials}}"
+msgstr ""
+
 #. Warning badge over the viewport when models stick out of the printer build volume.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:195
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:196
 msgid "{count, plural, one {# model out of build volume} other {# models out of build volume}}"
 msgstr ""
 
@@ -55,7 +66,7 @@ msgstr "{deltaHours} h"
 msgid "{deltaMin} min"
 msgstr "{deltaMin} min"
 
-#: src/app/page.tsx:435
+#: src/app/page.tsx:436
 #: src/components/controls/ModelStatsCard.tsx:209
 msgid "{hours} h {minutes} min"
 msgstr "{hours} h {minutes} min"
@@ -68,8 +79,8 @@ msgstr "{hours} h {paddedMinutes} min"
 msgid "{minutes} min"
 msgstr "{minutes} min"
 
-#: src/app/page.tsx:427
-#: src/app/page.tsx:436
+#: src/app/page.tsx:428
+#: src/app/page.tsx:437
 #: src/components/controls/ModelStatsCard.tsx:210
 msgid "{minutes} min {seconds} s"
 msgstr ""
@@ -97,12 +108,12 @@ msgid "< 1 min"
 msgstr "< 1 min"
 
 #. Approximate estimated print time (the "~" marks it as a rough estimate). {hours}/{mins} are whole-number quantities.
-#: src/app/page.tsx:419
+#: src/app/page.tsx:420
 msgid "~{hours} h {mins} min"
 msgstr "~{hours} h {mins} min"
 
 #. Approximate estimated print time under an hour (the "~" marks it as a rough estimate).
-#: src/app/page.tsx:420
+#: src/app/page.tsx:421
 msgid "~{mins} min"
 msgstr "~{mins} min"
 
@@ -128,7 +139,14 @@ msgstr ""
 msgid "Active"
 msgstr "Aktívne"
 
-#: src/app/page.tsx:2213
+#: src/components/settings/BackupsSettingsTab.tsx:1518
+#: src/components/settings/BackupsSettingsTab.tsx:1571
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1297
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1350
+msgid "ACTIVE"
+msgstr ""
+
+#: src/app/page.tsx:2214
 msgid "Add joint"
 msgstr "Pridať Kĺb"
 
@@ -154,6 +172,10 @@ msgstr ""
 msgid "Added"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1009
+msgid "After updating .env, restart the app, then click “I configured it”."
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:101
 msgid "Anti-aliasing: nothing to anti-alias."
 msgstr "Anti-aliasing: nič sa nedá anti-aliasovať."
@@ -170,6 +192,10 @@ msgstr "Usporiadať"
 #: src/components/layout/TopBar.tsx:612
 msgid "Arrange model and transforms"
 msgstr "Usporiadať modely a transformy"
+
+#: src/components/settings/BackupsSettingsTab.tsx:975
+msgid "Authorize DragonFruit so backups can be saved into your private repository."
+msgstr ""
 
 #: src/components/printers/SetupMethodChooser.tsx:25
 msgid "Auto"
@@ -192,6 +218,23 @@ msgstr ""
 msgid "Automatically saves a crash-recovery .voxl scene in the background and offers restore on next launch."
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:718
+msgid "Automatically saves snapshots of your settings and profiles to a folder on your computer."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1207
+msgid "Automatically sync to your private GitHub backup on an interval."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:845
+msgid "Automatically write snapshots to local disk on an interval."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1202
+#: src/components/settings/LocalBackupsSettingsTab.tsx:840
+msgid "Automation"
+msgstr ""
+
 #: src/components/settings/SettingsModal.tsx:1228
 msgid "Autosave and crash recovery behavior"
 msgstr ""
@@ -204,7 +247,7 @@ msgstr ""
 msgid "Autosave idle delay"
 msgstr ""
 
-#: src/app/page.tsx:950
+#: src/app/page.tsx:951
 msgid "Autosave is not working"
 msgstr ""
 
@@ -231,7 +274,7 @@ msgstr ""
 #. View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.
 #: src/components/layout/FirstRunOnboarding.tsx:273
 #: src/components/layout/OnboardingPrinterLibrary.tsx:279
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1541
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1542
 msgid "Back"
 msgstr ""
 
@@ -239,12 +282,73 @@ msgstr ""
 msgid "Back to setup step"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1122
+#: src/components/settings/LocalBackupsSettingsTab.tsx:804
+msgid "Backup Management"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1141
+#: src/components/settings/LocalBackupsSettingsTab.tsx:824
+msgid "Backup Now"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:601
+msgid "Backup repository is ready."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:676
+msgid "Backup restored. Run \"Restore Remote\" in conflict mode or sync this device if needed."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:446
+msgid "Backup saved to local disk."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1349
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1121
+msgid "Backup Snapshot Content"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:661
+#: src/components/settings/LocalBackupsSettingsTab.tsx:545
+msgid "Backup snapshot deleted."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:28
+msgid "Backup snapshot from {timestamp} will be permanently removed from disk."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:516
+msgid "Backup snapshot is malformed."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:546
+#: src/components/settings/BackupsSettingsTab.tsx:561
+msgid "Backup sync failed."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:558
+msgid "Backup synced to GitHub repository."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1639
+msgid "BACKUP_COOKIE_SECRET helper"
+msgstr ""
+
 #: src/components/settings/SettingsModal.tsx:1233
 msgid "Backups"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1077
+msgid "Backups are not configured on this build yet. Add GitHub OAuth env values to enable this tab."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:945
+msgid "Backups are stored in your own private GitHub repository. DragonFruit does not run a central backup server and does not keep a copy of your backup data outside your repository."
+msgstr ""
+
 #. View cube face (seen from below), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1545
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1546
 msgid "Bottom"
 msgstr ""
 
@@ -259,6 +363,14 @@ msgstr "Pridaj mesh alebo scénu a začni pripravovať, analyzovať, podporovať
 #: src/components/layout/TopBar.tsx:620
 msgid "Build and tune supports"
 msgstr "Budovať a štelovať podpery"
+
+#. placeholder {0}: selectedProfilesPrinter.buildVolumeMm?.width ?? '-'
+#. placeholder {1}: selectedProfilesPrinter.buildVolumeMm?.depth ?? '-'
+#. placeholder {2}: selectedProfilesPrinter.buildVolumeMm?.height ?? '-'
+#: src/components/settings/BackupsSettingsTab.tsx:1544
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1323
+msgid "Build: {0} × {1} × {2} mm"
+msgstr ""
 
 #. Shown in place of file size when the file is in cache but its size is unknown. Adjective/state label.
 #: src/components/layout/EmptySceneState.tsx:694
@@ -275,7 +387,17 @@ msgstr ""
 
 #: src/components/printers/PrinterVariantPickerModal.tsx:701
 #: src/components/settings/FleetManagement.tsx:436
+#: src/components/settings/LocalBackupsSettingsTab.tsx:990
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1083
 msgid "Cancel"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:982
+msgid "Cancel delete"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1066
+msgid "Cancel restore"
 msgstr ""
 
 #: src/components/layout/TopBar.tsx:1261
@@ -290,12 +412,20 @@ msgstr "Zmena profilu tlačiarne spôsobí potrebu znovu nasekania"
 msgid "Check for new versions and manage channels"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:418
+msgid "Choose a local backup directory before syncing."
+msgstr ""
+
 #: src/components/layout/OnboardingPrinterLibrary.tsx:393
 msgid "Choose a printer to add"
 msgstr ""
 
 #: src/components/layout/OnboardingPrinterLibrary.tsx:298
 msgid "Choose an official printer preset to add."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:780
+msgid "Choose Folder"
 msgstr ""
 
 #: src/components/layout/FirstRunOnboarding.tsx:197
@@ -322,6 +452,11 @@ msgstr ""
 msgid "Click to copy build info"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1433
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1205
+msgid "Client ID"
+msgstr ""
+
 #: src/components/layout/TopBar.tsx:1222
 #: src/components/printers/PrinterVariantPickerModal.tsx:422
 #: src/features/updater/GlobalUpdateIndicator.tsx:197
@@ -332,12 +467,21 @@ msgstr "Zatvoriť"
 msgid "Close network settings"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1623
+msgid "Close OAuth setup"
+msgstr ""
+
 #: src/components/layout/TopBar.tsx:908
 msgid "Close program"
 msgstr "Zatvoriť Program"
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:378
 msgid "Close release notes"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1375
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1147
+msgid "Close snapshot details"
 msgstr ""
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:187
@@ -368,11 +512,31 @@ msgstr ""
 msgid "Configure Networking Later"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:975
+msgid "Confirm delete snapshot"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1035
+msgid "Confirm restore snapshot"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1168
+msgid "Conflict detected"
+msgstr ""
+
 #: src/components/printers/SetupMethodChooser.tsx:111
 #: src/components/settings/FleetManagement.tsx:218
 #: src/components/settings/FleetManagement.tsx:219
 #: src/components/settings/FleetManagement.tsx:393
 msgid "Connect"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:993
+msgid "Connect GitHub now"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:971
+msgid "Connect your GitHub account"
 msgstr ""
 
 #: src/components/settings/FleetManagement.tsx:382
@@ -382,6 +546,10 @@ msgstr ""
 #: src/components/printers/SetupMethodChooser.tsx:140
 #: src/components/settings/FleetManagement.tsx:393
 msgid "Connecting…"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1082
+msgid "Connection"
 msgstr ""
 
 #. Confirms proceeding with the profile change despite the re-slice warning above (paired with "Keep current profiles", which cancels).
@@ -398,6 +566,14 @@ msgstr ""
 #: src/components/ui/EditorContextMenu.tsx:82
 msgid "Copy"
 msgstr "Kopírovať"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1670
+msgid "Copy template"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1634
+msgid "Copy the Client ID and Client Secret into your local <0>.env</0>."
+msgstr ""
 
 #: src/components/printers/PrinterVariantPickerModal.tsx:338
 msgid "Could not read printer data."
@@ -427,12 +603,32 @@ msgstr ""
 msgid "Crash Recovery"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1031
+msgid "Create {suggestedNewRepoName}"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:814
+msgid "Create a snapshot now and refresh history."
+msgstr ""
+
 #: src/components/controls/TransformToolbar.tsx:33
 msgid "Create cavity or open-face shell"
 msgstr "Vytvoriť dutinu alebo mušlu s otvorenou stranou"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1048
+msgid "Create your first backup snapshot"
+msgstr ""
+
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:176
 msgid "Creates recovery snapshots while editing."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1043
+msgid "Creating and configuring repository…"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:24
+msgid "Creating new repository: {repoName}"
 msgstr ""
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:284
@@ -461,14 +657,32 @@ msgstr ""
 msgid "Default (project setting)"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:732
+msgid "Default directory"
+msgstr ""
+
 #. placeholder {0}: model.geometry.meshDefects.repairedFloats
 #: src/components/controls/ModelStatsCard.tsx:610
 msgid "Defective — {0} errors"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1005
 #: src/components/ui/EditorContextMenu.tsx:80
 msgid "Delete"
 msgstr "Odstrániť"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:976
+msgid "Delete Backup Snapshot"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1319
+#: src/components/settings/LocalBackupsSettingsTab.tsx:959
+msgid "Delete snapshot"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:645
+msgid "Delete this backup snapshot from GitHub history? This cannot be undone."
+msgstr ""
 
 #: src/components/ui/EditorContextMenu.tsx:73
 msgid "Delete waypoint"
@@ -496,9 +710,14 @@ msgstr ""
 msgid "Discard"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1161
 #: src/components/settings/FleetManagement.tsx:229
 #: src/components/settings/FleetManagement.tsx:230
 msgid "Disconnect"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:615
+msgid "Disconnected GitHub account."
 msgstr ""
 
 #: src/components/settings/FleetManagement.tsx:347
@@ -509,10 +728,23 @@ msgstr ""
 msgid "Dismiss"
 msgstr ""
 
+#. placeholder {0}: selectedProfilesPrinter.display?.resolutionX ?? '-'
+#. placeholder {1}: selectedProfilesPrinter.display?.resolutionY ?? '-'
+#. placeholder {2}: selectedProfilesPrinter.display?.outputFormat ? ` (${selectedProfilesPrinter.display.outputFormat})` : ''
+#: src/components/settings/BackupsSettingsTab.tsx:1547
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1326
+msgid "Display: {0} × {1}{2}"
+msgstr ""
+
 #. Paraphrase of Yoda's line from Star Wars: The Empire Strikes Back (1980): "Do or do not. There is no try."
 #: src/components/layout/EmptySceneState.tsx:84
 msgid "Do or do not. There is no try... oh wait, just click Load mesh."
 msgstr "Urob či neurob. Tu niesu žiadne pokusy… ó počkaj, len klikni na Načítať Mesh."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1429
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1201
+msgid "Document Updated"
+msgstr ""
 
 #: src/components/settings/FleetManagement.tsx:277
 msgid "Done Adding"
@@ -547,6 +779,10 @@ msgstr ""
 msgid "DragonFruit first-time setup"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:964
+msgid "DragonFruit handles setup automatically and uses only your own private GitHub repository."
+msgstr ""
+
 #: src/components/layout/FirstRunOnboarding.tsx:175
 msgid "DragonFruit is a free, open-source slicer for resin 3D printing. Load a model, orient it, add supports, and slice it for your printer."
 msgstr ""
@@ -556,6 +792,10 @@ msgstr ""
 msgid "DragonFruit menu"
 msgstr "Menu DragonFruit"
 
+#: src/components/settings/BackupsSettingsTab.tsx:954
+msgid "DragonFruit stores backups in your own private GitHub repository. We intentionally avoid ORA-hosted cloud storage and we do not operate a DragonFruit backup server."
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:729
 msgid "Drop supported files"
 msgstr "Hoď podporované súbory"
@@ -564,7 +804,7 @@ msgstr "Hoď podporované súbory"
 msgid "Early-access and experimental features"
 msgstr ""
 
-#: src/app/page.tsx:2219
+#: src/app/page.tsx:2220
 #: src/components/ui/EditorContextMenu.tsx:126
 msgid "Editor"
 msgstr "Editor"
@@ -578,12 +818,21 @@ msgstr "Kontextové menu editoru"
 msgid "Elementary, my dear user — load a model."
 msgstr "Základy, môj milý používateľ — načítaj model."
 
+#: src/components/settings/BackupsSettingsTab.tsx:1206
+#: src/components/settings/LocalBackupsSettingsTab.tsx:844
+msgid "Enable automatic backups"
+msgstr ""
+
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:175
 msgid "Enable scene autosave"
 msgstr ""
 
 #: src/components/printers/SetupMethodChooser.tsx:85
 msgid "Enter your printer's IP address"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:902
+msgid "Env config required"
 msgstr ""
 
 #. "Est." abbreviates "Estimated", qualifying the print-time figure that follows it (e.g. "Est. 2h 05m • 12.50 ml"), not an abbreviation of anything else.
@@ -605,6 +854,10 @@ msgstr ""
 msgid "Every great print starts with an empty scene."
 msgstr "Každý skvelý výtlačok začína prázdnou scénou."
 
+#: src/components/settings/BackupsSettingsTab.tsx:1014
+msgid "Existing backup repository detected"
+msgstr ""
+
 #: src/components/controls/ModelManagerPanel.tsx:379
 msgid "Expand card"
 msgstr ""
@@ -625,8 +878,55 @@ msgstr "Exportovať"
 msgid "Exposure:"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:469
+msgid "Failed to choose local backup directory."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:886
+msgid "Failed to copy OAuth template. Copy it manually from the setup dialog."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:651
+#: src/components/settings/BackupsSettingsTab.tsx:663
+#: src/components/settings/LocalBackupsSettingsTab.tsx:547
+msgid "Failed to delete backup snapshot."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:618
+msgid "Failed to disconnect GitHub account."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:600
+#: src/components/settings/BackupsSettingsTab.tsx:604
+msgid "Failed to ensure repository."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:601
+msgid "Failed to initialize local backups."
+msgstr ""
+
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:85
 msgid "Failed to load autosave status."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:522
+#: src/components/settings/BackupsSettingsTab.tsx:526
+msgid "Failed to load backup history."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:634
+#: src/components/settings/BackupsSettingsTab.tsx:638
+#: src/components/settings/LocalBackupsSettingsTab.tsx:521
+msgid "Failed to load backup snapshot."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:507
+#: src/components/settings/BackupsSettingsTab.tsx:508
+msgid "Failed to load backup status."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:409
+msgid "Failed to load local backup history."
 msgstr ""
 
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:124
@@ -635,6 +935,24 @@ msgstr ""
 
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:148
 msgid "Failed to open autosave location."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:492
+msgid "Failed to open folder in file manager."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:673
+#: src/components/settings/BackupsSettingsTab.tsx:679
+#: src/components/settings/LocalBackupsSettingsTab.tsx:572
+msgid "Failed to restore backup snapshot."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:373
+msgid "Failed to start GitHub OAuth."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:584
+msgid "Failed to start OAuth."
 msgstr ""
 
 #: src/components/layout/TopBar.tsx:628
@@ -667,17 +985,33 @@ msgstr ""
 msgid "For continuous edits, save at least this often."
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1195
+msgid "Force Push Local"
+msgstr ""
+
 #: src/components/layout/FirstRunOnboarding.tsx:178
 msgid "From the community, for the community. Free to use, open to contribute, and shaped by the people who print with it."
 msgstr ""
 
 #. Orientation label, rendered uppercase on the view cube and on the build plate's front edge. Keep it as short as possible — long words are auto-shrunk to fit and become hard to read.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1537
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1538
 msgid "Front"
 msgstr ""
 
 #: src/components/settings/SettingsModal.tsx:1167
 msgid "General"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1656
+msgid "Generate"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1641
+msgid "Generate a local secret (at least 32 chars) and use it in your .env."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1649
+msgid "Generate a secret…"
 msgstr ""
 
 #: src/components/layout/EmptySceneState.tsx:516
@@ -686,6 +1020,10 @@ msgstr "Začať"
 
 #: src/components/layout/FirstRunOnboarding.tsx:187
 msgid "Get Started"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:571
+msgid "GitHub OAuth popup opened."
 msgstr ""
 
 #: src/components/controls/ModelManagerPanel.tsx:753
@@ -714,15 +1052,29 @@ msgstr ""
 msgid "I am the one who slices."
 msgstr "Ja som ten, kdo seká"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1002
+msgid "I configured it"
+msgstr ""
+
 #. Paraphrase of the Terminator's line from The Terminator (1984): "I'll be back."
 #: src/components/layout/EmptySceneState.tsx:92
 msgid "I'll be back. (Drop a file and I really will be.)"
 msgstr "Vrátim sa. (Podhoď mi súbor a naozaj sa vrátim.)"
 
+#. placeholder {0}: item.id
+#: src/components/settings/BackupsSettingsTab.tsx:1301
+#: src/components/settings/LocalBackupsSettingsTab.tsx:941
+msgid "ID {0}"
+msgstr ""
+
 #. Adaptation of the English proverb "Idle hands are the devil's workshop".
 #: src/components/layout/EmptySceneState.tsx:80
 msgid "Idle hands do no slicing."
 msgstr "Nehybné ruky nič nenasekajú."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1125
+msgid "If GitHub has a newer backup, DragonFruit pauses sync and asks whether to restore remote or force-push local."
+msgstr ""
 
 #: src/components/layout/TopBar.tsx:870
 msgid "Import mesh…"
@@ -806,6 +1158,21 @@ msgstr ""
 msgid "Last autosave timestamp"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:746
+msgid "Last backup on disk"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1107
+#: src/components/settings/LocalBackupsSettingsTab.tsx:753
+msgid "Last local sync"
+msgstr ""
+
+#. placeholder {0}: lastLocalSyncAt ? new Date(lastLocalSyncAt).toLocaleString() : _(msg`never`)
+#: src/components/settings/BackupsSettingsTab.tsx:1261
+#: src/components/settings/LocalBackupsSettingsTab.tsx:899
+msgid "Last local sync: {0}"
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:687
 msgid "last opened {period} ago"
 msgstr "naposledy otvorené pred {period}"
@@ -815,9 +1182,22 @@ msgstr "naposledy otvorené pred {period}"
 msgid "last opened just now"
 msgstr "naposledy otvorené práve teraz"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1100
+msgid "Last remote backup"
+msgstr ""
+
 #. {timestamp} is a locale-formatted date and time.
-#: src/app/page.tsx:570
+#: src/app/page.tsx:571
 msgid "Last successful autosave: {timestamp}. Save your project manually."
+msgstr ""
+
+#. placeholder {0}: material.layerHeightMm ?? '-'
+#. placeholder {1}: material.normalExposureSec ?? '-'
+#. placeholder {2}: material.bottomExposureSec ?? '-'
+#. placeholder {3}: material.bottomLayerCount ?? '-'
+#: src/components/settings/BackupsSettingsTab.tsx:1577
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1356
+msgid "Layer {0} mm • Normal {1}s • Bottom {2}s × {3}"
 msgstr ""
 
 #: src/components/layout/EmptySceneState.tsx:100
@@ -833,7 +1213,7 @@ msgid "Layers:"
 msgstr ""
 
 #. View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1543
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1544
 msgid "Left"
 msgstr ""
 
@@ -857,8 +1237,23 @@ msgstr ""
 msgid "Loading autosave status…"
 msgstr ""
 
-#: src/app/page.tsx:4291
+#: src/components/settings/BackupsSettingsTab.tsx:1073
+#: src/components/settings/LocalBackupsSettingsTab.tsx:727
+msgid "Loading backup status…"
+msgstr ""
+
+#: src/app/page.tsx:4292
 msgid "Loading Scene…"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1387
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1159
+msgid "Loading snapshot content…"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1354
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1126
+msgid "Loading snapshot..."
 msgstr ""
 
 #. Shown in place of file size while a recent file is being reopened. Keep it short.
@@ -866,8 +1261,34 @@ msgstr ""
 msgid "loading…"
 msgstr "načítavam…"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:467
+msgid "Local backup directory updated."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:449
+msgid "Local backup sync failed."
+msgstr ""
+
 #: src/components/settings/SettingsModal.tsx:1234
 msgid "Local on-disk backup snapshots"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:716
+msgid "Local On-Disk Backups"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:691
+msgid "Local on-disk backups are currently available in the DragonFruit desktop build only."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1395
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1167
+msgid "Local Storage"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1437
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1209
+msgid "LocalStorage Keys"
 msgstr ""
 
 #: src/components/settings/SettingsModal.tsx:1246
@@ -880,6 +1301,11 @@ msgstr ""
 
 #: src/components/layout/FirstRunOnboarding.tsx:229
 msgid "Low-glare surfaces for late-night printing."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1268
+#: src/components/settings/LocalBackupsSettingsTab.tsx:906
+msgid "Manage Backups"
 msgstr ""
 
 #: src/components/settings/FleetManagement.tsx:125
@@ -915,6 +1341,12 @@ msgstr "Materiálový profil nedostupný"
 msgid "Material:"
 msgstr ""
 
+#. placeholder {0}: filteredMaterialsForSelectedPrinter.length
+#: src/components/settings/BackupsSettingsTab.tsx:1553
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1332
+msgid "Materials for this printer ({0})"
+msgstr ""
+
 #: src/components/layout/TopBar.tsx:1200
 msgid "Maximize"
 msgstr "Maximalizovať"
@@ -943,6 +1375,8 @@ msgid "Mesh files (.stl, .obj, .3mf)"
 msgstr "Mesh súbory (.stl, .obj, .3mf)"
 
 #. Unit suffix after a minutes input box. Keep it abbreviated.
+#: src/components/settings/BackupsSettingsTab.tsx:1255
+#: src/components/settings/LocalBackupsSettingsTab.tsx:893
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:262
 msgid "min"
 msgstr ""
@@ -954,6 +1388,14 @@ msgstr "Minimizovať"
 #: src/components/layout/TopBar.tsx:1183
 msgid "Minimize window"
 msgstr "Minimizovať okno"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:878
+msgid "Minutes between automatic local backups."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1240
+msgid "Minutes between automatic sync attempts."
+msgstr ""
 
 #: src/components/controls/TransformToolbar.tsx:32
 msgid "Mirror"
@@ -1011,6 +1453,18 @@ msgstr ""
 msgid "Neutral"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1261
+#: src/components/settings/LocalBackupsSettingsTab.tsx:899
+msgid "never"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1102
+#: src/components/settings/BackupsSettingsTab.tsx:1109
+#: src/components/settings/LocalBackupsSettingsTab.tsx:748
+#: src/components/settings/LocalBackupsSettingsTab.tsx:755
+msgid "Never"
+msgstr ""
+
 #: src/features/updater/GlobalUpdateIndicator.tsx:299
 msgid "New version"
 msgstr ""
@@ -1026,7 +1480,7 @@ msgstr ""
 msgid "No active printer"
 msgstr "Žiadne aktívne tlačiarne"
 
-#: src/app/page.tsx:954
+#: src/app/page.tsx:955
 msgid "No autosave has succeeded this session. Save your project manually."
 msgstr ""
 
@@ -1034,9 +1488,27 @@ msgstr ""
 msgid "No autosave manifest found"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:925
+msgid "No history snapshots found in this folder."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1286
+msgid "No history snapshots yet. New syncs will appear here."
+msgstr ""
+
 #: src/components/layout/TopBar.tsx:998
 msgid "No IP"
 msgstr "Žiadna IP"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1448
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1220
+msgid "No LocalStorage keys found."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1557
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1336
+msgid "No materials linked to this printer."
+msgstr ""
 
 #: src/components/controls/ModelStatsCard.tsx:573
 #: src/components/controls/ModelStatsCard.tsx:574
@@ -1049,6 +1521,11 @@ msgstr ""
 
 #: src/components/controls/ModelStatsCard.tsx:439
 msgid "No printer connected"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1496
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1275
+msgid "No printer profiles."
 msgstr ""
 
 #: src/components/printers/PrinterVariantPickerModal.tsx:501
@@ -1068,6 +1545,10 @@ msgstr ""
 msgid "No recent files"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:926
+msgid "No snapshots yet. Run \"Backup Now\" to create your first local snapshot."
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:99
 msgid "No supports needed for an empty scene."
 msgstr "Prázdna scéna nepotrebuje žiadne podpery."
@@ -1082,10 +1563,32 @@ msgstr ""
 msgid "Not all slicers are created equal. This one's free!"
 msgstr "Nie všetky slicery sú vytvorené rovnako. Tento je voľný!"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1085
+msgid "Not connected"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1095
+msgid "Not created yet"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:741
+msgid "Not selected"
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:73
 msgid "Nothing to see here. Yet."
 msgstr "Nič tu nieje. Zatiaľ."
 
+#: src/components/settings/BackupsSettingsTab.tsx:884
+msgid "OAuth .env template copied to clipboard."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:928
+msgid "OAuth setup"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1226
+#: src/components/settings/LocalBackupsSettingsTab.tsx:864
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:195
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:300
 msgid "OFF"
@@ -1098,6 +1601,8 @@ msgstr ""
 msgid "Offline"
 msgstr "Offline"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1226
+#: src/components/settings/LocalBackupsSettingsTab.tsx:864
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:195
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:300
 msgid "ON"
@@ -1107,6 +1612,10 @@ msgstr ""
 #: src/components/controls/TransformToolbar.tsx:31
 msgid "On-Face"
 msgstr "Na-Stranu"
+
+#: src/components/settings/BackupsSettingsTab.tsx:961
+msgid "Onboarding"
+msgstr ""
 
 #. Paraphrase of Boromir's line from The Lord of the Rings: The Fellowship of the Ring (2001): "One does not simply walk into Mordor."
 #: src/components/layout/EmptySceneState.tsx:91
@@ -1132,6 +1641,14 @@ msgstr ""
 #: src/components/layout/TopBar.tsx:671
 msgid "Open DragonFruit menu"
 msgstr "Otvoriť menu DragonFruitu"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:790
+msgid "Open Folder"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1631
+msgid "Open GitHub Developer Settings and create a new OAuth App."
+msgstr ""
 
 #: src/components/controls/ModelStatsCard.tsx:523
 msgid "Open material profiles"
@@ -1168,6 +1685,11 @@ msgstr ""
 msgid "Overhang heatmap"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1394
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1166
+msgid "Overview"
+msgstr ""
+
 #: src/components/ui/EditorContextMenu.tsx:83
 msgid "Paste"
 msgstr "Prilepiť"
@@ -1195,6 +1717,14 @@ msgstr ""
 #: src/components/layout/TopBar.tsx:609
 msgid "Prepare"
 msgstr "Pripraviť"
+
+#: src/components/settings/BackupsSettingsTab.tsx:1037
+msgid "Preparing things…"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1039
+msgid "Preparing your repository <0>{selectedBackupRepoName}</0>. This usually takes a moment."
+msgstr ""
 
 #: src/components/settings/FleetManagement.tsx:134
 msgid "Primary printer assigned to this profile."
@@ -1243,6 +1773,12 @@ msgstr "Profil tlačiarne: {0}"
 msgid "Printer profile: {profileName} • Active printer: {printerName}"
 msgstr "Profil tlačiarne: {profileName} • Aktívna tlačiareň: {printerName}"
 
+#. placeholder {0}: parsedProfiles.printerProfiles.length
+#: src/components/settings/BackupsSettingsTab.tsx:1492
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1271
+msgid "Printer Profiles ({0})"
+msgstr ""
+
 #: src/components/controls/ModelStatsCard.tsx:498
 msgid "Printer:"
 msgstr ""
@@ -1251,8 +1787,31 @@ msgstr ""
 msgid "Printing"
 msgstr "Tlačenie"
 
+#: src/components/settings/BackupsSettingsTab.tsx:921
+msgid "Private GitHub Backups"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1095
+msgid "Private repo ready"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1396
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1168
+msgid "Profiles"
+msgstr ""
+
 #: src/components/settings/SettingsModal.tsx:1174
 msgid "Projection and navigation behavior"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1129
+#: src/components/settings/LocalBackupsSettingsTab.tsx:812
+msgid "Quick actions"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1397
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1169
+msgid "Raw JSON"
 msgstr ""
 
 #. "Slice"/"re-slice" is the 3D-printing step that converts a model into printer instructions (G-code). This dialog warns that switching printer profile invalidates the already-sliced file.
@@ -1260,7 +1819,7 @@ msgstr ""
 msgid "Re-slice required after profile change"
 msgstr "Znovu nasekanie je potrebné po zmene v profile"
 
-#: src/app/page.tsx:4292
+#: src/app/page.tsx:4293
 msgid "Reading autosaved scene…"
 msgstr ""
 
@@ -1292,10 +1851,16 @@ msgstr ""
 msgid "Recovery state"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1278
 #: src/components/settings/FleetManagement.tsx:218
 #: src/components/settings/FleetManagement.tsx:219
+#: src/components/settings/LocalBackupsSettingsTab.tsx:916
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:320
 msgid "Refresh"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:834
+msgid "Refresh History"
 msgstr ""
 
 #. placeholder {0}: info.version
@@ -1309,6 +1874,14 @@ msgstr ""
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:226
 msgid "Remind me later"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1170
+msgid "Remote backup is newer than your local snapshot. Choose how to resolve this sync."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:551
+msgid "Remote backup is newer. Choose restore or force sync."
 msgstr ""
 
 #: src/components/settings/FleetManagement.tsx:241
@@ -1345,17 +1918,53 @@ msgstr "Opraviť"
 msgid "Repair mesh…"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1090
+msgid "Repository"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1050
+msgid "Repository <0>{selectedBackupRepoName}</0> is ready. Run your first backup to finish onboarding."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1615
+msgid "Required for self-compiled builds that do not ship with backup OAuth env values."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:734
+msgid "Resolving..."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1635
+msgid "Restart DragonFruit, then click <0>I configured it</0>."
+msgstr ""
+
 #: src/components/layout/TopBar.tsx:1200
 msgid "Restore"
 msgstr "Obnoviť"
 
-#: src/app/page.tsx:4323
-#: src/app/page.tsx:4334
+#: src/components/settings/BackupsSettingsTab.tsx:1367
+msgid "Restore as Current"
+msgstr ""
+
+#: src/app/page.tsx:4324
+#: src/app/page.tsx:4335
 msgid "Restore Failed"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1184
+msgid "Restore Remote"
 msgstr ""
 
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:175
 msgid "Restore Scene"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1051
+msgid "Restore Snapshot"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1139
+msgid "Restore to App"
 msgstr ""
 
 #: src/components/layout/TopBar.tsx:1201
@@ -1363,7 +1972,7 @@ msgid "Restore window"
 msgstr "Obnoviť okno"
 
 #. View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1542
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1543
 msgid "Right"
 msgstr ""
 
@@ -1371,6 +1980,14 @@ msgstr ""
 #: src/components/layout/EmptySceneState.tsx:96
 msgid "Roads? Where we're printing, we don't need roads."
 msgstr "Cesty? Kde tlačíme my, nepotrebujeme cesty."
+
+#: src/components/settings/BackupsSettingsTab.tsx:1131
+msgid "Run a sync, verify repository readiness, or disconnect this GitHub account."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1060
+msgid "Run first backup now"
+msgstr ""
 
 #: src/components/layout/TopBar.tsx:1074
 msgid "Run slicing in Export to unlock Printing preview"
@@ -1383,6 +2000,10 @@ msgstr "Uložiť Scénu"
 #: src/components/layout/TopBar.tsx:828
 msgid "Save scene as…"
 msgstr "Uložiť Scénu Ako…"
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:806
+msgid "Save snapshots to your local backup folder, then review and restore any point-in-time snapshot in-app."
+msgstr ""
 
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:139
 msgid "Saved beside your project"
@@ -1450,6 +2071,21 @@ msgstr ""
 msgid "Select"
 msgstr "Vybrať"
 
+#: src/components/settings/BackupsSettingsTab.tsx:1476
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1248
+msgid "Select a key"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1481
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1260
+msgid "Select a LocalStorage key from the left to view its value."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1534
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1313
+msgid "Select a printer profile to view details."
+msgstr ""
+
 #: src/components/printers/PrinterVariantPickerModal.tsx:495
 msgid "Select a printer to detect its model."
 msgstr ""
@@ -1477,23 +2113,48 @@ msgstr "Vybrať profil tlačiarne"
 msgid "Select profile"
 msgstr "Vybrať profil"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:739
+msgid "Selected directory"
+msgstr ""
+
 #: src/components/layout/TopBar.tsx:756
 #: src/components/layout/TopBar.tsx:757
 msgid "Selected printer is offline"
 msgstr "Vybraná tlačiareň je offline"
 
 #. Shown while dragging a selection rectangle right to left, which takes every object the rectangle touches. Mirrors the CAD convention; keep it on one short line.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3014
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3075
 msgid "Selection Mode: Contact (Right to Left)"
 msgstr ""
 
 #. Shown while dragging a selection rectangle left to right, which takes only the objects the rectangle fully encloses. Mirrors the CAD convention; keep it on one short line.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3018
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3079
 msgid "Selection Mode: Enclosed (Left to Right)"
 msgstr ""
 
 #: src/components/settings/SettingsModal.tsx:1240
 msgid "Send sliced files to UVTools for analysis"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1633
+msgid "Set <0>Authorization callback URL</0> to <1>{oauthCallbackUrl}</1>."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1632
+msgid "Set <0>Homepage URL</0> to <1>{oauthHomepageUrl}</1>."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:971
+#: src/components/settings/BackupsSettingsTab.tsx:1613
+msgid "Set up GitHub OAuth"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:993
+msgid "Set up OAuth"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:962
+msgid "Set up private backups"
 msgstr ""
 
 #: src/components/layout/TopBar.tsx:1152
@@ -1540,6 +2201,26 @@ msgstr "Momentálne sekám. Akcie vo vrchnej lište sú momentálne vypnuté."
 msgid "Smooth"
 msgstr "Vyhladiť"
 
+#. placeholder {0}: new Date(Number(selectedHistoryId)).toLocaleString()
+#: src/components/settings/BackupsSettingsTab.tsx:1353
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1125
+msgid "Snapshot {0}"
+msgstr ""
+
+#. placeholder {0}: confirmRestoreId ? new Date(Number(confirmRestoreId)).toLocaleString() : ''
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1054
+msgid "Snapshot from {0}"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1425
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1197
+msgid "Snapshot ID"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:570
+msgid "Snapshot restored to current local backup state."
+msgstr ""
+
 #. View mode: matte clay-like surface with scene lighting.
 #: src/features/shaders/mesh/types.ts:37
 msgid "Soft clay (lit)"
@@ -1575,7 +2256,7 @@ msgstr ""
 msgid "Support"
 msgstr "Podpera"
 
-#: src/app/page.tsx:2219
+#: src/app/page.tsx:2220
 msgid "Supports"
 msgstr "Podpery"
 
@@ -1588,16 +2269,21 @@ msgstr ""
 msgid "Suspiciously empty in here."
 msgstr "Je to tu podozrivo prázdne."
 
-#: src/app/page.tsx:4336
+#: src/components/settings/BackupsSettingsTab.tsx:1239
+#: src/components/settings/LocalBackupsSettingsTab.tsx:877
+msgid "Sync interval"
+msgstr ""
+
+#: src/app/page.tsx:4337
 msgid "The autosave recovery file could not be found."
 msgstr ""
 
-#: src/app/page.tsx:4324
-#: src/app/page.tsx:4337
+#: src/app/page.tsx:4325
+#: src/app/page.tsx:4338
 msgid "The autosaved recovery file is corrupted or unreadable."
 msgstr ""
 
-#: src/app/page.tsx:951
+#: src/app/page.tsx:952
 msgid "The background recovery save failed repeatedly."
 msgstr ""
 
@@ -1618,7 +2304,7 @@ msgstr ""
 msgid "The resin is ready. Are you?"
 msgstr "Živica je pripravená. Si ty?"
 
-#: src/app/page.tsx:4325
+#: src/app/page.tsx:4326
 msgid "The scene importer rejected or could not parse the autosave data."
 msgstr ""
 
@@ -1635,6 +2321,14 @@ msgstr ""
 msgid "Theme and custom UI token customization"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:977
+msgid "This action cannot be undone."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1013
+msgid "This backup snapshot will be permanently removed from disk."
+msgstr ""
+
 #: src/components/printers/PrinterVariantPickerModal.tsx:461
 msgid "This model is already added."
 msgstr ""
@@ -1647,11 +2341,19 @@ msgstr ""
 msgid "This scene is aggressively unoccupied."
 msgstr "Táto scéna je agresívne prázdna."
 
+#: src/components/settings/BackupsSettingsTab.tsx:976
+msgid "This self-compiled build needs your own GitHub OAuth app in .env before sign-in can work."
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1075
+msgid "This will overwrite your current app settings and profiles with the data from this snapshot, then reload the app. This action cannot be undone."
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:70
 msgid "Time to make something real."
 msgstr "Čas vytvoriť niečo ozajstné."
 
-#: src/app/page.tsx:2208
+#: src/app/page.tsx:2209
 msgid "Toggle curve"
 msgstr "Prepnúť Krivku"
 
@@ -1661,7 +2363,7 @@ msgid "Toon"
 msgstr ""
 
 #. View cube face (seen from above), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1544
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1545
 msgid "Top"
 msgstr ""
 
@@ -1695,6 +2397,18 @@ msgstr ""
 msgid "Unknown"
 msgstr ""
 
+#: src/components/settings/BackupsSettingsTab.tsx:1574
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1353
+msgid "Unknown brand"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1521
+#: src/components/settings/BackupsSettingsTab.tsx:1540
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1300
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1319
+msgid "Unknown manufacturer"
+msgstr ""
+
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:92
 msgid "Unsaved Scene Found"
 msgstr ""
@@ -1723,12 +2437,32 @@ msgstr ""
 msgid "Updates"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:770
+msgid "Use Default Path"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1024
+msgid "Use existing repo"
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:550
 msgid "Use without printer"
 msgstr "Používať bez tlačiarne"
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:481
+msgid "Using default local backup directory."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:20
+msgid "Using existing repository: {repoName}"
+msgstr ""
+
 #: src/components/settings/SettingsModal.tsx:1239
 msgid "UVTools"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1151
+msgid "Verify Repo"
 msgstr ""
 
 #: src/components/settings/SettingsModal.tsx:1258
@@ -1739,8 +2473,25 @@ msgstr ""
 msgid "View mode"
 msgstr "Režim pohľadu"
 
+#: src/components/settings/BackupsSettingsTab.tsx:936
+msgid "View privacy commitments"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1310
+#: src/components/settings/LocalBackupsSettingsTab.tsx:950
+msgid "View snapshot"
+msgstr ""
+
 #: src/components/controls/ViewTypeDropdown.tsx:85
 msgid "View type"
+msgstr ""
+
+#: src/components/settings/LocalBackupsSettingsTab.tsx:907
+msgid "View, restore, or delete older snapshots from disk."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1269
+msgid "View, restore, or delete older snapshots from your private repository."
 msgstr ""
 
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:209
@@ -1751,9 +2502,21 @@ msgstr ""
 msgid "Waiting for first layer adhesion... to reality."
 msgstr "Čakám na prvé priľnanie vrstvy… k realite."
 
+#: src/components/settings/BackupsSettingsTab.tsx:1043
+msgid "Waiting for repository check…"
+msgstr ""
+
 #. Matcap lighting preset with a warm (orange) tint.
 #: src/features/shaders/mesh/types.ts:28
 msgid "Warm"
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1016
+msgid "We found <0>{defaultRepoName}</0>. Choose whether to keep using it or create a fresh repository."
+msgstr ""
+
+#: src/components/settings/BackupsSettingsTab.tsx:1008
+msgid "We’ll open a secure GitHub popup to connect your account."
 msgstr ""
 
 #. Paraphrase of Chief Brody's line from Jaws (1975): "You're gonna need a bigger boat."
@@ -1801,9 +2564,17 @@ msgstr ""
 msgid "X-ray"
 msgstr ""
 
+#: src/components/settings/LocalBackupsSettingsTab.tsx:1098
+msgid "Yes, restore"
+msgstr ""
+
 #: src/components/layout/TopBar.tsx:1283
 msgid "You can continue to adjust profiles, but you’ll be prompted to re-slice before printing with the updated settings."
 msgstr "Môžeš pokračovať v úprave profilov, ale bude potrebné znovu nasekať model pred tlačou s upravenými nastaveniami."
+
+#: src/components/settings/BackupsSettingsTab.tsx:948
+msgid "You can disconnect GitHub at any time. OAuth access is used only for repository checks and syncing backup files."
+msgstr ""
 
 #. Paraphrase of Gandalf's line from The Lord of the Rings: The Fellowship of the Ring (2001): "You shall not pass!"
 #: src/components/layout/EmptySceneState.tsx:86
