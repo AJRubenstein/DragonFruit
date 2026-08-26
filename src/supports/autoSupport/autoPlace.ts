@@ -10,6 +10,7 @@ import { quantizeToScale } from '@/utils/math';
  * that land exactly halfway, which authored 0.001-grid dimensions often do.
  */
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
+import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
 import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo } from './types';
 import type { SupportState, SupportOrigin } from '../types';
 import type { AutoSupportSettings } from './settings';
@@ -782,6 +783,33 @@ function placeOneCandidate(
         // Cavity fallback: if the trunk can't reach the build plate, try
         // bridging to a lower surface with a Stick (model-to-model).
         if (trunkResult.error === 'COLLISION_WITH_MODEL' && mesh) {
+            // Before bridging model-to-model, try to carry the tip as a fan
+            // leaf on a nearby host. A jaw tip whose straight pillar pierces
+            // the chest often has a trunk within 5 mm that can host it — that
+            // reads as a regular tree, not a "stick under the jaw". The trunk
+            // build's COLLISION_WITH_MODEL means "no plate route found", not
+            // "nowhere to attach".
+            try {
+                const auto = getSettings().autoSupport ?? {};
+                const fan = fanLeafToTrunk(
+                    tipPos,
+                    candidate.modelId,
+                    collectFanShaftPoints(draft),
+                    gridTrunkIds ?? new Set<string>(),
+                    `auto-cavity-fan-${candidate.id}`,
+                    auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM,
+                    GRID_HOST_FAN_RADIUS_MM,
+                    auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
+                    auto.maxAttachmentsPerTrunk ?? 12,
+                    draft,
+                    mesh,
+                    candidate.source as SupportOrigin | undefined,
+                );
+                if (fan.ok) {
+                    logPlacement(`Leaf (cavity-fan) ${candidate.id} → trunk ${fan.trunkId} dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
+                    return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.leafId };
+                }
+            } catch {}
             const band = activeSizingBand();
             const cavityResult = buildCavityStick(tipPos, tipNormal, candidate.modelId, mesh, band);
             if (cavityResult) {
@@ -1208,6 +1236,71 @@ export function rehostLegacyKnots(draft: SupportState): SupportState {
         }
     }
     return changed ? { ...draft, knots: nextKnots } : draft;
+}
+
+/**
+ * Enforce "contact cone body ≤ the shaft it sits on" across the whole draft —
+ * the same invariant `setSettings`/`updateTipProfile` clamp for settings-driven
+ * builds. The resize pass floors SEGMENTS at the cone demand, but cones are
+ * never re-derived when the forest changes shape around them: a leaf fanned
+ * while its host was temporarily thicker, a trunk whose cone profile was
+ * transplanted by a replacement, or a re-run over a previously resized forest
+ * can all leave a cone wider than its shaft. Clamping here makes the whole
+ * forest match what clicking a support (rebuild from shaft) produces.
+ */
+export function syncContactConeDiameters(draft: SupportState): SupportState {
+    const segmentDiameter = new Map<string, number>();
+    for (const t of Object.values(draft.trunks)) {
+        for (const seg of t.segments) {
+            if (typeof seg.diameter === 'number' && seg.diameter > 0) {
+                segmentDiameter.set(seg.id, seg.diameter);
+            }
+        }
+    }
+    for (const b of Object.values(draft.branches)) {
+        for (const seg of b.segments) {
+            if (typeof seg.diameter === 'number' && seg.diameter > 0) {
+                segmentDiameter.set(seg.id, seg.diameter);
+            }
+        }
+    }
+
+    let changed = false;
+    const clampCone = (cone: ContactCone | undefined, hostDia: number | undefined): ContactCone | undefined => {
+        const body = cone?.profile?.bodyDiameterMm;
+        if (!cone || body === undefined || hostDia === undefined) return cone;
+        if (body > hostDia + 1e-6) {
+            changed = true;
+            return { ...cone, profile: { ...cone.profile, bodyDiameterMm: hostDia } };
+        }
+        return cone;
+    };
+
+    const nextTrunks: SupportState['trunks'] = { ...draft.trunks };
+    for (const [tid, t] of Object.entries(draft.trunks)) {
+        const topSeg = t.segments[t.segments.length - 1];
+        const cone = clampCone(t.contactCone, topSeg?.diameter);
+        if (cone !== t.contactCone) nextTrunks[tid] = { ...t, contactCone: cone };
+    }
+    const nextLeaves: SupportState['leaves'] = { ...draft.leaves };
+    for (const [lid, l] of Object.entries(draft.leaves)) {
+        const knot = draft.knots[l.parentKnotId];
+        if (!knot) continue;
+        const hostDia = segmentDiameter.get(knot.parentShaftId);
+        if (hostDia === undefined) continue;
+        const cone = clampCone(l.contactCone, hostDia);
+        if (cone && cone !== l.contactCone) nextLeaves[lid] = { ...l, contactCone: cone };
+    }
+
+    const nextBranches: SupportState['branches'] = { ...draft.branches };
+    for (const [bid, b] of Object.entries(draft.branches)) {
+        const firstSeg = b.segments[0];
+        const cone = clampCone(b.contactCone, firstSeg?.diameter);
+        if (cone !== b.contactCone) nextBranches[bid] = { ...b, contactCone: cone };
+    }
+
+    if (!changed) return draft;
+    return { ...draft, trunks: nextTrunks, leaves: nextLeaves, branches: nextBranches };
 }
 
 /** Validate leaves/branches host attachment after forest resize; cull orphans and return them for reporting. */
@@ -1710,19 +1803,24 @@ export function forestReportToText(report: ForestReport): string {
             const mergeStr = mergeEntries.length > 0 ? mergeEntries.map(([k, v]) => `${k}=${v}`).join(', ') : 'none';
             const fanMaxDeg = getSettings().autoSupport?.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
             lines.push(`  Fan refusals: ${fanStr} (noHost=too far >5mm/2.5mm grid, angle=>${fanMaxDeg}° too flat, sameZ|cross|blocked|capacity=host full)`);
-        const conEntries = Object.entries(d.consolidationRefusals ?? {}).filter(([, v]) => v);
-        if (conEntries.length > 0) {
-            const conStr = conEntries.map(([k, v]) => `${k}=${v}`).join(', ');
-            lines.push(`  Consolidation refusals: ${conStr} (sameZ=surface too flat for side-leaves — chunking needs ≥0.4 mm neighbour height rise)`);
-        }
+            const conEntries = Object.entries(d.consolidationRefusals ?? {}).filter(([, v]) => v);
+            if (conEntries.length > 0) {
+                const conStr = conEntries.map(([k, v]) => `${k}=${v}`).join(', ');
+                lines.push(`  Consolidation refusals: ${conStr} (sameZ=surface too flat for side-leaves — chunking needs ≥0.4 mm neighbour height rise)`);
+            }
             lines.push(`  Merge refusals: ${mergeStr} (noHost=no trunk within 4mm, rejected=host at capacity or collision)`);
         } else {
             lines.push(`  Fan/Merge refusals: none (all fanned or standalone)`);
         }
+        if (d.cavityFallbacks && d.cavityFallbacks.length > 0) {
+            lines.push(`  Cavity fallbacks: ${d.cavityFallbacks.length} — trunk could not reach the plate (bridged model-to-model)`);
+            for (const fb of d.cavityFallbacks.slice(0, 20)) {
+                lines.push(`    ${fb.id} (${fb.kind}) @ (${fb.tip.x.toFixed(1)}, ${fb.tip.y.toFixed(1)}, Z${fb.tip.z.toFixed(1)})`);
+            }
+        }
         lines.push('');
     }
     lines.push(`${report.trunkCount} trunks · ${report.leafCount} leaves · ${report.branchCount} branches · ` +
-        `${report.stickCount} sticks · ${report.twigCount} twigs | ${report.trees.length} fan-out trees, ` +
         `${report.bareTrunks.length} bare trunks`);
     if (report.trees.length > 0) {
         lines.push('');
@@ -1915,6 +2013,7 @@ export function computeAutoSupportPlan(
         trunksByKind: { gridInfill: 0, coverageFill: 0, standalone: 0 },
         fanRefusals: {},
         mergeRefusals: {},
+        cavityFallbacks: [],
     };
     // Consolidation (chunk fanning) refusal tallies — hoisted so the forest
     // report can surface them even when the resize pass re-scopes.
@@ -1950,7 +2049,18 @@ export function computeAutoSupportPlan(
                 case 'anchor':  placedAnchors++; break;
                 case 'branch':  placedBranches++; break;
                 case 'leaf':    placedLeaves++; break;
-                case 'stick':   placedSticks++; break;
+                case 'stick':
+                case 'twig':
+                    // Cavity fallback: the trunk could not reach the plate, so
+                    // we bridged model-to-model. Report WHERE, so avoidable
+                    // bridges are visible instead of buried in a count.
+                    diagnostics.cavityFallbacks.push({
+                        id: candidate.id,
+                        kind: result.kind,
+                        tip: candidate.tipPos,
+                    });
+                    if (result.kind === 'stick') placedSticks++;
+                    break;
                 case 'reject':
                     rejectedCount++;
                     if (result.rejectedReason) {
@@ -2540,6 +2650,19 @@ export function computeAutoSupportPlan(
                 console.warn(LOG_PREFIX, `Orphan validation failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
             }
 
+            // Cone/shaft sync: the resize and merge passes thicken shafts and
+            // rehost members, but a contact cone keeps whatever body diameter
+            // it was built with — a leaf fanned onto a then-thicker host (or a
+            // trunk whose profile was transplanted during a replacement) can
+            // end up wider than the shaft it sits on. Clicking the support
+            // rebuilt the cone from the shaft and "snapped it correct"; do
+            // that globally instead of waiting for a click.
+            const coneSynced = syncContactConeDiameters(draft);
+            if (coneSynced !== draft) {
+                draft = coneSynced;
+                console.log(LOG_PREFIX, 'Contact cone sync: clamped oversized cone bodies to their host shafts.');
+            }
+
             // ── Forest Report ───────────────────────────────────────
             // Structured per-run summary: every placed support's id, size,
             // and sizing reasoning, plus the fan-out groups. Shown in the
@@ -2571,6 +2694,7 @@ export function computeAutoSupportPlan(
                 fanRefusals: { ...diagnostics.fanRefusals },
                 mergeRefusals: { ...diagnostics.mergeRefusals },
                 consolidationRefusals: { ...conRefusals },
+                cavityFallbacks: [...diagnostics.cavityFallbacks],
             };
             analytics.forestReport = forestReport;
             console.log(LOG_PREFIX,

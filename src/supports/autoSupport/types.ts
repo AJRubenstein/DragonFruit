@@ -101,6 +101,11 @@ export interface ForestReport {
          *  the surface is too flat for side-leaves at the consolidation
          *  angle (raft/connector territory). */
         consolidationRefusals: Partial<Record<string, number>>;
+        /** Candidates whose trunk could not reach the plate and were bridged
+         *  model-to-model instead (cavity stick/twig). Tip position = where
+         *  the bridge starts; each entry is a candidate for elimination by
+         *  better routing. */
+        cavityFallbacks: Array<{ id: string; kind: 'stick' | 'twig'; tip: { x: number; y: number; z: number } }>;
     };
 }
 
@@ -175,6 +180,10 @@ export interface PlacementDiagnostics {
     fanRefusals: Partial<Record<FanLeafRefusal, number>>;
     /** Why candidates failed to merge (no host vs host rejected the attachment). */
     mergeRefusals: Partial<Record<'noHost' | 'rejected', number>>;
+    /** Candidates whose trunk could not reach the plate and were bridged
+     *  model-to-model instead (cavity stick/twig). Tip = where the bridge
+     *  starts; each entry is a candidate for elimination by better routing. */
+    cavityFallbacks: Array<{ id: string; kind: 'stick' | 'twig'; tip: { x: number; y: number; z: number } }>;
 }
 
 /** Physics-based sizing debug data. */
