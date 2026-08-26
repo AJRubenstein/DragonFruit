@@ -4106,9 +4106,9 @@ fn main() {
     // called from `setup()`, for exactly this reason.
 
     let _log_level = read_log_level_pref();
-    // Log plugin disabled on CEF — it pulls tauri/wry transitively, causing
-    // E0252 collision. See Cargo.toml comment.
-    #[cfg(not(feature = "tauri-cef"))]
+    // Logging is backend-agnostic: tauri-plugin-log declares tauri with
+    // default-features = false, so it does not drag in wry.
+    #[cfg(feature = "logging")]
     let log_plugin = {
         use tauri_plugin_log::{Builder as LogBuilder, RotationStrategy, Target, TargetKind};
         LogBuilder::new()
@@ -4140,7 +4140,7 @@ fn main() {
     };
 
     let builder = tauri::Builder::default();
-    #[cfg(not(feature = "tauri-cef"))]
+    #[cfg(feature = "logging")]
     let builder = builder.plugin(log_plugin);
     let builder = builder.setup(|app| {
         let app_handle = app.handle().clone();
