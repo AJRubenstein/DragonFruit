@@ -62,6 +62,53 @@ export function mergeOverhangRegions(
 }
 
 /**
+ * Map a Rust overhang region to a unified DetectedIsland (source 'overhang').
+ * Contact = the footprint pixel with the lowest real surface Z, so the
+ * coordinate lies ON the mesh even for sloped/concave regions (a bbox-centre
+ * XY paired with region.minZ floats mid-air there). contactVoxels come from
+ * the footprint mask so the density grid stage can do containment tests
+ * against the exact region shape.
+ */
+export function overhangRegionToIsland(region: OverhangRegion, i: number): DetectedIsland {
+  const { width, height, originX, originY, pxMm, data, surfaceZ } = region.footprint;
+  const contactVoxels = new VoxelFootprintBuilder(Math.min(width * height, 4096), true);
+  let bestIdx = -1;
+  let bestZ = Infinity;
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      const idx = row * width + col;
+      if (data[idx]) {
+        const x = originX + (col + 0.5) * pxMm;
+        const y = originY + (row + 0.5) * pxMm;
+        const z = surfaceZ[idx];
+        contactVoxels.push(x, y, z);
+        if (Number.isFinite(z) && z < bestZ) {
+          bestZ = z;
+          bestIdx = idx;
+        }
+      }
+    }
+  }
+  // Lowest sampled surface pixel; falls back to the mask centre at
+  // region.minZ if the mask or its surface samples are unusable.
+  const contactX = bestIdx >= 0 ? originX + ((bestIdx % width) + 0.5) * pxMm : originX + (width * pxMm) / 2;
+  const contactY = bestIdx >= 0 ? originY + (Math.floor(bestIdx / width) + 0.5) * pxMm : originY + (height * pxMm) / 2;
+  const contactZ = bestIdx >= 0 ? bestZ : region.minZ;
+  return {
+    id: `o${i}`,
+    source: 'overhang' as const,
+    contact: new THREE.Vector3(contactX, contactY, contactZ),
+    baseZ: contactZ,
+    areaMm2: region.projectedAreaMm2,
+    overhangAngleDeg: region.angleDeg,
+    triangleIds: region.triangleIds,
+    surfaceNormal: { x: region.normal[0], y: region.normal[1], z: region.normal[2] },
+    contactVoxels: contactVoxels.build(),
+    perimeterLoops: region.perimeterLoops,
+  };
+}
+
+/**
  * True when a voxel island's contact sits inside an overhang region's
  * projected footprint and their areas are comparable — the same physical
  * surface detected by both detectors.
@@ -278,45 +325,7 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   ].map((v) => v.toFixed(3)).join(',');
   const cacheKey = sourcePath ? `${sourcePath}|${transformKey}` : null;
 
-  /**
-   * Map a Rust overhang region to a unified DetectedIsland (source 'overhang').
-   * Contact = projected-footprint centroid at the region's lowest Z; the
-   * placement pipeline raycasts the real surface point from there anyway.
-   * contactVoxels come from the footprint mask so the density grid stage can
-   * do containment tests against the exact region shape.
-   */
-  const overhangRegionToIsland = (region: OverhangRegion, i: number): DetectedIsland => {
-    const { width, height, originX, originY, pxMm, data, surfaceZ } = region.footprint;
-    const contactVoxels = new VoxelFootprintBuilder(Math.min(width * height, 4096), true);
-    for (let row = 0; row < height; row++) {
-      for (let col = 0; col < width; col++) {
-        const idx = row * width + col;
-        if (data[idx]) {
-          contactVoxels.push(
-            originX + (col + 0.5) * pxMm,
-            originY + (row + 0.5) * pxMm,
-            surfaceZ[idx],
-          );
-        }
-      }
-    }
-    return {
-      id: `o${i}`,
-      source: 'overhang' as const,
-      contact: new THREE.Vector3(
-        originX + (width * pxMm) / 2,
-        originY + (height * pxMm) / 2,
-        region.minZ,
-      ),
-      baseZ: region.minZ,
-      areaMm2: region.projectedAreaMm2,
-      overhangAngleDeg: region.angleDeg,
-      triangleIds: region.triangleIds,
-      surfaceNormal: { x: region.normal[0], y: region.normal[1], z: region.normal[2] },
-      contactVoxels: contactVoxels.build(),
-      perimeterLoops: region.perimeterLoops,
-    };
-  };
+
 
   /**
    * Run BOTH detectors on the same world-space positions (one shared transform →
