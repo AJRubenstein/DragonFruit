@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "sync:version": "node scripts/sync-app-version.mjs",
-    "sync:contributors": "node scripts/sync-contributors.mjs",
+    "sync:sponsors": "node scripts/sync-sponsors.mjs",
     "postversion": "npm run sync:version && npm run sync:contributors",
     "generate:builtin-simple-plugins": "node scripts/generate-builtin-simple-plugins.mjs",
     "generate:plugin-registry": "node scripts/generate-plugin-registry.mjs",
