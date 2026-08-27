@@ -324,12 +324,21 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
           setTimeout(() => {
             try {
               const list = islandsRef.current.filteredIslands;
+              const cur = islandsRef.current;
+              if (list.length === 0 && cur.voxelIslands.length === 0 && cur.minimaIslands.length === 0) {
+                pendingRef.current = true;
+                autoSupportDrivingScan = true;
+                void cur.onRunScan();
+                return;
+              }
               if (list.length > 0 && getSettings().autoSupport.enabled) {
                 runAutoSupports(list);
               }
             } finally {
-              setAutoSupportBusy(false);
-              setBusy(false);
+              if (!pendingRef.current) {
+                setAutoSupportBusy(false);
+                setBusy(false);
+              }
             }
           }, 0);
         });
