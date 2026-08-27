@@ -6,6 +6,7 @@ import { msg } from '@lingui/core/macro';
 import { GeneralSettingsTab } from '@/components/settings/GeneralSettingsTab';
 import { useLocale } from '@/components/I18nClientProvider';
 import contributors from '@/components/settings/contributors.json';
+import { SponsorsCarousel } from '@/components/settings/SponsorsCarousel';
 import { CameraSettingsTab } from '@/components/settings/CameraSettingsTab';
 import { HotkeysSettingsTab } from '@/components/settings/HotkeysSettingsTab';
 import { MeshSettingsTab } from '@/components/settings/MeshSettingsTab';
@@ -1744,15 +1745,11 @@ export function SettingsModal({
                           })()}
                         </div>
                       </div>
-                      
-
-                      <div className="rounded-lg border px-3 py-2 text-center" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-2), transparent 25%)' }}>
-                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          DragonFruit is under active development - expect frequent updates and iterative improvements to workflows and features.
-                        </div>
-                      </div>
                     </div>
                   </div>
+
+                  <SponsorsCarousel />
+
 
                   <div className="flex items-center gap-4 rounded-xl border px-4 py-3" style={{ borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 52%)', background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-0) 94%)' }}>
                       <img
