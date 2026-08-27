@@ -1510,6 +1510,7 @@ dependencies = [
  "rayon",
  "reqwest 0.12.28",
  "rfd",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
