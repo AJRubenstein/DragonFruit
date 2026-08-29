@@ -10,8 +10,10 @@ const SLICING_ENGINE_VERSION_FALLBACK = '3.2.1';
 
 
 export type SlicingThumbnailRenderSettings = {
+  includeGradient: boolean;
+  includeBuildPlate: boolean;
+  includeGrid: boolean;
 };
-
 interface PerformanceSettingsTabProps {
   settings: SlicingPerformanceSettings;
   onChange: (settings: SlicingPerformanceSettings) => void;
