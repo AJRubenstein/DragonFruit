@@ -429,7 +429,33 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
         }));
         setMinimaIslands(minimaMapped);
 
-        mappedOverhangs = (combined.overhangIslands ?? []).map(overhangRegionToIsland);
+        // Overhang triangleIds must index into `geom.geometry` as rendered.
+        // The sideload path loads the file separately in Rust and welds with
+        // a different epsilon/order than `prepareWorldGeom`/`processGeometry`,
+        // so its `triangleIds` point at the wrong geometric triangles
+        // (disconnected speckles). Always classify overhang on the frontend
+        // world soup where IDs are guaranteed to match the overlay geometry.
+        try {
+          const world = prepareWorldGeom();
+          if (world) {
+            // Tauri invoke not available in plain browser, so dynamic import is required.
+            const { invoke } = await import('@tauri-apps/api/core');
+            const regions = await invoke<OverhangRegion[]>('scan_overhangs', {
+              positions: Array.from(world.positions),
+              selfSupportAngleDeg:
+                getSettings().autoSupport?.overhangSelfSupportAngleDeg ??
+                OVERHANG_SELF_SUPPORT_ANGLE_DEG,
+              pxMm: OVERHANG_FOOTPRINT_PX_MM,
+            });
+            if (scanEpochRef.current !== epoch) return;
+            mappedOverhangs = regions.map(overhangRegionToIsland);
+          } else {
+            mappedOverhangs = (combined.overhangIslands ?? []).map(overhangRegionToIsland);
+          }
+        } catch (err) {
+          console.warn('[Islands] frontend overhang scan failed, falling back to sideload overhang', err);
+          mappedOverhangs = (combined.overhangIslands ?? []).map(overhangRegionToIsland);
+        }
         setOverhangIslands(mappedOverhangs);
 
         // Cache the scan results for this model + transform
