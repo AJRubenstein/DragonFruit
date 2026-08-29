@@ -705,7 +705,12 @@ export function PrintingModals({
                 </button>
                 <button
                   type="button"
-                  className="ui-button ui-button-accent !h-9 px-3 text-xs"
+                  className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                  style={{
+                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                    color: 'var(--accent)',
+                  }}
                   onClick={() => {
                     setPreSlicePrintConfirmOpen(false);
                     if (preSlicePrintConfirmResolverRef.current) {
@@ -950,7 +955,12 @@ export function PrintingModals({
                 </button>
                 <button
                   type="button"
-                  className="ui-button ui-button-accent !h-9 px-3 text-xs"
+                  className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                  style={{
+                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                    color: 'var(--accent)',
+                  }}
                   disabled={
                     printingSendBusy
                     || isPrintingTargetMaterialsLoading
@@ -1151,18 +1161,27 @@ export function PrintingModals({
                 {printingUploadDialogStage === 'failed' && (
                   <button
                     type="button"
-                    className="ui-button ui-button-accent !h-9 px-3 text-xs"
+                    className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                    style={{
+                      borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                      background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                      color: 'var(--accent)',
+                    }}
                     onClick={() => { void handleSendToPrinter(); }}
                     disabled={printingSendBusy || printingPrintNowBusy || !canSendToPrinter}
                   >
                     Retry Upload
                   </button>
                 )}
-
                 {printingUploadDialogStage === 'ready' && (
                   <button
                     type="button"
-                    className="ui-button ui-button-accent !h-9 px-3 text-xs"
+                    className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                    style={{
+                      borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                      background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                      color: 'var(--accent)',
+                    }}
                     onClick={handlePrintNow}
                     disabled={!canPrintNow || printingPrintNowBusy || printingSendBusy}
                   >
@@ -1173,7 +1192,12 @@ export function PrintingModals({
                 {printingUploadDialogStage === 'started' && (
                   <button
                     type="button"
-                    className="ui-button ui-button-accent !h-9 px-3 text-xs"
+                    className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                    style={{
+                      borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                      background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                      color: 'var(--accent)',
+                    }}
                     onClick={() => openPrintingMonitorForTargetDevice(printingTargetDevice?.id ?? null)}
                     disabled={printingSendBusy || printingPrintNowBusy}
                   >

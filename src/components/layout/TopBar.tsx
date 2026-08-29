@@ -472,14 +472,20 @@ export function TopBar({
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const handleOpenSettings = () => {
-      setSettingsInitialTab('general');
+    const handleOpenSettings = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { tab?: string } | undefined;
+      const tab = detail?.tab as SettingsTabKey | undefined;
+      if (tab && ['general', 'camera', 'workspaces', 'mesh', 'performance', 'spacemouse', 'ui', 'hotkeys', 'plugins', 'experiments', 'sceneAutosave', 'backups', 'uvtools', 'logging', 'updates', 'about'].includes(tab)) {
+        setSettingsInitialTab(tab as SettingsTabKey);
+      } else {
+        setSettingsInitialTab('general');
+      }
       setIsSettingsOpen(true);
     };
 
-    window.addEventListener(OPEN_SETTINGS_MODAL_EVENT, handleOpenSettings);
+    window.addEventListener(OPEN_SETTINGS_MODAL_EVENT, handleOpenSettings as EventListener);
     return () => {
-      window.removeEventListener(OPEN_SETTINGS_MODAL_EVENT, handleOpenSettings);
+      window.removeEventListener(OPEN_SETTINGS_MODAL_EVENT, handleOpenSettings as EventListener);
     };
   }, []);
 

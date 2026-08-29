@@ -115,7 +115,7 @@ nav:
           - Tauri IPC and Native Bridge: dev/tauri-ipc-bridge.md
           - Hotkeys: dev/hotkeys.md
           - Notifications and Toasts: dev/notifications.md
-      - Support System:
+          - System Notifications: dev/system-notifications.md
           - Support System: dev/support-system.md
           - Auto-Supports: dev/auto-supports.md
           - Auto-Orientation (Pre-Plan): dev/auto-orientation.md

@@ -185,5 +185,8 @@ Whenever you change one of these crates, **bump its `version`** in that crate's
 - `patch` for bug fixes, `minor` for new features (semver).
 - If another crate or the shell pins it by version, update that requirement to
   match.
-- Run `cargo check` (or `cargo build`) afterwards so `Cargo.lock` picks up the
-  bump before committing.
+- Run `cargo check` (or `cargo build`) afterwards so `Cargo.lock` picks up the bump before committing.
+
+## App version — do not bump unprompted
+
+NEVER bump the DragonFruit main app version unprompted — `package.json` `version`, `src-tauri/tauri.conf.json` `version`, and `src-tauri/Cargo.toml` `[package] version` must stay on the current release (currently `0.1.15`) unless the user explicitly asks for a release/version bump. The `rust/*` crate bumps above are allowed; the main app version is release-driven and user-controlled.

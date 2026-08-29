@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Settings } from 'lucide-react';
-import { Card, CardHeader, IconButton, Button } from '@/components/atoms';
+import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
@@ -541,7 +541,6 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
         )}
       </Card>
 
-      {/* Forest Report Modal */}
       <StructuredDialogModal
         open={showForestReport}
         ariaLabel="Forest report"
@@ -553,15 +552,24 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
         onBackdropClick={() => setShowForestReport(false)}
         actions={
           <>
-            <Button
+            <button
+              type="button"
               onClick={() => {
                 if (forestReport) {
                   void navigator.clipboard?.writeText(forestReportToText(forestReport));
                 }
               }}
-              variant="secondary" size="sm" className="!h-9 text-[12px]"
-            >Copy</Button>
-            <Button onClick={() => setShowForestReport(false)} variant="primary" size="sm" className="!h-9 text-[12px]">Close</Button>
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+            >
+              Copy
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForestReport(false)}
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+            >
+              Close
+            </button>
           </>
         }
       >
@@ -577,7 +585,6 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
         )}
       </StructuredDialogModal>
 
-      {/* Settings Modal */}
       <StructuredDialogModal
         open={showSettings}
         ariaLabel="Auto-support settings"
@@ -589,8 +596,25 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
         onBackdropClick={() => setShowSettings(false)}
         actions={
           <>
-            <Button onClick={() => setShowSettings(false)} variant="secondary" size="sm" className="!h-9 text-[12px]">Cancel</Button>
-            <Button onClick={applySettings} variant="primary" size="sm" className="!h-9 text-[12px]">Apply</Button>
+            <button
+              type="button"
+              onClick={() => setShowSettings(false)}
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={applySettings}
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
+            >
+              Apply
+            </button>
           </>
         }
       >
@@ -674,7 +698,6 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
         </div>
       </StructuredDialogModal>
 
-      {/* Replace / Add dialog */}
       <StructuredDialogModal
         open={showReplaceDialog}
         ariaLabel="Existing supports detected"
@@ -685,9 +708,32 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
         onBackdropClick={() => setShowReplaceDialog(false)}
         actions={
           <>
-            <Button onClick={() => setShowReplaceDialog(false)} variant="secondary" size="sm" className="!h-9 text-[12px]">Cancel</Button>
-            <Button onClick={() => { setShowReplaceDialog(false); doRun(false); }} variant="secondary" size="sm" className="!h-9 text-[12px]">Add to existing</Button>
-            <Button onClick={() => { setShowReplaceDialog(false); doRun(true); }} variant="primary" size="sm" className="!h-9 text-[12px]">Replace all</Button>
+            <button
+              type="button"
+              onClick={() => setShowReplaceDialog(false)}
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowReplaceDialog(false); doRun(false); }}
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+            >
+              Add to existing
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowReplaceDialog(false); doRun(true); }}
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
+            >
+              Replace all
+            </button>
           </>
         }
       >

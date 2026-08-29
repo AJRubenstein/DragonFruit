@@ -515,8 +515,8 @@ export function MeshSettingsTab({
                       type="color"
                       value={selectionColor}
                       onChange={(e) => onSelectionColorChange(e.target.value)}
-                      className="h-8 w-10 shrink-0 rounded border"
-                      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}
+                      className="h-8 w-10 shrink-0 cursor-pointer appearance-none overflow-hidden rounded border p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-moz-color-swatch]:border-0"
+                      style={{ borderColor: 'var(--border-subtle)' }}
                     />
                     <input
                       type="text"
@@ -534,8 +534,8 @@ export function MeshSettingsTab({
                       type="color"
                       value={hoverColor}
                       onChange={(e) => onHoverColorChange(e.target.value)}
-                      className="h-8 w-10 shrink-0 rounded border"
-                      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}
+                      className="h-8 w-10 shrink-0 cursor-pointer appearance-none overflow-hidden rounded border p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-moz-color-swatch]:border-0"
+                      style={{ borderColor: 'var(--border-subtle)' }}
                     />
                     <input
                       type="text"

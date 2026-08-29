@@ -20,6 +20,7 @@ import { PrintingPanelStack } from '@/components/organisms/panels/PrintingPanelS
 import { SharedPanelStack } from '@/components/organisms/panels/SharedPanelStack';
 import { TopBar } from '@/components/layout/TopBar';
 import { NotificationStack } from '@/components/organisms/NotificationStack';
+import { SystemNotificationStack } from '@/components/organisms/SystemNotificationStack';
 import { EditorLayout } from '@/components/templates/EditorLayout';
 import { PrintingPreviewPane } from '@/components/organisms/PrintingPreviewPane';
 import { DiagnosticsModals } from '@/components/organisms/modals/DiagnosticsModals';
@@ -938,6 +939,12 @@ export default function Home() {
     // downgrade the now-2.2 file.
     onSceneFormatUpgraded: React.useCallback(() => setSceneFormatChunked(true), []),
   });
+
+  // Expose flush for updater's pre-restart autosave (force trigger before Update & Restart)
+  React.useEffect(() => {
+    (window as unknown as Record<string, unknown>).__df_flushAutosave = flushAutosave;
+    return () => { delete (window as unknown as Record<string, unknown>).__df_flushAutosave; };
+  }, [flushAutosave]);
 
   /**
    * User-facing scene-save failure (Ph0.1 sub-phase D).
@@ -4580,10 +4587,29 @@ export default function Home() {
       return;
     }
     if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+    // Don't show recovery when the app was launched with a scene file (double-click VOXL etc.).
+    // In that case DragonFruit is already in a loading state (pendingStartupSceneHandoff).
+    if (pendingStartupSceneHandoff) {
+      setAutosaveRecovery(null);
+      return;
+    }
 
     let cancelled = false;
     void (async () => {
       try {
+        // If launched with a file, suppress recovery even if the pending flag wasn't yet set
+        // when this effect first ran (race between launch-file fetch and recovery fetch).
+        try {
+          const core = await import('@tauri-apps/api/core');
+          const launchEntries = await core.invoke<unknown[]>('get_launch_scene_files');
+          if (Array.isArray(launchEntries) && launchEntries.length > 0) {
+            if (!cancelled) setAutosaveRecovery(null);
+            return;
+          }
+        } catch {
+          // Non-Tauri or invoke not available — fall through to normal recovery check.
+        }
+
         // Discovery, not a bare manifest read: the payload may be a sidecar
         // beside the project, the generic location, or a legacy `scene.voxl`
         // from before Ph0.1. `resolveAutosaveRecovery` validates that whichever
@@ -4591,6 +4617,11 @@ export default function Home() {
         // never offered for a payload that cannot be restored.
         const candidate = await resolveAutosaveRecovery();
         if (!cancelled && candidate && !candidate.clean) {
+          // Re-check pending handoff after async fetch — it may have become pending while we were fetching.
+          if (pendingStartupSceneHandoff) {
+            setAutosaveRecovery(null);
+            return;
+          }
           setAutosaveRecovery({
             savedAt: candidate.savedAt ?? new Date().toISOString(),
             voxlPath: candidate.voxlPath,
@@ -4605,7 +4636,15 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [sceneAutosaveSettings.recoveryPromptEnabled]);
+  }, [sceneAutosaveSettings.recoveryPromptEnabled, pendingStartupSceneHandoff]);
+
+  // If a launch file arrives after the recovery prompt is already shown, dismiss it
+  // — the app is already loading a scene, so recovery would be a confusing fork.
+  React.useEffect(() => {
+    if (pendingStartupSceneHandoff && autosaveRecovery) {
+      setAutosaveRecovery(null);
+    }
+  }, [pendingStartupSceneHandoff, autosaveRecovery]);
 
   const isDesktopRuntime = React.useCallback(() => {
     if (typeof window === 'undefined') return false;
@@ -10924,6 +10963,8 @@ export default function Home() {
         exportErrorToast={exportErrorToast}
         isExportErrorToastVisible={isExportErrorToastVisible}
       />
+
+      <SystemNotificationStack />
 
       {islandsPoc.scanning && !autoSupportDrivingScan && (
         <div className="absolute inset-0 z-[121] flex items-center justify-center bg-black/45 backdrop-blur-[1px]">
