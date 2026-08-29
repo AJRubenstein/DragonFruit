@@ -4067,6 +4067,14 @@ fn main() {
         }
     }
 
+    // rustls 0.23 will not pick a crypto provider on its own. tauri-plugin-updater
+    // enables reqwest's `rustls-no-provider`, and reqwest then calls get_default()
+    // without the crate-features fallback, so building the updater's HTTP client
+    // panics with "No provider set" unless one was installed process-wide first.
+    // rustls' own `ring` feature being on (via ureq) is not enough. Err just means
+    // someone else got here first. See issue #615.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // Install a panic hook that writes the panic location and message to the
     // DragonFruit log before the default handler runs.  This ensures that even
     // hard crashes leave a human-readable trace in the log file rather than
