@@ -180,7 +180,9 @@ fn build_row_spans_matched(
     let mut pairs: Vec<(f32, f32)> = Vec::with_capacity(active_edges.len() / 2 + 1);
     let mut orphans: Vec<(f32, i32)> = Vec::new();
 
-    for edge in active_edges {
+    let mut edge_index = 0usize;
+    while edge_index < active_edges.len() {
+        let edge = active_edges[edge_index];
         if !edge.x.is_finite() {
             break;
         }
@@ -188,6 +190,25 @@ fn build_row_spans_matched(
         // Normalize so w > 0 opens fill and w < 0 closes it, regardless of
         // the mesh's dominant orientation.
         let mut w = edge.wind * entry_wind;
+        if w == -1 && open.is_empty() {
+            // A nearby entry belongs to this unmatched exit when its next
+            // possible closing exit is farther away. Consume that local gap
+            // instead of carrying the entry into another model instance.
+            let next_entry = active_edges.get(edge_index + 1).filter(|next| {
+                next.x.is_finite() && next.wind * entry_wind == 1 && next.x > edge.x
+            });
+            if let Some(next_entry) = next_entry {
+                let next_exit = active_edges[edge_index + 2..].iter().find(|candidate| {
+                    candidate.x.is_finite() && candidate.wind * entry_wind < 0
+                });
+                if next_exit.is_some_and(|next_exit| {
+                    next_entry.x - edge.x < next_exit.x - next_entry.x
+                }) {
+                    edge_index += 2;
+                    continue;
+                }
+            }
+        }
         while w > 0 {
             open.push(edge.x);
             w -= 1;
@@ -203,6 +224,7 @@ fn build_row_spans_matched(
                 None => orphans.push((edge.x, -1)),
             }
         }
+        edge_index += 1;
     }
     for &x in &open {
         orphans.push((x, 1));
@@ -4675,6 +4697,55 @@ mod tests {
                 "subpixel gaps must not bridge repeated instances: {spans:?}"
             );
         }
+    }
+
+    #[test]
+    fn repeated_local_gap_signatures_do_not_bridge_between_instances() {
+        let mut prev_edges = Vec::new();
+        let mut edges = Vec::new();
+        for offset in [0.0, 100.0, 200.0] {
+            prev_edges.extend_from_slice(&[
+                edge(offset + 10.0, 1),
+                edge(offset + 20.0, -1),
+                edge(offset + 30.0, 1),
+                edge(offset + 40.0, -1),
+            ]);
+            edges.extend_from_slice(&[
+                edge(offset + 10.0, 1),
+                edge(offset + 20.0, -1),
+                edge(offset + 30.0, 1),
+                edge(offset + 40.0, -1),
+                edge(offset + 50.0, -1),
+                edge(offset + 55.0, 1),
+            ]);
+        }
+        let prev = build_row_spans_nonzero(&prev_edges, 300, true);
+
+        for snap_to_integer in [true, false] {
+            let spans = super::build_row_spans_nonzero_ctx(
+                &edges,
+                300,
+                snap_to_integer,
+                Some(&prev),
+            );
+            assert_eq!(spans.len(), 6);
+            assert!(
+                spans.iter().all(|span| span.b - span.a <= 10.0),
+                "local gap signatures must not bridge repeated instances: {spans:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unmatched_exit_does_not_consume_the_next_real_object() {
+        let spans = build_row_spans_nonzero(
+            &[edge(10.0, -1), edge(100.0, 1), edge(130.0, -1)],
+            256,
+            true,
+        );
+
+        assert_eq!(spans.len(), 1);
+        assert_eq!((spans[0].start, spans[0].end), (100, 129));
     }
 
     #[test]

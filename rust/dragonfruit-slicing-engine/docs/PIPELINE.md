@@ -57,6 +57,7 @@ This path is still bounded/cancelable and useful for encoders not exposing paral
 
 - handles overlapping/intersecting solids robustly
 - removes opposite-winding crossings less than one source pixel apart before span construction, preventing unrenderable features or gaps from leaking across repeated instances
+- keeps unmatched exit/entry gap signatures local when the entry is closer to the orphan exit than its next possible closing exit
 - AA off => strict binary 0/255 writes
 - AA on => subscanline coverage accumulation to grayscale
 - output is row-major `Vec<RleRun>`
