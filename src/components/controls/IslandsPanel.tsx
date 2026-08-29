@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Settings, RotateCcw } from 'lucide-react';
-import { Button, Card, CardHeader, IconButton } from '@/components/atoms';
+import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
@@ -307,18 +307,26 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
         onBackdropClick={() => setShowSettings(false)}
         actions={
           <>
-            <Button onClick={() => setShowSettings(false)} variant="secondary" size="sm" className="!h-9 text-[12px]">
+            <button
+              type="button"
+              onClick={() => setShowSettings(false)}
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+            >
               Cancel
-            </Button>
-            <Button
+            </button>
+            <button
+              type="button"
               onClick={() => { applySettings(); setShowSettings(false); }}
-              variant="primary"
-              size="sm"
-              className="!h-9 text-[12px]"
               disabled={!hasPendingChanges}
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
             >
               Apply
-            </Button>
+            </button>
           </>
         }
       >
