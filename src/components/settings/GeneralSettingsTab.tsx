@@ -374,10 +374,10 @@ export function GeneralSettingsTab({
           </span>
           <div className="flex-1">
             <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
-              Support Placement Help
+              Support Tooltips
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              Show placement guidance next to the cursor while adding supports.
+              Show placement tooltips next to the cursor while adding supports.
             </p>
           </div>
         </div>
@@ -386,10 +386,10 @@ export function GeneralSettingsTab({
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
-                Show support placement help
+                Show support tooltips
               </div>
               <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Shows &quot;Cannot Place Support&quot; and &quot;Stability Warning&quot; messages.
+                Shows &quot;Cannot Place Support&quot; and &quot;Stability Warning&quot; tooltips.
               </div>
             </div>
             <button
