@@ -8,6 +8,7 @@ import { Trans } from '@lingui/react/macro';
 import ReactMarkdown from 'react-markdown';
 import { fetchUpdateInfo, downloadAndInstall, getUpdateChannel, updatesAreExternal, type UpdateInfo, type DownloadProgress, type UpdateChannel } from '@/features/updater/updateBridge';
 import { openSettingsModal } from '@/components/settings/settingsModalEvents';
+import { pushSystemNotification, dismissSystemNotification } from '@/features/notifications/systemNotificationStore';
 import { isAllowSameVersionEnabled, enableAllowSameVersionForSession } from '@/features/updater/debugForceSession';
 // ---------------------------------------------------------------------------
 
@@ -179,147 +180,66 @@ export function GlobalUpdateIndicator() {
     });
   }, [triggerExit]);
 
-  // Auto-exit after 30s expiry bar
+  // Push to reusable System Notification stack (bottom-right, frosted, 30s expiry)
+  // This makes the update notification reusable for future system notifications like "Print is Done"
   useEffect(() => {
-    if (state.status !== 'available' || isExiting) return;
-    if (isSettingsOpen()) return;
-    const timer = window.setTimeout(() => {
-      handleDismiss();
-    }, 30_000);
-    return () => window.clearTimeout(timer);
-  }, [state.status, isExiting, handleDismiss]);
+    if (state.status === 'available' && state.info) {
+      if (isSettingsOpen()) {
+        dismissSystemNotification('update-available');
+        return;
+      }
+      const info = state.info;
+      const parsedDate = info.date ? new Date(info.date) : null;
+      const releaseDate = parsedDate && !Number.isNaN(parsedDate.getTime())
+        ? parsedDate.toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' })
+        : null;
+      const subtitle = releaseDate ? _(msg`Released ${releaseDate}`) : undefined;
+      pushSystemNotification({
+        id: 'update-available',
+        title: 'Update Available!',
+        subtitle: subtitle ? (subtitle as string).replace('Released ', 'Release ') : undefined,
+        tone: 'accent-secondary',
+        hideIcon: true,
+        versionChip: `Version ${info.version}`,
+        expiryMs: 30_000,
+        onClose: handleClose,
+        actions: [
+          { label: 'Remind me later', variant: 'secondary', onClick: handleDismiss },
+          { label: 'View in Settings', variant: 'accent-secondary', onClick: () => { openSettingsModal('updates'); handleClose(); } },
+        ],
+      });
+      return;
+    }
+    if (state.status === 'downloading') {
+      const pct = state.pct;
+      pushSystemNotification({
+        id: 'update-available',
+        title: 'Downloading update',
+        subtitle: `${pct}%`,
+        tone: 'accent',
+        progressPct: pct,
+        expiryMs: null,
+        actions: [],
+      });
+      return;
+    }
+    if (state.status === 'error') {
+      const msg = state.message;
+      pushSystemNotification({
+        id: 'update-available',
+        title: 'Update failed',
+        subtitle: msg,
+        tone: 'error',
+        expiryMs: null,
+        actions: [
+          { label: 'Dismiss', variant: 'secondary', onClick: handleClose },
+          { label: 'Try again', variant: 'danger', onClick: handleClose },
+        ],
+      });
+      return;
+    }
+    dismissSystemNotification('update-available');
+  }, [state, i18n, handleDismiss, handleClose]);
 
-
-  // ── Render ──────────────────────────────────────────────────────────
-  const isNotificationVisible = state.status === 'available' || state.status === 'downloading' || state.status === 'error';
-  if (!isNotificationVisible) return null;
-  // Don't show global notification when already in Settings → Updates (handled in-page)
-  if (isSettingsOpen()) return null;
-
-  const info = state.status === 'available' ? state.info : null;
-  const isDownloading = state.status === 'downloading';
-  const isError = state.status === 'error';
-  const errorMessage = state.status === 'error' ? state.message : null;
-  const pct = state.status === 'downloading' ? state.pct : 0;
-  const parsedDate = info?.date ? new Date(info.date) : null;
-  const releaseDate = parsedDate && !Number.isNaN(parsedDate.getTime())
-    ? parsedDate.toLocaleDateString(i18n.locale, { year: 'numeric', month: 'long', day: 'numeric' })
-    : null;
-  const subtitle = releaseDate ? _(msg`Released ${releaseDate}`) : undefined;
-  const version = info?.version ?? '?';
-
-  const openSettingsUpdates = () => {
-    openSettingsModal('updates');
-    handleClose();
-  };
-
-  return (
-    <>
-      <style>{`@keyframes df-update-expiry { from { transform: scaleX(1); } to { transform: scaleX(0); } } @keyframes df-fly-in-right { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } } @keyframes df-fly-out-right { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }`}</style>
-      <div className="fixed bottom-6 right-6 z-[130] w-[22rem]" style={{ animation: isExiting ? 'df-fly-out-right 0.18s ease-in forwards' : 'df-fly-in-right 0.2s ease-out forwards' }}>
-        <div
-          className="relative overflow-hidden rounded-xl border shadow-2xl backdrop-blur-2xl supports-[backdrop-filter]:backdrop-blur-2xl"
-          style={{
-            background: 'color-mix(in srgb, var(--surface-0), transparent 12%)',
-            borderColor: 'color-mix(in srgb, var(--border-subtle), transparent 8%)',
-            boxShadow: '0 18px 48px rgba(0,0,0,0.42)',
-            backdropFilter: 'blur(32px) saturate(1.5)',
-            WebkitBackdropFilter: 'blur(32px) saturate(1.5)',
-          }}
-        >
-          <div className="flex flex-col items-center gap-1.5 p-3.5 text-center">
-            <div className="min-w-0">
-              <div className="text-base font-bold leading-tight" style={{ color: isDownloading || isError ? 'var(--text-strong)' : 'var(--accent-secondary)' }}>
-                {isDownloading ? _(msg`Downloading update`) : isError ? _(msg`Update failed`) : _(msg`Update Available!`)}
-              </div>
-              {subtitle && !isDownloading && !isError && (
-                <div className="mt-1 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                  {subtitle.replace('Released ', 'Release ')}
-                </div>
-              )}
-              {isDownloading && (
-                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full" style={{ background: 'var(--surface-1)' }}>
-                  <div className="h-full rounded-full transition-all duration-300" style={{ width: `${pct}%`, background: 'var(--accent)' }} />
-                </div>
-              )}
-              {isError && errorMessage && (
-                <div className="mt-1 text-xs" style={{ color: '#fca5a5' }}>
-                  {errorMessage}
-                </div>
-              )}
-            </div>
-          </div>
-        {!isDownloading && !isError && info && (
-          <div className="px-3.5 pb-2 -mt-1 text-center">
-            <span className="inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 40%)', background: 'color-mix(in srgb, var(--accent), var(--surface-1) 85%)', color: 'var(--accent)' }}>
-              Version {info.version}
-            </span>
-          </div>
-        )}
-        <div className="relative flex items-center gap-3 border-t px-4 py-3 overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-          {!isDownloading && !isError && (
-            <div className="absolute inset-x-0 top-0 h-0.5 overflow-hidden" style={{ background: 'transparent' }}>
-              <div
-                className="h-full w-full origin-left"
-                style={{
-                  background: 'var(--accent)',
-                  animation: 'df-update-expiry 30s linear forwards',
-                }}
-              />
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={handleDismiss}
-            className="flex-1 ui-button ui-button-secondary !h-9 px-4 text-sm inline-flex items-center justify-center gap-1.5"
-          >
-            <Trans>Remind me later</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={isDownloading || isError ? handleClose : isError ? handleClose : openSettingsUpdates}
-            className="flex-1 ui-button !h-9 px-4 text-sm inline-flex items-center justify-center gap-1.5"
-            style={
-              isError
-                ? {
-                    borderColor: 'color-mix(in srgb, #ef4444, var(--border-subtle) 45%)',
-                    background: 'color-mix(in srgb, #ef4444, var(--surface-1) 86%)',
-                    color: 'var(--danger)',
-                  }
-                : isDownloading
-                  ? {
-                      borderColor: 'var(--border-subtle)',
-                      background: 'var(--surface-1)',
-                      color: 'var(--text-muted)',
-                    }
-                  : {
-                      borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)',
-                      background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 86%)',
-                      color: 'var(--accent-secondary)',
-                    }
-            }
-            disabled={isDownloading}
-          >
-            {isError ? (
-              <>
-                <RotateCcw className="h-3.5 w-3.5" />
-                <Trans>Try again</Trans>
-              </>
-            ) : isDownloading ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <Trans>Downloading… {pct}%</Trans>
-              </>
-            ) : (
-              <>
-                <Download className="h-3.5 w-3.5" />
-                <Trans>View in Settings</Trans>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-    </>
-  );
+  return null;
 }

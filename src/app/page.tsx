@@ -20,6 +20,7 @@ import { PrintingPanelStack } from '@/components/organisms/panels/PrintingPanelS
 import { SharedPanelStack } from '@/components/organisms/panels/SharedPanelStack';
 import { TopBar } from '@/components/layout/TopBar';
 import { NotificationStack } from '@/components/organisms/NotificationStack';
+import { SystemNotificationStack } from '@/components/organisms/SystemNotificationStack';
 import { EditorLayout } from '@/components/templates/EditorLayout';
 import { PrintingPreviewPane } from '@/components/organisms/PrintingPreviewPane';
 import { DiagnosticsModals } from '@/components/organisms/modals/DiagnosticsModals';
@@ -10962,6 +10963,8 @@ export default function Home() {
         exportErrorToast={exportErrorToast}
         isExportErrorToastVisible={isExportErrorToastVisible}
       />
+
+      <SystemNotificationStack />
 
       {islandsPoc.scanning && !autoSupportDrivingScan && (
         <div className="absolute inset-0 z-[121] flex items-center justify-center bg-black/45 backdrop-blur-[1px]">
