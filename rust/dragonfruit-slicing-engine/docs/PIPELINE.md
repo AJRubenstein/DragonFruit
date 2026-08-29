@@ -56,6 +56,7 @@ This path is still bounded/cancelable and useful for encoders not exposing paral
 `raster::rasterize_layer_rle` uses scanline winding unions:
 
 - handles overlapping/intersecting solids robustly
+- removes opposite-winding crossings less than one source pixel apart before span construction, preventing unrenderable features or gaps from leaking across repeated instances
 - AA off => strict binary 0/255 writes
 - AA on => subscanline coverage accumulation to grayscale
 - output is row-major `Vec<RleRun>`

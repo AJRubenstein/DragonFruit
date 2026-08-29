@@ -351,12 +351,47 @@ fn spans_total_px(spans: &[RowSpan]) -> u64 {
     spans.iter().map(|s| (s.end - s.start + 1) as u64).sum()
 }
 
+fn collapse_subpixel_pairs(active_edges: &[ActiveEdge]) -> Option<Vec<ActiveEdge>> {
+    let has_subpixel_pair = active_edges.windows(2).any(|pair| {
+        pair[0].x.is_finite()
+            && pair[1].x.is_finite()
+            && pair[0].wind + pair[1].wind == 0
+            && pair[1].x - pair[0].x < 1.0
+    });
+    if !has_subpixel_pair {
+        return None;
+    }
+
+    let mut collapsed = Vec::with_capacity(active_edges.len());
+    for &edge in active_edges {
+        let cancels_previous = collapsed.last().is_some_and(|previous: &ActiveEdge| {
+            previous.x.is_finite()
+                && edge.x.is_finite()
+                && previous.wind + edge.wind == 0
+                && edge.x - previous.x < 1.0
+        });
+        if cancels_previous {
+            collapsed.pop();
+        } else {
+            collapsed.push(edge);
+        }
+    }
+
+    Some(collapsed)
+}
+
 fn build_row_spans_nonzero_inner(
     active_edges: &[ActiveEdge],
     width: usize,
     snap_to_integer: bool,
     prev_spans: Option<&[RowSpan]>,
 ) -> (Vec<RowSpan>, bool) {
+    // Opposite crossings below the source raster's X resolution have zero
+    // printable extent. Remove them before winding repair so one crossing
+    // cannot be matched against another instance across the plate.
+    let collapsed_edges = collapse_subpixel_pairs(active_edges);
+    let active_edges = collapsed_edges.as_deref().unwrap_or(active_edges);
+
     let mut spans = Vec::with_capacity(active_edges.len() / 2 + 1);
     let mut winding = 0i32;
     let n = active_edges.len();
@@ -4583,6 +4618,71 @@ mod tests {
         assert_eq!(spans.len(), 2, "orphan entries must not pair across matched fill");
         assert_eq!((spans[0].start, spans[0].end), (30, 49));
         assert_eq!((spans[1].start, spans[1].end), (100, 119));
+    }
+
+    #[test]
+    fn repeated_subpixel_gap_pairs_do_not_bridge_in_any_raster_mode() {
+        let prev = build_row_spans_nonzero(
+            &[
+                edge(10.0, 1),
+                edge(20.0, -1),
+                edge(30.0, 1),
+                edge(40.0, -1),
+                edge(110.0, 1),
+                edge(120.0, -1),
+                edge(130.0, 1),
+                edge(140.0, -1),
+                edge(210.0, 1),
+                edge(220.0, -1),
+                edge(230.0, 1),
+                edge(240.0, -1),
+            ],
+            300,
+            true,
+        );
+        let defective = [
+            edge(10.0, 1),
+            edge(20.0, -1),
+            edge(30.0, 1),
+            edge(40.0, -1),
+            edge(50.0, -1),
+            edge(50.02, 1),
+            edge(110.0, 1),
+            edge(120.0, -1),
+            edge(130.0, 1),
+            edge(140.0, -1),
+            edge(150.0, -1),
+            edge(150.02, 1),
+            edge(210.0, 1),
+            edge(220.0, -1),
+            edge(230.0, 1),
+            edge(240.0, -1),
+            edge(250.0, -1),
+            edge(250.02, 1),
+        ];
+
+        for snap_to_integer in [true, false] {
+            let spans = super::build_row_spans_nonzero_ctx(
+                &defective,
+                300,
+                snap_to_integer,
+                Some(&prev),
+            );
+
+            assert_eq!(spans.len(), 6);
+            assert!(
+                spans.iter().all(|span| span.b - span.a <= 10.0),
+                "subpixel gaps must not bridge repeated instances: {spans:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn complete_subpixel_features_are_dropped_in_all_raster_modes() {
+        let edges = [edge(10.1, 1), edge(10.9, -1)];
+
+        assert!(build_row_spans_nonzero(&edges, 256, true).is_empty());
+        assert!(build_row_spans_nonzero(&edges, 256, false).is_empty());
     }
 
     #[test]
