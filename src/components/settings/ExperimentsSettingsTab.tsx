@@ -3,7 +3,7 @@
 import React from 'react';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, FlaskConical, X } from 'lucide-react';
+import { AlertTriangle, FlaskConical } from 'lucide-react';
 import {
   getExperimentDefinitions,
   isExperimentEnabled,
@@ -52,7 +52,7 @@ function ExperimentsDisclaimer({ onAcknowledge, onExit }: ExperimentsDisclaimerP
         aria-modal="true"
         aria-label="Experiments disclaimer"
       >
-        <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
+        <div className="flex items-center gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
           <div className="flex min-w-0 items-center gap-3">
             <span
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border"
@@ -75,19 +75,6 @@ function ExperimentsDisclaimer({ onAcknowledge, onExit }: ExperimentsDisclaimerP
             </div>
           </div>
 
-          <button
-            type="button"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-colors"
-            style={{
-              borderColor: 'var(--border-subtle)',
-              background: 'var(--surface-1)',
-              color: 'var(--text-muted)',
-            }}
-            aria-label="Close experiments disclaimer"
-            onClick={onExit}
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
 
         <div className="space-y-4 p-5">
@@ -100,10 +87,17 @@ function ExperimentsDisclaimer({ onAcknowledge, onExit }: ExperimentsDisclaimerP
           <p className="text-xs leading-relaxed" style={{ color: '#fca5a5', fontWeight: 600 }}>
             Enable and use them at your own risk.
           </p>
-          <div className="flex justify-end pt-1">
+          <div className="grid grid-cols-2 gap-2 pt-1">
             <button
               type="button"
-              className="ui-button !h-9 px-3 text-xs"
+              className="ui-button ui-button-secondary !h-9 w-full px-3 text-xs inline-flex items-center justify-center gap-1.5"
+              onClick={onExit}
+            >
+              Take me back!
+            </button>
+            <button
+              type="button"
+              className="ui-button !h-9 w-full px-3 text-xs inline-flex items-center justify-center gap-1.5"
               style={{
                 borderColor: 'color-mix(in srgb, #f59e0b, var(--border-subtle) 45%)',
                 background: 'color-mix(in srgb, #f59e0b, var(--surface-1) 86%)',
@@ -111,7 +105,7 @@ function ExperimentsDisclaimer({ onAcknowledge, onExit }: ExperimentsDisclaimerP
               }}
               onClick={onAcknowledge}
             >
-              I Understand
+              I understand
             </button>
           </div>
         </div>
@@ -120,8 +114,8 @@ function ExperimentsDisclaimer({ onAcknowledge, onExit }: ExperimentsDisclaimerP
   );
 }
 
-// Module-level so the disclaimer is shown at most once per app launch, no matter
-// how many times the tab is entered (the tab remounts on each entry).
+// Module-level so the disclaimer is shown until acknowledged with I understand;
+// Take me back keeps it for next entry, so it can reappear within the same launch.
 let disclaimerSeenThisLaunch = false;
 
 export function ExperimentsSettingsTab({ onExit }: { onExit: () => void }) {
@@ -133,9 +127,9 @@ export function ExperimentsSettingsTab({ onExit }: { onExit: () => void }) {
   }, []);
 
   React.useEffect(() => {
-    // Show the ORA disclaimer on the first tab entry of this launch only.
+    // Show the ORA disclaimer if not yet acknowledged this launch.
+    // Only I understand marks it as seen — Take me back keeps it for next entry.
     if (!disclaimerSeenThisLaunch) {
-      disclaimerSeenThisLaunch = true;
       setShowDisclaimer(true);
     }
   }, []);
@@ -151,8 +145,15 @@ export function ExperimentsSettingsTab({ onExit }: { onExit: () => void }) {
       ? null
       : createPortal(
           <ExperimentsDisclaimer
-            onAcknowledge={() => setShowDisclaimer(false)}
-            onExit={onExit}
+            onAcknowledge={() => {
+              disclaimerSeenThisLaunch = true;
+              setShowDisclaimer(false);
+            }}
+            onExit={() => {
+              // Keep disclaimer for next entry — don't mark as seen
+              setShowDisclaimer(false);
+              onExit();
+            }}
           />,
           document.body,
         );
@@ -187,7 +188,7 @@ export function ExperimentsSettingsTab({ onExit }: { onExit: () => void }) {
             <div
               key={experiment.id}
               className="rounded-md border px-2.5 py-2 flex items-center justify-between gap-3"
-              style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}
+              style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}
             >
               <div className="min-w-0 flex-1">
                 <span className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>{experiment.name}</span>

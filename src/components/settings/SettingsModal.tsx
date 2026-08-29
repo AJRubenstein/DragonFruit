@@ -1905,8 +1905,12 @@ export function SettingsModal({
                 <button
                   type="button"
                   onClick={handleConfirmRestoreDefaults}
-                  className="ui-button !h-9 px-3 text-xs inline-flex items-center gap-1.5"
-                  style={accentSecondaryActionStyle92}
+                  className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                  style={{
+                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                    color: 'var(--accent)',
+                  }}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Restore Defaults
@@ -1985,8 +1989,12 @@ export function SettingsModal({
                 <button
                   type="button"
                   onClick={reloadToApplyExperiments}
-                  className="ui-button !h-9 px-3 text-xs inline-flex items-center gap-1.5"
-                  style={accentSecondaryActionStyle92}
+                  className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                  style={{
+                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                    color: 'var(--accent)',
+                  }}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Reload Now
@@ -2019,8 +2027,12 @@ export function SettingsModal({
             <button
               type="button"
               onClick={handleConfirmSaveCurrentCustomTheme}
-              className="ui-button !h-9 px-3 text-xs inline-flex items-center gap-1.5"
-              style={accentSecondaryActionStyle92}
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
             >
               <Save className="h-3.5 w-3.5" />
               Save Theme
@@ -2055,11 +2067,11 @@ export function SettingsModal({
             <button
               type="button"
               onClick={handleConfirmDeleteCurrentCustomTheme}
-              className="ui-button ui-button-secondary !h-9 px-3 text-xs inline-flex items-center gap-1.5"
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
               style={{
+                borderColor: 'color-mix(in srgb, #ef4444, var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, #ef4444, var(--surface-1) 86%)',
                 color: 'var(--danger)',
-                borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 40%)',
-                background: 'color-mix(in srgb, var(--danger), var(--surface-1) 92%)',
               }}
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -2095,8 +2107,12 @@ export function SettingsModal({
             <button
               type="button"
               onClick={handleConfirmRenameCurrentCustomTheme}
-              className="ui-button !h-9 px-3 text-xs inline-flex items-center gap-1.5"
-              style={accentSecondaryActionStyle92}
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
               disabled={draftThemeRenameName.trim().length === 0}
             >
               <Check className="h-3.5 w-3.5" />
