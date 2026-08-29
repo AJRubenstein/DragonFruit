@@ -1567,6 +1567,35 @@ export function useSceneCollectionManager() {
     setView3dSettingsState(getSavedView3DSettings());
   }, []);
 
+  useEffect(() => {
+    const prev = readMeshAppearanceFromLocalStorage();
+    if (!prev) {
+      writeMeshAppearanceToLocalStorage({
+        v: 1,
+        shaderType,
+        matcapVariant,
+        flatUseVertexColors,
+        toonSteps,
+        ambientIntensity,
+        directionalIntensity,
+        materialRoughness,
+        wireframeThicknessPx,
+        xrayOpacity,
+        heatmapMinAngle,
+        heatmapMaxAngle,
+        heatmapColors,
+        meshColor: preferredMeshColor,
+        hoverTintStrength,
+        selectedTintStrength,
+        selectionColor,
+        hoverColor,
+      });
+      return;
+    }
+    if (prev.selectionColor === selectionColor && prev.hoverColor === hoverColor) return;
+    writeMeshAppearanceToLocalStorage({ ...prev, selectionColor, hoverColor });
+  }, [selectionColor, hoverColor]);
+
   const setView3dSettings = useCallback((next: View3DSettings) => {
     const normalized = normalizeView3DSettings(next);
     setView3dSettingsState(normalized);

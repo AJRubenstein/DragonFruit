@@ -415,7 +415,11 @@ export function SettingsModal({
   const [draftPerspectiveFov, setDraftPerspectiveFov] = useState<number>(() => getSavedCameraFovSettings().fov);
   const [draftThemePreference, setDraftThemePreference] = useState(getSavedThemePreference());
   const [draftThemePreset, setDraftThemePreset] = useState<ThemePreset>(getSavedThemePreset());
-  const [draftThemeColors, setDraftThemeColors] = useState<ThemeCustomColors>(getSavedThemeCustomColors());
+  const [draftThemeColors, setDraftThemeColors] = useState<ThemeCustomColors>(() => {
+    const preset = getSavedThemePreset();
+    const profile = getThemeProfile(preset, getSavedCustomThemeProfiles());
+    return { ...profile.colors };
+  });
   const [draftThemeProfiles, setDraftThemeProfiles] = useState<SavedCustomThemeProfile[]>(() => getSavedCustomThemeProfiles());
   const [draftCustomThemeName, setDraftCustomThemeName] = useState<string>(() => {
     const savedPreset = getSavedThemePreset();
@@ -1058,12 +1062,6 @@ export function SettingsModal({
     applyThemeCustomColors(draftThemeColors);
   }, [draftThemeColors, draftThemePreference, isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    setDraftSelectionColor(draftThemeColors.accent);
-    setDraftHoverColor(draftThemeColors.accentHover);
-  }, [draftThemeColors.accent, draftThemeColors.accentHover, isOpen]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
