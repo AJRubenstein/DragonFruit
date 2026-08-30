@@ -52,8 +52,9 @@ type MeshSettingsTabProps = {
   onHoverTintStrengthChange: (value: number) => void;
   selectedTintStrength: number;
   onSelectedTintStrengthChange: (value: number) => void;
+  defaultSelectionColor?: string;
+  defaultHoverColor?: string;
 };
-
 export function MeshSettingsTab({
   shaderType,
   onShaderTypeChange,
@@ -87,6 +88,8 @@ export function MeshSettingsTab({
   onHoverTintStrengthChange,
   selectedTintStrength,
   onSelectedTintStrengthChange,
+  defaultSelectionColor = DEFAULT_SELECTION_COLOR,
+  defaultHoverColor = DEFAULT_HOVER_COLOR,
 }: MeshSettingsTabProps) {
   const { _ } = useLingui();
   const [previewModel, setPreviewModel] = React.useState<string>('knot');
@@ -151,10 +154,9 @@ export function MeshSettingsTab({
   }, [lightness, onAmbientIntensityChange, onDirectionalIntensityChange]);
 
   const handleResetColors = React.useCallback(() => {
-    onSelectionColorChange(DEFAULT_SELECTION_COLOR);
-    onHoverColorChange(DEFAULT_HOVER_COLOR);
-  }, [onSelectionColorChange, onHoverColorChange]);
-
+    onSelectionColorChange(defaultSelectionColor);
+    onHoverColorChange(defaultHoverColor);
+  }, [onSelectionColorChange, onHoverColorChange, defaultSelectionColor, defaultHoverColor]);
   return (
     <div className="space-y-3">
 

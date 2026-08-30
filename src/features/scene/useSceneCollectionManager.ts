@@ -22,6 +22,7 @@ import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports
 import { getKickstandSnapshot, setKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import type { KickstandState } from '@/supports/SupportTypes/Kickstand/types';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
+import { getSavedThemeCustomColors } from '@/components/settings/themeCustomizations';
 import {
   DEFAULT_VIEW3D_SETTINGS,
   getSavedView3DSettings,
@@ -87,6 +88,22 @@ const DEFAULT_FLAT_USE_VERTEX_COLORS = true;
 const DEFAULT_TOON_STEPS = 5;
 export const DEFAULT_SELECTION_COLOR = '#ec2a77';
 export const DEFAULT_HOVER_COLOR = '#ec2a77';
+export function getThemedDefaultSelectionColor(): string {
+  try {
+    if (typeof window === 'undefined') return DEFAULT_SELECTION_COLOR;
+    const c = getSavedThemeCustomColors()?.accent;
+    if (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();
+  } catch {}
+  return DEFAULT_SELECTION_COLOR;
+}
+export function getThemedDefaultHoverColor(): string {
+  try {
+    if (typeof window === 'undefined') return DEFAULT_HOVER_COLOR;
+    const c = getSavedThemeCustomColors()?.accent;
+    if (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();
+  } catch {}
+  return DEFAULT_HOVER_COLOR;
+}
 export const DEFAULT_HOVER_TINT_STRENGTH = 0.5;
 export const DEFAULT_SELECTED_TINT_STRENGTH = 0.75;
 const RECENT_OPENED_FILES_STORAGE_KEY = 'app-recent-opened-files';
@@ -424,8 +441,8 @@ function readMeshAppearanceFromLocalStorage(): PersistedMeshAppearance | null {
       heatmapMaxAngle: clampNumber(parsed.heatmapMaxAngle, 0, 90, DEFAULT_HEATMAP_MAX_ANGLE),
       heatmapColors: Array.isArray(parsed.heatmapColors) && parsed.heatmapColors.length === 5 ? parsed.heatmapColors : DEFAULT_HEATMAP_COLORS,
       meshColor: clampHexColor(parsed.meshColor, DEFAULT_MESH_COLOR),
-      selectionColor: clampHexColor(parsed.selectionColor, DEFAULT_SELECTION_COLOR),
-      hoverColor: clampHexColor(parsed.hoverColor, DEFAULT_HOVER_COLOR),
+      selectionColor: clampHexColor(parsed.selectionColor, getThemedDefaultSelectionColor()),
+      hoverColor: clampHexColor(parsed.hoverColor, getThemedDefaultHoverColor()),
       hoverTintStrength: clampNumber(parsed.hoverTintStrength, 0, 1, DEFAULT_HOVER_TINT_STRENGTH),
       selectedTintStrength: clampNumber(parsed.selectedTintStrength, 0, 1, DEFAULT_SELECTED_TINT_STRENGTH),
     };
@@ -1511,8 +1528,8 @@ export function useSceneCollectionManager() {
   const [heatmapMaxAngle, setHeatmapMaxAngle] = useState<number>(DEFAULT_HEATMAP_MAX_ANGLE);
   const [heatmapColors, setHeatmapColors] = useState<string[]>(DEFAULT_HEATMAP_COLORS);
   const [preferredMeshColor, setPreferredMeshColor] = useState<string>(DEFAULT_MESH_COLOR);
-  const [selectionColor, setSelectionColor] = useState<string>(DEFAULT_SELECTION_COLOR);
-  const [hoverColor, setHoverColor] = useState<string>(DEFAULT_HOVER_COLOR);
+  const [selectionColor, setSelectionColor] = useState<string>(() => getThemedDefaultSelectionColor());
+  const [hoverColor, setHoverColor] = useState<string>(() => getThemedDefaultHoverColor());
   const [hoverTintStrength, setHoverTintStrength] = useState<number>(DEFAULT_HOVER_TINT_STRENGTH);
   const [selectedTintStrength, setSelectedTintStrength] = useState<number>(DEFAULT_SELECTED_TINT_STRENGTH);
   const [storedView3dSettings, setView3dSettingsState] = useState<View3DSettings>(() => DEFAULT_VIEW3D_SETTINGS);
@@ -1557,8 +1574,8 @@ export function useSceneCollectionManager() {
       setHeatmapMaxAngle(persistedAppearance.heatmapMaxAngle ?? DEFAULT_HEATMAP_MAX_ANGLE);
       setHeatmapColors(persistedAppearance.heatmapColors ?? DEFAULT_HEATMAP_COLORS);
       setPreferredMeshColor(persistedAppearance.meshColor);
-      setSelectionColor(persistedAppearance.selectionColor ?? DEFAULT_SELECTION_COLOR);
-      setHoverColor(persistedAppearance.hoverColor ?? DEFAULT_HOVER_COLOR);
+      setSelectionColor(persistedAppearance.selectionColor ?? getThemedDefaultSelectionColor());
+      setHoverColor(persistedAppearance.hoverColor ?? getThemedDefaultHoverColor());
       setHoverTintStrength(persistedAppearance.hoverTintStrength);
       setSelectedTintStrength(persistedAppearance.selectedTintStrength);
     }
