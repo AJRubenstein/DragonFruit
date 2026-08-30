@@ -15,6 +15,7 @@
             "src/supports/Grid",
             "src/supports/history",
             "src/supports/interaction/shared",
+            "src/components/analysis",
             "src/components/atoms",
             "src/components/selection",
             "src/components/gizmo/rotate",
