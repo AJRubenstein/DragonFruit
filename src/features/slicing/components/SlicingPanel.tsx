@@ -2484,7 +2484,6 @@ export function SlicingPanel({
               <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}><Trans>Slicing</Trans></h3>
             </>
           )}
-          hideDivider={!isExpanded}
         />
         {isExpanded && (
           <div className="px-3 pb-3 text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -2522,7 +2521,6 @@ export function SlicingPanel({
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}><Trans>Slicing</Trans></h3>
           </>
         )}
-        hideDivider={!isExpanded}
       />
 
       {isExpanded && (

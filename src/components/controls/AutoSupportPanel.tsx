@@ -425,7 +425,6 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
               <Settings className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
             </IconButton>
           )}
-          hideDivider={!expanded}
         />
 
 
