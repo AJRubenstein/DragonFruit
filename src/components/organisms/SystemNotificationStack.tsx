@@ -98,27 +98,115 @@ function ActionButton({ action, onClose }: { action: SystemNotificationAction; o
   );
 }
 
+const EXIT_MS = 200;
+
 export function SystemNotificationStack() {
-  const notifications = useSyncExternalStore(
+  const storeNotifications = useSyncExternalStore(
     subscribeSystemNotifications,
     getSystemNotificationsSnapshot,
     getSystemNotificationsSnapshot,
   );
 
-  if (notifications.length === 0) return null;
+  // Displayed list preserves exiting items for slide-out animation.
+  const [displayed, setDisplayed] = React.useState<SystemNotification[]>(storeNotifications);
+  const [exitingIds, setExitingIds] = React.useState<Set<string>>(() => new Set());
+  const timersRef = React.useRef<Map<string, number>>(new Map());
+
+  // Sync displayed with store: add newcomers, keep exiting
+  React.useEffect(() => {
+    setDisplayed((prev) => {
+      const storeIds = new Set(storeNotifications.map((n) => n.id));
+      const prevIds = new Set(prev.map((n) => n.id));
+      const storeMap = new Map(storeNotifications.map((n) => [n.id, n] as const));
+
+      // Keep exiting items that are still animating (removed from store but in exitingIds)
+      const next: SystemNotification[] = [];
+      for (const n of prev) {
+        if (storeIds.has(n.id) || exitingIds.has(n.id)) {
+          // Update with fresh store version if still present
+          next.push(storeMap.get(n.id) ?? n);
+        }
+      }
+      for (const n of storeNotifications) {
+        if (!prevIds.has(n.id) && !exitingIds.has(n.id)) next.push(n);
+      }
+      // If store reordered (unlikely), respect store order for non-exiting
+      // Keep exiting items at their previous indices; new items appended per above is fine.
+      return next;
+    });
+  }, [storeNotifications, exitingIds]);
+
+  // Handle external removals (expiry, GlobalUpdateIndicator) that bypass handleDismiss:
+  // if store removed an id that is still in displayed but not already exiting, animate it.
+  React.useEffect(() => {
+    const storeIds = new Set(storeNotifications.map((n) => n.id));
+    const toExit = displayed.filter((n) => !storeIds.has(n.id) && !exitingIds.has(n.id));
+    if (toExit.length === 0) return;
+    setExitingIds((prev) => {
+      const next = new Set(prev);
+      for (const n of toExit) {
+        next.add(n.id);
+        const t = window.setTimeout(() => {
+          setDisplayed((d) => d.filter((x) => x.id !== n.id));
+          setExitingIds((p) => {
+            const np = new Set(p);
+            np.delete(n.id);
+            return np;
+          });
+          timersRef.current.delete(n.id);
+        }, EXIT_MS);
+        timersRef.current.set(n.id, t);
+      }
+      return next;
+    });
+  }, [displayed, storeNotifications, exitingIds]);
+
+  React.useEffect(() => {
+    return () => {
+      for (const t of timersRef.current.values()) window.clearTimeout(t);
+      timersRef.current.clear();
+    };
+  }, []);
+
+  const handleDismiss = React.useCallback((n: SystemNotification) => {
+    if (exitingIds.has(n.id)) return;
+    setExitingIds((prev) => {
+      const next = new Set(prev);
+      next.add(n.id);
+      return next;
+    });
+    // Ensure displayed contains the item (it already does)
+    const t = window.setTimeout(() => {
+      dismissSystemNotification(n.id);
+      n.onClose?.();
+      // Remove from displayed/exiting after store update will also trigger,
+      // but clean locally as well in case store already removed
+      setDisplayed((d) => d.filter((x) => x.id !== n.id));
+      setExitingIds((p) => {
+        const np = new Set(p);
+        np.delete(n.id);
+        return np;
+      });
+      timersRef.current.delete(n.id);
+    }, EXIT_MS);
+    timersRef.current.set(n.id, t);
+  }, [exitingIds]);
+
+  if (displayed.length === 0) return null;
 
   return (
     <>
-      <style>{`@keyframes df-system-expiry { from { transform: scaleX(1); } to { transform: scaleX(0); } } @keyframes df-fly-in-right { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
+      <style>{`@keyframes df-system-expiry { from { transform: scaleX(1); } to { transform: scaleX(0); } } @keyframes df-fly-in-right { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } } @keyframes df-fly-out-right { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }`}</style>
       <div className="fixed bottom-6 right-6 z-[130] flex flex-col gap-3 pointer-events-none">
-        {notifications.map((n) => {
+        {displayed.map((n) => {
           const tone = toneStyles(n.tone);
           const showExpiry = !!n.expiryMs && n.expiryMs > 0;
+          const isExiting = exitingIds.has(n.id);
           return (
             <div
               key={n.id}
               className="pointer-events-auto w-[22rem]"
-              style={{ animation: 'df-fly-in-right 0.2s ease-out forwards' } as React.CSSProperties}
+              style={{ animation: isExiting ? `df-fly-out-right ${EXIT_MS}ms ease-in forwards` : 'df-fly-in-right 0.2s ease-out forwards' } as React.CSSProperties}
             >
               <div
                 className="relative overflow-hidden rounded-xl border shadow-2xl backdrop-blur-2xl"
@@ -186,15 +274,12 @@ export function SystemNotificationStack() {
                     </div>
                   )}
                   {n.actions?.map((a, idx) => (
-                    <ActionButton key={idx} action={a} onClose={() => dismissSystemNotification(n.id)} />
+                    <ActionButton key={idx} action={a} onClose={() => handleDismiss(n)} />
                   ))}
                   {(!n.actions || n.actions.length === 0) && n.dismissible !== false && (
                     <button
                       type="button"
-                      onClick={() => {
-                        dismissSystemNotification(n.id);
-                        n.onClose?.();
-                      }}
+                      onClick={() => handleDismiss(n)}
                       className="flex-1 ui-button ui-button-secondary !h-9 px-4 text-sm"
                     >
                       Dismiss

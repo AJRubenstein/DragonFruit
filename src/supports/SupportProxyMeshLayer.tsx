@@ -14,37 +14,9 @@ import { InstancedContactConeGroup, type InstancedContactCone } from './SupportP
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
 import { calculateDiskThickness } from './SupportPrimitives/ContactDisk/contactDiskUtils';
 import { emitSupportModelPointerHover } from './interaction/clickHandlers';
-import type { ContactDisk, Vec3 } from './types';
+import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
+import type { ContactDisk, Segment, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
-
-// Tapered straight shaft type (kept for data flow, no longer creates per-item meshes -
-// all proxy shafts go through InstancedShaftGroup now).
-interface ProxyTaperedShaft {
-    id: string;
-    supportId?: string;
-    modelId?: string;
-    start: Vec3;
-    end: Vec3;
-    diameterStart: number;
-    diameterEnd: number;
-}
-
-// Unused in the simplified proxy — bezier curves become straight instanced
-// shafts with averaged diameter. The full SupportRenderer shows real curves.
-interface ProxyBezierShaft {
-    id: string;
-    supportId?: string;
-    modelId?: string;
-    start: Vec3;
-    end: Vec3;
-    control1: Vec3;
-    control2: Vec3;
-    resolution: number;
-    diameterStart: number;
-    diameterEnd: number;
-}
-
-function isBezierSegment(_seg: Vec3 & { type?: string }): boolean { return false; }
 
 interface SupportProxyMeshLayerProps {
   mode?: 'prepare' | 'analysis' | 'support' | 'export' | 'printing';
@@ -570,6 +542,26 @@ export function SupportProxyMeshLayer({
       registerSegmentMeta(shaft.id, shaft.modelId, shaft.supportId);
     };
 
+    // Curved segments become curved batched-shaft entries; InstancedShaftGroup
+    // renders them as smooth capped tubes (same approach as the support-mode
+    // scene batch). This keeps curves visible in proxy views AND in mesh
+    // export: the unscoped STL/3MF path serializes this layer's live scene
+    // graph in prepare/export modes.
+    const pushSegmentShafts = (segment: Segment, start: Vec3, end: Vec3, supportId: string, modelId?: string) => {
+      if (segment.type === 'bezier') {
+        pushShaft(bezierSegmentToBatchedShaft(segment, start, end, supportId, modelId));
+        return;
+      }
+      pushShaft({
+        id: segment.id,
+        supportId,
+        modelId,
+        start,
+        end,
+        diameter: segment.diameter,
+      });
+    };
+
     const pushRoot = (root: InstancedRoot) => {
       const effectiveDiskHeight = Math.max(0.001, root.effectiveDiskHeight);
       const verticalOffset = 0;
@@ -649,14 +641,7 @@ export function SupportProxyMeshLayer({
         const end = segment.topJoint?.pos
           ?? (trunk.contactCone ? getFinalSocketPosition(trunk.contactCone) : { x: currentStart.x, y: currentStart.y, z: currentStart.z + 5 });
 
-        pushShaft({
-          id: segment.id,
-          supportId: trunk.id,
-          modelId: trunk.modelId,
-          start: currentStart,
-          end,
-          diameter: segment.diameter,
-        });
+        pushSegmentShafts(segment, currentStart, end, trunk.id, trunk.modelId);
 
         if (includeDetailedPrimitives && segment.topJoint) {
           pushJoint({
@@ -701,14 +686,7 @@ export function SupportProxyMeshLayer({
         const end = segment.topJoint?.pos
           ?? (branch.contactCone ? getFinalSocketPosition(branch.contactCone) : { x: currentStart.x, y: currentStart.y, z: currentStart.z + 5 });
 
-        pushShaft({
-          id: segment.id,
-          supportId: branch.id,
-          modelId: branch.modelId,
-          start: currentStart,
-          end,
-          diameter: segment.diameter,
-        });
+        pushSegmentShafts(segment, currentStart, end, branch.id, branch.modelId);
 
         if (includeDetailedPrimitives && segment.topJoint) {
           pushJoint({
@@ -843,14 +821,7 @@ export function SupportProxyMeshLayer({
         const start = segment.bottomJoint?.pos ?? getDiskTipCenter(twig.contactDiskA);
         const end = segment.topJoint?.pos ?? getDiskTipCenter(twig.contactDiskB);
 
-        pushShaft({
-          id: segment.id,
-          supportId: twig.id,
-          modelId: twig.modelId,
-          start,
-          end,
-          diameter: segment.diameter,
-        });
+        pushSegmentShafts(segment, start, end, twig.id, twig.modelId);
 
         if (includeDetailedPrimitives && segment.topJoint) {
           pushJoint({
@@ -893,14 +864,7 @@ export function SupportProxyMeshLayer({
         const start = segment.bottomJoint?.pos ?? getFinalSocketPosition(stick.contactConeA);
         const end = segment.topJoint?.pos ?? getFinalSocketPosition(stick.contactConeB);
 
-        pushShaft({
-          id: segment.id,
-          supportId: stick.id,
-          modelId: stick.modelId,
-          start,
-          end,
-          diameter: segment.diameter,
-        });
+        pushSegmentShafts(segment, start, end, stick.id, stick.modelId);
 
         if (includeDetailedPrimitives && segment.topJoint) {
           pushJoint({
@@ -941,14 +905,29 @@ export function SupportProxyMeshLayer({
         ),
       );
 
-      pushShaft({
-        id: `braceSegment:${brace.id}`,
-        supportId: brace.id,
-        modelId: brace.modelId,
-        start: startKnot.pos,
-        end: endKnot.pos,
-        diameter: (startHostDiameter + endHostDiameter) * 0.5,
-      });
+      const braceDiameter = (startHostDiameter + endHostDiameter) * 0.5;
+      if (brace.curve?.type === 'bezier') {
+        pushShaft(braceBezierToBatchedShaft(
+          `braceSegment:${brace.id}`,
+          startKnot.pos,
+          endKnot.pos,
+          brace.curve.controlPoint1,
+          brace.curve.controlPoint2,
+          braceDiameter,
+          brace.curve.resolution,
+          brace.id,
+          brace.modelId,
+        ));
+      } else {
+        pushShaft({
+          id: `braceSegment:${brace.id}`,
+          supportId: brace.id,
+          modelId: brace.modelId,
+          start: startKnot.pos,
+          end: endKnot.pos,
+          diameter: braceDiameter,
+        });
+      }
     }
 
     // Knots that the scene renders always (leaf base knots and branch parent
@@ -1016,14 +995,7 @@ export function SupportProxyMeshLayer({
         }
 
         const end = segment.topJoint?.pos ?? hostKnot.pos;
-        pushShaft({
-          id: segment.id,
-          supportId: kickstand.id,
-          modelId: kickstand.modelId,
-          start: currentStart,
-          end,
-          diameter: segment.diameter,
-        });
+        pushSegmentShafts(segment, currentStart, end, kickstand.id, kickstand.modelId);
 
         if (includeDetailedPrimitives && segment.topJoint) {
           pushJoint({
@@ -1301,11 +1273,14 @@ export function SupportProxyMeshLayer({
         target.shafts.push(shaft);
         return;
       }
-      target.shafts.push({
+      const pushed: InstancedShaft = {
         ...shaft,
         start: { x: shaft.start.x, y: shaft.start.y, z: shaft.start.z + zOffset },
         end: { x: shaft.end.x, y: shaft.end.y, z: shaft.end.z + zOffset },
-      });
+      };
+      if (shaft.controlPoint1) pushed.controlPoint1 = { x: shaft.controlPoint1.x, y: shaft.controlPoint1.y, z: shaft.controlPoint1.z + zOffset };
+      if (shaft.controlPoint2) pushed.controlPoint2 = { x: shaft.controlPoint2.x, y: shaft.controlPoint2.y, z: shaft.controlPoint2.z + zOffset };
+      target.shafts.push(pushed);
     };
 
     const appendRoot = (target: FlatProxyGeometry, root: InstancedRoot, zOffset: number) => {
