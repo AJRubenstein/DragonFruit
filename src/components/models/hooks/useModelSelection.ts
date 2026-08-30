@@ -6,15 +6,9 @@
 
 "use client";
 
-import { useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { usePicking } from '@/components/picking';
-import { 
-  selectModel, 
-  clearSelection, 
-  toggleModelSelection,
-  getPrimarySelectedId,
-  isModelSelected 
-} from '../modelStore';
+import { selectModel, clearSelection } from '../modelStore';
 import type { ModelId } from '../types';
 
 interface UseModelSelectionOptions {

@@ -21,6 +21,7 @@
             "src/components/gizmo/rotate",
             "src/components/layout",
             "src/components/modals",
+            "src/components/models",
             "src/volumeAnalysis/Islands/__tests__",
             "src/app/api/backups"
       ]
