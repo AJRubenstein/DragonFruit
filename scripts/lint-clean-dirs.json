@@ -22,6 +22,7 @@
             "src/features/mirror/logic",
             "src/features/notifications",
             "src/features/organicCut",
+            "src/features/placeOnFace",
             "src/features/scene/__tests__",
             "src/features/shaders",
             "src/features/slicing/formats",
