@@ -420,7 +420,6 @@ export function PrintingModals({
       <UvToolsLaunchingModal
         isOpen={uvToolsLaunchingPath !== null}
         filePath={uvToolsLaunchingPath}
-        onLaunchComplete={() => setUvToolsLaunchingPath(null)}
       />
 
       {printingMonitorPendingConfirmation && (
