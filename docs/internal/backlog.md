@@ -127,6 +127,22 @@
 - Careful: (b) is not mechanical — typing the merge touches the shape of the
   persisted config.
 
+### [cleanup] exhaustive-deps in the hollowing and hole-punch managers — L · medium risk
+- Where: src/features/hollowing/useHollowingManager.ts (19 warnings) and
+  src/features/hole-punching/useHolePunchManager.ts (13). Regenerate with
+  `npx eslint <dir>` — don't freeze line numbers.
+- What: both hooks omit `scene`, `hollowingState` and the `deps` ref from their
+  useCallback/useEffect dependency arrays, and four effects read
+  `someRef.current` in a cleanup that runs after it has changed.
+- Why: these are the last two directories blocking `src/features/hollowing` and
+  `src/features/hole-punching` from joining `scripts/lint-clean-dirs.json`.
+  Every other warning in them is already cleared.
+- Careful: NOT mechanical. Some arrays list `deps.current.someFn`, which reads a
+  ref during render; swapping it for the stable `deps` object is safe, but
+  adding `scene` or `hollowingState` recreates callbacks on every scene mutation
+  and can re-trigger the hollow preview. Needs a manual hollowing/hole-punch
+  smoke test, which unit tests cannot stand in for.
+
 ### [cleanup] CRLF line endings in the plugin submodules — M · medium risk
 - Where: plugins/ (git submodules). Detect with
   `find plugins -type f | xargs grep -lU $'\r' | head` (~51+ files with CRLF).
