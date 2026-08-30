@@ -13,6 +13,7 @@
             "src/types",
             "src/utils/debug",
             "src/supports/Grid",
+            "src/supports/PlacementLogic/Grid",
             "src/supports/history",
             "src/supports/interaction/shared",
             "src/components/analysis",
