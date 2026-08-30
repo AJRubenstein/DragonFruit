@@ -234,8 +234,8 @@ describe('processGeometry classification bypass', () => {
     await processGeometry(geom, {
       skipClassification: true,
       _isTauriRuntime: () => true,
-      _classifyFromGeometry: async () => { classifyCalled = true; return null as any; },
-      _repairFromGeometry: async () => { repairCalled = true; return null as any; }
+      _classifyFromGeometry: async () => { classifyCalled = true; return null; },
+      _repairFromGeometry: async () => { repairCalled = true; return null; }
     });
     assert.equal(classifyCalled, false, 'should not run classification');
     assert.equal(repairCalled, false, 'should not run repair');
@@ -250,8 +250,8 @@ describe('processGeometry classification bypass', () => {
       skipClassification: false,
       nativeProcessingMode: 'classify-only',
       _isTauriRuntime: () => true,
-      _classifyFromGeometry: async () => { classifyCalled = true; return null as any; },
-      _repairFromGeometry: async () => { repairCalled = true; return null as any; }
+      _classifyFromGeometry: async () => { classifyCalled = true; return null; },
+      _repairFromGeometry: async () => { repairCalled = true; return null; }
     });
     assert.equal(classifyCalled, true, 'should run classification');
     assert.equal(repairCalled, false, 'should not run repair');
@@ -265,8 +265,8 @@ describe('processGeometry classification bypass', () => {
     await processGeometry(geom, {
       nativeProcessingMode: 'none',
       _isTauriRuntime: () => true,
-      _classifyFromGeometry: async () => { classifyCalled = true; return null as any; },
-      _repairFromGeometry: async () => { repairCalled = true; return null as any; }
+      _classifyFromGeometry: async () => { classifyCalled = true; return null; },
+      _repairFromGeometry: async () => { repairCalled = true; return null; }
     });
     assert.equal(classifyCalled, true, 'should run classification');
     assert.equal(repairCalled, false, 'should not run repair');

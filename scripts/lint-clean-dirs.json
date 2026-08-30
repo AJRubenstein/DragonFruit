@@ -29,6 +29,7 @@
             "src/features/slicing/tauri",
             "src/features/supports",
             "src/history",
+            "src/hooks/__tests__",
             "src/pages",
             "src/supports/Grid",
             "src/supports/PlacementLogic/Grid",
