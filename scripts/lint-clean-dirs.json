@@ -10,6 +10,7 @@
             "src/components/modals",
             "src/components/models",
             "src/components/organisms/modals",
+            "src/components/printers",
             "src/components/scene/__tests__",
             "src/components/selection",
             "src/features/delete",
