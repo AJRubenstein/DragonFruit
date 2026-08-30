@@ -7727,7 +7727,6 @@ export default function Home() {
     setSupportRenderRefreshNonce,
     supportBoundsByModelId,
     arrangeSpacingMm,
-    setArrangeSpacingMm,
     getArrangeTransform,
     getModelSupportAwareDimensionsMm,
     getModelSupportAwareFootprintPolygonRef,
