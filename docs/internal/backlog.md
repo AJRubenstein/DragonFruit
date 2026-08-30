@@ -127,23 +127,37 @@
 - Careful: (b) is not mechanical — typing the merge touches the shape of the
   persisted config.
 
-### [cleanup] exhaustive-deps in the hollowing, hole-punch and arrange managers — L · medium risk
-- Where: src/features/hollowing/useHollowingManager.ts (19 warnings),
-  src/features/hole-punching/useHolePunchManager.ts (13) and
-  src/features/scene/arrange/useArrangeManager.ts (10). Regenerate with
-  `npx eslint <dir>` — don't freeze line numbers.
-- What: both hooks omit `scene`, `hollowingState` and the `deps` ref from their
-  useCallback/useEffect dependency arrays, and four effects read
-  `someRef.current` in a cleanup that runs after it has changed.
-- Why: this is the only thing keeping those three directories out of
-  `scripts/lint-clean-dirs.json`. Every other warning in them is already
-  cleared. useArrangeManager also has two *unnecessary* deps (`transformMgr`,
-  `scene.models`/`scene.selectedModelIds`), which are the cheap half.
-- Careful: NOT mechanical. Some arrays list `deps.current.someFn`, which reads a
-  ref during render; swapping it for the stable `deps` object is safe, but
-  adding `scene` or `hollowingState` recreates callbacks on every scene mutation
-  and can re-trigger the hollow preview. Needs a manual hollowing/hole-punch
-  smoke test, which unit tests cannot stand in for.
+### [cleanup] Finish the lint cleanup in the directories still uncovered — XL · mixed risk
+- Where: everything under src/ that is not yet in `scripts/lint-clean-dirs.json`.
+  Regenerate the current picture with `npx eslint src` — don't freeze counts or
+  line numbers, they move with every commit.
+- What: clean a directory until `npx eslint <dir> --max-warnings 0` passes, then
+  add it to the list. `npm run check:lint` (CI job `lint` in test.yml) refuses
+  any new problem inside what is already listed, so the debt only shrinks.
+- Order that has held so far, cheapest first:
+  1. Unused vars, dead constants and stray imports — verified by `tsc` and the
+     unit tests alone. Most remaining directories still have some.
+  2. `no-explicit-any` on payload and settings objects. Usually
+     `Record<string, unknown>` plus the typeof guards already in the code; the
+     plugin manifests were exactly this shape.
+  3. `react-hooks/exhaustive-deps`, concentrated in useHollowingManager,
+     useHolePunchManager and useArrangeManager. Arrays that list
+     `deps.current.someFn` read a ref during render — swapping in the stable
+     `deps` object is safe. Adding `scene` or `hollowingState` is NOT: it
+     recreates callbacks on every scene mutation and can re-trigger the hollow
+     preview. Needs a manual smoke test, which unit tests cannot stand in for.
+  4. `react-hooks/refs` and `immutability`, almost all in src/supports and the
+     gizmos — the drag paths, where a wrong fix breaks interaction silently.
+- Threads that widen past lint, decide before pulling them:
+  - `raftOverride` reaches RootsRenderer from SupportBuilder and four
+    AnatomyPreview components and is now provably ignored there; removing it
+    touches the supports render pipeline.
+  - `SupportGeometryGenerator` takes two ignored `raftSettings` parameters and
+    types `coneData` as `any`; the accepted shape is a union of ContactCone and
+    the twig disk the NaN-radius regression test covers, so it needs a real
+    interface, not a cast.
+- Context: `src/app/page.tsx` alone holds ~440 unused-symbol warnings and is the
+  single largest mechanical win left; it has its own entry above.
 
 ### [cleanup] CRLF line endings in the plugin submodules — M · medium risk
 - Where: plugins/ (git submodules). Detect with
