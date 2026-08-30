@@ -251,9 +251,20 @@ function AvailableState({
           </>
         }
       >
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          DragonFruit will download, verify and install the update, then restart. Please <span style={{ color: 'var(--text-strong)', fontWeight: 600 }}>save your scene and any unsaved progress</span> before continuing. Unsaved changes may be lost.
-        </p>
+        <div className="space-y-3 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          <p>
+            DragonFruit will <span style={{ color: 'var(--text-strong)', fontWeight: 600 }}>download, verify and install</span> the update, then restart automatically.
+          </p>
+          <p>
+            Please <span style={{ color: 'var(--text-strong)', fontWeight: 600 }}>save your scene and any unsaved progress</span> before continuing.
+          </p>
+          <p
+            className="pt-3 mt-1 border-t text-sm font-semibold leading-relaxed"
+            style={{ borderColor: 'var(--border-subtle)', color: 'color-mix(in srgb, var(--danger), white 32%)' }}
+          >
+            Unsaved changes may be lost.
+          </p>
+        </div>
       </StructuredDialogModal>
     </div>
   );
