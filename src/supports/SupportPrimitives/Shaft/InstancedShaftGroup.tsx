@@ -196,6 +196,15 @@ export function InstancedShaftGroup({
         onShaftClick(shaft, event);
     };
 
+
+    const handleCurvedPointerDown = (event: ThreeEvent<PointerEvent>) => {
+        if (!onShaftPointerDown) return;
+        event.stopPropagation();
+        const shaft = resolveCurvedShaft(event);
+        if (!shaft) return;
+        onShaftPointerDown(shaft, event);
+    };
+
     const handleCurvedPointerMove = (event: ThreeEvent<PointerEvent>) => {
         if (!onShaftPointerMove) return;
         event.stopPropagation();
@@ -215,6 +224,7 @@ export function InstancedShaftGroup({
                     frustumCulled={false}
                     renderOrder={100000}
                     onClick={onShaftClick ? handleClick : undefined}
+                    onPointerDown={onShaftPointerDown ? handlePointerDown : undefined}
                     onPointerMove={onShaftPointerMove ? handlePointerMove : undefined}
                     onPointerOut={onShaftPointerOut ? handlePointerOut : undefined}
                 >
@@ -249,6 +259,7 @@ export function InstancedShaftGroup({
                     frustumCulled={false}
                     renderOrder={100000}
                     onClick={onShaftClick ? handleCurvedClick : undefined}
+                    onPointerDown={onShaftPointerDown ? handleCurvedPointerDown : undefined}
                     onPointerMove={onShaftPointerMove ? handleCurvedPointerMove : undefined}
                     onPointerOut={onShaftPointerOut ? handlePointerOut : undefined}
                 >

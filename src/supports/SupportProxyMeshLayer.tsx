@@ -1273,11 +1273,14 @@ export function SupportProxyMeshLayer({
         target.shafts.push(shaft);
         return;
       }
-      target.shafts.push({
+      const pushed: InstancedShaft = {
         ...shaft,
         start: { x: shaft.start.x, y: shaft.start.y, z: shaft.start.z + zOffset },
         end: { x: shaft.end.x, y: shaft.end.y, z: shaft.end.z + zOffset },
-      });
+      };
+      if (shaft.controlPoint1) pushed.controlPoint1 = { x: shaft.controlPoint1.x, y: shaft.controlPoint1.y, z: shaft.controlPoint1.z + zOffset };
+      if (shaft.controlPoint2) pushed.controlPoint2 = { x: shaft.controlPoint2.x, y: shaft.controlPoint2.y, z: shaft.controlPoint2.z + zOffset };
+      target.shafts.push(pushed);
     };
 
     const appendRoot = (target: FlatProxyGeometry, root: InstancedRoot, zOffset: number) => {
