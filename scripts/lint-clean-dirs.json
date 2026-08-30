@@ -18,6 +18,7 @@
             "src/components/atoms",
             "src/components/selection",
             "src/components/gizmo/rotate",
+            "src/components/layout",
             "src/components/modals",
             "src/volumeAnalysis/Islands/__tests__",
             "src/app/api/backups"

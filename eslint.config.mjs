@@ -83,6 +83,11 @@ const eslintConfig = defineConfig([
     },
     rules: {
       "hotkey-restriction/no-direct-window-document-hotkeys": "error",
+      // DragonFruit ships as a Tauri desktop app: there is no Next image
+      // optimizer at runtime, and the sources here are either local assets or
+      // blob/data URLs built from printer profiles, which next/image cannot
+      // take. The LCP/bandwidth advice the rule gives does not apply.
+      "@next/next/no-img-element": "off",
     },
   },
   // Override default ignores of eslint-config-next.
