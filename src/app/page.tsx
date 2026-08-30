@@ -10884,7 +10884,6 @@ export default function Home() {
         setShouldAutoSliceOnExportEntry={setShouldAutoSliceOnExportEntry}
         setShowPrintingResliceModal={setShowPrintingResliceModal}
         setShowSliceCompletedModal={setShowSliceCompletedModal}
-        setUvToolsLaunchingPath={setUvToolsLaunchingPath}
         shouldReturnToPrintingAfterSliceRef={shouldReturnToPrintingAfterSliceRef}
         shouldShowPrintingMonitorSlowResponseCard={shouldShowPrintingMonitorSlowResponseCard}
         showPrintingResliceModal={showPrintingResliceModal}

@@ -22,6 +22,7 @@
             "src/components/layout",
             "src/components/modals",
             "src/components/models",
+            "src/components/organisms/modals",
             "src/volumeAnalysis/Islands/__tests__",
             "src/app/api/backups"
       ]
