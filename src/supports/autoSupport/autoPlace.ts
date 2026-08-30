@@ -24,7 +24,7 @@ import {
     collectSupportTips,
     computeRegionCoverage,
 } from './coverage';
-import { sizeParameters, presetForArea, ANCHOR_SHAFT_MULTIPLIER, type SizingPreset } from './parameterSizing';
+import { sizeParameters, presetForArea } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
 import { getSnapshot, setSnapshot } from '../state';
@@ -1438,7 +1438,6 @@ export function validateAndCullOrphans(
             } else {
                 const branchObj = nextDraft.branches[id];
                 if (branchObj && mesh) {
-                    // @ts-ignore — Branch satisfies {segments}
                     blocked = branchCollidesWithSDF(branchObj, mesh);
                 } else if (mesh) {
                     blocked = isShaftBlocked(knot.pos, tipPos, 0.2, mesh);
@@ -2550,7 +2549,6 @@ export function computeAutoSupportPlan(
     const OVERHANG_AREA_THRESHOLD_MM2 = 1.5;
     const OVERHANG_GRID_SPACING_MM = 2.5;
 
-    const islandById = new Map(islands.map(i => [i.id, i]));
     let overhangSupportsPlaced = 0;
 
     for (const [tid, trunk] of Object.entries(draft.trunks)) {
@@ -2651,7 +2649,7 @@ export function computeAutoSupportPlan(
                         overhangSupportsPlaced++;
                         placedBranches++;
                     }
-                } catch (_) {
+                } catch {
                     // Skip this grid point.
                 }
             }
