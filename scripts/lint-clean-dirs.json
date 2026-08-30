@@ -36,7 +36,7 @@
             "src/supports/history",
             "src/supports/interaction/shared",
             "src/types",
-            "src/utils/debug",
+            "src/utils",
             "src/volumeAnalysis/IslandScan/workflow",
             "src/volumeAnalysis/Islands/__tests__",
             "src/volumeAnalysis/VoxelSystem"
