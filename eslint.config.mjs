@@ -95,6 +95,12 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Project-specific ignores:
     "2. Backup/**",
+    // Everything below is gitignored build output or scratch space. Linting it
+    // buried the real source problems under ~7000 files of generated noise.
+    "**/target/**",
+    "src-tauri/frontend-dist/**",
+    ".claude/**",
+    ".scratch/**",
   ]),
 ]);
 

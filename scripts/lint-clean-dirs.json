@@ -1,0 +1,22 @@
+{
+      "_comment": "Directories under lint control for scripts/check-lint-clean.mjs. The repo still carries thousands of pre-existing ESLint problems, so `npm run lint` cannot gate CI as a whole. Instead each directory is cleaned once and then listed here, and CI refuses any new error OR warning inside it. Add a directory only when `npx eslint <dir> --max-warnings 0` already passes; never remove one to make a build go green.",
+      "directories": [
+            "src/features/organicCut",
+            "src/features/shaders",
+            "src/features/experiments",
+            "src/features/mesh-modifiers/__tests__",
+            "src/features/mirror/logic",
+            "src/features/mirror/__tests__",
+            "src/features/scene/__tests__",
+            "src/history",
+            "src/pages",
+            "src/types",
+            "src/utils/debug",
+            "src/supports/Grid",
+            "src/supports/history",
+            "src/supports/interaction/shared",
+            "src/components/gizmo/rotate",
+            "src/volumeAnalysis/Islands/__tests__",
+            "src/app/api/backups"
+      ]
+}

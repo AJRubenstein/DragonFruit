@@ -121,9 +121,9 @@
 - What: (a) test mocks use `any`/`Function` and `let` where `const` belongs;
   (b) HotkeyContext.tsx uses `any` in `deepMerge`/`stripStaleActions` and calls
   `setState` inside the localStorage-loading effect (`react-hooks/set-state-in-effect`).
-- Why: `npm run lint` (= `eslint`, tests not ignored) already flags these. They
-  don't block today (no husky/lint-staged), but they will the moment CI requires
-  lint — which is why lint cannot go into CI before this is cleared. Predates #435.
+- Why: `npm run lint` (= `eslint`, tests not ignored) already flags these.
+  src/hotkeys/ cannot join `scripts/lint-clean-dirs.json` (the per-directory
+  lint gate in CI, see AGENTS.md) until this is cleared. Predates #435.
 - Careful: (b) is not mechanical — typing the merge touches the shape of the
   persisted config.
 

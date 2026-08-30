@@ -94,6 +94,19 @@ in CI. Deliberate exceptions — schematic names, external APIs, symbols named
 precisely because they were removed — go in
 `scripts/docs-accuracy-allowlist.json` **with a reason**.
 
+## Lint
+
+The repo still carries thousands of pre-existing ESLint problems, so
+`npm run lint` (full repo) is not a gate and will stay red for a long while.
+What gates CI is `npm run check:lint`: it lints only the directories listed in
+`scripts/lint-clean-dirs.json` and fails on any error **or** warning there.
+
+Coverage grows one directory at a time. To put a directory under lint control,
+clean it until `npx eslint <dir> --max-warnings 0` passes, then add it to the
+list. Never take a directory off the list to turn a build green, and when a
+listed directory is renamed, follow the rename in the list — the check fails on
+missing entries precisely so coverage cannot be lost silently.
+
 ## Consult the developer docs first
 
 Before reverse-engineering how a system works from the source, check the
