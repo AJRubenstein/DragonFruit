@@ -4406,6 +4406,7 @@ fn main() {
             save_print_file_from_path,
             pick_save_path,
             pick_open_files,
+            get_launch_scene_files,
             experiments::set_experiment_overrides,
             fetch_sponsor_avatar,
             fetch_external_text,
