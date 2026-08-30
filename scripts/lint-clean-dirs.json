@@ -20,6 +20,7 @@
             "src/features/mesh-smoothing/history",
             "src/features/mirror/__tests__",
             "src/features/mirror/logic",
+            "src/features/notifications",
             "src/features/organicCut",
             "src/features/scene/__tests__",
             "src/features/shaders",
