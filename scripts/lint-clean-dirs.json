@@ -16,6 +16,7 @@
             "src/supports/history",
             "src/supports/interaction/shared",
             "src/components/atoms",
+            "src/components/selection",
             "src/components/gizmo/rotate",
             "src/volumeAnalysis/Islands/__tests__",
             "src/app/api/backups"
