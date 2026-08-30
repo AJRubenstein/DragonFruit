@@ -4,7 +4,7 @@
             "src/features/organicCut",
             "src/features/shaders",
             "src/features/experiments",
-            "src/features/mesh-modifiers/__tests__",
+            "src/features/mesh-modifiers",
             "src/features/mirror/logic",
             "src/features/mirror/__tests__",
             "src/features/scene/__tests__",
