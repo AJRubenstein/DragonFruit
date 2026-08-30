@@ -35,6 +35,7 @@
             "src/types",
             "src/utils/debug",
             "src/volumeAnalysis/IslandScan/workflow",
-            "src/volumeAnalysis/Islands/__tests__"
+            "src/volumeAnalysis/Islands/__tests__",
+            "src/volumeAnalysis/VoxelSystem"
       ]
 }
