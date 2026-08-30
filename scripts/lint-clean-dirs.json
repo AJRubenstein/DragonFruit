@@ -39,6 +39,7 @@
             "src/types",
             "src/utils",
             "src/volumeAnalysis/IslandScan/workflow",
+            "src/volumeAnalysis/IslandVolumes",
             "src/volumeAnalysis/Islands/__tests__",
             "src/volumeAnalysis/TerritorySystem",
             "src/volumeAnalysis/VoxelSystem"
