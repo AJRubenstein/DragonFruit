@@ -1084,7 +1084,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                 // the projection is interior to the current segment. Right at a joint the
                 // current segment's closest point saturates at its shared endpoint, so a
                 // blanket bias there would pin the knot to the joint and refuse to hand
-                // off to the neighbour until it won by >5% — that is the "knot hangs on
+                // off to the neighbour until it won by >5% -- that is the "knot hangs on
                 // the joint" bug. At the ends we drop the bias and let closest-wins move
                 // the knot across the joint as soon as the neighbour is genuinely closer.
                 const CURRENT_SEGMENT_STICKINESS = 1.05;
