@@ -1,6 +1,7 @@
 import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, Knot, Vec3, Leaf, Brace, Twig, Stick, Anchor } from './types';
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
+import type { SupportSelectionCategory } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
 import { calculateDiskThickness } from './SupportPrimitives/ContactDisk/contactDiskUtils';
@@ -69,7 +70,7 @@ let supportSettingsHexCache: SupportSettingsHexCache = {
     leaf: {},
 };
 
-type SelectionCategory = 'trunk' | 'branch' | 'leaf' | 'twig' | 'stick' | 'brace' | 'anchor' | 'root' | 'joint' | 'knot' | 'segment' | 'contactDisk' | null;
+type SelectionCategory = SupportSelectionCategory | null;
 
 interface SelectionLookupCache {
     trunksRef: SupportState['trunks'];
@@ -206,7 +207,8 @@ function resolveSelectionCategory(id: string): SelectionCategory {
     if (state.anchors[id]) return 'anchor';
 
     const lookup = getSelectionLookupCache();
-    if (lookup.kickstandIds.has(id)) return 'brace';
+    // Kickstands live in their own store, so they are not in the loop above.
+    if (lookup.kickstandIds.has(id)) return 'kickstand';
     if (state.knots[id]) return 'knot';
     if (lookup.jointIds.has(id)) return 'joint';
     if (lookup.segmentIds.has(id)) return 'segment';
