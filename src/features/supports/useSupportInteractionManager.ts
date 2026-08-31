@@ -51,7 +51,7 @@ interface SupportInteractionOptions {
 
 
 
-function resolveSupportCategoryFromSnapshot(id: string) {
+export function resolveSupportCategoryFromSnapshot(id: string) {
   const snapshot = getSnapshot();
   if (snapshot.trunks[id]) return 'trunk' as const;
   if (snapshot.branches[id]) return 'branch' as const;
@@ -60,7 +60,7 @@ function resolveSupportCategoryFromSnapshot(id: string) {
   if (snapshot.sticks[id]) return 'stick' as const;
   if (snapshot.braces[id]) return 'brace' as const;
   if (snapshot.anchors[id]) return 'anchor' as const;
-  if (getKickstandSnapshot().kickstands[id]) return 'brace' as const;
+  if (getKickstandSnapshot().kickstands[id]) return 'kickstand' as const;
   return null;
 }
 
@@ -80,7 +80,7 @@ function collectAllSupportIds() {
   ];
 }
 
-function resolveSupportOwnerFromSegmentId(segmentId: string): { category: 'trunk' | 'branch' | 'twig' | 'stick' | 'brace'; id: string } | null {
+export function resolveSupportOwnerFromSegmentId(segmentId: string): { category: 'trunk' | 'branch' | 'twig' | 'stick' | 'brace' | 'kickstand'; id: string } | null {
   if (!segmentId) return null;
 
   const snapshot = getSnapshot();
@@ -117,14 +117,14 @@ function resolveSupportOwnerFromSegmentId(segmentId: string): { category: 'trunk
 
   for (const kickstand of Object.values(kickstandSnapshot.kickstands)) {
     if (kickstand.segments.some((segment) => segment.id === segmentId)) {
-      return { category: 'brace', id: kickstand.id };
+      return { category: 'kickstand', id: kickstand.id };
     }
   }
 
   return null;
 }
 
-function resolveSupportOwnerFromJointId(jointId: string): { category: 'brace'; id: string } | null {
+export function resolveSupportOwnerFromJointId(jointId: string): { category: 'kickstand'; id: string } | null {
   if (!jointId) return null;
 
   const kickstandSnapshot = getKickstandSnapshot();
@@ -133,7 +133,7 @@ function resolveSupportOwnerFromJointId(jointId: string): { category: 'brace'; i
       segment.bottomJoint?.id === jointId || segment.topJoint?.id === jointId,
     );
     if (ownsJoint) {
-      return { category: 'brace', id: kickstand.id };
+      return { category: 'kickstand', id: kickstand.id };
     }
   }
 
@@ -599,19 +599,20 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         return true;
       }
 
-      if (category === 'brace') {
+      if (category === 'kickstand') {
         const kickstandSnapshots = removeKickstandCascade(id);
-        if (kickstandSnapshots) {
-          if (recordHistory) {
-            pushSupportHistory({
-              type: SUPPORT_REMOVE_KICKSTAND,
-              payload: kickstandSnapshots,
-            });
-          }
-          setSelectedId(null);
-          return true;
+        if (!kickstandSnapshots) return false;
+        if (recordHistory) {
+          pushSupportHistory({
+            type: SUPPORT_REMOVE_KICKSTAND,
+            payload: kickstandSnapshots,
+          });
         }
+        setSelectedId(null);
+        return true;
+      }
 
+      if (category === 'brace') {
         const snapshots = removeBrace(id);
         if (!snapshots) return false;
         if (recordHistory) {
@@ -636,7 +637,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       const category = getSelectedCategory();
       const id = getSelectedId();
       if (!id || !category) return false;
-      if (category === 'joint' || category === 'trunk' || category === 'leaf' || category === 'branch' || category === 'twig' || category === 'stick' || category === 'brace') return true;
+      if (category === 'joint' || category === 'trunk' || category === 'leaf' || category === 'branch' || category === 'twig' || category === 'stick' || category === 'brace' || category === 'kickstand') return true;
 
       if (category === 'knot') {
         const leaves = getLeaves();

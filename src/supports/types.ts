@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { ContactCone } from './SupportPrimitives/ContactCone/types';
 import type { ContactDiskProfile } from './SupportPrimitives/ContactCone/types';
 import type { KickstandBuildResult } from './SupportTypes/Kickstand/types';
+import type { SupportSelectionCategory } from './supportTypeRegistry';
 
 export type SupportMode = 'prepare' | 'analysis' | 'support' | 'export' | 'printing';
 
@@ -243,7 +244,7 @@ export interface SupportState {
     knots: Record<string, Knot>;
     // Interaction State
     selectedId: string | null;
-    selectedCategory?: 'trunk' | 'branch' | 'leaf' | 'twig' | 'stick' | 'brace' | 'anchor' | 'root' | 'joint' | 'knot' | 'segment' | 'contactDisk' | null;
+    selectedCategory?: SupportSelectionCategory | null;
     hoveredId: string | null;
     hoveredCategory?: 'model' | 'support' | 'contactDisk' | 'segment' | 'joint' | 'knot' | 'raft' | 'gizmo' | 'none';
     interactionWarning?: WarningCode | null;

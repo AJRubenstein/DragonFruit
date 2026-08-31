@@ -3,6 +3,7 @@
 import React, { useSyncExternalStore, forwardRef, useImperativeHandle, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { addKnot, addRoot, removeRootById, subscribe, getSnapshot, updateKnot } from './state';
+import { getSupportTypeBySelectionCategory } from './supportTypeRegistry';
 import { TrunkRenderer } from './SupportTypes/Trunk/TrunkRenderer';
 import { BranchRenderer } from './SupportTypes/Branch/BranchRenderer';
 import { LeafRenderer } from './SupportTypes/Leaf/LeafRenderer';
@@ -1759,15 +1760,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             return trunkIdByRootIdForSelection.get(selectedId) ?? null;
         }
 
-        if (
-            selectedCategory === 'trunk'
-            || selectedCategory === 'branch'
-            || selectedCategory === 'leaf'
-            || selectedCategory === 'twig'
-            || selectedCategory === 'stick'
-            || selectedCategory === 'brace'
-            || selectedCategory === 'anchor'
-        ) {
+        if (getSupportTypeBySelectionCategory(selectedCategory)) {
             return selectedId;
         }
 

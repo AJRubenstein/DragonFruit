@@ -1,3 +1,4 @@
+import { MODEL_ID_COLLECTION_KEYS, type SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportState } from './types';
 
 /**
@@ -36,19 +37,14 @@ import type { SupportState } from './types';
  *   - interaction fields (selectedId, hoveredId, ...)
  */
 
-/** Keys of `SupportState` holding top-level, modelId-bearing support entities. */
-export const SUPPORT_ENTITY_COLLECTIONS = [
-    'roots',
-    'trunks',
-    'branches',
-    'leaves',
-    'twigs',
-    'sticks',
-    'braces',
-    'anchors',
-] as const;
+/**
+ * Keys of `SupportState` holding top-level, modelId-bearing support entities.
+ * Derived from the type registry so a new type is picked up by adding one
+ * descriptor, rather than by remembering this list too.
+ */
+export const SUPPORT_ENTITY_COLLECTIONS = MODEL_ID_COLLECTION_KEYS;
 
-export type SupportEntityCollectionKey = typeof SUPPORT_ENTITY_COLLECTIONS[number];
+export type SupportEntityCollectionKey = SupportCollectionKey;
 
 /**
  * The subset of SupportState these helpers read and write.
