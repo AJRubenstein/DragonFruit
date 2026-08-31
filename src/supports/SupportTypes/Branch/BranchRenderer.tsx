@@ -15,7 +15,7 @@ import { usePartDragUpdate } from '../../interaction/partDragPreview';
 import { KnotRenderer } from '../../SupportPrimitives/Knot/KnotRenderer';
 import { getSnapshot, updateBranch } from '../../state';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
-import { buildBranchData } from './branchBuilder';
+import { buildBranchData, remapBranchGeometryIds } from './branchBuilder';
 
 interface BranchRendererProps {
   branch: Branch;
@@ -65,6 +65,15 @@ export const BranchRenderer = React.memo(function BranchRenderer({
   const beforeHistoryRef = React.useRef<ReturnType<typeof captureSupportEditSnapshot> | null>(null);
   const [, setDragTick] = React.useState(0);
 
+  React.useEffect(() => {
+    return () => {
+      dragSessionRef.current?.stop();
+      dragSessionRef.current = null;
+      liveDragBranchRef.current = null;
+      beforeHistoryRef.current = null;
+    };
+  }, []);
+
   // Use universal highlight hook (matches TrunkRenderer pattern)
   const { pickRef, visuals, isPickingHovered } = useHighlight({
     id: branch.id,
@@ -101,13 +110,13 @@ export const BranchRenderer = React.memo(function BranchRenderer({
       onHit: ({ point, surfaceNormal, mesh }: ContactDiskDragHit) => {
         const latest = getSnapshot().branches[branch.id];
         if (!latest?.contactCone) return;
-        const rebuilt = buildBranchData({
+        const rebuilt = remapBranchGeometryIds(buildBranchData({
           tipPos: point,
           tipNormal: surfaceNormal,
           modelId: branch.modelId,
           parentKnot,
           mesh,
-        }).branch;
+        }).branch, latest);
         liveDragBranchRef.current = {
           ...rebuilt,
           contactCone: rebuilt.contactCone

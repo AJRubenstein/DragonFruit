@@ -423,3 +423,48 @@ export function buildBranchData(input: BranchBuildInput): BranchBuildResult {
 
     return { branch, supportData };
 }
+
+/**
+ * Re-stamps rebuilt branch geometry with the ids the branch already carried.
+ *
+ * A tip drag rebuilds the whole branch on every pointer move. Fresh ids there
+ * change the contact cone's id, which drops its selection and unmounts the
+ * drag HUD mid-drag, and would detach any knot hosted on the branch's own
+ * shafts once the drag commits. Segments and joints are matched by position:
+ * geometry the rebuild adds keeps its new ids.
+ */
+export function remapBranchGeometryIds(rebuilt: Branch, previous: Branch): Branch {
+    const jointIdMap = new Map<string, string>();
+
+    rebuilt.segments.forEach((segment, index) => {
+        const previousTopJoint = previous.segments[index]?.topJoint;
+        if (segment.topJoint && previousTopJoint) {
+            jointIdMap.set(segment.topJoint.id, previousTopJoint.id);
+        }
+    });
+
+    const remapJoint = (joint?: Joint): Joint | undefined => {
+        if (!joint) return joint;
+        const mappedId = jointIdMap.get(joint.id);
+        return mappedId ? { ...joint, id: mappedId } : joint;
+    };
+
+    const segments: Segment[] = rebuilt.segments.map((segment, index) => ({
+        ...segment,
+        id: previous.segments[index]?.id ?? segment.id,
+        topJoint: remapJoint(segment.topJoint),
+        bottomJoint: remapJoint(segment.bottomJoint),
+    }));
+
+    const contactCone: ContactCone | undefined = rebuilt.contactCone
+        ? {
+            ...rebuilt.contactCone,
+            id: previous.contactCone?.id ?? rebuilt.contactCone.id,
+            socketJointId: rebuilt.contactCone.socketJointId
+                ? jointIdMap.get(rebuilt.contactCone.socketJointId) ?? rebuilt.contactCone.socketJointId
+                : rebuilt.contactCone.socketJointId,
+        }
+        : rebuilt.contactCone;
+
+    return { ...rebuilt, segments, contactCone };
+}
