@@ -14,6 +14,8 @@ import { useHighlight } from '../../interaction/useHighlight';
 import { usePartDragUpdate } from '../../interaction/partDragPreview';
 import { KnotRenderer } from '../../SupportPrimitives/Knot/KnotRenderer';
 import { getSnapshot, updateBranch } from '../../state';
+import { getSettings } from '../../Settings';
+import { decodeSupportSettingsHex } from '../../Settings/supportSettingsCodec';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { buildBranchData, remapBranchGeometryIds } from './branchBuilder';
 
@@ -110,12 +112,22 @@ export const BranchRenderer = React.memo(function BranchRenderer({
       onHit: ({ point, surfaceNormal, mesh }: ContactDiskDragHit) => {
         const latest = getSnapshot().branches[branch.id];
         if (!latest?.contactCone) return;
+        // Size the rebuild from the branch's own settings and its existing
+        // geometry, not from whatever the global preset says now: moving a tip
+        // must not resize the support. The stored cone length is the solved one,
+        // so the nominal comes from the branch's own band instead.
+        const ownSettings = (latest.settingsCodeHex
+          ? decodeSupportSettingsHex(latest.settingsCodeHex, getSettings())
+          : null) ?? getSettings();
         const rebuilt = remapBranchGeometryIds(buildBranchData({
           tipPos: point,
           tipNormal: surfaceNormal,
           modelId: branch.modelId,
           parentKnot,
           mesh,
+          settings: ownSettings,
+          shaftDiameterMm: latest.segments[0]?.diameter,
+          tipProfile: { ...latest.contactCone.profile, lengthMm: ownSettings.tip.lengthMm },
         }).branch, latest);
         liveDragBranchRef.current = {
           ...rebuilt,

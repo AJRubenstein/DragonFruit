@@ -7,6 +7,7 @@ import { calculateDiskThickness } from '../../SupportPrimitives/ContactDisk/cont
 import { recomputeContactConeForMovedDisk } from '../../SupportPrimitives/ContactDisk';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import { getSettings } from '../../Settings';
+import type { SupportSettings } from '../../Settings/types';
 import { applySizingOverridesToSettings } from '../../autoSupport/parameterSizing';
 import { getJointDiameter } from '../../constants';
 import { resolveConeAxisPolicy, normalizeVectorOrFallback } from '../../PlacementLogic/ConeAxisPolicy';
@@ -257,6 +258,15 @@ export interface BranchBuildInput {
     shaftDiameterMm?: number;
     tipContactDiameterMm?: number;
     rootsDiameterMm?: number;
+    /** Settings band to size from. Defaults to the live global settings, which is
+     *  what a fresh placement wants. Rebuilding an existing branch passes that
+     *  branch's own band instead, so editing it does not resize it to whatever
+     *  the active preset happens to be. */
+    settings?: SupportSettings;
+    /** Contact tip profile to reuse verbatim instead of deriving one from
+     *  `settings`. Its `lengthMm` is the nominal the socket search starts from;
+     *  the solved length replaces it in the returned cone. */
+    tipProfile?: SupportTipProfile;
 }
 
 export interface BranchBuildResult {
@@ -274,7 +284,7 @@ export interface BranchBuildResult {
 export function buildBranchData(input: BranchBuildInput): BranchBuildResult {
     const { tipPos, tipNormal, modelId, parentKnot, mesh } = input;
 
-    const settings = getSettings();
+    const settings = input.settings ?? getSettings();
     const settingsCodeHex = encodeSupportSettingsHex(applySizingOverridesToSettings(settings, {
         shaftDiameterMm: input.shaftDiameterMm,
         tipContactDiameterMm: input.tipContactDiameterMm,
@@ -290,7 +300,7 @@ export function buildBranchData(input: BranchBuildInput): BranchBuildResult {
     });
 
     const effectiveConeAxis = coneAxis ?? tipNormal;
-    const tipProfile: SupportTipProfile = {
+    const tipProfile: SupportTipProfile = input.tipProfile ?? {
         type: 'disk',
         contactDiameterMm: input.tipContactDiameterMm ?? settings.tip.contactDiameterMm,
         bodyDiameterMm: settings.tip.bodyDiameterMm,
