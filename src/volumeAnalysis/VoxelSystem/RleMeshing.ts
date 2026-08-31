@@ -30,8 +30,8 @@ export function generateMeshFromRLE(
     const CHUNK_SIZE = 600_000; // Vertices per chunk. 600k * 3 floats = 7.2MB. Safe for Browser.
     // 400k vertices ~ 100k quads.
 
-    let positionBuffer = new Float32Array(CHUNK_SIZE * 3);
-    let indexBuffer = new Uint32Array(CHUNK_SIZE * 1.5); // 6 indices per 4 verts = 1.5x
+    const positionBuffer = new Float32Array(CHUNK_SIZE * 3);
+    const indexBuffer = new Uint32Array(CHUNK_SIZE * 1.5); // 6 indices per 4 verts = 1.5x
     let vertexCount = 0;
     let indexCount = 0;
 

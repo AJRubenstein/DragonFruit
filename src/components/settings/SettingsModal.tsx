@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { GeneralSettingsTab } from '@/components/settings/GeneralSettingsTab';
 import { useLocale } from '@/components/I18nClientProvider';
 import contributors from '@/components/settings/contributors.json';
+import { SponsorsCarousel } from '@/components/settings/SponsorsCarousel';
 import { CameraSettingsTab } from '@/components/settings/CameraSettingsTab';
 import { HotkeysSettingsTab } from '@/components/settings/HotkeysSettingsTab';
 import { MeshSettingsTab } from '@/components/settings/MeshSettingsTab';
@@ -48,6 +51,7 @@ import {
   type SavedCustomThemeProfile,
 } from '@/components/settings/themeCustomizations';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { Tooltip } from '@/components/ui/Tooltip';
 import {
   DEFAULT_SPACEMOUSE_SETTINGS,
@@ -211,6 +215,76 @@ type SettingsModalProps = {
 export type SettingsTabKey = 'general' | 'camera' | 'workspaces' | 'mesh' | 'performance' | 'spacemouse' | 'plugins' | 'experiments' | 'sceneAutosave' | 'backups' | 'uvtools' | 'ui' | 'hotkeys' | 'logging' | 'updates' | 'about';
 type SettingsTabTone = 'primary' | 'secondary';
 
+/**
+ * A sidebar description line that only offers a tooltip when it is actually
+ * clipped. Translated descriptions run much longer than the English ones — the
+ * Spanish "Comportamiento del espacio de trabajo y disposición de los paneles"
+ * is more than twice "Workspace behavior and panel layout" — so the truncation
+ * that never triggered in English hides most of the sentence in other locales.
+ *
+ * Two traps this deliberately avoids:
+ *
+ * 1. Measuring the truncating span itself. `Tooltip` renders no wrapper at all
+ *    when its content is falsy, so a measurement taken on the span reacts to
+ *    the very wrapper it decides to add — the element measures, gets wrapped,
+ *    measures differently, gets unwrapped. The reference box here is the outer
+ *    span, whose width is set by the sidebar and never by this decision, and
+ *    the text is measured through a Range, which reports the full laid-out
+ *    width regardless of what clips it.
+ * 2. Measuring once. A late webfont changes text metrics after the first pass,
+ *    and the outer box never resizes, so a ResizeObserver alone would keep a
+ *    stale answer forever. Hence the `fonts.ready` re-measure.
+ */
+function TabDescription({ text }: { text: string }) {
+  const outerRef = React.useRef<HTMLSpanElement>(null);
+  const textRef = React.useRef<HTMLSpanElement>(null);
+  const [isClipped, setIsClipped] = useState(false);
+
+  useEffect(() => {
+    const outer = outerRef.current;
+    const textEl = textRef.current;
+    if (!outer || !textEl) return;
+
+    let disposed = false;
+
+    const measure = () => {
+      if (disposed) return;
+      const range = document.createRange();
+      range.selectNodeContents(textEl);
+      const textWidth = range.getBoundingClientRect().width;
+      range.detach();
+      // The 1px slack absorbs sub-pixel rounding, which otherwise reports a
+      // one-pixel overflow on text that visibly fits.
+      setIsClipped(textWidth > outer.clientWidth + 1);
+    };
+
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(outer);
+    void document.fonts?.ready.then(measure);
+
+    return () => {
+      disposed = true;
+      observer.disconnect();
+    };
+  }, [text]);
+
+  return (
+    <span ref={outerRef} className="block min-w-0">
+      <Tooltip content={isClipped ? text : null} fullWidth maxWidth={280}>
+        <span
+          ref={textRef}
+          className="block min-w-0 flex-1 truncate text-xs"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          {text}
+        </span>
+      </Tooltip>
+    </span>
+  );
+}
+
 export function SettingsModal({
   isOpen,
   onClose,
@@ -309,6 +383,7 @@ export function SettingsModal({
 
   // Language is a draft like every other setting: changing the switcher only
   // updates draftLocale; the actual loadLocale happens in handleApply.
+  const { _ } = useLingui();
   const { locale: activeLocale, setLocale: applyLocale } = useLocale();
   const [draftLocale, setDraftLocale] = useState(activeLocale);
 
@@ -340,7 +415,11 @@ export function SettingsModal({
   const [draftPerspectiveFov, setDraftPerspectiveFov] = useState<number>(() => getSavedCameraFovSettings().fov);
   const [draftThemePreference, setDraftThemePreference] = useState(getSavedThemePreference());
   const [draftThemePreset, setDraftThemePreset] = useState<ThemePreset>(getSavedThemePreset());
-  const [draftThemeColors, setDraftThemeColors] = useState<ThemeCustomColors>(getSavedThemeCustomColors());
+  const [draftThemeColors, setDraftThemeColors] = useState<ThemeCustomColors>(() => {
+    const preset = getSavedThemePreset();
+    const profile = getThemeProfile(preset, getSavedCustomThemeProfiles());
+    return { ...profile.colors };
+  });
   const [draftThemeProfiles, setDraftThemeProfiles] = useState<SavedCustomThemeProfile[]>(() => getSavedCustomThemeProfiles());
   const [draftCustomThemeName, setDraftCustomThemeName] = useState<string>(() => {
     const savedPreset = getSavedThemePreset();
@@ -983,12 +1062,6 @@ export function SettingsModal({
     applyThemeCustomColors(draftThemeColors);
   }, [draftThemeColors, draftThemePreference, isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    setDraftSelectionColor(draftThemeColors.accent);
-    setDraftHoverColor(draftThemeColors.accentHover);
-  }, [draftThemeColors.accent, draftThemeColors.accentHover, isOpen]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1030,44 +1103,28 @@ export function SettingsModal({
     };
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const onKeyDown = (e: CustomEvent) => {
-      if (e.detail.key !== 'Escape') return;
-      if (showThemeDeleteConfirm) {
-        handleCancelThemeDeleteConfirm();
-        return;
-      }
-      if (showThemeRenameDialog) {
-        handleCancelThemeRenameDialog();
-        return;
-      }
-      if (showThemeSaveConfirm) {
-        handleCancelThemeSaveConfirm();
-        return;
-      }
-      if (showRestoreDefaultsConfirm) {
-        handleCancelRestoreDefaults();
-        return;
-      }
-      handleCancel();
-    };
-
-    window.addEventListener('app-hotkey-keydown', onKeyDown as EventListener);
-    return () => window.removeEventListener('app-hotkey-keydown', onKeyDown as EventListener);
-  }, [
-    isOpen,
-    handleCancel,
-    handleCancelRestoreDefaults,
-    handleCancelThemeDeleteConfirm,
-    handleCancelThemeRenameDialog,
-    handleCancelThemeSaveConfirm,
-    showRestoreDefaultsConfirm,
-    showThemeDeleteConfirm,
-    showThemeRenameDialog,
-    showThemeSaveConfirm,
-  ]);
+  // Nested dialogs rendered through StructuredDialogModal register their own
+  // Escape handler and take precedence; the cascade here covers the inline
+  // restore-defaults confirmation, which does not.
+  useEscapeToClose(isOpen, () => {
+    if (showThemeDeleteConfirm) {
+      handleCancelThemeDeleteConfirm();
+      return;
+    }
+    if (showThemeRenameDialog) {
+      handleCancelThemeRenameDialog();
+      return;
+    }
+    if (showThemeSaveConfirm) {
+      handleCancelThemeSaveConfirm();
+      return;
+    }
+    if (showRestoreDefaultsConfirm) {
+      handleCancelRestoreDefaults();
+      return;
+    }
+    handleCancel();
+  });
 
   const handleSpaceMouseChange = React.useCallback((partial: Partial<SpaceMouseSettings>) => {
     setDraftSpaceMouseSettings((prev) => normalizeSpaceMouseSettings({ ...prev, ...partial }));
@@ -1106,98 +1163,98 @@ export function SettingsModal({
 
   const tabMeta: Record<SettingsTabKey, { label: string; description: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; tone: SettingsTabTone }> = {
     general: {
-      label: 'General',
-      description: 'Workspace behavior and panel layout',
+      label: _(msg`General`),
+      description: _(msg`Workspace behavior and panel layout`),
       icon: Settings2,
       tone: 'primary',
     },
     camera: {
-      label: 'Camera',
-      description: 'Projection and navigation behavior',
+      label: _(msg`Camera`),
+      description: _(msg`Projection and navigation behavior`),
       icon: Camera,
       tone: 'primary',
     },
     mesh: {
-      label: 'Mesh',
-      description: 'Shader, rendering options, and selection behavior',
+      label: _(msg`Mesh`),
+      description: _(msg`Shader, rendering options, and selection behavior`),
       icon: Grid3x3,
       tone: 'primary',
     },
     performance: {
-      label: 'Slicing',
-      description: 'PNG compression and engine metadata',
+      label: _(msg`Slicing`),
+      description: _(msg`PNG compression and engine metadata`),
       icon: MonitorCog,
       tone: 'primary',
     },
     workspaces: {
-      label: 'Workspaces',
-      description: 'Per-workspace camera defaults',
+      label: _(msg`Workspaces`),
+      description: _(msg`Per-workspace camera defaults`),
       icon: MonitorCog,
       tone: 'primary',
     },
     ui: {
-      label: 'UI & Theme',
-      description: 'Theme and custom UI token customization',
+      label: _(msg`UI & Theme`),
+      description: _(msg`Theme and custom UI token customization`),
       icon: Palette,
       tone: 'primary',
     },
     hotkeys: {
-      label: 'Hotkeys',
-      description: 'Keyboard bindings and presets',
+      label: _(msg`Hotkeys`),
+      description: _(msg`Keyboard bindings and presets`),
       icon: Keyboard,
       tone: 'primary',
     },
     spacemouse: {
-      label: '3D Mouse',
-      description: '3D mouse navigation controls',
+      label: _(msg`3D Mouse`),
+      description: _(msg`3D mouse navigation controls`),
       icon: Gamepad2,
       tone: 'primary',
     },
     plugins: {
-      label: 'Plugins',
-      description: 'Load vendor profile plugins',
+      label: _(msg`Plugins`),
+      description: _(msg`Load vendor profile plugins`),
       icon: Plug,
       tone: 'secondary',
     },
     experiments: {
-      label: 'Experiments',
-      description: 'Early-access and experimental features',
+      label: _(msg`Experiments`),
+      description: _(msg`Early-access and experimental features`),
       icon: FlaskConical,
       tone: 'secondary',
     },
     sceneAutosave: {
-      label: 'Scene Autosave',
-      description: 'Autosave and crash recovery behavior',
+      label: _(msg`Scene Autosave`),
+      description: _(msg`Autosave and crash recovery behavior`),
       icon: HardDrive,
       tone: 'secondary',
     },
     backups: {
-      label: 'Backups',
-      description: 'Local on-disk backup snapshots',
+      label: _(msg`Backups`),
+      description: _(msg`Local on-disk backup snapshots`),
       icon: ArchiveRestore,
       tone: 'secondary',
     },
     uvtools: {
-      label: 'UVTools',
-      description: 'Send sliced files to UVTools for analysis',
+      label: _(msg`UVTools`),
+      description: _(msg`Send sliced files to UVTools for analysis`),
       icon: ExternalLink,
       tone: 'secondary',
     },
     logging: {
-      label: 'Logging',
-      description: 'Log file location and verbosity',
+      label: _(msg`Logging`),
+      description: _(msg`Log file location and verbosity`),
       icon: ScrollText,
       tone: 'secondary',
     },
     updates: {
-      label: 'Updates',
-      description: 'Check for new versions and manage channels',
+      label: _(msg`Updates`),
+      description: _(msg`Check for new versions and manage channels`),
       icon: CloudDownload,
       tone: 'secondary',
     },
     about: {
-      label: 'About',
-      description: 'Version info and project details',
+      label: _(msg`About`),
+      description: _(msg`Version info and project details`),
       icon: Info,
       tone: 'secondary',
     },
@@ -1331,9 +1388,7 @@ export function SettingsModal({
                           <span className="block text-sm font-semibold" style={{ color: active ? 'var(--text-strong)' : 'var(--text-strong)' }}>
                             {meta.label}
                           </span>
-                          <span className="block text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                            {meta.description}
-                          </span>
+                          <TabDescription text={meta.description} />
                         </span>
                       </div>
                     </button>
@@ -1386,9 +1441,7 @@ export function SettingsModal({
                           <span className="block text-sm font-semibold" style={{ color: active ? 'var(--text-strong)' : 'var(--text-strong)' }}>
                             {meta.label}
                           </span>
-                          <span className="block text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                            {meta.description}
-                          </span>
+                          <TabDescription text={meta.description} />
                         </span>
                       </div>
                     </button>
@@ -1690,15 +1743,11 @@ export function SettingsModal({
                           })()}
                         </div>
                       </div>
-                      
-
-                      <div className="rounded-lg border px-3 py-2 text-center" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-2), transparent 25%)' }}>
-                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          DragonFruit is under active development - expect frequent updates and iterative improvements to workflows and features.
-                        </div>
-                      </div>
                     </div>
                   </div>
+
+                  <SponsorsCarousel />
+
 
                   <div className="flex items-center gap-4 rounded-xl border px-4 py-3" style={{ borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 52%)', background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-0) 94%)' }}>
                       <img
@@ -1854,8 +1903,12 @@ export function SettingsModal({
                 <button
                   type="button"
                   onClick={handleConfirmRestoreDefaults}
-                  className="ui-button !h-9 px-3 text-xs inline-flex items-center gap-1.5"
-                  style={accentSecondaryActionStyle92}
+                  className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                  style={{
+                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                    color: 'var(--accent)',
+                  }}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Restore Defaults
@@ -1934,8 +1987,12 @@ export function SettingsModal({
                 <button
                   type="button"
                   onClick={reloadToApplyExperiments}
-                  className="ui-button !h-9 px-3 text-xs inline-flex items-center gap-1.5"
-                  style={accentSecondaryActionStyle92}
+                  className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                  style={{
+                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                    color: 'var(--accent)',
+                  }}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Reload Now
@@ -1968,8 +2025,12 @@ export function SettingsModal({
             <button
               type="button"
               onClick={handleConfirmSaveCurrentCustomTheme}
-              className="ui-button !h-9 px-3 text-xs inline-flex items-center gap-1.5"
-              style={accentSecondaryActionStyle92}
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
             >
               <Save className="h-3.5 w-3.5" />
               Save Theme
@@ -2004,11 +2065,11 @@ export function SettingsModal({
             <button
               type="button"
               onClick={handleConfirmDeleteCurrentCustomTheme}
-              className="ui-button ui-button-secondary !h-9 px-3 text-xs inline-flex items-center gap-1.5"
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
               style={{
+                borderColor: 'color-mix(in srgb, #ef4444, var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, #ef4444, var(--surface-1) 86%)',
                 color: 'var(--danger)',
-                borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 40%)',
-                background: 'color-mix(in srgb, var(--danger), var(--surface-1) 92%)',
               }}
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -2044,8 +2105,12 @@ export function SettingsModal({
             <button
               type="button"
               onClick={handleConfirmRenameCurrentCustomTheme}
-              className="ui-button !h-9 px-3 text-xs inline-flex items-center gap-1.5"
-              style={accentSecondaryActionStyle92}
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
               disabled={draftThemeRenameName.trim().length === 0}
             >
               <Check className="h-3.5 w-3.5" />

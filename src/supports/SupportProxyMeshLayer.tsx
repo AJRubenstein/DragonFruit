@@ -14,36 +14,9 @@ import { InstancedContactConeGroup, type InstancedContactCone } from './SupportP
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
 import { calculateDiskThickness } from './SupportPrimitives/ContactDisk/contactDiskUtils';
 import { emitSupportModelPointerHover } from './interaction/clickHandlers';
-import type { ContactDisk, Vec3 } from './types';
-
-// Tapered straight shaft type (kept for data flow, no longer creates per-item meshes -
-// all proxy shafts go through InstancedShaftGroup now).
-interface ProxyTaperedShaft {
-    id: string;
-    supportId?: string;
-    modelId?: string;
-    start: Vec3;
-    end: Vec3;
-    diameterStart: number;
-    diameterEnd: number;
-}
-
-// Unused in the simplified proxy — bezier curves become straight instanced
-// shafts with averaged diameter. The full SupportRenderer shows real curves.
-interface ProxyBezierShaft {
-    id: string;
-    supportId?: string;
-    modelId?: string;
-    start: Vec3;
-    end: Vec3;
-    control1: Vec3;
-    control2: Vec3;
-    resolution: number;
-    diameterStart: number;
-    diameterEnd: number;
-}
-
-function isBezierSegment(_seg: Vec3 & { type?: string }): boolean { return false; }
+import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
+import type { ContactDisk, Segment, Vec3 } from './types';
+import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 
 interface SupportProxyMeshLayerProps {
   mode?: 'prepare' | 'analysis' | 'support' | 'export' | 'printing';
@@ -52,6 +25,8 @@ interface SupportProxyMeshLayerProps {
   supportColorsByModelId?: Record<string, string>;
   activeModelId?: string | null;
   selectedModelIds?: string[];
+  /** Models the marquee would take if the drag ended now. */
+  marqueeCandidateModelIds?: readonly string[];
   hoverModelId?: string | null;
   hoverTintColor?: string;
   hoverTintStrength?: number;
@@ -84,6 +59,7 @@ interface SupportProxyMeshLayerProps {
 
 const DEFAULT_SUPPORT_COLOR = '#9a9a9a';
 const ACTIVE_SUPPORT_COLOR = '#c8752a';
+const EMPTY_MARQUEE_CANDIDATES: readonly string[] = Object.freeze([]);
 const PROXY_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
 
 type ProxyModelGeometry = {
@@ -155,6 +131,7 @@ export function SupportProxyMeshLayer({
   clipUpper,
   activeModelId = null,
   selectedModelIds = [],
+  marqueeCandidateModelIds = EMPTY_MARQUEE_CANDIDATES,
   hoverModelId = null,
   hoverTintColor = '#d18a4a',
   hoverTintStrength = 0.35,
@@ -565,6 +542,26 @@ export function SupportProxyMeshLayer({
       registerSegmentMeta(shaft.id, shaft.modelId, shaft.supportId);
     };
 
+    // Curved segments become curved batched-shaft entries; InstancedShaftGroup
+    // renders them as smooth capped tubes (same approach as the support-mode
+    // scene batch). This keeps curves visible in proxy views AND in mesh
+    // export: the unscoped STL/3MF path serializes this layer's live scene
+    // graph in prepare/export modes.
+    const pushSegmentShafts = (segment: Segment, start: Vec3, end: Vec3, supportId: string, modelId?: string) => {
+      if (segment.type === 'bezier') {
+        pushShaft(bezierSegmentToBatchedShaft(segment, start, end, supportId, modelId));
+        return;
+      }
+      pushShaft({
+        id: segment.id,
+        supportId,
+        modelId,
+        start,
+        end,
+        diameter: segment.diameter,
+      });
+    };
+
     const pushRoot = (root: InstancedRoot) => {
       const effectiveDiskHeight = Math.max(0.001, root.effectiveDiskHeight);
       const verticalOffset = 0;
@@ -644,14 +641,7 @@ export function SupportProxyMeshLayer({
         const end = segment.topJoint?.pos
           ?? (trunk.contactCone ? getFinalSocketPosition(trunk.contactCone) : { x: currentStart.x, y: currentStart.y, z: currentStart.z + 5 });
 
-        pushShaft({
-          id: segment.id,
-          supportId: trunk.id,
-          modelId: trunk.modelId,
-          start: currentStart,
-          end,
-          diameter: segment.diameter,
-        });
+        pushSegmentShafts(segment, currentStart, end, trunk.id, trunk.modelId);
 
         if (includeDetailedPrimitives && segment.topJoint) {
           pushJoint({
@@ -696,14 +686,7 @@ export function SupportProxyMeshLayer({
         const end = segment.topJoint?.pos
           ?? (branch.contactCone ? getFinalSocketPosition(branch.contactCone) : { x: currentStart.x, y: currentStart.y, z: currentStart.z + 5 });
 
-        pushShaft({
-          id: segment.id,
-          supportId: branch.id,
-          modelId: branch.modelId,
-          start: currentStart,
-          end,
-          diameter: segment.diameter,
-        });
+        pushSegmentShafts(segment, currentStart, end, branch.id, branch.modelId);
 
         if (includeDetailedPrimitives && segment.topJoint) {
           pushJoint({
@@ -716,6 +699,24 @@ export function SupportProxyMeshLayer({
         }
 
         currentStart = end;
+      }
+
+      // The branch's parent knot renders as a sphere on the host shaft
+      // (BranchRenderer draws it always) — the proxy must carry it too.
+      if (includeDetailedPrimitives) {
+        pushJoint(
+          {
+            id: parentKnot.id,
+            pos: parentKnot.pos,
+            diameter: parentKnot.diameter ?? 1.2,
+            supportId: branch.id,
+            modelId: branch.modelId,
+          },
+          undefined,
+          // KnotRenderer blends the FULL joint offset; the segment joints
+          // use the ×0.75 proxy blend.
+          JOINT_DIAMETER_OFFSET_MM,
+        );
       }
     }
 
@@ -746,6 +747,19 @@ export function SupportProxyMeshLayer({
             end: parentKnot.pos,
             diameter: rodDiameter,
           });
+
+          // The leaf base knot sphere (LeafRenderer draws it always).
+          pushJoint(
+            {
+              id: parentKnot.id,
+              pos: parentKnot.pos,
+              diameter: parentKnot.diameter ?? 1.2,
+              supportId: leaf.id,
+              modelId: leaf.modelId,
+            },
+            undefined,
+            JOINT_DIAMETER_OFFSET_MM,
+          );
         }
       }
     }
@@ -807,14 +821,7 @@ export function SupportProxyMeshLayer({
         const start = segment.bottomJoint?.pos ?? getDiskTipCenter(twig.contactDiskA);
         const end = segment.topJoint?.pos ?? getDiskTipCenter(twig.contactDiskB);
 
-        pushShaft({
-          id: segment.id,
-          supportId: twig.id,
-          modelId: twig.modelId,
-          start,
-          end,
-          diameter: segment.diameter,
-        });
+        pushSegmentShafts(segment, start, end, twig.id, twig.modelId);
 
         if (includeDetailedPrimitives && segment.topJoint) {
           pushJoint({
@@ -857,14 +864,7 @@ export function SupportProxyMeshLayer({
         const start = segment.bottomJoint?.pos ?? getFinalSocketPosition(stick.contactConeA);
         const end = segment.topJoint?.pos ?? getFinalSocketPosition(stick.contactConeB);
 
-        pushShaft({
-          id: segment.id,
-          supportId: stick.id,
-          modelId: stick.modelId,
-          start,
-          end,
-          diameter: segment.diameter,
-        });
+        pushSegmentShafts(segment, start, end, stick.id, stick.modelId);
 
         if (includeDetailedPrimitives && segment.topJoint) {
           pushJoint({
@@ -905,19 +905,36 @@ export function SupportProxyMeshLayer({
         ),
       );
 
-      pushShaft({
-        id: `braceSegment:${brace.id}`,
-        supportId: brace.id,
-        modelId: brace.modelId,
-        start: startKnot.pos,
-        end: endKnot.pos,
-        diameter: (startHostDiameter + endHostDiameter) * 0.5,
-      });
+      const braceDiameter = (startHostDiameter + endHostDiameter) * 0.5;
+      if (brace.curve?.type === 'bezier') {
+        pushShaft(braceBezierToBatchedShaft(
+          `braceSegment:${brace.id}`,
+          startKnot.pos,
+          endKnot.pos,
+          brace.curve.controlPoint1,
+          brace.curve.controlPoint2,
+          braceDiameter,
+          brace.curve.resolution,
+          brace.id,
+          brace.modelId,
+        ));
+      } else {
+        pushShaft({
+          id: `braceSegment:${brace.id}`,
+          supportId: brace.id,
+          modelId: brace.modelId,
+          start: startKnot.pos,
+          end: endKnot.pos,
+          diameter: braceDiameter,
+        });
+      }
     }
 
-    // Knots are interaction affordances (branch/brace attachment point drag handles) rendered
-    // only for selected supports in the full SupportRenderer. Omitting them from the proxy
-    // avoids visible hemisphere bumps at every trunk segment split point.
+    // Knots that the scene renders always (leaf base knots and branch parent
+    // knots on host shafts) are emitted as spheres above. The knots still
+    // omitted here — brace endpoints and kickstand host knots — are
+    // selection-only interaction affordances in SupportRenderer, so leaving
+    // them out keeps the proxy geometry clean.
 
     // Anchors: root + contact cone, no shafts
     const supportAnchors = supportState.anchors;
@@ -978,14 +995,7 @@ export function SupportProxyMeshLayer({
         }
 
         const end = segment.topJoint?.pos ?? hostKnot.pos;
-        pushShaft({
-          id: segment.id,
-          supportId: kickstand.id,
-          modelId: kickstand.modelId,
-          start: currentStart,
-          end,
-          diameter: segment.diameter,
-        });
+        pushSegmentShafts(segment, currentStart, end, kickstand.id, kickstand.modelId);
 
         if (includeDetailedPrimitives && segment.topJoint) {
           pushJoint({
@@ -1202,27 +1212,51 @@ export function SupportProxyMeshLayer({
     scheduleSupportHoverClear();
   }, [pointerHoverEnabled, scheduleSupportHoverClear]);
 
-  const hoveredOverlayEntry = React.useMemo(() => {
-    if (!effectiveHoverModelId) return null;
-    if (highlightedModelIdSet.has(effectiveHoverModelId)) return null;
-    if (!resolveModelVisible(effectiveHoverModelId)) return null;
+  // The hover tint also covers the models a marquee drag is about to take, so
+  // their supports light up with the model instead of after the mouse is up.
+  const hoveredOverlayEntries = React.useMemo(() => {
+    const modelIds = new Set<string>();
+    if (effectiveHoverModelId) modelIds.add(effectiveHoverModelId);
+    for (const modelId of marqueeCandidateModelIds) modelIds.add(modelId);
 
-    const modelKey = toModelKey(effectiveHoverModelId);
-    const geometry = baseProxyByModel.get(modelKey);
-    if (!geometry) return null;
+    const entries: Array<{
+      modelId: string;
+      modelKey: string;
+      zOffset: number;
+      geometry: NonNullable<ReturnType<typeof baseProxyByModel.get>>;
+      opacity: number;
+    }> = [];
 
-    return {
-      modelId: effectiveHoverModelId,
-      modelKey,
-      zOffset: modelDropOffsetsById?.[effectiveHoverModelId] ?? 0,
-      geometry,
-    };
+    for (const modelId of modelIds) {
+      if (highlightedModelIdSet.has(modelId)) continue;
+      if (!resolveModelVisible(modelId)) continue;
+
+      const modelKey = toModelKey(modelId);
+      const geometry = baseProxyByModel.get(modelKey);
+      if (!geometry) continue;
+
+      entries.push({
+        modelId,
+        modelKey,
+        zOffset: modelDropOffsetsById?.[modelId] ?? 0,
+        geometry,
+        // A candidate tints lighter than a hover, so a marquee lighting up
+        // model, supports and raft at once still reads apart from a selection.
+        opacity: modelId === effectiveHoverModelId
+          ? hoverOverlayOpacity
+          : hoverOverlayOpacity * MARQUEE_CANDIDATE_TINT_FACTOR,
+      });
+    }
+
+    return entries;
   }, [
     effectiveHoverModelId,
+    marqueeCandidateModelIds,
     highlightedModelIdSet,
     resolveModelVisible,
     baseProxyByModel,
     modelDropOffsetsById,
+    hoverOverlayOpacity,
   ]);
 
   // Flatten all visible model geometries into two batched groups (base + highlighted) so the
@@ -1239,11 +1273,14 @@ export function SupportProxyMeshLayer({
         target.shafts.push(shaft);
         return;
       }
-      target.shafts.push({
+      const pushed: InstancedShaft = {
         ...shaft,
         start: { x: shaft.start.x, y: shaft.start.y, z: shaft.start.z + zOffset },
         end: { x: shaft.end.x, y: shaft.end.y, z: shaft.end.z + zOffset },
-      });
+      };
+      if (shaft.controlPoint1) pushed.controlPoint1 = { x: shaft.controlPoint1.x, y: shaft.controlPoint1.y, z: shaft.controlPoint1.z + zOffset };
+      if (shaft.controlPoint2) pushed.controlPoint2 = { x: shaft.controlPoint2.x, y: shaft.controlPoint2.y, z: shaft.controlPoint2.z + zOffset };
+      target.shafts.push(pushed);
     };
 
     const appendRoot = (target: FlatProxyGeometry, root: InstancedRoot, zOffset: number) => {
@@ -1428,7 +1465,7 @@ export function SupportProxyMeshLayer({
         </group>
       )}
 
-      {hoveredOverlayEntry && (
+      {hoveredOverlayEntries.map((hoveredOverlayEntry) => (
         <group
           key={`proxy-hover:${hoveredOverlayEntry.modelKey}`}
           userData={{ modelId: hoveredOverlayEntry.modelId ?? null }}
@@ -1441,7 +1478,7 @@ export function SupportProxyMeshLayer({
               emissive={hoveredOverlayColor}
               emissiveIntensity={0.1}
               transparent={hoverOverlayTransparent}
-              opacity={hoverOverlayOpacity}
+              opacity={hoveredOverlayEntry.opacity}
               radialSegments={10}
               clippingPlanes={clippingPlanes}
               onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
@@ -1458,7 +1495,7 @@ export function SupportProxyMeshLayer({
               emissive={hoveredOverlayColor}
               emissiveIntensity={0.1}
               transparent={hoverOverlayTransparent}
-              opacity={hoverOverlayOpacity}
+              opacity={hoveredOverlayEntry.opacity}
               clippingPlanes={clippingPlanes}
               onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
               onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
@@ -1474,7 +1511,7 @@ export function SupportProxyMeshLayer({
               emissive={hoveredOverlayColor}
               emissiveIntensity={0.1}
               transparent={hoverOverlayTransparent}
-              opacity={hoverOverlayOpacity}
+              opacity={hoveredOverlayEntry.opacity}
               clippingPlanes={clippingPlanes}
               onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
               onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
@@ -1490,7 +1527,7 @@ export function SupportProxyMeshLayer({
               emissive={hoveredOverlayColor}
               emissiveIntensity={0.1}
               transparent={hoverOverlayTransparent}
-              opacity={hoverOverlayOpacity}
+              opacity={hoveredOverlayEntry.opacity}
               clippingPlanes={clippingPlanes}
               onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
               onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
@@ -1499,7 +1536,7 @@ export function SupportProxyMeshLayer({
             />
           )}
         </group>
-      )}
+      ))}
     </group>
   );
 }

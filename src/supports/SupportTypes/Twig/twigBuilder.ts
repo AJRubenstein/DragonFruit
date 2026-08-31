@@ -21,6 +21,8 @@ export interface TwigBuildInput {
     bPos: Vec3;
     bNormal: Vec3;
     mesh?: THREE.Mesh;
+    /** Auto-support tier tip contact — absent for manual placement. */
+    tipContactDiameterMm?: number;
 }
 
 export interface TwigBuildResult {
@@ -46,11 +48,15 @@ export function buildTwig(input: TwigBuildInput): TwigBuildResult {
         standoffAngleThreshold: settings.tip.standoffAngleThreshold ?? Math.PI / 4,
     };
 
-    // Twig sizing rule: each disk drives its own joint, and the shaft tapers
-    // between the two joints. Both disks use the global tip.contactDiameterMm
-    // until per-disk diameter editing exists.
-    const diskAContactDiameter = settings.tip.contactDiameterMm;
-    const diskBContactDiameter = settings.tip.contactDiameterMm;
+    // Twig sizing rule: both disk ends share one diameter — twigs are
+    // CYLINDRICAL. Slightly smaller than the global tip contact (twigs are
+    // short, low-span supports). An earlier change scaled the free (B) end
+    // down with span, which accidentally rendered every twig as a cone;
+    // equal ends is the intended geometry (the taper machinery in
+    // twigTaper.ts still works — with equal ends it degenerates to a
+    // cylinder).
+    const diskAContactDiameter = (input.tipContactDiameterMm ?? settings.tip.contactDiameterMm) * 0.9;
+    const diskBContactDiameter = diskAContactDiameter;
 
     const jointDiameterA = twigJointDiameterForDisk(diskAContactDiameter);
     const jointDiameterB = twigJointDiameterForDisk(diskBContactDiameter);
@@ -58,7 +64,7 @@ export function buildTwig(input: TwigBuildInput): TwigBuildResult {
     // Legacy uniform value for slicer/proxy and any consumer that reads
     // segment.diameter. The actual visible taper is carried per-end by the
     // joints and applied by TwigRenderer.
-    const shaftDiameter = settings.tip.contactDiameterMm;
+    const shaftDiameter = diskAContactDiameter;
 
     _aVec.set(aPos.x, aPos.y, aPos.z);
     _bVec.set(bPos.x, bPos.y, bPos.z);

@@ -42,6 +42,12 @@ import {
   storeModelMeshModifiers,
 } from '@/features/mesh-modifiers/meshModifierStore';
 import { splitClassifiedSupportGeometry } from '@/features/scene/splitClassifiedSupports';
+import {
+  applyModelGrouping,
+  applyModelGroupUngrouping,
+  applyModelUngrouping,
+} from '@/features/scene/modelGroupingHistory';
+import { performModelCut, selectModelsForClipboard } from '@/features/scene/modelCut';
 
 type PersistedMeshAppearance = {
   v: 1;
@@ -1155,6 +1161,11 @@ export function useSceneCollectionManager() {
   const modelsRef = useRef<LoadedModel[]>([]);
   const activeModelIdRef = useRef<string | null>(null);
   const selectedModelIdsRef = useRef<string[]>([]);
+  // Whether the most recently loaded .voxl was the chunked 2.2 layout. Read by
+  // the import/export manager right after a load to seed the scene's save-format
+  // so autosave preserves an old file's format without ever downgrading a 2.2
+  // one. Defaults to true (newest) for non-voxl / fresh scenes.
+  const lastLoadedVoxlFormatChunkedRef = useRef<boolean>(true);
   modelsRef.current = models;
   activeModelIdRef.current = activeModelId;
   selectedModelIdsRef.current = selectedModelIds;
@@ -1566,6 +1577,35 @@ export function useSceneCollectionManager() {
     setRecentOpenedFiles(readRecentOpenedFilesFromLocalStorage());
     setView3dSettingsState(getSavedView3DSettings());
   }, []);
+
+  useEffect(() => {
+    const prev = readMeshAppearanceFromLocalStorage();
+    if (!prev) {
+      writeMeshAppearanceToLocalStorage({
+        v: 1,
+        shaderType,
+        matcapVariant,
+        flatUseVertexColors,
+        toonSteps,
+        ambientIntensity,
+        directionalIntensity,
+        materialRoughness,
+        wireframeThicknessPx,
+        xrayOpacity,
+        heatmapMinAngle,
+        heatmapMaxAngle,
+        heatmapColors,
+        meshColor: preferredMeshColor,
+        hoverTintStrength,
+        selectedTintStrength,
+        selectionColor,
+        hoverColor,
+      });
+      return;
+    }
+    if (prev.selectionColor === selectionColor && prev.hoverColor === hoverColor) return;
+    writeMeshAppearanceToLocalStorage({ ...prev, selectionColor, hoverColor });
+  }, [selectionColor, hoverColor]);
 
   const setView3dSettings = useCallback((next: View3DSettings) => {
     const normalized = normalizeView3DSettings(next);
@@ -2633,7 +2673,59 @@ export function useSceneCollectionManager() {
     return true;
   }, [pushSceneSnapshotHistory]);
 
-  const updateModelTransforms = useCallback((updates: Array<{ id: string; transform: ModelTransform }>) => {
+  const commitModelTransformsHistory = useCallback((
+    beforeTransforms: Array<{ id: string; transform: ModelTransform }>,
+    description?: string,
+    supportSnapshotOptions?: TransformHistorySupportSnapshotOptions,
+  ) => {
+    const currentModels = modelsRef.current;
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+    const beforeTransformMap = new Map(beforeTransforms.map((entry) => [entry.id, entry.transform]));
+    const changedIds = currentModels
+      .filter((model) => {
+        const beforeTransform = beforeTransformMap.get(model.id);
+        return beforeTransform && !transformsEqual(beforeTransform, model.transform);
+      })
+      .map((model) => model.id);
+    if (changedIds.length === 0) return false;
+
+    const beforeModels = currentModels.map((model) => {
+      const beforeTransform = beforeTransformMap.get(model.id);
+      return beforeTransform
+        ? { ...model, transform: cloneTransform(beforeTransform) }
+        : model;
+    });
+    const includeSupportByOption = supportSnapshotOptions?.includeSupportState === true
+      || !!supportSnapshotOptions?.supportBefore
+      || !!supportSnapshotOptions?.supportAfter
+      || !!supportSnapshotOptions?.kickstandBefore
+      || !!supportSnapshotOptions?.kickstandAfter;
+    const supportStateNow = getSnapshot();
+    const kickstandStateNow = getKickstandSnapshot();
+    const includeSupportByState = changedIds.some((id) => (
+      hasSupportsOrKickstandsForModel(id, supportStateNow, kickstandStateNow)
+    ));
+    const includeSupportHistory = includeSupportByOption || includeSupportByState;
+
+    const before = captureSceneSnapshot(beforeModels, currentActiveModelId, currentSelectedModelIds, {
+      includeSupportState: includeSupportHistory,
+      supportStateOverride: supportSnapshotOptions?.supportBefore,
+      kickstandStateOverride: supportSnapshotOptions?.kickstandBefore,
+    });
+    const after = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, {
+      includeSupportState: includeSupportHistory,
+      supportStateOverride: supportSnapshotOptions?.supportAfter,
+      kickstandStateOverride: supportSnapshotOptions?.kickstandAfter,
+    });
+    pushSceneSnapshotHistory(before, after, description ?? 'Update Model Transforms');
+    return true;
+  }, [pushSceneSnapshotHistory]);
+
+  const updateModelTransforms = useCallback((
+    updates: Array<{ id: string; transform: ModelTransform }>,
+    options?: { pushHistory?: boolean },
+  ) => {
     if (updates.length === 0) {
       return {
         updated: false,
@@ -2686,11 +2778,14 @@ export function useSceneCollectionManager() {
     const allUpdatedIds = Array.from(updateMap.keys());
     const includeSupportHistory = allUpdatedIds.some((id) => hasSupportsOrKickstandsForModel(id, supportStateBefore, kickstandStateBefore));
 
-    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, {
-      includeSupportState: includeSupportHistory,
-      supportStateOverride: includeSupportHistory ? supportStateBefore : undefined,
-      kickstandStateOverride: includeSupportHistory ? kickstandStateBefore : undefined,
-    });
+    const shouldPushHistory = options?.pushHistory !== false;
+    const before = shouldPushHistory
+      ? captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, {
+          includeSupportState: includeSupportHistory,
+          supportStateOverride: includeSupportHistory ? supportStateBefore : undefined,
+          kickstandStateOverride: includeSupportHistory ? kickstandStateBefore : undefined,
+        })
+      : null;
 
     let supportsChanged = false;
     let kickstandsChanged = false;
@@ -2718,16 +2813,19 @@ export function useSceneCollectionManager() {
       return nextTransform ? { ...m, transform: nextTransform } : m;
     });
 
+    if (!shouldPushHistory) modelsRef.current = nextModels;
     setModels(nextModels);
 
-    const supportStateAfter = includeSupportHistory ? getSnapshot() : undefined;
-    const kickstandStateAfter = includeSupportHistory ? getKickstandSnapshot() : undefined;
-    const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds, {
-      includeSupportState: includeSupportHistory,
-      supportStateOverride: supportStateAfter,
-      kickstandStateOverride: kickstandStateAfter,
-    });
-    pushSceneSnapshotHistory(before, after, updates.length === 1 ? 'Update Model Transform' : 'Update Model Transforms');
+    if (shouldPushHistory && before) {
+      const supportStateAfter = includeSupportHistory ? getSnapshot() : undefined;
+      const kickstandStateAfter = includeSupportHistory ? getKickstandSnapshot() : undefined;
+      const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds, {
+        includeSupportState: includeSupportHistory,
+        supportStateOverride: supportStateAfter,
+        kickstandStateOverride: kickstandStateAfter,
+      });
+      pushSceneSnapshotHistory(before, after, updates.length === 1 ? 'Update Model Transform' : 'Update Model Transforms');
+    }
 
     return {
       updated,
@@ -3157,65 +3255,67 @@ export function useSceneCollectionManager() {
   }, []);
 
   const groupModels = useCallback((modelIds: string[], groupName?: string) => {
-    const ids = Array.from(new Set(modelIds));
-    if (ids.length === 0) return null;
-
-    let resolvedGroupId: string | null = null;
-    let resolvedGroupName: string | null = null;
-
-    setModels((prev) => {
-      const selected = prev.filter((model) => ids.includes(model.id));
-      if (selected.length === 0) return prev;
-
-      const commonGroupId = selected.every((model) => model.groupId && model.groupId === selected[0].groupId)
-        ? (selected[0].groupId ?? null)
-        : null;
-
-      resolvedGroupId = commonGroupId ?? `group-${uuidv4()}`;
-      const rawName = groupName?.trim();
-      resolvedGroupName = rawName && rawName.length > 0
-        ? rawName
-        : (selected.find((model) => model.groupName?.trim())?.groupName ?? selected[0].name);
-
-      return prev.map((model) => {
-        if (!ids.includes(model.id)) return model;
-        return {
-          ...model,
-          groupId: resolvedGroupId ?? undefined,
-          groupName: resolvedGroupName ?? undefined,
-        };
-      });
+    const currentModels = modelsRef.current;
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
+    const transition = applyModelGrouping({
+      models: currentModels,
+      modelIds,
+      groupId: `group-${uuidv4()}`,
+      groupName,
+      activeModelId: currentActiveModelId,
+      selectedModelIds: currentSelectedModelIds,
     });
 
-    if (resolvedGroupId) {
-      setSelectedModelIds((prev) => {
-        const next = Array.from(new Set([...prev, ...ids]));
-        return next;
-      });
-      setActiveModelId((prev) => prev ?? ids[0] ?? null);
-    }
+    if (!transition.changed) return transition.groupId ?? null;
 
-    return resolvedGroupId;
-  }, []);
+    setModels(transition.models);
+    setActiveModelId(transition.activeModelId);
+    setSelectedModelIds(transition.selectedModelIds);
+
+    const after = captureSceneSnapshot(transition.models, transition.activeModelId, transition.selectedModelIds);
+    pushSceneSnapshotHistory(before, after, transition.description);
+    return transition.groupId ?? null;
+  }, [pushSceneSnapshotHistory]);
 
   const ungroupModels = useCallback((modelIds: string[]) => {
-    const ids = new Set(modelIds);
-    if (ids.size === 0) return;
+    const currentModels = modelsRef.current;
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
+    const transition = applyModelUngrouping({
+      models: currentModels,
+      modelIds,
+      activeModelId: currentActiveModelId,
+      selectedModelIds: currentSelectedModelIds,
+    });
 
-    setModels((prev) => prev.map((model) => (
-      ids.has(model.id)
-        ? { ...model, groupId: undefined, groupName: undefined }
-        : model
-    )));
-  }, []);
+    if (!transition.changed) return;
+
+    setModels(transition.models);
+    const after = captureSceneSnapshot(transition.models, transition.activeModelId, transition.selectedModelIds);
+    pushSceneSnapshotHistory(before, after, transition.description);
+  }, [pushSceneSnapshotHistory]);
 
   const ungroupGroup = useCallback((groupId: string) => {
-    setModels((prev) => prev.map((model) => (
-      model.groupId === groupId
-        ? { ...model, groupId: undefined, groupName: undefined }
-        : model
-    )));
-  }, []);
+    const currentModels = modelsRef.current;
+    const currentActiveModelId = activeModelIdRef.current;
+    const currentSelectedModelIds = selectedModelIdsRef.current;
+    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds);
+    const transition = applyModelGroupUngrouping({
+      models: currentModels,
+      groupId,
+      activeModelId: currentActiveModelId,
+      selectedModelIds: currentSelectedModelIds,
+    });
+
+    if (!transition.changed) return;
+
+    setModels(transition.models);
+    const after = captureSceneSnapshot(transition.models, transition.activeModelId, transition.selectedModelIds);
+    pushSceneSnapshotHistory(before, after, transition.description);
+  }, [pushSceneSnapshotHistory]);
 
   /** Splits a multi-body 3MF model into independent models using the
    *  pre-processed `splitBodies` geometries. Instant — no reprocessing. */
@@ -3931,10 +4031,10 @@ export function useSceneCollectionManager() {
   }, [models]);
 
   const copySelectedModels = useCallback((ids?: string[]) => {
-    const idSet = new Set((ids && ids.length > 0) ? ids : selectedModelIds);
-    if (idSet.size === 0) return false;
+    const targetIds = (ids && ids.length > 0) ? ids : selectedModelIds;
+    if (targetIds.length === 0) return false;
 
-    const selected = models.filter((m) => idSet.has(m.id));
+    const selected = selectModelsForClipboard(models, targetIds);
     if (selected.length === 0) return false;
 
     setModelClipboard(selected.map((source) => {
@@ -3961,12 +4061,13 @@ export function useSceneCollectionManager() {
     return true;
   }, [models, selectedModelIds]);
 
+  const cutSelectedModels = useCallback((ids: string[]) => {
+    return performModelCut(ids, copySelectedModels, deleteModels);
+  }, [copySelectedModels, deleteModels]);
+
   const cutModel = useCallback((id: string) => {
-    const copied = copyModel(id);
-    if (!copied) return false;
-    deleteModel(id);
-    return true;
-  }, [copyModel, deleteModel]);
+    return cutSelectedModels([id]);
+  }, [cutSelectedModels]);
 
   const pasteModel = useCallback(() => {
     if (modelClipboard.length === 0) return null;
@@ -4872,6 +4973,9 @@ export function useSceneCollectionManager() {
         resolvedMeshBytes = r.meshBytes;
         resolvedOriginalMeshBytes = r.originalMeshBytes;
         originalMeshChunks = r.originalMeshChunks;
+        // sourceVersion is 2.2 only when the file actually carries modifier
+        // chunks; anything lower is treated as inline for format preservation.
+        lastLoadedVoxlFormatChunkedRef.current = r.sourceVersion >= 2.2;
       } else {
         document = parseVoxlDocument(await file.text());
         resolvedMeshBytes = new Map();
@@ -4927,7 +5031,6 @@ export function useSceneCollectionManager() {
           meshDataBytes = decodeVoxlEmbeddedMeshBytes(meshRef);
         }
 
-        let url = '';
         try {
           const bytes = meshDataBytes;
 
@@ -5088,10 +5191,6 @@ export function useSceneCollectionManager() {
         } catch (error) {
           console.error(`[SceneCollection] Failed importing embedded VOXL mesh for model "${model.name}"`, error);
           skippedModels += 1;
-        } finally {
-          if (url) {
-            URL.revokeObjectURL(url);
-          }
         }
       }
 
@@ -5716,6 +5815,7 @@ export function useSceneCollectionManager() {
     setActiveModelId,
     selectedModelIds,
     setSelectedModelIds,
+    lastLoadedVoxlFormatChunkedRef,
     selectModel,
     clearModelSelection,
     activeModel,
@@ -5754,6 +5854,7 @@ export function useSceneCollectionManager() {
     onFileChange,
     updateModelTransform,
     commitModelTransformHistory,
+    commitModelTransformsHistory,
     updateModelTransforms,
     setModelTransformRaw,
     replaceModelGeometry,
@@ -5781,6 +5882,7 @@ export function useSceneCollectionManager() {
     deleteSupportsForModels,
     copyModel,
     copySelectedModels,
+    cutSelectedModels,
     cutModel,
     pasteModel,
     pasteCopiedModelsAutoArrange,

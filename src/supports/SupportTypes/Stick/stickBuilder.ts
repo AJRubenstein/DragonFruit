@@ -1,3 +1,4 @@
+import { toVec3 } from '@/supports/Curves/BezierUtils';
 import * as THREE from 'three';
 import { Joint, Segment, Stick, Vec3, LimitationCode } from '../../types';
 import type { ContactCone, SupportTipProfile } from '../../SupportPrimitives/ContactCone/types';
@@ -11,6 +12,9 @@ import { v4 as uuidv4 } from 'uuid';
 
 export interface StickBuildInput {
     modelId: string;
+    /** Auto-support tier overrides — absent for manual placement. */
+    shaftDiameterMm?: number;
+    tipContactDiameterMm?: number;
     aPos: Vec3;
     aNormal: Vec3;
     bPos: Vec3;
@@ -25,9 +29,6 @@ export interface StickBuildResult {
 
 const GEOMETRY_EPSILON = 0.000001;
 
-function toVec3(vector: THREE.Vector3): Vec3 {
-    return { x: vector.x, y: vector.y, z: vector.z };
-}
 
 export function buildStick(input: StickBuildInput): StickBuildResult {
     const { modelId, aPos, aNormal, bPos, bNormal, mesh } = input;

@@ -6,9 +6,9 @@ import { SupportProxyMeshLayer } from '@/supports/SupportProxyMeshLayer';
 import { RaftProxyMeshLayer } from '@/supports/RaftProxyMeshLayer';
 import RaftRenderer from '@/supports/Rafts/Crenelated/rendering/RaftRenderer';
 import LineRaftRenderer from '@/supports/Rafts/Crenelated/rendering/LineRaftRenderer';
+import { getSettings, subscribeToSettings } from '@/supports/Settings/state';
 import type { SupportData } from '@/supports/rendering';
 import type { BracePreviewData } from '@/supports/SupportTypes/Brace/bracePlacementState';
-
 export type ModelAttachedSupportLayerProps = {
   mode?: SupportMode;
   modelFilterId?: string | null;
@@ -25,6 +25,7 @@ export type ModelAttachedSupportLayerProps = {
   selectedTintStrength?: number;
   activeModelId?: string | null;
   selectedModelIds?: string[];
+  marqueeCandidateModelIds?: readonly string[];
   hoverModelId?: string | null;
   modelDropOffsetsById?: Record<string, number>;
   navigationLodActive?: boolean;
@@ -78,6 +79,7 @@ export function ModelAttachedSupportLayer({
   selectedTintStrength,
   activeModelId = null,
   selectedModelIds = [],
+  marqueeCandidateModelIds,
   hoverModelId = null,
   modelDropOffsetsById,
   navigationLodActive = false,
@@ -110,16 +112,19 @@ export function ModelAttachedSupportLayer({
   const useUltraLazySupports = mode !== 'support';
   const proxyPointerSelectionEnabled = mode === 'prepare' && !navigationLodActive && !disableSelectionAndHover && !passive;
   const proxyIncludeDetailedPrimitives = supportProxyIncludeDetailedPrimitives;
+  const simpleRender = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings).debugSimpleSupportRender;
+  const hideRaftPrimitivesEffective = hideRaftPrimitives || simpleRender;
 
   return (
     <>
-      {!hideRaftPrimitives && !interiorView && useUltraLazySupports && (
+      {!hideRaftPrimitivesEffective && !interiorView && useUltraLazySupports && (
         <RaftProxyMeshLayer
           modelFilterId={hideRaftPrimitivesForInactiveModels && activeModelId ? activeModelId : modelFilterId}
           clipLower={clipLower}
           clipUpper={clipUpper}
           activeModelId={activeModelId}
           selectedModelIds={selectedModelIds}
+          marqueeCandidateModelIds={marqueeCandidateModelIds}
           hoverModelId={hoverModelId}
           excludeModelId={excludeModelId}
           excludeModelIds={excludeModelIds}
@@ -135,7 +140,7 @@ export function ModelAttachedSupportLayer({
         />
       )}
 
-      {!hideRaftPrimitives && !interiorView && !useUltraLazySupports && (
+      {!hideRaftPrimitivesEffective && !interiorView && !useUltraLazySupports && (
         <>
           <RaftRenderer
             clipLower={clipLower}
@@ -181,6 +186,7 @@ export function ModelAttachedSupportLayer({
             supportColorsByModelId={supportColorsByModelId}
             activeModelId={activeModelId}
             selectedModelIds={selectedModelIds}
+            marqueeCandidateModelIds={marqueeCandidateModelIds}
             hoverModelId={hoverModelId}
             hoverTintColor={hoverTintColor}
             hoverTintStrength={hoverTintStrength}
@@ -215,6 +221,7 @@ export function ModelAttachedSupportLayer({
             selectedTintStrength={selectedTintStrength}
             activeModelId={activeModelId}
             selectedModelIds={selectedModelIds}
+            marqueeCandidateModelIds={marqueeCandidateModelIds}
             hoverModelId={hoverModelId}
             modelDropOffsetsById={modelDropOffsetsById}
             modelFilterId={modelFilterId}

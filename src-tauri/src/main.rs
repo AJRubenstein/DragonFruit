@@ -4,6 +4,7 @@ mod astar;
 mod mesh_minima;
 mod mesh_repair;
 mod network;
+mod overhang;
 mod sdf;
 mod spacemouse;
 mod updater_channel;
@@ -58,6 +59,7 @@ fn default_dither_device_gamma() -> f64 {
 
 mod experiments;
 mod plugin_registry;
+mod webview_watchdog;
 mod window_state;
 
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -68,6 +70,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tauri::ipc::{InvokeBody, Response};
 use tauri::Emitter;
 use tauri::Manager;
+use base64::Engine as _;
 
 // Runtime type aliases — the feat/cef branch requires an explicit runtime
 // generic. These select Cef or Wry based on the active cargo feature.
@@ -1910,18 +1913,6 @@ async fn run_island_scan_native(
         let triangles_xyz = bytes_to_f32_vec(&mesh_bytes)?;
         let triangles = dragonfruit_slicing_engine::geometry::parse_triangles(&triangles_xyz);
 
-        // Debug dump: write positions + params to temp dir for offline reproduction
-        let dump_dir = std::env::temp_dir().join("dragonfruit-island-debug");
-        let _ = std::fs::create_dir_all(&dump_dir);
-        let _ = std::fs::write(
-            dump_dir.join("params.json"),
-            &params_json,
-        );
-        // Write positions as raw f32 binary (same format as stage_mesh_binary)
-        let _ = std::fs::write(
-            dump_dir.join("positions.bin"),
-            &mesh_bytes,
-        );
         log::debug!(
             "[island-scan-native] triangles={} bbox=({:.4},{:.4},{:.4})-({:.4},{:.4},{:.4}) px_mm={} layer_h={} buf={} conn={} min_area={} overlap_px={} neighborhood={}",
             triangles.len(),
@@ -1931,7 +1922,6 @@ async fn run_island_scan_native(
             params.connectivity, params.min_island_area_mm2,
             params.min_overlap_px, params.overlap_neighborhood_px,
         );
-        log::debug!("[island-scan-native] debug dump: {}", dump_dir.display());
 
         // Phase A: Calculate grid dimensions and bounds
         let origin_x = params.bbox_min_x;
@@ -1977,6 +1967,7 @@ async fn run_island_scan_native(
                 &job,
                 &triangles,
                 params.bbox_min_z,
+                params.bbox_max_z,
                 true, // store_labels = true for Volume Analysis
                 Some(&move |done: u32, total: u32| {
                     let _ = win_scan.emit("islandscan://progress", SliceProgressPayload {
@@ -3823,22 +3814,57 @@ async fn reveal_in_file_manager(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Executable names to look for on PATH. Everywhere but Windows UVTools ships
+/// the same plain binary — `UVtools` inside the macOS bundle, `UVtools` in the
+/// Linux zip — that users sometimes symlink onto PATH in lowercase.
+#[cfg(target_os = "windows")]
+const UVTOOLS_PATH_EXECUTABLES: &[&str] = &["UVTools.exe"];
+#[cfg(not(target_os = "windows"))]
+const UVTOOLS_PATH_EXECUTABLES: &[&str] = &["UVtools", "uvtools"];
+
+/// Expand a leading `~/` against HOME. Candidate paths come from the frontend,
+/// which has no way to resolve the home directory itself.
+fn expand_tilde(path: &str) -> std::path::PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return std::path::PathBuf::from(home).join(rest);
+        }
+    }
+    std::path::PathBuf::from(path)
+}
+
+/// A candidate counts as UVTools when it is an executable file or, on macOS, an
+/// `.app` bundle — which is a directory, so `is_file()` alone rejects it.
+fn is_uvtools_install(path: &std::path::Path) -> bool {
+    if path.is_file() {
+        return true;
+    }
+
+    cfg!(target_os = "macos")
+        && path.is_dir()
+        && path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
+}
+
 #[tauri::command]
 async fn discover_uvtools_path(candidates: Vec<String>) -> Result<Option<String>, String> {
     // Check candidate absolute paths first
     for candidate in &candidates {
-        let p = std::path::Path::new(candidate);
-        if p.exists() && p.is_file() {
-            return Ok(Some(candidate.clone()));
+        let p = expand_tilde(candidate);
+        if is_uvtools_install(&p) {
+            return Ok(Some(p.to_string_lossy().to_string()));
         }
     }
 
-    // Check PATH for UVTools.exe
+    // Then PATH, for installs that are not in a standard location
     if let Ok(path_env) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path_env) {
-            let exe_candidate = dir.join("UVTools.exe");
-            if exe_candidate.exists() && exe_candidate.is_file() {
-                return Ok(Some(exe_candidate.to_string_lossy().to_string()));
+            for name in UVTOOLS_PATH_EXECUTABLES {
+                let exec_candidate = dir.join(name);
+                if exec_candidate.is_file() {
+                    return Ok(Some(exec_candidate.to_string_lossy().to_string()));
+                }
             }
         }
     }
@@ -3876,12 +3902,106 @@ async fn launch_external_process(exe_path: String, file_arg: String) -> Result<(
         return Err("Executable path is empty".to_string());
     }
 
+    // A macOS `.app` bundle is a directory: it has to be started through
+    // `open -a`, which hands the file to the already-running instance if there
+    // is one. A bare executable (a CLI on PATH, or the binary inside the
+    // bundle) still spawns directly.
+    #[cfg(target_os = "macos")]
+    if std::path::Path::new(&exe_path)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
+    {
+        let mut command = std::process::Command::new("open");
+        command.arg("-a").arg(&exe_path);
+        if !file_arg.is_empty() {
+            command.arg(&file_arg);
+        }
+        command
+            .spawn()
+            .map_err(|e| format!("Failed to launch external process: {e}"))?;
+        return Ok(());
+    }
+
     std::process::Command::new(&exe_path)
         .arg(&file_arg)
         .spawn()
         .map_err(|e| format!("Failed to launch external process: {e}"))?;
 
     Ok(())
+}
+/// Fetch a sponsor avatar via Rust (bypasses WebView CORS).
+/// Only `https` URLs from the Open Collective avatar hosts are allowed,
+/// mirroring the allowlist in `src/app/api/sponsor-avatar/route.ts`.
+/// Returns a `data:` URL so the frontend can render it without further network.
+#[tauri::command]
+async fn fetch_sponsor_avatar(url: String) -> Result<String, String> {
+    let trimmed = url.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("URL is empty".to_string());
+    }
+    let parsed = url::Url::parse(&trimmed).map_err(|e| format!("Invalid url: {e}"))?;
+    if parsed.scheme() != "https" {
+        return Err("Only https URLs are allowed".to_string());
+    }
+    let host = parsed.host_str().ok_or("Missing host")?.to_ascii_lowercase();
+    const ALLOWED_HOSTS: &[&str] = &[
+        "opencollective-production.s3.us-west-1.amazonaws.com",
+        "opencollective-production.s3-us-west-1.amazonaws.com",
+        "images.opencollective.com",
+        "avatars.githubusercontent.com",
+    ];
+    if !ALLOWED_HOSTS.contains(&host.as_str()) {
+        return Err(format!("Host not allowed: {host}"));
+    }
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(trimmed)
+        .header("Accept", "image/*,*/*")
+        .send()
+        .await
+        .map_err(|e| format!("Fetch failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Upstream {}", resp.status()));
+    }
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/png")
+        .to_string();
+    let bytes = resp.bytes().await.map_err(|e| format!("Read failed: {e}"))?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{content_type};base64,{b64}"))
+}
+/// Fetch external JSON/text via Rust (bypasses WebView CORS) for sponsors list.
+/// Only `https` URLs from `opencollective.com` are allowed.
+#[tauri::command]
+async fn fetch_external_text(url: String) -> Result<String, String> {
+    let trimmed = url.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("URL is empty".to_string());
+    }
+    let parsed = url::Url::parse(&trimmed).map_err(|e| format!("Invalid url: {e}"))?;
+    if parsed.scheme() != "https" {
+        return Err("Only https URLs are allowed".to_string());
+    }
+    let host = parsed.host_str().ok_or("Missing host")?.to_ascii_lowercase();
+    const ALLOWED_HOSTS: &[&str] = &["opencollective.com", "www.opencollective.com", "api.opencollective.com"];
+    if !ALLOWED_HOSTS.contains(&host.as_str()) {
+        return Err(format!("Host not allowed: {host}"));
+    }
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(trimmed)
+        .header("Accept", "application/json,*/*")
+        .send()
+        .await
+        .map_err(|e| format!("Fetch failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Upstream {}", resp.status()));
+    }
+    let text = resp.text().await.map_err(|e| format!("Read failed: {e}"))?;
+    Ok(text)
 }
 
 /// Returns the path to the log-level preference file.
@@ -3913,6 +4033,30 @@ fn resolve_log_level_pref_path() -> std::path::PathBuf {
             .join("org.openresinalliance.dragonfruit")
             .join("loglevel")
     }
+}
+
+/// Fixed header written once per run, as the first thing in the log file.
+///
+/// Every performance report needs an anchor: a 12-second freeze means nothing
+/// until you know the version, the platform and how many cores it had. The
+/// webview logs its own half (GPU, viewport) from `startupHeader.ts`.
+///
+/// Must run inside `setup()` — the log plugin attaches the `log` facade during
+/// plugin setup, so records emitted before that are dropped on the floor.
+fn log_startup_header() {
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    log::info!(
+        "[header] DragonFruit {} (debug={}) os={} arch={} cores={} log_level={}",
+        env!("CARGO_PKG_VERSION"),
+        cfg!(debug_assertions),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        cores,
+        log::max_level(),
+    );
 }
 
 fn read_log_level_pref() -> log::LevelFilter {
@@ -4053,6 +4197,14 @@ fn main() {
         }
     }
 
+    // rustls 0.23 will not pick a crypto provider on its own. tauri-plugin-updater
+    // enables reqwest's `rustls-no-provider`, and reqwest then calls get_default()
+    // without the crate-features fallback, so building the updater's HTTP client
+    // panics with "No provider set" unless one was installed process-wide first.
+    // rustls' own `ring` feature being on (via ureq) is not enough. Err just means
+    // someone else got here first. See issue #615.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // Install a panic hook that writes the panic location and message to the
     // DragonFruit log before the default handler runs.  This ensures that even
     // hard crashes leave a human-readable trace in the log file rather than
@@ -4086,16 +4238,15 @@ fn main() {
         }
     }
 
-    log::info!(
-        "DragonFruit {} starting (debug={})",
-        env!("CARGO_PKG_VERSION"),
-        cfg!(debug_assertions)
-    );
+    // NOTE: nothing may be logged before this point. `tauri-plugin-log` attaches
+    // the `log` facade during its plugin setup, so any record emitted earlier is
+    // silently dropped. The startup header lives in `log_startup_header()`,
+    // called from `setup()`, for exactly this reason.
 
     let _log_level = read_log_level_pref();
-    // Log plugin disabled on CEF — it pulls tauri/wry transitively, causing
-    // E0252 collision. See Cargo.toml comment.
-    #[cfg(not(feature = "tauri-cef"))]
+    // Logging is backend-agnostic: tauri-plugin-log declares tauri with
+    // default-features = false, so it does not drag in wry.
+    #[cfg(feature = "logging")]
     let log_plugin = {
         use tauri_plugin_log::{Builder as LogBuilder, RotationStrategy, Target, TargetKind};
         LogBuilder::new()
@@ -4127,12 +4278,16 @@ fn main() {
     };
 
     let builder = tauri::Builder::default();
-    #[cfg(not(feature = "tauri-cef"))]
+    #[cfg(feature = "logging")]
     let builder = builder.plugin(log_plugin);
     let builder = builder.setup(|app| {
         let app_handle = app.handle().clone();
 
+        log_startup_header();
+
         app.manage(window_state::WindowStateTracker::default());
+        app.manage(webview_watchdog::WebviewLiveness::default());
+        webview_watchdog::spawn(app_handle.clone());
         app.manage(experiments::ExperimentsState::default());
 
         // Defer main window creation to an async task so the splashscreen's
@@ -4227,6 +4382,7 @@ fn main() {
 
     builder
         .invoke_handler(tauri::generate_handler![
+            webview_watchdog::webview_heartbeat,
             stage_mesh_binary_start,
             allocate_mesh_stage_path,
             append_mesh_stage_chunk,
@@ -4244,13 +4400,15 @@ fn main() {
             mesh_minima::scan_mesh_minima_from_path,
             mesh_minima::scan_voxel_islands_from_path,
             mesh_minima::scan_islands_from_path,
+            overhang::scan_overhangs,
             export_mesh_file,
             save_print_file,
             save_print_file_from_path,
             pick_save_path,
             pick_open_files,
             experiments::set_experiment_overrides,
-            get_launch_scene_files,
+            fetch_sponsor_avatar,
+            fetch_external_text,
             get_slicer_engine_version,
             notify_launch_scene_handoff,
             focus_main_window_command,
@@ -4280,6 +4438,7 @@ fn main() {
             reveal_in_file_manager,
             open_external_url,
             launch_external_process,
+            fetch_sponsor_avatar,
             discover_uvtools_path,
             set_log_level_pref,
             read_log_tail,
@@ -5292,5 +5451,59 @@ mod tests {
             next.voxl_path, None,
             "a cleaned manifest advertised a file it had deleted"
         );
+    }
+
+    /// Candidate paths come from the frontend, which cannot resolve `~`; the
+    /// macOS candidate `~/Applications/UVtools.app` depends on this.
+    #[test]
+    fn expand_tilde_resolves_against_home() {
+        let home = std::env::var("HOME").expect("HOME is set on the test hosts");
+
+        assert_eq!(
+            super::expand_tilde("~/Applications/UVtools.app"),
+            std::path::PathBuf::from(&home).join("Applications/UVtools.app"),
+        );
+        assert_eq!(
+            super::expand_tilde("/Applications/UVtools.app"),
+            std::path::PathBuf::from("/Applications/UVtools.app"),
+            "an absolute candidate must be left alone",
+        );
+        assert_eq!(
+            super::expand_tilde("~backup/UVtools"),
+            std::path::PathBuf::from("~backup/UVtools"),
+            "only a leading `~/` is a home reference",
+        );
+    }
+
+    /// UVTools ships on macOS as an `.app` bundle, which is a directory: the
+    /// `is_file()` check that discovery used before rejected every macOS
+    /// install (issue #604).
+    #[test]
+    fn app_bundles_count_as_uvtools_installs_on_macos() {
+        let dir = unique_test_dir("uvtools-discovery");
+
+        let bundle = dir.join("UVtools.app");
+        std::fs::create_dir_all(bundle.join("Contents/MacOS")).expect("failed creating bundle");
+        let binary = bundle.join("Contents/MacOS/UVtools");
+        std::fs::write(&binary, b"").expect("failed writing bundle binary");
+        let plain_dir = dir.join("UVtools");
+        std::fs::create_dir_all(&plain_dir).expect("failed creating plain dir");
+
+        assert!(
+            super::is_uvtools_install(&binary),
+            "a bare executable is an install on every platform",
+        );
+        assert!(!super::is_uvtools_install(&dir.join("missing.app")));
+        assert!(
+            !super::is_uvtools_install(&plain_dir),
+            "a directory without the .app extension is not a bundle",
+        );
+        assert_eq!(
+            super::is_uvtools_install(&bundle),
+            cfg!(target_os = "macos"),
+            "only macOS treats an .app directory as an install",
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

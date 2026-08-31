@@ -1,5 +1,6 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Trash2 } from 'lucide-react';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { DestructiveTransformModal } from '@/components/modals/DestructiveTransformModal';
 import { type HollowingPanelState } from '@/features/hollowing';
 
@@ -47,6 +48,9 @@ export function ModifierModals({
   showUnappliedHolePunchModal,
   unappliedHolePunchResolveRef,
 }: ModifierModalsProps) {
+  // A blocking progress overlay: swallow Escape rather than let it through.
+  useEscapeToClose(showModifierApplyBlockingOverlay, undefined);
+
   return (
     <>
       <StructuredDialogModal
@@ -77,7 +81,12 @@ export function ModifierModals({
             </button>
             <button
               type="button"
-              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
               onClick={() => {
                 unappliedHolePunchResolveRef.current = null;
                 handleGoToHollowTool();
@@ -87,7 +96,12 @@ export function ModifierModals({
             </button>
             <button
               type="button"
-              className="ui-button ui-button-accent !h-9 px-3 text-xs"
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
               onClick={() => {
                 unappliedHolePunchResolveRef.current = null;
                 // Defer so the modal closes before apply starts.
@@ -133,14 +147,15 @@ export function ModifierModals({
             </button>
             <button
               type="button"
-              className="ui-button !h-9 px-3 text-xs"
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
               style={{
-                borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 36%)',
-                background: 'color-mix(in srgb, var(--danger), transparent 86%)',
+                borderColor: 'color-mix(in srgb, #ef4444, var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, #ef4444, var(--surface-1) 86%)',
                 color: 'var(--danger)',
               }}
               onClick={handleConfirmModifierReset}
             >
+              <Trash2 className="w-3.5 h-3.5" />
               {pendingModifierResetAction === 'hollowing' ? 'Remove Hollowing' : 'Remove All Holes'}
             </button>
           </>
@@ -180,14 +195,15 @@ export function ModifierModals({
             </button>
             <button
               type="button"
-              className="ui-button !h-9 px-3 text-xs"
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
               style={{
-                borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 36%)',
-                background: 'color-mix(in srgb, var(--danger), transparent 86%)',
+                borderColor: 'color-mix(in srgb, #ef4444, var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, #ef4444, var(--surface-1) 86%)',
                 color: 'var(--danger)',
               }}
               onClick={handleConfirmBlockerReset}
             >
+              <Trash2 className="w-3.5 h-3.5" />
               Reset Blockers
             </button>
           </>

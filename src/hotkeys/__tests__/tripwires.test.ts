@@ -34,7 +34,7 @@ test('Runtime monkey-patch allows registration from allowed paths', () => {
 });
 
 test('Runtime monkey-patch logs error for forbidden paths', () => {
-    let loggedArgs: string[] = [];
+    const loggedArgs: string[] = [];
     const originalConsoleError = console.error;
     console.error = (...args: any[]) => {
         loggedArgs.push(args.join(' '));

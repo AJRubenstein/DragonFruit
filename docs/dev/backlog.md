@@ -47,6 +47,25 @@ type should keep using the current hand-wired path until the registry exists.
 The registry is a separate, deliberate refactor that should land with its own
 migration and no behavior change.
 
+## Desired: route every native call through the IPC bridge
+
+`src/features/slicing/tauri/nativeSlicerBridge.ts` is documented as the seam for
+Tauri commands (`dev/tauri-ipc-bridge.md`), and it is where new wrappers belong.
+It is not yet the only path: 84 direct `invoke(...)` call sites live in 29 other
+modules, nine of them React components, reaching ~70 of the 107 native commands.
+
+**Why it matters:** the command name is a plain string on the TS side, so nothing
+type-checks it against Rust. Centralizing the calls is what would make a single
+rename verifiable instead of a grep-and-pray.
+
+**Goal:** every native command reached through a named wrapper, so the bridge is
+the full inventory of the contract and a boundary check (in the style of
+`scripts/check-plugin-boundaries.mjs`) can enforce it.
+
+Do not attempt the migration as part of unrelated work — move a call site into
+the bridge when you are already editing it, and leave the rest. The bulk move is
+its own change, with no behavior difference.
+
 ## Desired: native twin optimization plan
 
 A roadmap note, not a current runtime contract — previously

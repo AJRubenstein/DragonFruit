@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { sceneFileExtensionLabels } from '@/features/plugins/pluginFileTypeExtensions';
+import { useSceneFileExtensionLabels } from '@/features/plugins/pluginFileTypeExtensions';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { MessageDescriptor } from '@lingui/core';
@@ -20,6 +20,7 @@ import { PrintingPanelStack } from '@/components/organisms/panels/PrintingPanelS
 import { SharedPanelStack } from '@/components/organisms/panels/SharedPanelStack';
 import { TopBar } from '@/components/layout/TopBar';
 import { NotificationStack } from '@/components/organisms/NotificationStack';
+import { SystemNotificationStack } from '@/components/organisms/SystemNotificationStack';
 import { EditorLayout } from '@/components/templates/EditorLayout';
 import { PrintingPreviewPane } from '@/components/organisms/PrintingPreviewPane';
 import { DiagnosticsModals } from '@/components/organisms/modals/DiagnosticsModals';
@@ -68,9 +69,21 @@ import { SlicingPanel, type SliceIntent } from '@/features/slicing/components/Sl
 import { PrintingPanel } from '@/features/printing/components/PrintingPanel';
 import { usePrintingPreviewManager, type PrintingPreviewManagerDeps } from '@/features/printing/usePrintingPreviewManager';
 import { useEditorToasts } from '@/features/notifications/useEditorToasts';
+import { ScanProgressBar } from '@/components/scene/ScanProgressBar';
 import { SliceMetricsDebugModal } from '@/features/slicing/components/SliceMetricsDebugModal';
 import { MeshSmoothingSettingsPanel } from '@/features/mesh-smoothing/MeshSmoothingSettingsPanel';
 import { MeshSmoothingBrushCursor } from '@/features/mesh-smoothing/MeshSmoothingBrushCursor';
+import {
+  dispatchCutModelAction,
+  dispatchDeleteModelAction,
+  resolveModelActionTargetIds,
+} from '@/features/scene/modelActionTargets';
+import { buildLiftDropUpdates } from '@/features/scene/selectionLiftDrop';
+import {
+  buildCenterSelectionUpdates,
+  buildSelectionPositionUpdates,
+  getSelectionPositionOrigin,
+} from '@/features/scene/selectionPosition';
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
@@ -201,6 +214,7 @@ import {
   type SceneFileHandoffPayload,
 } from '@/features/import-export/fileHandling';
 import { getPluginSceneOverlayLoader } from '@/features/plugins/pluginRegistry';
+import { isExperimentEnabled, subscribeToExperiments } from '@/features/experiments/experimentsRegistry';
 import {
   type HullCacheEntry,
   type ArrangeModel as HighPrecisionArrangeModel,
@@ -220,6 +234,7 @@ import { useIslandManager } from '@/volumeAnalysis/IslandScan/useIslandManager';
 // agents/Claude/20260613-1404-Implementation-dev-islands-islands-panel-...md.
 import { useIslands } from '@/volumeAnalysis/Islands/useIslands';
 import { IslandsPanel } from '@/components/controls/IslandsPanel';
+import { AutoSupportPanel, getAutoSupportBusy, subscribeAutoSupportBusy, autoSupportDrivingScan } from '@/components/controls/AutoSupportPanel';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import { useSupportInteractionManager } from '@/features/supports/useSupportInteractionManager';
 import { useUndoRedoHotkeys } from '@/hotkeys/useUndoRedoHotkeys';
@@ -231,6 +246,7 @@ import { useCameraProjectionHotkey } from '@/hotkeys/useCameraProjectionHotkey';
 import { useInteriorViewHotkey } from '@/hotkeys/useInteriorViewHotkey';
 import { usePrepareTransformHotkeys } from '@/hotkeys/usePrepareTransformHotkeys';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { matchesConfiguredHotkeyDown, matchesConfiguredHotkeyUp } from '@/hotkeys/hotkeyConfig';
 import {
   clearHistory,
@@ -303,14 +319,31 @@ import {
   getSavedUvToolsSettings,
   resolveUvToolsExecutablePath,
 } from '@/components/settings/uvToolsPreferences';
-import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, toggleSegmentCurve, transformSupportsForModel, updateTrunk, updateBranch, updateTwig, updateStick } from '@/supports/state';
+import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, toggleSegmentCurve, transformSupportsForModel, updateTrunk, updateBranch, updateTwig, updateStick, updateKnot } from '@/supports/state';
 import {
   getKickstandSnapshot,
   subscribeToKickstandStore,
 } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
 import { splitShaft, splitBranchShaft, splitTwigShaft, splitStickShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
+import type { KnotSplitRemap } from '@/supports/SupportPrimitives/Knot/knotUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '@/supports/history/supportEditHistory';
+
+/**
+ * Apply knot re-anchor patches from a segment split BEFORE the host update runs,
+ * so attached branches/leaves keep their world position when a joint is inserted
+ * (issue #204). Mirror of the helper in useJointCreation for the context-menu
+ * "Add joint" path.
+ */
+function applyJointSplitKnotRemaps(remaps: KnotSplitRemap[]) {
+    if (remaps.length === 0) return;
+    const knots = getSupportSnapshot().knots;
+    for (const remap of remaps) {
+        const knot = knots[remap.knotId];
+        if (!knot) continue;
+        updateKnot({ ...knot, parentShaftId: remap.parentShaftId, t: remap.t });
+    }
+}
 import { getRaftSettings, subscribeToRaftStore } from '@/supports/Rafts/Crenelated/RaftState';
 import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
 import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/computeRaftOuterBoundary';
@@ -557,8 +590,21 @@ function isTransformMode(value: string): value is TransformMode {
   return (HISTORY_TRANSFORM_MODES as readonly string[]).includes(value);
 }
 
+// Static ICU pattern in a module-level formatter (see PrinterVariantPickerModal):
+// inline interpolation loses its placeholder names to the React Compiler in
+// production builds, leaving the raw {timestamp} on screen.
+function formatLastSuccessfulAutosave(
+  translate: (descriptor: MessageDescriptor, values?: Record<string, unknown>) => string,
+  timestamp: string,
+): string {
+  return translate(msg({
+    message: 'Last successful autosave: {timestamp}. Save your project manually.',
+    comment: '{timestamp} is a locale-formatted date and time.',
+  }), { timestamp });
+}
+
 export default function Home() {
-  const { _ } = useLingui();
+  const { _, i18n } = useLingui();
   const { stage, sproutParentingLockHeld } = useLeafPlacementState();
   // Supports undo/redo handlers register for the lifetime of the app root, not
   // for the lifetime of a scene renderer. Otherwise Ctrl+Z depends on which
@@ -591,6 +637,13 @@ export default function Home() {
   const recentOpenedFiles = scene.recentOpenedFiles;
   const reopenRecentOpenedFile = scene.reopenRecentOpenedFile;
   const profileState = React.useSyncExternalStore(subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot);
+  const autoSupportsExperimentEnabled = React.useSyncExternalStore(
+    subscribeToExperiments,
+    () => isExperimentEnabled('auto-supports'),
+    // SSR: no localStorage → the manifest default (disabled).
+    () => false,
+  );
+  const sceneFileExtensionLabelsValue = useSceneFileExtensionLabels();
   const sceneAutosaveSettings = React.useSyncExternalStore(
     subscribeToSceneAutosaveSettings,
     getSceneAutosaveSettingsSnapshot,
@@ -763,6 +816,12 @@ export default function Home() {
     kickstandBefore?: ReturnType<typeof getKickstandSnapshot>;
     kickstandAfter?: ReturnType<typeof getKickstandSnapshot>;
   } | null>(null);
+  const pendingSelectionPositionHistoryRef = React.useRef<{
+    targetIdsKey: string;
+    beforeTransforms: Array<{ id: string; transform: ModelTransform }>;
+    supportBefore: ReturnType<typeof getSupportSnapshot>;
+    kickstandBefore: ReturnType<typeof getKickstandSnapshot>;
+  } | null>(null);
   const transformHistoryCommitRequestedRef = React.useRef(false);
   const transformHistoryCommitNonceRef = React.useRef(0);
   const pendingHistoryTransformResyncRef = React.useRef(false);
@@ -822,6 +881,11 @@ export default function Home() {
   const [activePluginImportWarning, setActivePluginImportWarning] = React.useState<{ title: string; body: string; storageKey: string } | null>(null);
   const [activeSceneFilePath, setActiveSceneFilePath] = React.useState<string | null>(null);
   const [loadedSceneSaveSource, setLoadedSceneSaveSource] = React.useState<{ name: string; path: string | null } | null>(null);
+  // Save-format tracking: whether the current scene is the chunked VOXL 2.2
+  // layout. Autosave preserves a loaded old file's inline format but never
+  // downgrades a 2.2 file; manual saves always write 2.2 and latch this true.
+  // Defaults true (newest) for fresh scenes.
+  const [sceneFormatChunked, setSceneFormatChunked] = React.useState(true);
   const [showSceneSaveChoiceModal, setShowSceneSaveChoiceModal] = React.useState(false);
   const [sceneSaveChoiceFileName, setSceneSaveChoiceFileName] = React.useState<string | null>(null);
   const [sceneSaveChoicePath, setSceneSaveChoicePath] = React.useState<string | null>(null);
@@ -886,7 +950,18 @@ export default function Home() {
     // state (set on every successful save and on every scene open), so the
     // sidecar follows the project.
     preferredSavePath: activeSceneFilePath,
+    sceneFormatChunked,
+    // Inline autosave hit the string ceiling and escalated to 2.2 — latch the
+    // scene there so later ticks skip the failing inline attempt and never
+    // downgrade the now-2.2 file.
+    onSceneFormatUpgraded: React.useCallback(() => setSceneFormatChunked(true), []),
   });
+
+  // Expose flush for updater's pre-restart autosave (force trigger before Update & Restart)
+  React.useEffect(() => {
+    (window as unknown as Record<string, unknown>).__df_flushAutosave = flushAutosave;
+    return () => { delete (window as unknown as Record<string, unknown>).__df_flushAutosave; };
+  }, [flushAutosave]);
 
   /**
    * User-facing scene-save failure (Ph0.1 sub-phase D).
@@ -915,16 +990,16 @@ export default function Home() {
     const onAutosaveFailed = (event: Event) => {
       const detail = (event as CustomEvent<{ message?: string; lastSuccessAt?: string | null }>).detail;
       setSceneSaveError({
-        title: 'Autosave is not working',
-        message: detail?.message ?? 'The background recovery save failed repeatedly.',
+        title: _(msg`Autosave is not working`),
+        message: detail?.message ?? _(msg`The background recovery save failed repeatedly.`),
         detail: detail?.lastSuccessAt
-          ? `Last successful autosave: ${new Date(detail.lastSuccessAt).toLocaleString()}. Save your project manually.`
-          : 'No autosave has succeeded this session. Save your project manually.',
+          ? formatLastSuccessfulAutosave(_, new Date(detail.lastSuccessAt).toLocaleString(i18n.locale))
+          : _(msg`No autosave has succeeded this session. Save your project manually.`),
       });
     };
     window.addEventListener(SCENE_AUTOSAVE_FAILED_EVENT, onAutosaveFailed);
     return () => window.removeEventListener(SCENE_AUTOSAVE_FAILED_EVENT, onAutosaveFailed);
-  }, []);
+  }, [_, i18n.locale, setSceneSaveError]);
 
   const dismissSceneSaveError = React.useCallback(() => setSceneSaveError(null), []);
 
@@ -950,8 +1025,8 @@ export default function Home() {
     setIsSaveToastVisible,
     isSaveToastAnimatedVisible,
     setIsSaveToastAnimatedVisible,
-    saveToastLabel,
-    setSaveToastLabel,
+    saveToastMode,
+    setSaveToastMode,
     historyActionToastFadeTimeoutRef,
     historyActionToastClearTimeoutRef,
     printingMonitorErrorToastFadeTimeoutRef,
@@ -1430,6 +1505,7 @@ export default function Home() {
     markSceneSaveBaseline,
     setActiveSceneFilePath,
     setLoadedSceneSaveSource,
+    setSceneFormatChunked,
     sceneImportAutosaveSuppressMs,
     deps: importExportDepsRef,
   });
@@ -2210,7 +2286,11 @@ export default function Home() {
     const canSplitSupports = !!activeModel?.geometry.meshDefects?.nativeRepairReport?.model_triangle_count;
     const canMergeSupports = scene.selectedModelIds.length === 2;
 
-    const hasTargetModel = !!scene.activeModelId || scene.selectedModelIds.length > 0;
+    const hasTargetModel = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    }).length > 0;
     const canLink = scene.selectedModelIds.length >= 2;
     const selectedOrActiveModels = scene.selectedModelIds.length > 0
       ? scene.models.filter((m) => scene.selectedModelIds.includes(m.id))
@@ -2218,7 +2298,8 @@ export default function Home() {
     const canUnlink = selectedOrActiveModels.some((m) => !!m.linkGroupId);
 
     return [
-      ...(!scene.activeModelId ? (['delete', 'cut', 'copy', 'repair'] as const) : []),
+      ...(!hasTargetModel ? (['delete'] as const) : []),
+      ...(!scene.activeModelId ? (['cut', 'copy', 'repair'] as const) : []),
       ...(!hasTargetModel ? (['mark-as-support-geometry', 'mark-as-model-geometry'] as const) : []),
       ...(!canLink ? (['link-models'] as const) : []),
       ...(!canUnlink ? (['unlink-models'] as const) : []),
@@ -2355,7 +2436,7 @@ export default function Home() {
   ]);
 
   const printingPreviewTargetResolution = React.useMemo(() => {
-    let printerWidth = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionX ?? 0));
+    const printerWidth = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionX ?? 0));
     const printerHeight = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionY ?? 0));
     const pixelSizeX = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.x ?? 1));
     const pixelSizeY = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.y ?? 1));
@@ -4250,6 +4331,10 @@ export default function Home() {
         exportSuccessToastFadeTimeoutRef.current = null;
       }, 3800);
 
+      // Manual save always writes the newest (2.2) layout, so the scene is now
+      // 2.2 on disk — latch it so autosave keeps it there instead of trying to
+      // preserve a stale inline format and downgrading it.
+      setSceneFormatChunked(true);
       markSceneSaveBaseline();
       void clearAutosave();
     }
@@ -4262,8 +4347,8 @@ export default function Home() {
     setAutosaveRecovery(null);
     setNativePickerPreparationState({
       active: true,
-      label: 'Loading Scene…',
-      detail: 'Reading autosaved scene…',
+      label: _(msg`Loading Scene…`),
+      detail: _(msg`Reading autosaved scene…`),
       progress: null,
     });
 
@@ -4294,9 +4379,9 @@ export default function Home() {
         await clearAutosave();
       } else {
         setSceneSaveError({
-          title: 'Restore Failed',
-          message: 'The autosaved recovery file is corrupted or unreadable.',
-          detail: 'The scene importer rejected or could not parse the autosave data.',
+          title: _(msg`Restore Failed`),
+          message: _(msg`The autosaved recovery file is corrupted or unreadable.`),
+          detail: _(msg`The scene importer rejected or could not parse the autosave data.`),
         });
         await clearAutosave();
       }
@@ -4305,10 +4390,10 @@ export default function Home() {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isMissing = errorMessage.includes('No autosaved scene file found') || errorMessage.includes('does not exist');
       setSceneSaveError({
-        title: 'Restore Failed',
+        title: _(msg`Restore Failed`),
         message: isMissing
-          ? 'The autosave recovery file could not be found.'
-          : 'The autosaved recovery file is corrupted or unreadable.',
+          ? _(msg`The autosave recovery file could not be found.`)
+          : _(msg`The autosaved recovery file is corrupted or unreadable.`),
         detail: errorMessage,
       });
       await clearAutosave();
@@ -4320,7 +4405,7 @@ export default function Home() {
         progress: null,
       });
     }
-  }, [autosaveRecovery, clearAutosave, importSceneFile, setSceneSaveError]);
+  }, [autosaveRecovery, clearAutosave, importSceneFile, setSceneSaveError, _]);
 
   const handleAutosaveDiscard = React.useCallback(async () => {
     setAutosaveRecovery(null);
@@ -4498,6 +4583,7 @@ export default function Home() {
     preferredOverwriteScenePathRef.current = null;
     setActiveSceneFilePath(null);
     setLoadedSceneSaveSource(null);
+    setSceneFormatChunked(true);
     setShowCloseUnsavedChangesModal(false);
     setCloseUnsavedChangesBusy('none');
     if (sceneSaveChoiceResolveRef.current) {
@@ -4529,10 +4615,29 @@ export default function Home() {
       return;
     }
     if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+    // Don't show recovery when the app was launched with a scene file (double-click VOXL etc.).
+    // In that case DragonFruit is already in a loading state (pendingStartupSceneHandoff).
+    if (pendingStartupSceneHandoff) {
+      setAutosaveRecovery(null);
+      return;
+    }
 
     let cancelled = false;
     void (async () => {
       try {
+        // If launched with a file, suppress recovery even if the pending flag wasn't yet set
+        // when this effect first ran (race between launch-file fetch and recovery fetch).
+        try {
+          const core = await import('@tauri-apps/api/core');
+          const launchEntries = await core.invoke<unknown[]>('get_launch_scene_files');
+          if (Array.isArray(launchEntries) && launchEntries.length > 0) {
+            if (!cancelled) setAutosaveRecovery(null);
+            return;
+          }
+        } catch {
+          // Non-Tauri or invoke not available — fall through to normal recovery check.
+        }
+
         // Discovery, not a bare manifest read: the payload may be a sidecar
         // beside the project, the generic location, or a legacy `scene.voxl`
         // from before Ph0.1. `resolveAutosaveRecovery` validates that whichever
@@ -4540,6 +4645,11 @@ export default function Home() {
         // never offered for a payload that cannot be restored.
         const candidate = await resolveAutosaveRecovery();
         if (!cancelled && candidate && !candidate.clean) {
+          // Re-check pending handoff after async fetch — it may have become pending while we were fetching.
+          if (pendingStartupSceneHandoff) {
+            setAutosaveRecovery(null);
+            return;
+          }
           setAutosaveRecovery({
             savedAt: candidate.savedAt ?? new Date().toISOString(),
             voxlPath: candidate.voxlPath,
@@ -4554,7 +4664,15 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [sceneAutosaveSettings.recoveryPromptEnabled]);
+  }, [sceneAutosaveSettings.recoveryPromptEnabled, pendingStartupSceneHandoff]);
+
+  // If a launch file arrives after the recovery prompt is already shown, dismiss it
+  // — the app is already loading a scene, so recovery would be a confusing fork.
+  React.useEffect(() => {
+    if (pendingStartupSceneHandoff && autosaveRecovery) {
+      setAutosaveRecovery(null);
+    }
+  }, [pendingStartupSceneHandoff, autosaveRecovery]);
 
   const isDesktopRuntime = React.useCallback(() => {
     if (typeof window === 'undefined') return false;
@@ -5810,7 +5928,8 @@ export default function Home() {
               const projected = segment.type === 'bezier'
                 ? projectBezierSplitPoint(start, segment.controlPoint1, segment.controlPoint2, end, splitTargetPoint)
                 : projectSplitPoint(start, end, splitTargetPoint);
-              const updated = splitShaft(trunk, segmentId, projected.point, projected.t, root);
+              const { trunk: updated, knotRemaps } = splitShaft(trunk, segmentId, projected.point, projected.t, root, state.knots);
+              applyJointSplitKnotRemaps(knotRemaps);
               updateTrunk(updated);
               pushSupportEditHistory('Create trunk joint', beforeSnapshot, captureSupportEditSnapshot());
             }
@@ -5835,7 +5954,8 @@ export default function Home() {
               const projected = segment.type === 'bezier'
                 ? projectBezierSplitPoint(start, segment.controlPoint1, segment.controlPoint2, end, splitTargetPoint)
                 : projectSplitPoint(start, end, splitTargetPoint);
-              const updated = splitBranchShaft(branch, segmentId, projected.point, projected.t, parentKnot);
+              const { branch: updated, knotRemaps } = splitBranchShaft(branch, segmentId, projected.point, projected.t, parentKnot, state.knots);
+              applyJointSplitKnotRemaps(knotRemaps);
               updateBranch(updated);
               pushSupportEditHistory('Create branch joint', beforeSnapshot, captureSupportEditSnapshot());
             }
@@ -5857,7 +5977,8 @@ export default function Home() {
               const projected = segment.type === 'bezier'
                 ? projectBezierSplitPoint(start, segment.controlPoint1, segment.controlPoint2, end, splitTargetPoint)
                 : projectSplitPoint(start, end, splitTargetPoint);
-              const updated = splitTwigShaft(twig, segmentId, projected.point, projected.t);
+              const { twig: updated, knotRemaps } = splitTwigShaft(twig, segmentId, projected.point, projected.t, state.knots);
+              applyJointSplitKnotRemaps(knotRemaps);
               updateTwig(updated);
               pushSupportEditHistory('Create twig joint', beforeSnapshot, captureSupportEditSnapshot());
             }
@@ -5879,7 +6000,8 @@ export default function Home() {
               const projected = segment.type === 'bezier'
                 ? projectBezierSplitPoint(start, segment.controlPoint1, segment.controlPoint2, end, splitTargetPoint)
                 : projectSplitPoint(start, end, splitTargetPoint);
-              const updated = splitStickShaft(stick, segmentId, projected.point, projected.t);
+              const { stick: updated, knotRemaps } = splitStickShaft(stick, segmentId, projected.point, projected.t, state.knots);
+              applyJointSplitKnotRemaps(knotRemaps);
               updateStick(updated);
               pushSupportEditHistory('Create stick joint', beforeSnapshot, captureSupportEditSnapshot());
             }
@@ -5902,9 +6024,11 @@ export default function Home() {
         return;
       }
       case 'delete':
-        if (scene.activeModelId) {
-          scene.deleteModel(scene.activeModelId);
-        }
+        dispatchDeleteModelAction({
+          modelIds: scene.models.map((model) => model.id),
+          selectedModelIds: scene.selectedModelIds,
+          activeModelId: scene.activeModelId,
+        }, scene.deleteModels);
         break;
       case 'copy':
         if (scene.selectedModelIds.length > 0) {
@@ -5914,9 +6038,11 @@ export default function Home() {
         }
         break;
       case 'cut':
-        if (scene.activeModelId) {
-          scene.cutModel(scene.activeModelId);
-        }
+        dispatchCutModelAction({
+          modelIds: scene.models.map((model) => model.id),
+          selectedModelIds: scene.selectedModelIds,
+          activeModelId: scene.activeModelId,
+        }, scene.cutSelectedModels);
         break;
       case 'paste': {
         const pastedIds = scene.pasteCopiedModelsAutoArrange(arrangeSpacingMm);
@@ -7060,6 +7186,13 @@ export default function Home() {
     return subscribeSupportState(updateSupportTips);
   }, [scene.activeModel?.id]);
 
+  // useSyncExternalStore, not a one-shot effect: the module-level busy flag
+  // lives in AutoSupportPanel, and a hot reload swaps the module's listener
+  // set. useSyncExternalStore re-subscribes when the subscribe function's
+  // identity changes, so the Generating modal keeps working across HMR —
+  // a `useEffect(..., [])` closure stays bound to the dead listener set.
+  const autoSupportBusy = React.useSyncExternalStore(subscribeAutoSupportBusy, getAutoSupportBusy, getAutoSupportBusy);
+
   const islandsPoc = useIslands({
     geom: scene.geom,
     transform: transformMgr.transform,
@@ -7069,6 +7202,12 @@ export default function Home() {
     sourcePath: scene.activeModel?.sourcePath,
     activeTab: scene.mode,
   });
+
+  // Blocking progress overlays are modal: while one is up it owns Escape, so
+  // the key never reaches whatever is behind it.
+  useEscapeToClose(islandsPoc.scanning && !autoSupportDrivingScan, undefined);
+  useEscapeToClose(autoSupportBusy, undefined);
+  useEscapeToClose(isExporting, undefined);
 
   // 5. Supports
   const supports = useSupportInteractionManager({ mode: scene.mode });
@@ -7851,6 +7990,17 @@ export default function Home() {
   }, [scene.mode, transformMgr.transformMode, scene.models, scene.activeModelId, scene.selectedModelIds, scene.selectModel]);
 
   React.useEffect(() => {
+    if (scene.mode !== 'prepare') return;
+    if (transformMgr.transformMode !== 'mirror') return;
+    if (!scene.activeModelId) return;
+    if (
+      scene.selectedModelIds.length === 1
+      && scene.selectedModelIds[0] === scene.activeModelId
+    ) return;
+    scene.selectModel(scene.activeModelId, 'single');
+  }, [scene.mode, transformMgr.transformMode, scene.activeModelId, scene.selectedModelIds, scene.selectModel]);
+
+  React.useEffect(() => {
     if (!hasActivePrinterProfile) return;
     if (!allowPrepareWithoutPrinter) return;
     setAllowPrepareWithoutPrinter(false);
@@ -8466,6 +8616,162 @@ export default function Home() {
     }
     transformMgr.setAutoLift(enabled);
   }, [scene, transformMgr]);
+
+  const commitPendingSelectionPositionHistory = React.useCallback(() => {
+    const pending = pendingSelectionPositionHistoryRef.current;
+    if (!pending) return;
+
+    pendingSelectionPositionHistoryRef.current = null;
+    const afterSupportSnapshot = captureTransformSupportSnapshot();
+    scene.commitModelTransformsHistory(
+      pending.beforeTransforms,
+      'Move Selected Models',
+      {
+        includeSupportState: true,
+        supportBefore: pending.supportBefore,
+        supportAfter: afterSupportSnapshot.support,
+        kickstandBefore: pending.kickstandBefore,
+        kickstandAfter: afterSupportSnapshot.kickstand,
+      },
+    );
+  }, [captureTransformSupportSnapshot, scene]);
+
+  const applySelectionPositionUpdates = React.useCallback((
+    updates: Array<{ id: string; transform: ModelTransform }>,
+    options?: { pushHistory?: boolean },
+  ) => {
+    if (updates.length === 0) return;
+
+    if (options?.pushHistory !== false) invalidatePendingTransformHistory();
+    const result = scene.updateModelTransforms(updates, options);
+    if (!result.updated) return;
+
+    const activeUpdate = scene.activeModelId
+      ? updates.find((update) => update.id === scene.activeModelId)
+      : undefined;
+    if (activeUpdate) {
+      suppressTransformPersistenceCycles();
+      const { position, rotation, scale } = activeUpdate.transform;
+      transformMgr.transformHook.setPosition(position.x, position.y, position.z);
+      transformMgr.transformHook.setRotation(rotation.x, rotation.y, rotation.z);
+      transformMgr.transformHook.setScale(scale.x, scale.y, scale.z);
+    }
+
+    setSupportRenderRefreshNonce((value) => value + 1);
+  }, [invalidatePendingTransformHistory, scene, suppressTransformPersistenceCycles, transformMgr.transformHook]);
+
+  const handlePositionSelectedModels = React.useCallback((x: number, y: number, z: number) => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    if (targetIds.length === 0) return;
+
+    const targetIdsKey = targetIds.join('\0');
+    if (
+      pendingSelectionPositionHistoryRef.current
+      && pendingSelectionPositionHistoryRef.current.targetIdsKey !== targetIdsKey
+    ) {
+      commitPendingSelectionPositionHistory();
+    }
+    if (!pendingSelectionPositionHistoryRef.current) {
+      invalidatePendingTransformHistory();
+      const beforeSupportSnapshot = captureTransformSupportSnapshot();
+      pendingSelectionPositionHistoryRef.current = {
+        targetIdsKey,
+        beforeTransforms: scene.models.map((model) => ({
+          id: model.id,
+          transform: {
+            position: model.transform.position.clone(),
+            rotation: model.transform.rotation.clone(),
+            scale: model.transform.scale.clone(),
+          },
+        })),
+        supportBefore: beforeSupportSnapshot.support,
+        kickstandBefore: beforeSupportSnapshot.kickstand,
+      };
+    }
+
+    applySelectionPositionUpdates(buildSelectionPositionUpdates(
+      scene.models,
+      targetIds,
+      new THREE.Vector3(x, y, z),
+    ), { pushHistory: false });
+  }, [
+    applySelectionPositionUpdates,
+    captureTransformSupportSnapshot,
+    commitPendingSelectionPositionHistory,
+    invalidatePendingTransformHistory,
+    scene.activeModelId,
+    scene.models,
+    scene.selectedModelIds,
+  ]);
+
+  const selectionPositionOrigin = React.useMemo(() => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    return getSelectionPositionOrigin(scene.models, targetIds)
+      ?? transformMgr.transform.position;
+  }, [scene.activeModelId, scene.models, scene.selectedModelIds, transformMgr.transform.position]);
+
+  const handleCenterSelectedModels = React.useCallback(() => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    const targetCenter = scene.view3dSettings.originMode === 'front_left'
+      ? new THREE.Vector2(scene.view3dSettings.widthMm * 0.5, scene.view3dSettings.depthMm * 0.5)
+      : new THREE.Vector2(0, 0);
+    applySelectionPositionUpdates(buildCenterSelectionUpdates(scene.models, targetIds, targetCenter));
+  }, [
+    applySelectionPositionUpdates,
+    scene.activeModelId,
+    scene.models,
+    scene.selectedModelIds,
+    scene.view3dSettings.depthMm,
+    scene.view3dSettings.originMode,
+    scene.view3dSettings.widthMm,
+  ]);
+
+  const placeSelectedModelsAtWorldZ = React.useCallback((targetLowestWorldZ: number) => {
+    const targetIds = resolveModelActionTargetIds({
+      modelIds: scene.models.map((model) => model.id),
+      selectedModelIds: scene.selectedModelIds,
+      activeModelId: scene.activeModelId,
+    });
+    const updates = buildLiftDropUpdates(scene.models, targetIds, targetLowestWorldZ);
+    if (updates.length === 0) return;
+
+    invalidatePendingTransformHistory();
+    const result = scene.updateModelTransforms(updates);
+    if (!result.updated) return;
+
+    const activeUpdate = scene.activeModelId
+      ? updates.find((update) => update.id === scene.activeModelId)
+      : undefined;
+    if (activeUpdate) {
+      suppressTransformPersistenceCycles();
+      const { position, rotation, scale } = activeUpdate.transform;
+      transformMgr.transformHook.setPosition(position.x, position.y, position.z);
+      transformMgr.transformHook.setRotation(rotation.x, rotation.y, rotation.z);
+      transformMgr.transformHook.setScale(scale.x, scale.y, scale.z);
+    }
+
+    setSupportRenderRefreshNonce((value) => value + 1);
+  }, [invalidatePendingTransformHistory, scene, suppressTransformPersistenceCycles, transformMgr.transformHook]);
+
+  const handleLiftSelectedModels = React.useCallback(() => {
+    placeSelectedModelsAtWorldZ(transformMgr.liftDistance);
+  }, [placeSelectedModelsAtWorldZ, transformMgr.liftDistance]);
+
+  const handleDropSelectedModels = React.useCallback(() => {
+    placeSelectedModelsAtWorldZ(0);
+  }, [placeSelectedModelsAtWorldZ]);
 
   const disableAutoLiftForManualZMove = React.useCallback(() => {
     if (!scene.activeModelId) return;
@@ -9526,14 +9832,12 @@ export default function Home() {
     commitParts: React.useCallback((parts: THREE.BufferGeometry[]) => {
       const target = scene.activeModel;
       if (!target) {
-        // eslint-disable-next-line no-console
         console.warn('[organicCut] commitParts: no active model');
         return false;
       }
       // ONE atomic split — replacing + adding as separate calls races on stale
       // state and deletes a piece. A multi-loop cut may hand us >2 parts.
       const newIds = scene.splitModelIntoParts(target.id, parts, 'Organic Cut');
-      // eslint-disable-next-line no-console
       console.info(`[organicCut] commitParts OK | parts=${parts.length} newModelIds=${newIds?.join(',') ?? 'null'}`);
       return newIds != null;
     }, [scene]),
@@ -9798,6 +10102,12 @@ export default function Home() {
               requestDestructiveTransformSupportDeletion: requestDestructiveTransformSupportDeletion,
               handleRotationComplete: handleRotationComplete,
               handleAutoLiftChange: handleAutoLiftChange,
+              selectionPositionOrigin: selectionPositionOrigin,
+              handlePositionSelectedModels: handlePositionSelectedModels,
+              commitPendingSelectionPositionHistory: commitPendingSelectionPositionHistory,
+              handleCenterSelectedModels: handleCenterSelectedModels,
+              handleLiftSelectedModels: handleLiftSelectedModels,
+              handleDropSelectedModels: handleDropSelectedModels,
               scheduleCommitPendingTransformHistory: scheduleCommitPendingTransformHistory,
               uniformScaling: uniformScaling,
               setUniformScaling: setUniformScaling,
@@ -9852,6 +10162,14 @@ export default function Home() {
         ) : scene.mode === 'support' ? (
           <>
             <SupportSidebar key="support-settings" />
+            {autoSupportsExperimentEnabled && (
+              <AutoSupportPanel
+                key="support-auto"
+                islands={islandsPoc}
+                hasGeometry={!!scene.geom}
+                activeModelId={scene.activeModelId ?? undefined}
+              />
+            )}
             <IslandsPanel
               key="support-islands"
               islands={islandsPoc}
@@ -9985,8 +10303,8 @@ export default function Home() {
                 </div>
                 <div className="mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
                   {isPrepareDragUnsupported
-                    ? `Please use: ${['STL', 'OBJ', '3MF', ...sceneFileExtensionLabels()].join(', ')}`
-                    : `Supported: ${['STL', 'OBJ', '3MF', ...sceneFileExtensionLabels()].join(', ')}`}
+                    ? `Please use: ${['STL', 'OBJ', '3MF', ...sceneFileExtensionLabelsValue].join(', ')}`
+                    : `Supported: ${['STL', 'OBJ', '3MF', ...sceneFileExtensionLabelsValue].join(', ')}`}
                 </div>
               </div>
             </div>
@@ -10020,13 +10338,16 @@ export default function Home() {
                 ? islandsPoc.islandMarkers
                 : (islands.overlayEnabled ? islands.islandMarkers : [])
             }
+            overhangIslands={
+              scene.mode === 'support' ? islandsPoc.overhangIslands : []
+            }
             overlayBrushRadius={islands.overlayBrushRadius}
             overlayColor={islands.overlayColor}
             overlayOpacity={islands.overlayOpacity}
             overlaySelectedIslandId={
               scene.mode === 'support' ? islandsPoc.selectedMarkerId : islands.selectedIslandId
             }
-            enableVolumeGlow={islandsPoc.enableVolumeGlow}
+            showOverhangs={islandsPoc.showOverhangs}
             ambientIntensity={scene.ambientIntensity}
             directionalIntensity={scene.directionalIntensity}
             materialRoughness={scene.materialRoughness}
@@ -10661,7 +10982,7 @@ export default function Home() {
       <NotificationStack
         isSaveToastVisible={isSaveToastVisible}
         isSaveToastAnimatedVisible={isSaveToastAnimatedVisible}
-        saveToastLabel={saveToastLabel}
+        saveToastMode={saveToastMode}
         historyActionToast={historyActionToast}
         isHistoryActionToastVisible={isHistoryActionToastVisible}
         printingMonitorErrorToast={printingMonitorErrorToast}
@@ -10675,7 +10996,9 @@ export default function Home() {
         isExportErrorToastVisible={isExportErrorToastVisible}
       />
 
-      {islandsPoc.scanning && (
+      <SystemNotificationStack />
+
+      {islandsPoc.scanning && !autoSupportDrivingScan && (
         <div className="absolute inset-0 z-[121] flex items-center justify-center bg-black/45 backdrop-blur-[1px]">
           <div
             className="w-[min(520px,92vw)] rounded-xl border px-5 py-4 shadow-xl"
@@ -10692,11 +11015,6 @@ export default function Home() {
             </div>
             <div className="mt-1 space-y-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               <p>Slicing and analysis in progress...</p>
-              {islandsPoc.scanProgress && islandsPoc.scanProgress.total > 100 && (
-                <p>
-                  Layer {islandsPoc.scanProgress.done} of {islandsPoc.scanProgress.total}
-                </p>
-              )}
             </div>
 
             <div className="mt-2 text-[11px] font-medium tracking-wide" style={{ color: 'var(--accent)' }}>
@@ -10706,15 +11024,31 @@ export default function Home() {
               Processing 1 model
             </div>
 
-            <div
-              className="ui-loading-track mt-3 h-2.5 w-full rounded-full"
-              style={{ background: 'color-mix(in srgb, var(--surface-2), black 20%)' }}
-            >
-              <div
-                className="ui-loading-indicator"
-                style={{ background: 'linear-gradient(90deg, var(--accent), #ff79c6)' }}
-              />
+            <ScanProgressBar progress={islandsPoc.scanProgress} />
+          </div>
+        </div>
+      )}
+
+      {autoSupportBusy && (
+        <div className="absolute inset-0 z-[122] flex items-center justify-center bg-black/45 backdrop-blur-[1px]">
+          <div
+            className="w-[min(520px,92vw)] rounded-xl border px-5 py-4 shadow-xl"
+            style={{ background: 'color-mix(in srgb, var(--surface-0), black 10%)', borderColor: 'var(--border-subtle)' }}
+            role="dialog" aria-modal="true" aria-live="polite"
+          >
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+              Generating Supports
             </div>
+            <div className="mt-1 space-y-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              <p>{islandsPoc.scanning ? 'Scanning islands & minima…' : 'Placing and bracing supports…'}</p>
+            </div>
+            <div className="mt-2 text-[11px] font-medium tracking-wide" style={{ color: 'var(--accent)' }}>
+              Elapsed: {islandsPoc.scanning ? islandsPoc.elapsedLabel : '…'}
+            </div>
+            <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              Processing 1 model
+            </div>
+            <ScanProgressBar progress={islandsPoc.scanning ? islandsPoc.scanProgress : null} />
           </div>
         </div>
       )}

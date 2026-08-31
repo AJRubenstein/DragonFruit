@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle2, LayoutGrid, Trash2, X } from 'lucide-react';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { ModelSupportsModal } from '@/components/modals/ModelSupportsModal';
 import { SceneAutosaveRecoveryModal } from '@/components/scene/SceneAutosaveRecoveryModal';
 import { ZipFilePickerModal } from '@/components/modals/ZipFilePickerModal';
@@ -76,6 +77,13 @@ export function SceneFileModals({
   zipPickerResolveRef,
   zipPickerState,
 }: SceneFileModalsProps) {
+  // Escape mirrors each dialog's backdrop click; the arrange overlay is a
+  // blocking progress state, so it swallows the key instead.
+  useEscapeToClose(Boolean(scene.sceneImportPlacementPrompt), () => scene.resolveSceneImportPlacementPrompt('load_as_is'));
+  useEscapeToClose(showPluginImportWarningModal, handleCancelPluginImportWarning);
+  useEscapeToClose(showSceneSaveChoiceModal, () => resolveSceneSaveChoice('cancel'));
+  useEscapeToClose(showArrangeBlockingOverlay, undefined);
+
   return (
     <>
       <StructuredDialogModal
@@ -87,7 +95,12 @@ export function SceneFileModals({
         actions={
           <button
             type="button"
-            className="ui-button ui-button-accent !h-9 px-4 text-xs font-semibold"
+            className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+            style={{
+              borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+              background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+              color: 'var(--accent)',
+            }}
             onClick={() => dismissSceneSaveError?.()}
           >
             OK
@@ -197,7 +210,12 @@ export function SceneFileModals({
                 </button>
                 <button
                   type="button"
-                  className="ui-button ui-button-accent !h-9 w-full px-3 text-xs"
+                  className="ui-button !h-9 w-full px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                  style={{
+                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                    color: 'var(--accent)',
+                  }}
                   onClick={() => scene.resolveSceneImportPlacementPrompt('auto_arrange')}
                 >
                   Auto-Arrange
@@ -488,7 +506,12 @@ export function SceneFileModals({
                 </button>
                 <button
                   type="button"
-                  className="ui-button ui-button-accent !h-9 px-3 text-xs whitespace-nowrap"
+                  className="ui-button !h-9 px-3 text-xs whitespace-nowrap inline-flex items-center justify-center gap-1.5"
+                  style={{
+                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                    color: 'var(--accent)',
+                  }}
                   disabled={!sceneSaveChoicePath}
                   onClick={() => resolveSceneSaveChoice('overwrite')}
                 >

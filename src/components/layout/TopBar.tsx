@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { ViewTypeDropdown } from '@/components/controls/ViewTypeDropdown';
@@ -33,7 +34,7 @@ import {
 
 import type { View3DSettings } from '@/components/settings/view3dPreferences';
 import type { SlicingThumbnailRenderSettings } from '@/components/settings/PerformanceSettingsTab';
-import { sceneFileInputAccept } from '@/features/plugins/pluginFileTypeExtensions';
+import { useSceneFileInputAccept } from '@/features/plugins/pluginFileTypeExtensions';
 
 interface TopBarProps {
   meshColor: string;
@@ -168,6 +169,7 @@ export function TopBar({
   hideWorkflowControls = false,
 }: TopBarProps) {
   const { _ } = useLingui();
+  const sceneFileAccept = useSceneFileInputAccept();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabKey>('general');
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -176,6 +178,7 @@ export function TopBar({
   const [profileModalOpenNetworkSettingsToken, setProfileModalOpenNetworkSettingsToken] = useState(0);
   const [profileModalOpenMaterialAntiAliasingToken, setProfileModalOpenMaterialAntiAliasingToken] = useState(0);
   const [showProfileChangeWarning, setShowProfileChangeWarning] = useState(false);
+  useEscapeToClose(showProfileChangeWarning, () => setShowProfileChangeWarning(false));
   const [isDesktopWindow, setIsDesktopWindow] = useState(false);
   const [isDesktopWindowMaximized, setIsDesktopWindowMaximized] = useState(false);
   const [isLightTheme, setIsLightTheme] = useState(() => {
@@ -469,14 +472,20 @@ export function TopBar({
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const handleOpenSettings = () => {
-      setSettingsInitialTab('general');
+    const handleOpenSettings = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { tab?: string } | undefined;
+      const tab = detail?.tab as SettingsTabKey | undefined;
+      if (tab && ['general', 'camera', 'workspaces', 'mesh', 'performance', 'spacemouse', 'ui', 'hotkeys', 'plugins', 'experiments', 'sceneAutosave', 'backups', 'uvtools', 'logging', 'updates', 'about'].includes(tab)) {
+        setSettingsInitialTab(tab as SettingsTabKey);
+      } else {
+        setSettingsInitialTab('general');
+      }
       setIsSettingsOpen(true);
     };
 
-    window.addEventListener(OPEN_SETTINGS_MODAL_EVENT, handleOpenSettings);
+    window.addEventListener(OPEN_SETTINGS_MODAL_EVENT, handleOpenSettings as EventListener);
     return () => {
-      window.removeEventListener(OPEN_SETTINGS_MODAL_EVENT, handleOpenSettings);
+      window.removeEventListener(OPEN_SETTINGS_MODAL_EVENT, handleOpenSettings as EventListener);
     };
   }, []);
 
@@ -920,7 +929,7 @@ export function TopBar({
       <input
         id="topbar-scene-input"
         type="file"
-        accept={sceneFileInputAccept()}
+        accept={sceneFileAccept}
         onChange={onImportSceneChange}
         className="hidden"
       />

@@ -87,6 +87,13 @@ What "fleshed out" means — cover at least:
 
 Reference example: `docs/dev/experiments-framework.md`.
 
+Run `npm run check:docs` before you push. It verifies that every path and code
+symbol a document cites still exists, that no page pins a line number (they
+drift within a week), and that the MkDocs nav matches what is on disk. It runs
+in CI. Deliberate exceptions — schematic names, external APIs, symbols named
+precisely because they were removed — go in
+`scripts/docs-accuracy-allowlist.json` **with a reason**.
+
 ## Consult the developer docs first
 
 Before reverse-engineering how a system works from the source, check the
@@ -101,19 +108,39 @@ codebase — it names the exact files and invariants you would otherwise spend
 time re-deriving. Only fall back to source reading when the docs don't answer
 the question.
 
+## Where documentation lives
+
+| Location | Holds | Published |
+| --- | --- | --- |
+| `AGENTS.md` | Agent guidelines and hard rules | no |
+| `CONTEXT.md` | Domain glossary — use its terms, not synonyms | no |
+| `docs/dev/`, `docs/reference/` | Contracts, invariants, frameworks | yes |
+| `docs/adr/` | Decisions and the reasoning behind them | yes |
+| `docs/internal/` | Working inboxes, agent instructions, research | **no** |
+
+`docs/internal/` is excluded from the MkDocs build (`exclude_docs`) but is
+versioned and reviewed like everything else — see `docs/internal/README.md`.
+
+Two files named `backlog.md` exist and they are different things:
+`docs/dev/backlog.md` is the published record of known gotchas, temporary rules,
+and desired architectural directions; `docs/internal/backlog.md` is the
+unpublished capture inbox for incidental findings, whose entries are deleted
+when closed. Read the header of either before adding to it.
+
 ## Agent skills
 
 ### Issue tracker
 
-Issues live in GitHub Issues (external PRs are not a triage surface). See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues (external PRs are not a triage surface). See `docs/internal/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/internal/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context repo — one `CONTEXT.md` + `docs/adr/` at the root. See `docs/agents/domain.md`.
+Single-context repo — one `CONTEXT.md` at the root plus `docs/adr/`. See
+`docs/internal/agents/domain.md`.
 
 ## i18n / Lingui — interpolation gotcha
 
@@ -158,5 +185,8 @@ Whenever you change one of these crates, **bump its `version`** in that crate's
 - `patch` for bug fixes, `minor` for new features (semver).
 - If another crate or the shell pins it by version, update that requirement to
   match.
-- Run `cargo check` (or `cargo build`) afterwards so `Cargo.lock` picks up the
-  bump before committing.
+- Run `cargo check` (or `cargo build`) afterwards so `Cargo.lock` picks up the bump before committing.
+
+## App version — do not bump unprompted
+
+NEVER bump the DragonFruit main app version unprompted — `package.json` `version`, `src-tauri/tauri.conf.json` `version`, and `src-tauri/Cargo.toml` `[package] version` must stay on the current release (currently `0.1.15`) unless the user explicitly asks for a release/version bump. The `rust/*` crate bumps above are allowed; the main app version is release-driven and user-controlled.

@@ -1559,7 +1559,6 @@ export function useOrganicCutSession({
 
         // Flat string (not an object) so the Tauri log forwarder shows every
         // field inline instead of collapsing it to "Object".
-        // eslint-disable-next-line no-console
         console.info(
           `[organicCut] cut applied | engine=${result.report.engine}` +
           ` committed=${committed}` +
@@ -1599,7 +1598,6 @@ export function useOrganicCutSession({
           clearModelDerivedPreviews();
         }
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.error('[organicCut] cut failed', err);
       } finally {
         if (!cancelled) setIsApplying(false);
