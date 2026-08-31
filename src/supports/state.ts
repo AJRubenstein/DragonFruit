@@ -2,6 +2,8 @@ import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSeg
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
+import { createEmptySupportCollections, SUPPORT_STATE_COLLECTIONS } from './supportTypeRegistry';
+import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
 import { calculateDiskThickness } from './SupportPrimitives/ContactDisk/contactDiskUtils';
@@ -45,16 +47,9 @@ type SupportSettingsHexCache = {
     leaf: Record<string, string>;
 };
 
+// Entity collections come from the registry; only interaction state is listed here.
 const initialState: SupportState = {
-    roots: {},
-    trunks: {},
-    branches: {},
-    leaves: {},
-    twigs: {},
-    sticks: {},
-    braces: {},
-    anchors: {},
-    knots: {},
+    ...createEmptySupportCollections(),
     selectedId: null,
     hoveredId: null,
     selectedCategory: null,
@@ -197,14 +192,10 @@ function getSelectionLookupCache(): SelectionLookupCache {
 function resolveSelectionCategory(id: string): SelectionCategory {
     if (!id) return null;
     if (id.startsWith('braceSegment:')) return 'segment';
-    if (state.roots[id]) return 'root';
-    if (state.trunks[id]) return 'trunk';
-    if (state.branches[id]) return 'branch';
-    if (state.leaves[id]) return 'leaf';
-    if (state.twigs[id]) return 'twig';
-    if (state.sticks[id]) return 'stick';
-    if (state.braces[id]) return 'brace';
-    if (state.anchors[id]) return 'anchor';
+    // Entity collections resolve from the registry, in its order.
+    for (const { key, selectionCategory } of SUPPORT_STATE_COLLECTIONS) {
+        if (state[key][id]) return selectionCategory;
+    }
 
     const lookup = getSelectionLookupCache();
     // Kickstands live in their own store, so they are not in the loop above.
@@ -516,7 +507,7 @@ function computeClosestTOnSegmentFromPoint(
     return THREE.MathUtils.clamp(ap.dot(ab) / abLenSq, 0, 1);
 }
 
-function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, 'roots' | 'trunks' | 'branches' | 'braces' | 'leaves' | 'twigs' | 'knots'>): {
+function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, SupportCollectionKey>): {
     knots: Record<string, Knot>;
     leaves: Record<string, Leaf>;
 } {
@@ -544,6 +535,12 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, 'roots'
     for (const twig of Object.values(snapshot.twigs)) {
         twig.segments.forEach((segment, segmentIndex) => {
             twigSegmentMap.set(segment.id, { twig, segment, segmentIndex });
+        });
+    }
+    const stickSegmentMap = new Map<string, { stick: Stick; segment: Segment; segmentIndex: number }>();
+    for (const stick of Object.values(snapshot.sticks)) {
+        stick.segments.forEach((segment, segmentIndex) => {
+            stickSegmentMap.set(segment.id, { stick, segment, segmentIndex });
         });
     }
     const getTwigSegmentEndpoints = (segment: Segment): { start: Vec3; end: Vec3 } | null => {
@@ -643,6 +640,17 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, 'roots'
                     if (twigEndpoints) {
                         segment = twigRef.segment;
                         endpoints = twigEndpoints;
+                    }
+                }
+            }
+
+            if (!segment || !endpoints) {
+                const stickRef = stickSegmentMap.get(knot.parentShaftId);
+                if (stickRef) {
+                    const stickEndpoints = getTwigSegmentEndpoints(stickRef.segment);
+                    if (stickEndpoints) {
+                        segment = stickRef.segment;
+                        endpoints = stickEndpoints;
                     }
                 }
             }
