@@ -2,39 +2,18 @@ import { MODEL_ID_COLLECTION_KEYS, type SupportCollectionKey } from './supportTy
 import type { SupportState } from './types';
 
 /**
- * The support collections held in `SupportState`, in one place.
+ * The modelId-bearing support collections, in one place.
  *
- * WHY THIS EXISTS
+ * A support's type is implicit -- an entity is a Stick because its id is a key in
+ * `state.sticks`, not because of any field -- so every "do this to all supports"
+ * walk hand-wrote the collection list, and a list missing one failed SILENTLY.
+ * That shipped twice: applyZShift skipped sticks, and normalizeLoadedKnotAndLeaf-
+ * Geometry had no stick map, both invisible until geometry looked wrong.
  *
- * A support's type is implicit: there is no `type` field on any support object,
- * so an entity is a Stick purely because its id is a key in `state.sticks`. Every
- * operation that means "do this to all supports" therefore hand-writes the list
- * of collections, and a list that misses one fails SILENTLY -- no error, no
- * warning, just a support type that quietly stops being transformed, reassigned
- * or persisted.
+ * Deriving the walks from one list makes "did this cover every type?" a question
+ * the compiler answers.
  *
- * That has bitten this codebase repeatedly. `applyZShift` walked trunks,
- * branches, twigs and leaves but not sticks, so imported sticks stayed in the
- * authored frame while their own knots moved with everything else.
- * `normalizeLoadedKnotAndLeafGeometry` resolved knot hosts against trunks,
- * branches and twigs but had no stick map, so stick-hosted knots were skipped
- * entirely. Both were invisible until someone noticed geometry in the wrong
- * place.
- *
- * Deriving those walks from ONE list makes "did this cover every type?" a
- * question the compiler answers, instead of one a reviewer has to answer by
- * reading. Adding a ninth support type means adding it here; anything built on
- * `SUPPORT_ENTITY_COLLECTIONS` picks it up, and anything that cannot be
- * expressed that way is at least a deliberate, visible exception.
- *
- * SCOPE
- *
- * Only top-level entity collections that carry a `modelId` -- the things a
- * "for every support" walk means. Deliberately excluded:
- *
- *   - `knots`, which are attachments rather than supports and have no modelId
- *   - kickstands, which live in their own store (SupportTypes/Kickstand)
- *   - interaction fields (selectedId, hoveredId, ...)
+ * Excludes `knots` (attachments, no modelId) and interaction fields.
  */
 
 /**
@@ -118,18 +97,14 @@ export function forEachSupportEntity(
 /**
  * Apply `mapEntity` to every support entity in an import payload.
  *
- * `DragonfruitImportFormat` stores each collection as an ARRAY rather than a
- * record, and marks several optional, so it needs its own walk -- but it must
- * cover the same collections, which is why both derive from
- * SUPPORT_ENTITY_COLLECTIONS rather than repeating the list.
+ * The payload stores collections as ARRAYS, so it needs its own walk -- derived
+ * from the same list so the two cannot drift.
  *
- * Optional collections stay `undefined` rather than becoming `[]`: the payload
- * shape is part of the import contract, and materialising empty arrays would
- * change what round-trips through save/load.
+ * Optional collections stay `undefined` rather than `[]`: the payload shape is
+ * part of the import contract.
  *
- * Kickstands are NOT handled here. They sit at `kickstands[].kickstand` and
- * `kickstands[].root` rather than as a flat collection, so callers that need
- * them must walk them explicitly.
+ * Kickstands are NOT handled here -- they nest at `kickstands[].kickstand`, so
+ * callers must walk them explicitly.
  */
 export function mapImportPayloadEntities<T extends Partial<Record<SupportEntityCollectionKey, unknown>>>(
     payload: T,

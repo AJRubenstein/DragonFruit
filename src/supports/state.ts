@@ -78,7 +78,6 @@ interface SelectionLookupCache {
     jointIds: Set<string>;
     segmentIds: Set<string>;
     contactDiskIds: Set<string>;
-    kickstandIds: Set<string>;
 }
 
 let selectionLookupCache: SelectionLookupCache | null = null;
@@ -103,7 +102,6 @@ function getSelectionLookupCache(): SelectionLookupCache {
     const jointIds = new Set<string>();
     const segmentIds = new Set<string>();
     const contactDiskIds = new Set<string>();
-    const kickstandIds = new Set<string>();
 
     for (const trunk of Object.values(state.trunks)) {
         for (const segment of trunk.segments) {
@@ -164,7 +162,6 @@ function getSelectionLookupCache(): SelectionLookupCache {
     }
 
     for (const kickstand of Object.values(kickstands)) {
-        kickstandIds.add(kickstand.id);
         for (const segment of kickstand.segments) {
             segmentIds.add(segment.id);
             if (segment.topJoint?.id) jointIds.add(segment.topJoint.id);
@@ -183,7 +180,6 @@ function getSelectionLookupCache(): SelectionLookupCache {
         jointIds,
         segmentIds,
         contactDiskIds,
-        kickstandIds,
     };
 
     return selectionLookupCache;
@@ -198,8 +194,6 @@ function resolveSelectionCategory(id: string): SelectionCategory {
     }
 
     const lookup = getSelectionLookupCache();
-    // Kickstands live in their own store, so they are not in the loop above.
-    if (lookup.kickstandIds.has(id)) return 'kickstand';
     if (state.knots[id]) return 'knot';
     if (lookup.jointIds.has(id)) return 'joint';
     if (lookup.segmentIds.has(id)) return 'segment';
@@ -1308,8 +1302,8 @@ export function removeJointById(jointId: string): RemoveJointByIdResult | null {
         }
     }
 
-    // Kickstands live in a separate store — check them too so deleting a
-    // kickstand joint removes just that joint rather than the entire support.
+    // Checked separately from the shafted types above: a kickstand joint should
+    // delete just that joint, not the whole support.
     const kickstandSnapshot = getKickstandSnapshot();
     for (const [kickstandId, kickstand] of Object.entries(kickstandSnapshot.kickstands)) {
         const hasJoint = kickstand.segments.some(
@@ -1546,15 +1540,8 @@ function eulersRoughlyEqual(a: THREE.Euler, b: THREE.Euler, epsilon = 1e-8) {
 /* ---------------------------------------------------------------------------
  * Kickstands
  *
- * Kickstands used to live in their own store with their own roots and knots.
- * They are now a SupportState collection like any other, and their root and
- * host knot go in the shared `roots`/`knots` collections -- ids never collided
- * because both stores minted uuids, so the merge is lossless.
- *
- * kickstandStore.ts still exports the same API and now delegates here, so its
- * consumers did not have to change. What the API does NOT do any more is keep a
- * second copy of the data, which is what let an import remap kickstands and
- * knots out of step and strand knots on ids nothing else used.
+ * A SupportState collection like any other; their root and host knot live in the
+ * shared `roots`/`knots`. kickstandStore.ts keeps its API and delegates here.
  * ------------------------------------------------------------------------- */
 
 /** Kickstand plus the root and host knot it owns, as callers still expect it. */
@@ -1623,17 +1610,11 @@ export function resetKickstandsInState() {
  */
 /**
  * Transform kickstand SHAFTS for `modelId`, plus any connected to a touched
- * entity: a kickstand can be grafted onto another model's support, and moving
- * that support has to carry the kickstand with it.
+ * entity -- a kickstand grafted onto another model's support must move with it.
  *
- * Roots and host knots are deliberately NOT touched here. They live in the
- * shared `roots`/`knots` collections now, so the main walk in
- * transformSupportsForModel already moved them -- a kickstand root by modelId,
- * a host knot by its parent segment. Transforming them again applied the delta
- * twice, which put a host knot at authored+2*delta.
- *
- * `preserveRootZ` is still accepted so callers need not care which pass grounds
- * the root; the main walk applies it.
+ * Roots and host knots are deliberately NOT touched: the main walk in
+ * transformSupportsForModel already moved them, and doing it again applied the
+ * delta twice.
  */
 export function transformKickstandsForModelInState(
     modelId: string,
