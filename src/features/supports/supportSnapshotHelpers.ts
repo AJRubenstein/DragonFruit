@@ -1,11 +1,14 @@
 import { getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
+import { SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 
 export type HomeSupportSnapshot = ReturnType<typeof getSupportSnapshot>;
-export type HomeSupportCollectionsSnapshot = Pick<
-  HomeSupportSnapshot,
-  'trunks' | 'branches' | 'leaves' | 'twigs' | 'sticks' | 'braces' | 'roots' | 'knots'
->;
+
+/**
+ * Every entity collection, derived: the hand-written list here used to omit
+ * anchors, so anything reading this snapshot silently could not see them.
+ */
+export type HomeSupportCollectionsSnapshot = Pick<HomeSupportSnapshot, SupportCollectionKey>;
 
 export type HomeKickstandSnapshot = ReturnType<typeof getKickstandSnapshot>;
 export type HomeKickstandCollectionsSnapshot = Pick<
@@ -13,16 +16,11 @@ export type HomeKickstandCollectionsSnapshot = Pick<
   'kickstands' | 'roots' | 'knots'
 >;
 
-export const EMPTY_HOME_SUPPORT_COLLECTIONS_SNAPSHOT: HomeSupportCollectionsSnapshot = {
-  trunks: {},
-  branches: {},
-  leaves: {},
-  twigs: {},
-  sticks: {},
-  braces: {},
-  roots: {},
-  knots: {},
-};
+export const EMPTY_HOME_SUPPORT_COLLECTIONS_SNAPSHOT: HomeSupportCollectionsSnapshot = (() => {
+  const empty = {} as Record<SupportCollectionKey, Record<string, never>>;
+  for (const key of SUPPORT_COLLECTION_KEYS) empty[key] = {};
+  return empty as HomeSupportCollectionsSnapshot;
+})();
 
 export const EMPTY_HOME_KICKSTAND_COLLECTIONS_SNAPSHOT: HomeKickstandCollectionsSnapshot = {
   kickstands: {},
@@ -37,33 +35,17 @@ export function getHomeSupportCollectionsSnapshot(): HomeSupportCollectionsSnaps
   const snapshot = getSupportSnapshot();
   const cached = cachedHomeSupportCollectionsSnapshot;
 
-  if (
-    cached
-    && cached.trunks === snapshot.trunks
-    && cached.branches === snapshot.branches
-    && cached.leaves === snapshot.leaves
-    && cached.twigs === snapshot.twigs
-    && cached.sticks === snapshot.sticks
-    && cached.braces === snapshot.braces
-    && cached.roots === snapshot.roots
-    && cached.knots === snapshot.knots
-  ) {
+  // Identity comparison per collection: the snapshot is handed to
+  // useSyncExternalStore, which re-renders whenever the object changes.
+  if (cached && SUPPORT_COLLECTION_KEYS.every((key) => cached[key] === snapshot[key])) {
     return cached;
   }
 
-  const next: HomeSupportCollectionsSnapshot = {
-    trunks: snapshot.trunks,
-    branches: snapshot.branches,
-    leaves: snapshot.leaves,
-    twigs: snapshot.twigs,
-    sticks: snapshot.sticks,
-    braces: snapshot.braces,
-    roots: snapshot.roots,
-    knots: snapshot.knots,
-  };
+  const next = {} as Record<SupportCollectionKey, unknown>;
+  for (const key of SUPPORT_COLLECTION_KEYS) next[key] = snapshot[key];
 
-  cachedHomeSupportCollectionsSnapshot = next;
-  return next;
+  cachedHomeSupportCollectionsSnapshot = next as HomeSupportCollectionsSnapshot;
+  return cachedHomeSupportCollectionsSnapshot;
 }
 
 export function getHomeKickstandCollectionsSnapshot(): HomeKickstandCollectionsSnapshot {

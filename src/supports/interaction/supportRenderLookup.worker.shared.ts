@@ -1,5 +1,6 @@
 import type { KickstandState } from '../SupportTypes/Kickstand/types';
 import type { SupportState } from '../types';
+import type { SupportCollectionKey } from '../supportTypeRegistry';
 import type { SupportRenderLookupInput, SupportRenderLookupSnapshot } from './supportRenderLookupMath';
 
 type SupportLookupStateInput = SupportRenderLookupInput['state'];
@@ -45,5 +46,5 @@ export type SupportRenderLookupWorkerResponseMessage = {
   snapshot: SupportRenderLookupSnapshot;
 };
 
-export type SupportLookupCollections = Pick<SupportState, 'roots' | 'trunks' | 'branches' | 'leaves' | 'twigs' | 'sticks' | 'braces' | 'knots'>;
+export type SupportLookupCollections = Pick<SupportState, SupportCollectionKey>;
 export type SupportLookupKickstandCollections = Pick<KickstandState, 'kickstands' | 'knots'>;

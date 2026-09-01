@@ -3,7 +3,7 @@
 import React, { useSyncExternalStore, forwardRef, useImperativeHandle, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { addKnot, addRoot, removeRootById, subscribe, getSnapshot, updateKnot } from './state';
-import { getSupportTypeBySelectionCategory } from './supportTypeRegistry';
+import { getSupportTypeBySelectionCategory, SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from './supportTypeRegistry';
 import { TrunkRenderer } from './SupportTypes/Trunk/TrunkRenderer';
 import { BranchRenderer } from './SupportTypes/Branch/BranchRenderer';
 import { LeafRenderer } from './SupportTypes/Leaf/LeafRenderer';
@@ -896,37 +896,25 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const marqueeHoveredSupportIdSet = useMemo(() => new Set(marqueeHoveredSupportIds), [marqueeHoveredSupportIds]);
     const activeKnotDragPreview = useActiveKnotDragPreview();
     const activeTwigDragPreview = useActiveTwigDragPreview();
-    const supportRenderLookupInput = useMemo(() => ({
-        state: {
-            roots: state.roots,
-            trunks: state.trunks,
-            branches: state.branches,
-            leaves: state.leaves,
-            twigs: state.twigs,
-            sticks: state.sticks,
-            braces: state.braces,
-            knots: state.knots,
-        },
-        kickstandState: {
-            kickstands: kickstandState.kickstands,
-            knots: kickstandState.knots,
-        },
-        // Keep worker lookups driven by committed state only.
-        // Drag previews are resolved locally in this renderer to avoid per-frame
-        // structured-clone payload churn during joint dragging.
-        activePreviewSupport: null,
-    }), [
-        state.roots,
-        state.trunks,
-        state.branches,
-        state.leaves,
-        state.twigs,
-        state.sticks,
-        state.braces,
-        state.knots,
-        kickstandState.kickstands,
-        kickstandState.knots,
-    ]);
+    // Collections picked by SUPPORT_COLLECTION_KEYS rather than listed: the old
+    // list omitted anchors, so nothing could resolve which support an anchor
+    // segment belonged to. `state` is the dependency because the picked object is
+    // rebuilt whenever any collection identity changes, which is what `state` does.
+    const supportRenderLookupInput = useMemo(() => {
+        const picked = {} as Record<string, unknown>;
+        for (const key of SUPPORT_COLLECTION_KEYS) picked[key] = state[key];
+        return {
+            state: picked as Pick<typeof state, SupportCollectionKey>,
+            kickstandState: {
+                kickstands: kickstandState.kickstands,
+                knots: kickstandState.knots,
+            },
+            // Keep worker lookups driven by committed state only.
+            // Drag previews are resolved locally in this renderer to avoid per-frame
+            // structured-clone payload churn during joint dragging.
+            activePreviewSupport: null,
+        };
+    }, [state, kickstandState.kickstands, kickstandState.knots]);
     const supportRenderLookup = useSupportRenderLookup(supportRenderLookupInput);
 
     const trunkList = useMemo(() => Object.values(state.trunks), [state.trunks]);
