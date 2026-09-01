@@ -2018,94 +2018,89 @@ export function transformAllSupportsForSingleModel(
     const deltaMatrix = afterMatrix.clone().multiply(beforeMatrix.clone().invert());
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
 
-    const nextRoots: Record<string, Roots> = {};
-    for (const root of Object.values(state.roots)) {
-        nextRoots[root.id] = {
-            ...root,
-            transform: {
-                ...root.transform,
-                pos: preserveRootZ
-                    ? transformVec3PreserveZ(root.transform.pos, deltaMatrix)
-                    : transformVec3(root.transform.pos, deltaMatrix),
-            },
-        };
-    }
-
-    const nextTrunks: Record<string, Trunk> = {};
-    for (const trunk of Object.values(state.trunks)) {
-        nextTrunks[trunk.id] = {
-            ...trunk,
-            segments: trunk.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-            contactCone: trunk.contactCone ? transformContactCone(trunk.contactCone, deltaMatrix, normalMatrix) : trunk.contactCone,
-        };
-    }
-
-    const nextBranches: Record<string, Branch> = {};
-    for (const branch of Object.values(state.branches)) {
-        nextBranches[branch.id] = {
-            ...branch,
-            segments: branch.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-            contactCone: branch.contactCone ? transformContactCone(branch.contactCone, deltaMatrix, normalMatrix) : branch.contactCone,
-        };
-    }
-
-    const nextLeaves: Record<string, Leaf> = {};
-    for (const leaf of Object.values(state.leaves)) {
-        nextLeaves[leaf.id] = {
-            ...leaf,
-            contactCone: transformContactCone(leaf.contactCone, deltaMatrix, normalMatrix),
-        };
-    }
-
-    const nextTwigs: Record<string, Twig> = {};
-    for (const twig of Object.values(state.twigs)) {
-        nextTwigs[twig.id] = {
-            ...twig,
-            segments: twig.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-            contactDiskA: transformContactDisk(twig.contactDiskA, deltaMatrix, normalMatrix),
-            contactDiskB: transformContactDisk(twig.contactDiskB, deltaMatrix, normalMatrix),
-        };
-    }
-
-    const nextSticks: Record<string, Stick> = {};
-    for (const stick of Object.values(state.sticks)) {
-        nextSticks[stick.id] = {
-            ...stick,
-            segments: stick.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-            contactConeA: transformContactCone(stick.contactConeA, deltaMatrix, normalMatrix),
-            contactConeB: transformContactCone(stick.contactConeB, deltaMatrix, normalMatrix),
-        };
-    }
-
-    const nextBraces: Record<string, Brace> = {};
-    for (const brace of Object.values(state.braces)) {
-        nextBraces[brace.id] = {
-            ...brace,
-            curve: brace.curve
-                ? {
-                    ...brace.curve,
-                    controlPoint1: transformVec3(brace.curve.controlPoint1, deltaMatrix),
-                    controlPoint2: transformVec3(brace.curve.controlPoint2, deltaMatrix),
-                    startTangent: transformDirection(brace.curve.startTangent, normalMatrix),
-                    endTangent: transformDirection(brace.curve.endTangent, normalMatrix),
-                }
-                : brace.curve,
-        };
-    }
-
-    const nextAnchors: Record<string, Anchor> = {};
-    for (const anchor of Object.values(state.anchors)) {
-        nextAnchors[anchor.id] = {
-            ...anchor,
-            rootPos: transformVec3(anchor.rootPos, deltaMatrix),
-            joint: {
-                ...anchor.joint,
-                pos: transformVec3(anchor.joint.pos, deltaMatrix),
-            },
-            segments: anchor.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-            contactCone: transformContactCone(anchor.contactCone, deltaMatrix, normalMatrix),
-        };
-    }
+    // One walk over SUPPORT_ENTITY_COLLECTIONS instead of eight hand-written
+    // loops, so a new collection cannot be silently left untransformed. The
+    // per-type work still differs, so it dispatches on the collection key.
+    const { collections: transformed } = mapSupportEntities(state, (entity, collection) => {
+        switch (collection) {
+            case 'roots': {
+                const root = entity as unknown as Roots;
+                return {
+                    ...root,
+                    transform: {
+                        ...root.transform,
+                        pos: preserveRootZ
+                            ? transformVec3PreserveZ(root.transform.pos, deltaMatrix)
+                            : transformVec3(root.transform.pos, deltaMatrix),
+                    },
+                } as unknown as typeof entity;
+            }
+            case 'trunks':
+            case 'branches': {
+                const shafted = entity as unknown as Trunk | Branch;
+                return {
+                    ...shafted,
+                    segments: shafted.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
+                    contactCone: shafted.contactCone ? transformContactCone(shafted.contactCone, deltaMatrix, normalMatrix) : shafted.contactCone,
+                } as unknown as typeof entity;
+            }
+            case 'leaves': {
+                const leaf = entity as unknown as Leaf;
+                return {
+                    ...leaf,
+                    contactCone: transformContactCone(leaf.contactCone, deltaMatrix, normalMatrix),
+                } as unknown as typeof entity;
+            }
+            case 'twigs': {
+                const twig = entity as unknown as Twig;
+                return {
+                    ...twig,
+                    segments: twig.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
+                    contactDiskA: transformContactDisk(twig.contactDiskA, deltaMatrix, normalMatrix),
+                    contactDiskB: transformContactDisk(twig.contactDiskB, deltaMatrix, normalMatrix),
+                } as unknown as typeof entity;
+            }
+            case 'sticks': {
+                const stick = entity as unknown as Stick;
+                return {
+                    ...stick,
+                    segments: stick.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
+                    contactConeA: transformContactCone(stick.contactConeA, deltaMatrix, normalMatrix),
+                    contactConeB: transformContactCone(stick.contactConeB, deltaMatrix, normalMatrix),
+                } as unknown as typeof entity;
+            }
+            case 'braces': {
+                const brace = entity as unknown as Brace;
+                return {
+                    ...brace,
+                    curve: brace.curve
+                        ? {
+                            ...brace.curve,
+                            controlPoint1: transformVec3(brace.curve.controlPoint1, deltaMatrix),
+                            controlPoint2: transformVec3(brace.curve.controlPoint2, deltaMatrix),
+                            startTangent: transformDirection(brace.curve.startTangent, normalMatrix),
+                            endTangent: transformDirection(brace.curve.endTangent, normalMatrix),
+                        }
+                        : brace.curve,
+                } as unknown as typeof entity;
+            }
+            case 'anchors': {
+                const anchor = entity as unknown as Anchor;
+                return {
+                    ...anchor,
+                    rootPos: transformVec3(anchor.rootPos, deltaMatrix),
+                    joint: {
+                        ...anchor.joint,
+                        pos: transformVec3(anchor.joint.pos, deltaMatrix),
+                    },
+                    segments: anchor.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
+                    contactCone: transformContactCone(anchor.contactCone, deltaMatrix, normalMatrix),
+                } as unknown as typeof entity;
+            }
+            default:
+                return entity;
+        }
+    });
 
     const nextKnots: Record<string, Knot> = {};
     for (const knot of Object.values(state.knots)) {
@@ -2117,14 +2112,7 @@ export function transformAllSupportsForSingleModel(
 
     state = {
         ...state,
-        roots: nextRoots,
-        trunks: nextTrunks,
-        branches: nextBranches,
-        leaves: nextLeaves,
-        twigs: nextTwigs,
-        sticks: nextSticks,
-        braces: nextBraces,
-        anchors: nextAnchors,
+        ...transformed,
         knots: nextKnots,
     };
     notify();
@@ -2410,15 +2398,7 @@ export function loadFromImportFormat(data: DragonfruitImportFormat) {
     resetKickstandStore();
 
     const newState: SupportState = {
-        roots: {},
-        trunks: {},
-        branches: {},
-        leaves: {},
-        twigs: {},
-        sticks: {},
-        braces: {},
-        anchors: {},
-        knots: {},
+        ...createEmptySupportCollections(),
         selectedId: null,
         hoveredId: null,
         selectedCategory: null,
