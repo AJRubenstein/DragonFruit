@@ -114,6 +114,33 @@ export function buildCharacterisationFixture(): DragonfruitImportFormat {
             { id: 'knot-a', parentShaftId: 'seg-ta', t: 0.5, pos: { x: 0, y: 0, z: 4.5 }, diameter: 1.1 },
             { id: 'knot-b', parentShaftId: 'seg-tb', t: 0.5, pos: { x: 20, y: 0, z: 4.5 }, diameter: 1.1 },
         ],
+        // A kickstand hosted on trunk-a. Kickstands live in their own store and
+        // serialise as a nested {root, hostKnot, kickstand}, so a fixture without
+        // one leaves every kickstand path uncovered -- which is how the import
+        // ordering bug that dropped kickstand-hosted knots went unnoticed.
+        kickstands: [
+            {
+                root: {
+                    id: 'ks-root-a',
+                    modelId: MODEL_A,
+                    transform: { pos: { x: 3, y: 0, z: 0 }, rot: { x: 0, y: 0, z: 0, w: 1 } },
+                    diameter: 3,
+                    diskHeight: 0.5,
+                    coneHeight: 1.5,
+                },
+                hostKnot: { id: 'ks-knot-a', parentShaftId: 'seg-ta', t: 0.35, pos: { x: 0, y: 0, z: 3.5 }, diameter: 1.1 },
+                kickstand: {
+                    id: 'ks-a',
+                    modelId: MODEL_A,
+                    rootId: 'ks-root-a',
+                    hostKnotId: 'ks-knot-a',
+                    hostSegmentId: 'seg-ta',
+                    hostMinT: 0.2,
+                    segments: [seg('seg-ka', 2)],
+                    profile: { bodyDiameterMm: 1, terminalStartDiameterMm: 1.2, terminalEndDiameterMm: 0.8 },
+                },
+            },
+        ],
     };
 }
 
