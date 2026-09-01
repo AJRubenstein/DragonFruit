@@ -2669,7 +2669,7 @@ export function useSceneCollectionManager() {
 
     const includeSupportByState = (() => {
       const supportStateNow = getSnapshot();
-      const kickstandStateNow = getKickstandSnapshot();
+      const kickstandStateNow = getSnapshot();
       return hasSupportsOrKickstandsForModel(id, supportStateNow, kickstandStateNow);
     })();
 
@@ -2719,7 +2719,7 @@ export function useSceneCollectionManager() {
       || !!supportSnapshotOptions?.kickstandBefore
       || !!supportSnapshotOptions?.kickstandAfter;
     const supportStateNow = getSnapshot();
-    const kickstandStateNow = getKickstandSnapshot();
+    const kickstandStateNow = getSnapshot();
     const includeSupportByState = changedIds.some((id) => (
       hasSupportsOrKickstandsForModel(id, supportStateNow, kickstandStateNow)
     ));
@@ -2791,7 +2791,7 @@ export function useSceneCollectionManager() {
     });
 
     const supportStateBefore = getSnapshot();
-    const kickstandStateBefore = getKickstandSnapshot();
+    const kickstandStateBefore = getSnapshot();
     const allUpdatedIds = Array.from(updateMap.keys());
     const includeSupportHistory = allUpdatedIds.some((id) => hasSupportsOrKickstandsForModel(id, supportStateBefore, kickstandStateBefore));
 
@@ -3832,7 +3832,7 @@ export function useSceneCollectionManager() {
       });
 
     const supportStateBeforeDelete = getSnapshot();
-    const kickstandSnapshotBefore = getKickstandSnapshot();
+    const kickstandSnapshotBefore = getSnapshot();
 
     const kickstandCountByModel = new Map<string, number>();
     for (const kickstand of Object.values(kickstandSnapshotBefore.kickstands)) {
@@ -3945,7 +3945,7 @@ export function useSceneCollectionManager() {
           || remaining.twigs.length > 0
           || remaining.sticks.length > 0;
 
-        const hasRemainingKickstands = Object.values(getKickstandSnapshot().kickstands)
+        const hasRemainingKickstands = Object.values(getSnapshot().kickstands)
           .some((kickstand) => kickstand.modelId === modelId);
 
         if (hasRemainingMainSupports || hasRemainingKickstands) {
@@ -3978,7 +3978,7 @@ export function useSceneCollectionManager() {
     if (existingModelIds.length === 0) return 0;
 
     const supportStateBefore = getSnapshot();
-    const kickstandStateBefore = getKickstandSnapshot();
+    const kickstandStateBefore = getSnapshot();
 
     const hasSupportsForModel = (modelId: string) => {
       const supportIds = getSupportsForModel(supportStateBefore, modelId);
@@ -4093,7 +4093,7 @@ export function useSceneCollectionManager() {
     const beforeActiveModelId = activeModelId;
     const beforeSelectedModelIds = selectedModelIds;
     const supportStateBefore = getSnapshot();
-    const kickstandStateBefore = getKickstandSnapshot();
+    const kickstandStateBefore = getSnapshot();
 
     const first = modelClipboard[0];
 
@@ -4159,7 +4159,7 @@ export function useSceneCollectionManager() {
     const beforeActiveModelId = activeModelId;
     const beforeSelectedModelIds = selectedModelIds;
     const supportStateBefore = getSnapshot();
-    const kickstandStateBefore = getKickstandSnapshot();
+    const kickstandStateBefore = getSnapshot();
 
     const entries = modelClipboard;
 
