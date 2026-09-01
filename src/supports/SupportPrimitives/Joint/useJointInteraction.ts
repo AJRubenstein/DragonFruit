@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
-import {
+import { getSnapshot,
     getTrunks,
     getBranches,
     getTwigs,
@@ -17,7 +17,7 @@ import {
     setInteractionWarning,
     updateTwig,
     updateStick,
-} from '../../state';
+ } from '../../state';
 import { getTrunkSegmentEndpoints } from '../Knot/knotUtils';
 import { Vec3, Trunk, Branch, Roots, Twig, Stick, ContactDisk } from '../../types';
 import { getKickstandSnapshot } from '../../SupportTypes/Kickstand/kickstandStore';
@@ -406,7 +406,7 @@ export function useJointInteraction(enabled: boolean = true) {
             }
         }
 
-        for (const kickstand of Object.values(getKickstandSnapshot().kickstands)) {
+        for (const kickstand of Object.values(getSnapshot().kickstands)) {
             if (resolveJointPosFromSegments(kickstand.segments as any[], jointId)) {
                 jointParentCacheRef.current.set(jointId, { kind: 'kickstand', supportId: kickstand.id });
                 return;
@@ -546,7 +546,7 @@ export function useJointInteraction(enabled: boolean = true) {
                         jointParentCacheRef.current.delete(jointId);
                     }
                 } else {
-                    const kickstand = getKickstandSnapshot().kickstands[cachedParent.supportId];
+                    const kickstand = getSnapshot().kickstands[cachedParent.supportId];
                     const pos = kickstand ? resolveJointPosFromSegments(kickstand.segments as any[], jointId) : null;
                     if (kickstand && pos) {
                         foundKickstand = kickstand;
@@ -588,7 +588,7 @@ export function useJointInteraction(enabled: boolean = true) {
 
                 // If not in trunk/branch, search kickstands
                 if (!foundTrunk && !foundBranch) {
-                    const kickstands = Object.values(getKickstandSnapshot().kickstands);
+                    const kickstands = Object.values(getSnapshot().kickstands);
                     for (const kickstand of kickstands) {
                         const pos = resolveJointPosFromSegments(kickstand.segments as any[], jointId);
                         if (pos) {
@@ -782,7 +782,7 @@ export function useJointInteraction(enabled: boolean = true) {
                         commitJointDragSupport('branch', resolved, { stripDiskLengthOverride: true });
                     }
                 } else if (activeKickstandId.current) {
-                    const kickstand = getKickstandSnapshot().kickstands[activeKickstandId.current];
+                    const kickstand = getSnapshot().kickstands[activeKickstandId.current];
                     if (kickstand) {
                         const root = activeConstraintRootRef.current ?? getRootById(kickstand.rootId) ?? undefined;
                         let contextStart = activeConstraintStartRef.current;
@@ -1083,7 +1083,7 @@ export function useJointInteraction(enabled: boolean = true) {
                         applyWarningForDragDelta(clampedBranchJointPos, newPosVec3);
                     }
                 } else if (activeKickstandId.current) {
-                    const kickstand = getKickstandSnapshot().kickstands[activeKickstandId.current];
+                    const kickstand = getSnapshot().kickstands[activeKickstandId.current];
                     if (kickstand) {
                         const root = activeConstraintRootRef.current ?? getRootById(kickstand.rootId) ?? undefined;
                         let contextStart = activeConstraintStartRef.current;
@@ -1106,7 +1106,7 @@ export function useJointInteraction(enabled: boolean = true) {
 
                         const clampedKickstandJointPos = resolveJointPosById(newKickstand.segments, activeJointId.current!);
                         const shouldPublish = shouldPublishForClampedPos(clampedKickstandJointPos);
-                        if (getKickstandSnapshot().kickstands[activeKickstandId.current] !== newKickstand && shouldPublish) {
+                        if (getSnapshot().kickstands[activeKickstandId.current] !== newKickstand && shouldPublish) {
                             publishJointDragSupportPreview('kickstand', newKickstand);
                             markPublishedClampedPos(clampedKickstandJointPos);
                         }
