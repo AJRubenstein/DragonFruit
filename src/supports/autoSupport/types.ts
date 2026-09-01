@@ -229,7 +229,6 @@ export interface AutoSupportPlan {
     /** Support state committed before the run (for the undo payload). */
     before: SupportState;
     /** Kickstand state committed before the run. */
-    kickstandBefore: KickstandState;
     /** Final braced support state. */
     support: SupportState;
     /** Final kickstand state (bracing strips/regenerates auto kickstands). */

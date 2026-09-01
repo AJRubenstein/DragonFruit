@@ -1000,8 +1000,19 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     const removedBraceCount = Object.keys(snapshot.braces).length;
     const changed = generatedBraceCount > 0 || removedBraceCount > 0;
 
+    // Fold the kickstand result back into the snapshot. Bracing strips and
+    // regenerates auto kickstands in `kickstandState`, while `nextSnapshot` was
+    // spread from the input and still holds the old ones -- so the two disagreed
+    // and callers had to reconcile them with a second store write.
+    const snapshotWithKickstands: SupportState = {
+        ...nextSnapshot,
+        kickstands: kickstandState.kickstands,
+        roots: { ...nextSnapshot.roots, ...kickstandState.roots },
+        knots: { ...nextSnapshot.knots, ...kickstandState.knots },
+    };
+
     return {
-        snapshot: nextSnapshot,
+        snapshot: snapshotWithKickstands,
         kickstand: kickstandState,
         generatedBraceCount,
         removedBraceCount,
@@ -1015,19 +1026,15 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
 
 export function runAutoBracing(): AutoBraceResult {
     const before = structuredClone(getSnapshot());
-    const kickstandBefore = structuredClone(getKickstandSnapshot());
-    const built = buildAutoBracedSnapshot(before, getSettings().autoBracing, kickstandBefore);
+    const built = buildAutoBracedSnapshot(before, getSettings().autoBracing);
     if (!built.changed) return built;
 
     setSnapshot(built.snapshot);
-    setKickstandSnapshot(built.kickstand);
     pushSupportHistory({
         type: SUPPORT_AUTO_BRACE_REPLACE,
         payload: {
             before,
             after: built.snapshot,
-            kickstandBefore,
-            kickstandAfter: structuredClone(built.kickstand),
         },
     });
     return built;

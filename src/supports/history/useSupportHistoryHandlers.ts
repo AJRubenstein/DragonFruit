@@ -31,17 +31,12 @@ import { clearSupportSelection } from '../interaction/shared/selection/selection
 
 function applySnapshotHistory(payload: SupportReplaceStatePayload, direction: 'undo' | 'redo') {
   clearSupportSelection();
-  if (direction === 'undo') {
-    setSnapshot(payload.before);
-    if (payload.kickstandBefore) {
-      setKickstandSnapshot(payload.kickstandBefore);
-    }
-  } else {
-    setSnapshot(payload.after);
-    if (payload.kickstandAfter) {
-      setKickstandSnapshot(payload.kickstandAfter);
-    }
-  }
+  // setSnapshot restores kickstands too: they are a SupportState collection, so
+  // the separate kickstand restore this used to do is covered by the line above.
+  // It was added when the two stores were separate and undo left kickstands
+  // behind; keeping it risked the opposite, a stale kickstand snapshot wiping
+  // what setSnapshot had just restored.
+  setSnapshot(direction === 'undo' ? payload.before : payload.after);
 }
 
 /**

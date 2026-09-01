@@ -50,8 +50,6 @@ function flushPendingJobs() {
       payload: {
         before: sanitizeSupportSnapshot(job.before.support),
         after: sanitizeSupportSnapshot(job.after.support),
-        kickstandBefore: sanitizeKickstandSnapshot(job.before.kickstand),
-        kickstandAfter: sanitizeKickstandSnapshot(job.after.kickstand),
       },
     });
   }
