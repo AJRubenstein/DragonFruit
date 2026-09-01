@@ -9,7 +9,7 @@ import { Vec3 } from '../../types';
 import { useJointCreationState } from './jointCreationState';
 import { getJointDiameter } from '../../constants';
 import { usePlacementSnappingSession } from '../../interaction/shared/placement/snapping/usePlacementSnappingSession';
-import { buildPrimarySnapTargetIndex, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
+import { buildPrimarySnapTargetIndex, ALL_SNAP_TYPES, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 
 /**
@@ -42,11 +42,8 @@ export function useJointCreation() {
     // Pre-calculate all snap targets (memoized) - includes trunks/branches/twigs/sticks
     const allTargets = useMemo(() => {
         return buildSupportPathSnapTargets(supportState, {
-            includeTrunks: true,
-            includeBranches: true,
-            includeBraces: false,
-            includeTwigs: true,
-            includeSticks: true,
+            // Everything with a real shaft to drop a joint on; braces have none.
+            snapTypes: ALL_SNAP_TYPES.filter((id) => id !== 'brace'),
         });
     }, [supportState]);
 

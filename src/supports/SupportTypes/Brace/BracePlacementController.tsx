@@ -21,7 +21,7 @@ import {
     buildLeafConeSnapMeta,
     buildPrimarySnapTargetIndex,
     buildSnapTargetCandidateIndex,
-    buildSupportPathSnapTargets,
+    ALL_SNAP_TYPES, buildSupportPathSnapTargets,
     resolveBracePathDiameterAtT,
 } from '../../interaction/shared/placement/snapping/supportPathTargets';
 import { getSupportPlacementModifierState, isSupportPlacementBindingSatisfiedByModifierState } from '../../interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver';
@@ -271,11 +271,7 @@ export function BracePlacementController() {
         }
 
         const targets: SnapTarget[] = buildSupportPathSnapTargets(supportState, {
-            includeTrunks: true,
-            includeBranches: true,
-            includeBraces: true,
-            includeTwigs: true,
-            includeSticks: true,
+            snapTypes: ALL_SNAP_TYPES,
             placementSurface: activePlacementSurface,
             excludeSegmentIds: excludedSegmentIds,
         });

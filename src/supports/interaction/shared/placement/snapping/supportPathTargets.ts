@@ -1,6 +1,6 @@
 import type { SnapTarget } from '../../../SnappingManager';
 import type { SupportState, Vec3, Brace, Knot } from '../../../../types';
-import type { SupportCollectionKey } from '../../../../supportTypeRegistry';
+import { SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from '../../../../supportTypeRegistry';
 import { getFinalSocketPosition } from '../../../../SupportPrimitives/ContactCone';
 import type { ContactCone } from '../../../../SupportPrimitives/ContactCone/types';
 import { calculateDiskThickness } from '../../../../SupportPrimitives/ContactDisk/contactDiskUtils';
@@ -9,12 +9,21 @@ import type { KickstandState } from '../../../../SupportTypes/Kickstand/types';
 
 type PlacementSurface = 'interior' | 'exterior';
 
+/**
+ * Which support types can be snapped to.
+ *
+ * A set of type ids rather than one boolean per type: the booleans were a
+ * hardcoded type list wearing options, and three of five callers set every one of
+ * them true. A new support type joins by being in SUPPORT_TYPES, not by growing
+ * another flag here.
+ */
+export const ALL_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES.map((d) => d.id);
+
+/** The historical default: shafts and braces, not the two-contact types. */
+export const DEFAULT_SNAP_TYPES: readonly SupportTypeId[] = ['trunk', 'branch', 'brace'];
+
 interface BuildSupportPathSnapTargetsOptions {
-    includeTrunks?: boolean;
-    includeBranches?: boolean;
-    includeBraces?: boolean;
-    includeTwigs?: boolean;
-    includeSticks?: boolean;
+    snapTypes?: readonly SupportTypeId[];
     placementSurface?: PlacementSurface;
     excludeSegmentIds?: ReadonlySet<string>;
 }
@@ -92,14 +101,15 @@ export function buildSupportPathSnapTargets(
     options: BuildSupportPathSnapTargetsOptions = {}
 ): SnapTarget[] {
     const {
-        includeTrunks = true,
-        includeBranches = true,
-        includeBraces = true,
-        includeTwigs = false,
-        includeSticks = false,
+        snapTypes = DEFAULT_SNAP_TYPES,
         placementSurface,
         excludeSegmentIds,
     } = options;
+
+    const snap = new Set(snapTypes);
+    const includeTrunks = snap.has('trunk');
+    const includeBranches = snap.has('branch');
+    const includeBraces = snap.has('brace');
 
     const targets: SnapTarget[] = [];
     const rootMap = new Map(Object.values(supportState.roots).map((root) => [root.id, root]));
@@ -220,17 +230,33 @@ export function buildSupportPathSnapTargets(
     // two-contact type does not need a third copy.
     const twoContactSources: Array<{ include: boolean; entities: Array<{ segments: typeof supportState.twigs[string]['segments']; placementSurface?: string }> }> = [
         {
-            include: includeTwigs,
+            include: snap.has('twig'),
             entities: Object.values(supportState.twigs).map((twig) => ({
                 segments: twig.segments,
                 placementSurface: twig.contactDiskA?.placementSurface ?? twig.contactDiskB?.placementSurface,
             })),
         },
         {
-            include: includeSticks,
+            include: snap.has('stick'),
             entities: Object.values(supportState.sticks).map((stick) => ({
                 segments: stick.segments,
                 placementSurface: stick.contactConeA?.placementSurface ?? stick.contactConeB?.placementSurface,
+            })),
+        },
+        {
+            // Anchors are stubby shafts to the raft; nothing about them makes a
+            // worse snap target than a trunk, they were simply never listed.
+            include: snap.has('anchor'),
+            entities: Object.values(supportState.anchors).map((anchor) => ({
+                segments: anchor.segments,
+                placementSurface: anchor.contactCone?.placementSurface,
+            })),
+        },
+        {
+            include: snap.has('kickstand'),
+            entities: Object.values(supportState.kickstands).map((kickstand) => ({
+                segments: kickstand.segments,
+                placementSurface: undefined,
             })),
         },
     ];
