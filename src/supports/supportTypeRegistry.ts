@@ -43,6 +43,14 @@ export type SupportCollectionLocation =
  */
 export interface SupportTypeDescriptor {
     id: SupportTypeId;
+    /**
+     * Plural display name for UI that lists collections.
+     *
+     * Identity, not rendering: it is what the type is CALLED, so the panels and
+     * modals listing supports do not each keep their own label table. Anchors
+     * were missing from every one of those tables.
+     */
+    label: string;
     location: SupportCollectionLocation;
     selectionCategory: SupportSelectionCategory;
     historyAdd: SupportHistoryActionType;
@@ -54,6 +62,7 @@ export interface SupportTypeDescriptor {
 export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'trunk',
+        label: 'Trunks',
         location: { store: 'support', key: 'trunks' },
         selectionCategory: 'trunk',
         historyAdd: SUPPORT_ADD_TRUNK,
@@ -62,6 +71,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'branch',
+        label: 'Branches',
         location: { store: 'support', key: 'branches' },
         selectionCategory: 'branch',
         historyAdd: SUPPORT_ADD_BRANCH,
@@ -70,6 +80,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'leaf',
+        label: 'Leaves',
         location: { store: 'support', key: 'leaves' },
         selectionCategory: 'leaf',
         historyAdd: SUPPORT_ADD_LEAF,
@@ -78,6 +89,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'twig',
+        label: 'Twigs',
         location: { store: 'support', key: 'twigs' },
         selectionCategory: 'twig',
         historyAdd: SUPPORT_ADD_TWIG,
@@ -86,6 +98,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'stick',
+        label: 'Sticks',
         location: { store: 'support', key: 'sticks' },
         selectionCategory: 'stick',
         historyAdd: SUPPORT_ADD_STICK,
@@ -94,6 +107,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'brace',
+        label: 'Braces',
         location: { store: 'support', key: 'braces' },
         selectionCategory: 'brace',
         historyAdd: SUPPORT_ADD_BRACE,
@@ -102,6 +116,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'anchor',
+        label: 'Anchors',
         location: { store: 'support', key: 'anchors' },
         selectionCategory: 'anchor',
         historyAdd: SUPPORT_ADD_ANCHOR,
@@ -110,6 +125,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'kickstand',
+        label: 'Kickstands',
         location: { store: 'support', key: 'kickstands' },
         selectionCategory: 'kickstand',
         historyAdd: SUPPORT_ADD_KICKSTAND,
