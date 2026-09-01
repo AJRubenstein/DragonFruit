@@ -126,6 +126,7 @@ function makeState(): SupportState {
       },
     },
     anchors: {},
+    kickstands: {},
     knots: {
       'kickstand-host-knot': {
         id: 'kickstand-host-knot',

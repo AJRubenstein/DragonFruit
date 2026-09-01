@@ -177,19 +177,37 @@ export const SUPPORT_STATE_COLLECTIONS: readonly {
     })),
 ];
 
-/** An empty collection per SupportState entity key, for initial and reset state. */
+/**
+ * An empty collection per SupportState entity key, for initial and reset state.
+ *
+ * STAGE 3, STEP 1: `kickstands` now has storage on SupportState but is still
+ * owned by the kickstand store, so its descriptor keeps `store: 'kickstand'` and
+ * it is excluded from SUPPORT_STATE_TYPES -- and therefore from every derived
+ * walk. It is seeded explicitly here so the collection exists and the type is
+ * satisfied. Step 2 flips the descriptor to `store: 'support'`, at which point
+ * the loop below covers it and this line goes away.
+ */
 export function createEmptySupportCollections(): Pick<SupportState, SupportCollectionKey> {
     const collections = {} as Record<SupportCollectionKey, Record<string, never>>;
     for (const { key } of SUPPORT_PRIMITIVE_COLLECTIONS) collections[key] = {};
+    collections.kickstands = {};
     for (const descriptor of SUPPORT_STATE_TYPES) {
         collections[descriptor.location.key as SupportCollectionKey] = {};
     }
     return collections as Pick<SupportState, SupportCollectionKey>;
 }
 
-/** Entity collection keys on SupportState: primitives first, then support types. */
+/**
+ * Entity collection keys on SupportState: primitives first, then support types.
+ *
+ * STAGE 3, STEP 1: `kickstands` is listed explicitly for the same reason
+ * createEmptySupportCollections seeds it -- storage has moved to SupportState but
+ * ownership has not, so the descriptor is still excluded from SUPPORT_STATE_TYPES.
+ * Step 2 removes this entry along with the seed.
+ */
 export const SUPPORT_COLLECTION_KEYS: readonly SupportCollectionKey[] = [
     ...SUPPORT_PRIMITIVE_COLLECTIONS.map((c) => c.key),
+    'kickstands' as SupportCollectionKey,
     ...SUPPORT_STATE_TYPES.map((d) => d.location.key as SupportCollectionKey),
 ];
 

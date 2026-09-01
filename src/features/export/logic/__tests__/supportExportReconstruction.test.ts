@@ -144,6 +144,7 @@ function makeSupportState(): SupportState {
         },
       },
     },
+    kickstands: {},
     knots: {
       'knot-a': { id: 'knot-a', parentShaftId: 'trunk-a-seg', pos: { x: 0, y: 0, z: 4 }, diameter: 1.1 },
       'knot-b': { id: 'knot-b', parentShaftId: 'trunk-b-seg', pos: { x: 20, y: 0, z: 4 }, diameter: 1.1 },

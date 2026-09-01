@@ -52,6 +52,7 @@ function seedLadderSnapshot(): void {
         sticks: {},
         braces: {},
         anchors: {},
+        kickstands: {},
         knots: {},
         selectedId: null,
         selectedCategory: null,
