@@ -18,11 +18,8 @@ export function buildKickstandSnapTargetMetaIndex(
     supportState: Pick<SupportState, SupportCollectionKey>
 ): Map<string, KickstandSnapTargetMeta> {
     const targets = buildSupportPathSnapTargets(supportState, {
-        includeTrunks: true,
-        includeBranches: true,
-        includeBraces: false,
-        includeTwigs: false,
-        includeSticks: false,
+        // A kickstand braces against a shaft, so only the shafted hosts.
+        snapTypes: ['trunk', 'branch'],
     });
 
     const targetById = buildPrimarySnapTargetIndex(targets);

@@ -38,7 +38,7 @@ import { clearSupportSelection } from '../../interaction/shared/selection/select
 import { useImmediateModelHoverId } from '../../interaction/useInteractionStatus';
 import { isSupportTargetHoverCategory } from '../../interaction/shared/hover/supportHoverResolver';
 import { usePlacementSnappingSession } from '../../interaction/shared/placement/snapping/usePlacementSnappingSession';
-import { buildPrimarySnapTargetIndex, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
+import { buildPrimarySnapTargetIndex, ALL_SNAP_TYPES, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
 import { projectPointToSnapTargetPath, projectRayToSnapTargetPath, selectNearestPathTarget } from '../../interaction/shared/placement/snapping/pathProjection';
 import { isSupportEditInteractionActive } from '../../interaction/gizmoInteractionLock';
 import { previewNormalKey, previewVecKey, quantizePreviewValue } from '../shared/previewSignature';
@@ -212,11 +212,7 @@ export function BranchPlacementController() {
         if (stage !== 'awaitingBase') return [];
 
         return buildSupportPathSnapTargets(supportState, {
-            includeTrunks: true,
-            includeBranches: true,
-            includeBraces: true,
-            includeTwigs: true,
-            includeSticks: true,
+            snapTypes: ALL_SNAP_TYPES,
             placementSurface,
         });
     }, [stage, placementSurface, supportState.trunks, supportState.branches, supportState.braces, supportState.twigs, supportState.sticks]);

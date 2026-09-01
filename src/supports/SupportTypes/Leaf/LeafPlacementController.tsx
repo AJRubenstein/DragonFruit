@@ -19,7 +19,7 @@ import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacemen
 import { clearSupportSelection } from '../../interaction/shared/selection/selectionController';
 import { canResolveSupportPlacementBindingFromModifierState, getSupportPlacementModifierState, isSupportPlacementBindingSatisfiedByModifierState } from '../../interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver';
 import { usePlacementSnappingSession } from '../../interaction/shared/placement/snapping/usePlacementSnappingSession';
-import { buildKickstandPathSnapTargets, buildPrimarySnapTargetIndex, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
+import { buildKickstandPathSnapTargets, buildPrimarySnapTargetIndex, ALL_SNAP_TYPES, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
 import { useKickstandStoreState } from '../Kickstand/kickstandStore';
 import { projectPointToSnapTargetPath, projectRayToSnapTargetPath, selectNearestPathTarget } from '../../interaction/shared/placement/snapping/pathProjection';
 import { isSupportEditInteractionActive } from '../../interaction/gizmoInteractionLock';
@@ -83,11 +83,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
 
         return [
             ...buildSupportPathSnapTargets(supportState, {
-                includeTrunks: true,
-                includeBranches: true,
-                includeBraces: true,
-                includeTwigs: true,
-                includeSticks: true,
+                snapTypes: ALL_SNAP_TYPES,
                 placementSurface,
             }),
             ...buildKickstandPathSnapTargets(kickstandState),
