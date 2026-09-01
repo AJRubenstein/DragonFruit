@@ -263,7 +263,7 @@ function isGridRootOccupied(rootPos: Vec3, modelId: string, hostRootId?: string 
         }
     }
 
-    const kickstandSnapshot = getKickstandSnapshot();
+    const kickstandSnapshot = getSnapshot();
     for (const root of Object.values(kickstandSnapshot.roots)) {
         if (root.modelId !== modelId) continue;
         if (hostRootId && root.id === hostRootId) continue;

@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
-import { getBranches, getKnotById, getLeaves, getRootById, getTrunks, getTwigs, getSticks, getBraces, setInteractionWarning, updateKnot, updateLeaf, updateBranch, getBranchById, subscribe } from '../../state';
+import { getSnapshot, getBranches, getKnotById, getLeaves, getRootById, getTrunks, getTwigs, getSticks, getBraces, setInteractionWarning, updateKnot, updateLeaf, updateBranch, getBranchById, subscribe  } from '../../state';
 import { Branch, Brace, Knot, Roots, Trunk, Twig, Stick, Vec3 } from '../../types';
 import { getKickstandSnapshot } from '../../SupportTypes/Kickstand/kickstandStore';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
@@ -130,7 +130,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             for (const branch of getBranches()) {
                 for (const seg of branch.segments) map.set(seg.id, { containerType: 'branch', entityId: branch.id });
             }
-            for (const kickstand of Object.values(getKickstandSnapshot().kickstands)) {
+            for (const kickstand of Object.values(getSnapshot().kickstands)) {
                 for (const seg of kickstand.segments) map.set(seg.id, { containerType: 'kickstand', entityId: kickstand.id });
             }
             for (const twig of getTwigs()) {
@@ -368,7 +368,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                     host = { segmentId: knot.parentShaftId, containerType: 'branch', branch, parentKnot, start: new THREE.Vector3(), end: new THREE.Vector3(), initialTopology: {} };
                 }
             } else if (cacheEntry.containerType === 'kickstand') {
-                const kickstandState = getKickstandSnapshot();
+                const kickstandState = getSnapshot();
                 const kickstand = kickstandState.kickstands[cacheEntry.entityId];
                 if (kickstand) {
                     const kickstandRoot = kickstandState.roots[kickstand.rootId];
