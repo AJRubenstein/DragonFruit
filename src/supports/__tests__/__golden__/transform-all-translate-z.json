@@ -146,6 +146,83 @@
       ]
     }
   },
+  "kickstandStore": {
+    "kickstands": {
+      "ks-a": {
+        "hostKnotId": "ks-knot-a",
+        "hostMinT": 0.2,
+        "hostSegmentId": "seg-ta",
+        "id": "ks-a",
+        "modelId": "model-a",
+        "profile": {
+          "bodyDiameterMm": 1,
+          "terminalEndDiameterMm": 0.8,
+          "terminalStartDiameterMm": 1.2
+        },
+        "rootId": "ks-root-a",
+        "segments": [
+          {
+            "bottomJoint": {
+              "diameter": 1,
+              "id": "seg-ka-bot",
+              "pos": {
+                "x": 0,
+                "y": 0,
+                "z": 12
+              }
+            },
+            "diameter": 1,
+            "id": "seg-ka",
+            "topJoint": {
+              "diameter": 1,
+              "id": "seg-ka-top",
+              "pos": {
+                "x": 0,
+                "y": 0,
+                "z": 17
+              }
+            },
+            "type": "straight"
+          }
+        ]
+      }
+    },
+    "knots": {
+      "ks-knot-a": {
+        "diameter": 1.1,
+        "id": "ks-knot-a",
+        "parentShaftId": "seg-ta",
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "z": 13.5
+        },
+        "t": 0.35
+      }
+    },
+    "roots": {
+      "ks-root-a": {
+        "coneHeight": 1.5,
+        "diameter": 3,
+        "diskHeight": 0.5,
+        "id": "ks-root-a",
+        "modelId": "model-a",
+        "transform": {
+          "pos": {
+            "x": 3,
+            "y": 0,
+            "z": 0
+          },
+          "rot": {
+            "w": 1,
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        }
+      }
+    }
+  },
   "knots": {
     "knot-a": {
       "diameter": 1.1,
