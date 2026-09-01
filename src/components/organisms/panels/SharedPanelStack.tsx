@@ -5,6 +5,7 @@ import type { SliceExportArtifact, SliceExportResult } from '@/features/slicing/
 import type { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import type { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import type { useTransformManager } from '@/features/transform/useTransformManager';
+import { SUPPORT_STATE_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 
 type DebugStamp = { perfMs: number; epochMs: number };
 type Vec3Like = { x: number; y: number; z: number };
@@ -53,17 +54,7 @@ type TransformDebugStats = {
     lastPushApplied: boolean | null;
     lastAt: DebugStamp | null;
   };
-  supportCounts: {
-    trunks: number;
-    branches: number;
-    leaves: number;
-    twigs: number;
-    sticks: number;
-    braces: number;
-    roots: number;
-    knots: number;
-    kickstands: number;
-  };
+  supportCounts: Record<string, number>;
 };
 
 type SupportDebugStats = {
@@ -104,17 +95,18 @@ type SupportDebugStats = {
   hoveredIdForVisual: string | null;
 };
 
-type SupportEntityCounts = {
-  trunks: number;
-  branches: number;
-  leaves: number;
-  twigs: number;
-  sticks: number;
-  braces: number;
-  roots: number;
-  knots: number;
-  kickstands: number;
-};
+/** One count per collection, derived so a new support type is counted too. */
+type SupportEntityCounts = Record<SupportCollectionKey, number>;
+
+/** Debug rows: the support types in registry order, then the primitives. */
+const SUPPORT_COUNT_ROWS: ReadonlyArray<{ key: SupportCollectionKey; label: string }> = [
+  ...SUPPORT_STATE_TYPES.map((descriptor) => ({
+    key: descriptor.location.key as SupportCollectionKey,
+    label: descriptor.label,
+  })),
+  { key: 'roots' as SupportCollectionKey, label: 'Roots' },
+  { key: 'knots' as SupportCollectionKey, label: 'Knots' },
+];
 
 export type SharedPanelStackProps = {
   scene: ReturnType<typeof useSceneCollectionManager>;
@@ -388,15 +380,11 @@ export function SharedPanelStack({
             <div className="mb-1 text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
               Support Counts (all / active model)
             </div>
-            <div>Trunks: {transformDebugStats.supportCounts.trunks} / {activeSupportEntityCounts.trunks}</div>
-            <div>Branches: {transformDebugStats.supportCounts.branches} / {activeSupportEntityCounts.branches}</div>
-            <div>Leaves: {transformDebugStats.supportCounts.leaves} / {activeSupportEntityCounts.leaves}</div>
-            <div>Twigs: {transformDebugStats.supportCounts.twigs} / {activeSupportEntityCounts.twigs}</div>
-            <div>Sticks: {transformDebugStats.supportCounts.sticks} / {activeSupportEntityCounts.sticks}</div>
-            <div>Braces: {transformDebugStats.supportCounts.braces} / {activeSupportEntityCounts.braces}</div>
-            <div>Roots: {transformDebugStats.supportCounts.roots} / {activeSupportEntityCounts.roots}</div>
-            <div>Knots: {transformDebugStats.supportCounts.knots} / {activeSupportEntityCounts.knots}</div>
-            <div>Kickstands: {transformDebugStats.supportCounts.kickstands} / {activeSupportEntityCounts.kickstands}</div>
+            {SUPPORT_COUNT_ROWS.map(({ key, label }) => (
+              <div key={key}>
+                {label}: {transformDebugStats.supportCounts[key] ?? 0} / {activeSupportEntityCounts[key] ?? 0}
+              </div>
+            ))}
           </div>
 
           {scene.mode !== 'support' && scene.mode !== 'printing' && (

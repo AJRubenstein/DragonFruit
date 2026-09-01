@@ -58,6 +58,7 @@ import {
 } from '@/components/controls/ArrangePanel';
 import { DuplicatePanel, type DuplicateLayoutMode } from '../components/controls/DuplicatePanel';
 import { VisualSettingsPanel } from '@/components/controls/VisualSettingsPanel';
+import { countSupportCollections, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 import { LayerSlider } from '@/components/controls/LayerSlider';
 import { PrintingLayerGpuPreview } from '@/components/controls/PrintingLayerGpuPreview';
 import { SupportSidebar } from '@/supports/Settings';
@@ -1873,27 +1874,17 @@ export default function Home() {
 
   const activeSupportEntityCounts = React.useMemo(() => {
     const modelId = scene.activeModelId;
-    if (!modelId) {
-      return {
-        trunks: 0,
-        branches: 0,
-        leaves: 0,
-        twigs: 0,
-        sticks: 0,
-        braces: 0,
-        roots: 0,
-        knots: 0,
-        kickstands: 0,
-      };
-    }
+    const emptyCounts = () => {
+      const zeros = {} as Record<SupportCollectionKey, number>;
+      for (const key of SUPPORT_COLLECTION_KEYS) zeros[key] = 0;
+      return zeros;
+    };
+    if (!modelId) return emptyCounts();
 
-    const trunks = Object.values(supportStateSnapshot.trunks).filter((item) => item.modelId === modelId).length;
-    const branches = Object.values(supportStateSnapshot.branches).filter((item) => item.modelId === modelId).length;
-    const leaves = Object.values(supportStateSnapshot.leaves).filter((item) => item.modelId === modelId).length;
-    const twigs = Object.values(supportStateSnapshot.twigs).filter((item) => item.modelId === modelId).length;
-    const sticks = Object.values(supportStateSnapshot.sticks).filter((item) => item.modelId === modelId).length;
-    const braces = Object.values(supportStateSnapshot.braces).filter((item) => item.modelId === modelId).length;
-    const roots = Object.values(supportStateSnapshot.roots).filter((item) => item.modelId === modelId).length;
+    const counts = emptyCounts();
+    const byModel = getSupportsForModel(supportStateSnapshot, modelId);
+    for (const key of MODEL_ID_COLLECTION_KEYS) counts[key] = byModel[key].length;
+
     const knots = Object.values(supportStateSnapshot.knots).filter((item) => {
       const parent = item.parentShaftId;
       const trunk = supportStateSnapshot.trunks[parent];
@@ -1910,10 +1901,9 @@ export default function Home() {
       }
       return false;
     }).length;
-    const kickstands = Object.values(kickstandStateSnapshot.kickstands).filter((item) => item.modelId === modelId).length;
-
-    return { trunks, branches, leaves, twigs, sticks, braces, roots, knots, kickstands };
-  }, [kickstandStateSnapshot.kickstands, scene.activeModelId, supportStateSnapshot.braces, supportStateSnapshot.branches, supportStateSnapshot.knots, supportStateSnapshot.leaves, supportStateSnapshot.roots, supportStateSnapshot.sticks, supportStateSnapshot.trunks, supportStateSnapshot.twigs]);
+    counts.knots = knots;
+    return counts;
+  }, [scene.activeModelId, supportStateSnapshot]);
 
   const transformDebugStats = React.useMemo(() => {
     const activeModel = scene.models.find((m) => m.id === scene.activeModelId) ?? null;
@@ -2006,19 +1996,9 @@ export default function Home() {
         lastPushApplied: historyDebug.lastPushApplied,
         lastAt: historyDebug.lastAt,
       },
-      supportCounts: {
-        trunks: countRecordEntries(supportStateSnapshot.trunks),
-        branches: countRecordEntries(supportStateSnapshot.branches),
-        leaves: countRecordEntries(supportStateSnapshot.leaves),
-        twigs: countRecordEntries(supportStateSnapshot.twigs),
-        sticks: countRecordEntries(supportStateSnapshot.sticks),
-        braces: countRecordEntries(supportStateSnapshot.braces),
-        roots: countRecordEntries(supportStateSnapshot.roots),
-        knots: countRecordEntries(supportStateSnapshot.knots),
-        kickstands: countRecordEntries(kickstandStateSnapshot.kickstands),
-      },
+      supportCounts: countSupportCollections(supportStateSnapshot),
     };
-  }, [kickstandStateSnapshot.kickstands, scene.activeModelId, scene.models, supportDragGroupRef, supportStateSnapshot.braces, supportStateSnapshot.branches, supportStateSnapshot.knots, supportStateSnapshot.leaves, supportStateSnapshot.roots, supportStateSnapshot.sticks, supportStateSnapshot.trunks, supportStateSnapshot.twigs, transformDebugTick, transformMgr.transform]);
+  }, [scene.activeModelId, scene.models, supportDragGroupRef, supportStateSnapshot, transformDebugTick, transformMgr.transform]);
 
   const supportDebugStats = React.useMemo(() => {
     const snapTarget = bracePlacementSnapshot.snapTarget;
