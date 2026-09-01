@@ -60,13 +60,13 @@ export function resolveSupportCategoryFromSnapshot(id: string) {
   if (snapshot.sticks[id]) return 'stick' as const;
   if (snapshot.braces[id]) return 'brace' as const;
   if (snapshot.anchors[id]) return 'anchor' as const;
-  if (getKickstandSnapshot().kickstands[id]) return 'kickstand' as const;
+  if (getSnapshot().kickstands[id]) return 'kickstand' as const;
   return null;
 }
 
 function collectAllSupportIds() {
   const snapshot = getSnapshot();
-  const kickstandSnapshot = getKickstandSnapshot();
+  const kickstandSnapshot = getSnapshot();
 
   return [
     ...Object.keys(snapshot.trunks),
@@ -84,7 +84,7 @@ export function resolveSupportOwnerFromSegmentId(segmentId: string): { category:
   if (!segmentId) return null;
 
   const snapshot = getSnapshot();
-  const kickstandSnapshot = getKickstandSnapshot();
+  const kickstandSnapshot = getSnapshot();
 
   if (segmentId.startsWith('braceSegment:')) {
     const braceId = segmentId.slice('braceSegment:'.length);
@@ -127,7 +127,7 @@ export function resolveSupportOwnerFromSegmentId(segmentId: string): { category:
 export function resolveSupportOwnerFromJointId(jointId: string): { category: 'kickstand'; id: string } | null {
   if (!jointId) return null;
 
-  const kickstandSnapshot = getKickstandSnapshot();
+  const kickstandSnapshot = getSnapshot();
   for (const kickstand of Object.values(kickstandSnapshot.kickstands)) {
     const ownsJoint = kickstand.segments.some((segment) =>
       segment.bottomJoint?.id === jointId || segment.topJoint?.id === jointId,
@@ -500,7 +500,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
           return true;
         }
 
-        const kickstands = Object.values(getKickstandSnapshot().kickstands);
+        const kickstands = Object.values(getSnapshot().kickstands);
         const kickstand = kickstands.find((ks) => ks.hostKnotId === id);
         if (kickstand) {
           const kickstandSnapshots = removeKickstandCascade(kickstand.id);
@@ -649,7 +649,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         const braces = getBraces();
         if (braces.some(br => br.startKnotId === id || br.endKnotId === id)) return true;
 
-        const kickstands = Object.values(getKickstandSnapshot().kickstands);
+        const kickstands = Object.values(getSnapshot().kickstands);
         if (kickstands.some((ks) => ks.hostKnotId === id)) return true;
 
         return false;

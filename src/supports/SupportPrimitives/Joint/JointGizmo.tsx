@@ -617,7 +617,7 @@ export function JointGizmo() {
                 clearSupportDragPreview('stick', stick.id);
                 pushSupportEditHistory('Move stick joint', initialEditSnapshotRef.current, captureSupportEditSnapshot());
             } else if (kickstand) {
-                const committedKickstand = liveKickstandPreviewRef.current ?? getKickstandSnapshot().kickstands[kickstand.id];
+                const committedKickstand = liveKickstandPreviewRef.current ?? getSnapshot().kickstands[kickstand.id];
                 if (committedKickstand) {
                     commitJointDragSupport('kickstand', committedKickstand);
                 }

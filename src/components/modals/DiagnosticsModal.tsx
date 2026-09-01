@@ -120,7 +120,7 @@ function formatFps(value: number | null | undefined, digits = 1): string {
 
 function computeSupportDiagnostics(): SupportDiagnosticsStats {
   const supportState = getSupportSnapshot();
-  const kickstandState = getKickstandSnapshot();
+  const kickstandState = getSupportSnapshot();
   const picking = getPickingDiagnosticsSnapshot();
 
   const trunks = Object.values(supportState.trunks);
