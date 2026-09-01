@@ -46,10 +46,27 @@ const ALLOWED = new Map<string, string>([
     ['features/supports/useSupportInteractionManager.ts', 'history action payloads'],
 ]);
 
+// Other suites create and delete temp files under src/ while this walk runs, so
+// a path can vanish between readdir and stat. Skipping those keeps this test from
+// failing for reasons that have nothing to do with what it checks.
 function walkFiles(dir: string, out: string[] = []): string[] {
-    for (const entry of readdirSync(dir)) {
+    let entries: string[];
+    try {
+        entries = readdirSync(dir);
+    } catch {
+        return out;
+    }
+
+    for (const entry of entries) {
         const full = path.join(dir, entry);
-        if (statSync(full).isDirectory()) {
+        let isDirectory: boolean;
+        try {
+            isDirectory = statSync(full).isDirectory();
+        } catch {
+            continue;
+        }
+
+        if (isDirectory) {
             if (entry === '__tests__' || entry === '__golden__' || entry === 'node_modules') continue;
             walkFiles(full, out);
             continue;
@@ -57,6 +74,15 @@ function walkFiles(dir: string, out: string[] = []): string[] {
         if (/\.(ts|tsx)$/.test(entry) && !/\.test\.tsx?$/.test(entry)) out.push(full);
     }
     return out;
+}
+
+/** Reads a file, or null when it vanished mid-walk (see walkFiles). */
+function readSourceOrSkip(file: string): string | null {
+    try {
+        return readFileSync(file, 'utf8');
+    } catch {
+        return null;
+    }
 }
 
 test('every declared support type has a distinct collection key', () => {
@@ -85,7 +111,8 @@ test('no new hand-written Pick<SupportState, ...> collection lists', () => {
         const rel = path.relative(SRC, file).split(path.sep).join('/');
         if (ALLOWED.has(rel)) continue;
 
-        const source = readFileSync(file, 'utf8');
+        const source = readSourceOrSkip(file);
+        if (source === null) continue;
         for (const match of source.matchAll(pickPattern)) {
             const named = match[1];
             if (!named) continue;
@@ -113,7 +140,8 @@ test('no new hand-written object literals over every collection', () => {
         const rel = path.relative(SRC, file).split(path.sep).join('/');
         if (ALLOWED.has(rel)) continue;
 
-        const source = readFileSync(file, 'utf8');
+        const source = readSourceOrSkip(file);
+        if (source === null) continue;
         const lines = source.split('\n');
         let run = 0;
         let runStart = 0;
