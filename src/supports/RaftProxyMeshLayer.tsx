@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { usePicking } from '@/components/picking';
 import { subscribe, getSnapshot } from './state';
-import { getKickstandSnapshot, subscribeToKickstandStore } from './SupportTypes/Kickstand/kickstandStore';
+import { subscribeToKickstandStore, getKickstandSnapshot } from './SupportTypes/Kickstand/kickstandStore';
 import { getRaftSettings, subscribeToRaftStore } from './Rafts/Crenelated/RaftState';
 import type { RaftSettings } from './Rafts/Crenelated/RaftTypes';
 import { buildSolidRaftPreviewMeshes } from './Settings/AnatomyPreview/PreviewTypes/Raft/buildSolidRaftPreviewMeshes';
