@@ -4,7 +4,7 @@ import test from 'node:test';
 import { clearHistory, registerHistoryHandler, undo } from '../../history/historyStore';
 import { SUPPORT_AUTO_BRACE_REPLACE } from '../history/actionTypes';
 import { runAutoBracing } from '../autoBracing/autoBrace';
-import { resetStore, setSnapshot } from '../state';
+import { getSnapshot, resetStore, setSnapshot  } from '../state';
 import { getKickstandSnapshot, resetKickstandStore } from '../SupportTypes/Kickstand/kickstandStore';
 import type { Roots, SupportState, Trunk } from '../types';
 
@@ -71,7 +71,11 @@ function seedLadderSnapshot(): void {
     setSnapshot(snapshot);
 }
 
-test('runAutoBracing records kickstand snapshots so undo can restore the kickstand store', () => {
+// Rewritten from asserting the payload SHAPE (kickstandBefore/kickstandAfter) to
+// asserting the OUTCOME. Those fields existed because kickstands lived in a second
+// store that setSnapshot did not restore; they are a SupportState collection now,
+// so what matters is that one snapshot round-trips both.
+test('the auto-brace history snapshot carries kickstands with everything else', () => {
     resetStore();
     resetKickstandStore();
     clearHistory();
@@ -84,23 +88,29 @@ test('runAutoBracing records kickstand snapshots so undo can restore the kicksta
     });
 
     try {
-        const kickstandBeforeRun = structuredClone(getKickstandSnapshot());
+        const before = getSnapshot();
         const result = runAutoBracing();
         assert.equal(result.changed, true, 'ladder setup must generate braces for this test to be meaningful');
-        const kickstandAfterRun = structuredClone(getKickstandSnapshot());
 
         undo();
-
         assert.equal(captured.length, 1, 'undo must dispatch the auto-brace history action');
-        const payload = captured[0].payload as {
-            kickstandBefore?: unknown;
-            kickstandAfter?: unknown;
-        };
 
-        assert.ok(payload.kickstandBefore, 'SUPPORT_AUTO_BRACE_REPLACE payload must carry kickstandBefore');
-        assert.ok(payload.kickstandAfter, 'SUPPORT_AUTO_BRACE_REPLACE payload must carry kickstandAfter');
-        assert.deepEqual(payload.kickstandBefore, kickstandBeforeRun);
-        assert.deepEqual(payload.kickstandAfter, kickstandAfterRun);
+        // The spy above swallows the action, so restore from the payload by hand:
+        // this asserts the payload is sufficient, which is the property that used
+        // to need a second kickstand snapshot alongside it.
+        const payload = captured[0].payload as { before: ReturnType<typeof getSnapshot> };
+        setSnapshot(payload.before);
+
+        assert.deepEqual(
+            Object.keys(getSnapshot().braces).sort(),
+            Object.keys(before.braces).sort(),
+            'restoring payload.before puts the braces back',
+        );
+        assert.deepEqual(
+            Object.keys(getSnapshot().kickstands).sort(),
+            Object.keys(before.kickstands).sort(),
+            'and the kickstands with them -- no separate kickstand snapshot needed',
+        );
     } finally {
         unregister();
         clearHistory();

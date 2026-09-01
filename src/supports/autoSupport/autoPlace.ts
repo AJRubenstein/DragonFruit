@@ -2204,7 +2204,6 @@ export function computeAutoSupportPlan(
     // reported as unchanged, so the caller commits nothing.
     const noopPlan = (result: AutoPlaceResult): AutoSupportPlan => ({
         before,
-        kickstandBefore,
         support: draft,
         kickstand: kickstandDraft,
         analytics: {
@@ -3192,7 +3191,6 @@ export function computeAutoSupportPlan(
 
     return {
         before,
-        kickstandBefore,
         support: draft,
         kickstand: kickstandDraft,
         analytics,
@@ -3216,16 +3214,14 @@ export function runAutoPlace(
     }
 
     if (plan.result.changed) {
+        // plan.support carries the kickstands now, so one write restores everything.
         setSnapshot(plan.support);
-        setKickstandSnapshot(plan.kickstand);
         try {
             pushSupportHistory({
                 type: SUPPORT_AUTO_PLACE,
                 payload: {
                     before: plan.before,
                     after: plan.support,
-                    kickstandBefore: plan.kickstandBefore,
-                    kickstandAfter: plan.kickstand,
                 },
             });
             console.log(LOG_PREFIX, 'History entry pushed — undo available.');

@@ -128,8 +128,6 @@ export interface SupportReplaceTrunkPayload {
 export interface SupportReplaceStatePayload {
   before: SupportState;
   after: SupportState;
-  kickstandBefore?: KickstandState;
-  kickstandAfter?: KickstandState;
 }
 
 export interface SupportBlockerStrokePayload {

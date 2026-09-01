@@ -688,8 +688,6 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
             payload: {
               before: beforeSupportSnapshot,
               after: afterSupportSnapshot,
-              kickstandBefore: beforeKickstandSnapshot,
-              kickstandAfter: afterKickstandSnapshot,
             },
           });
         }
