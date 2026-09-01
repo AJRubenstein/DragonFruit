@@ -46,10 +46,11 @@ import {
   THEME_CUSTOM_PROFILES_STORAGE_KEY,
   THEME_PRESET_STORAGE_KEY,
   THEME_STORAGE_KEY,
-  type ThemePreset,
   type ThemeCustomColors,
+  type ThemePreset,
   type SavedCustomThemeProfile,
 } from '@/components/settings/themeCustomizations';
+import { DEFAULT_HOVER_COLOR, DEFAULT_SELECTION_COLOR } from '@/features/scene/useSceneCollectionManager';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -556,16 +557,42 @@ export function SettingsModal({
   ]);
 
   const handleThemeColorChange = React.useCallback((key: keyof ThemeCustomColors, value: string) => {
+    if (key === 'accent' && typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)) {
+      const oldAccent = draftThemeColors.accent?.toLowerCase();
+      const newAccent = value.toLowerCase();
+      if (oldAccent && newAccent && oldAccent !== newAccent) {
+        const selLower = draftSelectionColor.toLowerCase();
+        const hovLower = draftHoverColor.toLowerCase();
+        if (selLower === oldAccent) setDraftSelectionColor(value);
+        if (hovLower === oldAccent) setDraftHoverColor(value);
+      }
+    }
     setDraftThemeColors((prev) => ({
       ...prev,
       [key]: value,
     }));
-  }, []);
-
+  }, [draftThemeColors.accent, draftSelectionColor, draftHoverColor]);
   const restoreSavedThemePreview = React.useCallback(() => {
     applyThemePreference(getSavedThemePreference());
     applyThemeCustomColors(getSavedThemeCustomColors());
   }, []);
+  const handleThemePresetChange = React.useCallback((preset: ThemePreset) => {
+    const oldProfile = getThemeProfile(draftThemePreset, draftThemeProfiles);
+    const newProfile = getThemeProfile(preset, draftThemeProfiles);
+    const oldAccent = oldProfile.colors.accent?.toLowerCase();
+    const newAccent = newProfile.colors.accent?.toLowerCase();
+    if (oldAccent && newAccent && oldAccent !== newAccent) {
+      const selLower = draftSelectionColor.toLowerCase();
+      const hovLower = draftHoverColor.toLowerCase();
+      const defSel = DEFAULT_SELECTION_COLOR.toLowerCase();
+      const defHov = DEFAULT_HOVER_COLOR.toLowerCase();
+      const isSelDefault = selLower === oldAccent || selLower === defSel;
+      const isHovDefault = hovLower === oldAccent || hovLower === defHov;
+      if (isSelDefault) setDraftSelectionColor(newProfile.colors.accent);
+      if (isHovDefault) setDraftHoverColor(newProfile.colors.accent);
+    }
+    setThemeDraftFromProfile(preset, draftThemeProfiles);
+  }, [draftThemePreset, draftThemeProfiles, draftSelectionColor, draftHoverColor, setThemeDraftFromProfile]);
 
   const handleDraftHeatmapColorChange = React.useCallback((index: number, color: string) => {
     setDraftHeatmapColors((prev) => {
@@ -574,10 +601,6 @@ export function SettingsModal({
       return copy;
     });
   }, []);
-
-  const handleThemePresetChange = React.useCallback((preset: ThemePreset) => {
-    setThemeDraftFromProfile(preset, draftThemeProfiles);
-  }, [draftThemeProfiles, setThemeDraftFromProfile]);
 
   const handleResetThemeColors = React.useCallback(() => {
     const profile = getThemeProfile(draftThemePreset, draftThemeProfiles);
@@ -925,9 +948,27 @@ export function SettingsModal({
     draftHeatmapColors.forEach((color, i) => onHeatmapColorChange(i, color));
     onHoverTintStrengthChange(draftHoverTintStrength);
     onSelectedTintStrengthChange(draftSelectedTintStrength);
-    onSelectionColorChange(draftSelectionColor);
-    onHoverColorChange(draftHoverColor);
-
+    // Auto-apply theme accent to selection/hover if not user-overridden (theme changed and selection still at old default)
+    let finalSelectionColor = draftSelectionColor;
+    let finalHoverColor = draftHoverColor;
+    try {
+      const savedThemeAccent = getSavedThemeCustomColors().accent?.toLowerCase();
+      const draftAccent = draftThemeColors.accent?.toLowerCase();
+      if (savedThemeAccent && draftAccent && savedThemeAccent !== draftAccent) {
+        const savedSel = selectionColor.toLowerCase();
+        const defSel = DEFAULT_SELECTION_COLOR.toLowerCase();
+        const isSavedSelDefault = savedSel === savedThemeAccent || savedSel === defSel;
+        const isDraftSelUnchanged = draftSelectionColor.toLowerCase() === savedSel;
+        if (isSavedSelDefault && isDraftSelUnchanged) finalSelectionColor = draftThemeColors.accent;
+        const savedHov = hoverColor.toLowerCase();
+        const defHov = DEFAULT_HOVER_COLOR.toLowerCase();
+        const isSavedHovDefault = savedHov === savedThemeAccent || savedHov === defHov;
+        const isDraftHovUnchanged = draftHoverColor.toLowerCase() === savedHov;
+        if (isSavedHovDefault && isDraftHovUnchanged) finalHoverColor = draftThemeColors.accent;
+      }
+    } catch {}
+    onSelectionColorChange(finalSelectionColor);
+    onHoverColorChange(finalHoverColor);
     applyThemePreference(draftThemePreference);
     applyThemeCustomColors(draftThemeColors);
     setFloatingLayoutPersistenceEnabled(draftFloatingLayoutPersistence);
@@ -981,6 +1022,8 @@ export function SettingsModal({
     draftSelectedTintStrength,
     draftSelectionColor,
     draftHoverColor,
+    selectionColor,
+    hoverColor,
     draftCameraScope,
     draftHigherContrastModelEdges,
     draftThemePreset,
@@ -1533,6 +1576,8 @@ export function SettingsModal({
                   onHoverTintStrengthChange={setDraftHoverTintStrength}
                   selectedTintStrength={draftSelectedTintStrength}
                   onSelectedTintStrengthChange={setDraftSelectedTintStrength}
+                  defaultSelectionColor={draftThemeColors.accent}
+                  defaultHoverColor={draftThemeColors.accent}
                 />
               )}
               {activeTab === 'performance' && (

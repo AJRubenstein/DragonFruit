@@ -177,8 +177,8 @@ async fn check_updates_impl(
                                     body = Some(b.to_string());
                                 }
                             }
-                            if let Some(pub_at) = json.get("published_at").and_then(|v| v.as_str()) {
-                                // Try to keep date from GitHub if updater date is None
+                            if let Some(_pub_at) = json.get("published_at").and_then(|v| v.as_str()) {
+                                // Try to keep date from GitHub if updater date is None (currently unused — updater provides date)
                             }
                         }
                     }
