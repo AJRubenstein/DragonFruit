@@ -1,7 +1,6 @@
 import type { Knot, SupportState } from '../types';
 import type { SupportCollectionKey } from '../supportTypeRegistry';
 import { SUPPORT_STATE_TYPES } from '../supportTypeRegistry';
-import type { KickstandState } from '../SupportTypes/Kickstand/types';
 
 /**
  * Collections whose entities carry `segments`. Braces are excluded: their knots
@@ -26,7 +25,6 @@ export interface SupportRenderLookupSnapshot {
 
 export interface SupportRenderLookupInput {
   state: Pick<SupportState, SupportCollectionKey>;
-  kickstandState: Pick<KickstandState, 'kickstands' | 'knots'>;
   activePreviewSupport?: {
     kind: 'trunk' | 'branch' | 'kickstand' | null;
     support: { segments: Array<{ id: string }> } | null;
@@ -38,7 +36,7 @@ export interface SupportRenderLookupComputeOptions {
 }
 
 export function computeSupportRenderLookup(input: SupportRenderLookupInput, options?: SupportRenderLookupComputeOptions): SupportRenderLookupSnapshot {
-  const { state, kickstandState, activePreviewSupport } = input;
+  const { state, activePreviewSupport } = input;
   const shouldAbort = options?.shouldAbort;
 
   const supportIdBySegmentId: Record<string, string> = {};
@@ -144,21 +142,14 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
     }
   }
 
-  for (const knot of Object.values(kickstandState.knots)) {
+  // Kickstand host knots are ordinary entries in state.knots, so the loop above
+  // has already indexed them. All that is left is the kickstand-specific bucket
+  // the renderer uses to spot knots hosted on a kickstand shaft.
+  for (const kickstand of Object.values(state.kickstands)) {
     if (shouldAbort?.()) break;
-    const parentShaftId = knot.parentShaftId;
-    entityModelIdByKnotId[knot.id] = parentShaftId.startsWith('braceSegment:')
-      ? state.braces[parentShaftId.slice('braceSegment:'.length)]?.modelId
-      : parentShaftId.startsWith('leafCone:')
-        ? state.leaves[parentShaftId.slice('leafCone:'.length)]?.modelId
-        : entitySegmentModelIdById[parentShaftId];
-    const parentSupportId = supportIdBySegmentId[parentShaftId];
-    if (parentSupportId) {
-      supportIdByKnotId[knot.id] = parentSupportId;
-      pushKnotId(knotIdsByParentShaftId, parentShaftId, knot.id);
-    }
-
-    pushKnotId(kickstandKnotIdsByParentShaftId, parentShaftId, knot.id);
+    const hostKnot = state.knots[kickstand.hostKnotId];
+    if (!hostKnot) continue;
+    pushKnotId(kickstandKnotIdsByParentShaftId, hostKnot.parentShaftId, hostKnot.id);
   }
 
   const previewCandidateKnots: Record<string, Knot> = {};
@@ -176,7 +167,7 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
       const kickstandIds = kickstandKnotIdsByParentShaftId[segment.id] ?? [];
       for (const knotId of kickstandIds) {
         if (shouldAbort?.()) break;
-        const knot = kickstandState.knots[knotId];
+        const knot = state.knots[knotId];
         if (knot) previewCandidateKnots[knotId] = knot;
       }
     }
