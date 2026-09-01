@@ -3853,18 +3853,6 @@ export function updateKnot(knot: Knot, options?: { skipDependentGeometry?: boole
     const existing = state.knots[knot.id];
     if (!existing) return;
 
-    const kickstandState = getKickstandSnapshot();
-    const hostKickstand = Object.values(kickstandState.kickstands).find((kickstand) => kickstand.hostKnotId === knot.id);
-    if (hostKickstand) {
-        setKickstandSnapshot({
-            ...kickstandState,
-            knots: {
-                ...kickstandState.knots,
-                [knot.id]: knot,
-            },
-        });
-    }
-
     const baseKnots = { ...state.knots, [knot.id]: knot };
 
     if (skipDependentGeometry) {
@@ -3930,20 +3918,6 @@ export function applyKnotDragFramePreview(
 
     if (knotUnchanged && !branchesChanged) {
         return;
-    }
-
-    if (!knotUnchanged) {
-        const kickstandState = getKickstandSnapshot();
-        const hostKickstand = Object.values(kickstandState.kickstands).find((kickstand) => kickstand.hostKnotId === knot.id);
-        if (hostKickstand) {
-            setKickstandSnapshot({
-                ...kickstandState,
-                knots: {
-                    ...kickstandState.knots,
-                    [knot.id]: knot,
-                },
-            });
-        }
     }
 
     let nextKnots = state.knots;
