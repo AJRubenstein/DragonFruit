@@ -537,6 +537,31 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
             twigSegmentMap.set(segment.id, { twig, segment, segmentIndex });
         });
     }
+    // Kickstands live in their own store, so a knot hosted on one is invisible to
+    // a SupportState-only walk. Their segments chain root top -> host knot, so
+    // endpoints come from the neighbours: the first has no bottomJoint and the
+    // last no topJoint.
+    const kickstandSegmentEndpoints = new Map<string, { start: Vec3; end: Vec3 }>();
+    const kickstandState = getKickstandSnapshot();
+    for (const kickstand of Object.values(kickstandState.kickstands)) {
+        const root = kickstandState.roots[kickstand.rootId];
+        const hostKnot = kickstandState.knots[kickstand.hostKnotId];
+        if (!root || !hostKnot) continue;
+
+        let start: Vec3 = {
+            x: root.transform.pos.x,
+            y: root.transform.pos.y,
+            z: root.transform.pos.z + (root.diskHeight ?? 0) + (root.coneHeight ?? 0),
+        };
+        kickstand.segments.forEach((segment, index) => {
+            const isLast = index === kickstand.segments.length - 1;
+            const end = segment.topJoint?.pos ?? (isLast ? hostKnot.pos : null);
+            if (!end) return;
+            kickstandSegmentEndpoints.set(segment.id, { start: { ...start }, end: { ...end } });
+            start = end;
+        });
+    }
+
     const stickSegmentMap = new Map<string, { stick: Stick; segment: Segment; segmentIndex: number }>();
     for (const stick of Object.values(snapshot.sticks)) {
         stick.segments.forEach((segment, segmentIndex) => {
@@ -652,6 +677,14 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
                         segment = stickRef.segment;
                         endpoints = stickEndpoints;
                     }
+                }
+            }
+
+            if (!segment || !endpoints) {
+                const kickstandEndpoints = kickstandSegmentEndpoints.get(knot.parentShaftId);
+                if (kickstandEndpoints) {
+                    segment = { id: knot.parentShaftId, type: 'straight' } as Segment;
+                    endpoints = kickstandEndpoints;
                 }
             }
 
