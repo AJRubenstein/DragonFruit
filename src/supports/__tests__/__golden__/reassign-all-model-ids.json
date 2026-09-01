@@ -146,81 +146,44 @@
       ]
     }
   },
-  "kickstandStore": {
-    "kickstands": {
-      "ks-a": {
-        "hostKnotId": "ks-knot-a",
-        "hostMinT": 0.2,
-        "hostSegmentId": "seg-ta",
-        "id": "ks-a",
-        "modelId": "model-target",
-        "profile": {
-          "bodyDiameterMm": 1,
-          "terminalEndDiameterMm": 0.8,
-          "terminalStartDiameterMm": 1.2
-        },
-        "rootId": "ks-root-a",
-        "segments": [
-          {
-            "bottomJoint": {
-              "diameter": 1,
-              "id": "seg-ka-bot",
-              "pos": {
-                "x": 0,
-                "y": 0,
-                "z": 2
-              }
-            },
+  "kickstands": {
+    "ks-a": {
+      "hostKnotId": "ks-knot-a",
+      "hostMinT": 0.2,
+      "hostSegmentId": "seg-ta",
+      "id": "ks-a",
+      "modelId": "model-target",
+      "profile": {
+        "bodyDiameterMm": 1,
+        "terminalEndDiameterMm": 0.8,
+        "terminalStartDiameterMm": 1.2
+      },
+      "rootId": "ks-root-a",
+      "segments": [
+        {
+          "bottomJoint": {
             "diameter": 1,
-            "id": "seg-ka",
-            "topJoint": {
-              "diameter": 1,
-              "id": "seg-ka-top",
-              "pos": {
-                "x": 0,
-                "y": 0,
-                "z": 7
-              }
-            },
-            "type": "straight"
-          }
-        ]
-      }
-    },
-    "knots": {
-      "ks-knot-a": {
-        "diameter": 1.1,
-        "id": "ks-knot-a",
-        "parentShaftId": "seg-ta",
-        "pos": {
-          "x": 0,
-          "y": 0,
-          "z": 3.5
-        },
-        "t": 0.35
-      }
-    },
-    "roots": {
-      "ks-root-a": {
-        "coneHeight": 1.5,
-        "diameter": 3,
-        "diskHeight": 0.5,
-        "id": "ks-root-a",
-        "modelId": "model-target",
-        "transform": {
-          "pos": {
-            "x": 3,
-            "y": 0,
-            "z": 0
+            "id": "seg-ka-bot",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 2
+            }
           },
-          "rot": {
-            "w": 1,
-            "x": 0,
-            "y": 0,
-            "z": 0
-          }
+          "diameter": 1,
+          "id": "seg-ka",
+          "topJoint": {
+            "diameter": 1,
+            "id": "seg-ka-top",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 7
+            }
+          },
+          "type": "straight"
         }
-      }
+      ]
     }
   },
   "knots": {
@@ -245,6 +208,17 @@
         "z": 4.5
       },
       "t": 0.5
+    },
+    "ks-knot-a": {
+      "diameter": 1.1,
+      "id": "ks-knot-a",
+      "parentShaftId": "seg-ta",
+      "pos": {
+        "x": 0,
+        "y": 0,
+        "z": 3.5
+      },
+      "t": 0.35
     }
   },
   "leaves": {
@@ -283,6 +257,26 @@
     }
   },
   "roots": {
+    "ks-root-a": {
+      "coneHeight": 1.5,
+      "diameter": 3,
+      "diskHeight": 0.5,
+      "id": "ks-root-a",
+      "modelId": "model-target",
+      "transform": {
+        "pos": {
+          "x": 3,
+          "y": 0,
+          "z": 0
+        },
+        "rot": {
+          "w": 1,
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    },
     "root-a": {
       "coneHeight": 1.5,
       "diameter": 3,
