@@ -857,7 +857,7 @@ function buildSupportAndRaftWorldTriangles(
 
   const out: WorldTriangle[] = [];
   const supportState = getSupportSnapshot();
-  const kickstandState = getKickstandSnapshot();
+  const kickstandState = getSupportSnapshot();
   const sink: TriangleSink = collector ?? out;
   const raftSettings = getRaftSettings();
   const hasSolidBottom = raftSettings.bottomMode === 'solid';

@@ -63,7 +63,7 @@ function remapSupportJoint<T extends { id: string; pos: { x: number; y: number; 
 
 function extractSupportClipboardPayload(modelId: string): SupportClipboardPayload | null {
   const state = getSnapshot();
-  const kickstandState = getKickstandSnapshot();
+  const kickstandState = getSnapshot();
 
   const roots = Object.values(state.roots).filter((item) => item.modelId === modelId).map(clonePlain);
   const trunks = Object.values(state.trunks).filter((item) => item.modelId === modelId).map(clonePlain);
@@ -153,7 +153,7 @@ function mergeSupportClipboardPayload(
   targetModelId: string,
 ): { mergedState: SupportState; mergedKickstandState: KickstandState } {
   const state = getSnapshot();
-  const kickstandState = getKickstandSnapshot();
+  const kickstandState = getSnapshot();
 
   const rootIdMap = new Map<string, string>();
   const knotIdMap = new Map<string, string>();
@@ -473,7 +473,7 @@ export function estimateSupportBoundsForModel(modelId: string): SupportModelBoun
   if (!modelId) return null;
 
   const state = getSnapshot();
-  const kickstandState = getKickstandSnapshot();
+  const kickstandState = getSnapshot();
   const raftSettings = getRaftSettings();
 
   let minX = Number.POSITIVE_INFINITY;

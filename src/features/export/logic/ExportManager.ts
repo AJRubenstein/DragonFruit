@@ -958,7 +958,7 @@ export class ExportManager {
     if (options.includeSupports) {
       if (hasScopedModelFilter) {
         const supportSnapshot = getSnapshot();
-        const kickstandSnapshot = getKickstandSnapshot();
+        const kickstandSnapshot = supportSnapshot;
         const scopedSupports = buildScopedSupportGeometryGroup(supportSnapshot, kickstandSnapshot, scopedModelIds);
         if (scopedSupports.children.length > 0) {
           exportObjects.push(scopedSupports);
@@ -974,7 +974,7 @@ export class ExportManager {
       const globalRaftSettings = getRaftSettings();
       if (globalRaftSettings.bottomMode !== 'off') {
         const supportState = getSnapshot();
-        const kickstandState = getKickstandSnapshot();
+        const kickstandState = getSnapshot();
         const allRoots = Object.values(supportState.roots);
         const allKickstandRoots = Object.values(kickstandState.roots);
 
@@ -1190,7 +1190,7 @@ export class ExportManager {
     await this.yieldToBrowserFrame();
 
     const supportSnapshot = getSnapshot();
-    const kickstandSnapshot = getKickstandSnapshot();
+    const kickstandSnapshot = getSnapshot();
 
     const scopedModelIds = new Set((sceneContext?.models ?? []).map((model) => model.id));
     const hasScopedModelFilter = scopedModelIds.size > 0;

@@ -160,7 +160,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             for (const branch of getBranches()) {
                 for (const seg of branch.segments) map.set(seg.id, { containerType: 'branch', entityId: branch.id });
             }
-            for (const kickstand of Object.values(getKickstandSnapshot().kickstands)) {
+            for (const kickstand of Object.values(getSnapshot().kickstands)) {
                 for (const seg of kickstand.segments) map.set(seg.id, { containerType: 'kickstand', entityId: kickstand.id });
             }
             for (const twig of getTwigs()) {
@@ -398,7 +398,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                     host = { segmentId: knot.parentShaftId, containerType: 'branch', branch, parentKnot, start: new THREE.Vector3(), end: new THREE.Vector3(), initialTopology: {} };
                 }
             } else if (cacheEntry.containerType === 'kickstand') {
-                const kickstandState = getKickstandSnapshot();
+                const kickstandState = getSnapshot();
                 const kickstand = kickstandState.kickstands[cacheEntry.entityId];
                 if (kickstand) {
                     const kickstandRoot = kickstandState.roots[kickstand.rootId];
