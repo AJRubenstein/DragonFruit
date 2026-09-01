@@ -52,10 +52,9 @@ test('kickstand is a peer type, not a brace', () => {
   assert.notEqual(kickstand.selectionCategory, getSupportTypeDescriptor('brace').selectionCategory);
 });
 
-test('kickstand is the only type outside SupportState', () => {
-  const external = SUPPORT_TYPES.filter((d) => d.location.store !== 'support');
-  assert.deepEqual(external.map((d) => d.id), ['kickstand']);
-  assert.equal(SUPPORT_STATE_TYPES.length, SUPPORT_TYPES.length - 1);
+test('every type lives on SupportState', () => {
+  assert.deepEqual(SUPPORT_TYPES.filter((d) => d.location.store !== 'support'), []);
+  assert.equal(SUPPORT_STATE_TYPES.length, SUPPORT_TYPES.length);
 });
 
 test('all types carry a modelId', () => {
@@ -83,7 +82,7 @@ test('empty collections start empty and are not shared between calls', () => {
 test('selection resolves roots first, then support types in registry order', () => {
   assert.deepEqual(
     SUPPORT_STATE_COLLECTIONS.map((c) => c.selectionCategory),
-    ['root', 'trunk', 'branch', 'leaf', 'twig', 'stick', 'brace', 'anchor'],
+    ['root', 'trunk', 'branch', 'leaf', 'twig', 'stick', 'brace', 'anchor', 'kickstand'],
   );
 });
 
@@ -92,11 +91,8 @@ test('knots are a primitive collection, not a selection-order entry', () => {
   assert.ok(!SUPPORT_STATE_COLLECTIONS.some((c) => c.key === 'knots'));
 });
 
-// Stage 3 step 1 moved kickstand STORAGE onto SupportState; the kickstand store
-// still owns the data, so the type stays out of the derived walks. Step 2 flips
-// ownership and this test goes with it.
-test('kickstands have storage on SupportState but are not yet a walked collection', () => {
-  assert.ok(!SUPPORT_STATE_COLLECTIONS.some((c) => c.selectionCategory === 'kickstand'));
+test('kickstands are a walked SupportState collection like any other type', () => {
+  assert.ok(SUPPORT_STATE_COLLECTIONS.some((c) => c.selectionCategory === 'kickstand'));
   assert.ok(Object.keys(createEmptySupportCollections()).includes('kickstands'));
 });
 

@@ -537,15 +537,17 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
             twigSegmentMap.set(segment.id, { twig, segment, segmentIndex });
         });
     }
-    // Kickstands live in their own store, so a knot hosted on one is invisible to
-    // a SupportState-only walk. Their segments chain root top -> host knot, so
-    // endpoints come from the neighbours: the first has no bottomJoint and the
-    // last no topJoint.
+    // Kickstand segments chain root top -> host knot, so endpoints come from the
+    // neighbours: the first has no bottomJoint and the last no topJoint.
+    //
+    // Read from `snapshot`, NOT from the live store: normalization runs on the
+    // state being built, before it is assigned, so the store still holds the
+    // previous scene. Reading it there resolved incoming knots against outgoing
+    // kickstands and stranded every one of them.
     const kickstandSegmentEndpoints = new Map<string, { start: Vec3; end: Vec3 }>();
-    const kickstandState = getKickstandSnapshot();
-    for (const kickstand of Object.values(kickstandState.kickstands)) {
-        const root = kickstandState.roots[kickstand.rootId];
-        const hostKnot = kickstandState.knots[kickstand.hostKnotId];
+    for (const kickstand of Object.values(snapshot.kickstands)) {
+        const root = snapshot.roots[kickstand.rootId];
+        const hostKnot = snapshot.knots[kickstand.hostKnotId];
         if (!root || !hostKnot) continue;
 
         let start: Vec3 = {
@@ -1412,44 +1414,6 @@ function deleteCachedSupportSettingsHex(kind: 'trunk' | 'branch' | 'leaf', id: s
     delete supportSettingsHexCache[kind][id];
 }
 
-function syncKickstandHostKnotsFromSharedKnots(sharedKnots: Record<string, Knot>) {
-    const kickstandState = getKickstandSnapshot();
-    let nextKnots = kickstandState.knots;
-    let changed = false;
-
-    for (const kickstand of Object.values(kickstandState.kickstands)) {
-        const hostKnot = sharedKnots[kickstand.hostKnotId];
-        if (!hostKnot) continue;
-
-        const existing = nextKnots[hostKnot.id];
-        if (
-            existing
-            && existing.pos.x === hostKnot.pos.x
-            && existing.pos.y === hostKnot.pos.y
-            && existing.pos.z === hostKnot.pos.z
-            && existing.t === hostKnot.t
-            && existing.diameter === hostKnot.diameter
-            && existing.parentShaftId === hostKnot.parentShaftId
-        ) {
-            continue;
-        }
-
-        if (!changed) {
-            nextKnots = { ...kickstandState.knots };
-            changed = true;
-        }
-
-        nextKnots[hostKnot.id] = { ...hostKnot };
-    }
-
-    if (!changed) return;
-
-    setKickstandSnapshot({
-        ...kickstandState,
-        knots: nextKnots,
-    });
-}
-
 export function subscribe(listener: () => void) {
     listeners.add(listener);
     return () => { listeners.delete(listener); };
@@ -1577,6 +1541,188 @@ function eulersRoughlyEqual(a: THREE.Euler, b: THREE.Euler, epsilon = 1e-8) {
         && Math.abs(a.y - b.y) <= epsilon
         && Math.abs(a.z - b.z) <= epsilon
         && a.order === b.order;
+}
+
+/* ---------------------------------------------------------------------------
+ * Kickstands
+ *
+ * Kickstands used to live in their own store with their own roots and knots.
+ * They are now a SupportState collection like any other, and their root and
+ * host knot go in the shared `roots`/`knots` collections -- ids never collided
+ * because both stores minted uuids, so the merge is lossless.
+ *
+ * kickstandStore.ts still exports the same API and now delegates here, so its
+ * consumers did not have to change. What the API does NOT do any more is keep a
+ * second copy of the data, which is what let an import remap kickstands and
+ * knots out of step and strand knots on ids nothing else used.
+ * ------------------------------------------------------------------------- */
+
+/** Kickstand plus the root and host knot it owns, as callers still expect it. */
+function buildKickstandResult(kickstand: Kickstand): KickstandBuildResult | null {
+    const root = state.roots[kickstand.rootId];
+    const hostKnot = state.knots[kickstand.hostKnotId];
+    if (!root || !hostKnot) return null;
+    return { kickstand, root, hostKnot };
+}
+
+export function addKickstandToState(build: KickstandBuildResult) {
+    state = {
+        ...state,
+        kickstands: { ...state.kickstands, [build.kickstand.id]: build.kickstand },
+        roots: { ...state.roots, [build.root.id]: build.root },
+        knots: { ...state.knots, [build.hostKnot.id]: build.hostKnot },
+    };
+    notify();
+}
+
+export function updateKickstandInState(kickstand: Kickstand) {
+    if (!state.kickstands[kickstand.id]) return;
+    state = {
+        ...state,
+        kickstands: { ...state.kickstands, [kickstand.id]: kickstand },
+    };
+    notify();
+}
+
+export function removeKickstandFromState(id: string): KickstandBuildResult | null {
+    const kickstand = state.kickstands[id];
+    if (!kickstand) return null;
+
+    const result = buildKickstandResult(kickstand);
+    if (!result) return null;
+
+    const kickstands = { ...state.kickstands };
+    delete kickstands[kickstand.id];
+    const roots = { ...state.roots };
+    delete roots[result.root.id];
+    const knots = { ...state.knots };
+    delete knots[result.hostKnot.id];
+
+    state = {
+        ...state,
+        kickstands,
+        roots,
+        knots,
+        selectedId: state.selectedId === id ? null : state.selectedId,
+    };
+    notify();
+
+    return result;
+}
+
+export function resetKickstandsInState() {
+    if (Object.keys(state.kickstands).length === 0) return;
+    state = { ...state, kickstands: {} };
+    notify();
+}
+
+/**
+ * Transform kickstands owned by `modelId`, plus any connected to a touched
+ * entity: a kickstand can be grafted onto another model's support, and moving
+ * that support has to carry the kickstand with it.
+ */
+/**
+ * Transform kickstand SHAFTS for `modelId`, plus any connected to a touched
+ * entity: a kickstand can be grafted onto another model's support, and moving
+ * that support has to carry the kickstand with it.
+ *
+ * Roots and host knots are deliberately NOT touched here. They live in the
+ * shared `roots`/`knots` collections now, so the main walk in
+ * transformSupportsForModel already moved them -- a kickstand root by modelId,
+ * a host knot by its parent segment. Transforming them again applied the delta
+ * twice, which put a host knot at authored+2*delta.
+ *
+ * `preserveRootZ` is still accepted so callers need not care which pass grounds
+ * the root; the main walk applies it.
+ */
+export function transformKickstandsForModelInState(
+    modelId: string,
+    deltaMatrix: THREE.Matrix4,
+    touchedRootIds?: Set<string>,
+    touchedKnotIds?: Set<string>,
+    touchedSegmentIds?: Set<string>,
+): boolean {
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
+
+    let changed = false;
+    let nextKickstands = state.kickstands;
+
+    for (const kickstand of Object.values(state.kickstands)) {
+        const isConnectedToTouchedGraph = !!(
+            (touchedRootIds && touchedRootIds.has(kickstand.rootId))
+            || (touchedKnotIds && touchedKnotIds.has(kickstand.hostKnotId))
+            || (touchedSegmentIds && kickstand.segments.some((segment) => touchedSegmentIds.has(segment.id)))
+        );
+
+        if (kickstand.modelId !== modelId && !isConnectedToTouchedGraph) continue;
+
+        if (!changed) {
+            nextKickstands = { ...state.kickstands };
+            changed = true;
+        }
+
+        nextKickstands[kickstand.id] = {
+            ...kickstand,
+            segments: kickstand.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
+        };
+    }
+
+    if (!changed) return false;
+
+    state = { ...state, kickstands: nextKickstands };
+    notify();
+    return true;
+}
+
+/** Shafts only; roots and host knots are covered by the whole-scene walk. */
+export function transformAllKickstandsInState(deltaMatrix: THREE.Matrix4): boolean {
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
+
+    const kickstandEntries = Object.values(state.kickstands);
+    if (kickstandEntries.length === 0) return false;
+
+    const nextKickstands = { ...state.kickstands };
+    for (const kickstand of kickstandEntries) {
+        nextKickstands[kickstand.id] = {
+            ...kickstand,
+            segments: kickstand.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
+        };
+    }
+
+    state = { ...state, kickstands: nextKickstands };
+    notify();
+    return true;
+}
+
+export function reassignAllKickstandModelIdsInState(modelId: string): boolean {
+    if (!modelId) return false;
+
+    let changed = false;
+    let nextKickstands = state.kickstands;
+    let nextRoots = state.roots;
+
+    for (const kickstand of Object.values(state.kickstands)) {
+        if (kickstand.modelId === modelId) continue;
+
+        if (!changed) {
+            nextKickstands = { ...state.kickstands };
+            nextRoots = { ...state.roots };
+            changed = true;
+        }
+
+        nextKickstands[kickstand.id] = { ...kickstand, modelId };
+
+        const root = state.roots[kickstand.rootId];
+        if (root && root.modelId !== modelId) {
+            nextRoots[root.id] = { ...root, modelId };
+        }
+    }
+
+    if (!changed) return false;
+
+    state = { ...state, kickstands: nextKickstands, roots: nextRoots };
+    notify();
+    return true;
 }
 
 export type SupportTransformCommitResult = {
@@ -2492,8 +2638,13 @@ export function loadFromImportFormat(data: DragonfruitImportFormat) {
         });
     }
 
-    for (const kickstandBuild of effectiveData.kickstands ?? []) {
-        addKickstand(kickstandBuild);
+    // Written into newState directly rather than via addKickstand: kickstands are
+    // a SupportState collection now, and addKickstand would mutate `state` only
+    // for `state = newState` below to discard it.
+    for (const build of effectiveData.kickstands ?? []) {
+        newState.kickstands[build.kickstand.id] = build.kickstand;
+        newState.roots[build.root.id] = build.root;
+        newState.knots[build.hostKnot.id] = build.hostKnot;
     }
 
     const normalized = normalizeLoadedKnotAndLeafGeometry(newState);
@@ -2860,6 +3011,7 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
         sticks: { ...state.sticks },
         braces: { ...state.braces },
         anchors: { ...state.anchors },
+        kickstands: { ...state.kickstands },
         knots: { ...state.knots },
     };
 
@@ -2873,8 +3025,12 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
     if (isolated.anchors) { isolated.anchors.forEach(a => { merged.anchors[a.id] = a; }); }
     if (isolated.knots) { isolated.knots.forEach(k => { merged.knots[k.id] = k; }); }
 
-    for (const kickstandBuild of isolated.kickstands ?? []) {
-        addKickstand(kickstandBuild);
+    // Into `merged` directly, for the same reason loadFromImportFormat does:
+    // `state = merged` below would discard anything addKickstand wrote.
+    for (const build of isolated.kickstands ?? []) {
+        merged.kickstands[build.kickstand.id] = build.kickstand;
+        merged.roots[build.root.id] = build.root;
+        merged.knots[build.hostKnot.id] = build.hostKnot;
     }
 
     const normalized = normalizeLoadedKnotAndLeafGeometry(merged);
@@ -3040,7 +3196,6 @@ export function updateTrunk(trunk: Trunk, options?: { skipDependentGeometry?: bo
         leaves: nextLeaves,
     };
 
-    syncKickstandHostKnotsFromSharedKnots(nextKnots);
 
     notify();
 }
@@ -3676,7 +3831,6 @@ export function updateBranch(branch: Branch, options?: { skipDependentGeometry?:
         leaves: nextLeaves,
     };
 
-    syncKickstandHostKnotsFromSharedKnots(nextKnots);
 
     notify();
 }
@@ -3825,7 +3979,6 @@ export function applyKnotDragFramePreview(
     };
 
     if (!knotUnchanged) {
-        syncKickstandHostKnotsFromSharedKnots(nextKnots);
     }
 
     notify();

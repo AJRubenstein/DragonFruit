@@ -85,14 +85,14 @@
       },
       "startKnotId": "knot-a"
     },
-    "uuid-33": {
-      "endKnotId": "uuid-34",
-      "id": "uuid-33",
+    "uuid-34": {
+      "endKnotId": "uuid-35",
+      "id": "uuid-34",
       "modelId": "owner-model",
       "profile": {
         "diameter": 0.8
       },
-      "startKnotId": "uuid-14"
+      "startKnotId": "uuid-15"
     }
   },
   "branches": {
@@ -154,9 +154,9 @@
         }
       ]
     },
-    "uuid-13": {
+    "uuid-14": {
       "contactCone": {
-        "id": "uuid-18",
+        "id": "uuid-19",
         "normal": {
           "x": 0,
           "y": 0,
@@ -183,14 +183,14 @@
           "z": 1
         }
       },
-      "id": "uuid-13",
+      "id": "uuid-14",
       "modelId": "owner-model",
-      "parentKnotId": "uuid-14",
+      "parentKnotId": "uuid-15",
       "segments": [
         {
           "bottomJoint": {
             "diameter": 1,
-            "id": "uuid-16",
+            "id": "uuid-17",
             "pos": {
               "x": 0,
               "y": 0,
@@ -198,10 +198,10 @@
             }
           },
           "diameter": 1,
-          "id": "uuid-15",
+          "id": "uuid-16",
           "topJoint": {
             "diameter": 1,
-            "id": "uuid-17",
+            "id": "uuid-18",
             "pos": {
               "x": 0,
               "y": 0,
@@ -213,150 +213,82 @@
       ]
     }
   },
-  "kickstandStore": {
-    "kickstands": {
-      "ks-a": {
-        "hostKnotId": "ks-knot-a",
-        "hostMinT": 0.2,
-        "hostSegmentId": "seg-ta",
-        "id": "ks-a",
-        "modelId": "model-a",
-        "profile": {
-          "bodyDiameterMm": 1,
-          "terminalEndDiameterMm": 0.8,
-          "terminalStartDiameterMm": 1.2
-        },
-        "rootId": "ks-root-a",
-        "segments": [
-          {
-            "bottomJoint": {
-              "diameter": 1,
-              "id": "seg-ka-bot",
-              "pos": {
-                "x": 0,
-                "y": 0,
-                "z": 2
-              }
-            },
+  "kickstands": {
+    "ks-a": {
+      "hostKnotId": "ks-knot-a",
+      "hostMinT": 0.2,
+      "hostSegmentId": "seg-ta",
+      "id": "ks-a",
+      "modelId": "model-a",
+      "profile": {
+        "bodyDiameterMm": 1,
+        "terminalEndDiameterMm": 0.8,
+        "terminalStartDiameterMm": 1.2
+      },
+      "rootId": "ks-root-a",
+      "segments": [
+        {
+          "bottomJoint": {
             "diameter": 1,
-            "id": "seg-ka",
-            "topJoint": {
-              "diameter": 1,
-              "id": "seg-ka-top",
-              "pos": {
-                "x": 0,
-                "y": 0,
-                "z": 7
-              }
-            },
-            "type": "straight"
-          }
-        ]
-      },
-      "uuid-35": {
-        "hostKnotId": "uuid-37",
-        "hostMinT": 0.2,
-        "hostSegmentId": "uuid-4",
-        "id": "uuid-35",
-        "modelId": "owner-model",
-        "profile": {
-          "bodyDiameterMm": 1,
-          "terminalEndDiameterMm": 0.8,
-          "terminalStartDiameterMm": 1.2
-        },
-        "rootId": "uuid-36",
-        "segments": [
-          {
-            "bottomJoint": {
-              "diameter": 1,
-              "id": "uuid-39",
-              "pos": {
-                "x": 0,
-                "y": 0,
-                "z": 2
-              }
-            },
+            "id": "seg-ka-bot",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 2
+            }
+          },
+          "diameter": 1,
+          "id": "seg-ka",
+          "topJoint": {
             "diameter": 1,
-            "id": "uuid-38",
-            "topJoint": {
-              "diameter": 1,
-              "id": "uuid-40",
-              "pos": {
-                "x": 0,
-                "y": 0,
-                "z": 7
-              }
-            },
-            "type": "straight"
-          }
-        ]
-      }
-    },
-    "knots": {
-      "ks-knot-a": {
-        "diameter": 1.1,
-        "id": "ks-knot-a",
-        "parentShaftId": "seg-ta",
-        "pos": {
-          "x": 0,
-          "y": 0,
-          "z": 3.5
-        },
-        "t": 0.35
-      },
-      "uuid-37": {
-        "diameter": 1.1,
-        "id": "uuid-37",
-        "parentShaftId": "uuid-4",
-        "pos": {
-          "x": 0,
-          "y": 0,
-          "z": 3.5
-        },
-        "t": 0.35
-      }
-    },
-    "roots": {
-      "ks-root-a": {
-        "coneHeight": 1.5,
-        "diameter": 3,
-        "diskHeight": 0.5,
-        "id": "ks-root-a",
-        "modelId": "model-a",
-        "transform": {
-          "pos": {
-            "x": 3,
-            "y": 0,
-            "z": 0
+            "id": "seg-ka-top",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 7
+            }
           },
-          "rot": {
-            "w": 1,
-            "x": 0,
-            "y": 0,
-            "z": 0
-          }
+          "type": "straight"
         }
+      ]
+    },
+    "uuid-37": {
+      "hostKnotId": "uuid-36",
+      "hostMinT": 0.2,
+      "hostSegmentId": "uuid-5",
+      "id": "uuid-37",
+      "modelId": "owner-model",
+      "profile": {
+        "bodyDiameterMm": 1,
+        "terminalEndDiameterMm": 0.8,
+        "terminalStartDiameterMm": 1.2
       },
-      "uuid-36": {
-        "coneHeight": 1.5,
-        "diameter": 3,
-        "diskHeight": 0.5,
-        "id": "uuid-36",
-        "modelId": "owner-model",
-        "transform": {
-          "pos": {
-            "x": 3,
-            "y": 0,
-            "z": 0
+      "rootId": "uuid-3",
+      "segments": [
+        {
+          "bottomJoint": {
+            "diameter": 1,
+            "id": "uuid-39",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 2
+            }
           },
-          "rot": {
-            "w": 1,
-            "x": 0,
-            "y": 0,
-            "z": 0
-          }
+          "diameter": 1,
+          "id": "uuid-38",
+          "topJoint": {
+            "diameter": 1,
+            "id": "uuid-40",
+            "pos": {
+              "x": 0,
+              "y": 0,
+              "z": 7
+            }
+          },
+          "type": "straight"
         }
-      }
+      ]
     }
   },
   "knots": {
@@ -382,10 +314,21 @@
       },
       "t": 0.5
     },
-    "uuid-14": {
+    "ks-knot-a": {
       "diameter": 1.1,
-      "id": "uuid-14",
-      "parentShaftId": "uuid-4",
+      "id": "ks-knot-a",
+      "parentShaftId": "seg-ta",
+      "pos": {
+        "x": 0,
+        "y": 0,
+        "z": 3.5
+      },
+      "t": 0.35
+    },
+    "uuid-15": {
+      "diameter": 1.1,
+      "id": "uuid-15",
+      "parentShaftId": "uuid-5",
       "pos": {
         "x": 0,
         "y": 0,
@@ -393,16 +336,27 @@
       },
       "t": 0.5
     },
-    "uuid-34": {
+    "uuid-35": {
       "diameter": 1.1,
-      "id": "uuid-34",
-      "parentShaftId": "uuid-9",
+      "id": "uuid-35",
+      "parentShaftId": "uuid-10",
       "pos": {
         "x": 0,
         "y": 0,
         "z": 4.5
       },
       "t": 0.5
+    },
+    "uuid-36": {
+      "diameter": 1.1,
+      "id": "uuid-36",
+      "parentShaftId": "uuid-5",
+      "pos": {
+        "x": 0,
+        "y": 0,
+        "z": 3.5
+      },
+      "t": 0.35
     }
   },
   "leaves": {
@@ -439,9 +393,9 @@
       "modelId": "model-a",
       "parentKnotId": "knot-a"
     },
-    "uuid-19": {
+    "uuid-20": {
       "contactCone": {
-        "id": "uuid-20",
+        "id": "uuid-21",
         "normal": {
           "x": 0,
           "y": 0,
@@ -468,12 +422,32 @@
           "z": 1
         }
       },
-      "id": "uuid-19",
+      "id": "uuid-20",
       "modelId": "owner-model",
-      "parentKnotId": "uuid-14"
+      "parentKnotId": "uuid-15"
     }
   },
   "roots": {
+    "ks-root-a": {
+      "coneHeight": 1.5,
+      "diameter": 3,
+      "diskHeight": 0.5,
+      "id": "ks-root-a",
+      "modelId": "model-a",
+      "transform": {
+        "pos": {
+          "x": 3,
+          "y": 0,
+          "z": 0
+        },
+        "rot": {
+          "w": 1,
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    },
     "root-a": {
       "coneHeight": 1.5,
       "diameter": 3,
@@ -543,6 +517,26 @@
       "transform": {
         "pos": {
           "x": 20,
+          "y": 0,
+          "z": 0
+        },
+        "rot": {
+          "w": 1,
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    },
+    "uuid-3": {
+      "coneHeight": 1.5,
+      "diameter": 3,
+      "diskHeight": 0.5,
+      "id": "uuid-3",
+      "modelId": "owner-model",
+      "transform": {
+        "pos": {
+          "x": 3,
           "y": 0,
           "z": 0
         },
@@ -641,9 +635,9 @@
         }
       ]
     },
-    "uuid-27": {
+    "uuid-28": {
       "contactConeA": {
-        "id": "uuid-31",
+        "id": "uuid-32",
         "normal": {
           "x": 0,
           "y": 0,
@@ -671,7 +665,7 @@
         }
       },
       "contactConeB": {
-        "id": "uuid-32",
+        "id": "uuid-33",
         "normal": {
           "x": 0,
           "y": 0,
@@ -698,13 +692,13 @@
           "z": 1
         }
       },
-      "id": "uuid-27",
+      "id": "uuid-28",
       "modelId": "owner-model",
       "segments": [
         {
           "bottomJoint": {
             "diameter": 1,
-            "id": "uuid-29",
+            "id": "uuid-30",
             "pos": {
               "x": 0,
               "y": 0,
@@ -712,10 +706,10 @@
             }
           },
           "diameter": 1,
-          "id": "uuid-28",
+          "id": "uuid-29",
           "topJoint": {
             "diameter": 1,
-            "id": "uuid-30",
+            "id": "uuid-31",
             "pos": {
               "x": 0,
               "y": 0,
@@ -844,9 +838,9 @@
         }
       ]
     },
-    "uuid-3": {
+    "uuid-4": {
       "contactCone": {
-        "id": "uuid-7",
+        "id": "uuid-8",
         "normal": {
           "x": 0,
           "y": 0,
@@ -873,14 +867,14 @@
           "z": 1
         }
       },
-      "id": "uuid-3",
+      "id": "uuid-4",
       "modelId": "owner-model",
       "rootId": "uuid-1",
       "segments": [
         {
           "bottomJoint": {
             "diameter": 1,
-            "id": "uuid-5",
+            "id": "uuid-6",
             "pos": {
               "x": 0,
               "y": 0,
@@ -888,10 +882,10 @@
             }
           },
           "diameter": 1,
-          "id": "uuid-4",
+          "id": "uuid-5",
           "topJoint": {
             "diameter": 1,
-            "id": "uuid-6",
+            "id": "uuid-7",
             "pos": {
               "x": 0,
               "y": 0,
@@ -902,9 +896,9 @@
         }
       ]
     },
-    "uuid-8": {
+    "uuid-9": {
       "contactCone": {
-        "id": "uuid-12",
+        "id": "uuid-13",
         "normal": {
           "x": 0,
           "y": 0,
@@ -931,14 +925,14 @@
           "z": 1
         }
       },
-      "id": "uuid-8",
+      "id": "uuid-9",
       "modelId": "owner-model",
       "rootId": "uuid-2",
       "segments": [
         {
           "bottomJoint": {
             "diameter": 1,
-            "id": "uuid-10",
+            "id": "uuid-11",
             "pos": {
               "x": 0,
               "y": 0,
@@ -946,10 +940,10 @@
             }
           },
           "diameter": 1,
-          "id": "uuid-9",
+          "id": "uuid-10",
           "topJoint": {
             "diameter": 1,
-            "id": "uuid-11",
+            "id": "uuid-12",
             "pos": {
               "x": 0,
               "y": 0,
@@ -1041,7 +1035,7 @@
         }
       ]
     },
-    "uuid-21": {
+    "uuid-22": {
       "contactDiskA": {
         "coneAxis": {
           "x": 0,
@@ -1049,7 +1043,7 @@
           "z": 1
         },
         "contactDiameterMm": 0.4,
-        "id": "uuid-25",
+        "id": "uuid-26",
         "pos": {
           "x": 0,
           "y": 0,
@@ -1074,7 +1068,7 @@
           "z": 1
         },
         "contactDiameterMm": 0.4,
-        "id": "uuid-26",
+        "id": "uuid-27",
         "pos": {
           "x": 0,
           "y": 0,
@@ -1092,13 +1086,13 @@
           "z": 1
         }
       },
-      "id": "uuid-21",
+      "id": "uuid-22",
       "modelId": "owner-model",
       "segments": [
         {
           "bottomJoint": {
             "diameter": 1,
-            "id": "uuid-23",
+            "id": "uuid-24",
             "pos": {
               "x": 0,
               "y": 0,
@@ -1106,10 +1100,10 @@
             }
           },
           "diameter": 1,
-          "id": "uuid-22",
+          "id": "uuid-23",
           "topJoint": {
             "diameter": 1,
-            "id": "uuid-24",
+            "id": "uuid-25",
             "pos": {
               "x": 0,
               "y": 0,

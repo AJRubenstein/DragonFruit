@@ -13,7 +13,6 @@ import {
     transformAllSupportsForSingleModel,
     transformSupportsForModel,
 } from '../state';
-import { getKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import { buildCharacterisationFixture, identityTransform } from './fixtures/supportFixture';
 
 /**
@@ -82,10 +81,6 @@ function stableStringify(value: unknown): string {
  */
 function serialiseStore(): string {
     const s = getSnapshot();
-    // Kickstands live in a separate store, so a SupportState-only snapshot leaves
-    // them unguarded. Captured under their own key so a change that moves them
-    // into SupportState shows up as a diff rather than passing silently.
-    const k = getKickstandSnapshot();
     return stableStringify(canonicaliseGeneratedIds({
         roots: s.roots,
         trunks: s.trunks,
@@ -96,11 +91,7 @@ function serialiseStore(): string {
         braces: s.braces,
         anchors: s.anchors,
         knots: s.knots,
-        kickstandStore: {
-            kickstands: k.kickstands,
-            roots: k.roots,
-            knots: k.knots,
-        },
+        kickstands: s.kickstands,
     }));
 }
 
