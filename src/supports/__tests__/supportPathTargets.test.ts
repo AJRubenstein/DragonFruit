@@ -7,17 +7,10 @@ import {
 } from '../interaction/shared/placement/snapping/supportPathTargets';
 import { getFinalSocketPosition } from '../SupportPrimitives/ContactCone/contactConeUtils';
 import type { SupportState } from '../types';
+import { createEmptySupportCollections, type SupportCollectionKey } from '../supportTypeRegistry';
 
-function makeBaseState(): Pick<SupportState, 'trunks' | 'branches' | 'braces' | 'twigs' | 'sticks' | 'roots' | 'knots'> {
-    return {
-        trunks: {},
-        branches: {},
-        braces: {},
-        twigs: {},
-        sticks: {},
-        roots: {},
-        knots: {},
-    };
+function makeBaseState(): Pick<SupportState, SupportCollectionKey> {
+    return createEmptySupportCollections();
 }
 
 test('buildSupportPathSnapTargets uses the final trunk cone socket for the terminal shaft endpoint', () => {
