@@ -326,10 +326,7 @@ import {
   resolveUvToolsExecutablePath,
 } from '@/components/settings/uvToolsPreferences';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, toggleSegmentCurve, transformSupportsForModel, updateTrunk, updateBranch, updateTwig, updateStick, updateKnot } from '@/supports/state';
-import {
-  getKickstandSnapshot,
-  subscribeToKickstandStore,
-} from '@/supports/SupportTypes/Kickstand/kickstandStore';
+import { subscribeToKickstandStore, getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
 import { splitShaft, splitBranchShaft, splitTwigShaft, splitStickShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
 import type { KnotSplitRemap } from '@/supports/SupportPrimitives/Knot/knotUtils';
@@ -378,7 +375,6 @@ import { SceneAutosaveRecoveryModal } from '@/components/scene/SceneAutosaveReco
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { ManifoldWarningModal } from '@/components/modals/ManifoldWarningModal';
-
 
 import { IslandScanWorkflowCard } from '@/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard';
 import { IslandVolumesHierarchyCard } from '@/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard';
@@ -1119,7 +1115,6 @@ export default function Home() {
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = React.useState(false);
   const [isSliceMetricsDebugOpen, setIsSliceMetricsDebugOpen] = React.useState(false);
 
-
   const [isHistoryDebugOpen, setIsHistoryDebugOpen] = React.useState(false);
   const [supportsInfoModelId, setSupportsInfoModelId] = React.useState<string | null>(null);
   const [isTransformDebugOverlayOpen, setIsTransformDebugOverlayOpen] = React.useState(false);
@@ -1204,7 +1199,6 @@ export default function Home() {
     printingLayerPreviewUrls,
     deps: printingPreviewDepsRef,
   });
-
 
   const defaultHolePunchState = React.useMemo<HolePunchPanelState>(() => ({
     radiusMm: 2.0,
@@ -1565,7 +1559,6 @@ export default function Home() {
     : 'Processing 1 model';
   const [modifierApplyOverlayElapsedSec, setModifierApplyOverlayElapsedSec] = React.useState(0);
 
-
   const modifierApplyOverlayContent = React.useMemo(() => {
     if (isApplyingHollowing && pendingHolePunchAutoApplyModelId) {
       return {
@@ -1617,7 +1610,6 @@ export default function Home() {
       ],
     };
   }, [finalizingOverlayContent, isApplyingBlockersHollowing, isApplyingHolePunch, isApplyingHollowing, pendingHolePunchAutoApplyModelId]);
-
 
   React.useEffect(() => {
     if (!showModifierApplyBlockingOverlay) {
@@ -2195,7 +2187,6 @@ export default function Home() {
     setPendingDestructiveTransform(null);
   }, []);
 
-
   React.useLayoutEffect(() => {
     const element = modelStatsCardContainerRef.current;
     if (!element) {
@@ -2342,7 +2333,6 @@ export default function Home() {
   }, [clearPrintingLayerPreviewUrls]);
 
 
-
   const handlePrintingLayerPreviewGenerated = React.useCallback((payload: {
     layerIndex: number;
     totalLayers: number;
@@ -2397,7 +2387,6 @@ export default function Home() {
     slicedArtifactProfileFingerprintRef.current = null;
     setPrintingReadyPlateId(null);
   }, [clearPrintingLayerPreviewUrls]);
-
 
   React.useEffect(() => {
     if (scene.mode !== 'printing') return;
@@ -3708,7 +3697,6 @@ export default function Home() {
   }, [profileState.printerProfiles]);
 
 
-
   React.useEffect(() => {
     if (allReachabilityProbeTargets.length === 0) return;
 
@@ -3986,8 +3974,6 @@ export default function Home() {
 
 
 
-
-
   const selectedPrinterStateTextNormalized = React.useMemo(() => {
     return String(selectedPrinterMonitorSnapshot?.stateText ?? '').trim().toLowerCase();
   }, [selectedPrinterMonitorSnapshot?.stateText]);
@@ -4060,8 +4046,6 @@ export default function Home() {
 
 
 
-
-
   // Best-effort background cleanup of stale DragonFruit temp artifacts from prior runs.
   React.useEffect(() => {
     void cleanupStalePrintTempArtifacts(3 * 24 * 60 * 60)
@@ -4118,7 +4102,6 @@ export default function Home() {
     };
   }, []);
 
-
   React.useEffect(() => {
     if (!activePrinterProfile || !activeNetworkUiAdapter) {
       setPrintingTargetDeviceId(null);
@@ -4160,7 +4143,6 @@ export default function Home() {
     }
   }, [activeNetworkUiAdapter, activePrinterProfile, printableConnectedPrinterFleet, printerReachabilityByDeviceId, printingTargetDeviceId]);
 
-
   React.useEffect(() => {
     if (!printingUploadDialogOpen || printingUploadDialogStage !== 'processing' || printingDeviceProcessingStartedAtMs == null) {
       setPrintingDeviceProcessingElapsedSec(0);
@@ -4193,20 +4175,9 @@ export default function Home() {
 
 
 
-
-
-
-
-
-
-
-
   // Flush webcam polling/circuit-breaker state on monitor close.
 
-
   // Manage printer monitor webcam lifecycle: disable when monitor closes.
-
-
 
 
 
@@ -4877,7 +4848,6 @@ export default function Home() {
     };
   }, [isDesktopRuntime]);
 
-
   const performSendToPrinter = React.useCallback(async (targetDevice: PrinterNetworkDevice, selectedMaterialIdOverride?: string) => {
     if (!printingArtifact || !activePrinterProfile) return;
     if (!activeNetworkUiAdapter) return;
@@ -5198,7 +5168,6 @@ export default function Home() {
     }
   }, [activeNetworkUiAdapter?.pluginId, printingSendBusy]);
 
-
   const handlePrintNow = React.useCallback(async () => {
     if (!activePrinterProfile || !printingTargetDevice) return;
     if (!printingMonitoringAdapter.pluginId || !printingMonitoringAdapter.operations?.start) return;
@@ -5248,10 +5217,6 @@ export default function Home() {
       setPrintingPrintNowBusy(false);
     }
   }, [activePrinterProfile, openPrintingMonitorForTargetDevice, printingMonitoringAdapter.operations, printingMonitoringAdapter.pluginId, printingReadyPlateId, printingTargetDevice]);
-
-
-
-
 
 
 
@@ -5660,7 +5625,6 @@ export default function Home() {
       }
     };
   }, [invalidatePendingTransformHistory]);
-
 
 
   const handleNewDeviceDetected = React.useCallback((deviceId: string) => {
@@ -6292,8 +6256,6 @@ export default function Home() {
 
     return unsubscribe;
   }, [printingMonitorModalOpen, printingSlicingBenchmark]);
-
-
 
 
 
@@ -9102,7 +9064,6 @@ export default function Home() {
     };
   }, [isSelectAllModelsActive]);
 
-
   const saveAsActive = useActionActive('GLOBAL', 'SAVE_AS');
   const wasSaveAsActive = React.useRef(false);
 
@@ -9363,7 +9324,6 @@ export default function Home() {
     scene.view3dSettings.safetyMarginMm,
     transformMgr.transformMode,
   ]);
-
 
   const handlePlaceOnFaceAnimationStart = React.useCallback(() => {
     ensurePendingTransformHistoryForActiveModel('rotate');
@@ -9659,7 +9619,6 @@ export default function Home() {
       },
     });
   }, [defaultHollowingState, hollowingState, pendingBlockerResetState, persistActiveModelModifiers, scene.activeModel]);
-
 
 
   const handleTransformToolbarHover = React.useCallback((mode: TransformMode | null) => {
@@ -11127,7 +11086,6 @@ export default function Home() {
         isOpen={showManifoldWarning}
         onAcknowledge={() => setShowManifoldWarning(false)}
       />
-
 
 
       <MeshRepairModals

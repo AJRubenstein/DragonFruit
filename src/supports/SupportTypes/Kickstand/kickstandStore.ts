@@ -3,21 +3,15 @@
 import { useSyncExternalStore } from 'react';
 import type { KickstandBuildResult, KickstandState } from './types';
 import type { SupportState } from '../../types';
-import type * as THREE from 'three';
 import {
     addKickstandToState,
     getSnapshot,
-    removeKickstandFromState,
-    reassignAllKickstandModelIdsInState,
     resetKickstandsInState,
     setSnapshot,
     subscribe,
     beginSupportStateBatch,
     endSupportStateBatch,
-    transformAllKickstandsInState,
-    transformKickstandsForModelInState,
-    updateKickstandInState,
-    setSelectedId,
+    updateKickstandInState
 } from '../../state';
 
 export type { KickstandState } from './types';
@@ -82,10 +76,6 @@ export function resetKickstandStore() {
     resetKickstandsInState();
 }
 
-export function setKickstandSelectedId(id: string | null) {
-    setSelectedId(id);
-}
-
 export function addKickstand(build: KickstandBuildResult) {
     addKickstandToState(build);
 }
@@ -96,39 +86,6 @@ export function updateKickstand(buildOrKickstand: KickstandBuildResult | Kicksta
         return;
     }
     updateKickstandInState(buildOrKickstand);
-}
-
-export function removeKickstand(id: string): KickstandBuildResult | null {
-    return removeKickstandFromState(id);
-}
-
-export function transformKickstandsForModel(
-    modelId: string,
-    deltaMatrix: THREE.Matrix4,
-    touchedRootIds?: Set<string>,
-    touchedKnotIds?: Set<string>,
-    touchedSegmentIds?: Set<string>,
-    preserveRootZ = false,
-): boolean {
-    // preserveRootZ is accepted and ignored: kickstand roots are in the shared
-    // roots collection now, and the caller's main walk grounds them.
-    void preserveRootZ;
-    return transformKickstandsForModelInState(
-        modelId,
-        deltaMatrix,
-        touchedRootIds,
-        touchedKnotIds,
-        touchedSegmentIds,
-    );
-}
-
-export function transformAllKickstands(deltaMatrix: THREE.Matrix4, preserveRootZ = false): boolean {
-    void preserveRootZ;
-    return transformAllKickstandsInState(deltaMatrix);
-}
-
-export function reassignAllKickstandModelIds(modelId: string): boolean {
-    return reassignAllKickstandModelIdsInState(modelId);
 }
 
 // Batching is SupportState's now that the data is. Delegated rather than made a

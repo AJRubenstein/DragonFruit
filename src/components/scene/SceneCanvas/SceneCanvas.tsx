@@ -904,7 +904,6 @@ export function SceneCanvas({
     getRaftSettings,
   );
 
-
   const models = React.useMemo<LoadedModel[]>(() => {
     if (modelsProp.length > 0) return modelsProp;
 
@@ -1481,7 +1480,6 @@ export function SceneCanvas({
       window.removeEventListener('support-raft-model-pointer-hover', handleSupportRaftModelPointerHover as EventListener);
     };
   }, [modelPickerEnabled, onModelHoverModelChange]);
-
 
   const selectModelFromPointerHit = React.useCallback((modelId: string | null | undefined) => {
     if (mode !== 'prepare') return;
