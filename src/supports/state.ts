@@ -2681,25 +2681,10 @@ function isolateImportedSupportPayload(data: DragonfruitImportFormat): Dragonfru
         };
     });
 
-    cloned.knots = cloned.knots.map((knot) => {
-        let parentShaftId = knot.parentShaftId;
-        if (parentShaftId.startsWith('leafCone:')) {
-            const leafId = parentShaftId.slice('leafCone:'.length);
-            parentShaftId = `leafCone:${getOrCreateMappedId(leafId, leafIdMap)}`;
-        } else if (parentShaftId.startsWith('braceSegment:')) {
-            const braceId = parentShaftId.slice('braceSegment:'.length);
-            parentShaftId = `braceSegment:${getOrCreateMappedId(braceId, braceIdMap)}`;
-        } else {
-            parentShaftId = getOrCreateMappedId(parentShaftId, segmentIdMap);
-        }
-
-        return {
-            ...knot,
-            id: getOrCreateMappedId(knot.id, knotIdMap),
-            parentShaftId,
-        };
-    });
-
+    // Kickstands are remapped before knots: a knot hosted on a kickstand segment
+    // resolves its parentShaftId through segmentIdMap, and getOrCreateMappedId
+    // mints a fresh id for anything not yet registered. Remapping knots first
+    // left those knots pointing at ids nothing else would ever use.
     cloned.kickstands = (cloned.kickstands ?? []).map((build) => {
         const nextRootId = uuidv4();
         kickstandRootIdMap.set(build.root.id, nextRootId);
@@ -2743,6 +2728,25 @@ function isolateImportedSupportPayload(data: DragonfruitImportFormat): Dragonfru
                 segments: nextKickstandSegments,
             },
         } as KickstandBuildResult;
+    });
+
+    cloned.knots = cloned.knots.map((knot) => {
+        let parentShaftId = knot.parentShaftId;
+        if (parentShaftId.startsWith('leafCone:')) {
+            const leafId = parentShaftId.slice('leafCone:'.length);
+            parentShaftId = `leafCone:${getOrCreateMappedId(leafId, leafIdMap)}`;
+        } else if (parentShaftId.startsWith('braceSegment:')) {
+            const braceId = parentShaftId.slice('braceSegment:'.length);
+            parentShaftId = `braceSegment:${getOrCreateMappedId(braceId, braceIdMap)}`;
+        } else {
+            parentShaftId = getOrCreateMappedId(parentShaftId, segmentIdMap);
+        }
+
+        return {
+            ...knot,
+            id: getOrCreateMappedId(knot.id, knotIdMap),
+            parentShaftId,
+        };
     });
 
     return cloned;
