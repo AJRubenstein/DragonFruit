@@ -69,7 +69,7 @@ test('unknown type ids throw rather than resolving to undefined', () => {
 test('empty collections cover every entity collection on SupportState', () => {
   const keys = Object.keys(createEmptySupportCollections()).sort();
   assert.deepEqual(keys, [
-    'anchors', 'braces', 'branches', 'knots', 'leaves', 'roots', 'sticks', 'trunks', 'twigs',
+    'anchors', 'braces', 'branches', 'kickstands', 'knots', 'leaves', 'roots', 'sticks', 'trunks', 'twigs',
   ]);
 });
 
@@ -92,9 +92,12 @@ test('knots are a primitive collection, not a selection-order entry', () => {
   assert.ok(!SUPPORT_STATE_COLLECTIONS.some((c) => c.key === 'knots'));
 });
 
-test('kickstands are not a SupportState collection', () => {
+// Stage 3 step 1 moved kickstand STORAGE onto SupportState; the kickstand store
+// still owns the data, so the type stays out of the derived walks. Step 2 flips
+// ownership and this test goes with it.
+test('kickstands have storage on SupportState but are not yet a walked collection', () => {
   assert.ok(!SUPPORT_STATE_COLLECTIONS.some((c) => c.selectionCategory === 'kickstand'));
-  assert.ok(!Object.keys(createEmptySupportCollections()).includes('kickstands'));
+  assert.ok(Object.keys(createEmptySupportCollections()).includes('kickstands'));
 });
 
 test('collection keys cover every entity collection', () => {

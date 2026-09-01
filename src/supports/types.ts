@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { ContactCone } from './SupportPrimitives/ContactCone/types';
 import type { ContactDiskProfile } from './SupportPrimitives/ContactCone/types';
-import type { KickstandBuildResult } from './SupportTypes/Kickstand/types';
+import type { Kickstand, KickstandBuildResult } from './SupportTypes/Kickstand/types';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 
 export type SupportMode = 'prepare' | 'analysis' | 'support' | 'export' | 'printing';
@@ -241,6 +241,7 @@ export interface SupportState {
     sticks: Record<string, Stick>;
     braces: Record<string, Brace>;
     anchors: Record<string, Anchor>;
+    kickstands: Record<string, Kickstand>;
     knots: Record<string, Knot>;
     // Interaction State
     selectedId: string | null;
