@@ -1,5 +1,6 @@
 import type { SnapTarget } from '../../../SnappingManager';
 import type { SupportState, Vec3, Brace, Knot } from '../../../../types';
+import type { SupportCollectionKey } from '../../../../supportTypeRegistry';
 import { getFinalSocketPosition } from '../../../../SupportPrimitives/ContactCone';
 import type { ContactCone } from '../../../../SupportPrimitives/ContactCone/types';
 import { calculateDiskThickness } from '../../../../SupportPrimitives/ContactDisk/contactDiskUtils';
@@ -87,7 +88,7 @@ export function resolveBracePathDiameterAtT(brace: Brace, knotById: Record<strin
 }
 
 export function buildSupportPathSnapTargets(
-    supportState: Pick<SupportState, 'trunks' | 'branches' | 'braces' | 'twigs' | 'sticks' | 'roots' | 'knots'>,
+    supportState: Pick<SupportState, SupportCollectionKey>,
     options: BuildSupportPathSnapTargetsOptions = {}
 ): SnapTarget[] {
     const {
@@ -214,35 +215,31 @@ export function buildSupportPathSnapTargets(
         }
     }
 
-    if (includeTwigs) {
-        for (const twig of Object.values(supportState.twigs)) {
-            const twigPlacementSurface = twig.contactDiskA?.placementSurface ?? twig.contactDiskB?.placementSurface;
-            if (!matchesPlacementSurfaceFilter(twigPlacementSurface, placementSurface)) continue;
-            for (const segment of twig.segments) {
-                if (shouldExclude(segment.id, excludeSegmentIds)) continue;
-                if (!segment.bottomJoint || !segment.topJoint) continue;
+    // Twigs and sticks snap identically -- both are two-contact shafts whose
+    // placement surface comes from either end. Kept as one loop so a third
+    // two-contact type does not need a third copy.
+    const twoContactSources: Array<{ include: boolean; entities: Array<{ segments: typeof supportState.twigs[string]['segments']; placementSurface?: string }> }> = [
+        {
+            include: includeTwigs,
+            entities: Object.values(supportState.twigs).map((twig) => ({
+                segments: twig.segments,
+                placementSurface: twig.contactDiskA?.placementSurface ?? twig.contactDiskB?.placementSurface,
+            })),
+        },
+        {
+            include: includeSticks,
+            entities: Object.values(supportState.sticks).map((stick) => ({
+                segments: stick.segments,
+                placementSurface: stick.contactConeA?.placementSurface ?? stick.contactConeB?.placementSurface,
+            })),
+        },
+    ];
 
-                targets.push({
-                    id: segment.id,
-                    type: 'path',
-                    pathSegment: {
-                        start: cloneVec3(segment.bottomJoint.pos),
-                        end: cloneVec3(segment.topJoint.pos),
-                        radius: segment.diameter / 2,
-                        bezier: segment.type === 'bezier'
-                            ? { control1: segment.controlPoint1, control2: segment.controlPoint2 }
-                            : undefined,
-                    },
-                });
-            }
-        }
-    }
-
-    if (includeSticks) {
-        for (const stick of Object.values(supportState.sticks)) {
-            const stickPlacementSurface = stick.contactConeA?.placementSurface ?? stick.contactConeB?.placementSurface;
-            if (!matchesPlacementSurfaceFilter(stickPlacementSurface, placementSurface)) continue;
-            for (const segment of stick.segments) {
+    for (const source of twoContactSources) {
+        if (!source.include) continue;
+        for (const entity of source.entities) {
+            if (!matchesPlacementSurfaceFilter(entity.placementSurface as never, placementSurface)) continue;
+            for (const segment of entity.segments) {
                 if (shouldExclude(segment.id, excludeSegmentIds)) continue;
                 if (!segment.bottomJoint || !segment.topJoint) continue;
 

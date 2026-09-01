@@ -1,5 +1,6 @@
 import type { SnapTarget } from '../../../SnappingManager';
 import type { SupportState } from '../../../../types';
+import type { SupportCollectionKey } from '../../../../supportTypeRegistry';
 import type { KickstandHostKind } from '../../../../SupportTypes/Kickstand/types';
 import { buildPrimarySnapTargetIndex, buildSupportPathSnapTargets } from './supportPathTargets';
 
@@ -14,7 +15,7 @@ export interface KickstandSnapTargetMeta {
 }
 
 export function buildKickstandSnapTargetMetaIndex(
-    supportState: Pick<SupportState, 'trunks' | 'branches' | 'roots' | 'knots' | 'braces' | 'twigs' | 'sticks'>
+    supportState: Pick<SupportState, SupportCollectionKey>
 ): Map<string, KickstandSnapTargetMeta> {
     const targets = buildSupportPathSnapTargets(supportState, {
         includeTrunks: true,

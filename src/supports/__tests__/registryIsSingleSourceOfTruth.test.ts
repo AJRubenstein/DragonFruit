@@ -42,11 +42,6 @@ const ALLOWED = new Map<string, string>([
     ['features/scene/voxl/codec.ts', 'disk format'],
     ['features/scene/voxl/types.ts', 'disk format'],
     ['features/export/logic/supportExportReconstruction.ts', 'builds the export payload, a wire shape'],
-    // Snap targets are opt-in per caller (includeTrunks, includeBraces, ...), so
-    // the set is a deliberate product choice rather than a walk. Whether anchors
-    // should be snappable is an open question, not a missed collection.
-    ['supports/interaction/shared/placement/snapping/supportPathTargets.ts', 'opt-in snap set'],
-    ['supports/interaction/shared/placement/snapping/kickstandSnapTargets.ts', 'opt-in snap set'],
     // History payloads carry the entities a single undo restores, not a walk.
     ['features/supports/useSupportInteractionManager.ts', 'history action payloads'],
 ]);
