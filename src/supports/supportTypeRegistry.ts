@@ -32,10 +32,7 @@ export type SupportCollectionKey = NonNullable<{
     [K in keyof SupportState]-?: SupportState[K] extends Record<string, { id: string }> ? K : never;
 }[keyof SupportState]>;
 
-/**
- * Where a type's instances live. Every type is on SupportState now; the union is
- * kept so a future type can declare a different home without reshaping this.
- */
+/** Where a type's instances live. Every type is on SupportState today. */
 export type SupportCollectionLocation =
     | { store: 'support'; key: SupportCollectionKey }
     | { store: 'kickstand'; key: 'kickstands' };
@@ -164,11 +161,7 @@ export const SUPPORT_PRIMITIVE_COLLECTIONS: readonly {
     { key: 'knots', selectionCategory: 'knot' },
 ];
 
-/**
- * Collections selection resolves by direct id lookup, in order: roots, then the
- * support types. Knots are excluded because they resolve after kickstands, which
- * live in a separate store — see resolveSelectionCategory in state.ts.
- */
+/** Collections selection resolves by direct id lookup: roots, then support types. */
 export const SUPPORT_STATE_COLLECTIONS: readonly {
     key: SupportCollectionKey;
     selectionCategory: SupportSelectionCategory;
