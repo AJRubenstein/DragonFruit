@@ -1,5 +1,6 @@
 import { computeSupportRenderLookup, type SupportRenderLookupInput, type SupportRenderLookupSnapshot } from './supportRenderLookupMath';
 import type { RecordDelta, SupportRenderLookupWorkerRequestMessage, SupportRenderLookupWorkerResponseMessage } from './supportRenderLookup.worker.shared';
+import { createEmptySupportCollections } from '../supportTypeRegistry';
 
 type MutableRecord<T> = Record<string, T>;
 
@@ -16,16 +17,7 @@ const EMPTY_LOOKUP: SupportRenderLookupSnapshot = {
 };
 
 const cachedInput: SupportRenderLookupInput = {
-  state: {
-    roots: {},
-    trunks: {},
-    branches: {},
-    leaves: {},
-    twigs: {},
-    sticks: {},
-    braces: {},
-    knots: {},
-  },
+  state: createEmptySupportCollections(),
   kickstandState: {
     kickstands: {},
     knots: {},

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { SupportState } from '../types';
+import { createEmptySupportCollections, type SupportCollectionKey } from '../supportTypeRegistry';
 import type { KickstandState } from '../SupportTypes/Kickstand/types';
 import { computeSupportRenderLookup, type SupportRenderLookupInput, type SupportRenderLookupSnapshot } from './supportRenderLookupMath';
 import { isSupportEditInteractionActive } from './gizmoInteractionLock';
@@ -15,7 +16,7 @@ import type {
 } from './supportRenderLookup.worker.shared';
 
 interface UseSupportRenderLookupOptions {
-  state: Pick<SupportState, 'roots' | 'trunks' | 'branches' | 'leaves' | 'twigs' | 'sticks' | 'braces' | 'knots'>;
+  state: Pick<SupportState, SupportCollectionKey>;
   kickstandState: Pick<KickstandState, 'kickstands' | 'knots'>;
   activePreviewSupport?: {
     kind: 'trunk' | 'branch' | 'kickstand' | null;
@@ -31,16 +32,7 @@ type WorkerCollectionsRef = {
 
 function createEmptyWorkerCollectionsRef(): WorkerCollectionsRef {
   return {
-    state: {
-      roots: {},
-      trunks: {},
-      branches: {},
-      leaves: {},
-      twigs: {},
-      sticks: {},
-      braces: {},
-      knots: {},
-    },
+    state: createEmptySupportCollections(),
     kickstandState: {
       kickstands: {},
       knots: {},

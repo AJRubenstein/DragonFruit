@@ -1,5 +1,16 @@
 import type { Knot, SupportState } from '../types';
+import type { SupportCollectionKey } from '../supportTypeRegistry';
+import { SUPPORT_STATE_TYPES } from '../supportTypeRegistry';
 import type { KickstandState } from '../SupportTypes/Kickstand/types';
+
+/**
+ * Collections whose entities carry `segments`. Braces are excluded: their knots
+ * hang off a synthetic `braceSegment:` id rather than real segments, handled
+ * separately below.
+ */
+const SHAFTED_COLLECTION_KEYS = SUPPORT_STATE_TYPES
+  .map((descriptor) => descriptor.location.key)
+  .filter((key) => key !== 'braces' && key !== 'leaves');
 
 export interface SupportRenderLookupSnapshot {
   supportIdBySegmentId: Record<string, string>;
@@ -14,7 +25,7 @@ export interface SupportRenderLookupSnapshot {
 }
 
 export interface SupportRenderLookupInput {
-  state: Pick<SupportState, 'roots' | 'trunks' | 'branches' | 'leaves' | 'twigs' | 'sticks' | 'braces' | 'knots'>;
+  state: Pick<SupportState, SupportCollectionKey>;
   kickstandState: Pick<KickstandState, 'kickstands' | 'knots'>;
   activePreviewSupport?: {
     kind: 'trunk' | 'branch' | 'kickstand' | null;
@@ -44,27 +55,42 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
     list.push(knotId);
   };
 
+  /**
+   * Register a shafted support's segments and joints.
+   *
+   * Every segment-bearing type does this identically; only the contact
+   * primitives differ, so those stay in the per-type blocks below. Driving the
+   * shaft half from the registry is what finally put ANCHORS in this lookup --
+   * they have segments and were simply missing, so nothing could resolve which
+   * support an anchor segment or joint belonged to.
+   */
+  const registerShaft = (entity: { id: string; modelId?: string; segments: Array<{ id: string; topJoint?: { id: string } | null; bottomJoint?: { id: string } | null }> }) => {
+    for (const segment of entity.segments) {
+      if (shouldAbort?.()) break;
+      supportIdBySegmentId[segment.id] = entity.id;
+      entitySegmentModelIdById[segment.id] = entity.modelId;
+      if (segment.topJoint?.id) supportIdByJointId[segment.topJoint.id] = entity.id;
+      if (segment.bottomJoint?.id) supportIdByJointId[segment.bottomJoint.id] = entity.id;
+    }
+  };
+
+  for (const key of SHAFTED_COLLECTION_KEYS) {
+    if (shouldAbort?.()) break;
+    const record = (state as Partial<Record<string, Record<string, unknown>>>)[key];
+    if (!record) continue;
+    for (const entity of Object.values(record)) {
+      if (shouldAbort?.()) break;
+      registerShaft(entity as Parameters<typeof registerShaft>[0]);
+    }
+  }
+
   for (const trunk of Object.values(state.trunks)) {
     if (shouldAbort?.()) break;
-    for (const segment of trunk.segments) {
-      if (shouldAbort?.()) break;
-      supportIdBySegmentId[segment.id] = trunk.id;
-      entitySegmentModelIdById[segment.id] = trunk.modelId;
-      if (segment.topJoint?.id) supportIdByJointId[segment.topJoint.id] = trunk.id;
-      if (segment.bottomJoint?.id) supportIdByJointId[segment.bottomJoint.id] = trunk.id;
-    }
     if (trunk.contactCone?.id) supportIdByContactDiskId[trunk.contactCone.id] = trunk.id;
   }
 
   for (const branch of Object.values(state.branches)) {
     if (shouldAbort?.()) break;
-    for (const segment of branch.segments) {
-      if (shouldAbort?.()) break;
-      supportIdBySegmentId[segment.id] = branch.id;
-      entitySegmentModelIdById[segment.id] = branch.modelId;
-      if (segment.topJoint?.id) supportIdByJointId[segment.topJoint.id] = branch.id;
-      if (segment.bottomJoint?.id) supportIdByJointId[segment.bottomJoint.id] = branch.id;
-    }
     supportIdByKnotId[branch.parentKnotId] = branch.id;
     pushKnotId(knotIdsByParentShaftId, branch.parentKnotId, branch.parentKnotId);
     entityModelIdByKnotId[branch.parentKnotId] = branch.modelId;
@@ -80,26 +106,12 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
 
   for (const twig of Object.values(state.twigs)) {
     if (shouldAbort?.()) break;
-    for (const segment of twig.segments) {
-      if (shouldAbort?.()) break;
-      supportIdBySegmentId[segment.id] = twig.id;
-      entitySegmentModelIdById[segment.id] = twig.modelId;
-      if (segment.topJoint?.id) supportIdByJointId[segment.topJoint.id] = twig.id;
-      if (segment.bottomJoint?.id) supportIdByJointId[segment.bottomJoint.id] = twig.id;
-    }
     if (twig.contactDiskA?.id) supportIdByContactDiskId[twig.contactDiskA.id] = twig.id;
     if (twig.contactDiskB?.id) supportIdByContactDiskId[twig.contactDiskB.id] = twig.id;
   }
 
   for (const stick of Object.values(state.sticks)) {
     if (shouldAbort?.()) break;
-    for (const segment of stick.segments) {
-      if (shouldAbort?.()) break;
-      supportIdBySegmentId[segment.id] = stick.id;
-      entitySegmentModelIdById[segment.id] = stick.modelId;
-      if (segment.topJoint?.id) supportIdByJointId[segment.topJoint.id] = stick.id;
-      if (segment.bottomJoint?.id) supportIdByJointId[segment.bottomJoint.id] = stick.id;
-    }
     if (stick.contactConeA?.id) supportIdByContactDiskId[stick.contactConeA.id] = stick.id;
     if (stick.contactConeB?.id) supportIdByContactDiskId[stick.contactConeB.id] = stick.id;
   }
