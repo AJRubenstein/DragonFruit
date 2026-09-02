@@ -1,6 +1,6 @@
 import type { SnapTarget } from '../../../SnappingManager';
-import type { SupportState, Vec3, Brace, Knot } from '../../../../types';
-import { SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from '../../../../supportTypeRegistry';
+import type { Segment, SupportState, Vec3, Brace, Knot } from '../../../../types';
+import { getPlacementSurface, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from '../../../../supportTypeRegistry';
 import { getFinalSocketPosition } from '../../../../SupportPrimitives/ContactCone';
 import type { ContactCone } from '../../../../SupportPrimitives/ContactCone/types';
 import { calculateDiskThickness } from '../../../../SupportPrimitives/ContactDisk/contactDiskUtils';
@@ -228,43 +228,19 @@ export function buildSupportPathSnapTargets(
     // Twigs and sticks snap identically -- both are two-contact shafts whose
     // placement surface comes from either end. Kept as one loop so a third
     // two-contact type does not need a third copy.
-    const twoContactSources: Array<{ include: boolean; entities: Array<{ segments: typeof supportState.twigs[string]['segments']; placementSurface?: string }> }> = [
-        {
-            include: snap.has('twig'),
-            entities: Object.values(supportState.twigs).map((twig) => ({
-                segments: twig.segments,
-                placementSurface: twig.contactDiskA?.placementSurface ?? twig.contactDiskB?.placementSurface,
-            })),
-        },
-        {
-            include: snap.has('stick'),
-            entities: Object.values(supportState.sticks).map((stick) => ({
-                segments: stick.segments,
-                placementSurface: stick.contactConeA?.placementSurface ?? stick.contactConeB?.placementSurface,
-            })),
-        },
-        {
-            // Anchors are stubby shafts to the raft; nothing about them makes a
-            // worse snap target than a trunk, they were simply never listed.
-            include: snap.has('anchor'),
-            entities: Object.values(supportState.anchors).map((anchor) => ({
-                segments: anchor.segments,
-                placementSurface: anchor.contactCone?.placementSurface,
-            })),
-        },
-        {
-            include: snap.has('kickstand'),
-            entities: Object.values(supportState.kickstands).map((kickstand) => ({
-                segments: kickstand.segments,
-                placementSurface: undefined,
-            })),
-        },
-    ];
+    // Every shafted type except the ones trunk/branch handle above, walked from
+    // the registry. This was a hand-written entry per type, so a ninth needed a
+    // fifth entry -- and anchors were simply never listed.
+    const shaftedSnapTypes = SUPPORT_TYPES.filter((descriptor) =>
+        descriptor.hasSegments
+        && descriptor.id !== 'trunk'
+        && descriptor.id !== 'branch');
 
-    for (const source of twoContactSources) {
-        if (!source.include) continue;
-        for (const entity of source.entities) {
-            if (!matchesPlacementSurfaceFilter(entity.placementSurface as never, placementSurface)) continue;
+    for (const descriptor of shaftedSnapTypes) {
+        if (!snap.has(descriptor.id)) continue;
+        const record = supportState[descriptor.location.key as SupportCollectionKey] as Record<string, { segments: Segment[] }>;
+        for (const entity of Object.values(record)) {
+            if (!matchesPlacementSurfaceFilter(getPlacementSurface(descriptor, entity), placementSurface)) continue;
             for (const segment of entity.segments) {
                 if (shouldExclude(segment.id, excludeSegmentIds)) continue;
                 if (!segment.bottomJoint || !segment.topJoint) continue;
