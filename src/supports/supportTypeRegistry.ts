@@ -57,11 +57,20 @@ export interface SupportTypeDescriptor {
     historyRemove: SupportHistoryActionType;
     /** Whether a modelId walk includes this type. All nine do; the flag exists so a future type can opt out. */
     carriesModelId: boolean;
+    /**
+     * Whether instances carry a `segments` array of real shafts.
+     *
+     * Declared rather than inferred by excluding names: callers that walk shafts
+     * were subtracting 'braces' and 'leaves' by hand, which quietly includes any
+     * future type that also has no segments.
+     */
+    hasSegments: boolean;
 }
 
 export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'trunk',
+        hasSegments: true,
         label: 'Trunks',
         location: { store: 'support', key: 'trunks' },
         selectionCategory: 'trunk',
@@ -71,6 +80,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'branch',
+        hasSegments: true,
         label: 'Branches',
         location: { store: 'support', key: 'branches' },
         selectionCategory: 'branch',
@@ -80,6 +90,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'leaf',
+        hasSegments: false,
         label: 'Leaves',
         location: { store: 'support', key: 'leaves' },
         selectionCategory: 'leaf',
@@ -89,6 +100,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'twig',
+        hasSegments: true,
         label: 'Twigs',
         location: { store: 'support', key: 'twigs' },
         selectionCategory: 'twig',
@@ -98,6 +110,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'stick',
+        hasSegments: true,
         label: 'Sticks',
         location: { store: 'support', key: 'sticks' },
         selectionCategory: 'stick',
@@ -107,6 +120,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'brace',
+        hasSegments: false,
         label: 'Braces',
         location: { store: 'support', key: 'braces' },
         selectionCategory: 'brace',
@@ -116,6 +130,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'anchor',
+        hasSegments: true,
         label: 'Anchors',
         location: { store: 'support', key: 'anchors' },
         selectionCategory: 'anchor',
@@ -125,6 +140,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'kickstand',
+        hasSegments: true,
         label: 'Kickstands',
         location: { store: 'support', key: 'kickstands' },
         selectionCategory: 'kickstand',
@@ -150,6 +166,11 @@ export function getSupportTypeBySelectionCategory(
     if (!category) return null;
     return SUPPORT_TYPES.find((descriptor) => descriptor.selectionCategory === category) ?? null;
 }
+
+/** Collections whose entities have real shafts, for segment and joint walks. */
+export const SHAFTED_COLLECTION_KEYS: readonly SupportCollectionKey[] = SUPPORT_TYPES
+    .filter((descriptor) => descriptor.hasSegments)
+    .map((descriptor) => descriptor.location.key as SupportCollectionKey);
 
 /** Types held in SupportState, in registry order. */
 export const SUPPORT_STATE_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYPES.filter(
