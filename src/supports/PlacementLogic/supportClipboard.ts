@@ -12,19 +12,21 @@ import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFo
 import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/computeRaftOuterBoundary';
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { v4 as uuidv4 } from 'uuid';
+import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 
+/**
+ * One array per collection, keyed off the registry.
+ *
+ * The hand-written version listed seven types and omitted anchors, so copying a
+ * model's supports silently dropped them. `kickstandRoots`/`kickstandKnots` stay
+ * separate because a kickstand owns its root and host knot, and paste has to
+ * remap those as a unit.
+ */
 type SupportClipboardPayload = {
-  roots: Roots[];
-  trunks: Trunk[];
-  branches: Branch[];
-  leaves: Leaf[];
-  twigs: Twig[];
-  sticks: Stick[];
-  braces: Brace[];
-  knots: Knot[];
+  [K in SupportCollectionKey]: SupportState[K][string][];
+} & {
   kickstandRoots: Roots[];
   kickstandKnots: Knot[];
-  kickstands: Kickstand[];
 };
 
 export type SupportModelBounds2D = {
@@ -65,13 +67,25 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
   const state = getSnapshot();
   const kickstandState = getSnapshot();
 
-  const roots = Object.values(state.roots).filter((item) => item.modelId === modelId).map(clonePlain);
-  const trunks = Object.values(state.trunks).filter((item) => item.modelId === modelId).map(clonePlain);
-  const branches = Object.values(state.branches).filter((item) => item.modelId === modelId).map(clonePlain);
-  const leaves = Object.values(state.leaves).filter((item) => item.modelId === modelId).map(clonePlain);
-  const twigs = Object.values(state.twigs).filter((item) => item.modelId === modelId).map(clonePlain);
-  const sticks = Object.values(state.sticks).filter((item) => item.modelId === modelId).map(clonePlain);
-  const braces = Object.values(state.braces).filter((item) => item.modelId === modelId).map(clonePlain);
+  // Every modelId-bearing collection, so a new support type is copied without
+  // being named here.
+  const owned = {} as { [K in SupportCollectionKey]: SupportState[K][string][] };
+  for (const key of SUPPORT_COLLECTION_KEYS) {
+    (owned as Record<string, unknown[]>)[key] = [];
+  }
+  for (const key of MODEL_ID_COLLECTION_KEYS) {
+    const record = state[key] as Record<string, { modelId?: string }>;
+    (owned as Record<string, unknown[]>)[key] = Object.values(record)
+      .filter((item) => item.modelId === modelId)
+      .map(clonePlain);
+  }
+  const roots = owned.roots;
+  const trunks = owned.trunks;
+  const branches = owned.branches;
+  const leaves = owned.leaves;
+  const twigs = owned.twigs;
+  const sticks = owned.sticks;
+  const braces = owned.braces;
 
   const kickstands = Object.values(kickstandState.kickstands)
     .filter((item) => item.modelId === modelId)
@@ -119,32 +133,18 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
     })
     .map(clonePlain);
 
-  const hasData = roots.length > 0
-    || trunks.length > 0
-    || branches.length > 0
-    || leaves.length > 0
-    || twigs.length > 0
-    || sticks.length > 0
-    || braces.length > 0
+  const hasData = SUPPORT_COLLECTION_KEYS.some((key) => owned[key].length > 0)
     || knots.length > 0
-    || kickstands.length > 0
     || kickstandRoots.length > 0
     || kickstandKnots.length > 0;
 
   if (!hasData) return null;
 
   return {
-    roots,
-    trunks,
-    branches,
-    leaves,
-    twigs,
-    sticks,
-    braces,
+    ...owned,
     knots,
     kickstandRoots,
     kickstandKnots,
-    kickstands,
   };
 }
 

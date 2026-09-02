@@ -201,6 +201,7 @@ function makePayload(): SupportClipboardPayload {
         diameter: 0.7,
       },
     ],
+    anchors: [],
     kickstands: [
       {
         id: 'support-brace-source',
