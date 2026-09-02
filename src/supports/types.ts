@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import type { ContactCone } from './SupportPrimitives/ContactCone/types';
 import type { ContactDiskProfile } from './SupportPrimitives/ContactCone/types';
 import type { KickstandBuildResult } from './SupportTypes/Kickstand/types';
