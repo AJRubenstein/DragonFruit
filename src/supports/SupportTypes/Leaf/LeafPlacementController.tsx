@@ -20,7 +20,6 @@ import { clearSupportSelection } from '../../interaction/shared/selection/select
 import { canResolveSupportPlacementBindingFromModifierState, getSupportPlacementModifierState, isSupportPlacementBindingSatisfiedByModifierState } from '../../interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver';
 import { usePlacementSnappingSession } from '../../interaction/shared/placement/snapping/usePlacementSnappingSession';
 import { buildKickstandPathSnapTargets, buildPrimarySnapTargetIndex, ALL_SNAP_TYPES, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
-import { useKickstandStoreState } from '../Kickstand/kickstandStore';
 import { projectPointToSnapTargetPath, projectRayToSnapTargetPath, selectNearestPathTarget } from '../../interaction/shared/placement/snapping/pathProjection';
 import { isSupportEditInteractionActive } from '../../interaction/gizmoInteractionLock';
 import { previewVecKey, previewNormalKey, quantizePreviewValue } from '../shared/previewSignature';
@@ -51,7 +50,6 @@ interface LeafPlacementControllerProps {
 export function LeafPlacementController({ activeModelId }: LeafPlacementControllerProps = {}) {
     const { isActive, stage, tipPosition, surfaceNormal, modelId, placementSurface, sproutParentingLockHeld } = useLeafPlacementState();
     const supportState = useSyncExternalStore(subscribe, getSnapshot);
-    const kickstandState = useKickstandStoreState();
     const { getHotkey } = useHotkeyConfig();
     const leafBinding = getHotkey('SUPPORTS', 'LEAF_PLACEMENT');
 
@@ -86,7 +84,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                 snapTypes: ALL_SNAP_TYPES,
                 placementSurface,
             }),
-            ...buildKickstandPathSnapTargets(kickstandState),
+            ...buildKickstandPathSnapTargets(supportState),
         ];
     }, [
         stage,
@@ -97,7 +95,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
         supportState.braces,
         supportState.twigs,
         supportState.sticks,
-        kickstandState.kickstands,
+        supportState.kickstands,
     ]);
 
     const targetById = useMemo(() => {

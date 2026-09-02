@@ -264,7 +264,7 @@ export function buildPrimarySnapTargetIndex(targets: readonly SnapTarget[]): Map
 }
 
 export function buildKickstandPathSnapTargets(
-    kickstandState: Pick<KickstandState, 'kickstands' | 'roots' | 'knots'>,
+    kickstandState: Pick<SupportState, 'kickstands' | 'roots' | 'knots'>,
     options: BuildKickstandPathSnapTargetsOptions = {}
 ): SnapTarget[] {
     const { excludeSegmentIds } = options;
