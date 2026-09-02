@@ -1,4 +1,4 @@
-import type { Knot, Roots, SupportState, Trunk, Vec3 } from '../../types';
+import type { Knot, Roots, Trunk, Vec3 } from '../../types';
 import type { TrunkBuildResult } from '../../SupportTypes/Trunk/trunkBuilder';
 import type { SnappedTrunkRouteResult } from '../../SupportTypes/Trunk/trunkRouteTypes';
 import { buildBranchData } from '../../SupportTypes/Branch/branchBuilder';
@@ -14,7 +14,7 @@ import { gridNodeKeyFromXY, gridSnappedXYFromKey } from './gridMath';
 import type { DecideGridPlacementArgs, GridPlacementDecision } from './types';
 import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import { calculateKnotPositionOnSegmentFromT } from '../../SupportPrimitives/Knot/knotUtils';
-import { isShaftBlocked, isCollisionSegmentBlocked } from '../CollisionAvoidance';
+import { isShaftBlocked } from '../CollisionAvoidance';
 import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
 import { buildAnchorData } from '../../SupportTypes/Anchor/anchorBuilder';

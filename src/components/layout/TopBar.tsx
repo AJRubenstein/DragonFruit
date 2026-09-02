@@ -18,7 +18,6 @@ import {
 } from '@/components/settings/themeCustomizations';
 import {
   OPEN_PROFILE_SETTINGS_MODAL_EVENT,
-  PROFILE_SETTINGS_MODAL_OPEN_CHANGE_EVENT,
   dispatchProfileSettingsModalOpenChange,
   type ProfileSettingsTab,
 } from '@/components/settings/profileModalEvents';

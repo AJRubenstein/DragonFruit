@@ -167,7 +167,6 @@ export function IslandScanCard({
                         </Button>
                     </div>
                 )}
-                hideDivider={!islands.scanCardExpanded}
             />
 
             <div className="px-2.5 pt-1 pb-2.5 space-y-1.5">

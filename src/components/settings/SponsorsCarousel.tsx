@@ -326,7 +326,6 @@ function CachedAvatar({ src, profile, alt, className, totalAmountDonated }: { sr
           }}
           aria-hidden={alt === '' ? true : undefined}
         />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={url}
           alt={alt}

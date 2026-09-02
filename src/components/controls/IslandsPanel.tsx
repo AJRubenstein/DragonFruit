@@ -159,7 +159,6 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
               <Settings className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
             </IconButton>
           )}
-          hideDivider={!expanded}
         />
 
         {expanded && (
