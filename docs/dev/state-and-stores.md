@@ -52,6 +52,42 @@ backup/legacy keys, sanitize-on-read, `setState → sanitize → persist → not
 and active-material sidecar keys. Minimal examples: `printerReachabilityStore.ts`,
 `src/volumeAnalysis/Islands/hoverStore.ts`.
 
+## The support store
+
+`src/supports/state.ts` is the largest module store in the codebase (~4 900
+lines) and departs from the shape above in four ways worth knowing before you
+touch it.
+
+**Short names, not `subscribeX`/`getXSnapshot`.** It exports plain `subscribe`,
+`getSnapshot` and `setSnapshot`. Importers that already have a `subscribe` in
+scope alias it (`subscribe as subscribeSupportState`) — check for an existing
+alias before adding an import, or you will shadow one.
+
+**No server snapshot.** It exports no `getServerSnapshot`, so consumers either
+omit the third `useSyncExternalStore` argument or pass `getSnapshot` twice. That
+breaks the stable-reference rule above, and is only safe because the support
+scene is client-only. Do not copy this into a store that renders on the server.
+
+**Batched notification.** `beginSupportStateBatch()` / `endSupportStateBatch()`
+bracket bulk edits; `notify()` sets a pending flag instead of calling listeners
+while a batch is open, and fires once at the end. Use these for any loop that
+mutates many entities, or every consumer re-renders per entity.
+
+**Collections come from the registry.** `SupportState` holds one record per
+support type, and those keys are derived from `supportTypeRegistry.ts` rather
+than hand-listed — `initialState` spreads `createEmptySupportCollections()`. A
+walk that needs "every collection" should derive it (`SUPPORT_COLLECTION_KEYS`,
+`MODEL_ID_COLLECTION_KEYS`, `SHAFTED_COLLECTION_KEYS`) rather than writing the
+names out. See [Support System](support-system.md).
+
+Two caveats. Registry adoption inside `state.ts` itself is still early — most of
+the file names types by hand, so do not assume a helper exists. And kickstands
+live on `SupportState` like every other type: `SupportTypes/Kickstand/kickstandStore.ts`
+is a read-through adapter that derives a filtered view, not a second store.
+Because that view is rebuilt whenever *any* support state changes, a component
+that only needs kickstands should read `state.kickstands` directly and skip the
+adapter's re-render.
+
 ## Preferences module pattern
 
 Settings that persist to `localStorage` use a fixed contract, repeated in ~13
