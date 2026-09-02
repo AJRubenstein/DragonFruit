@@ -233,6 +233,20 @@ inherited from an older convention and is somewhat misleading given it isn't
 on any schedule — treat it as a branch/PR preview mechanism, not a "nightly
 channel."
 
+### External (fork) pull requests
+
+A preview build compiles the branch with the release signing secrets in scope,
+so external pull requests are never built automatically: the `preview-build`
+label does not dispatch for them, and `/preview` replies with a pointer to the
+command below.
+
+After reading the diff, a maintainer runs `/create-preview-external`. That
+resolves the pull request's head SHA, points `preview/pr-<number>` at it, and
+builds that branch. It imports **one commit** — later pushes need the command
+again, so every external build is one a maintainer chose to run. Preview
+branches whose pull request has closed are swept away the next time any
+preview is activated.
+
 ## Updater implementation notes
 
 - `src-tauri/tauri.conf.json`'s `plugins.updater.endpoints` points at the

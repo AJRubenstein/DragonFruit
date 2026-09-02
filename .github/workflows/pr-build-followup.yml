@@ -198,11 +198,13 @@ jobs:
           HEAD_BRANCH: ${{ steps.pr.outputs.head_ref }}
           BASE_BRANCH: ${{ steps.pr.outputs.base_ref }}
           RUN_ID: ${{ github.event.workflow_run.id }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
+          # No pr_number: this path only fires for PRs whose branch lives in
+          # this repository, so the branch name resolves on its own. The old
+          # input made build-nightly check out refs/pull/N/head, which follows
+          # the fork's tip.
           gh workflow run build-nightly.yml \
             --repo "${{ github.repository }}" \
             --ref "$BASE_BRANCH" \
             -f branch="$HEAD_BRANCH" \
-            -f pr_run_id="$RUN_ID" \
-            -f pr_number="$PR_NUMBER"
+            -f pr_run_id="$RUN_ID"
