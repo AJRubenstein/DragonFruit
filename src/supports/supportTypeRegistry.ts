@@ -65,11 +65,20 @@ export interface SupportTypeDescriptor {
      * future type that also has no segments.
      */
     hasSegments: boolean;
+    /**
+     * Field names holding this type's contact primitives, in order.
+     *
+     * Types name these differently -- `contactCone`, or a `contactDiskA`/`B`
+     * pair -- so code wanting "where does this touch the model" had to know each
+     * type by name. Declaring them lets a caller read the first one that is set.
+     */
+    contactFields: readonly string[];
 }
 
 export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'trunk',
+        contactFields: ['contactCone'],
         hasSegments: true,
         label: 'Trunks',
         location: { store: 'support', key: 'trunks' },
@@ -80,6 +89,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'branch',
+        contactFields: ['contactCone'],
         hasSegments: true,
         label: 'Branches',
         location: { store: 'support', key: 'branches' },
@@ -90,6 +100,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'leaf',
+        contactFields: ['contactCone'],
         hasSegments: false,
         label: 'Leaves',
         location: { store: 'support', key: 'leaves' },
@@ -100,6 +111,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'twig',
+        contactFields: ['contactDiskA', 'contactDiskB'],
         hasSegments: true,
         label: 'Twigs',
         location: { store: 'support', key: 'twigs' },
@@ -110,6 +122,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'stick',
+        contactFields: ['contactConeA', 'contactConeB'],
         hasSegments: true,
         label: 'Sticks',
         location: { store: 'support', key: 'sticks' },
@@ -120,6 +133,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'brace',
+        contactFields: [],
         hasSegments: false,
         label: 'Braces',
         location: { store: 'support', key: 'braces' },
@@ -130,6 +144,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'anchor',
+        contactFields: ['contactCone'],
         hasSegments: true,
         label: 'Anchors',
         location: { store: 'support', key: 'anchors' },
@@ -140,6 +155,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'kickstand',
+        contactFields: [],
         hasSegments: true,
         label: 'Kickstands',
         location: { store: 'support', key: 'kickstands' },
@@ -198,6 +214,23 @@ export function getSupportTypeBySelectionCategory(
 ): SupportTypeDescriptor | null {
     if (!category) return null;
     return SUPPORT_TYPES.find((descriptor) => descriptor.selectionCategory === category) ?? null;
+}
+
+/**
+ * The placement surface an entity contacts, from whichever contact field is set.
+ *
+ * Braces and kickstands declare no contact fields and always return undefined.
+ */
+export function getPlacementSurface(
+    descriptor: SupportTypeDescriptor,
+    entity: unknown,
+): 'interior' | 'exterior' | undefined {
+    const record = entity as Record<string, { placementSurface?: 'interior' | 'exterior' } | undefined>;
+    for (const field of descriptor.contactFields) {
+        const surface = record[field]?.placementSurface;
+        if (surface) return surface;
+    }
+    return undefined;
 }
 
 /** Collections whose entities have real shafts, for segment and joint walks. */
