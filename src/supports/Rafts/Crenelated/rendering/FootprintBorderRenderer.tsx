@@ -4,7 +4,7 @@ import React from 'react';
 import * as THREE from 'three';
 import { useSyncExternalStore } from 'react';
 import { subscribe, getSnapshot } from '@/supports/state';
-import { subscribeToKickstandStore, getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
+import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { getRaftSettings, subscribeToRaftStore } from '../RaftState';
 import { computeFootprint } from '../geometry/computeFootprint';
 import { computeRaftOuterBoundary } from '../geometry/computeRaftOuterBoundary';
@@ -162,7 +162,7 @@ export default function FootprintBorderRenderer({
   color = '#3b82f6',
 }: FootprintBorderRendererProps) {
   const supportState = useSyncExternalStore(subscribe, getSnapshot);
-  const kickstandState = useSyncExternalStore(subscribeToKickstandStore, getKickstandSnapshot, getKickstandSnapshot);
+  const kickstandState = useSyncExternalStore(subscribe, getKickstandSnapshot, getKickstandSnapshot);
   const raft = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
   const [localModelFootprintHull, setLocalModelFootprintHull] = React.useState<THREE.Vector2[]>([]);
   const hullCacheKeyRef = React.useRef<string | null>(null);

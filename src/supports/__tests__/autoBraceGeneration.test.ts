@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
+import { resetKickstandsInState } from '@/supports/state';
 import test from 'node:test';
 
 import { buildAutoBracedSnapshot } from '../autoBracing/autoBrace';
 import { createDefaultAutoBracingSettings } from '../autoBracing/settings';
-import { resetKickstandStore } from '../SupportTypes/Kickstand/kickstandStore';
 import type { Roots, SupportState, Trunk } from '../types';
 
 function createRoot(id: string, modelId: string, x: number, y = 0): Roots {
@@ -255,7 +255,7 @@ test('dense grid forests brace trunks together instead of spawning kickstands', 
     // A 10×10 tall trunk grid at 2.24 mm spacing (the auto-grid shape).
     // Voronoi cells can isolate single trunks; bracing must pair model-wide
     // so every trunk finds a second brace axis — zero kickstands, braces on.
-    resetKickstandStore();
+    resetKickstandsInState();
     const snapshot = createEmptySnapshot();
     const spacing = 2.24;
     for (let r = 0; r < 10; r++) {

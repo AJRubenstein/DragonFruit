@@ -83,13 +83,13 @@ r3f.useFrame = () => {};
 // Now import the controller and stores
 import { KickstandPlacementController } from '../SupportTypes/Kickstand/KickstandPlacementController';
 import { kickstandPlacementStore } from '../SupportTypes/Kickstand/kickstandPlacementState';
-import { getKickstandSnapshot, resetKickstandStore } from '../SupportTypes/Kickstand/kickstandStore';
-import { getSnapshot, resetStore } from '../state';
+import { getKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
+import { getSnapshot, resetStore, resetKickstandsInState} from '../state';
 
 test('Kickstand click-commit tests', async (t) => {
   await t.test('succeeds on click-commit with valid preview', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     kickstandPlacementStore.reset();
 
     // Render the controller to register event listeners
@@ -179,7 +179,7 @@ test('Kickstand click-commit tests', async (t) => {
 
   await t.test('aborts and does not commit on occupied preview (TOO_CLOSE_TO_EXISTING error)', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     kickstandPlacementStore.reset();
 
     // Render the controller to register event listeners
@@ -264,7 +264,7 @@ test('Kickstand click-commit tests', async (t) => {
 
   await t.test('falls back to finding nearest unoccupied grid cell when target cell is occupied', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     kickstandPlacementStore.reset();
 
     // Enable grid and set spacing to 2mm

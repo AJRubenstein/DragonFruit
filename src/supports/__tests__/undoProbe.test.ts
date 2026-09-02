@@ -6,8 +6,7 @@ import { pushSupportHistory } from '../history/supportHistory';
 import { SUPPORT_UPDATE_TRUNK, SUPPORT_REMOVE_TRUNK, SUPPORT_REMOVE_BRANCH } from '../history/actionTypes';
 import { pushSupportEditHistory, captureSupportEditSnapshot } from '../history/supportEditHistory';
 import { registerSupportHistoryHandlers } from '../history/useSupportHistoryHandlers';
-import { resetStore, getSnapshot, setSnapshot, updateTrunk, removeTrunk, removeBranch, addRoot, addTrunk } from '../state';
-import { resetKickstandStore } from '../SupportTypes/Kickstand/kickstandStore';
+import { resetStore, getSnapshot, setSnapshot, updateTrunk, removeTrunk, removeBranch, addRoot, addTrunk, resetKickstandsInState} from '../state';
 import type { SupportState, Trunk, Roots, Segment, Branch } from '../types';
 
 function emptySnapshot(): SupportState {
@@ -44,7 +43,7 @@ function seedTrunk(id: string, segmentId: string, jointPos: { x: number; y: numb
 
 test('updateTrunk re-anchors t-less knots when the shaft moves', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     clearHistory();
 
     seedTrunk('t1', 's1', { x: 0, y: 0, z: 10 });
@@ -75,7 +74,7 @@ test('updateTrunk re-anchors t-less knots when the shaft moves', () => {
 
 test('undo restores a moved trunk joint (SUPPORT_UPDATE_TRUNK)', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     clearHistory();
     const dispose = registerSupportHistoryHandlers();
 
@@ -104,7 +103,7 @@ test('undo restores a moved trunk joint (SUPPORT_UPDATE_TRUNK)', () => {
 
 test('undo restores a deleted trunk (SUPPORT_REMOVE_TRUNK)', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     clearHistory();
     const dispose = registerSupportHistoryHandlers();
 
@@ -136,7 +135,7 @@ test('undo restores a deleted trunk (SUPPORT_REMOVE_TRUNK)', () => {
 
 test('undo restores a branch-joint move pushed via pushSupportEditHistory (deferred flush)', async () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     clearHistory();
     const dispose = registerSupportHistoryHandlers();
 
@@ -168,7 +167,7 @@ test('undo restores a branch-joint move pushed via pushSupportEditHistory (defer
 
 test('undo preserves selection when the moved support still exists', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     clearHistory();
     const dispose = registerSupportHistoryHandlers();
 
@@ -203,7 +202,7 @@ test('undo preserves selection when the moved support still exists', () => {
 
 test('undo clears a selection that points at a removed entity', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     clearHistory();
     const dispose = registerSupportHistoryHandlers();
 
@@ -230,7 +229,7 @@ test('undo clears a selection that points at a removed entity', () => {
 
 test('undo restores a deleted branch (SUPPORT_REMOVE_BRANCH cascade)', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     clearHistory();
     const dispose = registerSupportHistoryHandlers();
 
