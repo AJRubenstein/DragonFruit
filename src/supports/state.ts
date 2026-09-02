@@ -2,7 +2,7 @@ import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSeg
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
-import { createEmptySupportCollections, SUPPORT_STATE_COLLECTIONS } from './supportTypeRegistry';
+import { createEmptySupportCollections, registerSupportUpdater, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -1331,7 +1331,7 @@ export function removeJointById(jointId: string): RemoveJointByIdResult | null {
             lowerSegment.topJoint = undefined;
         }
 
-        updateKickstandInState(after);
+        updateKickstand(after);
         return { kind: 'kickstand', kickstandId, before, after };
     }
 
@@ -1559,7 +1559,7 @@ export function addKickstandToState(build: KickstandBuildResult) {
     notify();
 }
 
-export function updateKickstandInState(kickstand: Kickstand) {
+export function updateKickstand(kickstand: Kickstand) {
     if (!state.kickstands[kickstand.id]) return;
     state = {
         ...state,
@@ -2530,7 +2530,7 @@ export function toggleSegmentCurve(segmentId: string) {
     } else if (targetStickId) {
         updateStick(newContainer as Stick);
     } else if (targetKickstandId) {
-        updateKickstandInState(newContainer as Kickstand);
+        updateKickstand(newContainer as Kickstand);
     }
 }
 
@@ -4897,4 +4897,28 @@ export function applySettingsToSupportSelection(
     const target = resolveEditableSupportTarget(selectedId, selectedCategory);
     if (!target) return false;
     return applySettingsToSupportTarget(target, settings);
+}
+
+/* ---------------------------------------------------------------------------
+ * Updater registration
+ *
+ * Fills the registry's updater slot for every declared type by iterating
+ * SUPPORT_TYPES, so a ninth type is wired up by adding its descriptor and an
+ * `update<Type>` function -- not by remembering a line here.
+ *
+ * Registered rather than imported the other way because state.ts calls into the
+ * registry while building its initial state; the reverse import would be a cycle.
+ * The lookup is by convention (`update` + capitalised type id), and a missing
+ * function throws at load rather than failing silently later.
+ * ------------------------------------------------------------------------- */
+const SUPPORT_UPDATERS: Record<string, (entity: never) => void> = {
+    updateTrunk, updateBranch, updateLeaf, updateTwig,
+    updateStick, updateBrace, updateAnchor, updateKickstand,
+};
+
+for (const descriptor of SUPPORT_TYPES) {
+    const name = `update${descriptor.id.charAt(0).toUpperCase()}${descriptor.id.slice(1)}`;
+    const update = SUPPORT_UPDATERS[name];
+    if (!update) throw new Error(`No ${name} for support type "${descriptor.id}"`);
+    registerSupportUpdater(descriptor.id, update);
 }

@@ -11,7 +11,7 @@ import {
     subscribe,
     beginSupportStateBatch,
     endSupportStateBatch,
-    updateKickstandInState
+    updateKickstand as updateKickstandInStore
 } from '../../state';
 
 export type { KickstandState } from './types';
@@ -85,7 +85,7 @@ export function updateKickstand(buildOrKickstand: KickstandBuildResult | Kicksta
         addKickstandToState(buildOrKickstand);
         return;
     }
-    updateKickstandInState(buildOrKickstand);
+    updateKickstandInStore(buildOrKickstand);
 }
 
 // Batching is SupportState's now that the data is. Delegated rather than made a
