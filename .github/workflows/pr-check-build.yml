@@ -97,8 +97,7 @@ jobs:
         # HTTP 401. Same reason as the TAURI_SIGNING_PRIVATE_KEY guard below.
         if: >-
           steps.apple_cert.outputs.available == 'true' &&
-          (contains(github.event.pull_request.labels.*.name, 'preview-build') ||
-           contains(github.event.pull_request.labels.*.name, 'nightly-build'))
+          contains(github.event.pull_request.labels.*.name, 'preview-build')
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}

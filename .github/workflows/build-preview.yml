@@ -36,22 +36,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'issue_comment' }}
 
 env:
-  # "nightly" is being retired in favour of "preview" (see docs/dev/releases.md).
-  # Both spellings are accepted while the old one is phased out; the new label is
-  # the one this workflow applies.
   PREVIEW_LABEL: preview-build
-  NIGHTLY_LABEL: nightly-build
 
 jobs:
-  # ── Comment handler: /preview (or the deprecated /nightly) ──────────────
+  # ── Comment handler: /preview and /create-preview-external ──────────────
   activate-preview:
     if: >
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
       (startsWith(github.event.comment.body, '/preview') ||
-       startsWith(github.event.comment.body, '/nightly') ||
        startsWith(github.event.comment.body, '@github-actions build preview') ||
-       startsWith(github.event.comment.body, '@github-actions build nightly') ||
        startsWith(github.event.comment.body, '/create-preview-external'))
     runs-on: ubuntu-latest
     permissions:
@@ -246,10 +240,10 @@ jobs:
           script: |
             const body = context.payload.comment.body;
             // Everything after the command (with trailing space) is the custom
-            // name. Several spellings are accepted, and the prefix that actually
-            // matched is the one stripped — slicing a hard-coded '/nightly' off
-            // a '/preview' comment silently drops the name.
-            for (const prefix of ['/create-preview-external', '/preview', '/nightly']) {
+            // name. Both commands are accepted, and the prefix that actually
+            // matched is the one stripped — /create-preview-external must be
+            // tested first, or /preview would never match it.
+            for (const prefix of ['/create-preview-external', '/preview']) {
               if (!body.startsWith(prefix)) continue;
               const rest = body.slice(prefix.length).trim();
               if (rest) {
@@ -270,12 +264,6 @@ jobs:
           PR: ${{ github.event.issue.number }}
         run: |
           gh issue edit "$PR" --add-label "${{ env.PREVIEW_LABEL }}" --repo "${{ github.repository }}"
-
-          # Drop the old label as the new one goes on, so a PR never carries
-          # both and "remove the label to stop rebuilding" stays unambiguous.
-          # Removing a label the PR does not have is a no-op; do not let it fail
-          # the run either way.
-          gh issue edit "$PR" --remove-label "${{ env.NIGHTLY_LABEL }}" --repo "${{ github.repository }}" || true
 
       - name: Trigger immediate preview build
         if: steps.route.outputs.result == 'internal' || steps.route.outputs.result == 'external'

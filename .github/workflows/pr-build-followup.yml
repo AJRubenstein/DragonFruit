@@ -175,10 +175,7 @@ jobs:
             // repo counts as a fork and the check fails closed.
             const isFork =
               pr.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`;
-            // preview-build is the current name; nightly-build is still
-            // honoured until the old spelling is retired.
-            const PREVIEW_LABELS = ['preview-build', 'nightly-build'];
-            const hasPreviewLabel = pr.labels.some((label) => PREVIEW_LABELS.includes(label.name));
+            const hasPreviewLabel = pr.labels.some((label) => label.name === 'preview-build');
 
             if (isFork && hasPreviewLabel) {
               core.warning(
