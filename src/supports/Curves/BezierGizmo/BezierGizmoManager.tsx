@@ -13,7 +13,7 @@ import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../histor
 import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import { clearSupportDragPreview, emitSupportDragPreview } from '../../SupportPrimitives/Joint/jointDragRuntime';
 import { clearTwigDragPreview, computeTwigDragAttachmentUpdates, emitTwigDragPreview } from '../../SupportTypes/Twig/twigDragPreview';
-import { SUPPORT_TYPES, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
+import { getSupportTypeDescriptor, SUPPORT_TYPES, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
 
 interface HandleContext {
     id: string; // Unique ID for key
@@ -702,9 +702,11 @@ export function BezierGizmoManager() {
             initialTrunkRef.current = null;
         }
 
-        // One path for every non-trunk type: commit the preview, clear it, record
-        // one history entry. Trunks keep their own before/after entry above.
-        if (initialEditSnapshotRef.current && ctx.typeId && ctx.typeId !== 'trunk') {
+        // One path for every type that does not record its own history: commit the
+        // preview, clear it, record one entry. A type that writes its own entry
+        // above would otherwise get two.
+        if (initialEditSnapshotRef.current && ctx.typeId
+            && !getSupportTypeDescriptor(ctx.typeId).ownsEditHistoryEntry) {
             const typeId = ctx.typeId;
             const draggedId = (ctx as unknown as Record<string, { id: string } | undefined>)[typeId]?.id;
             const preview = livePreviewRefs[typeId]?.current;

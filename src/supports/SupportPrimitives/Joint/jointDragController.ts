@@ -2,6 +2,7 @@ import type { Branch, Roots, Trunk, Vec3 } from '../../types';
 import { updateBranch, updateTrunk } from '../../state';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { updateKickstand } from '../../SupportTypes/Kickstand/kickstandStore';
+import { getSupportTypeDescriptor } from '../../supportTypeRegistry';
 import { moveJoint } from './jointUtils';
 import { clearSupportDragPreview, emitSupportDragPreview } from './jointDragRuntime';
 
@@ -96,7 +97,7 @@ function normalizeCommittedSupport<K extends JointDragSupportKind>(
   stripDiskLengthOverride: boolean,
 ): JointDragSupportByKind[K] {
   if (!stripDiskLengthOverride) return support;
-  if (kind !== 'trunk' && kind !== 'branch') return support;
+  if (!getSupportTypeDescriptor(kind).hasContactDiskLengthOverride) return support;
 
   const typed = support as Trunk | Branch;
   if (!typed.contactCone) return support;

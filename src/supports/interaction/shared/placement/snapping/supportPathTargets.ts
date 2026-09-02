@@ -218,14 +218,12 @@ export function buildSupportPathSnapTargets(
         }
     }
 
-    // Twigs and sticks snap identically -- both are two-contact shafts whose
-    // placement surface comes from either end. Kept as one loop so a third
-    // two-contact type does not need a third copy.
-    // Every shafted type the trunk/branch passes above do not cover.
-    const shaftedSnapTypes = SUPPORT_TYPES.filter((descriptor) =>
-        descriptor.hasSegments
-        && descriptor.id !== 'trunk'
-        && descriptor.id !== 'branch');
+    // Every shafted type without a dedicated pass above. Twigs and sticks snap
+    // identically -- both are two-contact shafts whose placement surface comes
+    // from either end -- so one loop serves them and any future type like them.
+    const shaftedSnapTypes = SUPPORT_TYPES.filter(
+        (descriptor) => descriptor.hasSegments && !descriptor.hasDedicatedSnapPass,
+    );
 
     for (const descriptor of shaftedSnapTypes) {
         if (!snap.has(descriptor.id)) continue;

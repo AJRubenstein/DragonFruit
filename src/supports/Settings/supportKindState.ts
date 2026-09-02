@@ -1,5 +1,14 @@
 export type SupportKind = 'trunk' | 'raft' | 'leaf' | 'branch' | 'stick' | 'twig' | 'grid' | 'auto';
 
+/**
+ * The kind the sidebar returns to when an edit session ends.
+ *
+ * Named here rather than at each reset site. Not a SupportTypeId: this union is
+ * the tool selector, which carries non-type tools (raft, grid, auto) and omits
+ * types with no sidebar tool of their own.
+ */
+export const DEFAULT_SUPPORT_KIND: SupportKind = 'trunk';
+
 type SupportKindState = {
     kind: SupportKind;
 };
