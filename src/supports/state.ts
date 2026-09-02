@@ -2,7 +2,7 @@ import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSeg
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
-import { createEmptySupportCollections, registerSupportUpdater, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES } from './supportTypeRegistry';
+import { createEmptySupportCollections, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SHAFTED_COLLECTION_KEYS, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -523,12 +523,7 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
     // its diameter degenerates to the renderer default (oversized) and its position is
     // never reconciled to the twig. Twig segment endpoints are the segment's two joints
     // (same contract useKnotInteraction.resolveEndpoints uses for twig hosts).
-    const twigSegmentMap = new Map<string, { twig: Twig; segment: Segment; segmentIndex: number }>();
-    for (const twig of Object.values(snapshot.twigs)) {
-        twig.segments.forEach((segment, segmentIndex) => {
-            twigSegmentMap.set(segment.id, { twig, segment, segmentIndex });
-        });
-    }
+
     // Segments chain root top -> host knot, so endpoints come from the neighbours.
     // Read from `snapshot`, not the live store: this runs on the state being
     // built, so the store still holds the previous scene.
@@ -552,13 +547,36 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
         });
     }
 
-    const stickSegmentMap = new Map<string, { stick: Stick; segment: Segment; segmentIndex: number }>();
-    for (const stick of Object.values(snapshot.sticks)) {
-        stick.segments.forEach((segment, segmentIndex) => {
-            stickSegmentMap.set(segment.id, { stick, segment, segmentIndex });
-        });
+    // Types whose segments carry both joints, so a host resolves from the segment
+    // alone. Trunks, branches and kickstands need their own maps below because
+    // their endpoints come from a root, a parent knot or a neighbouring segment.
+    const SELF_CONTAINED_SHAFTS = SHAFTED_COLLECTION_KEYS.filter(
+        (key) => key !== 'trunks' && key !== 'branches' && key !== 'kickstands',
+    );
+    // Segment -> its owning entity and type, so a host can be asked how it sizes
+    // knots without this function knowing which types answer.
+    const shaftHostBySegmentId = new Map<string, { typeId: SupportTypeId; entity: unknown }>();
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        const record = snapshot[descriptor.location.key as SupportCollectionKey] as Record<string, { segments: Segment[] }> | undefined;
+        if (!record) continue;
+        for (const entity of Object.values(record)) {
+            for (const segment of entity.segments) {
+                shaftHostBySegmentId.set(segment.id, { typeId: descriptor.id, entity });
+            }
+        }
     }
-    const getTwigSegmentEndpoints = (segment: Segment): { start: Vec3; end: Vec3 } | null => {
+
+    const simpleShaftSegmentMap = new Map<string, Segment>();
+    for (const key of SELF_CONTAINED_SHAFTS) {
+        const record = snapshot[key] as Record<string, { segments: Segment[] }> | undefined;
+        if (!record) continue;
+        for (const entity of Object.values(record)) {
+            for (const segment of entity.segments) simpleShaftSegmentMap.set(segment.id, segment);
+        }
+    }
+    /** Endpoints for a segment that carries both joints, whatever type owns it. */
+    const getSelfContainedSegmentEndpoints = (segment: Segment): { start: Vec3; end: Vec3 } | null => {
         if (!segment.bottomJoint || !segment.topJoint) return null;
         return {
             start: { ...segment.bottomJoint.pos },
@@ -649,23 +667,12 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
             }
 
             if (!segment || !endpoints) {
-                const twigRef = twigSegmentMap.get(knot.parentShaftId);
-                if (twigRef) {
-                    const twigEndpoints = getTwigSegmentEndpoints(twigRef.segment);
-                    if (twigEndpoints) {
-                        segment = twigRef.segment;
-                        endpoints = twigEndpoints;
-                    }
-                }
-            }
-
-            if (!segment || !endpoints) {
-                const stickRef = stickSegmentMap.get(knot.parentShaftId);
-                if (stickRef) {
-                    const stickEndpoints = getTwigSegmentEndpoints(stickRef.segment);
-                    if (stickEndpoints) {
-                        segment = stickRef.segment;
-                        endpoints = stickEndpoints;
+                const simpleShaft = simpleShaftSegmentMap.get(knot.parentShaftId);
+                if (simpleShaft) {
+                    const shaftEndpoints = getSelfContainedSegmentEndpoints(simpleShaft);
+                    if (shaftEndpoints) {
+                        segment = simpleShaft;
+                        endpoints = shaftEndpoints;
                     }
                 }
             }
@@ -827,18 +834,12 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
                 braceHostKnotIds.has(knot.id)
                 && effectiveNormalizationHint === 'braceImported'
                 && Number.isFinite(knot.diameter as number);
-            // Twig hosts size their knots by the 10% taper rule (matching native
-            // LeafPlacementController / twigBuilder), NOT the generic segment+0.1mm
-            // used by trunk/branch. Without this a twig-hosted knot is normalized to
-            // segment.diameter + 0.1 — slightly oversized and unlike a hand-placed leaf.
-            const twigHostRef = twigSegmentMap.get(nextParentShaftId);
-            let twigKnotDiameter: number | null = null;
-            if (twigHostRef) {
-                const localTwigDia = resolveTwigDiameterAtSegmentT(twigHostRef.twig, nextParentShaftId, t);
-                if (localTwigDia !== null && localTwigDia > 0) {
-                    twigKnotDiameter = twigJointDiameterForLocalDiameter(localTwigDia);
-                }
-            }
+            // A host type may size knots its own way -- twigs follow their taper
+            // rather than the generic segment-diameter rule below.
+            const shaftHost = shaftHostBySegmentId.get(nextParentShaftId);
+            const twigKnotDiameter = shaftHost
+                ? resolveKnotDiameter(shaftHost.typeId, shaftHost.entity, nextParentShaftId, t)
+                : null;
             const computedDiameter = preserveImportedBraceUniformDiameter
                 ? (knot.diameter as number)
                 : twigKnotDiameter !== null
@@ -4890,6 +4891,13 @@ const SUPPORT_UPDATERS: Record<string, (entity: never) => void> = {
     updateTrunk, updateBranch, updateLeaf, updateTwig,
     updateStick, updateBrace, updateAnchor, updateKickstand,
 };
+
+// Twigs taper along their length, so a knot on one is sized from the taper
+// rather than the generic segment-diameter rule.
+registerKnotDiameterRule<Twig>('twig', (twig, segmentId, t) => {
+    const local = resolveTwigDiameterAtSegmentT(twig, segmentId, t);
+    return local !== null && local > 0 ? twigJointDiameterForLocalDiameter(local) : null;
+});
 
 for (const descriptor of SUPPORT_TYPES) {
     const name = `update${descriptor.id.charAt(0).toUpperCase()}${descriptor.id.slice(1)}`;
