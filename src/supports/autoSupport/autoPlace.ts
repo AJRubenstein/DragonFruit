@@ -3153,7 +3153,7 @@ export function computeAutoSupportPlan(
     if (changed && !autoSettings.debugSkipAutoBracing) {
         console.log(LOG_PREFIX, 'Running auto-brace...');
         try {
-            const braceResult = buildAutoBracedSnapshot(draft, getSettings().autoBracing, kickstandDraft);
+            const braceResult = buildAutoBracedSnapshot(draft, getSettings().autoBracing);
             draft = braceResult.snapshot;
             kickstandDraft = braceResult.kickstand;
             console.log(LOG_PREFIX,

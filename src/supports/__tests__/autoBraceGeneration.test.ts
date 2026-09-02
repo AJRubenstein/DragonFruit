@@ -91,12 +91,15 @@ test('buildAutoBracedSnapshot replaces old braces and generates braces with vali
         diameter: 1.1,
     };
 
+    // Marked as auto-bracing's own: a run replaces what it generated. An
+    // unmarked brace is hand-placed and is now kept, which this test predates.
     snapshot.braces['brace-old'] = {
         id: 'brace-old',
         modelId,
         startKnotId: 'k-old-a',
         endKnotId: 'k-old-b',
         profile: { diameter: 0.9 },
+        generatedBy: 'autoBracing',
     };
 
     const settings = createDefaultAutoBracingSettings();
@@ -272,3 +275,58 @@ test('dense grid forests brace trunks together instead of spawning kickstands', 
         'every grid trunk finds two brace axes — no kickstands needed');
 });
 
+/** Three trunks in a row: the minimum auto-bracing will act on. */
+function buildLadder() {
+    const snapshot = createEmptySnapshot();
+    const modelId = 'model-a';
+    for (const [i, id] of ['a', 'b', 'c'].entries()) {
+        const root = createRoot(`root-${id}`, modelId, i * 2);
+        const trunk = createTrunk(`trunk-${id}`, modelId, root.id, `seg-${id}`, i * 2, 0, 10);
+        snapshot.roots[root.id] = root;
+        snapshot.trunks[trunk.id] = trunk;
+    }
+    return { snapshot, modelId };
+}
+
+test('auto-bracing keeps hand-placed braces', () => {
+    const { snapshot, modelId } = buildLadder();
+
+    snapshot.knots['k-hand-a'] = { id: 'k-hand-a', parentShaftId: 'seg-a', t: 0.5, pos: { x: 0, y: 0, z: 3 }, diameter: 1.1 };
+    snapshot.knots['k-hand-b'] = { id: 'k-hand-b', parentShaftId: 'seg-b', t: 0.5, pos: { x: 2, y: 0, z: 3 }, diameter: 1.1 };
+    // No generatedBy: a person drew this one.
+    snapshot.braces['brace-hand'] = {
+        id: 'brace-hand',
+        modelId,
+        startKnotId: 'k-hand-a',
+        endKnotId: 'k-hand-b',
+        profile: { diameter: 0.9 },
+    };
+
+    const result = buildAutoBracedSnapshot(snapshot, createDefaultAutoBracingSettings());
+
+    assert.ok(result.snapshot.braces['brace-hand'], 'a brace nothing generated must survive a run');
+    assert.ok(
+        Object.values(result.snapshot.braces).some((brace) => brace.generatedBy === 'autoBracing'),
+        'and the run must still generate its own',
+    );
+});
+
+test('removeExistingBracing=false keeps previously generated braces too', () => {
+    const { snapshot, modelId } = buildLadder();
+
+    snapshot.knots['k-prev-a'] = { id: 'k-prev-a', parentShaftId: 'seg-a', t: 0.5, pos: { x: 0, y: 0, z: 3 }, diameter: 1.1 };
+    snapshot.knots['k-prev-b'] = { id: 'k-prev-b', parentShaftId: 'seg-b', t: 0.5, pos: { x: 2, y: 0, z: 3 }, diameter: 1.1 };
+    snapshot.braces['brace-prev'] = {
+        id: 'brace-prev',
+        modelId,
+        startKnotId: 'k-prev-a',
+        endKnotId: 'k-prev-b',
+        profile: { diameter: 0.9 },
+        generatedBy: 'autoBracing',
+    };
+
+    const settings = { ...createDefaultAutoBracingSettings(), removeExistingBracing: false };
+    const result = buildAutoBracedSnapshot(snapshot, settings);
+
+    assert.ok(result.snapshot.braces['brace-prev'], 'nothing is removed when the flag is off');
+});

@@ -23,6 +23,11 @@ export interface Kickstand extends SupportEntity {
     hostKnotId: string;
     hostSegmentId: string;
     hostMinT: number;
+    /**
+     * @deprecated Superseded by `generatedBy` on SupportEntity, which every type
+     * carries. Kept so scenes saved before the change still identify their
+     * auto-generated kickstands; see migrateLegacyGeneratedBy in state.ts.
+     */
     autoBracingGenerated?: boolean;
     segments: Segment[];
     profile: {

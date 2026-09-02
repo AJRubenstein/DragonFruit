@@ -2545,6 +2545,16 @@ export function resetStore() {
  * Loads support data from the DragonFruit import format into the support store,
  * replacing all existing support data.
  */
+/**
+ * Scenes saved before `generatedBy` marked auto kickstands with their own
+ * `autoBracingGenerated` flag. Carry it across on read so auto-bracing still
+ * recognises its own work in an older file.
+ */
+function migrateLegacyGeneratedBy(kickstand: Kickstand): Kickstand {
+    if (kickstand.generatedBy || !kickstand.autoBracingGenerated) return kickstand;
+    return { ...kickstand, generatedBy: 'autoBracing' };
+}
+
 export function loadFromImportFormat(data: DragonfruitImportFormat) {
     const importDefaults = getSavedImportDefaultsSettings();
     const effectiveData = applyImportDefaultsToSupportPayload(data, importDefaults);
@@ -2615,7 +2625,7 @@ export function loadFromImportFormat(data: DragonfruitImportFormat) {
     // a SupportState collection now, and addKickstand would mutate `state` only
     // for `state = newState` below to discard it.
     for (const build of effectiveData.kickstands ?? []) {
-        newState.kickstands[build.kickstand.id] = build.kickstand;
+        newState.kickstands[build.kickstand.id] = migrateLegacyGeneratedBy(build.kickstand);
         newState.roots[build.root.id] = build.root;
         newState.knots[build.hostKnot.id] = build.hostKnot;
     }
@@ -3001,7 +3011,7 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
     // Into `merged` directly, for the same reason loadFromImportFormat does:
     // `state = merged` below would discard anything addKickstand wrote.
     for (const build of isolated.kickstands ?? []) {
-        merged.kickstands[build.kickstand.id] = build.kickstand;
+        merged.kickstands[build.kickstand.id] = migrateLegacyGeneratedBy(build.kickstand);
         merged.roots[build.root.id] = build.root;
         merged.knots[build.hostKnot.id] = build.hostKnot;
     }
