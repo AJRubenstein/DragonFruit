@@ -1,15 +1,6 @@
 import type { Knot, SupportState } from '../types';
 import type { SupportCollectionKey } from '../supportTypeRegistry';
-import { SUPPORT_STATE_TYPES } from '../supportTypeRegistry';
-
-/**
- * Collections whose entities carry `segments`. Braces are excluded: their knots
- * hang off a synthetic `braceSegment:` id rather than real segments, handled
- * separately below.
- */
-const SHAFTED_COLLECTION_KEYS = SUPPORT_STATE_TYPES
-  .map((descriptor) => descriptor.location.key)
-  .filter((key) => key !== 'braces' && key !== 'leaves');
+import { SHAFTED_COLLECTION_KEYS } from '../supportTypeRegistry';
 
 export interface SupportRenderLookupSnapshot {
   supportIdBySegmentId: Record<string, string>;

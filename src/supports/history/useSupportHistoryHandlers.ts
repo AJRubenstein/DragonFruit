@@ -30,7 +30,7 @@ import { addAnchor, addKnot, addLeaf, addRoot, addTrunk, addBranch, addTwig, add
 import { addKickstand, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import { setSupportBlockedTriangles } from '../autoSupport/supportBlockers';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
-import { getSupportTypeBySelectionCategory, MODEL_ID_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, type SupportCollectionKey } from '../supportTypeRegistry';
+import { getSupportTypeBySelectionCategory, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, type SupportCollectionKey } from '../supportTypeRegistry';
 
 function applySnapshotHistory(payload: SupportReplaceStatePayload, direction: 'undo' | 'redo') {
   clearSupportSelection();
@@ -77,14 +77,14 @@ function selectionExistsInSnapshot(): boolean {
     case 'joint': {
       const hasJointOrSegment = (segments: Array<{ id: string; topJoint?: { id: string } | null; bottomJoint?: { id: string } | null }>) =>
         segments.some((s) => s.id === id || s.topJoint?.id === id || s.bottomJoint?.id === id);
-      // Every segment-bearing type, not just trunks and branches: a twig, stick,
-      // anchor or kickstand joint used to read as deleted the moment it was
-      // selected, because this scan never looked at those collections.
-      for (const key of MODEL_ID_COLLECTION_KEYS) {
-        const record = state[key] as Record<string, { segments?: Array<{ id: string; topJoint?: { id: string } | null; bottomJoint?: { id: string } | null }> }> | undefined;
+      // Every shafted type, from the registry: this used to look at trunks and
+      // branches only, so a twig, stick, anchor or kickstand joint read as
+      // deleted the moment it was selected.
+      for (const key of SHAFTED_COLLECTION_KEYS) {
+        const record = state[key] as Record<string, { segments: Array<{ id: string; topJoint?: { id: string } | null; bottomJoint?: { id: string } | null }> }> | undefined;
         if (!record) continue;
         for (const entity of Object.values(record)) {
-          if (entity.segments && hasJointOrSegment(entity.segments)) return true;
+          if (hasJointOrSegment(entity.segments)) return true;
         }
       }
       return false;

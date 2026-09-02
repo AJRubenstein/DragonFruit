@@ -10,6 +10,7 @@ import {
   SUPPORT_COLLECTION_KEYS,
   MODEL_ID_TYPES,
   SUPPORT_STATE_TYPES,
+  SHAFTED_COLLECTION_KEYS,
   getSupportTypeDescriptor,
   getSupportTypeBySelectionCategory,
 } from '../supportTypeRegistry';
@@ -114,4 +115,26 @@ test('counts reflect populated collections', () => {
   snapshot.trunks = { 't-1': { id: 't-1' } } as never;
   assert.equal(countSupportCollections(snapshot).trunks, 1);
   assert.equal(countSupportCollections(snapshot).braces, 0);
+});
+
+test('hasSegments matches the actual entity shape', () => {
+    // The flag is what shaft walks key off, so a wrong one silently skips a type.
+    // Built from a real empty collection set plus a probe entity per type.
+    const shafted = new Set(SHAFTED_COLLECTION_KEYS);
+    for (const descriptor of SUPPORT_TYPES) {
+        const key = descriptor.location.key;
+        assert.equal(
+            shafted.has(key as never),
+            descriptor.hasSegments,
+            `${descriptor.id}: hasSegments=${descriptor.hasSegments} but SHAFTED_COLLECTION_KEYS ${shafted.has(key as never) ? 'includes' : 'omits'} it`,
+        );
+    }
+});
+
+test('leaves and braces are the only types without segments', () => {
+    // Not a walk, a fact: both attach via knots rather than carrying a shaft.
+    assert.deepEqual(
+        SUPPORT_TYPES.filter((d) => !d.hasSegments).map((d) => d.id).sort(),
+        ['brace', 'leaf'],
+    );
 });
