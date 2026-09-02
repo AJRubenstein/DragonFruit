@@ -205,6 +205,21 @@ export const SUPPORT_COLLECTION_KEYS: readonly SupportCollectionKey[] = [
     ...SUPPORT_STATE_TYPES.map((d) => d.location.key as SupportCollectionKey),
 ];
 
+/**
+ * Categories that count as "a support is selected".
+ *
+ * Every support type plus `root`, which is selectable but belongs to a support
+ * rather than being one. Knots are excluded: selecting a knot is selecting an
+ * attachment point, and the multi-selection paths treat that as not-a-support.
+ *
+ * Derived because the two hand-written copies of this set both omitted
+ * kickstand, so a selected kickstand did not resolve as a support selection.
+ */
+export const SUPPORT_SELECTION_CATEGORIES: ReadonlySet<SupportSelectionCategory> = new Set([
+    ...SUPPORT_TYPES.map((descriptor) => descriptor.selectionCategory),
+    'root' as SupportSelectionCategory,
+]);
+
 /** Per-collection counts, for load diagnostics. */
 export function countSupportCollections(
     snapshot: Pick<SupportState, SupportCollectionKey>,

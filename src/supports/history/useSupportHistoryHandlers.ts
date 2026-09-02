@@ -28,6 +28,7 @@ import { registerSupportHistoryHandler } from './supportHistory';
 import { addAnchor, addKnot, addLeaf, addRoot, addTrunk, addBranch, addTwig, addStick, addBrace, removeAnchor, removeLeaf, removeTrunk, removeBranch, removeTwig, removeStick, removeBrace, removeKickstandCascade, updateTrunk, updateBranch, updateKnot, setSnapshot, getSnapshot } from '../state';
 import { addKickstand, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
+import { getSupportTypeBySelectionCategory, MODEL_ID_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, type SupportCollectionKey } from '../supportTypeRegistry';
 
 function applySnapshotHistory(payload: SupportReplaceStatePayload, direction: 'undo' | 'redo') {
   clearSupportSelection();
@@ -51,16 +52,21 @@ function selectionExistsInSnapshot(): boolean {
   const category = state.selectedCategory;
   if (!id || !category) return false;
 
+  // Collection categories resolve by direct lookup; the registry knows which key
+  // each one lives in, so a new type does not need another case here. The list
+  // this replaced had no 'kickstand', so a selected kickstand always read as gone.
+  const descriptor = getSupportTypeBySelectionCategory(category);
+  if (descriptor) {
+    const record = state[descriptor.location.key as SupportCollectionKey] as Record<string, unknown> | undefined;
+    return !!record?.[id];
+  }
+  for (const primitive of SUPPORT_PRIMITIVE_COLLECTIONS) {
+    if (primitive.selectionCategory !== category) continue;
+    const record = state[primitive.key] as Record<string, unknown> | undefined;
+    return !!record?.[id];
+  }
+
   switch (category) {
-    case 'trunk': return !!state.trunks[id];
-    case 'branch': return !!state.branches[id];
-    case 'leaf': return !!state.leaves[id];
-    case 'twig': return !!state.twigs[id];
-    case 'stick': return !!state.sticks[id];
-    case 'brace': return !!state.braces[id];
-    case 'anchor': return !!state.anchors[id];
-    case 'root': return !!state.roots[id];
-    case 'knot': return !!state.knots[id];
     case 'segment':
       if (id.startsWith('braceSegment:')) {
         return !!state.braces[id.slice('braceSegment:'.length)];
@@ -69,11 +75,15 @@ function selectionExistsInSnapshot(): boolean {
     case 'joint': {
       const hasJointOrSegment = (segments: Array<{ id: string; topJoint?: { id: string } | null; bottomJoint?: { id: string } | null }>) =>
         segments.some((s) => s.id === id || s.topJoint?.id === id || s.bottomJoint?.id === id);
-      for (const t of Object.values(state.trunks)) {
-        if (hasJointOrSegment(t.segments)) return true;
-      }
-      for (const b of Object.values(state.branches)) {
-        if (hasJointOrSegment(b.segments)) return true;
+      // Every segment-bearing type, not just trunks and branches: a twig, stick,
+      // anchor or kickstand joint used to read as deleted the moment it was
+      // selected, because this scan never looked at those collections.
+      for (const key of MODEL_ID_COLLECTION_KEYS) {
+        const record = state[key] as Record<string, { segments?: Array<{ id: string; topJoint?: { id: string } | null; bottomJoint?: { id: string } | null }> }> | undefined;
+        if (!record) continue;
+        for (const entity of Object.values(record)) {
+          if (entity.segments && hasJointOrSegment(entity.segments)) return true;
+        }
       }
       return false;
     }
