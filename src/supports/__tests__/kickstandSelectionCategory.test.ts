@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { resetStore, setSnapshot, getSnapshot, setSelectedId } from '../state';
-import { setKickstandSnapshot, resetKickstandStore } from '../SupportTypes/Kickstand/kickstandStore';
+import { resetStore, setSnapshot, getSnapshot, setSelectedId, resetKickstandsInState} from '../state';
+import { setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import {
   resolveSupportCategoryFromSnapshot,
   resolveSupportOwnerFromSegmentId,
@@ -56,7 +56,7 @@ function makeKickstandState(): KickstandState {
 
 function seed() {
   resetStore();
-  resetKickstandStore();
+  resetKickstandsInState();
   setSnapshot({ ...getSnapshot() });
   setKickstandSnapshot(makeKickstandState());
 }

@@ -25,8 +25,8 @@ import {
   SupportReplaceStatePayload,
 } from './actionTypes';
 import { registerSupportHistoryHandler } from './supportHistory';
-import { addAnchor, addKnot, addLeaf, addRoot, addTrunk, addBranch, addTwig, addStick, addBrace, removeAnchor, removeLeaf, removeTrunk, removeBranch, removeTwig, removeStick, removeBrace, removeKickstandCascade, updateTrunk, updateBranch, updateKnot, setSnapshot, getSnapshot } from '../state';
-import { addKickstand, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
+import { addKickstandToState, addAnchor, addKnot, addLeaf, addRoot, addTrunk, addBranch, addTwig, addStick, addBrace, removeAnchor, removeLeaf, removeTrunk, removeBranch, removeTwig, removeStick, removeBrace, removeKickstandCascade, updateTrunk, updateBranch, updateKnot, setSnapshot, getSnapshot } from '../state';
+import { setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
 import { getSupportTypeBySelectionCategory, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, type SupportCollectionKey } from '../supportTypeRegistry';
 
@@ -191,7 +191,7 @@ export function registerSupportHistoryHandlers(): () => void {
         for (const leaf of payload.leaves ?? []) addLeaf(leaf);
         for (const brace of payload.braces ?? []) addBrace(brace);
         for (const kickstand of payload.kickstands ?? []) {
-          addKickstand(kickstand);
+          addKickstandToState(kickstand);
           addRoot(kickstand.root);
           addKnot(kickstand.hostKnot);
         }
@@ -218,7 +218,7 @@ export function registerSupportHistoryHandlers(): () => void {
         for (const leaf of payload.leaves ?? []) addLeaf(leaf);
         for (const brace of payload.braces ?? []) addBrace(brace);
         for (const kickstand of payload.kickstands ?? []) {
-          addKickstand(kickstand);
+          addKickstandToState(kickstand);
           addRoot(kickstand.root);
           addKnot(kickstand.hostKnot);
         }
@@ -281,7 +281,7 @@ export function registerSupportHistoryHandlers(): () => void {
       if (direction === 'undo') {
         removeKickstandCascade(payload.build.kickstand.id);
       } else {
-        addKickstand(payload.build);
+        addKickstandToState(payload.build);
         addRoot(payload.build.root);
         addKnot(payload.build.hostKnot);
       }
@@ -291,13 +291,13 @@ export function registerSupportHistoryHandlers(): () => void {
       if (!payload?.build) return false;
       if (direction === 'undo') {
         addRoot(payload.build.root);
-        addKickstand(payload.build);
+        addKickstandToState(payload.build);
         addKnot(payload.build.hostKnot);
         for (const knot of payload.knots ?? []) addKnot(knot);
         for (const leaf of payload.leaves ?? []) addLeaf(leaf);
         for (const brace of payload.braces ?? []) addBrace(brace);
         for (const kickstand of payload.kickstands ?? []) {
-          addKickstand(kickstand);
+          addKickstandToState(kickstand);
           addRoot(kickstand.root);
           addKnot(kickstand.hostKnot);
         }

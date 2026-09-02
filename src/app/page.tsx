@@ -321,7 +321,7 @@ import {
   resolveUvToolsExecutablePath,
 } from '@/components/settings/uvToolsPreferences';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, toggleSegmentCurve, transformSupportsForModel, updateTrunk, updateBranch, updateTwig, updateStick, updateKnot } from '@/supports/state';
-import { subscribeToKickstandStore, getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
+import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
 import { splitShaft, splitBranchShaft, splitTwigShaft, splitStickShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
 import type { KnotSplitRemap } from '@/supports/SupportPrimitives/Knot/knotUtils';
@@ -1651,7 +1651,7 @@ export default function Home() {
     trackSupportCollectionsInHome ? getHomeSupportCollectionsSnapshot : getEmptySupportSnapshot,
   );
   const kickstandStateSnapshot = React.useSyncExternalStore(
-    subscribeToKickstandStore,
+    subscribeSupportState,
     trackSupportCollectionsInHome ? getHomeKickstandCollectionsSnapshot : getEmptyKickstandSnapshot,
     trackSupportCollectionsInHome ? getHomeKickstandCollectionsSnapshot : getEmptyKickstandSnapshot,
   );

@@ -4,8 +4,8 @@ import test from 'node:test';
 import { clearHistory, registerHistoryHandler, undo } from '../../history/historyStore';
 import { SUPPORT_AUTO_BRACE_REPLACE } from '../history/actionTypes';
 import { runAutoBracing } from '../autoBracing/autoBrace';
-import { getSnapshot, resetStore, setSnapshot  } from '../state';
-import { getKickstandSnapshot, resetKickstandStore } from '../SupportTypes/Kickstand/kickstandStore';
+import { getSnapshot, resetStore, setSnapshot, resetKickstandsInState} from '../state';
+import { getKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import type { Roots, SupportState, Trunk } from '../types';
 
 function createRoot(id: string, modelId: string, x: number): Roots {
@@ -77,7 +77,7 @@ function seedLadderSnapshot(): void {
 // so what matters is that one snapshot round-trips both.
 test('the auto-brace history snapshot carries kickstands with everything else', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     clearHistory();
     seedLadderSnapshot();
 
@@ -115,6 +115,6 @@ test('the auto-brace history snapshot carries kickstands with everything else', 
         unregister();
         clearHistory();
         resetStore();
-        resetKickstandStore();
+        resetKickstandsInState();
     }
 });

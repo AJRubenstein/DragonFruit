@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildSupportExportFromStores, buildVoxlDocumentV1, parseVoxlDocument, serializeVoxlDocument } from '../codec';
-import { getSnapshot, loadFromImportFormat, resetStore } from '@/supports/state';
-import { getKickstandSnapshot, resetKickstandStore } from '@/supports/SupportTypes/Kickstand/kickstandStore';
+import { getSnapshot, loadFromImportFormat, resetStore, resetKickstandsInState} from '@/supports/state';
+import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import type { DragonfruitImportFormat } from '@/supports/types';
 
 function almostEqual(a: number, b: number, epsilon = 1e-6): boolean {
@@ -12,7 +12,7 @@ function almostEqual(a: number, b: number, epsilon = 1e-6): boolean {
 
 test('VOXL support roundtrip preserves imported leaf and brace normalization intent', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
 
     const imported: DragonfruitImportFormat = {
         version: 1,
@@ -187,7 +187,7 @@ test('VOXL support roundtrip preserves imported leaf and brace normalization int
     const parsed = parseVoxlDocument(serialized);
 
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     loadFromImportFormat(parsed.supports);
 
     const roundTripped = getSnapshot();
@@ -209,5 +209,5 @@ test('VOXL support roundtrip preserves imported leaf and brace normalization int
     assert.ok(almostEqual(rightBraceKnot.diameter ?? 0, 1.1), 'Brace end knot diameter should stay uniform after VOXL roundtrip');
 
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
 });

@@ -40,7 +40,7 @@ import type { ContactCone } from '@/supports/SupportPrimitives/ContactCone/types
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { getModelIdForSupportEntityId } from '@/supports/state';
-import { subscribeToKickstandStore, getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
+import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import FootprintBorderRenderer from '@/supports/Rafts/Crenelated/rendering/FootprintBorderRenderer';
 import SliceSatBoundingMeshRenderer from '@/supports/Rafts/Crenelated/rendering/SliceSatBoundingMeshRenderer';
 import { getRaftSettings, subscribeToRaftStore } from '@/supports/Rafts/Crenelated/RaftState';
@@ -907,7 +907,7 @@ export function SceneCanvas({
   }, []);
 
   const kickstandStateForBounds = React.useSyncExternalStore(
-    subscribeToKickstandStore,
+    subscribeSupportState,
     getKickstandSnapshot,
     getKickstandSnapshot,
   );

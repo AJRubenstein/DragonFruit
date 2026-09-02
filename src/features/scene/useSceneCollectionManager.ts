@@ -960,7 +960,6 @@ import { getRaftSettings, updateRaftSettings, applyImportDefaultRaftSettings, re
 import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
 import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/computeRaftOuterBoundary';
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
-import { beginKickstandStoreBatch, endKickstandStoreBatch } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { getImportDefaultsRaftPatch, getSavedImportDefaultsSettings } from '@/features/scene/importDefaultsPreferences';
 import { readNativeFileSize } from '@/utils/pluginNetworkBridge';
 
@@ -4126,7 +4125,7 @@ export function useSceneCollectionManager() {
 
     schedulePostPaint(() => {
       beginSupportStateBatch();
-      beginKickstandStoreBatch();
+      beginSupportStateBatch();
       try {
         pasteModelSupportsFromClipboard(
           first.supportClipboard,
@@ -4136,7 +4135,7 @@ export function useSceneCollectionManager() {
           { recordHistory: false },
         );
       } finally {
-        endKickstandStoreBatch();
+        endSupportStateBatch();
         endSupportStateBatch();
       }
 
@@ -4524,7 +4523,7 @@ export function useSceneCollectionManager() {
 
       schedulePostPaint(() => {
         beginSupportStateBatch();
-        beginKickstandStoreBatch();
+        beginSupportStateBatch();
         try {
           pastedModels.forEach((pastedModel, index) => {
             const sourceEntry = entries[index];
@@ -4538,7 +4537,7 @@ export function useSceneCollectionManager() {
             );
           });
         } finally {
-          endKickstandStoreBatch();
+          endSupportStateBatch();
           endSupportStateBatch();
         }
 
@@ -4606,7 +4605,7 @@ export function useSceneCollectionManager() {
     // Apply source-support transform before model commit so support state can
     // never visually lag behind the moved source model during duplicate apply.
     beginSupportStateBatch();
-    beginKickstandStoreBatch();
+    beginSupportStateBatch();
     try {
       if (sourceTransform && !transformsEqual(source.transform, sourceTransform)) {
         transformSupportsForModel(sourceId, source.transform, sourceTransform);
@@ -4653,7 +4652,7 @@ export function useSceneCollectionManager() {
         pushSceneSnapshotHistory(before, after, createdIds.length === 1 ? `Duplicate Model ${source.name}` : `Duplicate ${createdIds.length} Models`);
       }
     } finally {
-      endKickstandStoreBatch();
+      endSupportStateBatch();
       endSupportStateBatch();
     }
 

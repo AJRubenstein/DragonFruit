@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { usePicking } from '@/components/picking';
 import { subscribe, getSnapshot } from './state';
-import { subscribeToKickstandStore, getKickstandSnapshot } from './SupportTypes/Kickstand/kickstandStore';
+import { getKickstandSnapshot } from './SupportTypes/Kickstand/kickstandStore';
 import { getRaftSettings, subscribeToRaftStore } from './Rafts/Crenelated/RaftState';
 import type { RaftSettings } from './Rafts/Crenelated/RaftTypes';
 import { buildSolidRaftPreviewMeshes } from './Settings/AnatomyPreview/PreviewTypes/Raft/buildSolidRaftPreviewMeshes';
@@ -200,7 +200,7 @@ export function RaftProxyMeshLayer({
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const supportRoots = supportState.roots;
   const supportAnchors = supportState.anchors;
-  const kickstandState = useSyncExternalStore(subscribeToKickstandStore, getKickstandSnapshot, getKickstandSnapshot);
+  const kickstandState = useSyncExternalStore(subscribe, getKickstandSnapshot, getKickstandSnapshot);
   const kickstandRoots = kickstandState.roots;
   const raft = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
 

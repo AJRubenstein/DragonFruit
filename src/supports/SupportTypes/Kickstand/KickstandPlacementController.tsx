@@ -5,11 +5,11 @@ import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_ADD_KICKSTAND } from '@/supports/history/actionTypes';
-import { addKnot, addRoot, subscribe, getSnapshot } from '../../state';
+import { addKickstandToState, addKnot, addRoot, subscribe, getSnapshot } from '../../state';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import { getGridSettings } from '../../Settings';
 import { snapToGridIndex } from '../../PlacementLogic/Grid/gridMath';
-import { addKickstand, getKickstandSnapshot } from './kickstandStore';
+import { getKickstandSnapshot } from './kickstandStore';
 import { clampKickstandHostT } from './kickstandRules';
 import { buildKickstandData, toKickstandPreviewData } from './kickstandBuilder';
 import { getKickstandPlacementOffsetMm } from './kickstandSettings';
@@ -653,7 +653,7 @@ export function KickstandPlacementController() {
 
             console.log('[DEBUG Kickstand placement handleClick] Placement succeeded! Adding kickstand:', finalBuild);
 
-            addKickstand(finalBuild);
+            addKickstandToState(finalBuild);
             addRoot(finalBuild.root);
             addKnot(finalBuild.hostKnot);
 

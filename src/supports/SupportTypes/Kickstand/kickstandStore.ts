@@ -3,16 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import type { KickstandBuildResult, KickstandState } from './types';
 import type { SupportState } from '../../types';
-import {
-    addKickstandToState,
-    getSnapshot,
-    resetKickstandsInState,
-    setSnapshot,
-    subscribe,
-    beginSupportStateBatch,
-    endSupportStateBatch,
-    updateKickstand as updateKickstandInStore
-} from '../../state';
+import { getSnapshot, setSnapshot, subscribe, addKickstandToState, updateKickstand as updateKickstandInStore } from '../../state';
 
 export type { KickstandState } from './types';
 
@@ -45,10 +36,6 @@ export function getKickstandSnapshot(): KickstandState {
     return cachedView;
 }
 
-export function subscribeToKickstandStore(listener: () => void) {
-    return subscribe(listener);
-}
-
 /**
  * Replace kickstand data. Roots and knots merge into the shared collections
  * rather than replacing them -- overwriting would drop every other root and knot.
@@ -63,14 +50,6 @@ export function setKickstandSnapshot(next: KickstandState) {
     });
 }
 
-export function resetKickstandStore() {
-    resetKickstandsInState();
-}
-
-export function addKickstand(build: KickstandBuildResult) {
-    addKickstandToState(build);
-}
-
 export function updateKickstand(buildOrKickstand: KickstandBuildResult | KickstandState['kickstands'][string]) {
     if ('kickstand' in buildOrKickstand) {
         addKickstandToState(buildOrKickstand);
@@ -79,19 +58,9 @@ export function updateKickstand(buildOrKickstand: KickstandBuildResult | Kicksta
     updateKickstandInStore(buildOrKickstand);
 }
 
-// Batching is SupportState's now that the data is. Delegated rather than made a
-// no-op: callers use these to suppress notification storms during bulk edits.
-export function beginKickstandStoreBatch() {
-    beginSupportStateBatch();
-}
-
-export function endKickstandStoreBatch() {
-    endSupportStateBatch();
-}
-
 export function useKickstandStoreState() {
     return useSyncExternalStore(
-        subscribeToKickstandStore,
+        subscribe,
         getKickstandSnapshot,
         getKickstandSnapshot,
     );
