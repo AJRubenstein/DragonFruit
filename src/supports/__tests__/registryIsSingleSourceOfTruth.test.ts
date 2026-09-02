@@ -67,7 +67,7 @@ function walkFiles(dir: string, out: string[] = []): string[] {
         }
 
         if (isDirectory) {
-            if (entry === '__tests__' || entry === '__golden__' || entry === 'node_modules') continue;
+            if (entry === '__tests__' || entry === 'node_modules') continue;
             walkFiles(full, out);
             continue;
         }
