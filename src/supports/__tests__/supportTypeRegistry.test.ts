@@ -8,6 +8,7 @@ import {
   createEmptySupportCollections,
   countSupportCollections,
   SUPPORT_COLLECTION_KEYS,
+  MODEL_ID_COLLECTION_KEYS,
   MODEL_ID_TYPES,
   SUPPORT_STATE_TYPES,
   SHAFTED_COLLECTION_KEYS,
@@ -137,4 +138,30 @@ test('leaves and braces are the only types without segments', () => {
         SUPPORT_TYPES.filter((d) => !d.hasSegments).map((d) => d.id).sort(),
         ['brace', 'leaf'],
     );
+});
+
+test('every collection is either a support type or a declared primitive', () => {
+    // The type system cannot check this: SUPPORT_TYPES is annotated, so its
+    // location.key widens to the full union and Exclude<> always yields never.
+    const covered = new Set<string>([
+        ...SUPPORT_TYPES.map((d) => d.location.key),
+        ...SUPPORT_PRIMITIVE_COLLECTIONS.map((c) => c.key),
+    ]);
+    const uncovered = Object.keys(createEmptySupportCollections()).filter((key) => !covered.has(key));
+    assert.deepEqual(uncovered, [], 'add a descriptor or a primitive entry for these');
+});
+
+test('primitives are collections that are not support types', () => {
+    assert.deepEqual(
+        SUPPORT_PRIMITIVE_COLLECTIONS.map((c) => c.key).sort(),
+        ['knots', 'roots'],
+    );
+});
+
+test('the modelId walk covers everything except knots', () => {
+    // A knot hangs off a shaft and carries no modelId of its own -- its model is
+    // resolved from the host. Roots do carry one, so they are walked.
+    const walked = new Set<string>(MODEL_ID_COLLECTION_KEYS);
+    const all = Object.keys(createEmptySupportCollections());
+    assert.deepEqual(all.filter((key) => !walked.has(key)), ['knots']);
 });
