@@ -76,11 +76,19 @@ export interface SupportTypeDescriptor {
      * writes its own would get two.
      */
     ownsEditHistoryEntry: boolean;
+    /**
+     * Whether instances own a Roots entry, via a `rootId` field.
+     *
+     * A root with no owner is garbage and gets culled, so a type missing here
+     * has its roots deleted out from under it.
+     */
+    ownsRoot: boolean;
 }
 
 export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'trunk',
+        ownsRoot: true,
         segmentsCarryBothJoints: false,
         hasDedicatedSnapPass: true,
         hasContactDiskLengthOverride: true,
@@ -96,6 +104,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'branch',
+        ownsRoot: false,
         segmentsCarryBothJoints: false,
         hasDedicatedSnapPass: true,
         hasContactDiskLengthOverride: true,
@@ -111,6 +120,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'leaf',
+        ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
         hasContactDiskLengthOverride: false,
@@ -126,6 +136,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'twig',
+        ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
         hasContactDiskLengthOverride: false,
@@ -141,6 +152,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'stick',
+        ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
         hasContactDiskLengthOverride: false,
@@ -156,6 +168,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'brace',
+        ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: true,
         hasContactDiskLengthOverride: false,
@@ -171,6 +184,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'anchor',
+        ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
         hasContactDiskLengthOverride: false,
@@ -186,6 +200,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'kickstand',
+        ownsRoot: true,
         segmentsCarryBothJoints: false,
         hasDedicatedSnapPass: false,
         hasContactDiskLengthOverride: false,
@@ -256,6 +271,29 @@ export function resolveKnotDiameter(
     t: number,
 ): number | null {
     return KNOT_DIAMETER_RULES.get(id)?.(entity, segmentId, t) ?? null;
+}
+
+/**
+ * Ids of every Roots entry some entity still claims.
+ *
+ * A root outlives the entity that made it unless something culls it, so callers
+ * need the live set. Derived from `ownsRoot` rather than named types: a new
+ * root-owning type would otherwise have its roots collected as garbage.
+ */
+export function collectOwnedRootIds(
+    collections: Partial<Record<SupportCollectionKey, Record<string, unknown>>>,
+): Set<string> {
+    const owned = new Set<string>();
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.ownsRoot) continue;
+        const record = collections[descriptor.location.key];
+        if (!record) continue;
+        for (const entity of Object.values(record)) {
+            const rootId = (entity as { rootId?: string }).rootId;
+            if (rootId) owned.add(rootId);
+        }
+    }
+    return owned;
 }
 
 const BY_ID = new Map<SupportTypeId, SupportTypeDescriptor>(
