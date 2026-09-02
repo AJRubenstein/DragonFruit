@@ -52,6 +52,19 @@ export interface SupportEdge {
     field: string;
     to: SupportCollectionKey | 'segment';
     ownership: 'owns' | 'hostedBy';
+    /**
+     * For a `hostedBy` edge: whether removing this entity also removes the host.
+     *
+     * - `'never'`     -- leave the host alone (a knot on a shaft segment).
+     * - `'ifUnused'`  -- remove it only when nothing else references it.
+     * - `'always'`    -- remove it regardless.
+     *
+     * The three removers that touch a host knot currently disagree, and the
+     * disagreement is deliberate policy rather than drift: a branch takes its
+     * knot AND everything else on it, a leaf tidies up only when it was the last
+     * user. Declaring it keeps both without a per-type branch in the walk.
+     */
+    takeHost?: 'never' | 'ifUnused' | 'always';
 }
 
 /**
@@ -139,7 +152,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'branch',
         hasSettingsHex: true,
-        edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy' }],
+        edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' }],
         ownsRoot: false,
         segmentsCarryBothJoints: false,
         hasDedicatedSnapPass: true,
@@ -157,7 +170,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'leaf',
         hasSettingsHex: true,
-        edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy' }],
+        edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' }],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
@@ -212,8 +225,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         id: 'brace',
         hasSettingsHex: false,
         edges: [
-            { field: 'startKnotId', to: 'knots', ownership: 'hostedBy' },
-            { field: 'endKnotId', to: 'knots', ownership: 'hostedBy' },
+            { field: 'startKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' },
+            { field: 'endKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' },
         ],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -252,8 +265,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasSettingsHex: false,
         edges: [
             { field: 'rootId', to: 'roots', ownership: 'owns' },
-            { field: 'hostKnotId', to: 'knots', ownership: 'hostedBy' },
-            { field: 'hostSegmentId', to: 'segment', ownership: 'hostedBy' },
+            { field: 'hostKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' },
+            { field: 'hostSegmentId', to: 'segment', ownership: 'hostedBy', takeHost: 'always' },
         ],
         ownsRoot: true,
         segmentsCarryBothJoints: false,
@@ -411,9 +424,44 @@ export const MODEL_ID_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYPES.fi
 export const SUPPORT_PRIMITIVE_COLLECTIONS: readonly {
     key: SupportCollectionKey;
     selectionCategory: SupportSelectionCategory;
+    /**
+     * How the primitive links to the rest of the graph.
+     *
+     * A knot's `parentShaftId` is the busiest edge there is -- nearly every
+     * cascade travels it -- so a walk that only reads SUPPORT_TYPES misses the
+     * majority of what a removal should take.
+     */
+    edges: readonly SupportEdge[];
 }[] = [
-    { key: 'roots', selectionCategory: 'root' },
-    { key: 'knots', selectionCategory: 'knot' },
+    { key: 'roots', selectionCategory: 'root', edges: [] },
+    {
+        key: 'knots',
+        selectionCategory: 'knot',
+        edges: [{ field: 'parentShaftId', to: 'segment', ownership: 'hostedBy' }],
+    },
+];
+
+/**
+ * Every collection that takes part in the dependency graph, with its edges.
+ *
+ * Support types and primitives both, so a graph walk cannot silently skip the
+ * primitives the way one reading SUPPORT_TYPES alone would.
+ */
+export const SUPPORT_GRAPH_NODES: readonly {
+    key: SupportCollectionKey;
+    edges: readonly SupportEdge[];
+    hasSegments: boolean;
+}[] = [
+    ...SUPPORT_TYPES.map((descriptor) => ({
+        key: descriptor.location.key,
+        edges: descriptor.edges,
+        hasSegments: descriptor.hasSegments,
+    })),
+    ...SUPPORT_PRIMITIVE_COLLECTIONS.map((primitive) => ({
+        key: primitive.key,
+        edges: primitive.edges,
+        hasSegments: false,
+    })),
 ];
 
 /** Collections selection resolves by direct id lookup: roots, then support types. */
