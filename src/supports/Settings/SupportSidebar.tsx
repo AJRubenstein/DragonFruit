@@ -48,6 +48,7 @@ import { shouldRunAutoBracingHotkey } from '../autoBracing/autoBracingHotkey';
 import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { setAnatomyPreviewActiveSettingKey, subscribeToAnatomyPreviewState, getAnatomyPreviewState } from './AnatomyPreview/previewState';
 import {
+    DEFAULT_SUPPORT_KIND,
     getSupportKindSnapshot,
     setActiveSupportKind,
     subscribeToSupportKindState,
@@ -430,8 +431,8 @@ export function SupportSidebar() {
             globalSettingsBeforeSupportEditRef.current = null;
         }
 
-        if (leavingSupportEdit && activeKind !== 'trunk') {
-            setActiveSupportKind('trunk');
+        if (leavingSupportEdit && activeKind !== DEFAULT_SUPPORT_KIND) {
+            setActiveSupportKind(DEFAULT_SUPPORT_KIND);
         }
     }, [editableTarget, commitPendingSettingsSession]);
 

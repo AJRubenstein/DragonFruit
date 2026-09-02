@@ -2,7 +2,7 @@ import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSeg
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
-import { createEmptySupportCollections, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SHAFTED_COLLECTION_KEYS, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { createEmptySupportCollections, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -548,11 +548,11 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
     }
 
     // Types whose segments carry both joints, so a host resolves from the segment
-    // alone. Trunks, branches and kickstands need their own maps below because
-    // their endpoints come from a root, a parent knot or a neighbouring segment.
-    const SELF_CONTAINED_SHAFTS = SHAFTED_COLLECTION_KEYS.filter(
-        (key) => key !== 'trunks' && key !== 'branches' && key !== 'kickstands',
-    );
+    // alone. The rest need their own maps below because their endpoints come from
+    // a root, a parent knot or a neighbouring segment.
+    const SELF_CONTAINED_SHAFTS = SUPPORT_TYPES
+        .filter((descriptor) => descriptor.hasSegments && descriptor.segmentsCarryBothJoints)
+        .map((descriptor) => descriptor.location.key);
     // Segment -> its owning entity and type, so a host can be asked how it sizes
     // knots without this function knowing which types answer.
     const shaftHostBySegmentId = new Map<string, { typeId: SupportTypeId; entity: unknown }>();

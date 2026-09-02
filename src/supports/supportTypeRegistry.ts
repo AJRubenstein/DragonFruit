@@ -49,11 +49,42 @@ export interface SupportTypeDescriptor {
     hasSegments: boolean;
     /** Contact primitive fields, in order: types name these differently. */
     contactFields: readonly string[];
+    /**
+     * Whether every segment carries both its own joints, so a host resolves from
+     * the segment alone.
+     *
+     * False for types whose endpoints come from elsewhere -- a root, a parent
+     * knot, or a neighbouring segment -- which need their own endpoint maps.
+     */
+    segmentsCarryBothJoints: boolean;
+    /**
+     * Whether the type is placed by its own dedicated snap pass.
+     *
+     * Such a type is skipped by the generic shafted-snap loop, which would
+     * otherwise offer its segments a second time.
+     */
+    hasDedicatedSnapPass: boolean;
+    /**
+     * Whether a contact cone on this type carries `diskLengthOverride`, which a
+     * joint drag strips on commit.
+     */
+    hasContactDiskLengthOverride: boolean;
+    /**
+     * Whether an edit gizmo records its own before/after history entry.
+     *
+     * The generic path commits the preview and records one entry; a type that
+     * writes its own would get two.
+     */
+    ownsEditHistoryEntry: boolean;
 }
 
 export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'trunk',
+        segmentsCarryBothJoints: false,
+        hasDedicatedSnapPass: true,
+        hasContactDiskLengthOverride: true,
+        ownsEditHistoryEntry: true,
         contactFields: ['contactCone'],
         hasSegments: true,
         label: 'Trunks',
@@ -65,6 +96,10 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'branch',
+        segmentsCarryBothJoints: false,
+        hasDedicatedSnapPass: true,
+        hasContactDiskLengthOverride: true,
+        ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
         hasSegments: true,
         label: 'Branches',
@@ -76,6 +111,10 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'leaf',
+        segmentsCarryBothJoints: true,
+        hasDedicatedSnapPass: false,
+        hasContactDiskLengthOverride: false,
+        ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
         hasSegments: false,
         label: 'Leaves',
@@ -87,6 +126,10 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'twig',
+        segmentsCarryBothJoints: true,
+        hasDedicatedSnapPass: false,
+        hasContactDiskLengthOverride: false,
+        ownsEditHistoryEntry: false,
         contactFields: ['contactDiskA', 'contactDiskB'],
         hasSegments: true,
         label: 'Twigs',
@@ -98,6 +141,10 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'stick',
+        segmentsCarryBothJoints: true,
+        hasDedicatedSnapPass: false,
+        hasContactDiskLengthOverride: false,
+        ownsEditHistoryEntry: false,
         contactFields: ['contactConeA', 'contactConeB'],
         hasSegments: true,
         label: 'Sticks',
@@ -109,6 +156,10 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'brace',
+        segmentsCarryBothJoints: true,
+        hasDedicatedSnapPass: true,
+        hasContactDiskLengthOverride: false,
+        ownsEditHistoryEntry: false,
         contactFields: [],
         hasSegments: false,
         label: 'Braces',
@@ -120,6 +171,10 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'anchor',
+        segmentsCarryBothJoints: true,
+        hasDedicatedSnapPass: false,
+        hasContactDiskLengthOverride: false,
+        ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
         hasSegments: true,
         label: 'Anchors',
@@ -131,6 +186,10 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'kickstand',
+        segmentsCarryBothJoints: false,
+        hasDedicatedSnapPass: false,
+        hasContactDiskLengthOverride: false,
+        ownsEditHistoryEntry: false,
         contactFields: [],
         hasSegments: true,
         label: 'Kickstands',
