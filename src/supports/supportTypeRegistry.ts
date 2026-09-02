@@ -108,11 +108,19 @@ export interface SupportTypeDescriptor {
     ownsRoot: boolean;
     /** How instances link to other entities. See {@link SupportEdge}. */
     edges: readonly SupportEdge[];
+    /**
+     * Whether instances carry a `settingsCodeHex` cached outside the entity.
+     *
+     * The cache is keyed by type and id, so a type that caches must evict on
+     * remove or the next entity reusing that id inherits stale settings.
+     */
+    hasSettingsHex: boolean;
 }
 
 export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'trunk',
+        hasSettingsHex: true,
         edges: [{ field: 'rootId', to: 'roots', ownership: 'owns' }],
         ownsRoot: true,
         segmentsCarryBothJoints: false,
@@ -130,6 +138,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'branch',
+        hasSettingsHex: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy' }],
         ownsRoot: false,
         segmentsCarryBothJoints: false,
@@ -147,6 +156,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'leaf',
+        hasSettingsHex: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy' }],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -164,6 +174,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'twig',
+        hasSettingsHex: false,
         edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -181,6 +192,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'stick',
+        hasSettingsHex: false,
         edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -198,6 +210,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'brace',
+        hasSettingsHex: false,
         edges: [
             { field: 'startKnotId', to: 'knots', ownership: 'hostedBy' },
             { field: 'endKnotId', to: 'knots', ownership: 'hostedBy' },
@@ -218,6 +231,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'anchor',
+        hasSettingsHex: false,
         edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -235,6 +249,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'kickstand',
+        hasSettingsHex: false,
         edges: [
             { field: 'rootId', to: 'roots', ownership: 'owns' },
             { field: 'hostKnotId', to: 'knots', ownership: 'hostedBy' },

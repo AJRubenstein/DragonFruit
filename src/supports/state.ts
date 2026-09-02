@@ -2,7 +2,7 @@ import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSeg
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
-import { createEmptySupportCollections, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -1504,12 +1504,7 @@ export function addKickstandToState(build: KickstandBuildResult) {
 }
 
 export function updateKickstand(kickstand: Kickstand) {
-    if (!state.kickstands[kickstand.id]) return;
-    state = {
-        ...state,
-        kickstands: { ...state.kickstands, [kickstand.id]: kickstand },
-    };
-    notify();
+    replaceSupportEntity('kickstand', kickstand);
 }
 
 export function removeKickstandFromState(id: string): KickstandBuildResult | null {
@@ -3018,16 +3013,29 @@ export function addRoot(root: Roots) {
     notify();
 }
 
-export function addTrunk(trunk: Trunk) {
-    if (trunk.settingsCodeHex) {
-        setCachedSupportSettingsHex('trunk', trunk.id, trunk.settingsCodeHex);
+/**
+ * Write an entity into its collection, evicting nothing and cascading nothing.
+ *
+ * The per-type `addX` functions below are thin wrappers: identical apart from
+ * which collection they write and whether the type caches a settings hex, both
+ * of which the registry declares.
+ */
+function addSupportEntity(typeId: SupportTypeId, entity: { id: string; settingsCodeHex?: string }) {
+    const descriptor = getSupportTypeDescriptor(typeId);
+    if (descriptor.hasSettingsHex && entity.settingsCodeHex) {
+        setCachedSupportSettingsHex(typeId as 'trunk' | 'branch' | 'leaf', entity.id, entity.settingsCodeHex);
     }
 
+    const key = descriptor.location.key;
     state = {
         ...state,
-        trunks: { ...state.trunks, [trunk.id]: trunk }
+        [key]: { ...state[key], [entity.id]: entity },
     };
     notify();
+}
+
+export function addTrunk(trunk: Trunk) {
+    addSupportEntity('trunk', trunk);
 }
 
 export function updateTrunk(trunk: Trunk, options?: { skipDependentGeometry?: boolean }) {
@@ -3121,27 +3129,11 @@ export function updateTrunk(trunk: Trunk, options?: { skipDependentGeometry?: bo
 }
 
 export function addBranch(branch: Branch) {
-    if (branch.settingsCodeHex) {
-        setCachedSupportSettingsHex('branch', branch.id, branch.settingsCodeHex);
-    }
-
-    state = {
-        ...state,
-        branches: { ...state.branches, [branch.id]: branch }
-    };
-    notify();
+    addSupportEntity('branch', branch);
 }
 
 export function addLeaf(leaf: Leaf) {
-    if (leaf.settingsCodeHex) {
-        setCachedSupportSettingsHex('leaf', leaf.id, leaf.settingsCodeHex);
-    }
-
-    state = {
-        ...state,
-        leaves: { ...state.leaves, [leaf.id]: leaf }
-    };
-    notify();
+    addSupportEntity('leaf', leaf);
 }
 
 export function updateLeaf(leaf: Leaf) {
@@ -3169,44 +3161,42 @@ export function updateLeaf(leaf: Leaf) {
 }
 
 export function addBrace(brace: Brace) {
-    state = {
-        ...state,
-        braces: { ...state.braces, [brace.id]: brace },
-    };
-    notify();
+    addSupportEntity('brace', brace);
 }
 
 export function addTwig(twig: Twig) {
-    state = {
-        ...state,
-        twigs: { ...state.twigs, [twig.id]: twig },
-    };
-    notify();
+    addSupportEntity('twig', twig);
 }
 
 export function addStick(stick: Stick) {
-    state = {
-        ...state,
-        sticks: { ...state.sticks, [stick.id]: stick },
-    };
-    notify();
+    addSupportEntity('stick', stick);
 }
 
 export function addAnchor(anchor: Anchor) {
+    addSupportEntity('anchor', anchor);
+}
+
+/**
+ * Overwrite an existing entity in place, no-op if the id is unknown.
+ *
+ * Only for types whose update is a plain write. `updateTrunk`, `updateBranch`,
+ * `updateTwig` and `updateStick` recompute dependent geometry and are
+ * deliberately NOT routed through here -- that work genuinely differs per type.
+ */
+function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): boolean {
+    const key = getSupportTypeDescriptor(typeId).location.key;
+    if (!state[key][entity.id]) return false;
+
     state = {
         ...state,
-        anchors: { ...state.anchors, [anchor.id]: anchor },
+        [key]: { ...state[key], [entity.id]: entity },
     };
     notify();
+    return true;
 }
 
 export function updateAnchor(anchor: Anchor) {
-    if (!state.anchors[anchor.id]) return;
-    state = {
-        ...state,
-        anchors: { ...state.anchors, [anchor.id]: anchor },
-    };
-    notify();
+    replaceSupportEntity('anchor', anchor);
 }
 
 export function removeAnchor(anchorId: string): { anchor: Anchor } | null {
