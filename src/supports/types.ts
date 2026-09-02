@@ -45,10 +45,22 @@ export interface Transform {
  * Base interface for all top-level support entities.
  * Ensures every support element is linked to a specific model.
  */
+/**
+ * Who created a support.
+ *
+ * Absent means a person placed it by hand. A tool that regenerates its own
+ * output filters on this rather than on the support's type -- before it existed,
+ * auto-bracing knew kickstands by an `autoBracingGenerated` flag but had no way
+ * to tell a hand-drawn brace from one of its own, so it removed every brace.
+ */
+export type SupportGeneratedBy = 'autoSupport' | 'autoBracing';
+
 export interface SupportEntity {
     id: string;
     modelId: string; // The model this support belongs to
     settingsCodeHex?: string;
+    /** Set when a tool created this; absent when a person did. */
+    generatedBy?: SupportGeneratedBy;
 }
 
 /**
