@@ -243,8 +243,9 @@ command below.
 After reading the diff, a maintainer runs `/create-preview-external`. That
 resolves the pull request's head SHA, points `preview/pr-<number>` at it, and
 builds that branch. It imports **one commit** — later pushes need the command
-again, so every external build is one a maintainer chose to run. The branch is
-swept away by `preview-branch-cleanup.yml` once the pull request closes.
+again, so every external build is one a maintainer chose to run. Preview
+branches whose pull request has closed are swept away the next time any
+preview is activated.
 
 ## Updater implementation notes
 

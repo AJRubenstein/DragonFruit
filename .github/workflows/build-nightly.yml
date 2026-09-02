@@ -347,6 +347,57 @@ jobs:
               ].join('\n'),
             });
 
+      - name: Sweep preview branches whose PR has closed
+        # Hangs off every preview activation rather than a schedule: cron only
+        # fires from the default branch, and nothing lands on main here for
+        # months at a time. Reacting to the close itself would mean a
+        # pull_request_target handler, which runs with write access on an event
+        # an external contributor times and stays safe only while nobody adds a
+        # checkout to it. Preview branches only ever appear when this job runs,
+        # so sweeping them when it runs keeps the set bounded.
+        if: steps.check_access.outputs.result == 'granted'
+        continue-on-error: true
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const PREFIX = 'preview/pr-';
+
+            const refs = await github.paginate(github.rest.git.listMatchingRefs, {
+              owner,
+              repo,
+              ref: `heads/${PREFIX}`,
+              per_page: 100,
+            });
+
+            for (const { ref } of refs) {
+              const branch = ref.replace('refs/heads/', '');
+              const number = Number(branch.slice(PREFIX.length));
+
+              if (!Number.isInteger(number) || number <= 0) {
+                core.warning(`Skipping ${branch}: no PR number in the name.`);
+                continue;
+              }
+
+              let pr;
+              try {
+                ({ data: pr } = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: number,
+                }));
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                core.warning(`Skipping ${branch}: PR #${number} does not exist.`);
+                continue;
+              }
+
+              if (pr.state === 'open') continue;
+
+              await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
+              core.info(`Deleted ${branch}: PR #${number} is ${pr.state}.`);
+            }
+
   # ── Derive metadata (branch, tag, names) ────────────────────────────────
   derive:
     if: github.event_name == 'workflow_dispatch'
