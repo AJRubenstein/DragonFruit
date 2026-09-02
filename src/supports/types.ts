@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { ContactCone } from './SupportPrimitives/ContactCone/types';
 import type { ContactDiskProfile } from './SupportPrimitives/ContactCone/types';
-import type { Kickstand, KickstandBuildResult } from './SupportTypes/Kickstand/types';
+import type { KickstandBuildResult } from './SupportTypes/Kickstand/types';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 
 export type SupportMode = 'prepare' | 'analysis' | 'support' | 'export' | 'printing';
@@ -243,18 +243,57 @@ export interface Brace extends SupportEntity {
     debugSection?: 'initial' | 'repeating';
 }
 
+/**
+ * Kickstand: A grounded column bracing a shaft it attaches to.
+ */
+export interface Kickstand extends SupportEntity {
+    rootId: string;
+    hostKnotId: string;
+    hostSegmentId: string;
+    hostMinT: number;
+    /**
+     * @deprecated Superseded by `generatedBy` on SupportEntity. Kept so scenes
+     * saved before the change still identify their auto-generated kickstands.
+     */
+    autoBracingGenerated?: boolean;
+    segments: Segment[];
+    profile: {
+        bodyDiameterMm: number;
+        terminalStartDiameterMm: number;
+        terminalEndDiameterMm: number;
+    };
+}
+
 // --- Collection State ---
-export interface SupportState {
-    roots: Record<string, Roots>;
-    trunks: Record<string, Trunk>;
-    branches: Record<string, Branch>;
-    leaves: Record<string, Leaf>;
-    twigs: Record<string, Twig>;
-    sticks: Record<string, Stick>;
-    braces: Record<string, Brace>;
-    anchors: Record<string, Anchor>;
-    kickstands: Record<string, Kickstand>;
-    knots: Record<string, Knot>;
+
+/**
+ * The entity each collection holds.
+ *
+ * The one place a collection name is written down. SupportState's collections
+ * and the registry's SupportCollectionKey are both derived from this, so adding
+ * a type here is what makes it exist everywhere else.
+ */
+export interface SupportEntityByCollection {
+    roots: Roots;
+    trunks: Trunk;
+    branches: Branch;
+    leaves: Leaf;
+    twigs: Twig;
+    sticks: Stick;
+    braces: Brace;
+    anchors: Anchor;
+    kickstands: Kickstand;
+    knots: Knot;
+}
+
+/** Keys of SupportState holding entity collections. */
+export type SupportCollectionName = keyof SupportEntityByCollection;
+
+export type SupportCollections = {
+    [K in SupportCollectionName]: Record<string, SupportEntityByCollection[K]>;
+};
+
+export interface SupportState extends SupportCollections {
     // Interaction State
     selectedId: string | null;
     selectedCategory?: SupportSelectionCategory | null;
