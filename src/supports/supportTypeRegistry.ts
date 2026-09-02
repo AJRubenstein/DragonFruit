@@ -176,6 +176,35 @@ export function updateSupportEntity(id: SupportTypeId, entity: unknown): boolean
     return true;
 }
 
+/**
+ * How a type sizes a knot sitting on its shaft, when it does so specially.
+ *
+ * Most types leave this unset and get the generic segment-diameter rule. Twigs
+ * taper along their length, so a knot on one is sized from that taper instead.
+ * A slot for the same reason as the updaters: the rule lives with the type, but
+ * importing it here would be an initialisation cycle.
+ */
+type KnotDiameterRule = (entity: unknown, segmentId: string, t: number) => number | null;
+
+const KNOT_DIAMETER_RULES = new Map<SupportTypeId, KnotDiameterRule>();
+
+export function registerKnotDiameterRule<T>(
+    id: SupportTypeId,
+    rule: (entity: T, segmentId: string, t: number) => number | null,
+): void {
+    KNOT_DIAMETER_RULES.set(id, rule as KnotDiameterRule);
+}
+
+/** The type's own knot diameter at `t`, or null to use the generic rule. */
+export function resolveKnotDiameter(
+    id: SupportTypeId,
+    entity: unknown,
+    segmentId: string,
+    t: number,
+): number | null {
+    return KNOT_DIAMETER_RULES.get(id)?.(entity, segmentId, t) ?? null;
+}
+
 const BY_ID = new Map<SupportTypeId, SupportTypeDescriptor>(
     SUPPORT_TYPES.map((descriptor) => [descriptor.id, descriptor]),
 );
