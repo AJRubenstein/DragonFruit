@@ -150,6 +150,39 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
 ];
 
+/**
+ * The store's update function for a type, registered at load.
+ *
+ * A slot rather than a direct import: state.ts calls into this module while
+ * building its initial state, so importing state.ts back here would be a real
+ * initialisation cycle -- whichever module evaluated second would see undefined.
+ * state.ts fills these in on load instead, and callers ask by type id.
+ *
+ * This is a STORE operation, the same category as historyAdd/historyRemove, not
+ * rendering or placement -- those stay out of the registry deliberately.
+ */
+type SupportUpdater = (entity: never) => void;
+
+const UPDATERS = new Map<SupportTypeId, SupportUpdater>();
+
+/** Called once by state.ts; later calls for the same id replace the previous one. */
+export function registerSupportUpdater<T>(id: SupportTypeId, update: (entity: T) => void): void {
+    UPDATERS.set(id, update as SupportUpdater);
+}
+
+/**
+ * Apply an entity back to the store by type id.
+ *
+ * Returns false when nothing is registered for the id, so a caller can tell
+ * "no updater" from "updated".
+ */
+export function updateSupportEntity(id: SupportTypeId, entity: unknown): boolean {
+    const update = UPDATERS.get(id);
+    if (!update) return false;
+    (update as (value: unknown) => void)(entity);
+    return true;
+}
+
 const BY_ID = new Map<SupportTypeId, SupportTypeDescriptor>(
     SUPPORT_TYPES.map((descriptor) => [descriptor.id, descriptor]),
 );
