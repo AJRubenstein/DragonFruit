@@ -1,4 +1,4 @@
-import type { SupportState } from './types';
+import type { SupportCollectionName, SupportState } from './types';
 import {
     SUPPORT_ADD_TRUNK, SUPPORT_REMOVE_TRUNK,
     SUPPORT_ADD_BRANCH, SUPPORT_REMOVE_BRANCH,
@@ -23,14 +23,8 @@ export type SupportTypeId =
 
 export type SupportSelectionCategory = SupportTypeId | 'root' | 'joint' | 'knot' | 'segment' | 'contactDisk';
 
-/**
- * Entity collections on SupportState: the keys holding Record<string, Entity>,
- * excluding interaction fields like selectedId. Derived, so a new collection on
- * SupportState is picked up automatically.
- */
-export type SupportCollectionKey = NonNullable<{
-    [K in keyof SupportState]-?: SupportState[K] extends Record<string, { id: string }> ? K : never;
-}[keyof SupportState]>;
+/** Entity collections on SupportState, named once in SupportEntityByCollection. */
+export type SupportCollectionKey = SupportCollectionName;
 
 /** Where a type's instances live. Every type is on SupportState today. */
 export type SupportCollectionLocation =
