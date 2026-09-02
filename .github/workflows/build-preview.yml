@@ -1,4 +1,4 @@
-name: Build nightly
+name: Build preview
 
 on:
   workflow_dispatch:
@@ -44,7 +44,7 @@ env:
 
 jobs:
   # ── Comment handler: /preview (or the deprecated /nightly) ──────────────
-  activate-nightly:
+  activate-preview:
     if: >
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
@@ -296,7 +296,7 @@ jobs:
             args+=(-f release_name="$RELEASE_NAME")
           fi
 
-          gh workflow run build-nightly.yml "${args[@]}"
+          gh workflow run build-preview.yml "${args[@]}"
 
       - name: Acknowledge activation
         if: steps.route.outputs.result == 'internal' || steps.route.outputs.result == 'external'
@@ -314,7 +314,7 @@ jobs:
             const branch = process.env.BUILD_BRANCH;
             const actions =
               `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/` +
-              `${context.repo.repo}/actions/workflows/build-nightly.yml`;
+              `${context.repo.repo}/actions/workflows/build-preview.yml`;
 
             const rows = external
               ? [
@@ -752,7 +752,7 @@ jobs:
           if-no-files-found: error
 
   # ── Publish nightly prerelease ──────────────────────────────────────────
-  publish-nightly:
+  publish-preview:
     name: Publish nightly prerelease
     if: always() && !cancelled() && needs.derive.result == 'success' && needs.build-tauri.result == 'success'
     needs:

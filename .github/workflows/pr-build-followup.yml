@@ -133,7 +133,7 @@ jobs:
               body
             });
 
-  dispatch-nightly:
+  dispatch-preview:
     name: Dispatch nightly build if labeled
     runs-on: ubuntu-latest
     if: >
@@ -164,7 +164,7 @@ jobs:
               return;
             }
 
-            // The label persists across pushes and build-nightly checks out
+            // The label persists across pushes and the preview build checked out
             // refs/pull/N/head, which always points at the fork's current tip.
             // Labelling an external PR once would hand its author code execution
             // with every secret in scope (Apple certificate, updater signing
@@ -191,7 +191,7 @@ jobs:
             core.setOutput('head_ref', pr.head.ref);
             core.setOutput('base_ref', pr.base.ref);
 
-      - name: Dispatch build-nightly workflow
+      - name: Dispatch the preview build
         if: steps.pr.outputs.should_dispatch == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -201,9 +201,9 @@ jobs:
         run: |
           # No pr_number: this path only fires for PRs whose branch lives in
           # this repository, so the branch name resolves on its own. The old
-          # input made build-nightly check out refs/pull/N/head, which follows
+          # input made the preview build check out refs/pull/N/head, which follows
           # the fork's tip.
-          gh workflow run build-nightly.yml \
+          gh workflow run build-preview.yml \
             --repo "${{ github.repository }}" \
             --ref "$BASE_BRANCH" \
             -f branch="$HEAD_BRANCH" \
