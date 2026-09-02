@@ -134,7 +134,7 @@ jobs:
             });
 
   dispatch-preview:
-    name: Dispatch nightly build if labeled
+    name: Dispatch preview build if labeled
     runs-on: ubuntu-latest
     if: >
       github.event.workflow_run.event == 'pull_request' &&
@@ -159,7 +159,7 @@ jobs:
             const pr = prs.find((candidate) => candidate.state === "open") ?? prs[0];
 
             if (!pr) {
-              core.info(`No pull request found for commit ${headSha}; skipping nightly dispatch.`);
+              core.info(`No pull request found for commit ${headSha}; skipping preview dispatch.`);
               core.setOutput('should_dispatch', 'false');
               return;
             }

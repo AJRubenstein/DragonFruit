@@ -176,21 +176,21 @@ jobs:
           node scripts/macos-embed-appex.mjs --target universal-apple-darwin
           node scripts/verify-universal-bundle.mjs
 
-      - name: Rename DMG for nightly handoff
+      - name: Rename DMG for preview handoff
         shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
           COMMIT_HASH: ${{ steps.version.outputs.commit_hash }}
         run: |
-          nightly_tag="pr-${COMMIT_HASH}_${VERSION}_DragonFruit_nightly"
+          preview_tag="pr-${COMMIT_HASH}_${VERSION}_DragonFruit_preview"
 
           for f in src-tauri/target/*/release/bundle/dmg/*.dmg; do
-            [ -e "$f" ] && mv -v "$f" "$(dirname "$f")/${nightly_tag}.dmg"
+            [ -e "$f" ] && mv -v "$f" "$(dirname "$f")/${preview_tag}.dmg"
           done
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v7
         with:
           name: macos-dmg
-          path: src-tauri/target/*/release/bundle/dmg/*_DragonFruit_nightly.dmg
+          path: src-tauri/target/*/release/bundle/dmg/*_DragonFruit_preview.dmg
           if-no-files-found: error
