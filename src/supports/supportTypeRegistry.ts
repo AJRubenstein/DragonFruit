@@ -32,6 +32,29 @@ export type SupportCollectionLocation =
     | { store: 'kickstand'; key: 'kickstands' };
 
 /**
+ * One link from an entity to something it depends on, or that depends on it.
+ *
+ * `field` names an id-bearing property on the entity. `to` is what that id
+ * points at -- a collection, or `'segment'` for a shaft segment, which is not a
+ * collection of its own.
+ *
+ * `ownership` is the direction the cascade travels, and it is the part that
+ * matters:
+ *
+ * - `owns`     -- removing the ENTITY removes the target. A trunk owns its root.
+ * - `hostedBy` -- removing the TARGET removes the entity. A leaf dies with the
+ *                 knot it hangs from.
+ *
+ * Declared here so a removal cascade can walk the graph instead of each
+ * `removeX` re-deriving it by hand.
+ */
+export interface SupportEdge {
+    field: string;
+    to: SupportCollectionKey | 'segment';
+    ownership: 'owns' | 'hostedBy';
+}
+
+/**
  * What a support type IS — not how it renders, builds or places. Adding a
  * renderer or builder reference here turns a mechanical refactor into a rewrite.
  */
@@ -83,11 +106,14 @@ export interface SupportTypeDescriptor {
      * has its roots deleted out from under it.
      */
     ownsRoot: boolean;
+    /** How instances link to other entities. See {@link SupportEdge}. */
+    edges: readonly SupportEdge[];
 }
 
 export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'trunk',
+        edges: [{ field: 'rootId', to: 'roots', ownership: 'owns' }],
         ownsRoot: true,
         segmentsCarryBothJoints: false,
         hasDedicatedSnapPass: true,
@@ -104,6 +130,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'branch',
+        edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy' }],
         ownsRoot: false,
         segmentsCarryBothJoints: false,
         hasDedicatedSnapPass: true,
@@ -120,6 +147,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'leaf',
+        edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy' }],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
@@ -136,6 +164,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'twig',
+        edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
@@ -152,6 +181,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'stick',
+        edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
@@ -168,6 +198,10 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'brace',
+        edges: [
+            { field: 'startKnotId', to: 'knots', ownership: 'hostedBy' },
+            { field: 'endKnotId', to: 'knots', ownership: 'hostedBy' },
+        ],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: true,
@@ -184,6 +218,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'anchor',
+        edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
@@ -200,6 +235,11 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'kickstand',
+        edges: [
+            { field: 'rootId', to: 'roots', ownership: 'owns' },
+            { field: 'hostKnotId', to: 'knots', ownership: 'hostedBy' },
+            { field: 'hostSegmentId', to: 'segment', ownership: 'hostedBy' },
+        ],
         ownsRoot: true,
         segmentsCarryBothJoints: false,
         hasDedicatedSnapPass: false,
