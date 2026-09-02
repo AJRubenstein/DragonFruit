@@ -23,13 +23,7 @@ interface HandleContext {
     stick?: Stick;
     brace?: Brace;
     kickstand?: KickstandEntity;
-    /**
-     * Which of the fields above is set.
-     *
-     * Set alongside the entity so drag handling can ask the registry what to do
-     * rather than testing each field in turn; the typed fields stay because the
-     * per-type preview refs still read them.
-     */
+    /** Which field above is set, so drag handling can dispatch by type. */
     typeId?: SupportTypeId;
     joint: Joint;
     incomingSegment?: Segment; // Segment ending at this joint (from below)
@@ -54,11 +48,7 @@ export function BezierGizmoManager() {
     const liveStickPreviewRef = useRef<Stick | null>(null);
     const liveKickstandPreviewRef = useRef<KickstandEntity | null>(null);
 
-    /**
-     * The live-drag preview ref per type, so drag-end can commit whichever type
-     * is being dragged without naming each one. Types with no entry simply have
-     * no preview and commit nothing.
-     */
+    /** Live-drag preview per type; a type with no entry commits nothing. */
     const livePreviewRefs: Partial<Record<SupportTypeId, { current: unknown }>> = {
         trunk: liveTrunkPreviewRef,
         branch: liveBranchPreviewRef,
@@ -118,8 +108,7 @@ export function BezierGizmoManager() {
         const segmentContextsById = new Map<string, HandleContext[]>();
         const braceContextsById = new Map<string, HandleContext[]>();
 
-        // Tag each context with the type whose field is set, so drag handling can
-        // dispatch through the registry instead of testing six fields in turn.
+        // Tag each context with the type whose field is set.
         const resolveTypeId = (context: HandleContext): SupportTypeId | undefined => {
             for (const descriptor of SUPPORT_TYPES) {
                 if ((context as unknown as Record<string, unknown>)[descriptor.id]) return descriptor.id;
@@ -713,10 +702,8 @@ export function BezierGizmoManager() {
             initialTrunkRef.current = null;
         }
 
-        // One path for every non-trunk type: commit the live preview through the
-        // registry, clear it, and record one edit-history entry. This was a branch
-        // per type, each naming its own update function -- so a type with no
-        // branch (anchors) silently skipped the commit.
+        // One path for every non-trunk type: commit the preview, clear it, record
+        // one history entry. Trunks keep their own before/after entry above.
         if (initialEditSnapshotRef.current && ctx.typeId && ctx.typeId !== 'trunk') {
             const typeId = ctx.typeId;
             const draggedId = (ctx as unknown as Record<string, { id: string } | undefined>)[typeId]?.id;

@@ -17,10 +17,8 @@ import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, type SupportCollecti
 /**
  * One array per collection, keyed off the registry.
  *
- * The hand-written version listed seven types and omitted anchors, so copying a
- * model's supports silently dropped them. `kickstandRoots`/`kickstandKnots` stay
- * separate because a kickstand owns its root and host knot, and paste has to
- * remap those as a unit.
+ * `kickstandRoots`/`kickstandKnots` stay separate because a kickstand owns its
+ * root and host knot, and paste remaps those as a unit.
  */
 type SupportClipboardPayload = {
   [K in SupportCollectionKey]: SupportState[K][string][];
@@ -67,8 +65,7 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
   const state = getSnapshot();
   const kickstandState = getSnapshot();
 
-  // Every modelId-bearing collection, so a new support type is copied without
-  // being named here.
+  // Every modelId-bearing collection, so a new type is copied unnamed.
   const owned = {} as { [K in SupportCollectionKey]: SupportState[K][string][] };
   for (const key of SUPPORT_COLLECTION_KEYS) {
     (owned as Record<string, unknown[]>)[key] = [];

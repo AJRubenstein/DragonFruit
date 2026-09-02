@@ -529,13 +529,9 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
             twigSegmentMap.set(segment.id, { twig, segment, segmentIndex });
         });
     }
-    // Kickstand segments chain root top -> host knot, so endpoints come from the
-    // neighbours: the first has no bottomJoint and the last no topJoint.
-    //
-    // Read from `snapshot`, NOT from the live store: normalization runs on the
-    // state being built, before it is assigned, so the store still holds the
-    // previous scene. Reading it there resolved incoming knots against outgoing
-    // kickstands and stranded every one of them.
+    // Segments chain root top -> host knot, so endpoints come from the neighbours.
+    // Read from `snapshot`, not the live store: this runs on the state being
+    // built, so the store still holds the previous scene.
     const kickstandSegmentEndpoints = new Map<string, { start: Vec3; end: Vec3 }>();
     for (const kickstand of Object.values(snapshot.kickstands)) {
         const root = snapshot.roots[kickstand.rootId];
@@ -1417,9 +1413,7 @@ export function getSnapshot() {
 export function reassignAllSupportModelIds(modelId: string): boolean {
     if (!modelId) return false;
 
-    // Was eight near-identical blocks, one per collection, each with its own
-    // `next*` accumulator. Driven from SUPPORT_ENTITY_COLLECTIONS instead, so a
-    // future support type cannot be silently left un-reassigned.
+    // Driven from SUPPORT_ENTITY_COLLECTIONS so a new type cannot be missed.
     const { collections, changed } = mapSupportEntities(state, (entity) => (
         entity.modelId === modelId ? entity : { ...entity, modelId }
     ));
@@ -1534,12 +1528,8 @@ function eulersRoughlyEqual(a: THREE.Euler, b: THREE.Euler, epsilon = 1e-8) {
         && a.order === b.order;
 }
 
-/* ---------------------------------------------------------------------------
- * Kickstands
- *
- * A SupportState collection like any other; their root and host knot live in the
- * shared `roots`/`knots`. kickstandStore.ts keeps its API and delegates here.
- * ------------------------------------------------------------------------- */
+/* --- Kickstands: a SupportState collection; their root and host knot live in
+ * the shared `roots`/`knots`. kickstandStore.ts delegates here. --- */
 
 /** Kickstand plus the root and host knot it owns, as callers still expect it. */
 function buildKickstandResult(kickstand: Kickstand): KickstandBuildResult | null {
@@ -1606,12 +1596,9 @@ export function resetKickstandsInState() {
  * that support has to carry the kickstand with it.
  */
 /**
- * Transform kickstand SHAFTS for `modelId`, plus any connected to a touched
- * entity -- a kickstand grafted onto another model's support must move with it.
- *
- * Roots and host knots are deliberately NOT touched: the main walk in
- * transformSupportsForModel already moved them, and doing it again applied the
- * delta twice.
+ * Transform kickstand SHAFTS only -- a kickstand grafted onto another model's
+ * support moves with it. Roots and host knots are left to the main walk, which
+ * already moves them; doing it here too applied the delta twice.
  */
 export function transformKickstandsForModelInState(
     modelId: string,
@@ -2545,11 +2532,7 @@ export function resetStore() {
  * Loads support data from the DragonFruit import format into the support store,
  * replacing all existing support data.
  */
-/**
- * Scenes saved before `generatedBy` marked auto kickstands with their own
- * `autoBracingGenerated` flag. Carry it across on read so auto-bracing still
- * recognises its own work in an older file.
- */
+/** Carry the pre-`generatedBy` flag across on read, for older scenes. */
 function migrateLegacyGeneratedBy(kickstand: Kickstand): Kickstand {
     if (kickstand.generatedBy || !kickstand.autoBracingGenerated) return kickstand;
     return { ...kickstand, generatedBy: 'autoBracing' };
@@ -4899,18 +4882,10 @@ export function applySettingsToSupportSelection(
     return applySettingsToSupportTarget(target, settings);
 }
 
-/* ---------------------------------------------------------------------------
- * Updater registration
- *
- * Fills the registry's updater slot for every declared type by iterating
- * SUPPORT_TYPES, so a ninth type is wired up by adding its descriptor and an
- * `update<Type>` function -- not by remembering a line here.
- *
- * Registered rather than imported the other way because state.ts calls into the
- * registry while building its initial state; the reverse import would be a cycle.
- * The lookup is by convention (`update` + capitalised type id), and a missing
- * function throws at load rather than failing silently later.
- * ------------------------------------------------------------------------- */
+/* --- Updater registration ------------------------------------------------
+ * Fills the registry's updater slot per declared type, looking each function up
+ * by convention (`update` + capitalised id). A missing one throws at load.
+ * ---------------------------------------------------------------------- */
 const SUPPORT_UPDATERS: Record<string, (entity: never) => void> = {
     updateTrunk, updateBranch, updateLeaf, updateTwig,
     updateStick, updateBrace, updateAnchor, updateKickstand,
