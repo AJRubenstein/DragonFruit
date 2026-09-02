@@ -468,7 +468,11 @@ jobs:
       - fetch-macos-artifacts
     runs-on: macos-latest
     permissions:
-      actions: write
+      # Deliberately no actions: write. This job compiles whatever ref it is
+      # handed (npm ci, build.rs) with the Apple certificate and the updater
+      # signing key in scope. With actions: write it could dispatch docs-pages
+      # and have a poisoned latest.json published to Pages. It makes no calls
+      # to the Actions API.
       contents: write
     steps:
       - name: Checkout
