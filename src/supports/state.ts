@@ -66,14 +66,16 @@ let supportSettingsHexCache: SupportSettingsHexCache = {
 
 type SelectionCategory = SupportSelectionCategory | null;
 
+/**
+ * Primitive ids (joints, segments, contact disks) reachable from support
+ * entities, so selection can resolve an id to its category without re-walking
+ * every collection on every click.
+ *
+ * `sources` holds the collection objects the sets were built from; identity
+ * comparison against them is the invalidation check.
+ */
 interface SelectionLookupCache {
-    trunksRef: SupportState['trunks'];
-    branchesRef: SupportState['branches'];
-    leavesRef: SupportState['leaves'];
-    twigsRef: SupportState['twigs'];
-    sticksRef: SupportState['sticks'];
-    anchorsRef: SupportState['anchors'];
-    kickstandsRef: Record<string, Kickstand>;
+    sources: Partial<Record<SupportCollectionKey, unknown>>;
     jointIds: Set<string>;
     segmentIds: Set<string>;
     contactDiskIds: Set<string>;
@@ -81,105 +83,56 @@ interface SelectionLookupCache {
 
 let selectionLookupCache: SelectionLookupCache | null = null;
 
-function getSelectionLookupCache(): SelectionLookupCache {
-    const kickstands = state.kickstands;
+/**
+ * Types that put ids into the cache: anything with segments (joints, segment
+ * ids) or contact fields (contact disk ids).
+ *
+ * Deliberately not every collection -- braces have neither, so watching them
+ * would rebuild the cache on brace edits that cannot change its contents.
+ */
+const SELECTION_LOOKUP_TYPES = SUPPORT_TYPES.filter(
+    (descriptor) => descriptor.hasSegments || descriptor.contactFields.length > 0,
+);
 
-    if (
-        selectionLookupCache
-        && selectionLookupCache.trunksRef === state.trunks
-        && selectionLookupCache.branchesRef === state.branches
-        && selectionLookupCache.leavesRef === state.leaves
-        && selectionLookupCache.twigsRef === state.twigs
-        && selectionLookupCache.sticksRef === state.sticks
-        && selectionLookupCache.anchorsRef === state.anchors
-        && selectionLookupCache.kickstandsRef === kickstands
-    ) {
-        return selectionLookupCache;
+function getSelectionLookupCache(): SelectionLookupCache {
+    if (selectionLookupCache) {
+        let stale = false;
+        for (const descriptor of SELECTION_LOOKUP_TYPES) {
+            if (selectionLookupCache.sources[descriptor.location.key] !== state[descriptor.location.key]) {
+                stale = true;
+                break;
+            }
+        }
+        if (!stale) return selectionLookupCache;
     }
 
     const jointIds = new Set<string>();
     const segmentIds = new Set<string>();
     const contactDiskIds = new Set<string>();
+    const sources: Partial<Record<SupportCollectionKey, unknown>> = {};
 
-    for (const trunk of Object.values(state.trunks)) {
-        for (const segment of trunk.segments) {
-            segmentIds.add(segment.id);
-            if (segment.topJoint?.id) jointIds.add(segment.topJoint.id);
-            if (segment.bottomJoint?.id) jointIds.add(segment.bottomJoint.id);
-        }
+    for (const descriptor of SELECTION_LOOKUP_TYPES) {
+        const key = descriptor.location.key;
+        sources[key] = state[key];
 
-        if (trunk.contactCone?.id) {
-            contactDiskIds.add(trunk.contactCone.id);
-        }
-    }
-
-    for (const branch of Object.values(state.branches)) {
-        for (const segment of branch.segments) {
-            segmentIds.add(segment.id);
-            if (segment.topJoint?.id) jointIds.add(segment.topJoint.id);
-            if (segment.bottomJoint?.id) jointIds.add(segment.bottomJoint.id);
-        }
-
-        if (branch.contactCone?.id) {
-            contactDiskIds.add(branch.contactCone.id);
+        for (const entity of Object.values(state[key])) {
+            if (descriptor.hasSegments) {
+                const segments = (entity as { segments?: Segment[] }).segments ?? [];
+                for (const segment of segments) {
+                    segmentIds.add(segment.id);
+                    if (segment.topJoint?.id) jointIds.add(segment.topJoint.id);
+                    if (segment.bottomJoint?.id) jointIds.add(segment.bottomJoint.id);
+                }
+            }
+            const fields = entity as unknown as Record<string, { id?: string } | undefined>;
+            for (const field of descriptor.contactFields) {
+                const contact = fields[field];
+                if (contact?.id) contactDiskIds.add(contact.id);
+            }
         }
     }
 
-    for (const leaf of Object.values(state.leaves)) {
-        if (leaf.contactCone?.id) {
-            contactDiskIds.add(leaf.contactCone.id);
-        }
-    }
-
-    for (const twig of Object.values(state.twigs)) {
-        for (const segment of twig.segments) {
-            segmentIds.add(segment.id);
-            if (segment.topJoint?.id) jointIds.add(segment.topJoint.id);
-            if (segment.bottomJoint?.id) jointIds.add(segment.bottomJoint.id);
-        }
-
-        if (twig.contactDiskA?.id) contactDiskIds.add(twig.contactDiskA.id);
-        if (twig.contactDiskB?.id) contactDiskIds.add(twig.contactDiskB.id);
-    }
-
-    for (const stick of Object.values(state.sticks)) {
-        for (const segment of stick.segments) {
-            segmentIds.add(segment.id);
-            if (segment.topJoint?.id) jointIds.add(segment.topJoint.id);
-            if (segment.bottomJoint?.id) jointIds.add(segment.bottomJoint.id);
-        }
-
-        if (stick.contactConeA?.id) contactDiskIds.add(stick.contactConeA.id);
-        if (stick.contactConeB?.id) contactDiskIds.add(stick.contactConeB.id);
-    }
-
-    for (const anchor of Object.values(state.anchors)) {
-        if (anchor.contactCone?.id) {
-            contactDiskIds.add(anchor.contactCone.id);
-        }
-    }
-
-    for (const kickstand of Object.values(kickstands)) {
-        for (const segment of kickstand.segments) {
-            segmentIds.add(segment.id);
-            if (segment.topJoint?.id) jointIds.add(segment.topJoint.id);
-            if (segment.bottomJoint?.id) jointIds.add(segment.bottomJoint.id);
-        }
-    }
-
-    selectionLookupCache = {
-        trunksRef: state.trunks,
-        branchesRef: state.branches,
-        leavesRef: state.leaves,
-        twigsRef: state.twigs,
-        sticksRef: state.sticks,
-        anchorsRef: state.anchors,
-        kickstandsRef: kickstands,
-        jointIds,
-        segmentIds,
-        contactDiskIds,
-    };
-
+    selectionLookupCache = { sources, jointIds, segmentIds, contactDiskIds };
     return selectionLookupCache;
 }
 
