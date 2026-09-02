@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { buildKickstandData } from '../SupportTypes/Kickstand/kickstandBuilder';
 import { snapToGridIndex } from '../PlacementLogic/Grid/gridMath';
-import type { KickstandBuildResult, KickstandHostTarget, KickstandState } from '../SupportTypes/Kickstand/types';
+import type { KickstandBuildResult, KickstandHostTarget } from '../SupportTypes/Kickstand/types';
 import type { SupportState, Trunk, Vec3, Segment, Roots } from '../types';
 import { AUTO_BRACING_HARD_RULES, type AutoBracingSettings } from './settings';
 import { getAllMeshEntriesForAutoBrace } from './meshGeometryStore';
@@ -29,7 +29,7 @@ function createVector3(v: Vec3) {
  */
 export function generateRequiredKickstands(
     snapshot: SupportState,
-    kickstandState: KickstandState,
+    kickstandState: Pick<SupportState, 'kickstands' | 'roots' | 'knots'>,
     settings: AutoBracingSettings,
     existingBraceEdges: Array<{ a: string; b: string; angleRad: number }>,
     gridSettings: { enabled: boolean; spacingMm: number },

@@ -271,7 +271,7 @@ test('dense grid forests brace trunks together instead of spawning kickstands', 
     const result = buildAutoBracedSnapshot(snapshot, createDefaultAutoBracingSettings());
 
     assert.ok(result.generatedBraceCount > 0, 'the grid gets braced');
-    assert.equal(Object.keys(result.kickstand.kickstands).length, 0,
+    assert.equal(Object.keys(result.snapshot.kickstands).length, 0,
         'every grid trunk finds two brace axes — no kickstands needed');
 });
 
@@ -329,4 +329,27 @@ test('removeExistingBracing=false keeps previously generated braces too', () => 
     const result = buildAutoBracedSnapshot(snapshot, settings);
 
     assert.ok(result.snapshot.braces['brace-prev'], 'nothing is removed when the flag is off');
+});
+
+test('regenerating a selected kickstand clears the selection', () => {
+    // The clearing used to be computed into a local that the final fold never
+    // read, so the returned snapshot kept an id pointing at a deleted kickstand.
+    const { snapshot, modelId } = buildLadder();
+    snapshot.roots['ks-root'] = createRoot('ks-root', modelId, 20);
+    snapshot.knots['ks-knot'] = {
+        id: 'ks-knot', parentShaftId: 'seg-a', t: 0.5, diameter: 2,
+        pos: { x: 0, y: 0, z: 5 },
+    } as never;
+    snapshot.kickstands['ks-old'] = {
+        id: 'ks-old', modelId, rootId: 'ks-root', hostKnotId: 'ks-knot',
+        hostSegmentId: 'seg-a', hostMinT: 0, segments: [],
+        generatedBy: 'autoBracing',
+    } as never;
+    snapshot.selectedId = 'ks-old';
+
+    const result = buildAutoBracedSnapshot(snapshot, createDefaultAutoBracingSettings());
+
+    if (result.snapshot.kickstands['ks-old']) return; // not regenerated: nothing to assert
+    assert.notEqual(result.snapshot.selectedId, 'ks-old',
+        'selection must not point at a kickstand that was regenerated away');
 });

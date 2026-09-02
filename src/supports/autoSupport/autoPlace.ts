@@ -2669,6 +2669,9 @@ export function computeAutoSupportPlan(
             `Auto-support failed mid-run — rolling back.`,
             e instanceof Error ? e.message : String(e));
         setSnapshot(before);
+        // Redundant since kickstands moved onto SupportState -- setSnapshot(before)
+        // already restored them. Kept because this is the failure path and a
+        // second restore is cheaper than being wrong about it.
         setKickstandSnapshot(kickstandBefore);
         return null;
     }
@@ -2781,7 +2784,6 @@ export function computeAutoSupportPlan(
         try {
             const braceResult = buildAutoBracedSnapshot(draft, getSettings().autoBracing);
             draft = braceResult.snapshot;
-            kickstandDraft = braceResult.kickstand;
             console.log(LOG_PREFIX, `Auto-brace: ${braceResult.message}`);
         } catch (e) {
             console.warn(LOG_PREFIX,
