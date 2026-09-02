@@ -1,6 +1,6 @@
 import React, { useSyncExternalStore, useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import { subscribe, getSnapshot, updateTrunk, updateBranch, updateTwig, updateStick, updateBrace, getTrunkById, getBranchById } from '../../state';
+import { subscribe, getSnapshot, updateTrunk, updateBranch, updateBrace, getTrunkById, getBranchById } from '../../state';
 import { Trunk, Branch, Twig, Stick, Brace, Segment, BezierSegment, Joint } from '../../types';
 import { updateKickstand, useKickstandStoreState } from '../../SupportTypes/Kickstand/kickstandStore';
 import type { Kickstand as KickstandEntity } from '../../SupportTypes/Kickstand/types';
@@ -13,6 +13,7 @@ import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../histor
 import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import { clearSupportDragPreview, emitSupportDragPreview } from '../../SupportPrimitives/Joint/jointDragRuntime';
 import { clearTwigDragPreview, computeTwigDragAttachmentUpdates, emitTwigDragPreview } from '../../SupportTypes/Twig/twigDragPreview';
+import { SUPPORT_TYPES, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
 
 interface HandleContext {
     id: string; // Unique ID for key
@@ -22,6 +23,14 @@ interface HandleContext {
     stick?: Stick;
     brace?: Brace;
     kickstand?: KickstandEntity;
+    /**
+     * Which of the fields above is set.
+     *
+     * Set alongside the entity so drag handling can ask the registry what to do
+     * rather than testing each field in turn; the typed fields stay because the
+     * per-type preview refs still read them.
+     */
+    typeId?: SupportTypeId;
     joint: Joint;
     incomingSegment?: Segment; // Segment ending at this joint (from below)
     incomingIndex: number;
@@ -38,17 +47,25 @@ export function BezierGizmoManager() {
     const selectedCategory = state.selectedCategory;
     useCurveInteractionState();
     const initialTrunkRef = useRef<Trunk | null>(null);
-    const initialBranchRef = useRef<Branch | null>(null);
-    const initialTwigRef = useRef<Twig | null>(null);
-    const initialStickRef = useRef<Stick | null>(null);
-    const initialBraceRef = useRef<Brace | null>(null);
-    const initialKickstandRef = useRef<KickstandEntity | null>(null);
     const initialEditSnapshotRef = useRef<ReturnType<typeof captureSupportEditSnapshot> | null>(null);
     const liveTrunkPreviewRef = useRef<Trunk | null>(null);
     const liveBranchPreviewRef = useRef<Branch | null>(null);
     const liveTwigPreviewRef = useRef<Twig | null>(null);
     const liveStickPreviewRef = useRef<Stick | null>(null);
     const liveKickstandPreviewRef = useRef<KickstandEntity | null>(null);
+
+    /**
+     * The live-drag preview ref per type, so drag-end can commit whichever type
+     * is being dragged without naming each one. Types with no entry simply have
+     * no preview and commit nothing.
+     */
+    const livePreviewRefs: Partial<Record<SupportTypeId, { current: unknown }>> = {
+        trunk: liveTrunkPreviewRef,
+        branch: liveBranchPreviewRef,
+        twig: liveTwigPreviewRef,
+        stick: liveStickPreviewRef,
+        kickstand: liveKickstandPreviewRef,
+    };
 
     const setBezierGizmoInteractionFlags = useCallback((isDragging: boolean, postGuardMs = 180) => {
         if (typeof window === 'undefined') return;
@@ -101,8 +118,18 @@ export function BezierGizmoManager() {
         const segmentContextsById = new Map<string, HandleContext[]>();
         const braceContextsById = new Map<string, HandleContext[]>();
 
+        // Tag each context with the type whose field is set, so drag handling can
+        // dispatch through the registry instead of testing six fields in turn.
+        const resolveTypeId = (context: HandleContext): SupportTypeId | undefined => {
+            for (const descriptor of SUPPORT_TYPES) {
+                if ((context as unknown as Record<string, unknown>)[descriptor.id]) return descriptor.id;
+            }
+            return undefined;
+        };
+
         const pushContext = (map: Map<string, HandleContext[]>, key: string | null | undefined, context: HandleContext) => {
             if (!key) return;
+            context.typeId = context.typeId ?? resolveTypeId(context);
             const existing = map.get(key);
             if (existing) {
                 existing.push(context);
@@ -651,21 +678,11 @@ export function BezierGizmoManager() {
         curveInteractionStore.setIsDraggingHandle(true);
         setBezierGizmoInteractionFlags(true);
         // Snapshot for history
+        // Trunks keep their own before/after history entry; every other type is
+        // covered by the whole-store edit snapshot below.
         if (ctx.trunk) {
             initialTrunkRef.current = JSON.parse(JSON.stringify(ctx.trunk));
-        } else if (ctx.branch) {
-            initialBranchRef.current = JSON.parse(JSON.stringify(ctx.branch));
-        } else if (ctx.twig) {
-            initialTwigRef.current = JSON.parse(JSON.stringify(ctx.twig));
-        } else if (ctx.stick) {
-            initialStickRef.current = JSON.parse(JSON.stringify(ctx.stick));
-        } else if (ctx.brace) {
-            initialBraceRef.current = JSON.parse(JSON.stringify(ctx.brace));
-        } else if (ctx.kickstand) {
-            initialKickstandRef.current = JSON.parse(JSON.stringify(ctx.kickstand));
-        }
-
-        if (ctx.branch || ctx.twig || ctx.stick || ctx.brace || ctx.kickstand) {
+        } else if (ctx.typeId) {
             initialEditSnapshotRef.current = captureSupportEditSnapshot();
         }
     };
@@ -696,49 +713,36 @@ export function BezierGizmoManager() {
             initialTrunkRef.current = null;
         }
 
-        if (initialEditSnapshotRef.current) {
-            if (ctx.branch) {
-                const latestBranch = liveBranchPreviewRef.current ?? getBranchById(ctx.branch.id);
-                if (latestBranch) {
-                    // Final exact reconciliation after drag-time fast-path updates.
-                    updateBranch(latestBranch);
-                }
-                clearSupportDragPreview('branch', ctx.branch.id);
-                liveBranchPreviewRef.current = null;
-                pushSupportEditHistory('Edit branch curve', initialEditSnapshotRef.current, captureSupportEditSnapshot());
-            } else if (ctx.twig) {
-                if (liveTwigPreviewRef.current) {
-                    updateTwig(liveTwigPreviewRef.current);
-                }
-                clearSupportDragPreview('twig', ctx.twig.id);
-                clearTwigDragPreview();
-                liveTwigPreviewRef.current = null;
-                pushSupportEditHistory('Edit twig curve', initialEditSnapshotRef.current, captureSupportEditSnapshot());
-            } else if (ctx.stick) {
-                if (liveStickPreviewRef.current) {
-                    updateStick(liveStickPreviewRef.current);
-                }
-                clearSupportDragPreview('stick', ctx.stick.id);
-                liveStickPreviewRef.current = null;
-                pushSupportEditHistory('Edit stick curve', initialEditSnapshotRef.current, captureSupportEditSnapshot());
-            } else if (ctx.brace) {
-                pushSupportEditHistory('Edit brace curve', initialEditSnapshotRef.current, captureSupportEditSnapshot());
-            } else if (ctx.kickstand) {
-                if (liveKickstandPreviewRef.current) {
-                    updateKickstand(liveKickstandPreviewRef.current);
-                }
-                clearSupportDragPreview('kickstand', ctx.kickstand.id);
-                liveKickstandPreviewRef.current = null;
-                pushSupportEditHistory('Edit kickstand curve', initialEditSnapshotRef.current, captureSupportEditSnapshot());
+        // One path for every non-trunk type: commit the live preview through the
+        // registry, clear it, and record one edit-history entry. This was a branch
+        // per type, each naming its own update function -- so a type with no
+        // branch (anchors) silently skipped the commit.
+        if (initialEditSnapshotRef.current && ctx.typeId && ctx.typeId !== 'trunk') {
+            const typeId = ctx.typeId;
+            const draggedId = (ctx as unknown as Record<string, { id: string } | undefined>)[typeId]?.id;
+            const preview = livePreviewRefs[typeId]?.current;
+
+            if (preview) {
+                updateSupportEntity(typeId, preview);
+            } else if (typeId === 'branch' && draggedId) {
+                // Branches reconcile from the store when no preview was produced.
+                const latestBranch = getBranchById(draggedId);
+                if (latestBranch) updateBranch(latestBranch);
             }
+
+            if (draggedId) clearSupportDragPreview(typeId, draggedId);
+            if (typeId === 'twig') clearTwigDragPreview();
+            if (livePreviewRefs[typeId]) livePreviewRefs[typeId]!.current = null;
+
+            const descriptor = SUPPORT_TYPES.find((d) => d.id === typeId);
+            pushSupportEditHistory(
+                `Edit ${descriptor?.id ?? typeId} curve`,
+                initialEditSnapshotRef.current,
+                captureSupportEditSnapshot(),
+            );
             initialEditSnapshotRef.current = null;
         }
 
-        initialBranchRef.current = null;
-        initialTwigRef.current = null;
-        initialStickRef.current = null;
-        initialBraceRef.current = null;
-        initialKickstandRef.current = null;
         clearLiveSupportPreviews();
     };
 
