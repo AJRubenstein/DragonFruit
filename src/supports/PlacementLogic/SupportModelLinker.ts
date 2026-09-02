@@ -3,18 +3,10 @@ import { getSnapshot, setSnapshot } from '../state';
 import { MODEL_ID_COLLECTION_KEYS, type SupportCollectionKey } from '../supportTypeRegistry';
 
 /**
- * SupportModelLinker
- *
- * Owns the relationship between Supports and 3D Models:
- * 1. Query the supports belonging to a model.
- * 2. Remove all of them when that model is deleted.
- *
- * Both walks are driven by MODEL_ID_COLLECTION_KEYS rather than a hand-written
- * list. The list here used to omit anchors, so deleting a model left its anchors
- * behind bound to a model that no longer existed -- and a model supported ONLY by
- * anchors deleted nothing at all, because the "did anything match?" check missed
- * them too. Deriving the walk makes that class of omission impossible.
- */
+  * Owns the relationship between supports and models: query a model's supports,
+  * and remove them when it is deleted. Both walks come from
+  * MODEL_ID_COLLECTION_KEYS so a collection cannot be silently missed.
+  */
 
 /** Ids of a model's supports, one array per modelId-bearing collection. */
 export type ModelSupportIds = Record<SupportCollectionKey, string[]>;
@@ -67,9 +59,8 @@ function collectRemovedSegmentIds(
 /**
  * Removes every support belonging to `modelId`.
  *
- * @returns Number of support entities removed. Roots are excluded from the count
- * to preserve historical semantics: they were cascaded from shaft removals rather
- * than counted as removals in their own right.
+ * @returns entities removed, excluding roots -- they cascade from shaft removals
+ * rather than counting as removals themselves.
  */
 export function deleteSupportsForModel(state: SupportState, modelId: string): number {
     const removing = getSupportsForModel(state, modelId);

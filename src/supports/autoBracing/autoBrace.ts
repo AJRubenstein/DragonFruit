@@ -406,11 +406,7 @@ function buildGroupPairs(
     return result;
 }
 
-/**
- * `kickstandState` is derived from the snapshot rather than passed in: kickstands
- * are a SupportState collection, so a second store argument could only ever
- * disagree with the first.
- */
+/** Kickstand state is derived from the snapshot; a second argument could only disagree. */
 export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: AutoBracingSettings): BuildSnapshotResult {
     const kickstandBase: KickstandState = {
         kickstands: snapshot.kickstands,
@@ -617,9 +613,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     const groupedIds = new Set<string>();
     groupedSupports.forEach(g => g.forEach(s => { if (s.supportKind === 'trunk') groupedIds.add(s.supportId); }));
 
-    // Keep braces this tool did not generate. `braces: {}` used to drop every one,
-    // so a hand-drawn brace vanished on the next run; `generatedBy` is what makes
-    // "mine" distinguishable from "theirs".
+    // Keep braces this tool did not generate; `generatedBy` distinguishes them.
     const keptBraces: SupportState['braces'] = {};
     for (const [id, brace] of Object.entries(snapshot.braces)) {
         const isOurs = brace.generatedBy === 'autoBracing';
@@ -1031,13 +1025,10 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     const removedBraceCount = Object.keys(snapshot.braces).length;
     const changed = generatedBraceCount > 0 || removedBraceCount > 0;
 
-    // Fold the kickstand result back into the snapshot. Bracing strips and
-    // regenerates auto kickstands in `kickstandState`, while `nextSnapshot` was
-    // spread from the input and still holds the old ones -- so the two disagreed
-    // and callers had to reconcile them with a second store write.
-    // Only the roots and knots kickstands own: kickstandState is derived from the
-    // INPUT snapshot, so merging it wholesale would put back the brace knots the
-    // prune above just removed.
+    // Fold the kickstand result back in: nextSnapshot was spread from the input
+    // and still holds the pre-regeneration kickstands.
+    // Only kickstand-owned roots and knots: kickstandState comes from the input
+    // snapshot, so a wholesale merge would restore the pruned brace knots.
     const snapshotWithKickstands: SupportState = {
         ...nextSnapshot,
         kickstands: kickstandState.kickstands,

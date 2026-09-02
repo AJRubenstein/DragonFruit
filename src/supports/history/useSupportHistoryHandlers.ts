@@ -32,11 +32,7 @@ import { getSupportTypeBySelectionCategory, SHAFTED_COLLECTION_KEYS, SUPPORT_PRI
 
 function applySnapshotHistory(payload: SupportReplaceStatePayload, direction: 'undo' | 'redo') {
   clearSupportSelection();
-  // setSnapshot restores kickstands too: they are a SupportState collection, so
-  // the separate kickstand restore this used to do is covered by the line above.
-  // It was added when the two stores were separate and undo left kickstands
-  // behind; keeping it risked the opposite, a stale kickstand snapshot wiping
-  // what setSnapshot had just restored.
+  // setSnapshot restores kickstands too -- they are a SupportState collection.
   setSnapshot(direction === 'undo' ? payload.before : payload.after);
 }
 
@@ -52,9 +48,7 @@ function selectionExistsInSnapshot(): boolean {
   const category = state.selectedCategory;
   if (!id || !category) return false;
 
-  // Collection categories resolve by direct lookup; the registry knows which key
-  // each one lives in, so a new type does not need another case here. The list
-  // this replaced had no 'kickstand', so a selected kickstand always read as gone.
+  // Collection categories resolve by direct lookup, keyed off the registry.
   const descriptor = getSupportTypeBySelectionCategory(category);
   if (descriptor) {
     const record = state[descriptor.location.key as SupportCollectionKey] as Record<string, unknown> | undefined;
@@ -75,9 +69,7 @@ function selectionExistsInSnapshot(): boolean {
     case 'joint': {
       const hasJointOrSegment = (segments: Array<{ id: string; topJoint?: { id: string } | null; bottomJoint?: { id: string } | null }>) =>
         segments.some((s) => s.id === id || s.topJoint?.id === id || s.bottomJoint?.id === id);
-      // Every shafted type, from the registry: this used to look at trunks and
-      // branches only, so a twig, stick, anchor or kickstand joint read as
-      // deleted the moment it was selected.
+      // Every shafted type, from the registry.
       for (const key of SHAFTED_COLLECTION_KEYS) {
         const record = state[key] as Record<string, { segments: Array<{ id: string; topJoint?: { id: string } | null; bottomJoint?: { id: string } | null }> }> | undefined;
         if (!record) continue;

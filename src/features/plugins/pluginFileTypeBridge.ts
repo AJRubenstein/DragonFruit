@@ -5,18 +5,9 @@ import type { DragonfruitImportFormat } from '@/supports/types';
 /**
  * One model produced by a scene-file plugin import.
  *
- * `modelId` is REQUIRED and is the contract that binds a model to its supports.
- * The host uses it as the created model's id, and stamps it onto every support
- * in `supportData` so the association is guaranteed rather than assumed.
- *
- * Before this was declared here the bridge passed `payload: unknown`, so the
- * link existed only by convention: a plugin separately (a) stamped `modelId`
- * onto its supports and (b) returned the same value on the payload, and the two
- * happened to agree. Nothing verified that, so a plugin that disagreed with
- * itself -- or omitted `modelId` and fell through to the host's `uuidv4()`
- * fallback -- produced supports belonging to no model: invisible to
- * `getSupportsForModel`, unmoved by per-model transforms, and impossible to
- * chunk per model on save.
+ * `modelId` is required: the host uses it as the created model's id and stamps
+ * it onto every support in `supportData`, so the association is guaranteed
+ * rather than left to a plugin and the host agreeing by convention.
  */
 export interface PluginSceneImportModel {
   /**
@@ -62,13 +53,9 @@ export type PluginSceneImportPayload = PluginSceneImportModel | PluginSceneImpor
 /**
  * The result returned by a plugin file-type import handler.
  *
- * `success: false` with an `error` string signals a user-visible import
- * failure; the host surfaces the error without crashing.
- *
- * On success, `payload` carries the structured import data the host dispatch
- * path consumes (see `useSceneCollectionManager`). Scene-file plugins should
- * return `PluginSceneImportPayload`; the union keeps `unknown` for non-scene
- * file types whose payload shape is private to the plugin and its own consumer.
+ * `success: false` with an `error` string surfaces a user-visible failure.
+ * Scene-file plugins return `PluginSceneImportPayload`; the union keeps
+ * `unknown` for file types whose payload is private to the plugin.
  */
 export type PluginFileTypeImportResult =
   | { success: true; payload: PluginSceneImportPayload }
@@ -76,15 +63,12 @@ export type PluginFileTypeImportResult =
   | { success: false; error: string };
 
 /**
- * Handler function that every `fileType`-capable plugin must export from
- * `fileTypeHandlers.ts` as the named export `handleFileTypeImport`.
+ * Exported by every `fileType`-capable plugin from `fileTypeHandlers.ts` as
+ * `handleFileTypeImport`.
  *
- * @param file - The raw `File` object received from a file picker or
- *   drag-and-drop event.
- * @param fileTypeDefinition - The matching `PluginFileTypeDefinition` from
- *   the plugin's `pluginDefinition.ts`, provided for convenience so the
- *   handler can inspect metadata (e.g. `isSceneFile`) without hard-coding it.
- * @returns A promise that resolves to a `PluginFileTypeImportResult`.
+ * @param file - from a file picker or drag-and-drop.
+ * @param fileTypeDefinition - the matching definition, so the handler can read
+ *   metadata such as `isSceneFile` without hard-coding it.
  */
 export type PluginFileTypeHandler = (
   file: File,

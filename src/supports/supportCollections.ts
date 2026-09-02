@@ -2,36 +2,17 @@ import { MODEL_ID_COLLECTION_KEYS, type SupportCollectionKey } from './supportTy
 import type { SupportState } from './types';
 
 /**
- * The modelId-bearing support collections, in one place.
+ * Keys of `SupportState` holding modelId-bearing support entities.
  *
  * A support's type is implicit -- an entity is a Stick because its id is a key in
- * `state.sticks`, not because of any field -- so every "do this to all supports"
- * walk hand-wrote the collection list, and a list missing one failed SILENTLY.
- * That shipped twice: applyZShift skipped sticks, and normalizeLoadedKnotAndLeaf-
- * Geometry had no stick map, both invisible until geometry looked wrong.
- *
- * Deriving the walks from one list makes "did this cover every type?" a question
- * the compiler answers.
- *
- * Excludes `knots` (attachments, no modelId) and interaction fields.
- */
-
-/**
- * Keys of `SupportState` holding top-level, modelId-bearing support entities.
- * Derived from the type registry so a new type is picked up by adding one
- * descriptor, rather than by remembering this list too.
+ * `state.sticks` -- so a walk that misses a collection fails silently. Excludes
+ * `knots`, which are attachments and carry no modelId.
  */
 export const SUPPORT_ENTITY_COLLECTIONS = MODEL_ID_COLLECTION_KEYS;
 
 export type SupportEntityCollectionKey = SupportCollectionKey;
 
-/**
- * The subset of SupportState these helpers read and write.
- *
- * Narrower than SupportState on purpose: it keeps the helpers usable with a
- * partial snapshot (an import payload being reconciled, say) and stops them
- * reaching into interaction state.
- */
+/** Narrower than SupportState so these work on a partial import payload too. */
 export type SupportEntityCollections = Pick<SupportState, SupportEntityCollectionKey>;
 
 /** Minimum shape a support entity must have to take part in these walks. */
@@ -43,12 +24,9 @@ export interface SupportEntityLike {
 /**
  * Apply `mapEntity` to every entity in every collection, copy-on-write.
  *
- * Returns the ORIGINAL collections object when nothing changed, so callers can
- * keep their existing `if (changed)` short-circuit and avoid a pointless state
- * update plus subscriber notification. Individual collections are likewise only
- * cloned once something in them actually changes.
- *
- * `mapEntity` returns the entity unchanged (by reference) to signal "no change".
+ * Returns the original object when nothing changed, so callers keep their
+ * `if (changed)` short-circuit. `mapEntity` signals "no change" by returning the
+ * entity by reference.
  */
 export function mapSupportEntities<T extends SupportEntityCollections>(
     collections: T,
@@ -97,14 +75,10 @@ export function forEachSupportEntity(
 /**
  * Apply `mapEntity` to every support entity in an import payload.
  *
- * The payload stores collections as ARRAYS, so it needs its own walk -- derived
- * from the same list so the two cannot drift.
- *
- * Optional collections stay `undefined` rather than `[]`: the payload shape is
- * part of the import contract.
- *
- * Kickstands are NOT handled here -- they nest at `kickstands[].kickstand`, so
- * callers must walk them explicitly.
+ * The payload stores collections as arrays, so it needs its own walk. Optional
+ * collections stay `undefined` rather than `[]` -- the shape is part of the
+ * import contract. Kickstands nest at `kickstands[].kickstand` and are not
+ * covered here.
  */
 export function mapImportPayloadEntities<T extends Partial<Record<SupportEntityCollectionKey, unknown>>>(
     payload: T,

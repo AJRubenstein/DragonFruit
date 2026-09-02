@@ -45,13 +45,9 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
   };
 
   /**
-   * Register a shafted support's segments and joints.
-   *
-   * Every segment-bearing type does this identically; only the contact
-   * primitives differ, so those stay in the per-type blocks below. Driving the
-   * shaft half from the registry is what finally put ANCHORS in this lookup --
-   * they have segments and were simply missing, so nothing could resolve which
-   * support an anchor segment or joint belonged to.
+   * Register a shafted support's segments and joints. Every segment-bearing type
+   * does this identically; only the contact primitives differ, so those stay in
+   * the per-type blocks below.
    */
   const registerShaft = (entity: { id: string; modelId?: string; segments: Array<{ id: string; topJoint?: { id: string } | null; bottomJoint?: { id: string } | null }> }) => {
     for (const segment of entity.segments) {
@@ -133,9 +129,8 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
     }
   }
 
-  // Kickstand host knots are ordinary entries in state.knots, so the loop above
-  // has already indexed them. All that is left is the kickstand-specific bucket
-  // the renderer uses to spot knots hosted on a kickstand shaft.
+  // Host knots are ordinary state.knots entries the loop above already indexed;
+  // this only fills the bucket the renderer uses for kickstand-hosted knots.
   for (const kickstand of Object.values(state.kickstands)) {
     if (shouldAbort?.()) break;
     const hostKnot = state.knots[kickstand.hostKnotId];

@@ -43,13 +43,7 @@ export type SupportCollectionLocation =
  */
 export interface SupportTypeDescriptor {
     id: SupportTypeId;
-    /**
-     * Plural display name for UI that lists collections.
-     *
-     * Identity, not rendering: it is what the type is CALLED, so the panels and
-     * modals listing supports do not each keep their own label table. Anchors
-     * were missing from every one of those tables.
-     */
+    /** Plural display name, so panels listing collections need no label table. */
     label: string;
     location: SupportCollectionLocation;
     selectionCategory: SupportSelectionCategory;
@@ -57,21 +51,9 @@ export interface SupportTypeDescriptor {
     historyRemove: SupportHistoryActionType;
     /** Whether a modelId walk includes this type. All nine do; the flag exists so a future type can opt out. */
     carriesModelId: boolean;
-    /**
-     * Whether instances carry a `segments` array of real shafts.
-     *
-     * Declared rather than inferred by excluding names: callers that walk shafts
-     * were subtracting 'braces' and 'leaves' by hand, which quietly includes any
-     * future type that also has no segments.
-     */
+    /** Whether instances carry real shafts, for segment and joint walks. */
     hasSegments: boolean;
-    /**
-     * Field names holding this type's contact primitives, in order.
-     *
-     * Types name these differently -- `contactCone`, or a `contactDiskA`/`B`
-     * pair -- so code wanting "where does this touch the model" had to know each
-     * type by name. Declaring them lets a caller read the first one that is set.
-     */
+    /** Contact primitive fields, in order: types name these differently. */
     contactFields: readonly string[];
 }
 
@@ -167,15 +149,10 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
 ];
 
 /**
- * The store's update function for a type, registered at load.
+ * The store's update function for a type, filled in by state.ts at load.
  *
- * A slot rather than a direct import: state.ts calls into this module while
- * building its initial state, so importing state.ts back here would be a real
- * initialisation cycle -- whichever module evaluated second would see undefined.
- * state.ts fills these in on load instead, and callers ask by type id.
- *
- * This is a STORE operation, the same category as historyAdd/historyRemove, not
- * rendering or placement -- those stay out of the registry deliberately.
+ * A slot rather than an import: state.ts calls into this module while building
+ * its initial state, so importing it back would be an initialisation cycle.
  */
 type SupportUpdater = (entity: never) => void;
 
@@ -293,14 +270,10 @@ export const SUPPORT_COLLECTION_KEYS: readonly SupportCollectionKey[] = [
 ];
 
 /**
- * Categories that count as "a support is selected".
+ * Categories that count as "a support is selected": every type, plus `root`.
  *
- * Every support type plus `root`, which is selectable but belongs to a support
- * rather than being one. Knots are excluded: selecting a knot is selecting an
- * attachment point, and the multi-selection paths treat that as not-a-support.
- *
- * Derived because the two hand-written copies of this set both omitted
- * kickstand, so a selected kickstand did not resolve as a support selection.
+ * Knots are excluded -- selecting one is selecting an attachment point, which
+ * the multi-selection paths treat as not-a-support.
  */
 export const SUPPORT_SELECTION_CATEGORIES: ReadonlySet<SupportSelectionCategory> = new Set([
     ...SUPPORT_TYPES.map((descriptor) => descriptor.selectionCategory),

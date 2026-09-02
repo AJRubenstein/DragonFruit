@@ -9,14 +9,7 @@ import type { KickstandState } from '../../../../SupportTypes/Kickstand/types';
 
 type PlacementSurface = 'interior' | 'exterior';
 
-/**
- * Which support types can be snapped to.
- *
- * A set of type ids rather than one boolean per type: the booleans were a
- * hardcoded type list wearing options, and three of five callers set every one of
- * them true. A new support type joins by being in SUPPORT_TYPES, not by growing
- * another flag here.
- */
+/** Which types can be snapped to. A new type joins by being in SUPPORT_TYPES. */
 export const ALL_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES.map((d) => d.id);
 
 /** The historical default: shafts and braces, not the two-contact types. */
@@ -228,9 +221,7 @@ export function buildSupportPathSnapTargets(
     // Twigs and sticks snap identically -- both are two-contact shafts whose
     // placement surface comes from either end. Kept as one loop so a third
     // two-contact type does not need a third copy.
-    // Every shafted type except the ones trunk/branch handle above, walked from
-    // the registry. This was a hand-written entry per type, so a ninth needed a
-    // fifth entry -- and anchors were simply never listed.
+    // Every shafted type the trunk/branch passes above do not cover.
     const shaftedSnapTypes = SUPPORT_TYPES.filter((descriptor) =>
         descriptor.hasSegments
         && descriptor.id !== 'trunk'
