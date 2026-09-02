@@ -8,7 +8,7 @@ import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../histor
 import { useCurveInteractionState } from '../../Curves/curveInteractionState';
 import { calculateDiskThickness } from '../ContactDisk/contactDiskUtils';
 import { Trunk, Branch, Twig, Stick, Joint } from '../../types';
-import { getKickstandSnapshot, useKickstandStoreState, updateKickstand } from '../../SupportTypes/Kickstand/kickstandStore';
+import { getKickstandSnapshot, updateKickstand } from '../../SupportTypes/Kickstand/kickstandStore';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { useJointDragPosition } from '../../interaction/jointDragPosition';
 import { clearSupportDragPreview, emitSupportDragPreview, setJointInteractionLock } from './jointDragRuntime';
@@ -17,7 +17,6 @@ import { commitJointDragSupport, computeJointDragSupportPreview, publishJointDra
 export function JointGizmo() {
     const MOVE_DELTA_EPS_SQ = 1e-12;
     const state = useSyncExternalStore(subscribe, getSnapshot);
-    const kickstandState = useKickstandStoreState();
     const selectedId = state.selectedId;
     const initialTrunkRef = useRef<Trunk | null>(null);
     const initialBranchRef = useRef<Branch | null>(null);
@@ -238,7 +237,7 @@ export function JointGizmo() {
                     if (joint) return { joint, stick };
                 }
             } else {
-                const kickstand = kickstandState.kickstands[cached.supportId];
+                const kickstand = state.kickstands[cached.supportId];
                 if (kickstand) {
                     const joint = findJointInSegments(kickstand.segments as any[]);
                     if (joint) return { joint, kickstand };
@@ -309,7 +308,7 @@ export function JointGizmo() {
         }
 
         // Search kickstands
-        const kickstands = Object.values(kickstandState.kickstands);
+        const kickstands = Object.values(state.kickstands);
         for (const kickstand of kickstands) {
             for (const seg of kickstand.segments) {
                 if (seg.topJoint?.id === selectedId) {
@@ -326,7 +325,7 @@ export function JointGizmo() {
         selectedJointParentRef.current = null;
         
         return null;
-    }, [selectedId, state.trunks, state.branches, state.twigs, state.sticks, kickstandState.kickstands]);
+    }, [selectedId, state.trunks, state.branches, state.twigs, state.sticks, state.kickstands]);
 
     useEffect(() => {
         if (!jointDragPosition) return;

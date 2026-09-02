@@ -9,7 +9,6 @@ import type { SnapTarget } from '../../interaction/SnappingManager';
 import type { Brace, Knot, Vec3 } from '../../types';
 import { SUPPORT_ADD_BRACE } from '../../history/actionTypes';
 import { getSettings, getAutoBracingSettings } from '../../Settings/state';
-import { useKickstandStoreState } from '../Kickstand/kickstandStore';
 import { bracePlacementStore, useBracePlacementState } from './bracePlacementState';
 import { branchPlacementStore } from '../Branch/branchPlacementState';
 import { v4 as uuidv4 } from 'uuid';
@@ -63,7 +62,6 @@ interface LeafHoverDetail {
 export function BracePlacementController() {
     const { altActive, stage, start } = useBracePlacementState();
     const supportState = useSyncExternalStore(subscribe, getSnapshot);
-    const kickstandState = useKickstandStoreState();
     const { getHotkey } = useHotkeyConfig();
     const branchFamilyBinding = getHotkey('SUPPORTS', 'BRANCH_PLACEMENT');
 
@@ -94,7 +92,7 @@ export function BracePlacementController() {
             }
         }
 
-        for (const kickstand of Object.values(kickstandState.kickstands)) {
+        for (const kickstand of Object.values(supportState.kickstands)) {
             for (const seg of kickstand.segments) {
                 map.set(seg.id, {
                     modelId: kickstand.modelId,
@@ -132,7 +130,7 @@ export function BracePlacementController() {
             });
         }
         return map;
-    }, [supportState.trunks, supportState.branches, supportState.twigs, supportState.sticks, supportState.braces, kickstandState.kickstands]);
+    }, [supportState.trunks, supportState.branches, supportState.twigs, supportState.sticks, supportState.braces, supportState.kickstands]);
 
     const leafMeta = useMemo(() => {
         return buildLeafConeSnapMeta(supportState.leaves);
@@ -276,7 +274,7 @@ export function BracePlacementController() {
             excludeSegmentIds: excludedSegmentIds,
         });
 
-        targets.push(...buildKickstandPathSnapTargets(kickstandState, { excludeSegmentIds: excludedSegmentIds }));
+        targets.push(...buildKickstandPathSnapTargets(supportState, { excludeSegmentIds: excludedSegmentIds }));
         targets.push(...buildLeafConePathSnapTargets(leafMeta, { placementSurface: activePlacementSurface }));
 
         return targets;
@@ -290,7 +288,7 @@ export function BracePlacementController() {
         supportState.braces,
         supportState.twigs,
         supportState.sticks,
-        kickstandState.kickstands,
+        supportState.kickstands,
         leafMeta,
     ]);
 
