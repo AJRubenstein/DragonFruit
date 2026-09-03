@@ -17,7 +17,7 @@ import * as THREE from 'three';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { v4 as uuidv4 } from 'uuid';
 import { applyImportDefaultsToSupportPayload, getSavedImportDefaultsSettings } from '@/features/scene/importDefaultsPreferences';
-import type { SupportSettings } from './Settings/types';
+import { mergeSettingsWithDefaults, type SupportSettings } from './Settings/types';
 import { createDefaultSettings } from './Settings/types';
 import { decodeSupportSettingsHex, encodeSupportSettingsHex } from './Settings/supportSettingsCodec';
 import { resolveTwigDiameterAtSegmentT, twigJointDiameterForLocalDiameter } from './SupportTypes/Twig/twigTaper';
@@ -3849,24 +3849,6 @@ export type EditableSupportTarget = {
     id: string;
 };
 
-function mergeSettingsWithDefaults(base?: SupportSettings): SupportSettings {
-    const defaults = createDefaultSettings();
-    if (!base) return defaults;
-
-    return {
-        ...defaults,
-        ...base,
-        tip: { ...defaults.tip, ...base.tip },
-        shaft: { ...defaults.shaft, ...base.shaft },
-        roots: { ...defaults.roots, ...base.roots },
-        baseFlare: { ...defaults.baseFlare, ...base.baseFlare },
-        joint: { ...defaults.joint, ...base.joint },
-        grid: { ...defaults.grid, ...base.grid },
-        meshToMesh: { ...defaults.meshToMesh, ...base.meshToMesh },
-        autoBracing: { ...defaults.autoBracing, ...base.autoBracing },
-    };
-}
-
 function inferSettingsFromTrunk(trunk: Trunk, root: Roots | null, base?: SupportSettings): SupportSettings {
     const merged = mergeSettingsWithDefaults(base);
     const coneProfile = trunk.contactCone?.profile;
@@ -3895,52 +3877,6 @@ function inferSettingsFromTrunk(trunk: Trunk, root: Roots | null, base?: Support
             diameterMm: root?.diameter ?? merged.roots.diameterMm,
             diskHeightMm: root?.diskHeight ?? merged.roots.diskHeightMm,
             coneHeightMm: root?.coneHeight ?? merged.roots.coneHeightMm,
-        },
-    };
-}
-
-function inferSettingsFromBranch(branch: Branch, base?: SupportSettings): SupportSettings {
-    const merged = mergeSettingsWithDefaults(base);
-    const coneProfile = branch.contactCone?.profile;
-    const diskConeProfile = coneProfile?.type === 'disk' ? coneProfile : undefined;
-    const shaftDiameter = branch.segments[0]?.diameter ?? merged.shaft.diameterMm;
-
-    return {
-        ...merged,
-        tip: {
-            ...merged.tip,
-            contactDiameterMm: coneProfile?.contactDiameterMm ?? merged.tip.contactDiameterMm,
-            bodyDiameterMm: coneProfile?.bodyDiameterMm ?? merged.tip.bodyDiameterMm,
-            lengthMm: coneProfile?.lengthMm ?? merged.tip.lengthMm,
-            penetrationMm: coneProfile?.penetrationMm ?? merged.tip.penetrationMm,
-            diskThicknessMm: diskConeProfile?.diskThicknessMm ?? merged.tip.diskThicknessMm,
-            maxStandoffMm: diskConeProfile?.maxStandoffMm ?? merged.tip.maxStandoffMm,
-            standoffAngleThreshold: diskConeProfile?.standoffAngleThreshold ?? merged.tip.standoffAngleThreshold,
-        },
-        shaft: {
-            ...merged.shaft,
-            diameterMm: shaftDiameter,
-            secondaryDiameterMm: shaftDiameter,
-        },
-    };
-}
-
-function inferSettingsFromLeaf(leaf: Leaf, base?: SupportSettings): SupportSettings {
-    const merged = mergeSettingsWithDefaults(base);
-    const coneProfile = leaf.contactCone?.profile;
-    const diskConeProfile = coneProfile?.type === 'disk' ? coneProfile : undefined;
-
-    return {
-        ...merged,
-        tip: {
-            ...merged.tip,
-            contactDiameterMm: coneProfile?.contactDiameterMm ?? merged.tip.contactDiameterMm,
-            bodyDiameterMm: coneProfile?.bodyDiameterMm ?? merged.tip.bodyDiameterMm,
-            lengthMm: coneProfile?.lengthMm ?? merged.tip.lengthMm,
-            penetrationMm: coneProfile?.penetrationMm ?? merged.tip.penetrationMm,
-            diskThicknessMm: diskConeProfile?.diskThicknessMm ?? merged.tip.diskThicknessMm,
-            maxStandoffMm: diskConeProfile?.maxStandoffMm ?? merged.tip.maxStandoffMm,
-            standoffAngleThreshold: diskConeProfile?.standoffAngleThreshold ?? merged.tip.standoffAngleThreshold,
         },
     };
 }
@@ -4253,6 +4189,12 @@ export function applySettingsToSupportSelection(
     return applySettingsToSupportTarget(target, settings);
 }
 
+// Per-type registrations live in each type's folder; importing them here runs
+// their side effects once the store exists.
+import './SupportTypes/Twig/twigRegistration';
+import './SupportTypes/Branch/branchRegistration';
+import './SupportTypes/Leaf/leafRegistration';
+
 /* --- Updater registration ------------------------------------------------
  * Fills the registry's updater slot per declared type, looking each function up
  * by convention (`update` + capitalised id). A missing one throws at load.
@@ -4261,13 +4203,6 @@ const SUPPORT_UPDATERS: Record<string, (entity: never) => void> = {
     updateTrunk, updateBranch, updateLeaf, updateTwig,
     updateStick, updateBrace, updateAnchor, updateKickstand,
 };
-
-// Twigs taper along their length, so a knot on one is sized from the taper
-// rather than the generic segment-diameter rule.
-registerKnotDiameterRule<Twig>('twig', (twig, segmentId, t) => {
-    const local = resolveTwigDiameterAtSegmentT(twig, segmentId, t);
-    return local !== null && local > 0 ? twigJointDiameterForLocalDiameter(local) : null;
-});
 
 for (const descriptor of SUPPORT_TYPES) {
     const name = `update${descriptor.id.charAt(0).toUpperCase()}${descriptor.id.slice(1)}`;
@@ -4280,8 +4215,7 @@ for (const descriptor of SUPPORT_TYPES) {
 // slot rather than something the registry could hold directly.
 registerSettingsInference<Trunk, SupportSettings, SupportSettings>('trunk', (trunk, base) =>
     inferSettingsFromTrunk(trunk, state.roots[trunk.rootId] ?? null, base));
-registerSettingsInference<Branch, SupportSettings, SupportSettings>('branch', inferSettingsFromBranch);
-registerSettingsInference<Leaf, SupportSettings, SupportSettings>('leaf', inferSettingsFromLeaf);
+
 
 // How each collection puts an entity back, for undo. Types go through the
 // generic adder; the two primitives and kickstand's nested build do not.
