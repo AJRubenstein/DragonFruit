@@ -1,6 +1,7 @@
 import type { ContactCone } from './SupportPrimitives/ContactCone/types';
 import type { ContactDiskProfile } from './SupportPrimitives/ContactCone/types';
 import type { KickstandBuildResult } from './SupportTypes/Kickstand/types';
+import type { SupportOriginId } from './supportTypeRegistry';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 
 export type SupportMode = 'prepare' | 'analysis' | 'support' | 'export' | 'printing';
@@ -135,12 +136,11 @@ export interface BezierSegment extends BaseSegment {
 
 export type Segment = StraightSegment | BezierSegment;
 
-/** Where an auto-placed support came from — debug origin coloring.
- *  'anchor' = Poisson-disk trunks on anchor-band regions (first-printed layer).
- *  'overhang' = grid infill / organic Poisson / coverage fill / fanned overhang leaves.
- *  'island' = voxel/minima island trunks and their merge leaves/branches.
- *  'standalone' = sub-threshold overhang candidates that neither fanned nor merged. */
-export type SupportOrigin = 'anchor' | 'overhang' | 'island' | 'standalone';
+/**
+ * Where an auto-placed support came from. Declared in `supportTypeRegistry.ts`
+ * alongside what each origin implies; re-exported here for entity interfaces.
+ */
+export type SupportOrigin = SupportOriginId;
 
 /**
  * Trunk: A vertical column extending from Roots.
