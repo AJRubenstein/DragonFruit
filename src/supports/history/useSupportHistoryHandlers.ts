@@ -26,7 +26,6 @@ import {
 } from './actionTypes';
 import { registerSupportHistoryHandler } from './supportHistory';
 import { removeSupportEntity, updateTrunk, updateBranch, updateKnot, setSnapshot, getSnapshot } from '../state';
-import { setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
 import { getSupportTypeBySelectionCategory, restoreToCollection, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, SUPPORT_REMOVAL_SHAPES, SUPPORT_TYPES, type SupportCollectionKey, type SupportEntityIn, type SupportTypeDescriptor } from '../supportTypeRegistry';
 

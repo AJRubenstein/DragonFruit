@@ -266,22 +266,10 @@ function captureSceneSnapshot(
   };
 }
 
-function hasSupportsOrKickstandsForModel(
-  modelId: string,
-  supportState: SupportState,
-  kickstandState: KickstandState,
-): boolean {
+/** Whether any support entity of any type belongs to this model. */
+function hasSupportsForModel(modelId: string, supportState: SupportState): boolean {
   const supportIds = getSupportsForModel(supportState, modelId);
-  const hasMainSupports = supportIds.roots.length > 0
-    || supportIds.trunks.length > 0
-    || supportIds.branches.length > 0
-    || supportIds.braces.length > 0
-    || supportIds.leaves.length > 0
-    || supportIds.twigs.length > 0
-    || supportIds.sticks.length > 0;
-  if (hasMainSupports) return true;
-
-  return Object.values(kickstandState.kickstands).some((kickstand) => kickstand.modelId === modelId);
+  return Object.values(supportIds).some((ids) => ids.length > 0);
 }
 
 function estimateGeometryBytes(geometry: THREE.BufferGeometry): number {
@@ -1864,12 +1852,11 @@ export function useSceneCollectionManager() {
     setActiveModelId(snapshot.activeModelId);
     setSelectedModelIds([...snapshot.selectedModelIds]);
 
+    // setSupportSnapshot restores kickstands with everything else -- they are
+    // ordinary SupportState collections, and their roots and host knots ride in
+    // `roots` and `knots`.
     if (snapshot.supportState) {
       setSupportSnapshot(clonePlainObject(snapshot.supportState));
-    }
-
-    if (snapshot.kickstandState) {
-      setKickstandSnapshot(clonePlainObject(snapshot.kickstandState));
     }
   }, []);
 
@@ -2668,8 +2655,7 @@ export function useSceneCollectionManager() {
 
     const includeSupportByState = (() => {
       const supportStateNow = getSnapshot();
-      const kickstandStateNow = getSnapshot();
-      return hasSupportsOrKickstandsForModel(id, supportStateNow, kickstandStateNow);
+      return hasSupportsForModel(id, supportStateNow);
     })();
 
     const includeSupportHistory = includeSupportByOption || includeSupportByState;
@@ -2718,10 +2704,7 @@ export function useSceneCollectionManager() {
       || !!supportSnapshotOptions?.kickstandBefore
       || !!supportSnapshotOptions?.kickstandAfter;
     const supportStateNow = getSnapshot();
-    const kickstandStateNow = getSnapshot();
-    const includeSupportByState = changedIds.some((id) => (
-      hasSupportsOrKickstandsForModel(id, supportStateNow, kickstandStateNow)
-    ));
+    const includeSupportByState = changedIds.some((id) => hasSupportsForModel(id, supportStateNow));
     const includeSupportHistory = includeSupportByOption || includeSupportByState;
 
     const before = captureSceneSnapshot(beforeModels, currentActiveModelId, currentSelectedModelIds, {
@@ -2790,16 +2773,14 @@ export function useSceneCollectionManager() {
     });
 
     const supportStateBefore = getSnapshot();
-    const kickstandStateBefore = getSnapshot();
     const allUpdatedIds = Array.from(updateMap.keys());
-    const includeSupportHistory = allUpdatedIds.some((id) => hasSupportsOrKickstandsForModel(id, supportStateBefore, kickstandStateBefore));
+    const includeSupportHistory = allUpdatedIds.some((id) => hasSupportsForModel(id, supportStateBefore));
 
     const shouldPushHistory = options?.pushHistory !== false;
     const before = shouldPushHistory
       ? captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, {
           includeSupportState: includeSupportHistory,
           supportStateOverride: includeSupportHistory ? supportStateBefore : undefined,
-          kickstandStateOverride: includeSupportHistory ? kickstandStateBefore : undefined,
         })
       : null;
 
@@ -2940,7 +2921,7 @@ export function useSceneCollectionManager() {
     })();
 
     const includeSupportHistory = options?.includeSupportState
-      ?? hasSupportsOrKickstandsForModel(id, getSnapshot(), getKickstandSnapshot());
+      ?? hasSupportsForModel(id, getSnapshot());
 
     const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, {
       includeSupportState: includeSupportHistory,
