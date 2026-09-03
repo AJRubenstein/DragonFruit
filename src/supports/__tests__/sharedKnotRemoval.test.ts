@@ -2,16 +2,20 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    addAnchor,
     addBrace,
     addBranch,
     addKnot,
     addLeaf,
+    addStick,
     addTrunk,
     getSnapshot,
+    removeAnchor,
     removeBrace,
+    removeStick,
     resetStore,
 } from '../state';
-import type { Brace, Branch, Knot, Leaf, Trunk } from '../types';
+import type { Anchor, Brace, Branch, Knot, Leaf, Stick, Trunk } from '../types';
 
 /**
  * A knot shared by several supports must outlive any one of them.
@@ -129,4 +133,49 @@ test('no removal leaves a support pointing at a missing knot', () => {
         if (!leaf.parentKnotId) continue;
         assert.ok(state.knots[leaf.parentKnotId], `leaf ${leaf.id} dangles`);
     }
+});
+
+test('removing a stick takes the knots on its shaft', () => {
+    // Sticks used to delete only themselves, orphaning any knot on their
+    // segments -- and any leaf hanging off that knot.
+    resetStore();
+    addStick({
+        id: 'stick-a', modelId: MODEL, segments: [segment('seg-sa')],
+    } as unknown as Stick);
+    addKnot(knot('knot-on-stick', 'seg-sa'));
+    addLeaf({ id: 'leaf-on-stick', modelId: MODEL, parentKnotId: 'knot-on-stick' } as Leaf);
+
+    const removed = removeStick('stick-a');
+    const state = getSnapshot();
+
+    assert.equal(state.knots['knot-on-stick'], undefined, 'the knot goes with the stick');
+    assert.equal(state.leaves['leaf-on-stick'], undefined, 'so does the leaf on it');
+    assert.equal(removed?.knots.length, 1, 'undo needs the knot back');
+    assert.equal(removed?.leaves.length, 1, 'and the leaf');
+});
+
+test('removing an anchor takes the knots on its shaft', () => {
+    resetStore();
+    addAnchor({
+        id: 'anchor-a', modelId: MODEL, segments: [segment('seg-aa')],
+    } as unknown as Anchor);
+    addKnot(knot('knot-on-anchor', 'seg-aa'));
+
+    const removed = removeAnchor('anchor-a');
+    const state = getSnapshot();
+
+    assert.equal(state.knots['knot-on-anchor'], undefined);
+    assert.equal(removed?.knots.length, 1);
+});
+
+test('a stick with nothing on it removes only itself', () => {
+    resetStore();
+    addStick({
+        id: 'stick-a', modelId: MODEL, segments: [segment('seg-sa')],
+    } as unknown as Stick);
+
+    const removed = removeStick('stick-a');
+
+    assert.equal(removed?.knots.length, 0);
+    assert.equal(removed?.leaves.length, 0);
 });

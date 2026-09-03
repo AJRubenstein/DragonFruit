@@ -177,6 +177,8 @@ export function registerSupportHistoryHandlers(): () => void {
       if (!payload?.anchor) return false;
       if (direction === 'undo') {
         addAnchor(payload.anchor);
+        for (const knot of payload.knots ?? []) addKnot(knot);
+        for (const leaf of payload.leaves ?? []) addLeaf(leaf);
       } else {
         removeAnchor(payload.anchor.id);
       }
@@ -260,6 +262,8 @@ export function registerSupportHistoryHandlers(): () => void {
       if (!payload?.stick) return false;
       if (direction === 'undo') {
         addStick(payload.stick);
+        for (const knot of payload.knots ?? []) addKnot(knot);
+        for (const leaf of payload.leaves ?? []) addLeaf(leaf);
       } else {
         removeStick(payload.stick.id);
       }

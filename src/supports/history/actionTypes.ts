@@ -113,6 +113,22 @@ export interface SupportAnchorPayload {
   anchor: Anchor;
 }
 
+/**
+ * Anchors and sticks cascade like twigs: a knot on their shaft, and anything
+ * hanging off that knot, goes with them. Undo has to put all of it back.
+ */
+export interface SupportAnchorRemovePayload {
+  anchor: Anchor;
+  knots: Knot[];
+  leaves: Leaf[];
+}
+
+export interface SupportStickRemovePayload {
+  stick: Stick;
+  knots: Knot[];
+  leaves: Leaf[];
+}
+
 export interface SupportKickstandPayload {
   build: KickstandBuildResult;
 }
@@ -146,11 +162,11 @@ export type SupportHistoryPayloadMap = {
   [SUPPORT_ADD_TWIG]: SupportTwigPayload;
   [SUPPORT_REMOVE_TWIG]: SupportTwigRemovePayload;
   [SUPPORT_ADD_STICK]: SupportStickPayload;
-  [SUPPORT_REMOVE_STICK]: SupportStickPayload;
+  [SUPPORT_REMOVE_STICK]: SupportStickRemovePayload;
   [SUPPORT_ADD_BRACE]: BraceLinkPayload;
   [SUPPORT_REMOVE_BRACE]: BraceLinkPayload;
   [SUPPORT_ADD_ANCHOR]: SupportAnchorPayload;
-  [SUPPORT_REMOVE_ANCHOR]: SupportAnchorPayload;
+  [SUPPORT_REMOVE_ANCHOR]: SupportAnchorRemovePayload;
   [SUPPORT_ADD_KICKSTAND]: SupportKickstandPayload;
   [SUPPORT_REMOVE_KICKSTAND]: SupportKickstandRemovePayload;
   [SUPPORT_REPLACE_TRUNK]: SupportReplaceTrunkPayload;
