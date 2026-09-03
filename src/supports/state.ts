@@ -2,6 +2,7 @@ import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSeg
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
+import { isReferencedOutside } from './supportCascade';
 import { createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
@@ -3335,27 +3336,29 @@ export function removeBrace(braceId: string): { brace: Brace; startKnot: Knot | 
 
     const { [braceId]: _, ...remainingBraces } = state.braces;
 
+    // A brace's knots go with it only when nothing else is attached. Deleting
+    // them unconditionally left any branch, leaf or kickstand on the same knot
+    // pointing at an id that no longer resolved.
+    const doomed = new Set([`braces:${braceId}`]);
     let nextKnots = state.knots;
-    const knotsToRemove = [startKnotId, endKnotId].filter(Boolean);
-    if (knotsToRemove.length > 0) {
-        const updatedKnots: Record<string, Knot> = { ...state.knots };
-        if (startKnotId && updatedKnots[startKnotId]) {
-            snapshots.startKnot = deepClone(updatedKnots[startKnotId]);
-            delete updatedKnots[startKnotId];
-        }
-        if (endKnotId && updatedKnots[endKnotId]) {
-            snapshots.endKnot = deepClone(updatedKnots[endKnotId]);
-            delete updatedKnots[endKnotId];
-        }
-        nextKnots = updatedKnots;
+    const updatedKnots: Record<string, Knot> = { ...state.knots };
+    let removedAnyKnot = false;
+
+    for (const [knotId, slot] of [[startKnotId, 'startKnot'], [endKnotId, 'endKnot']] as const) {
+        if (!knotId || !updatedKnots[knotId]) continue;
+        if (isReferencedOutside(state, { collection: 'knots', id: knotId }, doomed)) continue;
+
+        snapshots[slot] = deepClone(updatedKnots[knotId]);
+        delete updatedKnots[knotId];
+        removedAnyKnot = true;
     }
+    if (removedAnyKnot) nextKnots = updatedKnots;
 
     let nextSelectedId = state.selectedId;
     let nextSelectedCategory = state.selectedCategory;
     if (
         state.selectedId === braceId ||
-        (startKnotId && state.selectedId === startKnotId) ||
-        (endKnotId && state.selectedId === endKnotId)
+        (state.selectedId !== null && !nextKnots[state.selectedId] && state.knots[state.selectedId] !== undefined)
     ) {
         nextSelectedId = null;
         nextSelectedCategory = null;
