@@ -755,7 +755,6 @@ function PreviewContent({
                     <RaftPreview
                             settings={previewSettings}
                         liveConfig={liveConfig}
-                        activeKind={activeKind}
                         raftSettings={raftSettings}
                         previewState={previewState}
                     />
