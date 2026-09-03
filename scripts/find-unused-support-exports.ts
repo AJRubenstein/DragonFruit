@@ -16,7 +16,8 @@ import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
-const SRC = join(ROOT, 'src');
+/** Everything that can reference a support export. `plugins/` imports from `src/`. */
+const SEARCH_ROOTS = ['src', 'plugins', 'scripts'];
 
 const args = process.argv.slice(2);
 const dirArg = args.includes('--dir') ? args[args.indexOf('--dir') + 1] : 'src/supports';
@@ -47,7 +48,13 @@ function exportsOf(src: string): { name: string; line: number }[] {
     return found;
 }
 
-const allFiles = walk(SRC);
+const allFiles = SEARCH_ROOTS.flatMap((dir) => {
+    try {
+        return walk(join(ROOT, dir));
+    } catch {
+        return [];
+    }
+});
 const targets = walk(join(ROOT, dirArg));
 
 // One pass over every file, so each is read once rather than per candidate.
@@ -55,6 +62,8 @@ const sources = new Map<string, string>();
 for (const abs of allFiles) sources.set(rel(abs), readFileSync(abs, 'utf8'));
 
 const unused: { path: string; name: string; line: number; testOnly: boolean }[] = [];
+/** Exported but only used inside its own file -- un-export, do not delete. */
+const internal: { path: string; name: string; line: number }[] = [];
 
 for (const abs of targets) {
     const path = rel(abs);
@@ -74,6 +83,16 @@ for (const abs of targets) {
         }
 
         if (production > 0) continue;
+
+        // Named more than once in its own file, so something here still calls
+        // it: the export is redundant but the code is live. Un-export, do not
+        // delete -- deleting these breaks the build.
+        const ownUses = src.match(new RegExp(pattern.source, 'g'))?.length ?? 0;
+        if (ownUses > 1) {
+            internal.push({ path, name, line });
+            continue;
+        }
+
         if (tests > 0 && includeTests) continue;
         unused.push({ path, name, line, testOnly: tests > 0 });
     }
@@ -87,11 +106,19 @@ for (const entry of unused) {
 }
 
 const dead = unused.filter((u) => !u.testOnly).length;
-console.log(`${dead} exports referenced nowhere, ${unused.length - dead} referenced only by tests\n`);
+console.log(
+    `${dead} referenced nowhere, ${unused.length - dead} only by tests, `
+    + `${internal.length} exported but used only internally\n`,
+);
 
 for (const [path, entries] of [...byFile].sort((a, b) => b[1].length - a[1].length)) {
     console.log(`${path}  (${entries.length})`);
     for (const e of entries.sort((a, b) => a.line - b.line)) {
         console.log(`  ${String(e.line).padStart(5)}  ${e.name}${e.testOnly ? '   [tests only]' : ''}`);
     }
+}
+
+if (internal.length > 0) {
+    console.log('\nExported but used only within their own file -- un-export, do not delete:');
+    for (const entry of internal) console.log(`  ${entry.path}:${entry.line}  ${entry.name}`);
 }
