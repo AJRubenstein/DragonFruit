@@ -6,7 +6,7 @@ import { SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { Trunk, Twig } from '../types';
 
 /**
- * Covers `hasSettingsHex`, the flag that decides whether adding an entity seeds
+ * Covers `hasEditableSettings`, the flag that decides whether adding an entity seeds
  * the settings-hex cache.
  *
  * The cache is private, but observable: an update that carries no
@@ -39,7 +39,7 @@ const twig = (settingsCodeHex?: string): Twig => ({
 }) as unknown as Twig;
 
 test('adding a trunk with a settings hex seeds the cache', () => {
-    // Trunk declares hasSettingsHex: true, so the add must store the hex and a
+    // Trunk declares hasEditableSettings: true, so the add must store the hex and a
     // later update that omits one gets it back.
     resetStore();
     addTrunk(trunk('DEADBEEF'));
@@ -57,7 +57,7 @@ test('an explicit hex on update wins over the cached one', () => {
 });
 
 test('a type without a settings hex caches nothing', () => {
-    // Twig declares hasSettingsHex: false. Its hex round-trips through the
+    // Twig declares hasEditableSettings: false. Its hex round-trips through the
     // entity itself, never through the cache -- so omitting it on update
     // leaves it absent rather than resurrecting an old value.
     resetStore();
@@ -71,7 +71,7 @@ test('exactly the settings-hex types declare the flag', () => {
     // The private cache is keyed 'trunk' | 'branch' | 'leaf'; a fourth type
     // setting the flag would index a bucket that does not exist.
     assert.deepEqual(
-        SUPPORT_TYPES.filter((d) => d.hasSettingsHex).map((d) => d.id).sort(),
+        SUPPORT_TYPES.filter((d) => d.hasEditableSettings).map((d) => d.id).sort(),
         ['branch', 'leaf', 'trunk'],
     );
 });

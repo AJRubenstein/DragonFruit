@@ -132,18 +132,19 @@ export interface SupportTypeDescriptor {
         links: Readonly<Record<string, { from: string; in: SupportCollectionKey }>>;
     };
     /**
-     * Whether instances carry a `settingsCodeHex` cached outside the entity.
+     * Whether instances have per-entity editable settings.
      *
-     * The cache is keyed by type and id, so a type that caches must evict on
-     * remove or the next entity reusing that id inherits stale settings.
+     * Such a type is selectable in the settings sidebar and caches a
+     * `settingsCodeHex` outside the entity, keyed by type and id -- so it must
+     * evict on remove or the next entity reusing that id inherits stale values.
      */
-    hasSettingsHex: boolean;
+    hasEditableSettings: boolean;
 }
 
 export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'trunk',
-        hasSettingsHex: true,
+        hasEditableSettings: true,
         edges: [{ field: 'rootId', to: 'roots', ownership: 'owns' }],
         ownsRoot: true,
         segmentsCarryBothJoints: false,
@@ -161,7 +162,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'branch',
-        hasSettingsHex: true,
+        hasEditableSettings: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' }],
         ownsRoot: false,
         segmentsCarryBothJoints: false,
@@ -179,7 +180,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'leaf',
-        hasSettingsHex: true,
+        hasEditableSettings: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' }],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -197,7 +198,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'twig',
-        hasSettingsHex: false,
+        hasEditableSettings: false,
         edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -215,7 +216,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'stick',
-        hasSettingsHex: false,
+        hasEditableSettings: false,
         edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -235,7 +236,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         id: 'brace',
         // Two named knot fields rather than a list: the history payload and its
         // undo handler read them by name, and start/end are not interchangeable.
-        hasSettingsHex: false,
+        hasEditableSettings: false,
         edges: [
             { field: 'startKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' },
             { field: 'endKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' },
@@ -256,7 +257,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'anchor',
-        hasSettingsHex: false,
+        hasEditableSettings: false,
         edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -281,7 +282,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
             },
         },
         id: 'kickstand',
-        hasSettingsHex: false,
+        hasEditableSettings: false,
         edges: [
             { field: 'rootId', to: 'roots', ownership: 'owns' },
             { field: 'hostKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' },
@@ -439,6 +440,19 @@ type _RemovalShapesCoverEveryType =
     Exclude<SupportTypeId, keyof typeof SUPPORT_REMOVAL_SHAPES> extends never ? true : never;
 const _removalShapesCoverEveryType: _RemovalShapesCoverEveryType = true;
 void _removalShapesCoverEveryType;
+
+/**
+ * Types whose entities have editable settings, and can be a sidebar target.
+ *
+ * Derived, so a new type with settings joins by declaring the flag.
+ */
+export const EDITABLE_SUPPORT_TYPES: readonly SupportTypeDescriptor[] =
+    SUPPORT_TYPES.filter((descriptor) => descriptor.hasEditableSettings);
+
+/** Whether `id` names a type with editable settings. */
+export function isEditableSupportType(id: string): id is SupportTypeId {
+    return EDITABLE_SUPPORT_TYPES.some((descriptor) => descriptor.id === id);
+}
 
 /**
  * Ids of every Roots entry some entity still claims.
