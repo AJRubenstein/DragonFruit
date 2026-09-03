@@ -1,10 +1,10 @@
-import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, Knot, Vec3, Leaf, Brace, Twig, Stick, Anchor } from './types';
+import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace, Twig, Stick, Anchor } from './types';
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
-import { MODEL_ID_COLLECTION_KEYS, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -1949,122 +1949,90 @@ export function transformSupportsForModel(
         }
     }
 
-    for (const branchId of affectedBranchIds) {
-        const branch = state.branches[branchId];
-        if (!branch) continue;
+    // Apply the transform to every affected entity. What moves is declared:
+    // segments and contactFields cover six of the eight types, and
+    // SUPPORT_TRANSFORM_EXTRAS names the brace curve and the anchor's own root.
+    const affectedByType: Partial<Record<SupportTypeId, Set<string>>> = {
+        branch: affectedBranchIds,
+        leaf: affectedLeafIds,
+        twig: affectedTwigIds,
+        stick: affectedStickIds,
+        brace: affectedBraceIds,
+    };
 
-        if (!changed) {
-            nextBranches = { ...state.branches };
-            changed = true;
-        }
+    const nextByCollection: Partial<Record<SupportCollectionKey, Record<string, unknown>>> = {};
 
-        nextBranches[branch.id] = {
-            ...branch,
-            segments: branch.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-            contactCone: branch.contactCone ? transformContactCone(branch.contactCone, deltaMatrix, normalMatrix) : branch.contactCone,
-        };
-    }
+    for (const descriptor of SUPPORT_TYPES) {
+        // Trunks and kickstands are transformed above, alongside their roots.
+        if (descriptor.id === 'trunk' || descriptor.id === 'kickstand') continue;
 
-    for (const leafId of affectedLeafIds) {
-        const leaf = state.leaves[leafId];
-        if (!leaf) continue;
+        const collection = descriptor.location.key;
+        const source = state[collection] as unknown as Record<string, Record<string, unknown>>;
+        // An anchor has no affected-set: it moves purely on its own modelId.
+        const ids = affectedByType[descriptor.id]
+            ?? Object.values(source)
+                .filter((entity) => entity.modelId === modelId)
+                .map((entity) => entity.id as string);
 
-        if (!changed) {
-            nextLeaves = { ...state.leaves };
-            changed = true;
-        }
+        for (const id of ids) {
+            const entity = source[id];
+            if (!entity) continue;
 
-        nextLeaves[leaf.id] = {
-            ...leaf,
-            contactCone: transformContactCone(leaf.contactCone, deltaMatrix, normalMatrix),
-        };
-    }
+            if (!changed) changed = true;
+            const target = nextByCollection[collection] ?? { ...source };
+            nextByCollection[collection] = target;
 
-    for (const twigId of affectedTwigIds) {
-        const twig = state.twigs[twigId];
-        if (!twig) continue;
-        if (!changed) {
-            nextTwigs = { ...state.twigs };
-            changed = true;
-        }
+            const next: Record<string, unknown> = { ...entity };
 
-        twig.segments.forEach((segment) => touchedSegmentIds.add(segment.id));
-        twig.segments.forEach((segment) => {
-            if (segment.bottomJoint?.id) touchedJointIds.add(segment.bottomJoint.id);
-            if (segment.topJoint?.id) touchedJointIds.add(segment.topJoint.id);
-        });
-        nextTwigs[twig.id] = {
-            ...twig,
-            segments: twig.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-            contactDiskA: transformContactDisk(twig.contactDiskA, deltaMatrix, normalMatrix),
-            contactDiskB: transformContactDisk(twig.contactDiskB, deltaMatrix, normalMatrix),
-        };
-    }
 
-    for (const stickId of affectedStickIds) {
-        const stick = state.sticks[stickId];
-        if (!stick) continue;
-        if (!changed) {
-            nextSticks = { ...state.sticks };
-            changed = true;
-        }
-
-        stick.segments.forEach((segment) => touchedSegmentIds.add(segment.id));
-        stick.segments.forEach((segment) => {
-            if (segment.bottomJoint?.id) touchedJointIds.add(segment.bottomJoint.id);
-            if (segment.topJoint?.id) touchedJointIds.add(segment.topJoint.id);
-        });
-        if (stick.contactConeA?.socketJointId) touchedJointIds.add(stick.contactConeA.socketJointId);
-        if (stick.contactConeB?.socketJointId) touchedJointIds.add(stick.contactConeB.socketJointId);
-        nextSticks[stick.id] = {
-            ...stick,
-            segments: stick.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-            contactConeA: transformContactCone(stick.contactConeA, deltaMatrix, normalMatrix),
-            contactConeB: transformContactCone(stick.contactConeB, deltaMatrix, normalMatrix),
-        };
-    }
-
-    for (const braceId of affectedBraceIds) {
-        const brace = state.braces[braceId];
-        if (!brace) continue;
-
-        if (!changed) {
-            nextBraces = { ...state.braces };
-            changed = true;
-        }
-
-        nextBraces[brace.id] = {
-            ...brace,
-            curve: brace.curve
-                ? {
-                    ...brace.curve,
-                    controlPoint1: transformVec3(brace.curve.controlPoint1, deltaMatrix),
-                    controlPoint2: transformVec3(brace.curve.controlPoint2, deltaMatrix),
-                    startTangent: transformDirection(brace.curve.startTangent, normalMatrix),
-                    endTangent: transformDirection(brace.curve.endTangent, normalMatrix),
+            if (descriptor.hasSegments) {
+                const segments = (entity.segments ?? []) as Segment[];
+                if (descriptor.transformPropagatesToShaft) {
+                    for (const segment of segments) {
+                        touchedSegmentIds.add(segment.id);
+                        if (segment.bottomJoint?.id) touchedJointIds.add(segment.bottomJoint.id);
+                        if (segment.topJoint?.id) touchedJointIds.add(segment.topJoint.id);
+                    }
                 }
-                : brace.curve,
-        };
+                next.segments = segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix));
+            }
+
+            for (const field of descriptor.contactFields) {
+                const contact = entity[field] as { socketJointId?: string } | undefined;
+                if (!contact) continue;
+                if (contact.socketJointId) touchedJointIds.add(contact.socketJointId);
+                next[field] = field.startsWith('contactDisk')
+                    ? transformContactDisk(contact as never, deltaMatrix, normalMatrix)
+                    : transformContactCone(contact as never, deltaMatrix, normalMatrix);
+            }
+
+            for (const field of transformExtrasFor(descriptor.id)) {
+                const value = entity[field];
+                if (!value) continue;
+                next[field] = field === 'curve'
+                    ? {
+                        ...(value as BraceCurve),
+                        controlPoint1: transformVec3((value as BraceCurve).controlPoint1, deltaMatrix),
+                        controlPoint2: transformVec3((value as BraceCurve).controlPoint2, deltaMatrix),
+                        startTangent: transformDirection((value as BraceCurve).startTangent, normalMatrix),
+                        endTangent: transformDirection((value as BraceCurve).endTangent, normalMatrix),
+                    }
+                    : field === 'joint'
+                        ? { ...(value as Joint), pos: transformVec3((value as Joint).pos, deltaMatrix) }
+                        : transformVec3(value as Vec3, deltaMatrix);
+            }
+
+            target[id] = next;
+        }
     }
 
-    let nextAnchors = state.anchors;
-    for (const anchor of Object.values(state.anchors)) {
-        if (anchor.modelId !== modelId) continue;
-        if (!changed) {
-            nextAnchors = { ...state.anchors };
-            changed = true;
-        }
-        nextAnchors[anchor.id] = {
-            ...anchor,
-            rootPos: transformVec3(anchor.rootPos, deltaMatrix),
-            joint: {
-                ...anchor.joint,
-                pos: transformVec3(anchor.joint.pos, deltaMatrix),
-            },
-            segments: anchor.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-            contactCone: transformContactCone(anchor.contactCone, deltaMatrix, normalMatrix),
-        };
-    }
+    if (nextByCollection.branches) nextBranches = nextByCollection.branches as typeof nextBranches;
+    if (nextByCollection.leaves) nextLeaves = nextByCollection.leaves as typeof nextLeaves;
+    if (nextByCollection.twigs) nextTwigs = nextByCollection.twigs as typeof nextTwigs;
+    if (nextByCollection.sticks) nextSticks = nextByCollection.sticks as typeof nextSticks;
+    if (nextByCollection.braces) nextBraces = nextByCollection.braces as typeof nextBraces;
+    const nextAnchors = (nextByCollection.anchors ?? state.anchors) as typeof state.anchors;
+
 
     for (const knot of Object.values(state.knots)) {
         const parentShaftId = knot.parentShaftId;

@@ -103,6 +103,15 @@ export interface SupportTypeDescriptor {
      */
     hasContactDiskLengthOverride: boolean;
     /**
+     * Whether a model transform marks this type's segments as moved, so knots
+     * sitting on them follow.
+     *
+     * False for a type that moves purely on its own `modelId` and carries no
+     * hosted geometry -- an anchor is a plate-to-model stub, and a knot on its
+     * shaft is not dragged along by the model moving.
+     */
+    transformPropagatesToShaft: boolean;
+    /**
      * Whether an edit gizmo records its own before/after history entry.
      *
      * The generic path commits the preview and records one entry; a type that
@@ -149,6 +158,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         segmentsCarryBothJoints: false,
         hasDedicatedSnapPass: true,
         hasContactDiskLengthOverride: true,
+        transformPropagatesToShaft: true,
         ownsEditHistoryEntry: true,
         contactFields: ['contactCone'],
         hasSegments: true,
@@ -167,6 +177,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         segmentsCarryBothJoints: false,
         hasDedicatedSnapPass: true,
         hasContactDiskLengthOverride: true,
+        transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
         hasSegments: true,
@@ -185,6 +196,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
         hasContactDiskLengthOverride: false,
+        transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
         hasSegments: false,
@@ -203,6 +215,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
         hasContactDiskLengthOverride: false,
+        transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactDiskA', 'contactDiskB'],
         hasSegments: true,
@@ -221,6 +234,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
         hasContactDiskLengthOverride: false,
+        transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactConeA', 'contactConeB'],
         hasSegments: true,
@@ -244,6 +258,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: true,
         hasContactDiskLengthOverride: false,
+        transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: [],
         hasSegments: false,
@@ -262,6 +277,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         segmentsCarryBothJoints: true,
         hasDedicatedSnapPass: false,
         hasContactDiskLengthOverride: false,
+        transformPropagatesToShaft: false,
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
         hasSegments: true,
@@ -291,6 +307,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         segmentsCarryBothJoints: false,
         hasDedicatedSnapPass: false,
         hasContactDiskLengthOverride: false,
+        transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: [],
         hasSegments: true,
@@ -489,6 +506,24 @@ export function restoreToCollection(key: SupportCollectionKey, entity: unknown):
 /** Whether every collection in the graph can be restored. For a startup check. */
 export function collectionsMissingRestore(): SupportCollectionKey[] {
     return SUPPORT_COLLECTION_KEYS.filter((key) => !COLLECTION_RESTORE.has(key));
+}
+
+/**
+ * Position-bearing fields a model transform must move, beyond the segments and
+ * contact fields every shafted type shares.
+ *
+ * Declared because they are the only per-type difference in the transform's
+ * apply phase: a brace carries a bezier curve, an anchor its own root position
+ * and joint. Everything else is derived from `hasSegments` and `contactFields`.
+ */
+export const SUPPORT_TRANSFORM_EXTRAS = {
+    brace: ['curve'],
+    anchor: ['rootPos', 'joint'],
+} as const satisfies Partial<Record<SupportTypeId, readonly string[]>>;
+
+/** Extra transform fields this type declares, or none. */
+export function transformExtrasFor(typeId: SupportTypeId): readonly string[] {
+    return (SUPPORT_TRANSFORM_EXTRAS as Record<string, readonly string[]>)[typeId] ?? [];
 }
 
 /**

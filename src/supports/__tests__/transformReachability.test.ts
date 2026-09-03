@@ -3,6 +3,7 @@ import test from 'node:test';
 import * as THREE from 'three';
 
 import { getSnapshot, loadFromImportFormat, resetStore, transformSupportsForModel } from '../state';
+import { SUPPORT_TYPES } from '../supportTypeRegistry';
 import { DEFAULT_TIP_PROFILE } from '../SupportPrimitives/ContactCone/types';
 
 /**
@@ -159,6 +160,36 @@ test('an unknown model moves nothing', () => {
     const result = transformSupportsForModel('model-nope', transform(0), transform(10));
     assert.equal(result.supportsChanged, false);
     assert.deepEqual(movedSince(before), []);
+});
+
+test('an anchor shaft does not drag its knots along', () => {
+    // An anchor is a plate-to-model stub: it moves on its own modelId, and a
+    // knot sitting on its shaft is not pulled with it. Declared as
+    // transformPropagatesToShaft, and the only type where it is false.
+    resetStore();
+    loadFromImportFormat({
+        ...fixture(),
+        anchors: [{
+            id: 'anchor-a', modelId: 'model-a',
+            rootPos: { x: 5, y: 0, z: 0 }, rootBaseDiameter: 2, rootTopDiameter: 1, rootHeight: 1,
+            joint: { id: 'anchor-a-joint', pos: { x: 5, y: 0, z: 1 }, diameter: 1 },
+            segments: [seg('seg-aa', 0)], contactCone: cone('cone-aa', 7),
+        }],
+        knots: [
+            ...fixture().knots,
+            { id: 'knot-on-anchor', parentShaftId: 'seg-aa', t: 0.5, pos: { x: 5, y: 0, z: 1.5 }, diameter: 1 },
+        ],
+    } as never);
+    const before = JSON.parse(JSON.stringify(getSnapshot().knots['knot-on-anchor'].pos));
+
+    transformSupportsForModel('model-a', transform(0), transform(10));
+
+    assert.deepEqual(getSnapshot().knots['knot-on-anchor'].pos, before, 'the knot should stay put');
+});
+
+test('every type but one propagates a transform to its shaft', () => {
+    const notPropagating = SUPPORT_TYPES.filter((d) => !d.transformPropagatesToShaft).map((d) => d.id);
+    assert.deepEqual(notPropagating, ['anchor']);
 });
 
 test('an empty model id is a no-op', () => {
