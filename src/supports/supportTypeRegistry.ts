@@ -400,7 +400,7 @@ export const SUPPORT_REMOVAL_SHAPES = {
     stick: { self: 'stick', cascade: { knots: 'knots', leaves: 'leaves' } },
     brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'] } },
     anchor: { self: 'anchor', cascade: { knots: 'knots', leaves: 'leaves' } },
-    kickstand: { self: 'build', cascade: { roots: 'root', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches' } },
+    kickstand: { self: 'build', cascade: { roots: 'root', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches', kickstands: 'kickstands' } },
 } as const;
 
 /**
@@ -437,7 +437,7 @@ type CascadeResult<C> = C extends Readonly<Record<string, unknown>>
  * than a silent undo failure.
  */
 export type SupportRemovalResult<T extends SupportTypeId> =
-    { [S in (typeof SUPPORT_REMOVAL_SHAPES)[T]['self']]: SupportEntityIn<(typeof SUPPORT_TYPE_COLLECTION)[T]> }
+    { [S in (typeof SUPPORT_REMOVAL_SHAPES)[T]['self']]: RemovedEntity<(typeof SUPPORT_TYPE_COLLECTION)[T]> }
     & UnionToIntersection<CascadeResult<(typeof SUPPORT_REMOVAL_SHAPES)[T]['cascade']>>;
 
 type UnionToIntersection<U> =
