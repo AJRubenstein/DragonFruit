@@ -122,6 +122,27 @@ export interface SupportTypeDescriptor {
     /** How instances link to other entities. See {@link SupportEdge}. */
     edges: readonly SupportEdge[];
     /**
+     * What a removal returns, so undo can put the entity and its cascade back.
+     *
+     * `self` is the field the removed entity arrives under -- types spell it
+     * differently (`trunk`, `leaf`, `stick`), and history payloads read it by
+     * name. `cascade` maps a collection to the field its removed members arrive
+     * under; a collection absent here is still deleted, just not reported.
+     *
+     * Declared rather than inferred because these names are a contract with the
+     * history handlers, not an implementation detail: renaming one silently
+     * breaks undo.
+     */
+    removalShape: {
+        self: string;
+        /**
+         * Field name for a collection's removed members. A plural name gets an
+         * array; a singular one gets at most one entity; a tuple names each
+         * slot positionally, for a type whose two links are not interchangeable.
+         */
+        cascade: Readonly<Partial<Record<SupportCollectionKey, string | readonly string[]>>>;
+    };
+    /**
      * Whether instances carry a `settingsCodeHex` cached outside the entity.
      *
      * The cache is keyed by type and id, so a type that caches must evict on
@@ -133,6 +154,7 @@ export interface SupportTypeDescriptor {
 export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'trunk',
+        removalShape: { self: 'trunk', cascade: { roots: 'root', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
         hasSettingsHex: true,
         edges: [{ field: 'rootId', to: 'roots', ownership: 'owns' }],
         ownsRoot: true,
@@ -151,6 +173,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'branch',
+        removalShape: { self: 'branch', cascade: { branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
         hasSettingsHex: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' }],
         ownsRoot: false,
@@ -169,6 +192,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'leaf',
+        removalShape: { self: 'leaf', cascade: { knots: 'knot' } },
         hasSettingsHex: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' }],
         ownsRoot: false,
@@ -187,6 +211,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'twig',
+        removalShape: { self: 'twig', cascade: { knots: 'knots', leaves: 'leaves' } },
         hasSettingsHex: false,
         edges: [],
         ownsRoot: false,
@@ -205,6 +230,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'stick',
+        removalShape: { self: 'stick', cascade: { knots: 'knots', leaves: 'leaves' } },
         hasSettingsHex: false,
         edges: [],
         ownsRoot: false,
@@ -223,10 +249,13 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'brace',
+        // Two named knot fields rather than a list: the history payload and its
+        // undo handler read them by name, and start/end are not interchangeable.
+        removalShape: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'] } },
         hasSettingsHex: false,
         edges: [
-            { field: 'startKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' },
-            { field: 'endKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' },
+            { field: 'startKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' },
+            { field: 'endKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' },
         ],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -244,6 +273,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'anchor',
+        removalShape: { self: 'anchor', cascade: { knots: 'knots', leaves: 'leaves' } },
         hasSettingsHex: false,
         edges: [],
         ownsRoot: false,
@@ -262,6 +292,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'kickstand',
+        removalShape: { self: 'kickstand', cascade: { roots: 'root', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches' } },
         hasSettingsHex: false,
         edges: [
             { field: 'rootId', to: 'roots', ownership: 'owns' },
