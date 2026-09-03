@@ -2894,11 +2894,8 @@ function isolateImportedSupportPayload(data: DragonfruitImportFormat): Dragonfru
 /**
  * Stamp `modelId` onto every support entity in an imported payload.
  *
- * Every top-level support type carries its own `modelId` (they are all
- * `SupportEntity`), and kickstands carry one on the nested build result -- so
- * each collection has to be walked. A type missed here is a support that stays
- * bound to whatever the plugin wrote, which is the failure mode this function
- * exists to prevent.
+ * Kickstands carry theirs on the nested build result, so every collection is
+ * walked; a type missed here stays bound to whatever the plugin wrote.
  */
 function reconcileSupportModelIds(
     data: DragonfruitImportFormat,

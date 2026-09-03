@@ -95,3 +95,6 @@ src-tauri/binaries/dragonfruit-voxl-thumbnailer*
 
 # Local-only refactor scaffolding (golden masters + harness). Never commit.
 /local-only/
+
+# Directory-scoped agent notes: local working aids, not project docs.
+src/**/AGENTS.md

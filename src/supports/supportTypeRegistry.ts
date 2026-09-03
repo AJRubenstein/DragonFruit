@@ -45,9 +45,6 @@ export type SupportCollectionLocation =
  * - `owns`     -- removing the ENTITY removes the target. A trunk owns its root.
  * - `hostedBy` -- removing the TARGET removes the entity. A leaf dies with the
  *                 knot it hangs from.
- *
- * Declared here so a removal cascade can walk the graph instead of each
- * `removeX` re-deriving it by hand.
  */
 export interface SupportEdge {
     field: string;
