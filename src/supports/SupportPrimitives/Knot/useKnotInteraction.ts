@@ -16,10 +16,24 @@ import { getBezierPointAtT } from '../../Curves/BezierUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { clearKnotDragPreview, emitKnotDragPreview } from '../../interaction/knotDragPreview';
 import { resolveTwigDiameterAtSegmentT, twigJointDiameterForLocalDiameter } from '../../SupportTypes/Twig/twigTaper';
+import type { SupportTypeId } from '../../supportTypeRegistry';
+
+/**
+ * What a knot can be dragged along: any support type, or a leaf's contact cone.
+ *
+ * Derived, so a ninth type is a host by being registered. `leafCone` is not a
+ * support type -- it is the cone primitive a leaf knot rides.
+ */
+type KnotHostType = SupportTypeId | 'leafCone';
+
+/** Whether this host is a shaft, as opposed to a leaf's cone. */
+function hostsAShaft(containerType: KnotHostType): boolean {
+    return containerType !== 'leafCone';
+}
 
 interface ActiveHost {
     segmentId: string;
-    containerType: 'trunk' | 'branch' | 'twig' | 'stick' | 'leafCone' | 'brace' | 'kickstand';
+    containerType: KnotHostType;
     trunk?: Trunk;
     branch?: Branch;
     twig?: Twig;
@@ -1433,8 +1447,9 @@ export function useKnotInteraction(enabled: boolean = true) {
             t: t
         };
 
-        // Update diameter when crossing into a segment with a different diameter
-        if (host.containerType === 'trunk' || host.containerType === 'branch' || host.containerType === 'twig' || host.containerType === 'stick' || host.containerType === 'brace' || host.containerType === 'kickstand') {
+        // Update diameter when crossing into a segment with a different diameter.
+        // Every shaft host does this; a leaf cone is the one that does not.
+        if (hostsAShaft(host.containerType)) {
             // +0.125 (not the legacy +0.1): the KnotRenderer subtracts the
             // full joint offset, so shaft + 0.125 renders at shaft + 0.025 —
             // the same diameter as a trunk's joint spheres. A moved auto

@@ -26,6 +26,7 @@ import { getSettings } from '../../Settings';
 import { getSocketPosition } from '../ContactCone';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { clearKnotDragPreview, emitKnotDragPreview, useActiveKnotDragPreview } from '../../interaction/knotDragPreview';
+import type { SupportTypeId } from '../../supportTypeRegistry';
 
 type KnotGizmoWindowState = Window & {
     __knotGizmoDragging?: boolean;
@@ -55,7 +56,7 @@ export function KnotGizmo() {
     const selectedKnotParentRef = useRef<{
         selectedId: string;
         parentShaftId: string;
-        kind: 'trunk' | 'branch' | 'twig' | 'stick';
+        kind: SupportTypeId;
         supportId: string;
         segmentIndex: number;
     } | null>(null);
