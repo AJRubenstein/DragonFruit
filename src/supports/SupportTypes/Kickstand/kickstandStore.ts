@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import type { KickstandBuildResult, KickstandState } from './types';
 import type { SupportState } from '../../types';
-import { getSnapshot, setSnapshot, subscribe, addKickstandToState, updateKickstand as updateKickstandInStore } from '../../state';
+import { addKnot, addRoot, addSupportEntity, getSnapshot, setSnapshot, subscribe, updateKickstand as updateKickstandInStore } from '../../state';
 
 export type { KickstandState } from './types';
 
@@ -52,7 +52,11 @@ export function setKickstandSnapshot(next: KickstandState) {
 
 export function updateKickstand(buildOrKickstand: KickstandBuildResult | KickstandState['kickstands'][string]) {
     if ('kickstand' in buildOrKickstand) {
-        addKickstandToState(buildOrKickstand);
+        // A build carries the root and host knot it created; add all three as
+        // ordinary entities.
+        addRoot(buildOrKickstand.root);
+        addKnot(buildOrKickstand.hostKnot);
+        addSupportEntity('kickstand', buildOrKickstand.kickstand);
         return;
     }
     updateKickstandInStore(buildOrKickstand);

@@ -27,7 +27,7 @@ import {
   removeStick,
   removeAnchor,
   removeTrunk,
-  removeKickstandCascade,
+  removeSupportEntity,
   removeJointById,
   updateKnot,
   updateTrunk,
@@ -399,15 +399,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         if (recordHistory) {
           pushSupportHistory({
             type: SUPPORT_REMOVE_TRUNK,
-            payload: {
-              trunk: snapshots.trunk,
-              root: snapshots.root ?? undefined,
-              branches: snapshots.branches,
-              braces: snapshots.braces,
-              kickstands: snapshots.kickstands,
-              leaves: snapshots.leaves,
-              knots: snapshots.knots,
-            },
+            payload: snapshots,
           });
         }
         setSelectedId(null);
@@ -504,7 +496,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         const kickstands = Object.values(getSnapshot().kickstands);
         const kickstand = kickstands.find((ks) => ks.hostKnotId === id);
         if (kickstand) {
-          const kickstandSnapshots = removeKickstandCascade(kickstand.id);
+          const kickstandSnapshots = removeSupportEntity('kickstand', kickstand.id);
           if (!kickstandSnapshots) return false;
           if (recordHistory) {
             pushSupportHistory({
@@ -601,7 +593,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       }
 
       if (category === 'kickstand') {
-        const kickstandSnapshots = removeKickstandCascade(id);
+        const kickstandSnapshots = removeSupportEntity('kickstand', id);
         if (!kickstandSnapshots) return false;
         if (recordHistory) {
           pushSupportHistory({

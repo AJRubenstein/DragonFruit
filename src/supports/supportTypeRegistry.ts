@@ -128,18 +128,6 @@ export interface SupportTypeDescriptor {
     /** How instances link to other entities. See {@link SupportEdge}. */
     edges: readonly SupportEdge[];
     /**
-     * Fields to gather alongside the entity when it is reported in a cascade.
-     *
-     * Kickstands serialise as a nested `{ kickstand, root, hostKnot }` rather
-     * than a flat entity, because that is what `addKickstandToState` takes on
-     * undo. Named here so the generic remover can rebuild the shape without
-     * knowing which type is special.
-     */
-    nestedRemoval?: {
-        entityField: string;
-        links: Readonly<Record<string, { from: string; in: SupportCollectionKey }>>;
-    };
-    /**
      * Whether instances have per-entity editable settings.
      *
      * Such a type is selectable in the settings sidebar and caches a
@@ -289,13 +277,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         carriesModelId: true,
     },
     {
-        nestedRemoval: {
-            entityField: 'kickstand',
-            links: {
-                root: { from: 'rootId', in: 'roots' },
-                hostKnot: { from: 'hostKnotId', in: 'knots' },
-            },
-        },
         id: 'kickstand',
         hasEditableSettings: false,
         edges: [
@@ -393,14 +374,14 @@ export function resolveKnotDiameter(
  * makes a type-level check against SUPPORT_TYPES impossible.
  */
 export const SUPPORT_REMOVAL_SHAPES = {
-    trunk: { self: 'trunk', cascade: { roots: 'root', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
+    trunk: { self: 'trunk', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
     branch: { self: 'branch', cascade: { branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
     leaf: { self: 'leaf', cascade: { knots: 'knot' } },
     twig: { self: 'twig', cascade: { knots: 'knots', leaves: 'leaves' } },
     stick: { self: 'stick', cascade: { knots: 'knots', leaves: 'leaves' } },
     brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'] } },
     anchor: { self: 'anchor', cascade: { knots: 'knots', leaves: 'leaves' } },
-    kickstand: { self: 'build', cascade: { roots: 'root', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches', kickstands: 'kickstands' } },
+    kickstand: { self: 'kickstand', cascade: { roots: 'roots', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches', kickstands: 'kickstands' } },
 } as const;
 
 /**

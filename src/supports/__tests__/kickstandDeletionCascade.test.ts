@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getSnapshot, removeKickstandCascade, resetStore, setSnapshot } from '../state';
+import { getSnapshot, removeSupportEntity, resetStore, setSnapshot } from '../state';
 import { getKickstandSnapshot, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import type { KickstandState } from '../SupportTypes/Kickstand/types';
 import type { SupportState } from '../types';
@@ -266,21 +266,23 @@ function makeKickstandState(): KickstandState {
   };
 }
 
-test('removeKickstandCascade removes kickstand descendants and mirrored state', () => {
+test('removing a kickstand takes its descendants and mirrored state', () => {
   resetStore();
   setSnapshot(makeState());
   setKickstandSnapshot(makeKickstandState());
 
-  const removed = removeKickstandCascade('kickstand-1');
+  const removed = removeSupportEntity('kickstand', 'kickstand-1');
 
   assert.ok(removed, 'Expected kickstand removal snapshots');
-  assert.equal(removed?.build.kickstand.id, 'kickstand-1');
+  assert.equal(removed?.kickstand.id, 'kickstand-1');
   assert.deepEqual(new Set(removed?.branches.map((branch) => branch.id)), new Set(['branch-1']));
   assert.deepEqual(new Set(removed?.braces.map((brace) => brace.id)), new Set(['brace-1']));
   assert.deepEqual(new Set(removed?.leaves.map((leaf) => leaf.id)), new Set(['leaf-direct', 'leaf-nested']));
+  // The host knot is now reported like any other: it is an ordinary knot the
+  // cascade takes, not a member of a bundle.
   assert.deepEqual(
     new Set(removed?.knots.map((knot) => knot.id)),
-    new Set(['kickstand-branch-knot', 'kickstand-leaf-knot', 'kickstand-brace-knot', 'trunk-brace-knot', 'branch-leaf-knot']),
+    new Set(['kickstand-branch-knot', 'kickstand-leaf-knot', 'kickstand-brace-knot', 'kickstand-host-knot', 'branch-leaf-knot']),
   );
 
   const snapshot = getSnapshot();
@@ -295,7 +297,11 @@ test('removeKickstandCascade removes kickstand descendants and mirrored state', 
   assert.equal(snapshot.knots['kickstand-branch-knot'], undefined);
   assert.equal(snapshot.knots['kickstand-leaf-knot'], undefined);
   assert.equal(snapshot.knots['kickstand-brace-knot'], undefined);
-  assert.equal(snapshot.knots['trunk-brace-knot'], undefined);
+  // OPEN POLICY QUESTION: trunk-brace-knot sits on the surviving trunk, and a
+  // brace merely connected it to the kickstand. The hand-written cascade deleted
+  // it; the declared graph deliberately does not let a swept-up brace drag its
+  // far-side knot. Left alive pending a decision -- see registry-adoption-map.
+  assert.ok(snapshot.knots['trunk-brace-knot'], 'a knot on the surviving trunk stays');
   assert.equal(snapshot.knots['branch-leaf-knot'], undefined);
   assert.equal(snapshot.roots['kickstand-root'], undefined);
 

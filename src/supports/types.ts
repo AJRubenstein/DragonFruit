@@ -275,24 +275,11 @@ export interface Kickstand extends SupportEntity {
 /**
  * How a collection's entity is reported when a removal takes it.
  *
- * Most report the entity itself. A type declaring `nestedRemoval` reports a
- * wrapper carrying the entity plus the links it owns -- a kickstand travels
- * with its root and host knot, because that is what restoring it needs.
+ * Every collection reports the entity itself. A type owning a root or hanging
+ * off a knot reports those as ordinary members of the `roots` and `knots`
+ * cascades, so there is no wrapper form.
  */
-export type SupportRemovedEntityByCollection = Omit<SupportEntityByCollection, keyof SupportRemovalOverrides>
-    & SupportRemovalOverrides;
-
-/** Collections whose removal reports something other than the entity itself. */
-export interface SupportRemovalOverrides {
-    kickstands: KickstandRemovalShape;
-}
-
-/** A kickstand plus the entities its removal takes with it. */
-export interface KickstandRemovalShape {
-    kickstand: Kickstand;
-    root: Roots;
-    hostKnot: Knot;
-}
+export type SupportRemovedEntityByCollection = SupportEntityByCollection;
 
 export interface SupportEntityByCollection {
     roots: Roots;

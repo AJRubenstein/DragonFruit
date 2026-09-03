@@ -5,7 +5,6 @@ import {
     addAnchor,
     addBrace,
     addBranch,
-    addKickstandToState,
     addKnot,
     addLeaf,
     addRoot,
@@ -17,14 +16,14 @@ import {
     removeAnchor,
     removeBrace,
     removeBranch,
-    removeKickstandCascade,
     removeLeaf,
     removeStick,
+    removeSupportEntity,
     removeTrunk,
     removeTwig,
     resetStore,
 } from '../state';
-import { SUPPORT_COLLECTION_KEYS } from '../supportTypeRegistry';
+import { restoreToCollection, SUPPORT_COLLECTION_KEYS } from '../supportTypeRegistry';
 import { DEFAULT_TIP_PROFILE } from '../SupportPrimitives/ContactCone/types';
 import type { DragonfruitImportFormat } from '../types';
 
@@ -165,9 +164,9 @@ function restore(snapshot: Record<string, unknown>) {
     for (const brace of list('braces')) addBrace(brace as never);
     if (one('brace')) addBrace(one('brace'));
 
-    for (const build of list('kickstands')) addKickstandToState(build as never);
-    // Kickstands report their nested build under `build`, not `kickstand`.
-    if (snapshot.build) addKickstandToState(snapshot.build as never);
+    // Through the registered restore, which is what the handlers use.
+    for (const build of list('kickstands')) restoreToCollection('kickstands', build);
+    if (snapshot.build) restoreToCollection('kickstands', snapshot.build);
 }
 
 const CASES: [string, () => Record<string, unknown> | null][] = [
@@ -179,7 +178,7 @@ const CASES: [string, () => Record<string, unknown> | null][] = [
     ['removeStick', () => removeStick('stick-a') as never],
     ['removeBrace', () => removeBrace('brace-a') as never],
     ['removeAnchor', () => removeAnchor('anchor-a') as never],
-    ['removeKickstand', () => removeKickstandCascade('ks-a') as never],
+    ['removeKickstand', () => removeSupportEntity('kickstand', 'ks-a') as never],
 ];
 
 for (const [name, remove] of CASES) {
