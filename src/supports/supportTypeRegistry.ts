@@ -1,5 +1,4 @@
-import type { SupportCollectionName, SupportEntityByCollection, SupportState } from './types';
-import type { KickstandBuildResult } from './SupportTypes/Kickstand/types';
+import type { SupportCollectionName, SupportEntityByCollection, SupportRemovedEntityByCollection, SupportState } from './types';
 import {
     SUPPORT_ADD_TRUNK, SUPPORT_REMOVE_TRUNK,
     SUPPORT_ADD_BRANCH, SUPPORT_REMOVE_BRANCH,
@@ -396,12 +395,10 @@ export type SupportEntityIn<K extends SupportCollectionKey> = SupportEntityByCol
 /**
  * What a collection's entities look like when reported in a cascade.
  *
- * Kickstands travel nested, so a caller receives `KickstandBuildResult`, not
- * `Kickstand`. Declared here beside the shapes rather than asserted at the
- * consumer, which is where the mismatch used to surface.
+ * Read from SupportRemovedEntityByCollection, which names the one collection
+ * that reports a nested shape. No type is named here.
  */
-export type RemovedEntity<K extends SupportCollectionKey> =
-    K extends 'kickstands' ? KickstandBuildResult : SupportEntityIn<K>;
+export type RemovedEntity<K extends SupportCollectionKey> = SupportRemovedEntityByCollection[K];
 
 type CascadeField<K extends SupportCollectionKey, F> =
     F extends readonly string[]
