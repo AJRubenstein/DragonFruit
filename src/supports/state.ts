@@ -12,7 +12,7 @@ import { calculateDiskThickness } from './SupportPrimitives/ContactDisk/contactD
 import { emitSupportInteractionReset } from './interaction/supportInteractionReset';
 import { getJointDiameter, JOINT_DIAMETER_OFFSET_MM } from './constants';
 import { mapImportPayloadEntities, mapSupportEntities } from './supportCollections';
-import type { Kickstand, KickstandBuildResult, KickstandRemoveResult } from './SupportTypes/Kickstand/types';
+import type { Kickstand, KickstandBuildResult } from './SupportTypes/Kickstand/types';
 import * as THREE from 'three';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { v4 as uuidv4 } from 'uuid';
@@ -189,29 +189,6 @@ export function removeTwig(twigId: string) {
 }
 
 /**
- * Wrap an entity in the nested shape its type serialises as.
- *
- * Kickstands travel as `{ kickstand, root, hostKnot }` so undo can hand the
- * whole build back to `addKickstandToState`; the links say which id field to
- * follow and where the target lives.
- */
-function nestRemovedEntity(
-    shape: { entityField: string; links: Readonly<Record<string, { from: string; in: SupportCollectionKey }>> },
-    entity: unknown,
-): Record<string, unknown> {
-    const fields = entity as Record<string, unknown>;
-    const nested: Record<string, unknown> = { [shape.entityField]: deepClone(entity) };
-
-    for (const field of Object.keys(shape.links)) {
-        const link = shape.links[field];
-        const targetId = fields[link.from];
-        const target = typeof targetId === 'string' ? state[link.in][targetId] : undefined;
-        nested[field] = target ? deepClone(target) : null;
-    }
-    return nested;
-}
-
-/**
  * Remove an entity and everything the declared graph says depends on it.
  *
  * One walk for every support type: `collectCascade` works out the doomed set
@@ -234,13 +211,8 @@ function removeSupportEntityCascading(
     const doomed = collectCascade(state, [{ collection, id }]);
     const byCollection = groupByCollection(doomed);
 
-    // Snapshot before deleting: the shape is what undo replays from. A type
-    // declaring nestedRemoval reports its seed nested, as its handler expects.
-    const result: Record<string, unknown> = {
-        [shape.self]: descriptor.nestedRemoval
-            ? nestRemovedEntity(descriptor.nestedRemoval, existing)
-            : deepClone(existing),
-    };
+    // Snapshot before deleting: the shape is what undo replays from.
+    const result: Record<string, unknown> = { [shape.self]: deepClone(existing) };
     const plural = (field: string) => field.endsWith('s');
 
     for (const [key, field] of Object.entries(shape.cascade as Record<string, string | readonly string[]>)) {
@@ -253,9 +225,7 @@ function removeSupportEntityCascading(
         const entities = ids
             .map((entityId) => state[key as SupportCollectionKey][entityId])
             .filter(Boolean)
-            .map((entity) => (node?.nestedRemoval
-                ? nestRemovedEntity(node.nestedRemoval, entity)
-                : deepClone(entity)));
+            .map((entity) => deepClone(entity));
 
         if (typeof field === 'string') {
             result[field] = plural(field) ? entities : (entities[0] ?? null);
@@ -1530,16 +1500,6 @@ function buildKickstandResult(kickstand: Kickstand): KickstandBuildResult | null
     const hostKnot = state.knots[kickstand.hostKnotId];
     if (!root || !hostKnot) return null;
     return { kickstand, root, hostKnot };
-}
-
-export function addKickstandToState(build: KickstandBuildResult) {
-    state = {
-        ...state,
-        kickstands: { ...state.kickstands, [build.kickstand.id]: build.kickstand },
-        roots: { ...state.roots, [build.root.id]: build.root },
-        knots: { ...state.knots, [build.hostKnot.id]: build.hostKnot },
-    };
-    notify();
 }
 
 /** @deprecated Thin wrapper for removal; prefer `replaceSupportEntity('kickstand', entity)`. */
@@ -3014,7 +2974,13 @@ export function addRoot(root: Roots) {
  * which collection they write and whether the type caches a settings hex, both
  * of which the registry declares.
  */
-function addSupportEntity(typeId: SupportTypeId, entity: { id: string; settingsCodeHex?: string }) {
+/**
+ * Add one entity to the collection its type declares.
+ *
+ * The generic adder every type uses. A type owning a root or hanging off a knot
+ * adds those as ordinary entities too -- there is no bundled form.
+ */
+export function addSupportEntity(typeId: SupportTypeId, entity: { id: string; settingsCodeHex?: string }) {
     const descriptor = getSupportTypeDescriptor(typeId);
     if (descriptor.hasEditableSettings && entity.settingsCodeHex) {
         setCachedSupportSettingsHex(typeId as 'trunk' | 'branch' | 'leaf', entity.id, entity.settingsCodeHex);
@@ -3201,6 +3167,11 @@ export function updateAnchor(anchor: Anchor) {
     replaceSupportEntity('anchor', anchor);
 }
 
+/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('brace', id)`. */
+export function removeBrace(braceId: string) {
+    return removeSupportEntity('brace', braceId);
+}
+
 /** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('anchor', id)`. */
 export function removeAnchor(anchorId: string) {
     return removeSupportEntity('anchor', anchorId);
@@ -3318,149 +3289,6 @@ export function updateBrace(brace: Brace) {
     notify();
 }
 
-/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('brace', id)`. */
-export function removeBrace(braceId: string) {
-    return removeSupportEntity('brace', braceId);
-}
-
-export function removeKickstandCascade(kickstandId: string): KickstandRemoveResult | null {
-    const kickstand = state.kickstands[kickstandId];
-    if (!kickstand) return null;
-
-    const kickstandSegmentIds = new Set(kickstand.segments.map((segment) => segment.id));
-    const directKnotIds = new Set<string>();
-    for (const knot of Object.values(state.knots)) {
-        if (kickstandSegmentIds.has(knot.parentShaftId)) {
-            directKnotIds.add(knot.id);
-        }
-    }
-
-    const branchIdsToRemove: string[] = [];
-    for (const branch of Object.values(state.branches)) {
-        if (branch.parentKnotId && directKnotIds.has(branch.parentKnotId)) {
-            branchIdsToRemove.push(branch.id);
-        }
-    }
-
-    const leafIdsToRemove: string[] = [];
-    for (const leaf of Object.values(state.leaves)) {
-        if (leaf.parentKnotId && directKnotIds.has(leaf.parentKnotId)) {
-            leafIdsToRemove.push(leaf.id);
-        }
-    }
-
-    const braceIdsToRemove: string[] = [];
-    for (const brace of Object.values(state.braces)) {
-        if ((brace.startKnotId && directKnotIds.has(brace.startKnotId)) || (brace.endKnotId && directKnotIds.has(brace.endKnotId))) {
-            braceIdsToRemove.push(brace.id);
-        }
-    }
-
-    const build = removeKickstandFromState(kickstandId);
-    if (!build) return null;
-
-    const snapshots: KickstandRemoveResult = {
-        build,
-        branches: [],
-        braces: [],
-        kickstands: [],
-        leaves: [],
-        knots: [],
-    };
-
-    const seenBranchIds = new Set<string>();
-    const seenBraceIds = new Set<string>();
-    const seenKickstandIds = new Set<string>();
-    const seenLeafIds = new Set<string>();
-    const seenKnotIds = new Set<string>();
-
-    for (const branchId of branchIdsToRemove) {
-        const removed = removeBranch(branchId);
-        if (!removed) continue;
-
-        for (const branch of removed.branches ?? []) {
-            if (!branch || seenBranchIds.has(branch.id)) continue;
-            seenBranchIds.add(branch.id);
-            snapshots.branches.push(branch);
-        }
-
-        for (const brace of removed.braces ?? []) {
-            if (!brace || seenBraceIds.has(brace.id)) continue;
-            seenBraceIds.add(brace.id);
-            snapshots.braces.push(brace);
-        }
-
-        for (const nestedKickstand of removed.kickstands ?? []) {
-            if (!nestedKickstand || seenKickstandIds.has(nestedKickstand.kickstand.id)) continue;
-            seenKickstandIds.add(nestedKickstand.kickstand.id);
-            snapshots.kickstands.push(nestedKickstand);
-        }
-
-        for (const leaf of removed.leaves ?? []) {
-            if (!leaf || seenLeafIds.has(leaf.id)) continue;
-            seenLeafIds.add(leaf.id);
-            snapshots.leaves.push(leaf);
-        }
-
-        for (const knot of removed.knots ?? []) {
-            if (!knot || seenKnotIds.has(knot.id)) continue;
-            seenKnotIds.add(knot.id);
-            snapshots.knots.push(knot);
-        }
-    }
-
-    for (const leafId of leafIdsToRemove) {
-        const removed = removeLeaf(leafId);
-        if (!removed) continue;
-
-        if (removed.leaf && !seenLeafIds.has(removed.leaf.id)) {
-            seenLeafIds.add(removed.leaf.id);
-            snapshots.leaves.push(removed.leaf);
-        }
-
-        if (removed.knot && !seenKnotIds.has(removed.knot.id)) {
-            seenKnotIds.add(removed.knot.id);
-            snapshots.knots.push(removed.knot);
-        }
-    }
-
-    for (const braceId of braceIdsToRemove) {
-        const removed = removeBrace(braceId);
-        if (!removed) continue;
-
-        if (removed.brace && !seenBraceIds.has(removed.brace.id)) {
-            seenBraceIds.add(removed.brace.id);
-            snapshots.braces.push(removed.brace);
-        }
-
-        if (removed.startKnot && !seenKnotIds.has(removed.startKnot.id)) {
-            seenKnotIds.add(removed.startKnot.id);
-            snapshots.knots.push(removed.startKnot);
-        }
-
-        if (removed.endKnot && !seenKnotIds.has(removed.endKnot.id)) {
-            seenKnotIds.add(removed.endKnot.id);
-            snapshots.knots.push(removed.endKnot);
-        }
-    }
-
-    for (const knotId of directKnotIds) {
-        const removedKnot = removeKnotById(knotId);
-        if (!removedKnot || seenKnotIds.has(removedKnot.id)) continue;
-        seenKnotIds.add(removedKnot.id);
-        snapshots.knots.push(removedKnot);
-    }
-
-    if (state.knots[build.hostKnot.id]) {
-        removeKnotById(build.hostKnot.id);
-    }
-
-    if (state.roots[build.root.id]) {
-        removeRootById(build.root.id);
-    }
-
-    return snapshots;
-}
 
 /** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('branch', id)`. */
 export function removeBranch(branchId: string) {
@@ -4040,21 +3868,25 @@ registerSettingsInference<Trunk, SupportSettings, SupportSettings>('trunk', (tru
     inferSettingsFromTrunk(trunk, state.roots[trunk.rootId] ?? null, base));
 
 
-// How each collection puts an entity back, for undo. Types go through the
-// generic adder; the two primitives and kickstand's nested build do not.
+// How each collection puts an entity back, for undo. Every type goes through
+// the generic adder; only the two primitives have their own.
 for (const descriptor of SUPPORT_TYPES) {
-    if (descriptor.nestedRemoval) continue;
-    registerCollectionRestore(descriptor.location.key, (entity) =>
-        addSupportEntity(descriptor.id, entity as { id: string }));
+    registerCollectionRestore(descriptor.location.key, (entity) => {
+        // History payloads written before kickstands were flattened still carry
+        // a { kickstand, root, hostKnot } build. Unwrap it rather than break
+        // undo of an entry already on the stack.
+        const build = entity as Partial<KickstandBuildResult>;
+        if (build.kickstand) {
+            if (build.root) addRoot(build.root);
+            if (build.hostKnot) addKnot(build.hostKnot);
+            addSupportEntity(descriptor.id, build.kickstand);
+            return;
+        }
+        addSupportEntity(descriptor.id, entity as { id: string });
+    });
 }
 registerCollectionRestore('roots', (entity) => addRoot(entity as Roots));
 registerCollectionRestore('knots', (entity) => addKnot(entity as Knot));
-registerCollectionRestore('kickstands', (build) => {
-    const nested = build as KickstandBuildResult;
-    addRoot(nested.root);
-    addKickstandToState(nested);
-    addKnot(nested.hostKnot);
-});
 
 const missingRestore = collectionsMissingRestore();
 if (missingRestore.length > 0) {

@@ -116,7 +116,7 @@ test('undo restores a deleted trunk (SUPPORT_REMOVE_TRUNK)', () => {
         type: SUPPORT_REMOVE_TRUNK,
         payload: {
             trunk: removed.trunk,
-            root: removed.root ?? undefined,
+            roots: removed.roots,
             branches: removed.branches,
             braces: removed.braces,
             kickstands: removed.kickstands,

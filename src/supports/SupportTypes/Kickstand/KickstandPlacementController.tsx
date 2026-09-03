@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_ADD_KICKSTAND } from '@/supports/history/actionTypes';
-import { addKickstandToState, addKnot, addRoot, subscribe, getSnapshot } from '../../state';
+import { addSupportEntity, addKnot, addRoot, subscribe, getSnapshot } from '../../state';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import { getGridSettings } from '../../Settings';
 import { snapToGridIndex } from '../../PlacementLogic/Grid/gridMath';
@@ -653,9 +653,11 @@ export function KickstandPlacementController() {
 
             console.log('[DEBUG Kickstand placement handleClick] Placement succeeded! Adding kickstand:', finalBuild);
 
-            addKickstandToState(finalBuild);
+            // Three ordinary entities: the kickstand, the root it mounts to and
+            // the knot it hangs from. No bundled adder.
             addRoot(finalBuild.root);
             addKnot(finalBuild.hostKnot);
+            addSupportEntity('kickstand', finalBuild.kickstand);
 
             pushSupportHistory({
                 type: SUPPORT_ADD_KICKSTAND,

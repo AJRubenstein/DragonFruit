@@ -315,7 +315,7 @@ export function useTrunkPlacementV2() {
             type: SUPPORT_ADD_TRUNK,
             payload: {
                 trunk: markedBuild.trunk,
-                root: markedBuild.root,
+                roots: [markedBuild.root],
             },
         });
         clearSupportSelection();

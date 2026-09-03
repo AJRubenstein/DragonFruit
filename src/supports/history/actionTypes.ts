@@ -1,5 +1,6 @@
-import type { Anchor, Roots, Trunk, Leaf, Knot, Branch, Brace, Twig, Stick, SupportState } from '../types';
-import type { KickstandBuildResult, KickstandRemoveResult, KickstandState } from '../SupportTypes/Kickstand/types';
+import type { Anchor, Roots, Trunk, Leaf, Knot, Kickstand, Branch, Brace, Twig, Stick, SupportState } from '../types';
+import type { SupportRemovalResult } from '../supportTypeRegistry';
+import type { KickstandBuildResult, KickstandState } from '../SupportTypes/Kickstand/types';
 
 export const SUPPORT_ADD_TRUNK = 'support:add-trunk' as const;
 export const SUPPORT_REMOVE_TRUNK = 'support:remove-trunk' as const;
@@ -37,10 +38,11 @@ export type SupportHistoryActionType = keyof SupportHistoryPayloadMap;
 
 export interface SupportTrunkPayload {
   trunk: Trunk;
-  root?: Roots | null;
+  /** The trunk's own root, plus one per kickstand the cascade swept up. */
+  roots?: Roots[];
   branches?: Branch[];
   braces?: Brace[];
-  kickstands?: KickstandBuildResult[];
+  kickstands?: Kickstand[];
   leaves?: Leaf[];
   knots?: Knot[];
 }
@@ -90,7 +92,7 @@ export interface SupportStickPayload {
 export interface SupportBranchRemovePayload {
   branches: Branch[];
   braces: Brace[];
-  kickstands?: KickstandBuildResult[];
+  kickstands?: Kickstand[];
   leaves: Leaf[];
   knots: Knot[];
   trunkUpdate?: {
@@ -133,7 +135,8 @@ export interface SupportKickstandPayload {
   build: KickstandBuildResult;
 }
 
-export type SupportKickstandRemovePayload = KickstandRemoveResult;
+/** Derived: a kickstand removal reports what the registry declares it takes. */
+export type SupportKickstandRemovePayload = SupportRemovalResult<'kickstand'>;
 
 export interface SupportReplaceTrunkPayload {
   before: SupportState;
