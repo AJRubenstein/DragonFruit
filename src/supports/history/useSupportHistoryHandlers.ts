@@ -25,10 +25,10 @@ import {
   SupportReplaceStatePayload,
 } from './actionTypes';
 import { registerSupportHistoryHandler } from './supportHistory';
-import { addKickstandToState, addAnchor, addKnot, addLeaf, addRoot, addTrunk, addBranch, addTwig, addStick, addBrace, removeAnchor, removeLeaf, removeTrunk, removeBranch, removeTwig, removeStick, removeBrace, removeKickstandCascade, updateTrunk, updateBranch, updateKnot, setSnapshot, getSnapshot } from '../state';
+import { removeSupportEntity, updateTrunk, updateBranch, updateKnot, setSnapshot, getSnapshot } from '../state';
 import { setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
-import { getSupportTypeBySelectionCategory, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, type SupportCollectionKey } from '../supportTypeRegistry';
+import { getSupportTypeBySelectionCategory, restoreToCollection, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, SUPPORT_REMOVAL_SHAPES, SUPPORT_TYPES, type SupportCollectionKey, type SupportEntityIn, type SupportTypeDescriptor } from '../supportTypeRegistry';
 
 function applySnapshotHistory(payload: SupportReplaceStatePayload, direction: 'undo' | 'redo') {
   clearSupportSelection();
@@ -91,226 +91,110 @@ function selectionExistsInSnapshot(): boolean {
  * stores, not over React state, so registration must not depend on whether
  * any particular renderer happens to be mounted.
  */
+/** The fields a type's removal payload carries, from its declared shape. */
+function payloadFields(descriptor: SupportTypeDescriptor): {
+  self: string;
+  cascade: [SupportCollectionKey, string | readonly string[]][];
+} {
+  const shape = SUPPORT_REMOVAL_SHAPES[descriptor.id];
+  return {
+    self: shape.self,
+    cascade: Object.entries(shape.cascade) as [SupportCollectionKey, string | readonly string[]][],
+  };
+}
+
+/**
+ * The removed entity a payload is keyed on.
+ *
+ * Normally the declared `self` field. Callers may omit it and send only the
+ * type's collection list -- the branch remove path does -- so fall back to the
+ * first entry there rather than refusing the entry.
+ */
+function seedEntity(
+  descriptor: SupportTypeDescriptor,
+  payload: unknown,
+): { id: string } | null {
+  const fields = payload as Record<string, unknown> | null | undefined;
+  if (!fields) return null;
+
+  const seed = fields[payloadFields(descriptor).self] as
+    { id?: string; kickstand?: { id: string } } | undefined;
+  if (seed?.id) return seed as { id: string };
+  // Nested builds carry the entity one level down.
+  if (seed?.kickstand?.id) return seed.kickstand;
+
+  const list = fields[descriptor.location.key] as { id: string }[] | undefined;
+  return list?.length ? list[0] : null;
+}
+
+/** Puts a removal payload back, walking the collections its shape declares. */
+function restoreRemoved(descriptor: SupportTypeDescriptor, payload: unknown): void {
+  const fields = payload as Record<string, unknown>;
+  const { self, cascade } = payloadFields(descriptor);
+
+  // Hosts first: a leaf cannot be re-added before the knot it hangs from.
+  for (const [collection, field] of cascade) {
+    for (const name of Array.isArray(field) ? field : [field as string]) {
+      const value = fields[name];
+      if (!value) continue;
+      for (const entity of Array.isArray(value) ? value : [value]) {
+        if (entity) restoreToCollection(collection, entity);
+      }
+    }
+  }
+
+  const seed = fields[self];
+  if (seed) restoreToCollection(descriptor.location.key, seed);
+}
+
+/**
+ * Knot and trunk edits some payloads carry alongside the entity.
+ *
+ * Adding a branch can resize its host knot and rewrite the trunk it hangs from;
+ * those edits invert with the entity rather than separately.
+ */
+function applyHostEdits(payload: unknown, direction: 'undo' | 'redo'): void {
+  const fields = payload as {
+    knotUpdates?: { before: SupportEntityIn<'knots'>; after: SupportEntityIn<'knots'> }[];
+    trunkUpdate?: { before: SupportEntityIn<'trunks'>; after: SupportEntityIn<'trunks'> };
+  } | null | undefined;
+  if (!fields) return;
+
+  for (const update of fields.knotUpdates ?? []) {
+    updateKnot(direction === 'undo' ? update.before : update.after);
+  }
+  const trunkUpdate = fields.trunkUpdate;
+  if (trunkUpdate) {
+    updateTrunk(direction === 'undo' ? trunkUpdate.before : trunkUpdate.after);
+  }
+}
+
 export function registerSupportHistoryHandlers(): () => void {
   const unregisters = [
-    registerSupportHistoryHandler(SUPPORT_ADD_TRUNK, (payload, direction) => {
-      if (!payload?.trunk) return false;
-      if (direction === 'undo') {
-        removeTrunk(payload.trunk.id);
-      } else {
-        if (payload.root) addRoot(payload.root);
-        addTrunk(payload.trunk);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_ADD_LEAF, (payload, direction) => {
-      if (!payload?.leaf) return false;
-      if (direction === 'undo') {
-        removeLeaf(payload.leaf.id);
-      } else {
-        if (payload.knot) addKnot(payload.knot);
-        addLeaf(payload.leaf);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_ADD_BRANCH, (payload, direction) => {
-      if (!payload?.branch) return false;
-      if (direction === 'undo') {
-        removeBranch(payload.branch.id);
-        for (const u of payload.knotUpdates ?? []) {
-          updateKnot(u.before);
-        }
-        if (payload.trunkUpdate?.before) {
-          updateTrunk(payload.trunkUpdate.before);
-        }
-      } else {
-        if (payload.knot) addKnot(payload.knot);
-        addBranch(payload.branch);
-        for (const u of payload.knotUpdates ?? []) {
-          updateKnot(u.after);
-        }
-        if (payload.trunkUpdate?.after) {
-          updateTrunk(payload.trunkUpdate.after);
-        }
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_ADD_TWIG, (payload, direction) => {
-      if (!payload?.twig) return false;
-      if (direction === 'undo') {
-        removeTwig(payload.twig.id);
-      } else {
-        addTwig(payload.twig);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_ADD_STICK, (payload, direction) => {
-      if (!payload?.stick) return false;
-      if (direction === 'undo') {
-        removeStick(payload.stick.id);
-      } else {
-        addStick(payload.stick);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_ADD_BRACE, (payload, direction) => {
-      if (!payload?.brace) return false;
-      if (direction === 'undo') {
-        removeBrace(payload.brace.id);
-      } else {
-        if (payload.startKnot) addKnot(payload.startKnot);
-        if (payload.endKnot) addKnot(payload.endKnot);
-        addBrace(payload.brace);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_ADD_ANCHOR, (payload, direction) => {
-      if (!payload?.anchor) return false;
-      if (direction === 'undo') {
-        removeAnchor(payload.anchor.id);
-      } else {
-        addAnchor(payload.anchor);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_REMOVE_ANCHOR, (payload, direction) => {
-      if (!payload?.anchor) return false;
-      if (direction === 'undo') {
-        addAnchor(payload.anchor);
-        for (const knot of payload.knots ?? []) addKnot(knot);
-        for (const leaf of payload.leaves ?? []) addLeaf(leaf);
-      } else {
-        removeAnchor(payload.anchor.id);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_REMOVE_TRUNK, (payload, direction) => {
-      if (!payload?.trunk) return false;
-      if (direction === 'undo') {
-        if (payload.root) addRoot(payload.root);
-        addTrunk(payload.trunk);
-        for (const knot of payload.knots ?? []) addKnot(knot);
-        for (const leaf of payload.leaves ?? []) addLeaf(leaf);
-        for (const brace of payload.braces ?? []) addBrace(brace);
-        for (const kickstand of payload.kickstands ?? []) {
-          addKickstandToState(kickstand);
-          addRoot(kickstand.root);
-          addKnot(kickstand.hostKnot);
-        }
-        for (const branch of payload.branches ?? []) addBranch(branch);
-      } else {
-        removeTrunk(payload.trunk.id);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_REMOVE_LEAF, (payload, direction) => {
-      if (!payload?.leaf) return false;
-      if (direction === 'undo') {
-        if (payload.knot) addKnot(payload.knot);
-        addLeaf(payload.leaf);
-      } else {
-        removeLeaf(payload.leaf.id);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_REMOVE_BRANCH, (payload, direction) => {
-      if (!payload?.branches || payload.branches.length === 0) return false;
-      if (direction === 'undo') {
-        for (const knot of payload.knots ?? []) addKnot(knot);
-        for (const leaf of payload.leaves ?? []) addLeaf(leaf);
-        for (const brace of payload.braces ?? []) addBrace(brace);
-        for (const kickstand of payload.kickstands ?? []) {
-          addKickstandToState(kickstand);
-          addRoot(kickstand.root);
-          addKnot(kickstand.hostKnot);
-        }
-        for (const branch of payload.branches ?? []) addBranch(branch);
-        for (const u of payload.knotUpdates ?? []) {
-          updateKnot(u.before);
-        }
-        if (payload.trunkUpdate?.before) {
-          updateTrunk(payload.trunkUpdate.before);
-        }
-      } else {
-        // Use the first removed branch as the entrypoint; the store handles cascade.
-        removeBranch(payload.branches[0].id);
-        for (const u of payload.knotUpdates ?? []) {
-          updateKnot(u.after);
-        }
-        if (payload.trunkUpdate?.after) {
-          updateTrunk(payload.trunkUpdate.after);
-        }
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_REMOVE_TWIG, (payload, direction) => {
-      if (!payload?.twig) return false;
-      if (direction === 'undo') {
-        addTwig(payload.twig);
-        for (const knot of payload.knots ?? []) {
-          addKnot(knot);
-        }
-        for (const leaf of payload.leaves ?? []) {
-          addLeaf(leaf);
-        }
-      } else {
-        removeTwig(payload.twig.id);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_REMOVE_STICK, (payload, direction) => {
-      if (!payload?.stick) return false;
-      if (direction === 'undo') {
-        addStick(payload.stick);
-        for (const knot of payload.knots ?? []) addKnot(knot);
-        for (const leaf of payload.leaves ?? []) addLeaf(leaf);
-      } else {
-        removeStick(payload.stick.id);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_REMOVE_BRACE, (payload, direction) => {
-      if (!payload?.brace) return false;
-      if (direction === 'undo') {
-        if (payload.startKnot) addKnot(payload.startKnot);
-        if (payload.endKnot) addKnot(payload.endKnot);
-        addBrace(payload.brace);
-      } else {
-        removeBrace(payload.brace.id);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_ADD_KICKSTAND, (payload, direction) => {
-      if (!payload?.build) return false;
-      if (direction === 'undo') {
-        removeKickstandCascade(payload.build.kickstand.id);
-      } else {
-        addKickstandToState(payload.build);
-        addRoot(payload.build.root);
-        addKnot(payload.build.hostKnot);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_REMOVE_KICKSTAND, (payload, direction) => {
-      if (!payload?.build) return false;
-      if (direction === 'undo') {
-        addRoot(payload.build.root);
-        addKickstandToState(payload.build);
-        addKnot(payload.build.hostKnot);
-        for (const knot of payload.knots ?? []) addKnot(knot);
-        for (const leaf of payload.leaves ?? []) addLeaf(leaf);
-        for (const brace of payload.braces ?? []) addBrace(brace);
-        for (const kickstand of payload.kickstands ?? []) {
-          addKickstandToState(kickstand);
-          addRoot(kickstand.root);
-          addKnot(kickstand.hostKnot);
-        }
-        for (const branch of payload.branches ?? []) addBranch(branch);
-      } else {
-        removeKickstandCascade(payload.build.kickstand.id);
-      }
-      return true;
-    }),
+    // Add and remove handlers, derived from the registry.
+    //
+    // Every type's pair inverts the same way: an add undoes by removing the
+    // entity and redoes by restoring the payload; a remove does the reverse.
+    // What a payload carries is SUPPORT_REMOVAL_SHAPES, so both directions read
+    // the declared fields rather than a hand-written list per type.
+    ...SUPPORT_TYPES.flatMap((descriptor) => [
+      registerSupportHistoryHandler(descriptor.historyAdd, (payload, direction) => {
+        const seed = seedEntity(descriptor, payload);
+        if (!seed) return false;
+        if (direction === 'undo') removeSupportEntity(descriptor.id, seed.id);
+        else restoreRemoved(descriptor, payload);
+        applyHostEdits(payload, direction);
+        return true;
+      }),
+      registerSupportHistoryHandler(descriptor.historyRemove, (payload, direction) => {
+        const seed = seedEntity(descriptor, payload);
+        if (!seed) return false;
+        if (direction === 'undo') restoreRemoved(descriptor, payload);
+        else removeSupportEntity(descriptor.id, seed.id);
+        applyHostEdits(payload, direction);
+        return true;
+      }),
+    ]),
     registerSupportHistoryHandler(SUPPORT_UPDATE_TRUNK, (payload, direction) => {
       if (!payload?.before || !payload?.after) return false;
       if (direction === 'undo') {

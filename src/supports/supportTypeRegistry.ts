@@ -462,6 +462,36 @@ export function inferSupportSettings<R>(id: SupportTypeId, entity: unknown, base
 }
 
 /**
+ * How a collection puts one entity back, for undo.
+ *
+ * A slot rather than an import: the adders live in `state.ts`, and kickstands
+ * take a nested build rather than a bare entity. Keyed by collection so the
+ * `roots` and `knots` primitives participate alongside the types.
+ */
+type CollectionRestore = (entity: unknown) => void;
+
+const COLLECTION_RESTORE = new Map<SupportCollectionKey, CollectionRestore>();
+
+export function registerCollectionRestore(
+    key: SupportCollectionKey,
+    restore: CollectionRestore,
+): void {
+    COLLECTION_RESTORE.set(key, restore);
+}
+
+/** Puts one entity back into `key`. Throws if the collection declared no rule. */
+export function restoreToCollection(key: SupportCollectionKey, entity: unknown): void {
+    const restore = COLLECTION_RESTORE.get(key);
+    if (!restore) throw new Error(`no restore registered for collection "${key}"`);
+    restore(entity);
+}
+
+/** Whether every collection in the graph can be restored. For a startup check. */
+export function collectionsMissingRestore(): SupportCollectionKey[] {
+    return SUPPORT_COLLECTION_KEYS.filter((key) => !COLLECTION_RESTORE.has(key));
+}
+
+/**
  * Types whose entities have editable settings, and can be a sidebar target.
  *
  * Derived, so a new type with settings joins by declaring the flag.

@@ -178,6 +178,31 @@ for (const descriptor of SUPPORT_TYPES) {
     });
 }
 
+test('a branch remove replays the host edits the manager attaches', () => {
+    // Production spreads the remover's snapshot and adds trunkUpdate/knotUpdates
+    // (useSupportInteractionManager.ts:477). Those invert with the entity, so a
+    // handler that drops them leaves the host resized after undo.
+    load();
+    const snapshot = removeSupportEntity('branch', SEED.branch) as Record<string, unknown>;
+
+    const knot = { id: 'knot-a', parentShaftId: 'seg-ta', t: 0.5, pos: { x: 0, y: 0, z: 4.5 }, diameter: 1 };
+    const widened = { ...knot, diameter: 9 };
+
+    pushSupportHistory({
+        type: 'support:remove-branch',
+        payload: {
+            ...snapshot,
+            knotUpdates: [{ before: knot, after: widened }],
+        } as never,
+    });
+
+    // Redo re-removes the branch, which cascades its host knot away, so the
+    // edit is only observable on the undo side.
+    undo();
+    const restored = (getSnapshot() as unknown as Record<string, Record<string, { diameter: number }>>).knots['knot-a'];
+    assert.equal(restored?.diameter, knot.diameter, 'undo should restore the host knot to its pre-edit size');
+});
+
 test('a remove handler reports the collections its removal shape declares', () => {
     // The handler reads the snapshot by field name, so a shape whose field is
     // renamed leaves the handler silently restoring nothing from it.
