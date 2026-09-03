@@ -383,7 +383,7 @@ export const SUPPORT_REMOVAL_SHAPES = {
     stick: { self: 'stick', cascade: { knots: 'knots', leaves: 'leaves' } },
     brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'] } },
     anchor: { self: 'anchor', cascade: { knots: 'knots', leaves: 'leaves' } },
-    kickstand: { self: 'kickstand', cascade: { roots: 'root', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches' } },
+    kickstand: { self: 'build', cascade: { roots: 'root', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches' } },
 } as const;
 
 /**

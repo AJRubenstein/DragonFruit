@@ -234,8 +234,13 @@ function removeSupportEntityCascading(
     const doomed = collectCascade(state, [{ collection, id }]);
     const byCollection = groupByCollection(doomed);
 
-    // Snapshot before deleting: the shape is what undo replays from.
-    const result: Record<string, unknown> = { [shape.self]: deepClone(existing) };
+    // Snapshot before deleting: the shape is what undo replays from. A type
+    // declaring nestedRemoval reports its seed nested, as its handler expects.
+    const result: Record<string, unknown> = {
+        [shape.self]: descriptor.nestedRemoval
+            ? nestRemovedEntity(descriptor.nestedRemoval, existing)
+            : deepClone(existing),
+    };
     const plural = (field: string) => field.endsWith('s');
 
     for (const [key, field] of Object.entries(shape.cascade as Record<string, string | readonly string[]>)) {
