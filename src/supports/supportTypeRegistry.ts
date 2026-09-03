@@ -314,8 +314,8 @@ type SupportUpdater = (entity: never) => void;
 const UPDATERS = new Map<SupportTypeId, SupportUpdater>();
 
 /** Called once by state.ts; later calls for the same id replace the previous one. */
-export function registerSupportUpdater<T>(id: SupportTypeId, update: (entity: T) => void): void {
-    UPDATERS.set(id, update as SupportUpdater);
+export function registerSupportUpdater<T>(typeId: SupportTypeId, update: (entity: T) => void): void {
+    UPDATERS.set(typeId, update as SupportUpdater);
 }
 
 /**
@@ -324,8 +324,8 @@ export function registerSupportUpdater<T>(id: SupportTypeId, update: (entity: T)
  * Returns false when nothing is registered for the id, so a caller can tell
  * "no updater" from "updated".
  */
-export function updateSupportEntity(id: SupportTypeId, entity: unknown): boolean {
-    const update = UPDATERS.get(id);
+export function updateSupportEntity(typeId: SupportTypeId, entity: unknown): boolean {
+    const update = UPDATERS.get(typeId);
     if (!update) return false;
     (update as (value: unknown) => void)(entity);
     return true;
@@ -344,20 +344,20 @@ type KnotDiameterRule = (entity: unknown, segmentId: string, t: number) => numbe
 const KNOT_DIAMETER_RULES = new Map<SupportTypeId, KnotDiameterRule>();
 
 export function registerKnotDiameterRule<T>(
-    id: SupportTypeId,
+    typeId: SupportTypeId,
     rule: (entity: T, segmentId: string, t: number) => number | null,
 ): void {
-    KNOT_DIAMETER_RULES.set(id, rule as KnotDiameterRule);
+    KNOT_DIAMETER_RULES.set(typeId, rule as KnotDiameterRule);
 }
 
 /** The type's own knot diameter at `t`, or null to use the generic rule. */
 export function resolveKnotDiameter(
-    id: SupportTypeId,
+    typeId: SupportTypeId,
     entity: unknown,
     segmentId: string,
     t: number,
 ): number | null {
-    return KNOT_DIAMETER_RULES.get(id)?.(entity, segmentId, t) ?? null;
+    return KNOT_DIAMETER_RULES.get(typeId)?.(entity, segmentId, t) ?? null;
 }
 
 /**
@@ -449,15 +449,15 @@ type SettingsInference = (entity: unknown, base?: unknown) => unknown;
 const SETTINGS_INFERENCE = new Map<SupportTypeId, SettingsInference>();
 
 export function registerSettingsInference<E, B, R>(
-    id: SupportTypeId,
+    typeId: SupportTypeId,
     infer: (entity: E, base?: B) => R,
 ): void {
-    SETTINGS_INFERENCE.set(id, infer as SettingsInference);
+    SETTINGS_INFERENCE.set(typeId, infer as SettingsInference);
 }
 
 /** Settings inferred for `entity`, or null when the type declares no rule. */
-export function inferSupportSettings<R>(id: SupportTypeId, entity: unknown, base?: unknown): R | null {
-    const infer = SETTINGS_INFERENCE.get(id);
+export function inferSupportSettings<R>(typeId: SupportTypeId, entity: unknown, base?: unknown): R | null {
+    const infer = SETTINGS_INFERENCE.get(typeId);
     return infer ? (infer(entity, base) as R) : null;
 }
 
