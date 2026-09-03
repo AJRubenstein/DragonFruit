@@ -592,7 +592,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         if (recordHistory) {
           pushSupportHistory({
             type: SUPPORT_REMOVE_ANCHOR,
-            payload: { anchor: snapshots.anchor },
+            payload: snapshots,
           });
         }
         setSelectedId(null);

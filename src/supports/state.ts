@@ -2,7 +2,7 @@ import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSeg
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
-import { isReferencedOutside } from './supportCascade';
+import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
@@ -227,28 +227,62 @@ export function removeTwig(twigId: string): { twig: Twig; knots: Knot[]; leaves:
     return snapshot;
 }
 
-export function removeStick(stickId: string): { stick: Stick } | null {
-    const existing = state.sticks[stickId];
-    if (!existing) return null;
+/**
+ * Remove an entity and everything the declared graph says depends on it.
+ *
+ * Returns the removed knots and leaves so a history payload can put them back.
+ * Sticks and anchors used to skip this entirely and orphan any knot on their
+ * shaft; twigs did it by hand.
+ */
+function removeShaftedWithCascade(
+    collection: 'sticks' | 'anchors',
+    id: string,
+): { knots: Knot[]; leaves: Leaf[] } | null {
+    if (!state[collection][id]) return null;
 
-    const snapshot = { stick: deepClone(existing) };
-    const { [stickId]: _, ...remainingSticks } = state.sticks;
+    const doomed = collectCascade(state, [{ collection, id }]);
+    const byCollection = groupByCollection(doomed);
 
-    let nextSelectedId = state.selectedId;
-    let nextSelectedCategory = state.selectedCategory;
-    if (state.selectedId === stickId) {
-        nextSelectedId = null;
-        nextSelectedCategory = null;
-    }
+    const knotIds = byCollection.get('knots') ?? new Set<string>();
+    const leafIds = byCollection.get('leaves') ?? new Set<string>();
+
+    const removed = {
+        knots: [...knotIds].map((knotId) => deepClone(state.knots[knotId])).filter(Boolean),
+        leaves: [...leafIds].map((leafId) => deepClone(state.leaves[leafId])).filter(Boolean),
+    };
+
+    const nextKnots = { ...state.knots };
+    for (const knotId of knotIds) delete nextKnots[knotId];
+    const nextLeaves = { ...state.leaves };
+    for (const leafId of leafIds) delete nextLeaves[leafId];
+
+    const { [id]: _removed, ...remaining } = state[collection];
+
+    const clearSelection = doomed.has(`${collection}:${state.selectedId}`)
+        || (state.selectedId !== null
+            && (knotIds.has(state.selectedId) || leafIds.has(state.selectedId) || state.selectedId === id));
 
     state = {
         ...state,
-        sticks: remainingSticks,
-        selectedId: nextSelectedId,
-        selectedCategory: nextSelectedCategory,
+        [collection]: remaining,
+        knots: nextKnots,
+        leaves: nextLeaves,
+        selectedId: clearSelection ? null : state.selectedId,
+        selectedCategory: clearSelection ? null : state.selectedCategory,
     };
+
+    for (const leafId of leafIds) deleteCachedSupportSettingsHex('leaf', leafId);
     notify();
-    return snapshot;
+    return removed;
+}
+
+export function removeStick(stickId: string): { stick: Stick; knots: Knot[]; leaves: Leaf[] } | null {
+    const existing = state.sticks[stickId];
+    if (!existing) return null;
+
+    const stick = deepClone(existing);
+    const cascaded = removeShaftedWithCascade('sticks', stickId);
+    return cascaded ? { stick, ...cascaded } : null;
 }
 
 function resolveLowerSegmentIndex(segments: Segment[], jointId: string) {
@@ -3200,13 +3234,13 @@ export function updateAnchor(anchor: Anchor) {
     replaceSupportEntity('anchor', anchor);
 }
 
-export function removeAnchor(anchorId: string): { anchor: Anchor } | null {
-    const anchor = state.anchors[anchorId];
-    if (!anchor) return null;
-    const { [anchorId]: _, ...rest } = state.anchors;
-    state = { ...state, anchors: rest };
-    notify();
-    return { anchor };
+export function removeAnchor(anchorId: string): { anchor: Anchor; knots: Knot[]; leaves: Leaf[] } | null {
+    const existing = state.anchors[anchorId];
+    if (!existing) return null;
+
+    const anchor = deepClone(existing);
+    const cascaded = removeShaftedWithCascade('anchors', anchorId);
+    return cascaded ? { anchor, ...cascaded } : null;
 }
 
 export function updateTwig(twig: Twig) {
