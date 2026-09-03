@@ -1547,7 +1547,7 @@ export function updateKickstand(kickstand: Kickstand) {
     replaceSupportEntity('kickstand', kickstand);
 }
 
-export function removeKickstandFromState(id: string): KickstandBuildResult | null {
+function removeKickstandFromState(id: string): KickstandBuildResult | null {
     const kickstand = state.kickstands[id];
     if (!kickstand) return null;
 
@@ -1589,7 +1589,7 @@ export function resetKickstandsInState() {
  * support moves with it. Roots and host knots are left to the main walk, which
  * already moves them; doing it here too applied the delta twice.
  */
-export function transformKickstandsForModelInState(
+function transformKickstandsForModelInState(
     modelId: string,
     deltaMatrix: THREE.Matrix4,
     touchedRootIds?: Set<string>,
@@ -1629,7 +1629,7 @@ export function transformKickstandsForModelInState(
 }
 
 /** Shafts only; roots and host knots are covered by the whole-scene walk. */
-export function transformAllKickstandsInState(deltaMatrix: THREE.Matrix4): boolean {
+function transformAllKickstandsInState(deltaMatrix: THREE.Matrix4): boolean {
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
 
     const kickstandEntries = Object.values(state.kickstands);
@@ -1648,7 +1648,7 @@ export function transformAllKickstandsInState(deltaMatrix: THREE.Matrix4): boole
     return true;
 }
 
-export function reassignAllKickstandModelIdsInState(modelId: string): boolean {
+function reassignAllKickstandModelIdsInState(modelId: string): boolean {
     if (!modelId) return false;
 
     let changed = false;
@@ -3968,130 +3968,77 @@ function applyTipSettingsToConeProfile(
     return baseProfile;
 }
 
+/**
+ * Write settings onto whichever support the sidebar is editing.
+ *
+ * One path for every editable type: a type owning a root rewrites it, a type
+ * with segments resizes them, and a type without one has no shaft-to-tip
+ * transition so the tip's body and length do not apply.
+ */
 export function applySettingsToSupportTarget(target: EditableSupportTarget, settings: SupportSettings): boolean {
     logSupportSettingsDebug('apply start', target);
 
-    if (target.kind === 'trunk') {
-        const trunk = state.trunks[target.id];
-        if (!trunk) return false;
+    const descriptor = SUPPORT_TYPES.find((d) => d.id === target.kind);
+    if (!descriptor?.hasEditableSettings) return false;
 
-        const root = state.roots[trunk.rootId];
-        if (!root) return false;
+    const collection = state[descriptor.location.key] as Record<string, unknown>;
+    const entity = collection[target.id] as {
+        id: string;
+        segments?: Segment[];
+        contactCone?: Trunk['contactCone'];
+        rootId?: string;
+        settingsCodeHex?: string;
+    } | undefined;
+    if (!entity) return false;
 
+    const root = descriptor.ownsRoot ? state.roots[entity.rootId ?? ''] : null;
+    if (descriptor.ownsRoot && !root) return false;
+
+    const nextContactCone = entity.contactCone
+        ? {
+            ...entity.contactCone,
+            profile: applyTipSettingsToConeProfile(
+                entity.contactCone.profile,
+                settings.tip,
+                { includeBodyAndLength: descriptor.hasSegments },
+            ),
+        }
+        : entity.contactCone;
+
+    const nextHex = encodeSupportSettingsHex(settings);
+    const next: Record<string, unknown> = { ...entity, settingsCodeHex: nextHex, contactCone: nextContactCone };
+
+    if (descriptor.hasSegments) {
+        const socketPos = nextContactCone ? getFinalSocketPosition(nextContactCone) : undefined;
+        next.segments = updateSegmentDiametersAndJoints(
+            entity.segments ?? [],
+            settings.shaft.diameterMm,
+            nextContactCone?.socketJointId,
+            socketPos,
+        );
+    }
+    // Only a root-owning type records its shaft width on the entity.
+    if (descriptor.ownsRoot) next.baseDiameterMm = settings.shaft.diameterMm;
+
+    setCachedSupportSettingsHex(descriptor.id, entity.id, nextHex);
+
+    logSupportSettingsDebug(`apply ${descriptor.id} hex`, {
+        target,
+        prevHex: entity.settingsCodeHex?.slice(0, 18),
+        nextHex: nextHex.slice(0, 18),
+    });
+
+    if (root) {
         const nextRoot: Roots = {
             ...root,
             diameter: settings.roots.diameterMm,
             diskHeight: settings.roots.diskHeightMm,
             coneHeight: settings.roots.coneHeightMm,
         };
-
-        const nextContactCone = trunk.contactCone
-            ? {
-                ...trunk.contactCone,
-                profile: applyTipSettingsToConeProfile(trunk.contactCone.profile, settings.tip),
-            }
-            : trunk.contactCone;
-
-        const socketPos = nextContactCone ? getFinalSocketPosition(nextContactCone) : undefined;
-        const nextSegments = updateSegmentDiametersAndJoints(
-            trunk.segments,
-            settings.shaft.diameterMm,
-            nextContactCone?.socketJointId,
-            socketPos,
-        );
-        const nextTrunkSettingsCodeHex = encodeSupportSettingsHex(settings);
-
-        const nextTrunk: Trunk = {
-            ...trunk,
-            settingsCodeHex: nextTrunkSettingsCodeHex,
-            baseDiameterMm: settings.shaft.diameterMm,
-            segments: nextSegments,
-            contactCone: nextContactCone,
-        };
-
-        setCachedSupportSettingsHex('trunk', nextTrunk.id, nextTrunkSettingsCodeHex);
-
-        logSupportSettingsDebug('apply trunk hex', {
-            target,
-            prevHex: trunk.settingsCodeHex?.slice(0, 18),
-            nextHex: nextTrunk.settingsCodeHex?.slice(0, 18),
-        });
-
-        state = {
-            ...state,
-            roots: {
-                ...state.roots,
-                [nextRoot.id]: nextRoot,
-            },
-        };
-
-        updateTrunk(nextTrunk);
-        logSupportSettingsDebug('apply done', target);
-        return true;
+        state = { ...state, roots: { ...state.roots, [nextRoot.id]: nextRoot } };
     }
 
-    if (target.kind === 'branch') {
-        const branch = state.branches[target.id];
-        if (!branch) return false;
-
-        const nextContactCone = branch.contactCone
-            ? {
-                ...branch.contactCone,
-                profile: applyTipSettingsToConeProfile(branch.contactCone.profile, settings.tip),
-            }
-            : branch.contactCone;
-
-        const socketPos = nextContactCone ? getFinalSocketPosition(nextContactCone) : undefined;
-        const nextSegments = updateSegmentDiametersAndJoints(
-            branch.segments,
-            settings.shaft.diameterMm,
-            nextContactCone?.socketJointId,
-            socketPos,
-        );
-        const nextBranchSettingsCodeHex = encodeSupportSettingsHex(settings);
-
-        const nextBranch: Branch = {
-            ...branch,
-            settingsCodeHex: nextBranchSettingsCodeHex,
-            segments: nextSegments,
-            contactCone: nextContactCone,
-        };
-
-        setCachedSupportSettingsHex('branch', nextBranch.id, nextBranchSettingsCodeHex);
-
-        logSupportSettingsDebug('apply branch hex', {
-            target,
-            prevHex: branch.settingsCodeHex?.slice(0, 18),
-            nextHex: nextBranch.settingsCodeHex?.slice(0, 18),
-        });
-
-        updateBranch(nextBranch);
-        logSupportSettingsDebug('apply done', target);
-        return true;
-    }
-
-    const leaf = state.leaves[target.id];
-    if (!leaf) return false;
-
-    const nextLeafSettingsCodeHex = encodeSupportSettingsHex(settings);
-    const nextLeaf: Leaf = {
-        ...leaf,
-        settingsCodeHex: nextLeafSettingsCodeHex,
-        contactCone: {
-            ...leaf.contactCone,
-            profile: applyTipSettingsToConeProfile(leaf.contactCone.profile, settings.tip, { includeBodyAndLength: false }),
-        },
-    };
-
-    setCachedSupportSettingsHex('leaf', nextLeaf.id, nextLeafSettingsCodeHex);
-
-    logSupportSettingsDebug('apply leaf hex', {
-        target,
-        prevHex: leaf.settingsCodeHex?.slice(0, 18),
-        nextHex: nextLeaf.settingsCodeHex?.slice(0, 18),
-    });
-
-    updateLeaf(nextLeaf);
+    replaceSupportEntity(descriptor.id, next as never);
     logSupportSettingsDebug('apply done', target);
     return true;
 }
