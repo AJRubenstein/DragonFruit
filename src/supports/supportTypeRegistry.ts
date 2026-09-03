@@ -143,6 +143,18 @@ export interface SupportTypeDescriptor {
         cascade: Readonly<Partial<Record<SupportCollectionKey, string | readonly string[]>>>;
     };
     /**
+     * Fields to gather alongside the entity when it is reported in a cascade.
+     *
+     * Kickstands serialise as a nested `{ kickstand, root, hostKnot }` rather
+     * than a flat entity, because that is what `addKickstandToState` takes on
+     * undo. Named here so the generic remover can rebuild the shape without
+     * knowing which type is special.
+     */
+    nestedRemoval?: {
+        entityField: string;
+        links: Readonly<Record<string, { from: string; in: SupportCollectionKey }>>;
+    };
+    /**
      * Whether instances carry a `settingsCodeHex` cached outside the entity.
      *
      * The cache is keyed by type and id, so a type that caches must evict on
@@ -291,6 +303,13 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         carriesModelId: true,
     },
     {
+        nestedRemoval: {
+            entityField: 'kickstand',
+            links: {
+                root: { from: 'rootId', in: 'roots' },
+                hostKnot: { from: 'hostKnotId', in: 'knots' },
+            },
+        },
         id: 'kickstand',
         removalShape: { self: 'kickstand', cascade: { roots: 'root', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches' } },
         hasSettingsHex: false,

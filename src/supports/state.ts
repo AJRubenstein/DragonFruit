@@ -163,6 +163,29 @@ export function removeTwig(twigId: string): { twig: Twig; knots: Knot[]; leaves:
 }
 
 /**
+ * Wrap an entity in the nested shape its type serialises as.
+ *
+ * Kickstands travel as `{ kickstand, root, hostKnot }` so undo can hand the
+ * whole build back to `addKickstandToState`; the links say which id field to
+ * follow and where the target lives.
+ */
+function nestRemovedEntity(
+    shape: { entityField: string; links: Readonly<Record<string, { from: string; in: SupportCollectionKey }>> },
+    entity: unknown,
+): Record<string, unknown> {
+    const fields = entity as Record<string, unknown>;
+    const nested: Record<string, unknown> = { [shape.entityField]: deepClone(entity) };
+
+    for (const field of Object.keys(shape.links)) {
+        const link = shape.links[field];
+        const targetId = fields[link.from];
+        const target = typeof targetId === 'string' ? state[link.in][targetId] : undefined;
+        nested[field] = target ? deepClone(target) : null;
+    }
+    return nested;
+}
+
+/**
  * Remove an entity and everything the declared graph says depends on it.
  *
  * One walk for every support type: `collectCascade` works out the doomed set
@@ -189,12 +212,18 @@ function removeSupportEntityCascading(
     const plural = (field: string) => field.endsWith('s');
 
     for (const [key, field] of Object.entries(descriptor.removalShape.cascade)) {
-        const ids = [...(byCollection.get(key as SupportCollectionKey) ?? [])]
-            .filter((entityId) => !(key === collection && entityId === id));
+        // The seed is included when its own collection is listed in `cascade`.
+        // removeBranch reports every doomed branch, itself among them, because
+        // undo replays the list wholesale; removeTrunk names the trunk
+        // separately via `self` and does not list `trunks` here.
+        const ids = [...(byCollection.get(key as SupportCollectionKey) ?? [])];
+        const node = SUPPORT_TYPES.find((d) => d.location.key === key);
         const entities = ids
             .map((entityId) => state[key as SupportCollectionKey][entityId])
             .filter(Boolean)
-            .map((entity) => deepClone(entity));
+            .map((entity) => (node?.nestedRemoval
+                ? nestRemovedEntity(node.nestedRemoval, entity)
+                : deepClone(entity)));
 
         if (typeof field === 'string') {
             result[field] = plural(field) ? entities : (entities[0] ?? null);
@@ -3446,167 +3475,7 @@ export function removeKickstandCascade(kickstandId: string): KickstandRemoveResu
 }
 
 export function removeBranch(branchId: string): { branches: Branch[]; braces: Brace[]; kickstands: KickstandBuildResult[]; leaves: Leaf[]; knots: Knot[] } | null {
-    const rootBranch = state.branches[branchId];
-    if (!rootBranch) return null;
-
-    const branchIdsToRemove = new Set<string>([branchId]);
-    const knotIdsToRemove = new Set<string>();
-
-    // Collect branches recursively: if a branch is attached to a knot we remove, it must be removed too.
-    // Also remove all knots created on the segments of those branches.
-    let grew = true;
-    while (grew) {
-        grew = false;
-
-        for (const bId of Array.from(branchIdsToRemove)) {
-            const b = state.branches[bId];
-            if (!b) continue;
-
-            if (b.parentKnotId) {
-                knotIdsToRemove.add(b.parentKnotId);
-            }
-
-            for (const seg of b.segments) {
-                for (const knot of Object.values(state.knots)) {
-                    if (knot.parentShaftId === seg.id) {
-                        knotIdsToRemove.add(knot.id);
-                    }
-                }
-            }
-        }
-
-        for (const b of Object.values(state.branches)) {
-            if (branchIdsToRemove.has(b.id)) continue;
-            if (b.parentKnotId && knotIdsToRemove.has(b.parentKnotId)) {
-                branchIdsToRemove.add(b.id);
-                grew = true;
-            }
-        }
-    }
-
-    const leafIdsToRemove = new Set<string>();
-    for (const leaf of Object.values(state.leaves)) {
-        if (leaf.parentKnotId && knotIdsToRemove.has(leaf.parentKnotId)) {
-            leafIdsToRemove.add(leaf.id);
-        }
-    }
-
-    const braceIdsToRemove = new Set<string>();
-    for (const brace of Object.values(state.braces)) {
-        if ((brace.startKnotId && knotIdsToRemove.has(brace.startKnotId)) || (brace.endKnotId && knotIdsToRemove.has(brace.endKnotId))) {
-            braceIdsToRemove.add(brace.id);
-        }
-    }
-
-    const branchSegmentIds = new Set<string>();
-    for (const bId of branchIdsToRemove) {
-        const b = state.branches[bId];
-        if (!b) continue;
-        for (const seg of b.segments) {
-            branchSegmentIds.add(seg.id);
-        }
-    }
-
-    const kickstandIdsToRemove = new Set<string>();
-    for (const kickstand of Object.values(state.kickstands)) {
-        if (branchSegmentIds.has(kickstand.hostSegmentId) || knotIdsToRemove.has(kickstand.hostKnotId)) {
-            kickstandIdsToRemove.add(kickstand.id);
-            if (kickstand.hostKnotId) {
-                knotIdsToRemove.add(kickstand.hostKnotId);
-            }
-        }
-    }
-
-    const snapshots = {
-        branches: Array.from(branchIdsToRemove).map((id) => deepClone(state.branches[id])).filter(Boolean),
-        braces: Array.from(braceIdsToRemove).map((id) => deepClone(state.braces[id])).filter(Boolean),
-        kickstands: [] as KickstandBuildResult[],
-        leaves: Array.from(leafIdsToRemove).map((id) => deepClone(state.leaves[id])).filter(Boolean),
-        knots: Array.from(knotIdsToRemove).map((id) => deepClone(state.knots[id])).filter(Boolean),
-    };
-
-    const kickstandRootIdsToRemove = new Set<string>();
-    for (const kickstandId of kickstandIdsToRemove) {
-        const removed = removeKickstandCascade(kickstandId);
-        if (!removed) continue;
-
-        snapshots.kickstands.push(removed.build);
-        kickstandRootIdsToRemove.add(removed.build.root.id);
-
-        for (const nestedKickstand of removed.kickstands ?? []) {
-            snapshots.kickstands.push(nestedKickstand);
-            kickstandRootIdsToRemove.add(nestedKickstand.root.id);
-        }
-
-        snapshots.branches.push(...removed.branches);
-        snapshots.braces.push(...removed.braces);
-        snapshots.leaves.push(...removed.leaves);
-        snapshots.knots.push(...removed.knots);
-    }
-
-    const nextBranches = { ...state.branches };
-    for (const id of branchIdsToRemove) {
-        delete nextBranches[id];
-    }
-
-    const nextBraces = { ...state.braces };
-    for (const id of braceIdsToRemove) {
-        delete nextBraces[id];
-    }
-
-    const nextLeaves = { ...state.leaves };
-    for (const id of leafIdsToRemove) {
-        delete nextLeaves[id];
-    }
-
-    const nextKnots = { ...state.knots };
-    for (const id of knotIdsToRemove) {
-        delete nextKnots[id];
-    }
-
-    let nextRoots = state.roots;
-    if (kickstandRootIdsToRemove.size > 0) {
-        const updatedRoots: Record<string, Roots> = { ...state.roots };
-        for (const rootId of kickstandRootIdsToRemove) {
-            delete updatedRoots[rootId];
-        }
-        nextRoots = updatedRoots;
-    }
-
-    let nextSelectedId = state.selectedId;
-    let nextSelectedCategory = state.selectedCategory;
-    if (
-        (nextSelectedId && branchIdsToRemove.has(nextSelectedId)) ||
-        (nextSelectedId && braceIdsToRemove.has(nextSelectedId)) ||
-        (nextSelectedId && kickstandIdsToRemove.has(nextSelectedId)) ||
-        (nextSelectedId && leafIdsToRemove.has(nextSelectedId)) ||
-        (nextSelectedId && knotIdsToRemove.has(nextSelectedId)) ||
-        (nextSelectedId && kickstandRootIdsToRemove.has(nextSelectedId))
-    ) {
-        nextSelectedId = null;
-        nextSelectedCategory = null;
-    }
-
-    state = {
-        ...state,
-        branches: nextBranches,
-        braces: nextBraces,
-        leaves: nextLeaves,
-        roots: nextRoots,
-        knots: nextKnots,
-        selectedId: nextSelectedId,
-        selectedCategory: nextSelectedCategory,
-    };
-
-    for (const id of branchIdsToRemove) {
-        deleteCachedSupportSettingsHex('branch', id);
-    }
-    for (const id of leafIdsToRemove) {
-        deleteCachedSupportSettingsHex('leaf', id);
-    }
-
-    notify();
-    return snapshots;
+    return removeSupportEntityCascading('branch', branchId) as unknown as { branches: Branch[]; braces: Brace[]; kickstands: KickstandBuildResult[]; leaves: Leaf[]; knots: Knot[] } | null;
 }
 
 export function updateBranch(branch: Branch, options?: { skipDependentGeometry?: boolean }) {
@@ -3804,251 +3673,8 @@ export function removeLeaf(leafId: string): { leaf: Leaf; knot: Knot | null } | 
     return removeSupportEntityCascading('leaf', leafId) as { leaf: Leaf; knot: Knot | null } | null;
 }
 
-export function removeTrunk(
-    trunkId: string
-): { trunk: Trunk; root: Roots | null; branches: Branch[]; braces: Brace[]; kickstands: KickstandBuildResult[]; leaves: Leaf[]; knots: Knot[] } | null {
-    const existingTrunk = state.trunks[trunkId];
-    if (!existingTrunk) return null;
-
-    const trunkSegmentIds = new Set(existingTrunk.segments.map((s) => s.id));
-    const trunkHostedKnotIds = new Set<string>();
-    for (const knot of Object.values(state.knots)) {
-        if (trunkSegmentIds.has(knot.parentShaftId)) trunkHostedKnotIds.add(knot.id);
-    }
-
-    const branchIdsToRemove: string[] = [];
-    for (const branch of Object.values(state.branches)) {
-        if (branch.parentKnotId && trunkHostedKnotIds.has(branch.parentKnotId)) {
-            branchIdsToRemove.push(branch.id);
-        }
-    }
-
-    const leafIdsToRemove: string[] = [];
-    for (const leaf of Object.values(state.leaves)) {
-        if (leaf.parentKnotId && trunkHostedKnotIds.has(leaf.parentKnotId)) {
-            leafIdsToRemove.push(leaf.id);
-        }
-    }
-
-    const braceIdsToRemove: string[] = [];
-    for (const brace of Object.values(state.braces)) {
-        if ((brace.startKnotId && trunkHostedKnotIds.has(brace.startKnotId)) || (brace.endKnotId && trunkHostedKnotIds.has(brace.endKnotId))) {
-            braceIdsToRemove.push(brace.id);
-        }
-    }
-
-    const snapshots: { trunk: Trunk; root: Roots | null; branches: Branch[]; braces: Brace[]; kickstands: KickstandBuildResult[]; leaves: Leaf[]; knots: Knot[] } = {
-        trunk: deepClone(existingTrunk),
-        root: null,
-        branches: [],
-        braces: [],
-        kickstands: [],
-        leaves: [],
-        knots: [],
-    };
-
-    const seenBranchIds = new Set<string>();
-    const seenBraceIds = new Set<string>();
-    const seenKickstandIds = new Set<string>();
-    const seenLeafIds = new Set<string>();
-    const seenKnotIds = new Set<string>();
-    const kickstandRootIdsToRemove = new Set<string>();
-
-    for (const branchId of branchIdsToRemove) {
-        const removed = removeBranch(branchId);
-        if (!removed) continue;
-        for (const b of removed.branches ?? []) {
-            if (!b || seenBranchIds.has(b.id)) continue;
-            seenBranchIds.add(b.id);
-            snapshots.branches.push(b);
-        }
-        for (const br of removed.braces ?? []) {
-            if (!br || seenBraceIds.has(br.id)) continue;
-            seenBraceIds.add(br.id);
-            snapshots.braces.push(br);
-        }
-        for (const kickstandBuild of removed.kickstands ?? []) {
-            if (!kickstandBuild || seenKickstandIds.has(kickstandBuild.kickstand.id)) continue;
-            seenKickstandIds.add(kickstandBuild.kickstand.id);
-            snapshots.kickstands.push(kickstandBuild);
-            kickstandRootIdsToRemove.add(kickstandBuild.root.id);
-            seenKnotIds.add(kickstandBuild.hostKnot.id);
-        }
-        for (const l of removed.leaves ?? []) {
-            if (!l || seenLeafIds.has(l.id)) continue;
-            seenLeafIds.add(l.id);
-            snapshots.leaves.push(l);
-        }
-        for (const k of removed.knots ?? []) {
-            if (!k || seenKnotIds.has(k.id)) continue;
-            seenKnotIds.add(k.id);
-            snapshots.knots.push(k);
-        }
-    }
-
-    for (const leafId of leafIdsToRemove) {
-        const removed = removeLeaf(leafId);
-        if (!removed) continue;
-        if (removed.leaf && !seenLeafIds.has(removed.leaf.id)) {
-            seenLeafIds.add(removed.leaf.id);
-            snapshots.leaves.push(removed.leaf);
-        }
-        if (removed.knot && !seenKnotIds.has(removed.knot.id)) {
-            seenKnotIds.add(removed.knot.id);
-            snapshots.knots.push(removed.knot);
-        }
-    }
-
-    for (const braceId of braceIdsToRemove) {
-        const removed = removeBrace(braceId);
-        if (!removed) continue;
-        if (removed.brace && !seenBraceIds.has(removed.brace.id)) {
-            seenBraceIds.add(removed.brace.id);
-            snapshots.braces.push(removed.brace);
-        }
-        if (removed.startKnot && !seenKnotIds.has(removed.startKnot.id)) {
-            seenKnotIds.add(removed.startKnot.id);
-            snapshots.knots.push(removed.startKnot);
-        }
-        if (removed.endKnot && !seenKnotIds.has(removed.endKnot.id)) {
-            seenKnotIds.add(removed.endKnot.id);
-            snapshots.knots.push(removed.endKnot);
-        }
-    }
-
-    const kickstandIdsToRemove = new Set<string>();
-    for (const kickstand of Object.values(state.kickstands)) {
-        if (trunkSegmentIds.has(kickstand.hostSegmentId) || trunkHostedKnotIds.has(kickstand.hostKnotId)) {
-            kickstandIdsToRemove.add(kickstand.id);
-        }
-    }
-
-    for (const kickstandId of kickstandIdsToRemove) {
-        const removed = removeKickstandCascade(kickstandId);
-        if (!removed) continue;
-
-        if (!seenKickstandIds.has(removed.build.kickstand.id)) {
-            seenKickstandIds.add(removed.build.kickstand.id);
-            snapshots.kickstands.push(removed.build);
-            kickstandRootIdsToRemove.add(removed.build.root.id);
-        }
-
-        for (const nestedKickstand of removed.kickstands ?? []) {
-            if (!nestedKickstand || seenKickstandIds.has(nestedKickstand.kickstand.id)) continue;
-            seenKickstandIds.add(nestedKickstand.kickstand.id);
-            snapshots.kickstands.push(nestedKickstand);
-            kickstandRootIdsToRemove.add(nestedKickstand.root.id);
-        }
-
-        for (const branch of removed.branches ?? []) {
-            if (!branch || seenBranchIds.has(branch.id)) continue;
-            seenBranchIds.add(branch.id);
-            snapshots.branches.push(branch);
-        }
-
-        for (const brace of removed.braces ?? []) {
-            if (!brace || seenBraceIds.has(brace.id)) continue;
-            seenBraceIds.add(brace.id);
-            snapshots.braces.push(brace);
-        }
-
-        for (const leaf of removed.leaves ?? []) {
-            if (!leaf || seenLeafIds.has(leaf.id)) continue;
-            seenLeafIds.add(leaf.id);
-            snapshots.leaves.push(leaf);
-        }
-
-        for (const knot of removed.knots ?? []) {
-            if (!knot || seenKnotIds.has(knot.id)) continue;
-            seenKnotIds.add(knot.id);
-            snapshots.knots.push(knot);
-        }
-    }
-
-    const remainingKnotsToRemove: string[] = [];
-    for (const knotId of Array.from(trunkHostedKnotIds)) {
-        if (state.knots[knotId]) remainingKnotsToRemove.push(knotId);
-    }
-
-    let nextKnots = state.knots;
-    if (remainingKnotsToRemove.length > 0) {
-        const updatedKnots: Record<string, Knot> = { ...state.knots };
-        for (const knotId of remainingKnotsToRemove) {
-            const k = updatedKnots[knotId];
-            if (!k) continue;
-            if (!seenKnotIds.has(k.id)) {
-                seenKnotIds.add(k.id);
-                snapshots.knots.push(deepClone(k));
-            }
-            delete updatedKnots[knotId];
-        }
-        nextKnots = updatedKnots;
-    }
-
-    const { [trunkId]: _, ...remainingTrunks } = state.trunks;
-    let nextRoots = state.roots;
-    if (kickstandRootIdsToRemove.size > 0) {
-        const updatedRoots: Record<string, Roots> = { ...nextRoots };
-        for (const rootId of kickstandRootIdsToRemove) {
-            delete updatedRoots[rootId];
-        }
-        nextRoots = updatedRoots;
-    }
-    if (existingTrunk.rootId && state.roots[existingTrunk.rootId]) {
-        const { [existingTrunk.rootId]: removedRoot, ...restRoots } = state.roots;
-        snapshots.root = deepClone(removedRoot);
-        nextRoots = { ...restRoots, ...nextRoots };
-        delete nextRoots[existingTrunk.rootId];
-    }
-
-    let nextSelectedId = state.selectedId;
-    let nextSelectedCategory = state.selectedCategory;
-
-    if (state.selectedId === trunkId || state.selectedId === existingTrunk.rootId) {
-        nextSelectedId = null;
-        nextSelectedCategory = null;
-    } else if (state.selectedCategory === 'joint' && state.selectedId) {
-        const jointInTrunk =
-            existingTrunk.segments.some((s) => s.topJoint?.id === state.selectedId || s.bottomJoint?.id === state.selectedId) ||
-            (!!existingTrunk.contactCone?.socketJointId && existingTrunk.contactCone.socketJointId === state.selectedId);
-        if (jointInTrunk) {
-            nextSelectedId = null;
-            nextSelectedCategory = null;
-        }
-    } else if (state.selectedCategory === 'segment' && state.selectedId) {
-        if (trunkSegmentIds.has(state.selectedId)) {
-            nextSelectedId = null;
-            nextSelectedCategory = null;
-        }
-    } else if (state.selectedCategory === 'knot' && state.selectedId) {
-        if (trunkHostedKnotIds.has(state.selectedId)) {
-            nextSelectedId = null;
-            nextSelectedCategory = null;
-        }
-    } else if (state.selectedId && seenKickstandIds.has(state.selectedId)) {
-        nextSelectedId = null;
-        nextSelectedCategory = null;
-    }
-
-    state = {
-        ...state,
-        trunks: remainingTrunks,
-        roots: nextRoots,
-        knots: nextKnots,
-        selectedId: nextSelectedId,
-        selectedCategory: nextSelectedCategory,
-    };
-
-    deleteCachedSupportSettingsHex('trunk', trunkId);
-    for (const branch of snapshots.branches) {
-        deleteCachedSupportSettingsHex('branch', branch.id);
-    }
-    for (const leaf of snapshots.leaves) {
-        deleteCachedSupportSettingsHex('leaf', leaf.id);
-    }
-
-    notify();
-    return snapshots;
+export function removeTrunk(trunkId: string): { trunk: Trunk; root: Roots | null; branches: Branch[]; braces: Brace[]; kickstands: KickstandBuildResult[]; leaves: Leaf[]; knots: Knot[] } | null {
+    return removeSupportEntityCascading('trunk', trunkId) as { trunk: Trunk; root: Roots | null; branches: Branch[]; braces: Brace[]; kickstands: KickstandBuildResult[]; leaves: Leaf[]; knots: Knot[] } | null;
 }
 
 // --- Selectors / Hooks Helpers ---
