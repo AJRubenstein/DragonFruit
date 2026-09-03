@@ -49,7 +49,7 @@ type SupportSettingsHexCache = Record<EditableSupportKind, Record<string, string
 function createEmptySettingsHexCache(): SupportSettingsHexCache {
     const cache = {} as SupportSettingsHexCache;
     for (const descriptor of EDITABLE_SUPPORT_TYPES) {
-        cache[descriptor.id as EditableSupportKind] = {};
+        cache[descriptor.id] = {};
     }
     return cache;
 }
@@ -1096,7 +1096,7 @@ function recomputeBraceSegmentKnotGeometry(
     return { knots: nextKnots, changed };
 }
 
-export function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: Trunk } | null {
+function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: Trunk } | null {
     const trunk = state.trunks[trunkId];
     if (!trunk) return null;
 
@@ -1186,7 +1186,7 @@ export function removeJoint(trunkId: string, jointId: string): { before: Trunk; 
     };
 }
 
-export function removeBranchJoint(branchId: string, jointId: string): { before: Branch; after: Branch } | null {
+function removeBranchJoint(branchId: string, jointId: string): { before: Branch; after: Branch } | null {
     const branch = state.branches[branchId];
     if (!branch) return null;
 
@@ -1362,7 +1362,7 @@ function rebuildSupportSettingsHexCacheFromState() {
     const next = createEmptySettingsHexCache();
 
     for (const descriptor of EDITABLE_SUPPORT_TYPES) {
-        const bucket = next[descriptor.id as EditableSupportKind];
+        const bucket = next[descriptor.id];
         for (const entity of Object.values(state[descriptor.location.key])) {
             const { id, settingsCodeHex } = entity as { id: string; settingsCodeHex?: string };
             if (settingsCodeHex) bucket[id] = settingsCodeHex;
@@ -3015,17 +3015,6 @@ export function setSelectedId(id: string | null) {
     notify();
 }
 
-export function setHoveredId(id: string | null) {
-    if (state.hoveredId === id) return;
-    state = { ...state, hoveredId: id };
-    notify();
-}
-
-export function setHoveredCategory(category: 'model' | 'support' | 'contactDisk' | 'segment' | 'joint' | 'knot' | 'raft' | 'gizmo' | 'none') {
-    if (state.hoveredCategory === category) return;
-    state = { ...state, hoveredCategory: category };
-    notify();
-}
 
 export function setHoveredState(
     category: 'model' | 'support' | 'contactDisk' | 'segment' | 'joint' | 'knot' | 'raft' | 'gizmo' | 'none',
@@ -3644,62 +3633,6 @@ export function updateKnot(knot: Knot, options?: { skipDependentGeometry?: boole
     notify();
 }
 
-export function applyKnotDragFramePreview(
-    knot: Knot,
-    branchSegmentsById: Record<string, Branch['segments']> = {},
-) {
-    const existing = state.knots[knot.id];
-    if (!existing) return;
-
-    const knotUnchanged = existing.parentShaftId === knot.parentShaftId
-        && existing.t === knot.t
-        && existing.diameter === knot.diameter
-        && existing.pos.x === knot.pos.x
-        && existing.pos.y === knot.pos.y
-        && existing.pos.z === knot.pos.z;
-
-    let nextBranches = state.branches;
-    const branchIds = Object.keys(branchSegmentsById);
-    let branchesChanged = false;
-    if (branchIds.length > 0) {
-        const updatedBranches: Record<string, Branch> = { ...state.branches };
-
-        for (const branchId of branchIds) {
-            const branch = state.branches[branchId];
-            const nextSegments = branchSegmentsById[branchId];
-            if (!branch || !nextSegments) continue;
-            if (branch.segments === nextSegments) continue;
-            updatedBranches[branchId] = { ...branch, segments: nextSegments };
-            branchesChanged = true;
-        }
-
-        if (branchesChanged) {
-            nextBranches = updatedBranches;
-        }
-    }
-
-    if (knotUnchanged && !branchesChanged) {
-        return;
-    }
-
-    let nextKnots = state.knots;
-    if (!knotUnchanged) {
-        const baseKnots = { ...state.knots, [knot.id]: knot };
-        const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, baseKnots);
-        nextKnots = braceSeg.knots;
-    }
-
-    state = {
-        ...state,
-        branches: nextBranches,
-        knots: nextKnots,
-    };
-
-    if (!knotUnchanged) {
-    }
-
-    notify();
-}
 
 /** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('leaf', id)`. */
 export function removeLeaf(leafId: string) {
@@ -3713,9 +3646,6 @@ export function removeTrunk(trunkId: string) {
 
 // --- Selectors / Hooks Helpers ---
 
-export function getRoots() {
-    return Object.values(state.roots);
-}
 
 export function getTrunks() {
     return Object.values(state.trunks);
@@ -3745,17 +3675,6 @@ export function getAnchors() {
     return Object.values(state.anchors);
 }
 
-export function getAnchorById(anchorId: string) {
-    return state.anchors[anchorId] ?? null;
-}
-
-export function getKnotsMap() {
-    return state.knots;
-}
-
-export function getKnots() {
-    return Object.values(state.knots);
-}
 
 export function getKnotById(knotId: string) {
     return state.knots[knotId] ?? null;
@@ -3842,7 +3761,14 @@ export function getStickById(stickId: string) {
     return state.sticks[stickId] ?? null;
 }
 
-export type EditableSupportKind = 'trunk' | 'branch' | 'leaf';
+/**
+ * A type whose entities have editable settings.
+ *
+ * Widened to SupportTypeId rather than listing the three: which types are
+ * editable is `hasEditableSettings`, and the runtime already reads it. Narrowing
+ * this by hand would be a second source of truth.
+ */
+export type EditableSupportKind = SupportTypeId;
 
 export type EditableSupportTarget = {
     kind: EditableSupportKind;
@@ -3932,7 +3858,7 @@ export function resolveEditableSupportTarget(selectedId: string | null, selected
         for (const descriptor of EDITABLE_SUPPORT_TYPES) {
             for (const entity of Object.values(state[descriptor.location.key])) {
                 if (matches(entity as unknown as Record<string, unknown>, descriptor)) {
-                    return { kind: descriptor.id as EditableSupportKind, id: (entity as { id: string }).id };
+                    return { kind: descriptor.id, id: (entity as { id: string }).id };
                 }
             }
         }
@@ -4000,15 +3926,6 @@ export function getSupportSettingsForTarget(target: EditableSupportTarget, base?
     return decoded ?? inferSupportSettings<SupportSettings>(target.kind, entity, base);
 }
 
-export function getSupportSettingsForSelection(
-    selectedId: string | null,
-    selectedCategory: SelectionCategory | undefined,
-    base?: SupportSettings,
-): SupportSettings | null {
-    const target = resolveEditableSupportTarget(selectedId, selectedCategory);
-    if (!target) return null;
-    return getSupportSettingsForTarget(target, base);
-}
 
 function applyTipSettingsToConeProfile(
     profile: SupportTipProfile,
@@ -4179,15 +4096,6 @@ export function applySettingsToSupportTarget(target: EditableSupportTarget, sett
     return true;
 }
 
-export function applySettingsToSupportSelection(
-    selectedId: string | null,
-    selectedCategory: SelectionCategory | undefined,
-    settings: SupportSettings,
-): boolean {
-    const target = resolveEditableSupportTarget(selectedId, selectedCategory);
-    if (!target) return false;
-    return applySettingsToSupportTarget(target, settings);
-}
 
 // Per-type registrations live in each type's folder; importing them here runs
 // their side effects once the store exists.
