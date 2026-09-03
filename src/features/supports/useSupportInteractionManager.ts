@@ -38,6 +38,7 @@ import {
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_REMOVE_ANCHOR, SUPPORT_REMOVE_BRANCH, SUPPORT_REMOVE_BRACE, SUPPORT_REMOVE_LEAF, SUPPORT_REMOVE_TRUNK, SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_REMOVE_TWIG, SUPPORT_REMOVE_STICK, SUPPORT_AUTO_BRACE_REPLACE, SUPPORT_REMOVE_KICKSTAND, type SupportBranchRemovePayload } from '@/supports/history/actionTypes';
+import { getSupportTypeBySelectionCategory } from '@/supports/supportTypeRegistry';
 import { clearSupportSelection, getResolvedPrimarySelection, selectSupportIds } from '@/supports/interaction/shared/selection/selectionController';
 import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
@@ -637,7 +638,9 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       const category = getSelectedCategory();
       const id = getSelectedId();
       if (!id || !category) return false;
-      if (category === 'joint' || category === 'trunk' || category === 'leaf' || category === 'branch' || category === 'twig' || category === 'stick' || category === 'brace' || category === 'kickstand') return true;
+      // Every support type is deletable; 'joint' too. Enumerating them here is
+      // how anchors ended up deletable but gated out of single-selection Delete.
+      if (category === 'joint' || getSupportTypeBySelectionCategory(category)) return true;
 
       if (category === 'knot') {
         const leaves = getLeaves();
