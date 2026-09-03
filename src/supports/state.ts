@@ -159,130 +159,82 @@ function deepClone<T>(value: T): T {
 }
 
 export function removeTwig(twigId: string): { twig: Twig; knots: Knot[]; leaves: Leaf[] } | null {
-    const existing = state.twigs[twigId];
-    if (!existing) return null;
-
-    // Cascade: any knot whose parentShaftId is one of this twig's segments
-    // (i.e. a leaf base sitting on the twig) must be removed, along with the
-    // leaves attached to those knots.
-    const twigSegmentIds = new Set<string>(existing.segments.map((s) => s.id));
-    const knotIdsToRemove = new Set<string>();
-    for (const knot of Object.values(state.knots)) {
-        if (twigSegmentIds.has(knot.parentShaftId)) {
-            knotIdsToRemove.add(knot.id);
-        }
-    }
-    const leafIdsToRemove = new Set<string>();
-    for (const leaf of Object.values(state.leaves)) {
-        if (leaf.parentKnotId && knotIdsToRemove.has(leaf.parentKnotId)) {
-            leafIdsToRemove.add(leaf.id);
-        }
-    }
-
-    const snapshot = {
-        twig: deepClone(existing),
-        knots: Array.from(knotIdsToRemove)
-            .map((id) => state.knots[id])
-            .filter(Boolean)
-            .map((k) => deepClone(k)),
-        leaves: Array.from(leafIdsToRemove)
-            .map((id) => state.leaves[id])
-            .filter(Boolean)
-            .map((l) => deepClone(l)),
-    };
-
-    const { [twigId]: _, ...remainingTwigs } = state.twigs;
-
-    const nextKnots = { ...state.knots };
-    for (const id of knotIdsToRemove) delete nextKnots[id];
-
-    const nextLeaves = { ...state.leaves };
-    for (const id of leafIdsToRemove) delete nextLeaves[id];
-
-    let nextSelectedId = state.selectedId;
-    let nextSelectedCategory = state.selectedCategory;
-    if (
-        state.selectedId === twigId
-        || (state.selectedId && knotIdsToRemove.has(state.selectedId))
-        || (state.selectedId && leafIdsToRemove.has(state.selectedId))
-    ) {
-        nextSelectedId = null;
-        nextSelectedCategory = null;
-    }
-
-    state = {
-        ...state,
-        twigs: remainingTwigs,
-        knots: nextKnots,
-        leaves: nextLeaves,
-        selectedId: nextSelectedId,
-        selectedCategory: nextSelectedCategory,
-    };
-
-    for (const id of leafIdsToRemove) {
-        deleteCachedSupportSettingsHex('leaf', id);
-    }
-
-    notify();
-    return snapshot;
+    return removeSupportEntityCascading('twig', twigId) as { twig: Twig; knots: Knot[]; leaves: Leaf[] } | null;
 }
 
 /**
  * Remove an entity and everything the declared graph says depends on it.
  *
- * Returns the removed knots and leaves so a history payload can put them back.
- * Sticks and anchors used to skip this entirely and orphan any knot on their
- * shaft; twigs did it by hand.
+ * One walk for every support type: `collectCascade` works out the doomed set
+ * from the registry's edges, and `removalShape` says what to call each piece on
+ * the way out, so history payloads keep the field names their handlers read.
+ *
+ * A collection listed in `cascade` with a singular field name (`knots: 'knot'`)
+ * reports at most one entity, matching the shapes that predate this walk.
  */
-function removeShaftedWithCascade(
-    collection: 'sticks' | 'anchors',
+function removeSupportEntityCascading(
+    typeId: SupportTypeId,
     id: string,
-): { knots: Knot[]; leaves: Leaf[] } | null {
-    if (!state[collection][id]) return null;
+): Record<string, unknown> | null {
+    const descriptor = getSupportTypeDescriptor(typeId);
+    const collection = descriptor.location.key;
+    const existing = state[collection][id] as { id: string } | undefined;
+    if (!existing) return null;
 
     const doomed = collectCascade(state, [{ collection, id }]);
     const byCollection = groupByCollection(doomed);
 
-    const knotIds = byCollection.get('knots') ?? new Set<string>();
-    const leafIds = byCollection.get('leaves') ?? new Set<string>();
+    // Snapshot before deleting: the shape is what undo replays from.
+    const result: Record<string, unknown> = { [descriptor.removalShape.self]: deepClone(existing) };
+    const plural = (field: string) => field.endsWith('s');
 
-    const removed = {
-        knots: [...knotIds].map((knotId) => deepClone(state.knots[knotId])).filter(Boolean),
-        leaves: [...leafIds].map((leafId) => deepClone(state.leaves[leafId])).filter(Boolean),
-    };
+    for (const [key, field] of Object.entries(descriptor.removalShape.cascade)) {
+        const ids = [...(byCollection.get(key as SupportCollectionKey) ?? [])]
+            .filter((entityId) => !(key === collection && entityId === id));
+        const entities = ids
+            .map((entityId) => state[key as SupportCollectionKey][entityId])
+            .filter(Boolean)
+            .map((entity) => deepClone(entity));
 
-    const nextKnots = { ...state.knots };
-    for (const knotId of knotIds) delete nextKnots[knotId];
-    const nextLeaves = { ...state.leaves };
-    for (const leafId of leafIds) delete nextLeaves[leafId];
+        if (typeof field === 'string') {
+            result[field] = plural(field) ? entities : (entities[0] ?? null);
+        } else {
+            // Positional slots: fill in declared order, pad with null.
+            field.forEach((slot, index) => { result[slot] = entities[index] ?? null; });
+        }
+    }
 
-    const { [id]: _removed, ...remaining } = state[collection];
+    // Apply: one state write, one notify.
+    const next: Record<string, unknown> = { ...state };
+    for (const [key, ids] of byCollection) {
+        const record = { ...state[key] } as Record<string, unknown>;
+        for (const entityId of ids) delete record[entityId];
+        next[key] = record;
+    }
 
-    const clearSelection = doomed.has(`${collection}:${state.selectedId}`)
-        || (state.selectedId !== null
-            && (knotIds.has(state.selectedId) || leafIds.has(state.selectedId) || state.selectedId === id));
+    const selectionDoomed = state.selectedId !== null
+        && [...byCollection.values()].some((ids) => ids.has(state.selectedId as string));
+    if (selectionDoomed) {
+        next.selectedId = null;
+        next.selectedCategory = null;
+    }
 
-    state = {
-        ...state,
-        [collection]: remaining,
-        knots: nextKnots,
-        leaves: nextLeaves,
-        selectedId: clearSelection ? null : state.selectedId,
-        selectedCategory: clearSelection ? null : state.selectedCategory,
-    };
+    state = next as unknown as SupportState;
 
-    for (const leafId of leafIds) deleteCachedSupportSettingsHex('leaf', leafId);
+    for (const [key, ids] of byCollection) {
+        const node = SUPPORT_TYPES.find((d) => d.location.key === key);
+        if (!node?.hasSettingsHex) continue;
+        for (const entityId of ids) {
+            deleteCachedSupportSettingsHex(node.id as 'trunk' | 'branch' | 'leaf', entityId);
+        }
+    }
+
     notify();
-    return removed;
+    return result;
 }
 
 export function removeStick(stickId: string): { stick: Stick; knots: Knot[]; leaves: Leaf[] } | null {
-    const existing = state.sticks[stickId];
-    if (!existing) return null;
-
-    const stick = deepClone(existing);
-    const cascaded = removeShaftedWithCascade('sticks', stickId);
-    return cascaded ? { stick, ...cascaded } : null;
+    return removeSupportEntityCascading('stick', stickId) as { stick: Stick; knots: Knot[]; leaves: Leaf[] } | null;
 }
 
 function resolveLowerSegmentIndex(segments: Segment[], jointId: string) {
@@ -3235,12 +3187,7 @@ export function updateAnchor(anchor: Anchor) {
 }
 
 export function removeAnchor(anchorId: string): { anchor: Anchor; knots: Knot[]; leaves: Leaf[] } | null {
-    const existing = state.anchors[anchorId];
-    if (!existing) return null;
-
-    const anchor = deepClone(existing);
-    const cascaded = removeShaftedWithCascade('anchors', anchorId);
-    return cascaded ? { anchor, ...cascaded } : null;
+    return removeSupportEntityCascading('anchor', anchorId) as { anchor: Anchor; knots: Knot[]; leaves: Leaf[] } | null;
 }
 
 export function updateTwig(twig: Twig) {
@@ -3356,57 +3303,7 @@ export function updateBrace(brace: Brace) {
 }
 
 export function removeBrace(braceId: string): { brace: Brace; startKnot: Knot | null; endKnot: Knot | null } | null {
-    const existing = state.braces[braceId];
-    if (!existing) return null;
-
-    const snapshots: { brace: Brace; startKnot: Knot | null; endKnot: Knot | null } = {
-        brace: deepClone(existing),
-        startKnot: null,
-        endKnot: null,
-    };
-
-    const startKnotId = existing.startKnotId;
-    const endKnotId = existing.endKnotId;
-
-    const { [braceId]: _, ...remainingBraces } = state.braces;
-
-    // A brace's knots go with it only when nothing else is attached. Deleting
-    // them unconditionally left any branch, leaf or kickstand on the same knot
-    // pointing at an id that no longer resolved.
-    const doomed = new Set([`braces:${braceId}`]);
-    let nextKnots = state.knots;
-    const updatedKnots: Record<string, Knot> = { ...state.knots };
-    let removedAnyKnot = false;
-
-    for (const [knotId, slot] of [[startKnotId, 'startKnot'], [endKnotId, 'endKnot']] as const) {
-        if (!knotId || !updatedKnots[knotId]) continue;
-        if (isReferencedOutside(state, { collection: 'knots', id: knotId }, doomed)) continue;
-
-        snapshots[slot] = deepClone(updatedKnots[knotId]);
-        delete updatedKnots[knotId];
-        removedAnyKnot = true;
-    }
-    if (removedAnyKnot) nextKnots = updatedKnots;
-
-    let nextSelectedId = state.selectedId;
-    let nextSelectedCategory = state.selectedCategory;
-    if (
-        state.selectedId === braceId ||
-        (state.selectedId !== null && !nextKnots[state.selectedId] && state.knots[state.selectedId] !== undefined)
-    ) {
-        nextSelectedId = null;
-        nextSelectedCategory = null;
-    }
-
-    state = {
-        ...state,
-        braces: remainingBraces,
-        knots: nextKnots,
-        selectedId: nextSelectedId,
-        selectedCategory: nextSelectedCategory,
-    };
-    notify();
-    return snapshots;
+    return removeSupportEntityCascading('brace', braceId) as { brace: Brace; startKnot: Knot | null; endKnot: Knot | null } | null;
 }
 
 export function removeKickstandCascade(kickstandId: string): KickstandRemoveResult | null {
@@ -3904,53 +3801,7 @@ export function applyKnotDragFramePreview(
 }
 
 export function removeLeaf(leafId: string): { leaf: Leaf; knot: Knot | null } | null {
-    const existingLeaf = state.leaves[leafId];
-    if (!existingLeaf) return null;
-
-    const snapshots: { leaf: Leaf; knot: Knot | null } = {
-        leaf: deepClone(existingLeaf),
-        knot: null,
-    };
-
-    const knotId = existingLeaf.parentKnotId;
-    const { [leafId]: _, ...remainingLeaves } = state.leaves;
-
-    let nextKnots = state.knots;
-    let knotDeleted = false;
-    if (knotId && state.knots[knotId]) {
-        const isShared =
-            Object.values(state.leaves).some((l) => l.id !== leafId && l.parentKnotId === knotId) ||
-            Object.values(state.branches).some((b) => b.parentKnotId === knotId) ||
-            Object.values(state.braces).some((brace) => brace.startKnotId === knotId || brace.endKnotId === knotId) ||
-            Object.values(state.kickstands).some((k) => k.hostKnotId === knotId);
-
-        if (!isShared) {
-            const { [knotId]: removedKnot, ...restKnots } = state.knots;
-            snapshots.knot = deepClone(removedKnot);
-            nextKnots = restKnots;
-            knotDeleted = true;
-        }
-    }
-
-    let nextSelectedId = state.selectedId;
-    let nextSelectedCategory = state.selectedCategory;
-    if (state.selectedId === leafId || (knotId && knotDeleted && state.selectedId === knotId)) {
-        nextSelectedId = null;
-        nextSelectedCategory = null;
-    }
-
-    state = {
-        ...state,
-        leaves: remainingLeaves,
-        knots: nextKnots,
-        selectedId: nextSelectedId,
-        selectedCategory: nextSelectedCategory,
-    };
-
-    deleteCachedSupportSettingsHex('leaf', leafId);
-
-    notify();
-    return snapshots;
+    return removeSupportEntityCascading('leaf', leafId) as { leaf: Leaf; knot: Knot | null } | null;
 }
 
 export function removeTrunk(
