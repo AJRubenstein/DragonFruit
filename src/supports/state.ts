@@ -4,7 +4,7 @@ import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPosit
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
-import { EDITABLE_SUPPORT_TYPES, isEditableSupportType, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerSettingsInference, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -4057,38 +4057,11 @@ export function resolveEditableSupportTarget(selectedId: string | null, selected
 }
 
 export function getSupportSettingsForTarget(target: EditableSupportTarget, base?: SupportSettings): SupportSettings | null {
-    if (target.kind === 'trunk') {
-        const trunk = state.trunks[target.id];
-        if (!trunk) return null;
-        const root = state.roots[trunk.rootId] ?? null;
-        const encoded = getCachedSupportSettingsHex('trunk', trunk.id, trunk.settingsCodeHex);
-        const decoded = encoded ? decodeSupportSettingsHex(encoded, base) : null;
-        logSupportSettingsDebug('read target', target, {
-            hasHex: Boolean(encoded),
-            hexPreview: encoded?.slice(0, 18),
-            decodeOk: Boolean(decoded),
-            source: decoded ? 'hex' : 'inferred',
-        });
-        return decoded ?? inferSettingsFromTrunk(trunk, root, base);
-    }
+    const descriptor = getSupportTypeDescriptor(target.kind);
+    const entity = state[descriptor.location.key][target.id] as { settingsCodeHex?: string } | undefined;
+    if (!entity) return null;
 
-    if (target.kind === 'branch') {
-        const branch = state.branches[target.id];
-        if (!branch) return null;
-        const encoded = getCachedSupportSettingsHex('branch', branch.id, branch.settingsCodeHex);
-        const decoded = encoded ? decodeSupportSettingsHex(encoded, base) : null;
-        logSupportSettingsDebug('read target', target, {
-            hasHex: Boolean(encoded),
-            hexPreview: encoded?.slice(0, 18),
-            decodeOk: Boolean(decoded),
-            source: decoded ? 'hex' : 'inferred',
-        });
-        return decoded ?? inferSettingsFromBranch(branch, base);
-    }
-
-    const leaf = state.leaves[target.id];
-    if (!leaf) return null;
-    const encoded = getCachedSupportSettingsHex('leaf', leaf.id, leaf.settingsCodeHex);
+    const encoded = getCachedSupportSettingsHex(target.kind, target.id, entity.settingsCodeHex);
     const decoded = encoded ? decodeSupportSettingsHex(encoded, base) : null;
     logSupportSettingsDebug('read target', target, {
         hasHex: Boolean(encoded),
@@ -4096,7 +4069,8 @@ export function getSupportSettingsForTarget(target: EditableSupportTarget, base?
         decodeOk: Boolean(decoded),
         source: decoded ? 'hex' : 'inferred',
     });
-    return decoded ?? inferSettingsFromLeaf(leaf, base);
+
+    return decoded ?? inferSupportSettings<SupportSettings>(target.kind, entity, base);
 }
 
 export function getSupportSettingsForSelection(
@@ -4310,3 +4284,10 @@ for (const descriptor of SUPPORT_TYPES) {
     if (!update) throw new Error(`No ${name} for support type "${descriptor.id}"`);
     registerSupportUpdater(descriptor.id, update);
 }
+
+// Settings inference per type. Trunks read their root, which is why this is a
+// slot rather than something the registry could hold directly.
+registerSettingsInference<Trunk, SupportSettings, SupportSettings>('trunk', (trunk, base) =>
+    inferSettingsFromTrunk(trunk, state.roots[trunk.rootId] ?? null, base));
+registerSettingsInference<Branch, SupportSettings, SupportSettings>('branch', inferSettingsFromBranch);
+registerSettingsInference<Leaf, SupportSettings, SupportSettings>('leaf', inferSettingsFromLeaf);

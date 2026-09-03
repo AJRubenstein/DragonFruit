@@ -442,6 +442,29 @@ const _removalShapesCoverEveryType: _RemovalShapesCoverEveryType = true;
 void _removalShapesCoverEveryType;
 
 /**
+ * How a type derives settings from an entity when it carries no encoded hex.
+ *
+ * A slot rather than an import: the inference reads other collections, so it
+ * lives in `state.ts` and registers itself at load.
+ */
+type SettingsInference = (entity: unknown, base?: unknown) => unknown;
+
+const SETTINGS_INFERENCE = new Map<SupportTypeId, SettingsInference>();
+
+export function registerSettingsInference<E, B, R>(
+    id: SupportTypeId,
+    infer: (entity: E, base?: B) => R,
+): void {
+    SETTINGS_INFERENCE.set(id, infer as SettingsInference);
+}
+
+/** Settings inferred for `entity`, or null when the type declares no rule. */
+export function inferSupportSettings<R>(id: SupportTypeId, entity: unknown, base?: unknown): R | null {
+    const infer = SETTINGS_INFERENCE.get(id);
+    return infer ? (infer(entity, base) as R) : null;
+}
+
+/**
  * Types whose entities have editable settings, and can be a sidebar target.
  *
  * Derived, so a new type with settings joins by declaring the flag.
