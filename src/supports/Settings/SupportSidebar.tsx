@@ -50,6 +50,7 @@ import { setAnatomyPreviewActiveSettingKey, subscribeToAnatomyPreviewState, getA
 import {
     DEFAULT_SUPPORT_KIND,
     getSupportKindSnapshot,
+    isSupportKind,
     setActiveSupportKind,
     subscribeToSupportKindState,
 } from './supportKindState';
@@ -488,7 +489,9 @@ export function SupportSidebar() {
             });
         }
 
-        if (selectionChanged && activeKind !== editableTarget.kind) {
+        // Not every editable type has a sidebar tool, so only follow the
+        // selection when one exists.
+        if (selectionChanged && activeKind !== editableTarget.kind && isSupportKind(editableTarget.kind)) {
             setActiveSupportKind(editableTarget.kind);
         }
 

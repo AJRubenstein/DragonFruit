@@ -22,6 +22,11 @@ export const SUPPORT_KINDS = {
 
 export type SupportKind = keyof typeof SUPPORT_KINDS;
 
+/** Whether a support type id also names a sidebar tool. Not every one does. */
+export function isSupportKind(value: string): value is SupportKind {
+    return value in SUPPORT_KINDS;
+}
+
 /** Whether the anatomy preview draws this kind itself. */
 export function kindDrawsOwnPreview(kind: SupportKind): boolean {
     return SUPPORT_KINDS[kind].drawsOwnPreview;
