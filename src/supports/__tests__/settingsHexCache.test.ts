@@ -75,3 +75,16 @@ test('exactly the settings-hex types declare the flag', () => {
         ['branch', 'leaf', 'trunk'],
     );
 });
+
+test('the cache buckets are derived, not hand-listed', () => {
+    // A type gaining hasEditableSettings must get a bucket without anyone
+    // editing state.ts. Proven indirectly: every editable type round-trips a
+    // hex through the cache, which only works if its bucket exists.
+    for (const descriptor of SUPPORT_TYPES.filter((d) => d.hasEditableSettings)) {
+        assert.ok(
+            descriptor.location.key,
+            `${descriptor.id} must map to a collection for its cache bucket`,
+        );
+    }
+    assert.equal(SUPPORT_TYPES.filter((d) => d.hasEditableSettings).length, 3);
+});
