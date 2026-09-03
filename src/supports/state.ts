@@ -42,11 +42,17 @@ const listeners = new Set<() => void>();
 let notifyBatchDepth = 0;
 let pendingNotify = false;
 
-type SupportSettingsHexCache = {
-    trunk: Record<string, string>;
-    branch: Record<string, string>;
-    leaf: Record<string, string>;
-};
+/** Settings hex per entity, bucketed by type. Only editable types have one. */
+type SupportSettingsHexCache = Record<EditableSupportKind, Record<string, string>>;
+
+/** An empty bucket per editable type, so a new one needs no change here. */
+function createEmptySettingsHexCache(): SupportSettingsHexCache {
+    const cache = {} as SupportSettingsHexCache;
+    for (const descriptor of EDITABLE_SUPPORT_TYPES) {
+        cache[descriptor.id as EditableSupportKind] = {};
+    }
+    return cache;
+}
 
 // Entity collections come from the registry; only interaction state is listed here.
 const initialState: SupportState = {
@@ -60,11 +66,7 @@ const initialState: SupportState = {
 
 let state: SupportState = { ...initialState };
 
-let supportSettingsHexCache: SupportSettingsHexCache = {
-    trunk: {},
-    branch: {},
-    leaf: {},
-};
+let supportSettingsHexCache: SupportSettingsHexCache = createEmptySettingsHexCache();
 
 type SelectionCategory = SupportSelectionCategory | null;
 
@@ -1345,34 +1347,24 @@ export function endSupportStateBatch() {
 }
 
 function rebuildSupportSettingsHexCacheFromState() {
-    const next: SupportSettingsHexCache = {
-        trunk: {},
-        branch: {},
-        leaf: {},
-    };
+    const next = createEmptySettingsHexCache();
 
-    for (const trunk of Object.values(state.trunks)) {
-        if (trunk.settingsCodeHex) next.trunk[trunk.id] = trunk.settingsCodeHex;
-    }
-    for (const branch of Object.values(state.branches)) {
-        if (branch.settingsCodeHex) next.branch[branch.id] = branch.settingsCodeHex;
-    }
-    for (const leaf of Object.values(state.leaves)) {
-        if (leaf.settingsCodeHex) next.leaf[leaf.id] = leaf.settingsCodeHex;
+    for (const descriptor of EDITABLE_SUPPORT_TYPES) {
+        const bucket = next[descriptor.id as EditableSupportKind];
+        for (const entity of Object.values(state[descriptor.location.key])) {
+            const { id, settingsCodeHex } = entity as { id: string; settingsCodeHex?: string };
+            if (settingsCodeHex) bucket[id] = settingsCodeHex;
+        }
     }
 
     supportSettingsHexCache = next;
 }
 
 function clearSupportSettingsHexCache() {
-    supportSettingsHexCache = {
-        trunk: {},
-        branch: {},
-        leaf: {},
-    };
+    supportSettingsHexCache = createEmptySettingsHexCache();
 }
 
-function getCachedSupportSettingsHex(kind: 'trunk' | 'branch' | 'leaf', id: string, entityHex?: string): string | null {
+function getCachedSupportSettingsHex(kind: EditableSupportKind, id: string, entityHex?: string): string | null {
     const cached = supportSettingsHexCache[kind][id];
     if (cached) return cached;
     if (entityHex) {
@@ -1382,11 +1374,11 @@ function getCachedSupportSettingsHex(kind: 'trunk' | 'branch' | 'leaf', id: stri
     return null;
 }
 
-function setCachedSupportSettingsHex(kind: 'trunk' | 'branch' | 'leaf', id: string, hex: string) {
+function setCachedSupportSettingsHex(kind: EditableSupportKind, id: string, hex: string) {
     supportSettingsHexCache[kind][id] = hex;
 }
 
-function deleteCachedSupportSettingsHex(kind: 'trunk' | 'branch' | 'leaf', id: string) {
+function deleteCachedSupportSettingsHex(kind: EditableSupportKind, id: string) {
     delete supportSettingsHexCache[kind][id];
 }
 
