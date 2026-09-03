@@ -12,8 +12,18 @@ type PlacementSurface = 'interior' | 'exterior';
 /** Which types can be snapped to. A new type joins by being in SUPPORT_TYPES. */
 export const ALL_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES.map((d) => d.id);
 
-/** The historical default: shafts and braces, not the two-contact types. */
-export const DEFAULT_SNAP_TYPES: readonly SupportTypeId[] = ['trunk', 'branch', 'brace'];
+/** Types with a real shaft to drop a joint on. */
+export const SHAFTED_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES
+    .filter((descriptor) => descriptor.hasSegments)
+    .map((descriptor) => descriptor.id);
+
+/**
+ * Default when a caller names no types: those with their own snap pass below.
+ * Was a hand-written ['trunk', 'branch', 'brace'], which is the same set.
+ */
+const DEFAULT_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES
+    .filter((descriptor) => descriptor.hasDedicatedSnapPass)
+    .map((descriptor) => descriptor.id);
 
 interface BuildSupportPathSnapTargetsOptions {
     snapTypes?: readonly SupportTypeId[];
