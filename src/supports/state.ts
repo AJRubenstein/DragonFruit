@@ -4,7 +4,7 @@ import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPosit
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
-import { MODEL_ID_COLLECTION_KEYS, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerSettingsInference, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -4282,3 +4282,24 @@ registerSettingsInference<Trunk, SupportSettings, SupportSettings>('trunk', (tru
     inferSettingsFromTrunk(trunk, state.roots[trunk.rootId] ?? null, base));
 registerSettingsInference<Branch, SupportSettings, SupportSettings>('branch', inferSettingsFromBranch);
 registerSettingsInference<Leaf, SupportSettings, SupportSettings>('leaf', inferSettingsFromLeaf);
+
+// How each collection puts an entity back, for undo. Types go through the
+// generic adder; the two primitives and kickstand's nested build do not.
+for (const descriptor of SUPPORT_TYPES) {
+    if (descriptor.nestedRemoval) continue;
+    registerCollectionRestore(descriptor.location.key, (entity) =>
+        addSupportEntity(descriptor.id, entity as { id: string }));
+}
+registerCollectionRestore('roots', (entity) => addRoot(entity as Roots));
+registerCollectionRestore('knots', (entity) => addKnot(entity as Knot));
+registerCollectionRestore('kickstands', (build) => {
+    const nested = build as KickstandBuildResult;
+    addRoot(nested.root);
+    addKickstandToState(nested);
+    addKnot(nested.hostKnot);
+});
+
+const missingRestore = collectionsMissingRestore();
+if (missingRestore.length > 0) {
+    throw new Error(`No restore registered for: ${missingRestore.join(', ')}`);
+}
