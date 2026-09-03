@@ -2,8 +2,8 @@ import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
-import { getSnapshot, getBranches, getKnotById, getLeaves, getRootById, getTrunks, getTwigs, getSticks, getBraces, setInteractionWarning, updateKnot, updateLeaf, updateBranch, getBranchById, subscribe  } from '../../state';
-import { Branch, Brace, Knot, Roots, Trunk, Twig, Stick, Vec3 } from '../../types';
+import { getSnapshot, getAnchors, getBranches, getKnotById, getLeaves, getRootById, getTrunks, getTwigs, getSticks, getBraces, setInteractionWarning, updateKnot, updateLeaf, updateBranch, getBranchById, subscribe  } from '../../state';
+import { Anchor, Branch, Brace, Knot, Roots, Trunk, Twig, Stick, Vec3 } from '../../types';
 import { getKickstandSnapshot } from '../../SupportTypes/Kickstand/kickstandStore';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, projectOntoSegment, shouldStayOnCurrentSegment } from './knotUtils';
@@ -16,7 +16,7 @@ import { getBezierPointAtT } from '../../Curves/BezierUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { clearKnotDragPreview, emitKnotDragPreview } from '../../interaction/knotDragPreview';
 import { resolveTwigDiameterAtSegmentT, twigJointDiameterForLocalDiameter } from '../../SupportTypes/Twig/twigTaper';
-import type { SupportTypeId } from '../../supportTypeRegistry';
+import { SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
 
 /**
  * What a knot can be dragged along: any support type, or a leaf's contact cone.
@@ -38,6 +38,7 @@ interface ActiveHost {
     branch?: Branch;
     twig?: Twig;
     stick?: Stick;
+    anchor?: Anchor;
     root?: Roots;
     parentKnot?: Knot;
     leafId?: string;
@@ -131,27 +132,23 @@ export function useKnotInteraction(enabled: boolean = true) {
         };
     }, []);
 
-    // Segment→host lookup cache: rebuilt whenever support state changes
-    type SegmentHostEntry = { containerType: 'trunk'; entityId: string } | { containerType: 'branch'; entityId: string } | { containerType: 'kickstand'; entityId: string } | { containerType: 'twig'; entityId: string } | { containerType: 'stick'; entityId: string };
+    // Segment->host lookup cache: rebuilt whenever support state changes.
+    // Walks every type declaring segments, so a ninth joins by being registered.
+    type SegmentHostEntry = { containerType: SupportTypeId; entityId: string };
     const segmentHostMapRef = useRef<Map<string, SegmentHostEntry>>(new Map());
 
     useEffect(() => {
         const buildMap = () => {
             const map = new Map<string, SegmentHostEntry>();
-            for (const trunk of getTrunks()) {
-                for (const seg of trunk.segments) map.set(seg.id, { containerType: 'trunk', entityId: trunk.id });
-            }
-            for (const branch of getBranches()) {
-                for (const seg of branch.segments) map.set(seg.id, { containerType: 'branch', entityId: branch.id });
-            }
-            for (const kickstand of Object.values(getSnapshot().kickstands)) {
-                for (const seg of kickstand.segments) map.set(seg.id, { containerType: 'kickstand', entityId: kickstand.id });
-            }
-            for (const twig of getTwigs()) {
-                for (const seg of twig.segments) map.set(seg.id, { containerType: 'twig', entityId: twig.id });
-            }
-            for (const stick of getSticks()) {
-                for (const seg of stick.segments) map.set(seg.id, { containerType: 'stick', entityId: stick.id });
+            const snapshot = getSnapshot() as unknown as Record<string, Record<string, { id: string; segments?: { id: string }[] }>>;
+
+            for (const descriptor of SUPPORT_TYPES) {
+                if (!descriptor.hasSegments) continue;
+                for (const entity of Object.values(snapshot[descriptor.location.key] ?? {})) {
+                    for (const seg of entity.segments ?? []) {
+                        map.set(seg.id, { containerType: descriptor.id, entityId: entity.id });
+                    }
+                }
             }
             segmentHostMapRef.current = map;
         };
@@ -401,6 +398,11 @@ export function useKnotInteraction(enabled: boolean = true) {
                 if (stick) {
                     host = { segmentId: knot.parentShaftId, containerType: 'stick', stick, start: new THREE.Vector3(), end: new THREE.Vector3(), initialTopology: {} };
                 }
+            } else if (cacheEntry.containerType === 'anchor') {
+                const anchor = getAnchors().find(a => a.id === cacheEntry.entityId);
+                if (anchor) {
+                    host = { segmentId: knot.parentShaftId, containerType: 'anchor', anchor, start: new THREE.Vector3(), end: new THREE.Vector3(), initialTopology: {} };
+                }
             }
         }
 
@@ -471,6 +473,11 @@ export function useKnotInteraction(enabled: boolean = true) {
             host.end.set(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z);
         } else if (host.containerType === 'stick' && host.stick) {
             const seg = host.stick.segments.find((s) => s.id === host.segmentId);
+            if (!seg?.bottomJoint || !seg?.topJoint) return;
+            host.start.set(seg.bottomJoint.pos.x, seg.bottomJoint.pos.y, seg.bottomJoint.pos.z);
+            host.end.set(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z);
+        } else if (host.containerType === 'anchor' && host.anchor) {
+            const seg = host.anchor.segments.find((s) => s.id === host.segmentId);
             if (!seg?.bottomJoint || !seg?.topJoint) return;
             host.start.set(seg.bottomJoint.pos.x, seg.bottomJoint.pos.y, seg.bottomJoint.pos.z);
             host.end.set(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z);
@@ -565,6 +572,18 @@ export function useKnotInteraction(enabled: boolean = true) {
         } else if (host.containerType === 'stick' && host.stick) {
             for (let idx = 0; idx < host.stick.segments.length; idx++) {
                 const seg = host.stick.segments[idx];
+                if (!seg.bottomJoint || !seg.topJoint) continue;
+                out.push({
+                    segmentId: seg.id,
+                    start: new THREE.Vector3(seg.bottomJoint.pos.x, seg.bottomJoint.pos.y, seg.bottomJoint.pos.z),
+                    end: new THREE.Vector3(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z),
+                    diameter: seg.diameter,
+                    bezier: seg.type === 'bezier' ? { control1: seg.controlPoint1, control2: seg.controlPoint2 } : undefined,
+                });
+            }
+        } else if (host.containerType === 'anchor' && host.anchor) {
+            for (let idx = 0; idx < host.anchor.segments.length; idx++) {
+                const seg = host.anchor.segments[idx];
                 if (!seg.bottomJoint || !seg.topJoint) continue;
                 out.push({
                     segmentId: seg.id,

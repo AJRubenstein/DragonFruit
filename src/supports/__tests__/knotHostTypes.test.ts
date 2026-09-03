@@ -30,6 +30,23 @@ test('the knot primitives declare no hand-written type unions', () => {
     }
 });
 
+test('every type with segments can host a dragged knot', () => {
+    // Anchors were absent from the segment->host map, so a knot on an anchor
+    // shaft could not be dragged while every other shafted type's could.
+    const source = read('useKnotInteraction.ts');
+    const constructed = new Set(
+        [...source.matchAll(/containerType: '([a-zA-Z]+)'/g)].map((m) => m[1]),
+    );
+
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        assert.ok(
+            constructed.has(descriptor.id),
+            `${descriptor.id} declares segments but is never built as a knot host`,
+        );
+    }
+});
+
 test('a leaf cone is the only knot host that is not a support type', () => {
     // hostsAShaft() reads as "not a leafCone", which is only correct while
     // leafCone is the sole non-type host. A second one silently joins the
