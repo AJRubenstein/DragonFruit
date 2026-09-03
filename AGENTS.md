@@ -117,6 +117,11 @@ the question.
 | `docs/dev/`, `docs/reference/` | Contracts, invariants, frameworks | yes |
 | `docs/adr/` | Decisions and the reasoning behind them | yes |
 | `docs/internal/` | Working inboxes, agent instructions, research | **no** |
+| `src/*/AGENTS.md` | Directory-scoped rules — read before editing that directory | no |
+
+`src/supports/AGENTS.md` is the one that exists today. The support system is
+registry-driven and the registry is easy to bypass by accident; read it before
+touching anything under `src/supports/`.
 
 `docs/internal/` is excluded from the MkDocs build (`exclude_docs`) but is
 versioned and reviewed like everything else — see `docs/internal/README.md`.
