@@ -4,28 +4,8 @@ import type { Segment, SupportState } from './types';
 /**
  * Walks the support dependency graph to work out what a removal takes with it.
  *
- * The eight `removeX` functions in `state.ts` each re-derive this by hand, which
- * is how they drifted apart: `removeLeaf` reference-counts a shared host knot
- * before deleting it, `removeBrace` does not. This module is the shared walk
- * they can be rebuilt on.
- *
  * The graph is declared on the registry as `SupportTypeDescriptor.edges`; see
  * `SupportEdge` for what `owns` and `hostedBy` mean.
- *
- * NOT YET WIRED IN. Verified against the recorded cascade goldens, where it
- * reproduces removeTrunk, removeBranch, removeTwig, removeLeaf and both
- * kickstand cases exactly. Three cases still differ, and each difference is a
- * decision rather than a defect in the walk:
- *
- * - removeStick / removeAnchor orphan the knots on their segments. This walk
- *   cascades to them, which is almost certainly what should happen -- but
- *   changing it is a behaviour fix, not a refactor.
- * - removeBrace deletes both its knots and STOPS, leaving whatever else was on
- *   them dangling. removeBranch takes its knot and cascades onward. Encoding
- *   both needs a second policy axis on the edge, and encoding the brace one
- *   means preserving a bug.
- *
- * Resolve those before replacing the removers; see plans/state-ts-cleanup.md.
  */
 
 /** One entity, addressed by the collection it lives in. */
