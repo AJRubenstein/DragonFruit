@@ -1,4 +1,5 @@
-import type { SupportCollectionName, SupportState } from './types';
+import type { SupportCollectionName, SupportEntityByCollection, SupportState } from './types';
+import type { KickstandBuildResult } from './SupportTypes/Kickstand/types';
 import {
     SUPPORT_ADD_TRUNK, SUPPORT_REMOVE_TRUNK,
     SUPPORT_ADD_BRANCH, SUPPORT_REMOVE_BRANCH,
@@ -122,27 +123,6 @@ export interface SupportTypeDescriptor {
     /** How instances link to other entities. See {@link SupportEdge}. */
     edges: readonly SupportEdge[];
     /**
-     * What a removal returns, so undo can put the entity and its cascade back.
-     *
-     * `self` is the field the removed entity arrives under -- types spell it
-     * differently (`trunk`, `leaf`, `stick`), and history payloads read it by
-     * name. `cascade` maps a collection to the field its removed members arrive
-     * under; a collection absent here is still deleted, just not reported.
-     *
-     * Declared rather than inferred because these names are a contract with the
-     * history handlers, not an implementation detail: renaming one silently
-     * breaks undo.
-     */
-    removalShape: {
-        self: string;
-        /**
-         * Field name for a collection's removed members. A plural name gets an
-         * array; a singular one gets at most one entity; a tuple names each
-         * slot positionally, for a type whose two links are not interchangeable.
-         */
-        cascade: Readonly<Partial<Record<SupportCollectionKey, string | readonly string[]>>>;
-    };
-    /**
      * Fields to gather alongside the entity when it is reported in a cascade.
      *
      * Kickstands serialise as a nested `{ kickstand, root, hostKnot }` rather
@@ -166,7 +146,6 @@ export interface SupportTypeDescriptor {
 export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'trunk',
-        removalShape: { self: 'trunk', cascade: { roots: 'root', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
         hasSettingsHex: true,
         edges: [{ field: 'rootId', to: 'roots', ownership: 'owns' }],
         ownsRoot: true,
@@ -185,7 +164,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'branch',
-        removalShape: { self: 'branch', cascade: { branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
         hasSettingsHex: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' }],
         ownsRoot: false,
@@ -204,7 +182,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'leaf',
-        removalShape: { self: 'leaf', cascade: { knots: 'knot' } },
         hasSettingsHex: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' }],
         ownsRoot: false,
@@ -223,7 +200,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'twig',
-        removalShape: { self: 'twig', cascade: { knots: 'knots', leaves: 'leaves' } },
         hasSettingsHex: false,
         edges: [],
         ownsRoot: false,
@@ -242,7 +218,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'stick',
-        removalShape: { self: 'stick', cascade: { knots: 'knots', leaves: 'leaves' } },
         hasSettingsHex: false,
         edges: [],
         ownsRoot: false,
@@ -263,7 +238,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         id: 'brace',
         // Two named knot fields rather than a list: the history payload and its
         // undo handler read them by name, and start/end are not interchangeable.
-        removalShape: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'] } },
         hasSettingsHex: false,
         edges: [
             { field: 'startKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' },
@@ -285,7 +259,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'anchor',
-        removalShape: { self: 'anchor', cascade: { knots: 'knots', leaves: 'leaves' } },
         hasSettingsHex: false,
         edges: [],
         ownsRoot: false,
@@ -311,7 +284,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
             },
         },
         id: 'kickstand',
-        removalShape: { self: 'kickstand', cascade: { roots: 'root', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches' } },
         hasSettingsHex: false,
         edges: [
             { field: 'rootId', to: 'roots', ownership: 'owns' },
@@ -390,6 +362,86 @@ export function resolveKnotDiameter(
 ): number | null {
     return KNOT_DIAMETER_RULES.get(id)?.(entity, segmentId, t) ?? null;
 }
+
+/**
+ * What each type's removal returns, so undo can rebuild what it deleted.
+ *
+ * `self` is the field the removed entity arrives under; types spell it
+ * differently and the history handlers read it by name. `cascade` maps a
+ * collection to the field its removed members arrive under -- a plural name
+ * gets an array, a singular one at most one entity, and a tuple names slots
+ * positionally for links that are not interchangeable (a brace's two ends).
+ *
+ * Declared `as const` and NOT annotated: the literal types are what
+ * {@link SupportRemovalResult} derives the per-type return shapes from, so a
+ * field renamed here changes every caller's type. Annotating this would widen
+ * the literals to `string` and silently break that link -- the same trap that
+ * makes a type-level check against SUPPORT_TYPES impossible.
+ */
+export const SUPPORT_REMOVAL_SHAPES = {
+    trunk: { self: 'trunk', cascade: { roots: 'root', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
+    branch: { self: 'branch', cascade: { branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
+    leaf: { self: 'leaf', cascade: { knots: 'knot' } },
+    twig: { self: 'twig', cascade: { knots: 'knots', leaves: 'leaves' } },
+    stick: { self: 'stick', cascade: { knots: 'knots', leaves: 'leaves' } },
+    brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'] } },
+    anchor: { self: 'anchor', cascade: { knots: 'knots', leaves: 'leaves' } },
+    kickstand: { self: 'kickstand', cascade: { roots: 'root', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches' } },
+} as const;
+
+/**
+ * The entity type living in each collection, so a removal result can be typed
+ * from the declared shape rather than restated at every call site.
+ */
+export type SupportEntityIn<K extends SupportCollectionKey> = SupportEntityByCollection[K];
+
+/**
+ * What a collection's entities look like when reported in a cascade.
+ *
+ * Kickstands travel nested, so a caller receives `KickstandBuildResult`, not
+ * `Kickstand`. Declared here beside the shapes rather than asserted at the
+ * consumer, which is where the mismatch used to surface.
+ */
+export type RemovedEntity<K extends SupportCollectionKey> =
+    K extends 'kickstands' ? KickstandBuildResult : SupportEntityIn<K>;
+
+type CascadeField<K extends SupportCollectionKey, F> =
+    F extends readonly string[]
+        ? { [S in F[number]]: RemovedEntity<K> | null }
+        : F extends `${string}s`
+            ? { [S in F & string]: RemovedEntity<K>[] }
+            : { [S in F & string]: RemovedEntity<K> | null };
+
+type CascadeResult<C> = C extends Readonly<Record<string, unknown>>
+    ? { [K in keyof C]: K extends SupportCollectionKey ? CascadeField<K, C[K]> : never }[keyof C]
+    : never;
+
+/**
+ * What `removeSupportEntity` returns for a given type, derived from
+ * {@link SUPPORT_REMOVAL_SHAPES}.
+ *
+ * Callers get precise field names and entity types without writing them out, so
+ * renaming a field in the shape map is a compile error at every consumer rather
+ * than a silent undo failure.
+ */
+export type SupportRemovalResult<T extends SupportTypeId> =
+    { [S in (typeof SUPPORT_REMOVAL_SHAPES)[T]['self']]: SupportEntityIn<(typeof SUPPORT_TYPE_COLLECTION)[T]> }
+    & UnionToIntersection<CascadeResult<(typeof SUPPORT_REMOVAL_SHAPES)[T]['cascade']>>;
+
+type UnionToIntersection<U> =
+    (U extends unknown ? (arg: U) => void : never) extends (arg: infer I) => void ? I : never;
+
+/** Type id -> the collection its entities live in, kept literal for the above. */
+export const SUPPORT_TYPE_COLLECTION = {
+    trunk: 'trunks', branch: 'branches', leaf: 'leaves', twig: 'twigs',
+    stick: 'sticks', brace: 'braces', anchor: 'anchors', kickstand: 'kickstands',
+} as const;
+
+/** Compile-time check that every support type declares a removal shape. */
+type _RemovalShapesCoverEveryType =
+    Exclude<SupportTypeId, keyof typeof SUPPORT_REMOVAL_SHAPES> extends never ? true : never;
+const _removalShapesCoverEveryType: _RemovalShapesCoverEveryType = true;
+void _removalShapesCoverEveryType;
 
 /**
  * Ids of every Roots entry some entity still claims.

@@ -2,6 +2,7 @@ import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSeg
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
+import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
@@ -158,8 +159,24 @@ function deepClone<T>(value: T): T {
     return JSON.parse(JSON.stringify(value));
 }
 
-export function removeTwig(twigId: string): { twig: Twig; knots: Knot[]; leaves: Leaf[] } | null {
-    return removeSupportEntityCascading('twig', twigId) as { twig: Twig; knots: Knot[]; leaves: Leaf[] } | null;
+/**
+ * Remove a support entity and everything the declared graph says depends on it.
+ *
+ * The single removal path. Its return type is derived from
+ * SUPPORT_REMOVAL_SHAPES, so callers get the right field names without any of
+ * them being written out a second time -- rename one in the registry and every
+ * consumer fails to compile rather than silently losing undo data.
+ */
+export function removeSupportEntity<T extends SupportTypeId>(
+    typeId: T,
+    id: string,
+): SupportRemovalResult<T> | null {
+    return removeSupportEntityCascading(typeId, id) as SupportRemovalResult<T> | null;
+}
+
+/** @deprecated Prefer `removeSupportEntity('twig', id)`. */
+export function removeTwig(twigId: string) {
+    return removeSupportEntity('twig', twigId);
 }
 
 /**
@@ -200,6 +217,7 @@ function removeSupportEntityCascading(
     id: string,
 ): Record<string, unknown> | null {
     const descriptor = getSupportTypeDescriptor(typeId);
+    const shape = SUPPORT_REMOVAL_SHAPES[typeId];
     const collection = descriptor.location.key;
     const existing = state[collection][id] as { id: string } | undefined;
     if (!existing) return null;
@@ -208,10 +226,10 @@ function removeSupportEntityCascading(
     const byCollection = groupByCollection(doomed);
 
     // Snapshot before deleting: the shape is what undo replays from.
-    const result: Record<string, unknown> = { [descriptor.removalShape.self]: deepClone(existing) };
+    const result: Record<string, unknown> = { [shape.self]: deepClone(existing) };
     const plural = (field: string) => field.endsWith('s');
 
-    for (const [key, field] of Object.entries(descriptor.removalShape.cascade)) {
+    for (const [key, field] of Object.entries(shape.cascade as Record<string, string | readonly string[]>)) {
         // The seed is included when its own collection is listed in `cascade`.
         // removeBranch reports every doomed branch, itself among them, because
         // undo replays the list wholesale; removeTrunk names the trunk
@@ -262,8 +280,9 @@ function removeSupportEntityCascading(
     return result;
 }
 
-export function removeStick(stickId: string): { stick: Stick; knots: Knot[]; leaves: Leaf[] } | null {
-    return removeSupportEntityCascading('stick', stickId) as { stick: Stick; knots: Knot[]; leaves: Leaf[] } | null;
+/** @deprecated Prefer `removeSupportEntity('stick', id)`. */
+export function removeStick(stickId: string) {
+    return removeSupportEntity('stick', stickId);
 }
 
 function resolveLowerSegmentIndex(segments: Segment[], jointId: string) {
@@ -3215,8 +3234,9 @@ export function updateAnchor(anchor: Anchor) {
     replaceSupportEntity('anchor', anchor);
 }
 
-export function removeAnchor(anchorId: string): { anchor: Anchor; knots: Knot[]; leaves: Leaf[] } | null {
-    return removeSupportEntityCascading('anchor', anchorId) as { anchor: Anchor; knots: Knot[]; leaves: Leaf[] } | null;
+/** @deprecated Prefer `removeSupportEntity('anchor', id)`. */
+export function removeAnchor(anchorId: string) {
+    return removeSupportEntity('anchor', anchorId);
 }
 
 export function updateTwig(twig: Twig) {
@@ -3331,8 +3351,9 @@ export function updateBrace(brace: Brace) {
     notify();
 }
 
-export function removeBrace(braceId: string): { brace: Brace; startKnot: Knot | null; endKnot: Knot | null } | null {
-    return removeSupportEntityCascading('brace', braceId) as { brace: Brace; startKnot: Knot | null; endKnot: Knot | null } | null;
+/** @deprecated Prefer `removeSupportEntity('brace', id)`. */
+export function removeBrace(braceId: string) {
+    return removeSupportEntity('brace', braceId);
 }
 
 export function removeKickstandCascade(kickstandId: string): KickstandRemoveResult | null {
@@ -3474,8 +3495,9 @@ export function removeKickstandCascade(kickstandId: string): KickstandRemoveResu
     return snapshots;
 }
 
-export function removeBranch(branchId: string): { branches: Branch[]; braces: Brace[]; kickstands: KickstandBuildResult[]; leaves: Leaf[]; knots: Knot[] } | null {
-    return removeSupportEntityCascading('branch', branchId) as unknown as { branches: Branch[]; braces: Brace[]; kickstands: KickstandBuildResult[]; leaves: Leaf[]; knots: Knot[] } | null;
+/** @deprecated Prefer `removeSupportEntity('branch', id)`. */
+export function removeBranch(branchId: string) {
+    return removeSupportEntity('branch', branchId);
 }
 
 export function updateBranch(branch: Branch, options?: { skipDependentGeometry?: boolean }) {
@@ -3669,12 +3691,14 @@ export function applyKnotDragFramePreview(
     notify();
 }
 
-export function removeLeaf(leafId: string): { leaf: Leaf; knot: Knot | null } | null {
-    return removeSupportEntityCascading('leaf', leafId) as { leaf: Leaf; knot: Knot | null } | null;
+/** @deprecated Prefer `removeSupportEntity('leaf', id)`. */
+export function removeLeaf(leafId: string) {
+    return removeSupportEntity('leaf', leafId);
 }
 
-export function removeTrunk(trunkId: string): { trunk: Trunk; root: Roots | null; branches: Branch[]; braces: Brace[]; kickstands: KickstandBuildResult[]; leaves: Leaf[]; knots: Knot[] } | null {
-    return removeSupportEntityCascading('trunk', trunkId) as { trunk: Trunk; root: Roots | null; branches: Branch[]; braces: Brace[]; kickstands: KickstandBuildResult[]; leaves: Leaf[]; knots: Knot[] } | null;
+/** @deprecated Prefer `removeSupportEntity('trunk', id)`. */
+export function removeTrunk(trunkId: string) {
+    return removeSupportEntity('trunk', trunkId);
 }
 
 // --- Selectors / Hooks Helpers ---
