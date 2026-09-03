@@ -113,78 +113,93 @@ export function collectCascade(state: CascadeState, seed: EntityRef[]): Set<stri
     const seedKeys = new Set<string>(seed.map(refKey));
     const segmentOwners = buildSegmentOwners(state);
 
-    /** Segment ids belonging to doomed entities, so knots on them can be found. */
-    const doomedSegmentIds = () => {
-        const ids = new Set<string>();
-        for (const [segmentId, owner] of segmentOwners) {
-            if (doomed.has(refKey(owner))) ids.add(segmentId);
-        }
-        return ids;
+    // Host -> everything hosted by it, built once. The previous fixpoint
+    // re-scanned every entity per round, which made a cascade cost
+    // O(depth x entities) -- 88ms on a 200-deep chain.
+    const dependents = new Map<string, EntityRef[]>();
+    const addDependent = (hostKey: string, ref: EntityRef) => {
+        const existing = dependents.get(hostKey);
+        if (existing) existing.push(ref);
+        else dependents.set(hostKey, [ref]);
     };
 
-    let grew = true;
-    while (grew) {
-        grew = false;
-
-        // Downward: anything hosted by a doomed entity, or sitting on its shaft.
-        const shaftIds = doomedSegmentIds();
-        for (const node of SUPPORT_GRAPH_NODES) {
-            const collection = node.key;
-            for (const entity of Object.values(state[collection])) {
-                const id = (entity as { id: string }).id;
-                const ref = { collection, id };
-                if (doomed.has(refKey(ref))) continue;
-
-                for (const link of outgoingIds(state, ref)) {
-                    if (link.ownership !== 'hostedBy') continue;
-                    const hostDoomed = link.edgeTo === 'segment'
-                        ? shaftIds.has(link.id)
-                        : doomed.has(refKey({ collection: link.edgeTo, id: link.id }));
-                    if (hostDoomed) {
-                        doomed.add(refKey(ref));
-                        grew = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Upward: a host the SEED hung from, per the edge's takeHost policy.
-        //
-        // Seed-only and inside the fixpoint: taking a host must then cascade
-        // down to everything else on it, but a brace swept up by a cascade must
-        // NOT drag its far-side knot along -- that knot belongs to a shaft
-        // nobody asked to remove. The existing removers draw the line here too.
-        for (const ref of seed) {
+    for (const node of SUPPORT_GRAPH_NODES) {
+        const collection = node.key;
+        for (const entity of Object.values(state[collection])) {
+            const ref = { collection, id: (entity as { id: string }).id };
             for (const link of outgoingIds(state, ref)) {
-                if (link.ownership !== 'hostedBy' || link.edgeTo === 'segment') continue;
-                const policy = link.takeHost ?? 'never';
-                if (policy === 'never') continue;
-
-                const target = { collection: link.edgeTo, id: link.id };
-                if (doomed.has(refKey(target))) continue;
-                if (!state[target.collection][target.id]) continue;
-
-                if (policy === 'always' || !isReferencedOutside(state, target, doomed)) {
-                    doomed.add(refKey(target));
-                    grew = true;
-                }
+                if (link.ownership !== 'hostedBy') continue;
+                // A knot names a segment; map it to the shaft that owns it.
+                const host = link.edgeTo === 'segment' ? segmentOwners.get(link.id) : { collection: link.edgeTo, id: link.id };
+                if (host) addDependent(refKey(host), ref);
             }
         }
+    }
 
-        // Upward: anything a doomed entity OWNS goes with it, however it was
+    const queue: EntityRef[] = [...seed];
+
+    /** Marks `ref` doomed and queues it, if it is not already. */
+    const claim = (ref: EntityRef): boolean => {
+        const key = refKey(ref);
+        if (doomed.has(key)) return false;
+        doomed.add(key);
+        queue.push(ref);
+        return true;
+    };
+
+    // A host kept alive by a survivor may become claimable once that survivor
+    // is itself claimed, so 'ifUnused' candidates are retried after the queue
+    // drains rather than being decided on first sight.
+    const deferredHosts: EntityRef[] = [];
+
+    while (queue.length > 0) {
+        const ref = queue.pop()!;
+
+        // Downward: anything hosted by this entity, directly or on its shaft.
+        for (const dependent of dependents.get(refKey(ref)) ?? []) claim(dependent);
+
+        // Upward: anything this entity OWNS goes with it, however it was
         // reached. A trunk's root dies whether the trunk was the seed or was
         // swept up by a cascade.
-        for (const key of Array.from(doomed)) {
-            const [collection, id] = key.split(':') as [SupportCollectionKey, string];
-            for (const link of outgoingIds(state, { collection, id })) {
-                if (link.ownership !== 'owns' || link.edgeTo === 'segment') continue;
-                const target = { collection: link.edgeTo, id: link.id };
-                if (doomed.has(refKey(target))) continue;
-                if (!state[target.collection][target.id]) continue;
-                doomed.add(refKey(target));
-                grew = true;
+        for (const link of outgoingIds(state, ref)) {
+            if (link.edgeTo === 'segment') continue;
+            const target = { collection: link.edgeTo, id: link.id };
+            if (!state[target.collection][target.id]) continue;
+
+            if (link.ownership === 'owns') {
+                claim(target);
+                continue;
             }
+
+            // Upward: a host the SEED hung from, per the edge's takeHost policy.
+            //
+            // Seed-only: taking a host must then cascade down to everything else
+            // on it, but a brace swept up by a cascade must NOT drag its
+            // far-side knot along -- that knot belongs to a shaft nobody asked
+            // to remove. The existing removers draw the line here too.
+            if (!seedKeys.has(refKey(ref))) continue;
+            const policy = link.takeHost ?? 'never';
+            if (policy === 'always') claim(target);
+            else if (policy === 'ifUnused') deferredHosts.push(target);
+        }
+
+        if (queue.length === 0 && deferredHosts.length > 0) {
+            // Re-test now the doomed set has settled; claiming one can free
+            // another, so keep going while any still resolves.
+            let claimedAny = false;
+            for (let i = deferredHosts.length - 1; i >= 0; i--) {
+                const target = deferredHosts[i];
+                if (doomed.has(refKey(target))) {
+                    deferredHosts.splice(i, 1);
+                    continue;
+                }
+                if (!isReferencedOutside(state, target, doomed)) {
+                    deferredHosts.splice(i, 1);
+                    claim(target);
+                    claimedAny = true;
+                }
+            }
+            if (!claimedAny) break;
         }
     }
 
