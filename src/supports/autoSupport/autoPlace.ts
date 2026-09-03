@@ -1,3 +1,4 @@
+import { isOriginConvertibleToTree } from '../supportTypeRegistry';
 import { footprintX, footprintY } from '@/volumeAnalysis/Islands/voxelFootprint';
 import * as THREE from 'three';
 import { quantizeToScale } from '@/utils/math';
@@ -2214,7 +2215,7 @@ export function computeAutoSupportPlan(
             // bounded by maxAttachmentsPerTrunk; anchors (near-plate) and
             // island trunks are never converted.
             const originKind = trunkOriginById.get(tid);
-            const isConvertible = draft.trunks[tid].origin !== 'anchor'
+            const isConvertible = isOriginConvertibleToTree(draft.trunks[tid].origin)
                 && (originKind === 'gridInfill'
                     || originKind === 'coverageFill'
                     || draft.trunks[tid].origin === 'standalone');

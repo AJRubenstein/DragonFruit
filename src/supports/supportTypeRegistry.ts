@@ -455,6 +455,29 @@ export function isEditableSupportType(id: string): id is SupportTypeId {
 }
 
 /**
+ * Where an auto-placed support came from, and what that implies.
+ *
+ * `convertibleToTree` gates trunk-to-tree conversion: anchors sit near the
+ * plate and island trunks carry their own geometry, so neither converts. Stated
+ * as a property because "not an anchor" was previously written out at the call
+ * site, where a fifth origin would silently have joined the convertible set.
+ */
+export const SUPPORT_ORIGINS = {
+    anchor: { convertibleToTree: false },
+    overhang: { convertibleToTree: true },
+    island: { convertibleToTree: false },
+    standalone: { convertibleToTree: true },
+} as const;
+
+export type SupportOriginId = keyof typeof SUPPORT_ORIGINS;
+
+/** Whether a trunk with this origin may be converted into a tree. */
+export function isOriginConvertibleToTree(origin: string | undefined): boolean {
+    if (!origin) return false;
+    return SUPPORT_ORIGINS[origin as SupportOriginId]?.convertibleToTree ?? false;
+}
+
+/**
  * Ids of every Roots entry some entity still claims.
  *
  * A root outlives the entity that made it unless something culls it, so callers

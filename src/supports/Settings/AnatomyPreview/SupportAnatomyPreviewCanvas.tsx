@@ -14,7 +14,7 @@ import { subscribeToAnatomyPreviewState, getAnatomyPreviewState, setAnatomyPrevi
 import { ANATOMY_CONFIG } from './AnatomyPreviewConfig';
 import { getTargetFocusState } from './AnatomyPreviewCameraLogic';
 import type { SupportKind } from '../supportKindState';
-import { getSupportKindSnapshot, subscribeToSupportKindState } from '../supportKindState';
+import { getSupportKindSnapshot, kindDrawsOwnPreview, subscribeToSupportKindState } from '../supportKindState';
 import { getRaftSettings, subscribeToRaftStore } from '../../Rafts/Crenelated/RaftState';
 import { resolveConeAxisPolicy } from '@/supports/PlacementLogic/ConeAxisPolicy';
 import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
@@ -774,12 +774,11 @@ function PreviewContent({
                 {activeKind === 'stick' && (
                     <BracePreview
                         settings={previewSettings}
-                        activeKind={activeKind}
                         previewState={previewState}
                     />
                 )}
 
-                {activeKind !== 'raft' && activeKind !== 'grid' && activeKind !== 'stick' && (
+                {!kindDrawsOwnPreview(activeKind) && (
                     <TrunkPreview
                             settings={previewSettings}
                         liveConfig={liveConfig}

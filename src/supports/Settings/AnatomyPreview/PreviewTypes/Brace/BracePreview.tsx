@@ -2,11 +2,9 @@ import React from 'react';
 import * as THREE from 'three';
 import { SupportBuilder } from '@/supports/rendering/SupportBuilder';
 import { ANATOMY_CONFIG } from '../../AnatomyPreviewConfig';
-import type { SupportKind } from '../../../supportKindState';
 
 interface BracePreviewProps {
     settings: any;
-    activeKind: SupportKind;
     previewState: any;
 }
 
@@ -148,11 +146,8 @@ function applyPatternToPair(
  */
 export function BracePreview({
     settings,
-    activeKind,
     previewState,
 }: BracePreviewProps) {
-    if (activeKind !== 'stick') return null;
-
     const autoBracing = settings.autoBracing ?? {};
     const braceDiameter = autoBracing.braceDiameterMm ?? 0.7;
     const initialPattern: string = autoBracing.initialPattern ?? 'singleDiagonal';
