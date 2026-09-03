@@ -4,7 +4,7 @@ import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPosit
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
-import { createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { EDITABLE_SUPPORT_TYPES, isEditableSupportType, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -270,7 +270,7 @@ function removeSupportEntityCascading(
 
     for (const [key, ids] of byCollection) {
         const node = SUPPORT_TYPES.find((d) => d.location.key === key);
-        if (!node?.hasSettingsHex) continue;
+        if (!node?.hasEditableSettings) continue;
         for (const entityId of ids) {
             deleteCachedSupportSettingsHex(node.id as 'trunk' | 'branch' | 'leaf', entityId);
         }
@@ -3054,7 +3054,7 @@ export function addRoot(root: Roots) {
  */
 function addSupportEntity(typeId: SupportTypeId, entity: { id: string; settingsCodeHex?: string }) {
     const descriptor = getSupportTypeDescriptor(typeId);
-    if (descriptor.hasSettingsHex && entity.settingsCodeHex) {
+    if (descriptor.hasEditableSettings && entity.settingsCodeHex) {
         setCachedSupportSettingsHex(typeId as 'trunk' | 'branch' | 'leaf', entity.id, entity.settingsCodeHex);
     }
 
@@ -4002,128 +4002,63 @@ function updateSegmentDiametersAndJoints(
 export function resolveEditableSupportTarget(selectedId: string | null, selectedCategory: SelectionCategory | undefined): EditableSupportTarget | null {
     if (!selectedId) return null;
 
-    if (selectedCategory === 'trunk' || selectedCategory === 'branch' || selectedCategory === 'leaf') {
-        return { kind: selectedCategory, id: selectedId };
+    if (selectedCategory && isEditableSupportType(selectedCategory)) {
+        return { kind: selectedCategory as EditableSupportKind, id: selectedId };
     }
+
+    /** The editable entity owning `matches`, in registry order. */
+    const findOwner = (
+        matches: (entity: Record<string, unknown>, descriptor: SupportTypeDescriptor) => boolean,
+    ): EditableSupportTarget | null => {
+        for (const descriptor of EDITABLE_SUPPORT_TYPES) {
+            for (const entity of Object.values(state[descriptor.location.key])) {
+                if (matches(entity as unknown as Record<string, unknown>, descriptor)) {
+                    return { kind: descriptor.id as EditableSupportKind, id: (entity as { id: string }).id };
+                }
+            }
+        }
+        return null;
+    };
+
+    const segmentsOf = (entity: Record<string, unknown>) => (entity.segments as Segment[] | undefined) ?? [];
+    const contactOf = (entity: Record<string, unknown>, descriptor: SupportTypeDescriptor) =>
+        descriptor.contactFields
+            .map((field) => entity[field] as { id?: string; socketJointId?: string } | undefined)
+            .filter(Boolean);
 
     if (selectedCategory === 'root') {
-        const trunk = Object.values(state.trunks).find((candidate) => candidate.rootId === selectedId);
-        if (!trunk) return null;
-        return { kind: 'trunk', id: trunk.id };
+        return findOwner((entity) => entity.rootId === selectedId);
     }
 
-    if (selectedCategory === 'segment' || selectedCategory === 'joint') {
-        for (const trunk of Object.values(state.trunks)) {
-            const owns = trunk.segments.some((segment) => {
-                if (selectedCategory === 'segment') return segment.id === selectedId;
-                return segment.topJoint?.id === selectedId || segment.bottomJoint?.id === selectedId || trunk.contactCone?.socketJointId === selectedId;
-            });
-            if (owns) return { kind: 'trunk', id: trunk.id };
-        }
+    if (selectedCategory === 'segment') {
+        return findOwner((entity) => segmentsOf(entity).some((segment) => segment.id === selectedId));
+    }
 
-        for (const branch of Object.values(state.branches)) {
-            const owns = branch.segments.some((segment) => {
-                if (selectedCategory === 'segment') return segment.id === selectedId;
-                return segment.topJoint?.id === selectedId || segment.bottomJoint?.id === selectedId || branch.contactCone?.socketJointId === selectedId;
-            });
-            if (owns) return { kind: 'branch', id: branch.id };
-        }
+    if (selectedCategory === 'joint') {
+        return findOwner((entity, descriptor) =>
+            segmentsOf(entity).some((segment) =>
+                segment.topJoint?.id === selectedId || segment.bottomJoint?.id === selectedId)
+            || contactOf(entity, descriptor).some((contact) => contact?.socketJointId === selectedId));
     }
 
     if (selectedCategory === 'contactDisk') {
-        for (const trunk of Object.values(state.trunks)) {
-            if (trunk.contactCone?.id === selectedId) {
-                return { kind: 'trunk', id: trunk.id };
-            }
-        }
-
-        for (const branch of Object.values(state.branches)) {
-            if (branch.contactCone?.id === selectedId) {
-                return { kind: 'branch', id: branch.id };
-            }
-        }
-
-        for (const leaf of Object.values(state.leaves)) {
-            if (leaf.contactCone?.id === selectedId) {
-                return { kind: 'leaf', id: leaf.id };
-            }
-        }
+        return findOwner((entity, descriptor) =>
+            contactOf(entity, descriptor).some((contact) => contact?.id === selectedId));
     }
 
     if (selectedCategory === 'knot') {
         const knot = state.knots[selectedId];
         if (!knot) return null;
 
+        // A leaf's own cone knot encodes its owner in the shaft id.
         if (knot.parentShaftId.startsWith('leafCone:')) {
             const leafId = knot.parentShaftId.slice('leafCone:'.length);
             if (state.leaves[leafId]) return { kind: 'leaf', id: leafId };
         }
 
-        for (const trunk of Object.values(state.trunks)) {
-            if (trunk.segments.some((segment) => segment.id === knot.parentShaftId)) {
-                return { kind: 'trunk', id: trunk.id };
-            }
-        }
-
-        for (const branch of Object.values(state.branches)) {
-            if (branch.segments.some((segment) => segment.id === knot.parentShaftId) || branch.parentKnotId === selectedId) {
-                return { kind: 'branch', id: branch.id };
-            }
-        }
-
-        for (const leaf of Object.values(state.leaves)) {
-            if (leaf.parentKnotId === selectedId) {
-                return { kind: 'leaf', id: leaf.id };
-            }
-        }
-    }
-
-    // Fallback: if category-based routing failed, resolve by ownership scans.
-    if (state.trunks[selectedId]) return { kind: 'trunk', id: selectedId };
-    if (state.branches[selectedId]) return { kind: 'branch', id: selectedId };
-    if (state.leaves[selectedId]) return { kind: 'leaf', id: selectedId };
-
-    for (const trunk of Object.values(state.trunks)) {
-        if (trunk.rootId === selectedId) return { kind: 'trunk', id: trunk.id };
-        if (trunk.contactCone?.id === selectedId) return { kind: 'trunk', id: trunk.id };
-        if (trunk.contactCone?.socketJointId === selectedId) return { kind: 'trunk', id: trunk.id };
-        if (trunk.segments.some((segment) => segment.id === selectedId || segment.topJoint?.id === selectedId || segment.bottomJoint?.id === selectedId)) {
-            return { kind: 'trunk', id: trunk.id };
-        }
-    }
-
-    for (const branch of Object.values(state.branches)) {
-        if (branch.contactCone?.id === selectedId) return { kind: 'branch', id: branch.id };
-        if (branch.contactCone?.socketJointId === selectedId) return { kind: 'branch', id: branch.id };
-        if (branch.segments.some((segment) => segment.id === selectedId || segment.topJoint?.id === selectedId || segment.bottomJoint?.id === selectedId)) {
-            return { kind: 'branch', id: branch.id };
-        }
-    }
-
-    for (const leaf of Object.values(state.leaves)) {
-        if (leaf.contactCone?.id === selectedId) return { kind: 'leaf', id: leaf.id };
-        if (leaf.contactCone?.socketJointId === selectedId) return { kind: 'leaf', id: leaf.id };
-        if (leaf.parentKnotId === selectedId) return { kind: 'leaf', id: leaf.id };
-    }
-
-    if (state.knots[selectedId]) {
-        const knot = state.knots[selectedId];
-        if (knot.parentShaftId.startsWith('leafCone:')) {
-            const leafId = knot.parentShaftId.slice('leafCone:'.length);
-            if (state.leaves[leafId]) return { kind: 'leaf', id: leafId };
-        }
-
-        for (const trunk of Object.values(state.trunks)) {
-            if (trunk.segments.some((segment) => segment.id === knot.parentShaftId)) {
-                return { kind: 'trunk', id: trunk.id };
-            }
-        }
-
-        for (const branch of Object.values(state.branches)) {
-            if (branch.segments.some((segment) => segment.id === knot.parentShaftId) || branch.parentKnotId === selectedId) {
-                return { kind: 'branch', id: branch.id };
-            }
-        }
+        return findOwner((entity) =>
+            segmentsOf(entity).some((segment) => segment.id === knot.parentShaftId)
+            || entity.parentKnotId === selectedId);
     }
 
     return null;
