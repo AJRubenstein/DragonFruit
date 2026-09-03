@@ -4,7 +4,7 @@ import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPosit
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
-import { EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerSettingsInference, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerSettingsInference, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -176,7 +176,14 @@ export function removeSupportEntity<T extends SupportTypeId>(
     return removeSupportEntityCascading(typeId, id) as SupportRemovalResult<T> | null;
 }
 
-/** @deprecated Prefer `removeSupportEntity('twig', id)`. */
+/*
+ * Per-type wrappers below are DEBT, not API. Each exists only because its call
+ * sites are not converted yet; they bind a type id and nothing else. Adding
+ * logic to one turns a marker into a second source of truth. Remove them as the
+ * callers move to the generic entry points -- see plans/registry-adoption-map.md.
+ */
+
+/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('twig', id)`. */
 export function removeTwig(twigId: string) {
     return removeSupportEntity('twig', twigId);
 }
@@ -282,7 +289,7 @@ function removeSupportEntityCascading(
     return result;
 }
 
-/** @deprecated Prefer `removeSupportEntity('stick', id)`. */
+/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('stick', id)`. */
 export function removeStick(stickId: string) {
     return removeSupportEntity('stick', stickId);
 }
@@ -1530,6 +1537,7 @@ export function addKickstandToState(build: KickstandBuildResult) {
     notify();
 }
 
+/** @deprecated Thin wrapper for removal; prefer `replaceSupportEntity('kickstand', entity)`. */
 export function updateKickstand(kickstand: Kickstand) {
     replaceSupportEntity('kickstand', kickstand);
 }
@@ -3058,6 +3066,7 @@ function addSupportEntity(typeId: SupportTypeId, entity: { id: string; settingsC
     notify();
 }
 
+/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('trunk', entity)`. */
 export function addTrunk(trunk: Trunk) {
     addSupportEntity('trunk', trunk);
 }
@@ -3152,10 +3161,12 @@ export function updateTrunk(trunk: Trunk, options?: { skipDependentGeometry?: bo
     notify();
 }
 
+/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('branch', entity)`. */
 export function addBranch(branch: Branch) {
     addSupportEntity('branch', branch);
 }
 
+/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('leaf', entity)`. */
 export function addLeaf(leaf: Leaf) {
     addSupportEntity('leaf', leaf);
 }
@@ -3184,18 +3195,22 @@ export function updateLeaf(leaf: Leaf) {
     notify();
 }
 
+/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('brace', entity)`. */
 export function addBrace(brace: Brace) {
     addSupportEntity('brace', brace);
 }
 
+/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('twig', entity)`. */
 export function addTwig(twig: Twig) {
     addSupportEntity('twig', twig);
 }
 
+/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('stick', entity)`. */
 export function addStick(stick: Stick) {
     addSupportEntity('stick', stick);
 }
 
+/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('anchor', entity)`. */
 export function addAnchor(anchor: Anchor) {
     addSupportEntity('anchor', anchor);
 }
@@ -3219,11 +3234,12 @@ function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): bo
     return true;
 }
 
+/** @deprecated Thin wrapper for removal; prefer `replaceSupportEntity('anchor', entity)`. */
 export function updateAnchor(anchor: Anchor) {
     replaceSupportEntity('anchor', anchor);
 }
 
-/** @deprecated Prefer `removeSupportEntity('anchor', id)`. */
+/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('anchor', id)`. */
 export function removeAnchor(anchorId: string) {
     return removeSupportEntity('anchor', anchorId);
 }
@@ -3340,7 +3356,7 @@ export function updateBrace(brace: Brace) {
     notify();
 }
 
-/** @deprecated Prefer `removeSupportEntity('brace', id)`. */
+/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('brace', id)`. */
 export function removeBrace(braceId: string) {
     return removeSupportEntity('brace', braceId);
 }
@@ -3484,7 +3500,7 @@ export function removeKickstandCascade(kickstandId: string): KickstandRemoveResu
     return snapshots;
 }
 
-/** @deprecated Prefer `removeSupportEntity('branch', id)`. */
+/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('branch', id)`. */
 export function removeBranch(branchId: string) {
     return removeSupportEntity('branch', branchId);
 }
@@ -3680,12 +3696,12 @@ export function applyKnotDragFramePreview(
     notify();
 }
 
-/** @deprecated Prefer `removeSupportEntity('leaf', id)`. */
+/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('leaf', id)`. */
 export function removeLeaf(leafId: string) {
     return removeSupportEntity('leaf', leafId);
 }
 
-/** @deprecated Prefer `removeSupportEntity('trunk', id)`. */
+/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('trunk', id)`. */
 export function removeTrunk(trunkId: string) {
     return removeSupportEntity('trunk', trunkId);
 }
@@ -3761,72 +3777,42 @@ export function getModelIdForSupportEntityId(id: string | null | undefined): str
 
     if (id.startsWith('braceSegment:')) {
         const braceId = id.slice('braceSegment:'.length);
-        return state.braces[braceId]?.modelId ?? null;
+        return (state.braces[braceId] as { modelId?: string } | undefined)?.modelId ?? null;
     }
 
-    if (state.roots[id]) return state.roots[id].modelId ?? null;
-    if (state.trunks[id]) return state.trunks[id].modelId ?? null;
-    if (state.branches[id]) return state.branches[id].modelId ?? null;
-    if (state.leaves[id]) return state.leaves[id].modelId ?? null;
-    if (state.twigs[id]) return state.twigs[id].modelId ?? null;
-    if (state.sticks[id]) return state.sticks[id].modelId ?? null;
-    if (state.braces[id]) return state.braces[id].modelId ?? null;
-    if (state.anchors[id]) return state.anchors[id].modelId ?? null;
+    const modelIdOf = (entity: unknown) => (entity as { modelId?: string } | undefined)?.modelId ?? null;
 
-    const directKickstand = state.kickstands[id];
-    if (directKickstand) return directKickstand.modelId ?? null;
-
-    for (const trunk of Object.values(state.trunks)) {
-        if (trunk.segments.some((segment) => segment.id === id || segment.topJoint?.id === id || segment.bottomJoint?.id === id)) {
-            return trunk.modelId ?? null;
-        }
+    // Direct hit on any modelId-bearing collection.
+    for (const key of MODEL_ID_COLLECTION_KEYS) {
+        const entity = state[key][id];
+        if (entity) return modelIdOf(entity);
     }
 
-    for (const branch of Object.values(state.branches)) {
-        if (branch.segments.some((segment) => segment.id === id || segment.topJoint?.id === id || segment.bottomJoint?.id === id)) {
-            return branch.modelId ?? null;
+    // A primitive on a shaft: segment, or either of its joints.
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        for (const entity of Object.values(state[descriptor.location.key])) {
+            const segments = (entity as { segments?: Segment[] }).segments ?? [];
+            if (segments.some((segment) =>
+                segment.id === id || segment.topJoint?.id === id || segment.bottomJoint?.id === id)) {
+                return modelIdOf(entity);
+            }
         }
     }
 
-    for (const twig of Object.values(state.twigs)) {
-        if (twig.segments.some((segment) => segment.id === id || segment.topJoint?.id === id || segment.bottomJoint?.id === id)) {
-            return twig.modelId ?? null;
+    // An entity pointing at the id through one of its declared edges.
+    for (const descriptor of SUPPORT_TYPES) {
+        const knotEdges = descriptor.edges.filter((edge) => edge.to === 'knots');
+        if (knotEdges.length === 0) continue;
+        for (const entity of Object.values(state[descriptor.location.key])) {
+            const fields = entity as unknown as Record<string, unknown>;
+            if (knotEdges.some((edge) => fields[edge.field] === id)) return modelIdOf(entity);
         }
     }
 
-    for (const stick of Object.values(state.sticks)) {
-        if (stick.segments.some((segment) => segment.id === id || segment.topJoint?.id === id || segment.bottomJoint?.id === id)) {
-            return stick.modelId ?? null;
-        }
-    }
-
-    for (const brace of Object.values(state.braces)) {
-        if (brace.startKnotId === id || brace.endKnotId === id) {
-            return brace.modelId ?? null;
-        }
-    }
-
-    for (const kickstand of Object.values(state.kickstands)) {
-        if (kickstand.hostKnotId === id) return kickstand.modelId ?? null;
-        if (kickstand.segments.some((segment) => segment.id === id || segment.topJoint?.id === id || segment.bottomJoint?.id === id)) {
-            return kickstand.modelId ?? null;
-        }
-    }
-
-    if (state.knots[id]) {
-        const parentShaftId = state.knots[id].parentShaftId;
-        if (parentShaftId) {
-            const byParent = getModelIdForSupportEntityId(parentShaftId);
-            if (byParent) return byParent;
-        }
-
-        for (const branch of Object.values(state.branches)) {
-            if (branch.parentKnotId === id) return branch.modelId ?? null;
-        }
-        for (const leaf of Object.values(state.leaves)) {
-            if (leaf.parentKnotId === id) return leaf.modelId ?? null;
-        }
-    }
+    // A knot resolves from its host shaft.
+    const knot = state.knots[id];
+    if (knot?.parentShaftId) return getModelIdForSupportEntityId(knot.parentShaftId);
 
     return null;
 }
