@@ -2,11 +2,12 @@ import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
-import { getSnapshot, getAnchors, getBranches, getKnotById, getLeaves, getRootById, getTrunks, getTwigs, getSticks, getBraces, setInteractionWarning, updateKnot, updateLeaf, updateBranch, getBranchById, subscribe  } from '../../state';
+import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getBranches, getKnotById, getLeaves, getRootById, getBraces, setInteractionWarning, updateKnot, updateLeaf, updateBranch, getBranchById, subscribe  } from '../../state';
 import { Anchor, Branch, Brace, Knot, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
 import { resolveSegmentEndpoints, type EndpointHosts } from './segmentEndpoints';
+import { getSupportTypeDescriptor, type SupportEdge } from '../../supportTypeRegistry';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
-import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, projectOntoSegment, shouldStayOnCurrentSegment } from './knotUtils';
+import { projectOntoSegment, shouldStayOnCurrentSegment } from './knotUtils';
 import { getSettings } from '../../Settings';
 import { solveKnotConstraint } from '../../PlacementLogic/JointConstraintSolver';
 import { ElasticChainInitialState, ElasticChainResult, solveElasticChain } from '../../PlacementLogic/ElasticChainSolver';
@@ -329,6 +330,58 @@ export function useKnotInteraction(enabled: boolean = true) {
         return { t: tClamped, clamped: Math.abs(tClamped - tDesired) > 1e-6 };
     };
 
+    /** Which ActiveHost slot each type's entity lands in. */
+    const HOST_SLOT: Record<string, keyof ActiveHost> = {
+        trunk: 'trunk', branch: 'branch', twig: 'twig',
+        stick: 'stick', anchor: 'anchor', kickstand: 'kickstand',
+    };
+
+    /**
+     * An ActiveHost for any shafted type, with the hosts its lower and upper
+     * endpoints declare. Was six near-identical branches.
+     */
+    const buildShaftHost = (typeId: SupportTypeId, entityId: string, segmentId: string): ActiveHost | null => {
+        const descriptor = getSupportTypeDescriptor(typeId);
+        if (!descriptor.hasSegments) return null;
+
+        const entity = getSupportEntity(typeId, entityId) as
+            | (Record<string, unknown> & { rootId?: string; parentKnotId?: string; hostKnotId?: string })
+            | null;
+        if (!entity) return null;
+
+        const host: ActiveHost = {
+            segmentId,
+            containerType: typeId as ActiveHost['containerType'],
+            start: new THREE.Vector3(),
+            end: new THREE.Vector3(),
+            initialTopology: {},
+        };
+        (host as unknown as Record<string, unknown>)[HOST_SLOT[typeId] ?? typeId] = entity;
+
+        // A plate-rooted type needs its root; a knot-hosted one its host knot.
+        // Kickstand needs both, and keeps them in its own named slots.
+        const root = descriptor.lower.kind === 'plateRoot' && entity.rootId
+            ? getRootById(entity.rootId) ?? undefined
+            : undefined;
+        if (descriptor.lower.kind === 'plateRoot' && !root) return null;
+
+        const knotField = descriptor.edges.find((e: SupportEdge) => e.to === 'knots' && e.ownership === 'hostedBy')?.field;
+        const hostKnot = knotField && typeof entity[knotField] === 'string'
+            ? getKnotById(entity[knotField] as string) ?? undefined
+            : undefined;
+        if (descriptor.upper.kind === 'knot' && !hostKnot) return null;
+
+        if (typeId === 'kickstand') {
+            host.kickstandRoot = root;
+            host.kickstandHostKnot = hostKnot;
+        } else {
+            host.root = root;
+            host.parentKnot = hostKnot;
+        }
+
+        return host;
+    };
+
     const findHost = (knot: Knot): ActiveHost | null => {
         let host: ActiveHost | null = null;
 
@@ -366,63 +419,13 @@ export function useKnotInteraction(enabled: boolean = true) {
         }
         const cacheEntry = segmentHostMapRef.current.get(knot.parentShaftId);
         if (cacheEntry) {
-            if (cacheEntry.containerType === 'trunk') {
-                const trunk = getTrunks().find(t => t.id === cacheEntry.entityId);
-                if (trunk) {
-                    const root = getRootById(trunk.rootId) || undefined;
-                    host = { segmentId: knot.parentShaftId, containerType: 'trunk', trunk, root, start: new THREE.Vector3(), end: new THREE.Vector3(), initialTopology: {} };
-                }
-            } else if (cacheEntry.containerType === 'branch') {
-                const branch = getBranches().find(b => b.id === cacheEntry.entityId);
-                if (branch) {
-                    const parentKnot = getKnotById(branch.parentKnotId) || undefined;
-                    host = { segmentId: knot.parentShaftId, containerType: 'branch', branch, parentKnot, start: new THREE.Vector3(), end: new THREE.Vector3(), initialTopology: {} };
-                }
-            } else if (cacheEntry.containerType === 'kickstand') {
-                const kickstandState = getSnapshot();
-                const kickstand = kickstandState.kickstands[cacheEntry.entityId];
-                if (kickstand) {
-                    const kickstandRoot = kickstandState.roots[kickstand.rootId];
-                    const kickstandHostKnot = kickstandState.knots[kickstand.hostKnotId];
-                    if (kickstandRoot && kickstandHostKnot) {
-                        host = { segmentId: knot.parentShaftId, containerType: 'kickstand', kickstand, kickstandRoot, kickstandHostKnot, start: new THREE.Vector3(), end: new THREE.Vector3(), initialTopology: {} };
-                    }
-                }
-            } else if (cacheEntry.containerType === 'twig') {
-                const twig = getTwigs().find(t => t.id === cacheEntry.entityId);
-                if (twig) {
-                    host = { segmentId: knot.parentShaftId, containerType: 'twig', twig, start: new THREE.Vector3(), end: new THREE.Vector3(), initialTopology: {} };
-                }
-            } else if (cacheEntry.containerType === 'stick') {
-                const stick = getSticks().find(s => s.id === cacheEntry.entityId);
-                if (stick) {
-                    host = { segmentId: knot.parentShaftId, containerType: 'stick', stick, start: new THREE.Vector3(), end: new THREE.Vector3(), initialTopology: {} };
-                }
-            } else if (cacheEntry.containerType === 'anchor') {
-                const anchor = getAnchors().find(a => a.id === cacheEntry.entityId);
-                if (anchor) {
-                    host = { segmentId: knot.parentShaftId, containerType: 'anchor', anchor, start: new THREE.Vector3(), end: new THREE.Vector3(), initialTopology: {} };
-                }
-            }
+            host = buildShaftHost(cacheEntry.containerType as SupportTypeId, cacheEntry.entityId, knot.parentShaftId);
         }
 
         if (!host) {
-            // Fallback: stale cache — should not happen in normal use
-            const sticks = getSticks();
-            for (const stick of sticks) {
-                const idx = stick.segments.findIndex((s) => s.id === knot.parentShaftId);
-                if (idx !== -1) {
-                    host = {
-                        segmentId: knot.parentShaftId,
-                        containerType: 'stick',
-                        stick,
-                        start: new THREE.Vector3(),
-                        end: new THREE.Vector3(),
-                        initialTopology: {}
-                    };
-                    break;
-                }
-            }
+            // Stale cache: search every shafted type rather than only sticks.
+            const owner = findShaftOwnerOfSegment(knot.parentShaftId);
+            if (owner) host = buildShaftHost(owner.typeId, owner.id, knot.parentShaftId);
         }
 
         if (host) {
@@ -509,11 +512,15 @@ export function useKnotInteraction(enabled: boolean = true) {
     const getHostCandidates = (host: ActiveHost): Array<{ segmentId: string; start: THREE.Vector3; end: THREE.Vector3; diameter: number; bezier?: { control1: Vec3; control2: Vec3 } }> => {
         const out: Array<{ segmentId: string; start: THREE.Vector3; end: THREE.Vector3; diameter: number; bezier?: { control1: Vec3; control2: Vec3 } }> = [];
 
-        if (host.containerType === 'trunk' && host.trunk && host.root) {
-            for (let idx = 0; idx < host.trunk.segments.length; idx++) {
-                const seg = host.trunk.segments[idx];
-                const endpoints = getTrunkSegmentEndpoints(host.trunk, seg, idx, host.root);
-                if (!endpoints) continue;
+        // Every shafted host offers its segments; a brace offers the one span
+        // between its end knots.
+        const shaft = shaftOf(host);
+        if (shaft) {
+            shaft.entity.segments.forEach((seg, idx) => {
+                const endpoints = resolveSegmentEndpoints(
+                    host.containerType as SupportTypeId, shaft.entity, seg, idx, shaft.hosts,
+                );
+                if (!endpoints) return;
                 out.push({
                     segmentId: seg.id,
                     start: new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z),
@@ -521,57 +528,11 @@ export function useKnotInteraction(enabled: boolean = true) {
                     diameter: seg.diameter,
                     bezier: seg.type === 'bezier' ? { control1: seg.controlPoint1, control2: seg.controlPoint2 } : undefined,
                 });
-            }
-        } else if (host.containerType === 'branch' && host.branch && host.parentKnot) {
-            for (let idx = 0; idx < host.branch.segments.length; idx++) {
-                const seg = host.branch.segments[idx];
-                const endpoints = getBranchSegmentEndpoints(host.branch, seg, idx, host.parentKnot);
-                if (!endpoints) continue;
-                out.push({
-                    segmentId: seg.id,
-                    start: new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z),
-                    end: new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z),
-                    diameter: seg.diameter,
-                    bezier: seg.type === 'bezier' ? { control1: seg.controlPoint1, control2: seg.controlPoint2 } : undefined,
-                });
-            }
-        } else if (host.containerType === 'twig' && host.twig) {
-            for (let idx = 0; idx < host.twig.segments.length; idx++) {
-                const seg = host.twig.segments[idx];
-                if (!seg.bottomJoint || !seg.topJoint) continue;
-                out.push({
-                    segmentId: seg.id,
-                    start: new THREE.Vector3(seg.bottomJoint.pos.x, seg.bottomJoint.pos.y, seg.bottomJoint.pos.z),
-                    end: new THREE.Vector3(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z),
-                    diameter: seg.diameter,
-                    bezier: seg.type === 'bezier' ? { control1: seg.controlPoint1, control2: seg.controlPoint2 } : undefined,
-                });
-            }
-        } else if (host.containerType === 'stick' && host.stick) {
-            for (let idx = 0; idx < host.stick.segments.length; idx++) {
-                const seg = host.stick.segments[idx];
-                if (!seg.bottomJoint || !seg.topJoint) continue;
-                out.push({
-                    segmentId: seg.id,
-                    start: new THREE.Vector3(seg.bottomJoint.pos.x, seg.bottomJoint.pos.y, seg.bottomJoint.pos.z),
-                    end: new THREE.Vector3(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z),
-                    diameter: seg.diameter,
-                    bezier: seg.type === 'bezier' ? { control1: seg.controlPoint1, control2: seg.controlPoint2 } : undefined,
-                });
-            }
-        } else if (host.containerType === 'anchor' && host.anchor) {
-            for (let idx = 0; idx < host.anchor.segments.length; idx++) {
-                const seg = host.anchor.segments[idx];
-                if (!seg.bottomJoint || !seg.topJoint) continue;
-                out.push({
-                    segmentId: seg.id,
-                    start: new THREE.Vector3(seg.bottomJoint.pos.x, seg.bottomJoint.pos.y, seg.bottomJoint.pos.z),
-                    end: new THREE.Vector3(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z),
-                    diameter: seg.diameter,
-                    bezier: seg.type === 'bezier' ? { control1: seg.controlPoint1, control2: seg.controlPoint2 } : undefined,
-                });
-            }
-        } else if (host.containerType === 'brace' && host.brace) {
+            });
+            return out;
+        }
+
+        if (host.containerType === 'brace' && host.brace) {
             const startKnot = getKnotById(host.brace.startKnotId);
             const endKnot = getKnotById(host.brace.endKnotId);
             if (startKnot && endKnot) {
@@ -580,34 +541,6 @@ export function useKnotInteraction(enabled: boolean = true) {
                     start: new THREE.Vector3(startKnot.pos.x, startKnot.pos.y, startKnot.pos.z),
                     end: new THREE.Vector3(endKnot.pos.x, endKnot.pos.y, endKnot.pos.z),
                     diameter: host.brace.profile.diameter,
-                });
-            }
-        } else if (host.containerType === 'kickstand' && host.kickstand && host.kickstandRoot && host.kickstandHostKnot) {
-            const rootTopZ = host.kickstandRoot.transform.pos.z + host.kickstandRoot.diskHeight + host.kickstandRoot.coneHeight;
-
-            for (let idx = 0; idx < host.kickstand.segments.length; idx++) {
-                const seg = host.kickstand.segments[idx];
-
-                let startPos: Vec3;
-                if (idx === 0) {
-                    startPos = {
-                        x: host.kickstandRoot.transform.pos.x,
-                        y: host.kickstandRoot.transform.pos.y,
-                        z: rootTopZ,
-                    };
-                } else {
-                    const prevSeg = host.kickstand.segments[idx - 1];
-                    if (!prevSeg.topJoint) continue;
-                    startPos = prevSeg.topJoint.pos;
-                }
-
-                const endPos = seg.topJoint?.pos ?? host.kickstandHostKnot.pos;
-                out.push({
-                    segmentId: seg.id,
-                    start: new THREE.Vector3(startPos.x, startPos.y, startPos.z),
-                    end: new THREE.Vector3(endPos.x, endPos.y, endPos.z),
-                    diameter: seg.diameter,
-                    bezier: seg.type === 'bezier' ? { control1: seg.controlPoint1, control2: seg.controlPoint2 } : undefined,
                 });
             }
         }
