@@ -32,6 +32,40 @@ export type SupportCollectionLocation =
     | { store: 'kickstand'; key: 'kickstands' };
 
 /**
+ * What sits at one end of a support.
+ *
+ * A support type is a choice of two endpoints plus whether a shaft joins them.
+ * The vocabulary is closed -- these six cover all eight types -- and declaring
+ * it replaces the field-name inspection that decides endpoint behaviour today
+ * (`contactFields[0]`, `field.startsWith('contactDisk')`).
+ *
+ * - `plateRoot`  -- a Roots row on the plate, via `rootId`.
+ * - `inlineRoot` -- plate geometry carried on the entity, as an anchor does.
+ * - `knot`       -- hangs from a knot on another support's shaft.
+ * - `cone`       -- a contact cone against the model.
+ * - `disk`       -- a contact disk against the model.
+ * - `none`       -- nothing declared at this end (a brace's ends are its knots).
+ */
+export type SupportEndpointKind =
+    | 'plateRoot'
+    | 'inlineRoot'
+    | 'knot'
+    | 'cone'
+    | 'disk'
+    | 'none';
+
+/**
+ * One end of a support: what kind it is, and the entity field carrying it.
+ *
+ * `field` is absent for `none`, and for an endpoint whose link is already a
+ * declared edge (`plateRoot`, `knot`) -- the edge names the field.
+ */
+export interface SupportEndpoint {
+    kind: SupportEndpointKind;
+    field?: string;
+}
+
+/**
  * One link from an entity to something it depends on, or that depends on it.
  *
  * `field` names an id-bearing property on the entity. `to` is what that id
@@ -80,8 +114,17 @@ export interface SupportTypeDescriptor {
     carriesModelId: boolean;
     /** Whether instances carry real shafts, for segment and joint walks. */
     hasSegments: boolean;
-    /** Contact primitive fields, in order: types name these differently. */
+    /**
+     * Contact primitive fields, in order: types name these differently.
+     *
+     * @deprecated Prefer `lower`/`upper`, which say which END a contact is at.
+     * Reading `contactFields[0]` picks an arbitrary end on a two-contact type.
+     */
     contactFields: readonly string[];
+    /** What sits at the bottom of this type. */
+    lower: SupportEndpoint;
+    /** What sits at the top of this type. */
+    upper: SupportEndpoint;
     /**
      * Whether every segment carries both its own joints, so a host resolves from
      * the segment alone.
@@ -149,6 +192,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: true,
         contactFields: ['contactCone'],
+        lower: { kind: 'plateRoot' },
+        upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
         label: 'Trunks',
         location: { store: 'support', key: 'trunks' },
@@ -168,6 +213,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
+        lower: { kind: 'knot' },
+        upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
         label: 'Branches',
         location: { store: 'support', key: 'branches' },
@@ -187,6 +234,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
+        lower: { kind: 'knot' },
+        upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: false,
         label: 'Leaves',
         location: { store: 'support', key: 'leaves' },
@@ -206,6 +255,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactDiskA', 'contactDiskB'],
+        lower: { kind: 'disk', field: 'contactDiskA' },
+        upper: { kind: 'disk', field: 'contactDiskB' },
         hasSegments: true,
         label: 'Twigs',
         location: { store: 'support', key: 'twigs' },
@@ -225,6 +276,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactConeA', 'contactConeB'],
+        lower: { kind: 'cone', field: 'contactConeA' },
+        upper: { kind: 'cone', field: 'contactConeB' },
         hasSegments: true,
         label: 'Sticks',
         location: { store: 'support', key: 'sticks' },
@@ -249,6 +302,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: [],
+        lower: { kind: 'knot' },
+        upper: { kind: 'knot' },
         hasSegments: false,
         label: 'Braces',
         location: { store: 'support', key: 'braces' },
@@ -268,6 +323,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: false,
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
+        lower: { kind: 'inlineRoot', field: 'rootPos' },
+        upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
         label: 'Anchors',
         location: { store: 'support', key: 'anchors' },
@@ -291,6 +348,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: [],
+        lower: { kind: 'plateRoot' },
+        upper: { kind: 'knot' },
         hasSegments: true,
         label: 'Kickstands',
         location: { store: 'support', key: 'kickstands' },
