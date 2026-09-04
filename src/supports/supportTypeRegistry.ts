@@ -115,10 +115,14 @@ export interface SupportTypeDescriptor {
     /** Whether instances carry real shafts, for segment and joint walks. */
     hasSegments: boolean;
     /**
-     * Contact primitive fields, in order: types name these differently.
+     * Contact primitive fields, lower end first.
      *
-     * @deprecated Prefer `lower`/`upper`, which say which END a contact is at.
-     * Reading `contactFields[0]` picks an arbitrary end on a two-contact type.
+     * Fine for "every contact on this type", where order does not matter. When
+     * the END or the KIND matters, use `lower`/`upper` or `contactEndpointsFor`
+     * -- reading `contactFields[0]` picks an arbitrary end on twig and stick,
+     * and the field NAME is not where the kind is declared.
+     *
+     * Kept in step with the endpoints by `__tests__/endpointVocabulary.test.ts`.
      */
     contactFields: readonly string[];
     /** What sits at the bottom of this type. */
