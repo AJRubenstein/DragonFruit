@@ -175,6 +175,31 @@ export interface SupportTypeDescriptor {
     /** How instances link to other entities. See {@link SupportEdge}. */
     edges: readonly SupportEdge[];
     /**
+     * How a shaft behaves when its geometry cannot be resolved.
+     *
+     * Only reached on malformed geometry -- a segment with no top joint, or a
+     * bezier split with no host to start from. The values differ per type
+     * today; they are declared rather than inlined so the difference is
+     * visible beside everything else the type declares.
+     */
+    shaftFallback: {
+        /**
+         * Stub length when a segment has no top joint and no contact to end at.
+         *
+         * 10 for a trunk, 5 elsewhere. The inconsistency is inherited, not
+         * chosen -- see the note in `resolveSegmentEndpoints`.
+         */
+        stubLengthMm: number;
+        /**
+         * Whether an unresolvable segment start falls back to the split point.
+         *
+         * True for the self-contained types, which have no host to ask. False
+         * for a hosted type, where an unresolved start means the caller failed
+         * to supply the host and the split should stay straight.
+         */
+        startFallsBackToSplitPoint: boolean;
+    };
+    /**
      * Whether instances have per-entity editable settings.
      *
      * Such a type is selectable in the settings sidebar and caches a
@@ -196,6 +221,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: true,
         contactFields: ['contactCone'],
+        shaftFallback: { stubLengthMm: 10, startFallsBackToSplitPoint: false },
         lower: { kind: 'plateRoot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -217,6 +243,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
+        shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -238,6 +265,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
+        shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: false,
@@ -259,6 +287,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactDiskA', 'contactDiskB'],
+        shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         lower: { kind: 'disk', field: 'contactDiskA' },
         upper: { kind: 'disk', field: 'contactDiskB' },
         hasSegments: true,
@@ -280,6 +309,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: ['contactConeA', 'contactConeB'],
+        shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         lower: { kind: 'cone', field: 'contactConeA' },
         upper: { kind: 'cone', field: 'contactConeB' },
         hasSegments: true,
@@ -306,6 +336,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: [],
+        shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         lower: { kind: 'knot' },
         upper: { kind: 'knot' },
         hasSegments: false,
@@ -327,6 +358,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: false,
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
+        shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         lower: { kind: 'inlineRoot', field: 'rootPos' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -352,6 +384,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         contactFields: [],
+        shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         lower: { kind: 'plateRoot' },
         upper: { kind: 'knot' },
         hasSegments: true,
