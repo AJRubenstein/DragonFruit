@@ -1824,14 +1824,12 @@ export function transformSupportsForModel(
             const endKnot = state.knots[brace.endKnotId];
             const startParentShaftId = startKnot?.parentShaftId;
             const endParentShaftId = endKnot?.parentShaftId;
+            // A reached brace adds its own `braceSegment:` id to
+            // touchedSegmentIds below, so nesting needs no separate check.
             const isConnectedToMovedGraph = touchedKnotIds.has(brace.startKnotId)
                 || touchedKnotIds.has(brace.endKnotId)
-                || (!!startParentShaftId && (touchedSegmentIds.has(startParentShaftId)
-                    || (startParentShaftId.startsWith('braceSegment:')
-                        && touchedBraceIds.has(startParentShaftId.slice('braceSegment:'.length)))))
-                || (!!endParentShaftId && (touchedSegmentIds.has(endParentShaftId)
-                    || (endParentShaftId.startsWith('braceSegment:')
-                        && touchedBraceIds.has(endParentShaftId.slice('braceSegment:'.length)))));
+                || (!!startParentShaftId && touchedSegmentIds.has(startParentShaftId))
+                || (!!endParentShaftId && touchedSegmentIds.has(endParentShaftId));
             const resolvedBraceModelId = brace.modelId
                 ?? resolveModelIdFromKnot(brace.startKnotId)
                 ?? resolveModelIdFromKnot(brace.endKnotId);
@@ -1905,8 +1903,8 @@ export function transformSupportsForModel(
     const nextByCollection: Partial<Record<SupportCollectionKey, Record<string, unknown>>> = {};
 
     for (const descriptor of SUPPORT_TYPES) {
-        // Trunks and kickstands are transformed above, alongside their roots.
-        if (descriptor.id === 'trunk' || descriptor.id === 'kickstand') continue;
+        // A root-owning type is transformed above, alongside the root it owns.
+        if (descriptor.ownsRoot) continue;
 
         const collection = descriptor.location.key;
         const source = state[collection] as unknown as Record<string, Record<string, unknown>>;
