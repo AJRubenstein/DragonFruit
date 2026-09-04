@@ -497,35 +497,6 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
     // never reconciled to the twig. Twig segment endpoints are the segment's two joints
     // (same contract useKnotInteraction.resolveEndpoints uses for twig hosts).
 
-    // Segments chain root top -> host knot, so endpoints come from the neighbours.
-    // Read from `snapshot`, not the live store: this runs on the state being
-    // built, so the store still holds the previous scene.
-    const kickstandSegmentEndpoints = new Map<string, { start: Vec3; end: Vec3 }>();
-    for (const kickstand of Object.values(snapshot.kickstands)) {
-        const root = snapshot.roots[kickstand.rootId];
-        const hostKnot = snapshot.knots[kickstand.hostKnotId];
-        if (!root || !hostKnot) continue;
-
-        let start: Vec3 = {
-            x: root.transform.pos.x,
-            y: root.transform.pos.y,
-            z: root.transform.pos.z + (root.diskHeight ?? 0) + (root.coneHeight ?? 0),
-        };
-        kickstand.segments.forEach((segment, index) => {
-            const isLast = index === kickstand.segments.length - 1;
-            const end = segment.topJoint?.pos ?? (isLast ? hostKnot.pos : null);
-            if (!end) return;
-            kickstandSegmentEndpoints.set(segment.id, { start: { ...start }, end: { ...end } });
-            start = end;
-        });
-    }
-
-    // Types whose segments carry both joints, so a host resolves from the segment
-    // alone. The rest need their own maps below because their endpoints come from
-    // a root, a parent knot or a neighbouring segment.
-    const SELF_CONTAINED_SHAFTS = SUPPORT_TYPES
-        .filter((descriptor) => descriptor.hasSegments && descriptor.segmentsCarryBothJoints)
-        .map((descriptor) => descriptor.location.key);
     // Segment -> its owning entity and type, so a host can be asked how it sizes
     // knots without this function knowing which types answer.
     const shaftHostBySegmentId = new Map<string, { typeId: SupportTypeId; entity: unknown }>();
@@ -539,23 +510,6 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
             }
         }
     }
-
-    const simpleShaftSegmentMap = new Map<string, Segment>();
-    for (const key of SELF_CONTAINED_SHAFTS) {
-        const record = snapshot[key] as Record<string, { segments: Segment[] }> | undefined;
-        if (!record) continue;
-        for (const entity of Object.values(record)) {
-            for (const segment of entity.segments) simpleShaftSegmentMap.set(segment.id, segment);
-        }
-    }
-    /** Endpoints for a segment that carries both joints, whatever type owns it. */
-    const getSelfContainedSegmentEndpoints = (segment: Segment): { start: Vec3; end: Vec3 } | null => {
-        if (!segment.bottomJoint || !segment.topJoint) return null;
-        return {
-            start: { ...segment.bottomJoint.pos },
-            end: { ...segment.topJoint.pos },
-        };
-    };
 
     // Track branch parent knots that currently host descendants.
     // If a branch parent knot is hosting descendants, keep it projected to ensure
@@ -1680,24 +1634,14 @@ export function transformSupportsForModel(
     const touchedKnotIds = new Set<string>();
     const touchedLeafIds = new Set<string>();
     const touchedBraceIds = new Set<string>();
-    const affectedBranchIds = new Set<string>();
-    const affectedLeafIds = new Set<string>();
-    const affectedBraceIds = new Set<string>();
-    const affectedTwigIds = new Set<string>();
-    const affectedStickIds = new Set<string>();
 
     const segmentModelIdById = new Map<string, string | undefined>();
-    for (const trunk of Object.values(state.trunks)) {
-        for (const segment of trunk.segments) segmentModelIdById.set(segment.id, trunk.modelId);
-    }
-    for (const branch of Object.values(state.branches)) {
-        for (const segment of branch.segments) segmentModelIdById.set(segment.id, branch.modelId);
-    }
-    for (const twig of Object.values(state.twigs)) {
-        for (const segment of twig.segments) segmentModelIdById.set(segment.id, twig.modelId);
-    }
-    for (const stick of Object.values(state.sticks)) {
-        for (const segment of stick.segments) segmentModelIdById.set(segment.id, stick.modelId);
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        const collection = state[descriptor.location.key] as Record<string, { modelId: string; segments?: Segment[] }>;
+        for (const entity of Object.values(collection)) {
+            for (const segment of entity.segments ?? []) segmentModelIdById.set(segment.id, entity.modelId);
+        }
     }
 
     const resolveModelIdFromParentShaft = (parentShaftId: string, visitedBraceIds?: Set<string>): string | undefined => {
@@ -1774,132 +1718,94 @@ export function transformSupportsForModel(
         nextTrunks[trunk.id] = nextTrunk;
     }
 
+    // Which entities the transform reaches. Two declared rules cover every
+    // type: a knot-hosted type follows its host knot or that knot's shaft; a
+    // self-contained one follows a joint it shares with a moved segment.
+    const affectedByType = new Map<SupportTypeId, Set<string>>(
+        SUPPORT_TYPES.map((descriptor) => [descriptor.id, new Set<string>()]),
+    );
+
+    /** Marks a shaft's segments and joints as moved, if the type propagates. */
+    const claimShaft = (descriptor: SupportTypeDescriptor, entity: Record<string, unknown>) => {
+        if (descriptor.hasSegments && descriptor.transformPropagatesToShaft) {
+            for (const segment of (entity.segments ?? []) as Segment[]) {
+                touchedSegmentIds.add(segment.id);
+                if (segment.bottomJoint?.id) touchedJointIds.add(segment.bottomJoint.id);
+                if (segment.topJoint?.id) touchedJointIds.add(segment.topJoint.id);
+            }
+        }
+        for (const { field } of contactEndpointsFor(descriptor.id)) {
+            const contact = entity[field] as { socketJointId?: string } | undefined;
+            if (contact?.socketJointId) touchedJointIds.add(contact.socketJointId);
+        }
+    };
+
     let expandedGraph = true;
     while (expandedGraph) {
         expandedGraph = false;
 
-        for (const branch of Object.values(state.branches)) {
-            if (affectedBranchIds.has(branch.id)) continue;
+        for (const descriptor of SUPPORT_TYPES) {
+            // Trunks are seeded above; roots carry them.
+            if (descriptor.ownsRoot) continue;
 
-            const parentKnot = state.knots[branch.parentKnotId];
-            const isConnectedToMovedGraph = touchedKnotIds.has(branch.parentKnotId)
-                || (!!parentKnot && touchedSegmentIds.has(parentKnot.parentShaftId));
-            const resolvedBranchModelId = branch.modelId ?? resolveModelIdFromKnot(branch.parentKnotId);
+            const affected = affectedByType.get(descriptor.id)!;
+            const knotFields = descriptor.edges
+                .filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy')
+                .map((edge) => edge.field);
 
-            if (resolvedBranchModelId !== modelId && !isConnectedToMovedGraph) continue;
+            const collection = state[descriptor.location.key] as unknown as Record<string, Record<string, unknown>>;
+            for (const entity of Object.values(collection)) {
+                const id = entity.id as string;
+                if (affected.has(id)) continue;
 
-            affectedBranchIds.add(branch.id);
-            touchedKnotIds.add(branch.parentKnotId);
-            branch.segments.forEach((segment) => touchedSegmentIds.add(segment.id));
-            branch.segments.forEach((segment) => {
-                if (segment.bottomJoint?.id) touchedJointIds.add(segment.bottomJoint.id);
-                if (segment.topJoint?.id) touchedJointIds.add(segment.topJoint.id);
-            });
-            if (branch.contactCone?.socketJointId) {
-                touchedJointIds.add(branch.contactCone.socketJointId);
+                let connected = false;
+
+                // Knot-hosted: the host knot, or the shaft that knot sits on.
+                for (const field of knotFields) {
+                    const knotId = entity[field];
+                    if (typeof knotId !== 'string') continue;
+                    if (touchedKnotIds.has(knotId)) { connected = true; break; }
+                    const hostShaftId = state.knots[knotId]?.parentShaftId;
+                    if (hostShaftId && touchedSegmentIds.has(hostShaftId)) { connected = true; break; }
+                }
+
+                // Self-contained: a joint shared with something already moved.
+                if (!connected && knotFields.length === 0 && descriptor.hasSegments) {
+                    connected = ((entity.segments ?? []) as Segment[]).some((segment) => (
+                        (!!segment.bottomJoint?.id && touchedJointIds.has(segment.bottomJoint.id))
+                        || (!!segment.topJoint?.id && touchedJointIds.has(segment.topJoint.id))
+                    ));
+                }
+
+                const ownModelId = (entity.modelId as string | undefined)
+                    ?? knotFields.reduce<string | undefined>(
+                        (found, field) => found ?? (typeof entity[field] === 'string'
+                            ? resolveModelIdFromKnot(entity[field] as string)
+                            : undefined),
+                        undefined,
+                    );
+
+                if (ownModelId !== modelId && !connected) continue;
+
+                affected.add(id);
+                for (const field of knotFields) {
+                    const knotId = entity[field];
+                    if (typeof knotId === 'string') touchedKnotIds.add(knotId);
+                }
+                if (descriptor.id === 'leaf') touchedLeafIds.add(id);
+                if (descriptor.id === 'brace') {
+                    touchedBraceIds.add(id);
+                    touchedSegmentIds.add(`braceSegment:${id}`);
+                }
+                claimShaft(descriptor, entity);
+                expandedGraph = true;
             }
-            expandedGraph = true;
-        }
-
-        for (const leaf of Object.values(state.leaves)) {
-            if (affectedLeafIds.has(leaf.id)) continue;
-
-            const parentKnot = state.knots[leaf.parentKnotId];
-            const isConnectedToMovedGraph = touchedKnotIds.has(leaf.parentKnotId)
-                || (!!parentKnot && touchedSegmentIds.has(parentKnot.parentShaftId));
-            const resolvedLeafModelId = leaf.modelId ?? resolveModelIdFromKnot(leaf.parentKnotId);
-
-            if (resolvedLeafModelId !== modelId && !isConnectedToMovedGraph) continue;
-
-            affectedLeafIds.add(leaf.id);
-            touchedKnotIds.add(leaf.parentKnotId);
-            touchedLeafIds.add(leaf.id);
-            expandedGraph = true;
-        }
-
-        for (const brace of Object.values(state.braces)) {
-            if (affectedBraceIds.has(brace.id)) continue;
-
-            const startKnot = state.knots[brace.startKnotId];
-            const endKnot = state.knots[brace.endKnotId];
-            const startParentShaftId = startKnot?.parentShaftId;
-            const endParentShaftId = endKnot?.parentShaftId;
-            // A reached brace adds its own `braceSegment:` id to
-            // touchedSegmentIds below, so nesting needs no separate check.
-            const isConnectedToMovedGraph = touchedKnotIds.has(brace.startKnotId)
-                || touchedKnotIds.has(brace.endKnotId)
-                || (!!startParentShaftId && touchedSegmentIds.has(startParentShaftId))
-                || (!!endParentShaftId && touchedSegmentIds.has(endParentShaftId));
-            const resolvedBraceModelId = brace.modelId
-                ?? resolveModelIdFromKnot(brace.startKnotId)
-                ?? resolveModelIdFromKnot(brace.endKnotId);
-
-            if (resolvedBraceModelId !== modelId && !isConnectedToMovedGraph) continue;
-
-            affectedBraceIds.add(brace.id);
-            touchedKnotIds.add(brace.startKnotId);
-            touchedKnotIds.add(brace.endKnotId);
-            touchedBraceIds.add(brace.id);
-            touchedSegmentIds.add(`braceSegment:${brace.id}`);
-            expandedGraph = true;
-        }
-
-        for (const twig of Object.values(state.twigs)) {
-            if (affectedTwigIds.has(twig.id)) continue;
-
-            const isConnectedToMovedGraph = twig.segments.some((segment) => {
-                const bottomJointId = segment.bottomJoint?.id;
-                const topJointId = segment.topJoint?.id;
-                return (!!bottomJointId && touchedJointIds.has(bottomJointId))
-                    || (!!topJointId && touchedJointIds.has(topJointId));
-            });
-
-            if (twig.modelId !== modelId && !isConnectedToMovedGraph) continue;
-
-            affectedTwigIds.add(twig.id);
-            twig.segments.forEach((segment) => touchedSegmentIds.add(segment.id));
-            twig.segments.forEach((segment) => {
-                if (segment.bottomJoint?.id) touchedJointIds.add(segment.bottomJoint.id);
-                if (segment.topJoint?.id) touchedJointIds.add(segment.topJoint.id);
-            });
-            expandedGraph = true;
-        }
-
-        for (const stick of Object.values(state.sticks)) {
-            if (affectedStickIds.has(stick.id)) continue;
-
-            const isConnectedToMovedGraph = stick.segments.some((segment) => {
-                const bottomJointId = segment.bottomJoint?.id;
-                const topJointId = segment.topJoint?.id;
-                return (!!bottomJointId && touchedJointIds.has(bottomJointId))
-                    || (!!topJointId && touchedJointIds.has(topJointId));
-            });
-
-            if (stick.modelId !== modelId && !isConnectedToMovedGraph) continue;
-
-            affectedStickIds.add(stick.id);
-            stick.segments.forEach((segment) => touchedSegmentIds.add(segment.id));
-            stick.segments.forEach((segment) => {
-                if (segment.bottomJoint?.id) touchedJointIds.add(segment.bottomJoint.id);
-                if (segment.topJoint?.id) touchedJointIds.add(segment.topJoint.id);
-            });
-            if (stick.contactConeA?.socketJointId) touchedJointIds.add(stick.contactConeA.socketJointId);
-            if (stick.contactConeB?.socketJointId) touchedJointIds.add(stick.contactConeB.socketJointId);
-            expandedGraph = true;
         }
     }
 
     // Apply the transform to every affected entity. What moves is declared:
     // segments and contactFields cover six of the eight types, and
     // SUPPORT_TRANSFORM_EXTRAS names the brace curve and the anchor's own root.
-    const affectedByType: Partial<Record<SupportTypeId, Set<string>>> = {
-        branch: affectedBranchIds,
-        leaf: affectedLeafIds,
-        twig: affectedTwigIds,
-        stick: affectedStickIds,
-        brace: affectedBraceIds,
-    };
-
     const nextByCollection: Partial<Record<SupportCollectionKey, Record<string, unknown>>> = {};
 
     for (const descriptor of SUPPORT_TYPES) {
@@ -1908,11 +1814,7 @@ export function transformSupportsForModel(
 
         const collection = descriptor.location.key;
         const source = state[collection] as unknown as Record<string, Record<string, unknown>>;
-        // An anchor has no affected-set: it moves purely on its own modelId.
-        const ids = affectedByType[descriptor.id]
-            ?? Object.values(source)
-                .filter((entity) => entity.modelId === modelId)
-                .map((entity) => entity.id as string);
+        const ids = affectedByType.get(descriptor.id) ?? new Set<string>();
 
         for (const id of ids) {
             const entity = source[id];

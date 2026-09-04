@@ -232,3 +232,28 @@ test('knot-hosted and joint-shared are the two reachability rules', () => {
         .map((d) => d.id).sort();
     assert.deepEqual(jointShared, ['anchor', 'stick', 'trunk', 'twig']);
 });
+
+test('a knot on any shafted type resolves its model', () => {
+    // The segment -> modelId index covered four of the six shafted types, so a
+    // leaf hanging off an anchor or kickstand knot stayed behind when its
+    // model moved.
+    load({
+        ...base(),
+        anchors: [{
+            id: 'anchor-a', modelId: 'model-a',
+            rootPos: { x: 0, y: 0, z: 0 }, rootBaseDiameter: 2, rootTopDiameter: 1, rootHeight: 1,
+            joint: { id: 'anchor-a-joint', pos: { x: 0, y: 0, z: 1 }, diameter: 1 },
+            segments: [seg('seg-aa', 0)], contactCone: cone('cone-aa', 8),
+        }],
+        knots: [{ id: 'knot-on-anchor', parentShaftId: 'seg-aa', t: 0.5, pos: { x: 0, y: 0, z: 3 }, diameter: 1 }],
+        leaves: [{ id: 'leaf-a', parentKnotId: 'knot-on-anchor', contactCone: cone('cone-la', 4) }],
+    });
+
+    const before = getSnapshot().leaves['leaf-a'].contactCone.pos.x;
+    transformSupportsForModel('model-a', transform(0), transform(10));
+    assert.equal(
+        getSnapshot().leaves['leaf-a'].contactCone.pos.x,
+        before + 10,
+        'a leaf on an anchor-hosted knot moves with its model',
+    );
+});
