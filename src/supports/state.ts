@@ -3537,6 +3537,42 @@ export function getModelIdForSupportEntityId(id: string | null | undefined): str
     return null;
 }
 
+/** One entity of any type, by id. */
+export function getSupportEntity(typeId: SupportTypeId, id: string) {
+    const { key } = getSupportTypeDescriptor(typeId).location;
+    return (state[key] as Record<string, unknown>)[id] ?? null;
+}
+
+/** Where a joint sits within a segment list, or null if it is not there. */
+export function jointPosIn(segments: readonly Segment[], jointId: string): Vec3 | null {
+    for (const segment of segments) {
+        if (segment.topJoint?.id === jointId) return segment.topJoint.pos;
+        if (segment.bottomJoint?.id === jointId) return segment.bottomJoint.pos;
+    }
+    return null;
+}
+
+/**
+ * Which support owns a joint, searching every shafted type.
+ *
+ * The joint gizmo asked this five times over, once per type it knew about,
+ * which is why an anchor's joints were never draggable.
+ */
+export function findShaftOwnerOfJoint(
+    jointId: string,
+): { typeId: SupportTypeId; id: string; pos: Vec3 } | null {
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        const collection = state[descriptor.location.key] as Record<string, { id: string; segments?: Segment[] }>;
+        for (const entity of Object.values(collection)) {
+            const pos = jointPosIn(entity.segments ?? [], jointId);
+            if (pos) return { typeId: descriptor.id, id: entity.id, pos };
+        }
+    }
+    return null;
+}
+
+/** @deprecated for removal — call getSupportEntity('trunk', id). */
 export function getTrunkById(trunkId: string) {
     return state.trunks[trunkId] ?? null;
 }
@@ -3545,14 +3581,17 @@ export function getRootById(rootId: string) {
     return state.roots[rootId] ?? null;
 }
 
+/** @deprecated for removal -- call getSupportEntity. */
 export function getBranchById(branchId: string) {
     return state.branches[branchId] ?? null;
 }
 
+/** @deprecated for removal -- call getSupportEntity. */
 export function getTwigById(twigId: string) {
     return state.twigs[twigId] ?? null;
 }
 
+/** @deprecated for removal -- call getSupportEntity. */
 export function getStickById(stickId: string) {
     return state.sticks[stickId] ?? null;
 }
