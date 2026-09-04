@@ -142,9 +142,26 @@ test('the signatures are the ones the plan records', () => {
 test('a two-contact type declares its ends in order', () => {
     // contactEnd() takes contactFields[0], which picks an arbitrary end on twig
     // and stick. The A/B suffixes must map to lower/upper respectively.
+    //
+    // Both builders already guarantee this, by different means: stickBuilder
+    // sorts its ends on z, twigBuilder makes A the segment bottomJoint and B
+    // the topJoint. Neither says so where a reader of the type would look.
     for (const id of ['twig', 'stick']) {
         const descriptor = byId(id);
         assert.match(descriptor.lower.field ?? '', /A$/, `${id} lower should be the A contact`);
         assert.match(descriptor.upper.field ?? '', /B$/, `${id} upper should be the B contact`);
+    }
+});
+
+test('a contact at both ends is a contact at both ends', () => {
+    // Twig and stick are a shaft with a contact at each end -- never one.
+    // Their interfaces make both non-optional, unlike contactCone? elsewhere.
+    for (const id of ['twig', 'stick']) {
+        const descriptor = byId(id);
+        assert.equal(descriptor.hasSegments, true, `${id} has a shaft`);
+        assert.equal(descriptor.contactFields.length, 2, `${id} has two contacts`);
+        for (const end of ends(descriptor)) {
+            assert.ok(end.kind === 'cone' || end.kind === 'disk', `${id} ${end.kind} should be a contact`);
+        }
     }
 });
