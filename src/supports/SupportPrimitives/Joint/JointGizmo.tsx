@@ -1,13 +1,13 @@
 import React, { useSyncExternalStore, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { ScreenSpaceGizmo } from '@/components/gizmo/ScreenSpaceGizmo';
-import { subscribe, getSnapshot, updateTrunk, updateBranch, updateTwig, updateStick, getTrunkById, getBranchById, getTwigById, getStickById } from '../../state';
+import { subscribe, getSnapshot, updateTwig, updateStick, findShaftOwnerOfJoint, getSupportEntity } from '../../state';
 import * as THREE from 'three';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_UPDATE_TRUNK } from '../../history/actionTypes';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { useCurveInteractionState } from '../../Curves/curveInteractionState';
 import { calculateDiskThickness } from '../ContactDisk/contactDiskUtils';
-import { Trunk, Branch, Twig, Stick, Joint } from '../../types';
+import { Trunk, Branch, Twig, Stick, Joint, Segment } from '../../types';
 import { getKickstandSnapshot, updateKickstand } from '../../SupportTypes/Kickstand/kickstandStore';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { useJointDragPosition } from '../../interaction/jointDragPosition';
@@ -22,7 +22,6 @@ export function JointGizmo() {
     const initialBranchRef = useRef<Branch | null>(null);
     const initialEditSnapshotRef = useRef<ReturnType<typeof captureSupportEditSnapshot> | null>(null);
     const dragPosRef = useRef<THREE.Vector3 | null>(null);
-    const selectedJointParentRef = useRef<{ selectedId: string; kind: 'trunk' | 'branch' | 'twig' | 'stick' | 'kickstand'; supportId: string } | null>(null);
     const { isActive: isCurveMode } = useCurveInteractionState();
     const liveTrunkPreviewRef = useRef<Trunk | null>(null);
     const liveBranchPreviewRef = useRef<Branch | null>(null);
@@ -199,133 +198,28 @@ export function JointGizmo() {
     }, []);
 
     // Helper to find joint and parent
+    // Helper to find joint and parent
     const findJointAndParent = useCallback((): { joint: Joint, trunk?: Trunk, branch?: Branch, twig?: Twig, stick?: Stick, kickstand?: Kickstand } | null => {
         if (!selectedId) return null;
 
-        const findJointInSegments = (segments: Array<{ topJoint?: Joint; bottomJoint?: Joint }>) => {
-            for (const seg of segments) {
-                if (seg.topJoint?.id === selectedId) return seg.topJoint;
-                if (seg.bottomJoint?.id === selectedId) return seg.bottomJoint;
-            }
-            return null;
-        };
+        // One lookup over every shafted type. The chain this replaces ended in
+        // a bare else for kickstand and never searched anchors.
+        const owner = findShaftOwnerOfJoint(selectedId);
+        if (!owner) return null;
 
-        const cached = selectedJointParentRef.current;
-        if (cached && cached.selectedId === selectedId) {
-            if (cached.kind === 'trunk') {
-                const trunk = getTrunkById(cached.supportId);
-                if (trunk) {
-                    const joint = findJointInSegments(trunk.segments as any[]);
-                    if (joint) return { joint, trunk };
-                }
-            } else if (cached.kind === 'branch') {
-                const branch = getBranchById(cached.supportId);
-                if (branch) {
-                    const joint = findJointInSegments(branch.segments as any[]);
-                    if (joint) return { joint, branch };
-                }
-            } else if (cached.kind === 'twig') {
-                const twig = getTwigById(cached.supportId);
-                if (twig) {
-                    const joint = findJointInSegments(twig.segments as any[]);
-                    if (joint) return { joint, twig };
-                }
-            } else if (cached.kind === 'stick') {
-                const stick = getStickById(cached.supportId);
-                if (stick) {
-                    const joint = findJointInSegments(stick.segments as any[]);
-                    if (joint) return { joint, stick };
-                }
-            } else {
-                const kickstand = state.kickstands[cached.supportId];
-                if (kickstand) {
-                    const joint = findJointInSegments(kickstand.segments as any[]);
-                    if (joint) return { joint, kickstand };
-                }
-            }
+        const entity = getSupportEntity(owner.typeId, owner.id) as { segments?: Segment[] } | null;
+        if (!entity) return null;
 
-            selectedJointParentRef.current = null;
+        let joint: Joint | null = null;
+        for (const seg of entity.segments ?? []) {
+            if (seg.topJoint?.id === selectedId) { joint = seg.topJoint; break; }
+            if (seg.bottomJoint?.id === selectedId) { joint = seg.bottomJoint; break; }
         }
-        
-        // Search trunks first
-        const trunks = Object.values(state.trunks);
-        for (const trunk of trunks) {
-            for (const seg of trunk.segments) {
-                if (seg.topJoint?.id === selectedId) {
-                    selectedJointParentRef.current = { selectedId, kind: 'trunk', supportId: trunk.id };
-                    return { joint: seg.topJoint, trunk };
-                }
-                if (seg.bottomJoint?.id === selectedId) {
-                    selectedJointParentRef.current = { selectedId, kind: 'trunk', supportId: trunk.id };
-                    return { joint: seg.bottomJoint, trunk };
-                }
-            }
-        }
-        
-        // Search branches
-        const branches = Object.values(state.branches);
-        for (const branch of branches) {
-            for (const seg of branch.segments) {
-                if (seg.topJoint?.id === selectedId) {
-                    selectedJointParentRef.current = { selectedId, kind: 'branch', supportId: branch.id };
-                    return { joint: seg.topJoint, branch };
-                }
-                if (seg.bottomJoint?.id === selectedId) {
-                    selectedJointParentRef.current = { selectedId, kind: 'branch', supportId: branch.id };
-                    return { joint: seg.bottomJoint, branch };
-                }
-            }
-        }
+        if (!joint) return null;
 
-        // Search twigs
-        const twigs = Object.values(state.twigs);
-        for (const twig of twigs) {
-            for (const seg of twig.segments) {
-                if (seg.topJoint?.id === selectedId) {
-                    selectedJointParentRef.current = { selectedId, kind: 'twig', supportId: twig.id };
-                    return { joint: seg.topJoint, twig };
-                }
-                if (seg.bottomJoint?.id === selectedId) {
-                    selectedJointParentRef.current = { selectedId, kind: 'twig', supportId: twig.id };
-                    return { joint: seg.bottomJoint, twig };
-                }
-            }
-        }
-
-        // Search sticks
-        const sticks = Object.values(state.sticks);
-        for (const stick of sticks) {
-            for (const seg of stick.segments) {
-                if (seg.topJoint?.id === selectedId) {
-                    selectedJointParentRef.current = { selectedId, kind: 'stick', supportId: stick.id };
-                    return { joint: seg.topJoint, stick };
-                }
-                if (seg.bottomJoint?.id === selectedId) {
-                    selectedJointParentRef.current = { selectedId, kind: 'stick', supportId: stick.id };
-                    return { joint: seg.bottomJoint, stick };
-                }
-            }
-        }
-
-        // Search kickstands
-        const kickstands = Object.values(state.kickstands);
-        for (const kickstand of kickstands) {
-            for (const seg of kickstand.segments) {
-                if (seg.topJoint?.id === selectedId) {
-                    selectedJointParentRef.current = { selectedId, kind: 'kickstand', supportId: kickstand.id };
-                    return { joint: seg.topJoint, kickstand };
-                }
-                if (seg.bottomJoint?.id === selectedId) {
-                    selectedJointParentRef.current = { selectedId, kind: 'kickstand', supportId: kickstand.id };
-                    return { joint: seg.bottomJoint, kickstand };
-                }
-            }
-        }
-
-        selectedJointParentRef.current = null;
-        
-        return null;
-    }, [selectedId, state.trunks, state.branches, state.twigs, state.sticks, state.kickstands]);
+        // The caller still wants the entity in a per-type slot.
+        return { joint, [owner.typeId]: entity } as ReturnType<typeof findJointAndParent>;
+    }, [selectedId, state.trunks, state.branches, state.twigs, state.sticks, state.anchors, state.kickstands]);
 
     useEffect(() => {
         if (!jointDragPosition) return;
@@ -576,7 +470,7 @@ export function JointGizmo() {
         pendingDeltaRef.current.set(0, 0, 0);
 
         if (initialTrunkRef.current && trunk) {
-            const committedTrunk = liveTrunkPreviewRef.current ?? getTrunkById(trunk.id);
+            const committedTrunk = liveTrunkPreviewRef.current ?? getSupportEntity('trunk', trunk.id) as Trunk | null;
             if (committedTrunk) {
                 const appliedTrunk = commitJointDragSupport('trunk', committedTrunk);
                 const appliedTrunkSnapshot = cloneObj(appliedTrunk);
@@ -596,20 +490,20 @@ export function JointGizmo() {
 
         if (initialEditSnapshotRef.current) {
             if (branch) {
-                const committedBranch = liveBranchPreviewRef.current ?? getBranchById(branch.id);
+                const committedBranch = liveBranchPreviewRef.current ?? getSupportEntity('branch', branch.id) as Branch | null;
                 if (committedBranch) {
                     commitJointDragSupport('branch', committedBranch as Branch);
                 }
                 pushSupportEditHistory('Move branch joint', initialEditSnapshotRef.current, captureSupportEditSnapshot());
             } else if (twig) {
-                const committedTwig = liveTwigPreviewRef.current ?? getTwigById(twig.id);
+                const committedTwig = liveTwigPreviewRef.current ?? getSupportEntity('twig', twig.id) as Twig | null;
                 if (committedTwig) {
                     updateTwig(committedTwig);
                 }
                 clearSupportDragPreview('twig', twig.id);
                 pushSupportEditHistory('Move twig joint', initialEditSnapshotRef.current, captureSupportEditSnapshot());
             } else if (stick) {
-                const committedStick = liveStickPreviewRef.current ?? getStickById(stick.id);
+                const committedStick = liveStickPreviewRef.current ?? getSupportEntity('stick', stick.id) as Stick | null;
                 if (committedStick) {
                     updateStick(committedStick);
                 }
