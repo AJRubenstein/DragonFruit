@@ -4,7 +4,7 @@ import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPosit
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
-import { MODEL_ID_COLLECTION_KEYS, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -1957,11 +1957,11 @@ export function transformSupportsForModel(
                 next.segments = segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix));
             }
 
-            for (const field of descriptor.contactFields) {
+            for (const { kind, field } of contactEndpointsFor(descriptor.id)) {
                 const contact = entity[field] as { socketJointId?: string } | undefined;
                 if (!contact) continue;
                 if (contact.socketJointId) touchedJointIds.add(contact.socketJointId);
-                next[field] = field.startsWith('contactDisk')
+                next[field] = kind === 'disk'
                     ? transformContactDisk(contact as never, deltaMatrix, normalMatrix)
                     : transformContactCone(contact as never, deltaMatrix, normalMatrix);
             }
