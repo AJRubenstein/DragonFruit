@@ -142,6 +142,27 @@ test('the declared upper endpoint is what a shaft ends at', () => {
     assert.notEqual(noContact?.end.z, withCone?.end.z);
 });
 
+test('a knot upper ends the shaft at the knot it braces', () => {
+    // A kickstand is plateRoot->knot: with no top joint it ends at its host
+    // knot, not at a contact or the stub. useKnotInteraction did this by hand.
+    const segments = [segment('s0', 2, null)];
+    const kickstand = {
+        id: 'ks-a', modelId: 'model-a', rootId: 'root-a',
+        hostKnotId: 'knot-a', hostSegmentId: 'seg-x', hostMinT: 0.2, segments,
+    } as unknown as Parameters<typeof resolveSegmentEndpoints>[1];
+
+    const resolved = resolveSegmentEndpoints('kickstand', kickstand, segments[0], 0, {
+        root: root(), hostKnot,
+    });
+    assert.deepEqual(resolved?.end, { x: 5, y: 6, z: 7 }, 'the end is the host knot');
+
+    assert.equal(
+        resolveSegmentEndpoints('kickstand', kickstand, segments[0], 0, { root: root() }),
+        null,
+        'with no host knot there is no end to resolve',
+    );
+});
+
 test('a missing host returns null, as the originals did', () => {
     const segments = [segment('s0', null, 6)];
     const trunk = trunkWith(segments, cone(12));
