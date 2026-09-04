@@ -3543,6 +3543,22 @@ export function getSupportEntity(typeId: SupportTypeId, id: string) {
     return (state[key] as Record<string, unknown>)[id] ?? null;
 }
 
+/** Which support owns a shaft segment, searching every shafted type. */
+export function findShaftOwnerOfSegment(
+    segmentId: string,
+): { typeId: SupportTypeId; id: string } | null {
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        const collection = state[descriptor.location.key] as Record<string, { id: string; segments?: Segment[] }>;
+        for (const entity of Object.values(collection)) {
+            if (entity.segments?.some((segment) => segment.id === segmentId)) {
+                return { typeId: descriptor.id, id: entity.id };
+            }
+        }
+    }
+    return null;
+}
+
 /** Where a joint sits within a segment list, or null if it is not there. */
 export function jointPosIn(segments: readonly Segment[], jointId: string): Vec3 | null {
     for (const segment of segments) {

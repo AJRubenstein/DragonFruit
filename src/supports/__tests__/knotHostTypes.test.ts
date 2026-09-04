@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { SUPPORT_TYPES } from '../supportTypeRegistry';
+import { addSupportEntity, findShaftOwnerOfSegment, resetStore } from '../state';
 
 /**
  * Knot hosts are derived, not listed.
@@ -33,16 +34,32 @@ test('the knot primitives declare no hand-written type unions', () => {
 test('every type with segments can host a dragged knot', () => {
     // Anchors were absent from the segment->host map, so a knot on an anchor
     // shaft could not be dragged while every other shafted type's could.
-    const source = read('useKnotInteraction.ts');
-    const constructed = new Set(
-        [...source.matchAll(/containerType: '([a-zA-Z]+)'/g)].map((m) => m[1]),
-    );
+    //
+    // This used to grep for `containerType: '<id>'` literals, which stopped
+    // working once the host was built generically -- the literals going away
+    // is the fix, not a regression. Ask the lookup instead.
+    resetStore();
+    const shafted = SUPPORT_TYPES.filter((d) => d.hasSegments);
 
-    for (const descriptor of SUPPORT_TYPES) {
-        if (!descriptor.hasSegments) continue;
-        assert.ok(
-            constructed.has(descriptor.id),
-            `${descriptor.id} declares segments but is never built as a knot host`,
+    for (const descriptor of shafted) {
+        addSupportEntity(descriptor.id, {
+            id: `${descriptor.id}-a`, modelId: 'model-a',
+            segments: [{
+                id: `seg-${descriptor.id}`, diameter: 1,
+                bottomJoint: { id: `seg-${descriptor.id}-bj`, pos: { x: 0, y: 0, z: 0 }, diameter: 1 },
+                topJoint: { id: `seg-${descriptor.id}-tj`, pos: { x: 0, y: 0, z: 4 }, diameter: 1 },
+            }],
+            rootId: `${descriptor.id}-root`, parentKnotId: `${descriptor.id}-knot`,
+            hostKnotId: `${descriptor.id}-knot`, hostSegmentId: 'seg-host', hostMinT: 0.2,
+        } as never);
+    }
+
+    for (const descriptor of shafted) {
+        const owner = findShaftOwnerOfSegment(`seg-${descriptor.id}`);
+        assert.equal(
+            owner?.typeId,
+            descriptor.id,
+            `${descriptor.id} declares segments but its shaft resolves to no host`,
         );
     }
 });
