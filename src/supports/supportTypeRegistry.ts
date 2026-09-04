@@ -556,6 +556,26 @@ export function collectionsMissingRestore(): SupportCollectionKey[] {
  * apply phase: a brace carries a bezier curve, an anchor its own root position
  * and joint. Everything else is derived from `hasSegments` and `contactFields`.
  */
+/**
+ * The contact primitives this type carries, lower end first.
+ *
+ * Each says which END it is and what KIND of primitive sits there, so a caller
+ * never has to infer either from the field name.
+ */
+export function contactEndpointsFor(
+    typeId: SupportTypeId,
+): readonly { end: 'lower' | 'upper'; kind: 'cone' | 'disk'; field: string }[] {
+    const descriptor = getSupportTypeDescriptor(typeId);
+    const contacts: { end: 'lower' | 'upper'; kind: 'cone' | 'disk'; field: string }[] = [];
+    for (const end of ['lower', 'upper'] as const) {
+        const endpoint = descriptor[end];
+        if ((endpoint.kind === 'cone' || endpoint.kind === 'disk') && endpoint.field) {
+            contacts.push({ end, kind: endpoint.kind, field: endpoint.field });
+        }
+    }
+    return contacts;
+}
+
 export const SUPPORT_TRANSFORM_EXTRAS = {
     brace: ['curve'],
     anchor: ['rootPos', 'joint'],
