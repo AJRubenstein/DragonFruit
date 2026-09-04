@@ -114,10 +114,8 @@ export interface SplitHosts {
 
 /**
  * Splits a shaft segment on any type, inserting a joint at `splitPoint`.
- *
- * Start and end resolution come from the declared endpoints: `lower` says
- * whether segment 0 begins at a root top or a host knot, `upper` what the
- * shaft ends at, and `shaftFallback` what to do when neither resolves.
+ * Start and end come from the declared endpoints; `shaftFallback` covers
+ * what to do when neither resolves.
  */
 export function splitSupportShaft<T extends { segments: Segment[] }>(
     typeId: SupportTypeId,

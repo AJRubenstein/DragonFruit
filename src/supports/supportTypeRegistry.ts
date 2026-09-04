@@ -32,19 +32,14 @@ export type SupportCollectionLocation =
     | { store: 'kickstand'; key: 'kickstands' };
 
 /**
- * What sits at one end of a support.
- *
- * A support type is a choice of two endpoints plus whether a shaft joins them.
- * The vocabulary is closed -- these six cover all eight types -- and declaring
- * it replaces the field-name inspection that decides endpoint behaviour today
- * (`contactFields[0]`, `field.startsWith('contactDisk')`).
+ * What sits at one end of a support. A type is two endpoints plus whether a
+ * shaft joins them; the vocabulary is closed over all eight.
  *
  * - `plateRoot`  -- a Roots row on the plate, via `rootId`.
- * - `inlineRoot` -- plate geometry carried on the entity, as an anchor does.
+ * - `inlineRoot` -- plate geometry on the entity, as an anchor carries.
  * - `knot`       -- hangs from a knot on another support's shaft.
- * - `cone`       -- a contact cone against the model.
- * - `disk`       -- a contact disk against the model.
- * - `none`       -- nothing declared at this end (a brace's ends are its knots).
+ * - `cone` / `disk` -- a contact primitive against the model.
+ * - `none`       -- nothing declared at this end.
  */
 export type SupportEndpointKind =
     | 'plateRoot'
@@ -115,14 +110,9 @@ export interface SupportTypeDescriptor {
     /** Whether instances carry real shafts, for segment and joint walks. */
     hasSegments: boolean;
     /**
-     * Contact primitive fields, lower end first.
-     *
-     * Fine for "every contact on this type", where order does not matter. When
-     * the END or the KIND matters, use `lower`/`upper` or `contactEndpointsFor`
-     * -- reading `contactFields[0]` picks an arbitrary end on twig and stick,
-     * and the field NAME is not where the kind is declared.
-     *
-     * Kept in step with the endpoints by `__tests__/endpointVocabulary.test.ts`.
+     * Contact primitive fields, lower end first. Use for "every contact",
+     * where order does not matter; when the end or kind matters use
+     * `lower`/`upper` or `contactEndpointsFor`.
      */
     contactFields: readonly string[];
     /** What sits at the bottom of this type. */
@@ -175,27 +165,15 @@ export interface SupportTypeDescriptor {
     /** How instances link to other entities. See {@link SupportEdge}. */
     edges: readonly SupportEdge[];
     /**
-     * How a shaft behaves when its geometry cannot be resolved.
-     *
-     * Only reached on malformed geometry -- a segment with no top joint, or a
-     * bezier split with no host to start from. The values differ per type
-     * today; they are declared rather than inlined so the difference is
-     * visible beside everything else the type declares.
+     * How a shaft behaves when its geometry cannot be resolved. Only reached
+     * on malformed geometry, and the values differ per type.
      */
     shaftFallback: {
-        /**
-         * Stub length when a segment has no top joint and no contact to end at.
-         *
-         * 10 for a trunk, 5 elsewhere. The inconsistency is inherited, not
-         * chosen -- see the note in `resolveSegmentEndpoints`.
-         */
+        /** No top joint and no contact: 10 for a trunk, 5 elsewhere. Inherited drift. */
         stubLengthMm: number;
         /**
-         * Whether an unresolvable segment start falls back to the split point.
-         *
-         * True for the self-contained types, which have no host to ask. False
-         * for a hosted type, where an unresolved start means the caller failed
-         * to supply the host and the split should stay straight.
+         * Whether an unresolvable start falls back to the split point. True for
+         * self-contained types; a hosted type stays straight instead.
          */
         startFallsBackToSplitPoint: boolean;
     };
@@ -594,10 +572,8 @@ export function collectionsMissingRestore(): SupportCollectionKey[] {
  * and joint. Everything else is derived from `hasSegments` and `contactFields`.
  */
 /**
- * The contact primitives this type carries, lower end first.
- *
- * Each says which END it is and what KIND of primitive sits there, so a caller
- * never has to infer either from the field name.
+ * The contact primitives this type carries, lower end first, each with its end
+ * and kind -- so a caller never infers either from the field name.
  */
 export function contactEndpointsFor(
     typeId: SupportTypeId,

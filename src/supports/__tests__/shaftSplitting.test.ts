@@ -12,10 +12,8 @@ import type { Branch, Knot, Roots, Segment, Stick, Trunk, Twig } from '../types'
 /**
  * Inserting a joint into a shaft, across all four types.
  *
- * Only splitShaft had any coverage, and only for knot remapping. The four
- * wrappers share splitSegmentArray and differ only in how they resolve a
- * segment's start and end -- which is resolveSegmentEndpoints' job. These pin
- * what each does now, including the differences, before they are unified.
+ * Pins what each does, including the per-type differences in stub length and
+ * start fallback, which are declared as `shaftFallback`.
  */
 
 const joint = (id: string, z: number) => ({ id, pos: { x: 0, y: 0, z }, diameter: 1 });
@@ -141,10 +139,8 @@ test('twig and stick resolve a missing start from the split point itself', () =>
 });
 
 test('the declared stub length ends a shaft with no top joint and no contact', () => {
-    // Trunk inherited 10mm where every other type uses 5. Only reachable on
-    // malformed geometry, so nothing else pins it.
-    // De Casteljau derives the LEFT half's control points from the start side
-    // only, so the stub shows up on the upper segment.
+    // Trunk inherited 10mm where every other type uses 5. De Casteljau derives
+    // the left half from the start side only, so the stub shows on the upper.
     const trunk = splitShaft(trunkWith([bezier('s0', 0, null)]), 's0', SPLIT, 0.5, root);
     const trunkCp = (trunk.trunk.segments[1] as unknown as { controlPoint2: { z: number } }).controlPoint2;
 

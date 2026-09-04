@@ -3568,12 +3568,7 @@ export function jointPosIn(segments: readonly Segment[], jointId: string): Vec3 
     return null;
 }
 
-/**
- * Which support owns a joint, searching every shafted type.
- *
- * The joint gizmo asked this five times over, once per type it knew about,
- * which is why an anchor's joints were never draggable.
- */
+/** Which support owns a joint, searching every shafted type. */
 export function findShaftOwnerOfJoint(
     jointId: string,
 ): { typeId: SupportTypeId; id: string; pos: Vec3 } | null {

@@ -12,10 +12,8 @@ import { SUPPORT_TYPES } from '../supportTypeRegistry';
 /**
  * Finding the support that owns a joint.
  *
- * The joint gizmo asked this with a five-branch chain over the types it knew,
- * ending in a bare `else` for kickstand. Anchors were absent, so their joints
- * were never draggable, and a ninth type would have been treated as a
- * kickstand. This is the one derived answer.
+ * Anchors were absent from the chain this replaces, so their joints were never
+ * draggable, and a ninth type would have been treated as a kickstand.
  */
 
 const seg = (id: string, z: number) => ({
