@@ -8,11 +8,9 @@ import {
 } from '../supportTypeRegistry';
 
 /**
- * The declared endpoint vocabulary, checked against what the types already say.
- *
- * A support type is two endpoints plus an optional shaft. These pin that the
- * declaration agrees with the older flags it is meant to replace, so the two
- * cannot drift while both exist.
+ * The declared endpoint vocabulary, cross-checked against the older flags it
+ * overlaps -- `ownsRoot`, the knot edges, `contactFields` -- so the two cannot
+ * drift while both exist.
  */
 
 const byId = (id: string): SupportTypeDescriptor => {
@@ -56,8 +54,8 @@ test('a linked endpoint takes its field from a declared edge, not its own', () =
 });
 
 test('declared contact endpoints match contactFields exactly', () => {
-    // contactFields is deprecated but still read; the two must agree while both
-    // exist, or a consumer picks a different endpoint depending which it asks.
+    // Both are still read; if they disagreed a consumer would get a different
+    // endpoint depending which it asked.
     for (const descriptor of SUPPORT_TYPES) {
         const declared = ends(descriptor)
             .filter((e) => e.kind === 'cone' || e.kind === 'disk')
@@ -140,12 +138,9 @@ test('the signatures are the ones the plan records', () => {
 });
 
 test('a two-contact type declares its ends in order', () => {
-    // contactEnd() takes contactFields[0], which picks an arbitrary end on twig
-    // and stick. The A/B suffixes must map to lower/upper respectively.
-    //
-    // Both builders already guarantee this, by different means: stickBuilder
-    // sorts its ends on z, twigBuilder makes A the segment bottomJoint and B
-    // the topJoint. Neither says so where a reader of the type would look.
+    // stickBuilder sorts its ends on z and twigBuilder binds A to the segment
+    // bottomJoint, so A is always the lower end -- but neither says so where a
+    // reader of the type would look.
     for (const id of ['twig', 'stick']) {
         const descriptor = byId(id);
         assert.match(descriptor.lower.field ?? '', /A$/, `${id} lower should be the A contact`);

@@ -9,10 +9,7 @@ import { DEFAULT_TIP_PROFILE } from '../SupportPrimitives/ContactCone/types';
 /**
  * How a model transform REACHES an entity, as opposed to what it then writes.
  *
- * The apply phase is derived and covered; this walk is not. A leaf reached
- * through its knot's shaft and a brace reached through another brace segment
- * both survived mutation against the whole suite and all 22 goldens, so every
- * rule below is pinned before the walk is converted.
+ * The apply phase is derived and covered; the walk had no coverage at all.
  */
 
 const seg = (id: string, z: number, bottomId?: string, topId?: string) => ({

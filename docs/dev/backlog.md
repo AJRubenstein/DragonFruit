@@ -34,11 +34,12 @@ from it. `SupportState`'s collections, the modelId and shafted walks, root
 ownership, the updater and knot-diameter slots, and several behaviour decisions
 that used to be hardcoded type names now come from there.
 
-**Adoption is early.** `state.ts` alone still carries ~498 hand-written per-type
-references across 64 functions against 8 registry-derived call sites;
-`SupportRenderer.tsx`, export reconstruction, and the interaction manager are
-still one hand-wired block per type. Adding a type is therefore still mostly
-manual — see `dev/support-type-extension.md`, which marks each step.
+**Adoption is partway.** Measured by `npm run scan:support-types`: **11,226
+hand-written type references across 147 files**, down from 12,164. History
+handlers, registration slots and the support primitives are converted;
+`SupportRenderer.tsx` (1,598), `state.ts` (1,333) and auto-placement (1,270) are
+not. Adding a type is therefore still mostly manual — see
+`dev/support-type-extension.md`, which marks each step.
 
 **Remaining goal:** move the rest of the per-type threading behind the registry,
 so the renderer, interaction manager and export derive their behaviour rather
@@ -66,6 +67,31 @@ Known remaining hand-written lists worth converting:
   registry must be kept in sync with `SupportTypeId` by hand. Deriving them from
   the type id is possible but needs checking first: history action strings may be
   persisted in saved projects, and changing one would break loading old files.
+
+### Bugs found while converting
+
+Each was a hand-written type list that disagreed with the registry. Fixed
+unless marked otherwise; recorded because the same shape will recur.
+
+| bug | where | status |
+| --- | ----- | ------ |
+| Anchor joints could not be dragged — three separate lookups omitted anchors | `useJointInteraction`, `JointGizmo`, knot host map | fixed |
+| Anchors could not host a draggable knot | `useKnotInteraction` | fixed |
+| Stale-cache host recovery searched only sticks | `useKnotInteraction` | fixed |
+| Knot-move history said "Move support knot" for trunk, anchor and kickstand | `KnotGizmo` | fixed |
+| Kickstand undo restored nothing generically | `state.ts` | fixed |
+| Trunk and kickstand `roots: 'root'` singular dropped a root on removal | `SUPPORT_REMOVAL_SHAPES` | fixed |
+| Sidebar accepted types with no tool | settings | fixed |
+| Settings fell through to "leaf" for an unhandled kind | `applySettingsToSupportTarget` | fixed |
+| `canDeleteSelection` omits `anchor` | `useSupportInteractionManager` | **open** — §7 |
+| Nested-brace reachability clauses are dead code, subsumed by `touchedSegmentIds` | `transformSupportsForModel` | **open** — remove with §5 |
+| Shaft stub length is 10 for trunk, 5 elsewhere; four other sites use 10 | `shaftFallback`, `resolveSegmentEndpoints` | **open** — inherited drift, needs a decision |
+| `TwigRenderer` omits `isInteractable` where the other three pass it | `TwigRenderer` | **open** — harmless while the default is true |
+| The import wire format still carries the `{kickstand, root, hostKnot}` bundle | `loadFromImportFormat` | **open** — ⚠️ wire format |
+
+Two of these were invisible to the whole suite AND all 22 goldens
+(`transformSupportsForModel`'s reachability walk). Passing tests are not
+evidence a flag is covered — see AGENTS.md trap 4.
 
 ## Desired: route every native call through the IPC bridge
 

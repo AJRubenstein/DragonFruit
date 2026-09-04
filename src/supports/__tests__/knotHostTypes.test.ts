@@ -33,11 +33,8 @@ test('the knot primitives declare no hand-written type unions', () => {
 
 test('every type with segments can host a dragged knot', () => {
     // Anchors were absent from the segment->host map, so a knot on an anchor
-    // shaft could not be dragged while every other shafted type's could.
-    //
-    // This used to grep for `containerType: '<id>'` literals, which stopped
-    // working once the host was built generically -- the literals going away
-    // is the fix, not a regression. Ask the lookup instead.
+    // shaft could not be dragged. Asks the lookup, not the source text: the
+    // per-type literals going away is the fix, not a regression.
     resetStore();
     const shafted = SUPPORT_TYPES.filter((d) => d.hasSegments);
 
