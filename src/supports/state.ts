@@ -1,6 +1,7 @@
 import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace, Twig, Stick, Anchor } from './types';
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
+import { resolveSegmentEndpoints } from './SupportPrimitives/Knot/segmentEndpoints';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
@@ -611,49 +612,29 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
             let segment: Segment | null = null;
             let endpoints: { start: Vec3; end: Vec3 } | null = null;
 
-            const trunkRef = trunkSegmentMap.get(knot.parentShaftId);
-            if (trunkRef?.root) {
-                segment = trunkRef.segment;
-                endpoints = getTrunkSegmentEndpoints(
-                    trunkRef.trunk,
-                    trunkRef.segment,
-                    trunkRef.segmentIndex,
-                    trunkRef.root,
-                );
-            }
+            // One walker for every shafted type; the hosts come from the
+            // declared endpoints rather than a per-type fallback chain.
+            const host = shaftHostBySegmentId.get(knot.parentShaftId);
+            if (host) {
+                const owner = host.entity as { segments: Segment[]; rootId?: string; parentKnotId?: string; hostKnotId?: string };
+                const index = owner.segments.findIndex((seg) => seg.id === knot.parentShaftId);
+                if (index !== -1) {
+                    const descriptor = getSupportTypeDescriptor(host.typeId);
+                    const knotField = descriptor.edges.find(
+                        (edge) => edge.to === 'knots' && edge.ownership === 'hostedBy',
+                    )?.field as keyof typeof owner | undefined;
+                    const hostKnotId = knotField ? owner[knotField] : undefined;
 
-            if (!segment || !endpoints) {
-                const branchRef = branchSegmentMap.get(knot.parentShaftId);
-                if (branchRef) {
-                    const parentKnot = nextKnots[branchRef.branch.parentKnotId] ?? snapshot.knots[branchRef.branch.parentKnotId];
-                    if (parentKnot) {
-                        segment = branchRef.segment;
-                        endpoints = getBranchSegmentEndpoints(
-                            branchRef.branch,
-                            branchRef.segment,
-                            branchRef.segmentIndex,
-                            parentKnot,
-                        );
+                    const resolved = resolveSegmentEndpoints(host.typeId, owner, owner.segments[index], index, {
+                        root: owner.rootId ? snapshot.roots[owner.rootId] : undefined,
+                        hostKnot: typeof hostKnotId === 'string'
+                            ? nextKnots[hostKnotId] ?? snapshot.knots[hostKnotId]
+                            : undefined,
+                    });
+                    if (resolved) {
+                        segment = owner.segments[index];
+                        endpoints = resolved;
                     }
-                }
-            }
-
-            if (!segment || !endpoints) {
-                const simpleShaft = simpleShaftSegmentMap.get(knot.parentShaftId);
-                if (simpleShaft) {
-                    const shaftEndpoints = getSelfContainedSegmentEndpoints(simpleShaft);
-                    if (shaftEndpoints) {
-                        segment = simpleShaft;
-                        endpoints = shaftEndpoints;
-                    }
-                }
-            }
-
-            if (!segment || !endpoints) {
-                const kickstandEndpoints = kickstandSegmentEndpoints.get(knot.parentShaftId);
-                if (kickstandEndpoints) {
-                    segment = { id: knot.parentShaftId, type: 'straight' } as Segment;
-                    endpoints = kickstandEndpoints;
                 }
             }
 
@@ -717,6 +698,7 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
                     };
                 };
 
+                const trunkRef = trunkSegmentMap.get(knot.parentShaftId);
                 if (trunkRef?.root) {
                     const segments = trunkRef.trunk.segments;
                     const firstSeg = segments[0];

@@ -83,6 +83,7 @@ unless marked otherwise; recorded because the same shape will recur.
 | Trunk and kickstand `roots: 'root'` singular dropped a root on removal | `SUPPORT_REMOVAL_SHAPES` | fixed |
 | Sidebar accepted types with no tool | settings | fixed |
 | Settings fell through to "leaf" for an unhandled kind | `applySettingsToSupportTarget` | fixed |
+| A knot on a kickstand shaft loaded with `diameter: NaN` — normalization synthesised a segment carrying no diameter | `normalizeLoadedKnotAndLeafGeometry` | fixed |
 | `canDeleteSelection` omits `anchor` | `useSupportInteractionManager` | **open** — §7 |
 | Nested-brace reachability clauses are dead code, subsumed by `touchedSegmentIds` | `transformSupportsForModel` | **open** — remove with §5 |
 | Shaft stub length is 10 for trunk, 5 elsewhere; four other sites use 10 | `shaftFallback`, `resolveSegmentEndpoints` | **open** — inherited drift, needs a decision |

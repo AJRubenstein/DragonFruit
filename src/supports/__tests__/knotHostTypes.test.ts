@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { SUPPORT_TYPES } from '../supportTypeRegistry';
-import { addSupportEntity, findShaftOwnerOfSegment, resetStore } from '../state';
+import { addSupportEntity, findShaftOwnerOfSegment, getSnapshot, loadFromImportFormat, resetStore } from '../state';
 
 /**
  * Knot hosts are derived, not listed.
@@ -71,4 +71,52 @@ test('a leaf cone is the only knot host that is not a support type', () => {
 
     const nonTypes = [...new Set(hosts)].filter((host) => !registered.has(host));
     assert.deepEqual(nonTypes, ['leafCone']);
+});
+
+test('a knot on a kickstand shaft gets a real diameter', () => {
+    // Normalization resolved a kickstand shaft through a synthesised segment
+    // that carried no diameter, so the knot size computed to NaN.
+    resetStore();
+    loadFromImportFormat({
+        version: 1,
+        meta: { source: 'knot-diameter', objectCenter: { x: 0, y: 0, z: 0 } },
+        roots: [{
+            id: 'ks-root', modelId: 'model-a',
+            transform: { pos: { x: 3, y: 0, z: 0 }, rot: { x: 0, y: 0, z: 0, w: 1 } },
+            diameter: 3, diskHeight: 0.5, coneHeight: 1.5,
+        }],
+        trunks: [{
+            id: 'trunk-a', modelId: 'model-a', rootId: 'root-a',
+            segments: [{
+                id: 'seg-ta', diameter: 2,
+                bottomJoint: { id: 'seg-ta-bj', pos: { x: 0, y: 0, z: 0 }, diameter: 1 },
+                topJoint: { id: 'seg-ta-tj', pos: { x: 0, y: 0, z: 8 }, diameter: 1 },
+            }],
+        }],
+        kickstands: [{
+            kickstand: {
+                id: 'ks-a', modelId: 'model-a', rootId: 'ks-root',
+                hostKnotId: 'ks-host', hostSegmentId: 'seg-ta', hostMinT: 0.2,
+                segments: [{
+                    id: 'seg-ka', diameter: 1.6,
+                    bottomJoint: { id: 'seg-ka-bj', pos: { x: 3, y: 0, z: 2 }, diameter: 1 },
+                    topJoint: undefined,
+                }],
+                profile: { bodyDiameterMm: 1.6, terminalStartDiameterMm: 1.8, terminalEndDiameterMm: 1.2 },
+            },
+            root: {
+                id: 'ks-root', modelId: 'model-a',
+                transform: { pos: { x: 3, y: 0, z: 0 }, rot: { x: 0, y: 0, z: 0, w: 1 } },
+                diameter: 3, diskHeight: 0.5, coneHeight: 1.5,
+            },
+            hostKnot: { id: 'ks-host', parentShaftId: 'seg-ta', t: 0.5, pos: { x: 0, y: 0, z: 4 }, diameter: 1.1 },
+        }],
+        branches: [], leaves: [], twigs: [], sticks: [], anchors: [],
+        braces: [{ id: 'brace-a', modelId: 'model-a', startKnotId: 'knot-on-ks', endKnotId: 'ks-host' }],
+        knots: [{ id: 'knot-on-ks', parentShaftId: 'seg-ka', t: 0.5, pos: { x: 3, y: 0, z: 3 }, diameter: 1 }],
+    } as never);
+
+    const knot = getSnapshot().knots['knot-on-ks'];
+    assert.ok(knot, 'the knot should survive the load');
+    assert.ok(Number.isFinite(knot.diameter), `diameter should be finite, got ${knot.diameter}`);
 });
