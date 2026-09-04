@@ -126,7 +126,14 @@ export function resolveSegmentEndpoints(
     let end: THREE.Vector3;
     if (segment.topJoint) {
         end = vec(segment.topJoint.pos);
+    } else if (descriptor.upper.kind === 'knot') {
+        // A kickstand ends at the knot it braces, not at a contact.
+        if (!hosts.hostKnot) return null;
+        end = vec(hosts.hostKnot.pos);
     } else {
+        // Deliberately 10 rather than shaftFallback.stubLengthMm: the two
+        // disagree for branch, twig and stick, and reconciling them is a
+        // behaviour change, not part of this conversion.
         const contact = contactAt(descriptor.upper, entity);
         end = contact ?? start.clone().add(new THREE.Vector3(0, 0, 10));
     }
