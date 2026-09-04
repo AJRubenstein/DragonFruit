@@ -34,11 +34,11 @@ from it. `SupportState`'s collections, the modelId and shafted walks, root
 ownership, the updater and knot-diameter slots, and several behaviour decisions
 that used to be hardcoded type names now come from there.
 
-**Adoption is partway.** Measured by `npm run scan:support-types`: **11,226
-hand-written type references across 147 files**, down from 12,164. History
-handlers, registration slots and the support primitives are converted;
-`SupportRenderer.tsx` (1,598), `state.ts` (1,333) and auto-placement (1,270) are
-not. Adding a type is therefore still mostly manual — see
+**Adoption is partway.** Measured by `npm run scan:support-types`: **11,008
+hand-written type references across 147 files**, down from 12,164, and 950
+production lines lighter than `dev` across `src/supports/`. History handlers,
+registration slots, the support primitives and most of `state.ts` are converted;
+`SupportRenderer.tsx` (1,598) and auto-placement (1,270) are not. Adding a type is therefore still mostly manual — see
 `dev/support-type-extension.md`, which marks each step.
 
 **Remaining goal:** move the rest of the per-type threading behind the registry,
@@ -84,8 +84,9 @@ unless marked otherwise; recorded because the same shape will recur.
 | Sidebar accepted types with no tool | settings | fixed |
 | Settings fell through to "leaf" for an unhandled kind | `applySettingsToSupportTarget` | fixed |
 | A knot on a kickstand shaft loaded with `diameter: NaN` — normalization synthesised a segment carrying no diameter | `normalizeLoadedKnotAndLeafGeometry` | fixed |
+| A leaf on an anchor- or kickstand-hosted knot stayed behind when its model moved — the segment/modelId index covered four of six shafted types | `transformSupportsForModel` | fixed |
 | `canDeleteSelection` omits `anchor` | `useSupportInteractionManager` | **open** — §7 |
-| Nested-brace reachability clauses are dead code, subsumed by `touchedSegmentIds` | `transformSupportsForModel` | **open** — remove with §5 |
+| Nested-brace reachability clauses are dead code, subsumed by `touchedSegmentIds` | `transformSupportsForModel` | fixed |
 | Shaft stub length is 10 for trunk, 5 elsewhere; four other sites use 10 | `shaftFallback`, `resolveSegmentEndpoints` | **open** — inherited drift, needs a decision |
 | `TwigRenderer` omits `isInteractable` where the other three pass it | `TwigRenderer` | **open** — harmless while the default is true |
 | The import wire format still carries the `{kickstand, root, hostKnot}` bundle | `loadFromImportFormat` | **open** — ⚠️ wire format |
