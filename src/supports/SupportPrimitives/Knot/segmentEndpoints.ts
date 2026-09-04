@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { getFinalSocketPosition } from '../ContactCone';
 import {
     getSupportTypeDescriptor,
+    type SupportEndpoint,
     type SupportTypeDescriptor,
     type SupportTypeId,
 } from '../../supportTypeRegistry';
@@ -13,9 +14,8 @@ import type { Knot, Roots, Segment, Vec3 } from '../../types';
  *
  * This replaced getTrunkSegmentEndpoints and getBranchSegmentEndpoints, which
  * were identical apart from what anchors segment 0: a trunk starts at its
- * root's top, a branch at its parent knot. The registry already declares which
- * applies -- `ownsRoot`, a `hostedBy` edge to knots, or
- * `segmentsCarryBothJoints` for the self-contained types.
+ * root's top, a branch at its parent knot. The declared `lower` endpoint says
+ * which applies, and `upper` says what the shaft ends at.
  */
 
 export interface SegmentEndpoints {
@@ -48,9 +48,9 @@ function rootTop(root: Roots): THREE.Vector3 {
     return vec(root.transform.pos).add(new THREE.Vector3(0, 0, diskHeight + coneHeight));
 }
 
-/** Whether this type hangs off a knot rather than a root. */
-function knotHostEdge(descriptor: SupportTypeDescriptor) {
-    return descriptor.edges.find((edge) => edge.ownership === 'hostedBy' && edge.to === 'knots');
+/** Whether this type's lower end hangs from a knot rather than a root. */
+function startsAtKnot(descriptor: SupportTypeDescriptor): boolean {
+    return descriptor.lower.kind === 'knot';
 }
 
 /**
@@ -61,19 +61,24 @@ function anchorPoint(
     descriptor: SupportTypeDescriptor,
     hosts: EndpointHosts,
 ): THREE.Vector3 | null {
-    if (descriptor.ownsRoot) return hosts.root ? rootTop(hosts.root) : null;
-    if (knotHostEdge(descriptor)) return hosts.hostKnot ? vec(hosts.hostKnot.pos) : null;
-    return null;
+    switch (descriptor.lower.kind) {
+        case 'plateRoot':
+            return hosts.root ? rootTop(hosts.root) : null;
+        case 'knot':
+            return hosts.hostKnot ? vec(hosts.hostKnot.pos) : null;
+        default:
+            // A contact or inline root anchors the shaft on the entity itself,
+            // so the segment joints already carry it.
+            return null;
+    }
 }
 
-/** The socket position of the contact this type ends at, if it declares one. */
-function contactEnd(descriptor: SupportTypeDescriptor, entity: ShaftEntity): THREE.Vector3 | null {
-    const fields = entity as unknown as Record<string, unknown>;
-    for (const field of descriptor.contactFields) {
-        const cone = fields[field];
-        if (cone) return vec(getFinalSocketPosition(cone as Parameters<typeof getFinalSocketPosition>[0]));
-    }
-    return null;
+/** The socket position of a declared contact endpoint. */
+function contactAt(endpoint: SupportEndpoint, entity: ShaftEntity): THREE.Vector3 | null {
+    if (!endpoint.field) return null;
+    const contact = (entity as unknown as Record<string, unknown>)[endpoint.field];
+    if (!contact) return null;
+    return vec(getFinalSocketPosition(contact as Parameters<typeof getFinalSocketPosition>[0]));
 }
 
 /**
@@ -102,7 +107,7 @@ export function resolveSegmentEndpoints(
     // joint is a render artefact there, and trusting it detaches the shaft from
     // the knot it hangs on. Root-owned and self-contained shafts read the joint
     // first, which is what their originals did.
-    const startsAtHost = knotHostEdge(descriptor) !== undefined;
+    const startsAtHost = startsAtKnot(descriptor);
 
     let start: THREE.Vector3;
     if (!startsAtHost && segment.bottomJoint) {
@@ -122,7 +127,7 @@ export function resolveSegmentEndpoints(
     if (segment.topJoint) {
         end = vec(segment.topJoint.pos);
     } else {
-        const contact = contactEnd(descriptor, entity);
+        const contact = contactAt(descriptor.upper, entity);
         end = contact ?? start.clone().add(new THREE.Vector3(0, 0, 10));
     }
 
