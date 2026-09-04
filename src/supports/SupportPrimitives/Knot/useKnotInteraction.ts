@@ -2,8 +2,8 @@ import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
-import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getBranches, getKnotById, getLeaves, getRootById, getBraces, setInteractionWarning, updateKnot, updateLeaf, updateBranch, getBranchById, subscribe  } from '../../state';
-import { Anchor, Branch, Brace, Knot, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
+import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getSupportEntities, getKnotById, getRootById, setInteractionWarning, updateKnot, updateLeaf, updateBranch, subscribe  } from '../../state';
+import { Anchor, Branch, Brace, Knot, Leaf, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
 import { resolveSegmentEndpoints, type EndpointHosts } from './segmentEndpoints';
 import { getSupportTypeDescriptor, type SupportEdge } from '../../supportTypeRegistry';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
@@ -194,7 +194,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         host: ActiveHost,
         maxAngleDeg: number,
     ): { t: number; clamped: boolean } => {
-        const leaves = getLeaves().filter(l => l.parentKnotId === activeKnotId.current);
+        const leaves = getSupportEntities<Leaf>('leaf').filter(l => l.parentKnotId === activeKnotId.current);
         if (leaves.length === 0) return { t: tDesired, clamped: false };
 
         let low = 0;
@@ -388,7 +388,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         // Leaf cone host (brace endpoints)
         if (knot.parentShaftId.startsWith('leafCone:')) {
             const leafId = knot.parentShaftId.slice('leafCone:'.length);
-            const leaf = getLeaves().find(l => l.id === leafId);
+            const leaf = getSupportEntities<Leaf>('leaf').find(l => l.id === leafId);
             if (leaf?.contactCone) {
                 host = {
                     segmentId: knot.parentShaftId,
@@ -404,7 +404,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
         if (knot.parentShaftId.startsWith('braceSegment:')) {
             const braceId = knot.parentShaftId.slice('braceSegment:'.length);
-            const brace = getBraces().find(b => b.id === braceId);
+            const brace = getSupportEntities<Brace>('brace').find(b => b.id === braceId);
             if (brace) {
                 host = {
                     segmentId: knot.parentShaftId,
@@ -430,7 +430,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
         if (host) {
             // Determine Initial Topology
-            const allBranches = getBranches();
+            const allBranches = getSupportEntities<Branch>('branch');
             const attached = allBranches.filter(b => b.parentKnotId === knot.id);
             for (const b of attached) {
                 if (b.segments.length > 0) {
@@ -489,7 +489,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         }
 
         if (host.containerType === 'leafCone' && host.leafId) {
-            const leaf = getLeaves().find((l) => l.id === host.leafId);
+            const leaf = getSupportEntities<Leaf>('leaf').find((l) => l.id === host.leafId);
             const cone = leaf?.contactCone;
             if (!cone) return;
 
@@ -581,7 +581,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
     // Capture the initial state of attached branches
     const captureElasticState = (knotId: string): Record<string, ElasticChainInitialState> => {
-        const allBranches = getBranches();
+        const allBranches = getSupportEntities<Branch>('branch');
         const attached = allBranches.filter(b => b.parentKnotId === knotId);
         const state: Record<string, ElasticChainInitialState> = {};
 
@@ -747,7 +747,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                     const res = elasticResults[branchId];
                     if (!res) continue;
 
-                    const branch = getBranchById(branchId);
+                    const branch = getSupportEntity('branch', branchId) as Branch | null;
                     if (!branch) continue;
 
                     let branchChanged = false;
@@ -794,7 +794,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
             // Reconcile drag-time fast-path edits with an exact pass once on release.
             for (const [branchId, previewSegments] of Object.entries(previewBranchSegmentsByIdAtEnd)) {
-                const branch = getBranchById(branchId);
+                const branch = getSupportEntity('branch', branchId) as Branch | null;
                 if (branch) {
                     updateBranch({ ...branch, segments: previewSegments });
                 }
@@ -823,7 +823,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                     previewKnotAtEnd.t,
                 );
                 if (localTwigDia !== null) {
-                    const attachedLeaves = getLeaves().filter(l => l.parentKnotId === activeKnotIdAtEnd);
+                    const attachedLeaves = getSupportEntities<Leaf>('leaf').filter(l => l.parentKnotId === activeKnotIdAtEnd);
                     for (const leaf of attachedLeaves) {
                         if (!leaf.contactCone) continue;
                         if (leaf.contactCone.profile.bodyDiameterMm === localTwigDia) continue;
@@ -900,7 +900,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             raycaster.setFromCamera(pointer, camera);
             const projected = projectOntoSegment(raycaster.ray, host.start, host.end);
 
-            const leaf = getLeaves().find(l => l.id === host.leafId);
+            const leaf = getSupportEntities<Leaf>('leaf').find(l => l.id === host.leafId);
             const cone = leaf?.contactCone;
             if (!cone) return;
 
@@ -1071,7 +1071,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
         if (bestSegmentId.startsWith('braceSegment:')) {
             const braceId = bestSegmentId.slice('braceSegment:'.length);
-            const brace = getBraces().find(b => b.id === braceId);
+            const brace = getSupportEntities<Brace>('brace').find(b => b.id === braceId);
             if (brace) {
                 const startKnot = getKnotById(brace.startKnotId);
                 const endKnot = getKnotById(brace.endKnotId);
@@ -1130,7 +1130,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
         if (shouldSkipElasticPreview) {
             for (const branchId of Object.keys(previewBranchSegmentsByIdRef.current)) {
-                const branch = getBranchById(branchId);
+                const branch = getSupportEntity('branch', branchId) as Branch | null;
                 if (branch) {
                     // Explicitly mark previously preview-overridden branches for prune.
                     branchSegmentsById[branch.id] = branch.segments;
@@ -1180,7 +1180,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                 const res = elasticResults[branchId];
                 if (!res) continue;
 
-                const branch = getBranchById(branchId);
+                const branch = getSupportEntity('branch', branchId) as Branch | null;
                 if (!branch) continue;
 
                 let branchChanged = false;
@@ -1409,7 +1409,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
             for (const branchId of updatedBranchIds) {
                 const nextSegments = branchSegmentsById[branchId];
-                const committedBranch = getBranchById(branchId);
+                const committedBranch = getSupportEntity('branch', branchId) as Branch | null;
                 if (committedBranch && committedBranch.segments === nextSegments) {
                     delete nextPreviewBranchSegmentsById[branchId];
                 } else {

@@ -3443,32 +3443,10 @@ export function removeTrunk(trunkId: string) {
 // --- Selectors / Hooks Helpers ---
 
 
-export function getTrunks() {
-    return Object.values(state.trunks);
-}
-
-export function getBranches() {
-    return Object.values(state.branches);
-}
-
-export function getLeaves() {
-    return Object.values(state.leaves);
-}
-
-export function getTwigs() {
-    return Object.values(state.twigs);
-}
-
-export function getSticks() {
-    return Object.values(state.sticks);
-}
-
-export function getBraces() {
-    return Object.values(state.braces);
-}
-
-export function getAnchors() {
-    return Object.values(state.anchors);
+/** Every entity of one type. */
+export function getSupportEntities<T = unknown>(typeId: SupportTypeId): T[] {
+    const { key } = getSupportTypeDescriptor(typeId).location;
+    return Object.values(state[key]) as T[];
 }
 
 
@@ -3583,28 +3561,8 @@ export function findShaftOwnerOfJoint(
     return null;
 }
 
-/** @deprecated for removal — call getSupportEntity('trunk', id). */
-export function getTrunkById(trunkId: string) {
-    return state.trunks[trunkId] ?? null;
-}
-
 export function getRootById(rootId: string) {
     return state.roots[rootId] ?? null;
-}
-
-/** @deprecated for removal -- call getSupportEntity. */
-export function getBranchById(branchId: string) {
-    return state.branches[branchId] ?? null;
-}
-
-/** @deprecated for removal -- call getSupportEntity. */
-export function getTwigById(twigId: string) {
-    return state.twigs[twigId] ?? null;
-}
-
-/** @deprecated for removal -- call getSupportEntity. */
-export function getStickById(stickId: string) {
-    return state.sticks[stickId] ?? null;
 }
 
 /**

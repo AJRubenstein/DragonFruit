@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore, useRef } from 'react';
 import * as THREE from 'three';
-import type { SupportMode } from '@/supports/types';
+import type { Brace, Branch, Leaf, SupportMode } from '@/supports/types';
 import { useTrunkPlacementV2 } from '@/supports/SupportTypes/Trunk/useTrunkPlacement';
 import { useBranchPlacement } from '@/supports/SupportTypes/Branch/useBranchPlacement';
 import { useLeafPlacement } from '@/supports/SupportTypes/Leaf/useLeafPlacement';
@@ -16,9 +16,7 @@ import { computeAndApplyTrunkDiameterProfile } from '@/supports/SupportTypes/Tru
 import {
   getSelectedId,
   getSelectedCategory,
-  getBranches,
-  getBraces,
-  getLeaves,
+  getSupportEntities,
   getSnapshot,
   removeBranch,
   removeBrace,
@@ -420,7 +418,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       }
 
       if (category === 'knot') {
-        const leaves = getLeaves();
+        const leaves = getSupportEntities<Leaf>('leaf');
         const leaf = leaves.find(l => l.parentKnotId === id);
         if (leaf) {
           const snapshots = removeLeaf(leaf.id);
@@ -435,7 +433,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
           return true;
         }
 
-        const branches = getBranches();
+        const branches = getSupportEntities<Branch>('branch');
         const branch = branches.find(b => b.parentKnotId === id);
         if (branch) {
           const beforeSnapshot = getSnapshot();
@@ -478,7 +476,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
           return true;
         }
 
-        const braces = getBraces();
+        const braces = getSupportEntities<Brace>('brace');
         const brace = braces.find(br => br.startKnotId === id || br.endKnotId === id);
         if (brace) {
           const snapshots = removeBrace(brace.id);
@@ -635,13 +633,13 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       if (category === 'joint' || getSupportTypeBySelectionCategory(category)) return true;
 
       if (category === 'knot') {
-        const leaves = getLeaves();
+        const leaves = getSupportEntities<Leaf>('leaf');
         if (leaves.some(l => l.parentKnotId === id)) return true;
 
-        const branches = getBranches();
+        const branches = getSupportEntities<Branch>('branch');
         if (branches.some(b => b.parentKnotId === id)) return true;
 
-        const braces = getBraces();
+        const braces = getSupportEntities<Brace>('brace');
         if (braces.some(br => br.startKnotId === id || br.endKnotId === id)) return true;
 
         const kickstands = Object.values(getSnapshot().kickstands);

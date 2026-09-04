@@ -1,6 +1,6 @@
 import React, { useSyncExternalStore, useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import { subscribe, getSnapshot, updateTrunk, updateBranch, updateBrace, getTrunkById, getBranchById } from '../../state';
+import { subscribe, getSnapshot, updateTrunk, updateBranch, updateBrace, getSupportEntity } from '../../state';
 import { Trunk, Branch, Twig, Stick, Brace, Segment, BezierSegment, Joint } from '../../types';
 import { updateKickstand, useKickstandStoreState } from '../../SupportTypes/Kickstand/kickstandStore';
 import type { Kickstand as KickstandEntity } from '../../SupportTypes/Kickstand/types';
@@ -684,7 +684,7 @@ export function BezierGizmoManager() {
 
         // Push history for trunks
         if (initialTrunkRef.current && ctx.trunk) {
-            const latestTrunk = liveTrunkPreviewRef.current ?? getTrunkById(ctx.trunk.id);
+            const latestTrunk = liveTrunkPreviewRef.current ?? getSupportEntity('trunk', ctx.trunk.id) as Trunk | null;
             if (latestTrunk) {
                 // Final exact reconciliation after drag-time fast-path updates.
                 updateTrunk(latestTrunk);
@@ -715,7 +715,7 @@ export function BezierGizmoManager() {
                 updateSupportEntity(typeId, preview);
             } else if (typeId === 'branch' && draggedId) {
                 // Branches reconcile from the store when no preview was produced.
-                const latestBranch = getBranchById(draggedId);
+                const latestBranch = getSupportEntity('branch', draggedId) as Branch | null;
                 if (latestBranch) updateBranch(latestBranch);
             }
 

@@ -9,8 +9,7 @@ import {
     subscribe,
     getSnapshot,
     getKnotById,
-    getBranches,
-    getBranchById,
+    getSupportEntities,
     getRootById,
     updateKnot,
     updateBranch,
@@ -207,7 +206,7 @@ export function KnotGizmo() {
             }
 
             // Update branch joints
-            const branch = getBranchById(branchId);
+            const branch = getSupportEntity('branch', branchId) as Branch | null;
             if (!branch) continue;
 
             let branchChanged = false;
@@ -268,7 +267,7 @@ export function KnotGizmo() {
             const nextPreviewBranchSegmentsById = { ...previewBranchSegmentsByIdRef.current };
             for (const branchId of updatedBranchIds) {
                 const nextSegments = branchSegmentsById[branchId];
-                const committedBranch = getBranchById(branchId);
+                const committedBranch = getSupportEntity('branch', branchId) as Branch | null;
                 if (committedBranch && committedBranch.segments === nextSegments) {
                     delete nextPreviewBranchSegmentsById[branchId];
                 } else {
@@ -350,7 +349,7 @@ export function KnotGizmo() {
         w.__draggedKnotGroup = isGroup ? coincident.map(k => k.id) : [result.knot.id];
 
         // Capture elastic state for attached branches
-        const allBranches = getBranches();
+        const allBranches = getSupportEntities<Branch>('branch');
         const attached = allBranches.filter(b => w.__draggedKnotGroup.includes(b.parentKnotId));
         const nextState: Record<string, ElasticChainInitialState> = {};
 
@@ -401,7 +400,7 @@ export function KnotGizmo() {
         const previewKnot = previewKnotRef.current;
 
         for (const [branchId, previewSegments] of Object.entries(previewBranchSegmentsById)) {
-            const branch = getBranchById(branchId);
+            const branch = getSupportEntity('branch', branchId) as Branch | null;
             if (!branch) continue;
             updateBranch({ ...branch, segments: previewSegments });
         }
