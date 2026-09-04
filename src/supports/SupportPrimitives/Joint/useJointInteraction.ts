@@ -2,11 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
-import { getSnapshot,
-    getTrunks,
-    getBranches,
-    getTwigs,
-    getSticks,
+import { findShaftOwnerOfJoint, getSupportEntity, jointPosIn, getSnapshot,
     getSelectedId,
     getTrunkById,
     getRootById,
@@ -19,8 +15,8 @@ import { getSnapshot,
     updateStick,
  } from '../../state';
 import { getTrunkSegmentEndpoints } from '../Knot/knotUtils';
-import { Vec3, Trunk, Branch, Roots, Twig, Stick, ContactDisk } from '../../types';
-import { getKickstandSnapshot } from '../../SupportTypes/Kickstand/kickstandStore';
+import type { SupportTypeId } from '../../supportTypeRegistry';
+import { Vec3, Trunk, Branch, Roots, Segment, Twig, Stick, ContactDisk } from '../../types';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_UPDATE_TRUNK } from '../../history/actionTypes';
@@ -77,7 +73,7 @@ export function useJointInteraction(enabled: boolean = true) {
     const lastPublishedClampedJointPosRef = useRef<Vec3 | null>(null);
     const lastWarningRef = useRef<string | null>(null);
     const lastWarningEvalAtRef = useRef(0);
-    const jointParentCacheRef = useRef<Map<string, { kind: 'trunk' | 'branch' | 'twig' | 'stick' | 'kickstand'; supportId: string }>>(new Map());
+    const jointParentCacheRef = useRef<Map<string, { kind: SupportTypeId; supportId: string }>>(new Map());
     const activeJointBindingRef = useRef<{ jointId: string; segmentIndex: number; jointKey: 'topJoint' | 'bottomJoint' } | null>(null);
     const jointDragUpdatePendingRef = useRef(false);
     const jointDragListenersAttachedRef = useRef(false);
@@ -384,48 +380,8 @@ export function useJointInteraction(enabled: boolean = true) {
         const jointId = hit.objectId;
         if (jointParentCacheRef.current.has(jointId)) return;
 
-        const resolveJointPosFromSegments = (segments: Array<{ topJoint?: { id: string; pos: Vec3 }; bottomJoint?: { id: string; pos: Vec3 } }>, targetJointId: string): Vec3 | null => {
-            for (const s of segments) {
-                if (s.topJoint?.id === targetJointId) return s.topJoint.pos;
-                if (s.bottomJoint?.id === targetJointId) return s.bottomJoint.pos;
-            }
-            return null;
-        };
-
-        for (const trunk of getTrunks()) {
-            if (resolveJointPosFromSegments(trunk.segments as any[], jointId)) {
-                jointParentCacheRef.current.set(jointId, { kind: 'trunk', supportId: trunk.id });
-                return;
-            }
-        }
-
-        for (const branch of getBranches()) {
-            if (resolveJointPosFromSegments(branch.segments as any[], jointId)) {
-                jointParentCacheRef.current.set(jointId, { kind: 'branch', supportId: branch.id });
-                return;
-            }
-        }
-
-        for (const kickstand of Object.values(getSnapshot().kickstands)) {
-            if (resolveJointPosFromSegments(kickstand.segments as any[], jointId)) {
-                jointParentCacheRef.current.set(jointId, { kind: 'kickstand', supportId: kickstand.id });
-                return;
-            }
-        }
-
-        for (const twig of getTwigs()) {
-            if (resolveJointPosFromSegments(twig.segments as any[], jointId)) {
-                jointParentCacheRef.current.set(jointId, { kind: 'twig', supportId: twig.id });
-                return;
-            }
-        }
-
-        for (const stick of getSticks()) {
-            if (resolveJointPosFromSegments(stick.segments as any[], jointId)) {
-                jointParentCacheRef.current.set(jointId, { kind: 'stick', supportId: stick.id });
-                return;
-            }
-        }
+        const owner = findShaftOwnerOfJoint(jointId);
+        if (owner) jointParentCacheRef.current.set(jointId, { kind: owner.typeId, supportId: owner.id });
     }, [enabled, isDragging, hit.category, hit.objectId, JOINT_PARENT_CACHE_MAX_ENTRIES]);
 
     useEffect(() => {
@@ -491,141 +447,33 @@ export function useJointInteraction(enabled: boolean = true) {
             const jointId = hit.objectId;
 
             // Find trunk/branch and joint
-            let foundTrunk: Trunk | null = null;
-            let foundBranch: Branch | null = null;
-            let foundKickstand: Kickstand | null = null;
-            let foundTwig: Twig | null = null;
-            let foundStick: Stick | null = null;
-            let foundJointPos: Vec3 | null = null;
+            // One derived lookup, cache-first. The downstream still needs the
+            // entity by type, so it is unpacked into the same locals as before.
+            const cached = jointParentCacheRef.current.get(jointId);
+            let owner = cached
+                ? (() => {
+                    const entity = getSupportEntity(cached.kind, cached.supportId) as { segments?: Segment[] } | null;
+                    const pos = entity ? jointPosIn(entity.segments ?? [], jointId) : null;
+                    if (entity && pos) return { typeId: cached.kind, id: cached.supportId, pos };
+                    jointParentCacheRef.current.delete(jointId);
+                    return null;
+                })()
+                : null;
 
-            const resolveJointPosFromSegments = (segments: Array<{ topJoint?: { id: string; pos: Vec3 }; bottomJoint?: { id: string; pos: Vec3 } }>, targetJointId: string): Vec3 | null => {
-                for (const s of segments) {
-                    if (s.topJoint?.id === targetJointId) return s.topJoint.pos;
-                    if (s.bottomJoint?.id === targetJointId) return s.bottomJoint.pos;
-                }
-                return null;
-            };
-
-            // Fast path: resolve via last-known parent cache.
-            const cachedParent = jointParentCacheRef.current.get(jointId);
-            if (cachedParent) {
-                if (cachedParent.kind === 'trunk') {
-                    const trunk = getTrunkById(cachedParent.supportId);
-                    const pos = trunk ? resolveJointPosFromSegments(trunk.segments as any[], jointId) : null;
-                    if (trunk && pos) {
-                        foundTrunk = trunk;
-                        foundJointPos = pos;
-                    } else {
-                        jointParentCacheRef.current.delete(jointId);
-                    }
-                } else if (cachedParent.kind === 'branch') {
-                    const branch = getBranchById(cachedParent.supportId);
-                    const pos = branch ? resolveJointPosFromSegments(branch.segments as any[], jointId) : null;
-                    if (branch && pos) {
-                        foundBranch = branch;
-                        foundJointPos = pos;
-                    } else {
-                        jointParentCacheRef.current.delete(jointId);
-                    }
-                } else if (cachedParent.kind === 'twig') {
-                    const twig = getTwigById(cachedParent.supportId);
-                    const pos = twig ? resolveJointPosFromSegments(twig.segments as any[], jointId) : null;
-                    if (twig && pos) {
-                        foundTwig = twig;
-                        foundJointPos = pos;
-                    } else {
-                        jointParentCacheRef.current.delete(jointId);
-                    }
-                } else if (cachedParent.kind === 'stick') {
-                    const stick = getStickById(cachedParent.supportId);
-                    const pos = stick ? resolveJointPosFromSegments(stick.segments as any[], jointId) : null;
-                    if (stick && pos) {
-                        foundStick = stick;
-                        foundJointPos = pos;
-                    } else {
-                        jointParentCacheRef.current.delete(jointId);
-                    }
-                } else {
-                    const kickstand = getSnapshot().kickstands[cachedParent.supportId];
-                    const pos = kickstand ? resolveJointPosFromSegments(kickstand.segments as any[], jointId) : null;
-                    if (kickstand && pos) {
-                        foundKickstand = kickstand;
-                        foundJointPos = pos;
-                    } else {
-                        jointParentCacheRef.current.delete(jointId);
-                    }
-                }
+            if (!owner) {
+                owner = findShaftOwnerOfJoint(jointId);
+                if (owner) jointParentCacheRef.current.set(jointId, { kind: owner.typeId, supportId: owner.id });
             }
 
-            // Fallback path: full scan if cache miss.
-            if (!foundJointPos) {
-                const trunks = getTrunks();
-                const branches = getBranches();
+            const ofType = <T,>(typeId: SupportTypeId): T | null =>
+                owner && owner.typeId === typeId ? (getSupportEntity(typeId, owner.id) as T | null) : null;
 
-                // Search trunks first
-                for (const t of trunks) {
-                    const pos = resolveJointPosFromSegments(t.segments as any[], jointId);
-                    if (pos) {
-                        foundTrunk = t;
-                        foundJointPos = pos;
-                        jointParentCacheRef.current.set(jointId, { kind: 'trunk', supportId: t.id });
-                        break;
-                    }
-                }
-
-                // If not in trunk, search branches
-                if (!foundTrunk) {
-                    for (const b of branches) {
-                        const pos = resolveJointPosFromSegments(b.segments as any[], jointId);
-                        if (pos) {
-                            foundBranch = b;
-                            foundJointPos = pos;
-                            jointParentCacheRef.current.set(jointId, { kind: 'branch', supportId: b.id });
-                            break;
-                        }
-                    }
-                }
-
-                // If not in trunk/branch, search kickstands
-                if (!foundTrunk && !foundBranch) {
-                    const kickstands = Object.values(getSnapshot().kickstands);
-                    for (const kickstand of kickstands) {
-                        const pos = resolveJointPosFromSegments(kickstand.segments as any[], jointId);
-                        if (pos) {
-                            foundKickstand = kickstand;
-                            foundJointPos = pos;
-                            jointParentCacheRef.current.set(jointId, { kind: 'kickstand', supportId: kickstand.id });
-                            break;
-                        }
-                    }
-                }
-
-                if (!foundTrunk && !foundBranch && !foundKickstand) {
-                    const twigs = getTwigs();
-                    for (const twig of twigs) {
-                        const pos = resolveJointPosFromSegments(twig.segments as any[], jointId);
-                        if (pos) {
-                            foundTwig = twig;
-                            foundJointPos = pos;
-                            jointParentCacheRef.current.set(jointId, { kind: 'twig', supportId: twig.id });
-                            break;
-                        }
-                    }
-                }
-
-                if (!foundTrunk && !foundBranch && !foundKickstand && !foundTwig) {
-                    const sticks = getSticks();
-                    for (const stick of sticks) {
-                        const pos = resolveJointPosFromSegments(stick.segments as any[], jointId);
-                        if (pos) {
-                            foundStick = stick;
-                            foundJointPos = pos;
-                            jointParentCacheRef.current.set(jointId, { kind: 'stick', supportId: stick.id });
-                            break;
-                        }
-                    }
-                }
-            }
+            const foundTrunk = ofType<Trunk>('trunk');
+            const foundBranch = ofType<Branch>('branch');
+            const foundKickstand = ofType<Kickstand>('kickstand');
+            const foundTwig = ofType<Twig>('twig');
+            const foundStick = ofType<Stick>('stick');
+            const foundJointPos = owner?.pos ?? null;
 
             const foundParent = foundTrunk || foundBranch || foundKickstand || foundTwig || foundStick;
             if (foundParent && foundJointPos) {
