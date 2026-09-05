@@ -9,7 +9,7 @@ use crate::encoders::registry::{
 };
 use crate::geometry::{parse_triangles, project_triangles_inplace};
 use crate::index::build_layer_index;
-use crate::metrics::SlicingPerfV3;
+use crate::metrics::{add_elapsed, EncodeStageCounters, SlicingPerfV3};
 use crate::pipeline::{render_layers_bounded, render_layers_rle, render_layers_rle_encoded};
 use crate::raster::{
     apply_blur_postprocess_inplace_with_roi, blur_gray_rle_streaming,
@@ -4643,6 +4643,10 @@ pub fn slice_and_rasterize_rle_encoded_v3(
         None
     };
 
+    // Per-stage timers for the encode closure below.  `png_encode_ns` covers the
+    // whole closure, which hides four pre-passes behind one number; these split it.
+    let stage_counters = Arc::new(EncodeStageCounters::default());
+
     let effective_encode_fn: Arc<
         dyn Fn(
                 u32,
@@ -4658,46 +4662,59 @@ pub fn slice_and_rasterize_rle_encoded_v3(
         let out_height = job.source_height_px as usize;
         let inner = encode_fn.clone();
         let dither_palette = dither_palette.clone();
+        let counters = stage_counters.clone();
         Arc::new(
             move |layer_idx: u32,
                   super_runs: &[crate::rle::RleRun],
                   support_super_runs: Option<&[crate::rle::RleRun]>| {
                 let downsample_min_alpha_u8 = ssaa_downsample_min_alpha_u8(blur_radius, 0);
                 let gray_runs = if ssaa_factor > 1 {
-                    downsample_binary_rle_to_gray_rle(
+                    let start = std::time::Instant::now();
+                    let downsampled = downsample_binary_rle_to_gray_rle(
                         super_runs,
                         super_width,
                         super_height,
                         ssaa_factor,
                         downsample_min_alpha_u8,
-                    )
+                    );
+                    add_elapsed(&counters.ssaa_downsample_ns, start);
+                    downsampled
                 } else {
                     super_runs.to_vec()
                 };
 
                 let post_aa_runs = if blur_radius > 0 {
                     // Streaming separable box blur: O((2r+1)×width) memory, no full-image allocation.
+                    let start = std::time::Instant::now();
                     let blurred =
                         blur_gray_rle_streaming(&gray_runs, out_width, out_height, blur_radius, 0);
+                    add_elapsed(&counters.blur_ns, start);
                     blurred
                 } else {
                     gray_runs
                 };
 
                 let final_runs = if let Some(ref palette) = dither_palette {
-                    crate::dither::dither_rle_layer_with_lut_and_gamma(
+                    let start = std::time::Instant::now();
+                    let dithered = crate::dither::dither_rle_layer_with_lut_and_gamma(
                         &post_aa_runs,
                         palette,
                         out_width,
                         out_height,
-                    )
+                    );
+                    add_elapsed(&counters.dither_ns, start);
+                    dithered
                 } else if let Some(lut) = tail_cure_lut.as_ref() {
-                    remap_gray_rle_with_lut(&post_aa_runs, lut)
+                    let start = std::time::Instant::now();
+                    let remapped = remap_gray_rle_with_lut(&post_aa_runs, lut);
+                    add_elapsed(&counters.dither_ns, start);
+                    remapped
                 } else {
                     post_aa_runs
                 };
 
                 let final_runs = if let Some(support_super_runs) = support_super_runs {
+                    let start = std::time::Instant::now();
                     let support_runs = if ssaa_factor > 1 {
                         downsample_binary_rle_to_gray_rle(
                             support_super_runs,
@@ -4709,17 +4726,28 @@ pub fn slice_and_rasterize_rle_encoded_v3(
                     } else {
                         support_super_runs.to_vec()
                     };
-                    merge_rle_max(final_runs, &support_runs)
+                    let merged = merge_rle_max(final_runs, &support_runs);
+                    add_elapsed(&counters.support_merge_ns, start);
+                    merged
                 } else {
                     final_runs
                 };
 
-                inner(layer_idx, &final_runs)
+                let start = std::time::Instant::now();
+                let encoded = inner(layer_idx, &final_runs);
+                add_elapsed(&counters.format_ns, start);
+                encoded
             },
         )
     } else {
         let inner = encode_fn.clone();
-        Arc::new(move |layer_idx, runs, _support_runs| inner(layer_idx, runs))
+        let counters = stage_counters.clone();
+        Arc::new(move |layer_idx, runs, _support_runs| {
+            let start = std::time::Instant::now();
+            let encoded = inner(layer_idx, runs);
+            add_elapsed(&counters.format_ns, start);
+            encoded
+        })
     };
 
     let (rendered_layers, layer_area_stats, mut perf) = render_layers_rle_encoded(
@@ -4734,6 +4762,7 @@ pub fn slice_and_rasterize_rle_encoded_v3(
         cancel_flag,
     )?;
     perf.index_build_ns = index_ns;
+    stage_counters.apply_to(&mut perf);
 
     Ok((rendered_layers, layer_area_stats, perf))
 }
