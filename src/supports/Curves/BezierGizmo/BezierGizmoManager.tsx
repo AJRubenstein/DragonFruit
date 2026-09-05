@@ -1,6 +1,6 @@
 import React, { useSyncExternalStore, useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import { subscribe, getSnapshot, updateTrunk, updateBranch, updateBrace, getSupportEntity } from '../../state';
+import { subscribe, getSnapshot, getSupportEntity } from '../../state';
 import { Trunk, Branch, Twig, Stick, Brace, Segment, BezierSegment, Joint } from '../../types';
 import { updateKickstand, useKickstandStoreState } from '../../SupportTypes/Kickstand/kickstandStore';
 import type { Kickstand as KickstandEntity } from '../../SupportTypes/Kickstand/types';
@@ -687,7 +687,7 @@ export function BezierGizmoManager() {
             const latestTrunk = liveTrunkPreviewRef.current ?? getSupportEntity('trunk', ctx.trunk.id) as Trunk | null;
             if (latestTrunk) {
                 // Final exact reconciliation after drag-time fast-path updates.
-                updateTrunk(latestTrunk);
+                updateSupportEntity('trunk', latestTrunk);
                 pushSupportHistory({
                     type: SUPPORT_UPDATE_TRUNK,
                     description: 'Edit trunk curve',
@@ -716,7 +716,7 @@ export function BezierGizmoManager() {
             } else if (typeId === 'branch' && draggedId) {
                 // Branches reconcile from the store when no preview was produced.
                 const latestBranch = getSupportEntity('branch', draggedId) as Branch | null;
-                if (latestBranch) updateBranch(latestBranch);
+                if (latestBranch) updateSupportEntity('branch', latestBranch);
             }
 
             if (draggedId) clearSupportDragPreview(typeId, draggedId);
@@ -772,7 +772,7 @@ export function BezierGizmoManager() {
                 curve.controlPoint2 = { x: newPos.x, y: newPos.y, z: newPos.z };
             }
 
-            updateBrace(newBrace);
+            updateSupportEntity('brace', newBrace);
             return;
         }
 

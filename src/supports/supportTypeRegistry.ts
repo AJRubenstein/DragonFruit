@@ -1,7 +1,7 @@
 import type { SupportCollectionName, SupportEntityByCollection, SupportRemovedEntityByCollection, SupportState } from './types';
 import {
-    SUPPORT_ADD_TRUNK, SUPPORT_REMOVE_TRUNK,
-    SUPPORT_ADD_BRANCH, SUPPORT_REMOVE_BRANCH,
+    SUPPORT_ADD_TRUNK, SUPPORT_REMOVE_TRUNK, SUPPORT_UPDATE_TRUNK,
+    SUPPORT_ADD_BRANCH, SUPPORT_REMOVE_BRANCH, SUPPORT_UPDATE_BRANCH,
     SUPPORT_ADD_LEAF, SUPPORT_REMOVE_LEAF,
     SUPPORT_ADD_TWIG, SUPPORT_REMOVE_TWIG,
     SUPPORT_ADD_STICK, SUPPORT_REMOVE_STICK,
@@ -159,6 +159,16 @@ export interface SupportTypeDescriptor {
     selectionCategory: SupportSelectionCategory;
     historyAdd: SupportHistoryActionType;
     historyRemove: SupportHistoryActionType;
+    /**
+     * The action a before/after edit to this type records, when it has one of
+     * its own. Trunk and branch do; every other type's edits go through the
+     * shared support-edit snapshot instead.
+     *
+     * Distinct from `ownsEditHistoryEntry`, which only trunk sets: that says
+     * the joint-drag path pushes its own entry, this says an update action
+     * exists at all.
+     */
+    historyUpdate?: SupportHistoryActionType;
     /** Whether a modelId walk includes this type. All eight do; the flag exists so a future type can opt out. */
     carriesModelId: boolean;
     /** Whether instances carry real shafts, for segment and joint walks. */
@@ -363,6 +373,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         selectionCategory: 'trunk',
         historyAdd: SUPPORT_ADD_TRUNK,
         historyRemove: SUPPORT_REMOVE_TRUNK,
+        historyUpdate: SUPPORT_UPDATE_TRUNK,
         carriesModelId: true,
     },
     {
@@ -396,6 +407,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         selectionCategory: 'branch',
         historyAdd: SUPPORT_ADD_BRANCH,
         historyRemove: SUPPORT_REMOVE_BRANCH,
+        historyUpdate: SUPPORT_UPDATE_BRANCH,
         carriesModelId: true,
     },
     {

@@ -2975,6 +2975,10 @@ function applySupportEntityUpdate(
     notify();
 }
 
+/**
+ * @deprecated for removal -- prefer `updateSupportEntity('trunk', entity)`.
+ * Kept for `SupportTypes/Trunk/`, which may name its own type, and for tests.
+ */
 export function updateTrunk(trunk: Trunk) {
     applySupportEntityUpdate('trunk', trunk);
 }
@@ -2989,6 +2993,10 @@ export function addLeaf(leaf: Leaf) {
     addSupportEntity('leaf', leaf);
 }
 
+/**
+ * @deprecated for removal -- prefer `updateSupportEntity('leaf', entity)`.
+ * Kept for `SupportTypes/Leaf/`, which may name its own type, and for tests.
+ */
 export function updateLeaf(leaf: Leaf) {
     if (!state.leaves[leaf.id]) return;
 
@@ -3053,6 +3061,10 @@ function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): bo
 }
 
 /** @deprecated Thin wrapper for removal; prefer `replaceSupportEntity('anchor', entity)`. */
+/**
+ * @deprecated for removal -- prefer `updateSupportEntity('anchor', entity)`.
+ * Kept for `SupportTypes/Anchor/`, which may name its own type, and for tests.
+ */
 export function updateAnchor(anchor: Anchor) {
     replaceSupportEntity('anchor', anchor);
 }
@@ -3121,14 +3133,26 @@ KNOT_PLACEMENT_BY_TYPE.set('branch', (entity, knot, segment, segmentIndex) => {
     return { pos: calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, segment, knot.t) };
 });
 
+/**
+ * @deprecated for removal -- prefer `updateSupportEntity('twig', entity)`.
+ * Kept for `SupportTypes/Twig/`, which may name its own type, and for tests.
+ */
 export function updateTwig(twig: Twig) {
     applySupportEntityUpdate('twig', twig);
 }
 
+/**
+ * @deprecated for removal -- prefer `updateSupportEntity('stick', entity)`.
+ * Kept for `SupportTypes/Stick/`, which may name its own type, and for tests.
+ */
 export function updateStick(stick: Stick) {
     applySupportEntityUpdate('stick', stick);
 }
 
+/**
+ * @deprecated for removal -- prefer `updateSupportEntity('brace', entity)`.
+ * Kept for `SupportTypes/Brace/`, which may name its own type, and for tests.
+ */
 export function updateBrace(brace: Brace) {
     if (!state.braces[brace.id]) return;
     const nextBraces = { ...state.braces, [brace.id]: brace };
@@ -3161,6 +3185,10 @@ export function removeBranch(branchId: string) {
     return removeSupportEntity('branch', branchId);
 }
 
+/**
+ * @deprecated for removal -- prefer `updateSupportEntity('branch', entity)`.
+ * Kept for `SupportTypes/Branch/`, which may name its own type, and for tests.
+ */
 export function updateBranch(branch: Branch) {
     applySupportEntityUpdate('branch', branch);
 }

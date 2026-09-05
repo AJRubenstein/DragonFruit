@@ -12,10 +12,9 @@ import {
     getSupportEntities,
     getRootById,
     updateKnot,
-    updateBranch,
 } from '../../state';
 import { Branch, Knot, Segment } from '../../types';
-import { getSupportTypeDescriptor, type SupportEdge } from '../../supportTypeRegistry';
+import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
 import { resolveSegmentEndpoints } from './segmentEndpoints';
 import { projectOntoSegment } from './knotUtils';
 import { ElasticChainInitialState, solveElasticChain } from '../../PlacementLogic/ElasticChainSolver';
@@ -402,7 +401,7 @@ export function KnotGizmo() {
         for (const [branchId, previewSegments] of Object.entries(previewBranchSegmentsById)) {
             const branch = getSupportEntity('branch', branchId) as Branch | null;
             if (!branch) continue;
-            updateBranch({ ...branch, segments: previewSegments });
+            updateSupportEntity('branch', { ...branch, segments: previewSegments });
         }
 
         if (previewKnot) {

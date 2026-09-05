@@ -29,7 +29,6 @@ import {
   removeSupportEntity,
   removeJointById,
   updateKnot,
-  updateTrunk,
   setSelectedId,
   setHoveredState,
   subscribe,
@@ -37,7 +36,7 @@ import {
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_REMOVE_ANCHOR, SUPPORT_REMOVE_BRANCH, SUPPORT_REMOVE_BRACE, SUPPORT_REMOVE_LEAF, SUPPORT_REMOVE_TRUNK, SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_REMOVE_TWIG, SUPPORT_REMOVE_STICK, SUPPORT_AUTO_BRACE_REPLACE, SUPPORT_REMOVE_KICKSTAND, type SupportBranchRemovePayload } from '@/supports/history/actionTypes';
-import { getSupportTypeBySelectionCategory, SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
+import { getSupportTypeBySelectionCategory, SUPPORT_TYPES, updateSupportEntity } from '@/supports/supportTypeRegistry';
 import { knotFields } from '@/supports/interaction/shared/selection/selectedIdsByType';
 import { clearSupportSelection, getResolvedPrimarySelection, selectSupportIds } from '@/supports/interaction/shared/selection/selectionController';
 import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
@@ -455,7 +454,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
             const applied = computeAndApplyTrunkDiameterProfile(afterSnapshot, trunkId);
             if (applied) {
               for (const u of applied.knotUpdates) updateKnot(u.after);
-              updateTrunk(applied.trunk);
+              updateSupportEntity('trunk', applied.trunk);
               const beforeTrunk = beforeSnapshot.trunks[trunkId];
               if (beforeTrunk) {
                 trunkUpdate = { before: structuredClone(beforeTrunk), after: structuredClone(applied.trunk) };
@@ -530,7 +529,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
           const applied = computeAndApplyTrunkDiameterProfile(afterSnapshot, trunkId);
           if (applied) {
             for (const u of applied.knotUpdates) updateKnot(u.after);
-            updateTrunk(applied.trunk);
+            updateSupportEntity('trunk', applied.trunk);
             const beforeTrunk = beforeSnapshot.trunks[trunkId];
             if (beforeTrunk) {
               trunkUpdate = { before: structuredClone(beforeTrunk), after: structuredClone(applied.trunk) };

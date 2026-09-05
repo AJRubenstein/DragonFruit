@@ -7,11 +7,9 @@ import { findShaftOwnerOfJoint, getSupportEntity, jointPosIn, getSnapshot,
     getRootById,
     getKnotById,
     setInteractionWarning,
-    updateTwig,
-    updateStick,
  } from '../../state';
 import { getTrunkSegmentEndpoints } from '../Knot/knotUtils';
-import { getSupportTypeDescriptor, type SupportTypeId } from '../../supportTypeRegistry';
+import { getSupportTypeDescriptor, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
 import { Vec3, Trunk, Branch, Roots, Segment, Twig, Stick, ContactDisk } from '../../types';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
@@ -703,7 +701,7 @@ export function useJointInteraction(enabled: boolean = true) {
                             contactDiskB: nextDiskB,
                         };
 
-                        updateTwig(committedTwig);
+                        updateSupportEntity('twig', committedTwig);
                     }
                 } else if (activeIdOf('stick')) {
                     const stick = getSupportEntity('stick', activeIdOf('stick')!) as Stick | null;
@@ -723,7 +721,7 @@ export function useJointInteraction(enabled: boolean = true) {
                             contactConeB: nextConeB,
                         };
 
-                        updateStick(committedStick);
+                        updateSupportEntity('stick', committedStick);
                     }
                 }
             }
