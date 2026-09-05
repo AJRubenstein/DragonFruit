@@ -461,6 +461,9 @@ export function useJointInteraction(enabled: boolean = true) {
                 if (owner) jointParentCacheRef.current.set(jointId, { kind: owner.typeId, supportId: owner.id });
             }
 
+            // @deprecated for removal -- the downstream drag blocks each read
+            // their own local, so the owner is unpacked back into five. Goes
+            // when the activeXId refs collapse to one { typeId, id }.
             const ofType = <T,>(typeId: SupportTypeId): T | null =>
                 owner && owner.typeId === typeId ? (getSupportEntity(typeId, owner.id) as T | null) : null;
 

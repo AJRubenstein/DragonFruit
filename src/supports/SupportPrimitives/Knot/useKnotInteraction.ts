@@ -32,6 +32,11 @@ function hostsAShaft(containerType: KnotHostType): boolean {
     return containerType !== 'leafCone';
 }
 
+/**
+ * @deprecated for removal -- one optional field per support type. A single
+ * `{ typeId, entity }` would carry the same thing and let HOST_SLOT, shaftOf
+ * and the containerType chains go with it.
+ */
 interface ActiveHost {
     segmentId: string;
     containerType: KnotHostType;
@@ -330,7 +335,13 @@ export function useKnotInteraction(enabled: boolean = true) {
         return { t: tClamped, clamped: Math.abs(tClamped - tDesired) > 1e-6 };
     };
 
-    /** Which ActiveHost slot each type's entity lands in. */
+    /**
+     * Which ActiveHost slot each type's entity lands in.
+     *
+     * @deprecated for removal -- ActiveHost carries one optional field per
+     * type, so this map exists only to pick between them. Collapsing it to a
+     * single `{ typeId, entity }` removes both.
+     */
     const HOST_SLOT: Record<string, keyof ActiveHost> = {
         trunk: 'trunk', branch: 'branch', twig: 'twig',
         stick: 'stick', anchor: 'anchor', kickstand: 'kickstand',
@@ -452,7 +463,12 @@ export function useKnotInteraction(enabled: boolean = true) {
         return host;
     };
 
-    /** The shafted entity and hosts backing this host record, if it has one. */
+    /**
+     * The shafted entity and hosts backing this host record, if it has one.
+     *
+     * @deprecated for removal -- the switch enumerates types only because
+     * ActiveHost stores each in its own field. Goes with HOST_SLOT.
+     */
     const shaftOf = (host: ActiveHost): { entity: { segments: Segment[] }; hosts: EndpointHosts } | null => {
         switch (host.containerType) {
             case 'trunk': return host.trunk ? { entity: host.trunk, hosts: { root: host.root } } : null;
