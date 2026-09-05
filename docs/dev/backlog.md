@@ -85,7 +85,7 @@ unless marked otherwise; recorded because the same shape will recur.
 | Settings fell through to "leaf" for an unhandled kind | `applySettingsToSupportTarget` | fixed |
 | A knot on a kickstand shaft loaded with `diameter: NaN` — normalization synthesised a segment carrying no diameter | `normalizeLoadedKnotAndLeafGeometry` | fixed |
 | A leaf on an anchor- or kickstand-hosted knot stayed behind when its model moved — the segment/modelId index covered four of six shafted types | `transformSupportsForModel` | fixed |
-| Scene-batched branches passed only `modelId` to `isModelVisible`, so a branch with none of its own could not resolve through its parent knot and was hidden under any model filter | `SupportRenderer` | fixed |
+| Scene-batched branches passed only `modelId` to `isModelVisible`, so a branch with none of its own could not resolve through its parent knot and was hidden under any model filter. Verified mechanically (false -> true); whether such branches occur in practice is unconfirmed, though four other sites defend against it | `SupportRenderer` | fixed, latent |
 | `canDeleteSelection` omits `anchor` | `useSupportInteractionManager` | **open** — §7 |
 | Nested-brace reachability clauses are dead code, subsumed by `touchedSegmentIds` | `transformSupportsForModel` | fixed |
 | Shaft stub length is 10 for trunk, 5 elsewhere; four other sites use 10 | `shaftFallback`, `resolveSegmentEndpoints` | **open** — inherited drift, needs a decision |
