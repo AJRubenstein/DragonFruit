@@ -157,3 +157,20 @@ test('primitives are not in the view', () => {
     assert.equal(supports['root-a'], undefined);
     assert.equal(supports['knot-a'], undefined);
 });
+
+test('a write to any collection changes the identity', () => {
+    // SupportProxyMeshLayer compares this one identity where it used to compare
+    // eight collections, so a write that failed to invalidate it would leave
+    // stale proxy geometry -- and proxy geometry is what picking hits.
+    for (const descriptor of SUPPORT_TYPES) {
+        oneOfEach();
+
+        const beforeAdd = getSupports();
+        addSupportEntity(descriptor.id, SEED[descriptor.id](`${descriptor.id}-b`) as never);
+        assert.notEqual(getSupports(), beforeAdd, `adding a ${descriptor.id} did not invalidate`);
+
+        const beforeRemove = getSupports();
+        removeSupportEntity(descriptor.id, `${descriptor.id}-b`);
+        assert.notEqual(getSupports(), beforeRemove, `removing a ${descriptor.id} did not invalidate`);
+    }
+});
