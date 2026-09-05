@@ -2,10 +2,10 @@ import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
-import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getSupportEntities, getKnotById, getRootById, setInteractionWarning, updateKnot, updateLeaf, updateBranch, subscribe  } from '../../state';
+import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getSupportEntities, getKnotById, getRootById, setInteractionWarning, updateKnot, subscribe  } from '../../state';
 import { Anchor, Branch, Brace, Knot, Leaf, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
 import { resolveSegmentEndpoints, type EndpointHosts } from './segmentEndpoints';
-import { getSupportTypeDescriptor, type SupportEdge } from '../../supportTypeRegistry';
+import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { projectOntoSegment, shouldStayOnCurrentSegment } from './knotUtils';
 import { getSettings } from '../../Settings';
@@ -812,7 +812,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             for (const [branchId, previewSegments] of Object.entries(previewBranchSegmentsByIdAtEnd)) {
                 const branch = getSupportEntity('branch', branchId) as Branch | null;
                 if (branch) {
-                    updateBranch({ ...branch, segments: previewSegments });
+                    updateSupportEntity('branch', { ...branch, segments: previewSegments });
                 }
             }
 
@@ -843,7 +843,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                     for (const leaf of attachedLeaves) {
                         if (!leaf.contactCone) continue;
                         if (leaf.contactCone.profile.bodyDiameterMm === localTwigDia) continue;
-                        updateLeaf({
+                        updateSupportEntity('leaf', {
                             ...leaf,
                             contactCone: {
                                 ...leaf.contactCone,

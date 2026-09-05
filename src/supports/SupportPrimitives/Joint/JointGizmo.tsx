@@ -1,6 +1,7 @@
 import React, { useSyncExternalStore, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { ScreenSpaceGizmo } from '@/components/gizmo/ScreenSpaceGizmo';
-import { subscribe, getSnapshot, updateTwig, updateStick, findShaftOwnerOfJoint, getSupportEntity } from '../../state';
+import { subscribe, getSnapshot, findShaftOwnerOfJoint, getSupportEntity } from '../../state';
+import { updateSupportEntity } from '../../supportTypeRegistry';
 import * as THREE from 'three';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_UPDATE_TRUNK } from '../../history/actionTypes';
@@ -498,14 +499,14 @@ export function JointGizmo() {
             } else if (twig) {
                 const committedTwig = liveTwigPreviewRef.current ?? getSupportEntity('twig', twig.id) as Twig | null;
                 if (committedTwig) {
-                    updateTwig(committedTwig);
+                    updateSupportEntity('twig', committedTwig);
                 }
                 clearSupportDragPreview('twig', twig.id);
                 pushSupportEditHistory('Move twig joint', initialEditSnapshotRef.current, captureSupportEditSnapshot());
             } else if (stick) {
                 const committedStick = liveStickPreviewRef.current ?? getSupportEntity('stick', stick.id) as Stick | null;
                 if (committedStick) {
-                    updateStick(committedStick);
+                    updateSupportEntity('stick', committedStick);
                 }
                 clearSupportDragPreview('stick', stick.id);
                 pushSupportEditHistory('Move stick joint', initialEditSnapshotRef.current, captureSupportEditSnapshot());

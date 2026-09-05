@@ -15,6 +15,7 @@ import {
     updateTwig,
 } from '../state';
 import { SUPPORT_TYPES, updateSupportEntity } from '../supportTypeRegistry';
+import { SUPPORT_UPDATE_BRANCH, SUPPORT_UPDATE_TRUNK } from '../history/actionTypes';
 import type { SupportState } from '../types';
 
 /**
@@ -232,4 +233,18 @@ test('every declared type has an updater registered', () => {
             `${descriptor.id} has no updater in the slot`,
         );
     }
+});
+
+test('exactly the types with an update action declare one', () => {
+    // The undo handlers are derived from `historyUpdate`, so a type losing its
+    // declaration silently stops registering a handler -- no error, undo just
+    // does nothing. Removing branch's passed every other test in the suite.
+    const declared = SUPPORT_TYPES
+        .filter((d) => d.historyUpdate)
+        .map((d) => [d.id, d.historyUpdate]);
+
+    assert.deepEqual(declared, [
+        ['trunk', SUPPORT_UPDATE_TRUNK],
+        ['branch', SUPPORT_UPDATE_BRANCH],
+    ]);
 });

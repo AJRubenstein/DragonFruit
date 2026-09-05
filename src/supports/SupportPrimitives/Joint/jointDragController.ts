@@ -1,8 +1,6 @@
 import type { Branch, Roots, Trunk, Vec3 } from '../../types';
-import { updateBranch, updateTrunk } from '../../state';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
-import { updateKickstand } from '../../SupportTypes/Kickstand/kickstandStore';
-import { getSupportTypeDescriptor, type SupportTypeId } from '../../supportTypeRegistry';
+import { getSupportTypeDescriptor, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
 import { moveJoint } from './jointUtils';
 import { clearSupportDragPreview, emitSupportDragPreview } from './jointDragRuntime';
 
@@ -127,22 +125,11 @@ export function commitJointDragSupport<K extends JointDragSupportKind>(
   const { clearPreview = true, stripDiskLengthOverride = false } = options;
   const committed = normalizeCommittedSupport(kind, support, stripDiskLengthOverride);
 
-  // Exhaustive rather than a trailing else: a fourth draggable type would
-  // otherwise be written silently into the kickstand collection.
-  switch (kind) {
-    case 'trunk':
-      updateTrunk(committed as Trunk);
-      break;
-    case 'branch':
-      updateBranch(committed as unknown as Branch);
-      break;
-    case 'kickstand':
-      updateKickstand(committed as unknown as Kickstand);
-      break;
-    default: {
-      const unhandled: never = kind;
-      throw new Error(`No joint-drag commit for support type ${String(unhandled)}`);
-    }
+  // Dispatched by the registry: a fourth draggable type is written to its own
+  // collection without touching this file. The trailing else this replaced put
+  // anything unrecognised into the kickstand collection.
+  if (!updateSupportEntity(kind, committed)) {
+    throw new Error(`No updater registered for support type ${kind}`);
   }
 
   if (clearPreview) {

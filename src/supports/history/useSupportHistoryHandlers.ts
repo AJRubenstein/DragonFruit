@@ -14,8 +14,6 @@ import {
   SUPPORT_REMOVE_TWIG,
   SUPPORT_REMOVE_STICK,
   SUPPORT_REMOVE_BRACE,
-  SUPPORT_UPDATE_TRUNK,
-  SUPPORT_UPDATE_BRANCH,
   SUPPORT_ADD_KICKSTAND,
   SUPPORT_REMOVE_KICKSTAND,
   SUPPORT_REPLACE_TRUNK,
@@ -25,9 +23,9 @@ import {
   SupportReplaceStatePayload,
 } from './actionTypes';
 import { registerSupportHistoryHandler } from './supportHistory';
-import { removeSupportEntity, updateTrunk, updateBranch, updateKnot, setSnapshot, getSnapshot } from '../state';
+import { removeSupportEntity, updateKnot, setSnapshot, getSnapshot } from '../state';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
-import { getSupportTypeBySelectionCategory, restoreToCollection, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, SUPPORT_REMOVAL_SHAPES, SUPPORT_TYPES, type SupportCollectionKey, type SupportEntityIn, type SupportTypeDescriptor } from '../supportTypeRegistry';
+import { getSupportTypeBySelectionCategory, restoreToCollection, updateSupportEntity, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, SUPPORT_REMOVAL_SHAPES, SUPPORT_TYPES, type SupportCollectionKey, type SupportEntityIn, type SupportTypeDescriptor } from '../supportTypeRegistry';
 
 function applySnapshotHistory(payload: SupportReplaceStatePayload, direction: 'undo' | 'redo') {
   clearSupportSelection();
@@ -162,9 +160,12 @@ function applyHostEdits(payload: unknown, direction: 'undo' | 'redo'): void {
   for (const update of fields.knotUpdates ?? []) {
     updateKnot(direction === 'undo' ? update.before : update.after);
   }
+  // Stays named: `trunkUpdate` is a field on the stored payload, so the type
+  // name is in the history wire format rather than in this dispatch. Goes with
+  // the payload shapes, not with this file.
   const trunkUpdate = fields.trunkUpdate;
   if (trunkUpdate) {
-    updateTrunk(direction === 'undo' ? trunkUpdate.before : trunkUpdate.after);
+    updateSupportEntity('trunk', direction === 'undo' ? trunkUpdate.before : trunkUpdate.after);
   }
 }
 
@@ -194,30 +195,20 @@ export function registerSupportHistoryHandlers(): () => void {
         return true;
       }),
     ]),
-    registerSupportHistoryHandler(SUPPORT_UPDATE_TRUNK, (payload, direction) => {
-      if (!payload?.before || !payload?.after) return false;
-      if (direction === 'undo') {
-        updateTrunk(payload.before);
-      } else {
-        updateTrunk(payload.after);
-      }
-      // Keep the selection across the restore — the support still exists —
-      // unless it now points at an entity that was removed underneath.
-      if (!selectionExistsInSnapshot()) clearSupportSelection();
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_UPDATE_BRANCH, (payload, direction) => {
-      if (!payload?.before || !payload?.after) return false;
-      if (direction === 'undo') {
-        updateBranch(payload.before);
-      } else {
-        updateBranch(payload.after);
-      }
-      // Keep the selection across the restore — the support still exists —
-      // unless it now points at an entity that was removed underneath.
-      if (!selectionExistsInSnapshot()) clearSupportSelection();
-      return true;
-    }),
+    // Update handlers, for the types that record a before/after edit of their
+    // own. Both directions just apply the stored entity, so the pair is the
+    // same code with the payload side swapped.
+    ...SUPPORT_TYPES.flatMap((descriptor) => (descriptor.historyUpdate
+      ? [registerSupportHistoryHandler(descriptor.historyUpdate, (payload, direction) => {
+        const edit = payload as { before?: { id: string }; after?: { id: string } } | undefined;
+        if (!edit?.before || !edit?.after) return false;
+        updateSupportEntity(descriptor.id, direction === 'undo' ? edit.before : edit.after);
+        // Keep the selection across the restore — the support still exists —
+        // unless it now points at an entity that was removed underneath.
+        if (!selectionExistsInSnapshot()) clearSupportSelection();
+        return true;
+      })]
+      : [])),
     registerSupportHistoryHandler(SUPPORT_REPLACE_TRUNK, (payload, direction) => {
       if (!payload?.before || !payload?.after) return false;
       clearSupportSelection();

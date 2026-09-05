@@ -58,7 +58,7 @@ import {
 } from '@/components/controls/ArrangePanel';
 import { DuplicatePanel, type DuplicateLayoutMode } from '../components/controls/DuplicatePanel';
 import { VisualSettingsPanel } from '@/components/controls/VisualSettingsPanel';
-import { countSupportCollections, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
+import { countSupportCollections, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, updateSupportEntity, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 import { LayerSlider } from '@/components/controls/LayerSlider';
 import { PrintingLayerGpuPreview } from '@/components/controls/PrintingLayerGpuPreview';
 import { SupportSidebar } from '@/supports/Settings';
@@ -320,7 +320,7 @@ import {
   getSavedUvToolsSettings,
   resolveUvToolsExecutablePath,
 } from '@/components/settings/uvToolsPreferences';
-import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, toggleSegmentCurve, transformSupportsForModel, updateTrunk, updateBranch, updateTwig, updateStick, updateKnot } from '@/supports/state';
+import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, toggleSegmentCurve, transformSupportsForModel, updateKnot } from '@/supports/state';
 import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
 import { splitShaft, splitBranchShaft, splitTwigShaft, splitStickShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
@@ -5874,7 +5874,7 @@ export default function Home() {
                 : projectSplitPoint(start, end, splitTargetPoint);
               const { trunk: updated, knotRemaps } = splitShaft(trunk, segmentId, projected.point, projected.t, root, state.knots);
               applyJointSplitKnotRemaps(knotRemaps);
-              updateTrunk(updated);
+              updateSupportEntity('trunk', updated);
               pushSupportEditHistory('Create trunk joint', beforeSnapshot, captureSupportEditSnapshot());
             }
           }
@@ -5900,7 +5900,7 @@ export default function Home() {
                 : projectSplitPoint(start, end, splitTargetPoint);
               const { branch: updated, knotRemaps } = splitBranchShaft(branch, segmentId, projected.point, projected.t, parentKnot, state.knots);
               applyJointSplitKnotRemaps(knotRemaps);
-              updateBranch(updated);
+              updateSupportEntity('branch', updated);
               pushSupportEditHistory('Create branch joint', beforeSnapshot, captureSupportEditSnapshot());
             }
           }
@@ -5923,7 +5923,7 @@ export default function Home() {
                 : projectSplitPoint(start, end, splitTargetPoint);
               const { twig: updated, knotRemaps } = splitTwigShaft(twig, segmentId, projected.point, projected.t, state.knots);
               applyJointSplitKnotRemaps(knotRemaps);
-              updateTwig(updated);
+              updateSupportEntity('twig', updated);
               pushSupportEditHistory('Create twig joint', beforeSnapshot, captureSupportEditSnapshot());
             }
           }
@@ -5946,7 +5946,7 @@ export default function Home() {
                 : projectSplitPoint(start, end, splitTargetPoint);
               const { stick: updated, knotRemaps } = splitStickShaft(stick, segmentId, projected.point, projected.t, state.knots);
               applyJointSplitKnotRemaps(knotRemaps);
-              updateStick(updated);
+              updateSupportEntity('stick', updated);
               pushSupportEditHistory('Create stick joint', beforeSnapshot, captureSupportEditSnapshot());
             }
           }
