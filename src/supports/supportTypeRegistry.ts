@@ -160,6 +160,16 @@ export interface SupportTypeDescriptor {
     historyAdd: SupportHistoryActionType;
     historyRemove: SupportHistoryActionType;
     /**
+     * Whether this type is serialised as a bundle rather than a bare entity.
+     *
+     * Kickstand alone is: the wire format writes it as
+     * `{ kickstand, root, hostKnot }`, so a loader walking the arrays by
+     * collection key has to unwrap it instead of reading entities directly.
+     * A wire-format artefact, tracked in docs/dev/backlog.md -- declared here
+     * so the loader can ask rather than test the key by name.
+     */
+    serialisedAsBundle?: boolean;
+    /**
      * The action a before/after edit to this type records, when it has one of
      * its own. Trunk and branch do; every other type's edits go through the
      * shared support-edit snapshot instead.
@@ -591,6 +601,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         selectionCategory: 'kickstand',
         historyAdd: SUPPORT_ADD_KICKSTAND,
         historyRemove: SUPPORT_REMOVE_KICKSTAND,
+        serialisedAsBundle: true,
         carriesModelId: true,
     },
 ];
