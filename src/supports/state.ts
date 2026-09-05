@@ -3305,25 +3305,28 @@ export function getModelIdForSupportEntityId(id: string | null | undefined): str
         if (entity) return modelIdOf(entity);
     }
 
-    // A primitive on a shaft: segment, or either of its joints.
-    for (const descriptor of SUPPORT_TYPES) {
-        if (!descriptor.hasSegments) continue;
-        for (const entity of Object.values(state[descriptor.location.key])) {
+    // One pass over every support, asking each what it is. The two nested walks
+    // this replaces searched all segments before any edge; merging them is safe
+    // because the two match disjoint id kinds -- a segment or joint id, versus
+    // the knot id an edge points at -- so no id can satisfy both.
+    for (const entity of Object.values(getSupports())) {
+        const typeId = (entity as { typeId?: SupportTypeId }).typeId;
+        if (!typeId) continue;
+        const descriptor = getSupportTypeDescriptor(typeId);
+
+        // A primitive on a shaft: segment, or either of its joints.
+        if (descriptor.hasSegments) {
             const segments = (entity as { segments?: Segment[] }).segments ?? [];
             if (segments.some((segment) =>
                 segment.id === id || segment.topJoint?.id === id || segment.bottomJoint?.id === id)) {
                 return modelIdOf(entity);
             }
         }
-    }
 
-    // An entity pointing at the id through one of its declared edges.
-    for (const descriptor of SUPPORT_TYPES) {
-        const knotEdges = descriptor.edges.filter((edge) => edge.to === 'knots');
-        if (knotEdges.length === 0) continue;
-        for (const entity of Object.values(state[descriptor.location.key])) {
-            const fields = entity as unknown as Record<string, unknown>;
-            if (knotEdges.some((edge) => fields[edge.field] === id)) return modelIdOf(entity);
+        // Or the entity points at the id through one of its declared edges.
+        const fields = entity as unknown as Record<string, unknown>;
+        if (descriptor.edges.some((edge) => edge.to === 'knots' && fields[edge.field] === id)) {
+            return modelIdOf(entity);
         }
     }
 
@@ -3383,13 +3386,10 @@ export function findShaftOwnerOfSegment(
         return getSupportEntity(descriptor.id, ownerId) ? { typeId: descriptor.id, id: ownerId } : null;
     }
 
-    for (const descriptor of SUPPORT_TYPES) {
-        if (!descriptor.hasSegments) continue;
-        const collection = state[descriptor.location.key] as Record<string, { id: string; segments?: Segment[] }>;
-        for (const entity of Object.values(collection)) {
-            if (entity.segments?.some((segment) => segment.id === segmentId)) {
-                return { typeId: descriptor.id, id: entity.id };
-            }
+    for (const entity of Object.values(getSupports()) as { id: string; segments?: Segment[] }[]) {
+        if (entity.segments?.some((segment) => segment.id === segmentId)) {
+            const typeId = getSupportTypeOf(entity.id);
+            if (typeId) return { typeId, id: entity.id };
         }
     }
     return null;
@@ -3408,13 +3408,11 @@ export function jointPosIn(segments: readonly Segment[], jointId: string): Vec3 
 export function findShaftOwnerOfJoint(
     jointId: string,
 ): { typeId: SupportTypeId; id: string; pos: Vec3 } | null {
-    for (const descriptor of SUPPORT_TYPES) {
-        if (!descriptor.hasSegments) continue;
-        const collection = state[descriptor.location.key] as Record<string, { id: string; segments?: Segment[] }>;
-        for (const entity of Object.values(collection)) {
-            const pos = jointPosIn(entity.segments ?? [], jointId);
-            if (pos) return { typeId: descriptor.id, id: entity.id, pos };
-        }
+    for (const entity of Object.values(getSupports()) as { id: string; segments?: Segment[] }[]) {
+        const pos = jointPosIn(entity.segments ?? [], jointId);
+        if (!pos) continue;
+        const typeId = getSupportTypeOf(entity.id);
+        if (typeId) return { typeId, id: entity.id, pos };
     }
     return null;
 }
