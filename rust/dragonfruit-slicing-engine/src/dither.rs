@@ -396,4 +396,34 @@ mod tests {
         }
         assert!(!flat, "The dithered output should contain spatially distributed values rather than a single flat level");
     }
+
+    /// An empty layer must dither to nothing at all.
+    ///
+    /// This is the invariant that makes it legal to skip empty regions: with
+    /// `src = 0` and no incoming error the desired energy is 0, which lands in
+    /// the bin whose target energy is exactly 0, so the quantisation error is 0
+    /// and nothing is propagated onwards.  Empty space consumes error but never
+    /// creates it.
+    #[test]
+    fn empty_layer_dithers_to_nothing() {
+        let mut lut = [0u8; 256];
+        for i in 0..256 {
+            lut[i] = i as u8;
+        }
+        let palette = DitherPaletteV3::new(&lut, 2.2, 3);
+
+        let (width, height) = (64usize, 8usize);
+        let input = vec![RleRun { length: (width * height) as u32, value: 0 }];
+        let out = dither_rle_layer_with_lut_and_gamma(&input, &palette, width, height);
+
+        assert!(
+            out.iter().all(|run| run.value == 0),
+            "an empty layer produced non-zero output: {out:?}"
+        );
+        assert_eq!(
+            out.iter().map(|run| run.length as usize).sum::<usize>(),
+            width * height,
+            "output pixel count must match the layer"
+        );
+    }
 }
