@@ -16,7 +16,7 @@ import {
     type PlacementSurface,
     type Vec3Like,
 } from './supportPlacementPreviewMath';
-import { anyContactMatches, collectOwnedRootIds, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
+import { anyContactMatches, collectOwnedRootIds, contactEndpointsFor, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
 import { buildKnotIndex, selectedIdsForType, type CollectionLookup, type SelectionInputs } from './interaction/shared/selection/selectedIdsByType';
 import { TrunkRenderer } from './SupportTypes/Trunk/TrunkRenderer';
 import { BranchRenderer } from './SupportTypes/Branch/BranchRenderer';
@@ -1975,102 +1975,51 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return map;
     }, [renderKnotList, renderBracesById, renderLeavesById, renderKickstandKnotList, segmentModelIdById]);
 
+    /**
+     * Contact cones for the batched pass, keyed by support.
+     *
+     * Which fields to read comes from the declared contact endpoints. Anchors
+     * are absent deliberately -- AnchorRenderer draws their cone itself, and
+     * only while selected; see the note in the plan.
+     */
     const contactConesBySupport = useMemo(() => {
         const result = new Map<string, { supportId: string; modelId?: string; cones: InstancedContactCone[] }>();
 
-        for (const trunk of renderTrunkList) {
-            const modelId = trunk.modelId;
-            if (!isModelVisible(modelId)) continue;
-            if (!trunk.contactCone) continue;
+        const collect = <T extends { id: string; modelId?: string }>(
+            typeId: SupportTypeId,
+            list: readonly T[],
+            resolveModelId: (entity: T) => string | undefined,
+        ) => {
+            for (const entity of list) {
+                const modelId = resolveModelId(entity);
+                if (!isModelVisible(modelId)) continue;
 
-            result.set(trunk.id, {
-                supportId: trunk.id,
-                modelId,
-                cones: [{
-                    id: trunk.contactCone.id,
-                    supportId: trunk.id,
-                    modelId,
-                    pos: trunk.contactCone.pos,
-                    normal: trunk.contactCone.normal,
-                    surfaceNormal: trunk.contactCone.surfaceNormal,
-                    diskLengthOverride: trunk.contactCone.diskLengthOverride,
-                    profile: trunk.contactCone.profile,
-                }],
-            });
-        }
-
-        for (const branch of renderBranchList) {
-            const modelId = branch.modelId ?? modelIdByKnotId.get(branch.parentKnotId);
-            if (!isModelVisible(modelId)) continue;
-            if (!branch.contactCone) continue;
-
-            result.set(branch.id, {
-                supportId: branch.id,
-                modelId,
-                cones: [{
-                    id: branch.contactCone.id,
-                    supportId: branch.id,
-                    modelId,
-                    pos: branch.contactCone.pos,
-                    normal: branch.contactCone.normal,
-                    surfaceNormal: branch.contactCone.surfaceNormal,
-                    diskLengthOverride: branch.contactCone.diskLengthOverride,
-                    profile: branch.contactCone.profile,
-                }],
-            });
-        }
-
-        for (const stick of renderStickList) {
-            const modelId = stick.modelId;
-            if (!isModelVisible(modelId)) continue;
-
-            result.set(stick.id, {
-                supportId: stick.id,
-                modelId,
-                cones: [
-                    {
-                        id: stick.contactConeA.id,
-                        supportId: stick.id,
+                const record = entity as unknown as Record<string, InstancedContactCone | undefined>;
+                const cones: InstancedContactCone[] = [];
+                for (const { kind, field } of contactEndpointsFor(typeId)) {
+                    if (kind !== 'cone') continue;
+                    const cone = record[field];
+                    if (!cone) continue;
+                    cones.push({
+                        id: cone.id,
+                        supportId: entity.id,
                         modelId,
-                        pos: stick.contactConeA.pos,
-                        normal: stick.contactConeA.normal,
-                        surfaceNormal: stick.contactConeA.surfaceNormal,
-                        diskLengthOverride: stick.contactConeA.diskLengthOverride,
-                        profile: stick.contactConeA.profile,
-                    },
-                    {
-                        id: stick.contactConeB.id,
-                        supportId: stick.id,
-                        modelId,
-                        pos: stick.contactConeB.pos,
-                        normal: stick.contactConeB.normal,
-                        surfaceNormal: stick.contactConeB.surfaceNormal,
-                        diskLengthOverride: stick.contactConeB.diskLengthOverride,
-                        profile: stick.contactConeB.profile,
-                    },
-                ],
-            });
-        }
+                        pos: cone.pos,
+                        normal: cone.normal,
+                        surfaceNormal: cone.surfaceNormal,
+                        diskLengthOverride: cone.diskLengthOverride,
+                        profile: cone.profile,
+                    });
+                }
 
-        for (const previewLeaf of renderLeafList) {
-            const modelId = previewLeaf.modelId ?? modelIdByKnotId.get(previewLeaf.parentKnotId);
-            if (!isModelVisible(modelId)) continue;
+                if (cones.length > 0) result.set(entity.id, { supportId: entity.id, modelId, cones });
+            }
+        };
 
-            result.set(previewLeaf.id, {
-                supportId: previewLeaf.id,
-                modelId,
-                cones: [{
-                    id: previewLeaf.contactCone.id,
-                    supportId: previewLeaf.id,
-                    modelId,
-                    pos: previewLeaf.contactCone.pos,
-                    normal: previewLeaf.contactCone.normal,
-                    surfaceNormal: previewLeaf.contactCone.surfaceNormal,
-                    diskLengthOverride: previewLeaf.contactCone.diskLengthOverride,
-                    profile: previewLeaf.contactCone.profile,
-                }],
-            });
-        }
+        collect('trunk', renderTrunkList, (trunk) => trunk.modelId);
+        collect('branch', renderBranchList, (branch) => branch.modelId ?? modelIdByKnotId.get(branch.parentKnotId));
+        collect('stick', renderStickList, (stick) => stick.modelId);
+        collect('leaf', renderLeafList, (leaf) => leaf.modelId ?? modelIdByKnotId.get(leaf.parentKnotId));
 
         return result;
     }, [renderTrunkList, renderBranchList, renderStickList, renderLeafList, modelIdByKnotId, isModelVisible]);
