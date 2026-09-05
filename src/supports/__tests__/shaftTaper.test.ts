@@ -56,3 +56,21 @@ test('exactly the placeable types declare a preview', () => {
     const placeable = SUPPORT_TYPES.filter((d) => d.hasPlacementPreview).map((d) => d.id).sort();
     assert.deepEqual(placeable, ['brace', 'branch', 'kickstand', 'leaf', 'trunk']);
 });
+
+test('the default placement tool is the one that yields', () => {
+    const yielding = SUPPORT_TYPES.filter((d) => d.previewYieldsToOtherModes).map((d) => d.id);
+    assert.deepEqual(yielding, ['trunk']);
+});
+
+test('a mode-scoped preview needs its own mode active', () => {
+    const scoped = SUPPORT_TYPES.filter((d) => d.previewRequiresOwnMode).map((d) => d.id);
+    assert.deepEqual(scoped, ['branch']);
+});
+
+test('brace placement does not displace the default preview', () => {
+    // A brace places between two existing supports rather than against the
+    // model, so a trunk preview may sit under it.
+    const displacing = SUPPORT_TYPES.filter((d) => d.placementModeDisplacesDefault).map((d) => d.id).sort();
+    assert.deepEqual(displacing, ['branch', 'kickstand', 'leaf']);
+    assert.equal(SUPPORT_TYPES.find((d) => d.id === 'brace')!.placementModeDisplacesDefault, undefined);
+});

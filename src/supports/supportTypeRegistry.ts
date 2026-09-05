@@ -132,6 +132,26 @@ export interface SupportTypeDescriptor {
      */
     hasPlacementPreview: boolean;
     /**
+     * Whether this type's preview yields to any other placement mode.
+     *
+     * True for the default tool: a trunk preview follows the cursor whenever
+     * nothing else is being placed, so it must stand down when another mode
+     * takes over. The rest only preview while their own mode is active.
+     */
+    previewYieldsToOtherModes?: boolean;
+    /**
+     * Whether the preview shows only while this type's own placement mode is
+     * active, rather than whenever a preview exists.
+     */
+    previewRequiresOwnMode?: boolean;
+    /**
+     * Whether this type's placement mode displaces the default tool's preview.
+     *
+     * False for brace: it places between two existing supports rather than
+     * against the model, so a trunk preview may sit under it.
+     */
+    placementModeDisplacesDefault?: boolean;
+    /**
      * Where a tapering shaft reads its two end diameters, and on which
      * segment. A taper whose ends differ cannot be instanced, so the whole
      * support drops out of the batched pass.
@@ -229,6 +249,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 10, startFallsBackToSplitPoint: false },
         hasOrigin: true,
         hasPlacementPreview: true,
+        previewYieldsToOtherModes: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -253,6 +274,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
         hasPlacementPreview: true,
+        previewRequiresOwnMode: true,
+        placementModeDisplacesDefault: true,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -277,6 +300,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
         hasPlacementPreview: true,
+        placementModeDisplacesDefault: true,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: false,
@@ -409,6 +433,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasOrigin: false,
         shaftTaper: { segments: 'last', from: ['profile.terminalStartDiameterMm', 'profile.terminalEndDiameterMm'] },
         hasPlacementPreview: true,
+        placementModeDisplacesDefault: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'knot' },
         hasSegments: true,

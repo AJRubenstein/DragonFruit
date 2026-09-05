@@ -36,6 +36,7 @@ import type { BasinFillSimulator } from '@/volumeAnalysis/islandVolume/steps/exp
 import type { BasinFillProxy } from '@/volumeAnalysis/islandVolume/steps/expansion/BasinFillProxy';
 import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { Segment, SupportMode } from '@/supports/types';
+import { getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import type { ContactCone } from '@/supports/SupportPrimitives/ContactCone/types';
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
@@ -4253,51 +4254,37 @@ export function SceneCanvas({
   const { isDraggingHandle } = useCurveInteractionState();
   const interactionWarning = useInteractionWarning();
 
-  const trunkPlacementPreviewForRenderer = (
-    trunkPlacementPreview
-    && !suppressSupportPlacementPreviewRendering
-    && !blockSupportPlacement
-    && !isDraggingHandle
-    && !isBranchPlacementActive
-    && !isLeafPlacementActive
-    && !isKickstandPlacementActive
-    && !branchPlacementPreview
-  )
-    ? trunkPlacementPreview
-    : null;
+  // Which previews the renderer sees. Two declared rules cover all five: the
+  // default tool stands down when another mode takes over, and a mode-scoped
+  // preview shows only while its own mode is active.
+  const activePlacementModes: Partial<Record<SupportTypeId, boolean>> = {
+    branch: !!isBranchPlacementActive,
+    leaf: !!isLeafPlacementActive,
+    brace: !!isBracePlacementActive,
+    kickstand: !!isKickstandPlacementActive,
+  };
 
-  const branchPlacementPreviewForRenderer = (
-    branchPlacementPreview
-    && isBranchPlacementActive
-    && !isDraggingHandle
-    && !suppressSupportPlacementPreviewRendering
-  )
-    ? branchPlacementPreview
-    : null;
+  const gatePlacementPreview = <T,>(typeId: SupportTypeId, preview: T | null | undefined): T | null => {
+    if (!preview || isDraggingHandle || suppressSupportPlacementPreviewRendering) return null;
 
-  const leafPlacementPreviewForRenderer = (
-    leafPlacementPreview
-    && !isDraggingHandle
-    && !suppressSupportPlacementPreviewRendering
-  )
-    ? leafPlacementPreview
-    : null;
+    const descriptor = getSupportTypeDescriptor(typeId);
+    if (descriptor.previewRequiresOwnMode && !activePlacementModes[typeId]) return null;
 
-  const bracePlacementPreviewForRenderer = (
-    bracePlacementPreview
-    && !isDraggingHandle
-    && !suppressSupportPlacementPreviewRendering
-  )
-    ? bracePlacementPreview
-    : null;
+    if (descriptor.previewYieldsToOtherModes) {
+      if (blockSupportPlacement) return null;
+      const displaced = SUPPORT_TYPES.some((other: { id: SupportTypeId; placementModeDisplacesDefault?: boolean }) =>
+        other.id !== typeId && other.placementModeDisplacesDefault && activePlacementModes[other.id]);
+      if (displaced || branchPlacementPreview) return null;
+    }
 
-  const kickstandPlacementPreviewForRenderer = (
-    kickstandPlacementPreview
-    && !isDraggingHandle
-    && !suppressSupportPlacementPreviewRendering
-  )
-    ? kickstandPlacementPreview
-    : null;
+    return preview;
+  };
+
+  const trunkPlacementPreviewForRenderer = gatePlacementPreview('trunk', trunkPlacementPreview);
+  const branchPlacementPreviewForRenderer = gatePlacementPreview('branch', branchPlacementPreview);
+  const leafPlacementPreviewForRenderer = gatePlacementPreview('leaf', leafPlacementPreview);
+  const bracePlacementPreviewForRenderer = gatePlacementPreview('brace', bracePlacementPreview);
+  const kickstandPlacementPreviewForRenderer = gatePlacementPreview('kickstand', kickstandPlacementPreview);
 
   // Listen for selection events to show/hide gizmo
   React.useEffect(() => {
