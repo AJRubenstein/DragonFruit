@@ -35,8 +35,9 @@ import type { ScanResults } from '@/volumeAnalysis/islandVolume/steps/voxelizati
 import type { BasinFillSimulator } from '@/volumeAnalysis/islandVolume/steps/expansion/BasinFillSimulator';
 import type { BasinFillProxy } from '@/volumeAnalysis/islandVolume/steps/expansion/BasinFillProxy';
 import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
-import type { Segment, SupportMode } from '@/supports/types';
-import { getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
+import type { LimitationCode, Segment, SupportMode, WarningCode } from '@/supports/types';
+import { getSupportTypeDescriptor, previewTypesByPriority, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
+import { EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementPreviews } from '@/supports/rendering';
 import type { ContactCone } from '@/supports/SupportPrimitives/ContactCone/types';
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
@@ -481,11 +482,7 @@ export function SceneCanvas({
   onSupportHover,
   onActiveModelChange,
   onMarqueeSelectionChange,
-  trunkPlacementPreview,
-  branchPlacementPreview,
-  leafPlacementPreview,
-  bracePlacementPreview,
-  kickstandPlacementPreview,
+  placementPreviews = EMPTY_PLACEMENT_PREVIEWS,
   jointPlacementPreview,
   gpuPickingTest,
   selectionHighlightMode,
@@ -631,11 +628,8 @@ export function SceneCanvas({
   onSupportHover?: (hit: THREE.Intersection | null) => void;
   onActiveModelChange?: (id: string | null, options?: { selectionMode?: 'single' | 'toggle' | 'add' }) => void;
   onMarqueeSelectionChange?: (ids: string[]) => void;
-  trunkPlacementPreview?: SupportData | null;
-  branchPlacementPreview?: SupportData | null;
-  leafPlacementPreview?: SupportData | null;
-  bracePlacementPreview?: import('@/supports/SupportTypes/Brace/bracePlacementState').BracePreviewData | null;
-  kickstandPlacementPreview?: SupportData | null;
+  /** Live placement previews, keyed by type. */
+  placementPreviews?: SupportPlacementPreviews;
   jointPlacementPreview?: { pos: { x: number; y: number; z: number }; diameter: number } | null;
   gpuPickingTest?: boolean;
   selectionHighlightMode?: SelectionHighlightMode;
@@ -1919,6 +1913,43 @@ export function SceneCanvas({
     return supportPlacementGuideZ;
   }, [blockSupportPlacement, mode, supportPlacementGuideZ]);
 
+  // Which placement mode is active. Read by the preview gate, and by the two
+  // questions that consult several live previews in a declared order.
+  const activePlacementModes: Partial<Record<SupportTypeId, boolean>> = React.useMemo(() => ({
+    branch: !!isBranchPlacementActive,
+    leaf: !!isLeafPlacementActive,
+    brace: !!isBracePlacementActive,
+    kickstand: !!isKickstandPlacementActive,
+  }), [isBranchPlacementActive, isLeafPlacementActive, isBracePlacementActive, isKickstandPlacementActive]);
+
+  // The first live preview with something to say. Suppressed wholesale while a
+  // debug overlay owns the viewport.
+  const placementLimitation = React.useMemo((): { error: LimitationCode | null; warning: WarningCode | null } => {
+    if (suppressSupportPlacementPreviewRendering || supportPathfindingDebugState.enabled) {
+      return { error: null, warning: null };
+    }
+
+    const order = previewTypesByPriority('limitationFeedback', activePlacementModes);
+    const first = <T,>(read: (preview: SupportData) => T | null | undefined): T | null => {
+      for (const typeId of order) {
+        const preview = placementPreviews[typeId] as SupportData | null | undefined;
+        const value = preview ? read(preview) : null;
+        if (value != null) return value;
+      }
+      return null;
+    };
+
+    return {
+      error: first((preview) => preview.error),
+      warning: first((preview) => preview.warning),
+    };
+  }, [
+    activePlacementModes,
+    placementPreviews,
+    suppressSupportPlacementPreviewRendering,
+    supportPathfindingDebugState.enabled,
+  ]);
+
   const supportPlacementGuideLineWidthMm = React.useMemo(() => {
     const toGuideWidthMm = (contactDiameterMm: number) => Math.max(0.01, contactDiameterMm * 0.3);
 
@@ -1940,40 +1971,22 @@ export function SceneCanvas({
       return Math.max(...diameters);
     };
 
-    const orderedPreviews: Array<SupportData | null | undefined> = [];
-
-    if (isBranchPlacementActive) orderedPreviews.push(branchPlacementPreview);
-    if (isLeafPlacementActive) orderedPreviews.push(leafPlacementPreview);
-    if (isKickstandPlacementActive) orderedPreviews.push(kickstandPlacementPreview);
-
-    orderedPreviews.push(
-      trunkPlacementPreview,
-      branchPlacementPreview,
-      leafPlacementPreview,
-      kickstandPlacementPreview,
-    );
-
-    for (const preview of orderedPreviews) {
-      const diameter = pickPreviewContactDiameterMm(preview);
+    for (const typeId of previewTypesByPriority('contactGuideWidth', activePlacementModes)) {
+      const diameter = pickPreviewContactDiameterMm(placementPreviews[typeId] as SupportData | null | undefined);
       if (diameter != null) return toGuideWidthMm(diameter);
     }
 
     return toGuideWidthMm(supportSettings.tip.contactDiameterMm || DEFAULT_TIP_CONTACT_DIAMETER_MM);
   }, [
-    branchPlacementPreview,
-    isBranchPlacementActive,
-    isKickstandPlacementActive,
-    isLeafPlacementActive,
-    kickstandPlacementPreview,
-    leafPlacementPreview,
+    activePlacementModes,
+    placementPreviews,
     supportSettings.tip.contactDiameterMm,
-    trunkPlacementPreview,
   ]);
 
   const branchHoverDotVisible = Boolean(
     branchHoverPosition
     && !branchTipPosition
-    && !branchPlacementPreview
+    && !placementPreviews.branch
     && !suppressSupportPlacementPreviewRendering
     && !supportHoverTargetActive
     && !!hoveredMeshModelId
@@ -2192,7 +2205,7 @@ export function SceneCanvas({
   }, []);
 
   React.useEffect(() => {
-    const visible = !!branchHoverPosition && !branchTipPosition && !branchPlacementPreview;
+    const visible = !!branchHoverPosition && !branchTipPosition && !placementPreviews.branch;
     if (prevBranchHoverDotVisibleRef.current === null) {
       prevBranchHoverDotVisibleRef.current = visible;
       return;
@@ -2200,10 +2213,10 @@ export function SceneCanvas({
     if (prevBranchHoverDotVisibleRef.current !== visible) {
       prevBranchHoverDotVisibleRef.current = visible;
     }
-  }, [branchHoverPosition, branchTipPosition, branchPlacementPreview]);
+  }, [branchHoverPosition, branchTipPosition, placementPreviews.branch]);
 
   React.useEffect(() => {
-    const visible = !!leafHoverPosition && !leafTipPosition && !leafPlacementPreview;
+    const visible = !!leafHoverPosition && !leafTipPosition && !placementPreviews.leaf;
     if (prevLeafHoverDotVisibleRef.current === null) {
       prevLeafHoverDotVisibleRef.current = visible;
       return;
@@ -2211,7 +2224,7 @@ export function SceneCanvas({
     if (prevLeafHoverDotVisibleRef.current !== visible) {
       prevLeafHoverDotVisibleRef.current = visible;
     }
-  }, [leafHoverPosition, leafTipPosition, leafPlacementPreview]);
+  }, [leafHoverPosition, leafTipPosition, placementPreviews.leaf]);
 
   // Computed refs for active model
   const activeGroupRef = React.useMemo(
@@ -4254,16 +4267,6 @@ export function SceneCanvas({
   const { isDraggingHandle } = useCurveInteractionState();
   const interactionWarning = useInteractionWarning();
 
-  // Which previews the renderer sees. Two declared rules cover all five: the
-  // default tool stands down when another mode takes over, and a mode-scoped
-  // preview shows only while its own mode is active.
-  const activePlacementModes: Partial<Record<SupportTypeId, boolean>> = {
-    branch: !!isBranchPlacementActive,
-    leaf: !!isLeafPlacementActive,
-    brace: !!isBracePlacementActive,
-    kickstand: !!isKickstandPlacementActive,
-  };
-
   const gatePlacementPreview = <T,>(typeId: SupportTypeId, preview: T | null | undefined): T | null => {
     if (!preview || isDraggingHandle || suppressSupportPlacementPreviewRendering) return null;
 
@@ -4274,17 +4277,17 @@ export function SceneCanvas({
       if (blockSupportPlacement) return null;
       const displaced = SUPPORT_TYPES.some((other: { id: SupportTypeId; placementModeDisplacesDefault?: boolean }) =>
         other.id !== typeId && other.placementModeDisplacesDefault && activePlacementModes[other.id]);
-      if (displaced || branchPlacementPreview) return null;
+      if (displaced || placementPreviews.branch) return null;
     }
 
     return preview;
   };
 
-  const trunkPlacementPreviewForRenderer = gatePlacementPreview('trunk', trunkPlacementPreview);
-  const branchPlacementPreviewForRenderer = gatePlacementPreview('branch', branchPlacementPreview);
-  const leafPlacementPreviewForRenderer = gatePlacementPreview('leaf', leafPlacementPreview);
-  const bracePlacementPreviewForRenderer = gatePlacementPreview('brace', bracePlacementPreview);
-  const kickstandPlacementPreviewForRenderer = gatePlacementPreview('kickstand', kickstandPlacementPreview);
+  const gatedPlacementPreviews: SupportPlacementPreviews = Object.fromEntries(
+    SUPPORT_TYPES
+      .filter((descriptor) => descriptor.hasPlacementPreview)
+      .map((descriptor) => [descriptor.id, gatePlacementPreview(descriptor.id, placementPreviews[descriptor.id])]),
+  );
 
   // Listen for selection events to show/hide gizmo
   React.useEffect(() => {
@@ -6556,11 +6559,7 @@ export function SceneCanvas({
                   outOfBoundsMin={shaderOutOfBoundsBounds?.min ?? null}
                   outOfBoundsMax={shaderOutOfBoundsBounds?.max ?? null}
                   outOfBoundsStripeColor={outOfBoundsStripeColor}
-                  trunkPlacementPreview={trunkPlacementPreviewForRenderer}
-                  branchPlacementPreview={branchPlacementPreviewForRenderer}
-                  leafPlacementPreview={leafPlacementPreviewForRenderer}
-                  bracePlacementPreview={bracePlacementPreviewForRenderer}
-                  kickstandPlacementPreview={kickstandPlacementPreviewForRenderer}
+                  placementPreviews={gatedPlacementPreviews}
                   interiorView={interiorView}
                   cavityGeometryByModelId={cavityGeometryByModelId}
                   modelWorldInverseById={modelWorldInverseById}
@@ -7270,7 +7269,7 @@ export function SceneCanvas({
 
               {/* Render Branch Tip Marker - only show when NO preview is visible */}
               {/* Once preview shows, the contact cone at the tip replaces this marker */}
-              {isBranchPlacementActive && branchTipPosition && !branchPlacementPreview && !suppressSupportPlacementPreviewRendering && (
+              {isBranchPlacementActive && branchTipPosition && !placementPreviews.branch && !suppressSupportPlacementPreviewRendering && (
                 <mesh position={[branchTipPosition.x, branchTipPosition.y, branchTipPosition.z]} raycast={() => null}>
                   <sphereGeometry args={[DEFAULT_TIP_CONTACT_DIAMETER_MM / 2 * 0.5, 12, 12]} />
                   <meshStandardMaterial color="#00ff00" transparent opacity={0.7} />
@@ -7279,7 +7278,7 @@ export function SceneCanvas({
 
               {/* Render Leaf Hover Preview Dot - shows when Alt+Shift is held before first click */}
               {/* Uses tip contact diameter to match actual tip size */}
-              {leafHoverPosition && !leafTipPosition && !leafPlacementPreview && !suppressSupportPlacementPreviewRendering && (
+              {leafHoverPosition && !leafTipPosition && !placementPreviews.leaf && !suppressSupportPlacementPreviewRendering && (
                 <mesh position={[leafHoverPosition.x, leafHoverPosition.y, leafHoverPosition.z]} raycast={() => null}>
                   <sphereGeometry args={[DEFAULT_TIP_CONTACT_DIAMETER_MM / 2 * 0.5, 12, 12]} />
                   <meshStandardMaterial
@@ -7294,7 +7293,7 @@ export function SceneCanvas({
 
               {/* Render Leaf Tip Marker - only show when NO preview is visible */}
               {/* Once preview shows, the contact cone at the tip replaces this marker */}
-              {isLeafPlacementActive && leafTipPosition && !leafPlacementPreview && !suppressSupportPlacementPreviewRendering && (
+              {isLeafPlacementActive && leafTipPosition && !placementPreviews.leaf && !suppressSupportPlacementPreviewRendering && (
                 <mesh position={[leafTipPosition.x, leafTipPosition.y, leafTipPosition.z]} raycast={() => null}>
                   <sphereGeometry args={[DEFAULT_TIP_CONTACT_DIAMETER_MM / 2 * 0.5, 12, 12]} />
                   <meshStandardMaterial color="#00ff00" transparent opacity={0.7} />
@@ -7510,18 +7509,8 @@ export function SceneCanvas({
 
       {supportHelpEnabled && (
         <SupportLimitationFeedback
-          error={suppressSupportPlacementPreviewRendering || supportPathfindingDebugState.enabled ? null : (leafPlacementPreview?.error ?? (isBranchPlacementActive ? branchPlacementPreview?.error : null) ?? trunkPlacementPreview?.error ?? null)}
-          warning={
-            suppressSupportPlacementPreviewRendering || supportPathfindingDebugState.enabled
-              ? null
-              : (
-                leafPlacementPreview?.warning ??
-                (isBranchPlacementActive ? branchPlacementPreview?.warning : null) ??
-                trunkPlacementPreview?.warning ??
-                interactionWarning ??
-                null
-              )
-          }
+          error={placementLimitation.error}
+          warning={placementLimitation.warning ?? interactionWarning ?? null}
         />
       )}
 
