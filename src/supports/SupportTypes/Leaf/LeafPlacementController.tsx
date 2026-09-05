@@ -90,12 +90,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
         stage,
         sproutParentingLockHeld,
         placementSurface,
-        supportState.trunks,
-        supportState.branches,
-        supportState.braces,
-        supportState.twigs,
-        supportState.sticks,
-        supportState.kickstands,
+        supportState,
     ]);
 
     const targetById = useMemo(() => {

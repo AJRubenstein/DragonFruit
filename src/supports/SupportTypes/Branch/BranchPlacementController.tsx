@@ -216,7 +216,7 @@ export function BranchPlacementController() {
             snapTypes: ALL_SNAP_TYPES,
             placementSurface,
         });
-    }, [stage, placementSurface, supportState.trunks, supportState.branches, supportState.braces, supportState.twigs, supportState.sticks]);
+    }, [stage, placementSurface, supportState]);
 
     const targetById = useMemo(() => {
         return buildPrimarySnapTargetIndex(allTargets);
