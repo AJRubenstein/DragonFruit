@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { getSnapshot, setSnapshot, transformSupportsForModel } from '@/supports/state';
-import type { Brace, Branch, Knot, Leaf, Roots, Stick, SupportState, Trunk, Twig } from '@/supports/types';
+import type { Brace, Branch, Knot, Leaf, Roots, Segment, Stick, SupportState, Trunk, Twig } from '@/supports/types';
 import {
   getKickstandSnapshot,
   setKickstandSnapshot,
@@ -12,7 +12,7 @@ import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFo
 import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/computeRaftOuterBoundary';
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { v4 as uuidv4 } from 'uuid';
-import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 
 /**
  * One array per collection, keyed off the registry.
@@ -96,12 +96,21 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
     .filter((item) => kickstandKnotIds.has(item.id))
     .map(clonePlain);
 
+  // Every type's segments, by what the registry declares: a shafted type
+  // contributes its segment ids, a prefixed one its own id under that prefix.
+  // The four loops this replaces omitted anchors and kickstands, so a bare
+  // knot on one of those shafts was not copied with it.
   const includedSegmentIds = new Set<string>();
-  trunks.forEach((item) => item.segments.forEach((segment) => includedSegmentIds.add(segment.id)));
-  branches.forEach((item) => item.segments.forEach((segment) => includedSegmentIds.add(segment.id)));
-  twigs.forEach((item) => item.segments.forEach((segment) => includedSegmentIds.add(segment.id)));
-  sticks.forEach((item) => item.segments.forEach((segment) => includedSegmentIds.add(segment.id)));
-  braces.forEach((item) => includedSegmentIds.add(`braceSegment:${item.id}`));
+  for (const descriptor of SUPPORT_TYPES) {
+    const entities = (owned as Record<string, { id: string; segments?: Segment[] }[]>)[descriptor.location.key] ?? [];
+    for (const entity of entities) {
+      if (descriptor.segmentSelectionPrefix) {
+        includedSegmentIds.add(`${descriptor.segmentSelectionPrefix}${entity.id}`);
+        continue;
+      }
+      for (const segment of entity.segments ?? []) includedSegmentIds.add(segment.id);
+    }
+  }
 
   const referencedKnotIds = new Set<string>();
   branches.forEach((item) => referencedKnotIds.add(item.parentKnotId));

@@ -1091,13 +1091,18 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     // Support id → origin lookup for the debug origin coloring.
     const originById = useMemo(() => {
+        // Every type that records an origin, declared as `hasOrigin`. The four
+        // hand-written loops this replaces named exactly those four types.
         const map = new Map<string, SupportOrigin>();
-        for (const t of trunkList) if (t.origin) map.set(t.id, t.origin);
-        for (const b of branchList) if (b.origin) map.set(b.id, b.origin);
-        for (const l of leafList) if (l.origin) map.set(l.id, l.origin);
-        for (const a of anchorList) if (a.origin) map.set(a.id, a.origin);
+        for (const descriptor of SUPPORT_TYPES) {
+            if (!descriptor.hasOrigin) continue;
+            const collection = state[descriptor.location.key] as unknown as Record<string, { id: string; origin?: SupportOrigin }>;
+            for (const entity of Object.values(collection ?? {})) {
+                if (entity.origin) map.set(entity.id, entity.origin);
+            }
+        }
         return map;
-    }, [trunkList, branchList, leafList, anchorList]);
+    }, [state]);
 
     const originColorFor = React.useCallback((supportId: string): string | null => {
         if (!debugOriginColors) return null;
