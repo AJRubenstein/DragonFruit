@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useSyncExternalStore, useRef } from 'react';
 import * as THREE from 'three';
 import type { Brace, Branch, Leaf, SupportMode } from '@/supports/types';
+import type { SupportPlacementPreviews } from '@/supports/rendering';
 import { useTrunkPlacementV2 } from '@/supports/SupportTypes/Trunk/useTrunkPlacement';
 import { useBranchPlacement } from '@/supports/SupportTypes/Branch/useBranchPlacement';
 import { useLeafPlacement } from '@/supports/SupportTypes/Leaf/useLeafPlacement';
@@ -809,6 +810,6 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       leaf: leafPlacement.previewData,
       brace: bracePlacement.preview,
       kickstand: kickstandPlacement.previewData,
-    },
+    } satisfies SupportPlacementPreviews,
   };
 }

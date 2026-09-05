@@ -48,7 +48,7 @@ import { BezierGizmoManager } from './Curves/BezierGizmo/BezierGizmoManager';
 import { ContactDisk, SupportMode, BezierSegment, type Brace, type Knot, type Leaf, type Roots, type Segment, type Twig, type SupportOrigin, type Vec3 } from './types';
 import { resolveTwigDiameterAtSegmentT } from './SupportTypes/Twig/twigTaper';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
-import type { SupportData } from './rendering';
+import { EMPTY_PLACEMENT_PREVIEWS, type SupportData, type SupportPlacementPreviews } from './rendering';
 import type { BracePreviewData } from './SupportTypes/Brace/bracePlacementState';
 import { useJointCreationState } from './SupportPrimitives/Joint/jointCreationState';
 import { subscribeToSettings, getSettingsSnapshot } from './Settings/state';
@@ -94,17 +94,8 @@ interface SupportRendererProps {
     disableSelectionAndHover?: boolean;
     ghostOpacity?: number;
     ghostRenderOrder?: number;
-    /**
-     * @deprecated for removal -- one prop per type, threaded through 22 files.
-     * The body already handles four of them identically; collapsing to a
-     * `Record<SupportTypeId, SupportData | null>` needs the four placement
-     * hooks feeding them to share a shape first. See plan section 3b.
-     */
-    trunkPlacementPreview?: SupportData | null;
-    branchPlacementPreview?: SupportData | null;
-    leafPlacementPreview?: SupportData | null;
-    bracePlacementPreview?: BracePreviewData | null;
-    kickstandPlacementPreview?: SupportData | null;
+    /** Live placement previews, keyed by type. */
+    placementPreviews?: SupportPlacementPreviews;
     interiorView?: boolean;
     cavityGeometryByModelId?: Map<string, THREE.BufferGeometry>;
     modelWorldInverseById?: Map<string, THREE.Matrix4>;
@@ -113,17 +104,8 @@ interface SupportRendererProps {
 interface SupportPlacementPreviewLayerProps {
     mode?: SupportMode;
     hidePlateContactPrimitives?: boolean;
-    /**
-     * @deprecated for removal -- one prop per type, threaded through 22 files.
-     * The body already handles four of them identically; collapsing to a
-     * `Record<SupportTypeId, SupportData | null>` needs the four placement
-     * hooks feeding them to share a shape first. See plan section 3b.
-     */
-    trunkPlacementPreview?: SupportData | null;
-    branchPlacementPreview?: SupportData | null;
-    leafPlacementPreview?: SupportData | null;
-    bracePlacementPreview?: BracePreviewData | null;
-    kickstandPlacementPreview?: SupportData | null;
+    /** Live placement previews, keyed by type. */
+    placementPreviews?: SupportPlacementPreviews;
 }
 
 
@@ -198,14 +180,45 @@ function SimpleShaftLines({ shafts, color }: { shafts: InstancedShaft[]; color: 
 
 
 
+/**
+ * One batch per live placement preview, in registry order.
+ *
+ * A segment-shaped preview (brace) is a bare start-to-end pair, so it takes a
+ * different builder -- declared as `previewShape`, not tested by name.
+ */
+function buildPlacementPreviewBatches(
+    placementPreviews: SupportPlacementPreviews,
+    hasSolidBottom: boolean,
+    raftThickness: number,
+    hidePlateContactPrimitives: boolean,
+): PlacementPreviewBatch[] {
+    const next: PlacementPreviewBatch[] = [];
+
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasPlacementPreview) continue;
+        const preview = placementPreviews[descriptor.id];
+        if (!preview) continue;
+
+        const id = `placement-preview:${descriptor.id}`;
+
+        if (descriptor.previewShape === 'segment') {
+            const segmentBatch = buildBracePlacementPreviewBatch(id, preview as BracePreviewData);
+            if (segmentBatch) next.push(segmentBatch);
+            continue;
+        }
+
+        const batch = buildSupportPlacementPreviewBatch(id, preview as SupportData, hasSolidBottom, raftThickness);
+        if (!batch) continue;
+        next.push(hidePlateContactPrimitives ? { ...batch, roots: [] } : batch);
+    }
+
+    return next;
+}
+
 export function SupportPlacementPreviewLayer({
     mode,
     hidePlateContactPrimitives = false,
-    trunkPlacementPreview = null,
-    branchPlacementPreview = null,
-    leafPlacementPreview = null,
-    bracePlacementPreview = null,
-    kickstandPlacementPreview = null,
+    placementPreviews = EMPTY_PLACEMENT_PREVIEWS,
 }: SupportPlacementPreviewLayerProps) {
     const raftSettings = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
     const { sproutParentingLockHeld, stage: leafStage } = useLeafPlacementState();
@@ -213,44 +226,10 @@ export function SupportPlacementPreviewLayer({
     const placementPreviewBatches = useMemo(() => {
         if (mode !== 'support') return [] as PlacementPreviewBatch[];
 
-        const hasSolidBottom = raftSettings.bottomMode === 'solid';
-        const raftThickness = raftSettings.thickness ?? 0;
-        const next: PlacementPreviewBatch[] = [];
-
-        const pushSupportPreview = (id: string, preview: SupportData | null) => {
-            if (!preview) return;
-            const batch = buildSupportPlacementPreviewBatch(id, preview, hasSolidBottom, raftThickness);
-            if (!batch) return;
-
-            if (hidePlateContactPrimitives) {
-                next.push({
-                    ...batch,
-                    roots: [],
-                });
-                return;
-            }
-
-            next.push(batch);
-        };
-
-        pushSupportPreview('placement-preview:trunk', trunkPlacementPreview);
-        pushSupportPreview('placement-preview:branch', branchPlacementPreview);
-        pushSupportPreview('placement-preview:leaf', leafPlacementPreview);
-        pushSupportPreview('placement-preview:kickstand', kickstandPlacementPreview);
-
-        if (bracePlacementPreview) {
-            const braceBatch = buildBracePlacementPreviewBatch('placement-preview:brace', bracePlacementPreview);
-            if (braceBatch) next.push(braceBatch);
-        }
-
-        return next;
+        return buildPlacementPreviewBatches(placementPreviews, raftSettings.bottomMode === 'solid', raftSettings.thickness ?? 0, hidePlateContactPrimitives);
     }, [
         mode,
-        trunkPlacementPreview,
-        branchPlacementPreview,
-        leafPlacementPreview,
-        bracePlacementPreview,
-        kickstandPlacementPreview,
+        placementPreviews,
         raftSettings.bottomMode,
         raftSettings.thickness,
         hidePlateContactPrimitives,
@@ -378,7 +357,7 @@ export function SupportPlacementPreviewLayer({
     );
 }
 
-export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], marqueeCandidateModelIds = EMPTY_SUPPORT_ID_LIST, hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, trunkPlacementPreview = null, branchPlacementPreview = null, leafPlacementPreview = null, bracePlacementPreview = null, kickstandPlacementPreview = null, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
+export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], marqueeCandidateModelIds = EMPTY_SUPPORT_ID_LIST, hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, placementPreviews = EMPTY_PLACEMENT_PREVIEWS, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
     const state = useSyncExternalStore(subscribe, getSnapshot);
     const resolvedSelection = useResolvedSelectionState();
     const settings = useSyncExternalStore(subscribeToSettings, getSettingsSnapshot, getSettingsSnapshot);
@@ -2276,44 +2255,10 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const placementPreviewBatches = useMemo(() => {
         if (mode !== 'support') return [] as PlacementPreviewBatch[];
 
-        const hasSolidBottom = raftSettings.bottomMode === 'solid';
-        const raftThickness = raftSettings.thickness ?? 0;
-        const next: PlacementPreviewBatch[] = [];
-
-        const pushSupportPreview = (id: string, preview: SupportData | null) => {
-            if (!preview) return;
-            const batch = buildSupportPlacementPreviewBatch(id, preview, hasSolidBottom, raftThickness);
-            if (!batch) return;
-
-            if (hidePlateContactPrimitivesEffective) {
-                next.push({
-                    ...batch,
-                    roots: [],
-                });
-                return;
-            }
-
-            next.push(batch);
-        };
-
-        pushSupportPreview('placement-preview:trunk', trunkPlacementPreview);
-        pushSupportPreview('placement-preview:branch', branchPlacementPreview);
-        pushSupportPreview('placement-preview:leaf', leafPlacementPreview);
-        pushSupportPreview('placement-preview:kickstand', kickstandPlacementPreview);
-
-        if (bracePlacementPreview) {
-            const braceBatch = buildBracePlacementPreviewBatch('placement-preview:brace', bracePlacementPreview);
-            if (braceBatch) next.push(braceBatch);
-        }
-
-        return next;
+        return buildPlacementPreviewBatches(placementPreviews, raftSettings.bottomMode === 'solid', raftSettings.thickness ?? 0, hidePlateContactPrimitivesEffective);
     }, [
         mode,
-        trunkPlacementPreview,
-        branchPlacementPreview,
-        leafPlacementPreview,
-        bracePlacementPreview,
-        kickstandPlacementPreview,
+        placementPreviews,
         raftSettings.bottomMode,
         raftSettings.thickness,
         hidePlateContactPrimitivesEffective,

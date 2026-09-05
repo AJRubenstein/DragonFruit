@@ -70,6 +70,24 @@ export interface SupportEndpoint {
 export type SupportPlacementMetric = 'contactSpan' | 'tipHeight';
 
 /**
+ * A question answered by consulting live placement previews in turn, taking
+ * the first that has an answer.
+ *
+ * - `contactGuideWidth`  -- how wide to draw the placement guide.
+ * - `limitationFeedback` -- which preview's error or warning to show.
+ */
+export type SupportPreviewPurpose = 'contactGuideWidth' | 'limitationFeedback';
+
+/**
+ * Types whose placement preview is a bare segment rather than a whole
+ * provisional support, mirroring `previewShape` at the type level so a preview
+ * map can be typed without naming a type in the consumer.
+ *
+ * Kept in step with the descriptors by `__tests__/placementPreviewPriority.test.ts`.
+ */
+export type SegmentPreviewTypeId = 'brace';
+
+/**
  * A settings path a threshold reads from, with the fallback used when the
  * setting is absent. The union keeps a typo a compile error.
  */
@@ -162,6 +180,16 @@ export interface SupportTypeDescriptor {
      */
     hasPlacementPreview: boolean;
     /**
+     * What a live placement preview carries.
+     *
+     * `support` is a whole provisional support, with contacts and any error.
+     * `segment` is a bare start-to-end pair -- brace places between two
+     * existing supports, so there is no model contact to describe and nothing
+     * to report. Consumers that measure contacts or read an error consult
+     * `previewPriority` rather than excluding a type by name.
+     */
+    previewShape?: 'support' | 'segment';
+    /**
      * Whether auto-bracing samples this type's shafts as a brace endpoint: a
      * shaft running plate-to-model, not one bridging two model contacts.
      */
@@ -195,6 +223,25 @@ export interface SupportTypeDescriptor {
      * against the model, so a trunk preview may sit under it.
      */
     placementModeDisplacesDefault?: boolean;
+    /**
+     * Where this type sits when several live previews answer the same
+     * question, per purpose. Lower ranks are consulted first.
+     *
+     * A type omitted from a purpose is never consulted for it: brace appears
+     * in neither, because its preview is a bare segment with no contacts to
+     * measure and no error to report.
+     *
+     * `whileActive` is a second, earlier rank used only while this type's own
+     * placement mode is active; `onlyWhileActive` drops the type from the
+     * order entirely unless its mode is active. The two purposes produce
+     * different orders, and deliberately -- see
+     * `__tests__/placementPreviewPriority.test.ts`.
+     */
+    previewPriority?: Partial<Record<SupportPreviewPurpose, {
+        rank: number;
+        whileActive?: number;
+        onlyWhileActive?: boolean;
+    }>>;
     /**
      * Where a tapering shaft reads its two end diameters, and on which
      * segment. A taper whose ends differ cannot be instanced, so the whole
@@ -293,7 +340,12 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 10, startFallsBackToSplitPoint: false },
         hasOrigin: true,
         hasPlacementPreview: true,
+        previewShape: 'support',
         previewYieldsToOtherModes: true,
+        previewPriority: {
+            contactGuideWidth: { rank: 0 },
+            limitationFeedback: { rank: 2 },
+        },
         placementRule: { metric: 'tipHeight', minMm: ANCHOR_HEIGHT_THRESHOLD_MM, boundary: 'upper' },
         isAutoBraceable: true,
         lower: { kind: 'plateRoot' },
@@ -320,8 +372,13 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
         hasPlacementPreview: true,
+        previewShape: 'support',
         previewRequiresOwnMode: true,
         placementModeDisplacesDefault: true,
+        previewPriority: {
+            contactGuideWidth: { rank: 1, whileActive: -3 },
+            limitationFeedback: { rank: 1, onlyWhileActive: true },
+        },
         isAutoBraceable: true,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
@@ -347,7 +404,12 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
         hasPlacementPreview: true,
+        previewShape: 'support',
         placementModeDisplacesDefault: true,
+        previewPriority: {
+            contactGuideWidth: { rank: 2, whileActive: -2 },
+            limitationFeedback: { rank: 0 },
+        },
         isAutoBraceable: false,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
@@ -432,6 +494,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         segmentSelectionPrefix: 'braceSegment:',
         hasOrigin: false,
         hasPlacementPreview: true,
+        previewShape: 'segment',
         isAutoBraceable: false,
         lower: { kind: 'knot' },
         upper: { kind: 'knot' },
@@ -488,7 +551,11 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasOrigin: false,
         shaftTaper: { segments: 'last', from: ['profile.terminalStartDiameterMm', 'profile.terminalEndDiameterMm'] },
         hasPlacementPreview: true,
+        previewShape: 'support',
         placementModeDisplacesDefault: true,
+        previewPriority: {
+            contactGuideWidth: { rank: 3, whileActive: -1 },
+        },
         isAutoBraceable: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'knot' },
@@ -777,6 +844,37 @@ export function selectTypeForPlacement(
 /** Every type declaring a rule for this metric, in registry order. */
 export function typesForPlacementMetric(metric: SupportPlacementMetric): readonly SupportTypeDescriptor[] {
     return SUPPORT_TYPES.filter((descriptor) => descriptor.placementRule?.metric === metric);
+}
+
+/**
+ * The order to consult live placement previews in for one question, given
+ * which placement modes are active.
+ *
+ * A type whose own mode is active can rank earlier -- the preview the user is
+ * currently steering answers first. A type may appear twice for that reason,
+ * which the originals did too; the caller takes the first with an answer, so a
+ * repeat is harmless.
+ */
+export function previewTypesByPriority(
+    purpose: SupportPreviewPurpose,
+    activeModes: Partial<Record<SupportTypeId, boolean>>,
+): readonly SupportTypeId[] {
+    const entries: Array<{ id: SupportTypeId; at: number }> = [];
+
+    for (const descriptor of SUPPORT_TYPES) {
+        const priority = descriptor.previewPriority?.[purpose];
+        if (!priority) continue;
+
+        const active = !!activeModes[descriptor.id];
+        if (priority.onlyWhileActive && !active) continue;
+
+        if (active && priority.whileActive !== undefined) {
+            entries.push({ id: descriptor.id, at: priority.whileActive });
+        }
+        entries.push({ id: descriptor.id, at: priority.rank });
+    }
+
+    return entries.sort((a, b) => a.at - b.at).map((entry) => entry.id);
 }
 
 /**
