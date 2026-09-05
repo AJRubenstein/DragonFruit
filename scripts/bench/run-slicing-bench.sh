@@ -537,6 +537,19 @@ else
       fi
     fi
 
+    # A fresh worktree has neither the plugin submodules nor the generated plugin
+    # registry (it is gitignored), and the engine will not compile without them:
+    # `error[E0583]: file not found for module 'generated_plugin_encoders'`. These
+    # are the same two steps a fresh clone needs — see rust/dragonfruit-cli/docs/CLI.md.
+    if ! git -C "$wt" submodule update --init --quiet 2>/dev/null; then
+      echo "  WARN: submodule init failed for $label (plugin encoders may be missing)" >&2
+    fi
+    if ! ( cd "$wt" \
+           && node scripts/generate-plugin-registry.mjs >/dev/null 2>&1 \
+           && node scripts/generate-builtin-simple-plugins.mjs >/dev/null 2>&1 ); then
+      echo "  SKIP $label: could not generate the plugin registry" >&2; continue
+    fi
+
     if [[ "$DO_BUILD" == 1 ]]; then
       echo "  building dragonfruit-cli for $label" >&2
       if ! build_rust "$wt"; then echo "  SKIP $label: cargo build failed" >&2; continue; fi
@@ -552,7 +565,7 @@ else
     TARGET_CODEGEN+=("")
   done
 
-  [[ ${#TARGET_LABEL[@]} -gt 0 ]] || { echo "No usable git targets to benchmark" >&2; exit 1; }
+  [[ -n "${TARGET_LABEL[*]-}" ]] || { echo "No usable git targets to benchmark" >&2; exit 1; }
 fi
 
 # ---------------------------------------------------------------------------
