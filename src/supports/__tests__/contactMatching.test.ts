@@ -50,3 +50,10 @@ test('every type answers, anchor and kickstand included', () => {
     }
     assert.equal(contactEndpointsFor('anchor').length, 1, 'an anchor has a contact to test');
 });
+
+test('hasOrigin matches the types carrying an origin field', () => {
+    // The debug origin overlay reads `origin`; only four types record one, and
+    // the renderer consulted originColorFor for exactly those four.
+    const withOrigin = SUPPORT_TYPES.filter((d) => d.hasOrigin).map((d) => d.id).sort();
+    assert.deepEqual(withOrigin, ['anchor', 'branch', 'leaf', 'trunk']);
+});
