@@ -21,6 +21,7 @@ import {
   findShaftOwnerOfSegment,
   getSupportEntities,
   getSupportTypeOf,
+  getSupports,
   getSnapshot,
   removeBranch,
   removeBrace,
@@ -63,8 +64,7 @@ export function resolveSupportCategoryFromSnapshot(id: string) {
 }
 
 function collectAllSupportIds() {
-  const snapshot = getSnapshot();
-  return SUPPORT_TYPES.flatMap((descriptor) => Object.keys(snapshot[descriptor.location.key] ?? {}));
+  return Object.keys(getSupports());
 }
 
 /**

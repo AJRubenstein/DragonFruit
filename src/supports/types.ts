@@ -1,5 +1,6 @@
 import type { ContactCone } from './SupportPrimitives/ContactCone/types';
 import type { SupportTypeId } from './supportTypeRegistry';
+import type { SUPPORT_TYPE_COLLECTION } from './supportTypeRegistry';
 import type { ContactDiskProfile } from './SupportPrimitives/ContactCone/types';
 import type { KickstandBuildResult } from './SupportTypes/Kickstand/types';
 import type { SupportOriginId } from './supportTypeRegistry';
@@ -306,6 +307,17 @@ export interface SupportEntityByCollection {
 
 /** Keys of SupportState holding entity collections. */
 export type SupportCollectionName = keyof SupportEntityByCollection;
+
+/**
+ * Any one of the support entities.
+ *
+ * Keyed off `SUPPORT_TYPE_COLLECTION`, which maps a type id to its collection,
+ * so this covers exactly the declared types -- not `roots` and `knots`, which
+ * are collections but not support types. A ninth type joins by being declared
+ * in the registry.
+ */
+export type SupportEntityAny =
+    SupportEntityByCollection[(typeof SUPPORT_TYPE_COLLECTION)[SupportTypeId]];
 
 export type SupportCollections = {
     [K in SupportCollectionName]: Record<string, SupportEntityByCollection[K]>;
