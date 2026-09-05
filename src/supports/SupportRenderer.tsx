@@ -94,6 +94,12 @@ interface SupportRendererProps {
     disableSelectionAndHover?: boolean;
     ghostOpacity?: number;
     ghostRenderOrder?: number;
+    /**
+     * @deprecated for removal -- one prop per type, threaded through 22 files.
+     * The body already handles four of them identically; collapsing to a
+     * `Record<SupportTypeId, SupportData | null>` needs the four placement
+     * hooks feeding them to share a shape first. See plan section 3b.
+     */
     trunkPlacementPreview?: SupportData | null;
     branchPlacementPreview?: SupportData | null;
     leafPlacementPreview?: SupportData | null;
@@ -107,6 +113,12 @@ interface SupportRendererProps {
 interface SupportPlacementPreviewLayerProps {
     mode?: SupportMode;
     hidePlateContactPrimitives?: boolean;
+    /**
+     * @deprecated for removal -- one prop per type, threaded through 22 files.
+     * The body already handles four of them identically; collapsing to a
+     * `Record<SupportTypeId, SupportData | null>` needs the four placement
+     * hooks feeding them to share a shape first. See plan section 3b.
+     */
     trunkPlacementPreview?: SupportData | null;
     branchPlacementPreview?: SupportData | null;
     leafPlacementPreview?: SupportData | null;
