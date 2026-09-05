@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import { buildKickstandData } from '../SupportTypes/Kickstand/kickstandBuilder';
-import { snapToGridIndex } from '../PlacementLogic/Grid/gridMath';
-import type { KickstandBuildResult, KickstandHostTarget } from '../SupportTypes/Kickstand/types';
-import type { SupportState, Trunk, Vec3, Segment, Roots } from '../types';
-import { AUTO_BRACING_HARD_RULES, type AutoBracingSettings } from './settings';
-import { getAllMeshEntriesForAutoBrace } from './meshGeometryStore';
-import { getTrunkSegmentEndpoints } from '../SupportPrimitives/Knot/knotUtils';
-import { linePassesMeshClearance } from './meshClearance';
+import { buildKickstandData } from './kickstandBuilder';
+import { snapToGridIndex } from '../../PlacementLogic/Grid/gridMath';
+import type { KickstandBuildResult, KickstandHostTarget } from './types';
+import type { SupportState, Trunk, Vec3, Segment, Roots } from '../../types';
+import { AUTO_BRACING_HARD_RULES, type AutoBracingSettings } from '../../autoBracing/settings';
+import { getAllMeshEntriesForAutoBrace } from '../../autoBracing/meshGeometryStore';
+import { getTrunkSegmentEndpoints } from '../../SupportPrimitives/Knot/knotUtils';
+import { linePassesMeshClearance } from '../../autoBracing/meshClearance';
 import {
     additionalAxesNeededForTwoAxisBracing,
     hasQualifiedTwoAxisBracing,
     normalizeAxisAngleRad,
-} from './twoAxisDetection';
+} from '../../autoBracing/twoAxisDetection';
 
 const MIN_HEIGHT_FOR_MANDATORY_BRACING_MM = 15.0;
 const DROP_COLLISION_SAMPLES = 20;
