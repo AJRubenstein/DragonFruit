@@ -20,6 +20,7 @@ import { clearSupportSelection } from '../../interaction/shared/selection/select
 import { canResolveSupportPlacementBindingFromModifierState, getSupportPlacementModifierState, isSupportPlacementBindingSatisfiedByModifierState } from '../../interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver';
 import { usePlacementSnappingSession } from '../../interaction/shared/placement/snapping/usePlacementSnappingSession';
 import { buildKickstandPathSnapTargets, buildPrimarySnapTargetIndex, ALL_SNAP_TYPES, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
+import { getSupportTypeDescriptor, type SupportCollectionKey } from '../../supportTypeRegistry';
 import { projectPointToSnapTargetPath, projectRayToSnapTargetPath, selectNearestPathTarget } from '../../interaction/shared/placement/snapping/pathProjection';
 import { isSupportEditInteractionActive } from '../../interaction/gizmoInteractionLock';
 import { previewVecKey, previewNormalKey, quantizePreviewValue } from '../shared/previewSignature';
@@ -554,46 +555,26 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                     let minJointDist = Infinity;
                     let isBottom = false;
 
-                    for (const trunk of Object.values(supportState.trunks)) {
-                        for (const seg of trunk.segments) {
-                            if (seg.bottomJoint) {
-                                const dist = getDistance(clickPos, seg.bottomJoint.pos);
-                                if (dist < minJointDist) {
+                    // Trunk and branch only, as before. Whether a leaf should
+                    // sprout from a twig, stick, anchor or kickstand joint is a
+                    // product question, not a refactor one -- the set is kept
+                    // as it was and recorded in docs/dev/backlog.md.
+                    const leafSproutHosts = ['trunk', 'branch'] as const;
+
+                    for (const typeId of leafSproutHosts) {
+                        const key = getSupportTypeDescriptor(typeId).location.key as SupportCollectionKey;
+                        const collection = supportState[key] as unknown as Record<string, { segments?: Segment[] }>;
+
+                        for (const entity of Object.values(collection ?? {})) {
+                            for (const seg of entity.segments ?? []) {
+                                for (const [joint, bottom] of [[seg.bottomJoint, true], [seg.topJoint, false]] as const) {
+                                    if (!joint) continue;
+                                    const dist = getDistance(clickPos, joint.pos);
+                                    if (dist >= minJointDist) continue;
                                     minJointDist = dist;
-                                    closestJoint = seg.bottomJoint;
+                                    closestJoint = joint;
                                     closestJointSeg = seg;
-                                    isBottom = true;
-                                }
-                            }
-                            if (seg.topJoint) {
-                                const dist = getDistance(clickPos, seg.topJoint.pos);
-                                if (dist < minJointDist) {
-                                    minJointDist = dist;
-                                    closestJoint = seg.topJoint;
-                                    closestJointSeg = seg;
-                                    isBottom = false;
-                                }
-                            }
-                        }
-                    }
-                    for (const branch of Object.values(supportState.branches)) {
-                        for (const seg of branch.segments) {
-                            if (seg.bottomJoint) {
-                                const dist = getDistance(clickPos, seg.bottomJoint.pos);
-                                if (dist < minJointDist) {
-                                    minJointDist = dist;
-                                    closestJoint = seg.bottomJoint;
-                                    closestJointSeg = seg;
-                                    isBottom = true;
-                                }
-                            }
-                            if (seg.topJoint) {
-                                const dist = getDistance(clickPos, seg.topJoint.pos);
-                                if (dist < minJointDist) {
-                                    minJointDist = dist;
-                                    closestJoint = seg.topJoint;
-                                    closestJointSeg = seg;
-                                    isBottom = false;
+                                    isBottom = bottom;
                                 }
                             }
                         }
