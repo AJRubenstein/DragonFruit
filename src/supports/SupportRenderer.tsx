@@ -44,7 +44,7 @@ import { JointCreationManager } from './SupportPrimitives/Joint/JointCreationMan
 import { JointGizmo } from './SupportPrimitives/Joint/JointGizmo';
 import { KnotGizmo } from './SupportPrimitives/Knot/KnotGizmo';
 import { BezierGizmoManager } from './Curves/BezierGizmo/BezierGizmoManager';
-import { ContactDisk, SupportMode, BezierSegment, type Brace, type Knot, type Leaf, type Segment, type Twig, type SupportOrigin } from './types';
+import { ContactDisk, SupportMode, BezierSegment, type Brace, type Knot, type Leaf, type Segment, type Twig, type SupportOrigin, type Vec3 } from './types';
 import { resolveTwigDiameterAtSegmentT } from './SupportTypes/Twig/twigTaper';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
 import type { SupportData } from './rendering';
@@ -2075,197 +2075,73 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return result;
     }, [renderTrunkList, renderBranchList, renderStickList, renderLeafList, modelIdByKnotId, isModelVisible]);
 
-    const trunkJointsBySupport = useMemo(() => {
+    /**
+     * A type's shaft joints, keyed by support. `segmentsCarryBothJoints`
+     * decides whether the bottom joint counts: on a hosted shaft it is a
+     * render artefact, and the real lower end is the root or host knot.
+     */
+    const collectShaftJoints = useCallback(<T extends { id: string; modelId?: string; segments: Segment[] }>(
+        typeId: SupportTypeId,
+        list: readonly T[],
+    ) => {
+        const includeBottom = getSupportTypeDescriptor(typeId).segmentsCarryBothJoints;
         const result = new Map<string, SupportJointSet>();
 
-        for (const trunk of renderTrunkList) {
-            if (!isModelVisible(trunk.modelId, trunk.id)) continue;
+        for (const entity of list) {
+            if (!isModelVisible(entity.modelId, entity.id)) continue;
 
             const seen = new Set<string>();
             const joints: InstancedJoint[] = [];
 
-            for (const segment of trunk.segments) {
-                if (segment.topJoint && !seen.has(segment.topJoint.id)) {
-                    seen.add(segment.topJoint.id);
-                    joints.push({
-                        id: segment.topJoint.id,
-                        pos: segment.topJoint.pos,
-                        diameter: segment.topJoint.diameter,
-                        supportId: trunk.id,
-                        modelId: trunk.modelId,
-                    });
-                }
+            const take = (joint?: { id: string; pos: Vec3; diameter: number }) => {
+                if (!joint || seen.has(joint.id)) return;
+                seen.add(joint.id);
+                joints.push({
+                    id: joint.id,
+                    pos: joint.pos,
+                    diameter: joint.diameter,
+                    supportId: entity.id,
+                    modelId: entity.modelId,
+                });
+            };
+
+            for (const segment of entity.segments) {
+                if (includeBottom) take(segment.bottomJoint);
+                take(segment.topJoint);
             }
 
             if (joints.length > 0) {
-                result.set(trunk.id, {
-                    supportId: trunk.id,
-                    modelId: trunk.modelId,
-                    joints,
-                });
+                result.set(entity.id, { supportId: entity.id, modelId: entity.modelId, joints });
             }
         }
 
         return result;
-    }, [renderTrunkList, isModelVisible]);
+    }, [isModelVisible]);
 
-    const branchJointsBySupport = useMemo(() => {
-        const result = new Map<string, SupportJointSet>();
+    const trunkJointsBySupport = useMemo(
+        () => collectShaftJoints('trunk', renderTrunkList),
+        [renderTrunkList, collectShaftJoints],
+    );
 
-        for (const branch of renderBranchList) {
-            if (!isModelVisible(branch.modelId, branch.id)) continue;
+    const branchJointsBySupport = useMemo(
+        () => collectShaftJoints('branch', renderBranchList),
+        [renderBranchList, collectShaftJoints],
+    );
 
-            const seen = new Set<string>();
-            const joints: InstancedJoint[] = [];
+    const twigJointsBySupport = useMemo(
+        () => collectShaftJoints('twig', renderTwigList),
+        [renderTwigList, collectShaftJoints],
+    );
 
-            for (const segment of branch.segments) {
-                if (segment.topJoint && !seen.has(segment.topJoint.id)) {
-                    seen.add(segment.topJoint.id);
-                    joints.push({
-                        id: segment.topJoint.id,
-                        pos: segment.topJoint.pos,
-                        diameter: segment.topJoint.diameter,
-                        supportId: branch.id,
-                        modelId: branch.modelId,
-                    });
-                }
-            }
+    const stickJointsBySupport = useMemo(
+        () => collectShaftJoints('stick', renderStickList),
+        [renderStickList, collectShaftJoints],
+    );
 
-            if (joints.length > 0) {
-                result.set(branch.id, {
-                    supportId: branch.id,
-                    modelId: branch.modelId,
-                    joints,
-                });
-            }
-        }
-
-        return result;
-    }, [renderBranchList, isModelVisible]);
-
-    const twigJointsBySupport = useMemo(() => {
-        const result = new Map<string, SupportJointSet>();
-
-        for (const twig of renderTwigList) {
-            if (!isModelVisible(twig.modelId, twig.id)) continue;
-
-            const seen = new Set<string>();
-            const joints: InstancedJoint[] = [];
-
-            for (const segment of twig.segments) {
-                if (segment.bottomJoint && !seen.has(segment.bottomJoint.id)) {
-                    seen.add(segment.bottomJoint.id);
-                    joints.push({
-                        id: segment.bottomJoint.id,
-                        pos: segment.bottomJoint.pos,
-                        diameter: segment.bottomJoint.diameter,
-                        supportId: twig.id,
-                        modelId: twig.modelId,
-                    });
-                }
-
-                if (segment.topJoint && !seen.has(segment.topJoint.id)) {
-                    seen.add(segment.topJoint.id);
-                    joints.push({
-                        id: segment.topJoint.id,
-                        pos: segment.topJoint.pos,
-                        diameter: segment.topJoint.diameter,
-                        supportId: twig.id,
-                        modelId: twig.modelId,
-                    });
-                }
-            }
-
-            if (joints.length > 0) {
-                result.set(twig.id, {
-                    supportId: twig.id,
-                    modelId: twig.modelId,
-                    joints,
-                });
-            }
-        }
-
-        return result;
-    }, [renderTwigList, isModelVisible]);
-
-    const stickJointsBySupport = useMemo(() => {
-        const result = new Map<string, SupportJointSet>();
-
-        for (const stick of renderStickList) {
-            if (!isModelVisible(stick.modelId, stick.id)) continue;
-
-            const seen = new Set<string>();
-            const joints: InstancedJoint[] = [];
-
-            for (const segment of stick.segments) {
-                if (segment.bottomJoint && !seen.has(segment.bottomJoint.id)) {
-                    seen.add(segment.bottomJoint.id);
-                    joints.push({
-                        id: segment.bottomJoint.id,
-                        pos: segment.bottomJoint.pos,
-                        diameter: segment.bottomJoint.diameter,
-                        supportId: stick.id,
-                        modelId: stick.modelId,
-                    });
-                }
-
-                if (segment.topJoint && !seen.has(segment.topJoint.id)) {
-                    seen.add(segment.topJoint.id);
-                    joints.push({
-                        id: segment.topJoint.id,
-                        pos: segment.topJoint.pos,
-                        diameter: segment.topJoint.diameter,
-                        supportId: stick.id,
-                        modelId: stick.modelId,
-                    });
-                }
-            }
-
-            if (joints.length > 0) {
-                result.set(stick.id, {
-                    supportId: stick.id,
-                    modelId: stick.modelId,
-                    joints,
-                });
-            }
-        }
-
-        return result;
-    }, [renderStickList, isModelVisible]);
-
-    const kickstandJointsBySupport = useMemo(() => {
-        const result = new Map<string, SupportJointSet>();
-
-        for (const kickstand of renderKickstandList) {
-            if (!isModelVisible(kickstand.modelId, kickstand.id)) continue;
-
-            const seen = new Set<string>();
-            const joints: InstancedJoint[] = [];
-
-            for (const segment of kickstand.segments) {
-                if (segment.topJoint && !seen.has(segment.topJoint.id)) {
-                    seen.add(segment.topJoint.id);
-                    joints.push({
-                        id: segment.topJoint.id,
-                        pos: segment.topJoint.pos,
-                        diameter: segment.topJoint.diameter,
-                        supportId: kickstand.id,
-                        modelId: kickstand.modelId,
-                    });
-                }
-            }
-
-            if (joints.length > 0) {
-                result.set(kickstand.id, {
-                    supportId: kickstand.id,
-                    modelId: kickstand.modelId,
-                    joints,
-                });
-            }
-        }
-
-        return result;
-    }, [renderKickstandList, isModelVisible]);
+    const kickstandJointsBySupport = useMemo(
+        () => collectShaftJoints('kickstand', renderKickstandList),
+        [renderKickstandList, collectShaftJoints],
+    );
 
     /** Unselected leaf base knots as batch-ready joints: one instanced draw
      *  instead of a mounted KnotRenderer per leaf. Read through
