@@ -18,6 +18,7 @@ import {
 } from './supportPlacementPreviewMath';
 import { anyContactMatches, collectOwnedRootIds, contactEndpointsFor, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
 import { buildKnotIndex, selectedIdsForType, type CollectionLookup, type SelectionInputs } from './interaction/shared/selection/selectedIdsByType';
+import { resolveSegmentEndpoints, type EndpointHosts } from './SupportPrimitives/Knot/segmentEndpoints';
 import { TrunkRenderer } from './SupportTypes/Trunk/TrunkRenderer';
 import { BranchRenderer } from './SupportTypes/Branch/BranchRenderer';
 import { LeafRenderer } from './SupportTypes/Leaf/LeafRenderer';
@@ -1525,120 +1526,67 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return previewKnotOverrides[knotId] ?? state.knots[knotId] ?? kickstandState.knots[knotId] ?? null;
     }, [previewKnotOverrides, state.knots, kickstandState.knots]);
 
-    const trunkShaftsBySupport = useMemo(() => {
+    /**
+     * Batched shafts for a type whose segments need no taper: each one runs
+     * from the declared start to the declared end at its own diameter.
+     *
+     * Twig and kickstand keep their own builders -- they taper between contact
+     * diameters and decide batchability from it.
+     */
+    const buildPlainShaftSet = useCallback(<T extends { id: string; modelId?: string; segments: Segment[] }>(
+        typeId: SupportTypeId,
+        list: readonly T[],
+        hostsFor: (entity: T) => EndpointHosts,
+    ) => {
         const result = new Map<string, SupportShaftSet>();
-        const hasSolidBottom = raftSettings.bottomMode === 'solid';
-        const raftThickness = raftSettings.thickness ?? 0;
 
-        for (const trunk of renderTrunkList) {
-            if (!isModelVisible(trunk.modelId, trunk.id)) continue;
+        for (const entity of list) {
+            if (!isModelVisible(entity.modelId, entity.id)) continue;
 
-            const root = state.roots[trunk.rootId];
-            if (!root) continue;
-
+            const hosts = hostsFor(entity);
             const shafts: InstancedShaft[] = [];
 
-            const basePos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, root.transform.pos.z);
-            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
-            const verticalOffset = 0;
-            let currentStart = basePos.clone().add(new THREE.Vector3(0, 0, verticalOffset + effectiveDiskHeight + Math.max(0, root.coneHeight)));
+            entity.segments.forEach((segment, index) => {
+                const endpoints = resolveSegmentEndpoints(typeId, entity, segment, index, hosts);
+                if (!endpoints) return;
 
-            for (const segment of trunk.segments) {
-                if (segment.bottomJoint) {
-                    currentStart = new THREE.Vector3(segment.bottomJoint.pos.x, segment.bottomJoint.pos.y, segment.bottomJoint.pos.z);
-                }
-
-                let endPoint: THREE.Vector3;
-                if (segment.topJoint) {
-                    endPoint = new THREE.Vector3(segment.topJoint.pos.x, segment.topJoint.pos.y, segment.topJoint.pos.z);
-                } else if (trunk.contactCone) {
-                    const socketPos = getFinalSocketPosition(trunk.contactCone);
-                    endPoint = new THREE.Vector3(socketPos.x, socketPos.y, socketPos.z);
-                } else {
-                    endPoint = currentStart.clone().add(new THREE.Vector3(0, 0, 10));
-                }
+                const start = new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z);
+                const end = new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z);
 
                 if (segment.type === 'bezier') {
-                    shafts.push(bezierSegmentToBatchedShaft(segment, currentStart, endPoint, trunk.id, trunk.modelId));
-                    currentStart = endPoint;
-                    continue;
+                    shafts.push(bezierSegmentToBatchedShaft(segment, start, end, entity.id, entity.modelId));
+                    return;
                 }
 
                 shafts.push({
                     id: segment.id,
-                    start: { x: currentStart.x, y: currentStart.y, z: currentStart.z },
-                    end: { x: endPoint.x, y: endPoint.y, z: endPoint.z },
+                    start: { x: start.x, y: start.y, z: start.z },
+                    end: { x: end.x, y: end.y, z: end.z },
                     diameter: segment.diameter,
-                    supportId: trunk.id,
-                    modelId: trunk.modelId,
+                    supportId: entity.id,
+                    modelId: entity.modelId,
                 });
-
-                currentStart = endPoint;
-            }
+            });
 
             if (shafts.length > 0) {
-                result.set(trunk.id, {
-                    supportId: trunk.id,
-                    modelId: trunk.modelId,
-                    shafts,
-                });
+                result.set(entity.id, { supportId: entity.id, modelId: entity.modelId, shafts });
             }
         }
 
         return result;
-    }, [raftSettings.bottomMode, raftSettings.thickness, renderTrunkList, state.roots, isModelVisible]);
+    }, [isModelVisible]);
 
-    const branchShaftsBySupport = useMemo(() => {
-        const result = new Map<string, SupportShaftSet>();
+    const trunkShaftsBySupport = useMemo(
+        () => buildPlainShaftSet('trunk', renderTrunkList, (trunk) => ({ root: state.roots[trunk.rootId] })),
+        [renderTrunkList, state.roots, buildPlainShaftSet],
+    );
 
-        for (const branch of renderBranchList) {
-            if (!isModelVisible(branch.modelId, branch.id)) continue;
-            const parentKnot = renderKnotsById[branch.parentKnotId];
-            if (!parentKnot) continue;
-
-            const shafts: InstancedShaft[] = [];
-            let currentStart = new THREE.Vector3(parentKnot.pos.x, parentKnot.pos.y, parentKnot.pos.z);
-
-            for (const segment of branch.segments) {
-                let endPoint: THREE.Vector3;
-                if (segment.topJoint) {
-                    endPoint = new THREE.Vector3(segment.topJoint.pos.x, segment.topJoint.pos.y, segment.topJoint.pos.z);
-                } else if (branch.contactCone) {
-                    const socketPos = getFinalSocketPosition(branch.contactCone);
-                    endPoint = new THREE.Vector3(socketPos.x, socketPos.y, socketPos.z);
-                } else {
-                    endPoint = currentStart.clone().add(new THREE.Vector3(0, 0, 5));
-                }
-
-                if (segment.type === 'bezier') {
-                    shafts.push(bezierSegmentToBatchedShaft(segment, currentStart, endPoint, branch.id, branch.modelId));
-                    currentStart = endPoint;
-                    continue;
-                }
-
-                shafts.push({
-                    id: segment.id,
-                    start: { x: currentStart.x, y: currentStart.y, z: currentStart.z },
-                    end: { x: endPoint.x, y: endPoint.y, z: endPoint.z },
-                    diameter: segment.diameter,
-                    supportId: branch.id,
-                    modelId: branch.modelId,
-                });
-
-                currentStart = endPoint;
-            }
-
-            if (shafts.length > 0) {
-                result.set(branch.id, {
-                    supportId: branch.id,
-                    modelId: branch.modelId,
-                    shafts,
-                });
-            }
-        }
-
-        return result;
-    }, [renderBranchList, renderKnotsById, isModelVisible]);
+    const branchShaftsBySupport = useMemo(
+        () => buildPlainShaftSet('branch', renderBranchList, (branch) => ({
+            hostKnot: renderKnotsById[branch.parentKnotId],
+        })),
+        [renderBranchList, renderKnotsById, buildPlainShaftSet],
+    );
 
     const braceShaftsBySupport = useMemo(() => {
         const result = new Map<string, SupportShaftSet>();
@@ -1786,54 +1734,10 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return result;
     }, [renderTwigList, isModelVisible, enableTwigSceneBatching]);
 
-    const stickShaftsBySupport = useMemo(() => {
-        const result = new Map<string, SupportShaftSet>();
-
-        for (const stick of renderStickList) {
-            if (!isModelVisible(stick.modelId, stick.id)) continue;
-
-            const shafts: InstancedShaft[] = [];
-
-            for (const segment of stick.segments) {
-                const startPoint = segment.bottomJoint
-                    ? new THREE.Vector3(segment.bottomJoint.pos.x, segment.bottomJoint.pos.y, segment.bottomJoint.pos.z)
-                    : (() => {
-                        const socket = getFinalSocketPosition(stick.contactConeA);
-                        return new THREE.Vector3(socket.x, socket.y, socket.z);
-                    })();
-
-                const endPoint = segment.topJoint
-                    ? new THREE.Vector3(segment.topJoint.pos.x, segment.topJoint.pos.y, segment.topJoint.pos.z)
-                    : (() => {
-                        const socket = getFinalSocketPosition(stick.contactConeB);
-                        return new THREE.Vector3(socket.x, socket.y, socket.z);
-                    })();
-
-                if (segment.type === 'bezier') {
-                    shafts.push(bezierSegmentToBatchedShaft(segment, startPoint, endPoint, stick.id, stick.modelId));
-                } else {
-                    shafts.push({
-                        id: segment.id,
-                        start: { x: startPoint.x, y: startPoint.y, z: startPoint.z },
-                        end: { x: endPoint.x, y: endPoint.y, z: endPoint.z },
-                        diameter: segment.diameter,
-                        supportId: stick.id,
-                        modelId: stick.modelId,
-                    });
-                }
-            }
-
-            if (shafts.length > 0) {
-                result.set(stick.id, {
-                    supportId: stick.id,
-                    modelId: stick.modelId,
-                    shafts,
-                });
-            }
-        }
-
-        return result;
-    }, [renderStickList, isModelVisible]);
+    const stickShaftsBySupport = useMemo(
+        () => buildPlainShaftSet('stick', renderStickList, () => ({})),
+        [renderStickList, buildPlainShaftSet],
+    );
 
     const kickstandShaftsBySupport = useMemo(() => {
         const result = new Map<string, SupportShaftSet>();
