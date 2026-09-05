@@ -90,6 +90,7 @@ unless marked otherwise; recorded because the same shape will recur.
 | Shaft stub length is 10 for trunk, 5 elsewhere; four other sites use 10 | `shaftFallback`, `resolveSegmentEndpoints` | **open** — inherited drift, needs a decision |
 | `TwigRenderer` omits `isInteractable` where the other three pass it | `TwigRenderer` | **open** — harmless while the default is true |
 | The import wire format still carries the `{kickstand, root, hostKnot}` bundle | `loadFromImportFormat` | **open** — ⚠️ wire format |
+| Twig vs stick is chosen by a hardcoded span ternary, duplicated in two controllers, one of them named after a third type | `BranchPlacementController:609`, `useTrunkPlacement:186` | **open** — §8, should be a declared span range |
 
 Two of these were invisible to the whole suite AND all 22 goldens
 (`transformSupportsForModel`'s reachability walk). Passing tests are not
