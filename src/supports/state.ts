@@ -1,4 +1,4 @@
-import { SupportState, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace, Twig, Stick, Anchor } from './types';
+import { SupportState, SupportEntityAny, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace, Twig, Stick, Anchor } from './types';
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import { resolveSegmentEndpoints } from './SupportPrimitives/Knot/segmentEndpoints';
@@ -1307,6 +1307,30 @@ export function subscribe(listener: () => void) {
 
 export function getSnapshot() {
     return state;
+}
+
+/**
+ * Every support entity by id, across all eight collections.
+ *
+ * The merged view the eight collections will eventually be replaced by. Derived
+ * rather than stored, so it cannot drift from them, and memoised on the state
+ * identity so a read costs nothing until the store actually changes.
+ *
+ * Ids are UUIDs, so the collections cannot collide -- `assertNoIdCollisions`
+ * in `__tests__/mergedSupportView.test.ts` holds that.
+ */
+let mergedSupportsCache: { forState: SupportState; supports: Record<string, SupportEntityAny> } | null = null;
+
+export function getSupports(): Record<string, SupportEntityAny> {
+    if (mergedSupportsCache?.forState === state) return mergedSupportsCache.supports;
+
+    const supports: Record<string, SupportEntityAny> = {};
+    for (const descriptor of SUPPORT_TYPES) {
+        Object.assign(supports, state[descriptor.location.key]);
+    }
+
+    mergedSupportsCache = { forState: state, supports };
+    return supports;
 }
 
 export function reassignAllSupportModelIds(modelId: string): boolean {
@@ -3325,9 +3349,16 @@ export function getSupportEntity(typeId: SupportTypeId, id: string) {
  */
 export function getSupportTypeOf(id: string): SupportTypeId | null {
     if (!id) return null;
+
+    const entity = getSupports()[id] as { typeId?: SupportTypeId } | undefined;
+    if (entity?.typeId) return entity.typeId;
+    if (!entity) return null;
+
+    // In the store but unstamped: a whole-store payload restored through
+    // `setSnapshot` bypasses the writers that stamp. Fall back to the
+    // collection holding it, which is what the field replaced.
     for (const descriptor of SUPPORT_TYPES) {
-        const entity = (state[descriptor.location.key] as Record<string, { typeId?: SupportTypeId }>)[id];
-        if (entity) return entity.typeId ?? descriptor.id;
+        if ((state[descriptor.location.key] as Record<string, unknown>)[id]) return descriptor.id;
     }
     return null;
 }

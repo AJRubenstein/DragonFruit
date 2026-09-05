@@ -8,6 +8,7 @@ import {
     findShaftOwnerOfSegment,
     getSnapshot,
     getSupportTypeOf,
+    setSnapshot,
     loadFromImportFormat,
     removeSupportEntity,
     resetStore,
@@ -229,4 +230,19 @@ test('an ordinary segment id still resolves by scanning shafts', () => {
             descriptor.id,
         );
     }
+});
+
+test('an entity that reached the store unstamped still resolves', () => {
+    // `setSnapshot` replaces the whole store -- undo of a whole-store action
+    // takes that path, and it bypasses the writers that stamp `typeId`. The
+    // collection is the fallback, which is exactly what the field replaced.
+    oneOfEach();
+    const forced = structuredClone(getSnapshot());
+    (forced.twigs as Record<string, unknown>)['unstamped'] = {
+        id: 'unstamped', modelId: 'model-a', segments: [],
+    };
+    setSnapshot(forced as never);
+
+    assert.equal(getSupportTypeOf('unstamped'), 'twig');
+    assert.equal(getSupportTypeOf('not-in-the-store'), null);
 });
