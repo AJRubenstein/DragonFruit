@@ -45,6 +45,14 @@ pub struct SlicingPerfV3 {
     pub encode_support_merge_ns: u64,
     /// CPU time spent in the output format encoder itself (CTB, PNG, ...).
     pub encode_format_ns: u64,
+    /// Time spent encoding layer PNGs on the 3DAA encode thread.
+    pub encode_png_ns: u64,
+    /// Wall time of the 3DAA encode thread, which is a *single* consumer: no
+    /// number of post workers can push a job below this.
+    pub encode_thread_wall_ns: u64,
+    /// CPU time spent in the tail-cure LUT remap, previously folded into
+    /// `post_blur_ns` together with the dither.
+    pub tail_remap_ns: u64,
 }
 
 impl SlicingPerfV3 {
