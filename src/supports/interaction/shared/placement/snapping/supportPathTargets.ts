@@ -12,6 +12,7 @@ type PlacementSurface = 'interior' | 'exterior';
 /** Which types can be snapped to. A new type joins by being in SUPPORT_TYPES. */
 export const ALL_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES.map((d) => d.id);
 
+
 /** Types with a real shaft to drop a joint on. */
 export const SHAFTED_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES
     .filter((descriptor) => descriptor.hasSegments)
@@ -24,6 +25,7 @@ export const SHAFTED_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES
 const DEFAULT_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES
     .filter((descriptor) => descriptor.hasDedicatedSnapPass)
     .map((descriptor) => descriptor.id);
+
 
 interface BuildSupportPathSnapTargetsOptions {
     snapTypes?: readonly SupportTypeId[];

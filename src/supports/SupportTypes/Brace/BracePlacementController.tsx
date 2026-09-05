@@ -283,12 +283,7 @@ export function BracePlacementController() {
         stage,
         start,
         activePlacementSurface,
-        supportState.trunks,
-        supportState.branches,
-        supportState.braces,
-        supportState.twigs,
-        supportState.sticks,
-        supportState.kickstands,
+        supportState,
         leafMeta,
     ]);
 
