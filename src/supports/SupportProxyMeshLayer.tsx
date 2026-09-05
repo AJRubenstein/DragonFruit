@@ -169,6 +169,7 @@ export function SupportProxyMeshLayer({
   const supportTwigs = supportState.twigs;
   const supportSticks = supportState.sticks;
   const supportBraces = supportState.braces;
+  const supportAnchors = supportState.anchors;
   const kickstandKickstands = kickstandState.kickstands;
   const kickstandRoots = kickstandState.roots;
   const kickstandKnots = kickstandState.knots;
@@ -484,7 +485,7 @@ export function SupportProxyMeshLayer({
       && sharedProxyCache.supportTwigsRef === supportTwigs
       && sharedProxyCache.supportSticksRef === supportSticks
       && sharedProxyCache.supportBracesRef === supportBraces
-      && sharedProxyCache.supportAnchorsRef === supportState.anchors
+      && sharedProxyCache.supportAnchorsRef === supportAnchors
       && sharedProxyCache.kickstandKickstandsRef === kickstandKickstands
       && sharedProxyCache.kickstandRootsRef === kickstandRoots
       && sharedProxyCache.kickstandKnotsRef === kickstandKnots
@@ -937,7 +938,6 @@ export function SupportProxyMeshLayer({
     // them out keeps the proxy geometry clean.
 
     // Anchors: root + contact cone, no shafts
-    const supportAnchors = supportState.anchors;
     for (const anchor of Object.values(supportAnchors)) {
       if (interiorSupportIdSet && !interiorSupportIdSet.has(`anchor:${anchor.id}`)) continue;
       pushRoot({
@@ -1022,7 +1022,7 @@ export function SupportProxyMeshLayer({
       supportTwigsRef: supportTwigs,
       supportSticksRef: supportSticks,
       supportBracesRef: supportBraces,
-      supportAnchorsRef: supportState.anchors,
+      supportAnchorsRef: supportAnchors,
       kickstandKickstandsRef: kickstandKickstands,
       kickstandRootsRef: kickstandRoots,
       kickstandKnotsRef: kickstandKnots,
@@ -1043,6 +1043,7 @@ export function SupportProxyMeshLayer({
     supportTwigs,
     supportSticks,
     supportBraces,
+    supportAnchors,
     kickstandKickstands,
     kickstandRoots,
     kickstandKnots,
