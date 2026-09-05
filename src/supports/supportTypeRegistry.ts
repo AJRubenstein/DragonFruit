@@ -78,12 +78,9 @@ export type SupportPlacementThreshold =
     | { setting: SupportPlacementSettingPath; fallback: number };
 
 /**
- * The range of a measurement this type serves.
- *
- * `boundary` says which side owns a value sitting exactly on it, because the
- * hand-written sites disagreed: the span rule used `dist > cutoff` (so the
- * boundary is a twig) while the height rule used `z < threshold` (so the
- * boundary is a trunk). Declaring it keeps both.
+ * The range of a measurement this type serves. The two rules disagree about
+ * which side owns a value sitting exactly on a shared bound, so `boundary`
+ * declares it per rule.
  */
 export interface SupportPlacementRule {
     metric: SupportPlacementMetric;
@@ -165,12 +162,8 @@ export interface SupportTypeDescriptor {
      */
     hasPlacementPreview: boolean;
     /**
-     * Whether auto-bracing samples this type's shafts as a brace endpoint.
-     *
-     * Trunk, branch and kickstand today. That happens to equal
-     * `hasSegments && !segmentsCarryBothJoints`, but the reason is different:
-     * a brace wants a shaft that runs plate-to-model, not one bridging two
-     * model contacts. Declared separately so the two can diverge.
+     * Whether auto-bracing samples this type's shafts as a brace endpoint: a
+     * shaft running plate-to-model, not one bridging two model contacts.
      */
     isAutoBraceable: boolean;
     /**
