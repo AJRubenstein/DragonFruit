@@ -115,6 +115,11 @@ export interface SupportTypeDescriptor {
      * `lower`/`upper` or `contactEndpointsFor`.
      */
     contactFields: readonly string[];
+    /**
+     * Prefix a selection id carries when one of this type's segments is
+     * selected, if it uses one. Brace alone does today.
+     */
+    segmentSelectionPrefix?: string;
     /** What sits at the bottom of this type. */
     lower: SupportEndpoint;
     /** What sits at the top of this type. */
@@ -315,6 +320,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         contactFields: [],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
+        segmentSelectionPrefix: 'braceSegment:',
         lower: { kind: 'knot' },
         upper: { kind: 'knot' },
         hasSegments: false,

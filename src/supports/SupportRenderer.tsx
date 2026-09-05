@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useSyncExternalStore, forwardRef, useImperativeHandle, useEffect, useMemo } from 'react';
+import React, { useSyncExternalStore, forwardRef, useImperativeHandle, useCallback, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { removeRootById, subscribe, getSnapshot } from './state';
 import {
@@ -16,7 +16,8 @@ import {
     type PlacementSurface,
     type Vec3Like,
 } from './supportPlacementPreviewMath';
-import { collectOwnedRootIds, getSupportTypeBySelectionCategory, SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from './supportTypeRegistry';
+import { collectOwnedRootIds, getSupportTypeBySelectionCategory, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
+import { buildKnotIndex, selectedIdsForType, type CollectionLookup, type SelectionInputs } from './supportSelectionDerivation';
 import { TrunkRenderer } from './SupportTypes/Trunk/TrunkRenderer';
 import { BranchRenderer } from './SupportTypes/Branch/BranchRenderer';
 import { LeafRenderer } from './SupportTypes/Leaf/LeafRenderer';
@@ -1163,65 +1164,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return map;
     }, [trunkList]);
 
-    const branchIdsByParentKnotIdForSelection = useMemo(() => {
-        const map = new Map<string, string[]>();
-        for (const branch of branchList) {
-            const list = map.get(branch.parentKnotId);
-            if (list) {
-                list.push(branch.id);
-            } else {
-                map.set(branch.parentKnotId, [branch.id]);
-            }
-        }
-        return map;
-    }, [branchList]);
-
-    const leafIdsByParentKnotIdForSelection = useMemo(() => {
-        const map = new Map<string, string[]>();
-        for (const leaf of leafList) {
-            const list = map.get(leaf.parentKnotId);
-            if (list) {
-                list.push(leaf.id);
-            } else {
-                map.set(leaf.parentKnotId, [leaf.id]);
-            }
-        }
-        return map;
-    }, [leafList]);
-
-    const braceIdsByKnotIdForSelection = useMemo(() => {
-        const map = new Map<string, string[]>();
-        for (const brace of braceList) {
-            const startList = map.get(brace.startKnotId);
-            if (startList) {
-                startList.push(brace.id);
-            } else {
-                map.set(brace.startKnotId, [brace.id]);
-            }
-
-            const endList = map.get(brace.endKnotId);
-            if (endList) {
-                endList.push(brace.id);
-            } else {
-                map.set(brace.endKnotId, [brace.id]);
-            }
-        }
-        return map;
-    }, [braceList]);
-
-    const kickstandIdsByHostKnotIdForSelection = useMemo(() => {
-        const map = new Map<string, string[]>();
-        for (const kickstand of kickstandList) {
-            const list = map.get(kickstand.hostKnotId);
-            if (list) {
-                list.push(kickstand.id);
-            } else {
-                map.set(kickstand.hostKnotId, [kickstand.id]);
-            }
-        }
-        return map;
-    }, [kickstandList]);
-
     const fallbackSupportIdByPrimitiveForSelection = useMemo(() => {
         const map = new Map<string, string>();
 
@@ -1268,181 +1210,52 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         trunkIdByRootIdForSelection,
     ]);
 
-    const selectedTrunkIds = useMemo(() => {
-        const selected = new Set<string>();
-        if (useMultiSelectionDetail) {
-            for (const supportId of selectedSupportIdSet) {
-                if (state.trunks[supportId]) selected.add(supportId);
-            }
-        }
+    // Selection resolution, derived. The kickstand collection still lives in
+    // its own store, so the lookup routes that one key there.
+    const selectionCollections = useCallback<CollectionLookup>((key) => (
+        key === 'kickstands'
+            ? (kickstandState.kickstands as unknown as Record<string, unknown>)
+            : ((state as unknown as Record<string, Record<string, unknown>>)[key])
+    ), [state, kickstandState.kickstands]);
 
-        if (singleSelectedSupportId && state.trunks[singleSelectedSupportId]) {
-            selected.add(singleSelectedSupportId);
-        }
+    const selectionKnotIndex = useMemo(
+        () => buildKnotIndex(selectionCollections),
+        [selectionCollections],
+    );
 
-        return selected;
-    }, [singleSelectedSupportId, selectedSupportIdSet, state.trunks, useMultiSelectionDetail]);
-
-    const selectedBranchIds = useMemo(() => {
-        const selected = new Set<string>();
-        if (useMultiSelectionDetail) {
-            for (const supportId of selectedSupportIdSet) {
-                if (state.branches[supportId]) selected.add(supportId);
-            }
-        }
-
-        if (singleSelectedSupportId && state.branches[singleSelectedSupportId]) {
-            selected.add(singleSelectedSupportId);
-        }
-
-        if (selectedCategory === 'knot' && selectedId) {
-            const branchIds = branchIdsByParentKnotIdForSelection.get(selectedId) ?? [];
-            for (const id of branchIds) selected.add(id);
-        }
-
-        return selected;
-    }, [
-        branchIdsByParentKnotIdForSelection,
-        selectedCategory,
-        selectedId,
-        selectedSupportIdSet,
-        singleSelectedSupportId,
-        state.branches,
-        useMultiSelectionDetail,
-    ]);
-
-    const selectedBraceIds = useMemo(() => {
-        const selected = new Set<string>();
-        if (useMultiSelectionDetail) {
-            for (const supportId of selectedSupportIdSet) {
-                if (state.braces[supportId]) selected.add(supportId);
-            }
-        }
-
-        if (singleSelectedSupportId && state.braces[singleSelectedSupportId]) {
-            selected.add(singleSelectedSupportId);
-        }
-
-        if (selectedCategory === 'segment' && selectedId?.startsWith('braceSegment:')) {
-            selected.add(selectedId.slice('braceSegment:'.length));
-        }
-
-        if (selectedCategory === 'knot' && selectedId) {
-            const braceIds = braceIdsByKnotIdForSelection.get(selectedId) ?? [];
-            for (const id of braceIds) selected.add(id);
-        }
-
-        return selected;
-    }, [
-        braceIdsByKnotIdForSelection,
-        selectedCategory,
-        selectedId,
-        selectedSupportIdSet,
-        singleSelectedSupportId,
-        state.braces,
-        useMultiSelectionDetail,
-    ]);
-
-    const selectedTwigIds = useMemo(() => {
-        const selected = new Set<string>();
-        if (useMultiSelectionDetail) {
-            for (const supportId of selectedSupportIdSet) {
-                if (state.twigs[supportId]) selected.add(supportId);
-            }
-        }
-
-        if (singleSelectedSupportId && state.twigs[singleSelectedSupportId]) {
-            selected.add(singleSelectedSupportId);
-        }
-
-        return selected;
-    }, [singleSelectedSupportId, selectedSupportIdSet, state.twigs, useMultiSelectionDetail]);
-
-    const selectedStickIds = useMemo(() => {
-        const selected = new Set<string>();
-        if (useMultiSelectionDetail) {
-            for (const supportId of selectedSupportIdSet) {
-                if (state.sticks[supportId]) selected.add(supportId);
-            }
-        }
-
-        if (singleSelectedSupportId && state.sticks[singleSelectedSupportId]) {
-            selected.add(singleSelectedSupportId);
-        }
-
-        return selected;
-    }, [singleSelectedSupportId, selectedSupportIdSet, state.sticks, useMultiSelectionDetail]);
-
-    const selectedAnchorIds = useMemo(() => {
-        const selected = new Set<string>();
-        if (useMultiSelectionDetail) {
-            for (const supportId of selectedSupportIdSet) {
-                if (state.anchors[supportId]) selected.add(supportId);
-            }
-        }
-
-        if (singleSelectedSupportId && state.anchors[singleSelectedSupportId]) {
-            selected.add(singleSelectedSupportId);
-        }
-
-        return selected;
-    }, [singleSelectedSupportId, selectedSupportIdSet, state.anchors, useMultiSelectionDetail]);
-
-    const selectedKickstandIds = useMemo(() => {
-        const selected = new Set<string>();
-        if (useMultiSelectionDetail) {
-            for (const supportId of selectedSupportIdSet) {
-                if (kickstandState.kickstands[supportId]) selected.add(supportId);
-            }
-        }
-
-        if (singleSelectedSupportId && kickstandState.kickstands[singleSelectedSupportId]) {
-            selected.add(singleSelectedSupportId);
-        }
-
-        if (selectedCategory === 'knot' && selectedId) {
-            const kickstandIds = kickstandIdsByHostKnotIdForSelection.get(selectedId) ?? [];
-            for (const id of kickstandIds) selected.add(id);
-        }
-
-        return selected;
-    }, [
-        kickstandIdsByHostKnotIdForSelection,
-        kickstandState.kickstands,
-        selectedCategory,
-        selectedId,
+    const selectionInputs = useMemo<SelectionInputs>(() => ({
         selectedSupportIdSet,
         singleSelectedSupportId,
         useMultiSelectionDetail,
-    ]);
-
-    const selectedLeafIds = useMemo(() => {
-        const selected = new Set<string>();
-        if (useMultiSelectionDetail) {
-            for (const supportId of selectedSupportIdSet) {
-                if (state.leaves[supportId]) selected.add(supportId);
-            }
-        }
-
-        if (singleSelectedSupportId && state.leaves[singleSelectedSupportId]) {
-            selected.add(singleSelectedSupportId);
-        }
-
-        if (selectedCategory === 'knot' && selectedId) {
-            const leafIds = leafIdsByParentKnotIdForSelection.get(selectedId) ?? [];
-            for (const id of leafIds) selected.add(id);
-        }
-
-        return selected;
-    }, [
-        leafIdsByParentKnotIdForSelection,
         selectedCategory,
         selectedId,
-        selectedSupportIdSet,
-        singleSelectedSupportId,
-        state.leaves,
-        useMultiSelectionDetail,
-    ]);
+    }), [selectedSupportIdSet, singleSelectedSupportId, useMultiSelectionDetail, selectedCategory, selectedId]);
+
+    const selectedIdsByType = useMemo(() => {
+        const byType = new Map<SupportTypeId, Set<string>>();
+        for (const descriptor of SUPPORT_TYPES) {
+            byType.set(
+                descriptor.id,
+                selectedIdsForType(descriptor.id, selectionInputs, selectionCollections, selectionKnotIndex),
+            );
+        }
+        return byType;
+    }, [selectionInputs, selectionCollections, selectionKnotIndex]);
+
+    const EMPTY_SELECTION: ReadonlySet<string> = useMemo(() => new Set(), []);
+    const selectedOf = useCallback(
+        (typeId: SupportTypeId) => selectedIdsByType.get(typeId) ?? EMPTY_SELECTION,
+        [selectedIdsByType, EMPTY_SELECTION],
+    );
+
+    const selectedTrunkIds = selectedOf('trunk');
+    const selectedBranchIds = selectedOf('branch');
+    const selectedLeafIds = selectedOf('leaf');
+    const selectedTwigIds = selectedOf('twig');
+    const selectedStickIds = selectedOf('stick');
+    const selectedBraceIds = selectedOf('brace');
+    const selectedAnchorIds = selectedOf('anchor');
+    const selectedKickstandIds = selectedOf('kickstand');
 
     const knotIdsByParentShaftId = useMemo(() => {
         const map = new Map<string, string[]>();
