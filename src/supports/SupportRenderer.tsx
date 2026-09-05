@@ -17,7 +17,7 @@ import {
     type Vec3Like,
 } from './supportPlacementPreviewMath';
 import { collectOwnedRootIds, getSupportTypeBySelectionCategory, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
-import { buildKnotIndex, selectedIdsForType, type CollectionLookup, type SelectionInputs } from './supportSelectionDerivation';
+import { buildKnotIndex, selectedIdsForType, type CollectionLookup, type SelectionInputs } from './interaction/shared/selection/selectedIdsByType';
 import { TrunkRenderer } from './SupportTypes/Trunk/TrunkRenderer';
 import { BranchRenderer } from './SupportTypes/Branch/BranchRenderer';
 import { LeafRenderer } from './SupportTypes/Leaf/LeafRenderer';

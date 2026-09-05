@@ -3,7 +3,8 @@ import {
     SUPPORT_TYPES,
     type SupportTypeDescriptor,
     type SupportTypeId,
-} from './supportTypeRegistry';
+} from '../../../supportTypeRegistry';
+import type { ResolvedSelectionState } from './selectionTypes';
 
 /**
  * Which entities of each type the current selection covers.
@@ -14,14 +15,18 @@ import {
  * `segmentSelectionPrefix`.
  */
 
-/** Selection state the derivation reads, all of it plain values. */
+/**
+ * `ResolvedSelectionState` narrowed to what this derivation needs: ids as a
+ * set, and the detail threshold already applied.
+ */
 export interface SelectionInputs {
     selectedSupportIdSet: ReadonlySet<string>;
+    /** The lone support a selection resolves to, primitives included. */
     singleSelectedSupportId: string | null;
     /** Whether a multi-selection is small enough to resolve per entity. */
     useMultiSelectionDetail: boolean;
-    selectedCategory: string | null;
-    selectedId: string | null;
+    selectedCategory: ResolvedSelectionState['selectedCategory'];
+    selectedId: ResolvedSelectionState['selectedId'];
 }
 
 /** Reads a collection by key; the caller decides which store answers. */
