@@ -1526,6 +1526,16 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return previewKnotOverrides[knotId] ?? state.knots[knotId] ?? kickstandState.knots[knotId] ?? null;
     }, [previewKnotOverrides, state.knots, kickstandState.knots]);
 
+    /** Reads a dotted path off an entity, for declared diameter sources. */
+    const readNumberPath = useCallback((entity: unknown, path: string): number | null => {
+        let value: unknown = entity;
+        for (const key of path.split('.')) {
+            if (value == null || typeof value !== 'object') return null;
+            value = (value as Record<string, unknown>)[key];
+        }
+        return typeof value === 'number' ? value : null;
+    }, []);
+
     /**
      * Batched shafts for a type whose segments need no taper: each one runs
      * from the declared start to the declared end at its own diameter.
@@ -1546,12 +1556,27 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const hosts = hostsFor(entity);
             const shafts: InstancedShaft[] = [];
 
+            const taper = getSupportTypeDescriptor(typeId).shaftTaper;
+            let fullyBatchable = true;
+
             entity.segments.forEach((segment, index) => {
                 const endpoints = resolveSegmentEndpoints(typeId, entity, segment, index, hosts);
                 if (!endpoints) return;
 
                 const start = new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z);
                 const end = new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z);
+
+                // A declared taper on this segment: instancing needs one
+                // diameter, so a shaft whose ends differ leaves the batch.
+                const tapersHere = taper
+                    && (taper.segments === 'all' || index === entity.segments.length - 1);
+                if (tapersHere) {
+                    const [a, b] = taper.from.map((path) => readNumberPath(entity, path));
+                    if (a != null && b != null && Math.abs(a - b) >= 1e-6) {
+                        fullyBatchable = false;
+                        return;
+                    }
+                }
 
                 if (segment.type === 'bezier') {
                     shafts.push(bezierSegmentToBatchedShaft(segment, start, end, entity.id, entity.modelId));
@@ -1568,7 +1593,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 });
             });
 
-            if (shafts.length > 0) {
+            if (fullyBatchable && shafts.length > 0) {
                 result.set(entity.id, { supportId: entity.id, modelId: entity.modelId, shafts });
             }
         }
@@ -1658,150 +1683,25 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return result;
     }, [renderBraceList, braceRenderKnotsById, isModelVisible]);
 
-    const twigShaftsBySupport = useMemo(() => {
-        if (!enableTwigSceneBatching) {
-            return new Map<string, SupportShaftSet>();
-        }
-
-        const result = new Map<string, SupportShaftSet>();
-
-        const getDiskTipCenter = (disk: ContactDisk) => {
-            const thickness = disk.diskLengthOverride ?? calculateDiskThickness(disk.surfaceNormal, disk.coneAxis, disk.profile);
-            return {
-                x: disk.pos.x + disk.surfaceNormal.x * thickness,
-                y: disk.pos.y + disk.surfaceNormal.y * thickness,
-                z: disk.pos.z + disk.surfaceNormal.z * thickness,
-            };
-        };
-
-        for (const twig of renderTwigList) {
-            if (!isModelVisible(twig.modelId, twig.id)) continue;
-
-            const shafts: InstancedShaft[] = [];
-            let fullyBatchable = true;
-
-            for (const segment of twig.segments) {
-                let startPoint: THREE.Vector3;
-                let endPoint: THREE.Vector3;
-                // Twig shaft tapers between the two contact disks (matches
-                // TwigRenderer). Batchability is decided by whether the two
-                // ends are equal.
-                const diameterStart = twig.contactDiskA.contactDiameterMm;
-                const diameterEnd = twig.contactDiskB.contactDiameterMm;
-
-                if (segment.bottomJoint) {
-                    startPoint = new THREE.Vector3(segment.bottomJoint.pos.x, segment.bottomJoint.pos.y, segment.bottomJoint.pos.z);
-                } else {
-                    const diskATipCenter = getDiskTipCenter(twig.contactDiskA);
-                    startPoint = new THREE.Vector3(diskATipCenter.x, diskATipCenter.y, diskATipCenter.z);
-                }
-
-                if (segment.topJoint) {
-                    endPoint = new THREE.Vector3(segment.topJoint.pos.x, segment.topJoint.pos.y, segment.topJoint.pos.z);
-                } else {
-                    const diskBTipCenter = getDiskTipCenter(twig.contactDiskB);
-                    endPoint = new THREE.Vector3(diskBTipCenter.x, diskBTipCenter.y, diskBTipCenter.z);
-                }
-
-                const isUniformDiameter = Math.abs(diameterStart - diameterEnd) < 1e-6;
-                if (!isUniformDiameter) {
-                    fullyBatchable = false;
-                }
-
-                if (segment.type === 'bezier') {
-                    shafts.push(bezierSegmentToBatchedShaft(segment, startPoint, endPoint, twig.id, twig.modelId));
-                } else if (isUniformDiameter) {
-                    shafts.push({
-                        id: segment.id,
-                        start: { x: startPoint.x, y: startPoint.y, z: startPoint.z },
-                        end: { x: endPoint.x, y: endPoint.y, z: endPoint.z },
-                        diameter: segment.diameter,
-                        supportId: twig.id,
-                        modelId: twig.modelId,
-                    });
-                }
-            }
-
-            if (fullyBatchable && shafts.length > 0) {
-                result.set(twig.id, {
-                    supportId: twig.id,
-                    modelId: twig.modelId,
-                    shafts,
-                });
-            }
-        }
-
-        return result;
-    }, [renderTwigList, isModelVisible, enableTwigSceneBatching]);
+    const twigShaftsBySupport = useMemo(
+        () => (enableTwigSceneBatching
+            ? buildPlainShaftSet('twig', renderTwigList, () => ({}))
+            : new Map<string, SupportShaftSet>()),
+        [enableTwigSceneBatching, renderTwigList, buildPlainShaftSet],
+    );
 
     const stickShaftsBySupport = useMemo(
         () => buildPlainShaftSet('stick', renderStickList, () => ({})),
         [renderStickList, buildPlainShaftSet],
     );
 
-    const kickstandShaftsBySupport = useMemo(() => {
-        const result = new Map<string, SupportShaftSet>();
-        const hasSolidBottom = raftSettings.bottomMode === 'solid';
-        const raftThickness = raftSettings.thickness ?? 0;
-
-        for (const kickstand of renderKickstandList) {
-            if (!isModelVisible(kickstand.modelId, kickstand.id)) continue;
-
-            const root = kickstandState.roots[kickstand.rootId];
-            const hostKnot = renderKickstandKnotsById[kickstand.hostKnotId];
-            if (!root || !hostKnot) continue;
-
-            const basePos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, root.transform.pos.z);
-            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
-            const verticalOffset = 0;
-            let currentStart = basePos.clone().add(new THREE.Vector3(0, 0, verticalOffset + effectiveDiskHeight + Math.max(0, root.coneHeight)));
-
-            const shafts: InstancedShaft[] = [];
-            let fullyBatchable = true;
-
-            kickstand.segments.forEach((segment, index) => {
-                const isLast = index === kickstand.segments.length - 1;
-
-                const endPoint = segment.topJoint
-                    ? new THREE.Vector3(segment.topJoint.pos.x, segment.topJoint.pos.y, segment.topJoint.pos.z)
-                    : new THREE.Vector3(hostKnot.pos.x, hostKnot.pos.y, hostKnot.pos.z);
-
-                const diameterStart = isLast ? kickstand.profile.terminalStartDiameterMm : undefined;
-                const diameterEnd = isLast ? kickstand.profile.terminalEndDiameterMm : undefined;
-                const isUniformDiameter = (diameterStart == null && diameterEnd == null)
-                    || (diameterStart != null && diameterEnd != null && Math.abs(diameterStart - diameterEnd) < 1e-6);
-
-                if (!isUniformDiameter) {
-                    fullyBatchable = false;
-                }
-
-                if (segment.type === 'bezier') {
-                    shafts.push(bezierSegmentToBatchedShaft(segment, currentStart, endPoint, kickstand.id, kickstand.modelId));
-                } else if (isUniformDiameter) {
-                    shafts.push({
-                        id: segment.id,
-                        start: { x: currentStart.x, y: currentStart.y, z: currentStart.z },
-                        end: { x: endPoint.x, y: endPoint.y, z: endPoint.z },
-                        diameter: segment.diameter,
-                        supportId: kickstand.id,
-                        modelId: kickstand.modelId,
-                    });
-                }
-
-                currentStart = endPoint;
-            });
-
-            if (fullyBatchable && shafts.length > 0) {
-                result.set(kickstand.id, {
-                    supportId: kickstand.id,
-                    modelId: kickstand.modelId,
-                    shafts,
-                });
-            }
-        }
-
-        return result;
-    }, [renderKickstandList, kickstandState.roots, renderKickstandKnotsById, isModelVisible, raftSettings.bottomMode, raftSettings.thickness]);
+    const kickstandShaftsBySupport = useMemo(
+        () => buildPlainShaftSet('kickstand', renderKickstandList, (kickstand) => ({
+            root: kickstandState.roots[kickstand.rootId],
+            hostKnot: renderKickstandKnotsById[kickstand.hostKnotId],
+        })),
+        [renderKickstandList, kickstandState.roots, renderKickstandKnotsById, buildPlainShaftSet],
+    );
 
     const segmentModelIdById = useMemo(() => {
         const map = new Map<string, string | undefined>();

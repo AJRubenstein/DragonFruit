@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { SUPPORT_TYPES, getSupportTypeDescriptor } from '../supportTypeRegistry';
+
+/**
+ * Which types taper, where they read the two diameters, and on which segment.
+ *
+ * Twig and kickstand each had their own shaft builder for this. The shapes
+ * matched: read two diameters, compare them, drop the support from the batched
+ * pass when they differ.
+ */
+
+test('exactly twig and kickstand declare a taper', () => {
+    const tapering = SUPPORT_TYPES.filter((d) => d.shaftTaper).map((d) => d.id).sort();
+    assert.deepEqual(tapering, ['kickstand', 'twig']);
+});
+
+test('a twig tapers along its whole shaft, between its contact disks', () => {
+    const taper = getSupportTypeDescriptor('twig').shaftTaper!;
+    assert.equal(taper.segments, 'all');
+    assert.deepEqual([...taper.from], [
+        'contactDiskA.contactDiameterMm',
+        'contactDiskB.contactDiameterMm',
+    ]);
+});
+
+test('a kickstand tapers only its terminal segment, from its profile', () => {
+    const taper = getSupportTypeDescriptor('kickstand').shaftTaper!;
+    assert.equal(taper.segments, 'last');
+    assert.deepEqual([...taper.from], [
+        'profile.terminalStartDiameterMm',
+        'profile.terminalEndDiameterMm',
+    ]);
+});
+
+test('a declared taper names exactly two diameter sources', () => {
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.shaftTaper) continue;
+        assert.equal(descriptor.shaftTaper.from.length, 2, descriptor.id);
+        for (const path of descriptor.shaftTaper.from) {
+            assert.match(path, /^\w+(\.\w+)+$/, `${descriptor.id}: ${path} should be a dotted path`);
+        }
+    }
+});
+
+test('a tapering type has a shaft to taper', () => {
+    for (const descriptor of SUPPORT_TYPES) {
+        if (descriptor.shaftTaper) assert.equal(descriptor.hasSegments, true, descriptor.id);
+    }
+});
