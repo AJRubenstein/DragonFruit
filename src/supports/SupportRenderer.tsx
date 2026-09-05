@@ -3195,6 +3195,41 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         );
     }, [isPointerInteractable, mode, supportSelectionAndHoverSuppressed]);
 
+    /** Draws one type's batched shaft groups. Six identical blocks became this. */
+    const renderSceneBatchedShafts = useCallback((
+        typeId: string,
+        groups: ReadonlyArray<{ modelId?: string; color: string; shafts: InstancedShaft[] }>,
+        options?: { detailedOnly?: boolean },
+    ) => {
+        if (options?.detailedOnly && simpleRender) return null;
+        return groups.map((group) => (
+            <group
+                key={`scene-${typeId}-batch:${group.modelId ?? 'none'}:${group.color}:${group.shafts.length}`}
+                userData={{ modelId: group.modelId ?? null }}
+            >
+                {simpleRender ? (
+                    <SimpleShaftLines shafts={group.shafts} color={group.color} />
+                ) : (
+                    <InstancedShaftGroup
+                        shafts={group.shafts}
+                        color={group.color}
+                        transparent={ghostTransparent}
+                        opacity={ghostOpacityClamped}
+                        radialSegments={sceneBatchedShaftRadialSegments}
+                        onShaftClick={isPointerInteractable ? handleSceneBatchedShaftClick : undefined}
+                        onShaftPointerMove={isPointerInteractable ? handleSceneBatchedShaftPointerMove : undefined}
+                        onShaftPointerOut={isPointerInteractable ? handleSceneBatchedShaftPointerOut : undefined}
+                    />
+                )}
+            </group>
+        ));
+    }, [
+        simpleRender, ghostTransparent, ghostOpacityClamped, sceneBatchedShaftRadialSegments,
+        isPointerInteractable, handleSceneBatchedShaftClick,
+        handleSceneBatchedShaftPointerMove, handleSceneBatchedShaftPointerOut,
+    ]);
+
+
     const handleSceneBatchedRootClick = React.useCallback((root: InstancedRoot, event: { nativeEvent?: Event }) => {
         if (!isPointerInteractable) return;
         if (isPreparePointerInteractable) {
@@ -3474,24 +3509,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             <BezierGizmoManager />
 
             {/* Render Trunks */}
-            {sceneBatchedTrunkShaftGroups.map((group) => (
-                <group key={`scene-trunk-batch:${group.modelId ?? 'none'}:${group.color}:${group.shafts.length}`} userData={{ modelId: group.modelId ?? null }}>
-                    {simpleRender ? (
-                        <SimpleShaftLines shafts={group.shafts} color={group.color} />
-                    ) : (
-                        <InstancedShaftGroup
-                            shafts={group.shafts}
-                            color={group.color}
-                            transparent={ghostTransparent}
-                            opacity={ghostOpacityClamped}
-                            radialSegments={sceneBatchedShaftRadialSegments}
-                            onShaftClick={isPointerInteractable ? handleSceneBatchedShaftClick : undefined}
-                            onShaftPointerMove={isPointerInteractable ? handleSceneBatchedShaftPointerMove : undefined}
-                            onShaftPointerOut={isPointerInteractable ? handleSceneBatchedShaftPointerOut : undefined}
-                        />
-                    )}
-                </group>
-            ))}
+            {renderSceneBatchedShafts('trunk', sceneBatchedTrunkShaftGroups)}
             {!simpleRender && sceneBatchedJointGroups.map((group) => (
                 <group key={`scene-joint-batch:${group.modelId ?? 'none'}:${group.color}:${group.joints.length}`} userData={{ modelId: group.modelId ?? null }}>
                     <InstancedJointGroup
@@ -3828,24 +3846,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             })}
 
             {/* Render Branches */}
-            {sceneBatchedBranchShaftGroups.map((group) => (
-                <group key={`scene-branch-batch:${group.modelId ?? 'none'}:${group.color}:${group.shafts.length}`} userData={{ modelId: group.modelId ?? null }}>
-                    {simpleRender ? (
-                        <SimpleShaftLines shafts={group.shafts} color={group.color} />
-                    ) : (
-                        <InstancedShaftGroup
-                            shafts={group.shafts}
-                            color={group.color}
-                            transparent={ghostTransparent}
-                            opacity={ghostOpacityClamped}
-                            radialSegments={sceneBatchedShaftRadialSegments}
-                            onShaftClick={isPointerInteractable ? handleSceneBatchedShaftClick : undefined}
-                            onShaftPointerMove={isPointerInteractable ? handleSceneBatchedShaftPointerMove : undefined}
-                            onShaftPointerOut={isPointerInteractable ? handleSceneBatchedShaftPointerOut : undefined}
-                        />
-                    )}
-                </group>
-            ))}
+            {renderSceneBatchedShafts('branch', sceneBatchedBranchShaftGroups)}
 
             {renderBranchList.map(branch => {
                 if (!isModelVisible(branch.modelId, branch.id)) return null;
@@ -3952,24 +3953,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 );
             })}
 
-            {sceneBatchedTwigShaftGroups.map((group) => (
-                <group key={`scene-twig-batch:${group.modelId ?? 'none'}:${group.color}:${group.shafts.length}`} userData={{ modelId: group.modelId ?? null }}>
-                    {simpleRender ? (
-                        <SimpleShaftLines shafts={group.shafts} color={group.color} />
-                    ) : (
-                        <InstancedShaftGroup
-                            shafts={group.shafts}
-                            color={group.color}
-                            transparent={ghostTransparent}
-                            opacity={ghostOpacityClamped}
-                            radialSegments={sceneBatchedShaftRadialSegments}
-                            onShaftClick={isPointerInteractable ? handleSceneBatchedShaftClick : undefined}
-                            onShaftPointerMove={isPointerInteractable ? handleSceneBatchedShaftPointerMove : undefined}
-                            onShaftPointerOut={isPointerInteractable ? handleSceneBatchedShaftPointerOut : undefined}
-                        />
-                    )}
-                </group>
-            ))}
+            {renderSceneBatchedShafts('twig', sceneBatchedTwigShaftGroups)}
             {/* Render Sticks */}
             {renderStickList.map(stick => {
                 if (!isModelVisible(stick.modelId, stick.id)) return null;
@@ -4002,40 +3986,10 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 );
             })}
 
-            {sceneBatchedStickShaftGroups.map((group) => (
-                <group key={`scene-stick-batch:${group.modelId ?? 'none'}:${group.color}:${group.shafts.length}`} userData={{ modelId: group.modelId ?? null }}>
-                    {simpleRender ? (
-                        <SimpleShaftLines shafts={group.shafts} color={group.color} />
-                    ) : (
-                        <InstancedShaftGroup
-                            shafts={group.shafts}
-                            color={group.color}
-                            transparent={ghostTransparent}
-                            opacity={ghostOpacityClamped}
-                            radialSegments={sceneBatchedShaftRadialSegments}
-                            onShaftClick={isPointerInteractable ? handleSceneBatchedShaftClick : undefined}
-                            onShaftPointerMove={isPointerInteractable ? handleSceneBatchedShaftPointerMove : undefined}
-                            onShaftPointerOut={isPointerInteractable ? handleSceneBatchedShaftPointerOut : undefined}
-                        />
-                    )}
-                </group>
-            ))}
+            {renderSceneBatchedShafts('stick', sceneBatchedStickShaftGroups)}
 
             {/* Render Braces */}
-            {!simpleRender && sceneBatchedBraceShaftGroups.map((group) => (
-                <group key={`scene-brace-batch:${group.modelId ?? 'none'}:${group.color}:${group.shafts.length}`} userData={{ modelId: group.modelId ?? null }}>
-                    <InstancedShaftGroup
-                        shafts={group.shafts}
-                        color={group.color}
-                        transparent={ghostTransparent}
-                        opacity={ghostOpacityClamped}
-                        radialSegments={sceneBatchedShaftRadialSegments}
-                        onShaftClick={isPointerInteractable ? handleSceneBatchedShaftClick : undefined}
-                        onShaftPointerMove={isPointerInteractable ? handleSceneBatchedShaftPointerMove : undefined}
-                        onShaftPointerOut={isPointerInteractable ? handleSceneBatchedShaftPointerOut : undefined}
-                    />
-                </group>
-            ))}
+            {renderSceneBatchedShafts('brace', sceneBatchedBraceShaftGroups, { detailedOnly: true })}
 
             {!simpleRender && renderBraceList.map(brace => {
                 if (!isModelVisible(brace.modelId, brace.id)) return null;
@@ -4116,24 +4070,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 );
             })}
 
-            {sceneBatchedKickstandShaftGroups.map((group) => (
-                <group key={`scene-kickstand-batch:${group.modelId ?? 'none'}:${group.color}:${group.shafts.length}`} userData={{ modelId: group.modelId ?? null }}>
-                    {simpleRender ? (
-                        <SimpleShaftLines shafts={group.shafts} color={group.color} />
-                    ) : (
-                        <InstancedShaftGroup
-                            shafts={group.shafts}
-                            color={group.color}
-                            transparent={ghostTransparent}
-                            opacity={ghostOpacityClamped}
-                            radialSegments={sceneBatchedShaftRadialSegments}
-                            onShaftClick={isPointerInteractable ? handleSceneBatchedShaftClick : undefined}
-                            onShaftPointerMove={isPointerInteractable ? handleSceneBatchedShaftPointerMove : undefined}
-                            onShaftPointerOut={isPointerInteractable ? handleSceneBatchedShaftPointerOut : undefined}
-                        />
-                    )}
-                </group>
-            ))}
+            {renderSceneBatchedShafts('kickstand', sceneBatchedKickstandShaftGroups)}
             {/* Render Anchors */}
             {renderAnchorList.map(anchor => {
                 if (!isModelVisible(anchor.modelId, anchor.id)) return null;
