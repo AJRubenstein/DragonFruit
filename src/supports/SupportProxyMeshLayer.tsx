@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useSyncExternalStore } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
-import { subscribe, getSnapshot } from './state';
+import { subscribe, getSnapshot, getSupports } from './state';
 import { getRaftSettings, subscribeToRaftStore } from './Rafts/Crenelated/RaftState';
 import { JOINT_DIAMETER_OFFSET_MM } from './constants';
 import { useKickstandStoreState } from './SupportTypes/Kickstand/kickstandStore';
@@ -85,16 +85,10 @@ type FlatProxyGeometry = {
 };
 
 type SharedProxyCacheEntry = {
-  supportTrunksRef: ReturnType<typeof getSnapshot>['trunks'];
+  /** Every entity collection at once; see the comparison below. */
+  supportsRef: ReturnType<typeof getSupports>;
   supportRootsRef: ReturnType<typeof getSnapshot>['roots'];
   supportKnotsRef: ReturnType<typeof getSnapshot>['knots'];
-  supportBranchesRef: ReturnType<typeof getSnapshot>['branches'];
-  supportLeavesRef: ReturnType<typeof getSnapshot>['leaves'];
-  supportTwigsRef: ReturnType<typeof getSnapshot>['twigs'];
-  supportSticksRef: ReturnType<typeof getSnapshot>['sticks'];
-  supportBracesRef: ReturnType<typeof getSnapshot>['braces'];
-  supportAnchorsRef: ReturnType<typeof getSnapshot>['anchors'];
-  kickstandKickstandsRef: ReturnType<typeof useKickstandStoreState>['kickstands'];
   kickstandRootsRef: ReturnType<typeof useKickstandStoreState>['roots'];
   kickstandKnotsRef: ReturnType<typeof useKickstandStoreState>['knots'];
   hasSolidBottom: boolean;
@@ -170,6 +164,10 @@ export function SupportProxyMeshLayer({
   const supportSticks = supportState.sticks;
   const supportBraces = supportState.braces;
   const supportAnchors = supportState.anchors;
+  // Every entity collection as one identity, rebuilt when any changes. Used
+  // for the cache signature; the geometry loops below still read their own
+  // collection, because each builds different primitives.
+  const supports = getSupports();
   const kickstandKickstands = kickstandState.kickstands;
   const kickstandRoots = kickstandState.roots;
   const kickstandKnots = kickstandState.knots;
@@ -477,16 +475,12 @@ export function SupportProxyMeshLayer({
   const baseProxyByModel = React.useMemo(() => {
     if (
       sharedProxyCache
-      && sharedProxyCache.supportTrunksRef === supportTrunks
+      // One identity covers all eight entity collections: the merged view is
+      // rebuilt whenever any of them changes, which is what the per-collection
+      // checks this replaces were each testing for.
+      && sharedProxyCache.supportsRef === supports
       && sharedProxyCache.supportRootsRef === supportRoots
       && sharedProxyCache.supportKnotsRef === supportKnots
-      && sharedProxyCache.supportBranchesRef === supportBranches
-      && sharedProxyCache.supportLeavesRef === supportLeaves
-      && sharedProxyCache.supportTwigsRef === supportTwigs
-      && sharedProxyCache.supportSticksRef === supportSticks
-      && sharedProxyCache.supportBracesRef === supportBraces
-      && sharedProxyCache.supportAnchorsRef === supportAnchors
-      && sharedProxyCache.kickstandKickstandsRef === kickstandKickstands
       && sharedProxyCache.kickstandRootsRef === kickstandRoots
       && sharedProxyCache.kickstandKnotsRef === kickstandKnots
       && sharedProxyCache.hasSolidBottom === hasSolidBottom
@@ -1014,16 +1008,9 @@ export function SupportProxyMeshLayer({
     // Kickstand host knots are also interaction affordances — omitted from proxy for the same reason.
 
     sharedProxyCache = {
-      supportTrunksRef: supportTrunks,
+      supportsRef: supports,
       supportRootsRef: supportRoots,
       supportKnotsRef: supportKnots,
-      supportBranchesRef: supportBranches,
-      supportLeavesRef: supportLeaves,
-      supportTwigsRef: supportTwigs,
-      supportSticksRef: supportSticks,
-      supportBracesRef: supportBraces,
-      supportAnchorsRef: supportAnchors,
-      kickstandKickstandsRef: kickstandKickstands,
       kickstandRootsRef: kickstandRoots,
       kickstandKnotsRef: kickstandKnots,
       hasSolidBottom,
@@ -1035,6 +1022,7 @@ export function SupportProxyMeshLayer({
 
     return byModel;
   }, [
+    supports,
     supportTrunks,
     supportRoots,
     supportKnots,
