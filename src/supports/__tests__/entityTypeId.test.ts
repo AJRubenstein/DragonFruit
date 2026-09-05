@@ -5,12 +5,14 @@ import {
     addKnot,
     addRoot,
     addSupportEntity,
+    findShaftOwnerOfSegment,
     getSnapshot,
+    getSupportTypeOf,
     loadFromImportFormat,
     removeSupportEntity,
     resetStore,
 } from '../state';
-import { SUPPORT_TYPES, restoreToCollection, updateSupportEntity } from '../supportTypeRegistry';
+import { SUPPORT_TYPES, getSupportTypeDescriptor, restoreToCollection, updateSupportEntity } from '../supportTypeRegistry';
 import { buildSupportExportFromStores } from '@/features/scene/voxl/codec';
 
 /**
@@ -192,4 +194,39 @@ test('typeId survives a save and load unchanged', () => {
     loadFromImportFormat(second);
 
     assertAllAgree('after two round trips');
+});
+
+test('an id resolves to its type without scanning collections', () => {
+    oneOfEach();
+    for (const descriptor of SUPPORT_TYPES) {
+        assert.equal(getSupportTypeOf(`${descriptor.id}-a`), descriptor.id);
+    }
+    assert.equal(getSupportTypeOf('not-a-support'), null);
+    assert.equal(getSupportTypeOf(''), null);
+});
+
+test('a prefixed segment id names its own owner', () => {
+    // Brace segments are selected as `braceSegment:<id>`; the owner is in the
+    // id rather than in any collection, and only the prefix says so.
+    oneOfEach();
+    const brace = getSupportTypeDescriptor('brace');
+    assert.ok(brace.segmentSelectionPrefix, 'brace should declare a prefix');
+
+    assert.deepEqual(
+        findShaftOwnerOfSegment(`${brace.segmentSelectionPrefix}brace-a`),
+        { typeId: 'brace', id: 'brace-a' },
+    );
+    assert.equal(findShaftOwnerOfSegment(`${brace.segmentSelectionPrefix}gone`), null);
+});
+
+test('an ordinary segment id still resolves by scanning shafts', () => {
+    oneOfEach();
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        assert.deepEqual(
+            findShaftOwnerOfSegment(`${descriptor.id}-a-s`),
+            { typeId: descriptor.id, id: `${descriptor.id}-a` },
+            descriptor.id,
+        );
+    }
 });
