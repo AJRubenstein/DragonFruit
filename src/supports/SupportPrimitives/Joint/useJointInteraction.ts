@@ -443,9 +443,11 @@ export function useJointInteraction(enabled: boolean = true) {
                 if (owner) jointParentCacheRef.current.set(jointId, { kind: owner.typeId, supportId: owner.id });
             }
 
-            // @deprecated for removal -- the downstream drag blocks each read
-            // their own local, so the owner is unpacked back into five. Goes
-            // when the activeXId refs collapse to one { typeId, id }.
+            // One owner, unpacked into five so the drag-start chain below can
+            // read each as its own type. That chain is not a lookup: each arm
+            // sets a different constraint root, constraint start and preview
+            // ref, which is real per-type drag state. It goes when those move
+            // behind a slot, not when the refs collapse -- they already have.
             const ofType = <T,>(typeId: SupportTypeId): T | null =>
                 owner && owner.typeId === typeId ? (getSupportEntity(typeId, owner.id) as T | null) : null;
 
