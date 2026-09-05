@@ -2718,11 +2718,28 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         supportId: string,
         modelId?: string,
     ) => {
+        // Past MULTI_SELECTION_DETAIL_THRESHOLD the per-type selected sets are
+        // left empty, so `isSelected` never reaches a detail renderer and the
+        // bulk colour is the only thing marking a selection. Anchor is drawn
+        // entirely by detail renderers -- root frustum plus contact cone, no
+        // batched shaft pass -- so without this it was the one type that did
+        // not highlight in a large marquee.
+        if (hasSupportMultiSelection && !useMultiSelectionDetail && selectedSupportIdSet.has(supportId)) {
+            return BULK_MULTI_SELECTED_COLOR;
+        }
+
         if (!debugOriginColors) return resolveBaseColor(modelId);
         return getSupportTypeDescriptor(typeId).hasOrigin
             ? originColorFor(supportId) ?? ORIGIN_NO_ORIGIN_COLOR
             : ORIGIN_NOT_APPLICABLE_COLOR;
-    }, [debugOriginColors, originColorFor, resolveBaseColor]);
+    }, [
+        hasSupportMultiSelection,
+        useMultiSelectionDetail,
+        selectedSupportIdSet,
+        debugOriginColors,
+        originColorFor,
+        resolveBaseColor,
+    ]);
 
     /** The props every detail renderer takes identically. */
     const sharedRenderProps = useCallback((
