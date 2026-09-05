@@ -49,3 +49,10 @@ test('a tapering type has a shaft to taper', () => {
         if (descriptor.shaftTaper) assert.equal(descriptor.hasSegments, true, descriptor.id);
     }
 });
+
+test('exactly the placeable types declare a preview', () => {
+    // Twig, stick and anchor are chosen automatically by threshold rather than
+    // placed, so they have no placement hook and no preview.
+    const placeable = SUPPORT_TYPES.filter((d) => d.hasPlacementPreview).map((d) => d.id).sort();
+    assert.deepEqual(placeable, ['brace', 'branch', 'kickstand', 'leaf', 'trunk']);
+});

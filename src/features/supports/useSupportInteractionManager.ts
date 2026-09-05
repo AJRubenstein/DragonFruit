@@ -799,10 +799,16 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
     onSupportClick,
     previewError: trunkPlacementV2.previewError,
     previewWarning: trunkPlacementV2.previewWarning,
-    trunkPreview: trunkPlacementV2.previewData,
-    branchPreview: branchPlacement.previewData,
-    leafPreview: leafPlacement.previewData,
-    bracePreview: bracePlacement.preview,
-    kickstandPreview: kickstandPlacement.previewData,
+    /**
+     * Placement previews, keyed by type. Brace names its field `preview`
+     * where the others use `previewData`; that is the only difference.
+     */
+    placementPreviews: {
+      trunk: trunkPlacementV2.previewData,
+      branch: branchPlacement.previewData,
+      leaf: leafPlacement.previewData,
+      brace: bracePlacement.preview,
+      kickstand: kickstandPlacement.previewData,
+    },
   };
 }
