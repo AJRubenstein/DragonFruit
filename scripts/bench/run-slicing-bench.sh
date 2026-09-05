@@ -123,6 +123,15 @@ done
 
 MESH_DIR="${MESH_DIR:-$FIXTURES}"
 
+# Binary containers stamp the wall clock into their header, so two slices of the
+# same model differ and a whole-file comparison can never pass. Under --validate
+# the stamp is pinned so the comparison sees only what the slicer actually
+# produced; ordinary runs are left alone and still stamp the real time.
+DETERMINISTIC_STAMP=""
+if [[ -n "${VALIDATE_DIR:-}" ]]; then
+  DETERMINISTIC_STAMP="env SOURCE_DATE_EPOCH=0"
+fi
+
 # Expose V8's gc() to the TS "frontend" so it can actively reclaim the merged
 # geometry after handing positions.bin to the Rust slicer — the slice then runs
 # with the node process holding ~nothing, keeping the measurement to purely the
@@ -653,7 +662,7 @@ run_matrix() { # <label> <sha> <ts-cmd> <rust-binary> <hw-label> <hw-cpus> <hw-m
         # DF_RESOURCE_LOG makes the slicer stream each RSS/CPU sample to $reslog as it goes,
         # so the series survives an OOM SIGKILL that never reaches the final --json emit; the
         # failure branch below folds it into the error row for post-mortem debugging.
-        if DF_RESOURCE_LOG="$reslog" $HWPRE $TS scene slice "$voxl" --o "$tmp" --mesh-dir "$MESH_DIR" \
+        if DF_RESOURCE_LOG="$reslog" $DETERMINISTIC_STAMP $HWPRE $TS scene slice "$voxl" --o "$tmp" --mesh-dir "$MESH_DIR" \
                    --printer "$printer" --layer-height "$lh" --aa-preset "$aa" \
                    --json >"$resf" 2>"$errf"; then
           # print inspect is zip-only; on binary formats (.ctb/.goo/…) it fails and
