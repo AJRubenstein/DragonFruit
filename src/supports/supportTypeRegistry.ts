@@ -10,6 +10,7 @@ import {
     SUPPORT_ADD_KICKSTAND, SUPPORT_REMOVE_KICKSTAND,
 } from './history/actionTypes';
 import type { SupportHistoryActionType } from './history/actionTypes';
+import { ANCHOR_HEIGHT_THRESHOLD_MM } from './autoSupport/constants';
 
 export type SupportTypeId =
     | 'trunk'
@@ -58,6 +59,38 @@ export type SupportEndpointKind =
 export interface SupportEndpoint {
     kind: SupportEndpointKind;
     field?: string;
+}
+
+/**
+ * What a placement rule measures.
+ *
+ * - `contactSpan` -- distance between the two model contacts a support bridges.
+ * - `tipHeight`   -- height of the model contact above the plate.
+ */
+export type SupportPlacementMetric = 'contactSpan' | 'tipHeight';
+
+/**
+ * A settings path a threshold reads from, with the fallback used when the
+ * setting is absent. The union keeps a typo a compile error.
+ */
+export type SupportPlacementThreshold =
+    | number
+    | { setting: SupportPlacementSettingPath; fallback: number };
+
+/**
+ * The range of a measurement this type serves.
+ *
+ * `boundary` says which side owns a value sitting exactly on it, because the
+ * hand-written sites disagreed: the span rule used `dist > cutoff` (so the
+ * boundary is a twig) while the height rule used `z < threshold` (so the
+ * boundary is a trunk). Declaring it keeps both.
+ */
+export interface SupportPlacementRule {
+    metric: SupportPlacementMetric;
+    minMm?: SupportPlacementThreshold;
+    maxMm?: SupportPlacementThreshold;
+    /** Which type claims a value exactly on a shared bound. Default `'lower'`. */
+    boundary?: 'lower' | 'upper';
 }
 
 /**
@@ -131,6 +164,15 @@ export interface SupportTypeDescriptor {
      * automatically rather than placed.
      */
     hasPlacementPreview: boolean;
+    /**
+     * The measurement range this type serves, when the type is chosen
+     * automatically rather than picked by the user.
+     *
+     * A missing bound is unbounded on that side; `boundary` decides who owns
+     * a value sitting exactly on a shared bound.
+     * Enforced by `__tests__/placementRules.test.ts`.
+     */
+    placementRule?: SupportPlacementRule;
     /**
      * Whether this type's preview yields to any other placement mode.
      *
@@ -250,6 +292,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasOrigin: true,
         hasPlacementPreview: true,
         previewYieldsToOtherModes: true,
+        placementRule: { metric: 'tipHeight', minMm: ANCHOR_HEIGHT_THRESHOLD_MM, boundary: 'upper' },
         lower: { kind: 'plateRoot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -326,6 +369,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasOrigin: false,
         shaftTaper: { segments: 'all', from: ['contactDiskA.contactDiameterMm', 'contactDiskB.contactDiameterMm'] },
         hasPlacementPreview: false,
+        placementRule: { metric: 'contactSpan', maxMm: { setting: 'meshToMesh.stickVsTwigCutoffMm', fallback: 5 } },
         lower: { kind: 'disk', field: 'contactDiskA' },
         upper: { kind: 'disk', field: 'contactDiskB' },
         hasSegments: true,
@@ -350,6 +394,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: false,
         hasPlacementPreview: false,
+        placementRule: { metric: 'contactSpan', minMm: { setting: 'meshToMesh.stickVsTwigCutoffMm', fallback: 5 } },
         lower: { kind: 'cone', field: 'contactConeA' },
         upper: { kind: 'cone', field: 'contactConeB' },
         hasSegments: true,
@@ -404,6 +449,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: true,
         hasPlacementPreview: false,
+        placementRule: { metric: 'tipHeight', maxMm: ANCHOR_HEIGHT_THRESHOLD_MM, boundary: 'upper' },
         lower: { kind: 'inlineRoot', field: 'rootPos' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -674,6 +720,53 @@ export function anyContactMatches(
     const record = entity as Record<string, unknown> | null | undefined;
     if (!record) return false;
     return contactEndpointsFor(typeId).some(({ field }) => test(record[field]));
+}
+
+/** A settings path a placement threshold may read from. */
+export type SupportPlacementSettingPath = 'meshToMesh.stickVsTwigCutoffMm';
+
+/** Resolves a threshold, reading the named setting when there is one. */
+function thresholdMm(
+    threshold: SupportPlacementThreshold | undefined,
+    readSetting: (path: SupportPlacementSettingPath) => number | undefined,
+): number | undefined {
+    if (threshold === undefined) return undefined;
+    if (typeof threshold === 'number') return threshold;
+    return readSetting(threshold.setting) ?? threshold.fallback;
+}
+
+/**
+ * Which type serves a measurement, or null when none declares a range for it.
+ *
+ * Bounds are half-open, so adjacent types meet without overlapping and the
+ * answer is unambiguous.
+ */
+export function selectTypeForPlacement(
+    metric: SupportPlacementMetric,
+    valueMm: number,
+    readSetting: (path: SupportPlacementSettingPath) => number | undefined,
+): SupportTypeId | null {
+    // A NaN measurement satisfies no comparison, so an unbounded side would
+    // otherwise let it through.
+    if (!Number.isFinite(valueMm)) return null;
+
+    for (const descriptor of SUPPORT_TYPES) {
+        const rule = descriptor.placementRule;
+        if (!rule || rule.metric !== metric) continue;
+
+        const min = thresholdMm(rule.minMm, readSetting);
+        const max = thresholdMm(rule.maxMm, readSetting);
+        const boundaryOwner = rule.boundary ?? 'lower';
+        if (min !== undefined && (boundaryOwner === 'lower' ? valueMm <= min : valueMm < min)) continue;
+        if (max !== undefined && (boundaryOwner === 'lower' ? valueMm > max : valueMm >= max)) continue;
+        return descriptor.id;
+    }
+    return null;
+}
+
+/** Every type declaring a rule for this metric, in registry order. */
+export function typesForPlacementMetric(metric: SupportPlacementMetric): readonly SupportTypeDescriptor[] {
+    return SUPPORT_TYPES.filter((descriptor) => descriptor.placementRule?.metric === metric);
 }
 
 export const SUPPORT_TRANSFORM_EXTRAS = {

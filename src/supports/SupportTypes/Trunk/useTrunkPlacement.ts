@@ -12,7 +12,7 @@ import type { ContactCone } from '../../SupportPrimitives/ContactCone/types';
 import { calculateSmoothedNormal } from '../../PlacementLogic/PlacementUtils';
 import { getSettings } from '../../Settings';
 import { decideGridPlacement } from '../../PlacementLogic/Grid';
-import { ANCHOR_HEIGHT_THRESHOLD_MM } from '../../autoSupport/constants';
+import { selectTypeForPlacement } from '../../supportTypeRegistry';
 import { clearSupportSelection } from '../../interaction/shared/selection/selectionController';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
 import { perfMark, perfMeasureWithSpike, perfEndFrame } from '../../PlacementLogic/Pathfinding/pathfindingPerf';
@@ -183,12 +183,12 @@ export function buildCavityStick(
     const bNormal = { x: chosen.normal.x, y: chosen.normal.y, z: chosen.normal.z };
 
     const settings = getSettings();
-    const cutoff = settings.meshToMesh?.stickVsTwigCutoffMm ?? 5;
     const dx = tipPos.x - bPos.x;
     const dy = tipPos.y - bPos.y;
     const dz = tipPos.z - bPos.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const kind: 'twig' | 'stick' = dist > cutoff ? 'stick' : 'twig';
+    const kind = selectTypeForPlacement('contactSpan', dist, () => settings.meshToMesh?.stickVsTwigCutoffMm);
+    if (kind === null) return null;
 
     if (kind === 'twig') {
         const { twig } = buildTwig({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal, tipContactDiameterMm: sizing?.tipContactDiameterMm });
@@ -493,7 +493,7 @@ export function useTrunkPlacementV2() {
         // exception: decideGridPlacement owns the anchor decision in BOTH
         // modes (its validation also previews the rejection ghost), so they
         // must not take this early out.
-        if (!isGridMode && tipPos.z >= ANCHOR_HEIGHT_THRESHOLD_MM) {
+        if (!isGridMode && selectTypeForPlacement('tipHeight', tipPos.z, () => undefined) !== 'anchor') {
             setPreviewData(result.supportData);
             setPreviewError(forcePlaceOverrideRef.current ? null : (result.error || null));
             setPreviewWarning(result.warning || null);
