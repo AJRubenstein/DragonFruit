@@ -1106,15 +1106,20 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return origin ? ORIGIN_COLORS[origin] : ORIGIN_NO_ORIGIN_COLOR;
     }, [debugOriginColors, originById]);
 
-    const resolveSceneSupportColor = React.useCallback((modelId: string | undefined, supportId: string) => {
+    const resolveSceneSupportColor = React.useCallback((
+        modelId: string | undefined,
+        supportId: string,
+        typeId?: SupportTypeId,
+    ) => {
         if (hasSupportMultiSelection && !useMultiSelectionDetail && selectedSupportIdSet.has(supportId)) {
             return BULK_MULTI_SELECTED_COLOR;
         }
 
-        // Debug origin coloring: anchor / overhang / island / standalone
-        // (gray = pre-stamping entity → regenerate). originColorFor is
-        // non-null whenever the mode is on.
-        if (debugOriginColors) {
+        // Debug origin coloring: anchor / overhang / island / standalone, and
+        // gray for an entity stamped before origins existed. Only the types
+        // declaring hasOrigin take part; the rest keep their model colour
+        // rather than reading as unstamped.
+        if (debugOriginColors && (!typeId || getSupportTypeDescriptor(typeId).hasOrigin)) {
             return originColorFor(supportId) ?? ORIGIN_NO_ORIGIN_COLOR;
         }
 
@@ -2310,7 +2315,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const jointSet = trunkJointsBySupport.get(trunk.id);
             if (!jointSet) continue;
 
-            const color = resolveSceneSupportColor(trunk.modelId, trunk.id);
+            const color = resolveSceneSupportColor(trunk.modelId, trunk.id, 'trunk');
             pushJoints(trunk.modelId ?? null, color, jointSet.joints);
         }
 
@@ -2320,7 +2325,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const jointSet = branchJointsBySupport.get(branch.id);
             if (!jointSet) continue;
 
-            const color = resolveSceneSupportColor(branch.modelId, branch.id);
+            const color = resolveSceneSupportColor(branch.modelId, branch.id, 'branch');
             pushJoints(branch.modelId ?? null, color, jointSet.joints);
         }
 
@@ -2330,7 +2335,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const jointSet = twigJointsBySupport.get(twig.id);
             if (!jointSet) continue;
 
-            const color = resolveSceneSupportColor(twig.modelId, twig.id);
+            const color = resolveSceneSupportColor(twig.modelId, twig.id, 'twig');
             pushJoints(twig.modelId ?? null, color, jointSet.joints);
         }
 
@@ -2340,7 +2345,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const jointSet = stickJointsBySupport.get(stick.id);
             if (!jointSet) continue;
 
-            const color = resolveSceneSupportColor(stick.modelId, stick.id);
+            const color = resolveSceneSupportColor(stick.modelId, stick.id, 'stick');
             pushJoints(stick.modelId ?? null, color, jointSet.joints);
         }
 
@@ -2350,7 +2355,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const jointSet = kickstandJointsBySupport.get(kickstand.id);
             if (!jointSet) continue;
 
-            const color = resolveSceneSupportColor(kickstand.modelId, kickstand.id);
+            const color = resolveSceneSupportColor(kickstand.modelId, kickstand.id, 'kickstand');
             pushJoints(kickstand.modelId ?? null, color, jointSet.joints);
         }
 
@@ -2360,7 +2365,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const jointSet = leafJointsBySupport.get(leaf.id);
             if (!jointSet) continue;
 
-            const color = resolveSceneSupportColor(jointSet.modelId, leaf.id);
+            const color = resolveSceneSupportColor(jointSet.modelId, leaf.id, 'leaf');
             pushJoints(jointSet.modelId ?? null, color, jointSet.joints);
         }
 
@@ -2396,6 +2401,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
      * drawing. Five of the six batched types differed only in the type name.
      */
     const groupShaftsForSceneBatch = useCallback(<T extends { id: string; modelId?: string }>(
+        typeId: SupportTypeId,
         list: readonly T[],
         shaftsBySupport: Map<string, { modelId?: string; shafts: InstancedShaft[] }>,
         selectedIds: ReadonlySet<string>,
@@ -2411,7 +2417,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const shaftSet = shaftsBySupport.get(entity.id);
             if (!shaftSet) continue;
 
-            const color = resolveSceneSupportColor(shaftSet.modelId, entity.id);
+            const color = resolveSceneSupportColor(shaftSet.modelId, entity.id, typeId);
             const groupKey = `${shaftSet.modelId ?? '__unassigned__'}:${color}`;
             const existing = grouped.get(groupKey) ?? { modelId: shaftSet.modelId, color, shafts: [] };
             existing.shafts.push(...shaftSet.shafts.map(applyDropToInstancedShaft));
@@ -2423,18 +2429,18 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     const sceneBatchedTwigShaftGroups = useMemo(
         () => (enableTwigSceneBatching
-            ? groupShaftsForSceneBatch(renderTwigList, twigShaftsBySupport, selectedTwigIds)
+            ? groupShaftsForSceneBatch('twig', renderTwigList, twigShaftsBySupport, selectedTwigIds)
             : []),
         [enableTwigSceneBatching, renderTwigList, twigShaftsBySupport, selectedTwigIds, groupShaftsForSceneBatch],
     );
 
     const sceneBatchedStickShaftGroups = useMemo(
-        () => groupShaftsForSceneBatch(renderStickList, stickShaftsBySupport, selectedStickIds),
+        () => groupShaftsForSceneBatch('stick', renderStickList, stickShaftsBySupport, selectedStickIds),
         [renderStickList, stickShaftsBySupport, selectedStickIds, groupShaftsForSceneBatch],
     );
 
     const sceneBatchedKickstandShaftGroups = useMemo(
-        () => groupShaftsForSceneBatch(renderKickstandList, kickstandShaftsBySupport, selectedKickstandIds),
+        () => groupShaftsForSceneBatch('kickstand', renderKickstandList, kickstandShaftsBySupport, selectedKickstandIds),
         [renderKickstandList, kickstandShaftsBySupport, selectedKickstandIds, groupShaftsForSceneBatch],
     );
 
@@ -2457,7 +2463,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 : null;
             const color = debugSection
                 ? AUTO_BRACING_DEBUG_SECTION_COLORS[debugSection]
-                : resolveSceneSupportColor(shaftSet.modelId, brace.id);
+                : resolveSceneSupportColor(shaftSet.modelId, brace.id, 'brace');
             const groupKey = `${modelKey}:${color}`;
 
             const existing = grouped.get(groupKey);
@@ -2476,12 +2482,12 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [renderBraceList, braceShaftsBySupport, selectedBraceIds, ghostedBraceIdSet, isModelVisible, applyDropToInstancedShaft, settings.autoBracing.debugSectionColorsEnabled, dimNonSelected, resolveSceneSupportColor]);
 
     const sceneBatchedTrunkShaftGroups = useMemo(
-        () => groupShaftsForSceneBatch(renderTrunkList, trunkShaftsBySupport, selectedTrunkIds),
+        () => groupShaftsForSceneBatch('trunk', renderTrunkList, trunkShaftsBySupport, selectedTrunkIds),
         [renderTrunkList, trunkShaftsBySupport, selectedTrunkIds, groupShaftsForSceneBatch],
     );
 
     const sceneBatchedBranchShaftGroups = useMemo(
-        () => groupShaftsForSceneBatch(renderBranchList, branchShaftsBySupport, selectedBranchIds),
+        () => groupShaftsForSceneBatch('branch', renderBranchList, branchShaftsBySupport, selectedBranchIds),
         [renderBranchList, branchShaftsBySupport, selectedBranchIds, groupShaftsForSceneBatch],
     );
 
@@ -2505,7 +2511,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
             const verticalOffset = 0;
 
-            const color = resolveSceneSupportColor(trunk.modelId, trunk.id);
+            const color = resolveSceneSupportColor(trunk.modelId, trunk.id, 'trunk');
             const modelKey = `${trunk.modelId ?? '__unassigned__'}:${color}`;
             const existing = grouped.get(modelKey) ?? { modelId: trunk.modelId ?? null, color, roots: [] };
             existing.roots.push({
@@ -2564,7 +2570,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
             const verticalOffset = 0;
 
-            const color = resolveSceneSupportColor(kickstand.modelId, kickstand.id);
+            const color = resolveSceneSupportColor(kickstand.modelId, kickstand.id, 'kickstand');
             const modelKey = `${kickstand.modelId ?? '__unassigned__'}:${color}`;
             const existing = grouped.get(modelKey) ?? { modelId: kickstand.modelId ?? null, color, roots: [] };
             existing.roots.push({
@@ -2618,7 +2624,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const coneSet = contactConesBySupport.get(trunk.id);
             if (!coneSet) continue;
 
-            const color = resolveSceneSupportColor(coneSet.modelId, trunk.id);
+            const color = resolveSceneSupportColor(coneSet.modelId, trunk.id, 'trunk');
             coneSet.cones.forEach((cone) => pushCone(coneSet.modelId ?? null, color, {
                 ...cone,
                 pos: applyDropToVec3Like(cone.pos, cone.modelId),
@@ -2630,7 +2636,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const coneSet = contactConesBySupport.get(branch.id);
             if (!coneSet) continue;
 
-            const color = resolveSceneSupportColor(coneSet.modelId, branch.id);
+            const color = resolveSceneSupportColor(coneSet.modelId, branch.id, 'branch');
             coneSet.cones.forEach((cone) => pushCone(coneSet.modelId ?? null, color, {
                 ...cone,
                 pos: applyDropToVec3Like(cone.pos, cone.modelId),
@@ -2642,7 +2648,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const coneSet = contactConesBySupport.get(stick.id);
             if (!coneSet) continue;
 
-            const color = resolveSceneSupportColor(coneSet.modelId, stick.id);
+            const color = resolveSceneSupportColor(coneSet.modelId, stick.id, 'stick');
             coneSet.cones.forEach((cone) => pushCone(coneSet.modelId ?? null, color, {
                 ...cone,
                 pos: applyDropToVec3Like(cone.pos, cone.modelId),
@@ -2654,7 +2660,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const coneSet = contactConesBySupport.get(leaf.id);
             if (!coneSet) continue;
 
-            const color = resolveSceneSupportColor(coneSet.modelId, leaf.id);
+            const color = resolveSceneSupportColor(coneSet.modelId, leaf.id, 'leaf');
             coneSet.cones.forEach((cone) => pushCone(coneSet.modelId ?? null, color, {
                 ...cone,
                 pos: applyDropToVec3Like(cone.pos, cone.modelId),

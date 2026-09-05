@@ -57,3 +57,11 @@ test('hasOrigin matches the types carrying an origin field', () => {
     const withOrigin = SUPPORT_TYPES.filter((d) => d.hasOrigin).map((d) => d.id).sort();
     assert.deepEqual(withOrigin, ['anchor', 'branch', 'leaf', 'trunk']);
 });
+
+test('only origin-carrying types take part in origin colouring', () => {
+    // Braces, twigs, sticks and kickstands record no origin. Colouring them by
+    // it painted them all "no origin" grey, which reads as a fault rather than
+    // as not applicable.
+    const withoutOrigin = SUPPORT_TYPES.filter((d) => !d.hasOrigin).map((d) => d.id).sort();
+    assert.deepEqual(withoutOrigin, ['brace', 'kickstand', 'stick', 'twig']);
+});
