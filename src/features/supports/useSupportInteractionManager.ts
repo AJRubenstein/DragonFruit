@@ -36,7 +36,8 @@ import {
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_REMOVE_ANCHOR, SUPPORT_REMOVE_BRANCH, SUPPORT_REMOVE_BRACE, SUPPORT_REMOVE_LEAF, SUPPORT_REMOVE_TRUNK, SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_REMOVE_TWIG, SUPPORT_REMOVE_STICK, SUPPORT_AUTO_BRACE_REPLACE, SUPPORT_REMOVE_KICKSTAND, type SupportBranchRemovePayload } from '@/supports/history/actionTypes';
-import { getSupportTypeBySelectionCategory } from '@/supports/supportTypeRegistry';
+import { getSupportTypeBySelectionCategory, SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
+import { knotFields } from '@/supports/interaction/shared/selection/selectedIdsByType';
 import { clearSupportSelection, getResolvedPrimarySelection, selectSupportIds } from '@/supports/interaction/shared/selection/selectionController';
 import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
@@ -632,20 +633,15 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       // how anchors ended up deletable but gated out of single-selection Delete.
       if (category === 'joint' || getSupportTypeBySelectionCategory(category)) return true;
 
+      // A knot is deletable when something hangs off it. Which types can, and
+      // by which field, is the declared hostedBy-knots edge set.
       if (category === 'knot') {
-        const leaves = getSupportEntities<Leaf>('leaf');
-        if (leaves.some(l => l.parentKnotId === id)) return true;
-
-        const branches = getSupportEntities<Branch>('branch');
-        if (branches.some(b => b.parentKnotId === id)) return true;
-
-        const braces = getSupportEntities<Brace>('brace');
-        if (braces.some(br => br.startKnotId === id || br.endKnotId === id)) return true;
-
-        const kickstands = Object.values(getSnapshot().kickstands);
-        if (kickstands.some((ks) => ks.hostKnotId === id)) return true;
-
-        return false;
+        return SUPPORT_TYPES.some((descriptor) => {
+          const fields = knotFields(descriptor);
+          if (fields.length === 0) return false;
+          return getSupportEntities<Record<string, unknown>>(descriptor.id)
+            .some((entity) => fields.some((field) => entity[field] === id));
+        });
       }
 
       if (category === 'segment') {

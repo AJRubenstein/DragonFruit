@@ -61,8 +61,6 @@ which is the exact failure the registry exists to prevent.
 
 Known remaining hand-written lists worth converting:
 
-- `canDeleteSelection` in `useSupportInteractionManager.ts` enumerates seven
-  categories and omits `anchor` — a live bug, and a textbook case for a flag.
 - The 16 `SUPPORT_ADD_*` / `SUPPORT_REMOVE_*` constants imported into the
   registry must be kept in sync with `SupportTypeId` by hand. Deriving them from
   the type id is possible but needs checking first: history action strings may be
@@ -88,7 +86,7 @@ unless marked otherwise; recorded because the same shape will recur.
 | Scene-batched branches passed only `modelId` to `isModelVisible`, so a branch with none of its own could not resolve through its parent knot and was hidden under any model filter. Verified mechanically (false -> true); whether such branches occur in practice is unconfirmed, though four other sites defend against it | `SupportRenderer` | fixed, latent |
 | Debug origin colouring painted braces, twigs, sticks and kickstands grey ("no origin") though they record no origin at all — pre-existing, present on `dev`. Now a distinct slate; falling back to the model colour instead put them 76 RGB from the overhang orange | `SupportRenderer` | fixed |
 | Raft crenulation gap/spacing controls do nothing unless `wallEnabled` is on — the settings only reach the crenelated wall generators, so with the wall off they silently no-op. Pre-existing, unrelated to the registry work | `RaftRenderer:184` | **open** — UX, gate or disable the controls |
-| `canDeleteSelection` omits `anchor` | `useSupportInteractionManager` | **open** — §7 |
+| `canDeleteSelection` omitted `anchor` from its category list | `useSupportInteractionManager` | fixed — derives from `getSupportTypeBySelectionCategory` |
 | Nested-brace reachability clauses are dead code, subsumed by `touchedSegmentIds` | `transformSupportsForModel` | fixed |
 | Shaft stub length is 10 for trunk, 5 elsewhere; four other sites use 10 | `shaftFallback`, `resolveSegmentEndpoints` | **open** — inherited drift, needs a decision |
 | `TwigRenderer` omits `isInteractable` where the other three pass it | `TwigRenderer` | **open** — harmless while the default is true |
