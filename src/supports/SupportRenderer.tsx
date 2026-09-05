@@ -44,7 +44,7 @@ import { JointCreationManager } from './SupportPrimitives/Joint/JointCreationMan
 import { JointGizmo } from './SupportPrimitives/Joint/JointGizmo';
 import { KnotGizmo } from './SupportPrimitives/Knot/KnotGizmo';
 import { BezierGizmoManager } from './Curves/BezierGizmo/BezierGizmoManager';
-import { ContactDisk, SupportMode, BezierSegment, type Brace, type Knot, type Leaf, type Segment, type Twig, type SupportOrigin, type Vec3 } from './types';
+import { ContactDisk, SupportMode, BezierSegment, type Brace, type Knot, type Leaf, type Roots, type Segment, type Twig, type SupportOrigin, type Vec3 } from './types';
 import { resolveTwigDiameterAtSegmentT } from './SupportTypes/Twig/twigTaper';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
 import type { SupportData } from './rendering';
@@ -2322,120 +2322,72 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         [renderBranchList, branchShaftsBySupport, selectedBranchIds, groupShaftsForSceneBatch],
     );
 
-    const sceneBatchedTrunkRootGroups = useMemo(() => {
-        if (hidePlateContactPrimitivesEffective) return [] as Array<{ modelId: string | null; color: string; roots: InstancedRoot[] }>;
+    /**
+     * Plate roots for the batched pass, grouped by model and colour.
+     *
+     * Both root-owning types build these identically; only the shaft-diameter
+     * fallback differs, and the store the root comes from.
+     */
+    const groupRootsForSceneBatch = useCallback(<T extends { id: string; modelId?: string; rootId: string; segments?: Segment[] }>(
+        typeId: SupportTypeId,
+        list: readonly T[],
+        selectedIds: ReadonlySet<string>,
+        roots: Record<string, Roots>,
+        fallbackShaftDiameter: (entity: T) => number,
+    ) => {
+        if (hidePlateContactPrimitivesEffective) {
+            return [] as Array<{ modelId: string | null; color: string; roots: InstancedRoot[] }>;
+        }
 
         const grouped = new Map<string, { modelId: string | null; color: string; roots: InstancedRoot[] }>();
-        const hasSolidBottom = raftSettings.bottomMode === 'solid';
-        const raftThickness = raftSettings.thickness ?? 0;
 
-        for (const trunk of renderTrunkList) {
-            if (!isModelVisible(trunk.modelId)) continue;
-            if (selectedTrunkIds.has(trunk.id)) continue;
+        for (const entity of list) {
+            if (!isModelVisible(entity.modelId, entity.id)) continue;
+            if (selectedIds.has(entity.id)) continue;
 
-            const root = state.roots[trunk.rootId];
+            const root = roots[entity.rootId];
             if (!root) continue;
 
-            const shaftDiameter = Math.max(0.001, trunk.segments[0]?.diameter ?? 1.5);
-            const topRadius = shaftDiameter / 2;
-            const bottomRadius = Math.max(0.001, root.diameter / 2);
-            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
-            const verticalOffset = 0;
+            const shaftDiameter = Math.max(0.001, entity.segments?.[0]?.diameter ?? fallbackShaftDiameter(entity));
+            const color = resolveSceneSupportColor(entity.modelId, entity.id, typeId);
+            const groupKey = `${entity.modelId ?? '__unassigned__'}:${color}`;
+            const existing = grouped.get(groupKey) ?? { modelId: entity.modelId ?? null, color, roots: [] };
 
-            const color = resolveSceneSupportColor(trunk.modelId, trunk.id, 'trunk');
-            const modelKey = `${trunk.modelId ?? '__unassigned__'}:${color}`;
-            const existing = grouped.get(modelKey) ?? { modelId: trunk.modelId ?? null, color, roots: [] };
             existing.roots.push({
                 id: root.id,
-                supportId: trunk.id,
-                modelId: trunk.modelId,
+                supportId: entity.id,
+                modelId: entity.modelId,
                 basePos: applyDropToVec3Like({
                     x: root.transform.pos.x,
                     y: root.transform.pos.y,
-                    z: root.transform.pos.z + verticalOffset,
-                }, trunk.modelId),
-                bottomRadius,
-                topRadius,
-                effectiveDiskHeight,
+                    z: root.transform.pos.z,
+                }, entity.modelId),
+                bottomRadius: Math.max(0.001, root.diameter / 2),
+                topRadius: shaftDiameter / 2,
+                effectiveDiskHeight: Math.max(0.001, root.diskHeight),
                 coneHeight: Math.max(0, root.coneHeight),
             });
-            grouped.set(modelKey, existing);
+            grouped.set(groupKey, existing);
         }
 
         return Array.from(grouped.values());
     }, [
-        hidePlateContactPrimitivesEffective,
-        raftSettings.bottomMode,
-        raftSettings.thickness,
-        renderTrunkList,
-        state.roots,
-        dimNonSelected,
-        resolveBaseColor,
-        resolveSceneSupportColor,
-        applyDropToVec3Like,
-        selectedTrunkIds,
-        restrictToActiveModel,
-        activeModelId,
+        hidePlateContactPrimitivesEffective, isModelVisible,
+        resolveSceneSupportColor, applyDropToVec3Like,
     ]);
 
-    const sceneBatchedKickstandRootGroups = useMemo(() => {
-        if (hidePlateContactPrimitivesEffective) return [] as Array<{ modelId: string | null; color: string; roots: InstancedRoot[] }>;
+    const sceneBatchedTrunkRootGroups = useMemo(
+        () => groupRootsForSceneBatch('trunk', renderTrunkList, selectedTrunkIds, state.roots, () => 1.5),
+        [renderTrunkList, selectedTrunkIds, state.roots, groupRootsForSceneBatch],
+    );
 
-        const grouped = new Map<string, { modelId: string | null; color: string; roots: InstancedRoot[] }>();
-        const hasSolidBottom = raftSettings.bottomMode === 'solid';
-        const raftThickness = raftSettings.thickness ?? 0;
-
-        for (const kickstand of renderKickstandList) {
-            if (!isModelVisible(kickstand.modelId, kickstand.id)) continue;
-            if (selectedKickstandIds.has(kickstand.id)) continue;
-
-            const root = kickstandState.roots[kickstand.rootId];
-            if (!root) continue;
-
-            const shaftDiameter = Math.max(
-                0.001,
-                kickstand.segments[0]?.diameter ?? kickstand.profile.bodyDiameterMm,
-            );
-            const topRadius = shaftDiameter / 2;
-            const bottomRadius = Math.max(0.001, root.diameter / 2);
-            const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
-            const verticalOffset = 0;
-
-            const color = resolveSceneSupportColor(kickstand.modelId, kickstand.id, 'kickstand');
-            const modelKey = `${kickstand.modelId ?? '__unassigned__'}:${color}`;
-            const existing = grouped.get(modelKey) ?? { modelId: kickstand.modelId ?? null, color, roots: [] };
-            existing.roots.push({
-                id: root.id,
-                supportId: kickstand.id,
-                modelId: kickstand.modelId,
-                basePos: applyDropToVec3Like({
-                    x: root.transform.pos.x,
-                    y: root.transform.pos.y,
-                    z: root.transform.pos.z + verticalOffset,
-                }, kickstand.modelId),
-                bottomRadius,
-                topRadius,
-                effectiveDiskHeight,
-                coneHeight: Math.max(0, root.coneHeight),
-            });
-            grouped.set(modelKey, existing);
-        }
-
-        return Array.from(grouped.values());
-    }, [
-        hidePlateContactPrimitivesEffective,
-        raftSettings.bottomMode,
-        raftSettings.thickness,
-        renderKickstandList,
-        kickstandState.roots,
-        selectedKickstandIds,
-        dimNonSelected,
-        resolveBaseColor,
-        resolveSceneSupportColor,
-        applyDropToVec3Like,
-        restrictToActiveModel,
-        activeModelId,
-    ]);
+    const sceneBatchedKickstandRootGroups = useMemo(
+        () => groupRootsForSceneBatch(
+            'kickstand', renderKickstandList, selectedKickstandIds,
+            kickstandState.roots, (kickstand) => kickstand.profile.bodyDiameterMm,
+        ),
+        [renderKickstandList, selectedKickstandIds, kickstandState.roots, groupRootsForSceneBatch],
+    );
 
     const sceneBatchedContactConeGroups = useMemo(() => {
         const grouped = new Map<string, { modelId: string | null; color: string; cones: InstancedContactCone[] }>();
