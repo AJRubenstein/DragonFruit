@@ -2391,69 +2391,52 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         resolveSceneSupportColor,
     ]);
 
-    const sceneBatchedTwigShaftGroups = useMemo(() => {
-        if (!enableTwigSceneBatching) {
-            return [] as Array<{ modelId?: string; color: string; shafts: InstancedShaft[] }>;
-        }
-
+    /**
+     * Groups a type's unselected shafts by model and colour for instanced
+     * drawing. Five of the six batched types differed only in the type name.
+     */
+    const groupShaftsForSceneBatch = useCallback(<T extends { id: string; modelId?: string }>(
+        list: readonly T[],
+        shaftsBySupport: Map<string, { modelId?: string; shafts: InstancedShaft[] }>,
+        selectedIds: ReadonlySet<string>,
+        skip?: (entity: T) => boolean,
+    ) => {
         const grouped = new Map<string, { modelId?: string; color: string; shafts: InstancedShaft[] }>();
 
-        for (const twig of renderTwigList) {
-            if (!isModelVisible(twig.modelId, twig.id)) continue;
-            const shaftSet = twigShaftsBySupport.get(twig.id);
-            if (!shaftSet) continue;
-            if (selectedTwigIds.has(twig.id)) continue;
+        for (const entity of list) {
+            if (!isModelVisible(entity.modelId, entity.id)) continue;
+            if (selectedIds.has(entity.id)) continue;
+            if (skip?.(entity)) continue;
 
-            const color = resolveSceneSupportColor(shaftSet.modelId, twig.id);
-            const modelKey = shaftSet.modelId ?? '__unassigned__';
-            const groupKey = `${modelKey}:${color}`;
+            const shaftSet = shaftsBySupport.get(entity.id);
+            if (!shaftSet) continue;
+
+            const color = resolveSceneSupportColor(shaftSet.modelId, entity.id);
+            const groupKey = `${shaftSet.modelId ?? '__unassigned__'}:${color}`;
             const existing = grouped.get(groupKey) ?? { modelId: shaftSet.modelId, color, shafts: [] };
             existing.shafts.push(...shaftSet.shafts.map(applyDropToInstancedShaft));
             if (existing.shafts.length > 0) grouped.set(groupKey, existing);
         }
 
         return Array.from(grouped.values());
-    }, [renderTwigList, twigShaftsBySupport, selectedTwigIds, isModelVisible, applyDropToInstancedShaft, enableTwigSceneBatching, resolveSceneSupportColor]);
+    }, [isModelVisible, resolveSceneSupportColor, applyDropToInstancedShaft]);
 
-    const sceneBatchedStickShaftGroups = useMemo(() => {
-        const grouped = new Map<string, { modelId?: string; color: string; shafts: InstancedShaft[] }>();
+    const sceneBatchedTwigShaftGroups = useMemo(
+        () => (enableTwigSceneBatching
+            ? groupShaftsForSceneBatch(renderTwigList, twigShaftsBySupport, selectedTwigIds)
+            : []),
+        [enableTwigSceneBatching, renderTwigList, twigShaftsBySupport, selectedTwigIds, groupShaftsForSceneBatch],
+    );
 
-        for (const stick of renderStickList) {
-            if (!isModelVisible(stick.modelId, stick.id)) continue;
-            const shaftSet = stickShaftsBySupport.get(stick.id);
-            if (!shaftSet) continue;
-            if (selectedStickIds.has(stick.id)) continue;
+    const sceneBatchedStickShaftGroups = useMemo(
+        () => groupShaftsForSceneBatch(renderStickList, stickShaftsBySupport, selectedStickIds),
+        [renderStickList, stickShaftsBySupport, selectedStickIds, groupShaftsForSceneBatch],
+    );
 
-            const color = resolveSceneSupportColor(shaftSet.modelId, stick.id);
-            const modelKey = shaftSet.modelId ?? '__unassigned__';
-            const groupKey = `${modelKey}:${color}`;
-            const existing = grouped.get(groupKey) ?? { modelId: shaftSet.modelId, color, shafts: [] };
-            existing.shafts.push(...shaftSet.shafts.map(applyDropToInstancedShaft));
-            if (existing.shafts.length > 0) grouped.set(groupKey, existing);
-        }
-
-        return Array.from(grouped.values());
-    }, [renderStickList, stickShaftsBySupport, selectedStickIds, isModelVisible, applyDropToInstancedShaft, resolveSceneSupportColor]);
-
-    const sceneBatchedKickstandShaftGroups = useMemo(() => {
-        const grouped = new Map<string, { modelId?: string; color: string; shafts: InstancedShaft[] }>();
-
-        for (const kickstand of renderKickstandList) {
-            if (!isModelVisible(kickstand.modelId, kickstand.id)) continue;
-            const shaftSet = kickstandShaftsBySupport.get(kickstand.id);
-            if (!shaftSet) continue;
-            if (selectedKickstandIds.has(kickstand.id)) continue;
-
-            const color = resolveSceneSupportColor(shaftSet.modelId, kickstand.id);
-            const modelKey = shaftSet.modelId ?? '__unassigned__';
-            const groupKey = `${modelKey}:${color}`;
-            const existing = grouped.get(groupKey) ?? { modelId: shaftSet.modelId, color, shafts: [] };
-            existing.shafts.push(...shaftSet.shafts.map(applyDropToInstancedShaft));
-            if (existing.shafts.length > 0) grouped.set(groupKey, existing);
-        }
-
-        return Array.from(grouped.values());
-    }, [renderKickstandList, kickstandShaftsBySupport, selectedKickstandIds, isModelVisible, applyDropToInstancedShaft, resolveSceneSupportColor]);
+    const sceneBatchedKickstandShaftGroups = useMemo(
+        () => groupShaftsForSceneBatch(renderKickstandList, kickstandShaftsBySupport, selectedKickstandIds),
+        [renderKickstandList, kickstandShaftsBySupport, selectedKickstandIds, groupShaftsForSceneBatch],
+    );
 
     const sceneBatchedBraceShaftGroups = useMemo(() => {
         const grouped = new Map<string, { modelId?: string; color: string; shafts: InstancedShaft[] }>();
@@ -2492,51 +2475,15 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return Array.from(grouped.values());
     }, [renderBraceList, braceShaftsBySupport, selectedBraceIds, ghostedBraceIdSet, isModelVisible, applyDropToInstancedShaft, settings.autoBracing.debugSectionColorsEnabled, dimNonSelected, resolveSceneSupportColor]);
 
-    const sceneBatchedTrunkShaftGroups = useMemo(() => {
-        const grouped = new Map<string, { modelId?: string; color: string; shafts: InstancedShaft[] }>();
+    const sceneBatchedTrunkShaftGroups = useMemo(
+        () => groupShaftsForSceneBatch(renderTrunkList, trunkShaftsBySupport, selectedTrunkIds),
+        [renderTrunkList, trunkShaftsBySupport, selectedTrunkIds, groupShaftsForSceneBatch],
+    );
 
-        for (const trunk of renderTrunkList) {
-            if (!isModelVisible(trunk.modelId, trunk.id)) continue;
-            const shaftSet = trunkShaftsBySupport.get(trunk.id);
-            if (!shaftSet) continue;
-
-            if (selectedTrunkIds.has(trunk.id)) continue;
-
-            const color = resolveSceneSupportColor(shaftSet.modelId, trunk.id);
-            const modelKey = shaftSet.modelId ?? '__unassigned__';
-            const groupKey = `${modelKey}:${color}`;
-            const existing = grouped.get(groupKey) ?? { modelId: shaftSet.modelId, color, shafts: [] };
-            existing.shafts.push(...shaftSet.shafts.map(applyDropToInstancedShaft));
-
-            if (existing.shafts.length > 0) grouped.set(groupKey, existing);
-        }
-
-        return Array.from(grouped.values());
-    }, [renderTrunkList, trunkShaftsBySupport, selectedTrunkIds, isModelVisible, applyDropToInstancedShaft, resolveSceneSupportColor]);
-
-    const sceneBatchedBranchShaftGroups = useMemo(() => {
-        const grouped = new Map<string, { modelId?: string; color: string; shafts: InstancedShaft[] }>();
-
-        for (const branch of renderBranchList) {
-            if (!isModelVisible(branch.modelId)) continue;
-            const shaftSet = branchShaftsBySupport.get(branch.id);
-            if (!shaftSet) continue;
-
-            if (selectedBranchIds.has(branch.id)) continue;
-
-            const color = resolveSceneSupportColor(shaftSet.modelId, branch.id);
-            const modelKey = shaftSet.modelId ?? '__unassigned__';
-            const groupKey = `${modelKey}:${color}`;
-            const existing = grouped.get(groupKey) ?? { modelId: shaftSet.modelId, color, shafts: [] };
-            existing.shafts.push(...shaftSet.shafts.map(applyDropToInstancedShaft));
-
-            if (existing.shafts.length > 0) {
-                grouped.set(groupKey, existing);
-            }
-        }
-
-        return Array.from(grouped.values());
-    }, [renderBranchList, branchShaftsBySupport, selectedBranchIds, isModelVisible, applyDropToInstancedShaft, resolveSceneSupportColor]);
+    const sceneBatchedBranchShaftGroups = useMemo(
+        () => groupShaftsForSceneBatch(renderBranchList, branchShaftsBySupport, selectedBranchIds),
+        [renderBranchList, branchShaftsBySupport, selectedBranchIds, groupShaftsForSceneBatch],
+    );
 
     const sceneBatchedTrunkRootGroups = useMemo(() => {
         if (hidePlateContactPrimitivesEffective) return [] as Array<{ modelId: string | null; color: string; roots: InstancedRoot[] }>;
