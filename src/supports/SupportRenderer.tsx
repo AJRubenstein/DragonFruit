@@ -16,7 +16,7 @@ import {
     type PlacementSurface,
     type Vec3Like,
 } from './supportPlacementPreviewMath';
-import { collectOwnedRootIds, getSupportTypeBySelectionCategory, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
+import { anyContactMatches, collectOwnedRootIds, getSupportTypeBySelectionCategory, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
 import { buildKnotIndex, selectedIdsForType, type CollectionLookup, type SelectionInputs } from './interaction/shared/selection/selectedIdsByType';
 import { TrunkRenderer } from './SupportTypes/Trunk/TrunkRenderer';
 import { BranchRenderer } from './SupportTypes/Branch/BranchRenderer';
@@ -44,7 +44,7 @@ import { JointCreationManager } from './SupportPrimitives/Joint/JointCreationMan
 import { JointGizmo } from './SupportPrimitives/Joint/JointGizmo';
 import { KnotGizmo } from './SupportPrimitives/Knot/KnotGizmo';
 import { BezierGizmoManager } from './Curves/BezierGizmo/BezierGizmoManager';
-import { ContactDisk, SupportMode, BezierSegment, type Brace, type Knot, type Leaf, type Twig, type SupportOrigin } from './types';
+import { ContactDisk, SupportMode, BezierSegment, type Brace, type Knot, type Leaf, type Segment, type Twig, type SupportOrigin } from './types';
 import { resolveTwigDiameterAtSegmentT } from './SupportTypes/Twig/twigTaper';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
 import type { SupportData } from './rendering';
@@ -510,24 +510,17 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const matchesInteriorBrace = useMemo(() => {
         if (!interiorView) return (_brace: Brace) => true;
 
+        // Every shafted type, by its declared contacts. The four loops this
+        // replaces omitted anchors and kickstands.
         const directSegmentInteriorById = new Map<string, boolean>();
-        for (const trunk of Object.values(state.trunks)) {
-            const isInterior = matchesInteriorContact(trunk.contactCone, trunk.modelId);
-            for (const segment of trunk.segments) directSegmentInteriorById.set(segment.id, isInterior);
-        }
-        for (const branch of Object.values(state.branches)) {
-            const isInterior = matchesInteriorContact(branch.contactCone, branch.modelId);
-            for (const segment of branch.segments) directSegmentInteriorById.set(segment.id, isInterior);
-        }
-        for (const twig of Object.values(state.twigs)) {
-            const isInterior = matchesInteriorContact(twig.contactDiskA, twig.modelId)
-                || matchesInteriorContact(twig.contactDiskB, twig.modelId);
-            for (const segment of twig.segments) directSegmentInteriorById.set(segment.id, isInterior);
-        }
-        for (const stick of Object.values(state.sticks)) {
-            const isInterior = matchesInteriorContact(stick.contactConeA, stick.modelId)
-                || matchesInteriorContact(stick.contactConeB, stick.modelId);
-            for (const segment of stick.segments) directSegmentInteriorById.set(segment.id, isInterior);
+        for (const descriptor of SUPPORT_TYPES) {
+            if (!descriptor.hasSegments) continue;
+            const collection = state[descriptor.location.key] as unknown as Record<string, { modelId: string; segments?: Segment[] }>;
+            for (const entity of Object.values(collection ?? {})) {
+                const isInterior = anyContactMatches(descriptor.id, entity, (contact: unknown) =>
+                    matchesInteriorContact(contact as Parameters<typeof matchesInteriorContact>[0], entity.modelId));
+                for (const segment of entity.segments ?? []) directSegmentInteriorById.set(segment.id, isInterior);
+            }
         }
 
         const resolveKnotInterior = (knotId?: string, visitedBraceIds?: Set<string>): boolean => {
@@ -1473,18 +1466,14 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [leafList, previewLeavesById, interiorView, matchesInteriorContact]);
     const renderTwigList = useMemo(() => {
         return interiorView
-            ? twigList.filter((twig) =>
-                matchesInteriorContact(twig.contactDiskA, twig.modelId)
-                || matchesInteriorContact(twig.contactDiskB, twig.modelId),
-            )
+            ? twigList.filter((twig) => anyContactMatches('twig', twig,
+                (contact: unknown) => matchesInteriorContact(contact as ContactDisk, twig.modelId)))
             : twigList;
     }, [twigList, interiorView, matchesInteriorContact]);
     const renderStickList = useMemo(() => {
         return interiorView
-            ? stickList.filter((stick) =>
-                matchesInteriorContact(stick.contactConeA, stick.modelId)
-                || matchesInteriorContact(stick.contactConeB, stick.modelId),
-            )
+            ? stickList.filter((stick) => anyContactMatches('stick', stick,
+                (contact: unknown) => matchesInteriorContact(contact as ContactDisk, stick.modelId)))
             : stickList;
     }, [stickList, interiorView, matchesInteriorContact]);
     const renderBraceList = useMemo(() => {

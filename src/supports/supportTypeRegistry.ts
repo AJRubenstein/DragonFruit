@@ -595,6 +595,22 @@ export function contactEndpointsFor(
     return contacts;
 }
 
+/**
+ * Whether any contact this type declares satisfies `test`.
+ *
+ * Interior filtering asks this of every type; written out per type it covered
+ * four of the eight and named the fields by hand.
+ */
+export function anyContactMatches(
+    typeId: SupportTypeId,
+    entity: unknown,
+    test: (contact: unknown) => boolean,
+): boolean {
+    const record = entity as Record<string, unknown> | null | undefined;
+    if (!record) return false;
+    return contactEndpointsFor(typeId).some(({ field }) => test(record[field]));
+}
+
 export const SUPPORT_TRANSFORM_EXTRAS = {
     brace: ['curve'],
     anchor: ['rootPos', 'joint'],
