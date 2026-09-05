@@ -11,6 +11,12 @@ export type { KickstandState } from './types';
  * Kickstands live on SupportState; this module is the API its callers already
  * use. The KickstandState they read is a VIEW over it, with roots and knots
  * filtered to those a kickstand owns.
+ *
+ * @deprecated for removal -- a compatibility shim left by the kickstand
+ * flattening. Every export below reads or writes `state` directly, so a caller
+ * can use `getSnapshot()` / `getSupportEntities('kickstand')` and drop the
+ * filtered view. Kept because ~83 files still import it. No kickstand-specific
+ * logic may be added here; it is a wrapper, not a store.
  */
 // Rebuilt only when SupportState changes identity: useSyncExternalStore compares
 // by reference and would re-render forever given a fresh object each call.

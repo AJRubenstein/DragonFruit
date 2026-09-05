@@ -34,10 +34,13 @@ import { partitionSupportsWithVoronoi } from './voronoiPartitioning';
 import { applyInitialPattern } from './initialPattern';
 import { applyRepeatingPattern } from './repeatingPattern';
 import { buildBraceProfile } from './braceDiameter';
+import { SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeId } from '../supportTypeRegistry';
+import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
 import { linePassesMeshClearance } from './meshClearance';
 
 const EPS = 0.000001;
-type SupportKind = 'trunk' | 'branch' | 'kickstand';
+/** The types auto-bracing samples. Derived, so a ninth type joins by declaring it. */
+type SupportKind = SupportTypeId;
 
 function maxHorizontalRunFromBraceLen(maxBraceLenMm: number): number {
     return maxBraceLenMm;
@@ -129,35 +132,56 @@ function collectSegmentExtrema(segments: SegmentSample[]): { topReferenceZ: numb
     };
 }
 
+/**
+ * Shaft samples for every type auto-bracing can brace.
+ *
+ * Was one loop per type, each calling that type's own endpoint function.
+ * Endpoints now come from the shared walker, and which types take part is
+ * declared as `isAutoBraceable`.
+ */
 function buildSupportSamples(snapshot: SupportState): SupportSample[] {
     const supports: SupportSample[] = [];
 
-    // Process Trunks
-    for (const trunk of Object.values(snapshot.trunks)) {
-        const root = snapshot.roots[trunk.rootId];
-        if (!root) continue;
-        const segments: SegmentSample[] = [];
-        trunk.segments.forEach((seg, idx) => {
-            const ep = getTrunkSegmentEndpoints(trunk, seg, idx, root);
-            if (ep) segments.push({ segmentId: seg.id, segment: seg, start: ep.start, end: ep.end, diameterMm: seg.diameter });
-        });
-        if (segments.length === 0) continue;
-        const ex = collectSegmentExtrema(segments);
-        supports.push({ supportId: trunk.id, supportKind: 'trunk', modelId: trunk.modelId, segments, ...ex });
-    }
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.isAutoBraceable) continue;
 
-    // Process Branches
-    for (const branch of Object.values(snapshot.branches)) {
-        const knot = snapshot.knots[branch.parentKnotId];
-        if (!knot) continue;
-        const segments: SegmentSample[] = [];
-        branch.segments.forEach((seg, idx) => {
-            const ep = getBranchSegmentEndpoints(branch, seg, idx, knot);
-            if (ep) segments.push({ segmentId: seg.id, segment: seg, start: ep.start, end: ep.end, diameterMm: seg.diameter });
-        });
-        if (segments.length === 0) continue;
-        const ex = collectSegmentExtrema(segments);
-        supports.push({ supportId: branch.id, supportKind: 'branch', modelId: branch.modelId, segments, ...ex });
+        const collection = snapshot[descriptor.location.key as SupportCollectionKey] as unknown as Record<string, {
+            id: string;
+            modelId: string;
+            segments: Segment[];
+            rootId?: string;
+            parentKnotId?: string;
+            hostKnotId?: string;
+            hostSegmentId?: string;
+        }>;
+
+        const knotField = descriptor.edges.find(
+            (edge: SupportEdge) => edge.to === 'knots' && edge.ownership === 'hostedBy',
+        )?.field;
+
+        for (const entity of Object.values(collection ?? {})) {
+            const hostKnotId = knotField ? (entity as Record<string, unknown>)[knotField] : undefined;
+            const hosts = {
+                root: entity.rootId ? snapshot.roots[entity.rootId] : undefined,
+                hostKnot: typeof hostKnotId === 'string' ? snapshot.knots[hostKnotId] : undefined,
+            };
+
+            const segments: SegmentSample[] = [];
+            entity.segments.forEach((seg, idx) => {
+                const ep = resolveSegmentEndpoints(descriptor.id, entity, seg, idx, hosts);
+                if (ep) segments.push({ segmentId: seg.id, segment: seg, start: ep.start, end: ep.end, diameterMm: seg.diameter });
+            });
+            if (segments.length === 0) continue;
+
+            supports.push({
+                supportId: entity.id,
+                supportKind: descriptor.id,
+                modelId: entity.modelId,
+                segments,
+                ...collectSegmentExtrema(segments),
+                ...(entity.hostSegmentId ? { hostSegmentId: entity.hostSegmentId } : {}),
+            });
+        }
     }
 
     supports.sort(sortSupports);
