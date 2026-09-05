@@ -146,6 +146,10 @@ const ORIGIN_COLORS: Record<SupportOrigin, string> = {
 /** Origin coloring: gray = entity generated before origin stamping existed —
  * regenerate the supports to get colors. */
 const ORIGIN_NO_ORIGIN_COLOR = '#8e8e93';
+/** Origin coloring: a type that records no origin at all, so the question does
+ * not apply. Distinct from every ORIGIN_COLORS hue and from the gray above, or
+ * a debug mode for telling types apart would put two of them side by side. */
+const ORIGIN_NOT_APPLICABLE_COLOR = '#2e4a5c';
 const SCENE_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
 /** Leaf base knots rendered in the scene batch: KnotRenderer subtracts the
  *  full JOINT_DIAMETER_OFFSET_MM from the knot diameter while the batch
@@ -1115,12 +1119,14 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             return BULK_MULTI_SELECTED_COLOR;
         }
 
-        // Debug origin coloring: anchor / overhang / island / standalone, and
-        // gray for an entity stamped before origins existed. Only the types
-        // declaring hasOrigin take part; the rest keep their model colour
-        // rather than reading as unstamped.
-        if (debugOriginColors && (!typeId || getSupportTypeDescriptor(typeId).hasOrigin)) {
-            return originColorFor(supportId) ?? ORIGIN_NO_ORIGIN_COLOR;
+        // Debug origin coloring: anchor / overhang / island / standalone, gray
+        // for an entity stamped before origins existed, and a separate slate
+        // for a type that records no origin at all -- reusing the model colour
+        // put braces next to the overhang orange.
+        if (debugOriginColors) {
+            return typeId && !getSupportTypeDescriptor(typeId).hasOrigin
+                ? ORIGIN_NOT_APPLICABLE_COLOR
+                : originColorFor(supportId) ?? ORIGIN_NO_ORIGIN_COLOR;
         }
 
         return dimNonSelected ? '#666666' : resolveBaseColor(modelId);
@@ -3201,10 +3207,19 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         );
     }, [isPointerInteractable, mode, supportSelectionAndHoverSuppressed]);
 
-    /**
-     * The props every detail renderer takes identically. `baseColor` consults
-     * the debug origin overlay only for types declaring `hasOrigin`.
-     */
+    /** Base colour for a detail-rendered support, origin overlay included. */
+    const resolveDetailSupportColor = useCallback((
+        typeId: SupportTypeId,
+        supportId: string,
+        modelId?: string,
+    ) => {
+        if (!debugOriginColors) return resolveBaseColor(modelId);
+        return getSupportTypeDescriptor(typeId).hasOrigin
+            ? originColorFor(supportId) ?? ORIGIN_NO_ORIGIN_COLOR
+            : ORIGIN_NOT_APPLICABLE_COLOR;
+    }, [debugOriginColors, originColorFor, resolveBaseColor]);
+
+    /** The props every detail renderer takes identically. */
     const sharedRenderProps = useCallback((
         typeId: SupportTypeId,
         entity: { id: string; modelId?: string },
@@ -3215,11 +3230,10 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         selectedId: isSelected ? selectedId : null,
         dimNonSelected,
         isHovered,
-        baseColor: (getSupportTypeDescriptor(typeId).hasOrigin ? originColorFor(entity.id) : null)
-            ?? resolveBaseColor(entity.modelId),
+        baseColor: resolveDetailSupportColor(typeId, entity.id, entity.modelId),
         suppressHover,
         isInteractable,
-    }), [selectedId, dimNonSelected, originColorFor, resolveBaseColor, suppressHover, isInteractable]);
+    }), [selectedId, dimNonSelected, resolveDetailSupportColor, suppressHover, isInteractable]);
 
     /** Draws one type's batched shaft groups. Six identical blocks became this. */
     const renderSceneBatchedShafts = useCallback((
@@ -3921,7 +3935,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         selectedId={selectedId}
                         isSelected={effectiveSelected}
                         dimNonSelected={dimNonSelected}
-                        baseColor={originColorFor(leaf.id) ?? resolveBaseColor(leaf.modelId)}
+                        baseColor={resolveDetailSupportColor('leaf', leaf.id, leaf.modelId)}
                         showKnots={showKnots}
                         suppressHover={suppressHover}
                         isInteractable={isInteractable}
