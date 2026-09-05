@@ -2881,94 +2881,102 @@ export function addTrunk(trunk: Trunk) {
     addSupportEntity('trunk', trunk);
 }
 
-export function updateTrunk(trunk: Trunk, options?: { skipDependentGeometry?: boolean }) {
-    const skipDependentGeometry = options?.skipDependentGeometry === true;
+/**
+ * Where a knot sitting on this entity's shaft belongs after the entity moved.
+ *
+ * The one part of an update that genuinely differs per type, and it follows the
+ * declared lower endpoint: a `plateRoot` type resolves segment ends against its
+ * root, a `knot` type against its host knot, and a self-contained shaft reads
+ * the joints straight off the segment.
+ *
+ * Returns null to leave the knot alone.
+ */
+type KnotPlacementOnShaft = (
+    entity: { id: string; segments?: Segment[] },
+    knot: Knot,
+    segment: Segment,
+    segmentIndex: number,
+) => { pos: Vec3; diameter?: number } | null;
 
-    const cachedHex = getCachedSupportSettingsHex('trunk', trunk.id, trunk.settingsCodeHex ?? undefined);
-    const nextTrunk = !trunk.settingsCodeHex && cachedHex
-        ? { ...trunk, settingsCodeHex: cachedHex }
-        : trunk;
+const KNOT_PLACEMENT_BY_TYPE = new Map<SupportTypeId, KnotPlacementOnShaft>();
 
-    if (nextTrunk.settingsCodeHex) {
-        setCachedSupportSettingsHex('trunk', nextTrunk.id, nextTrunk.settingsCodeHex);
+/**
+ * Apply an entity to its collection, carrying whatever depends on it.
+ *
+ * Every type follows the same five steps -- bail if absent, cache the settings
+ * hex, write the entity, reposition the knots riding its shafts, recompute the
+ * geometry those knots carry. Only step four differs, and only for types that
+ * declare a placement rule above.
+ */
+function applySupportEntityUpdate(
+    typeId: SupportTypeId,
+    entity: { id: string; settingsCodeHex?: string; segments?: Segment[] },
+): void {
+    const descriptor = getSupportTypeDescriptor(typeId);
+    const key = descriptor.location.key;
+
+    if (!state[key][entity.id]) return;
+
+    let next = entity;
+    if (descriptor.hasEditableSettings) {
+        const settingsType = typeId as 'trunk' | 'branch' | 'leaf';
+        const cachedHex = getCachedSupportSettingsHex(settingsType, entity.id, entity.settingsCodeHex ?? undefined);
+        if (!entity.settingsCodeHex && cachedHex) next = { ...entity, settingsCodeHex: cachedHex };
+        if (next.settingsCodeHex) setCachedSupportSettingsHex(settingsType, next.id, next.settingsCodeHex);
     }
 
-    // Update trunk
-    const nextTrunks = { ...state.trunks, [nextTrunk.id]: nextTrunk };
+    const nextCollection = { ...state[key], [next.id]: next };
 
-    // Update any knots attached to this trunk's segments
-    const root = state.roots[nextTrunk.rootId];
+    const place = KNOT_PLACEMENT_BY_TYPE.get(typeId);
     let nextKnots = state.knots;
     let nextLeaves = state.leaves;
-    let knotsChanged = false;
 
-    if (root) {
+    if (place && next.segments) {
         const updatedKnots: Record<string, Knot> = { ...state.knots };
-        const updatedKnotPosById: Record<string, Vec3> = {};
+        const movedKnotPosById: Record<string, Vec3> = {};
+        let knotsChanged = false;
 
         for (const knot of Object.values(state.knots)) {
-            // Find if this knot is attached to one of this trunk's segments
-            const segIndex = nextTrunk.segments.findIndex(s => s.id === knot.parentShaftId);
-            if (segIndex === -1) continue;
+            const segmentIndex = next.segments.findIndex((s) => s.id === knot.parentShaftId);
+            if (segmentIndex === -1) continue;
 
-            const seg = nextTrunk.segments[segIndex];
-            const endpoints = getTrunkSegmentEndpoints(nextTrunk, seg, segIndex, root);
-            // +0.125 (not the legacy +0.1): renders at the trunk-joint
-            // diameter; the legacy value rendered at the shaft — invisible.
-            const nextDiameter = seg.diameter + 0.125;
+            const placed = place(next, knot, next.segments[segmentIndex], segmentIndex);
+            if (!placed) continue;
 
-            let nextPos = knot.pos;
-            let posChanged = false;
-            if (endpoints) {
-                // Auto merge/fan knots carry no `t` — project their position
-                // onto the (possibly moved) segment so the leaf follows the
-                // shaft on a joint drag. With a stored `t` the position is
-                // recomputed from it directly.
-                const tForKnot = knot.t !== undefined
-                    ? knot.t
-                    : computeClosestTOnSegmentFromPoint(knot.pos, endpoints.start, endpoints.end, seg);
-                const computed = calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, seg, tForKnot);
-                if (computed.x !== knot.pos.x || computed.y !== knot.pos.y || computed.z !== knot.pos.z) {
-                    nextPos = computed;
-                    posChanged = true;
-                }
-            }
+            const posChanged = placed.pos.x !== knot.pos.x
+                || placed.pos.y !== knot.pos.y
+                || placed.pos.z !== knot.pos.z;
+            const diameterChanged = placed.diameter !== undefined && placed.diameter !== knot.diameter;
+            if (!posChanged && !diameterChanged) continue;
 
-            const diaChanged = knot.diameter !== nextDiameter;
-            if (!posChanged && !diaChanged) continue;
-
-            updatedKnots[knot.id] = { ...knot, pos: nextPos, diameter: nextDiameter };
+            updatedKnots[knot.id] = {
+                ...knot,
+                pos: posChanged ? placed.pos : knot.pos,
+                ...(placed.diameter !== undefined ? { diameter: placed.diameter } : {}),
+            };
             knotsChanged = true;
-            if (posChanged) {
-                updatedKnotPosById[knot.id] = nextPos;
-            }
+            if (posChanged) movedKnotPosById[knot.id] = placed.pos;
         }
 
         if (knotsChanged) {
-            if (skipDependentGeometry) {
-                // Drag-time fast path: keep knot positions responsive, defer expensive
-                // leaf dependent recomputations until drag commit, but keep braces in sync
-                // so they don't visually snap after trunk/branch moves.
-                const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, updatedKnots);
-                nextKnots = braceSeg.knots;
-            } else {
-                nextLeaves = recomputeKnotDependentGeometry(state.leaves, updatedKnotPosById);
-                const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, updatedKnots);
-                const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, leafCone.knots);
-                nextKnots = braceSeg.knots;
-            }
+            nextLeaves = recomputeKnotDependentGeometry(state.leaves, movedKnotPosById);
+            const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, updatedKnots);
+            const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, leafCone.knots);
+            nextKnots = braceSeg.knots;
         }
     }
 
     state = {
         ...state,
-        trunks: nextTrunks,
+        [key]: nextCollection,
         knots: nextKnots,
         leaves: nextLeaves,
     };
-
-
     notify();
+}
+
+export function updateTrunk(trunk: Trunk) {
+    applySupportEntityUpdate('trunk', trunk);
 }
 
 /** @deprecated Thin wrapper for removal; prefer `addSupportEntity('branch', entity)`. */
@@ -3059,90 +3067,66 @@ export function removeAnchor(anchorId: string) {
     return removeSupportEntity('anchor', anchorId);
 }
 
+/**
+ * A self-contained shaft: both ends are joints on the segment itself, so a
+ * knot's position comes straight from them. Twig and stick are identical here,
+ * which is why one rule serves both.
+ */
+const placeKnotOnSelfContainedShaft: KnotPlacementOnShaft = (_entity, knot, segment) => {
+    if (!segment.bottomJoint || !segment.topJoint || knot.t === undefined) return null;
+    return { pos: calculateKnotPositionOnSegmentFromT(segment.bottomJoint.pos, segment.topJoint.pos, segment, knot.t) };
+};
+
+KNOT_PLACEMENT_BY_TYPE.set('twig', placeKnotOnSelfContainedShaft);
+KNOT_PLACEMENT_BY_TYPE.set('stick', placeKnotOnSelfContainedShaft);
+
+/**
+ * A shaft rising from a plate root. Segment ends resolve against the root, and
+ * the knot also takes the segment's diameter.
+ *
+ * A knot with no `t` -- auto merge and fan knots carry none -- is projected onto
+ * the possibly-moved segment so a leaf follows the shaft on a joint drag.
+ */
+KNOT_PLACEMENT_BY_TYPE.set('trunk', (entity, knot, segment, segmentIndex) => {
+    const trunk = entity as Trunk;
+    const root = state.roots[trunk.rootId];
+    if (!root) return null;
+
+    // +0.125 (not the legacy +0.1): renders at the trunk-joint diameter; the
+    // legacy value rendered at the shaft -- invisible.
+    const diameter = segment.diameter + 0.125;
+
+    const endpoints = getTrunkSegmentEndpoints(trunk, segment, segmentIndex, root);
+    if (!endpoints) return { pos: knot.pos, diameter };
+
+    const t = knot.t !== undefined
+        ? knot.t
+        : computeClosestTOnSegmentFromPoint(knot.pos, endpoints.start, endpoints.end, segment);
+
+    return { pos: calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, segment, t), diameter };
+});
+
+/**
+ * A shaft hanging from a host knot. Segment ends resolve against that knot, and
+ * a knot with no `t` is left alone rather than projected.
+ */
+KNOT_PLACEMENT_BY_TYPE.set('branch', (entity, knot, segment, segmentIndex) => {
+    const branch = entity as Branch;
+    const parentKnot = state.knots[branch.parentKnotId];
+    if (!parentKnot || knot.t === undefined) return null;
+
+    const endpoints = getBranchSegmentEndpoints(branch, segment, segmentIndex, parentKnot);
+    if (!endpoints) return null;
+
+    return { pos: calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, segment, knot.t) };
+});
+
 export function updateTwig(twig: Twig) {
-    if (!state.twigs[twig.id]) return;
-
-    const nextTwigs = { ...state.twigs, [twig.id]: twig };
-
-    let nextKnots = state.knots;
-    let nextLeaves = state.leaves;
-
-    const updatedKnots: Record<string, Knot> = { ...state.knots };
-    const updatedKnotPosById: Record<string, Vec3> = {};
-    let knotsChanged = false;
-
-    for (const knot of Object.values(state.knots)) {
-        const segIndex = twig.segments.findIndex(s => s.id === knot.parentShaftId);
-        if (segIndex === -1) continue;
-
-        const seg = twig.segments[segIndex];
-        if (!seg.bottomJoint || !seg.topJoint || knot.t === undefined) continue;
-
-        const newPos = calculateKnotPositionOnSegmentFromT(seg.bottomJoint.pos, seg.topJoint.pos, seg, knot.t);
-        if (newPos.x === knot.pos.x && newPos.y === knot.pos.y && newPos.z === knot.pos.z) continue;
-
-        updatedKnots[knot.id] = { ...knot, pos: newPos };
-        updatedKnotPosById[knot.id] = newPos;
-        knotsChanged = true;
-    }
-
-    if (knotsChanged) {
-        nextLeaves = recomputeKnotDependentGeometry(state.leaves, updatedKnotPosById);
-        const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, updatedKnots);
-        const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, leafCone.knots);
-        nextKnots = braceSeg.knots;
-    }
-
-    state = {
-        ...state,
-        twigs: nextTwigs,
-        knots: nextKnots,
-        leaves: nextLeaves,
-    };
-    notify();
+    applySupportEntityUpdate('twig', twig);
 }
 
 export function updateStick(stick: Stick) {
-    if (!state.sticks[stick.id]) return;
-
-    const nextSticks = { ...state.sticks, [stick.id]: stick };
-
-    let nextKnots = state.knots;
-    let nextLeaves = state.leaves;
-
-    const updatedKnots: Record<string, Knot> = { ...state.knots };
-    const updatedKnotPosById: Record<string, Vec3> = {};
-    let knotsChanged = false;
-
-    for (const knot of Object.values(state.knots)) {
-        const segIndex = stick.segments.findIndex(s => s.id === knot.parentShaftId);
-        if (segIndex === -1) continue;
-
-        const seg = stick.segments[segIndex];
-        if (!seg.bottomJoint || !seg.topJoint || knot.t === undefined) continue;
-
-        const newPos = calculateKnotPositionOnSegmentFromT(seg.bottomJoint.pos, seg.topJoint.pos, seg, knot.t);
-        if (newPos.x === knot.pos.x && newPos.y === knot.pos.y && newPos.z === knot.pos.z) continue;
-
-        updatedKnots[knot.id] = { ...knot, pos: newPos };
-        updatedKnotPosById[knot.id] = newPos;
-        knotsChanged = true;
-    }
-
-    if (knotsChanged) {
-        nextLeaves = recomputeKnotDependentGeometry(state.leaves, updatedKnotPosById);
-        const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, updatedKnots);
-        const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, leafCone.knots);
-        nextKnots = braceSeg.knots;
-    }
-
-    state = {
-        ...state,
-        sticks: nextSticks,
-        knots: nextKnots,
-        leaves: nextLeaves,
-    };
-    notify();
+    applySupportEntityUpdate('stick', stick);
 }
 
 export function updateBrace(brace: Brace) {
@@ -3177,72 +3161,8 @@ export function removeBranch(branchId: string) {
     return removeSupportEntity('branch', branchId);
 }
 
-export function updateBranch(branch: Branch, options?: { skipDependentGeometry?: boolean }) {
-    const skipDependentGeometry = options?.skipDependentGeometry === true;
-
-    if (!state.branches[branch.id]) return;
-
-    const cachedHex = getCachedSupportSettingsHex('branch', branch.id, branch.settingsCodeHex ?? undefined);
-    const nextBranch = !branch.settingsCodeHex && cachedHex
-        ? { ...branch, settingsCodeHex: cachedHex }
-        : branch;
-
-    if (nextBranch.settingsCodeHex) {
-        setCachedSupportSettingsHex('branch', nextBranch.id, nextBranch.settingsCodeHex);
-    }
-
-    const nextBranches = { ...state.branches, [nextBranch.id]: nextBranch };
-
-    // Update any knots attached to this branch's segments
-    const parentKnot = state.knots[nextBranch.parentKnotId];
-    let nextKnots = state.knots;
-    let nextLeaves = state.leaves;
-
-    if (parentKnot) {
-        const updatedKnots: Record<string, Knot> = { ...state.knots };
-        const updatedKnotPosById: Record<string, Vec3> = {};
-        let knotsChanged = false;
-
-        for (const knot of Object.values(state.knots)) {
-            const segIndex = nextBranch.segments.findIndex(s => s.id === knot.parentShaftId);
-            if (segIndex === -1) continue;
-
-            const seg = nextBranch.segments[segIndex];
-            const endpoints = getBranchSegmentEndpoints(nextBranch, seg, segIndex, parentKnot);
-            if (!endpoints || knot.t === undefined) continue;
-
-            const newPos = calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, seg, knot.t);
-            if (newPos.x === knot.pos.x && newPos.y === knot.pos.y && newPos.z === knot.pos.z) continue;
-
-            updatedKnots[knot.id] = { ...knot, pos: newPos };
-            updatedKnotPosById[knot.id] = newPos;
-            knotsChanged = true;
-        }
-
-        if (knotsChanged) {
-            if (skipDependentGeometry) {
-                // Drag-time fast path: defer expensive leaf dependent recomputations until commit,
-                // but keep brace geometry current so it stays anchored to the moving branch.
-                const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, updatedKnots);
-                nextKnots = braceSeg.knots;
-            } else {
-                nextLeaves = recomputeKnotDependentGeometry(state.leaves, updatedKnotPosById);
-                const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, updatedKnots);
-                const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, leafCone.knots);
-                nextKnots = braceSeg.knots;
-            }
-        }
-    }
-
-    state = {
-        ...state,
-        branches: nextBranches,
-        knots: nextKnots,
-        leaves: nextLeaves,
-    };
-
-
-    notify();
+export function updateBranch(branch: Branch) {
+    applySupportEntityUpdate('branch', branch);
 }
 
 export function addKnot(knot: Knot) {

@@ -144,6 +144,32 @@ test('moving a trunk joint carries its knots, branches and leaves', () => {
     assert.notDeepEqual(after.knots['knot-a'].pos, { x: 0, y: 0, z: 2 });
 });
 
+test('a knot on a trunk shaft takes the segment diameter plus 0.125', () => {
+    // The +0.125 renders at the trunk-joint diameter; the legacy +0.1 rendered
+    // at the shaft, where it was invisible. Nothing else covers the constant --
+    // mutating it passed all 22 goldens.
+    scene();
+    const trunk = getSnapshot().trunks['trunk-a'];
+    updateTrunk({
+        ...trunk,
+        segments: [{ ...trunk.segments[0], diameter: 2 }],
+    } as never);
+
+    assert.equal(getSnapshot().knots['knot-a'].diameter, 2.125);
+});
+
+test('only the plate-rooted shaft resizes its knots', () => {
+    // Branch, twig and stick reposition a knot without touching its diameter.
+    scene();
+    const branch = getSnapshot().branches['branch-a'];
+    updateBranch({
+        ...branch,
+        segments: [{ ...branch.segments[0], diameter: 2 }],
+    } as never);
+
+    assert.equal(getSnapshot().knots['knot-b'].diameter, 1, 'branch should leave the diameter alone');
+});
+
 test('a twig and a stick update identically', () => {
     // The two functions are the same code with the collection key swapped.
     scene();
@@ -159,24 +185,14 @@ test('a twig and a stick update identically', () => {
     assert.equal(twigKnots, stickKnots, 'neither has knots, so both leave them untouched');
 });
 
-test('an update for an entity that is not in the store is a no-op -- except trunk', () => {
-    // Seven of the eight bail on a missing entity. `updateTrunk` does not, so
-    // it INSERTS one instead: undo replaying a deleted trunk resurrects it as a
-    // partial entity with no root. Recorded in docs/dev/backlog.md; pinned here
-    // as-is so sharing the skeleton does not change it silently.
+test('an update for an entity that is not in the store is a no-op', () => {
+    // `updateTrunk` alone used to INSERT the absent entity rather than bail,
+    // so undo replaying a deleted trunk resurrected it with no root. Sharing
+    // one skeleton gave every type the guard the other seven already had.
     for (const descriptor of SUPPORT_TYPES) {
         scene();
         const before = capture();
         updateSupportEntity(descriptor.id, { id: 'not-in-the-store', segments: [] });
-
-        if (descriptor.id === 'trunk') {
-            assert.ok(
-                getSnapshot().trunks['not-in-the-store'],
-                'updateTrunk still inserts an absent entity -- change this test with the fix',
-            );
-            continue;
-        }
-
         assert.equal(capture(), before, `${descriptor.id} should have ignored an absent entity`);
     }
 });
