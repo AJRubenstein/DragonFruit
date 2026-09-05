@@ -125,6 +125,17 @@ export interface SupportTypeDescriptor {
      * origin-colouring overlay reads.
      */
     hasOrigin: boolean;
+    /**
+     * Where a tapering shaft reads its two end diameters, and on which
+     * segment. A taper whose ends differ cannot be instanced, so the whole
+     * support drops out of the batched pass.
+     */
+    shaftTaper?: {
+        /** `'all'` tapers every segment; `'last'` only the terminal one. */
+        segments: 'all' | 'last';
+        /** Entity paths holding the start and end diameters. */
+        from: readonly [string, string];
+    };
     /** What sits at the bottom of this type. */
     lower: SupportEndpoint;
     /** What sits at the top of this type. */
@@ -280,6 +291,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         contactFields: ['contactDiskA', 'contactDiskB'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: false,
+        shaftTaper: { segments: 'all', from: ['contactDiskA.contactDiameterMm', 'contactDiskB.contactDiameterMm'] },
         lower: { kind: 'disk', field: 'contactDiskA' },
         upper: { kind: 'disk', field: 'contactDiskB' },
         hasSegments: true,
@@ -382,6 +394,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         contactFields: [],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: false,
+        shaftTaper: { segments: 'last', from: ['profile.terminalStartDiameterMm', 'profile.terminalEndDiameterMm'] },
         lower: { kind: 'plateRoot' },
         upper: { kind: 'knot' },
         hasSegments: true,
