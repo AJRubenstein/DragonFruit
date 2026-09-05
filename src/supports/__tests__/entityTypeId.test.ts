@@ -5,6 +5,7 @@ import {
     addKnot,
     addRoot,
     addSupportEntity,
+    findShaftOwnerOfJoint,
     findShaftOwnerOfSegment,
     getSnapshot,
     getSupportTypeOf,
@@ -245,4 +246,24 @@ test('an entity that reached the store unstamped still resolves', () => {
 
     assert.equal(getSupportTypeOf('unstamped'), 'twig');
     assert.equal(getSupportTypeOf('not-in-the-store'), null);
+});
+
+test('the owner lookups find an unstamped entity too', () => {
+    // Both read the merged view, where an entity restored through setSnapshot
+    // has no typeId. Skipping those made two kickstand tests fail; resolving
+    // through getSupportTypeOf keeps the collection fallback.
+    oneOfEach();
+    const forced = structuredClone(getSnapshot());
+    (forced.twigs as Record<string, unknown>)['bare'] = {
+        id: 'bare', modelId: 'model-a',
+        segments: [{
+            id: 'bare-seg', diameter: 1,
+            bottomJoint: { id: 'bare-bj', pos: { x: 0, y: 0, z: 0 }, diameter: 1 },
+            topJoint: { id: 'bare-tj', pos: { x: 0, y: 0, z: 4 }, diameter: 1 },
+        }],
+    };
+    setSnapshot(forced as never);
+
+    assert.deepEqual(findShaftOwnerOfSegment('bare-seg'), { typeId: 'twig', id: 'bare' });
+    assert.equal(findShaftOwnerOfJoint('bare-tj')?.id, 'bare');
 });
