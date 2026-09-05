@@ -94,8 +94,8 @@ unless marked otherwise; recorded because the same shape will recur.
 | `TwigRenderer` omits `isInteractable` where the other three pass it | `TwigRenderer` | **open** — harmless while the default is true |
 | The import wire format still carries the `{kickstand, root, hostKnot}` bundle | `loadFromImportFormat` | **open** — ⚠️ wire format |
 | Type selection by hardcoded threshold, each duplicated at a second site: twig/stick by span, anchor/trunk by tip height | four sites | fixed — `placementRule` on the descriptor, resolved by `selectTypeForPlacement` |
-| `skipDependentGeometry` is declared on three updaters and passed `true` by nobody | `updateTrunk`, `updateBranch`, `updateKnot` | **open** — a drag-time fast path that no drag path uses; decide whether to wire it up or drop it |
-| `updateTrunk` alone omits the `if (!state.trunks[id]) return` guard the other seven have, so it INSERTS an absent trunk rather than ignoring it | `updateTrunk` | **open** — reachable via undo/redo replaying a deleted trunk; resurrects it as a partial entity with no root |
+| `skipDependentGeometry` is declared on an updater and passed `true` by nobody | `updateKnot` | **open** — a drag-time fast path no drag path uses; dropped from the support updaters, still on `updateKnot` |
+| `updateTrunk` alone omitted the `if (!state.trunks[id]) return` guard the other seven had, so it INSERTED an absent trunk rather than ignoring it | `updateTrunk` | fixed — sharing one update skeleton gave every type the guard |
 
 Two of these were invisible to the whole suite AND all 22 goldens
 (`transformSupportsForModel`'s reachability walk). Passing tests are not
