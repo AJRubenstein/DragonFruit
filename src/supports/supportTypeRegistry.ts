@@ -779,6 +779,54 @@ export function typesForPlacementMetric(metric: SupportPlacementMetric): readonl
     return SUPPORT_TYPES.filter((descriptor) => descriptor.placementRule?.metric === metric);
 }
 
+/**
+ * What a lateral stabiliser is asked for.
+ *
+ * Auto-bracing needs two bracing axes on a tall shaft. When no neighbouring
+ * shaft is in reach there is nothing to brace against, so it asks the registry
+ * for a support that stabilises on its own.
+ */
+export interface LateralStabiliserRequest {
+    /** The whole store, for collision and occupancy checks. */
+    snapshot: unknown;
+    /** The stabilisers already present, plus the roots and knots they own. */
+    existing: unknown;
+    /** Auto-bracing settings; the generator reads its own thresholds from here. */
+    settings: unknown;
+    /** Bracing axes already satisfied, so the generator knows what is missing. */
+    existingEdges: ReadonlyArray<{ a: string; b: string; angleRad: number }>;
+    gridSettings: { enabled: boolean; spacingMm: number };
+}
+
+/** Builds stabilisers for shafts that bracing alone cannot satisfy. */
+type LateralStabiliserGenerator = (request: LateralStabiliserRequest) => unknown[];
+
+const LATERAL_STABILISERS = new Map<SupportTypeId, LateralStabiliserGenerator>();
+
+/**
+ * Registered from the type's own folder. A type that can stand a shaft up
+ * without a partner registers here; auto-bracing asks rather than importing.
+ */
+export function registerLateralStabiliser(
+    typeId: SupportTypeId,
+    generate: LateralStabiliserGenerator,
+): void {
+    LATERAL_STABILISERS.set(typeId, generate);
+}
+
+/** Every registered stabiliser, in registry order. */
+export function lateralStabiliserTypes(): readonly SupportTypeId[] {
+    return SUPPORT_TYPES.filter((d) => LATERAL_STABILISERS.has(d.id)).map((d) => d.id);
+}
+
+/** Runs one type's generator, or returns nothing when it registers none. */
+export function generateLateralStabilisers(
+    typeId: SupportTypeId,
+    request: LateralStabiliserRequest,
+): unknown[] {
+    return LATERAL_STABILISERS.get(typeId)?.(request) ?? [];
+}
+
 export const SUPPORT_TRANSFORM_EXTRAS = {
     brace: ['curve'],
     anchor: ['rootPos', 'joint'],

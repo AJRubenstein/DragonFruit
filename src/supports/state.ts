@@ -3733,6 +3733,7 @@ export function applySettingsToSupportTarget(target: EditableSupportTarget, sett
 // Per-type registrations live in each type's folder; importing them here runs
 // their side effects once the store exists.
 import './SupportTypes/Twig/twigRegistration';
+import './SupportTypes/Kickstand/kickstandRegistration';
 import './SupportTypes/Branch/branchRegistration';
 import './SupportTypes/Leaf/leafRegistration';
 

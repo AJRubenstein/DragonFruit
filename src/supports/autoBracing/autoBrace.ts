@@ -29,12 +29,12 @@ import {
     normalizeAutoBracingSettings,
     type AutoBracingSettings,
 } from './settings';
-import { generateRequiredKickstands } from './generativeBracing';
 import { partitionSupportsWithVoronoi } from './voronoiPartitioning';
 import { applyInitialPattern } from './initialPattern';
 import { applyRepeatingPattern } from './repeatingPattern';
 import { buildBraceProfile } from './braceDiameter';
-import { SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeId } from '../supportTypeRegistry';
+import type { KickstandBuildResult } from '../SupportTypes/Kickstand/types';
+import { generateLateralStabilisers, lateralStabiliserTypes, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeId } from '../supportTypeRegistry';
 import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
 import { linePassesMeshClearance } from './meshClearance';
 
@@ -551,13 +551,16 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     // -- GENERATIVE PHASE --
     // Only generate Kickstands if a tall trunk failed to find 2-axis bracing
     // amongst the existing trunks in the preliminary pass.
-    const generatedKickstands = generateRequiredKickstands(
-        snapshot,
-        kickstandState,
-        settings,
-        existingTrunkEdges,
-        activeGridSettings,
-    );
+    // A tall shaft needs two bracing axes; when no neighbour is in reach there
+    // is nothing to brace against, so ask for a support that stands alone.
+    const generatedKickstands = lateralStabiliserTypes().flatMap((typeId) =>
+        generateLateralStabilisers(typeId, {
+            snapshot,
+            existing: kickstandState,
+            settings,
+            existingEdges: existingTrunkEdges,
+            gridSettings: activeGridSettings,
+        }) as KickstandBuildResult[]);
     
     let generatedKickstandCount = 0;
     const generatedKickstandIds = new Set<string>();
