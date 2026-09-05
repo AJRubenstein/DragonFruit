@@ -1,6 +1,6 @@
 import type { Knot, SupportState } from '../types';
 import type { SupportCollectionKey } from '../supportTypeRegistry';
-import { SHAFTED_COLLECTION_KEYS } from '../supportTypeRegistry';
+import { SUPPORT_TYPES, SHAFTED_COLLECTION_KEYS } from '../supportTypeRegistry';
 
 export interface SupportRenderLookupSnapshot {
   supportIdBySegmentId: Record<string, string>;
@@ -69,36 +69,48 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
     }
   }
 
-  for (const trunk of Object.values(state.trunks)) {
-    if (shouldAbort?.()) break;
-    if (trunk.contactCone?.id) supportIdByContactDiskId[trunk.contactCone.id] = trunk.id;
+  // Every contact primitive back to the support carrying it, by declared
+  // `contactFields`. The five loops this replaces named trunk, branch, leaf,
+  // twig and stick, and so omitted anchors.
+  for (const descriptor of SUPPORT_TYPES) {
+    if (descriptor.contactFields.length === 0) continue;
+    const record = (state as Partial<Record<string, Record<string, unknown>>>)[descriptor.location.key];
+    if (!record) continue;
+
+    for (const entity of Object.values(record)) {
+      if (shouldAbort?.()) break;
+      const fields = entity as Record<string, { id?: string } | undefined> & { id: string };
+      for (const field of descriptor.contactFields) {
+        const contactId = fields[field]?.id;
+        if (contactId) supportIdByContactDiskId[contactId] = fields.id;
+      }
+    }
   }
 
-  for (const branch of Object.values(state.branches)) {
-    if (shouldAbort?.()) break;
-    supportIdByKnotId[branch.parentKnotId] = branch.id;
-    pushKnotId(knotIdsByParentShaftId, branch.parentKnotId, branch.parentKnotId);
-    entityModelIdByKnotId[branch.parentKnotId] = branch.modelId;
-    if (branch.contactCone?.id) supportIdByContactDiskId[branch.contactCone.id] = branch.id;
-  }
+  // A knot-hosted type also indexes the knot it hangs from.
+  //
+  // The branch loop this replaces additionally did
+  // `pushKnotId(knotIdsByParentShaftId, parentKnotId, parentKnotId)`, keying a
+  // knot id to itself. That bucket is only ever read by SEGMENT id
+  // (`supportPreviewOverlay`), so the entry was unreachable unless a knot id
+  // equalled a segment id -- impossible for UUIDs. Dropped rather than
+  // reproduced; see docs/dev/backlog.md.
+  for (const descriptor of SUPPORT_TYPES) {
+    const hostEdges = descriptor.edges.filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy');
+    if (hostEdges.length === 0) continue;
+    const record = (state as Partial<Record<string, Record<string, unknown>>>)[descriptor.location.key];
+    if (!record) continue;
 
-  for (const leaf of Object.values(state.leaves)) {
-    if (shouldAbort?.()) break;
-    supportIdByKnotId[leaf.parentKnotId] = leaf.id;
-    entityModelIdByKnotId[leaf.parentKnotId] = leaf.modelId;
-    if (leaf.contactCone?.id) supportIdByContactDiskId[leaf.contactCone.id] = leaf.id;
-  }
-
-  for (const twig of Object.values(state.twigs)) {
-    if (shouldAbort?.()) break;
-    if (twig.contactDiskA?.id) supportIdByContactDiskId[twig.contactDiskA.id] = twig.id;
-    if (twig.contactDiskB?.id) supportIdByContactDiskId[twig.contactDiskB.id] = twig.id;
-  }
-
-  for (const stick of Object.values(state.sticks)) {
-    if (shouldAbort?.()) break;
-    if (stick.contactConeA?.id) supportIdByContactDiskId[stick.contactConeA.id] = stick.id;
-    if (stick.contactConeB?.id) supportIdByContactDiskId[stick.contactConeB.id] = stick.id;
+    for (const entity of Object.values(record)) {
+      if (shouldAbort?.()) break;
+      const fields = entity as Record<string, unknown> & { id: string; modelId: string };
+      for (const edge of hostEdges) {
+        const knotId = fields[edge.field] as string | undefined;
+        if (!knotId) continue;
+        supportIdByKnotId[knotId] = fields.id;
+        entityModelIdByKnotId[knotId] = fields.modelId;
+      }
+    }
   }
 
   for (const brace of Object.values(state.braces)) {
