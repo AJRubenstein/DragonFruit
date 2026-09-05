@@ -1,4 +1,5 @@
 import type { ContactCone } from './SupportPrimitives/ContactCone/types';
+import type { SupportTypeId } from './supportTypeRegistry';
 import type { ContactDiskProfile } from './SupportPrimitives/ContactCone/types';
 import type { KickstandBuildResult } from './SupportTypes/Kickstand/types';
 import type { SupportOriginId } from './supportTypeRegistry';
@@ -61,6 +62,15 @@ export interface SupportEntity {
     settingsCodeHex?: string;
     /** Set when a tool created this; absent when a person did. */
     generatedBy?: SupportGeneratedBy;
+    /**
+     * Which support type this is.
+     *
+     * Optional only for files written before the field existed: those have it
+     * derived on load from the array they came out of. Everything the store
+     * hands out carries it, and `__tests__/entityTypeId.test.ts` holds the two
+     * sources of truth -- this field and collection membership -- in agreement.
+     */
+    typeId?: SupportTypeId;
 }
 
 /**

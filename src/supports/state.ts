@@ -5,7 +5,7 @@ import { resolveSegmentEndpoints } from './SupportPrimitives/Knot/segmentEndpoin
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
-import { MODEL_ID_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -2355,45 +2355,19 @@ export function loadFromImportFormat(data: DragonfruitImportFormat) {
         newState.roots[r.id] = r;
     });
 
-    // Populate Trunks
-    effectiveData.trunks.forEach(t => {
-        newState.trunks[t.id] = t;
-    });
-
-    // Populate Branches
-    effectiveData.branches.forEach(b => {
-        newState.branches[b.id] = b;
-    });
-
-    // Populate Leaves
-    effectiveData.leaves.forEach(l => {
-        newState.leaves[l.id] = l;
-    });
-
-    // Populate Twigs
-    if (effectiveData.twigs) {
-        effectiveData.twigs.forEach((t) => {
-            newState.twigs[t.id] = t;
-        });
-    }
-
-    // Populate Sticks
-    if (effectiveData.sticks) {
-        effectiveData.sticks.forEach((s) => {
-            newState.sticks[s.id] = s;
-        });
-    }
-
-    // Populate Braces
-    effectiveData.braces.forEach(br => {
-        newState.braces[br.id] = br;
-    });
-
-    // Populate Anchors
-    if (effectiveData.anchors) {
-        effectiveData.anchors.forEach(a => {
-            newState.anchors[a.id] = a;
-        });
+    // Every declared type, from the array its collection is named after.
+    // `typeId` is stamped here: a file written before the field existed has it
+    // derived from the array it came out of, which is the only place that
+    // information survives in an older payload.
+    for (const descriptor of SUPPORT_TYPES) {
+        const key = descriptor.location.key;
+        // A bundled type is written as { entity, root, hostKnot } under this
+        // same key rather than as a bare entity, so it is unwrapped below.
+        if (descriptor.serialisedAsBundle) continue;
+        const incoming = (effectiveData as unknown as Record<string, { id: string }[] | undefined>)[key];
+        for (const entity of incoming ?? []) {
+            (newState[key] as Record<string, unknown>)[entity.id] = { ...entity, typeId: descriptor.id };
+        }
     }
 
     // Populate Knots
@@ -2407,7 +2381,7 @@ export function loadFromImportFormat(data: DragonfruitImportFormat) {
     // a SupportState collection now, and addKickstand would mutate `state` only
     // for `state = newState` below to discard it.
     for (const build of effectiveData.kickstands ?? []) {
-        newState.kickstands[build.kickstand.id] = migrateLegacyGeneratedBy(build.kickstand);
+        newState.kickstands[build.kickstand.id] = { ...migrateLegacyGeneratedBy(build.kickstand), typeId: 'kickstand' };
         newState.roots[build.root.id] = build.root;
         newState.knots[build.hostKnot.id] = build.hostKnot;
     }
@@ -2419,18 +2393,9 @@ export function loadFromImportFormat(data: DragonfruitImportFormat) {
     state = newState;
     rebuildSupportSettingsHexCacheFromState();
     emitSupportInteractionReset('loadFromImportFormat');
-    console.log('[SupportStore] Loaded from LYS:', {
-        roots: Object.keys(state.roots).length,
-        trunks: Object.keys(state.trunks).length,
-        branches: Object.keys(state.branches).length,
-        leaves: Object.keys(state.leaves).length,
-        twigs: Object.keys(state.twigs).length,
-        sticks: Object.keys(state.sticks).length,
-        braces: Object.keys(state.braces).length,
-        anchors: Object.keys(state.anchors).length,
-        knots: Object.keys(state.knots).length,
-        kickstands: Object.keys(state.kickstands).length,
-    });
+    console.log('[SupportStore] Loaded from LYS:', Object.fromEntries(
+        SUPPORT_COLLECTION_KEYS.map((key) => [key, Object.keys(state[key] ?? {}).length]),
+    ));
     notify();
 }
 
@@ -2871,7 +2836,7 @@ export function addSupportEntity(typeId: SupportTypeId, entity: { id: string; se
     const key = descriptor.location.key;
     state = {
         ...state,
-        [key]: { ...state[key], [entity.id]: entity },
+        [key]: { ...state[key], [entity.id]: { ...entity, typeId } },
     };
     notify();
 }
@@ -2925,7 +2890,7 @@ function applySupportEntityUpdate(
         if (next.settingsCodeHex) setCachedSupportSettingsHex(settingsType, next.id, next.settingsCodeHex);
     }
 
-    const nextCollection = { ...state[key], [next.id]: next };
+    const nextCollection = { ...state[key], [next.id]: { ...next, typeId } };
 
     const place = KNOT_PLACEMENT_BY_TYPE.get(typeId);
     let nextKnots = state.knots;
@@ -3054,7 +3019,7 @@ function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): bo
 
     state = {
         ...state,
-        [key]: { ...state[key], [entity.id]: entity },
+        [key]: { ...state[key], [entity.id]: { ...entity, typeId } },
     };
     notify();
     return true;
