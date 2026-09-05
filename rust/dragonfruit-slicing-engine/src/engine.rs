@@ -231,7 +231,7 @@ impl<'a> RleRowDecoder<'a> {
         }
     }
 
-    fn skip_pixels(&mut self, mut count: usize) {
+    pub(crate) fn skip_pixels(&mut self, mut count: usize) {
         while count > 0 {
             if self.run_idx >= self.runs.len() {
                 break;
@@ -291,7 +291,7 @@ impl<'a> RleRowDecoder<'a> {
 }
 
 #[inline]
-fn nonzero_bounds_from_rle_runs(
+pub(crate) fn nonzero_bounds_from_rle_runs(
     runs: &[crate::rle::RleRun],
     width: usize,
     height: usize,
