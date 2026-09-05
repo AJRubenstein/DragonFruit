@@ -220,7 +220,14 @@ export function JointGizmo() {
 
         // The caller still wants the entity in a per-type slot.
         return { joint, [owner.typeId]: entity } as ReturnType<typeof findJointAndParent>;
-    }, [selectedId, state.trunks, state.branches, state.twigs, state.sticks, state.anchors, state.kickstands]);
+        // `findShaftOwnerOfJoint` and `getSupportEntity` read the store
+        // directly, so `state` is what actually invalidates this result even
+        // though the body never names it -- ESLint calls it unnecessary because
+        // it cannot see through those calls. The per-collection list this
+        // replaces was the same dependency written by hand, and would have gone
+        // stale on a ninth type.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedId, state]);
 
     useEffect(() => {
         if (!jointDragPosition) return;
