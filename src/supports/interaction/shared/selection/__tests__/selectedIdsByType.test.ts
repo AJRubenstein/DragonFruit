@@ -7,8 +7,8 @@ import {
     selectedIdsForType,
     type CollectionLookup,
     type SelectionInputs,
-} from '../supportSelectionDerivation';
-import { SUPPORT_TYPES } from '../supportTypeRegistry';
+} from '../selectedIdsByType';
+import { SUPPORT_TYPES } from '../../../../supportTypeRegistry';
 
 /**
  * Which entities a selection covers, per type.
