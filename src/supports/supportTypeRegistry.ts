@@ -165,6 +165,15 @@ export interface SupportTypeDescriptor {
      */
     hasPlacementPreview: boolean;
     /**
+     * Whether auto-bracing samples this type's shafts as a brace endpoint.
+     *
+     * Trunk, branch and kickstand today. That happens to equal
+     * `hasSegments && !segmentsCarryBothJoints`, but the reason is different:
+     * a brace wants a shaft that runs plate-to-model, not one bridging two
+     * model contacts. Declared separately so the two can diverge.
+     */
+    isAutoBraceable: boolean;
+    /**
      * The measurement range this type serves, when the type is chosen
      * automatically rather than picked by the user.
      *
@@ -293,6 +302,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasPlacementPreview: true,
         previewYieldsToOtherModes: true,
         placementRule: { metric: 'tipHeight', minMm: ANCHOR_HEIGHT_THRESHOLD_MM, boundary: 'upper' },
+        isAutoBraceable: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -319,6 +329,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasPlacementPreview: true,
         previewRequiresOwnMode: true,
         placementModeDisplacesDefault: true,
+        isAutoBraceable: true,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -344,6 +355,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasOrigin: true,
         hasPlacementPreview: true,
         placementModeDisplacesDefault: true,
+        isAutoBraceable: false,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: false,
@@ -370,6 +382,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftTaper: { segments: 'all', from: ['contactDiskA.contactDiameterMm', 'contactDiskB.contactDiameterMm'] },
         hasPlacementPreview: false,
         placementRule: { metric: 'contactSpan', maxMm: { setting: 'meshToMesh.stickVsTwigCutoffMm', fallback: 5 } },
+        isAutoBraceable: false,
         lower: { kind: 'disk', field: 'contactDiskA' },
         upper: { kind: 'disk', field: 'contactDiskB' },
         hasSegments: true,
@@ -395,6 +408,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasOrigin: false,
         hasPlacementPreview: false,
         placementRule: { metric: 'contactSpan', minMm: { setting: 'meshToMesh.stickVsTwigCutoffMm', fallback: 5 } },
+        isAutoBraceable: false,
         lower: { kind: 'cone', field: 'contactConeA' },
         upper: { kind: 'cone', field: 'contactConeB' },
         hasSegments: true,
@@ -425,6 +439,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         segmentSelectionPrefix: 'braceSegment:',
         hasOrigin: false,
         hasPlacementPreview: true,
+        isAutoBraceable: false,
         lower: { kind: 'knot' },
         upper: { kind: 'knot' },
         hasSegments: false,
@@ -450,6 +465,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasOrigin: true,
         hasPlacementPreview: false,
         placementRule: { metric: 'tipHeight', maxMm: ANCHOR_HEIGHT_THRESHOLD_MM, boundary: 'upper' },
+        isAutoBraceable: false,
         lower: { kind: 'inlineRoot', field: 'rootPos' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -480,6 +496,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftTaper: { segments: 'last', from: ['profile.terminalStartDiameterMm', 'profile.terminalEndDiameterMm'] },
         hasPlacementPreview: true,
         placementModeDisplacesDefault: true,
+        isAutoBraceable: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'knot' },
         hasSegments: true,

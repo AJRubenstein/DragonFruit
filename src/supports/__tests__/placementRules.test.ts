@@ -93,3 +93,16 @@ test('an unmeasurable value picks nothing', () => {
         assert.equal(pick(metric, Infinity), null, metric);
     }
 });
+
+test('auto-bracing samples exactly the plate-to-model shafts', () => {
+    // A brace wants a shaft running plate to model, not one bridging two model
+    // contacts. That is trunk, branch and kickstand.
+    const braceable = SUPPORT_TYPES.filter((d) => d.isAutoBraceable).map((d) => d.id).sort();
+    assert.deepEqual(braceable, ['branch', 'kickstand', 'trunk']);
+
+    for (const descriptor of SUPPORT_TYPES) {
+        if (descriptor.isAutoBraceable) {
+            assert.equal(descriptor.hasSegments, true, `${descriptor.id} needs a shaft to brace`);
+        }
+    }
+});
