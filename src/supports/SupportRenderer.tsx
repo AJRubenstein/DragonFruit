@@ -2392,79 +2392,38 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const sceneBatchedContactConeGroups = useMemo(() => {
         const grouped = new Map<string, { modelId: string | null; color: string; cones: InstancedContactCone[] }>();
 
-        const pushCone = (modelId: string | null, color: string, cone: InstancedContactCone) => {
-            const key = `${modelId ?? '__unassigned__'}:${color}`;
-            const existing = grouped.get(key);
-            if (existing) {
-                existing.cones.push(cone);
-            } else {
-                grouped.set(key, { modelId, color, cones: [cone] });
+        const collect = <T extends { id: string }>(
+            typeId: SupportTypeId,
+            list: readonly T[],
+            selectedIds: ReadonlySet<string>,
+        ) => {
+            for (const entity of list) {
+                if (selectedIds.has(entity.id)) continue;
+                const coneSet = contactConesBySupport.get(entity.id);
+                if (!coneSet) continue;
+
+                const color = resolveSceneSupportColor(coneSet.modelId, entity.id, typeId);
+                const key = `${coneSet.modelId ?? '__unassigned__'}:${color}`;
+                const existing = grouped.get(key)
+                    ?? { modelId: coneSet.modelId ?? null, color, cones: [] as InstancedContactCone[] };
+
+                for (const cone of coneSet.cones) {
+                    existing.cones.push({ ...cone, pos: applyDropToVec3Like(cone.pos, cone.modelId) });
+                }
+                grouped.set(key, existing);
             }
         };
 
-        for (const trunk of renderTrunkList) {
-            if (selectedTrunkIds.has(trunk.id)) continue;
-            const coneSet = contactConesBySupport.get(trunk.id);
-            if (!coneSet) continue;
-
-            const color = resolveSceneSupportColor(coneSet.modelId, trunk.id, 'trunk');
-            coneSet.cones.forEach((cone) => pushCone(coneSet.modelId ?? null, color, {
-                ...cone,
-                pos: applyDropToVec3Like(cone.pos, cone.modelId),
-            }));
-        }
-
-        for (const branch of renderBranchList) {
-            if (selectedBranchIds.has(branch.id)) continue;
-            const coneSet = contactConesBySupport.get(branch.id);
-            if (!coneSet) continue;
-
-            const color = resolveSceneSupportColor(coneSet.modelId, branch.id, 'branch');
-            coneSet.cones.forEach((cone) => pushCone(coneSet.modelId ?? null, color, {
-                ...cone,
-                pos: applyDropToVec3Like(cone.pos, cone.modelId),
-            }));
-        }
-
-        for (const stick of renderStickList) {
-            if (selectedStickIds.has(stick.id)) continue;
-            const coneSet = contactConesBySupport.get(stick.id);
-            if (!coneSet) continue;
-
-            const color = resolveSceneSupportColor(coneSet.modelId, stick.id, 'stick');
-            coneSet.cones.forEach((cone) => pushCone(coneSet.modelId ?? null, color, {
-                ...cone,
-                pos: applyDropToVec3Like(cone.pos, cone.modelId),
-            }));
-        }
-
-        for (const leaf of renderLeafList) {
-            if (selectedLeafIds.has(leaf.id)) continue;
-            const coneSet = contactConesBySupport.get(leaf.id);
-            if (!coneSet) continue;
-
-            const color = resolveSceneSupportColor(coneSet.modelId, leaf.id, 'leaf');
-            coneSet.cones.forEach((cone) => pushCone(coneSet.modelId ?? null, color, {
-                ...cone,
-                pos: applyDropToVec3Like(cone.pos, cone.modelId),
-            }));
-        }
+        collect('trunk', renderTrunkList, selectedTrunkIds);
+        collect('branch', renderBranchList, selectedBranchIds);
+        collect('stick', renderStickList, selectedStickIds);
+        collect('leaf', renderLeafList, selectedLeafIds);
 
         return Array.from(grouped.values());
     }, [
-        renderTrunkList,
-        renderBranchList,
-        renderStickList,
-        renderLeafList,
-        contactConesBySupport,
-        selectedTrunkIds,
-        selectedBranchIds,
-        selectedStickIds,
-        selectedLeafIds,
-        applyDropToVec3Like,
-        dimNonSelected,
-        resolveBaseColor,
-        resolveSceneSupportColor,
+        renderTrunkList, renderBranchList, renderStickList, renderLeafList,
+        selectedTrunkIds, selectedBranchIds, selectedStickIds, selectedLeafIds,
+        contactConesBySupport, resolveSceneSupportColor, applyDropToVec3Like,
     ]);
 
     const sceneBatchedShaftInstanceCount = useMemo(() => {
