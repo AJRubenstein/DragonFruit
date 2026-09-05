@@ -16,7 +16,7 @@ import {
     type PlacementSurface,
     type Vec3Like,
 } from './supportPlacementPreviewMath';
-import { anyContactMatches, collectOwnedRootIds, getSupportTypeBySelectionCategory, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
+import { anyContactMatches, collectOwnedRootIds, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
 import { buildKnotIndex, selectedIdsForType, type CollectionLookup, type SelectionInputs } from './interaction/shared/selection/selectedIdsByType';
 import { TrunkRenderer } from './SupportTypes/Trunk/TrunkRenderer';
 import { BranchRenderer } from './SupportTypes/Branch/BranchRenderer';
@@ -3195,6 +3195,26 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         );
     }, [isPointerInteractable, mode, supportSelectionAndHoverSuppressed]);
 
+    /**
+     * The props every detail renderer takes identically. `baseColor` consults
+     * the debug origin overlay only for types declaring `hasOrigin`.
+     */
+    const sharedRenderProps = useCallback((
+        typeId: SupportTypeId,
+        entity: { id: string; modelId?: string },
+        isSelected: boolean,
+        isHovered: boolean,
+    ) => ({
+        isSelected,
+        selectedId: isSelected ? selectedId : null,
+        dimNonSelected,
+        isHovered,
+        baseColor: (getSupportTypeDescriptor(typeId).hasOrigin ? originColorFor(entity.id) : null)
+            ?? resolveBaseColor(entity.modelId),
+        suppressHover,
+        isInteractable,
+    }), [selectedId, dimNonSelected, originColorFor, resolveBaseColor, suppressHover, isInteractable]);
+
     /** Draws one type's batched shaft groups. Six identical blocks became this. */
     const renderSceneBatchedShafts = useCallback((
         typeId: string,
@@ -3828,13 +3848,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         key={trunk.id}
                         trunk={trunk}
                         root={root}
-                        isSelected={effectiveSelected}
-                        selectedId={effectiveSelected ? selectedId : null}
-                        dimNonSelected={dimNonSelected}
-                        isHovered={isTrunkHovered}
-                        baseColor={originColorFor(trunk.id) ?? resolveBaseColor(trunk.modelId)}
-                        suppressHover={suppressHover}
-                        isInteractable={isInteractable}
+                        {...sharedRenderProps('trunk', trunk, effectiveSelected, isTrunkHovered)}
                         deferStraightShaftsToSceneBatch={!effectiveSelected}
                         deferInteractionToSceneBatch={deferTrunkInteractionToSceneBatch}
                         deferRootsToSceneBatch={!effectiveSelected}
@@ -3867,14 +3881,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         key={branch.id}
                         branch={branch}
                         parentKnot={knot}
-                        isSelected={effectiveSelected}
-                        selectedId={effectiveSelected ? selectedId : null}
-                        dimNonSelected={dimNonSelected}
-                        isHovered={isBranchHovered}
-                        baseColor={originColorFor(branch.id) ?? resolveBaseColor(branch.modelId)}
+                        {...sharedRenderProps('branch', branch, effectiveSelected, isBranchHovered)}
                         showKnots={showKnots}
-                        suppressHover={suppressHover}
-                        isInteractable={isInteractable}
                         deferStraightShaftsToSceneBatch={!effectiveSelected}
                         deferInteractionToSceneBatch={deferBranchInteractionToSceneBatch}
                         deferContactConesToSceneBatch={!effectiveSelected && !!branch.contactCone}
@@ -3939,13 +3947,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                     <TwigRenderer
                         key={twig.id}
                         twig={twig}
-                        isSelected={effectiveSelected}
-                        selectedId={effectiveSelected ? selectedId : null}
-                        dimNonSelected={dimNonSelected}
-                        isHovered={isTwigHovered}
-                        baseColor={resolveBaseColor(twig.modelId)}
-                        suppressHover={suppressHover}
-                        isInteractable={isInteractable}
+                        {...sharedRenderProps('twig', twig, effectiveSelected, isTwigHovered)}
                         deferStraightShaftsToSceneBatch={!effectiveSelected && isTwigBatchable}
                         deferInteractionToSceneBatch={deferTwigInteractionToSceneBatch}
                     />
@@ -3971,13 +3973,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                     <StickRenderer
                         key={stick.id}
                         stick={stick}
-                        isSelected={effectiveSelected}
-                        selectedId={effectiveSelected ? selectedId : null}
-                        dimNonSelected={dimNonSelected}
-                        isHovered={isStickHovered}
-                        baseColor={resolveBaseColor(stick.modelId)}
-                        suppressHover={suppressHover}
-                        isInteractable={isInteractable}
+                        {...sharedRenderProps('stick', stick, effectiveSelected, isStickHovered)}
                         deferStraightShaftsToSceneBatch={!effectiveSelected && isStickBatchable}
                         deferInteractionToSceneBatch={deferStickInteractionToSceneBatch}
                         deferContactConesToSceneBatch={!effectiveSelected}
@@ -4083,13 +4079,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                     <AnchorRenderer
                         key={anchor.id}
                         anchor={anchor}
-                        isSelected={effectiveSelected}
-                        selectedId={effectiveSelected ? selectedId : null}
-                        dimNonSelected={dimNonSelected}
-                        isHovered={isAnchorHovered}
-                        baseColor={originColorFor(anchor.id) ?? resolveBaseColor(anchor.modelId)}
-                        suppressHover={suppressHover}
-                        isInteractable={isInteractable}
+                        {...sharedRenderProps('anchor', anchor, effectiveSelected, isAnchorHovered)}
                     />
                     </group>
                 );

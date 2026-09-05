@@ -120,6 +120,11 @@ export interface SupportTypeDescriptor {
      * selected, if it uses one. Brace alone does today.
      */
     segmentSelectionPrefix?: string;
+    /**
+     * Whether instances record an auto-support `origin`, which the debug
+     * origin-colouring overlay reads.
+     */
+    hasOrigin: boolean;
     /** What sits at the bottom of this type. */
     lower: SupportEndpoint;
     /** What sits at the top of this type. */
@@ -205,6 +210,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: true,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 10, startFallsBackToSplitPoint: false },
+        hasOrigin: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -227,6 +233,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
+        hasOrigin: true,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -249,6 +256,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
+        hasOrigin: true,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: false,
@@ -271,6 +279,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         contactFields: ['contactDiskA', 'contactDiskB'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
+        hasOrigin: false,
         lower: { kind: 'disk', field: 'contactDiskA' },
         upper: { kind: 'disk', field: 'contactDiskB' },
         hasSegments: true,
@@ -293,6 +302,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         contactFields: ['contactConeA', 'contactConeB'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
+        hasOrigin: false,
         lower: { kind: 'cone', field: 'contactConeA' },
         upper: { kind: 'cone', field: 'contactConeB' },
         hasSegments: true,
@@ -321,6 +331,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         contactFields: [],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         segmentSelectionPrefix: 'braceSegment:',
+        hasOrigin: false,
         lower: { kind: 'knot' },
         upper: { kind: 'knot' },
         hasSegments: false,
@@ -343,6 +354,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
+        hasOrigin: true,
         lower: { kind: 'inlineRoot', field: 'rootPos' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -369,6 +381,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         contactFields: [],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
+        hasOrigin: false,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'knot' },
         hasSegments: true,
