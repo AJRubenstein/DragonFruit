@@ -3316,10 +3316,42 @@ export function getSupportEntity(typeId: SupportTypeId, id: string) {
     return (state[key] as Record<string, unknown>)[id] ?? null;
 }
 
+/**
+ * What type of support an id names, or null if it names none.
+ *
+ * Reads the entity's own `typeId` rather than asking which collection holds
+ * it. The scan it replaces was written out per type at every call site, which
+ * is how three of them came to omit anchors.
+ */
+export function getSupportTypeOf(id: string): SupportTypeId | null {
+    if (!id) return null;
+    for (const descriptor of SUPPORT_TYPES) {
+        const entity = (state[descriptor.location.key] as Record<string, { typeId?: SupportTypeId }>)[id];
+        if (entity) return entity.typeId ?? descriptor.id;
+    }
+    return null;
+}
+
+/** One entity of any type, by id, without knowing its type first. */
+export function findSupportEntity(id: string): { typeId: SupportTypeId; entity: unknown } | null {
+    const typeId = getSupportTypeOf(id);
+    if (!typeId) return null;
+    return { typeId, entity: getSupportEntity(typeId, id) };
+}
+
 /** Which support owns a shaft segment, searching every shafted type. */
 export function findShaftOwnerOfSegment(
     segmentId: string,
 ): { typeId: SupportTypeId; id: string } | null {
+    // A type whose segments are selected under a prefix names its owner in the
+    // id itself, so there is nothing to scan for.
+    for (const descriptor of SUPPORT_TYPES) {
+        const prefix = descriptor.segmentSelectionPrefix;
+        if (!prefix || !segmentId.startsWith(prefix)) continue;
+        const ownerId = segmentId.slice(prefix.length);
+        return getSupportEntity(descriptor.id, ownerId) ? { typeId: descriptor.id, id: ownerId } : null;
+    }
+
     for (const descriptor of SUPPORT_TYPES) {
         if (!descriptor.hasSegments) continue;
         const collection = state[descriptor.location.key] as Record<string, { id: string; segments?: Segment[] }>;

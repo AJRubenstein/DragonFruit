@@ -17,7 +17,10 @@ import { computeAndApplyTrunkDiameterProfile } from '@/supports/SupportTypes/Tru
 import {
   getSelectedId,
   getSelectedCategory,
+  findShaftOwnerOfJoint,
+  findShaftOwnerOfSegment,
   getSupportEntities,
+  getSupportTypeOf,
   getSnapshot,
   removeBranch,
   removeBrace,
@@ -51,93 +54,36 @@ interface SupportInteractionOptions {
 
 
 
+/**
+ * @deprecated for removal -- prefer `getSupportTypeOf(id)` from state.
+ * Kept while callers and tests still name it.
+ */
 export function resolveSupportCategoryFromSnapshot(id: string) {
-  const snapshot = getSnapshot();
-  if (snapshot.trunks[id]) return 'trunk' as const;
-  if (snapshot.branches[id]) return 'branch' as const;
-  if (snapshot.leaves[id]) return 'leaf' as const;
-  if (snapshot.twigs[id]) return 'twig' as const;
-  if (snapshot.sticks[id]) return 'stick' as const;
-  if (snapshot.braces[id]) return 'brace' as const;
-  if (snapshot.anchors[id]) return 'anchor' as const;
-  if (getSnapshot().kickstands[id]) return 'kickstand' as const;
-  return null;
+  return getSupportTypeOf(id);
 }
 
 function collectAllSupportIds() {
   const snapshot = getSnapshot();
-  const kickstandSnapshot = getSnapshot();
-
-  return [
-    ...Object.keys(snapshot.trunks),
-    ...Object.keys(snapshot.branches),
-    ...Object.keys(snapshot.leaves),
-    ...Object.keys(snapshot.twigs),
-    ...Object.keys(snapshot.sticks),
-    ...Object.keys(snapshot.braces),
-    ...Object.keys(snapshot.anchors),
-    ...Object.keys(kickstandSnapshot.kickstands),
-  ];
+  return SUPPORT_TYPES.flatMap((descriptor) => Object.keys(snapshot[descriptor.location.key] ?? {}));
 }
 
-export function resolveSupportOwnerFromSegmentId(segmentId: string): { category: 'trunk' | 'branch' | 'twig' | 'stick' | 'brace' | 'kickstand'; id: string } | null {
-  if (!segmentId) return null;
-
-  const snapshot = getSnapshot();
-  const kickstandSnapshot = getSnapshot();
-
-  if (segmentId.startsWith('braceSegment:')) {
-    const braceId = segmentId.slice('braceSegment:'.length);
-    if (snapshot.braces[braceId]) return { category: 'brace', id: braceId };
-  }
-
-  for (const trunk of Object.values(snapshot.trunks)) {
-    if (trunk.segments.some((segment) => segment.id === segmentId)) {
-      return { category: 'trunk', id: trunk.id };
-    }
-  }
-
-  for (const branch of Object.values(snapshot.branches)) {
-    if (branch.segments.some((segment) => segment.id === segmentId)) {
-      return { category: 'branch', id: branch.id };
-    }
-  }
-
-  for (const twig of Object.values(snapshot.twigs)) {
-    if (twig.segments.some((segment) => segment.id === segmentId)) {
-      return { category: 'twig', id: twig.id };
-    }
-  }
-
-  for (const stick of Object.values(snapshot.sticks)) {
-    if (stick.segments.some((segment) => segment.id === segmentId)) {
-      return { category: 'stick', id: stick.id };
-    }
-  }
-
-  for (const kickstand of Object.values(kickstandSnapshot.kickstands)) {
-    if (kickstand.segments.some((segment) => segment.id === segmentId)) {
-      return { category: 'kickstand', id: kickstand.id };
-    }
-  }
-
-  return null;
+/**
+ * @deprecated for removal -- prefer `findShaftOwnerOfSegment(id)` from state.
+ * The scan this replaced omitted anchors, and handled brace's `braceSegment:`
+ * prefix separately; the shared lookup does both from the registry.
+ */
+export function resolveSupportOwnerFromSegmentId(segmentId: string) {
+  const owner = findShaftOwnerOfSegment(segmentId);
+  return owner ? { category: owner.typeId, id: owner.id } : null;
 }
 
-export function resolveSupportOwnerFromJointId(jointId: string): { category: 'kickstand'; id: string } | null {
-  if (!jointId) return null;
-
-  const kickstandSnapshot = getSnapshot();
-  for (const kickstand of Object.values(kickstandSnapshot.kickstands)) {
-    const ownsJoint = kickstand.segments.some((segment) =>
-      segment.bottomJoint?.id === jointId || segment.topJoint?.id === jointId,
-    );
-    if (ownsJoint) {
-      return { category: 'kickstand', id: kickstand.id };
-    }
-  }
-
-  return null;
+/**
+ * @deprecated for removal -- prefer `findShaftOwnerOfJoint(id)` from state.
+ * The scan this replaced searched kickstands only.
+ */
+export function resolveSupportOwnerFromJointId(jointId: string) {
+  const owner = findShaftOwnerOfJoint(jointId);
+  return owner ? { category: owner.typeId, id: owner.id } : null;
 }
 
 export function useSupportInteractionManager({ mode }: SupportInteractionOptions) {
