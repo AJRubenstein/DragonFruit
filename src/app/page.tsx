@@ -10350,11 +10350,11 @@ export default function Home() {
             onSupportHover={supports.onModelHover}
             onActiveModelChange={handleSceneModelSelection}
             onMarqueeSelectionChange={handleSceneMarqueeSelection}
-            trunkPlacementPreview={supports.trunkPlacementV2.previewData}
-            branchPlacementPreview={supports.branchPlacement.previewData}
-            leafPlacementPreview={supports.leafPlacement.previewData}
-            bracePlacementPreview={supports.bracePreview}
-            kickstandPlacementPreview={supports.kickstandPreview}
+            trunkPlacementPreview={supports.placementPreviews.trunk}
+            branchPlacementPreview={supports.placementPreviews.branch}
+            leafPlacementPreview={supports.placementPreviews.leaf}
+            bracePlacementPreview={supports.placementPreviews.brace}
+            kickstandPlacementPreview={supports.placementPreviews.kickstand}
             blockSupportPlacement={supports.isPlacementHardDisabled}
             isBranchPlacementActive={supports.branchPlacement.isActive}
             isLeafPlacementActive={supports.leafPlacement.isActive}

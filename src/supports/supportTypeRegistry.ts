@@ -126,6 +126,12 @@ export interface SupportTypeDescriptor {
      */
     hasOrigin: boolean;
     /**
+     * Whether the type has an interactive placement hook, and so a live
+     * placement preview. Twig, stick and anchor have none -- they are chosen
+     * automatically rather than placed.
+     */
+    hasPlacementPreview: boolean;
+    /**
      * Where a tapering shaft reads its two end diameters, and on which
      * segment. A taper whose ends differ cannot be instanced, so the whole
      * support drops out of the batched pass.
@@ -222,6 +228,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 10, startFallsBackToSplitPoint: false },
         hasOrigin: true,
+        hasPlacementPreview: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -245,6 +252,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
+        hasPlacementPreview: true,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -268,6 +276,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
+        hasPlacementPreview: true,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: false,
@@ -292,6 +301,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: false,
         shaftTaper: { segments: 'all', from: ['contactDiskA.contactDiameterMm', 'contactDiskB.contactDiameterMm'] },
+        hasPlacementPreview: false,
         lower: { kind: 'disk', field: 'contactDiskA' },
         upper: { kind: 'disk', field: 'contactDiskB' },
         hasSegments: true,
@@ -315,6 +325,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         contactFields: ['contactConeA', 'contactConeB'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: false,
+        hasPlacementPreview: false,
         lower: { kind: 'cone', field: 'contactConeA' },
         upper: { kind: 'cone', field: 'contactConeB' },
         hasSegments: true,
@@ -344,6 +355,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         segmentSelectionPrefix: 'braceSegment:',
         hasOrigin: false,
+        hasPlacementPreview: true,
         lower: { kind: 'knot' },
         upper: { kind: 'knot' },
         hasSegments: false,
@@ -367,6 +379,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: true,
+        hasPlacementPreview: false,
         lower: { kind: 'inlineRoot', field: 'rootPos' },
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
@@ -395,6 +408,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: false,
         shaftTaper: { segments: 'last', from: ['profile.terminalStartDiameterMm', 'profile.terminalEndDiameterMm'] },
+        hasPlacementPreview: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'knot' },
         hasSegments: true,
