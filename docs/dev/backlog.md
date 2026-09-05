@@ -92,7 +92,7 @@ unless marked otherwise; recorded because the same shape will recur.
 | Shaft stub length is 10 for trunk, 5 elsewhere; four other sites use 10 | `shaftFallback`, `resolveSegmentEndpoints` | **open** — inherited drift, needs a decision |
 | `TwigRenderer` omits `isInteractable` where the other three pass it | `TwigRenderer` | **open** — harmless while the default is true |
 | The import wire format still carries the `{kickstand, root, hostKnot}` bundle | `loadFromImportFormat` | **open** — ⚠️ wire format |
-| Type selection by hardcoded threshold, each duplicated at a second site: twig/stick by span, anchor/trunk by tip height | `BranchPlacementController:609`, `useTrunkPlacement:186/496`, `gridPlacement:500` | **open** — §8, should be declared ranges on the descriptor |
+| Type selection by hardcoded threshold, each duplicated at a second site: twig/stick by span, anchor/trunk by tip height | four sites | fixed — `placementRule` on the descriptor, resolved by `selectTypeForPlacement` |
 
 Two of these were invisible to the whole suite AND all 22 goldens
 (`transformSupportsForModel`'s reachability walk). Passing tests are not

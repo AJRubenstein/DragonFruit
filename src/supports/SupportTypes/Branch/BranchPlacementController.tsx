@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { matchesConfiguredHotkeyUp } from '@/hotkeys/hotkeyConfig';
 import { subscribe, getSnapshot, addBranch, addKnot, addTwig, addStick } from '../../state';
+import { selectTypeForPlacement } from '../../supportTypeRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { getClipBounds } from '@/components/scene/SceneCanvas/clipBoundsStore';
 import { SUPPORT_ADD_BRANCH, SUPPORT_ADD_TWIG, SUPPORT_ADD_STICK } from '../../history/actionTypes';
@@ -605,8 +606,9 @@ export function BranchPlacementController() {
                         const dy = tipPosition.y - bPos.y;
                         const dz = tipPosition.z - bPos.z;
                         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                        const cutoff = settings.meshToMesh?.stickVsTwigCutoffMm ?? 5;
-                        const kind: 'twig' | 'stick' = dist > cutoff ? 'stick' : 'twig';
+                        // contactSpan is declared only by twig and stick.
+                        const kind = (selectTypeForPlacement('contactSpan', dist,
+                            () => settings.meshToMesh?.stickVsTwigCutoffMm) ?? 'twig') as 'twig' | 'stick';
                         meshKindRef.current = kind;
 
                         const meshLinkSignature = [
