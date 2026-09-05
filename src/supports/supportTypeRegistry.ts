@@ -149,11 +149,17 @@ export interface SupportTypeDescriptor {
     id: SupportTypeId;
     /** Plural display name, so panels listing collections need no label table. */
     label: string;
+    /**
+     * Singular lower-case name, for history descriptions like
+     * `Move ${singular} joint`. Declared rather than derived from `label`,
+     * which does not depluralise ("Leaves" -> "Leave").
+     */
+    singular: string;
     location: SupportCollectionLocation;
     selectionCategory: SupportSelectionCategory;
     historyAdd: SupportHistoryActionType;
     historyRemove: SupportHistoryActionType;
-    /** Whether a modelId walk includes this type. All nine do; the flag exists so a future type can opt out. */
+    /** Whether a modelId walk includes this type. All eight do; the flag exists so a future type can opt out. */
     carriesModelId: boolean;
     /** Whether instances carry real shafts, for segment and joint walks. */
     hasSegments: boolean;
@@ -352,6 +358,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
         label: 'Trunks',
+        singular: 'trunk',
         location: { store: 'support', key: 'trunks' },
         selectionCategory: 'trunk',
         historyAdd: SUPPORT_ADD_TRUNK,
@@ -384,6 +391,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
         label: 'Branches',
+        singular: 'branch',
         location: { store: 'support', key: 'branches' },
         selectionCategory: 'branch',
         historyAdd: SUPPORT_ADD_BRANCH,
@@ -415,6 +423,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: false,
         label: 'Leaves',
+        singular: 'leaf',
         location: { store: 'support', key: 'leaves' },
         selectionCategory: 'leaf',
         historyAdd: SUPPORT_ADD_LEAF,
@@ -442,6 +451,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         upper: { kind: 'disk', field: 'contactDiskB' },
         hasSegments: true,
         label: 'Twigs',
+        singular: 'twig',
         location: { store: 'support', key: 'twigs' },
         selectionCategory: 'twig',
         historyAdd: SUPPORT_ADD_TWIG,
@@ -468,6 +478,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         upper: { kind: 'cone', field: 'contactConeB' },
         hasSegments: true,
         label: 'Sticks',
+        singular: 'stick',
         location: { store: 'support', key: 'sticks' },
         selectionCategory: 'stick',
         historyAdd: SUPPORT_ADD_STICK,
@@ -500,6 +511,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         upper: { kind: 'knot' },
         hasSegments: false,
         label: 'Braces',
+        singular: 'brace',
         location: { store: 'support', key: 'braces' },
         selectionCategory: 'brace',
         historyAdd: SUPPORT_ADD_BRACE,
@@ -526,6 +538,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         upper: { kind: 'cone', field: 'contactCone' },
         hasSegments: true,
         label: 'Anchors',
+        singular: 'anchor',
         location: { store: 'support', key: 'anchors' },
         selectionCategory: 'anchor',
         historyAdd: SUPPORT_ADD_ANCHOR,
@@ -561,6 +574,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         upper: { kind: 'knot' },
         hasSegments: true,
         label: 'Kickstands',
+        singular: 'kickstand',
         location: { store: 'support', key: 'kickstands' },
         selectionCategory: 'kickstand',
         historyAdd: SUPPORT_ADD_KICKSTAND,

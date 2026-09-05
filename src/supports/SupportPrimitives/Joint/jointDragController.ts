@@ -2,11 +2,19 @@ import type { Branch, Roots, Trunk, Vec3 } from '../../types';
 import { updateBranch, updateTrunk } from '../../state';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { updateKickstand } from '../../SupportTypes/Kickstand/kickstandStore';
-import { getSupportTypeDescriptor } from '../../supportTypeRegistry';
+import { getSupportTypeDescriptor, type SupportTypeId } from '../../supportTypeRegistry';
 import { moveJoint } from './jointUtils';
 import { clearSupportDragPreview, emitSupportDragPreview } from './jointDragRuntime';
 
 export type JointDragSupportKind = 'trunk' | 'branch' | 'kickstand';
+
+/**
+ * The types whose joint drag commits through `commitJointDragSupport`, which
+ * clears their live preview on the way. Twig and stick commit through their
+ * own `updateX` and must clear theirs by hand.
+ */
+export const JOINT_DRAG_COMMIT_TYPES: ReadonlySet<SupportTypeId> =
+  new Set<JointDragSupportKind>(['trunk', 'branch', 'kickstand']);
 
 export type JointDragSupportByKind = {
   trunk: Trunk;
@@ -119,12 +127,22 @@ export function commitJointDragSupport<K extends JointDragSupportKind>(
   const { clearPreview = true, stripDiskLengthOverride = false } = options;
   const committed = normalizeCommittedSupport(kind, support, stripDiskLengthOverride);
 
-  if (kind === 'trunk') {
-    updateTrunk(committed as Trunk);
-  } else if (kind === 'branch') {
-    updateBranch(committed as unknown as Branch);
-  } else {
-    updateKickstand(committed as unknown as Kickstand);
+  // Exhaustive rather than a trailing else: a fourth draggable type would
+  // otherwise be written silently into the kickstand collection.
+  switch (kind) {
+    case 'trunk':
+      updateTrunk(committed as Trunk);
+      break;
+    case 'branch':
+      updateBranch(committed as unknown as Branch);
+      break;
+    case 'kickstand':
+      updateKickstand(committed as unknown as Kickstand);
+      break;
+    default: {
+      const unhandled: never = kind;
+      throw new Error(`No joint-drag commit for support type ${String(unhandled)}`);
+    }
   }
 
   if (clearPreview) {
