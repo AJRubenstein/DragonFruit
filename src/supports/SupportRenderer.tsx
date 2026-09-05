@@ -557,7 +557,10 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             if (brace.placementSurface === 'exterior') return false;
             return resolveKnotInterior(brace.startKnotId) || resolveKnotInterior(brace.endKnotId);
         };
-    }, [interiorView, state.trunks, state.branches, state.leaves, state.twigs, state.sticks, state.braces, state.knots, kickstandState.knots, matchesInteriorContact]);
+        // The loop above walks every shafted type from the registry, so the
+        // whole snapshot is the dependency. The hand-written eight this
+        // replaces predated that conversion and omitted anchors.
+    }, [interiorView, state, kickstandState.knots, matchesInteriorContact]);
 
     const entitySegmentModelIdById = useMemo(() => {
         const map = new Map<string, string | undefined>();
