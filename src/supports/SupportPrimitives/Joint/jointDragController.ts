@@ -52,31 +52,9 @@ export function computeJointDragSupportPreview<K extends JointDragSupportKind>({
   contextStart,
   skipContactConeSolve,
 }: ComputeJointDragSupportPreviewOptions<K>): JointDragSupportByKind[K] {
-  if (kind === 'trunk') {
-    return moveJoint(
-      support as Trunk,
-      jointId,
-      newPos,
-      undefined,
-      isCurveMode,
-      root,
-      contextStart,
-      { skipContactConeSolve },
-    ) as JointDragSupportByKind[K];
-  }
-
-  if (kind === 'branch') {
-    return moveJoint(
-      support as unknown as Trunk,
-      jointId,
-      newPos,
-      undefined,
-      isCurveMode,
-      undefined,
-      contextStart,
-      { skipContactConeSolve },
-    ) as unknown as JointDragSupportByKind[K];
-  }
+  // Only a plate-rooted type constrains its drag against a root; a knot-hosted
+  // one is clamped from its host instead, so passing a root would move it.
+  const rooted = getSupportTypeDescriptor(kind).lower.kind === 'plateRoot';
 
   return moveJoint(
     support as unknown as Trunk,
@@ -84,7 +62,7 @@ export function computeJointDragSupportPreview<K extends JointDragSupportKind>({
     newPos,
     undefined,
     isCurveMode,
-    root,
+    rooted ? root : undefined,
     contextStart,
     { skipContactConeSolve },
   ) as unknown as JointDragSupportByKind[K];
