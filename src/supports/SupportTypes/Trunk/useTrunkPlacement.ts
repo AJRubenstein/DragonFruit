@@ -12,7 +12,7 @@ import type { ContactCone } from '../../SupportPrimitives/ContactCone/types';
 import { calculateSmoothedNormal } from '../../PlacementLogic/PlacementUtils';
 import { getSettings } from '../../Settings/state';
 import { decideGridPlacement } from '../../PlacementLogic/Grid';
-import { selectTypeForPlacement } from '../../supportTypeRegistry';
+import { contactEndpointsFor, selectTypeForPlacement, type SupportTypeId } from '../../supportTypeRegistry';
 import { clearSupportSelection } from '../../interaction/shared/selection/selectionController';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
 import { perfMark, perfMeasureWithSpike, perfEndFrame } from '../../PlacementLogic/Pathfinding/pathfindingPerf';
@@ -38,29 +38,39 @@ function getPlacementSurfaceFromHit(hit: THREE.Intersection | null): PlacementSu
     return hit?.object?.userData?.supportPlacementSurface === 'interior' ? 'interior' : undefined;
 }
 
-function markContactConePlacementSurface<T extends ContactCone | undefined>(cone: T, surface?: PlacementSurface): T {
-    if (!cone || !surface) return cone;
-    return {
-        ...cone,
-        placementSurface: surface,
-    } as T;
+function markContactPlacementSurface<T>(contact: T, surface?: PlacementSurface): T {
+    if (!contact || !surface) return contact;
+    return { ...contact, placementSurface: surface } as T;
 }
 
-function markContactDiskPlacementSurface<T extends ContactDisk | undefined>(disk: T, surface?: PlacementSurface): T {
-    if (!disk || !surface) return disk;
-    return {
-        ...disk,
-        placementSurface: surface,
-    } as T;
+/**
+ * Stamps the placement surface on a support's declared contacts.
+ *
+ * Which fields those are comes from the registry, so this is one function
+ * rather than one per type. Cone and disk take the same stamp; they differed
+ * only in the generic they were written against.
+ */
+function markPlacementSurface<T extends object>(
+    typeId: SupportTypeId,
+    entity: T,
+    surface?: PlacementSurface,
+): T {
+    if (!surface) return entity;
+
+    const next = { ...entity } as Record<string, unknown>;
+    for (const { field } of contactEndpointsFor(typeId)) {
+        if (next[field]) next[field] = markContactPlacementSurface(next[field], surface);
+    }
+    return next as T;
 }
 
 function markSupportDataPlacementSurface(data: SupportData, surface?: PlacementSurface): SupportData {
     if (!surface) return data;
     return {
         ...data,
-        contactCone: markContactConePlacementSurface(data.contactCone, surface),
-        contactCones: data.contactCones?.map((cone) => markContactConePlacementSurface(cone, surface)),
-        contactDisks: data.contactDisks?.map((disk) => markContactDiskPlacementSurface(disk, surface)),
+        contactCone: markContactPlacementSurface(data.contactCone, surface),
+        contactCones: data.contactCones?.map((cone) => markContactPlacementSurface(cone, surface)),
+        contactDisks: data.contactDisks?.map((disk) => markContactPlacementSurface(disk, surface)),
     };
 }
 
@@ -68,54 +78,9 @@ function markTrunkBuildPlacementSurface<T extends ReturnType<typeof buildTrunkDa
     if (!surface) return build;
     return {
         ...build,
-        trunk: {
-            ...build.trunk,
-            contactCone: markContactConePlacementSurface(build.trunk.contactCone, surface),
-        },
+        trunk: markPlacementSurface('trunk', build.trunk, surface),
         supportData: markSupportDataPlacementSurface(build.supportData, surface),
     } as T;
-}
-
-function markBranchPlacementSurface(branch: Branch, surface?: PlacementSurface): Branch {
-    if (!surface) return branch;
-    return {
-        ...branch,
-        contactCone: markContactConePlacementSurface(branch.contactCone, surface),
-    };
-}
-
-function markLeafPlacementSurface(leaf: Leaf, surface?: PlacementSurface): Leaf {
-    if (!surface) return leaf;
-    return {
-        ...leaf,
-        contactCone: markContactConePlacementSurface(leaf.contactCone, surface),
-    };
-}
-
-function markAnchorPlacementSurface(anchor: Anchor, surface?: PlacementSurface): Anchor {
-    if (!surface) return anchor;
-    return {
-        ...anchor,
-        contactCone: markContactConePlacementSurface(anchor.contactCone, surface),
-    };
-}
-
-function markStickPlacementSurface(stick: Stick, surface?: PlacementSurface): Stick {
-    if (!surface) return stick;
-    return {
-        ...stick,
-        contactConeA: markContactConePlacementSurface(stick.contactConeA, surface),
-        contactConeB: markContactConePlacementSurface(stick.contactConeB, surface),
-    };
-}
-
-function markTwigPlacementSurface(twig: Twig, surface?: PlacementSurface): Twig {
-    if (!surface) return twig;
-    return {
-        ...twig,
-        contactDiskA: markContactDiskPlacementSurface(twig.contactDiskA, surface),
-        contactDiskB: markContactDiskPlacementSurface(twig.contactDiskB, surface),
-    };
 }
 
 /**
@@ -675,14 +640,14 @@ export function useTrunkPlacementV2() {
                 const cavityStick = buildCavityStick(tipPos, tipNormal, modelId, mesh);
                 if (cavityStick) {
                     if (cavityStick.kind === 'twig') {
-                        const twig = markTwigPlacementSurface(cavityStick.twig, placementSurface);
+                        const twig = markPlacementSurface('twig', cavityStick.twig, placementSurface);
                         addTwig(twig);
                         pushSupportHistory({
                             type: SUPPORT_ADD_TWIG,
                             payload: { twig },
                         });
                     } else {
-                        const stick = markStickPlacementSurface(cavityStick.stick, placementSurface);
+                        const stick = markPlacementSurface('stick', cavityStick.stick, placementSurface);
                         addStick(stick);
                         pushSupportHistory({
                             type: SUPPORT_ADD_STICK,
@@ -734,7 +699,7 @@ export function useTrunkPlacementV2() {
         });
 
         if (decision.kind === 'place_anchor') {
-            const anchor = markAnchorPlacementSurface(decision.anchor, placementSurface);
+            const anchor = markPlacementSurface('anchor', decision.anchor, placementSurface);
             addAnchor(anchor);
             pushSupportHistory({
                 type: SUPPORT_ADD_ANCHOR,
@@ -745,7 +710,7 @@ export function useTrunkPlacementV2() {
         }
 
         if (decision.kind === 'place_branch') {
-            const branch = markBranchPlacementSurface(decision.branch, placementSurface);
+            const branch = markPlacementSurface('branch', decision.branch, placementSurface);
             addKnot(decision.knot);
             addBranch(branch);
 
@@ -779,7 +744,7 @@ export function useTrunkPlacementV2() {
         }
 
         if (decision.kind === 'place_leaf') {
-            const leaf = markLeafPlacementSurface(decision.leaf, placementSurface);
+            const leaf = markPlacementSurface('leaf', decision.leaf, placementSurface);
             addKnot(decision.knot);
             addLeaf(leaf);
 
@@ -796,7 +761,7 @@ export function useTrunkPlacementV2() {
 
         if (decision.kind === 'replace_trunk') {
             const before = cloneSupportState(getSnapshot());
-            const promoteBranch = markBranchPlacementSurface(decision.promoteBranch, placementSurface);
+            const promoteBranch = markPlacementSurface('branch', decision.promoteBranch, placementSurface);
             const trunkBuild = markTrunkBuildPlacementSurface(decision.trunkBuild, placementSurface);
 
             // Materialize the promoted branch (and its knot) into state so the planner can reference it.
@@ -838,14 +803,14 @@ export function useTrunkPlacementV2() {
                 const cavityStick = buildCavityStick(tipPos, tipNormal, modelId, mesh);
                 if (cavityStick) {
                     if (cavityStick.kind === 'twig') {
-                        const twig = markTwigPlacementSurface(cavityStick.twig, placementSurface);
+                        const twig = markPlacementSurface('twig', cavityStick.twig, placementSurface);
                         addTwig(twig);
                         pushSupportHistory({
                             type: SUPPORT_ADD_TWIG,
                             payload: { twig },
                         });
                     } else {
-                        const stick = markStickPlacementSurface(cavityStick.stick, placementSurface);
+                        const stick = markPlacementSurface('stick', cavityStick.stick, placementSurface);
                         addStick(stick);
                         pushSupportHistory({
                             type: SUPPORT_ADD_STICK,
