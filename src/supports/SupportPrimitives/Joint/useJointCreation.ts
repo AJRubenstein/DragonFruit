@@ -86,35 +86,12 @@ export function useJointCreation() {
                  normal: { x: normal.x, y: normal.y, z: normal.z }
              });
              
-             // Resolve which parent (trunk/branch/twig/stick) owns this segment.
-             // We keep the existing target shape by storing the parent id in `trunkId`.
+             // Which support owns this segment, across every shafted type.
+             // The target shape keeps the owner's id in `trunkId`.
              const segmentId = result.targetId;
              if (segmentId) {
-                 const trunks = Object.values(supportState.trunks);
-                 const trunk = trunks.find(t => t.segments.some(s => s.id === segmentId));
-                 if (trunk) {
-                     setTarget({ trunkId: trunk.id, segmentId, t: result.t });
-                 } else {
-                     const branches = Object.values(supportState.branches);
-                     const branch = branches.find(b => b.segments.some(s => s.id === segmentId));
-                     if (branch) {
-                         setTarget({ trunkId: branch.id, segmentId, t: result.t });
-                     } else {
-                         const twigs = Object.values(supportState.twigs);
-                         const twig = twigs.find(tg => tg.segments.some(s => s.id === segmentId));
-                         if (twig) {
-                             setTarget({ trunkId: twig.id, segmentId, t: result.t });
-                         } else {
-                             const sticks = Object.values(supportState.sticks);
-                             const stick = sticks.find(st => st.segments.some(s => s.id === segmentId));
-                             if (stick) {
-                                 setTarget({ trunkId: stick.id, segmentId, t: result.t });
-                             } else {
-                                 setTarget(null);
-                             }
-                         }
-                     }
-                 }
+                 const owner = findShaftOwnerOfSegment(segmentId);
+                 setTarget(owner ? { trunkId: owner.id, segmentId, t: result.t } : null);
              }
         } else {
             if (preview !== null) setPreview(null);

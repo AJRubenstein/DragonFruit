@@ -5,6 +5,8 @@ import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { X } from 'lucide-react';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { getSnapshot as getSupportSnapshot } from '@/supports/state';
+import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
+import type { Segment } from '@/supports/types';
 import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { getPickingDiagnosticsSnapshot } from '@/components/picking/pickingDiagnostics';
 import {
@@ -123,34 +125,26 @@ function computeSupportDiagnostics(): SupportDiagnosticsStats {
   const kickstandState = getSupportSnapshot();
   const picking = getPickingDiagnosticsSnapshot();
 
-  const trunks = Object.values(supportState.trunks);
-  const branches = Object.values(supportState.branches);
-  const twigs = Object.values(supportState.twigs);
-  const sticks = Object.values(supportState.sticks);
-  const braces = Object.values(supportState.braces);
-  const kickstands = Object.values(kickstandState.kickstands);
-
-  const segmentCount =
-    trunks.reduce((sum, trunk) => sum + trunk.segments.length, 0)
-    + branches.reduce((sum, branch) => sum + branch.segments.length, 0)
-    + twigs.reduce((sum, twig) => sum + twig.segments.length, 0)
-    + sticks.reduce((sum, stick) => sum + stick.segments.length, 0)
-    + kickstands.reduce((sum, kickstand) => sum + kickstand.segments.length, 0)
-    + braces.length;
-
+  // Every type's segments and joints. A brace has no segments but draws one
+  // shaft, so it counts as one each.
   const uniqueJointIds = new Set<string>();
-  const collectSegmentJoints = (segments: Array<{ topJoint?: { id: string } | null; bottomJoint?: { id: string } | null }>) => {
-    for (const segment of segments) {
-      if (segment.topJoint?.id) uniqueJointIds.add(segment.topJoint.id);
-      if (segment.bottomJoint?.id) uniqueJointIds.add(segment.bottomJoint.id);
-    }
-  };
+  let segmentCount = 0;
 
-  trunks.forEach((trunk) => collectSegmentJoints(trunk.segments));
-  branches.forEach((branch) => collectSegmentJoints(branch.segments));
-  twigs.forEach((twig) => collectSegmentJoints(twig.segments));
-  sticks.forEach((stick) => collectSegmentJoints(stick.segments));
-  kickstands.forEach((kickstand) => collectSegmentJoints(kickstand.segments));
+  for (const descriptor of SUPPORT_TYPES) {
+    const collection = supportState[descriptor.location.key] as unknown as Record<string, { segments?: Segment[] }>;
+
+    for (const entity of Object.values(collection ?? {})) {
+      if (!descriptor.hasSegments) {
+        if (descriptor.id === 'brace') segmentCount += 1;
+        continue;
+      }
+      for (const segment of entity.segments ?? []) {
+        segmentCount += 1;
+        if (segment.topJoint?.id) uniqueJointIds.add(segment.topJoint.id);
+        if (segment.bottomJoint?.id) uniqueJointIds.add(segment.bottomJoint.id);
+      }
+    }
+  }
 
   const estimatedRenderablePrimitives =
     segmentCount
@@ -169,13 +163,13 @@ function computeSupportDiagnostics(): SupportDiagnosticsStats {
 
   return {
     roots: Object.keys(supportState.roots).length,
-    trunks: trunks.length,
-    branches: branches.length,
+    trunks: Object.keys(supportState.trunks).length,
+    branches: Object.keys(supportState.branches).length,
     leaves: Object.keys(supportState.leaves).length,
-    twigs: twigs.length,
-    sticks: sticks.length,
-    braces: braces.length,
-    kickstands: kickstands.length,
+    twigs: Object.keys(supportState.twigs).length,
+    sticks: Object.keys(supportState.sticks).length,
+    braces: Object.keys(supportState.braces).length,
+    kickstands: Object.keys(supportState.kickstands).length,
     knots: Object.keys(supportState.knots).length,
     segmentCount,
     jointCount: uniqueJointIds.size,
