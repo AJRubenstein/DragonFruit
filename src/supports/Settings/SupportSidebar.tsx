@@ -208,9 +208,18 @@ export function SupportSidebar() {
     const curveSelection = getCurveSettingsSelection(supportState);
     const showCurvePage = curveSelection !== null;
     const selectedCategory = supportState.selectedCategory ?? undefined;
-    const editableTarget = React.useMemo(
+    // Keyed on what it resolves from, not on the whole snapshot: the target is
+    // a fresh object each call, so re-running it on every store write gives an
+    // effect that depends on it a new value every time.
+    const resolvedTarget = React.useMemo(
         () => resolveEditableSupportTarget(supportState.selectedId, selectedCategory),
-        [supportState, selectedCategory],
+        [supportState.selectedId, selectedCategory],
+    );
+    const editableTargetKey = resolvedTarget ? `${resolvedTarget.kind}:${resolvedTarget.id}` : null;
+    const editableTarget = React.useMemo(
+        () => resolvedTarget,
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- identity follows the key
+        [editableTargetKey],
     );
     const selectedSupportSettings = React.useMemo(() => {
         if (!editableTarget) return null;
