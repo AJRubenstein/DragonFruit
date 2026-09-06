@@ -53,8 +53,10 @@ export function renderShaftSegment({
         return null;
     }
 
+    // `key` stays out of this object: React requires it passed directly, not
+    // through a spread.
+    const key = `shaft-${segment.id}`;
     const shared = {
-        key: `shaft-${segment.id}`,
         id: segment.id,
         start,
         end,
@@ -71,6 +73,7 @@ export function renderShaftSegment({
     if (isBezier) {
         return (
             <BezierRenderer
+                key={key}
                 {...shared}
                 control1={segment.controlPoint1}
                 control2={segment.controlPoint2}
@@ -84,6 +87,7 @@ export function renderShaftSegment({
 
     return (
         <ShaftRenderer
+            key={key}
             {...shared}
             color={visuals.color}
             diameterStart={diameterStart}
