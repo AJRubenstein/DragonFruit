@@ -30,6 +30,9 @@ export function JointGizmo() {
         const live = livePreviewRef.current;
         return live?.typeId === typeId ? live.support as T : null;
     };
+    const setLivePreview = (typeId: SupportTypeId, support: unknown) => {
+        livePreviewRef.current = { typeId, support };
+    };
     const pendingDeltaRef = useRef<THREE.Vector3>(new THREE.Vector3());
     const moveRafRef = useRef<number | null>(null);
     const gizmoTargetRef = useRef<THREE.Group>(null);
@@ -290,7 +293,7 @@ export function JointGizmo() {
                 root: state.roots[trunk.rootId],
             });
             if (livePreviewOf<typeof newTrunk>('trunk') !== newTrunk) {
-                livePreviewRef.current = { typeId: 'trunk', support: newTrunk };
+                setLivePreview('trunk', newTrunk);
                 publishJointDragSupportPreview('trunk', newTrunk);
             }
             const clamped = getJointPosInSegments(newTrunk.segments as any[], joint.id);
@@ -307,7 +310,7 @@ export function JointGizmo() {
                 isCurveMode: false,
             }) as Branch;
             if (livePreviewOf<typeof newBranch>('branch') !== newBranch) {
-                livePreviewRef.current = { typeId: 'branch', support: newBranch };
+                setLivePreview('branch', newBranch);
                 publishJointDragSupportPreview('branch', newBranch);
             }
             const clamped = getJointPosInSegments(newBranch.segments as any[], joint.id);
@@ -382,7 +385,7 @@ export function JointGizmo() {
                 contactDiskA: nextDiskA,
                 contactDiskB: nextDiskB,
             };
-            livePreviewRef.current = { typeId: 'twig', support: newTwig };
+            setLivePreview('twig', newTwig);
             emitSupportDragPreview('twig', newTwig.id, newTwig);
         } else if (stick) {
             const nextSegments = updateSegmentsJointPos(stick.segments as any[], joint.id, newPos) as any;
@@ -399,7 +402,7 @@ export function JointGizmo() {
                 contactConeA: nextConeA,
                 contactConeB: nextConeB,
             };
-            livePreviewRef.current = { typeId: 'stick', support: newStick };
+            setLivePreview('stick', newStick);
             emitSupportDragPreview('stick', newStick.id, newStick);
         } else if (kickstand) {
             const root = state.roots[kickstand.rootId];
@@ -421,7 +424,7 @@ export function JointGizmo() {
                 contextStart,
             });
             if (livePreviewOf<typeof newKickstand>('kickstand') !== newKickstand) {
-                livePreviewRef.current = { typeId: 'kickstand', support: newKickstand };
+                setLivePreview('kickstand', newKickstand);
                 publishJointDragSupportPreview('kickstand', newKickstand);
             }
         }
