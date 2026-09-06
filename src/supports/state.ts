@@ -1429,7 +1429,11 @@ function normaliseSupportState(next: SupportState): SupportState {
 
     for (const descriptor of overrides) {
         for (const [id, entity] of Object.entries(raw[descriptor.location.key] as Record<string, SupportEntityAny>)) {
-            supports[id] = { ...entity, typeId: descriptor.id } as SupportEntityAny;
+            // Already stamped entities pass through by reference; copying every
+            // one on every write is what made a geometry write cost a frame.
+            supports[id] = (entity as { typeId?: SupportTypeId }).typeId === descriptor.id
+                ? entity
+                : { ...entity, typeId: descriptor.id } as SupportEntityAny;
         }
     }
 
