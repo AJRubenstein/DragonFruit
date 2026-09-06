@@ -32,26 +32,15 @@ function hostsAShaft(containerType: KnotHostType): boolean {
     return containerType !== 'leafCone';
 }
 
-/**
- * @deprecated for removal -- one optional field per support type. A single
- * `{ typeId, entity }` would carry the same thing and let HOST_SLOT, shaftOf
- * and the containerType chains go with it.
- */
+/** What a knot is riding: one entity, its type, and the hosts its ends need. */
 interface ActiveHost {
     segmentId: string;
     containerType: KnotHostType;
-    trunk?: Trunk;
-    branch?: Branch;
-    twig?: Twig;
-    stick?: Stick;
-    anchor?: Anchor;
-    root?: Roots;
-    parentKnot?: Knot;
+    /** The support the knot rides. Absent only for a leaf cone. */
+    entity?: { id: string; segments?: Segment[] };
+    /** The root and host knot the entity's declared endpoints resolve from. */
+    hosts: EndpointHosts;
     leafId?: string;
-    brace?: Brace;
-    kickstand?: Kickstand;
-    kickstandRoot?: Roots;
-    kickstandHostKnot?: Knot;
     start: THREE.Vector3;
     end: THREE.Vector3;
     // Topology Map: BranchID -> 'UP' (Knot Z < Joint Z) or 'DOWN' (Knot Z > Joint Z)
@@ -359,18 +348,6 @@ export function useKnotInteraction(enabled: boolean = true) {
     };
 
     /**
-     * Which ActiveHost slot each type's entity lands in.
-     *
-     * @deprecated for removal -- ActiveHost carries one optional field per
-     * type, so this map exists only to pick between them. Collapsing it to a
-     * single `{ typeId, entity }` removes both.
-     */
-    const HOST_SLOT: Record<string, keyof ActiveHost> = {
-        trunk: 'trunk', branch: 'branch', twig: 'twig',
-        stick: 'stick', anchor: 'anchor', kickstand: 'kickstand',
-    };
-
-    /**
      * An ActiveHost for any shafted type, with the hosts its lower and upper
      * endpoints declare. Was six near-identical branches.
      */
@@ -383,17 +360,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             | null;
         if (!entity) return null;
 
-        const host: ActiveHost = {
-            segmentId,
-            containerType: typeId as ActiveHost['containerType'],
-            start: new THREE.Vector3(),
-            end: new THREE.Vector3(),
-            initialTopology: {},
-        };
-        (host as unknown as Record<string, unknown>)[HOST_SLOT[typeId] ?? typeId] = entity;
-
         // A plate-rooted type needs its root; a knot-hosted one its host knot.
-        // Kickstand needs both, and keeps them in its own named slots.
         const root = descriptor.lower.kind === 'plateRoot' && entity.rootId
             ? getRootById(entity.rootId) ?? undefined
             : undefined;
@@ -405,15 +372,15 @@ export function useKnotInteraction(enabled: boolean = true) {
             : undefined;
         if (descriptor.upper.kind === 'knot' && !hostKnot) return null;
 
-        if (typeId === 'kickstand') {
-            host.kickstandRoot = root;
-            host.kickstandHostKnot = hostKnot;
-        } else {
-            host.root = root;
-            host.parentKnot = hostKnot;
-        }
-
-        return host;
+        return {
+            segmentId,
+            containerType: typeId,
+            entity: entity as ActiveHost['entity'],
+            hosts: { root, hostKnot },
+            start: new THREE.Vector3(),
+            end: new THREE.Vector3(),
+            initialTopology: {},
+        };
     };
 
     const findHost = (knot: Knot): ActiveHost | null => {
@@ -427,6 +394,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                 host = {
                     segmentId: knot.parentShaftId,
                     containerType: 'leafCone',
+                    hosts: {},
                     leafId,
                     start: new THREE.Vector3(),
                     end: new THREE.Vector3(),
@@ -443,7 +411,8 @@ export function useKnotInteraction(enabled: boolean = true) {
                 host = {
                     segmentId: knot.parentShaftId,
                     containerType: 'brace',
-                    brace,
+                    entity: brace,
+                    hosts: {},
                     start: new THREE.Vector3(),
                     end: new THREE.Vector3(),
                     initialTopology: {},
@@ -486,24 +455,10 @@ export function useKnotInteraction(enabled: boolean = true) {
         return host;
     };
 
-    /**
-     * The shafted entity and hosts backing this host record, if it has one.
-     *
-     * @deprecated for removal -- the switch enumerates types only because
-     * ActiveHost stores each in its own field. Goes with HOST_SLOT.
-     */
+    /** The shafted entity and hosts backing this host record, if it has one. */
     const shaftOf = (host: ActiveHost): { entity: { segments: Segment[] }; hosts: EndpointHosts } | null => {
-        switch (host.containerType) {
-            case 'trunk': return host.trunk ? { entity: host.trunk, hosts: { root: host.root } } : null;
-            case 'branch': return host.branch ? { entity: host.branch, hosts: { hostKnot: host.parentKnot } } : null;
-            case 'twig': return host.twig ? { entity: host.twig, hosts: {} } : null;
-            case 'stick': return host.stick ? { entity: host.stick, hosts: {} } : null;
-            case 'anchor': return host.anchor ? { entity: host.anchor, hosts: {} } : null;
-            case 'kickstand': return host.kickstand
-                ? { entity: host.kickstand, hosts: { root: host.kickstandRoot, hostKnot: host.kickstandHostKnot } }
-                : null;
-            default: return null;
-        }
+        if (!hostsAShaft(host.containerType) || !host.entity?.segments) return null;
+        return { entity: host.entity as { segments: Segment[] }, hosts: host.hosts };
     };
 
     const resolveEndpoints = (host: ActiveHost) => {
@@ -539,9 +494,10 @@ export function useKnotInteraction(enabled: boolean = true) {
             const endVec = new THREE.Vector3(socketPos.x, socketPos.y, socketPos.z);
             host.start.copy(endVec.clone().add(axis.multiplyScalar(-len)));
             host.end.copy(endVec);
-        } else if (host.containerType === 'brace' && host.brace) {
-            const startKnot = getKnotById(host.brace.startKnotId);
-            const endKnot = getKnotById(host.brace.endKnotId);
+        } else if (host.containerType === 'brace' && host.entity) {
+            const brace = host.entity as unknown as Brace;
+            const startKnot = getKnotById(brace.startKnotId);
+            const endKnot = getKnotById(brace.endKnotId);
             if (!startKnot || !endKnot) return;
             host.start.set(startKnot.pos.x, startKnot.pos.y, startKnot.pos.z);
             host.end.set(endKnot.pos.x, endKnot.pos.y, endKnot.pos.z);
@@ -571,15 +527,16 @@ export function useKnotInteraction(enabled: boolean = true) {
             return out;
         }
 
-        if (host.containerType === 'brace' && host.brace) {
-            const startKnot = getKnotById(host.brace.startKnotId);
-            const endKnot = getKnotById(host.brace.endKnotId);
+        if (host.containerType === 'brace' && host.entity) {
+            const brace = host.entity as unknown as Brace;
+            const startKnot = getKnotById(brace.startKnotId);
+            const endKnot = getKnotById(brace.endKnotId);
             if (startKnot && endKnot) {
                 out.push({
                     segmentId: host.segmentId,
                     start: new THREE.Vector3(startKnot.pos.x, startKnot.pos.y, startKnot.pos.z),
                     end: new THREE.Vector3(endKnot.pos.x, endKnot.pos.y, endKnot.pos.z),
-                    diameter: host.brace.profile.diameter,
+                    diameter: brace.profile.diameter,
                 });
             }
         }
@@ -861,12 +818,12 @@ export function useKnotInteraction(enabled: boolean = true) {
             if (
                 activeKnotIdAtEnd
                 && activeHostAtEnd?.containerType === 'twig'
-                && activeHostAtEnd.twig
+                && (activeHostAtEnd.entity as unknown as Twig)
                 && previewKnotAtEnd
                 && previewKnotAtEnd.t !== undefined
             ) {
                 const localTwigDia = resolveTwigDiameterAtSegmentT(
-                    activeHostAtEnd.twig,
+                    (activeHostAtEnd.entity as unknown as Twig),
                     activeHostAtEnd.segmentId,
                     previewKnotAtEnd.t,
                 );
@@ -1012,9 +969,12 @@ export function useKnotInteraction(enabled: boolean = true) {
         let bestT = projectedOnHost.t;
         let bestDistSq = Number.POSITIVE_INFINITY;
 
-        if (host.containerType === 'brace' && host.brace?.curve?.type === 'bezier') {
-            const startKnot = getKnotById(host.brace.startKnotId);
-            const endKnot = getKnotById(host.brace.endKnotId);
+        const braceHost = host.containerType === 'brace'
+            ? host.entity as unknown as Brace | undefined
+            : undefined;
+        if (braceHost?.curve?.type === 'bezier') {
+            const startKnot = getKnotById(braceHost.startKnotId);
+            const endKnot = getKnotById(braceHost.endKnotId);
             if (startKnot && endKnot) {
                 const STEPS = 40;
                 let best = Infinity;
@@ -1024,8 +984,8 @@ export function useKnotInteraction(enabled: boolean = true) {
                     const t = i / STEPS;
                     const p = getBezierPointAtT(
                         startKnot.pos,
-                        host.brace.curve.controlPoint1,
-                        host.brace.curve.controlPoint2,
+                        braceHost.curve.controlPoint1,
+                        braceHost.curve.controlPoint2,
                         endKnot.pos,
                         t
                     );
@@ -1287,9 +1247,12 @@ export function useKnotInteraction(enabled: boolean = true) {
         let finalOnLine = snapVec3(host.start.clone().add(lineVec.clone().multiplyScalar(t)));
 
         // For curved braces: keep knot exactly on the curve and derive t from closest sample.
-        if (host.containerType === 'brace' && host.brace?.curve?.type === 'bezier') {
-            const startKnot = getKnotById(host.brace.startKnotId);
-            const endKnot = getKnotById(host.brace.endKnotId);
+        const curvedBrace = host.containerType === 'brace'
+            ? host.entity as unknown as Brace | undefined
+            : undefined;
+        if (curvedBrace?.curve?.type === 'bezier') {
+            const startKnot = getKnotById(curvedBrace.startKnotId);
+            const endKnot = getKnotById(curvedBrace.endKnotId);
             if (startKnot && endKnot) {
                 const STEPS = 60;
                 let best = Infinity;
@@ -1301,8 +1264,8 @@ export function useKnotInteraction(enabled: boolean = true) {
                     const tt = i / STEPS;
                     const p = getBezierPointAtT(
                         startKnot.pos,
-                        host.brace.curve.controlPoint1,
-                        host.brace.curve.controlPoint2,
+                        curvedBrace.curve.controlPoint1,
+                        curvedBrace.curve.controlPoint2,
                         endKnot.pos,
                         tt
                     );
@@ -1320,100 +1283,35 @@ export function useKnotInteraction(enabled: boolean = true) {
 
                 const startDia = Math.max(
                     0.001,
-                    (startKnot.diameter ?? (host.brace.profile.diameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM
+                    (startKnot.diameter ?? (curvedBrace!.profile.diameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM
                 );
                 const endDia = Math.max(
                     0.001,
-                    (endKnot.diameter ?? (host.brace.profile.diameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM
+                    (endKnot.diameter ?? (curvedBrace!.profile.diameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM
                 );
                 bestDiameter = THREE.MathUtils.lerp(startDia, endDia, t);
             }
         }
 
-        if (host.containerType === 'trunk') {
-            if (host.trunk && host.root) {
-                const seg = host.trunk.segments.find(s => s.id === host.segmentId);
-                if (seg?.type === 'bezier') {
-                    const proj = projectOntoBezierCurve(
-                        raycaster.ray,
-                        host.start,
-                        host.end,
-                        seg.controlPoint1,
-                        seg.controlPoint2,
-                        BEZIER_PROJECTION_STEPS,
-                    );
-                    t = proj.t;
-                    finalOnLine = snapVec3(new THREE.Vector3(proj.point.x, proj.point.y, proj.point.z));
-                    bestDiameter = seg.diameter;
-                }
-            }
-        } else if (host.containerType === 'branch') {
-            if (host.branch && host.parentKnot) {
-                const seg = host.branch.segments.find(s => s.id === host.segmentId);
-                if (seg?.type === 'bezier') {
-                    const proj = projectOntoBezierCurve(
-                        raycaster.ray,
-                        host.start,
-                        host.end,
-                        seg.controlPoint1,
-                        seg.controlPoint2,
-                        BEZIER_PROJECTION_STEPS,
-                    );
-                    t = proj.t;
-                    finalOnLine = snapVec3(new THREE.Vector3(proj.point.x, proj.point.y, proj.point.z));
-                    bestDiameter = seg.diameter;
-                }
-            }
-        } else if (host.containerType === 'twig') {
-            if (host.twig) {
-                const seg = host.twig.segments.find(s => s.id === host.segmentId);
-                if (seg?.type === 'bezier') {
-                    const proj = projectOntoBezierCurve(
-                        raycaster.ray,
-                        host.start,
-                        host.end,
-                        seg.controlPoint1,
-                        seg.controlPoint2,
-                        BEZIER_PROJECTION_STEPS,
-                    );
-                    t = proj.t;
-                    finalOnLine = snapVec3(new THREE.Vector3(proj.point.x, proj.point.y, proj.point.z));
-                    bestDiameter = seg.diameter;
-                }
-            }
-        } else if (host.containerType === 'stick') {
-            if (host.stick) {
-                const seg = host.stick.segments.find(s => s.id === host.segmentId);
-                if (seg?.type === 'bezier') {
-                    const proj = projectOntoBezierCurve(
-                        raycaster.ray,
-                        host.start,
-                        host.end,
-                        seg.controlPoint1,
-                        seg.controlPoint2,
-                        BEZIER_PROJECTION_STEPS,
-                    );
-                    t = proj.t;
-                    finalOnLine = snapVec3(new THREE.Vector3(proj.point.x, proj.point.y, proj.point.z));
-                    bestDiameter = seg.diameter;
-                }
-            }
-        } else if (host.containerType === 'kickstand') {
-            if (host.kickstand) {
-                const seg = host.kickstand.segments.find(s => s.id === host.segmentId);
-                if (seg?.type === 'bezier') {
-                    const proj = projectOntoBezierCurve(
-                        raycaster.ray,
-                        host.start,
-                        host.end,
-                        seg.controlPoint1,
-                        seg.controlPoint2,
-                        BEZIER_PROJECTION_STEPS,
-                    );
-                    t = proj.t;
-                    finalOnLine = new THREE.Vector3(proj.point.x, proj.point.y, proj.point.z);
-                    bestDiameter = seg.diameter;
-                }
+        // Every shafted host projects onto its own bezier segment identically.
+        // Kickstand alone does not snap the result to the drag grid; that is
+        // pre-existing and recorded in docs/dev/backlog.md.
+        const shaft = shaftOf(host);
+        if (shaft) {
+            const seg = shaft.entity.segments.find((s: Segment) => s.id === host.segmentId);
+            if (seg?.type === 'bezier') {
+                const proj = projectOntoBezierCurve(
+                    raycaster.ray,
+                    host.start,
+                    host.end,
+                    seg.controlPoint1,
+                    seg.controlPoint2,
+                    BEZIER_PROJECTION_STEPS,
+                );
+                t = proj.t;
+                const projected = new THREE.Vector3(proj.point.x, proj.point.y, proj.point.z);
+                finalOnLine = host.containerType === 'kickstand' ? projected : snapVec3(projected);
+                bestDiameter = seg.diameter;
             }
         }
 
@@ -1435,11 +1333,13 @@ export function useKnotInteraction(enabled: boolean = true) {
             finalKnot.diameter = bestDiameter + 0.125;
         }
 
-        // Twig override: a knot on a twig live-tracks the twig's continuous
-        // disk-A→disk-B taper at its exact slide T and is sized 10% larger
-        // than that local diameter (same rule as the disk-end joints).
-        if (host.containerType === 'twig' && host.twig) {
-            const localTwigDia = resolveTwigDiameterAtSegmentT(host.twig, host.segmentId, t);
+        // A knot on a continuously tapered shaft live-tracks the taper at its
+        // exact slide T, sized 10% larger than that local diameter -- the same
+        // rule the disk-end joints use.
+        if (host.containerType === 'twig' && host.entity) {
+            const localTwigDia = resolveTwigDiameterAtSegmentT(
+                host.entity as unknown as Twig, host.segmentId, t,
+            );
             if (localTwigDia !== null) {
                 finalKnot.diameter = twigJointDiameterForLocalDiameter(localTwigDia);
             }
