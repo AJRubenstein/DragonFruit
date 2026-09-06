@@ -63,6 +63,8 @@ export interface SupportEntity {
     settingsCodeHex?: string;
     /** Set when a tool created this; absent when a person did. */
     generatedBy?: SupportGeneratedBy;
+    /** Auto-support origin, for debug origin colouring. */
+    origin?: SupportOrigin;
     /**
      * Which support type this is.
      *
@@ -156,37 +158,37 @@ export type SupportOrigin = SupportOriginId;
 /**
  * Trunk: A vertical column extending from Roots.
  */
-export interface Trunk extends SupportEntity {
+export interface TrunkFields {
     rootId: string; // Link to the Roots anchor
     baseDiameterMm?: number; // Baseline shaft diameter captured at creation/promotion
     segments: Segment[];
     contactCone?: ContactCone; // Terminal piece at model interface
-    /** Auto-support origin (debug origin coloring). */
-    origin?: SupportOrigin;
 }
+
+export type Trunk = SupportEntity & TrunkFields;
 
 /**
  * Branch: A column extending from a Knot on another support.
  */
-export interface Branch extends SupportEntity {
+export interface BranchFields {
     parentKnotId: string; // Link to the Knot on the parent
     segments: Segment[];
     contactCone?: ContactCone; // Terminal piece at model interface
-    /** Auto-support origin (debug origin coloring). */
-    origin?: SupportOrigin;
 }
+
+export type Branch = SupportEntity & BranchFields;
 
 /**
  * Leaf: A minimal model -> support connection.
  * Uses a contact tip on the model and a Knot on a host shaft.
  * No segments, no joints.
  */
-export interface Leaf extends SupportEntity {
+export interface LeafFields {
     parentKnotId: string;
     contactCone: ContactCone;
-    /** Auto-support origin (debug origin coloring). */
-    origin?: SupportOrigin;
 }
+
+export type Leaf = SupportEntity & LeafFields;
 
 export interface ContactDisk {
     id: string;
@@ -199,17 +201,21 @@ export interface ContactDisk {
     contactDiameterMm: number;
 }
 
-export interface Twig extends SupportEntity {
+export interface TwigFields {
     segments: Segment[];
     contactDiskA: ContactDisk;
     contactDiskB: ContactDisk;
 }
 
-export interface Stick extends SupportEntity {
+export type Twig = SupportEntity & TwigFields;
+
+export interface StickFields {
     segments: Segment[];
     contactConeA: ContactCone;
     contactConeB: ContactCone;
 }
+
+export type Stick = SupportEntity & StickFields;
 
 export type BraceCurve = {
     type: 'bezier';
@@ -227,22 +233,22 @@ export type BraceCurve = {
  * Bypasses grid system entirely. Not a target for branches, leaves, or braces.
  * Geometry: frustum root → joint → single segment → contact cone.
  */
-export interface Anchor extends SupportEntity {
+export interface AnchorFields {
     rootPos: Vec3;
     rootBaseDiameter: number;
     rootTopDiameter: number;
     rootHeight: number;
-    /** Auto-support origin (debug origin coloring). */
-    origin?: SupportOrigin;
     joint: Joint;
     segments: Segment[];
     contactCone: ContactCone;
 }
 
+export type Anchor = SupportEntity & AnchorFields;
+
 /**
  * Brace: A stabilizer bar connecting two supports.
  */
-export interface Brace extends SupportEntity {
+export interface BraceFields {
     startKnotId: string;
     endKnotId: string;
     placementSurface?: 'interior' | 'exterior';
@@ -253,10 +259,12 @@ export interface Brace extends SupportEntity {
     debugSection?: 'initial' | 'repeating';
 }
 
+export type Brace = SupportEntity & BraceFields;
+
 /**
  * Kickstand: A grounded column bracing a shaft it attaches to.
  */
-export interface Kickstand extends SupportEntity {
+export interface KickstandFields {
     rootId: string;
     hostKnotId: string;
     hostSegmentId: string;
@@ -273,6 +281,8 @@ export interface Kickstand extends SupportEntity {
         terminalEndDiameterMm: number;
     };
 }
+
+export type Kickstand = SupportEntity & KickstandFields;
 
 // --- Collection State ---
 
@@ -291,6 +301,37 @@ export interface Kickstand extends SupportEntity {
  * cascades, so there is no wrapper form.
  */
 export type SupportRemovedEntityByCollection = SupportEntityByCollection;
+
+/**
+ * The one place a support type is named.
+ *
+ * Each key is a type id; its value is that type's own fields, on top of
+ * `SupportEntity`. `SupportTypeId`, `SUPPORT_TYPE_COLLECTION` and the
+ * collection keys all derive from this, so renaming a key here renames the
+ * type everywhere and leaves every stale name a compile error.
+ */
+export interface SupportFieldsByType {
+    trunk: TrunkFields;
+    branch: BranchFields;
+    leaf: LeafFields;
+    twig: TwigFields;
+    stick: StickFields;
+    brace: BraceFields;
+    anchor: AnchorFields;
+    kickstand: KickstandFields;
+}
+
+/** Which collection each type's entities live in. */
+export interface SupportCollectionByType {
+    trunk: 'trunks';
+    branch: 'branches';
+    leaf: 'leaves';
+    twig: 'twigs';
+    stick: 'sticks';
+    brace: 'braces';
+    anchor: 'anchors';
+    kickstand: 'kickstands';
+}
 
 export interface SupportEntityByCollection {
     roots: Roots;
