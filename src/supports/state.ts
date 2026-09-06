@@ -1350,8 +1350,49 @@ export function reassignAllSupportModelIds(modelId: string): boolean {
     return changed || kickstandChanged;
 }
 
+/**
+ * Stamp every entity with the type of the collection holding it.
+ *
+ * `typeId` is applied at the store boundary, never by the builders. That holds
+ * only if everything entering the store passes a stamping writer, and
+ * `setSnapshot` did not -- so auto-support, undo and paste all wrote unstamped
+ * entities. Harmless while membership answers the type question; fatal once
+ * the collections are derived from the field.
+ *
+ * Returns `next` unchanged when nothing needed stamping.
+ */
+export function stampSupportTypeIds(next: SupportState): SupportState {
+    let changedAny = false;
+    const patched: Record<string, Record<string, unknown>> = {};
+
+    for (const descriptor of SUPPORT_TYPES) {
+        const key = descriptor.location.key;
+        const collection = next[key] as unknown as Record<string, { typeId?: SupportTypeId }>;
+        if (!collection) continue;
+
+        let changed = false;
+        let nextCollection = collection as Record<string, unknown>;
+
+        for (const id in collection) {
+            if (collection[id]?.typeId === descriptor.id) continue;
+            if (!changed) {
+                nextCollection = { ...collection };
+                changed = true;
+            }
+            nextCollection[id] = { ...collection[id], typeId: descriptor.id };
+        }
+
+        if (changed) {
+            patched[key] = nextCollection;
+            changedAny = true;
+        }
+    }
+
+    return changedAny ? { ...next, ...patched } as SupportState : next;
+}
+
 export function setSnapshot(next: SupportState) {
-    state = next;
+    state = stampSupportTypeIds(next);
     rebuildSupportSettingsHexCacheFromState();
     emitSupportInteractionReset('setSnapshot');
     notify();
@@ -2998,7 +3039,10 @@ export function updateLeaf(leaf: Leaf) {
         setCachedSupportSettingsHex('leaf', nextLeaf.id, nextLeaf.settingsCodeHex);
     }
 
-    const nextLeaves = { ...state.leaves, [nextLeaf.id]: nextLeaf };
+    // Stamped like every other writer. This one is hand-written rather than
+    // going through `applySupportEntityUpdate` -- it recomputes leaf-cone and
+    // brace-segment knot geometry -- and the stamp was what the copy dropped.
+    const nextLeaves = { ...state.leaves, [nextLeaf.id]: { ...nextLeaf, typeId: 'leaf' as const } };
     const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, state.knots);
     const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, leafCone.knots);
 
@@ -3144,7 +3188,9 @@ export function updateStick(stick: Stick) {
  */
 export function updateBrace(brace: Brace) {
     if (!state.braces[brace.id]) return;
-    const nextBraces = { ...state.braces, [brace.id]: brace };
+    // Stamped for the same reason as `updateLeaf`: hand-written for the knot
+    // recomputation, and the stamp was what it dropped.
+    const nextBraces = { ...state.braces, [brace.id]: { ...brace, typeId: 'brace' as const } };
 
     const braceSeg1 = recomputeBraceSegmentKnotGeometry(nextBraces, state.knots);
     const changedByBrace1 = getChangedKnotPositions(state.knots, braceSeg1.knots);
