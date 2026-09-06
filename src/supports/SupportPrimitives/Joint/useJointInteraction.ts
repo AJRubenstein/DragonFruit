@@ -59,10 +59,13 @@ export function useJointInteraction(enabled: boolean = true) {
     const initialTrunkSnapshot = useRef<Trunk | null>(null);
     const initialEditSnapshotRef = useRef<ReturnType<typeof captureSupportEditSnapshot> | null>(null);
     const lastAppliedDragPosRef = useRef<THREE.Vector3 | null>(null);
-    const liveTrunkPreviewRef = useRef<Trunk | null>(null);
-    const liveBranchPreviewRef = useRef<Branch | null>(null);
-    const liveTwigPreviewRef = useRef<Twig | null>(null);
-    const liveStickPreviewRef = useRef<Stick | null>(null);
+    // One preview for whichever support is being dragged; `activeSupport` says
+    // which type it is.
+    const livePreviewRef = useRef<{ typeId: SupportTypeId; support: unknown } | null>(null);
+    const livePreviewOf = <T,>(typeId: SupportTypeId): T | null => {
+        const live = livePreviewRef.current;
+        return live?.typeId === typeId ? live.support as T : null;
+    };
     const lastResolvedJointPosRef = useRef<Vec3 | null>(null);
     const lastPublishedClampedJointPosRef = useRef<Vec3 | null>(null);
     const lastWarningRef = useRef<string | null>(null);
@@ -321,10 +324,7 @@ export function useJointInteraction(enabled: boolean = true) {
         activeSupport.current = null;
         initialTrunkSnapshot.current = null;
         initialEditSnapshotRef.current = null;
-        liveTrunkPreviewRef.current = null;
-        liveBranchPreviewRef.current = null;
-        liveTwigPreviewRef.current = null;
-        liveStickPreviewRef.current = null;
+        livePreviewRef.current = null;
         forceEndDragRef.current = false;
         lastAppliedDragPosRef.current = null;
         lastResolvedJointPosRef.current = null;
@@ -498,7 +498,7 @@ export function useJointInteraction(enabled: boolean = true) {
                     activeSupport.current = { typeId: 'trunk', id: foundTrunk.id };
                     // Keep a direct immutable reference; trunk updates are copy-on-write.
                     initialTrunkSnapshot.current = foundTrunk;
-                    liveTrunkPreviewRef.current = foundTrunk;
+                    livePreviewRef.current = { typeId: 'trunk', support: foundTrunk };
 
                     const root = getRootById(foundTrunk.rootId) ?? undefined;
                     activeConstraintRootRef.current = root;
@@ -513,7 +513,7 @@ export function useJointInteraction(enabled: boolean = true) {
                     }
                 } else if (foundBranch) {
                     activeSupport.current = { typeId: 'branch', id: foundBranch.id };
-                    liveBranchPreviewRef.current = foundBranch;
+                    livePreviewRef.current = { typeId: 'branch', support: foundBranch };
                     activeConstraintRootRef.current = undefined;
                     activeConstraintStartRef.current = getKnotById(foundBranch.parentKnotId)?.pos;
                     initialEditSnapshotRef.current = captureSupportEditSnapshot();
@@ -530,13 +530,13 @@ export function useJointInteraction(enabled: boolean = true) {
                     initialEditSnapshotRef.current = captureSupportEditSnapshot();
                 } else if (foundTwig) {
                     activeSupport.current = { typeId: 'twig', id: foundTwig.id };
-                    liveTwigPreviewRef.current = foundTwig;
+                    livePreviewRef.current = { typeId: 'twig', support: foundTwig };
                     activeConstraintRootRef.current = undefined;
                     activeConstraintStartRef.current = undefined;
                     initialEditSnapshotRef.current = captureSupportEditSnapshot();
                 } else if (foundStick) {
                     activeSupport.current = { typeId: 'stick', id: foundStick.id };
-                    liveStickPreviewRef.current = foundStick;
+                    livePreviewRef.current = { typeId: 'stick', support: foundStick };
                     activeConstraintRootRef.current = undefined;
                     activeConstraintStartRef.current = undefined;
                     initialEditSnapshotRef.current = captureSupportEditSnapshot();
@@ -764,10 +764,7 @@ export function useJointInteraction(enabled: boolean = true) {
             activeSupport.current = null;
             initialTrunkSnapshot.current = null;
             initialEditSnapshotRef.current = null;
-            liveTrunkPreviewRef.current = null;
-            liveBranchPreviewRef.current = null;
-            liveTwigPreviewRef.current = null;
-            liveStickPreviewRef.current = null;
+            livePreviewRef.current = null;
             forceEndDragRef.current = false;
             lastAppliedDragPosRef.current = null;
             lastResolvedJointPosRef.current = null;
@@ -872,8 +869,8 @@ export function useJointInteraction(enabled: boolean = true) {
 
                         const clampedTrunkJointPos = resolveJointPosById(newTrunk.segments, activeJointId.current!);
                         const shouldPublish = shouldPublishForClampedPos(clampedTrunkJointPos);
-                        if (liveTrunkPreviewRef.current !== newTrunk && shouldPublish) {
-                            liveTrunkPreviewRef.current = newTrunk;
+                        if (livePreviewOf<typeof newTrunk>('trunk') !== newTrunk && shouldPublish) {
+                            livePreviewRef.current = { typeId: 'trunk', support: newTrunk };
                             publishJointDragSupportPreview('trunk', newTrunk);
                             markPublishedClampedPos(clampedTrunkJointPos);
                         }
@@ -899,8 +896,8 @@ export function useJointInteraction(enabled: boolean = true) {
 
                         const clampedBranchJointPos = resolveJointPosById(newBranch.segments, activeJointId.current!);
                         const shouldPublish = shouldPublishForClampedPos(clampedBranchJointPos);
-                        if (liveBranchPreviewRef.current !== newBranch && shouldPublish) {
-                            liveBranchPreviewRef.current = newBranch;
+                        if (livePreviewOf<typeof newBranch>('branch') !== newBranch && shouldPublish) {
+                            livePreviewRef.current = { typeId: 'branch', support: newBranch };
                             publishJointDragSupportPreview('branch', newBranch);
                             markPublishedClampedPos(clampedBranchJointPos);
                         }
@@ -1011,8 +1008,8 @@ export function useJointInteraction(enabled: boolean = true) {
 
                         const clampedTwigJointPos = resolveJointPosById(newTwig.segments, activeJointId.current!);
                         const shouldPublish = shouldPublishForClampedPos(clampedTwigJointPos);
-                        if (liveTwigPreviewRef.current !== newTwig && shouldPublish) {
-                            liveTwigPreviewRef.current = newTwig;
+                        if (livePreviewOf<typeof newTwig>('twig') !== newTwig && shouldPublish) {
+                            livePreviewRef.current = { typeId: 'twig', support: newTwig };
                             emitSupportDragPreview('twig', newTwig.id, newTwig);
                             markPublishedClampedPos(clampedTwigJointPos);
                         }
@@ -1039,8 +1036,8 @@ export function useJointInteraction(enabled: boolean = true) {
 
                         const clampedStickJointPos = resolveJointPosById(newStick.segments, activeJointId.current!);
                         const shouldPublish = shouldPublishForClampedPos(clampedStickJointPos);
-                        if (liveStickPreviewRef.current !== newStick && shouldPublish) {
-                            liveStickPreviewRef.current = newStick;
+                        if (livePreviewOf<typeof newStick>('stick') !== newStick && shouldPublish) {
+                            livePreviewRef.current = { typeId: 'stick', support: newStick };
                             emitSupportDragPreview('stick', newStick.id, newStick);
                             markPublishedClampedPos(clampedStickJointPos);
                         }
