@@ -318,6 +318,13 @@ export interface SupportTypeDescriptor {
      */
     ownsEditHistoryEntry: boolean;
     /**
+     * Whether a joint drag seeds and reads a live preview of the entity.
+     *
+     * A type that compares against the store instead gains nothing from the
+     * preview ref, and seeding one leaves a stale entity behind the drag.
+     */
+    jointDragUsesLivePreview: boolean;
+    /**
      * Whether instances own a Roots entry, via a `rootId` field.
      *
      * A root with no owner is garbage and gets culled, so a type missing here
@@ -360,6 +367,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasContactDiskLengthOverride: true,
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: true,
+        jointDragUsesLivePreview: true,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 10, startFallsBackToSplitPoint: false },
         hasOrigin: true,
@@ -394,6 +402,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasContactDiskLengthOverride: true,
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
+        jointDragUsesLivePreview: true,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
@@ -428,6 +437,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasContactDiskLengthOverride: false,
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
+        jointDragUsesLivePreview: true,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
@@ -460,6 +470,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasContactDiskLengthOverride: false,
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
+        jointDragUsesLivePreview: true,
         contactFields: ['contactDiskA', 'contactDiskB'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: false,
@@ -488,6 +499,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasContactDiskLengthOverride: false,
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
+        jointDragUsesLivePreview: true,
         contactFields: ['contactConeA', 'contactConeB'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: false,
@@ -520,6 +532,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasContactDiskLengthOverride: false,
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
+        jointDragUsesLivePreview: true,
         contactFields: [],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         segmentSelectionPrefix: 'braceSegment:',
@@ -548,6 +561,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasContactDiskLengthOverride: false,
         transformPropagatesToShaft: false,
         ownsEditHistoryEntry: false,
+        jointDragUsesLivePreview: true,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: true,
@@ -579,6 +593,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasContactDiskLengthOverride: false,
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
+        jointDragUsesLivePreview: false,
         contactFields: [],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: false,
