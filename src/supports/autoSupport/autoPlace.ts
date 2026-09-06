@@ -222,18 +222,7 @@ function filterAlreadySupported(candidates: CandidatePoint[], draft: SupportStat
     const snapshot = draft;
     const existingTips: Array<{ x: number; y: number; z: number }> = [];
 
-    for (const t of Object.values(snapshot.trunks)) {
-        if (t.contactCone?.pos) existingTips.push(t.contactCone.pos);
-    }
-    for (const b of Object.values(snapshot.branches)) {
-        if (b.contactCone?.pos) existingTips.push(b.contactCone.pos);
-    }
-    for (const l of Object.values(snapshot.leaves)) {
-        if (l.contactCone?.pos) existingTips.push(l.contactCone.pos);
-    }
-    for (const a of Object.values(snapshot.anchors)) {
-        if (a.contactCone?.pos) existingTips.push(a.contactCone.pos);
-    }
+    existingTips.push(...collectContactPositions(snapshot));
 
     if (existingTips.length === 0) return candidates;
 
@@ -2382,18 +2371,7 @@ export function computeAutoSupportPlan(
 
     // Collect all support tips from the post-placement snapshot.
     const allTips: Array<{ x: number; y: number; z: number }> = [];
-    for (const t of Object.values(snapshot.trunks)) {
-        if (t.contactCone?.pos) allTips.push(t.contactCone.pos);
-    }
-    for (const b of Object.values(snapshot.branches)) {
-        if (b.contactCone?.pos) allTips.push(b.contactCone.pos);
-    }
-    for (const l of Object.values(snapshot.leaves)) {
-        if (l.contactCone?.pos) allTips.push(l.contactCone.pos);
-    }
-    for (const a of Object.values(snapshot.anchors)) {
-        if (a.contactCone?.pos) allTips.push(a.contactCone.pos);
-    }
+    allTips.push(...collectContactPositions(snapshot));
 
     let coveredArea = 0;
     let totalArea = 0;
