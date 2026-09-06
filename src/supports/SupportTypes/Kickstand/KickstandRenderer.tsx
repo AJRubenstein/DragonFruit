@@ -81,13 +81,9 @@ export const KickstandRenderer = React.memo(function KickstandRenderer({
 
     const shaftSegments = useShaftSegments('kickstand', kickstand, { root, hostKnot });
 
-    shaftSegments.forEach(({ segment, index, isLast, start, end }) => {
+    shaftSegments.forEach(({ segment, index, start, end, diameterStart, diameterEnd, isUniformDiameter }) => {
         const segmentSelected = selectedId === segment.id;
 
-        const diameterStart = isLast ? kickstand.profile.terminalStartDiameterMm : undefined;
-        const diameterEnd = isLast ? kickstand.profile.terminalEndDiameterMm : undefined;
-        const isUniformDiameter = (diameterStart == null && diameterEnd == null)
-            || (diameterStart != null && diameterEnd != null && Math.abs(diameterStart - diameterEnd) < 1e-6);
         const canBatchShaft = !isSelected && !deferStraightShaftsToSceneBatch && segment.type !== 'bezier' && isUniformDiameter;
 
         if (canBatchShaft) {
