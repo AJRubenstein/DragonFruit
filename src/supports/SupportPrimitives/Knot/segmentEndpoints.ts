@@ -143,11 +143,10 @@ export function resolveSegmentEndpoints(
         if (!hosts.hostKnot) return null;
         end = vec(hosts.hostKnot.pos);
     } else {
-        // Deliberately 10 rather than shaftFallback.stubLengthMm: the two
-        // disagree for branch, twig and stick, and reconciling them is a
-        // behaviour change, not part of this conversion.
         const contact = contactAt(descriptor.upper, entity);
-        end = contact ?? start.clone().add(new THREE.Vector3(0, 0, 10));
+        end = contact ?? start.clone().add(
+            new THREE.Vector3(0, 0, descriptor.shaftFallback.stubLengthMm),
+        );
     }
 
     return { start: out(start), end: out(end) };

@@ -58,7 +58,7 @@ import {
 } from '@/components/controls/ArrangePanel';
 import { DuplicatePanel, type DuplicateLayoutMode } from '../components/controls/DuplicatePanel';
 import { VisualSettingsPanel } from '@/components/controls/VisualSettingsPanel';
-import { countSupportCollections, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, updateSupportEntity, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
+import { countSupportCollections, getSupportTypeDescriptor, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, updateSupportEntity, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 import { LayerSlider } from '@/components/controls/LayerSlider';
 import { PrintingLayerGpuPreview } from '@/components/controls/PrintingLayerGpuPreview';
 import { SupportSidebar } from '@/supports/Settings/SupportSidebar';
@@ -321,10 +321,11 @@ import {
   getSavedUvToolsSettings,
   resolveUvToolsExecutablePath,
 } from '@/components/settings/uvToolsPreferences';
-import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, toggleSegmentCurve, transformSupportsForModel, updateKnot } from '@/supports/state';
+import { subscribe as subscribeSupportState, findShaftOwnerOfSegment, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, getSupportEntity, toggleSegmentCurve, transformSupportsForModel, updateKnot } from '@/supports/state';
 import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
-import { splitShaft, splitBranchShaft, splitTwigShaft, splitStickShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
+import { splitSupportShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
+import { resolveSegmentEndpoints } from '@/supports/SupportPrimitives/Knot/segmentEndpoints';
 import type { KnotSplitRemap } from '@/supports/SupportPrimitives/Knot/knotUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '@/supports/history/supportEditHistory';
 
@@ -357,7 +358,7 @@ import { resolveCompositeMaterialLabel } from '@/utils/materialLabel';
 
 import { type MeshShaderType } from '@/features/shaders/mesh';
 import type { ModelTransform, TransformMode } from '@/hooks/useModelTransform';
-import type { SupportMode } from '@/supports/types';
+import type { Segment, SupportMode } from '@/supports/types';
 import { VoxlSizeLimitError } from '@/features/scene/voxl';
 import {
   useSceneAutosave,
@@ -2081,23 +2082,14 @@ export default function Home() {
     };
   }, [bracePlacementSnapshot, supportShaftHoverDebug.point, supportShaftHoverDebug.segmentId, transformDebugTick]);
 
+  // Summed over every modelId-bearing collection: the hand-written list left
+  // anchors uncounted, so a model carrying only anchors skipped the warning.
   const getSupportPrimitiveCountForModel = React.useCallback((modelId: string | null | undefined) => {
     if (!modelId) return 0;
 
     const supportIds = getSupportsForModel(supportStateSnapshot, modelId);
-    const kickstandCount = Object.values(kickstandStateSnapshot.kickstands)
-      .filter((kickstand) => kickstand.modelId === modelId)
-      .length;
-
-    return supportIds.roots.length
-      + supportIds.trunks.length
-      + supportIds.branches.length
-      + supportIds.braces.length
-      + supportIds.leaves.length
-      + supportIds.twigs.length
-      + supportIds.sticks.length
-      + kickstandCount;
-  }, [kickstandStateSnapshot.kickstands, supportStateSnapshot]);
+    return MODEL_ID_COLLECTION_KEYS.reduce((total, key) => total + supportIds[key].length, 0);
+  }, [supportStateSnapshot]);
 
   const requestDestructiveTransformSupportDeletion = React.useCallback((operationLabel: string) => {
     if (scene.mode !== 'prepare') return true;
@@ -2202,24 +2194,12 @@ export default function Home() {
     return supportMenuSelection.isBraceSelected;
   }, [scene.mode, supportMenuSelection.isBraceSelected, supportMenuSelection.selectedCategory, supportMenuSelection.selectedId]);
 
+  // The same lookup the add-joint handler runs, so the menu item is offered
+  // exactly when the action would succeed.
   const supportContextMenuSegmentOwner = React.useMemo(() => {
     const segmentId = editorContextMenuSupportTarget?.segmentId;
-    if (!segmentId) return null;
-
-    const trunk = Object.values(supportMenuSnapshot.trunks).find((item) => item.segments.some((segment) => segment.id === segmentId));
-    if (trunk) return { kind: 'trunk' as const, id: trunk.id };
-
-    const branch = Object.values(supportMenuSnapshot.branches).find((item) => item.segments.some((segment) => segment.id === segmentId));
-    if (branch) return { kind: 'branch' as const, id: branch.id };
-
-    const twig = Object.values(supportMenuSnapshot.twigs).find((item) => item.segments.some((segment) => segment.id === segmentId));
-    if (twig) return { kind: 'twig' as const, id: twig.id };
-
-    const stick = Object.values(supportMenuSnapshot.sticks).find((item) => item.segments.some((segment) => segment.id === segmentId));
-    if (stick) return { kind: 'stick' as const, id: stick.id };
-
-    return null;
-  }, [editorContextMenuSupportTarget?.segmentId, supportMenuSnapshot.branches, supportMenuSnapshot.sticks, supportMenuSnapshot.trunks, supportMenuSnapshot.twigs]);
+    return segmentId ? findShaftOwnerOfSegment(segmentId) : null;
+  }, [editorContextMenuSupportTarget?.segmentId, supportMenuSnapshot]);
 
   const supportsCanAddJoint = React.useMemo(() => {
     if (scene.mode !== 'support') return false;
@@ -5854,109 +5834,32 @@ export default function Home() {
         const splitTargetPoint = target.point;
         const beforeSnapshot = captureSupportEditSnapshot();
 
-        const trunk = Object.values(state.trunks).find((item) => item.segments.some((segment) => segment.id === segmentId));
-        if (trunk) {
-          const segmentIndex = trunk.segments.findIndex((segment) => segment.id === segmentId);
-          if (segmentIndex >= 0) {
-            const segment = trunk.segments[segmentIndex];
-            const root = state.roots[trunk.rootId];
-            let start = segment.bottomJoint?.pos;
-            if (!start) {
-              if (segmentIndex === 0 && root) {
-                start = {
-                  x: root.transform.pos.x,
-                  y: root.transform.pos.y,
-                  z: root.transform.pos.z + root.diskHeight + root.coneHeight,
-                };
-              } else {
-                start = trunk.segments[segmentIndex - 1]?.topJoint?.pos;
-              }
-            }
+        const owner = findShaftOwnerOfSegment(segmentId);
+        const entity = owner ? getSupportEntity(owner.typeId, owner.id) as { segments: Segment[] } | null : null;
+        if (owner && entity) {
+          const segmentIndex = entity.segments.findIndex((segment) => segment.id === segmentId);
+          const segment = entity.segments[segmentIndex];
+          if (segment) {
+            const descriptor = getSupportTypeDescriptor(owner.typeId);
+            const hosts = {
+              root: descriptor.ownsRoot ? state.roots[(entity as { rootId?: string }).rootId ?? ''] : undefined,
+              hostKnot: descriptor.lower.kind === 'knot'
+                ? state.knots[(entity as { parentKnotId?: string }).parentKnotId ?? '']
+                : undefined,
+            };
+            const endpoints = resolveSegmentEndpoints(owner.typeId, entity, segment, segmentIndex, hosts);
 
-            const end = segment.topJoint?.pos
-              ?? (trunk.contactCone ? getFinalSocketPosition(trunk.contactCone) : null)
-              ?? (start ? { x: start.x, y: start.y, z: start.z + 10 } : null);
-
-            if (start && end) {
+            if (endpoints) {
+              const { start, end } = endpoints;
               const projected = segment.type === 'bezier'
                 ? projectBezierSplitPoint(start, segment.controlPoint1, segment.controlPoint2, end, splitTargetPoint)
                 : projectSplitPoint(start, end, splitTargetPoint);
-              const { trunk: updated, knotRemaps } = splitShaft(trunk, segmentId, projected.point, projected.t, root, state.knots);
+              const { entity: updated, knotRemaps } = splitSupportShaft(
+                owner.typeId, entity, segmentId, projected.point, projected.t, hosts, state.knots,
+              );
               applyJointSplitKnotRemaps(knotRemaps);
-              updateSupportEntity('trunk', updated);
-              pushSupportEditHistory('Create trunk joint', beforeSnapshot, captureSupportEditSnapshot());
-            }
-          }
-          break;
-        }
-
-        const branch = Object.values(state.branches).find((item) => item.segments.some((segment) => segment.id === segmentId));
-        if (branch) {
-          const segmentIndex = branch.segments.findIndex((segment) => segment.id === segmentId);
-          if (segmentIndex >= 0) {
-            const segment = branch.segments[segmentIndex];
-            const parentKnot = state.knots[branch.parentKnotId];
-            const start = segmentIndex === 0
-              ? (parentKnot?.pos ?? segment.bottomJoint?.pos ?? null)
-              : (branch.segments[segmentIndex - 1]?.topJoint?.pos ?? segment.bottomJoint?.pos ?? null);
-            const end = segment.topJoint?.pos
-              ?? (branch.contactCone ? getFinalSocketPosition(branch.contactCone) : null)
-              ?? (start ? { x: start.x, y: start.y, z: start.z + 5 } : null);
-
-            if (start && end) {
-              const projected = segment.type === 'bezier'
-                ? projectBezierSplitPoint(start, segment.controlPoint1, segment.controlPoint2, end, splitTargetPoint)
-                : projectSplitPoint(start, end, splitTargetPoint);
-              const { branch: updated, knotRemaps } = splitBranchShaft(branch, segmentId, projected.point, projected.t, parentKnot, state.knots);
-              applyJointSplitKnotRemaps(knotRemaps);
-              updateSupportEntity('branch', updated);
-              pushSupportEditHistory('Create branch joint', beforeSnapshot, captureSupportEditSnapshot());
-            }
-          }
-          break;
-        }
-
-        const twig = Object.values(state.twigs).find((item) => item.segments.some((segment) => segment.id === segmentId));
-        if (twig) {
-          const segmentIndex = twig.segments.findIndex((segment) => segment.id === segmentId);
-          if (segmentIndex >= 0) {
-            const segment = twig.segments[segmentIndex];
-            const start = segmentIndex === 0
-              ? (segment.bottomJoint?.pos ?? null)
-              : (twig.segments[segmentIndex - 1]?.topJoint?.pos ?? segment.bottomJoint?.pos ?? null);
-            const end = segment.topJoint?.pos ?? (start ? { x: start.x, y: start.y, z: start.z + 5 } : null);
-
-            if (start && end) {
-              const projected = segment.type === 'bezier'
-                ? projectBezierSplitPoint(start, segment.controlPoint1, segment.controlPoint2, end, splitTargetPoint)
-                : projectSplitPoint(start, end, splitTargetPoint);
-              const { twig: updated, knotRemaps } = splitTwigShaft(twig, segmentId, projected.point, projected.t, state.knots);
-              applyJointSplitKnotRemaps(knotRemaps);
-              updateSupportEntity('twig', updated);
-              pushSupportEditHistory('Create twig joint', beforeSnapshot, captureSupportEditSnapshot());
-            }
-          }
-          break;
-        }
-
-        const stick = Object.values(state.sticks).find((item) => item.segments.some((segment) => segment.id === segmentId));
-        if (stick) {
-          const segmentIndex = stick.segments.findIndex((segment) => segment.id === segmentId);
-          if (segmentIndex >= 0) {
-            const segment = stick.segments[segmentIndex];
-            const start = segmentIndex === 0
-              ? (segment.bottomJoint?.pos ?? null)
-              : (stick.segments[segmentIndex - 1]?.topJoint?.pos ?? segment.bottomJoint?.pos ?? null);
-            const end = segment.topJoint?.pos ?? (start ? { x: start.x, y: start.y, z: start.z + 5 } : null);
-
-            if (start && end) {
-              const projected = segment.type === 'bezier'
-                ? projectBezierSplitPoint(start, segment.controlPoint1, segment.controlPoint2, end, splitTargetPoint)
-                : projectSplitPoint(start, end, splitTargetPoint);
-              const { stick: updated, knotRemaps } = splitStickShaft(stick, segmentId, projected.point, projected.t, state.knots);
-              applyJointSplitKnotRemaps(knotRemaps);
-              updateSupportEntity('stick', updated);
-              pushSupportEditHistory('Create stick joint', beforeSnapshot, captureSupportEditSnapshot());
+              updateSupportEntity(owner.typeId, updated);
+              pushSupportEditHistory(`Create ${descriptor.singular} joint`, beforeSnapshot, captureSupportEditSnapshot());
             }
           }
         }
