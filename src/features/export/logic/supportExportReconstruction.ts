@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { bezierToLineSegments } from '@/supports/Curves/BezierUtils';
 import { getModelIdForSupportEntityId } from '@/supports/state';
+import { getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone';
 import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getRaftSettingsForModel } from '@/supports/Rafts/Crenelated/RaftState';
@@ -16,6 +17,7 @@ import type {
   Segment,
   Stick,
   SupportState,
+  Trunk,
   Twig,
   Vec3,
 } from '@/supports/types';
@@ -97,17 +99,24 @@ function createScopedModelIdResolver(
     }
   };
 
-  for (const trunk of Object.values(supportState.trunks)) registerSegments(trunk.segments, trunk.modelId ?? null);
-  for (const branch of Object.values(supportState.branches)) registerSegments(branch.segments, branch.modelId ?? null);
-  for (const twig of Object.values(supportState.twigs)) registerSegments(twig.segments, twig.modelId ?? null);
-  for (const stick of Object.values(supportState.sticks)) registerSegments(stick.segments, stick.modelId ?? null);
-  for (const brace of Object.values(supportState.braces)) {
-    registerScan(brace.startKnotId, brace.modelId ?? null);
-    registerScan(brace.endKnotId, brace.modelId ?? null);
-  }
-  for (const kickstand of Object.values(kickstandState.kickstands)) {
-    registerScan(kickstand.hostKnotId, kickstand.modelId ?? null);
-    registerSegments(kickstand.segments, kickstand.modelId ?? null);
+  // Every type's shafts and the knots it hangs from, by declaration. The five
+  // loops this replaces covered trunk, branch, twig, stick and kickstand, so an
+  // anchor's segments and joints were in no index.
+  for (const descriptor of SUPPORT_TYPES) {
+    const collection = supportState[descriptor.location.key] as unknown as Record<string, Record<string, unknown>>;
+
+    for (const entity of Object.values(collection ?? {})) {
+      const modelId = (entity.modelId as string | undefined) ?? null;
+
+      if (descriptor.hasSegments) {
+        registerSegments(entity.segments as Segment[], modelId);
+      }
+      for (const edge of descriptor.edges) {
+        if (edge.to !== 'knots' || edge.ownership !== 'hostedBy') continue;
+        const knotId = entity[edge.field];
+        if (typeof knotId === 'string') registerScan(knotId, modelId);
+      }
+    }
   }
 
   // Knot fallbacks: a knot inherits from a branch/leaf that names it as parent.
@@ -128,14 +137,10 @@ function createScopedModelIdResolver(
     }
 
     if (supportState.roots[id]) return supportState.roots[id].modelId ?? null;
-    if (supportState.trunks[id]) return supportState.trunks[id].modelId ?? null;
-    if (supportState.branches[id]) return supportState.branches[id].modelId ?? null;
-    if (supportState.leaves[id]) return supportState.leaves[id].modelId ?? null;
-    if (supportState.twigs[id]) return supportState.twigs[id].modelId ?? null;
-    if (supportState.sticks[id]) return supportState.sticks[id].modelId ?? null;
-    if (supportState.braces[id]) return supportState.braces[id].modelId ?? null;
-    if (supportState.anchors[id]) return supportState.anchors[id].modelId ?? null;
-    if (kickstandState.kickstands[id]) return kickstandState.kickstands[id].modelId ?? null;
+    for (const descriptor of SUPPORT_TYPES) {
+      const entity = (supportState[descriptor.location.key] as unknown as Record<string, { modelId?: string }>)[id];
+      if (entity) return entity.modelId ?? null;
+    }
 
     if (scanModelId.has(id)) return scanModelId.get(id) ?? null;
 
@@ -460,24 +465,58 @@ export function extractScopedSupportPayload(
   // linear-scan form made this O(N²) — the multi-second autosave freeze.
   const resolveModelId = createScopedModelIdResolver(supportState, kickstandState);
 
+  /**
+   * Whether an entity belongs to a requested model.
+   *
+   * Its own `modelId` first, then the ids it links through -- a branch borrows
+   * its parent knot's model, a kickstand its root's, its host knot's or its
+   * host segment's. Those fall-backs are the type's declared `edges`, in
+   * declared order, which is exactly what the four per-type resolvers this
+   * replaces spelled out.
+   *
+   * `roots` is excluded from the fall-backs: a trunk names one but resolved on
+   * its own `modelId` alone before this, and following it would newly pull in
+   * a trunk whose root carries a model the trunk does not.
+   */
+  const belongsToScope = (descriptor: SupportTypeDescriptor, entity: Record<string, unknown>): boolean => {
+    const linked = descriptor.edges
+      .filter((edge) => edge.to !== 'roots')
+      .map((edge) => {
+        const linkedId = entity[edge.field];
+        return typeof linkedId === 'string' ? resolveModelId(linkedId) : null;
+      });
+
+    return firstAllowedModelId(
+      allowedModelIds,
+      entity.modelId as string | undefined,
+      ...linked,
+    ) !== null;
+  };
+
+  const scoped = <T>(typeId: SupportTypeId, from: unknown = supportState): T[] => {
+    const descriptor = getSupportTypeDescriptor(typeId);
+    const collection = (from as Record<string, unknown>)[descriptor.location.key] as Record<string, Record<string, unknown>> | undefined;
+    return Object.values(collection ?? {}).filter((entity) => belongsToScope(descriptor, entity)) as T[];
+  };
+
   const roots = Object.values(supportState.roots)
     .filter((item) => hasAllowedModelId(allowedModelIds, item.modelId));
-  const trunks = Object.values(supportState.trunks)
-    .filter((item) => hasAllowedModelId(allowedModelIds, item.modelId));
-  const branches = Object.values(supportState.branches)
-    .filter((item) => resolveBranchModelId(item, allowedModelIds, resolveModelId) !== null);
-  const leaves = Object.values(supportState.leaves)
-    .filter((item) => resolveLeafModelId(item, allowedModelIds, resolveModelId) !== null);
-  const twigs = Object.values(supportState.twigs)
-    .filter((item) => hasAllowedModelId(allowedModelIds, item.modelId));
-  const sticks = Object.values(supportState.sticks)
-    .filter((item) => hasAllowedModelId(allowedModelIds, item.modelId));
-  const braces = Object.values(supportState.braces)
-    .filter((item) => resolveBraceModelId(item, allowedModelIds, resolveModelId) !== null);
-  const anchors = Object.values(supportState.anchors)
-    .filter((item) => hasAllowedModelId(allowedModelIds, item.modelId));
-  const kickstands = Object.values(kickstandState.kickstands)
-    .filter((item) => resolveKickstandModelId(item, allowedModelIds, resolveModelId) !== null);
+  const trunks = scoped<Trunk>('trunk');
+  const branches = scoped<Branch>('branch');
+  const leaves = scoped<Leaf>('leaf');
+  const twigs = scoped<Twig>('twig');
+  const sticks = scoped<Stick>('stick');
+  const braces = scoped<Brace>('brace');
+  const anchors = scoped<Anchor>('anchor');
+  // Read from `kickstandState`, not `supportState`: this function still takes
+  // the two separately, and a caller may pass different objects.
+  const kickstands = scoped<Kickstand>('kickstand', kickstandState);
+
+  /** The same scoped lists, by type id, for the declaration-driven walks below. */
+  const scopedEntities: Record<SupportTypeId, unknown[]> = {
+    trunk: trunks, branch: branches, leaf: leaves, twig: twigs,
+    stick: sticks, brace: braces, anchor: anchors, kickstand: kickstands,
+  };
 
   const kickstandRootIds = new Set(kickstands.map((item) => item.rootId));
   const kickstandKnotIds = new Set(kickstands.map((item) => item.hostKnotId));
@@ -486,21 +525,43 @@ export function extractScopedSupportPayload(
   const kickstandKnots = Object.values(kickstandState.knots)
     .filter((item) => kickstandKnotIds.has(item.id));
 
-  const includedSegmentIds = new Set<string>();
-  trunks.forEach((item) => item.segments.forEach((segment) => includedSegmentIds.add(segment.id)));
-  branches.forEach((item) => item.segments.forEach((segment) => includedSegmentIds.add(segment.id)));
-  twigs.forEach((item) => item.segments.forEach((segment) => includedSegmentIds.add(segment.id)));
-  sticks.forEach((item) => item.segments.forEach((segment) => includedSegmentIds.add(segment.id)));
-  braces.forEach((item) => includedSegmentIds.add(`braceSegment:${item.id}`));
-  kickstands.forEach((item) => item.segments.forEach((segment) => includedSegmentIds.add(segment.id)));
+  /** Every scoped entity, with the descriptor that says what it is. */
+  const scopedByType: Array<{ descriptor: SupportTypeDescriptor; entities: Record<string, unknown>[] }> =
+    SUPPORT_TYPES.map((descriptor) => ({
+      descriptor,
+      entities: scopedEntities[descriptor.id] as unknown as Record<string, unknown>[],
+    }));
 
+  // Shafts carried by the scope: real segments, or a prefixed id for a type
+  // that has none. The six lines this replaces omitted anchors.
+  const includedSegmentIds = new Set<string>();
+  for (const { descriptor, entities } of scopedByType) {
+    for (const entity of entities) {
+      if (descriptor.segmentSelectionPrefix) {
+        includedSegmentIds.add(`${descriptor.segmentSelectionPrefix}${entity.id as string}`);
+        continue;
+      }
+      for (const segment of (entity.segments as Segment[] | undefined) ?? []) {
+        includedSegmentIds.add(segment.id);
+      }
+    }
+  }
+
+  // Knots the scope hangs from, by declared `hostedBy knots` edges.
   const referencedKnotIds = new Set<string>();
-  branches.forEach((item) => referencedKnotIds.add(item.parentKnotId));
-  leaves.forEach((item) => referencedKnotIds.add(item.parentKnotId));
-  braces.forEach((item) => {
-    referencedKnotIds.add(item.startKnotId);
-    referencedKnotIds.add(item.endKnotId);
-  });
+  for (const { descriptor, entities } of scopedByType) {
+    const knotFields = descriptor.edges
+      .filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy')
+      .map((edge) => edge.field);
+    if (knotFields.length === 0) continue;
+
+    for (const entity of entities) {
+      for (const field of knotFields) {
+        const knotId = entity[field];
+        if (typeof knotId === 'string') referencedKnotIds.add(knotId);
+      }
+    }
+  }
 
   const leafIds = new Set(leaves.map((item) => item.id));
   const braceIds = new Set(braces.map((item) => item.id));
