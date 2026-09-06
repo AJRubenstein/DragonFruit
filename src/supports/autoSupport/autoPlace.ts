@@ -31,7 +31,7 @@ import { sizeParameters, presetForArea } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
 import { DEFAULT_GRID_MIN_BRANCH_ANGLE_DEG } from '../Settings/defaults';
-import { getSnapshot, setSnapshot } from '../state';
+import { cloneSupportState, getSnapshot, setSnapshot } from '../state';
 import {
     draftAddRoot, draftAddTrunk, draftAddBranch, draftAddLeaf,
     draftAddKnot, draftAddAnchor, draftAddStick, draftAddTwig,
@@ -2223,7 +2223,7 @@ export function computeAutoSupportPlan(
         return null;
     }
 
-    const before = baseState ?? structuredClone(getSnapshot());
+    const before = baseState ?? cloneSupportState(getSnapshot());
     const kickstandBefore = baseKickstand ?? structuredClone(getKickstandSnapshot());
     let draft: SupportState = before;
     let kickstandDraft: KickstandState = kickstandBefore;

@@ -251,7 +251,7 @@ function removeSupportEntityCascading(
         next.selectedCategory = null;
     }
 
-    state = next as unknown as SupportState;
+    setState(next as unknown as SupportState);
 
     for (const [key, ids] of byCollection) {
         const node = SUPPORT_TYPES.find((d) => d.location.key === key);
@@ -1077,7 +1077,7 @@ function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: 
                 }
 
                 if (knotsChanged) {
-                    state = { ...state, knots: updatedKnots };
+                    setState({ ...state, knots: updatedKnots });
                 }
             }
         }
@@ -1163,7 +1163,7 @@ function removeBranchJoint(branchId: string, jointId: string): { before: Branch;
                 }
 
                 if (knotsChanged) {
-                    state = { ...state, knots: updatedKnots };
+                    setState({ ...state, knots: updatedKnots });
                 }
             }
         }
@@ -1310,27 +1310,19 @@ export function getSnapshot() {
 }
 
 /**
- * Every support entity by id, across all eight collections.
- *
- * The merged view the eight collections will eventually be replaced by. Derived
- * rather than stored, so it cannot drift from them, and memoised on the state
- * identity so a read costs nothing until the store actually changes.
- *
- * Ids are UUIDs, so the collections cannot collide -- `assertNoIdCollisions`
- * in `__tests__/mergedSupportView.test.ts` holds that.
+ * Deep-copy a whole support state. Use this rather than `structuredClone`,
+ * which drops the collection views because they are getters, not data.
  */
-let mergedSupportsCache: { forState: SupportState; supports: Record<string, SupportEntityAny> } | null = null;
+export function cloneSupportState(source: SupportState): SupportState {
+    return normaliseSupportState(structuredClone({
+        ...source,
+        supports: source.supports ?? {},
+    }) as SupportState);
+}
 
+/** Every support entity by id, whatever its type. */
 export function getSupports(): Record<string, SupportEntityAny> {
-    if (mergedSupportsCache?.forState === state) return mergedSupportsCache.supports;
-
-    const supports: Record<string, SupportEntityAny> = {};
-    for (const descriptor of SUPPORT_TYPES) {
-        Object.assign(supports, state[descriptor.location.key]);
-    }
-
-    mergedSupportsCache = { forState: state, supports };
-    return supports;
+    return state.supports ?? {};
 }
 
 export function reassignAllSupportModelIds(modelId: string): boolean {
@@ -1342,7 +1334,7 @@ export function reassignAllSupportModelIds(modelId: string): boolean {
     ));
 
     if (changed) {
-        state = { ...state, ...collections };
+        setState({ ...state, ...collections });
         notify();
     }
 
@@ -1351,13 +1343,8 @@ export function reassignAllSupportModelIds(modelId: string): boolean {
 }
 
 /**
- * Stamp every entity with the type of the collection holding it.
- *
- * `typeId` is applied at the store boundary, never by the builders. That holds
- * only if everything entering the store passes a stamping writer, and
- * `setSnapshot` did not -- so auto-support, undo and paste all wrote unstamped
- * entities. Harmless while membership answers the type question; fatal once
- * the collections are derived from the field.
+ * Stamp every entity with the type of the collection holding it. Entities are
+ * built unstamped; the store is where `typeId` is applied.
  *
  * Returns `next` unchanged when nothing needed stamping.
  */
@@ -1391,8 +1378,73 @@ export function stampSupportTypeIds(next: SupportState): SupportState {
     return changedAny ? { ...next, ...patched } as SupportState : next;
 }
 
+/**
+ * Install the eight collection names as views over `state.supports`.
+ *
+ * Non-enumerable so a spread drops them rather than copying a resolved value
+ * that would stop tracking `supports`.
+ */
+function installCollectionViews(next: SupportState): SupportState {
+    for (const descriptor of SUPPORT_TYPES) {
+        let cache: { from: Record<string, SupportEntityAny>; view: Record<string, SupportEntityAny> } | null = null;
+
+        Object.defineProperty(next, descriptor.location.key, {
+            configurable: true,
+            enumerable: false,
+            get(this: SupportState) {
+                const all = this.supports ?? {};
+                if (cache && cache.from === all) return cache.view;
+
+                const view: Record<string, SupportEntityAny> = {};
+                for (const id in all) {
+                    if ((all[id] as { typeId?: SupportTypeId }).typeId === descriptor.id) view[id] = all[id];
+                }
+
+                cache = { from: all, view };
+                return view;
+            },
+        });
+    }
+    return next;
+}
+
+/**
+ * Normalise a state object into the stored shape: one `supports` map with the
+ * eight names derived from it. Accepts either shape.
+ */
+function normaliseSupportState(next: SupportState): SupportState {
+    const raw = next as unknown as Record<string, unknown>;
+
+    // An own collection key means a writer set one explicitly, so it wins for
+    // that type. Types without one keep whatever `supports` already held.
+    const overrides = SUPPORT_TYPES.filter((d) => Object.prototype.hasOwnProperty.call(raw, d.location.key));
+
+    const supports: Record<string, SupportEntityAny> = {};
+    for (const [id, entity] of Object.entries(next.supports ?? {})) {
+        const typeId = (entity as { typeId?: SupportTypeId }).typeId;
+        if (overrides.some((d) => d.id === typeId)) continue;
+        supports[id] = entity;
+    }
+
+    for (const descriptor of overrides) {
+        for (const [id, entity] of Object.entries(raw[descriptor.location.key] as Record<string, SupportEntityAny>)) {
+            supports[id] = { ...entity, typeId: descriptor.id } as SupportEntityAny;
+        }
+    }
+
+    const rest: Record<string, unknown> = { ...raw };
+    for (const descriptor of SUPPORT_TYPES) delete rest[descriptor.location.key];
+
+    return installCollectionViews({ ...rest, supports } as unknown as SupportState);
+}
+
+/** The only place `state` is assigned, so the derived views cannot be lost. */
+function setState(next: SupportState): void {
+    state = normaliseSupportState(next);
+}
+
 export function setSnapshot(next: SupportState) {
-    state = stampSupportTypeIds(next);
+    state = normaliseSupportState(next);
     rebuildSupportSettingsHexCacheFromState();
     emitSupportInteractionReset('setSnapshot');
     notify();
@@ -1522,13 +1574,13 @@ function removeKickstandFromState(id: string): KickstandBuildResult | null {
     const knots = { ...state.knots };
     delete knots[result.hostKnot.id];
 
-    state = {
+    setState({
         ...state,
         kickstands,
         roots,
         knots,
         selectedId: state.selectedId === id ? null : state.selectedId,
-    };
+    });
     notify();
 
     return result;
@@ -1536,7 +1588,7 @@ function removeKickstandFromState(id: string): KickstandBuildResult | null {
 
 export function resetKickstandsInState() {
     if (Object.keys(state.kickstands).length === 0) return;
-    state = { ...state, kickstands: {} };
+    setState({ ...state, kickstands: {} });
     notify();
 }
 
@@ -1584,7 +1636,7 @@ function transformKickstandsForModelInState(
 
     if (!changed) return false;
 
-    state = { ...state, kickstands: nextKickstands };
+    setState({ ...state, kickstands: nextKickstands });
     notify();
     return true;
 }
@@ -1604,7 +1656,7 @@ function transformAllKickstandsInState(deltaMatrix: THREE.Matrix4): boolean {
         };
     }
 
-    state = { ...state, kickstands: nextKickstands };
+    setState({ ...state, kickstands: nextKickstands });
     notify();
     return true;
 }
@@ -1635,7 +1687,7 @@ function reassignAllKickstandModelIdsInState(modelId: string): boolean {
 
     if (!changed) return false;
 
-    state = { ...state, kickstands: nextKickstands, roots: nextRoots };
+    setState({ ...state, kickstands: nextKickstands, roots: nextRoots });
     notify();
     return true;
 }
@@ -1966,7 +2018,7 @@ export function transformSupportsForModel(
     }
 
     if (changed) {
-        state = {
+        setState({
             ...state,
             roots: nextRoots,
             trunks: nextTrunks,
@@ -1977,7 +2029,7 @@ export function transformSupportsForModel(
             braces: nextBraces,
             anchors: nextAnchors,
             knots: nextKnots,
-        };
+        });
         notify();
     }
 
@@ -2117,11 +2169,11 @@ export function transformAllSupportsForSingleModel(
         };
     }
 
-    state = {
+    setState({
         ...state,
         ...transformed,
         knots: nextKnots,
-    };
+    });
     notify();
 
     const kickstandsChanged = transformAllKickstandsInState(deltaMatrix);
@@ -2146,12 +2198,12 @@ export function removeRootById(rootId: string): Roots | null {
         nextSelectedCategory = null;
     }
 
-    state = {
+    setState({
         ...state,
         roots: nextRoots,
         selectedId: nextSelectedId,
         selectedCategory: nextSelectedCategory,
-    };
+    });
     notify();
     return deepClone(root);
 }
@@ -2386,7 +2438,7 @@ export function toggleSegmentCurve(segmentId: string) {
 }
 
 export function resetStore() {
-    state = { ...initialState };
+    setState({ ...initialState });
     clearSupportSettingsHexCache();
     emitSupportInteractionReset('resetStore');
     notify();
@@ -2455,7 +2507,7 @@ export function loadFromImportFormat(data: DragonfruitImportFormat) {
     newState.knots = normalized.knots;
     newState.leaves = normalized.leaves;
 
-    state = newState;
+    setState(newState);
     rebuildSupportSettingsHexCacheFromState();
     emitSupportInteractionReset('loadFromImportFormat');
     console.log('[SupportStore] Loaded from LYS:', Object.fromEntries(
@@ -2829,7 +2881,7 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
     merged.knots = normalized.knots;
     merged.leaves = normalized.leaves;
 
-    state = merged;
+    setState(merged);
     rebuildSupportSettingsHexCacheFromState();
     emitSupportInteractionReset('mergeFromImportFormat');
     console.log('[SupportStore] Merged from LYS:', {
@@ -2851,7 +2903,7 @@ export function setSelectedId(id: string | null) {
     if (state.selectedId === id) return;
     const category: SelectionCategory = id ? resolveSelectionCategory(id) : null;
 
-    state = { ...state, selectedId: id, selectedCategory: category };
+    setState({ ...state, selectedId: id, selectedCategory: category });
     notify();
 }
 
@@ -2861,21 +2913,21 @@ export function setHoveredState(
     id: string | null,
 ) {
     if (state.hoveredCategory === category && state.hoveredId === id) return;
-    state = { ...state, hoveredCategory: category, hoveredId: id };
+    setState({ ...state, hoveredCategory: category, hoveredId: id });
     notify();
 }
 
 export function setInteractionWarning(warning: import('./types').WarningCode | null) {
     if (state.interactionWarning === warning) return;
-    state = { ...state, interactionWarning: warning };
+    setState({ ...state, interactionWarning: warning });
     notify();
 }
 
 export function addRoot(root: Roots) {
-    state = {
+    setState({
         ...state,
         roots: { ...state.roots, [root.id]: root }
-    };
+    });
     notify();
 }
 
@@ -2899,10 +2951,10 @@ export function addSupportEntity(typeId: SupportTypeId, entity: { id: string; se
     }
 
     const key = descriptor.location.key;
-    state = {
+    setState({
         ...state,
         [key]: { ...state[key], [entity.id]: { ...entity, typeId } },
-    };
+    });
     notify();
 }
 
@@ -2931,12 +2983,8 @@ type KnotPlacementOnShaft = (
 const KNOT_PLACEMENT_BY_TYPE = new Map<SupportTypeId, KnotPlacementOnShaft>();
 
 /**
- * Apply an entity to its collection, carrying whatever depends on it.
- *
- * Every type follows the same five steps -- bail if absent, cache the settings
- * hex, write the entity, reposition the knots riding its shafts, recompute the
- * geometry those knots carry. Only step four differs, and only for types that
- * declare a placement rule above.
+ * Apply an entity to its collection, then reposition the knots riding its
+ * shafts and recompute the geometry those knots carry.
  */
 function applySupportEntityUpdate(
     typeId: SupportTypeId,
@@ -2996,12 +3044,12 @@ function applySupportEntityUpdate(
         }
     }
 
-    state = {
+    setState({
         ...state,
         [key]: nextCollection,
         knots: nextKnots,
         leaves: nextLeaves,
-    };
+    });
     notify();
 }
 
@@ -3039,18 +3087,15 @@ export function updateLeaf(leaf: Leaf) {
         setCachedSupportSettingsHex('leaf', nextLeaf.id, nextLeaf.settingsCodeHex);
     }
 
-    // Stamped like every other writer. This one is hand-written rather than
-    // going through `applySupportEntityUpdate` -- it recomputes leaf-cone and
-    // brace-segment knot geometry -- and the stamp was what the copy dropped.
     const nextLeaves = { ...state.leaves, [nextLeaf.id]: { ...nextLeaf, typeId: 'leaf' as const } };
     const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, state.knots);
     const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, leafCone.knots);
 
-    state = {
+    setState({
         ...state,
         leaves: nextLeaves,
         knots: braceSeg.knots,
-    };
+    });
     notify();
 }
 
@@ -3085,10 +3130,10 @@ function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): bo
     const key = getSupportTypeDescriptor(typeId).location.key;
     if (!state[key][entity.id]) return false;
 
-    state = {
+    setState({
         ...state,
         [key]: { ...state[key], [entity.id]: { ...entity, typeId } },
-    };
+    });
     notify();
     return true;
 }
@@ -3188,8 +3233,6 @@ export function updateStick(stick: Stick) {
  */
 export function updateBrace(brace: Brace) {
     if (!state.braces[brace.id]) return;
-    // Stamped for the same reason as `updateLeaf`: hand-written for the knot
-    // recomputation, and the stamp was what it dropped.
     const nextBraces = { ...state.braces, [brace.id]: { ...brace, typeId: 'brace' as const } };
 
     const braceSeg1 = recomputeBraceSegmentKnotGeometry(nextBraces, state.knots);
@@ -3205,12 +3248,12 @@ export function updateBrace(brace: Brace) {
         nextKnots = braceSeg2.knots;
     }
 
-    state = {
+    setState({
         ...state,
         braces: nextBraces,
         knots: nextKnots,
         leaves: nextLeaves,
-    };
+    });
     notify();
 }
 
@@ -3229,10 +3272,10 @@ export function updateBranch(branch: Branch) {
 }
 
 export function addKnot(knot: Knot) {
-    state = {
+    setState({
         ...state,
         knots: { ...state.knots, [knot.id]: knot }
-    };
+    });
     notify();
 }
 
@@ -3250,12 +3293,12 @@ export function removeKnotById(knotId: string): Knot | null {
         nextSelectedCategory = null;
     }
 
-    state = {
+    setState({
         ...state,
         knots: nextKnots,
         selectedId: nextSelectedId,
         selectedCategory: nextSelectedCategory,
-    };
+    });
     notify();
     return deepClone(knot);
 }
@@ -3271,7 +3314,7 @@ export function updateKnot(knot: Knot, options?: { skipDependentGeometry?: boole
         // Drag-time fast path: keep knot + brace-segment knots responsive while
         // deferring expensive leaf-dependent geometry recomputes until commit.
         const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, baseKnots);
-        state = { ...state, knots: braceSeg.knots };
+        setState({ ...state, knots: braceSeg.knots });
         notify();
         return;
     }
@@ -3290,7 +3333,7 @@ export function updateKnot(knot: Knot, options?: { skipDependentGeometry?: boole
         nextKnots = braceSeg2.knots;
     }
 
-    state = { ...state, knots: nextKnots, leaves: nextLeaves };
+    setState({ ...state, knots: nextKnots, leaves: nextLeaves });
     notify();
 }
 
@@ -3351,9 +3394,9 @@ export function getModelIdForSupportEntityId(id: string | null | undefined): str
         if (entity) return modelIdOf(entity);
     }
 
-    // One pass over every support, asking each what it is. The two nested walks
-    // this replaces searched all segments before any edge; merging them is safe
-    // because the two match disjoint id kinds -- a segment or joint id, versus
+    // One pass over every support, asking each what it is. Segments and edges
+    // are matched in the same pass because they take disjoint id kinds -- a
+    // segment or joint id, versus
     // the knot id an edge points at -- so no id can satisfy both.
     for (const entity of Object.values(getSupports())) {
         const typeId = (entity as { typeId?: SupportTypeId }).typeId;
@@ -3392,9 +3435,7 @@ export function getSupportEntity(typeId: SupportTypeId, id: string) {
 /**
  * What type of support an id names, or null if it names none.
  *
- * Reads the entity's own `typeId` rather than asking which collection holds
- * it. The scan it replaces was written out per type at every call site, which
- * is how three of them came to omit anchors.
+ * Reads the entity's own `typeId` rather than asking which collection holds it.
  */
 export function getSupportTypeOf(id: string): SupportTypeId | null {
     if (!id) return null;
@@ -3741,7 +3782,7 @@ export function applySettingsToSupportTarget(target: EditableSupportTarget, sett
             diskHeight: settings.roots.diskHeightMm,
             coneHeight: settings.roots.coneHeightMm,
         };
-        state = { ...state, roots: { ...state.roots, [nextRoot.id]: nextRoot } };
+        setState({ ...state, roots: { ...state.roots, [nextRoot.id]: nextRoot } });
     }
 
     replaceSupportEntity(descriptor.id, next as never);

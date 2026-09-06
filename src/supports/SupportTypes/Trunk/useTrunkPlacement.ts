@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { addAnchor, addBranch, addKnot, addLeaf, addRoot, addStick, addTrunk, addTwig, getSnapshot, setSnapshot, updateKnot, updateTrunk } from '../../state';
+import { cloneSupportState, addAnchor, addBranch, addKnot, addLeaf, addRoot, addStick, addTrunk, addTwig, getSnapshot, setSnapshot, updateKnot, updateTrunk } from '../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_ADD_ANCHOR, SUPPORT_ADD_BRANCH, SUPPORT_ADD_LEAF, SUPPORT_ADD_STICK, SUPPORT_ADD_TRUNK, SUPPORT_ADD_TWIG } from '../../history/actionTypes';
 import { useInteractionStatus } from '../../interaction/useInteractionStatus';
@@ -858,7 +858,7 @@ export function useTrunkPlacementV2() {
         }
 
         if (decision.kind === 'replace_trunk') {
-            const before = structuredClone(getSnapshot());
+            const before = cloneSupportState(getSnapshot());
             const promoteBranch = markBranchPlacementSurface(decision.promoteBranch, placementSurface);
             const trunkBuild = markTrunkBuildPlacementSurface(decision.trunkBuild, placementSurface);
 

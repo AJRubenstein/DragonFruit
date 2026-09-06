@@ -14,7 +14,7 @@ import { useJointCreationHotkey } from '@/supports/SupportPrimitives/Joint/useJo
 import { useCurveHotkey } from '@/supports/Curves/useCurveHotkey';
 import { useJointCreationState } from '@/supports/SupportPrimitives/Joint/jointCreationState';
 import { computeAndApplyTrunkDiameterProfile } from '@/supports/SupportTypes/Trunk/TrunkReplacement';
-import {
+import { cloneSupportState,
   getSelectedId,
   getSelectedCategory,
   findShaftOwnerOfJoint,
@@ -68,9 +68,8 @@ function collectAllSupportIds() {
 }
 
 /**
- * @deprecated for removal -- prefer `findShaftOwnerOfSegment(id)` from state.
- * The scan this replaced omitted anchors, and handled brace's `braceSegment:`
- * prefix separately; the shared lookup does both from the registry.
+ * @deprecated for removal -- prefer `findShaftOwnerOfSegment(id)` from state,
+ * which resolves every type and brace's `braceSegment:` prefix from the registry.
  */
 export function resolveSupportOwnerFromSegmentId(segmentId: string) {
   const owner = findShaftOwnerOfSegment(segmentId);
@@ -79,7 +78,6 @@ export function resolveSupportOwnerFromSegmentId(segmentId: string) {
 
 /**
  * @deprecated for removal -- prefer `findShaftOwnerOfJoint(id)` from state.
- * The scan this replaced searched kickstands only.
  */
 export function resolveSupportOwnerFromJointId(jointId: string) {
   const owner = findShaftOwnerOfJoint(jointId);
@@ -603,7 +601,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       try {
       const multiSelectedIds = Array.from(new Set(getResolvedPrimarySelection().selectedIds));
       if (multiSelectedIds.length > 0) {
-        const beforeSupportSnapshot = structuredClone(getSnapshot());
+        const beforeSupportSnapshot = cloneSupportState(getSnapshot());
         const beforeKickstandSnapshot = structuredClone(getKickstandSnapshot());
         let anyDeleted = false;
         for (const supportId of multiSelectedIds) {
@@ -614,7 +612,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         }
 
         if (anyDeleted) {
-          const afterSupportSnapshot = structuredClone(getSnapshot());
+          const afterSupportSnapshot = cloneSupportState(getSnapshot());
           const afterKickstandSnapshot = structuredClone(getKickstandSnapshot());
 
           pushSupportHistory({

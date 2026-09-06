@@ -10,11 +10,9 @@ import type { SupportState, Trunk } from '../types';
  * Everything a trunk replacement has to carry over: the branch tree hanging
  * from it, and the leaves, braces and knots on that tree.
  *
- * The branch tree was grown with a `while (grew)` fixpoint that rescanned every
- * knot, for every branch, on every round -- the shape AGENTS.md measures at
- * 87.7ms for a depth-200 chain against 1.32ms for a worklist. Replaced by a
- * worklist; these compare the two directly, because replacing a graph algorithm
- * on a path with no coverage is not something a green suite establishes.
+ * The tree is grown with a worklist. These compare it against the original
+ * fixpoint directly, since a green suite alone does not establish that a graph
+ * algorithm on an uncovered path still returns the same set.
  */
 
 let nextId = 0;
@@ -61,8 +59,7 @@ function makeRand(seed: number) {
  * A trunk with a randomly shaped branch tree on it, plus leaves and braces.
  *
  * Branches hang off knots, and a branch's own segments carry more knots, so the
- * tree can nest arbitrarily deep -- which is the case the fixpoint handled
- * slowly and the worklist has to handle identically.
+ * tree can nest arbitrarily deep.
  */
 function randomTree(rand: () => number, depth: number) {
     const state = emptyState();
@@ -139,8 +136,7 @@ test('the worklist finds exactly what the fixpoint found', () => {
 });
 
 test('a deep chain resolves the same as the fixpoint did', () => {
-    // The case the fixpoint was slowest on: each branch hangs off a knot on the
-    // previous one, so the round count was the chain length.
+    // Each branch hangs off a knot on the previous one.
     const state = emptyState();
     const trunkSeg = id('seg');
     const trunk = {

@@ -506,8 +506,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const matchesInteriorBrace = useMemo(() => {
         if (!interiorView) return (_brace: Brace) => true;
 
-        // Every shafted type, by its declared contacts. The four loops this
-        // replaces omitted anchors and kickstands.
+        // Every shafted type, by its declared contacts.
         const directSegmentInteriorById = new Map<string, boolean>();
         for (const descriptor of SUPPORT_TYPES) {
             if (!descriptor.hasSegments) continue;
@@ -558,8 +557,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             return resolveKnotInterior(brace.startKnotId) || resolveKnotInterior(brace.endKnotId);
         };
         // The loop above walks every shafted type from the registry, so the
-        // whole snapshot is the dependency. The hand-written eight this
-        // replaces predated that conversion and omitted anchors.
+        // whole snapshot is the dependency.
     }, [interiorView, state, kickstandState.knots, matchesInteriorContact]);
 
     const entitySegmentModelIdById = useMemo(() => {
@@ -1091,8 +1089,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     // Support id → origin lookup for the debug origin coloring.
     const originById = useMemo(() => {
-        // Every type that records an origin, declared as `hasOrigin`. The four
-        // hand-written loops this replaces named exactly those four types.
+        // Every type that records an origin, declared as `hasOrigin`.
         const map = new Map<string, SupportOrigin>();
         for (const descriptor of SUPPORT_TYPES) {
             if (!descriptor.hasOrigin) continue;
@@ -2032,7 +2029,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     /**
      * Groups a type's unselected shafts by model and colour for instanced
-     * drawing. Five of the six batched types differed only in the type name.
+     * drawing.
      */
     const groupShaftsForSceneBatch = useCallback(<T extends { id: string; modelId?: string }>(
         typeId: SupportTypeId,
@@ -2720,10 +2717,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     ) => {
         // Past MULTI_SELECTION_DETAIL_THRESHOLD the per-type selected sets are
         // left empty, so `isSelected` never reaches a detail renderer and the
-        // bulk colour is the only thing marking a selection. Anchor is drawn
-        // entirely by detail renderers -- root frustum plus contact cone, no
-        // batched shaft pass -- so without this it was the one type that did
-        // not highlight in a large marquee.
+        // bulk colour is the only thing marking a selection. Anchor has no
+        // batched shaft pass, so without this it never highlights in a large
+        // marquee.
         if (hasSupportMultiSelection && !useMultiSelectionDetail && selectedSupportIdSet.has(supportId)) {
             return BULK_MULTI_SELECTED_COLOR;
         }

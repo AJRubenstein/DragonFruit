@@ -324,6 +324,14 @@ export type SupportCollections = {
 };
 
 export interface SupportState extends SupportCollections {
+    /**
+     * Every support entity by id, regardless of type. The eight named
+     * collections are non-enumerable views over this, partitioned by `typeId`.
+     *
+     * Optional on input only: a state built from the eight collections is
+     * folded into this shape by the store.
+     */
+    supports?: Record<string, SupportEntityAny>;
     // Interaction State
     selectedId: string | null;
     selectedCategory?: SupportSelectionCategory | null;

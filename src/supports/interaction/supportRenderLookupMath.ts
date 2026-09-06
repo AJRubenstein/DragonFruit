@@ -70,8 +70,7 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
   }
 
   // Every contact primitive back to the support carrying it, by declared
-  // `contactFields`. The five loops this replaces named trunk, branch, leaf,
-  // twig and stick, and so omitted anchors.
+  // `contactFields`.
   for (const descriptor of SUPPORT_TYPES) {
     if (descriptor.contactFields.length === 0) continue;
     const record = (state as Partial<Record<string, Record<string, unknown>>>)[descriptor.location.key];
@@ -89,7 +88,7 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
 
   // A knot-hosted type also indexes the knot it hangs from.
   //
-  // The branch loop this replaces additionally did
+  // Branch additionally does
   // `pushKnotId(knotIdsByParentShaftId, parentKnotId, parentKnotId)`, keying a
   // knot id to itself. That bucket is only ever read by SEGMENT id
   // (`supportPreviewOverlay`), so the entry was unreachable unless a knot id

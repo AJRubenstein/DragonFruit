@@ -679,8 +679,6 @@ export function resolveSupportSliceTessellation(
   kickstandState: ReturnType<typeof getKickstandSnapshot>,
 ): SupportSliceTessellation {
   // How much geometry the scene will emit, which decides the detail level.
-  // The five segment loops this replaces omitted anchors, so a scene full of
-  // them under-counted and was tessellated finer than intended.
   let segmentCount = 0;
   let shaftlessCount = 0;
 
@@ -952,16 +950,10 @@ export function buildSupportAndRaftWorldTriangles(
   /**
    * Every support's root, shaft, joints and contacts, in registry order.
    *
-   * This was five hand-written per-type loops that each re-derived the same
-   * walk. A type missing from that list emitted nothing -- anchors were added
-   * only after they vanished from slices entirely -- and each loop carried its
-   * own copy of the joint-sphere dedup.
-   *
-   * Order matters and is why this is one loop rather than several: joint
-   * spheres are deduplicated across ALL types by `seenJointIds`, so a joint
-   * shared between a kickstand and the trunk it braces is emitted by whichever
-   * type reaches it first. Iterating `SUPPORT_TYPES` keeps that order fixed in
-   * one declared place instead of in the sequence the blocks happened to sit in.
+   * One loop rather than several because `seenJointIds` deduplicates joint
+   * spheres across all types: a joint shared between a kickstand and the trunk
+   * it braces is emitted by whichever type reaches it first, so the iteration
+   * order is part of the output.
    */
   const emitJoint = (joint: { id: string; pos: Vec3; diameter: number } | undefined | null) => {
     if (!joint || seenJointIds.has(joint.id)) return;

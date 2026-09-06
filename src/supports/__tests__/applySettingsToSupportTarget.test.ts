@@ -19,9 +19,7 @@ import type { Branch, Leaf, Trunk } from '../types';
 /**
  * Writing sidebar settings onto the selected support.
  *
- * This was three hand-written blocks; only one test covered any of it, and a
- * version that returned false unconditionally still passed 827 of 828. These
- * pin what each editable type actually writes.
+ * Pins what each editable type writes.
  */
 
 const MODEL = 'model-a';
@@ -142,10 +140,9 @@ test('a missing entity or non-editable type applies nothing', () => {
 
 test('a trunk whose root is missing applies nothing', () => {
     scene();
-    const state = getSnapshot();
-    const orphaned = { ...state, roots: {} };
+    const trunk = getSnapshot().trunks['trunk-a'];
     // Reload without the root the trunk points at.
     resetStore();
-    addTrunk(orphaned.trunks['trunk-a']);
+    addTrunk(trunk);
     assert.equal(applySettingsToSupportTarget({ kind: 'trunk', id: 'trunk-a' }, settings() as never), false);
 });
