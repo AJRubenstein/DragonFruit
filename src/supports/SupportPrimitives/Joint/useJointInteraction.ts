@@ -1,4 +1,4 @@
-import { resolveShaftAnchor } from '../Knot/segmentEndpoints';
+import { resolveSegmentEndpoints, resolveShaftAnchor } from '../Knot/segmentEndpoints';
 import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
@@ -449,23 +449,15 @@ export function useJointInteraction(enabled: boolean = true) {
                 if (owner) jointParentCacheRef.current.set(jointId, { kind: owner.typeId, supportId: owner.id });
             }
 
-            // One owner, unpacked into five so the drag-start chain below can
-            // read each as its own type. That chain is not a lookup: each arm
-            // sets a different constraint root, constraint start and preview
-            // ref, which is real per-type drag state. It goes when those move
-            // behind a slot, not when the refs collapse -- they already have.
-            const ofType = <T,>(typeId: SupportTypeId): T | null =>
-                owner && owner.typeId === typeId ? (getSupportEntity(typeId, owner.id) as T | null) : null;
-
-            const foundTrunk = ofType<Trunk>('trunk');
-            const foundBranch = ofType<Branch>('branch');
-            const foundKickstand = ofType<Kickstand>('kickstand');
-            const foundTwig = ofType<Twig>('twig');
-            const foundStick = ofType<Stick>('stick');
+            // The owner names its type, so one lookup replaces the five typed
+            // ones the drag-start chain used to unpack. Only shafted types
+            // reach here: findShaftOwnerOfJoint searches segments.
+            const foundParent = owner
+                ? getSupportEntity(owner.typeId, owner.id) as { id: string; segments: Segment[] } | null
+                : null;
             const foundJointPos = owner?.pos ?? null;
 
-            const foundParent = foundTrunk || foundBranch || foundKickstand || foundTwig || foundStick;
-            if (foundParent && foundJointPos) {
+            if (owner && foundParent && foundJointPos) {
                 // Check if interaction is allowed: parent or joint itself must be selected
                 const selectedId = getSelectedId();
                 const isAllowed = selectedId === foundParent.id || selectedId === jointId;
@@ -500,53 +492,47 @@ export function useJointInteraction(enabled: boolean = true) {
                     c.enabled = false;
                 }
 
-                if (foundTrunk) {
-                    activeSupport.current = { typeId: 'trunk', id: foundTrunk.id };
-                    // Keep a direct immutable reference; trunk updates are copy-on-write.
-                    initialTrunkSnapshot.current = foundTrunk;
-                    setLivePreview(foundTrunk);
+                activeSupport.current = { typeId: owner.typeId, id: owner.id };
 
-                    const root = getRootById(foundTrunk.rootId) ?? undefined;
-                    activeConstraintRootRef.current = root;
-                    activeConstraintStartRef.current = undefined;
-                    if (root) {
-                        const bottomSegIndex = foundTrunk.segments.findIndex((s) => s.topJoint?.id === jointId);
-                        if (bottomSegIndex !== -1) {
-                            const bottomSeg = foundTrunk.segments[bottomSegIndex];
-                            const endpoints = getTrunkSegmentEndpoints(foundTrunk, bottomSeg, bottomSegIndex, root);
-                            activeConstraintStartRef.current = endpoints?.start;
-                        }
-                    }
-                } else if (foundBranch) {
-                    activeSupport.current = { typeId: 'branch', id: foundBranch.id };
-                    setLivePreview(foundBranch);
-                    activeConstraintRootRef.current = undefined;
-                    activeConstraintStartRef.current = getKnotById(foundBranch.parentKnotId)?.pos;
-                    initialEditSnapshotRef.current = captureSupportEditSnapshot();
-                } else if (foundKickstand) {
-                    activeSupport.current = { typeId: 'kickstand', id: foundKickstand.id };
-                    const root = getRootById(foundKickstand.rootId) ?? undefined;
-                    activeConstraintRootRef.current = root;
-                    activeConstraintStartRef.current = undefined;
-                    if (root) {
-                        const rPos = root.transform.pos;
-                        const startZ = rPos.z + root.diskHeight + root.coneHeight;
-                        activeConstraintStartRef.current = { x: rPos.x, y: rPos.y, z: startZ };
-                    }
-                    initialEditSnapshotRef.current = captureSupportEditSnapshot();
-                } else if (foundTwig) {
-                    activeSupport.current = { typeId: 'twig', id: foundTwig.id };
-                    setLivePreview(foundTwig);
-                    activeConstraintRootRef.current = undefined;
-                    activeConstraintStartRef.current = undefined;
-                    initialEditSnapshotRef.current = captureSupportEditSnapshot();
-                } else if (foundStick) {
-                    activeSupport.current = { typeId: 'stick', id: foundStick.id };
-                    setLivePreview(foundStick);
-                    activeConstraintRootRef.current = undefined;
-                    activeConstraintStartRef.current = undefined;
+                const descriptor = getSupportTypeDescriptor(owner.typeId);
+                const hostRoot = descriptor.ownsRoot
+                    ? getRootById((foundParent as { rootId?: string }).rootId ?? '') ?? undefined
+                    : undefined;
+                const hostKnot = descriptor.lower.kind === 'knot'
+                    ? getKnotById((foundParent as { parentKnotId?: string }).parentKnotId ?? '') ?? undefined
+                    : undefined;
+
+                activeConstraintRootRef.current = hostRoot;
+                activeConstraintStartRef.current = resolveShaftAnchor(owner.typeId, {
+                    root: hostRoot,
+                    hostKnot,
+                }) ?? undefined;
+
+                // A multi-segment shaft clamps against the dragged segment's own
+                // start, not the shaft anchor: on segment N>0 that is the
+                // previous segment's top joint. Only segment 0 is the anchor.
+                const draggedSegIndex = (foundParent as { segments: Segment[] }).segments
+                    .findIndex((s) => s.topJoint?.id === jointId);
+                if (hostRoot && draggedSegIndex > 0) {
+                    const endpoints = resolveSegmentEndpoints(
+                        owner.typeId,
+                        foundParent as never,
+                        (foundParent as { segments: Segment[] }).segments[draggedSegIndex],
+                        draggedSegIndex,
+                        { root: hostRoot, hostKnot },
+                    );
+                    activeConstraintStartRef.current = endpoints?.start;
+                }
+
+                // Trunk pushes its own typed history entry, so it keeps a direct
+                // immutable reference instead of the shared edit snapshot.
+                if (descriptor.ownsEditHistoryEntry) {
+                    initialTrunkSnapshot.current = foundParent as Trunk;
+                } else {
                     initialEditSnapshotRef.current = captureSupportEditSnapshot();
                 }
+
+                if (descriptor.jointDragUsesLivePreview) setLivePreview(foundParent);
 
                 emitJointDragPositionPreview(jointId, foundJointPos);
                 lastResolvedJointPosRef.current = { x: foundJointPos.x, y: foundJointPos.y, z: foundJointPos.z };
@@ -612,7 +598,7 @@ export function useJointInteraction(enabled: boolean = true) {
                         commitJointDragSupport(typeId as never, resolved, { stripDiskLengthOverride: true });
                     }
                 } else if (activeIdOf('twig')) {
-                    const twig = getSupportEntity('twig', activeIdOf('twig')!) as Twig | null;
+                    const twig = getSupportEntity('twig', activeSupport.current!.id) as Twig | null;
                     if (twig) {
                         const nextSegments = updateSegmentsJointPos(twig.segments as any[], activeJointIdAtEnd, lastDragPos.current) as any[];
                         const firstSegment = nextSegments[0];
@@ -683,7 +669,7 @@ export function useJointInteraction(enabled: boolean = true) {
                         updateSupportEntity('twig', committedTwig);
                     }
                 } else if (activeIdOf('stick')) {
-                    const stick = getSupportEntity('stick', activeIdOf('stick')!) as Stick | null;
+                    const stick = getSupportEntity('stick', activeSupport.current!.id) as Stick | null;
                     if (stick) {
                         const nextSegments = updateSegmentsJointPos(stick.segments as any[], activeJointIdAtEnd, lastDragPos.current) as any;
                         const nextConeA = stick.contactConeA?.socketJointId === activeJointIdAtEnd
@@ -706,7 +692,7 @@ export function useJointInteraction(enabled: boolean = true) {
             }
 
             if (initialTrunkSnapshot.current && activeIdOf('trunk')) {
-                const currentTrunk = getSupportEntity('trunk', activeIdOf('trunk')!) as Trunk | null;
+                const currentTrunk = getSupportEntity('trunk', activeSupport.current!.id) as Trunk | null;
                 if (currentTrunk) {
                     pushSupportHistory({
                         type: SUPPORT_UPDATE_TRUNK,
@@ -827,7 +813,7 @@ export function useJointInteraction(enabled: boolean = true) {
 
                 if (activeIdOf('trunk')) {
                     // Update trunk
-                    const trunk = getSupportEntity('trunk', activeIdOf('trunk')!) as Trunk | null;
+                    const trunk = getSupportEntity('trunk', activeSupport.current!.id) as Trunk | null;
                     if (trunk) {
                         // Resolve Context for constraints (cached from drag start)
                         const root = activeConstraintRootRef.current ?? getRootById(trunk.rootId) ?? undefined;
@@ -857,7 +843,7 @@ export function useJointInteraction(enabled: boolean = true) {
                     }
                 } else if (activeIdOf('branch')) {
                     // Update branch
-                    const branch = getSupportEntity('branch', activeIdOf('branch')!) as Branch | null;
+                    const branch = getSupportEntity('branch', activeSupport.current!.id) as Branch | null;
                     if (branch) {
                         const contextStart = activeConstraintStartRef.current ?? getKnotById(branch.parentKnotId)?.pos;
 
@@ -883,7 +869,7 @@ export function useJointInteraction(enabled: boolean = true) {
                         applyWarningForDragDelta(clampedBranchJointPos, newPosVec3);
                     }
                 } else if (activeIdOf('kickstand')) {
-                    const kickstand = getSnapshot().kickstands[activeIdOf('kickstand')!];
+                    const kickstand = getSnapshot().kickstands[activeSupport.current!.id];
                     if (kickstand) {
                         const root = activeConstraintRootRef.current ?? getRootById(kickstand.rootId) ?? undefined;
                         let contextStart = activeConstraintStartRef.current;
@@ -906,7 +892,7 @@ export function useJointInteraction(enabled: boolean = true) {
 
                         const clampedKickstandJointPos = resolveJointPosById(newKickstand.segments, activeJointId.current!);
                         const shouldPublish = shouldPublishForClampedPos(clampedKickstandJointPos);
-                        if (getSnapshot().kickstands[activeIdOf('kickstand')!] !== newKickstand && shouldPublish) {
+                        if (getSnapshot().kickstands[activeSupport.current!.id] !== newKickstand && shouldPublish) {
                             publishJointDragSupportPreview('kickstand', newKickstand);
                             markPublishedClampedPos(clampedKickstandJointPos);
                         }
@@ -915,7 +901,7 @@ export function useJointInteraction(enabled: boolean = true) {
                         applyWarningForDragDelta(clampedKickstandJointPos, newPosVec3);
                     }
                 } else if (activeIdOf('twig')) {
-                    const twig = getSupportEntity('twig', activeIdOf('twig')!) as Twig | null;
+                    const twig = getSupportEntity('twig', activeSupport.current!.id) as Twig | null;
                     if (twig) {
                         const nextSegments = updateSegmentsJointPos(twig.segments as any[], activeJointId.current!, newPosVec3) as any[];
                         const firstSegment = nextSegments[0];
@@ -994,7 +980,7 @@ export function useJointInteraction(enabled: boolean = true) {
                         emitPreviewJointPos(clampedTwigJointPos, newPosVec3);
                     }
                 } else if (activeIdOf('stick')) {
-                    const stick = getSupportEntity('stick', activeIdOf('stick')!) as Stick | null;
+                    const stick = getSupportEntity('stick', activeSupport.current!.id) as Stick | null;
                     if (stick) {
                         const nextSegments = updateSegmentsJointPos(stick.segments as any[], activeJointId.current!, newPosVec3) as any;
                         const nextConeA = stick.contactConeA?.socketJointId === activeJointId.current!
