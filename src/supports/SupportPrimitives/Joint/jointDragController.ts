@@ -1,30 +1,42 @@
-import type { Branch, Roots, Trunk, Vec3 } from '../../types';
-import type { Kickstand } from '../../SupportTypes/Kickstand/types';
-import { getSupportTypeDescriptor, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
+import type { Branch, Roots, SupportEntity, SupportFieldsByType, Trunk, Vec3 } from '../../types';
+import { getSupportTypeDescriptor, SUPPORT_TYPES, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
 import { moveJoint } from './jointUtils';
 import { clearSupportDragPreview, emitSupportDragPreview } from './jointDragRuntime';
 
-export type JointDragSupportKind = 'trunk' | 'branch' | 'kickstand';
+export type JointDragSupportKind = SupportTypeId;
 
 /**
- * The types whose joint drag commits through `commitJointDragSupport`, which
- * clears their live preview on the way. Twig and stick commit through their
- * own `updateX` and must clear theirs by hand.
+ * The types whose joint drag commits through `commitJointDragSupport`.
  *
- * @deprecated Hand-written type list; belongs in the registry as a declared
- * flag. Blocked on the §4b drag-commit collapse — the per-type preview refs
- * have to go first.
+ * Every shafted type: the commit writes the entity back and clears its preview,
+ * and neither step is type-specific. Twig and stick used to do the same two
+ * calls by hand, which is what excluded them from this set.
  */
-export const JOINT_DRAG_COMMIT_TYPES: ReadonlySet<SupportTypeId> =
-  new Set<JointDragSupportKind>(['trunk', 'branch', 'kickstand']);
+export const JOINT_DRAG_COMMIT_TYPES: ReadonlySet<SupportTypeId> = new Set(
+  SUPPORT_TYPES.filter((descriptor) => descriptor.hasSegments).map((descriptor) => descriptor.id),
+);
 
+/**
+ * The types whose drag-end recompute moves the shaft against a host.
+ *
+ * A shaft running between hosts re-solves from its declared lower endpoint; a
+ * type contacting the model at both ends re-solves its contacts instead, which
+ * is a different computation and not this one. Distinct from
+ * JOINT_DRAG_COMMIT_TYPES, which is only about how the result is written.
+ */
+export const JOINT_DRAG_HOSTED_SHAFT_TYPES: ReadonlySet<SupportTypeId> = new Set(
+  SUPPORT_TYPES
+    .filter((descriptor) => descriptor.hasSegments && !descriptor.jointDragMovesContacts)
+    .filter((descriptor) => descriptor.lower.kind === 'plateRoot' || descriptor.lower.kind === 'knot')
+    .map((descriptor) => descriptor.id),
+);
+
+/** Each type's entity, derived from the one place types are named. */
 export type JointDragSupportByKind = {
-  trunk: Trunk;
-  branch: Branch;
-  kickstand: Kickstand;
+  [K in SupportTypeId]: SupportEntity & SupportFieldsByType[K];
 };
 
-type JointDragSupport = JointDragSupportByKind[keyof JointDragSupportByKind];
+export type JointDragSupport = JointDragSupportByKind[keyof JointDragSupportByKind];
 
 interface ComputeJointDragSupportPreviewOptions<K extends JointDragSupportKind> {
   kind: K;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { resolveShaftAnchor } from '../SupportPrimitives/Knot/segmentEndpoints';
-import { JOINT_DRAG_COMMIT_TYPES } from '../SupportPrimitives/Joint/jointDragController';
+import { JOINT_DRAG_HOSTED_SHAFT_TYPES } from '../SupportPrimitives/Joint/jointDragController';
 import { SUPPORT_TYPES, getSupportTypeDescriptor } from '../supportTypeRegistry';
 import type { Knot, Roots } from '../types';
 
@@ -56,27 +56,28 @@ test('a branch commit clamps from its parent knot, not from a root', () => {
     );
 });
 
-test('the three commit types resolve an anchor; the others do not', () => {
+test('every hosted-shaft type resolves an anchor; the others do not', () => {
     for (const descriptor of SUPPORT_TYPES) {
         const anchor = resolveShaftAnchor(descriptor.id, { root: ROOT, hostKnot: HOST_KNOT });
 
-        if (JOINT_DRAG_COMMIT_TYPES.has(descriptor.id)) {
-            assert.ok(anchor, `${descriptor.id} commits a joint drag but has no anchor`);
+        if (JOINT_DRAG_HOSTED_SHAFT_TYPES.has(descriptor.id)) {
+            assert.ok(anchor, `${descriptor.id} clamps against a host but has no anchor`);
         } else if (descriptor.lower.kind !== 'plateRoot' && descriptor.lower.kind !== 'knot') {
             assert.equal(anchor, null, `${descriptor.id} should not claim an anchor`);
         }
     }
 });
 
-test('every joint-drag commit type is shafted and declares a lower host', () => {
+test('every hosted-shaft type is shafted and declares a lower host', () => {
     // The collapsed arm reads `rootId` or `parentKnotId` off the entity, so a
-    // type joining this set without one would clamp from nothing.
-    for (const typeId of JOINT_DRAG_COMMIT_TYPES) {
+    // type joining this set without one would clamp from nothing. A type
+    // contacting the model at both ends re-solves its contacts instead.
+    for (const typeId of JOINT_DRAG_HOSTED_SHAFT_TYPES) {
         const descriptor = getSupportTypeDescriptor(typeId);
         assert.ok(descriptor.hasSegments, `${typeId} has no shaft to drag`);
         assert.ok(
             descriptor.lower.kind === 'plateRoot' || descriptor.lower.kind === 'knot',
-            `${typeId} commits a drag but declares lower.kind=${descriptor.lower.kind}`,
+            `${typeId} clamps against a host but declares lower.kind=${descriptor.lower.kind}`,
         );
     }
 });

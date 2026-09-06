@@ -325,6 +325,21 @@ export interface SupportTypeDescriptor {
      */
     jointDragUsesLivePreview: boolean;
     /**
+     * Whether dragging a joint re-solves the type's contact primitives.
+     *
+     * True where both ends are contacts against the model: moving an end
+     * carries its disk or cone with it. A shaft running between hosts instead
+     * moves the joint alone.
+     */
+    jointDragMovesContacts: boolean;
+    /**
+     * Whether a joint drag may turn this type's segments into curves.
+     *
+     * Segments already bezier keep updating regardless; this is whether the
+     * drag can newly curve a straight one.
+     */
+    jointDragCanCurveShaft: boolean;
+    /**
      * Whether instances own a Roots entry, via a `rootId` field.
      *
      * A root with no owner is garbage and gets culled, so a type missing here
@@ -368,6 +383,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: true,
         jointDragUsesLivePreview: true,
+        jointDragMovesContacts: false,
+        jointDragCanCurveShaft: true,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 10, startFallsBackToSplitPoint: false },
         hasOrigin: true,
@@ -403,6 +420,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        jointDragMovesContacts: false,
+        jointDragCanCurveShaft: false,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
@@ -438,6 +457,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        jointDragMovesContacts: false,
+        jointDragCanCurveShaft: false,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
@@ -471,6 +492,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        jointDragMovesContacts: true,
+        jointDragCanCurveShaft: false,
         contactFields: ['contactDiskA', 'contactDiskB'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: false,
@@ -500,6 +523,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        jointDragMovesContacts: true,
+        jointDragCanCurveShaft: false,
         contactFields: ['contactConeA', 'contactConeB'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: false,
@@ -533,6 +558,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        jointDragMovesContacts: false,
+        jointDragCanCurveShaft: false,
         contactFields: [],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         segmentSelectionPrefix: 'braceSegment:',
@@ -562,6 +589,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: false,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        jointDragMovesContacts: false,
+        jointDragCanCurveShaft: false,
         contactFields: ['contactCone'],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: true,
@@ -594,6 +623,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: false,
+        jointDragMovesContacts: false,
+        jointDragCanCurveShaft: true,
         contactFields: [],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: false,
