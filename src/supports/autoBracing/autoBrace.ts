@@ -31,7 +31,7 @@ import { applyInitialPattern } from './initialPattern';
 import { applyRepeatingPattern } from './repeatingPattern';
 import { buildBraceProfile } from './braceDiameter';
 import type { KickstandBuildResult } from '../SupportTypes/Kickstand/types';
-import { generateLateralStabilisers, lateralStabiliserTypes, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeId } from '../supportTypeRegistry';
+import { generateLateralStabilisers, getSupportTypeDescriptor, lateralStabiliserTypes, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
 import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
 import { linePassesMeshClearance } from './meshClearance';
 
@@ -616,13 +616,48 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         keptBraces[id] = brace;
     }
 
+    // The collection this pass rebuilds, so its kept set is read instead of the
+    // snapshot's. Named from the registry rather than written as 'braces'.
+    const bracesKey = getSupportTypeDescriptor('brace').location.key;
+
     const braceKnotIds = new Set<string>();
     for (const b of Object.values(snapshot.braces)) { braceKnotIds.add(b.startKnotId); braceKnotIds.add(b.endKnotId); }
+
+    /** Knots the entities in `collection` hang from, by declared knot edges. */
+    const addHostKnots = (
+        descriptor: SupportTypeDescriptor,
+        collection: Record<string, unknown>,
+        into: Set<string>,
+    ) => {
+        const knotFields = descriptor.edges
+            .filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy')
+            .map((edge) => edge.field);
+        if (knotFields.length === 0) return;
+
+        for (const entity of Object.values(collection ?? {})) {
+            const fields = entity as Record<string, unknown>;
+            for (const field of knotFields) {
+                const knotId = fields[field];
+                if (typeof knotId === 'string') into.add(knotId);
+            }
+        }
+    };
+
+    // A knot survives if anything still hanging from it needs it -- every type
+    // the registry says hangs from a knot, rather than the branch and leaf this
+    // replaces. Kickstand host knots were already safe by another route (the
+    // stabiliser pass above re-adds them), so this changes nothing today; it is
+    // the ninth type that would otherwise be missed.
+    //
+    // Braces read from `keptBraces` rather than the snapshot: the ones this pass
+    // is removing must NOT hold their endpoints alive.
     const preservedKnotIds = new Set<string>();
-    // A kept brace still needs its endpoints.
-    for (const b of Object.values(keptBraces)) { preservedKnotIds.add(b.startKnotId); preservedKnotIds.add(b.endKnotId); }
-    for (const b of Object.values(snapshot.branches)) preservedKnotIds.add(b.parentKnotId);
-    for (const l of Object.values(snapshot.leaves)) preservedKnotIds.add(l.parentKnotId);
+    for (const descriptor of SUPPORT_TYPES) {
+        const collection = descriptor.location.key === bracesKey
+            ? keptBraces as unknown as Record<string, unknown>
+            : snapshot[descriptor.location.key] as unknown as Record<string, unknown>;
+        addHostKnots(descriptor, collection, preservedKnotIds);
+    }
 
     const nextKnots: Record<string, Knot> = {};
     for (const [id, k] of Object.entries(snapshot.knots)) { if (!braceKnotIds.has(id) || preservedKnotIds.has(id)) nextKnots[id] = k; }
