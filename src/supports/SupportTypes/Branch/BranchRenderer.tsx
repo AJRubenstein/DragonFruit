@@ -1,6 +1,6 @@
+import { useShaftSegments } from '../useShaftSegments';
 import React from 'react';
 import { useThree } from '@react-three/fiber';
-import * as THREE from 'three';
 import { Branch, Knot } from '../../types';
 import { JointRenderer } from '../../SupportPrimitives/Joint/JointRenderer';
 import { ShaftRenderer } from '../../SupportPrimitives/Shaft/ShaftRenderer';
@@ -162,37 +162,15 @@ export const BranchRenderer = React.memo(function BranchRenderer({
     dragSessionRef.current?.stop();
     dragSessionRef.current = null;
   }, []);
-  
-  // Start point is the Knot position
-  const startPos = parentKnot.pos 
-    ? new THREE.Vector3(parentKnot.pos.x, parentKnot.pos.y, parentKnot.pos.z)
-    : new THREE.Vector3(0, 0, 0);
-
-  let currentStart = startPos.clone();
 
   const shafts: React.ReactNode[] = [];
   const batchedStraightShafts: InstancedShaft[] = [];
   const joints: React.ReactNode[] = [];
 
   const effectiveBranch = liveDragBranchRef.current ?? previewBranch ?? branch;
+  const shaftSegments = useShaftSegments('branch', effectiveBranch, { hostKnot: parentKnot });
 
-  effectiveBranch.segments.forEach((seg, index) => {
-    let endPoint: THREE.Vector3;
-
-    if (seg.topJoint) {
-      endPoint = new THREE.Vector3(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z);
-    } else if (effectiveBranch.contactCone) {
-      // Shaft ends at the cone's socket position
-      const socketPos = getFinalSocketPosition(effectiveBranch.contactCone);
-      endPoint = new THREE.Vector3(socketPos.x, socketPos.y, socketPos.z);
-    } else {
-      endPoint = currentStart.clone().add(new THREE.Vector3(0, 0, 5));
-    }
-
-    const startPosVec = { x: currentStart.x, y: currentStart.y, z: currentStart.z };
-    const endPosVec = { x: endPoint.x, y: endPoint.y, z: endPoint.z };
-
-    currentStart = endPoint;
+  shaftSegments.forEach(({ segment: seg, start: startPosVec, end: endPosVec }) => {
 
     const isSegSelected = selectedId === seg.id;
 

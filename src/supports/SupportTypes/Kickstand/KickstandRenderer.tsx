@@ -1,3 +1,4 @@
+import { useShaftSegments } from '../useShaftSegments';
 import React from 'react';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
@@ -74,25 +75,13 @@ export const KickstandRenderer = React.memo(function KickstandRenderer({
         handleSupportClick(e, kickstand.id, !!isInteractable);
     };
 
-    const basePos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, root.transform.pos.z);
-    const startZ = root.diskHeight + root.coneHeight;
-
-    let currentStart = basePos.clone().add(new THREE.Vector3(0, 0, startZ));
-
     const shafts: React.ReactNode[] = [];
     const batchedStraightShafts: InstancedShaft[] = [];
     const joints: React.ReactNode[] = [];
 
-    kickstand.segments.forEach((segment, index) => {
-        const isLast = index === kickstand.segments.length - 1;
+    const shaftSegments = useShaftSegments('kickstand', kickstand, { root, hostKnot });
 
-        const endPoint = segment.topJoint
-            ? new THREE.Vector3(segment.topJoint.pos.x, segment.topJoint.pos.y, segment.topJoint.pos.z)
-            : new THREE.Vector3(hostKnot.pos.x, hostKnot.pos.y, hostKnot.pos.z);
-
-        const start = { x: currentStart.x, y: currentStart.y, z: currentStart.z };
-        const end = { x: endPoint.x, y: endPoint.y, z: endPoint.z };
-
+    shaftSegments.forEach(({ segment, index, isLast, start, end }) => {
         const segmentSelected = selectedId === segment.id;
 
         const diameterStart = isLast ? kickstand.profile.terminalStartDiameterMm : undefined;
@@ -184,7 +173,6 @@ export const KickstandRenderer = React.memo(function KickstandRenderer({
             );
         }
 
-        currentStart = endPoint;
     });
 
     const shaftDiameter = kickstand.segments[0]?.diameter ?? kickstand.profile.bodyDiameterMm;

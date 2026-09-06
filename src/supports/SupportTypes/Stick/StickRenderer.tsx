@@ -1,6 +1,6 @@
+import { useShaftSegments } from '../useShaftSegments';
 import React, { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
-import * as THREE from 'three';
 import { Stick } from '../../types';
 import { JointRenderer } from '../../SupportPrimitives/Joint/JointRenderer';
 import { ShaftRenderer } from '../../SupportPrimitives/Shaft/ShaftRenderer';
@@ -165,26 +165,9 @@ export const StickRenderer = React.memo(function StickRenderer({
     return Array.from(map.values());
   }, [stick.segments]);
 
-  stick.segments.forEach((seg) => {
-    let startPoint: THREE.Vector3;
-    let endPoint: THREE.Vector3;
+  const shaftSegments = useShaftSegments('stick', stick, {});
 
-    if (seg.bottomJoint) {
-      startPoint = new THREE.Vector3(seg.bottomJoint.pos.x, seg.bottomJoint.pos.y, seg.bottomJoint.pos.z);
-    } else {
-      const socket = getFinalSocketPosition(stick.contactConeA);
-      startPoint = new THREE.Vector3(socket.x, socket.y, socket.z);
-    }
-
-    if (seg.topJoint) {
-      endPoint = new THREE.Vector3(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z);
-    } else {
-      const socket = getFinalSocketPosition(stick.contactConeB);
-      endPoint = new THREE.Vector3(socket.x, socket.y, socket.z);
-    }
-
-    const startPosVec = { x: startPoint.x, y: startPoint.y, z: startPoint.z };
-    const endPosVec = { x: endPoint.x, y: endPoint.y, z: endPoint.z };
+  shaftSegments.forEach(({ segment: seg, start: startPosVec, end: endPosVec }) => {
 
     const isSegSelected = selectedId === seg.id;
 
