@@ -25,7 +25,7 @@ import {
     isJointInteractionLocked,
     setJointInteractionLock,
 } from './jointDragRuntime';
-import { commitJointDragSupport, computeJointDragSupportPreview, JOINT_DRAG_COMMIT_TYPES, publishJointDragSupportPreview } from './jointDragController';
+import { commitJointDragSupport, computeJointDragSupportPreview, JOINT_DRAG_COMMIT_TYPES, JOINT_DRAG_HOSTED_SHAFT_TYPES, publishJointDragSupportPreview } from './jointDragController';
 import { subscribeSupportInteractionReset } from '../../interaction/supportInteractionReset';
 
 /**
@@ -571,8 +571,8 @@ export function useJointInteraction(enabled: boolean = true) {
             // On drag end, do one collision-aware recompute so diskLengthOverride only reflects
             // the final settled joint position (avoids latching max standoff mid-drag).
             if (lastDragPos.current) {
-                if (JOINT_DRAG_COMMIT_TYPES.has(activeSupport.current?.typeId as SupportTypeId)) {
-                    // Trunk, branch and kickstand commit identically; they differ
+                if (JOINT_DRAG_HOSTED_SHAFT_TYPES.has(activeSupport.current?.typeId as SupportTypeId)) {
+                    // A hosted shaft recomputes identically; the arms differed
                     // only in where the angle clamp measures from, which the
                     // declared lower endpoint gives.
                     const { typeId, id } = activeSupport.current!;
@@ -715,9 +715,8 @@ export function useJointInteraction(enabled: boolean = true) {
                 );
             }
 
-            // Twig and stick commit through updateX directly, so nothing has
-            // cleared their live preview; the three that go through
-            // commitJointDragSupport already had theirs cleared.
+            // A type that did not commit through the controller still has its
+            // preview up, so clear it here.
             if (activeSupport.current && !JOINT_DRAG_COMMIT_TYPES.has(activeSupport.current.typeId)) {
                 clearSupportDragPreview(activeSupport.current.typeId, activeSupport.current.id);
             }

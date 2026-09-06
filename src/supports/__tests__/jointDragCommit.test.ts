@@ -48,11 +48,13 @@ test('exactly one type pushes its own joint-drag history entry', () => {
 });
 
 test('the types that commit through the shared controller clear their own preview', () => {
-    // Membership decides whether the drag-end path clears the live preview by
-    // hand. A type added to the controller but not this set would leave a
-    // preview stuck on screen -- no test or golden catches that, so it is
-    // pinned here.
-    assert.deepEqual([...JOINT_DRAG_COMMIT_TYPES].sort(), ['branch', 'kickstand', 'trunk']);
+    // Every shafted type, since the controller's commit is what twig and stick
+    // were doing by hand. That the clear actually fires is held per type by
+    // jointDragPreviewClear.test.ts, against the event itself.
+    assert.deepEqual(
+        [...JOINT_DRAG_COMMIT_TYPES].sort(),
+        SUPPORT_TYPES.filter((d) => d.hasSegments).map((d) => d.id).sort(),
+    );
 
     for (const typeId of JOINT_DRAG_COMMIT_TYPES) {
         assert.equal(getSupportTypeDescriptor(typeId).hasSegments, true, typeId);
