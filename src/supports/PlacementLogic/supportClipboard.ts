@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { getSnapshot, setSnapshot, transformSupportsForModel } from '@/supports/state';
-import type { Brace, Branch, Knot, Leaf, Roots, Segment, Stick, SupportState, Trunk, Twig } from '@/supports/types';
+import type { Brace, Branch, Knot, Leaf, Roots, Segment, Stick, SupportState, Trunk, Twig, Vec3 } from '@/supports/types';
 import {
   getKickstandSnapshot,
   setKickstandSnapshot,
@@ -543,17 +543,15 @@ export function estimateSupportBoundsForModel(modelId: string): SupportModelBoun
       return state.braces[braceId]?.modelId === modelId;
     }
 
-    for (const trunk of Object.values(state.trunks)) {
-      if (trunk.modelId === modelId && trunk.segments.some((segment) => segment.id === parentShaftId)) return true;
-    }
-    for (const branch of Object.values(state.branches)) {
-      if (branch.modelId === modelId && branch.segments.some((segment) => segment.id === parentShaftId)) return true;
-    }
-    for (const twig of Object.values(state.twigs)) {
-      if (twig.modelId === modelId && twig.segments.some((segment) => segment.id === parentShaftId)) return true;
-    }
-    for (const stick of Object.values(state.sticks)) {
-      if (stick.modelId === modelId && stick.segments.some((segment) => segment.id === parentShaftId)) return true;
+    // Every shafted type, so a knot riding an anchor or kickstand resolves too.
+    for (const descriptor of SUPPORT_TYPES) {
+      if (!descriptor.hasSegments) continue;
+      const collection = state[descriptor.location.key] as unknown as Record<string, { modelId: string; segments?: Segment[] }>;
+
+      for (const entity of Object.values(collection ?? {})) {
+        if (entity.modelId !== modelId) continue;
+        if (entity.segments?.some((segment) => segment.id === parentShaftId)) return true;
+      }
     }
 
     return false;
@@ -580,36 +578,28 @@ export function estimateSupportBoundsForModel(modelId: string): SupportModelBoun
     });
   };
 
-  Object.values(state.trunks).filter((trunk) => trunk.modelId === modelId).forEach((trunk) => {
-    expandSegments(trunk.segments as any[]);
-    if (trunk.contactCone) {
-      expand(trunk.contactCone.pos, Math.max(0.001, trunk.contactCone.profile.contactDiameterMm / 2));
+  // Every type's shafts and declared contacts. A cone carries its contact
+  // diameter on its profile, a disk directly on itself.
+  for (const descriptor of SUPPORT_TYPES) {
+    const collection = state[descriptor.location.key] as unknown as Record<string, Record<string, unknown>>;
+
+    for (const entity of Object.values(collection ?? {})) {
+      if (entity.modelId !== modelId) continue;
+      if (descriptor.hasSegments) expandSegments((entity.segments ?? []) as any[]);
+
+      for (const field of descriptor.contactFields) {
+        const contact = entity[field] as {
+          pos: Vec3;
+          contactDiameterMm?: number;
+          profile?: { contactDiameterMm: number };
+        } | undefined;
+        if (!contact) continue;
+
+        const diameter = contact.contactDiameterMm ?? contact.profile?.contactDiameterMm ?? 0;
+        expand(contact.pos, Math.max(0.001, diameter / 2));
+      }
     }
-  });
-
-  Object.values(state.branches).filter((branch) => branch.modelId === modelId).forEach((branch) => {
-    expandSegments(branch.segments as any[]);
-    if (branch.contactCone) {
-      expand(branch.contactCone.pos, Math.max(0.001, branch.contactCone.profile.contactDiameterMm / 2));
-    }
-  });
-
-  Object.values(state.leaves).filter((leaf) => leaf.modelId === modelId).forEach((leaf) => {
-    if (!leaf.contactCone) return;
-    expand(leaf.contactCone.pos, Math.max(0.001, leaf.contactCone.profile.contactDiameterMm / 2));
-  });
-
-  Object.values(state.twigs).filter((twig) => twig.modelId === modelId).forEach((twig) => {
-    expandSegments(twig.segments as any[]);
-    expand(twig.contactDiskA.pos, Math.max(0.001, twig.contactDiskA.contactDiameterMm / 2));
-    expand(twig.contactDiskB.pos, Math.max(0.001, twig.contactDiskB.contactDiameterMm / 2));
-  });
-
-  Object.values(state.sticks).filter((stick) => stick.modelId === modelId).forEach((stick) => {
-    expandSegments(stick.segments as any[]);
-    expand(stick.contactConeA.pos, Math.max(0.001, stick.contactConeA.profile.contactDiameterMm / 2));
-    expand(stick.contactConeB.pos, Math.max(0.001, stick.contactConeB.profile.contactDiameterMm / 2));
-  });
+  }
 
   Object.values(kickstandState.kickstands)
     .filter((kickstand) => kickstand.modelId === modelId)
