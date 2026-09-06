@@ -325,6 +325,22 @@ export interface SupportTypeDescriptor {
      */
     jointDragUsesLivePreview: boolean;
     /**
+     * How interior view decides whether an instance is inside the cavity.
+     *
+     * - `contacts`  -- test the type's own declared contacts.
+     * - `inherited` -- it has none of its own; resolve through its host knots.
+     * - `hidden`    -- never shown in interior view.
+     */
+    interiorVisibility: 'contacts' | 'inherited' | 'hidden';
+    /**
+     * Whether unselected contact cones are drawn by the shared batched pass.
+     *
+     * A type that draws its own cone instead would get two if it also batched.
+     * Anchor is the one: its renderer draws the cone directly, and only while
+     * selected.
+     */
+    batchesContactCones: boolean;
+    /**
      * Whether dragging a joint re-solves the type's contact primitives.
      *
      * True where both ends are contacts against the model: moving an end
@@ -383,6 +399,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: true,
         jointDragUsesLivePreview: true,
+        batchesContactCones: true,
+        interiorVisibility: 'contacts',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: true,
         contactFields: ['contactCone'],
@@ -420,6 +438,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        batchesContactCones: true,
+        interiorVisibility: 'contacts',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: false,
         contactFields: ['contactCone'],
@@ -457,6 +477,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        batchesContactCones: true,
+        interiorVisibility: 'contacts',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: false,
         contactFields: ['contactCone'],
@@ -492,6 +514,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        batchesContactCones: false,
+        interiorVisibility: 'contacts',
         jointDragMovesContacts: true,
         jointDragCanCurveShaft: false,
         contactFields: ['contactDiskA', 'contactDiskB'],
@@ -523,6 +547,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        batchesContactCones: true,
+        interiorVisibility: 'contacts',
         jointDragMovesContacts: true,
         jointDragCanCurveShaft: false,
         contactFields: ['contactConeA', 'contactConeB'],
@@ -558,6 +584,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        batchesContactCones: false,
+        interiorVisibility: 'inherited',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: false,
         contactFields: [],
@@ -589,6 +617,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: false,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        batchesContactCones: false,
+        interiorVisibility: 'contacts',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: false,
         contactFields: ['contactCone'],
@@ -623,6 +653,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: false,
+        batchesContactCones: false,
+        interiorVisibility: 'hidden',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: true,
         contactFields: [],

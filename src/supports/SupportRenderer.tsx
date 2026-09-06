@@ -34,6 +34,7 @@ import { InstancedContactConeGroup, type InstancedContactCone } from './SupportP
 import { useBracePlacementState } from './SupportTypes/Brace/bracePlacementState';
 import { useLeafPlacementState } from './SupportTypes/Leaf/leafPlacementState';
 import { useKickstandStoreState } from './SupportTypes/Kickstand/kickstandStore';
+import type { Kickstand } from './SupportTypes/Kickstand/types';
 import { useKickstandPlacementState } from './SupportTypes/Kickstand/kickstandPlacementState';
 import { useJointInteraction } from './SupportPrimitives/Joint/useJointInteraction';
 import { useKnotInteraction } from './SupportPrimitives/Knot/useKnotInteraction';
@@ -45,7 +46,7 @@ import { JointCreationManager } from './SupportPrimitives/Joint/JointCreationMan
 import { JointGizmo } from './SupportPrimitives/Joint/JointGizmo';
 import { KnotGizmo } from './SupportPrimitives/Knot/KnotGizmo';
 import { BezierGizmoManager } from './Curves/BezierGizmo/BezierGizmoManager';
-import { ContactDisk, SupportMode, BezierSegment, type Brace, type Knot, type Leaf, type Roots, type Segment, type Twig, type SupportOrigin, type Vec3 } from './types';
+import { ContactDisk, SupportMode, BezierSegment, type Anchor, type Brace, type Knot, type Leaf, type Roots, type Segment, type Stick, type SupportEntityAny, type Trunk, type Branch, type Twig, type SupportOrigin, type Vec3 } from './types';
 import { resolveTwigDiameterAtSegmentT } from './SupportTypes/Twig/twigTaper';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
 import { EMPTY_PLACEMENT_PREVIEWS, type SupportData, type SupportPlacementPreviews } from './rendering';
@@ -1359,15 +1360,12 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         });
     }, [hasPreviewKnotOverrides, previewKnotOverrideIds, previewKnotOverrides, leafIdsByParentKnotId, state.leaves, twigBySegmentId]);
 
-    const activePreviewTrunk = activeJointDragPreview?.kind === 'trunk'
-        ? (activeJointDragPreview.support as (typeof state.trunks)[string])
-        : null;
-    const activePreviewBranch = activeJointDragPreview?.kind === 'branch'
-        ? (activeJointDragPreview.support as (typeof state.branches)[string])
-        : null;
-    const activePreviewKickstand = activeJointDragPreview?.kind === 'kickstand'
-        ? (activeJointDragPreview.support as (typeof kickstandState.kickstands)[string])
-        : null;
+    // One joint-drag preview, for whichever type is being dragged. It replaces
+    // that entity in its own render list below. Memoised on what it reads: a
+    // fresh object each render would rebuild every list on every render.
+    const activePreviewEntity = useMemo(() => (activeJointDragPreview
+        ? { typeId: activeJointDragPreview.kind as SupportTypeId, support: activeJointDragPreview.support as { id: string } }
+        : null), [activeJointDragPreview]);
 
     const renderLeavesById = useMemo(() => {
         if (previewLeavesById.size === 0) return state.leaves;
@@ -1428,86 +1426,93 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         });
     }, [branchList, knotDragPreviewBranchSegmentsById, knotDragPreviewBranchIds]);
 
-    const renderTrunkList = useMemo(() => {
-        const filterInteriorTrunks = (list: typeof trunkList) => interiorView
-            ? list.filter((trunk) => matchesInteriorContact(trunk.contactCone, trunk.modelId))
-            : list;
+    /**
+     * Entities a knot drag has reflowed, by entity id.
+     *
+     * A knot drag moves whatever hangs from the knot, so several entities of a
+     * type can change at once -- unlike a joint drag, which reflows the one
+     * support being dragged. Both producers key by entity id, so the render
+     * pass substitutes by id without asking which type it is looking at.
+     */
+    const knotDragOverridesById = useMemo(() => {
+        const overrides = new Map<string, SupportEntityAny>();
+        for (const [leafId, leaf] of previewLeavesById) {
+            overrides.set(leafId, leaf as unknown as SupportEntityAny);
+        }
+        for (const branch of branchListWithKnotDragPreview) {
+            if (branch !== state.branches[branch.id]) {
+                overrides.set(branch.id, branch as unknown as SupportEntityAny);
+            }
+        }
+        return overrides;
+    }, [previewLeavesById, branchListWithKnotDragPreview, state.branches]);
 
-        if (!activePreviewTrunk) return filterInteriorTrunks(trunkList);
+    /**
+     * What each type renders: its stored entities, with any live preview
+     * substituted, filtered for interior view by the rule it declares.
+     *
+     * Eight memos differing only in those two steps. The substitution source is
+     * the one active joint-drag preview, plus the leaf and branch knot-drag
+     * previews that reflow a whole list rather than one entity.
+     */
+    const renderListByType = useMemo(() => {
+        const lists = {} as Record<SupportTypeId, readonly SupportEntityAny[]>;
 
-        let replaced = false;
-        const result = trunkList.map((trunk) => {
-            if (trunk.id !== activePreviewTrunk.id) return trunk;
-            replaced = true;
-            return activePreviewTrunk;
-        });
+        for (const descriptor of SUPPORT_TYPES) {
+            if (descriptor.interiorVisibility === 'hidden' && interiorView) {
+                lists[descriptor.id] = [];
+                continue;
+            }
 
-        if (!replaced) result.push(activePreviewTrunk);
-        return filterInteriorTrunks(result);
-    }, [trunkList, activePreviewTrunk, interiorView, matchesInteriorContact]);
+            let list = Object.values(state[descriptor.location.key]) as readonly SupportEntityAny[];
 
-    const renderBranchList = useMemo(() => {
-        const filterInteriorBranches = (list: typeof branchListWithKnotDragPreview) => interiorView
-            ? list.filter((branch) => matchesInteriorContact(branch.contactCone, branch.modelId))
-            : list;
+            // A knot drag can reflow several entities of a type at once.
+            if (knotDragOverridesById.size > 0) {
+                list = list.map((entity) => knotDragOverridesById.get(entity.id) ?? entity);
+            }
 
-        if (!activePreviewBranch) return filterInteriorBranches(branchListWithKnotDragPreview);
+            if (activePreviewEntity?.typeId === descriptor.id) {
+                const preview = activePreviewEntity.support as SupportEntityAny;
+                let replaced = false;
+                const next = list.map((entity) => {
+                    if (entity.id !== preview.id) return entity;
+                    replaced = true;
+                    return preview;
+                });
+                if (!replaced) next.push(preview);
+                list = next;
+            }
 
-        let replaced = false;
-        const result = branchListWithKnotDragPreview.map((branch) => {
-            if (branch.id !== activePreviewBranch.id) return branch;
-            replaced = true;
-            return activePreviewBranch;
-        });
+            if (!interiorView) {
+                lists[descriptor.id] = list;
+                continue;
+            }
 
-        if (!replaced) result.push(activePreviewBranch);
-        return filterInteriorBranches(result);
-    }, [branchListWithKnotDragPreview, activePreviewBranch, interiorView, matchesInteriorContact]);
+            lists[descriptor.id] = descriptor.interiorVisibility === 'inherited'
+                ? list.filter((entity) => matchesInteriorBrace(entity as unknown as Brace))
+                : list.filter((entity) => anyContactMatches(descriptor.id, entity,
+                    (contact: unknown) => matchesInteriorContact(
+                        contact as ContactDisk,
+                        (entity as { modelId?: string }).modelId,
+                    )));
+        }
 
-    const renderLeafList = useMemo(() => {
-        const result = previewLeavesById.size === 0
-            ? leafList
-            : leafList.map((leaf) => previewLeavesById.get(leaf.id) ?? leaf);
-        return interiorView
-            ? result.filter((leaf) => matchesInteriorContact(leaf.contactCone, leaf.modelId))
-            : result;
-    }, [leafList, previewLeavesById, interiorView, matchesInteriorContact]);
-    const renderTwigList = useMemo(() => {
-        return interiorView
-            ? twigList.filter((twig) => anyContactMatches('twig', twig,
-                (contact: unknown) => matchesInteriorContact(contact as ContactDisk, twig.modelId)))
-            : twigList;
-    }, [twigList, interiorView, matchesInteriorContact]);
-    const renderStickList = useMemo(() => {
-        return interiorView
-            ? stickList.filter((stick) => anyContactMatches('stick', stick,
-                (contact: unknown) => matchesInteriorContact(contact as ContactDisk, stick.modelId)))
-            : stickList;
-    }, [stickList, interiorView, matchesInteriorContact]);
-    const renderBraceList = useMemo(() => {
-        return interiorView
-            ? braceList.filter((brace) => matchesInteriorBrace(brace))
-            : braceList;
-    }, [braceList, interiorView, matchesInteriorBrace]);
-    const renderAnchorList = useMemo(() => {
-        return interiorView
-            ? anchorList.filter((anchor) => matchesInteriorContact(anchor.contactCone, anchor.modelId))
-            : anchorList;
-    }, [anchorList, interiorView, matchesInteriorContact]);
-    const renderKickstandList = useMemo(() => {
-        if (interiorView) return [];
-        if (!activePreviewKickstand) return kickstandList;
+        return lists;
+    }, [state, knotDragOverridesById, activePreviewEntity, interiorView, matchesInteriorContact, matchesInteriorBrace]);
 
-        let replaced = false;
-        const result = kickstandList.map((kickstand) => {
-            if (kickstand.id !== activePreviewKickstand.id) return kickstand;
-            replaced = true;
-            return activePreviewKickstand;
-        });
-
-        if (!replaced) result.push(activePreviewKickstand);
-        return result;
-    }, [kickstandList, activePreviewKickstand, interiorView]);
+    /*
+     * Thin typed reads of `renderListByType`, one per type. DEBT, not API: they
+     * exist because ~80 call sites below still name a list, and each binds a
+     * type id and nothing else. They go as those sites move to the map.
+     */
+    const renderTrunkList = renderListByType.trunk as unknown as Trunk[];
+    const renderBranchList = renderListByType.branch as unknown as Branch[];
+    const renderLeafList = renderListByType.leaf as unknown as Leaf[];
+    const renderTwigList = renderListByType.twig as unknown as Twig[];
+    const renderStickList = renderListByType.stick as unknown as Stick[];
+    const renderBraceList = renderListByType.brace as unknown as Brace[];
+    const renderAnchorList = renderListByType.anchor as unknown as Anchor[];
+    const renderKickstandList = renderListByType.kickstand as unknown as Kickstand[];
 
     const renderKnotList = useMemo(() => {
         if (!hasPreviewKnotOverrides) return knotList;
@@ -1683,7 +1688,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         () => (enableTwigSceneBatching
             ? buildPlainShaftSet('twig', renderTwigList, () => ({}))
             : new Map<string, SupportShaftSet>()),
-        [enableTwigSceneBatching, renderTwigList, buildPlainShaftSet],
+        [renderTwigList, enableTwigSceneBatching, buildPlainShaftSet],
     );
 
     const stickShaftsBySupport = useMemo(
@@ -1733,7 +1738,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
 
         return map;
-    }, [renderTrunkList, renderBranchList, renderTwigList, renderStickList, renderKickstandList]);
+    }, [renderBranchList, renderKickstandList, renderStickList, renderTrunkList, renderTwigList, ]);
 
     const modelIdByKnotId = useMemo(() => {
         const map = new Map<string, string | undefined>();
@@ -1816,13 +1821,19 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             }
         };
 
-        collect('trunk', renderTrunkList, (trunk) => trunk.modelId);
-        collect('branch', renderBranchList, (branch) => branch.modelId ?? modelIdByKnotId.get(branch.parentKnotId));
-        collect('stick', renderStickList, (stick) => stick.modelId);
-        collect('leaf', renderLeafList, (leaf) => leaf.modelId ?? modelIdByKnotId.get(leaf.parentKnotId));
+        // A knot-hosted type resolves its model through the host when it
+        // carries none of its own; the rest read it directly.
+        for (const descriptor of SUPPORT_TYPES) {
+            if (!descriptor.batchesContactCones) continue;
+            collect(descriptor.id, renderListByType[descriptor.id], (entity) => (
+                descriptor.lower.kind === 'knot'
+                    ? entity.modelId ?? modelIdByKnotId.get((entity as { parentKnotId?: string }).parentKnotId ?? '')
+                    : entity.modelId
+            ));
+        }
 
         return result;
-    }, [renderTrunkList, renderBranchList, renderStickList, renderLeafList, modelIdByKnotId, isModelVisible]);
+    }, [renderListByType, modelIdByKnotId, isModelVisible]);
 
     /**
      * A type's shaft joints, keyed by support. `segmentsCarryBothJoints`
@@ -2003,11 +2014,11 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return Array.from(grouped.values());
     }, [
         disableSelectionAndHover,
-        renderTrunkList,
-        renderBranchList,
-        renderTwigList,
-        renderStickList,
-        renderKickstandList,
+        renderBranchList, renderKickstandList, renderLeafList, renderStickList, renderTrunkList, renderTwigList,
+        
+        
+        
+        renderListByType,
         isModelVisible,
         selectedTrunkIds,
         selectedBranchIds,
@@ -2021,7 +2032,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         kickstandJointsBySupport,
         leafJointsBySupport,
         selectedLeafIds,
-        renderLeafList,
+        renderListByType,
         applyDropToVec3Like,
         dimNonSelected,
         resolveSceneSupportColor,
@@ -2062,7 +2073,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         () => (enableTwigSceneBatching
             ? groupShaftsForSceneBatch('twig', renderTwigList, twigShaftsBySupport, selectedTwigIds)
             : []),
-        [enableTwigSceneBatching, renderTwigList, twigShaftsBySupport, selectedTwigIds, groupShaftsForSceneBatch],
+        [renderTwigList, enableTwigSceneBatching, twigShaftsBySupport, selectedTwigIds, groupShaftsForSceneBatch],
     );
 
     const sceneBatchedStickShaftGroups = useMemo(
@@ -2221,7 +2232,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
         return Array.from(grouped.values());
     }, [
-        renderTrunkList, renderBranchList, renderStickList, renderLeafList,
+        renderBranchList, renderLeafList, renderStickList, renderTrunkList,
         selectedTrunkIds, selectedBranchIds, selectedStickIds, selectedLeafIds,
         contactConesBySupport, resolveSceneSupportColor, applyDropToVec3Like,
     ]);
