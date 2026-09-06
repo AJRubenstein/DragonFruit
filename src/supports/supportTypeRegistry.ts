@@ -798,6 +798,16 @@ export const SUPPORT_REMOVAL_SHAPES = {
 } as const satisfies Record<SupportTypeId, { self: string; cascade: Record<string, string | readonly string[]> }>;
 
 /**
+ * Types whose removal history payload is not the cascade result verbatim.
+ *
+ * Leaf and brace narrow `null` to `undefined`; branch adds the trunk diameter
+ * reprofile its removal triggers. Everything else pushes the shape it got.
+ */
+export const RESHAPED_REMOVAL_PAYLOADS: ReadonlySet<SupportTypeId> = new Set<SupportTypeId>([
+    'leaf', 'brace', 'branch',
+]);
+
+/**
  * The entity type living in each collection, so a removal result can be typed
  * from the declared shape rather than restated at every call site.
  */
