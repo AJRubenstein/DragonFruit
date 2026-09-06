@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
+import { resolveShaftSegments } from '../SupportTypes/useShaftSegments';
 import { SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { Knot, Roots, Segment } from '../types';
 
@@ -113,6 +114,54 @@ test('each segment after the first continues from the one below', () => {
                 current.start, previous.end,
                 `${descriptor.id} segment ${i} does not continue from segment ${i - 1}`,
             );
+        }
+    }
+});
+
+test('a declared shaft taper reaches the segment that carries it', () => {
+    // `shaftTaper` says where a type reads its two end diameters and on which
+    // segment. Only the last segment's endpoints need a contact, so this uses a
+    // shaft whose joints are all present and checks which segments taper.
+    for (const descriptor of SUPPORT_TYPES) {
+        const taper = descriptor.shaftTaper;
+        if (!taper) continue;
+
+        const segments = shaft(descriptor.id, 3);
+        // Give the last segment a top joint too, so no endpoint needs a contact.
+        (segments[2] as { topJoint?: unknown }).topJoint = joint(`${descriptor.id}-end`, 13);
+
+        const entity = {
+            id: `${descriptor.id}-taper`,
+            segments,
+            profile: { terminalStartDiameterMm: 2, terminalEndDiameterMm: 0.6 },
+            contactDiskA: { contactDiameterMm: 2 },
+            contactDiskB: { contactDiameterMm: 0.6 },
+        } as unknown as { segments: Segment[] };
+
+        const resolved = resolveShaftSegments(descriptor.id, entity, { root: ROOT, hostKnot: HOST_KNOT });
+        const tapered = resolved.filter((segment) => segment.diameterStart != null);
+
+        assert.equal(
+            tapered.length,
+            taper.segments === 'all' ? resolved.length : 1,
+            `${descriptor.id} tapered the wrong number of segments`,
+        );
+        for (const segment of tapered) {
+            assert.equal(segment.isUniformDiameter, false, `${descriptor.id}: differing ends must not batch`);
+        }
+    }
+});
+
+test('a type with no declared taper reports uniform diameters', () => {
+    for (const descriptor of SUPPORT_TYPES) {
+        if (descriptor.shaftTaper || !descriptor.hasSegments) continue;
+
+        const segments = shaft(descriptor.id, 2);
+        const entity = { id: `${descriptor.id}-flat`, segments } as unknown as { segments: Segment[] };
+
+        for (const segment of resolveShaftSegments(descriptor.id, entity, { root: ROOT, hostKnot: HOST_KNOT })) {
+            assert.equal(segment.diameterStart, undefined, descriptor.id);
+            assert.ok(segment.isUniformDiameter, descriptor.id);
         }
     }
 });

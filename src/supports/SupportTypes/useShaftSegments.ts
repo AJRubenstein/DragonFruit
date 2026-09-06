@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import React from 'react';
 
 import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
-import type { SupportTypeId } from '../supportTypeRegistry';
+import { getSupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
 import type { Knot, Roots, Segment, Vec3 } from '../types';
 
 /**
@@ -22,6 +22,21 @@ export interface ShaftSegment {
     end: Vec3;
     startVec: THREE.Vector3;
     endVec: THREE.Vector3;
+    /** Set only where the type declares a taper on this segment. */
+    diameterStart?: number;
+    diameterEnd?: number;
+    /** False when the two ends differ, which drops the shaft out of the batch. */
+    isUniformDiameter: boolean;
+}
+
+/** Reads a dotted path off an entity, for `shaftTaper.from`. */
+function readPath(entity: unknown, path: string): number | undefined {
+    let value: unknown = entity;
+    for (const key of path.split('.')) {
+        if (value == null || typeof value !== 'object') return undefined;
+        value = (value as Record<string, unknown>)[key];
+    }
+    return typeof value === 'number' ? value : undefined;
 }
 
 export interface ShaftHosts {
@@ -35,20 +50,30 @@ export function resolveShaftSegments(
     hosts: ShaftHosts = {},
 ): ShaftSegment[] {
     const segments = entity?.segments ?? [];
+    const taper = getSupportTypeDescriptor(typeId).shaftTaper;
     const out: ShaftSegment[] = [];
 
     segments.forEach((segment, index) => {
         const endpoints = resolveSegmentEndpoints(typeId, entity as { segments: Segment[] }, segment, index, hosts);
         if (!endpoints) return;
 
+        const isLast = index === segments.length - 1;
+        const tapersHere = !!taper && (taper.segments === 'all' || isLast);
+        const diameterStart = tapersHere ? readPath(entity, taper.from[0]) : undefined;
+        const diameterEnd = tapersHere ? readPath(entity, taper.from[1]) : undefined;
+
         out.push({
             segment,
             index,
-            isLast: index === segments.length - 1,
+            isLast,
             start: endpoints.start,
             end: endpoints.end,
             startVec: new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z),
             endVec: new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z),
+            diameterStart,
+            diameterEnd,
+            isUniformDiameter: (diameterStart == null && diameterEnd == null)
+                || (diameterStart != null && diameterEnd != null && Math.abs(diameterStart - diameterEnd) < 1e-6),
         });
     });
 
