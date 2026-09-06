@@ -10,6 +10,10 @@ export type JointDragSupportKind = 'trunk' | 'branch' | 'kickstand';
  * The types whose joint drag commits through `commitJointDragSupport`, which
  * clears their live preview on the way. Twig and stick commit through their
  * own `updateX` and must clear theirs by hand.
+ *
+ * @deprecated Hand-written type list; belongs in the registry as a declared
+ * flag. Blocked on the §4b drag-commit collapse — the per-type preview refs
+ * have to go first.
  */
 export const JOINT_DRAG_COMMIT_TYPES: ReadonlySet<SupportTypeId> =
   new Set<JointDragSupportKind>(['trunk', 'branch', 'kickstand']);

@@ -555,10 +555,12 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                     let minJointDist = Infinity;
                     let isBottom = false;
 
-                    // Trunk and branch only, as before. Whether a leaf should
-                    // sprout from a twig, stick, anchor or kickstand joint is a
-                    // product question, not a refactor one -- the set is kept
-                    // as it was and recorded in docs/dev/backlog.md.
+                    /**
+                     * @deprecated Hand-written type list; belongs in the
+                     * registry as a declared flag. Blocked on a product
+                     * decision: whether a leaf may sprout from a twig, stick,
+                     * anchor or kickstand joint. See docs/dev/backlog.md.
+                     */
                     const leafSproutHosts = ['trunk', 'branch'] as const;
 
                     for (const typeId of leafSproutHosts) {
