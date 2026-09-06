@@ -330,6 +330,7 @@ import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstan
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
 import { splitSupportShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
 import { resolveSegmentEndpoints } from '@/supports/SupportPrimitives/Knot/segmentEndpoints';
+import { knotFields } from '@/supports/interaction/shared/selection/selectedIdsByType';
 import type { KnotSplitRemap } from '@/supports/SupportPrimitives/Knot/knotUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '@/supports/history/supportEditHistory';
 
@@ -7201,21 +7202,23 @@ export default function Home() {
       bounds.expandByPoint(new THREE.Vector3(pos.x + radius, pos.y + radius, pos.z + radius));
     };
 
+    // Which model each knot belongs to, from the `hostedBy knots` edges every
+    // type declares. A brace lands under both its ends because it declares two.
     const knotModelById = new Map<string, string>();
+    for (const descriptor of SUPPORT_TYPES) {
+      const fields = knotFields(descriptor);
+      if (fields.length === 0) continue;
 
-    for (const branch of Object.values(supportStateSnapshot.branches)) {
-      if (branch.modelId) knotModelById.set(branch.parentKnotId, branch.modelId);
-    }
-    for (const leaf of Object.values(supportStateSnapshot.leaves)) {
-      if (leaf.modelId) knotModelById.set(leaf.parentKnotId, leaf.modelId);
-    }
-    for (const brace of Object.values(supportStateSnapshot.braces)) {
-      if (!brace.modelId) continue;
-      knotModelById.set(brace.startKnotId, brace.modelId);
-      knotModelById.set(brace.endKnotId, brace.modelId);
-    }
-    for (const kickstand of Object.values(kickstandStateSnapshot.kickstands)) {
-      if (kickstand.modelId) knotModelById.set(kickstand.hostKnotId, kickstand.modelId);
+      const collection = supportStateSnapshot[descriptor.location.key as SupportCollectionKey] as unknown as
+        Record<string, Record<string, unknown>>;
+      for (const entity of Object.values(collection ?? {})) {
+        const modelId = entity.modelId as string | undefined;
+        if (!modelId) continue;
+        for (const field of fields) {
+          const knotId = entity[field];
+          if (typeof knotId === 'string') knotModelById.set(knotId, modelId);
+        }
+      }
     }
 
     for (const root of Object.values(supportStateSnapshot.roots)) {
@@ -7271,88 +7274,50 @@ export default function Home() {
       }
     }
 
-    for (const trunk of Object.values(supportStateSnapshot.trunks)) {
-      const modelId = trunk.modelId;
-      if (!modelId) continue;
-      for (const seg of trunk.segments) {
-        expand(modelId, seg.topJoint?.pos, Math.max(0.001, (seg.topJoint?.diameter ?? seg.diameter) / 2));
-        expand(modelId, seg.bottomJoint?.pos, Math.max(0.001, (seg.bottomJoint?.diameter ?? seg.diameter) / 2));
-      }
-      if (trunk.contactCone) {
-        expand(modelId, trunk.contactCone.pos, Math.max(0.001, trunk.contactCone.profile.contactDiameterMm / 2));
-      }
-    }
+    // Every type's joints and declared contacts. Written out per type this
+    // covered six of the eight, so an anchor never grew the bounds.
+    for (const descriptor of SUPPORT_TYPES) {
+      const collection = supportStateSnapshot[descriptor.location.key as SupportCollectionKey] as unknown as
+        Record<string, { modelId?: string; segments?: Segment[] }>;
 
-    for (const branch of Object.values(supportStateSnapshot.branches)) {
-      const modelId = branch.modelId;
-      if (!modelId) continue;
-      for (const seg of branch.segments) {
-        expand(modelId, seg.topJoint?.pos, Math.max(0.001, (seg.topJoint?.diameter ?? seg.diameter) / 2));
-        expand(modelId, seg.bottomJoint?.pos, Math.max(0.001, (seg.bottomJoint?.diameter ?? seg.diameter) / 2));
-      }
-      if (branch.contactCone) {
-        expand(modelId, branch.contactCone.pos, Math.max(0.001, branch.contactCone.profile.contactDiameterMm / 2));
-      }
-    }
+      for (const entity of Object.values(collection ?? {})) {
+        const modelId = entity.modelId;
+        if (!modelId) continue;
 
-    for (const leaf of Object.values(supportStateSnapshot.leaves)) {
-      if (!leaf.modelId || !leaf.contactCone) continue;
-      expand(leaf.modelId, leaf.contactCone.pos, Math.max(0.001, leaf.contactCone.profile.contactDiameterMm / 2));
-    }
+        for (const seg of entity.segments ?? []) {
+          expand(modelId, seg.topJoint?.pos, Math.max(0.001, (seg.topJoint?.diameter ?? seg.diameter) / 2));
+          expand(modelId, seg.bottomJoint?.pos, Math.max(0.001, (seg.bottomJoint?.diameter ?? seg.diameter) / 2));
+        }
 
-    for (const twig of Object.values(supportStateSnapshot.twigs)) {
-      const modelId = twig.modelId;
-      if (!modelId) continue;
-      for (const seg of twig.segments) {
-        expand(modelId, seg.topJoint?.pos, Math.max(0.001, (seg.topJoint?.diameter ?? seg.diameter) / 2));
-        expand(modelId, seg.bottomJoint?.pos, Math.max(0.001, (seg.bottomJoint?.diameter ?? seg.diameter) / 2));
-      }
-      expand(modelId, twig.contactDiskA.pos, Math.max(0.001, twig.contactDiskA.contactDiameterMm / 2));
-      expand(modelId, twig.contactDiskB.pos, Math.max(0.001, twig.contactDiskB.contactDiameterMm / 2));
-    }
-
-    for (const stick of Object.values(supportStateSnapshot.sticks)) {
-      const modelId = stick.modelId;
-      if (!modelId) continue;
-      for (const seg of stick.segments) {
-        expand(modelId, seg.topJoint?.pos, Math.max(0.001, (seg.topJoint?.diameter ?? seg.diameter) / 2));
-        expand(modelId, seg.bottomJoint?.pos, Math.max(0.001, (seg.bottomJoint?.diameter ?? seg.diameter) / 2));
-      }
-      expand(modelId, stick.contactConeA.pos, Math.max(0.001, stick.contactConeA.profile.contactDiameterMm / 2));
-      expand(modelId, stick.contactConeB.pos, Math.max(0.001, stick.contactConeB.profile.contactDiameterMm / 2));
-    }
-
-    for (const kickstand of Object.values(kickstandStateSnapshot.kickstands)) {
-      const modelId = kickstand.modelId;
-      if (!modelId) continue;
-      for (const seg of kickstand.segments) {
-        expand(modelId, seg.topJoint?.pos, Math.max(0.001, (seg.topJoint?.diameter ?? seg.diameter) / 2));
-        expand(modelId, seg.bottomJoint?.pos, Math.max(0.001, (seg.bottomJoint?.diameter ?? seg.diameter) / 2));
-      }
-    }
-
-    for (const knot of Object.values(supportStateSnapshot.knots)) {
-      const parent = knot.parentShaftId;
-      let modelId = knotModelById.get(knot.id) ?? null;
-      if (!modelId) {
-        const trunk = supportStateSnapshot.trunks[parent];
-        const branch = supportStateSnapshot.branches[parent];
-        const twig = supportStateSnapshot.twigs[parent];
-        const stick = supportStateSnapshot.sticks[parent];
-        if (trunk?.modelId) modelId = trunk.modelId;
-        else if (branch?.modelId) modelId = branch.modelId;
-        else if (twig?.modelId) modelId = twig.modelId;
-        else if (stick?.modelId) modelId = stick.modelId;
-        else if (parent.startsWith('braceSegment:')) {
-          const braceId = parent.slice('braceSegment:'.length);
-          modelId = supportStateSnapshot.braces[braceId]?.modelId ?? null;
+        for (const { kind, field } of contactEndpointsFor(descriptor.id)) {
+          const contact = (entity as unknown as Record<string, unknown>)[field];
+          if (!contact) continue;
+          // A disk carries its contact diameter directly; a cone in its profile.
+          const c = contact as { pos: { x: number; y: number; z: number }; contactDiameterMm?: number; profile?: { contactDiameterMm?: number } };
+          const diameter = kind === 'disk' ? c.contactDiameterMm : c.profile?.contactDiameterMm;
+          expand(modelId, c.pos, Math.max(0.001, (diameter ?? 0.002) / 2));
         }
       }
-      expand(modelId, knot.pos, Math.max(0.001, (knot.diameter ?? 1.2) / 2));
     }
 
-    for (const knot of Object.values(kickstandStateSnapshot.knots)) {
-      const modelId = knotModelById.get(knot.id) ?? null;
+    // A knot with no hosting entity falls back to the shaft it sits on. The
+    // parent is an entity id, except where a type declares a segment prefix.
+    const modelIdOfParentShaft = (parentShaftId: string): string | null => {
+      for (const descriptor of SUPPORT_TYPES) {
+        const collection = supportStateSnapshot[descriptor.location.key as SupportCollectionKey] as unknown as
+          Record<string, { modelId?: string }>;
+        const prefix = descriptor.segmentSelectionPrefix;
+        const id = prefix && parentShaftId.startsWith(prefix)
+          ? parentShaftId.slice(prefix.length)
+          : parentShaftId;
+        const modelId = collection?.[id]?.modelId;
+        if (modelId) return modelId;
+      }
+      return null;
+    };
+
+    for (const knot of Object.values(supportStateSnapshot.knots)) {
+      const modelId = knotModelById.get(knot.id) ?? modelIdOfParentShaft(knot.parentShaftId);
       expand(modelId, knot.pos, Math.max(0.001, (knot.diameter ?? 1.2) / 2));
     }
 
@@ -7360,16 +7325,7 @@ export default function Home() {
   }, [
     scene.mode,
     transformMgr.transformMode,
-    supportStateSnapshot.braces,
-    supportStateSnapshot.branches,
-    supportStateSnapshot.knots,
-    supportStateSnapshot.leaves,
-    supportStateSnapshot.roots,
-    supportStateSnapshot.sticks,
-    supportStateSnapshot.trunks,
-    supportStateSnapshot.twigs,
-    kickstandStateSnapshot.knots,
-    kickstandStateSnapshot.kickstands,
+    supportStateSnapshot,
     raftSettingsSnapshot,
   ]);
 
