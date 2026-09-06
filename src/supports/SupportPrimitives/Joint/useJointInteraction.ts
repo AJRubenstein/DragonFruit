@@ -1,3 +1,4 @@
+import { resolveShaftAnchor } from '../Knot/segmentEndpoints';
 import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
@@ -584,15 +585,23 @@ export function useJointInteraction(enabled: boolean = true) {
             // On drag end, do one collision-aware recompute so diskLengthOverride only reflects
             // the final settled joint position (avoids latching max standoff mid-drag).
             if (lastDragPos.current) {
-                if (activeIdOf('trunk')) {
-                    const trunk = getSupportEntity('trunk', activeIdOf('trunk')!) as Trunk | null;
-                    if (trunk) {
-                        const root = activeConstraintRootRef.current ?? getRootById(trunk.rootId) ?? undefined;
-                        const contextStart = activeConstraintStartRef.current;
+                if (JOINT_DRAG_COMMIT_TYPES.has(activeSupport.current?.typeId as SupportTypeId)) {
+                    // Trunk, branch and kickstand commit identically; they differ
+                    // only in where the angle clamp measures from, which the
+                    // declared lower endpoint gives.
+                    const { typeId, id } = activeSupport.current!;
+                    const support = getSupportEntity(typeId, id) as { rootId?: string; parentKnotId?: string } | null;
+
+                    if (support) {
+                        const root = activeConstraintRootRef.current
+                            ?? (support.rootId ? getRootById(support.rootId) ?? undefined : undefined);
+                        const hostKnot = support.parentKnotId ? getKnotById(support.parentKnotId) ?? undefined : undefined;
+                        const contextStart = activeConstraintStartRef.current
+                            ?? resolveShaftAnchor(typeId, { root, hostKnot }) ?? undefined;
 
                         const resolved = computeJointDragSupportPreview({
-                            kind: 'trunk',
-                            support: trunk,
+                            kind: typeId as never,
+                            support: support as never,
                             jointId: activeJointIdAtEnd,
                             newPos: lastDragPos.current,
                             isCurveMode: false,
@@ -600,44 +609,7 @@ export function useJointInteraction(enabled: boolean = true) {
                             contextStart,
                         });
 
-                        commitJointDragSupport('trunk', resolved, { stripDiskLengthOverride: true });
-                    }
-                } else if (activeIdOf('branch')) {
-                    const branch = getSupportEntity('branch', activeIdOf('branch')!) as Branch | null;
-                    if (branch) {
-                        const contextStart = activeConstraintStartRef.current ?? getKnotById(branch.parentKnotId)?.pos;
-                        const resolved = computeJointDragSupportPreview({
-                            kind: 'branch',
-                            support: branch,
-                            jointId: activeJointIdAtEnd,
-                            newPos: lastDragPos.current,
-                            isCurveMode: false,
-                            contextStart,
-                        });
-
-                        commitJointDragSupport('branch', resolved, { stripDiskLengthOverride: true });
-                    }
-                } else if (activeIdOf('kickstand')) {
-                    const kickstand = getSnapshot().kickstands[activeIdOf('kickstand')!];
-                    if (kickstand) {
-                        const root = activeConstraintRootRef.current ?? getRootById(kickstand.rootId) ?? undefined;
-                        let contextStart = activeConstraintStartRef.current;
-                        if (!contextStart && root) {
-                            const rPos = root.transform.pos;
-                            const startZ = rPos.z + root.diskHeight + root.coneHeight;
-                            contextStart = { x: rPos.x, y: rPos.y, z: startZ };
-                        }
-
-                        const resolved = computeJointDragSupportPreview({
-                            kind: 'kickstand',
-                            support: kickstand,
-                            jointId: activeJointIdAtEnd,
-                            newPos: lastDragPos.current,
-                            isCurveMode: false,
-                            root,
-                            contextStart,
-                        });
-                        commitJointDragSupport('kickstand', resolved);
+                        commitJointDragSupport(typeId as never, resolved, { stripDiskLengthOverride: true });
                     }
                 } else if (activeIdOf('twig')) {
                     const twig = getSupportEntity('twig', activeIdOf('twig')!) as Twig | null;

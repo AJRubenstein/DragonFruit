@@ -57,7 +57,7 @@ function startsAtKnot(descriptor: SupportTypeDescriptor): boolean {
  * Where segment 0 begins. Later segments always continue from the previous
  * segment's top joint, so only the first needs the host.
  */
-function anchorPoint(
+export function anchorPoint(
     descriptor: SupportTypeDescriptor,
     hosts: EndpointHosts,
 ): THREE.Vector3 | null {
@@ -89,6 +89,18 @@ function contactAt(endpoint: SupportEndpoint, entity: ShaftEntity): THREE.Vector
  * others fall back through the previous joint, the declared anchor, and finally
  * the contact socket.
  */
+/**
+ * Where a shaft is anchored, as a plain Vec3. The joint-drag angle clamp
+ * measures from here.
+ */
+export function resolveShaftAnchor(
+    typeId: SupportTypeId,
+    hosts: EndpointHosts,
+): Vec3 | null {
+    const point = anchorPoint(getSupportTypeDescriptor(typeId), hosts);
+    return point ? out(point) : null;
+}
+
 export function resolveSegmentEndpoints(
     typeId: SupportTypeId,
     entity: ShaftEntity,
