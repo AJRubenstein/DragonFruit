@@ -1381,8 +1381,9 @@ export function stampSupportTypeIds(next: SupportState): SupportState {
 /**
  * Install the eight collection names as views over `state.supports`.
  *
- * Non-enumerable so a spread drops them rather than copying a resolved value
- * that would stop tracking `supports`.
+ * Enumerable, so `{ ...state }` carries them as plain objects. A spread is
+ * then a snapshot rather than a live view, which is what a draft wants;
+ * `setState` re-derives from whichever side the writer set.
  */
 function installCollectionViews(next: SupportState): SupportState {
     for (const descriptor of SUPPORT_TYPES) {
@@ -1390,7 +1391,7 @@ function installCollectionViews(next: SupportState): SupportState {
 
         Object.defineProperty(next, descriptor.location.key, {
             configurable: true,
-            enumerable: false,
+            enumerable: true,
             get(this: SupportState) {
                 const all = this.supports ?? {};
                 if (cache && cache.from === all) return cache.view;
