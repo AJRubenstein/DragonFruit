@@ -1,5 +1,6 @@
 import { contactEndpointsFor, isOriginConvertibleToTree, SUPPORT_TYPES } from '../supportTypeRegistry';
 import { footprintX, footprintY } from '@/volumeAnalysis/Islands/voxelFootprint';
+
 import * as THREE from 'three';
 import { quantizeToScale } from '@/utils/math';
 
@@ -12,7 +13,7 @@ import { quantizeToScale } from '@/utils/math';
  */
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
-import type { CandidatePoint, AutoPlaceResult, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo } from './types';
+import type { CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo } from './types';
 import type { SupportState, SupportOrigin } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
@@ -25,7 +26,7 @@ import {
     collectSupportTips,
     computeRegionCoverage,
 } from './coverage';
-import { sizeParameters, presetForArea, ANCHOR_SHAFT_MULTIPLIER, type SizingPreset } from './parameterSizing';
+import { sizeParameters, presetForArea } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
 import { cloneSupportState, getSnapshot, setSnapshot } from '../state';
@@ -114,7 +115,7 @@ function makeResult(
     sticks: number,
     rejected: number,
     changed: boolean,
-    message: string,
+    status: AutoPlaceStatus,
 ): AutoPlaceResult {
     return {
         placedTrunks: trunks,
@@ -124,7 +125,7 @@ function makeResult(
         placedSticks: sticks,
         rejectedCandidates: rejected,
         changed,
-        message,
+        status,
     };
 }
 
@@ -1471,7 +1472,6 @@ export function validateAndCullOrphans(
             } else {
                 const branchObj = nextDraft.branches[id];
                 if (branchObj && mesh) {
-                    // @ts-ignore — Branch satisfies {segments}
                     blocked = branchCollidesWithSDF(branchObj, mesh);
                 } else if (mesh) {
                     blocked = isShaftBlocked(knot.pos, tipPos, 0.2, mesh);
@@ -2036,7 +2036,7 @@ export function computeAutoSupportPlan(
         `(filtered from ${islands.length} islands, min area ${autoSettings.minIslandAreaMm2}mm², ` +
         `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold)`);
     if (candidates.length === 0) {
-        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'No viable support candidates found.'));
+        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'no-candidates'));
     }
 
     // ------------------------------------------------------------------
@@ -2051,7 +2051,7 @@ export function computeAutoSupportPlan(
         `(removed ${beforeDedup - candidates.length} within ${autoSettings.tipInfluenceRadiusMm}mm radius)`);
 
     if (candidates.length === 0) {
-        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'All candidates deduplicated — nothing to place.'));
+        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'all-deduplicated'));
     }
 
     // ------------------------------------------------------------------
@@ -2065,8 +2065,7 @@ export function computeAutoSupportPlan(
         `(removed ${beforeSupportFilter - candidates.length} already supported within ${ALREADY_SUPPORTED_RADIUS_MM}mm)`);
 
     if (candidates.length === 0) {
-        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false,
-            'All candidate positions already have supports.'));
+        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'already-supported'));
     }
 
     // ------------------------------------------------------------------
@@ -2571,7 +2570,6 @@ export function computeAutoSupportPlan(
     const OVERHANG_AREA_THRESHOLD_MM2 = 1.5;
     const OVERHANG_GRID_SPACING_MM = 2.5;
 
-    const islandById = new Map(islands.map(i => [i.id, i]));
     let overhangSupportsPlaced = 0;
 
     for (const [tid, trunk] of Object.entries(draft.trunks)) {
@@ -2672,7 +2670,7 @@ export function computeAutoSupportPlan(
                         overhangSupportsPlaced++;
                         placedBranches++;
                     }
-                } catch (_) {
+                } catch {
                     // Skip this grid point.
                 }
             }
@@ -2806,7 +2804,10 @@ export function computeAutoSupportPlan(
         try {
             const braceResult = buildAutoBracedSnapshot(draft, getSettings().autoBracing);
             draft = braceResult.snapshot;
-            console.log(LOG_PREFIX, `Auto-brace: ${braceResult.message}`);
+            console.log(LOG_PREFIX,
+                `Auto-brace: ${braceResult.status} ` +
+                `(generated ${braceResult.generatedBraceCount}, removed ${braceResult.removedBraceCount}, ` +
+                `skipped ${braceResult.skippedSupportCount})`);
         } catch (e) {
             console.warn(LOG_PREFIX,
                 `Auto-brace failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
@@ -2824,11 +2825,17 @@ export function computeAutoSupportPlan(
             placedSticks,
             rejectedCount,
             changed,
-            `Placed ${placedTrunks} trunks, ${placedAnchors} anchors, ${placedBranches} branches, ${placedLeaves} leaves, ${placedSticks} sticks. ` +
-            `${rejectedCount} rejected. Coverage: ${analytics.islandsCovered}/${islands.length} islands (${(analytics.areaCoverage * 100).toFixed(0)}%).`,
+            'placed',
         ),
         analytics,
     };
+
+    // The result used to carry this as a sentence; it is a log line, not UI copy.
+    console.log(LOG_PREFIX,
+        `Placed ${placedTrunks} trunks, ${placedAnchors} anchors, ${placedBranches} branches, ` +
+        `${placedLeaves} leaves, ${placedSticks} sticks. ${rejectedCount} rejected. ` +
+        `Coverage: ${analytics.islandsCovered}/${islands.length} islands ` +
+        `(${(analytics.areaCoverage * 100).toFixed(0)}%).`);
 
     return {
         before,
@@ -2851,7 +2858,7 @@ export function runAutoPlace(
 ): AutoPlaceResult {
     const plan = computeAutoSupportPlan(islands, modelId, settingsOverride);
     if (!plan) {
-        return makeResult(0, 0, 0, 0, 0, 0, false, 'Auto-support is disabled.');
+        return makeResult(0, 0, 0, 0, 0, 0, false, 'disabled');
     }
 
     if (plan.result.changed) {

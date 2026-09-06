@@ -14,13 +14,6 @@ import type { TrunkReplacementPlan } from './types';
 import { computeAndApplyTrunkDiameterProfile } from './maxConnectedDiameter';
 import { v4 as uuidv4 } from 'uuid';
 
-function distSq(a: Vec3, b: Vec3): number {
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    const dz = a.z - b.z;
-    return dx * dx + dy * dy + dz * dz;
-}
-
 function satisfiesMinAngleFromHorizontal(tipPos: Vec3, knotPos: Vec3, minAngleDeg: number): boolean {
     const dx = tipPos.x - knotPos.x;
     const dy = tipPos.y - knotPos.y;

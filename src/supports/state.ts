@@ -1420,6 +1420,28 @@ function normaliseSupportState(next: SupportState): SupportState {
     // that type. Types without one keep whatever `supports` already held.
     const overrides = SUPPORT_TYPES.filter((d) => Object.prototype.hasOwnProperty.call(raw, d.location.key));
 
+    // A write that only touched interaction state carries the previous views
+    // unchanged, so `supports` is already correct. Rebuilding it would hand
+    // every reader new collection objects and invalidate their memos.
+    if (next.supports && overrides.length === SUPPORT_TYPES.length
+        && overrides.every((d) => (raw[d.location.key] as object) === state?.[d.location.key])) {
+        const carried: Record<string, unknown> = { ...raw };
+        for (const descriptor of SUPPORT_TYPES) delete carried[descriptor.location.key];
+        const kept = { ...carried, supports: next.supports } as unknown as SupportState;
+
+        // Reuse the resolved views, so a reader memoised on `state.trunks`
+        // does not rebuild for a hover.
+        for (const descriptor of SUPPORT_TYPES) {
+            Object.defineProperty(kept, descriptor.location.key, {
+                configurable: true,
+                enumerable: true,
+                value: state[descriptor.location.key],
+                writable: true,
+            });
+        }
+        return kept;
+    }
+
     const supports: Record<string, SupportEntityAny> = {};
     for (const [id, entity] of Object.entries(next.supports ?? {})) {
         const typeId = (entity as { typeId?: SupportTypeId }).typeId;

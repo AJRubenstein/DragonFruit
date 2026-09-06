@@ -27,7 +27,7 @@ export type SystemNotification = {
 
 type Listener = () => void;
 let notifications: SystemNotification[] = [];
-let expiryTimers = new Map<string, number>();
+const expiryTimers = new Map<string, number>();
 const listeners = new Set<Listener>();
 
 function emit(): void {

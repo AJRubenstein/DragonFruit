@@ -5,10 +5,10 @@ import { usePicking } from '@/components/picking';
 import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getSupportEntities, getKnotById, getRootById, setInteractionWarning, updateKnot, subscribe  } from '../../state';
 import { Anchor, Branch, Brace, Knot, Leaf, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
 import { resolveSegmentEndpoints, type EndpointHosts } from './segmentEndpoints';
-import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
+import { SUPPORT_COLLECTION_KEYS, getSupportTypeDescriptor, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { projectOntoSegment, shouldStayOnCurrentSegment } from './knotUtils';
-import { getSettings } from '../../Settings';
+import { getSettings } from '../../Settings/state';
 import { solveKnotConstraint } from '../../PlacementLogic/JointConstraintSolver';
 import { ElasticChainInitialState, ElasticChainResult, solveElasticChain } from '../../PlacementLogic/ElasticChainSolver';
 import { getFinalSocketPosition, getSocketPosition } from '../ContactCone';
@@ -58,6 +58,21 @@ interface ActiveHost {
     initialTopology: Record<string, 'UP' | 'DOWN'>;
 }
 
+export type SupportGeometryToken = Record<string, unknown>;
+
+/** Identity of every collection the host lookup and the elastic capture read. */
+export function captureSupportGeometryToken(): SupportGeometryToken {
+    const snapshot = getSnapshot();
+    const token: SupportGeometryToken = {};
+    for (const key of SUPPORT_COLLECTION_KEYS) token[key] = snapshot[key];
+    return token;
+}
+
+export function isSameSupportGeometry(a: SupportGeometryToken | null, b: SupportGeometryToken): boolean {
+    if (!a) return false;
+    return Object.keys(b).every((key) => a[key] === b[key]);
+}
+
 export function useKnotInteraction(enabled: boolean = true) {
     const MIN_DRAG_DELTA_SQ = 1e-6; // ~0.001mm epsilon to drop high-frequency jitter churn
     const BEZIER_PROJECTION_STEPS = 36;
@@ -79,6 +94,14 @@ export function useKnotInteraction(enabled: boolean = true) {
     const prewarmedKnotIdRef = useRef<string | null>(null);
     const prewarmedHostRef = useRef<ActiveHost | null>(null);
     const prewarmedElasticStateRef = useRef<Record<string, ElasticChainInitialState> | null>(null);
+    // The geometry the prewarm was taken from. The prewarmed host endpoints and
+    // elastic capture are a photo of support geometry: any edit in between (a tip
+    // drag rebuilding a branch, an undo, a deletion) makes them stale, and
+    // replaying a stale capture drags the chain back to the geometry it
+    // snapshotted. Hover and selection rewrite the store too, so the token holds
+    // the geometry collections rather than the whole snapshot — otherwise every
+    // hover would throw the prewarm away.
+    const prewarmedGeometryRef = useRef<SupportGeometryToken | null>(null);
     const lastAppliedKnotPosRef = useRef<THREE.Vector3 | null>(null);
     const previewBranchSegmentsByIdRef = useRef<Record<string, Branch['segments']>>({});
     const previewKnotRef = useRef<Knot | null>(null);
@@ -646,7 +669,12 @@ export function useKnotInteraction(enabled: boolean = true) {
         if (hit.category !== 'knot' || !hit.objectId) return;
 
         const knotId = hit.objectId;
-        if (prewarmedKnotIdRef.current === knotId && prewarmedHostRef.current && prewarmedElasticStateRef.current) {
+        if (
+            prewarmedKnotIdRef.current === knotId
+            && prewarmedHostRef.current
+            && prewarmedElasticStateRef.current
+            && isSameSupportGeometry(prewarmedGeometryRef.current, captureSupportGeometryToken())
+        ) {
             return;
         }
 
@@ -660,6 +688,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         prewarmedKnotIdRef.current = knotId;
         prewarmedHostRef.current = host;
         prewarmedElasticStateRef.current = captureElasticState(knotId);
+        prewarmedGeometryRef.current = captureSupportGeometryToken();
     }, [enabled, isDragging, hit.category, hit.objectId]);
 
     useEffect(() => {
@@ -670,7 +699,9 @@ export function useKnotInteraction(enabled: boolean = true) {
             if (!knot) {
                 return;
             }
-            const host = prewarmedKnotIdRef.current === knot.id && prewarmedHostRef.current
+            const prewarmIsFresh = prewarmedKnotIdRef.current === knot.id
+                && isSameSupportGeometry(prewarmedGeometryRef.current, captureSupportGeometryToken());
+            const host = prewarmIsFresh && prewarmedHostRef.current
                 ? prewarmedHostRef.current
                 : findHost(knot);
             if (!host) {
@@ -694,13 +725,14 @@ export function useKnotInteraction(enabled: boolean = true) {
             clearKnotDragPreview();
 
             // Capture/restore state
-            elasticState.current = prewarmedKnotIdRef.current === knot.id && prewarmedElasticStateRef.current
+            elasticState.current = prewarmIsFresh && prewarmedElasticStateRef.current
                 ? prewarmedElasticStateRef.current
                 : captureElasticState(knot.id);
 
             prewarmedKnotIdRef.current = null;
             prewarmedHostRef.current = null;
             prewarmedElasticStateRef.current = null;
+            prewarmedGeometryRef.current = null;
         }
 
         const shouldEndDrag = (!isDragging || forceEndDragRef.current) && !!activeKnotId.current;

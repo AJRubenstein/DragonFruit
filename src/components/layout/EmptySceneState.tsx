@@ -415,7 +415,7 @@ export function EmptySceneState({
     } finally {
       setReopeningEntryId(null);
     }
-  }, [onReopenRecentFile]);
+  }, [_, onReopenRecentFile]);
 
   const triggerMeshPicker = React.useCallback(() => {
     if (onLoadMeshClick) {

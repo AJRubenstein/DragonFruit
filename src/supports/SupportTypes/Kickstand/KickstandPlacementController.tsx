@@ -7,7 +7,7 @@ import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_ADD_KICKSTAND } from '@/supports/history/actionTypes';
 import { addSupportEntity, addKnot, addRoot, subscribe, getSnapshot } from '../../state';
 import type { SnapTarget } from '../../interaction/SnappingManager';
-import { getGridSettings } from '../../Settings';
+import { getGridSettings } from '../../Settings/state';
 import { snapToGridIndex } from '../../PlacementLogic/Grid/gridMath';
 import { getKickstandSnapshot } from './kickstandStore';
 import { clampKickstandHostT } from './kickstandRules';

@@ -38,7 +38,7 @@ import type {
 } from '@/features/plugins/complexPluginContracts';
 import type { ProfileNetworkUiAdapter } from '@/features/plugins/pluginRegistry';
 import type { SupportMode } from '@/supports/types';
-import type { SliceExportArtifact, SliceExportResult } from '@/features/slicing/sliceExportOrchestrator';
+import type { SliceExportArtifact } from '@/features/slicing/sliceExportOrchestrator';
 
 export type PrintingModalsProps = {
   DEFAULT_RELAY_AUTORETRY_DELAY_MS: number;
@@ -193,7 +193,6 @@ export type PrintingModalsProps = {
   setShouldAutoSliceOnExportEntry: React.Dispatch<React.SetStateAction<boolean>>;
   setShowPrintingResliceModal: React.Dispatch<React.SetStateAction<boolean>>;
   setShowSliceCompletedModal: React.Dispatch<React.SetStateAction<boolean>>;
-  setUvToolsLaunchingPath: React.Dispatch<React.SetStateAction<string | null>>;
   shouldReturnToPrintingAfterSliceRef: React.RefObject<boolean>;
   shouldShowPrintingMonitorSlowResponseCard: boolean;
   showPrintingResliceModal: boolean;
@@ -358,7 +357,6 @@ export function PrintingModals({
   setShouldAutoSliceOnExportEntry,
   setShowPrintingResliceModal,
   setShowSliceCompletedModal,
-  setUvToolsLaunchingPath,
   shouldReturnToPrintingAfterSliceRef,
   shouldShowPrintingMonitorSlowResponseCard,
   showPrintingResliceModal,
@@ -420,7 +418,6 @@ export function PrintingModals({
       <UvToolsLaunchingModal
         isOpen={uvToolsLaunchingPath !== null}
         filePath={uvToolsLaunchingPath}
-        onLaunchComplete={() => setUvToolsLaunchingPath(null)}
       />
 
       {printingMonitorPendingConfirmation && (

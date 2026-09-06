@@ -236,6 +236,8 @@ export function DiagnosticsModal({
   totalPolygons,
   selectedPolygons,
 }: DiagnosticsModalProps) {
+  useEscapeToClose(isOpen, onClose);
+
   const [stats, setStats] = React.useState<RuntimeStats>({
     fps: 0,
     frameTimeMs: 0,
