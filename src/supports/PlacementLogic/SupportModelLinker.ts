@@ -1,6 +1,6 @@
 import type { Segment, SupportState } from '../types';
 import { getSnapshot, setSnapshot } from '../state';
-import { MODEL_ID_COLLECTION_KEYS, type SupportCollectionKey } from '../supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '../supportTypeRegistry';
 
 /**
   * Owns the relationship between supports and models: query a model's supports,
@@ -35,6 +35,32 @@ export function getSupportsForModel(
     return result;
 }
 
+/**
+ * Which model a knot's parent shaft belongs to.
+ *
+ * `parentShaftId` names an entity, except where a type declares a
+ * `segmentSelectionPrefix` -- a brace knot hangs off `braceSegment:<id>`.
+ */
+export function modelIdOfParentShaft(
+    state: Pick<SupportState, SupportCollectionKey>,
+    parentShaftId: string,
+): string | null {
+    for (const descriptor of SUPPORT_TYPES) {
+        const record = state[descriptor.location.key as SupportCollectionKey] as
+            Record<string, { modelId?: string }> | undefined;
+        if (!record) continue;
+
+        const prefix = descriptor.segmentSelectionPrefix;
+        const id = prefix && parentShaftId.startsWith(prefix)
+            ? parentShaftId.slice(prefix.length)
+            : parentShaftId;
+
+        const modelId = record[id]?.modelId;
+        if (modelId) return modelId;
+    }
+    return null;
+}
+
 /** Segment ids owned by the entities being removed, for cascading knot removal. */
 function collectRemovedSegmentIds(
     state: Pick<SupportState, SupportCollectionKey>,
@@ -50,8 +76,15 @@ function collectRemovedSegmentIds(
         }
     }
 
-    // Braces have no `segments`; their knots hang off a synthetic shaft id.
-    for (const braceId of removing.braces) segmentIds.add(`braceSegment:${braceId}`);
+    // A type with no `segments` hangs its knots off a synthetic shaft id, built
+    // from the prefix it declares.
+    for (const descriptor of SUPPORT_TYPES) {
+        const prefix = descriptor.segmentSelectionPrefix;
+        if (!prefix) continue;
+        for (const id of removing[descriptor.location.key as SupportCollectionKey] ?? []) {
+            segmentIds.add(`${prefix}${id}`);
+        }
+    }
 
     return segmentIds;
 }

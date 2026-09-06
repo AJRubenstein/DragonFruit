@@ -353,7 +353,7 @@ import { getTrunkSegmentEndpoints, getBranchSegmentEndpoints } from '@/supports/
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone/contactConeUtils';
 import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getBezierPointAtT } from '@/supports/Curves/BezierUtils';
-import { getSupportsForModel } from '@/supports/PlacementLogic/SupportModelLinker';
+import { getSupportsForModel, modelIdOfParentShaft } from '@/supports/PlacementLogic/SupportModelLinker';
 import { buildProjectedCrossSectionZRange } from '@/features/slicing/rasterLayerZipExport';
 import { resolveCompositeMaterialLabel } from '@/utils/materialLabel';
 
@@ -1880,23 +1880,9 @@ export default function Home() {
     const byModel = getSupportsForModel(supportStateSnapshot, modelId);
     for (const key of MODEL_ID_COLLECTION_KEYS) counts[key] = byModel[key].length;
 
-    const knots = Object.values(supportStateSnapshot.knots).filter((item) => {
-      const parent = item.parentShaftId;
-      const trunk = supportStateSnapshot.trunks[parent];
-      if (trunk) return trunk.modelId === modelId;
-      const branch = supportStateSnapshot.branches[parent];
-      if (branch) return branch.modelId === modelId;
-      const twig = supportStateSnapshot.twigs[parent];
-      if (twig) return twig.modelId === modelId;
-      const stick = supportStateSnapshot.sticks[parent];
-      if (stick) return stick.modelId === modelId;
-      if (parent.startsWith('braceSegment:')) {
-        const braceId = parent.slice('braceSegment:'.length);
-        return supportStateSnapshot.braces[braceId]?.modelId === modelId;
-      }
-      return false;
-    }).length;
-    counts.knots = knots;
+    counts.knots = Object.values(supportStateSnapshot.knots).filter(
+      (knot) => modelIdOfParentShaft(supportStateSnapshot, knot.parentShaftId) === modelId,
+    ).length;
     return counts;
   }, [scene.activeModelId, supportStateSnapshot]);
 
@@ -2948,7 +2934,7 @@ export default function Home() {
         topDiameterByRootId.set(trunk.rootId, firstDiameter);
       }
     }
-    for (const kickstand of Object.values(kickstandStateSnapshot.kickstands)) {
+    for (const kickstand of Object.values(supportStateSnapshot.kickstands)) {
       const firstDiameter = kickstand.profile.terminalStartDiameterMm
         || kickstand.segments[0]?.diameter
         || kickstand.profile.bodyDiameterMm;
@@ -3082,17 +3068,7 @@ export default function Home() {
     computeRaftOuterBoundary,
     raftSettingsSnapshot,
     scene.models,
-    kickstandStateSnapshot.knots,
-    kickstandStateSnapshot.roots,
-    kickstandStateSnapshot.kickstands,
-    supportStateSnapshot.braces,
-    supportStateSnapshot.branches,
-    supportStateSnapshot.knots,
-    supportStateSnapshot.leaves,
-    supportStateSnapshot.roots,
-    supportStateSnapshot.sticks,
-    supportStateSnapshot.trunks,
-    supportStateSnapshot.twigs,
+    supportStateSnapshot,
   ]);
 
   React.useEffect(() => {
@@ -7263,24 +7239,10 @@ export default function Home() {
       }
     }
 
-    // A knot with no hosting entity falls back to the shaft it sits on. The
-    // parent is an entity id, except where a type declares a segment prefix.
-    const modelIdOfParentShaft = (parentShaftId: string): string | null => {
-      for (const descriptor of SUPPORT_TYPES) {
-        const collection = supportStateSnapshot[descriptor.location.key as SupportCollectionKey] as unknown as
-          Record<string, { modelId?: string }>;
-        const prefix = descriptor.segmentSelectionPrefix;
-        const id = prefix && parentShaftId.startsWith(prefix)
-          ? parentShaftId.slice(prefix.length)
-          : parentShaftId;
-        const modelId = collection?.[id]?.modelId;
-        if (modelId) return modelId;
-      }
-      return null;
-    };
-
+    // A knot with no hosting entity falls back to the shaft it sits on.
     for (const knot of Object.values(supportStateSnapshot.knots)) {
-      const modelId = knotModelById.get(knot.id) ?? modelIdOfParentShaft(knot.parentShaftId);
+      const modelId = knotModelById.get(knot.id)
+        ?? modelIdOfParentShaft(supportStateSnapshot, knot.parentShaftId);
       expand(modelId, knot.pos, Math.max(0.001, (knot.diameter ?? 1.2) / 2));
     }
 
