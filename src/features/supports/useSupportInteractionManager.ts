@@ -26,10 +26,6 @@ import { cloneSupportState,
   removeBranch,
   removeBrace,
   removeLeaf,
-  removeTwig,
-  removeStick,
-  removeAnchor,
-  removeTrunk,
   removeSupportEntity,
   removeJointById,
   updateKnot,
@@ -40,7 +36,7 @@ import { cloneSupportState,
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_REMOVE_ANCHOR, SUPPORT_REMOVE_BRANCH, SUPPORT_REMOVE_BRACE, SUPPORT_REMOVE_LEAF, SUPPORT_REMOVE_TRUNK, SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_REMOVE_TWIG, SUPPORT_REMOVE_STICK, SUPPORT_AUTO_BRACE_REPLACE, SUPPORT_REMOVE_KICKSTAND, type SupportBranchRemovePayload } from '@/supports/history/actionTypes';
-import { getSupportTypeBySelectionCategory, SUPPORT_TYPES, updateSupportEntity } from '@/supports/supportTypeRegistry';
+import { getSupportTypeBySelectionCategory, RESHAPED_REMOVAL_PAYLOADS, SUPPORT_TYPES, updateSupportEntity } from '@/supports/supportTypeRegistry';
 import { knotFields } from '@/supports/interaction/shared/selection/selectedIdsByType';
 import { clearSupportSelection, getResolvedPrimarySelection, selectSupportIds } from '@/supports/interaction/shared/selection/selectionController';
 import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
@@ -336,19 +332,6 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         return deleteSelectionByCategoryAndId(owner.category, owner.id, recordHistory);
       }
 
-      if (category === 'trunk') {
-        const snapshots = removeTrunk(id);
-        if (!snapshots) return false;
-        if (recordHistory) {
-          pushSupportHistory({
-            type: SUPPORT_REMOVE_TRUNK,
-            payload: snapshots,
-          });
-        }
-        setSelectedId(null);
-        return true;
-      }
-
       if (category === 'leaf') {
         const snapshots = removeLeaf(id);
         if (!snapshots) return false;
@@ -357,6 +340,23 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
             type: SUPPORT_REMOVE_LEAF,
             payload: { leaf: snapshots.leaf, knot: snapshots.knot ?? undefined },
           });
+        }
+        setSelectedId(null);
+        return true;
+      }
+
+      // Types whose removal is the cascade plus one history entry, under the
+      // action they declare. Branch, leaf and brace reshape their payload and
+      // keep their own blocks below.
+      const removalDescriptor = getSupportTypeBySelectionCategory(category);
+      if (removalDescriptor && !RESHAPED_REMOVAL_PAYLOADS.has(removalDescriptor.id)) {
+        const snapshots = removeSupportEntity(removalDescriptor.id, id);
+        if (!snapshots) return false;
+        if (recordHistory) {
+          pushSupportHistory({
+            type: removalDescriptor.historyRemove,
+            payload: snapshots,
+          } as Parameters<typeof pushSupportHistory>[0]);
         }
         setSelectedId(null);
         return true;
@@ -490,45 +490,6 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
               trunkUpdate,
               knotUpdates,
             },
-          });
-        }
-        setSelectedId(null);
-        return true;
-      }
-
-      if (category === 'twig') {
-        const snapshots = removeTwig(id);
-        if (!snapshots) return false;
-        if (recordHistory) {
-          pushSupportHistory({
-            type: SUPPORT_REMOVE_TWIG,
-            payload: snapshots,
-          });
-        }
-        setSelectedId(null);
-        return true;
-      }
-
-      if (category === 'stick') {
-        const snapshots = removeStick(id);
-        if (!snapshots) return false;
-        if (recordHistory) {
-          pushSupportHistory({
-            type: SUPPORT_REMOVE_STICK,
-            payload: snapshots,
-          });
-        }
-        setSelectedId(null);
-        return true;
-      }
-
-      if (category === 'anchor') {
-        const snapshots = removeAnchor(id);
-        if (!snapshots) return false;
-        if (recordHistory) {
-          pushSupportHistory({
-            type: SUPPORT_REMOVE_ANCHOR,
-            payload: snapshots,
           });
         }
         setSelectedId(null);
