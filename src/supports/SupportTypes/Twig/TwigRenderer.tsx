@@ -1,3 +1,4 @@
+import { useShaftSegments } from '../useShaftSegments';
 import { useContactDiskDragSession } from '../useContactDiskDragSession';
 import React, { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
@@ -9,7 +10,6 @@ import { InstancedShaftGroup, type InstancedShaft } from '../../SupportPrimitive
 import { BezierRenderer } from '../../Renderers/BezierRenderer';
 import { ContactDiskRenderer } from '../../SupportPrimitives/ContactDisk/ContactDiskRenderer';
 import { isPrimaryPointerPress, type ContactDiskDragHit } from '../../SupportPrimitives/ContactDisk/contactDiskDragController';
-import { calculateDiskThickness } from '../../SupportPrimitives/ContactDisk/contactDiskUtils';
 import { handleSupportClick } from '../../interaction/clickHandlers';
 import { selectPrimitiveById } from '../../interaction/shared/selection/selectionController';
 import { useHighlight } from '../../interaction/useHighlight';
@@ -74,15 +74,6 @@ export const TwigRenderer = React.memo(function TwigRenderer({
     if (!isPickingHovered) return;
     handleSupportClick(e, twig.id, !!isInteractable);
   };
-
-  const getDiskTipCenter = React.useCallback((disk: ContactDisk) => {
-    const thickness = disk.diskLengthOverride ?? calculateDiskThickness(disk.surfaceNormal, disk.coneAxis, disk.profile);
-    return {
-      x: disk.pos.x + disk.surfaceNormal.x * thickness,
-      y: disk.pos.y + disk.surfaceNormal.y * thickness,
-      z: disk.pos.z + disk.surfaceNormal.z * thickness,
-    };
-  }, []);
 
   const recomputeTwigForMovedDisk = React.useCallback((
     sourceTwig: Twig,
@@ -296,30 +287,12 @@ export const TwigRenderer = React.memo(function TwigRenderer({
   const isDiskASelected = selectedId === effectiveTwig.contactDiskA.id;
   const isDiskBSelected = selectedId === effectiveTwig.contactDiskB.id;
 
-  effectiveTwig.segments.forEach((seg) => {
-    let startPoint: THREE.Vector3;
-    let endPoint: THREE.Vector3;
-    // Shaft tapers between the two contact disks. Joints bulge slightly at
-    // each end (their own diameter, sized from the disks in twigBuilder).
-    const diameterStart = effectiveTwig.contactDiskA.contactDiameterMm;
-    const diameterEnd = effectiveTwig.contactDiskB.contactDiameterMm;
+  const twigShaftSegments = useShaftSegments(typeId, effectiveTwig, {});
 
-    if (seg.bottomJoint) {
-      startPoint = new THREE.Vector3(seg.bottomJoint.pos.x, seg.bottomJoint.pos.y, seg.bottomJoint.pos.z);
-    } else {
-      const diskATipCenter = getDiskTipCenter(effectiveTwig.contactDiskA);
-      startPoint = new THREE.Vector3(diskATipCenter.x, diskATipCenter.y, diskATipCenter.z);
-    }
-
-    if (seg.topJoint) {
-      endPoint = new THREE.Vector3(seg.topJoint.pos.x, seg.topJoint.pos.y, seg.topJoint.pos.z);
-    } else {
-      const diskBTipCenter = getDiskTipCenter(effectiveTwig.contactDiskB);
-      endPoint = new THREE.Vector3(diskBTipCenter.x, diskBTipCenter.y, diskBTipCenter.z);
-    }
-
-    const startPosVec = { x: startPoint.x, y: startPoint.y, z: startPoint.z };
-    const endPosVec = { x: endPoint.x, y: endPoint.y, z: endPoint.z };
+  twigShaftSegments.forEach(({ segment: seg, start: startPosVec, end: endPosVec, startVec: startPoint, endVec: endPoint, ...taper }) => {
+    // Twig declares a taper on every segment, so these are always present.
+    const diameterStart = taper.diameterStart ?? effectiveTwig.contactDiskA.contactDiameterMm;
+    const diameterEnd = taper.diameterEnd ?? effectiveTwig.contactDiskB.contactDiameterMm;
 
     const isSegSelected = selectedId === seg.id;
 
