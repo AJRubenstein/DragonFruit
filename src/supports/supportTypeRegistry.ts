@@ -325,6 +325,20 @@ export interface SupportTypeDescriptor {
      */
     jointDragUsesLivePreview: boolean;
     /**
+     * Whether a knot riding this shaft renders at the joint diameter.
+     *
+     * Trunk alone: at the bare shaft diameter the knot is hidden inside the
+     * joint sphere.
+     */
+    knotTakesJointDiameter: boolean;
+    /**
+     * Whether a knot carrying no `t` is projected onto the segment.
+     *
+     * Auto merge and fan knots carry none. Projecting keeps a leaf on the shaft
+     * through a joint drag; the others leave such a knot alone.
+     */
+    projectsUnparameterisedKnots: boolean;
+    /**
      * How interior view decides whether an instance is inside the cavity.
      *
      * - `contacts`  -- test the type's own declared contacts.
@@ -400,6 +414,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: true,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        knotTakesJointDiameter: true,
+        projectsUnparameterisedKnots: true,
         interiorVisibility: 'contacts',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: true,
@@ -439,6 +455,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        knotTakesJointDiameter: false,
+        projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: false,
@@ -478,6 +496,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        knotTakesJointDiameter: false,
+        projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: false,
@@ -515,6 +535,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
+        knotTakesJointDiameter: false,
+        projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
         jointDragMovesContacts: true,
         jointDragCanCurveShaft: false,
@@ -548,6 +570,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        knotTakesJointDiameter: false,
+        projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
         jointDragMovesContacts: true,
         jointDragCanCurveShaft: false,
@@ -585,6 +609,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
+        knotTakesJointDiameter: false,
+        projectsUnparameterisedKnots: false,
         interiorVisibility: 'inherited',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: false,
@@ -618,6 +644,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
+        knotTakesJointDiameter: false,
+        projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: false,
@@ -654,6 +682,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: false,
         batchesContactCones: false,
+        knotTakesJointDiameter: false,
+        projectsUnparameterisedKnots: false,
         interiorVisibility: 'hidden',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: true,
@@ -763,7 +793,9 @@ export const SUPPORT_REMOVAL_SHAPES = {
     brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'] } },
     anchor: { self: 'anchor', cascade: { knots: 'knots', leaves: 'leaves' } },
     kickstand: { self: 'kickstand', cascade: { roots: 'roots', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches', kickstands: 'kickstands' } },
-} as const;
+    // `satisfies` keeps the literal narrowing the result types read, while
+    // making a renamed type a compile error here rather than at the call site.
+} as const satisfies Record<SupportTypeId, { self: string; cascade: Record<string, string | readonly string[]> }>;
 
 /**
  * The entity type living in each collection, so a removal result can be typed

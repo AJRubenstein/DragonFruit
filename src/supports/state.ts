@@ -2985,7 +2985,15 @@ type KnotPlacementOnShaft = (
     segmentIndex: number,
 ) => { pos: Vec3; diameter?: number } | null;
 
+/** Renders the knot at the joint diameter; the legacy 0.1 sat inside the shaft. */
+const KNOT_JOINT_DIAMETER_BUMP_MM = 0.125;
+
 const KNOT_PLACEMENT_BY_TYPE = new Map<SupportTypeId, KnotPlacementOnShaft>();
+
+/** The rule placing a knot on this type's shaft, if it registers one. */
+export function getKnotPlacementOnShaft(typeId: SupportTypeId): KnotPlacementOnShaft | null {
+    return KNOT_PLACEMENT_BY_TYPE.get(typeId) ?? null;
+}
 
 /**
  * Apply an entity to its collection, then reposition the knots riding its
@@ -3163,58 +3171,48 @@ export function removeAnchor(anchorId: string) {
 }
 
 /**
- * A self-contained shaft: both ends are joints on the segment itself, so a
- * knot's position comes straight from them. Twig and stick are identical here,
- * which is why one rule serves both.
- */
-const placeKnotOnSelfContainedShaft: KnotPlacementOnShaft = (_entity, knot, segment) => {
-    if (!segment.bottomJoint || !segment.topJoint || knot.t === undefined) return null;
-    return { pos: calculateKnotPositionOnSegmentFromT(segment.bottomJoint.pos, segment.topJoint.pos, segment, knot.t) };
-};
-
-KNOT_PLACEMENT_BY_TYPE.set('twig', placeKnotOnSelfContainedShaft);
-KNOT_PLACEMENT_BY_TYPE.set('stick', placeKnotOnSelfContainedShaft);
-
-/**
- * A shaft rising from a plate root. Segment ends resolve against the root, and
- * the knot also takes the segment's diameter.
+ * Where a knot rides a shaft: interpolate along the segment its `t` names.
  *
- * A knot with no `t` -- auto merge and fan knots carry none -- is projected onto
- * the possibly-moved segment so a leaf follows the shaft on a joint drag.
+ * The ends come from the declared endpoints, so a plate-rooted shaft measures
+ * from its root and a knot-hosted one from its host without either being named
+ * here. Two rules stay per type, both trunk's:
+ *
+ * - the knot renders at the joint diameter, not the shaft's, or it is invisible;
+ * - a knot carrying no `t` (auto merge and fan knots do not) is projected onto
+ *   the possibly-moved segment, so a leaf follows the shaft on a joint drag.
  */
-KNOT_PLACEMENT_BY_TYPE.set('trunk', (entity, knot, segment, segmentIndex) => {
-    const trunk = entity as Trunk;
-    const root = state.roots[trunk.rootId];
-    if (!root) return null;
+for (const descriptor of SUPPORT_TYPES) {
+    if (!descriptor.hasSegments) continue;
 
-    // +0.125 (not the legacy +0.1): renders at the trunk-joint diameter; the
-    // legacy value rendered at the shaft -- invisible.
-    const diameter = segment.diameter + 0.125;
+    KNOT_PLACEMENT_BY_TYPE.set(descriptor.id, (entity, knot, segment, segmentIndex) => {
+        const record = entity as unknown as { rootId?: string; parentKnotId?: string };
+        const hosts = {
+            root: descriptor.ownsRoot ? state.roots[record.rootId ?? ''] : undefined,
+            hostKnot: descriptor.lower.kind === 'knot' ? state.knots[record.parentKnotId ?? ''] : undefined,
+        };
 
-    const endpoints = getTrunkSegmentEndpoints(trunk, segment, segmentIndex, root);
-    if (!endpoints) return { pos: knot.pos, diameter };
+        // A type declaring a host it was handed none of cannot place anything.
+        if (descriptor.lower.kind === 'plateRoot' && !hosts.root) return null;
+        if (descriptor.lower.kind === 'knot' && !hosts.hostKnot) return null;
 
-    const t = knot.t !== undefined
-        ? knot.t
-        : computeClosestTOnSegmentFromPoint(knot.pos, endpoints.start, endpoints.end, segment);
+        const diameter = descriptor.knotTakesJointDiameter
+            ? segment.diameter + KNOT_JOINT_DIAMETER_BUMP_MM
+            : undefined;
 
-    return { pos: calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, segment, t), diameter };
-});
+        const endpoints = resolveSegmentEndpoints(descriptor.id, entity as never, segment, segmentIndex, hosts);
+        if (!endpoints) return diameter === undefined ? null : { pos: knot.pos, diameter };
 
-/**
- * A shaft hanging from a host knot. Segment ends resolve against that knot, and
- * a knot with no `t` is left alone rather than projected.
- */
-KNOT_PLACEMENT_BY_TYPE.set('branch', (entity, knot, segment, segmentIndex) => {
-    const branch = entity as Branch;
-    const parentKnot = state.knots[branch.parentKnotId];
-    if (!parentKnot || knot.t === undefined) return null;
+        const t = knot.t !== undefined
+            ? knot.t
+            : (descriptor.projectsUnparameterisedKnots
+                ? computeClosestTOnSegmentFromPoint(knot.pos, endpoints.start, endpoints.end, segment)
+                : undefined);
+        if (t === undefined) return null;
 
-    const endpoints = getBranchSegmentEndpoints(branch, segment, segmentIndex, parentKnot);
-    if (!endpoints) return null;
-
-    return { pos: calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, segment, knot.t) };
-});
+        const pos = calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, segment, t);
+        return diameter === undefined ? { pos } : { pos, diameter };
+    });
+}
 
 /**
  * @deprecated for removal -- prefer `updateSupportEntity('twig', entity)`.
