@@ -1239,18 +1239,38 @@ function pointToSegmentDistanceSq(
     return dx * dx + dy * dy + dz * dz;
 }
 
+/**
+ * The shaft a knot sits on, across every type that has one.
+ *
+ * Searched `draft.trunks` alone, so a leaf or branch hosted on a BRANCH, twig,
+ * stick, anchor or kickstand shaft resolved to nothing and the orphan cull
+ * deleted it as `missingHost`. Running auto-support on a model with hand-placed
+ * leaves on branches silently removed them.
+ *
+ * `trunkId` keeps its name because the two callers below ask a genuine trunk
+ * question -- whether the owner is in `trunksToRemove` -- and a non-trunk owner
+ * is simply never in that set.
+ */
 function findHostSegment(
     draft: SupportState,
     parentShaftId: string,
 ): { trunkId: string; segment: { id: string; bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null } } | null {
-    for (const [tid, trunk] of Object.entries(draft.trunks)) {
-        for (const seg of trunk.segments) {
-            if (seg.id === parentShaftId) return { trunkId: tid, segment: seg };
-        }
-        if (tid === parentShaftId) {
-            // Legacy: knot parent was trunkId, pick the segment closest to knot.pos later
-            // For validation we treat this as missingSegment so it gets rehosted
-            return null;
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        const collection = draft[descriptor.location.key] as unknown as Record<string, { segments?: { id: string }[] }>;
+
+        for (const [ownerId, entity] of Object.entries(collection ?? {})) {
+            for (const seg of entity.segments ?? []) {
+                if (seg.id === parentShaftId) {
+                    return { trunkId: ownerId, segment: seg as never };
+                }
+            }
+            if (ownerId === parentShaftId) {
+                // Legacy: the knot's parent was the support id rather than a
+                // segment id. Treated as missing so `rehostLegacyKnots` moves it
+                // to the nearest segment instead.
+                return null;
+            }
         }
     }
     return null;
