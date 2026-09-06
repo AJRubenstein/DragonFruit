@@ -59,7 +59,9 @@ export const BranchRenderer = React.memo(function BranchRenderer({
   const highDetailPrimitiveSegments = 24;
   const lowDetailPrimitiveSegments = 8;
   const useLowDetailPrimitives = !isSelected && !propHovered;
-  const previewBranch = usePartDragUpdate<Branch>('branch', baseBranch.id);
+  // The entity names its own type; the store stamps it on every write.
+  const typeId = baseBranch.typeId ?? 'branch';
+  const previewBranch = usePartDragUpdate<Branch>(typeId, baseBranch.id);
   const branch = previewBranch ?? baseBranch;
 
 
@@ -82,7 +84,7 @@ export const BranchRenderer = React.memo(function BranchRenderer({
     handleSupportClick(e, branch.id, !!isInteractable);
   };
 
-  const tipDrag = useContactDiskDragSession<Branch>('branch', {
+  const tipDrag = useContactDiskDragSession<Branch>(typeId, {
     onHit: ({ point, surfaceNormal, mesh }: ContactDiskDragHit) => {
       const latest = getSnapshot().branches[branch.id];
       if (!latest?.contactCone) return null;
@@ -135,7 +137,7 @@ export const BranchRenderer = React.memo(function BranchRenderer({
   const joints: React.ReactNode[] = [];
 
   const effectiveBranch = tipDrag.preview ?? previewBranch ?? branch;
-  const shaftSegments = useShaftSegments('branch', effectiveBranch, { hostKnot: parentKnot });
+  const shaftSegments = useShaftSegments(typeId, effectiveBranch, { hostKnot: parentKnot });
 
   shaftSegments.forEach((shaft) => {
     const seg = shaft.segment;
