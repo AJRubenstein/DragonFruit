@@ -22,10 +22,22 @@ const PRIMITIVES = [
 
 const capitalise = (id: string) => `${id[0].toUpperCase()}${id.slice(1)}`;
 
+/** Shared helpers a renderer draws through, read alongside its own source. */
+const SHARED_SOURCES = [
+    join(process.cwd(), 'src', 'supports', 'SupportTypes', 'renderShaftSegment.tsx'),
+];
+
 function rendererSource(typeId: string): string | null {
     const name = capitalise(typeId);
     const path = join(process.cwd(), 'src', 'supports', 'SupportTypes', name, `${name}Renderer.tsx`);
-    return existsSync(path) ? readFileSync(path, 'utf8') : null;
+    if (!existsSync(path)) return null;
+
+    const own = readFileSync(path, 'utf8');
+    // A renderer that delegates its shafts still draws them.
+    const delegated = own.includes('renderShaftSegment')
+        ? SHARED_SOURCES.filter(existsSync).map((p) => readFileSync(p, 'utf8')).join('\n')
+        : '';
+    return [own, delegated].join('\n');
 }
 
 /** The primitives actually referenced as JSX in a renderer. */

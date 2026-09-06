@@ -1,12 +1,11 @@
+import { renderShaftSegment } from '../renderShaftSegment';
 import { useShaftSegments } from '../useShaftSegments';
 import React from 'react';
 import { useThree } from '@react-three/fiber';
 import { Branch, Knot } from '../../types';
 import { JointRenderer } from '../../SupportPrimitives/Joint/JointRenderer';
-import { ShaftRenderer } from '../../SupportPrimitives/Shaft/ShaftRenderer';
 import { InstancedShaftGroup, type InstancedShaft } from '../../SupportPrimitives/Shaft/InstancedShaftGroup';
-import { BezierRenderer } from '../../Renderers/BezierRenderer';
-import { ContactConeRenderer, getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
+import { ContactConeRenderer } from '../../SupportPrimitives/ContactCone';
 import { isPrimaryPointerPress, startContactDiskDragSession, type ContactDiskDragHit, type ContactDiskDragSession } from '../../SupportPrimitives/ContactDisk/contactDiskDragController';
 import { handleSupportClick } from '../../interaction/clickHandlers';
 import { selectPrimitiveById } from '../../interaction/shared/selection/selectionController';
@@ -170,61 +169,23 @@ export const BranchRenderer = React.memo(function BranchRenderer({
   const effectiveBranch = liveDragBranchRef.current ?? previewBranch ?? branch;
   const shaftSegments = useShaftSegments('branch', effectiveBranch, { hostKnot: parentKnot });
 
-  shaftSegments.forEach(({ segment: seg, start: startPosVec, end: endPosVec }) => {
+  shaftSegments.forEach((shaft) => {
+    const seg = shaft.segment;
 
     const isSegSelected = selectedId === seg.id;
 
     // Add Shaft (straight or bezier)
-    const canBatchShaft = !isSelected && !deferStraightShaftsToSceneBatch && seg.type !== 'bezier';
-
-    if (canBatchShaft) {
-      batchedStraightShafts.push({
-        id: seg.id,
-        start: startPosVec,
-        end: endPosVec,
-        diameter: seg.diameter,
-      });
-    } else if (seg.type === 'bezier') {
-      const bezierColor = isSelected ? '#ff00ff' : visuals.color;
-      shafts.push(
-        <BezierRenderer
-          key={`shaft-${seg.id}`}
-          id={seg.id}
-          start={startPosVec}
-          end={endPosVec}
-          control1={seg.controlPoint1}
-          control2={seg.controlPoint2}
-          diameter={seg.diameter}
-          resolution={seg.resolution}
-          color={bezierColor}
-          emissive={visuals.emissive}
-          emissiveIntensity={visuals.emissiveIntensity}
-          selectedColor={visuals.selectedColor}
-          isParentSelected={isSelected}
-          isInteractable={isInteractable}
-          isSelected={isSegSelected}
-          onClick={() => selectPrimitiveById(seg.id)}
-        />
-      );
-    } else if (!deferStraightShaftsToSceneBatch || isSelected) {
-      shafts.push(
-        <ShaftRenderer
-          key={`shaft-${seg.id}`}
-          id={seg.id}
-          start={startPosVec}
-          end={endPosVec}
-          diameter={seg.diameter}
-          color={visuals.color}
-          emissive={visuals.emissive}
-          emissiveIntensity={visuals.emissiveIntensity}
-          selectedColor={visuals.selectedColor}
-          isParentSelected={isSelected}
-          isInteractable={isInteractable}
-          isSelected={isSegSelected}
-          onClick={() => selectPrimitiveById(seg.id)}
-        />
-      );
-    }
+    const node = renderShaftSegment({
+      shaft,
+      visuals,
+      isSelected: !!isSelected,
+      isSegmentSelected: isSegSelected,
+      isInteractable,
+      deferStraightShaftsToSceneBatch,
+      onSelect: selectPrimitiveById,
+      batch: batchedStraightShafts,
+    });
+    if (node) shafts.push(node);
 
     // Add Joint (if present)
     if (isSelected && seg.topJoint) {
