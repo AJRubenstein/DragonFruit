@@ -1,3 +1,4 @@
+import { renderShaftSegment } from '../renderShaftSegment';
 import { useShaftSegments } from '../useShaftSegments';
 import React from 'react';
 import * as THREE from 'three';
@@ -9,9 +10,7 @@ import { handleSupportClick } from '../../interaction/clickHandlers';
 import { JointRenderer } from '../../SupportPrimitives/Joint/JointRenderer';
 import { KnotRenderer } from '../../SupportPrimitives/Knot/KnotRenderer';
 import { RootsRenderer } from '../../SupportPrimitives/Roots/RootsRenderer';
-import { ShaftRenderer } from '../../SupportPrimitives/Shaft/ShaftRenderer';
 import { InstancedShaftGroup, type InstancedShaft } from '../../SupportPrimitives/Shaft/InstancedShaftGroup';
-import { BezierRenderer } from '../../Renderers/BezierRenderer';
 import { usePartDragUpdate } from '../../interaction/partDragPreview';
 import type { Kickstand } from './types';
 
@@ -81,63 +80,22 @@ export const KickstandRenderer = React.memo(function KickstandRenderer({
 
     const shaftSegments = useShaftSegments('kickstand', kickstand, { root, hostKnot });
 
-    shaftSegments.forEach(({ segment, index, start, end, diameterStart, diameterEnd, isUniformDiameter }) => {
+    shaftSegments.forEach((shaft) => {
+        const segment = shaft.segment;
+        const index = shaft.index;
         const segmentSelected = selectedId === segment.id;
 
-        const canBatchShaft = !isSelected && !deferStraightShaftsToSceneBatch && segment.type !== 'bezier' && isUniformDiameter;
-
-        if (canBatchShaft) {
-            batchedStraightShafts.push({
-                id: segment.id,
-                start,
-                end,
-                diameter: segment.diameter,
-            });
-        } else if (segment.type === 'bezier') {
-            const bezierColor = isSelected ? '#ff00ff' : visuals.color;
-            shafts.push(
-                <BezierRenderer
-                    key={`shaft-${segment.id}`}
-                    id={segment.id}
-                    start={start}
-                    end={end}
-                    control1={segment.controlPoint1}
-                    control2={segment.controlPoint2}
-                    diameter={segment.diameter}
-                    diameterStart={diameterStart}
-                    diameterEnd={diameterEnd}
-                    resolution={segment.resolution}
-                    color={bezierColor}
-                    emissive={visuals.emissive}
-                    emissiveIntensity={visuals.emissiveIntensity}
-                    selectedColor={visuals.selectedColor}
-                    isParentSelected={isSelected}
-                    isInteractable={isInteractable}
-                    isSelected={segmentSelected}
-                    onClick={() => selectPrimitiveById(segment.id)}
-                />,
-            );
-        } else if (!deferStraightShaftsToSceneBatch || isSelected) {
-            shafts.push(
-                <ShaftRenderer
-                    key={`shaft-${segment.id}`}
-                    id={segment.id}
-                    start={start}
-                    end={end}
-                    diameter={segment.diameter}
-                    diameterStart={diameterStart}
-                    diameterEnd={diameterEnd}
-                    color={visuals.color}
-                    emissive={visuals.emissive}
-                    emissiveIntensity={visuals.emissiveIntensity}
-                    selectedColor={visuals.selectedColor}
-                    isParentSelected={isSelected}
-                    isInteractable={isInteractable}
-                    isSelected={segmentSelected}
-                    onClick={() => selectPrimitiveById(segment.id)}
-                />,
-            );
-        }
+        const node = renderShaftSegment({
+          shaft,
+          visuals,
+          isSelected: !!isSelected,
+          isSegmentSelected: segmentSelected,
+          isInteractable,
+          deferStraightShaftsToSceneBatch,
+          onSelect: selectPrimitiveById,
+          batch: batchedStraightShafts,
+        });
+        if (node) shafts.push(node);
 
         if (isSelected && segment.topJoint) {
             joints.push(
