@@ -27,10 +27,15 @@ export type SupportSelectionCategory = SupportTypeId | 'root' | 'joint' | 'knot'
 /** Entity collections on SupportState, named once in SupportEntityByCollection. */
 export type SupportCollectionKey = SupportCollectionName;
 
-/** Where a type's instances live. Every type is on SupportState today. */
-export type SupportCollectionLocation =
-    | { store: 'support'; key: SupportCollectionKey }
-    | { store: 'kickstand'; key: 'kickstands' };
+/**
+ * Where a type's instances live.
+ *
+ * One store. The union carried a second `{ store: 'kickstand' }` member from
+ * when kickstands had their own store; nothing ever set it, so a guard written
+ * against it was silently dead. Kept as a discriminated shape rather than a
+ * bare key so a future second store is a compile error at every read.
+ */
+export type SupportCollectionLocation = { store: 'support'; key: SupportCollectionKey };
 
 /**
  * What sits at one end of a support. A type is two endpoints plus whether a
@@ -1070,7 +1075,13 @@ export const SHAFTED_COLLECTION_KEYS: readonly SupportCollectionKey[] = SUPPORT_
     .filter((descriptor) => descriptor.hasSegments)
     .map((descriptor) => descriptor.location.key as SupportCollectionKey);
 
-/** Types held in SupportState, in registry order. */
+/**
+ * Types held in SupportState, in registry order.
+ *
+ * Every type, while there is one store. Kept as its own name because the
+ * question is "what does the store hold", not "what types exist" -- the two
+ * coincide today and would diverge again if a type ever lived elsewhere.
+ */
 export const SUPPORT_STATE_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYPES.filter(
     (descriptor) => descriptor.location.store === 'support',
 );
