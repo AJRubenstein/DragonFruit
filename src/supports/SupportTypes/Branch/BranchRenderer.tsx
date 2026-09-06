@@ -1,3 +1,4 @@
+import { useContactDiskDragSession } from '../useContactDiskDragSession';
 import { renderShaftSegment } from '../renderShaftSegment';
 import { useShaftSegments } from '../useShaftSegments';
 import React from 'react';
@@ -6,7 +7,7 @@ import { Branch, Knot } from '../../types';
 import { JointRenderer } from '../../SupportPrimitives/Joint/JointRenderer';
 import { InstancedShaftGroup, type InstancedShaft } from '../../SupportPrimitives/Shaft/InstancedShaftGroup';
 import { ContactConeRenderer } from '../../SupportPrimitives/ContactCone';
-import { isPrimaryPointerPress, startContactDiskDragSession, type ContactDiskDragHit, type ContactDiskDragSession } from '../../SupportPrimitives/ContactDisk/contactDiskDragController';
+import { isPrimaryPointerPress, type ContactDiskDragHit } from '../../SupportPrimitives/ContactDisk/contactDiskDragController';
 import { handleSupportClick } from '../../interaction/clickHandlers';
 import { selectPrimitiveById } from '../../interaction/shared/selection/selectionController';
 import { useHighlight } from '../../interaction/useHighlight';
@@ -15,7 +16,6 @@ import { KnotRenderer } from '../../SupportPrimitives/Knot/KnotRenderer';
 import { getSnapshot, updateBranch } from '../../state';
 import { getSettings } from '../../Settings/state';
 import { decodeSupportSettingsHex } from '../../Settings/supportSettingsCodec';
-import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { buildBranchData, remapBranchGeometryIds } from './branchBuilder';
 
 interface BranchRendererProps {
@@ -61,19 +61,7 @@ export const BranchRenderer = React.memo(function BranchRenderer({
   const useLowDetailPrimitives = !isSelected && !propHovered;
   const previewBranch = usePartDragUpdate<Branch>('branch', baseBranch.id);
   const branch = previewBranch ?? baseBranch;
-  const dragSessionRef = React.useRef<ContactDiskDragSession | null>(null);
-  const liveDragBranchRef = React.useRef<Branch | null>(null);
-  const beforeHistoryRef = React.useRef<ReturnType<typeof captureSupportEditSnapshot> | null>(null);
-  const [, setDragTick] = React.useState(0);
 
-  React.useEffect(() => {
-    return () => {
-      dragSessionRef.current?.stop();
-      dragSessionRef.current = null;
-      liveDragBranchRef.current = null;
-      beforeHistoryRef.current = null;
-    };
-  }, []);
 
   // Use universal highlight hook (matches TrunkRenderer pattern)
   const { pickRef, visuals, isPickingHovered } = useHighlight({
@@ -94,79 +82,59 @@ export const BranchRenderer = React.memo(function BranchRenderer({
     handleSupportClick(e, branch.id, !!isInteractable);
   };
 
+  const tipDrag = useContactDiskDragSession<Branch>('branch', {
+    onHit: ({ point, surfaceNormal, mesh }: ContactDiskDragHit) => {
+      const latest = getSnapshot().branches[branch.id];
+      if (!latest?.contactCone) return null;
+      // Size the rebuild from the branch's own settings and its existing
+      // geometry: moving a tip must not resize the support.
+      const ownSettings = (latest.settingsCodeHex
+        ? decodeSupportSettingsHex(latest.settingsCodeHex, getSettings())
+        : null) ?? getSettings();
+      const rebuilt = remapBranchGeometryIds(buildBranchData({
+        tipPos: point,
+        tipNormal: surfaceNormal,
+        modelId: branch.modelId,
+        parentKnot,
+        mesh,
+        settings: ownSettings,
+        shaftDiameterMm: latest.segments[0]?.diameter,
+        tipProfile: { ...latest.contactCone.profile, lengthMm: ownSettings.tip.lengthMm },
+      }).branch, latest);
+
+      return {
+        ...rebuilt,
+        contactCone: rebuilt.contactCone
+          ? { ...rebuilt.contactCone, placementSurface: latest.contactCone.placementSurface }
+          : rebuilt.contactCone,
+        id: latest.id,
+        parentKnotId: latest.parentKnotId,
+        settingsCodeHex: latest.settingsCodeHex,
+        modelId: latest.modelId,
+      };
+    },
+    onCommit: (next) => updateBranch(next),
+  });
+
   const handleContactDiskHudPointerDown = React.useCallback((e: any) => {
     if (!isSelected || !branch.contactCone) return;
     if (!isPrimaryPointerPress(e)) return;
-
-    beforeHistoryRef.current = captureSupportEditSnapshot();
-
-    dragSessionRef.current?.stop();
-    dragSessionRef.current = startContactDiskDragSession({
-      camera,
-      domElement: gl.domElement,
-      scene,
-      initialEvent: e,
+    tipDrag.start({
+      event: e, camera, domElement: gl.domElement, scene,
       modelId: branch.modelId,
       placementSurface: branch.contactCone?.placementSurface,
-      onHit: ({ point, surfaceNormal, mesh }: ContactDiskDragHit) => {
-        const latest = getSnapshot().branches[branch.id];
-        if (!latest?.contactCone) return;
-        // Size the rebuild from the branch's own settings and its existing
-        // geometry, not from whatever the global preset says now: moving a tip
-        // must not resize the support. The stored cone length is the solved one,
-        // so the nominal comes from the branch's own band instead.
-        const ownSettings = (latest.settingsCodeHex
-          ? decodeSupportSettingsHex(latest.settingsCodeHex, getSettings())
-          : null) ?? getSettings();
-        const rebuilt = remapBranchGeometryIds(buildBranchData({
-          tipPos: point,
-          tipNormal: surfaceNormal,
-          modelId: branch.modelId,
-          parentKnot,
-          mesh,
-          settings: ownSettings,
-          shaftDiameterMm: latest.segments[0]?.diameter,
-          tipProfile: { ...latest.contactCone.profile, lengthMm: ownSettings.tip.lengthMm },
-        }).branch, latest);
-        liveDragBranchRef.current = {
-          ...rebuilt,
-          contactCone: rebuilt.contactCone
-            ? {
-                ...rebuilt.contactCone,
-                placementSurface: latest.contactCone.placementSurface,
-              }
-            : rebuilt.contactCone,
-          id: latest.id,
-          parentKnotId: latest.parentKnotId,
-          settingsCodeHex: latest.settingsCodeHex,
-          modelId: latest.modelId,
-        };
-        setDragTick(t => t + 1);
-      },
-      onEnd: () => {
-        if (liveDragBranchRef.current) {
-          updateBranch(liveDragBranchRef.current);
-          if (beforeHistoryRef.current) {
-            pushSupportEditHistory('Move branch tip', beforeHistoryRef.current, captureSupportEditSnapshot());
-          }
-        }
-        liveDragBranchRef.current = null;
-        dragSessionRef.current = null;
-        beforeHistoryRef.current = null;
-      },
     });
-  }, [branch.id, branch.contactCone, branch.modelId, camera, gl.domElement, isSelected, parentKnot, scene]);
+  }, [branch.contactCone, branch.modelId, camera, gl.domElement, isSelected, scene, tipDrag]);
 
   const handleContactDiskHudPointerUp = React.useCallback(() => {
-    dragSessionRef.current?.stop();
-    dragSessionRef.current = null;
-  }, []);
+    tipDrag.stop();
+  }, [tipDrag]);
 
   const shafts: React.ReactNode[] = [];
   const batchedStraightShafts: InstancedShaft[] = [];
   const joints: React.ReactNode[] = [];
 
-  const effectiveBranch = liveDragBranchRef.current ?? previewBranch ?? branch;
+  const effectiveBranch = tipDrag.preview ?? previewBranch ?? branch;
   const shaftSegments = useShaftSegments('branch', effectiveBranch, { hostKnot: parentKnot });
 
   shaftSegments.forEach((shaft) => {
