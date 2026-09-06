@@ -1,4 +1,5 @@
 import { resolveSegmentEndpoints, resolveShaftAnchor } from '../Knot/segmentEndpoints';
+import { resolveDraggedContacts } from './resolveDraggedContacts';
 import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
@@ -107,126 +108,6 @@ export function useJointInteraction(enabled: boolean = true) {
 
             return changed ? { ...seg, topJoint, bottomJoint } : seg;
         });
-    }, []);
-
-    const recomputeConeForSocket = useCallback((cone: any, socketPos: { x: number; y: number; z: number }) => {
-        const effectiveSurfaceNormal = cone.surfaceNormal || cone.normal;
-        let axis = new THREE.Vector3(cone.normal.x, cone.normal.y, cone.normal.z);
-        if (axis.lengthSq() < 0.000001) axis.set(0, 0, 1);
-        axis.normalize();
-
-        let offset = 0;
-        if (cone.profile?.type === 'disk') {
-            if (cone.diskLengthOverride !== undefined) {
-                offset = cone.diskLengthOverride;
-            } else {
-                offset = calculateDiskThickness(effectiveSurfaceNormal, { x: axis.x, y: axis.y, z: axis.z }, cone.profile);
-            }
-        }
-
-        const contactPos = new THREE.Vector3(cone.pos.x, cone.pos.y, cone.pos.z);
-        const sn = new THREE.Vector3(effectiveSurfaceNormal.x, effectiveSurfaceNormal.y, effectiveSurfaceNormal.z);
-        const socket = new THREE.Vector3(socketPos.x, socketPos.y, socketPos.z);
-
-        let startPos = contactPos.clone().add(sn.clone().multiplyScalar(offset));
-        for (let i = 0; i < 3; i += 1) {
-            const v = socket.clone().sub(startPos);
-            if (v.length() > 0.0001) {
-                axis = v.clone().normalize();
-            }
-            if (cone.profile?.type === 'disk' && cone.diskLengthOverride === undefined) {
-                offset = calculateDiskThickness(effectiveSurfaceNormal, { x: axis.x, y: axis.y, z: axis.z }, cone.profile);
-                startPos = contactPos.clone().add(sn.clone().multiplyScalar(offset));
-            }
-        }
-
-        const finalStart = contactPos.clone().add(sn.clone().multiplyScalar(offset));
-        const lengthMm = Math.max(0.1, socket.distanceTo(finalStart));
-
-        return {
-            ...cone,
-            normal: { x: axis.x, y: axis.y, z: axis.z },
-            profile: {
-                ...cone.profile,
-                lengthMm,
-            },
-        };
-    }, []);
-
-    const getTwigDiskTipCenter = useCallback((disk: ContactDisk) => {
-        const thickness = disk.diskLengthOverride ?? calculateDiskThickness(disk.surfaceNormal, disk.coneAxis, disk.profile);
-        return {
-            x: disk.pos.x + disk.surfaceNormal.x * thickness,
-            y: disk.pos.y + disk.surfaceNormal.y * thickness,
-            z: disk.pos.z + disk.surfaceNormal.z * thickness,
-        };
-    }, []);
-
-    const recomputeTwigDiskForSocket = useCallback((
-        disk: ContactDisk,
-        desiredSocketPos: { x: number; y: number; z: number },
-        axisHint?: THREE.Vector3,
-    ) => {
-        const contactPos = new THREE.Vector3(disk.pos.x, disk.pos.y, disk.pos.z);
-        const desiredSocket = new THREE.Vector3(desiredSocketPos.x, desiredSocketPos.y, desiredSocketPos.z);
-        const contactToDesiredSocket = desiredSocket.clone().sub(contactPos);
-
-        let surfaceNormal = contactToDesiredSocket.clone();
-        if (surfaceNormal.lengthSq() < 0.000001) {
-            surfaceNormal = new THREE.Vector3(disk.surfaceNormal.x, disk.surfaceNormal.y, disk.surfaceNormal.z);
-        }
-        if (surfaceNormal.lengthSq() < 0.000001) {
-            surfaceNormal.set(0, 0, 1);
-        }
-        surfaceNormal.normalize();
-
-        let axis = axisHint?.clone() ?? contactToDesiredSocket.clone();
-        if (axis.lengthSq() < 0.000001) {
-            axis = new THREE.Vector3(disk.coneAxis.x, disk.coneAxis.y, disk.coneAxis.z);
-        }
-        if (axis.lengthSq() < 0.000001) {
-            axis = surfaceNormal.clone();
-        }
-        axis.normalize();
-
-        const desiredDistance = contactToDesiredSocket.length();
-        const fallbackThickness = disk.diskLengthOverride ?? calculateDiskThickness(
-            { x: surfaceNormal.x, y: surfaceNormal.y, z: surfaceNormal.z },
-            { x: axis.x, y: axis.y, z: axis.z },
-            disk.profile,
-        );
-        const thickness = Number.isFinite(desiredDistance) && desiredDistance > 0.000001
-            ? Math.max(0.001, desiredDistance)
-            : Math.max(0.001, fallbackThickness);
-
-        const snappedSocket = contactPos.clone().add(surfaceNormal.clone().multiplyScalar(thickness));
-
-        return {
-            disk: {
-                ...disk,
-                pos: {
-                    x: contactPos.x,
-                    y: contactPos.y,
-                    z: contactPos.z,
-                },
-                surfaceNormal: {
-                    x: surfaceNormal.x,
-                    y: surfaceNormal.y,
-                    z: surfaceNormal.z,
-                },
-                coneAxis: {
-                    x: axis.x,
-                    y: axis.y,
-                    z: axis.z,
-                },
-                diskLengthOverride: thickness,
-            } as ContactDisk,
-            socket: {
-                x: snappedSocket.x,
-                y: snappedSocket.y,
-                z: snappedSocket.z,
-            },
-        };
     }, []);
 
     const applyInteractionWarning = useCallback((warning: 'SHAFT_ANGLE_TOO_FLAT' | null) => {
@@ -597,96 +478,15 @@ export function useJointInteraction(enabled: boolean = true) {
 
                         commitJointDragSupport(typeId as never, resolved, { stripDiskLengthOverride: true });
                     }
-                } else if (activeIdOf('twig')) {
-                    const twig = getSupportEntity('twig', activeSupport.current!.id) as Twig | null;
-                    if (twig) {
-                        const nextSegments = updateSegmentsJointPos(twig.segments as any[], activeJointIdAtEnd, lastDragPos.current) as any[];
-                        const firstSegment = nextSegments[0];
-                        const lastSegment = nextSegments[nextSegments.length - 1];
-                        const movingBottomEndpoint = firstSegment?.bottomJoint?.id === activeJointIdAtEnd;
-                        const movingTopEndpoint = lastSegment?.topJoint?.id === activeJointIdAtEnd;
-
-                        let nextDiskA: ContactDisk = twig.contactDiskA;
-                        let nextDiskB: ContactDisk = twig.contactDiskB;
-                        let adjustedSegments = nextSegments;
-
-                        if (movingBottomEndpoint && firstSegment?.bottomJoint) {
-                            const otherSocket = lastSegment?.topJoint?.pos ?? getTwigDiskTipCenter(nextDiskB);
-                            const desiredSocketA = firstSegment.bottomJoint.pos;
-                            const axisHint = new THREE.Vector3(
-                                otherSocket.x - desiredSocketA.x,
-                                otherSocket.y - desiredSocketA.y,
-                                otherSocket.z - desiredSocketA.z,
-                            );
-
-                            const recomputedA = recomputeTwigDiskForSocket(twig.contactDiskA, desiredSocketA, axisHint);
-                            nextDiskA = recomputedA.disk;
-
-                            adjustedSegments = adjustedSegments.map((segment: any, index: number) => {
-                                if (index !== 0 || !segment.bottomJoint) return segment;
-                                return {
-                                    ...segment,
-                                    bottomJoint: {
-                                        ...segment.bottomJoint,
-                                        pos: recomputedA.socket,
-                                    },
-                                };
-                            });
-                        }
-
-                        if (movingTopEndpoint && lastSegment?.topJoint) {
-                            const firstAfterAdjust = adjustedSegments[0];
-                            const otherSocket = firstAfterAdjust?.bottomJoint?.pos ?? getTwigDiskTipCenter(nextDiskA);
-                            const desiredSocketB = lastSegment.topJoint.pos;
-                            const axisHint = new THREE.Vector3(
-                                otherSocket.x - desiredSocketB.x,
-                                otherSocket.y - desiredSocketB.y,
-                                otherSocket.z - desiredSocketB.z,
-                            );
-
-                            const recomputedB = recomputeTwigDiskForSocket(twig.contactDiskB, desiredSocketB, axisHint);
-                            nextDiskB = recomputedB.disk;
-
-                            adjustedSegments = adjustedSegments.map((segment: any, index: number) => {
-                                if (index !== adjustedSegments.length - 1 || !segment.topJoint) return segment;
-                                return {
-                                    ...segment,
-                                    topJoint: {
-                                        ...segment.topJoint,
-                                        pos: recomputedB.socket,
-                                    },
-                                };
-                            });
-                        }
-
-                        const committedTwig: Twig = {
-                            ...twig,
-                            segments: adjustedSegments,
-                            contactDiskA: nextDiskA,
-                            contactDiskB: nextDiskB,
-                        };
-
-                        updateSupportEntity('twig', committedTwig);
-                    }
-                } else if (activeIdOf('stick')) {
-                    const stick = getSupportEntity('stick', activeSupport.current!.id) as Stick | null;
-                    if (stick) {
-                        const nextSegments = updateSegmentsJointPos(stick.segments as any[], activeJointIdAtEnd, lastDragPos.current) as any;
-                        const nextConeA = stick.contactConeA?.socketJointId === activeJointIdAtEnd
-                            ? recomputeConeForSocket(stick.contactConeA as any, lastDragPos.current)
-                            : stick.contactConeA;
-                        const nextConeB = stick.contactConeB?.socketJointId === activeJointIdAtEnd
-                            ? recomputeConeForSocket(stick.contactConeB as any, lastDragPos.current)
-                            : stick.contactConeB;
-
-                        const committedStick: Stick = {
-                            ...stick,
-                            segments: nextSegments,
-                            contactConeA: nextConeA,
-                            contactConeB: nextConeB,
-                        };
-
-                        updateSupportEntity('stick', committedStick);
+                } else if (activeSupport.current) {
+                    // A type contacting the model at both ends re-solves those
+                    // contacts against the moved joint; the fields and their
+                    // kinds come from the declared endpoints.
+                    const { typeId, id } = activeSupport.current;
+                    const entity = getSupportEntity(typeId, id) as { segments: Segment[] } | null;
+                    if (entity) {
+                        const moved = updateSegmentsJointPos(entity.segments as any[], activeJointIdAtEnd, lastDragPos.current) as Segment[];
+                        updateSupportEntity(typeId, resolveDraggedContacts(typeId, entity, activeJointIdAtEnd, moved) as never);
                     }
                 }
             }
@@ -899,112 +699,21 @@ export function useJointInteraction(enabled: boolean = true) {
                         emitPreviewJointPos(clampedKickstandJointPos, newPosVec3);
                         applyWarningForDragDelta(clampedKickstandJointPos, newPosVec3);
                     }
-                } else if (activeIdOf('twig')) {
-                    const twig = getSupportEntity('twig', activeSupport.current!.id) as Twig | null;
-                    if (twig) {
-                        const nextSegments = updateSegmentsJointPos(twig.segments as any[], activeJointId.current!, newPosVec3) as any[];
-                        const firstSegment = nextSegments[0];
-                        const lastSegment = nextSegments[nextSegments.length - 1];
-                        const movingBottomEndpoint = firstSegment?.bottomJoint?.id === activeJointId.current!;
-                        const movingTopEndpoint = lastSegment?.topJoint?.id === activeJointId.current!;
+                } else if (activeSupport.current) {
+                    const { typeId, id } = activeSupport.current;
+                    const entity = getSupportEntity(typeId, id) as { id: string; segments: Segment[] } | null;
+                    if (entity) {
+                        const moved = updateSegmentsJointPos(entity.segments as any[], activeJointId.current!, newPosVec3) as Segment[];
+                        const next = resolveDraggedContacts(typeId, entity, activeJointId.current!, moved);
 
-                        let nextDiskA: ContactDisk = twig.contactDiskA;
-                        let nextDiskB: ContactDisk = twig.contactDiskB;
-                        let adjustedSegments = nextSegments;
-
-                        if (movingBottomEndpoint && firstSegment?.bottomJoint) {
-                            const otherSocket = lastSegment?.topJoint?.pos ?? getTwigDiskTipCenter(nextDiskB);
-                            const desiredSocketA = firstSegment.bottomJoint.pos;
-                            const axisHint = new THREE.Vector3(
-                                otherSocket.x - desiredSocketA.x,
-                                otherSocket.y - desiredSocketA.y,
-                                otherSocket.z - desiredSocketA.z,
-                            );
-
-                            const recomputedA = recomputeTwigDiskForSocket(twig.contactDiskA, desiredSocketA, axisHint);
-                            nextDiskA = recomputedA.disk;
-
-                            adjustedSegments = adjustedSegments.map((segment: any, index: number) => {
-                                if (index !== 0 || !segment.bottomJoint) return segment;
-                                return {
-                                    ...segment,
-                                    bottomJoint: {
-                                        ...segment.bottomJoint,
-                                        pos: recomputedA.socket,
-                                    },
-                                };
-                            });
+                        const clamped = resolveJointPosById(next.segments, activeJointId.current!);
+                        if (livePreviewOf<typeof next>(typeId) !== next && shouldPublishForClampedPos(clamped)) {
+                            setLivePreview(next);
+                            emitSupportDragPreview(typeId, next.id, next);
+                            markPublishedClampedPos(clamped);
                         }
 
-                        if (movingTopEndpoint && lastSegment?.topJoint) {
-                            const firstAfterAdjust = adjustedSegments[0];
-                            const otherSocket = firstAfterAdjust?.bottomJoint?.pos ?? getTwigDiskTipCenter(nextDiskA);
-                            const desiredSocketB = lastSegment.topJoint.pos;
-                            const axisHint = new THREE.Vector3(
-                                otherSocket.x - desiredSocketB.x,
-                                otherSocket.y - desiredSocketB.y,
-                                otherSocket.z - desiredSocketB.z,
-                            );
-
-                            const recomputedB = recomputeTwigDiskForSocket(twig.contactDiskB, desiredSocketB, axisHint);
-                            nextDiskB = recomputedB.disk;
-
-                            adjustedSegments = adjustedSegments.map((segment: any, index: number) => {
-                                if (index !== adjustedSegments.length - 1 || !segment.topJoint) return segment;
-                                return {
-                                    ...segment,
-                                    topJoint: {
-                                        ...segment.topJoint,
-                                        pos: recomputedB.socket,
-                                    },
-                                };
-                            });
-                        }
-
-                        const newTwig: Twig = {
-                            ...twig,
-                            segments: adjustedSegments,
-                            contactDiskA: nextDiskA,
-                            contactDiskB: nextDiskB,
-                        };
-
-                        const clampedTwigJointPos = resolveJointPosById(newTwig.segments, activeJointId.current!);
-                        const shouldPublish = shouldPublishForClampedPos(clampedTwigJointPos);
-                        if (livePreviewOf<typeof newTwig>('twig') !== newTwig && shouldPublish) {
-                            setLivePreview(newTwig);
-                            emitSupportDragPreview('twig', newTwig.id, newTwig);
-                            markPublishedClampedPos(clampedTwigJointPos);
-                        }
-
-                        emitPreviewJointPos(clampedTwigJointPos, newPosVec3);
-                    }
-                } else if (activeIdOf('stick')) {
-                    const stick = getSupportEntity('stick', activeSupport.current!.id) as Stick | null;
-                    if (stick) {
-                        const nextSegments = updateSegmentsJointPos(stick.segments as any[], activeJointId.current!, newPosVec3) as any;
-                        const nextConeA = stick.contactConeA?.socketJointId === activeJointId.current!
-                            ? recomputeConeForSocket(stick.contactConeA as any, newPosVec3)
-                            : stick.contactConeA;
-                        const nextConeB = stick.contactConeB?.socketJointId === activeJointId.current!
-                            ? recomputeConeForSocket(stick.contactConeB as any, newPosVec3)
-                            : stick.contactConeB;
-
-                        const newStick: Stick = {
-                            ...stick,
-                            segments: nextSegments,
-                            contactConeA: nextConeA,
-                            contactConeB: nextConeB,
-                        };
-
-                        const clampedStickJointPos = resolveJointPosById(newStick.segments, activeJointId.current!);
-                        const shouldPublish = shouldPublishForClampedPos(clampedStickJointPos);
-                        if (livePreviewOf<typeof newStick>('stick') !== newStick && shouldPublish) {
-                            setLivePreview(newStick);
-                            emitSupportDragPreview('stick', newStick.id, newStick);
-                            markPublishedClampedPos(clampedStickJointPos);
-                        }
-
-                        emitPreviewJointPos(clampedStickJointPos, newPosVec3);
+                        emitPreviewJointPos(clamped, newPosVec3);
                     }
                 }
             }
