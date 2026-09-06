@@ -52,7 +52,9 @@ export const TwigRenderer = React.memo(function TwigRenderer({
   const lowDetailPrimitiveSegments = 8;
   const useLowDetailPrimitives = !isSelected && !propHovered;
 
-  const previewTwig = usePartDragUpdate<Twig>('twig', baseTwig.id);
+  // The entity names its own type; the store stamps it on every write.
+  const typeId = baseTwig.typeId ?? 'twig';
+  const previewTwig = usePartDragUpdate<Twig>(typeId, baseTwig.id);
   const twig = previewTwig ?? baseTwig;
 
 
@@ -206,7 +208,7 @@ export const TwigRenderer = React.memo(function TwigRenderer({
     return computeTwigDragAttachmentUpdates(nextTwig, attachedKnots, leavesByParentKnotId);
   }, []);
 
-  const tipDrag = useContactDiskDragSession<Twig>('twig', {
+  const tipDrag = useContactDiskDragSession<Twig>(typeId, {
     onHit: ({ point, surfaceNormal }: ContactDiskDragHit) => {
       const diskKey = activeDiskRef.current;
       const latestTwig = diskKey ? getSnapshot().twigs[twig.id] : null;

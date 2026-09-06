@@ -44,7 +44,9 @@ export const TrunkRenderer = React.memo(function TrunkRenderer({ trunk: baseTrun
     const highDetailPrimitiveSegments = 24;
     const lowDetailPrimitiveSegments = 8;
     const useLowDetailPrimitives = !isSelected && !propHovered;
-    const previewTrunk = usePartDragUpdate<Trunk>('trunk', baseTrunk.id);
+    // The entity names its own type; the store stamps it on every write.
+    const typeId = baseTrunk.typeId ?? 'trunk';
+    const previewTrunk = usePartDragUpdate<Trunk>(typeId, baseTrunk.id);
     const trunk = previewTrunk ?? baseTrunk;
 
 
@@ -73,7 +75,7 @@ export const TrunkRenderer = React.memo(function TrunkRenderer({ trunk: baseTrun
         handleSupportClick(e, trunk.id, !!isInteractable);
     };
 
-    const tipDrag = useContactDiskDragSession<ContactCone>('trunk', {
+    const tipDrag = useContactDiskDragSession<ContactCone>(typeId, {
         onHit: ({ point, surfaceNormal, mesh }: ContactDiskDragHit) => {
             const latest = getSnapshot().trunks[trunk.id];
             if (!latest?.contactCone) return null;

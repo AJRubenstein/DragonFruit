@@ -49,7 +49,9 @@ export const StickRenderer = React.memo(function StickRenderer({
   selectedColor = '#80fffd',
   onContactDiskHudHoverChange,
 }: StickRendererProps) {
-  const previewStick = usePartDragUpdate<Stick>('stick', baseStick.id);
+  // The entity names its own type; the store stamps it on every write.
+  const typeId = baseStick.typeId ?? 'stick';
+  const previewStick = usePartDragUpdate<Stick>(typeId, baseStick.id);
   const stick = previewStick ?? baseStick;
   
   const { camera, scene, gl } = useThree();
@@ -76,7 +78,7 @@ export const StickRenderer = React.memo(function StickRenderer({
 
   const activeConeRef = React.useRef<{ key: 'contactConeA' | 'contactConeB'; anchor: Vec3 } | null>(null);
 
-  const tipDrag = useContactDiskDragSession<{ key: 'contactConeA' | 'contactConeB'; cone: ContactCone }>('stick', {
+  const tipDrag = useContactDiskDragSession<{ key: 'contactConeA' | 'contactConeB'; cone: ContactCone }>(typeId, {
     onHit: ({ point, surfaceNormal, mesh }: ContactDiskDragHit) => {
       const active = activeConeRef.current;
       const latestStick = active ? getSnapshot().sticks[stick.id] : null;
@@ -132,7 +134,7 @@ export const StickRenderer = React.memo(function StickRenderer({
     return Array.from(map.values());
   }, [stick.segments]);
 
-  const shaftSegments = useShaftSegments('stick', stick, {});
+  const shaftSegments = useShaftSegments(typeId, stick, {});
 
   shaftSegments.forEach((shaft) => {
     const seg = shaft.segment;

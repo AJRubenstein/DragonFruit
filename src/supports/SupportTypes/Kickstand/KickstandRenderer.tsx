@@ -51,7 +51,9 @@ export const KickstandRenderer = React.memo(function KickstandRenderer({
     hoverColor,
     selectedColor = '#80fffd',
 }: KickstandRendererProps) {
-    const previewKickstand = usePartDragUpdate<Kickstand>('kickstand', baseKickstand.id);
+    // The entity names its own type; the store stamps it on every write.
+    const typeId = baseKickstand.typeId ?? 'kickstand';
+    const previewKickstand = usePartDragUpdate<Kickstand>(typeId, baseKickstand.id);
     const kickstand = previewKickstand ?? baseKickstand;
 
     const highDetailPrimitiveSegments = 24;
@@ -78,7 +80,7 @@ export const KickstandRenderer = React.memo(function KickstandRenderer({
     const batchedStraightShafts: InstancedShaft[] = [];
     const joints: React.ReactNode[] = [];
 
-    const shaftSegments = useShaftSegments('kickstand', kickstand, { root, hostKnot });
+    const shaftSegments = useShaftSegments(typeId, kickstand, { root, hostKnot });
 
     shaftSegments.forEach((shaft) => {
         const segment = shaft.segment;
