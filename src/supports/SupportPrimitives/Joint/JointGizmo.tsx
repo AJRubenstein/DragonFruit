@@ -15,6 +15,7 @@ import { useJointDragPosition } from '../../interaction/jointDragPosition';
 import { clearSupportDragPreview, emitSupportDragPreview, setJointInteractionLock } from './jointDragRuntime';
 import { commitJointDragSupport, computeJointDragSupportPreview, publishJointDragSupportPreview, type JointDragSupport } from './jointDragController';
 import { resolveShaftAnchor } from '../Knot/segmentEndpoints';
+import { resolveDraggedContacts } from './resolveDraggedContacts';
 
 export function JointGizmo() {
     const MOVE_DELTA_EPS_SQ = 1e-12;
@@ -77,130 +78,6 @@ export function JointGizmo() {
             if (seg.bottomJoint?.id === jointId) return seg.bottomJoint.pos;
         }
         return null;
-    }, []);
-
-     const recomputeConeForSocket = useCallback((cone: any, socketPos: { x: number; y: number; z: number }) => {
-         const effectiveSurfaceNormal = cone.surfaceNormal || cone.normal;
-         let axis = new THREE.Vector3(cone.normal.x, cone.normal.y, cone.normal.z);
-         if (axis.lengthSq() < 0.000001) axis.set(0, 0, 1);
-         axis.normalize();
-
-         let offset = 0;
-         if (cone.profile?.type === 'disk') {
-             if (cone.diskLengthOverride !== undefined) {
-                 offset = cone.diskLengthOverride;
-             } else {
-                 offset = calculateDiskThickness(effectiveSurfaceNormal, { x: axis.x, y: axis.y, z: axis.z }, cone.profile);
-             }
-         }
-
-         const contactPos = new THREE.Vector3(cone.pos.x, cone.pos.y, cone.pos.z);
-         const sn = new THREE.Vector3(effectiveSurfaceNormal.x, effectiveSurfaceNormal.y, effectiveSurfaceNormal.z);
-         const socket = new THREE.Vector3(socketPos.x, socketPos.y, socketPos.z);
-
-         let startPos = contactPos.clone().add(sn.clone().multiplyScalar(offset));
-         for (let i = 0; i < 3; i++) {
-             const v = socket.clone().sub(startPos);
-             const len = v.length();
-             if (len > 0.0001) {
-                 axis = v.clone().normalize();
-             }
-             if (cone.profile?.type === 'disk' && cone.diskLengthOverride === undefined) {
-                 offset = calculateDiskThickness(effectiveSurfaceNormal, { x: axis.x, y: axis.y, z: axis.z }, cone.profile);
-                 startPos = contactPos.clone().add(sn.clone().multiplyScalar(offset));
-             }
-         }
-
-         const finalStart = contactPos.clone().add(sn.clone().multiplyScalar(offset));
-         const lengthMm = Math.max(0.1, socket.distanceTo(finalStart));
-
-         return {
-             ...cone,
-             normal: { x: axis.x, y: axis.y, z: axis.z },
-             profile: {
-                 ...cone.profile,
-                 lengthMm,
-             },
-         };
-     }, []);
-
-    const getTwigDiskTipCenter = useCallback((disk: any) => {
-        const thickness = disk.diskLengthOverride ?? calculateDiskThickness(disk.surfaceNormal, disk.coneAxis, disk.profile);
-        return {
-            x: disk.pos.x + disk.surfaceNormal.x * thickness,
-            y: disk.pos.y + disk.surfaceNormal.y * thickness,
-            z: disk.pos.z + disk.surfaceNormal.z * thickness,
-        };
-    }, []);
-
-    const recomputeTwigDiskForSocket = useCallback((
-        disk: any,
-        desiredSocketPos: { x: number; y: number; z: number },
-        axisHint?: THREE.Vector3,
-    ) => {
-        const contactPos = new THREE.Vector3(disk.pos.x, disk.pos.y, disk.pos.z);
-
-        const desiredSocket = new THREE.Vector3(desiredSocketPos.x, desiredSocketPos.y, desiredSocketPos.z);
-        const contactToDesiredSocket = desiredSocket.clone().sub(contactPos);
-
-        // Keep contact point anchored, but allow contact angle to tilt toward the moved joint.
-        let surfaceNormal = contactToDesiredSocket.clone();
-        if (surfaceNormal.lengthSq() < 0.000001) {
-            surfaceNormal = new THREE.Vector3(disk.surfaceNormal.x, disk.surfaceNormal.y, disk.surfaceNormal.z);
-        }
-        if (surfaceNormal.lengthSq() < 0.000001) {
-            surfaceNormal.set(0, 0, 1);
-        }
-        surfaceNormal.normalize();
-
-        const axis = axisHint?.clone() ?? contactToDesiredSocket.clone();
-        if (axis.lengthSq() < 0.000001) {
-            axis.set(disk.coneAxis.x, disk.coneAxis.y, disk.coneAxis.z);
-        }
-        if (axis.lengthSq() < 0.000001) {
-            axis.copy(surfaceNormal);
-        }
-        axis.normalize();
-
-        const desiredDistance = contactToDesiredSocket.length();
-        const fallbackThickness = disk.diskLengthOverride ?? calculateDiskThickness(
-            { x: surfaceNormal.x, y: surfaceNormal.y, z: surfaceNormal.z },
-            { x: axis.x, y: axis.y, z: axis.z },
-            disk.profile,
-        );
-        const thickness = Number.isFinite(desiredDistance) && desiredDistance > 0.000001
-            ? Math.max(0.001, desiredDistance)
-            : Math.max(0.001, fallbackThickness);
-
-        const snappedSocket = contactPos.clone().add(surfaceNormal.clone().multiplyScalar(thickness));
-
-        return {
-            disk: {
-                ...disk,
-                // Keep contact point anchored on the model surface.
-                pos: {
-                    x: contactPos.x,
-                    y: contactPos.y,
-                    z: contactPos.z,
-                },
-                surfaceNormal: {
-                    x: surfaceNormal.x,
-                    y: surfaceNormal.y,
-                    z: surfaceNormal.z,
-                },
-                coneAxis: {
-                    x: axis.x,
-                    y: axis.y,
-                    z: axis.z,
-                },
-                diskLengthOverride: thickness,
-            },
-            socket: {
-                x: snappedSocket.x,
-                y: snappedSocket.y,
-                z: snappedSocket.z,
-            },
-        };
     }, []);
 
     /** The dragged joint and the support that owns it, over every shafted type. */
@@ -304,97 +181,18 @@ export function JointGizmo() {
 
             const clamped = getJointPosInSegments((next as { segments: Segment[] }).segments as any[], joint.id);
             if (clamped) gizmoPos = clamped;
-        } else if (owner?.typeId === 'twig') {
-            const twig = result!.entity as Twig;
-            const nextSegments = updateSegmentsJointPos(twig.segments as any[], joint.id, newPos) as any;
-            const firstSegment = nextSegments[0];
-            const lastSegment = nextSegments[nextSegments.length - 1];
-            const movingBottomEndpoint = firstSegment?.bottomJoint?.id === joint.id;
-            const movingTopEndpoint = lastSegment?.topJoint?.id === joint.id;
+        } else if (owner && descriptor?.jointDragMovesContacts) {
+            // The contacts follow whichever end moved, and a disk snaps the
+            // joint back onto its tip -- which is what moves the gizmo.
+            const entity = result!.entity as unknown as { id: string; segments: Segment[] };
+            const moved = updateSegmentsJointPos(entity.segments as any[], joint.id, newPos) as Segment[];
+            const next = resolveDraggedContacts(owner.typeId, entity, joint.id, moved);
 
-            let nextDiskA = twig.contactDiskA;
-            let nextDiskB = twig.contactDiskB;
-            let adjustedSegments = nextSegments;
+            setLivePreview(owner.typeId, next);
+            emitSupportDragPreview(owner.typeId, next.id, next);
 
-            if (movingBottomEndpoint && firstSegment?.bottomJoint) {
-                const otherSocket = lastSegment?.topJoint?.pos ?? getTwigDiskTipCenter(twig.contactDiskB);
-                const desiredSocketA = firstSegment.bottomJoint.pos;
-                const axisHint = new THREE.Vector3(
-                    otherSocket.x - desiredSocketA.x,
-                    otherSocket.y - desiredSocketA.y,
-                    otherSocket.z - desiredSocketA.z,
-                );
-
-                const recomputedA = recomputeTwigDiskForSocket(twig.contactDiskA as any, desiredSocketA, axisHint);
-                nextDiskA = recomputedA.disk;
-
-                adjustedSegments = adjustedSegments.map((segment: any, index: number) => {
-                    if (index !== 0 || !segment.bottomJoint) return segment;
-                    return {
-                        ...segment,
-                        bottomJoint: {
-                            ...segment.bottomJoint,
-                            pos: recomputedA.socket,
-                        },
-                    };
-                });
-
-                gizmoPos = recomputedA.socket;
-            }
-
-            if (movingTopEndpoint && lastSegment?.topJoint) {
-                const firstAfterAdjust = adjustedSegments[0];
-                const otherSocket = firstAfterAdjust?.bottomJoint?.pos ?? getTwigDiskTipCenter(nextDiskA as any);
-                const desiredSocketB = lastSegment.topJoint.pos;
-                const axisHint = new THREE.Vector3(
-                    otherSocket.x - desiredSocketB.x,
-                    otherSocket.y - desiredSocketB.y,
-                    otherSocket.z - desiredSocketB.z,
-                );
-
-                const recomputedB = recomputeTwigDiskForSocket(twig.contactDiskB as any, desiredSocketB, axisHint);
-                nextDiskB = recomputedB.disk;
-
-                adjustedSegments = adjustedSegments.map((segment: any, index: number) => {
-                    if (index !== adjustedSegments.length - 1 || !segment.topJoint) return segment;
-                    return {
-                        ...segment,
-                        topJoint: {
-                            ...segment.topJoint,
-                            pos: recomputedB.socket,
-                        },
-                    };
-                });
-
-                gizmoPos = recomputedB.socket;
-            }
-
-            const newTwig: Twig = {
-                ...twig,
-                segments: adjustedSegments,
-                contactDiskA: nextDiskA,
-                contactDiskB: nextDiskB,
-            };
-            setLivePreview('twig', newTwig);
-            emitSupportDragPreview('twig', newTwig.id, newTwig);
-        } else if (owner?.typeId === 'stick') {
-            const stick = result!.entity as Stick;
-            const nextSegments = updateSegmentsJointPos(stick.segments as any[], joint.id, newPos) as any;
-            const nextConeA = stick.contactConeA?.socketJointId === joint.id
-                ? recomputeConeForSocket(stick.contactConeA as any, newPos)
-                : stick.contactConeA;
-            const nextConeB = stick.contactConeB?.socketJointId === joint.id
-                ? recomputeConeForSocket(stick.contactConeB as any, newPos)
-                : stick.contactConeB;
-
-            const newStick: Stick = {
-                ...stick,
-                segments: nextSegments,
-                contactConeA: nextConeA,
-                contactConeB: nextConeB,
-            };
-            setLivePreview('stick', newStick);
-            emitSupportDragPreview('stick', newStick.id, newStick);
+            const snapped = getJointPosInSegments(next.segments as any[], joint.id);
+            if (snapped) gizmoPos = snapped;
         }
 
         if (gizmoTargetRef.current) {
@@ -413,9 +211,6 @@ export function JointGizmo() {
         joint?.pos.z,
         state.roots,
         updateSegmentsJointPos,
-        getTwigDiskTipCenter,
-        recomputeTwigDiskForSocket,
-        recomputeConeForSocket,
     ]);
 
     const flushPendingMove = useCallback(() => {
