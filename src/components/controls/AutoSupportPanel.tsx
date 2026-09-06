@@ -14,6 +14,7 @@ import { DETAIL_PRESET, STRUCTURE_PRESET, ANCHOR_PRESET } from '@/supports/Setti
 import type { SizingDebugInfo, AutoSupportSettings, ForestReport } from '@/supports/autoSupport';
 import { getSettings, updateAutoSupportSettings, subscribeToSettings, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
 import { getSnapshot, setSnapshot } from '@/supports/state';
+import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 import { getKickstandSnapshot, setKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import type { Knot } from '@/supports/types';
 /** Set to true while auto-support is busy (scanning or placing).
@@ -267,16 +268,30 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
       // Rebuild knots: keep those referenced by surviving entities (other
       // models' trunks/branches/braces/leaf cones) or by the kickstand store;
       // drop orphans left by this model's deleted supports.
+      //
+      // Every shaft still standing, across every type that has one. The four
+      // blocks this replaces covered trunk, branch, brace and leaf cones, so a
+      // knot hosted on a surviving twig, stick or anchor was dropped as an
+      // orphan along with whatever hung from it.
       const survivingSegmentIds = new Set<string>();
-      for (const t of Object.values(next.trunks)) {
-        for (const s of t.segments) survivingSegmentIds.add(s.id);
+      for (const descriptor of SUPPORT_TYPES) {
+        const collection = next[descriptor.location.key] as unknown as Record<string, { id: string; segments?: { id: string }[] }>;
+        for (const entity of Object.values(collection ?? {})) {
+          // This model's own supports are being replaced, so their shafts do
+          // not survive -- `next` still holds the ones removed above only for
+          // collections cleaned later in this function.
+          if ((entity as { modelId?: string }).modelId === activeModelId) continue;
+          if (descriptor.segmentSelectionPrefix) {
+            survivingSegmentIds.add(`${descriptor.segmentSelectionPrefix}${entity.id}`);
+            continue;
+          }
+          for (const s of entity.segments ?? []) survivingSegmentIds.add(s.id);
+        }
       }
-      for (const b of Object.values(next.branches)) {
-        for (const s of b.segments) survivingSegmentIds.add(s.id);
-      }
-      for (const brace of Object.values(next.braces)) {
-        survivingSegmentIds.add(`braceSegment:${brace.id}`);
-      }
+      // A leaf's cone is addressable as a shaft too, but the prefix is not on
+      // the descriptor: leaf has no segments, so declaring it there changes how
+      // six other consumers treat leaves. Kept explicit until that is a
+      // deliberate change of its own.
       for (const l of Object.values(next.leaves)) {
         survivingSegmentIds.add(`leafCone:${l.id}`);
       }
