@@ -1,7 +1,15 @@
+import type { SupportTypeId } from '../../../../supportTypeRegistry';
 import type { HotkeyBinding } from '@/hotkeys/hotkeyConfig';
 
 export type SupportPlacementFamily = 'none' | 'branchFamily' | 'leaf' | 'kickstand';
-export type SupportPlacementOwner = 'none' | 'branch' | 'brace' | 'leaf' | 'kickstand';
+/**
+ * Which placement a pointer gesture belongs to.
+ *
+ * Drawn from `SupportTypeId` rather than spelled out, so renaming a type in the
+ * registry renames it here. Only the types with a placement mode appear; the
+ * set is held by `supportPlacementRouting.test.ts`.
+ */
+export type SupportPlacementOwner = 'none' | Extract<SupportTypeId, 'branch' | 'brace' | 'leaf' | 'kickstand'>;
 export type SupportPlacementFirstClickTarget = 'none' | 'model' | 'support';
 
 export interface SupportPlacementModifierState {
