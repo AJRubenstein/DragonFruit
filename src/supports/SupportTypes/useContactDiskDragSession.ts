@@ -22,6 +22,8 @@ export interface ContactDiskDragHandlers<TPreview> {
     onHit: (hit: ContactDiskDragHit) => TPreview | null;
     /** Write the finished preview to the store. */
     onCommit: (preview: TPreview) => void;
+    /** Runs after every drag, committed or not, for previews broadcast elsewhere. */
+    onSettled?: () => void;
 }
 
 export interface ContactDiskDragSessionApi<TPreview> {
@@ -92,6 +94,7 @@ export function useContactDiskDragSession<TPreview>(
                         );
                     }
                 }
+                handlersRef.current.onSettled?.();
                 previewRef.current = null;
                 sessionRef.current = null;
                 beforeRef.current = null;
