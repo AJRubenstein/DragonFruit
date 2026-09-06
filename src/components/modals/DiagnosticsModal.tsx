@@ -7,7 +7,6 @@ import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 import type { Segment } from '@/supports/types';
-import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { getPickingDiagnosticsSnapshot } from '@/components/picking/pickingDiagnostics';
 import {
   DIAGNOSTICS_BENCHMARK_PROGRESS_EVENT,
@@ -122,7 +121,6 @@ function formatFps(value: number | null | undefined, digits = 1): string {
 
 function computeSupportDiagnostics(): SupportDiagnosticsStats {
   const supportState = getSupportSnapshot();
-  const kickstandState = getSupportSnapshot();
   const picking = getPickingDiagnosticsSnapshot();
 
   // Every type's segments and joints. A brace has no segments but draws one

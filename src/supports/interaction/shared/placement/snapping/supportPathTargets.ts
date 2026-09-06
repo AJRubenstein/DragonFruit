@@ -5,7 +5,6 @@ import { getFinalSocketPosition } from '../../../../SupportPrimitives/ContactCon
 import type { ContactCone } from '../../../../SupportPrimitives/ContactCone/types';
 import { calculateDiskThickness } from '../../../../SupportPrimitives/ContactDisk/contactDiskUtils';
 import { JOINT_DIAMETER_OFFSET_MM } from '../../../../constants';
-import type { KickstandState } from '../../../../SupportTypes/Kickstand/types';
 
 type PlacementSurface = 'interior' | 'exterior';
 

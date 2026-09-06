@@ -1,6 +1,6 @@
 import type { Anchor, Roots, Trunk, Leaf, Knot, Kickstand, Branch, Brace, Twig, Stick, SupportState } from '../types';
 import type { SupportRemovalResult } from '../supportTypeRegistry';
-import type { KickstandBuildResult, KickstandState } from '../SupportTypes/Kickstand/types';
+import type { KickstandBuildResult } from '../SupportTypes/Kickstand/types';
 
 export const SUPPORT_ADD_TRUNK = 'support:add-trunk' as const;
 export const SUPPORT_REMOVE_TRUNK = 'support:remove-trunk' as const;

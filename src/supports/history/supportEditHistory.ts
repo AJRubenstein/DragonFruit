@@ -33,12 +33,6 @@ function sanitizeSupportSnapshot(snapshot: SupportState): SupportState {
   return cloned;
 }
 
-function sanitizeKickstandSnapshot(snapshot: KickstandState): KickstandState {
-  const cloned = structuredClone(snapshot);
-  cloned.selectedId = null;
-  return cloned;
-}
-
 function flushPendingJobs() {
   flushScheduled = false;
 
