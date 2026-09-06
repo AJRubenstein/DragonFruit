@@ -54,21 +54,13 @@ function declaresField(body: string, field: string): boolean {
     });
 }
 
-const INTERFACE_BY_TYPE_ID: Record<string, string> = {
-    trunk: 'Trunk',
-    branch: 'Branch',
-    leaf: 'Leaf',
-    twig: 'Twig',
-    stick: 'Stick',
-    brace: 'Brace',
-    anchor: 'Anchor',
-    kickstand: 'Kickstand',
-};
+/** A type's fields interface, named after its id. */
+const fieldsInterfaceFor = (typeId: string) =>
+    `${typeId[0].toUpperCase()}${typeId.slice(1)}Fields`;
 
 test('every declared edge field exists on the entity interface', () => {
     for (const descriptor of SUPPORT_TYPES) {
-        const interfaceName = INTERFACE_BY_TYPE_ID[descriptor.id];
-        assert.ok(interfaceName, `no interface mapped for "${descriptor.id}"`);
+        const interfaceName = fieldsInterfaceFor(descriptor.id);
 
         const body = interfaceBody(interfaceName);
         assert.ok(body, `interface ${interfaceName} not found in types.ts`);

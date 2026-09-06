@@ -1,4 +1,4 @@
-import type { SupportCollectionName, SupportEntityByCollection, SupportRemovedEntityByCollection, SupportState } from './types';
+import type { SupportCollectionByType, SupportCollectionName, SupportEntityByCollection, SupportFieldsByType, SupportRemovedEntityByCollection, SupportState } from './types';
 import {
     SUPPORT_ADD_TRUNK, SUPPORT_REMOVE_TRUNK, SUPPORT_UPDATE_TRUNK,
     SUPPORT_ADD_BRANCH, SUPPORT_REMOVE_BRANCH, SUPPORT_UPDATE_BRANCH,
@@ -12,15 +12,8 @@ import {
 import type { SupportHistoryActionType } from './history/actionTypes';
 import { ANCHOR_HEIGHT_THRESHOLD_MM } from './autoSupport/constants';
 
-export type SupportTypeId =
-    | 'trunk'
-    | 'branch'
-    | 'leaf'
-    | 'twig'
-    | 'stick'
-    | 'brace'
-    | 'anchor'
-    | 'kickstand';
+/** Every declared support type, named once in `SupportFieldsByType`. */
+export type SupportTypeId = keyof SupportFieldsByType;
 
 export type SupportSelectionCategory = SupportTypeId | 'root' | 'joint' | 'knot' | 'segment' | 'contactDisk';
 
@@ -735,10 +728,10 @@ type UnionToIntersection<U> =
     (U extends unknown ? (arg: U) => void : never) extends (arg: infer I) => void ? I : never;
 
 /** Type id -> the collection its entities live in, kept literal for the above. */
-export const SUPPORT_TYPE_COLLECTION = {
+export const SUPPORT_TYPE_COLLECTION: SupportCollectionByType = {
     trunk: 'trunks', branch: 'branches', leaf: 'leaves', twig: 'twigs',
     stick: 'sticks', brace: 'braces', anchor: 'anchors', kickstand: 'kickstands',
-} as const;
+};
 
 /** Compile-time check that every support type declares a removal shape. */
 type _RemovalShapesCoverEveryType =
