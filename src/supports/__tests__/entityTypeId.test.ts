@@ -233,34 +233,31 @@ test('an ordinary segment id still resolves by scanning shafts', () => {
     }
 });
 
-test('an entity that reached the store unstamped still resolves', () => {
-    // `setSnapshot` replaces the whole store -- undo of a whole-store action
-    // takes that path, and it bypasses the writers that stamp `typeId`. The
-    // collection is the fallback, which is exactly what the field replaced.
+test('an entity that reaches the store unstamped is stamped on entry', () => {
+    // `setSnapshot` replaces the whole store and is the path undo of a
+    // whole-store action takes. It stamps, so an entity that arrives without a
+    // typeId still lands in its collection.
     oneOfEach();
-    const forced = structuredClone(getSnapshot());
-    (forced.twigs as Record<string, unknown>)['unstamped'] = {
-        id: 'unstamped', modelId: 'model-a', segments: [],
-    };
+    const forced = { ...getSnapshot() } as Record<string, unknown>;
+    forced.twigs = { unstamped: { id: 'unstamped', modelId: 'model-a', segments: [] } };
     setSnapshot(forced as never);
 
     assert.equal(getSupportTypeOf('unstamped'), 'twig');
     assert.equal(getSupportTypeOf('not-in-the-store'), null);
 });
 
-test('the owner lookups find an unstamped entity too', () => {
-    // Both read the merged view, where an entity restored through setSnapshot
-    // has no typeId. Skipping those made two kickstand tests fail; resolving
-    // through getSupportTypeOf keeps the collection fallback.
+test('the owner lookups find an entity that arrived unstamped', () => {
     oneOfEach();
-    const forced = structuredClone(getSnapshot());
-    (forced.twigs as Record<string, unknown>)['bare'] = {
-        id: 'bare', modelId: 'model-a',
-        segments: [{
-            id: 'bare-seg', diameter: 1,
-            bottomJoint: { id: 'bare-bj', pos: { x: 0, y: 0, z: 0 }, diameter: 1 },
-            topJoint: { id: 'bare-tj', pos: { x: 0, y: 0, z: 4 }, diameter: 1 },
-        }],
+    const forced = { ...getSnapshot() } as Record<string, unknown>;
+    forced.twigs = {
+        bare: {
+            id: 'bare', modelId: 'model-a',
+            segments: [{
+                id: 'bare-seg', diameter: 1,
+                bottomJoint: { id: 'bare-bj', pos: { x: 0, y: 0, z: 0 }, diameter: 1 },
+                topJoint: { id: 'bare-tj', pos: { x: 0, y: 0, z: 4 }, diameter: 1 },
+            }],
+        },
     };
     setSnapshot(forced as never);
 

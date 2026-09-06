@@ -252,10 +252,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
       // models' trunks/branches/braces/leaf cones) or by the kickstand store;
       // drop orphans left by this model's deleted supports.
       //
-      // Every shaft still standing, across every type that has one. The four
-      // blocks this replaces covered trunk, branch, brace and leaf cones, so a
-      // knot hosted on a surviving twig, stick or anchor was dropped as an
-      // orphan along with whatever hung from it.
+      // Every shaft still standing, across every type that has one.
       const survivingSegmentIds = new Set<string>();
       for (const descriptor of SUPPORT_TYPES) {
         const collection = next[descriptor.location.key] as unknown as Record<string, { id: string; segments?: { id: string }[] }>;

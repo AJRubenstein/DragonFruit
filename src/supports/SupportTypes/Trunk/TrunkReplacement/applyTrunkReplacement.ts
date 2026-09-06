@@ -1,5 +1,5 @@
 import type { Branch, Joint, Knot, Roots, SupportState, Trunk, Vec3 } from '../../../types';
-import { addBranch, addKnot, addLeaf, addRoot, addTrunk, getSnapshot, removeBranch, removeLeaf, removeTrunk, updateBranch, updateKnot, updateTrunk } from '../../../state';
+import { cloneSupportState, addBranch, addKnot, addLeaf, addRoot, addTrunk, getSnapshot, removeBranch, removeLeaf, removeTrunk, updateBranch, updateKnot, updateTrunk } from '../../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_REPLACE_TRUNK } from '../../../history/actionTypes';
 import type { SupportReplaceTrunkPayload } from '../../../history/actionTypes';
@@ -327,7 +327,7 @@ export function applyTrunkReplacement(
     opts?: { skipHistory?: boolean },
 ): boolean {
     const snapshot = getSnapshot();
-    const before = structuredClone(historyBefore ?? snapshot);
+    const before = cloneSupportState(historyBefore ?? snapshot);
     const trunk = snapshot.trunks[plan.trunkToRemoveId];
     if (!trunk) return false;
 
@@ -549,7 +549,7 @@ export function applyTrunkReplacement(
         updateTrunk(applied.trunk);
     }
 
-    const after = structuredClone(getSnapshot());
+    const after = cloneSupportState(getSnapshot());
 
     if (!opts?.skipHistory) {
         const payload: SupportReplaceTrunkPayload = {

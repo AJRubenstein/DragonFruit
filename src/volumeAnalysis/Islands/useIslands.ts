@@ -626,9 +626,8 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
       }
     };
 
-    // Every declared contact, by its kind: a cone reports its profile diameter,
-    // a disk its own. The six blocks this replaces named the same six types and
-    // the same fields by hand.
+    // Every declared contact, by its kind: a cone reports its profile
+    // diameter, a disk its own.
     for (const descriptor of SUPPORT_TYPES) {
       const collection = (state as unknown as Record<string, Record<string, unknown> | undefined>)[descriptor.location.key];
       if (!collection) continue;

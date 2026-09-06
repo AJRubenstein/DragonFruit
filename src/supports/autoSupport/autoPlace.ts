@@ -28,7 +28,7 @@ import {
 import { sizeParameters, presetForArea, ANCHOR_SHAFT_MULTIPLIER, type SizingPreset } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
-import { getSnapshot, setSnapshot } from '../state';
+import { cloneSupportState, getSnapshot, setSnapshot } from '../state';
 import {
     draftAddRoot, draftAddTrunk, draftAddBranch, draftAddLeaf,
     draftAddKnot, draftAddAnchor, draftAddStick, draftAddTwig,
@@ -1966,7 +1966,7 @@ export function computeAutoSupportPlan(
         return null;
     }
 
-    const before = baseState ?? structuredClone(getSnapshot());
+    const before = baseState ?? cloneSupportState(getSnapshot());
     const kickstandBefore = baseKickstand ?? structuredClone(getKickstandSnapshot());
     let draft: SupportState = before;
     let kickstandDraft: KickstandState = kickstandBefore;

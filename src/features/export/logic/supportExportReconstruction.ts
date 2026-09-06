@@ -535,7 +535,7 @@ export function extractScopedSupportPayload(
     }));
 
   // Shafts carried by the scope: real segments, or a prefixed id for a type
-  // that has none. The six lines this replaces omitted anchors.
+  // that has none.
   const includedSegmentIds = new Set<string>();
   for (const { descriptor, entities } of scopedByType) {
     for (const entity of entities) {

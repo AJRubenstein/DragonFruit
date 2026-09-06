@@ -75,7 +75,7 @@ export function BracePlacementController() {
     const segmentMeta = useMemo(() => {
         // Every type's shaft, by what the registry declares: a shafted type
         // contributes each segment, a prefixed one its own id under that
-        // prefix. The six blocks this replaces omitted anchors.
+        // prefix.
         const map = new Map<string, { modelId: string; supportKey: string; isBezier: boolean }>();
 
         for (const descriptor of SUPPORT_TYPES) {
@@ -113,8 +113,7 @@ export function BracePlacementController() {
 
     const segmentPlacementSurfaceById = useMemo(() => {
         // Which surface a shaft's contact sits on, for every type that has
-        // contacts. Each block this replaces took the first contact that
-        // declared one, which is what `contactFields` order gives.
+        // contacts, taking the first that declares one.
         const map = new Map<string, 'interior' | 'exterior' | undefined>();
 
         for (const descriptor of SUPPORT_TYPES) {

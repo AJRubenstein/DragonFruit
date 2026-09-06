@@ -476,8 +476,7 @@ export function SupportProxyMeshLayer({
     if (
       sharedProxyCache
       // One identity covers all eight entity collections: the merged view is
-      // rebuilt whenever any of them changes, which is what the per-collection
-      // checks this replaces were each testing for.
+      // rebuilt whenever any of them changes.
       && sharedProxyCache.supportsRef === supports
       && sharedProxyCache.supportRootsRef === supportRoots
       && sharedProxyCache.supportKnotsRef === supportKnots

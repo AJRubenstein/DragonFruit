@@ -27,7 +27,7 @@ function collectSegmentDiameters(entity: { segments: { diameter: number }[] }): 
  * The diameter a support contributes to its connected graph.
  *
  * A shafted type reports its widest segment; a brace its profile; a leaf its
- * contact cone. Each arm of the walk this replaces read exactly one of these.
+ * contact cone.
  */
 function memberDiameterOf(descriptor: SupportTypeDescriptor, entity: Record<string, unknown>): number {
     if (descriptor.hasSegments) {

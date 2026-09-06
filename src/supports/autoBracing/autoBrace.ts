@@ -5,7 +5,7 @@ import {
     SUPPORT_AUTO_BRACE_REPLACE,
     type SupportReplaceStatePayload,
 } from '../history/actionTypes';
-import { getSnapshot, setSnapshot } from '../state';
+import { cloneSupportState, getSnapshot, setSnapshot } from '../state';
 import {
     calculateKnotPositionOnSegmentFromT,
 } from '../SupportPrimitives/Knot/knotUtils';
@@ -132,7 +132,6 @@ function collectSegmentExtrema(segments: SegmentSample[]): { topReferenceZ: numb
 /**
  * Shaft samples for every type auto-bracing can brace.
  *
- * Was one loop per type, each calling that type's own endpoint function.
  * Endpoints now come from the shared walker, and which types take part is
  * declared as `isAutoBraceable`.
  */
@@ -1086,7 +1085,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
 }
 
 export function runAutoBracing(): AutoBraceResult {
-    const before = structuredClone(getSnapshot());
+    const before = cloneSupportState(getSnapshot());
     const built = buildAutoBracedSnapshot(before, getSettings().autoBracing);
     if (!built.changed) return built;
 

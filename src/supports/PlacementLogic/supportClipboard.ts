@@ -98,8 +98,6 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
 
   // Every type's segments, by what the registry declares: a shafted type
   // contributes its segment ids, a prefixed one its own id under that prefix.
-  // The four loops this replaces omitted anchors and kickstands, so a bare
-  // knot on one of those shafts was not copied with it.
   const includedSegmentIds = new Set<string>();
   for (const descriptor of SUPPORT_TYPES) {
     const entities = (owned as Record<string, { id: string; segments?: Segment[] }[]>)[descriptor.location.key] ?? [];

@@ -96,10 +96,18 @@ const transform = (x: number) => ({
 });
 
 /** Loads the fixture fresh and returns a deep copy of the loaded state. */
+/** The collections as plain data; they are getters, so a bare stringify skips them. */
+function plainCollections(): Record<string, Record<string, Record<string, unknown>>> {
+    const snapshot = getSnapshot() as unknown as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of ['trunks', 'branches', 'leaves', 'twigs', 'sticks']) out[key] = snapshot[key];
+    return JSON.parse(JSON.stringify(out));
+}
+
 function load(): Record<string, Record<string, Record<string, unknown>>> {
     resetStore();
     loadFromImportFormat(fixture() as never);
-    return JSON.parse(JSON.stringify(getSnapshot()));
+    return plainCollections();
 }
 
 /** First x coordinate that identifies where an entity sits. */
@@ -115,7 +123,7 @@ function anchorX(entity: Record<string, unknown> | undefined): number | null {
 
 /** Entities whose anchor moved between `before` and the current snapshot. */
 function movedSince(before: Record<string, Record<string, Record<string, unknown>>>): string[] {
-    const now = JSON.parse(JSON.stringify(getSnapshot()));
+    const now = plainCollections();
     const moved: string[] = [];
     for (const collection of ['trunks', 'branches', 'leaves', 'twigs', 'sticks']) {
         for (const id of Object.keys(before[collection] ?? {})) {
