@@ -681,7 +681,8 @@ type SupportSliceTessellation = {
   jointRadialSegments: number;
 };
 
-function resolveSupportSliceTessellation(
+/** Exported for `local-only/slice-goldens/`; not part of the public surface. */
+export function resolveSupportSliceTessellation(
   supportState: ReturnType<typeof getSupportSnapshot>,
   kickstandState: ReturnType<typeof getKickstandSnapshot>,
 ): SupportSliceTessellation {
@@ -849,7 +850,8 @@ function appendContactDiskPrimitive(
 }
 
 
-function buildSupportAndRaftWorldTriangles(
+/** Exported for `local-only/slice-goldens/`; not part of the public surface. */
+export function buildSupportAndRaftWorldTriangles(
   visibleModelIds: Set<string>,
   collector?: TriangleFloatCollector,
 ): WorldTriangle[] {
