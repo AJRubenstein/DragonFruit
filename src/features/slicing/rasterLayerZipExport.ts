@@ -8,6 +8,7 @@ import {
   type PngCompressionStrategy,
 } from '@/components/settings/performancePreferences';
 import { getSnapshot as getSupportSnapshot } from '@/supports/state';
+import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { getRaftSettings } from '@/supports/Rafts/Crenelated/RaftState';
 import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
@@ -686,17 +687,27 @@ export function resolveSupportSliceTessellation(
   supportState: ReturnType<typeof getSupportSnapshot>,
   kickstandState: ReturnType<typeof getKickstandSnapshot>,
 ): SupportSliceTessellation {
+  // How much geometry the scene will emit, which decides the detail level.
+  // The five segment loops this replaces omitted anchors, so a scene full of
+  // them under-counted and was tessellated finer than intended.
   let segmentCount = 0;
-  for (const trunk of Object.values(supportState.trunks)) segmentCount += trunk.segments.length;
-  for (const branch of Object.values(supportState.branches)) segmentCount += branch.segments.length;
-  for (const twig of Object.values(supportState.twigs)) segmentCount += twig.segments.length;
-  for (const stick of Object.values(supportState.sticks)) segmentCount += stick.segments.length;
-  for (const kickstand of Object.values(kickstandState.kickstands)) segmentCount += kickstand.segments.length;
+  let shaftlessCount = 0;
+
+  for (const descriptor of SUPPORT_TYPES) {
+    const collection = supportState[descriptor.location.key] as unknown as Record<string, { segments?: unknown[] }>;
+    const entities = Object.values(collection ?? {});
+
+    if (!descriptor.hasSegments) {
+      // A leaf or brace is one primitive rather than a chain of them.
+      shaftlessCount += entities.length;
+      continue;
+    }
+    for (const entity of entities) segmentCount += entity.segments?.length ?? 0;
+  }
 
   const primitiveCount = segmentCount
     + Object.keys(supportState.roots).length
-    + Object.keys(supportState.leaves).length
-    + Object.keys(supportState.braces).length;
+    + shaftlessCount;
 
   if (segmentCount >= 20_000 || primitiveCount >= 24_000) {
     return {
