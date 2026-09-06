@@ -325,6 +325,22 @@ export interface SupportTypeDescriptor {
      */
     jointDragUsesLivePreview: boolean;
     /**
+     * Prefix for this type's bezier handle context ids.
+     *
+     * Those ids are React keys. Trunk's predate the others and carry no prefix;
+     * changing that remounts every trunk handle, so it is declared rather than
+     * derived from some flag that happens to be trunk-only today.
+     */
+    bezierContextIdPrefix: string;
+    /**
+     * Whether reshaping this type's curve broadcasts its attached knots and
+     * leaves live.
+     *
+     * Twig alone: knots ride its shaft and leaves hang off those, and without
+     * the broadcast they jump to the new curve only on release.
+     */
+    broadcastsAttachmentsWhileDragging: boolean;
+    /**
      * Whether a knot riding this shaft renders at the joint diameter.
      *
      * Trunk alone: at the bare shaft diameter the knot is hidden inside the
@@ -414,6 +430,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: true,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        bezierContextIdPrefix: '',
+        broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: true,
         projectsUnparameterisedKnots: true,
         interiorVisibility: 'contacts',
@@ -455,6 +473,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        bezierContextIdPrefix: 'branch-',
+        broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
         projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
@@ -496,6 +516,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        bezierContextIdPrefix: 'leaf-',
+        broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
         projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
@@ -535,6 +557,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
+        bezierContextIdPrefix: 'twig-',
+        broadcastsAttachmentsWhileDragging: true,
         knotTakesJointDiameter: false,
         projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
@@ -570,6 +594,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        bezierContextIdPrefix: 'stick-',
+        broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
         projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
@@ -609,6 +635,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
+        bezierContextIdPrefix: 'brace-',
+        broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
         projectsUnparameterisedKnots: false,
         interiorVisibility: 'inherited',
@@ -644,6 +672,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
+        bezierContextIdPrefix: 'anchor-',
+        broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
         projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
@@ -682,6 +712,8 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: false,
         batchesContactCones: false,
+        bezierContextIdPrefix: 'kickstand-',
+        broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
         projectsUnparameterisedKnots: false,
         interiorVisibility: 'hidden',
