@@ -1,4 +1,4 @@
-import { isOriginConvertibleToTree } from '../supportTypeRegistry';
+import { contactEndpointsFor, isOriginConvertibleToTree, SUPPORT_TYPES } from '../supportTypeRegistry';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
 import * as THREE from 'three';
 import { quantizeToScale } from '@/utils/math';
@@ -264,9 +264,32 @@ function resolveSurfaceNormal(
 // ---------------------------------------------------------------------------
 
 /**
- * Remove candidates whose tip position is already covered by an
- * existing support (any trunk / branch / leaf / anchor contact cone).
- * Prevents stacking duplicate supports on repeated runs.
+ * Where every support currently touches the model.
+ *
+ * Both callers -- "is this candidate already supported" and "how much of this
+ * island is covered" -- want the same answer, and each collected it from four
+ * types by hand: trunk, branch, leaf, anchor. Twig and stick declare contacts
+ * too, so a point held by one of those read as unsupported.
+ */
+export function collectContactPositions(snapshot: SupportState): Array<{ x: number; y: number; z: number }> {
+    const positions: Array<{ x: number; y: number; z: number }> = [];
+
+    for (const descriptor of SUPPORT_TYPES) {
+        const collection = snapshot[descriptor.location.key] as unknown as Record<string, Record<string, unknown>>;
+        for (const entity of Object.values(collection ?? {})) {
+            for (const contact of contactEndpointsFor(descriptor.id)) {
+                const pos = (entity[contact.field] as { pos?: { x: number; y: number; z: number } } | undefined)?.pos;
+                if (pos) positions.push(pos);
+            }
+        }
+    }
+
+    return positions;
+}
+
+/**
+ * Remove candidates whose tip position is already covered by an existing
+ * support contact. Prevents stacking duplicate supports on repeated runs.
  */
 function filterAlreadySupported(candidates: CandidatePoint[], draft: SupportState): CandidatePoint[] {
     const snapshot = draft;
