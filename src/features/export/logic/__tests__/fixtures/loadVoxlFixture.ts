@@ -7,37 +7,55 @@ import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 import type { DragonfruitImportFormat, SupportState } from '@/supports/types';
 
 /**
- * A real, deliberately awkward scene to run export against.
+ * Real scenes to run export against.
  *
- * `lysdiag/` sits outside the repo and is not committed -- the file is a
- * ChituBox import kept because it is slightly malformed on purpose, so it
- * exercises the paths a clean generated fixture never reaches.
+ * `lysdiag/` sits outside the repo and is not committed, so every test using
+ * these must skip when a file is absent and the suite still passes without it.
  *
- * Every test using this must skip when the file is absent, so the suite still
- * passes on a machine that does not have it.
+ * Real files rather than generated ones because they carry arrangements a
+ * hand-built fixture does not: hundreds of braces, knots on knots, and the
+ * type spread an actual print needs.
  */
 
 const FIXTURE_DIR = join(process.cwd(), '..', 'lysdiag');
-const FIXTURE_NAME = 'Lance, head, small shields (1)_DF_Scene.voxl';
 
-export const voxlFixturePath = join(FIXTURE_DIR, FIXTURE_NAME);
+/**
+ * The scenes the export goldens run against.
+ *
+ * Two, because one is not enough: `lance` is the wider scene but has no anchors
+ * and no kickstands, which are the two types hand-written per-type blocks most
+ * often omit. `criosphinx` carries both.
+ */
+export const VOXL_FIXTURES = {
+    lance: 'Lance, head, small shields (1)_DF_Scene.voxl',
+    criosphinx: 'CriosphinxHead_DF_Scene22.voxl',
+} as const;
 
-/** Whether the local-only fixture is present on this machine. */
-export function hasVoxlFixture(): boolean {
-    return existsSync(voxlFixturePath);
+export type VoxlFixtureName = keyof typeof VOXL_FIXTURES;
+
+export const voxlFixturePath = (name: VoxlFixtureName) => join(FIXTURE_DIR, VOXL_FIXTURES[name]);
+
+/** Whether one local-only fixture is present on this machine. */
+export function hasVoxlFixture(name: VoxlFixtureName): boolean {
+    return existsSync(voxlFixturePath(name));
 }
 
-/** The support payload the fixture carries, straight out of its SUPP chunk. */
-export function readVoxlSupportPayload(): DragonfruitImportFormat {
-    const bytes = new Uint8Array(readFileSync(voxlFixturePath));
+/** The fixture names present here, so a partial checkout still runs what it can. */
+export function availableVoxlFixtures(): VoxlFixtureName[] {
+    return (Object.keys(VOXL_FIXTURES) as VoxlFixtureName[]).filter(hasVoxlFixture);
+}
+
+/** The support payload a fixture carries, straight out of its SUPP chunk. */
+export function readVoxlSupportPayload(name: VoxlFixtureName): DragonfruitImportFormat {
+    const bytes = new Uint8Array(readFileSync(voxlFixturePath(name)));
     const parsed = parseVoxlBinaryV2(bytes);
     return parsed.document.supports as DragonfruitImportFormat;
 }
 
-/** The fixture loaded into the real store, as opening the file would leave it. */
-export function loadVoxlFixtureIntoStore(): SupportState {
+/** A fixture loaded into the real store, as opening the file would leave it. */
+export function loadVoxlFixtureIntoStore(name: VoxlFixtureName): SupportState {
     resetStore();
-    loadFromImportFormat(readVoxlSupportPayload());
+    loadFromImportFormat(readVoxlSupportPayload(name));
     return getSnapshot();
 }
 
