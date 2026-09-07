@@ -1594,17 +1594,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return result;
     }, [isModelVisible]);
 
-    const trunkShaftsBySupport = useMemo(
-        () => buildPlainShaftSet('trunk', renderTrunkList, (trunk) => ({ root: state.roots[trunk.rootId] })),
-        [renderTrunkList, state.roots, buildPlainShaftSet],
-    );
-
-    const branchShaftsBySupport = useMemo(
-        () => buildPlainShaftSet('branch', renderBranchList, (branch) => ({
-            hostKnot: renderKnotsById[branch.parentKnotId],
-        })),
-        [renderBranchList, renderKnotsById, buildPlainShaftSet],
-    );
 
     const braceShaftsBySupport = useMemo(() => {
         const result = new Map<string, SupportShaftSet>();
@@ -1676,25 +1665,53 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return result;
     }, [renderBraceList, braceRenderKnotsById, isModelVisible]);
 
-    const twigShaftsBySupport = useMemo(
-        () => (enableTwigSceneBatching
-            ? buildPlainShaftSet('twig', renderTwigList, () => ({}))
-            : new Map<string, SupportShaftSet>()),
-        [renderTwigList, enableTwigSceneBatching, buildPlainShaftSet],
-    );
+    /**
+     * Plain shaft sets per type, keyed by type id then by support.
+     *
+     * What a shaft needs beyond the entity is declared: `ownsRoot` means it
+     * leaves a root, a `hostedBy` knot edge means it hangs from a knot. Only
+     * WHERE those live still differs -- kickstands keep their roots and knots
+     * in their own store.
+     */
+    const plainShaftsByType = useMemo(() => {
+        const byType = {} as Record<SupportTypeId, Map<string, SupportShaftSet>>;
 
-    const stickShaftsBySupport = useMemo(
-        () => buildPlainShaftSet('stick', renderStickList, () => ({})),
-        [renderStickList, buildPlainShaftSet],
-    );
+        for (const descriptor of SUPPORT_TYPES) {
+            // Brace builds its own set (its shaft is a curve between two
+            // knots); anchor declares a shaft but builds none.
+            if (!descriptor.batchesPlainShafts) continue;
+            if (descriptor.id === 'twig' && !enableTwigSceneBatching) continue;
 
-    const kickstandShaftsBySupport = useMemo(
-        () => buildPlainShaftSet('kickstand', renderKickstandList, (kickstand) => ({
-            root: kickstandState.roots[kickstand.rootId],
-            hostKnot: renderKickstandKnotsById[kickstand.hostKnotId],
-        })),
-        [renderKickstandList, kickstandState.roots, renderKickstandKnotsById, buildPlainShaftSet],
-    );
+            const ownStore = descriptor.id === 'kickstand';
+            const roots = ownStore ? kickstandState.roots : state.roots;
+            const knotsById = ownStore ? renderKickstandKnotsById : renderKnotsById;
+            const knotEdge = descriptor.edges.find(
+                (edge) => edge.to === 'knots' && edge.ownership === 'hostedBy',
+            );
+
+            byType[descriptor.id] = buildPlainShaftSet(
+                descriptor.id,
+                renderListByType[descriptor.id] as readonly { id: string; modelId?: string; segments: Segment[] }[],
+                (entity) => {
+                    const fields = entity as unknown as Record<string, string | undefined>;
+                    const hosts: EndpointHosts = {};
+                    if (descriptor.ownsRoot) hosts.root = roots[fields.rootId ?? ''];
+                    if (knotEdge) hosts.hostKnot = knotsById[fields[knotEdge.field] ?? ''];
+                    return hosts;
+                },
+            );
+        }
+
+        return byType;
+    }, [
+        renderListByType,
+        buildPlainShaftSet,
+        enableTwigSceneBatching,
+        state.roots,
+        kickstandState.roots,
+        renderKnotsById,
+        renderKickstandKnotsById,
+    ]);
 
     const segmentModelIdById = useMemo(() => {
         const map = new Map<string, string | undefined>();
@@ -2004,22 +2021,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return Array.from(grouped.values());
     }, [isModelVisible, resolveSceneSupportColor, applyDropToInstancedShaft]);
 
-    const sceneBatchedTwigShaftGroups = useMemo(
-        () => (enableTwigSceneBatching
-            ? groupShaftsForSceneBatch('twig', renderTwigList, twigShaftsBySupport, selectedTwigIds)
-            : []),
-        [renderTwigList, enableTwigSceneBatching, twigShaftsBySupport, selectedTwigIds, groupShaftsForSceneBatch],
-    );
-
-    const sceneBatchedStickShaftGroups = useMemo(
-        () => groupShaftsForSceneBatch('stick', renderStickList, stickShaftsBySupport, selectedStickIds),
-        [renderStickList, stickShaftsBySupport, selectedStickIds, groupShaftsForSceneBatch],
-    );
-
-    const sceneBatchedKickstandShaftGroups = useMemo(
-        () => groupShaftsForSceneBatch('kickstand', renderKickstandList, kickstandShaftsBySupport, selectedKickstandIds),
-        [renderKickstandList, kickstandShaftsBySupport, selectedKickstandIds, groupShaftsForSceneBatch],
-    );
 
     const sceneBatchedBraceShaftGroups = useMemo(() => {
         const grouped = new Map<string, { modelId?: string; color: string; shafts: InstancedShaft[] }>();
@@ -2058,14 +2059,32 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return Array.from(grouped.values());
     }, [renderBraceList, braceShaftsBySupport, selectedBraceIds, ghostedBraceIdSet, isModelVisible, applyDropToInstancedShaft, settings.autoBracing.debugSectionColorsEnabled, dimNonSelected, resolveSceneSupportColor]);
 
-    const sceneBatchedTrunkShaftGroups = useMemo(
-        () => groupShaftsForSceneBatch('trunk', renderTrunkList, trunkShaftsBySupport, selectedTrunkIds),
-        [renderTrunkList, trunkShaftsBySupport, selectedTrunkIds, groupShaftsForSceneBatch],
-    );
+    /** Scene-batched shaft groups per type, from that type's shaft set. */
+    /** Stable empty set, so a non-batching type does not remount readers. */
+    const EMPTY_SHAFT_SET = useMemo(() => new Map<string, SupportShaftSet>(), []);
 
-    const sceneBatchedBranchShaftGroups = useMemo(
-        () => groupShaftsForSceneBatch('branch', renderBranchList, branchShaftsBySupport, selectedBranchIds),
-        [renderBranchList, branchShaftsBySupport, selectedBranchIds, groupShaftsForSceneBatch],
+    /** Stable empty groups, so a non-batching type does not remount readers. */
+    const EMPTY_SHAFT_GROUPS = useMemo<ReturnType<typeof groupShaftsForSceneBatch>>(() => [], []);
+
+    const sceneBatchedShaftGroupsByType = useMemo(() => {
+        const byType = {} as Record<SupportTypeId, ReturnType<typeof groupShaftsForSceneBatch>>;
+        for (const descriptor of SUPPORT_TYPES) {
+            const shaftSet = plainShaftsByType[descriptor.id];
+            if (!shaftSet) continue;
+            byType[descriptor.id] = groupShaftsForSceneBatch(
+                descriptor.id,
+                renderListByType[descriptor.id],
+                shaftSet,
+                selectedOf(descriptor.id),
+            );
+        }
+        return byType;
+    }, [plainShaftsByType, renderListByType, selectedOf, groupShaftsForSceneBatch]);
+
+    /** A type's groups, or none when it does not batch plainly. */
+    const sceneBatchedShaftsOf = React.useCallback(
+        (typeId: SupportTypeId) => sceneBatchedShaftGroupsByType[typeId] ?? EMPTY_SHAFT_GROUPS,
+        [sceneBatchedShaftGroupsByType, EMPTY_SHAFT_GROUPS],
     );
 
     /**
@@ -2173,31 +2192,17 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     ]);
 
     const sceneBatchedShaftInstanceCount = useMemo(() => {
-        const countGroups = [
-            sceneBatchedTrunkShaftGroups,
-            sceneBatchedBranchShaftGroups,
-            sceneBatchedBraceShaftGroups,
-            sceneBatchedTwigShaftGroups,
-            sceneBatchedStickShaftGroups,
-            sceneBatchedKickstandShaftGroups,
-        ];
-
+        // Every batched group counts, plus brace, which batches its own.
         let total = 0;
-        for (const groups of countGroups) {
-            for (const group of groups) {
-                total += group.shafts.length;
-            }
+        for (const groups of Object.values(sceneBatchedShaftGroupsByType)) {
+            for (const group of groups) total += group.shafts.length;
+        }
+        for (const group of sceneBatchedBraceShaftGroups) {
+            total += group.shafts.length;
         }
 
         return total;
-    }, [
-        sceneBatchedTrunkShaftGroups,
-        sceneBatchedBranchShaftGroups,
-        sceneBatchedBraceShaftGroups,
-        sceneBatchedTwigShaftGroups,
-        sceneBatchedStickShaftGroups,
-        sceneBatchedKickstandShaftGroups,
-    ]);
+    }, [sceneBatchedShaftGroupsByType, sceneBatchedBraceShaftGroups]);
 
     const sceneBatchedShaftRadialSegments = sceneBatchedShaftInstanceCount >= BATCHED_SHAFT_HIGH_INSTANCE_THRESHOLD
         ? BATCHED_SHAFT_LOW_RADIAL_SEGMENTS
@@ -2215,6 +2220,26 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         hidePlateContactPrimitivesEffective,
     ]);
 
+    /** A type's plain shaft set, empty when it does not batch plainly. */
+    const plainShaftsOf = React.useCallback(
+        (typeId: SupportTypeId) => plainShaftsByType[typeId] ?? EMPTY_SHAFT_SET,
+        [plainShaftsByType, EMPTY_SHAFT_SET],
+    );
+
+    /**
+     * The shaft set a support id belongs to, whichever type owns it.
+     *
+     * Ids are UUIDs, unique across types, so the first set holding one is the
+     * answer and the order the types are consulted in does not matter.
+     */
+    const shaftSetForSupport = React.useCallback((supportId: string) => {
+        for (const descriptor of SUPPORT_TYPES) {
+            const shaftSet = plainShaftsByType[descriptor.id]?.get(supportId);
+            if (shaftSet) return shaftSet;
+        }
+        return braceShaftsBySupport.get(supportId) ?? null;
+    }, [plainShaftsByType, braceShaftsBySupport]);
+
     const hoveredSupportShaftSet = useMemo(() => {
         if (!isInteractable) return null;
         if (hoveredSupportIsSelected) return null;
@@ -2222,26 +2247,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         const hoveredSupportId = hoveredSupportIdForVisual;
         if (!hoveredSupportId) return null;
 
-        const trunkSet = trunkShaftsBySupport.get(hoveredSupportId);
-        if (trunkSet) return trunkSet;
-
-        const branchSet = branchShaftsBySupport.get(hoveredSupportId);
-        if (branchSet) return branchSet;
-
-        const braceSet = braceShaftsBySupport.get(hoveredSupportId);
-        if (braceSet) return braceSet;
-
-        const twigSet = twigShaftsBySupport.get(hoveredSupportId);
-        if (twigSet) return twigSet;
-
-        const stickSet = stickShaftsBySupport.get(hoveredSupportId);
-        if (stickSet) return stickSet;
-
-        const kickstandSet = kickstandShaftsBySupport.get(hoveredSupportId);
-        if (kickstandSet) return kickstandSet;
-
-        return null;
-    }, [isInteractable, hoveredSupportIdForVisual, hoveredSupportIsSelected, trunkShaftsBySupport, branchShaftsBySupport, braceShaftsBySupport, twigShaftsBySupport, stickShaftsBySupport, kickstandShaftsBySupport]);
+        return shaftSetForSupport(hoveredSupportId);
+    }, [isInteractable, hoveredSupportIdForVisual, hoveredSupportIsSelected, shaftSetForSupport]);
 
     const hoveredSupportOverlayShafts = useMemo(() => {
         if (!hoveredSupportShaftSet) return [] as InstancedShaft[];
@@ -2393,13 +2400,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
         const overlays: InstancedShaft[] = [];
         for (const supportId of additionalMarqueeHoveredSupportIds) {
-            const shaftSet = trunkShaftsBySupport.get(supportId)
-                ?? branchShaftsBySupport.get(supportId)
-                ?? braceShaftsBySupport.get(supportId)
-                ?? twigShaftsBySupport.get(supportId)
-                ?? stickShaftsBySupport.get(supportId)
-                ?? kickstandShaftsBySupport.get(supportId)
-                ?? null;
+            const shaftSet = shaftSetForSupport(supportId);
             if (!shaftSet) continue;
             overlays.push(...shaftSet.shafts.map((shaft) => ({
                 ...applyDropToInstancedShaft(shaft),
@@ -2407,7 +2408,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             })));
         }
         return overlays;
-    }, [additionalMarqueeHoveredSupportIds, trunkShaftsBySupport, branchShaftsBySupport, braceShaftsBySupport, twigShaftsBySupport, stickShaftsBySupport, kickstandShaftsBySupport, applyDropToInstancedShaft]);
+    }, [additionalMarqueeHoveredSupportIds, shaftSetForSupport, applyDropToInstancedShaft]);
 
     const marqueeHoveredOverlayCones = useMemo(() => {
         if (additionalMarqueeHoveredSupportIds.length === 0) return [] as InstancedContactCone[];
@@ -2984,7 +2985,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             <BezierGizmoManager />
 
             {/* Render Trunks */}
-            {renderSceneBatchedShafts('trunk', sceneBatchedTrunkShaftGroups)}
+            {renderSceneBatchedShafts('trunk', sceneBatchedShaftsOf('trunk'))}
             {!simpleRender && sceneBatchedJointGroups.map((group) => (
                 <group key={`scene-joint-batch:${group.modelId ?? 'none'}:${group.color}:${group.joints.length}`} userData={{ modelId: group.modelId ?? null }}>
                     <InstancedJointGroup
@@ -3315,7 +3316,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             })}
 
             {/* Render Branches */}
-            {renderSceneBatchedShafts('branch', sceneBatchedBranchShaftGroups)}
+            {renderSceneBatchedShafts('branch', sceneBatchedShaftsOf('branch'))}
 
             {renderBranchList.map(branch => {
                 if (!isModelVisible(branch.modelId, branch.id)) return null;
@@ -3391,7 +3392,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             {renderTwigList.map(twig => {
                 if (!isModelVisible(twig.modelId, twig.id)) return null;
                 const effectiveSelected = selectedTwigIds.has(twig.id);
-                const isTwigBatchable = twigShaftsBySupport.has(twig.id);
+                const isTwigBatchable = plainShaftsOf('twig').has(twig.id);
 
                 const isTwigHovered = hoveredSupportIdForVisual === twig.id
                     || marqueeHoveredSupportIdSet.has(twig.id);
@@ -3410,12 +3411,12 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 );
             })}
 
-            {renderSceneBatchedShafts('twig', sceneBatchedTwigShaftGroups)}
+            {renderSceneBatchedShafts('twig', sceneBatchedShaftsOf('twig'))}
             {/* Render Sticks */}
             {renderStickList.map(stick => {
                 if (!isModelVisible(stick.modelId, stick.id)) return null;
                 const effectiveSelected = selectedStickIds.has(stick.id);
-                const isStickBatchable = stickShaftsBySupport.has(stick.id);
+                const isStickBatchable = plainShaftsOf('stick').has(stick.id);
                 const renderDetailedStick = (effectiveSelected || !isStickBatchable) && !simpleRender;
                 if (!renderDetailedStick) return null;
 
@@ -3437,7 +3438,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 );
             })}
 
-            {renderSceneBatchedShafts('stick', sceneBatchedStickShaftGroups)}
+            {renderSceneBatchedShafts('stick', sceneBatchedShaftsOf('stick'))}
 
             {/* Render Braces */}
             {renderSceneBatchedShafts('brace', sceneBatchedBraceShaftGroups, { detailedOnly: true })}
@@ -3489,7 +3490,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 if (!root || !hostKnot) return null;
 
                 const effectiveSelected = selectedKickstandIds.has(kickstand.id);
-                const isKickstandBatchable = kickstandShaftsBySupport.has(kickstand.id);
+                const isKickstandBatchable = plainShaftsOf('kickstand').has(kickstand.id);
                 const renderDetailedKickstand = (effectiveSelected || !isKickstandBatchable) && !simpleRender;
                 if (!renderDetailedKickstand) return null;
 
@@ -3521,7 +3522,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 );
             })}
 
-            {renderSceneBatchedShafts('kickstand', sceneBatchedKickstandShaftGroups)}
+            {renderSceneBatchedShafts('kickstand', sceneBatchedShaftsOf('kickstand'))}
             {/* Render Anchors */}
             {renderAnchorList.map(anchor => {
                 if (!isModelVisible(anchor.modelId, anchor.id)) return null;
