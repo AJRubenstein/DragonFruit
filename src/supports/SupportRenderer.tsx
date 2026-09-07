@@ -1245,10 +1245,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const selectedTrunkIds = selectedOf('trunk');
     const selectedBranchIds = selectedOf('branch');
     const selectedLeafIds = selectedOf('leaf');
-    const selectedTwigIds = selectedOf('twig');
     const selectedStickIds = selectedOf('stick');
     const selectedBraceIds = selectedOf('brace');
-    const selectedAnchorIds = selectedOf('anchor');
     const selectedKickstandIds = selectedOf('kickstand');
 
     const knotIdsByParentShaftId = useMemo(() => {
@@ -1500,10 +1498,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const renderTrunkList = renderListByType.trunk as unknown as Trunk[];
     const renderBranchList = renderListByType.branch as unknown as Branch[];
     const renderLeafList = renderListByType.leaf as unknown as Leaf[];
-    const renderTwigList = renderListByType.twig as unknown as Twig[];
     const renderStickList = renderListByType.stick as unknown as Stick[];
     const renderBraceList = renderListByType.brace as unknown as Brace[];
-    const renderAnchorList = renderListByType.anchor as unknown as Anchor[];
     const renderKickstandList = renderListByType.kickstand as unknown as Kickstand[];
 
     const renderKnotList = useMemo(() => {
@@ -2987,6 +2983,220 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         kickstandState.knots,
     ]);
 
+    /**
+     * What each type's detail renderer is, and what it needs.
+     *
+     * The eight near-identical `renderXList.map(...)` blocks this replaces
+     * differed only in the four fields below. Held here rather than in the
+     * registry because every entry closes over live scene state (the knot
+     * indexes, ghosting, settings) that only exists inside this component.
+     *
+     * `hosts` returning null skips the entity, as the old `if (!knot) return
+     * null` guards did. `skip` is the per-type "draws nothing this frame" rule.
+     */
+    const detailRenderers = useMemo((): Partial<Record<SupportTypeId, {
+        component: React.ComponentType<Record<string, unknown>>;
+        entityProp: string;
+        hosts?: (entity: never) => Record<string, unknown> | null;
+        skip?: (context: { entity: never; isSelected: boolean; isBatchable: boolean }) => boolean;
+        extraProps?: (context: { entity: never; isSelected: boolean; isBatchable: boolean }) => Record<string, unknown>;
+        noClipping?: (context: { entity: never; isSelected: boolean; isBatchable: boolean }) => boolean;
+        /** Where "is this shaft batched" comes from, when not `plainShaftsOf`. */
+        batchedIds?: ReadonlySet<string> | { has(id: string): boolean };
+    }>> => ({
+        trunk: {
+            component: TrunkRenderer as never,
+            entityProp: 'trunk',
+            hosts: (trunk: Trunk) => {
+                const root = state.roots[trunk.rootId];
+                return root ? { root } : null;
+            },
+            // Only a selected trunk mounts the detail renderer; the rest are
+            // fully scene-batched.
+            skip: ({ isSelected }) => !isSelected || simpleRender,
+            noClipping: () => true,
+            extraProps: ({ entity, isSelected }) => ({
+                deferStraightShaftsToSceneBatch: !isSelected,
+                deferInteractionToSceneBatch: !isSelected,
+                deferRootsToSceneBatch: !isSelected,
+                deferContactConesToSceneBatch: !isSelected && !!(entity as Trunk).contactCone,
+                hidePlateContactPrimitives: hidePlateContactPrimitivesEffective,
+            }),
+        },
+        branch: {
+            component: BranchRenderer as never,
+            entityProp: 'branch',
+            hosts: (branch: Branch) => {
+                const parentKnot = renderKnotsById[branch.parentKnotId];
+                return parentKnot ? { parentKnot } : null;
+            },
+            skip: ({ isSelected }) => !isSelected || simpleRender,
+            noClipping: () => true,
+            extraProps: ({ entity, isSelected }) => ({
+                showKnots: simpleRender ? false : (!hideUnselectedKnots || isSelected),
+                deferStraightShaftsToSceneBatch: !isSelected,
+                deferInteractionToSceneBatch: !isSelected,
+                deferContactConesToSceneBatch: !isSelected && !!(entity as Branch).contactCone,
+            }),
+        },
+        leaf: {
+            component: LeafRenderer as never,
+            entityProp: 'leaf',
+            hosts: (leaf: Leaf) => {
+                const parentKnot = renderKnotsById[leaf.parentKnotId];
+                return parentKnot ? { parentKnot } : null;
+            },
+            // Unselected leaves are fully scene-batched: cones via
+            // deferContactConesToSceneBatch, base knots via leafJointsBySupport,
+            // so the junction ball stays visible without a per-leaf renderer.
+            skip: ({ isSelected }) => !isSelected,
+            noClipping: () => true,
+            extraProps: ({ entity, isSelected }) => ({
+                showKnots: !simpleRender,
+                deferContactConesToSceneBatch: !isSelected && !!(entity as Leaf).contactCone,
+            }),
+        },
+        twig: {
+            component: TwigRenderer as never,
+            entityProp: 'twig',
+            // A twig always mounts: its contact disks and joints have no
+            // scene-batched equivalent and would vanish when unselected.
+            noClipping: ({ isSelected }) => isSelected,
+            extraProps: ({ isSelected, isBatchable }) => ({
+                deferStraightShaftsToSceneBatch: !isSelected && isBatchable,
+                deferInteractionToSceneBatch: !isSelected && isBatchable,
+            }),
+        },
+        stick: {
+            component: StickRenderer as never,
+            entityProp: 'stick',
+            skip: ({ isSelected, isBatchable }) => !(isSelected || !isBatchable) || simpleRender,
+            noClipping: ({ isSelected }) => isSelected,
+            extraProps: ({ isSelected, isBatchable }) => ({
+                deferStraightShaftsToSceneBatch: !isSelected && isBatchable,
+                deferInteractionToSceneBatch: !isSelected && isBatchable,
+                deferContactConesToSceneBatch: !isSelected,
+            }),
+        },
+        brace: {
+            component: BraceRenderer as never,
+            entityProp: 'brace',
+            // A brace's shaft is a curve between two knots, so it builds its
+            // own batched set rather than appearing in `plainShaftsByType`.
+            batchedIds: braceShaftsBySupport,
+            hosts: (brace: Brace) => {
+                const startKnot = braceRenderKnotsById[brace.startKnotId];
+                const endKnot = braceRenderKnotsById[brace.endKnotId];
+                return startKnot && endKnot ? { startKnot, endKnot } : null;
+            },
+            skip: ({ entity, isSelected, isBatchable }) => {
+                if (simpleRender) return true;
+                const ghosted = ghostedBraceIdSet.has((entity as Brace).id);
+                return !(isSelected || !isBatchable || ghosted);
+            },
+            noClipping: ({ isSelected }) => isSelected,
+            extraProps: ({ entity, isSelected, isBatchable }) => {
+                const ghosted = ghostedBraceIdSet.has((entity as Brace).id);
+                return {
+                    ghosted,
+                    ghostOpacity: ghostOpacityClamped,
+                    showKnots: !hideUnselectedKnots || isSelected,
+                    // A ghosted brace is scenery: it neither hovers nor picks,
+                    // whatever the shared props say. Applied after the spread.
+                    suppressHover: suppressHover || ghosted,
+                    isInteractable: isInteractable && !ghosted,
+                    deferStraightShaftToSceneBatch: !isSelected && isBatchable && !ghosted,
+                    deferInteractionToSceneBatch: (!isSelected && isBatchable) || ghosted,
+                    debugSectionColors: settings.autoBracing.debugSectionColorsEnabled,
+                };
+            },
+        },
+        kickstand: {
+            component: KickstandRenderer as never,
+            entityProp: 'kickstand',
+            hosts: (kickstand: Kickstand) => {
+                const root = kickstandState.roots[kickstand.rootId];
+                const hostKnot = renderKickstandKnotsById[kickstand.hostKnotId];
+                return root && hostKnot ? { root, hostKnot } : null;
+            },
+            skip: ({ isSelected, isBatchable }) => !(isSelected || !isBatchable) || simpleRender,
+            noClipping: ({ isSelected }) => isSelected,
+            extraProps: ({ isSelected, isBatchable }) => ({
+                showKnot: simpleRender ? false : (!hideUnselectedKnots || isSelected),
+                deferStraightShaftsToSceneBatch: !isSelected && isBatchable,
+                deferInteractionToSceneBatch: !isSelected && isBatchable,
+                hidePlateContactPrimitives: hidePlateContactPrimitivesEffective,
+            }),
+        },
+        anchor: {
+            component: AnchorRenderer as never,
+            entityProp: 'anchor',
+            // Anchor is drawn entirely by its detail renderer -- no batched
+            // shaft pass -- so it never skips and never opts out of clipping.
+        },
+    }), [
+        state.roots,
+        renderKnotsById,
+        braceRenderKnotsById,
+        renderKickstandKnotsById,
+        kickstandState.roots,
+        simpleRender,
+        hideUnselectedKnots,
+        hidePlateContactPrimitivesEffective,
+        braceShaftsBySupport,
+        ghostedBraceIdSet,
+        ghostOpacityClamped,
+        suppressHover,
+        isInteractable,
+        settings.autoBracing.debugSectionColorsEnabled,
+    ]);
+
+    /**
+     * One type's detail renderers for this frame.
+     *
+     * Ordering between types still matters (each batched-shaft pass sits at a
+     * specific point), so the JSX below calls this per type rather than looping
+     * over the whole registry in one place.
+     */
+    const renderDetailFor = useCallback((typeId: SupportTypeId) => {
+        const entry = detailRenderers[typeId];
+        if (!entry) return null;
+
+        const Component = entry.component;
+        const selected = selectedOf(typeId);
+        const batchable = entry.batchedIds ?? plainShaftsOf(typeId);
+        const list = renderListByType[typeId] as readonly { id: string; modelId?: string }[];
+
+        return list.map((entity) => {
+            if (!isModelVisible(entity.modelId, entity.id)) return null;
+
+            const isSelected = selected.has(entity.id);
+            const context = { entity: entity as never, isSelected, isBatchable: batchable.has(entity.id) };
+
+            if (entry.skip?.(context)) return null;
+            const hosts = entry.hosts ? entry.hosts(entity as never) : {};
+            if (!hosts) return null;
+
+            return (
+                <group key={entity.id} userData={{ noClipping: entry.noClipping?.(context) ?? false }}>
+                    <Component
+                        {...{ [entry.entityProp]: entity }}
+                        {...hosts}
+                        {...sharedRenderProps(typeId, entity, isSelected)}
+                        {...(entry.extraProps?.(context) ?? {})}
+                    />
+                </group>
+            );
+        });
+    }, [
+        detailRenderers,
+        selectedOf,
+        plainShaftsOf,
+        renderListByType,
+        isModelVisible,
+        sharedRenderProps,
+    ]);
+
     return (
         <group ref={groupRef}>
             {/* Joint Creation Manager */}
@@ -3297,94 +3507,15 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 />
             )}
 
-            {renderTrunkList.map(trunk => {
-                if (!isModelVisible(trunk.modelId, trunk.id)) return null;
-                const root = state.roots[trunk.rootId];
-                if (!root) return null;
-
-                const effectiveSelected = selectedTrunkIds.has(trunk.id);
-                const renderDetailedTrunk = effectiveSelected && !simpleRender;
-                if (!renderDetailedTrunk) return null;
-
-                const deferTrunkInteractionToSceneBatch = !effectiveSelected;
-
-                return (
-                    // noClipping: this trunk is actively selected/edited â€” exempt it
-                    // from cross-section clipping so it always renders fully visible.
-                    <group key={trunk.id} userData={{ noClipping: true }}>
-                    <TrunkRenderer
-                        key={trunk.id}
-                        trunk={trunk}
-                        root={root}
-                        {...sharedRenderProps('trunk', trunk, effectiveSelected)}
-                        deferStraightShaftsToSceneBatch={!effectiveSelected}
-                        deferInteractionToSceneBatch={deferTrunkInteractionToSceneBatch}
-                        deferRootsToSceneBatch={!effectiveSelected}
-                        deferContactConesToSceneBatch={!effectiveSelected && !!trunk.contactCone}
-                        hidePlateContactPrimitives={hidePlateContactPrimitivesEffective}
-                    />
-                    </group>
-                );
-            })}
+            {renderDetailFor('trunk')}
 
             {/* Render Branches */}
             {renderSceneBatchedShafts('branch', sceneBatchedShaftsOf('branch'))}
 
-            {renderBranchList.map(branch => {
-                if (!isModelVisible(branch.modelId, branch.id)) return null;
-                const knot = renderKnotsById[branch.parentKnotId];
-                if (!knot) return null;
-                const effectiveSelected = selectedBranchIds.has(branch.id);
-                const renderDetailedBranch = effectiveSelected && !simpleRender;
-                if (!renderDetailedBranch) return null;
-
-                const deferBranchInteractionToSceneBatch = !effectiveSelected;
-                const showKnots = simpleRender ? false : (!hideUnselectedKnots || effectiveSelected);
-
-                return (
-                    <group key={branch.id} userData={{ noClipping: true }}>
-                    <BranchRenderer
-                        key={branch.id}
-                        branch={branch}
-                        parentKnot={knot}
-                        {...sharedRenderProps('branch', branch, effectiveSelected)}
-                        showKnots={showKnots}
-                        deferStraightShaftsToSceneBatch={!effectiveSelected}
-                        deferInteractionToSceneBatch={deferBranchInteractionToSceneBatch}
-                        deferContactConesToSceneBatch={!effectiveSelected && !!branch.contactCone}
-                    />
-                    </group>
-                );
-            })}
+            {renderDetailFor('branch')}
 
             {/* Render Leaves */}
-            {renderLeafList.map(leaf => {
-                if (!isModelVisible(leaf.modelId, leaf.id)) return null;
-                const knot = renderKnotsById[leaf.parentKnotId];
-                if (!knot) return null;
-
-                const effectiveSelected = selectedLeafIds.has(leaf.id);
-                // Only the selected leaf mounts LeafRenderer. Unselected
-                // leaves are fully scene-batched: cones via
-                // deferContactConesToSceneBatch, base knots via
-                // leafJointsBySupport → sceneBatchedJointGroups (the junction
-                // ball stays visible without a per-leaf KnotRenderer).
-                if (!effectiveSelected) return null;
-                const showKnots = !simpleRender;
-
-                return (
-                    <group key={leaf.id} userData={{ noClipping: true }}>
-                    <LeafRenderer
-                        key={leaf.id}
-                        leaf={leaf}
-                        parentKnot={knot}
-                        {...sharedRenderProps('leaf', leaf, effectiveSelected)}
-                        showKnots={showKnots}
-                        deferContactConesToSceneBatch={!effectiveSelected && !!leaf.contactCone}
-                    />
-                    </group>
-                );
-            })}
+            {renderDetailFor('leaf')}
 
             {/* Render Twigs.
              *
@@ -3394,140 +3525,24 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
              * unselected twigs. TwigRenderer defers its shafts to the
              * scene batch via deferStraightShaftsToSceneBatch.
              */}
-            {renderTwigList.map(twig => {
-                if (!isModelVisible(twig.modelId, twig.id)) return null;
-                const effectiveSelected = selectedTwigIds.has(twig.id);
-                const isTwigBatchable = plainShaftsOf('twig').has(twig.id);
-
-                const deferTwigInteractionToSceneBatch = !effectiveSelected && isTwigBatchable;
-
-                return (
-                    <group key={twig.id} userData={{ noClipping: effectiveSelected }}>
-                    <TwigRenderer
-                        key={twig.id}
-                        twig={twig}
-                        {...sharedRenderProps('twig', twig, effectiveSelected)}
-                        deferStraightShaftsToSceneBatch={!effectiveSelected && isTwigBatchable}
-                        deferInteractionToSceneBatch={deferTwigInteractionToSceneBatch}
-                    />
-                    </group>
-                );
-            })}
+            {renderDetailFor('twig')}
 
             {renderSceneBatchedShafts('twig', sceneBatchedShaftsOf('twig'))}
             {/* Render Sticks */}
-            {renderStickList.map(stick => {
-                if (!isModelVisible(stick.modelId, stick.id)) return null;
-                const effectiveSelected = selectedStickIds.has(stick.id);
-                const isStickBatchable = plainShaftsOf('stick').has(stick.id);
-                const renderDetailedStick = (effectiveSelected || !isStickBatchable) && !simpleRender;
-                if (!renderDetailedStick) return null;
-
-                const deferStickInteractionToSceneBatch = !effectiveSelected && isStickBatchable;
-
-                return (
-                    <group key={stick.id} userData={{ noClipping: effectiveSelected }}>
-                    <StickRenderer
-                        key={stick.id}
-                        stick={stick}
-                        {...sharedRenderProps('stick', stick, effectiveSelected)}
-                        deferStraightShaftsToSceneBatch={!effectiveSelected && isStickBatchable}
-                        deferInteractionToSceneBatch={deferStickInteractionToSceneBatch}
-                        deferContactConesToSceneBatch={!effectiveSelected}
-                    />
-                    </group>
-                );
-            })}
+            {renderDetailFor('stick')}
 
             {renderSceneBatchedShafts('stick', sceneBatchedShaftsOf('stick'))}
 
             {/* Render Braces */}
             {renderSceneBatchedShafts('brace', sceneBatchedBraceShaftGroups, { detailedOnly: true })}
 
-            {!simpleRender && renderBraceList.map(brace => {
-                if (!isModelVisible(brace.modelId, brace.id)) return null;
-                const effectiveSelected = selectedBraceIds.has(brace.id);
-                const isBraceBatchable = braceShaftsBySupport.has(brace.id);
-                const isBraceGhosted = ghostedBraceIdSet.has(brace.id);
-                const renderDetailedBrace = effectiveSelected || !isBraceBatchable || isBraceGhosted;
-                if (!renderDetailedBrace) return null;
-
-                const deferBraceInteractionToSceneBatch = !effectiveSelected && isBraceBatchable;
-                const showKnots = !hideUnselectedKnots || effectiveSelected;
-                const braceStartKnot = braceRenderKnotsById[brace.startKnotId];
-                const braceEndKnot = braceRenderKnotsById[brace.endKnotId];
-                if (!braceStartKnot || !braceEndKnot) return null;
-
-                return (
-                    <group key={brace.id} userData={{ noClipping: effectiveSelected }}>
-                        <BraceRenderer
-                            key={brace.id}
-                            brace={brace}
-                            startKnot={braceStartKnot}
-                            endKnot={braceEndKnot}
-                            {...sharedRenderProps('brace', brace, effectiveSelected)}
-                            ghosted={isBraceGhosted}
-                            ghostOpacity={ghostOpacityClamped}
-                            showKnots={showKnots}
-                            // A ghosted brace is scenery: it neither hovers
-                            // nor picks, whatever the shared props say.
-                            suppressHover={suppressHover || isBraceGhosted}
-                            isInteractable={isInteractable && !isBraceGhosted}
-                            deferStraightShaftToSceneBatch={!effectiveSelected && isBraceBatchable && !isBraceGhosted}
-                            deferInteractionToSceneBatch={deferBraceInteractionToSceneBatch || isBraceGhosted}
-                            debugSectionColors={settings.autoBracing.debugSectionColorsEnabled}
-                        />
-                    </group>
-                );
-            })}
+            {renderDetailFor('brace')}
             {/* Render Kickstands */}
-            {renderKickstandList.map((kickstand) => {
-                if (!isModelVisible(kickstand.modelId, kickstand.id)) return null;
-                const root = kickstandState.roots[kickstand.rootId];
-                const hostKnot = renderKickstandKnotsById[kickstand.hostKnotId];
-                if (!root || !hostKnot) return null;
-
-                const effectiveSelected = selectedKickstandIds.has(kickstand.id);
-                const isKickstandBatchable = plainShaftsOf('kickstand').has(kickstand.id);
-                const renderDetailedKickstand = (effectiveSelected || !isKickstandBatchable) && !simpleRender;
-                if (!renderDetailedKickstand) return null;
-
-                const deferKickstandInteractionToSceneBatch = !effectiveSelected && isKickstandBatchable;
-                const showKnot = simpleRender ? false : (!hideUnselectedKnots || effectiveSelected);
-
-                return (
-                    <group key={kickstand.id} userData={{ noClipping: effectiveSelected }}>
-                    <KickstandRenderer
-                        key={kickstand.id}
-                        kickstand={kickstand}
-                        root={root}
-                        hostKnot={hostKnot}
-                        {...sharedRenderProps('kickstand', kickstand, effectiveSelected)}
-                        showKnot={showKnot}
-                        deferStraightShaftsToSceneBatch={!effectiveSelected && isKickstandBatchable}
-                        deferInteractionToSceneBatch={deferKickstandInteractionToSceneBatch}
-                        hidePlateContactPrimitives={hidePlateContactPrimitivesEffective}
-                    />
-                    </group>
-                );
-            })}
+            {renderDetailFor('kickstand')}
 
             {renderSceneBatchedShafts('kickstand', sceneBatchedShaftsOf('kickstand'))}
             {/* Render Anchors */}
-            {renderAnchorList.map(anchor => {
-                if (!isModelVisible(anchor.modelId, anchor.id)) return null;
-                const effectiveSelected = selectedAnchorIds.has(anchor.id);
-
-                return (
-                    <group key={anchor.id}>
-                    <AnchorRenderer
-                        key={anchor.id}
-                        anchor={anchor}
-                        {...sharedRenderProps('anchor', anchor, effectiveSelected)}
-                    />
-                    </group>
-                );
-            })}
+            {renderDetailFor('anchor')}
 
             {/*
               Auto-bracing debug overlay mount point.
