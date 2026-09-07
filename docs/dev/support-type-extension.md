@@ -179,8 +179,17 @@ wiring is explicit:
   now. The anchor gap this page used to warn about — anchors deletable but
   blocked from single-selection Delete — was that enumerated list, and it is
   gone.
-- `deleteSelectionByCategoryAndId` **is** still hand-wired; add your category
-  there.
+- `deleteSelectionByCategoryAndId` needs **nothing** for a type whose removal is
+  the cascade plus one history entry: a generic block reads `historyRemove` off
+  your descriptor. Only a type whose payload carries something extra (a branch's
+  trunk reprofile) needs its own block, and it must then be listed in
+  `RESHAPED_REMOVAL_PAYLOADS` — otherwise the generic block claims it first and
+  your block is dead code.
+- Deleting a **knot** deletes what it hosts, resolved by `findKnotHost` from the
+  `hostedBy` edges onto `knots` that you declare. If your type can hang off a
+  knot, add it to `KNOT_HOST_PRECEDENCE` (registry) — a knot-hosting type absent
+  from that order is silently undeletable via its knot. A test asserts the two
+  agree.
 
   The enumerated-conditional shape is the textbook case for the registry: a list
   of type names where forgetting one is silent. Where one remains, add the `||`
@@ -208,7 +217,8 @@ wiring is explicit:
 5. `state.ts` — add/update/remove, SelectionCategory, lookup cache, import/merge/isolate
    (**not** `initialState` — that derives from the registry)
 6. `actionTypes.ts` + `useSupportHistoryHandlers.ts` — add/remove handlers
-7. `useSupportInteractionManager.ts` — category resolution, delete path, can-delete
+7. `useSupportInteractionManager.ts` — **nothing**, unless the type reshapes its
+   removal payload or can host a knot (see step 7 above)
 8. `supportExportReconstruction.ts` — scoped payload, export document, geometry group
 
 After wiring, run the registry tests — they fail loudly on a half-declared type:
