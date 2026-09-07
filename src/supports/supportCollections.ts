@@ -57,17 +57,6 @@ export function mapSupportEntities<T extends SupportEntityCollections>(
     return { collections: next, changed };
 }
 
-/** Visit every entity in every collection without modifying anything. */
-export function forEachSupportEntity(
-    collections: Partial<SupportEntityCollections>,
-    visit: (entity: SupportEntityLike, collection: SupportEntityCollectionKey) => void,
-): void {
-    for (const key of SUPPORT_ENTITY_COLLECTIONS) {
-        const record = collections[key] as Record<string, SupportEntityLike> | undefined;
-        if (!record) continue;
-        for (const entity of Object.values(record)) visit(entity, key);
-    }
-}
 
 /**
  * Apply `mapEntity` to every support entity in an import payload.

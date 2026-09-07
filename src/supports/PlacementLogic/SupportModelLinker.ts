@@ -174,7 +174,3 @@ export function deleteSupportsForModel(state: SupportState, modelId: string): nu
     return removedCount;
 }
 
-/** Convenience wrapper for callers that do not already hold a snapshot. */
-export function getSupportsForModelFromStore(modelId: string): ModelSupportIds {
-    return getSupportsForModel(getSnapshot(), modelId);
-}
