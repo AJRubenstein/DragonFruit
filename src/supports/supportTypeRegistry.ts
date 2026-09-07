@@ -908,6 +908,16 @@ export type SupportRemovalResult<T extends SupportTypeId> =
     { [S in (typeof SUPPORT_REMOVAL_SHAPES)[T]['self']]: RemovedEntity<(typeof SUPPORT_TYPE_COLLECTION)[T]> }
     & UnionToIntersection<CascadeResult<(typeof SUPPORT_REMOVAL_SHAPES)[T]['cascade']>>;
 
+/**
+ * A type's entity under the field name its removal shape declares.
+ *
+ * The add payload for a simple type is just this: `{ twig: Twig }` and so on.
+ * Three of those were written out by hand, each repeating the `self` field the
+ * shape map already names.
+ */
+export type SupportEntityPayload<T extends SupportTypeId> =
+    { [S in (typeof SUPPORT_REMOVAL_SHAPES)[T]['self']]: RemovedEntity<(typeof SUPPORT_TYPE_COLLECTION)[T]> };
+
 type UnionToIntersection<U> =
     (U extends unknown ? (arg: U) => void : never) extends (arg: infer I) => void ? I : never;
 
