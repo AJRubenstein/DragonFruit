@@ -1,3 +1,4 @@
+import type * as THREE from 'three';
 import { registerContactBridgeBuilder } from '../../supportTypeRegistry';
 import { buildStick } from './stickBuilder';
 import { isShaftVerticalEnough } from './stickVerticality';
@@ -9,7 +10,7 @@ import { isShaftVerticalEnough } from './stickVerticality';
 // cants too far is not a bridge, and refusing to build one is a fact about
 // sticks, not about whoever asked for one.
 registerContactBridgeBuilder('stick', (request) => {
-    const { stick } = buildStick({
+    const { stick, error } = buildStick({
         modelId: request.modelId,
         aPos: request.aPos,
         aNormal: request.aNormal,
@@ -17,7 +18,8 @@ registerContactBridgeBuilder('stick', (request) => {
         bNormal: request.bNormal,
         shaftDiameterMm: request.shaftDiameterMm,
         tipContactDiameterMm: request.tipContactDiameterMm,
+        mesh: request.mesh as THREE.Mesh | undefined,
     });
-    if (!stick) return null;
-    return isShaftVerticalEnough(stick) ? stick : null;
+    if (!stick || !isShaftVerticalEnough(stick)) return null;
+    return { entity: stick, error };
 });

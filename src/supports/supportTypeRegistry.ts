@@ -1137,9 +1137,27 @@ export interface ContactBridgeRequest {
     bNormal: { x: number; y: number; z: number };
     shaftDiameterMm?: number;
     tipContactDiameterMm?: number;
+    /**
+     * Checked for clearance when given, so a preview can show the failure.
+     * Structural rather than `THREE.Mesh` -- the registry declares rules and
+     * does not depend on the renderer.
+     */
+    mesh?: { isMesh: boolean };
 }
 
-type ContactBridgeBuilder = (request: ContactBridgeRequest) => { id: string } | null;
+/**
+ * A built bridge and whatever limitation building it ran into.
+ *
+ * Both builders already returned this pair under their own entity field name;
+ * `entity` is the same value under a name a caller can read without knowing
+ * which type it asked for.
+ */
+export interface ContactBridgeResult {
+    entity: { id: string };
+    error?: string;
+}
+
+type ContactBridgeBuilder = (request: ContactBridgeRequest) => ContactBridgeResult | null;
 
 const CONTACT_BRIDGE_BUILDERS = new Map<SupportTypeId, ContactBridgeBuilder>();
 
@@ -1160,7 +1178,7 @@ export function registerContactBridgeBuilder(
 export function buildContactBridge(
     typeId: SupportTypeId,
     request: ContactBridgeRequest,
-): { id: string } | null {
+): ContactBridgeResult | null {
     return CONTACT_BRIDGE_BUILDERS.get(typeId)?.(request) ?? null;
 }
 

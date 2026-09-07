@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { contactEndpointsFor, SUPPORT_TYPES } from '../supportTypeRegistry';
+import { markPlacementSurface } from '../PlacementLogic/placementSurface';
 
 /**
  * Stamping the placement surface onto a support's contacts.
@@ -12,15 +13,6 @@ import { contactEndpointsFor, SUPPORT_TYPES } from '../supportTypeRegistry';
  * it as unknown. The stamp now walks the declared endpoints; this holds that
  * the declaration covers what the markers named by hand.
  */
-
-/** What the collapsed marker does, over the declared contact fields. */
-function markPlacementSurface<T extends object>(typeId: string, entity: T, surface: string): T {
-    const next = { ...entity } as Record<string, unknown>;
-    for (const { field } of contactEndpointsFor(typeId as never)) {
-        if (next[field]) next[field] = { ...(next[field] as object), placementSurface: surface };
-    }
-    return next as T;
-}
 
 test('every contact a type declares gets the stamp', () => {
     for (const descriptor of SUPPORT_TYPES) {
