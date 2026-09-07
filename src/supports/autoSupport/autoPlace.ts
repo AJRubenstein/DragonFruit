@@ -30,10 +30,7 @@ import { sizeParameters, presetForArea } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
 import { cloneSupportState, getSnapshot, setSnapshot } from '../state';
-import {
-    draftAddRoot, draftAddTrunk, draftAddBranch, draftAddLeaf,
-    draftAddKnot, draftAddAnchor, draftAddEntity,
-} from './supportDraft';
+import { draftAddEntity, draftAddPrimitive } from './supportDraft';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
@@ -463,9 +460,9 @@ export function buildConsolidationBranch(args: {
         if (mesh && branchCollidesWithSDF(branch, mesh)) return null;
         if (leafPathCrossesSupports(parentKnot.pos, branch.contactCone?.pos ?? tip, 0.25, pruned, best.trunkId)) return null;
 
-        let d = draftAddKnot(pruned, parentKnot);
+        let d = draftAddPrimitive(pruned, 'knots', parentKnot);
         branch.origin = 'overhang';
-        d = draftAddBranch(d, branch);
+        d = draftAddEntity(d, 'branch', branch);
         return { draft: d, branchId: branch.id };
     } catch {
         return null;
@@ -712,9 +709,9 @@ function placeOneCandidate(
                                         `Merge skip ${candidate.id}: host ${host.trunkId} at capacity (${cap} attachments)`);
                                     // fall through to standalone trunk
                                 } else {
-                                    d = draftAddKnot(d, parentKnot);
+                                    d = draftAddPrimitive(d, 'knots', parentKnot);
                                     leaf.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
-                                    d = draftAddLeaf(d, leaf);
+                                    d = draftAddEntity(d, 'leaf', leaf);
                                     const la = (Math.atan2(hDist, vDist) * 180) / Math.PI;
                                     logPlacement(
                                         `Leaf (merge) ${candidate.id} → host ${host.trunkId} ` +
@@ -755,11 +752,11 @@ function placeOneCandidate(
                                     `Merge skip ${candidate.id}: host ${host.trunkId} at capacity (${cap} attachments)`);
                                 // fall through to standalone trunk
                             } else {
-                                d = draftAddKnot(d, parentKnot);
+                                d = draftAddPrimitive(d, 'knots', parentKnot);
                                 // Branch fallback is island-only (overhang fanning
                                 // is leaves) — the origin is always island here.
                                 branch.origin = 'island';
-                                d = draftAddBranch(d, branch);
+                                d = draftAddEntity(d, 'branch', branch);
                                 const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                                 logPlacement(
                                     `Branch (merge) ${candidate.id} → host ${host.trunkId} ` +
@@ -913,8 +910,8 @@ function placeOneCandidate(
             decision.trunkBuild.trunk.origin = candidate.gridPoint
                 ? 'overhang'
                 : (candidate.source === 'overhang' ? 'standalone' : 'island');
-            d = draftAddRoot(d, decision.trunkBuild.root);
-            d = draftAddTrunk(d, decision.trunkBuild.trunk);
+            d = draftAddPrimitive(d, 'roots', decision.trunkBuild.root);
+            d = draftAddEntity(d, 'trunk', decision.trunkBuild.trunk);
             logPlacement(
                 `Trunk ${candidate.id} (→ ${trunkId}) @ grid ${decision.nodeKey} ` +
                 `area=${candidate.islandAreaMm2.toFixed(2)}mm² Z=${candidate.zHeight.toFixed(1)}mm ${preset}` +
@@ -932,7 +929,7 @@ function placeOneCandidate(
             decision.anchor.origin = candidate.gridPoint
                 ? 'overhang'
                 : (candidate.source === 'overhang' ? 'standalone' : 'island');
-            d = draftAddAnchor(d, decision.anchor);
+            d = draftAddEntity(d, 'anchor', decision.anchor);
             logPlacement(`Anchor ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
             return { kind: 'anchor', preset, draft: d, entityId: decision.anchor.id };
 
@@ -943,8 +940,8 @@ function placeOneCandidate(
                     `Grid skip ${candidate.id}: host ${decision.hostTrunkId} at capacity (${cap})`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            d = draftAddKnot(d, decision.knot);
-            d = draftAddBranch(d, decision.branch);
+            d = draftAddPrimitive(d, 'knots', decision.knot);
+            d = draftAddEntity(d, 'branch', decision.branch);
             logPlacement(
                 `Branch ${candidate.id} → host ${decision.hostTrunkId} ` +
                 `grid ${decision.nodeKey}`);
@@ -958,8 +955,8 @@ function placeOneCandidate(
                     `Grid skip ${candidate.id}: host ${decision.hostTrunkId} at capacity (${cap})`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            d = draftAddKnot(d, decision.knot);
-            d = draftAddLeaf(d, decision.leaf);
+            d = draftAddPrimitive(d, 'knots', decision.knot);
+            d = draftAddEntity(d, 'leaf', decision.leaf);
             logPlacement(
                 `Leaf ${candidate.id} → host ${decision.hostTrunkId} ` +
                 `grid ${decision.nodeKey}`);
@@ -979,8 +976,8 @@ function placeOneCandidate(
                     `Replace skip ${candidate.id}: no promoted branch from grid engine`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            d = draftAddKnot(d, promoteKnot);
-            d = draftAddBranch(d, promoteBranch);
+            d = draftAddPrimitive(d, 'knots', promoteKnot);
+            d = draftAddEntity(d, 'branch', promoteBranch);
             const planned = planTrunkReplacement({
                 snapshot: d,
                 trunkIdToRemove: decision.hostTrunkId,
@@ -1722,11 +1719,11 @@ export function fanLeafToTrunk(
             continue;
         }
 
-        const next = draftAddKnot(draft, parentKnot);
+        const next = draftAddPrimitive(draft, 'knots', parentKnot);
         if (origin) leaf.origin = origin;
         return {
             ok: true,
-            draft: draftAddLeaf(next, leaf),
+            draft: draftAddEntity(next, 'leaf', leaf),
             trunkId: sp.trunkId,
             leafId: leaf.id,
             distMm: Math.sqrt(dist2),
@@ -2668,8 +2665,8 @@ export function computeAutoSupportPlan(
                         }
                         // The tips are voxel-island footprints — island origin.
                         branch.origin = 'island';
-                        draft = draftAddKnot(draft, parentKnot);
-                        draft = draftAddBranch(draft, branch);
+                        draft = draftAddPrimitive(draft, 'knots', parentKnot);
+                        draft = draftAddEntity(draft, 'branch', branch);
                         overhangSupportsPlaced++;
                         placedBranches++;
                     }
