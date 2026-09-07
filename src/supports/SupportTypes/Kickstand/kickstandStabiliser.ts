@@ -5,7 +5,7 @@ import type { KickstandBuildResult, KickstandHostTarget } from './types';
 import type { SupportState, Trunk, Vec3, Segment, Roots } from '../../types';
 import { AUTO_BRACING_HARD_RULES, type AutoBracingSettings } from '../../autoBracing/settings';
 import { getAllMeshEntriesForAutoBrace } from '../../autoBracing/meshGeometryStore';
-import { getTrunkSegmentEndpoints } from '../../SupportPrimitives/Knot/knotUtils';
+import { resolveSegmentEndpoints } from '../../SupportPrimitives/Knot/segmentEndpoints';
 import { linePassesMeshClearance } from '../../autoBracing/meshClearance';
 import {
     additionalAxesNeededForTwoAxisBracing,
@@ -314,7 +314,7 @@ export function generateRequiredKickstands(
         const candidateAnchors: CandidateAnchor[] = [];
 
         trunk.segments.forEach((seg, idx) => {
-            const ep = getTrunkSegmentEndpoints(trunk, seg, idx, root);
+            const ep = resolveSegmentEndpoints('trunk', trunk, seg, idx, { root });
             if (ep) {
                 if (ep.end.z > maxZ) {
                     maxZ = ep.end.z;

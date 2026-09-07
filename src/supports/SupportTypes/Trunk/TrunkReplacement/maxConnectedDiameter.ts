@@ -1,7 +1,7 @@
 import type { Branch, Knot, Leaf, Roots, SupportState, Trunk } from '../../../types';
 import { getJointDiameter } from '../../../constants';
 import { splitShaft } from '../../../SupportPrimitives/Joint/jointUtils';
-import { getTrunkSegmentEndpoints } from '../../../SupportPrimitives/Knot/knotUtils';
+import { resolveSegmentEndpoints } from '../../../SupportPrimitives/Knot/segmentEndpoints';
 import { getSettings } from '../../../Settings/state';
 import { getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '../../../supportTypeRegistry';
 
@@ -328,7 +328,7 @@ export function computeAndApplyTrunkDiameterProfile(
         if (segIndex === -1) continue;
 
         const seg = nextTrunk.segments[segIndex];
-        const endpoints = getTrunkSegmentEndpoints(nextTrunk, seg, segIndex, root);
+        const endpoints = resolveSegmentEndpoints('trunk', nextTrunk, seg, segIndex, { root });
 
         const existingT = typeof knot.t === 'number'
             ? Math.min(1, Math.max(0, knot.t))

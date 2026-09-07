@@ -10,7 +10,6 @@ import { findShaftOwnerOfJoint, getSupportEntity, jointPosIn, getSnapshot,
     getKnotById,
     setInteractionWarning,
  } from '../../state';
-import { getTrunkSegmentEndpoints } from '../Knot/knotUtils';
 import { getSupportTypeDescriptor, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
 import { Vec3, Trunk, Branch, Roots, Segment, Twig, Stick, ContactDisk } from '../../types';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
