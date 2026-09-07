@@ -23,6 +23,14 @@ export const ANCHOR_MIN_AREA_MM2 = 12.0;
 /** Max span (mm) for a leaf cone attached to a host knot (grid path). */
 export const MAX_AUTO_LEAF_SPAN_MM = 2.5;
 
+/**
+ * Longest cavity bridge auto-placement will keep.
+ *
+ * Currently inert -- the span it is compared against measures ~0. See the
+ * note at the comparison in `autoPlace.ts`.
+ */
+export const MAX_CAVITY_BRIDGE_MM = 12;
+
 /** Distance (mm) within which an existing support tip counts a candidate as already supported. */
 export const ALREADY_SUPPORTED_RADIUS_MM = 3.0;
 

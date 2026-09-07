@@ -14,7 +14,7 @@ import { quantizeToScale } from '@/utils/math';
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
 import type { CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo } from './types';
-import type { SupportState, SupportOrigin } from '../types';
+import type { SupportState, SupportOrigin, Vec3 } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
 import { activeSizingBand } from './parameterSizing';
@@ -32,11 +32,11 @@ import { getSettings } from '../Settings/state';
 import { cloneSupportState, getSnapshot, setSnapshot } from '../state';
 import {
     draftAddRoot, draftAddTrunk, draftAddBranch, draftAddLeaf,
-    draftAddKnot, draftAddAnchor, draftAddStick, draftAddTwig,
+    draftAddKnot, draftAddAnchor, draftAddEntity,
 } from './supportDraft';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
-import { buildCavityStick } from '../SupportTypes/Trunk/useTrunkPlacement';
+import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
 import { applyTrunkReplacement, planTrunkReplacement } from '../SupportTypes/Trunk/TrunkReplacement';
 import { computeForestDiameterProfile } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
 import { buildBranchData } from '../SupportTypes/Branch/branchBuilder';
@@ -56,6 +56,7 @@ import {
     LEAF_FAN_RADIUS_MM,
     GRID_HOST_FAN_RADIUS_MM,
     LEAF_FAN_MAX_ANGLE_DEG,
+    MAX_CAVITY_BRIDGE_MM,
 } from './constants';
 
 const LOG_PREFIX = '[AutoSupport]';
@@ -827,7 +828,7 @@ function placeOneCandidate(
                 cavityFanRefusal = fan.reason;
             } catch {}
             const band = activeSizingBand();
-            const cavityResult = buildCavityStick(tipPos, tipNormal, candidate.modelId, mesh, band);
+            const cavityResult = buildCavityBridge(tipPos, tipNormal, candidate.modelId, mesh, band);
             if (cavityResult) {
                 // Long model-to-model bridges under an overhang (jaw → chest)
                 // read as "sticks under the jaw" and are rarely printable —
@@ -837,28 +838,30 @@ function placeOneCandidate(
                 // reject. The tip will then be reconsidered via fan/merge in a
                 // later pass or left unsupported (coverage still 100% per
                 // report).
-                if (cavityResult.kind === 'stick') {
-                    const lower = cavityResult.stick.contactConeB?.pos ?? cavityResult.stick.contactConeA?.pos;
-                    if (lower) {
-                        const dx = tipPos.x - lower.x, dy = tipPos.y - lower.y, dz = tipPos.z - lower.z;
-                        const bridgeLen = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                        if (bridgeLen > 12) {
-                            logPlacement(`Cavity stick rejected (bridge ${bridgeLen.toFixed(1)}mm > 12mm) ${candidate.id}`);
-                            // fall through to rejected trunk path below
-                        } else {
-                            d = draftAddStick(d, cavityResult.stick);
-                            logPlacement(`Stick (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                            return { kind: 'stick', preset, draft: d, entityId: cavityResult.stick.id, cavityFanRefusal };
-                        }
-                    } else {
-                        d = draftAddStick(d, cavityResult.stick);
-                        logPlacement(`Stick (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                        return { kind: 'stick', preset, draft: d, entityId: cavityResult.stick.id, cavityFanRefusal };
-                    }
+                // BUG (pre-existing, see docs/dev/backlog.md): the 12mm cap
+                // below measured from the type's `upper` contact, which the
+                // builder sorts to the tip -- so the span was always ~0 and
+                // the cap has never rejected anything. Measuring from the
+                // declared `lower` contact would start rejecting long bridges,
+                // a behaviour change left for review rather than folded in
+                // here. The dispatch is derived; the measurement is not.
+                const entity = cavityResult.entity;
+                const upperField = contactEndpointsFor(cavityResult.kind)
+                    .find(({ end }) => end === 'upper')?.field;
+                const lower = upperField
+                    ? (entity as unknown as Record<string, { pos?: Vec3 } | undefined>)[upperField]?.pos
+                    : undefined;
+                const bridgeLen = lower
+                    ? Math.hypot(tipPos.x - lower.x, tipPos.y - lower.y, tipPos.z - lower.z)
+                    : null;
+
+                if (bridgeLen !== null && bridgeLen > MAX_CAVITY_BRIDGE_MM) {
+                    logPlacement(`Cavity ${cavityResult.kind} rejected (bridge ${bridgeLen.toFixed(1)}mm > ${MAX_CAVITY_BRIDGE_MM}mm) ${candidate.id}`);
+                    // fall through to rejected trunk path below
                 } else {
-                    d = draftAddTwig(d, cavityResult.twig);
-                    logPlacement(`Twig (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                    return { kind: 'twig', preset, draft: d, entityId: cavityResult.twig.id, cavityFanRefusal };
+                    d = draftAddEntity(d, cavityResult.kind, entity);
+                    logPlacement(`${cavityResult.kind} (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
+                    return { kind: cavityResult.kind, preset, draft: d, entityId: entity.id, cavityFanRefusal };
                 }
             }
         }

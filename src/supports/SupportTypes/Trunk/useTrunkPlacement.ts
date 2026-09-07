@@ -1,23 +1,22 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { cloneSupportState, addAnchor, addBranch, addKnot, addLeaf, addRoot, addStick, addTrunk, addTwig, getSnapshot, setSnapshot, updateKnot, updateTrunk } from '../../state';
+import { cloneSupportState, addAnchor, addBranch, addKnot, addLeaf, addRoot, addSupportEntityWithHistory, addTrunk, getSnapshot, setSnapshot, updateKnot, updateTrunk } from '../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
-import { SUPPORT_ADD_ANCHOR, SUPPORT_ADD_BRANCH, SUPPORT_ADD_LEAF, SUPPORT_ADD_STICK, SUPPORT_ADD_TRUNK, SUPPORT_ADD_TWIG } from '../../history/actionTypes';
+import { SUPPORT_ADD_ANCHOR, SUPPORT_ADD_BRANCH, SUPPORT_ADD_LEAF, SUPPORT_ADD_TRUNK } from '../../history/actionTypes';
 import { useInteractionStatus } from '../../interaction/useInteractionStatus';
 import { buildTrunkData } from './trunkBuilder';
 import { applyTrunkReplacement, computeAndApplyTrunkDiameterProfile, planTrunkReplacement } from './TrunkReplacement';
-import type { SupportData } from '../../rendering/SupportBuilder';
-import type { Anchor, Branch, ContactDisk, Leaf, LimitationCode, Stick, Twig, WarningCode } from '../../types';
+import { supportDataForEntity, type SupportData } from '../../rendering/SupportBuilder';
+import type { Anchor, Branch, ContactDisk, Leaf, LimitationCode, Segment, Stick, Twig, WarningCode } from '../../types';
 import type { ContactCone } from '../../SupportPrimitives/ContactCone/types';
 import { calculateSmoothedNormal } from '../../PlacementLogic/PlacementUtils';
 import { getSettings } from '../../Settings/state';
 import { decideGridPlacement } from '../../PlacementLogic/Grid';
-import { contactEndpointsFor, selectTypeForPlacement, type SupportTypeId } from '../../supportTypeRegistry';
+import { buildContactBridge, contactEndpointsFor, selectTypeForPlacement, type SupportTypeId } from '../../supportTypeRegistry';
 import { clearSupportSelection } from '../../interaction/shared/selection/selectionController';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
 import { perfMark, perfMeasureWithSpike, perfEndFrame } from '../../PlacementLogic/Pathfinding/pathfindingPerf';
-import { buildStick } from '../Stick/stickBuilder';
-import { buildTwig } from '../Twig/twigBuilder';
+
 import { isShaftBlocked } from '../../PlacementLogic/CollisionAvoidance';
 import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { getSupportPathfindingDebugEnabled, setSupportPathfindingDebugSnapshot } from '../../PlacementLogic/Pathfinding/pathfindingDebugState';
@@ -83,21 +82,24 @@ function markTrunkBuildPlacementSurface<T extends ReturnType<typeof buildTrunkDa
     } as T;
 }
 
+/** A bridge always has a shaft; which contacts hang off it is declared. */
+type BridgingEntity = { id: string; segments: Segment[] };
+
 /**
  * When A* stagnates (tip is inside a closed cavity), attempt to find the
- * cavity floor by raycasting straight down.  Returns a buildStick result +
- * a SupportData preview object, or null if no lower surface is found.
+ * cavity floor by raycasting straight down and bridge the two contacts.
+ *
+ * Which type bridges them is the registry's call, by contact span -- the
+ * result carries whichever it chose, plus a SupportData preview. Null when
+ * no lower surface is found, or the bridge is not worth placing.
  */
-export function buildCavityStick(
+export function buildCavityBridge(
     tipPos: { x: number; y: number; z: number },
     tipNormal: { x: number; y: number; z: number },
     modelId: string,
     mesh: THREE.Mesh,
     sizing?: { tipContactDiameterMm: number; shaftDiameterMm: number },
-): (
-    | { kind: 'stick'; supportData: SupportData; stick: ReturnType<typeof buildStick>['stick'] }
-    | { kind: 'twig'; supportData: SupportData; twig: ReturnType<typeof buildTwig>['twig'] }
-) | null {
+): { kind: SupportTypeId; supportData: SupportData; entity: BridgingEntity } | null {
     _cavityRaycaster.set(
         new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z),
         _downDir,
@@ -147,87 +149,37 @@ export function buildCavityStick(
     const bPos = { x: chosen.hit.point.x, y: chosen.hit.point.y, z: chosen.hit.point.z };
     const bNormal = { x: chosen.normal.x, y: chosen.normal.y, z: chosen.normal.z };
 
-    const settings = getSettings();
     const dx = tipPos.x - bPos.x;
     const dy = tipPos.y - bPos.y;
     const dz = tipPos.z - bPos.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const kind = selectTypeForPlacement('contactSpan', dist, () => settings.meshToMesh?.stickVsTwigCutoffMm);
+    const kind = selectTypeForPlacement('contactSpan', dist);
     if (kind === null) return null;
 
-    if (kind === 'twig') {
-        const { twig } = buildTwig({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal, tipContactDiameterMm: sizing?.tipContactDiameterMm });
-        // Ensure the twig shaft does not pierce the model. Matches the trunk
-        // post-cull clearance (radius + 0.15mm) and catches the "sticks that
-        // shoot right through geometry" seen in auto supports.
-        {
-            const seg = twig.segments[0];
-            const start = seg?.bottomJoint?.pos ?? bPos;
-            const end = seg?.topJoint?.pos ?? tipPos;
-            const radius = (seg?.diameter ?? 1) / 2 + 0.15;
-            if (isShaftBlocked(start, end, radius, mesh)) return null;
-        }
-        const supportData: SupportData = {
-            id: twig.id,
-            segments: twig.segments,
-            contactDisks: [twig.contactDiskA, twig.contactDiskB],
-        };
-        return { kind, twig, supportData };
-    }
+    const entity = buildContactBridge(kind, {
+        modelId,
+        aPos: tipPos,
+        aNormal: tipNormal,
+        bPos,
+        bNormal,
+        shaftDiameterMm: sizing?.shaftDiameterMm,
+        tipContactDiameterMm: sizing?.tipContactDiameterMm,
+    }) as BridgingEntity | null;
+    if (!entity) return null;
 
-    const { stick } = buildStick({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal, shaftDiameterMm: sizing?.shaftDiameterMm, tipContactDiameterMm: sizing?.tipContactDiameterMm });
+    // The shaft must not pierce the model. Matches the trunk post-cull
+    // clearance (radius + 0.15mm) and catches the bridges that shot straight
+    // through geometry in auto supports.
+    const seg = entity.segments[0];
+    const start = seg?.bottomJoint?.pos ?? bPos;
+    const end = seg?.topJoint?.pos ?? tipPos;
+    const radius = (seg?.diameter ?? sizing?.shaftDiameterMm ?? 1) / 2 + 0.15;
+    if (isShaftBlocked(start, end, radius, mesh)) return null;
 
-    // Sticks are only useful as vertical bridges; a shaft that cants off
-    // vertical (standoffs + sloped surfaces shoving the sockets sideways)
-    // is a crammed stick. Reject it — the caller's trunk fallback applies.
-    if (stickShaftVerticalCos(stick) < Math.cos((CAVITY_STICK_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
-        return null;
-    }
-
-    // SDF/raycast: stick shaft must not pierce the model. This is the
-    // missing check that let auto supports place sticks straight through
-    // the Puck's chest. Uses the same shaft clearance as trunks.
-    {
-        const seg = stick.segments[0];
-        const start = seg?.bottomJoint?.pos ?? bPos;
-        const end = seg?.topJoint?.pos ?? tipPos;
-        const radius = (seg?.diameter ?? sizing?.shaftDiameterMm ?? 1) / 2 + 0.15;
-        if (isShaftBlocked(start, end, radius, mesh)) return null;
-    }
-
-    const supportData: SupportData = {
-        id: stick.id,
-        segments: stick.segments,
-        contactCones: [stick.contactConeA, stick.contactConeB],
-    };
-
-    return { kind: 'stick', stick, supportData };
+    return { kind, entity, supportData: supportDataForEntity(kind, entity) };
 }
 
-type CavityStickBuildResult = NonNullable<ReturnType<typeof buildCavityStick>>;
-
-/**
- * |cos| of the shaft's deviation from vertical, 1 = perfectly vertical.
- * The stick's visible shaft runs between its two socket joints — the
- * surface-normal standoffs can shove those sideways on sloped surfaces,
- * which is exactly the "crammed diagonal stick" look to avoid.
- */
-export function stickShaftVerticalCos(stick: { segments: { bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null }[] }): number {
-    const seg = stick.segments[0];
-    const a = seg?.bottomJoint?.pos;
-    const b = seg?.topJoint?.pos;
-    if (!a || !b) return 1;
-    const vx = b.x - a.x;
-    const vy = b.y - a.y;
-    const vz = b.z - a.z;
-    const len = Math.hypot(vx, vy, vz);
-    if (len < 1e-6) return 1;
-    return Math.abs(vz) / len;
-}
-
-// A cavity stick bridges straight down; a shaft that cants more than this
-// from vertical is a wedged stick, not a bridge (calibration knob).
-export const CAVITY_STICK_MAX_SHAFT_ANGLE_DEG = 20;
+type CavityBridgeBuildResult = NonNullable<ReturnType<typeof buildCavityBridge>>;
 
 export function useTrunkPlacementV2() {
     // Debounce tuned for human hand drift (~1-2mm) and 60fps target.
@@ -252,7 +204,7 @@ export function useTrunkPlacementV2() {
         point: THREE.Vector3;
         normal: THREE.Vector3;
         atMs: number;
-        result: CavityStickBuildResult | null;
+        result: CavityBridgeBuildResult | null;
     } | null>(null);
     const lastProcessedHoverRef = useRef<{
         objectUuid: string;
@@ -286,13 +238,13 @@ export function useTrunkPlacementV2() {
         clearSupportSelection();
     }, []);
 
-    const resolveCavityStickPreview = useCallback((
+    const resolveCavityBridgePreview = useCallback((
         hit: THREE.Intersection,
         tipPos: { x: number; y: number; z: number },
         tipNormal: { x: number; y: number; z: number },
         modelId: string,
         mesh: THREE.Mesh,
-    ): CavityStickBuildResult | null => {
+    ): CavityBridgeBuildResult | null => {
         const now = performance.now();
         const cached = cavityPreviewCacheRef.current;
         if (cached && cached.objectUuid === hit.object.uuid && cached.modelId === modelId && cached.result === null) {
@@ -307,7 +259,7 @@ export function useTrunkPlacementV2() {
             }
         }
 
-        const computed = buildCavityStick(tipPos, tipNormal, modelId, mesh);
+        const computed = buildCavityBridge(tipPos, tipNormal, modelId, mesh);
 
         // Cache only misses; successful stick previews should track pointer motion
         // continuously and must not reuse stale geometry.
@@ -426,15 +378,15 @@ export function useTrunkPlacementV2() {
         // IMPORTANT: ANGLE_TOO_STEEP (shallow angle / upward face) is a hard
         // surface rejection that prevents ALL support types — do NOT fall back
         // to a stick or twig for this error.
-        const cavityStickEligible = result.stagnated || result.exhaustedBudget
+        const cavityBridgeEligible = result.stagnated || result.exhaustedBudget
             || (result.error && result.error !== 'ANGLE_TOO_STEEP');
-        if (cavityStickEligible) {
+        if (cavityBridgeEligible) {
             if (mesh) {
                 perfMark('hover:cavity-stick');
-                const cavityStick = resolveCavityStickPreview(hit, tipPos, tipNormal, modelId, mesh);
+                const cavityBridge = resolveCavityBridgePreview(hit, tipPos, tipNormal, modelId, mesh);
                 perfMeasureWithSpike('hover:cavity-stick', 'branch:cavity-stick');
-                if (cavityStick) {
-                    setPreviewData(cavityStick.supportData);
+                if (cavityBridge) {
+                    setPreviewData(cavityBridge.supportData);
                     setPreviewError(null);
                     setPreviewWarning(null);
                     perfEndFrame();
@@ -462,7 +414,7 @@ export function useTrunkPlacementV2() {
         // `tipPos.z >= ANCHOR_HEIGHT_THRESHOLD_MM` and matches it for every
         // finite height; the two differ only on NaN and Infinity, which a
         // raycast hit against real geometry cannot produce.
-        const isNearPlateTip = selectTypeForPlacement('tipHeight', tipPos.z, () => undefined) === 'anchor';
+        const isNearPlateTip = selectTypeForPlacement('tipHeight', tipPos.z) === 'anchor';
         if (!isGridMode && !isNearPlateTip) {
             setPreviewData(result.supportData);
             setPreviewError(forcePlaceOverrideRef.current ? null : (result.error || null));
@@ -539,10 +491,10 @@ export function useTrunkPlacementV2() {
         // reject
         if (decision.kind === 'reject' && decision.reason === 'COLLISION_WITH_MODEL' && mesh) {
             perfMark('hover:cavity-stick');
-            const cavityStick = resolveCavityStickPreview(hit, tipPos, tipNormal, modelId, mesh);
+            const cavityBridge = resolveCavityBridgePreview(hit, tipPos, tipNormal, modelId, mesh);
             perfMeasureWithSpike('hover:cavity-stick', 'branch:cavity-stick');
-            if (cavityStick) {
-                setPreviewData(cavityStick.supportData);
+            if (cavityBridge) {
+                setPreviewData(cavityBridge.supportData);
                 setPreviewError(null);
                 setPreviewWarning(null);
                 perfEndFrame();
@@ -582,7 +534,7 @@ export function useTrunkPlacementV2() {
         );
         setPreviewWarning((prev) => (prev === null ? prev : null));
         perfEndFrame();
-    }, [HOVER_MIN_INTERVAL_MS, HOVER_NORMAL_DOT_MIN, HOVER_POS_EPSILON_MM, clearPreview, isPlacementHardDisabled, resolveCavityStickPreview]);
+    }, [HOVER_MIN_INTERVAL_MS, HOVER_NORMAL_DOT_MIN, HOVER_POS_EPSILON_MM, clearPreview, isPlacementHardDisabled, resolveCavityBridgePreview]);
 
     useEffect(() => {
         forcePlaceOverrideRef.current = forcePlaceActive;
@@ -633,27 +585,18 @@ export function useTrunkPlacementV2() {
         // IMPORTANT: ANGLE_TOO_STEEP (shallow angle / upward face) is a hard
         // surface rejection that prevents ALL support types — do NOT fall back
         // to a stick or twig for this error.
-        const cavityStickEligible = result.stagnated || result.exhaustedBudget
+        const cavityBridgeEligible = result.stagnated || result.exhaustedBudget
             || (result.error && result.error !== 'ANGLE_TOO_STEEP');
-        if (cavityStickEligible) {
+        if (cavityBridgeEligible) {
             if (mesh) {
-                const cavityStick = buildCavityStick(tipPos, tipNormal, modelId, mesh);
-                if (cavityStick) {
-                    if (cavityStick.kind === 'twig') {
-                        const twig = markPlacementSurface('twig', cavityStick.twig, placementSurface);
-                        addTwig(twig);
-                        pushSupportHistory({
-                            type: SUPPORT_ADD_TWIG,
-                            payload: { twig },
-                        });
-                    } else {
-                        const stick = markPlacementSurface('stick', cavityStick.stick, placementSurface);
-                        addStick(stick);
-                        pushSupportHistory({
-                            type: SUPPORT_ADD_STICK,
-                            payload: { stick },
-                        });
-                    }
+                const cavityBridge = buildCavityBridge(tipPos, tipNormal, modelId, mesh);
+                if (cavityBridge) {
+                    // The registry chose the type; committing it needs no
+                    // second choice here.
+                    addSupportEntityWithHistory(
+                        cavityBridge.kind,
+                        markPlacementSurface(cavityBridge.kind, cavityBridge.entity, placementSurface),
+                    );
                     clearSupportSelection();
                     return;
                 }
@@ -800,23 +743,14 @@ export function useTrunkPlacementV2() {
 
         if (decision.kind === 'reject') {
             if (decision.reason === 'COLLISION_WITH_MODEL' && mesh) {
-                const cavityStick = buildCavityStick(tipPos, tipNormal, modelId, mesh);
-                if (cavityStick) {
-                    if (cavityStick.kind === 'twig') {
-                        const twig = markPlacementSurface('twig', cavityStick.twig, placementSurface);
-                        addTwig(twig);
-                        pushSupportHistory({
-                            type: SUPPORT_ADD_TWIG,
-                            payload: { twig },
-                        });
-                    } else {
-                        const stick = markPlacementSurface('stick', cavityStick.stick, placementSurface);
-                        addStick(stick);
-                        pushSupportHistory({
-                            type: SUPPORT_ADD_STICK,
-                            payload: { stick },
-                        });
-                    }
+                const cavityBridge = buildCavityBridge(tipPos, tipNormal, modelId, mesh);
+                if (cavityBridge) {
+                    // The registry chose the type; committing it needs no
+                    // second choice here.
+                    addSupportEntityWithHistory(
+                        cavityBridge.kind,
+                        markPlacementSurface(cavityBridge.kind, cavityBridge.entity, placementSurface),
+                    );
                     clearSupportSelection();
                     return;
                 }
