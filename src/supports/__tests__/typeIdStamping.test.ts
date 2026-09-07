@@ -16,7 +16,7 @@ import {
     updateTrunk,
     updateTwig,
 } from '../state';
-import { draftAddAnchor, draftAddLeaf, draftAddTrunk } from '../autoSupport/supportDraft';
+import { draftAddEntity } from '../autoSupport/supportDraft';
 import { SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { SupportState } from '../types';
 
@@ -129,15 +129,24 @@ test('the auto-support draft adders stamp what they add', () => {
     // stamping pass of its own, so every entity an auto run produces reaches
     // the store unstamped. Invisible today because collection membership still
     // answers the question; fatal once the collections are derived from it.
-    const draft = getSnapshot() as SupportState;
+    let draft = getSnapshot() as SupportState;
 
-    const withTrunk = draftAddTrunk(draft, { id: 'auto-trunk', modelId: 'm', segments: [] } as never);
-    const withLeaf = draftAddLeaf(withTrunk, { id: 'auto-leaf', modelId: 'm' } as never);
-    const withAnchor = draftAddAnchor(withLeaf, { id: 'auto-anchor', modelId: 'm', segments: [] } as never);
+    for (const descriptor of SUPPORT_TYPES) {
+        draft = draftAddEntity(draft, descriptor.id, {
+            id: `auto-${descriptor.id}`,
+            modelId: 'm',
+            segments: [],
+        } as never);
+    }
 
-    assert.equal((withAnchor.trunks['auto-trunk'] as { typeId?: string }).typeId, 'trunk');
-    assert.equal((withAnchor.leaves['auto-leaf'] as { typeId?: string }).typeId, 'leaf');
-    assert.equal((withAnchor.anchors['auto-anchor'] as { typeId?: string }).typeId, 'anchor');
+    for (const descriptor of SUPPORT_TYPES) {
+        const collection = draft[descriptor.location.key] as unknown as Record<string, { typeId?: string }>;
+        assert.equal(
+            collection[`auto-${descriptor.id}`]?.typeId,
+            descriptor.id,
+            `${descriptor.id} entered the draft unstamped`,
+        );
+    }
 });
 
 test('a snapshot restored wholesale keeps every stamp', () => {
