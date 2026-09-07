@@ -38,8 +38,10 @@ export function getSupportsForModel(
 /**
  * Which model a knot's parent shaft belongs to.
  *
- * `parentShaftId` names an entity, except where a type declares a
- * `segmentSelectionPrefix` -- a brace knot hangs off `braceSegment:<id>`.
+ * `parentShaftId` names a SEGMENT on a shafted type -- that is what every knot
+ * on a real shaft carries. A type with no segments hangs its knots off a
+ * synthetic id built from its declared `segmentSelectionPrefix` instead, and
+ * that names the entity.
  */
 export function modelIdOfParentShaft(
     state: Pick<SupportState, SupportCollectionKey>,
@@ -47,16 +49,27 @@ export function modelIdOfParentShaft(
 ): string | null {
     for (const descriptor of SUPPORT_TYPES) {
         const record = state[descriptor.location.key as SupportCollectionKey] as
-            Record<string, { modelId?: string }> | undefined;
+            Record<string, { modelId?: string; segments?: Segment[] }> | undefined;
         if (!record) continue;
 
+        // A declared prefix means the id that follows names the entity.
         const prefix = descriptor.segmentSelectionPrefix;
-        const id = prefix && parentShaftId.startsWith(prefix)
-            ? parentShaftId.slice(prefix.length)
-            : parentShaftId;
+        if (prefix && parentShaftId.startsWith(prefix)) {
+            const modelId = record[parentShaftId.slice(prefix.length)]?.modelId;
+            if (modelId) return modelId;
+            continue;
+        }
 
-        const modelId = record[id]?.modelId;
-        if (modelId) return modelId;
+        // Otherwise it names one of the entity's segments. The bare entity id
+        // is accepted too: older snapshots and previews use it.
+        const direct = record[parentShaftId]?.modelId;
+        if (direct) return direct;
+
+        if (!descriptor.hasSegments) continue;
+        for (const entity of Object.values(record)) {
+            if (!entity.segments?.some((segment) => segment.id === parentShaftId)) continue;
+            return entity.modelId ?? null;
+        }
     }
     return null;
 }
