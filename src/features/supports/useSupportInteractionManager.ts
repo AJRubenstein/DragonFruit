@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore, useRef } from 'react';
 import * as THREE from 'three';
-import type { Brace, Branch, Leaf, SupportMode } from '@/supports/types';
+import type { SupportMode } from '@/supports/types';
 import type { SupportPlacementPreviews } from '@/supports/rendering';
 import { useTrunkPlacementV2 } from '@/supports/SupportTypes/Trunk/useTrunkPlacement';
 import { useBranchPlacement } from '@/supports/SupportTypes/Branch/useBranchPlacement';
@@ -35,8 +35,8 @@ import { cloneSupportState,
 } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
-import { SUPPORT_REMOVE_BRANCH, SUPPORT_REMOVE_BRACE, SUPPORT_REMOVE_LEAF, SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_AUTO_BRACE_REPLACE, SUPPORT_REMOVE_KICKSTAND, type SupportBranchRemovePayload } from '@/supports/history/actionTypes';
-import { getSupportTypeBySelectionCategory, RESHAPED_REMOVAL_PAYLOADS, SUPPORT_TYPES, updateSupportEntity } from '@/supports/supportTypeRegistry';
+import { SUPPORT_REMOVE_BRANCH, SUPPORT_REMOVE_BRACE, SUPPORT_REMOVE_LEAF, SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_AUTO_BRACE_REPLACE, type SupportBranchRemovePayload } from '@/supports/history/actionTypes';
+import { findKnotHost, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, KNOT_HOST_PRECEDENCE, RESHAPED_REMOVAL_PAYLOADS, SUPPORT_TYPES, updateSupportEntity } from '@/supports/supportTypeRegistry';
 import { knotFields } from '@/supports/interaction/shared/selection/selectedIdsByType';
 import { clearSupportSelection, getResolvedPrimarySelection, selectSupportIds } from '@/supports/interaction/shared/selection/selectionController';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
@@ -362,95 +362,16 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       }
 
       if (category === 'knot') {
-        const leaves = getSupportEntities<Leaf>('leaf');
-        const leaf = leaves.find(l => l.parentKnotId === id);
-        if (leaf) {
-          const snapshots = removeLeaf(leaf.id);
-          if (!snapshots) return false;
-          if (recordHistory) {
-            pushSupportHistory({
-              type: SUPPORT_REMOVE_LEAF,
-              payload: { leaf: snapshots.leaf, knot: snapshots.knot ?? undefined },
-            });
-          }
-          setSelectedId(null);
-          return true;
-        }
-
-        const branches = getSupportEntities<Branch>('branch');
-        const branch = branches.find(b => b.parentKnotId === id);
-        if (branch) {
-          const beforeSnapshot = getSnapshot();
-          const snapshots = removeBranch(branch.id);
-          if (!snapshots) return false;
-          const afterSnapshot = getSnapshot();
-
-          let trunkUpdate: SupportBranchRemovePayload['trunkUpdate'];
-          let knotUpdates: SupportBranchRemovePayload['knotUpdates'];
-          const parentKnot = branch.parentKnotId ? beforeSnapshot.knots[branch.parentKnotId] : undefined;
-          const parentSegId = parentKnot?.parentShaftId;
-          const trunkId = parentSegId
-            ? Object.values(beforeSnapshot.trunks).find(t => t.segments.some(s => s.id === parentSegId))?.id
-            : undefined;
-
-          if (trunkId && afterSnapshot.trunks[trunkId]) {
-            const applied = computeAndApplyTrunkDiameterProfile(afterSnapshot, trunkId);
-            if (applied) {
-              for (const u of applied.knotUpdates) updateKnot(u.after);
-              updateSupportEntity('trunk', applied.trunk);
-              const beforeTrunk = beforeSnapshot.trunks[trunkId];
-              if (beforeTrunk) {
-                trunkUpdate = { before: structuredClone(beforeTrunk), after: structuredClone(applied.trunk) };
-                knotUpdates = applied.knotUpdates;
-              }
-            }
-          }
-
-          if (recordHistory) {
-            pushSupportHistory({
-              type: SUPPORT_REMOVE_BRANCH,
-              payload: {
-                ...snapshots,
-                trunkUpdate,
-                knotUpdates,
-              },
-            });
-          }
-          setSelectedId(null);
-          return true;
-        }
-
-        const braces = getSupportEntities<Brace>('brace');
-        const brace = braces.find(br => br.startKnotId === id || br.endKnotId === id);
-        if (brace) {
-          const snapshots = removeBrace(brace.id);
-          if (!snapshots) return false;
-          if (recordHistory) {
-            pushSupportHistory({
-              type: SUPPORT_REMOVE_BRACE,
-              payload: { brace: snapshots.brace, startKnot: snapshots.startKnot ?? undefined, endKnot: snapshots.endKnot ?? undefined },
-            });
-          }
-          setSelectedId(null);
-          return true;
-        }
-
-        const kickstands = Object.values(getSnapshot().kickstands);
-        const kickstand = kickstands.find((ks) => ks.hostKnotId === id);
-        if (kickstand) {
-          const kickstandSnapshots = removeSupportEntity('kickstand', kickstand.id);
-          if (!kickstandSnapshots) return false;
-          if (recordHistory) {
-            pushSupportHistory({
-              type: SUPPORT_REMOVE_KICKSTAND,
-              payload: kickstandSnapshots,
-            });
-          }
-          setSelectedId(null);
-          return true;
-        }
-
-        return false;
+        // Deleting a knot deletes what it hosts. Which types can host, and the
+        // field each reads, come from the declared knot edges; the order is the
+        // precedence this has always used, since a knot can host more than one.
+        const host = findKnotHost(getSnapshot(), id, KNOT_HOST_PRECEDENCE);
+        if (!host) return false;
+        return deleteSelectionByCategoryAndId(
+          getSupportTypeDescriptor(host.typeId).selectionCategory,
+          host.id,
+          recordHistory,
+        );
       }
 
       if (category === 'branch') {

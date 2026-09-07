@@ -1458,3 +1458,47 @@ export const MODEL_ID_COLLECTION_KEYS: readonly SupportCollectionKey[] = [
         .filter((d) => d.carriesModelId)
         .map((d) => d.location.key as SupportCollectionKey),
 ];
+
+/**
+ * The support hanging off a knot, found through the declared knot edges.
+ *
+ * Deleting a knot deletes whatever it hosts, so the search has to cover every
+ * type that can name a knot. Each caller still handles the match its own way --
+ * the payloads differ -- but which types to look at, and which field to read,
+ * comes from the edges rather than a hand-kept list.
+ *
+ * `order` fixes precedence when several types could match, since the first hit
+ * wins at the call site.
+ */
+export function findKnotHost(
+    state: Pick<SupportState, SupportCollectionKey>,
+    knotId: string,
+    order: readonly SupportTypeId[],
+): { typeId: SupportTypeId; id: string } | null {
+    for (const typeId of order) {
+        const descriptor = getSupportTypeDescriptor(typeId);
+        const fields = descriptor.edges
+            .filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy')
+            .map((edge) => edge.field);
+        if (fields.length === 0) continue;
+
+        const record = state[descriptor.location.key] as unknown as
+            Record<string, Record<string, unknown>>;
+        for (const entity of Object.values(record ?? {})) {
+            if (fields.some((field) => entity[field] === knotId)) {
+                return { typeId, id: entity.id as string };
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * Order `findKnotHost` resolves a knot's host in.
+ *
+ * A knot can be named by more than one type at once, and deleting it takes the
+ * first match. This preserves the precedence the delete path has always used.
+ */
+export const KNOT_HOST_PRECEDENCE: readonly SupportTypeId[] = [
+    'leaf', 'branch', 'brace', 'kickstand',
+];
