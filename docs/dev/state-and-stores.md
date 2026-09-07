@@ -54,39 +54,26 @@ and active-material sidecar keys. Minimal examples: `printerReachabilityStore.ts
 
 ## The support store
 
-`src/supports/state.ts` is the largest module store in the codebase (~3 900
-lines) and departs from the shape above in four ways worth knowing before you
-touch it.
+`src/supports/state.ts` is the largest module store here and departs from the
+shape above in four ways:
 
-**Short names, not `subscribeX`/`getXSnapshot`.** It exports plain `subscribe`,
-`getSnapshot` and `setSnapshot`. Importers that already have a `subscribe` in
-scope alias it (`subscribe as subscribeSupportState`) — check for an existing
-alias before adding an import, or you will shadow one.
+- **Short names.** Plain `subscribe` / `getSnapshot` / `setSnapshot`. Importers
+  alias it (`subscribe as subscribeSupportState`); check for an existing alias
+  before adding an import.
+- **No server snapshot.** Consumers pass `getSnapshot` twice or omit the third
+  argument. Safe only because the support scene is client-only — do not copy
+  into a store that renders on the server.
+- **Batched notification.** `beginSupportStateBatch()` / `endSupportStateBatch()`
+  bracket bulk edits so listeners fire once. Use them for any loop touching many
+  entities.
+- **Collections come from the registry.** Derive "every collection" from
+  `SUPPORT_COLLECTION_KEYS`, `MODEL_ID_COLLECTION_KEYS` or
+  `SHAFTED_COLLECTION_KEYS` rather than writing the names out. See
+  [Support System](support-system.md).
 
-**No server snapshot.** It exports no `getServerSnapshot`, so consumers either
-omit the third `useSyncExternalStore` argument or pass `getSnapshot` twice. That
-breaks the stable-reference rule above, and is only safe because the support
-scene is client-only. Do not copy this into a store that renders on the server.
-
-**Batched notification.** `beginSupportStateBatch()` / `endSupportStateBatch()`
-bracket bulk edits; `notify()` sets a pending flag instead of calling listeners
-while a batch is open, and fires once at the end. Use these for any loop that
-mutates many entities, or every consumer re-renders per entity.
-
-**Collections come from the registry.** `SupportState` holds one record per
-support type, and those keys are derived from `supportTypeRegistry.ts` rather
-than hand-listed — `initialState` spreads `createEmptySupportCollections()`. A
-walk that needs "every collection" should derive it (`SUPPORT_COLLECTION_KEYS`,
-`MODEL_ID_COLLECTION_KEYS`, `SHAFTED_COLLECTION_KEYS`) rather than writing the
-names out. See [Support System](support-system.md).
-
-Two caveats. Registry adoption inside `state.ts` itself is still early — most of
-the file names types by hand, so do not assume a helper exists. And kickstands
-live on `SupportState` like every other type: `SupportTypes/Kickstand/kickstandStore.ts`
-is a read-through adapter that derives a filtered view, not a second store.
-Because that view is rebuilt whenever *any* support state changes, a component
-that only needs kickstands should read `state.kickstands` directly and skip the
-adapter's re-render.
+Kickstands live on `SupportState` like every other type;
+`SupportTypes/Kickstand/kickstandStore.ts` is a read-through adapter rebuilt on
+any support change, so read `state.kickstands` directly to avoid its re-render.
 
 ## Preferences module pattern
 
