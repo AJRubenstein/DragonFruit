@@ -2656,20 +2656,34 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     ]);
 
     /** The props every detail renderer takes identically. */
+    /**
+     * The props every detail renderer takes, for one entity.
+     *
+     * Hover is resolved here rather than at each block: the pointer hover and
+     * the marquee both count, and seven blocks wrote that same pair out.
+     */
     const sharedRenderProps = useCallback((
         typeId: SupportTypeId,
         entity: { id: string; modelId?: string },
         isSelected: boolean,
-        isHovered: boolean,
     ) => ({
         isSelected,
         selectedId: isSelected ? selectedId : null,
         dimNonSelected,
-        isHovered,
+        isHovered: hoveredSupportIdForVisual === entity.id
+            || marqueeHoveredSupportIdSet.has(entity.id),
         baseColor: resolveDetailSupportColor(typeId, entity.id, entity.modelId),
         suppressHover,
         isInteractable,
-    }), [selectedId, dimNonSelected, resolveDetailSupportColor, suppressHover, isInteractable]);
+    }), [
+        selectedId,
+        dimNonSelected,
+        hoveredSupportIdForVisual,
+        marqueeHoveredSupportIdSet,
+        resolveDetailSupportColor,
+        suppressHover,
+        isInteractable,
+    ]);
 
     /** Draws one type's batched shaft groups. Six identical blocks became this. */
     const renderSceneBatchedShafts = useCallback((
@@ -3292,8 +3306,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 const renderDetailedTrunk = effectiveSelected && !simpleRender;
                 if (!renderDetailedTrunk) return null;
 
-                const isTrunkHovered = hoveredSupportIdForVisual === trunk.id
-                    || marqueeHoveredSupportIdSet.has(trunk.id);
                 const deferTrunkInteractionToSceneBatch = !effectiveSelected;
 
                 return (
@@ -3304,7 +3316,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         key={trunk.id}
                         trunk={trunk}
                         root={root}
-                        {...sharedRenderProps('trunk', trunk, effectiveSelected, isTrunkHovered)}
+                        {...sharedRenderProps('trunk', trunk, effectiveSelected)}
                         deferStraightShaftsToSceneBatch={!effectiveSelected}
                         deferInteractionToSceneBatch={deferTrunkInteractionToSceneBatch}
                         deferRootsToSceneBatch={!effectiveSelected}
@@ -3326,8 +3338,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 const renderDetailedBranch = effectiveSelected && !simpleRender;
                 if (!renderDetailedBranch) return null;
 
-                const isBranchHovered = hoveredSupportIdForVisual === branch.id
-                    || marqueeHoveredSupportIdSet.has(branch.id);
                 const deferBranchInteractionToSceneBatch = !effectiveSelected;
                 const showKnots = simpleRender ? false : (!hideUnselectedKnots || effectiveSelected);
 
@@ -3337,7 +3347,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         key={branch.id}
                         branch={branch}
                         parentKnot={knot}
-                        {...sharedRenderProps('branch', branch, effectiveSelected, isBranchHovered)}
+                        {...sharedRenderProps('branch', branch, effectiveSelected)}
                         showKnots={showKnots}
                         deferStraightShaftsToSceneBatch={!effectiveSelected}
                         deferInteractionToSceneBatch={deferBranchInteractionToSceneBatch}
@@ -3368,7 +3378,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         key={leaf.id}
                         leaf={leaf}
                         parentKnot={knot}
-                        {...sharedRenderProps('leaf', leaf, effectiveSelected, false)}
+                        {...sharedRenderProps('leaf', leaf, effectiveSelected)}
                         showKnots={showKnots}
                         deferContactConesToSceneBatch={!effectiveSelected && !!leaf.contactCone}
                     />
@@ -3389,8 +3399,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 const effectiveSelected = selectedTwigIds.has(twig.id);
                 const isTwigBatchable = plainShaftsOf('twig').has(twig.id);
 
-                const isTwigHovered = hoveredSupportIdForVisual === twig.id
-                    || marqueeHoveredSupportIdSet.has(twig.id);
                 const deferTwigInteractionToSceneBatch = !effectiveSelected && isTwigBatchable;
 
                 return (
@@ -3398,7 +3406,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                     <TwigRenderer
                         key={twig.id}
                         twig={twig}
-                        {...sharedRenderProps('twig', twig, effectiveSelected, isTwigHovered)}
+                        {...sharedRenderProps('twig', twig, effectiveSelected)}
                         deferStraightShaftsToSceneBatch={!effectiveSelected && isTwigBatchable}
                         deferInteractionToSceneBatch={deferTwigInteractionToSceneBatch}
                     />
@@ -3415,8 +3423,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 const renderDetailedStick = (effectiveSelected || !isStickBatchable) && !simpleRender;
                 if (!renderDetailedStick) return null;
 
-                const isStickHovered = hoveredSupportIdForVisual === stick.id
-                    || marqueeHoveredSupportIdSet.has(stick.id);
                 const deferStickInteractionToSceneBatch = !effectiveSelected && isStickBatchable;
 
                 return (
@@ -3424,7 +3430,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                     <StickRenderer
                         key={stick.id}
                         stick={stick}
-                        {...sharedRenderProps('stick', stick, effectiveSelected, isStickHovered)}
+                        {...sharedRenderProps('stick', stick, effectiveSelected)}
                         deferStraightShaftsToSceneBatch={!effectiveSelected && isStickBatchable}
                         deferInteractionToSceneBatch={deferStickInteractionToSceneBatch}
                         deferContactConesToSceneBatch={!effectiveSelected}
@@ -3446,8 +3452,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 const renderDetailedBrace = effectiveSelected || !isBraceBatchable || isBraceGhosted;
                 if (!renderDetailedBrace) return null;
 
-                const isBraceHovered = hoveredSupportIdForVisual === brace.id
-                    || marqueeHoveredSupportIdSet.has(brace.id);
                 const deferBraceInteractionToSceneBatch = !effectiveSelected && isBraceBatchable;
                 const showKnots = !hideUnselectedKnots || effectiveSelected;
                 const braceStartKnot = braceRenderKnotsById[brace.startKnotId];
@@ -3461,14 +3465,13 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                             brace={brace}
                             startKnot={braceStartKnot}
                             endKnot={braceEndKnot}
-                            isSelected={effectiveSelected}
+                            {...sharedRenderProps('brace', brace, effectiveSelected)}
                             ghosted={isBraceGhosted}
                             ghostOpacity={ghostOpacityClamped}
-                            dimNonSelected={dimNonSelected}
-                            baseColor={resolveBaseColor(brace.modelId)}
                             showKnots={showKnots}
+                            // A ghosted brace is scenery: it neither hovers
+                            // nor picks, whatever the shared props say.
                             suppressHover={suppressHover || isBraceGhosted}
-                            isHovered={isBraceHovered}
                             isInteractable={isInteractable && !isBraceGhosted}
                             deferStraightShaftToSceneBatch={!effectiveSelected && isBraceBatchable && !isBraceGhosted}
                             deferInteractionToSceneBatch={deferBraceInteractionToSceneBatch || isBraceGhosted}
@@ -3489,8 +3492,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 const renderDetailedKickstand = (effectiveSelected || !isKickstandBatchable) && !simpleRender;
                 if (!renderDetailedKickstand) return null;
 
-                const isKickstandHovered = hoveredSupportIdForVisual === kickstand.id
-                    || marqueeHoveredSupportIdSet.has(kickstand.id);
                 const deferKickstandInteractionToSceneBatch = !effectiveSelected && isKickstandBatchable;
                 const showKnot = simpleRender ? false : (!hideUnselectedKnots || effectiveSelected);
 
@@ -3501,7 +3502,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         kickstand={kickstand}
                         root={root}
                         hostKnot={hostKnot}
-                        {...sharedRenderProps('kickstand', kickstand, effectiveSelected, isKickstandHovered)}
+                        {...sharedRenderProps('kickstand', kickstand, effectiveSelected)}
                         showKnot={showKnot}
                         deferStraightShaftsToSceneBatch={!effectiveSelected && isKickstandBatchable}
                         deferInteractionToSceneBatch={deferKickstandInteractionToSceneBatch}
@@ -3516,15 +3517,13 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             {renderAnchorList.map(anchor => {
                 if (!isModelVisible(anchor.modelId, anchor.id)) return null;
                 const effectiveSelected = selectedAnchorIds.has(anchor.id);
-                const isAnchorHovered = hoveredSupportIdForVisual === anchor.id
-                    || marqueeHoveredSupportIdSet.has(anchor.id);
 
                 return (
                     <group key={anchor.id}>
                     <AnchorRenderer
                         key={anchor.id}
                         anchor={anchor}
-                        {...sharedRenderProps('anchor', anchor, effectiveSelected, isAnchorHovered)}
+                        {...sharedRenderProps('anchor', anchor, effectiveSelected)}
                     />
                     </group>
                 );
