@@ -1780,8 +1780,12 @@ export function transformSupportsForModel(
     const touchedSegmentIds = new Set<string>();
     const touchedJointIds = new Set<string>();
     const touchedKnotIds = new Set<string>();
-    const touchedLeafIds = new Set<string>();
-    const touchedBraceIds = new Set<string>();
+    // Touched hosts of the pseudo-shafts a knot can ride, keyed by the prefix
+    // each type declares (`leafCone:`, `braceSegment:`).
+    const touchedKnotHostIdsByPrefix = new Map<string, Set<string>>();
+    for (const descriptor of SUPPORT_TYPES) {
+        if (descriptor.knotHostPrefix) touchedKnotHostIdsByPrefix.set(descriptor.knotHostPrefix, new Set());
+    }
 
     const segmentModelIdById = new Map<string, string | undefined>();
     for (const descriptor of SUPPORT_TYPES) {
@@ -1940,10 +1944,13 @@ export function transformSupportsForModel(
                     const knotId = entity[field];
                     if (typeof knotId === 'string') touchedKnotIds.add(knotId);
                 }
-                if (descriptor.id === 'leaf') touchedLeafIds.add(id);
-                if (descriptor.id === 'brace') {
-                    touchedBraceIds.add(id);
-                    touchedSegmentIds.add(`braceSegment:${id}`);
+                if (descriptor.knotHostPrefix) {
+                    touchedKnotHostIdsByPrefix.get(descriptor.knotHostPrefix)!.add(id);
+                    // A brace's span is itself addressed as a segment; a leaf's
+                    // cone is not, so only a shaftless host claims one.
+                    if (!descriptor.hasSegments && descriptor.segmentSelectionPrefix) {
+                        touchedSegmentIds.add(`${descriptor.segmentSelectionPrefix}${id}`);
+                    }
                 }
                 claimShaft(descriptor, entity);
                 expandedGraph = true;
@@ -2026,14 +2033,15 @@ export function transformSupportsForModel(
 
     for (const knot of Object.values(state.knots)) {
         const parentShaftId = knot.parentShaftId;
-        const isLeafConeKnot = parentShaftId.startsWith('leafCone:')
-            && touchedLeafIds.has(parentShaftId.slice('leafCone:'.length));
-        const isBraceSegmentKnot = parentShaftId.startsWith('braceSegment:')
-            && touchedBraceIds.has(parentShaftId.slice('braceSegment:'.length));
+        let ridesTouchedHost = false;
+        for (const [prefix, touchedHostIds] of touchedKnotHostIdsByPrefix) {
+            if (!parentShaftId.startsWith(prefix)) continue;
+            ridesTouchedHost = touchedHostIds.has(parentShaftId.slice(prefix.length));
+            break;
+        }
         const shouldTransform = touchedKnotIds.has(knot.id)
             || touchedSegmentIds.has(parentShaftId)
-            || isLeafConeKnot
-            || isBraceSegmentKnot;
+            || ridesTouchedHost;
 
         if (!shouldTransform) continue;
 
