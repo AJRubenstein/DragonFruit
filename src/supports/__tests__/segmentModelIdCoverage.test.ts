@@ -87,3 +87,47 @@ test('the shafted set is derived, not a hand-written list', () => {
     assert.deepEqual([...SHAFTED_COLLECTION_KEYS].sort(), declared);
     assert.ok(declared.length >= 6, 'six types carry a shaft today');
 });
+
+test('the batching flags match the shafts a type actually has', () => {
+    // Both flags were extracted from hand-written lists, so they must agree
+    // with the structure they describe rather than with those lists.
+    for (const descriptor of SUPPORT_TYPES) {
+        if (descriptor.batchesShaftJoints || descriptor.batchesPlainShafts) {
+            assert.equal(
+                descriptor.hasSegments,
+                true,
+                `${descriptor.id}: batches shafts, so it must declare one`,
+            );
+        }
+    }
+
+    // Brace has no shaft of its own and anchor builds none, so neither joins
+    // the plain batcher; every other shafted type does.
+    const plain = SUPPORT_TYPES.filter((d) => d.batchesPlainShafts).map((d) => d.id).sort();
+    assert.deepEqual(plain, ['branch', 'kickstand', 'stick', 'trunk', 'twig']);
+
+    const joints = SUPPORT_TYPES.filter((d) => d.batchesShaftJoints).map((d) => d.id).sort();
+    assert.deepEqual(joints, ['branch', 'kickstand', 'stick', 'trunk', 'twig']);
+});
+
+test('a type owning a root or hosted by a knot declares the edge', () => {
+    // The shaft builder reads its hosts off `ownsRoot` and the `hostedBy` knot
+    // edge instead of a per-type closure; these are the declarations it walks.
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.batchesPlainShafts) continue;
+
+        if (descriptor.ownsRoot) {
+            assert.ok(
+                descriptor.edges.some((e) => e.to === 'roots' && e.ownership === 'owns'),
+                `${descriptor.id}: owns a root, so it declares the edge`,
+            );
+        }
+
+        if (descriptor.lower.kind === 'knot') {
+            assert.ok(
+                descriptor.edges.some((e) => e.to === 'knots' && e.ownership === 'hostedBy'),
+                `${descriptor.id}: hangs from a knot, so it declares the edge`,
+            );
+        }
+    }
+});
