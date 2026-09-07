@@ -29,7 +29,6 @@ import { ScreenSpaceGizmo as UnifiedGizmo } from '@/components/gizmo';
 import { warmTransformGizmoGeometryCache } from '@/components/gizmo/gizmoGeometryCache';
 import { cancelActiveGizmoDrag } from '@/components/gizmo/gizmoDragRegistry';
 import { PickingDebugOverlay } from '@/components/picking';
-import { SupportInspectorPanel } from '@/supports/SupportInspectorPanel';
 import { SelectionProvider, SelectionManager, SelectionSpotlight } from '@/components/selection';
 import type { SelectionHighlightMode } from '@/components/selection';
 import type { IslandMarker } from '@/volumeAnalysis/IslandScan/islandOverlayLogic';
@@ -7505,17 +7504,6 @@ export function SceneCanvas({
       {/* GPU Picking Debug Overlay - shows what's under cursor */}
       {gpuPickingTest && <PickingDebugOverlay position="top-right" />}
 
-      {/* Support Inspector - what is selected, what it connects to, and what
-          the active model holds. Sits under the picking readout, which covers
-          the cursor rather than the selection. */}
-      {gpuPickingTest && (
-        <div className="absolute right-3 top-[210px] z-[70]" style={{ pointerEvents: 'none' }}>
-          <SupportInspectorPanel
-            activeModelId={activeModelId}
-            hoveredSupportId={sceneHoveredSupportId}
-          />
-        </div>
-      )}
 
       {showCrossSectionCapDebugPanel && (
         <div

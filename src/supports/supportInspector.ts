@@ -125,6 +125,42 @@ function dependentsOf(
     return found;
 }
 
+/**
+ * The support an id belongs to, following it through anything that is not
+ * itself an entity.
+ *
+ * A pick can land on a joint or a segment, neither of which is keyed by any
+ * collection -- both live inside a shafted entity. Resolving them to the owner
+ * is what makes hovering a joint say something useful.
+ */
+export function ownerOfPickedId(
+    state: InspectorState,
+    id: string,
+): { id: string; via: 'entity' | 'segment' | 'joint' } | null {
+    if (collectionOfEntity(state, id)) return { id, via: 'entity' };
+
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        const record = state[descriptor.location.key as SupportCollectionKey] as unknown as
+            Record<string, { id: string; segments?: {
+                id: string;
+                topJoint?: { id: string } | null;
+                bottomJoint?: { id: string } | null;
+            }[] }>;
+        if (!record) continue;
+
+        for (const entity of Object.values(record)) {
+            for (const segment of entity.segments ?? []) {
+                if (segment.id === id) return { id: entity.id, via: 'segment' };
+                if (segment.topJoint?.id === id || segment.bottomJoint?.id === id) {
+                    return { id: entity.id, via: 'joint' };
+                }
+            }
+        }
+    }
+    return null;
+}
+
 /** Everything the overlay can say about one support, or null if unknown. */
 export function inspectSupport(state: InspectorState, id: string): SupportInspection | null {
     const collection = collectionOfEntity(state, id);
