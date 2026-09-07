@@ -12,7 +12,7 @@ import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFo
 import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/computeRaftOuterBoundary';
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { v4 as uuidv4 } from 'uuid';
-import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeDescriptor } from '@/supports/supportTypeRegistry';
 
 /**
  * One array per collection, keyed off the registry.
@@ -110,28 +110,40 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
     }
   }
 
+  // Knots named by a declared edge onto `knots`, whichever type declares it.
   const referencedKnotIds = new Set<string>();
-  branches.forEach((item) => referencedKnotIds.add(item.parentKnotId));
-  leaves.forEach((item) => referencedKnotIds.add(item.parentKnotId));
-  braces.forEach((item) => {
-    referencedKnotIds.add(item.startKnotId);
-    referencedKnotIds.add(item.endKnotId);
-  });
+  for (const descriptor of SUPPORT_TYPES) {
+    const fields = descriptor.edges
+      .filter((edge) => edge.to === 'knots')
+      .map((edge) => edge.field);
+    if (fields.length === 0) continue;
 
-  const leafIds = new Set(leaves.map((item) => item.id));
-  const braceIds = new Set(braces.map((item) => item.id));
+    const entities = (owned as unknown as Record<string, Record<string, unknown>[]>)[descriptor.location.key] ?? [];
+    for (const entity of entities) {
+      for (const field of fields) {
+        const value = entity[field];
+        if (typeof value === 'string' && value) referencedKnotIds.add(value);
+      }
+    }
+  }
+
+  // Ids of the types a knot can ride instead of a real segment, by prefix.
+  const idsByKnotHostPrefix = new Map<string, Set<string>>();
+  for (const descriptor of SUPPORT_TYPES) {
+    if (!descriptor.knotHostPrefix) continue;
+    const entities = (owned as unknown as Record<string, { id: string }[]>)[descriptor.location.key] ?? [];
+    idsByKnotHostPrefix.set(descriptor.knotHostPrefix, new Set(entities.map((entity) => entity.id)));
+  }
 
   const knots = Object.values(state.knots)
     .filter((item) => {
       if (referencedKnotIds.has(item.id)) return true;
       if (includedSegmentIds.has(item.parentShaftId)) return true;
-      if (item.parentShaftId.startsWith('leafCone:')) {
-        const leafId = item.parentShaftId.slice('leafCone:'.length);
-        return leafIds.has(leafId);
-      }
-      if (item.parentShaftId.startsWith('braceSegment:')) {
-        const braceId = item.parentShaftId.slice('braceSegment:'.length);
-        return braceIds.has(braceId);
+
+      for (const [prefix, ids] of idsByKnotHostPrefix) {
+        if (item.parentShaftId.startsWith(prefix)) {
+          return ids.has(item.parentShaftId.slice(prefix.length));
+        }
       }
       return false;
     })
@@ -159,18 +171,17 @@ function mergeSupportClipboardPayload(
   const state = getSnapshot();
   const kickstandState = getSnapshot();
 
-  const rootIdMap = new Map<string, string>();
-  const knotIdMap = new Map<string, string>();
-  const branchIdMap = new Map<string, string>();
-  const leafIdMap = new Map<string, string>();
-  const twigIdMap = new Map<string, string>();
-  const stickIdMap = new Map<string, string>();
-  const braceIdMap = new Map<string, string>();
+  const idMapsByCollection = new Map<SupportCollectionKey, Map<string, string>>();
+  for (const key of SUPPORT_COLLECTION_KEYS) idMapsByCollection.set(key, new Map());
+  const mapFor = (key: SupportCollectionKey) => idMapsByCollection.get(key)!;
+
+  const rootIdMap = mapFor('roots');
+  const knotIdMap = mapFor('knots');
+  const segmentIdMap = new Map<string, string>();
+  const jointIdMap = new Map<string, string>();
   const kickstandRootIdMap = new Map<string, string>();
   const kickstandKnotIdMap = new Map<string, string>();
   const kickstandIdMap = new Map<string, string>();
-  const segmentIdMap = new Map<string, string>();
-  const jointIdMap = new Map<string, string>();
 
   const clonedRoots = payload.roots.map((root) => {
     const id = uuidv4();
@@ -182,182 +193,90 @@ function mergeSupportClipboardPayload(
     };
   });
 
-  const clonedTrunks = payload.trunks.map((trunk) => {
-    const id = uuidv4();
-    const clonedSegments = trunk.segments.map((segment) => {
-      const segmentId = uuidv4();
-      segmentIdMap.set(segment.id, segmentId);
-      return {
-        ...clonePlain(segment),
-        id: segmentId,
-        topJoint: remapSupportJoint(segment.topJoint, jointIdMap),
-        bottomJoint: remapSupportJoint(segment.bottomJoint, jointIdMap),
-      };
-    });
-
-    return {
-      ...clonePlain(trunk),
-      id,
-      modelId: targetModelId,
-      rootId: getOrCreateMappedId(trunk.rootId, rootIdMap),
-      segments: clonedSegments,
-      contactCone: trunk.contactCone
-        ? {
-            ...clonePlain(trunk.contactCone),
-            id: uuidv4(),
-            socketJointId: trunk.contactCone.socketJointId
-              ? getOrCreateMappedId(trunk.contactCone.socketJointId, jointIdMap)
-              : trunk.contactCone.socketJointId,
-          }
-        : trunk.contactCone,
-    } as Trunk;
-  });
-
+  // Knot ids are claimed before the entities that point at them, so an edge
+  // resolves to the knot's real new id rather than minting a placeholder.
   payload.knots.forEach((knot) => {
     knotIdMap.set(knot.id, uuidv4());
   });
 
-  const clonedBranches = payload.branches.map((branch) => {
+  /**
+   * One support entity, re-identified for the target model.
+   *
+   * Everything the clone touches is declared: `hasSegments` says whether to
+   * walk shafts, `contactFields` names the contact primitives, and `edges`
+   * names each id-bearing field and the collection it points into. A type is
+   * copied by declaring it -- which is how anchors came to be dropped, being
+   * the one type with no edges and an inline root.
+   */
+  const cloneEntity = (descriptor: SupportTypeDescriptor, entity: Record<string, unknown>) => {
     const id = uuidv4();
-    branchIdMap.set(branch.id, id);
+    mapFor(descriptor.location.key).set(entity.id as string, id);
 
-    const clonedSegments = branch.segments.map((segment) => {
-      const segmentId = uuidv4();
-      segmentIdMap.set(segment.id, segmentId);
-      return {
-        ...clonePlain(segment),
-        id: segmentId,
-        topJoint: remapSupportJoint(segment.topJoint, jointIdMap),
-        bottomJoint: remapSupportJoint(segment.bottomJoint, jointIdMap),
+    const next: Record<string, unknown> = { ...clonePlain(entity), id, modelId: targetModelId };
+
+    if (descriptor.hasSegments) {
+      next.segments = ((entity.segments as Segment[] | undefined) ?? []).map((segment) => {
+        const segmentId = uuidv4();
+        segmentIdMap.set(segment.id, segmentId);
+        return {
+          ...clonePlain(segment),
+          id: segmentId,
+          topJoint: remapSupportJoint(segment.topJoint, jointIdMap),
+          bottomJoint: remapSupportJoint(segment.bottomJoint, jointIdMap),
+        };
+      });
+    }
+
+    // An anchor carries a bare `joint` outside its segments; nothing else does.
+    const ownJoint = entity.joint as { id: string } | undefined;
+    if (ownJoint) next.joint = remapSupportJoint(ownJoint as never, jointIdMap);
+
+    for (const field of descriptor.contactFields) {
+      const contact = entity[field] as { id: string; socketJointId?: string } | undefined;
+      if (!contact) continue;
+      next[field] = {
+        ...clonePlain(contact),
+        id: uuidv4(),
+        ...(contact.socketJointId
+          ? { socketJointId: getOrCreateMappedId(contact.socketJointId, jointIdMap) }
+          : {}),
       };
-    });
+    }
 
-    return {
-      ...clonePlain(branch),
-      id,
-      modelId: targetModelId,
-      parentKnotId: getOrCreateMappedId(branch.parentKnotId, knotIdMap),
-      segments: clonedSegments,
-      contactCone: branch.contactCone
-        ? {
-            ...clonePlain(branch.contactCone),
-            id: uuidv4(),
-            socketJointId: branch.contactCone.socketJointId
-              ? getOrCreateMappedId(branch.contactCone.socketJointId, jointIdMap)
-              : branch.contactCone.socketJointId,
-          }
-        : branch.contactCone,
-    } as Branch;
-  });
+    for (const edge of descriptor.edges) {
+      const value = entity[edge.field];
+      if (typeof value !== 'string' || !value) continue;
+      // A `segment` edge names a shaft segment, not a collection member.
+      next[edge.field] = edge.to === 'segment'
+        ? getOrCreateMappedId(value, segmentIdMap)
+        : getOrCreateMappedId(value, mapFor(edge.to));
+    }
 
-  const clonedLeaves = payload.leaves.map((leaf) => {
-    const id = uuidv4();
-    leafIdMap.set(leaf.id, id);
-    return {
-      ...clonePlain(leaf),
-      id,
-      modelId: targetModelId,
-      parentKnotId: getOrCreateMappedId(leaf.parentKnotId, knotIdMap),
-      contactCone: {
-        ...clonePlain(leaf.contactCone),
-        id: uuidv4(),
-        socketJointId: leaf.contactCone.socketJointId
-          ? getOrCreateMappedId(leaf.contactCone.socketJointId, jointIdMap)
-          : leaf.contactCone.socketJointId,
-      },
-    } as Leaf;
-  });
+    return next;
+  };
 
-  const clonedTwigs = payload.twigs.map((twig) => {
-    const id = uuidv4();
-    twigIdMap.set(twig.id, id);
-
-    const clonedSegments = twig.segments.map((segment) => {
-      const segmentId = uuidv4();
-      segmentIdMap.set(segment.id, segmentId);
-      return {
-        ...clonePlain(segment),
-        id: segmentId,
-        topJoint: remapSupportJoint(segment.topJoint, jointIdMap),
-        bottomJoint: remapSupportJoint(segment.bottomJoint, jointIdMap),
-      };
-    });
-
-    return {
-      ...clonePlain(twig),
-      id,
-      modelId: targetModelId,
-      segments: clonedSegments,
-      contactDiskA: {
-        ...clonePlain(twig.contactDiskA),
-        id: uuidv4(),
-      },
-      contactDiskB: {
-        ...clonePlain(twig.contactDiskB),
-        id: uuidv4(),
-      },
-    } as Twig;
-  });
-
-  const clonedSticks = payload.sticks.map((stick) => {
-    const id = uuidv4();
-    stickIdMap.set(stick.id, id);
-
-    const clonedSegments = stick.segments.map((segment) => {
-      const segmentId = uuidv4();
-      segmentIdMap.set(segment.id, segmentId);
-      return {
-        ...clonePlain(segment),
-        id: segmentId,
-        topJoint: remapSupportJoint(segment.topJoint, jointIdMap),
-        bottomJoint: remapSupportJoint(segment.bottomJoint, jointIdMap),
-      };
-    });
-
-    return {
-      ...clonePlain(stick),
-      id,
-      modelId: targetModelId,
-      segments: clonedSegments,
-      contactConeA: {
-        ...clonePlain(stick.contactConeA),
-        id: uuidv4(),
-        socketJointId: stick.contactConeA.socketJointId
-          ? getOrCreateMappedId(stick.contactConeA.socketJointId, jointIdMap)
-          : stick.contactConeA.socketJointId,
-      },
-      contactConeB: {
-        ...clonePlain(stick.contactConeB),
-        id: uuidv4(),
-        socketJointId: stick.contactConeB.socketJointId
-          ? getOrCreateMappedId(stick.contactConeB.socketJointId, jointIdMap)
-          : stick.contactConeB.socketJointId,
-      },
-    } as Stick;
-  });
-
-  const clonedBraces = payload.braces.map((brace) => {
-    const id = uuidv4();
-    braceIdMap.set(brace.id, id);
-    return {
-      ...clonePlain(brace),
-      id,
-      modelId: targetModelId,
-      startKnotId: getOrCreateMappedId(brace.startKnotId, knotIdMap),
-      endKnotId: getOrCreateMappedId(brace.endKnotId, knotIdMap),
-    } as Brace;
-  });
+  /** Cloned entities per collection, keyed the way the merge writes them. */
+  const clonedByCollection = new Map<SupportCollectionKey, Record<string, unknown>[]>();
+  for (const descriptor of SUPPORT_TYPES) {
+    const key = descriptor.location.key;
+    const source = (payload as unknown as Record<string, Record<string, unknown>[]>)[key] ?? [];
+    clonedByCollection.set(key, source.map((entity) => cloneEntity(descriptor, entity)));
+  }
 
   const clonedKnots = payload.knots.map((knot) => {
     const id = knotIdMap.get(knot.id) ?? uuidv4();
 
+    // A knot names a shaft segment, or one of the prefixed pseudo-shafts a
+    // type declares (`leafCone:`, `braceSegment:`) -- resolved through the
+    // prefix owner's own id map.
     let parentShaftId = knot.parentShaftId;
-    if (parentShaftId.startsWith('leafCone:')) {
-      const leafId = parentShaftId.slice('leafCone:'.length);
-      parentShaftId = `leafCone:${getOrCreateMappedId(leafId, leafIdMap)}`;
-    } else if (parentShaftId.startsWith('braceSegment:')) {
-      const braceId = parentShaftId.slice('braceSegment:'.length);
-      parentShaftId = `braceSegment:${getOrCreateMappedId(braceId, braceIdMap)}`;
+    const prefixOwner = SUPPORT_TYPES.find((descriptor) => descriptor.knotHostPrefix
+      && parentShaftId.startsWith(descriptor.knotHostPrefix));
+
+    if (prefixOwner) {
+      const prefix = prefixOwner.knotHostPrefix!;
+      const ownerId = parentShaftId.slice(prefix.length);
+      parentShaftId = `${prefix}${getOrCreateMappedId(ownerId, mapFor(prefixOwner.location.key))}`;
     } else {
       parentShaftId = getOrCreateMappedId(parentShaftId, segmentIdMap);
     }
@@ -414,41 +333,23 @@ function mergeSupportClipboardPayload(
     } as Kickstand;
   });
 
-  const mergedState: SupportState = {
-    ...state,
-    roots: {
-      ...state.roots,
-      ...Object.fromEntries(clonedRoots.map((item) => [item.id, item])),
-    },
-    trunks: {
-      ...state.trunks,
-      ...Object.fromEntries(clonedTrunks.map((item) => [item.id, item])),
-    },
-    branches: {
-      ...state.branches,
-      ...Object.fromEntries(clonedBranches.map((item) => [item.id, item])),
-    },
-    leaves: {
-      ...state.leaves,
-      ...Object.fromEntries(clonedLeaves.map((item) => [item.id, item])),
-    },
-    twigs: {
-      ...state.twigs,
-      ...Object.fromEntries(clonedTwigs.map((item) => [item.id, item])),
-    },
-    sticks: {
-      ...state.sticks,
-      ...Object.fromEntries(clonedSticks.map((item) => [item.id, item])),
-    },
-    braces: {
-      ...state.braces,
-      ...Object.fromEntries(clonedBraces.map((item) => [item.id, item])),
-    },
-    knots: {
-      ...state.knots,
-      ...Object.fromEntries(clonedKnots.map((item) => [item.id, item])),
-    },
-  };
+  // Every entity collection, from the registry. The hand-written list this
+  // replaces omitted `anchors`, so a copied model's anchors were captured and
+  // then silently dropped on paste.
+  const mergedState: SupportState = { ...state };
+  for (const key of SUPPORT_COLLECTION_KEYS) {
+    const cloned = key === 'roots'
+      ? clonedRoots
+      : key === 'knots'
+        ? clonedKnots
+        : clonedByCollection.get(key) ?? [];
+    if (cloned.length === 0) continue;
+
+    (mergedState as unknown as Record<string, Record<string, unknown>>)[key] = {
+      ...(state[key] as unknown as Record<string, unknown>),
+      ...Object.fromEntries((cloned as { id: string }[]).map((item) => [item.id, item])),
+    };
+  }
 
   const mergedKickstandState: KickstandState = {
     ...kickstandState,
@@ -534,13 +435,13 @@ export function estimateSupportBoundsForModel(modelId: string): SupportModelBoun
 
   const knotBelongsToModel = (knot: Knot) => {
     const parentShaftId = knot.parentShaftId;
-    if (parentShaftId.startsWith('leafCone:')) {
-      const leafId = parentShaftId.slice('leafCone:'.length);
-      return state.leaves[leafId]?.modelId === modelId;
-    }
-    if (parentShaftId.startsWith('braceSegment:')) {
-      const braceId = parentShaftId.slice('braceSegment:'.length);
-      return state.braces[braceId]?.modelId === modelId;
+
+    // A knot riding a declared pseudo-shaft belongs to whatever that host does.
+    for (const descriptor of SUPPORT_TYPES) {
+      const prefix = descriptor.knotHostPrefix;
+      if (!prefix || !parentShaftId.startsWith(prefix)) continue;
+      const hosts = state[descriptor.location.key] as unknown as Record<string, { modelId?: string }>;
+      return hosts?.[parentShaftId.slice(prefix.length)]?.modelId === modelId;
     }
 
     // Every shafted type, so a knot riding an anchor or kickstand resolves too.
@@ -622,14 +523,10 @@ export function pasteModelSupportsFromClipboard(
 
   const before = captureSupportEditSnapshot();
 
-  const hasSupports = payload.roots.length
-    + payload.trunks.length
-    + payload.branches.length
-    + payload.leaves.length
-    + payload.twigs.length
-    + payload.sticks.length
-    + payload.braces.length
-    + payload.kickstands.length;
+  // Every collection, from the registry: the hand-written sum omitted
+  // `anchors`, so a model supported only by anchors pasted nothing at all.
+  const hasSupports = SUPPORT_COLLECTION_KEYS
+    .reduce((total, key) => total + (payload[key]?.length ?? 0), 0);
 
   if (hasSupports === 0) return 0;
 

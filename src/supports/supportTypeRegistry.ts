@@ -194,6 +194,14 @@ export interface SupportTypeDescriptor {
      */
     segmentSelectionPrefix?: string;
     /**
+     * Prefix a knot's `parentShaftId` carries when the knot rides this type
+     * rather than a real shaft segment -- a leaf's contact cone, a brace's
+     * span. Distinct from `segmentSelectionPrefix`, which is about selection
+     * ids: the two happen to agree for brace and would not for a type that
+     * hosts knots without being selectable by segment.
+     */
+    knotHostPrefix?: string;
+    /**
      * Whether instances record an auto-support `origin`, which the debug
      * origin-colouring overlay reads.
      */
@@ -527,6 +535,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     {
         id: 'leaf',
         hasEditableSettings: true,
+        knotHostPrefix: 'leafCone:',
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' }],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -673,6 +682,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         contactFields: [],
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         segmentSelectionPrefix: 'braceSegment:',
+        knotHostPrefix: 'braceSegment:',
         hasOrigin: false,
         hasPlacementPreview: true,
         previewShape: 'segment',
