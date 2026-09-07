@@ -2,8 +2,10 @@ import { calculateKnotPositionOnSegmentFromT } from '../SupportPrimitives/Knot/k
 import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
 import type { Branch, Knot, Roots, Trunk, Vec3 } from '../types';
 import type { Kickstand } from '../SupportTypes/Kickstand/types';
+import type { JointDragPreviewTypeId } from '../supportTypeRegistry';
 
-export type JointDragPreviewKind = 'trunk' | 'branch' | 'kickstand';
+/** Types whose joint drags publish a preview, from `JOINT_DRAG_PREVIEW_BY_TYPE`. */
+export type JointDragPreviewKind = JointDragPreviewTypeId;
 
 export interface JointDragPreviewPayload<TSupport = unknown> {
   kind: JointDragPreviewKind;
