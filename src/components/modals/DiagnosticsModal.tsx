@@ -132,6 +132,8 @@ function computeSupportDiagnostics(): SupportDiagnosticsStats {
     const collection = supportState[descriptor.location.key] as unknown as Record<string, { segments?: Segment[] }>;
 
     for (const entity of Object.values(collection ?? {})) {
+      // Brace spans one implicit segment between its two knots. Not derivable
+      // from `knotHostPrefix`: leaf declares one too but spans nothing.
       if (!descriptor.hasSegments) {
         if (descriptor.id === 'brace') segmentCount += 1;
         continue;

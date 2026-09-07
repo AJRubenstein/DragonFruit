@@ -54,6 +54,7 @@ import {
     DEFAULT_SUPPORT_KIND,
     getSupportKindSnapshot,
     isSupportKind,
+    kindHas,
     setActiveSupportKind,
     subscribeToSupportKindState,
 } from './supportKindState';
@@ -856,7 +857,7 @@ export function SupportSidebar() {
                 </div>
             </div>
 
-            {(activeKind === 'trunk' || activeKind === 'branch' || activeKind === 'leaf') && (
+            {kindHas(activeKind, 'hasContactCone') && (
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('tip.lengthMm')}>
                     <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title={_(msg`Contact Cone Length`)}>{_(msg`Contact Cone Length`)}</div>
                     <div className="relative">
@@ -872,7 +873,7 @@ export function SupportSidebar() {
                 </div>
             )}
 
-            {(activeKind === 'trunk' || activeKind === 'branch' || activeKind === 'leaf') && (
+            {kindHas(activeKind, 'hasContactCone') && (
                 <div className="space-y-1 min-w-0" {...fieldFocusProps('tip.coneAngleMode', () => setAnatomyPreviewActiveSettingKey('tip.coneAngleMode'), (e) => {
                     const next = e.relatedTarget as Node | null;
                     if (next && e.currentTarget.contains(next)) return;
@@ -930,7 +931,7 @@ export function SupportSidebar() {
                 </div>
             )}
 
-            {(activeKind === 'trunk' || activeKind === 'branch') && (
+            {kindHas(activeKind, 'hasShaft') && (
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('shaft.diameterMm')}>
                     <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title={_(msg`Trunk Diameter`)}>{_(msg`Trunk Diameter`)}</div>
                     <div className="relative">
@@ -946,7 +947,7 @@ export function SupportSidebar() {
                 </div>
             )}
 
-            {activeKind === 'trunk' && (
+            {kindHas(activeKind, 'hasPlateRoot') && (
                 <>
                     <div className="h-px" style={{ background: 'var(--border-subtle)' }} />
 

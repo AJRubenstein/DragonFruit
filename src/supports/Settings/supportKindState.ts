@@ -8,16 +8,19 @@
  *
  * `drawsOwnPreview` -- the anatomy preview renders this kind itself rather than
  * falling back to the trunk preview.
+ * `hasContactCone` -- the sidebar offers the contact-cone fields (length, angle).
+ * `hasShaft` -- the sidebar offers the shaft diameter field.
+ * `hasPlateRoot` -- the sidebar offers the roots fields.
  */
 export const SUPPORT_KINDS = {
-    trunk: { drawsOwnPreview: false },
-    raft: { drawsOwnPreview: true },
-    leaf: { drawsOwnPreview: false },
-    branch: { drawsOwnPreview: false },
-    stick: { drawsOwnPreview: true },
-    twig: { drawsOwnPreview: false },
-    grid: { drawsOwnPreview: true },
-    auto: { drawsOwnPreview: false },
+    trunk: { drawsOwnPreview: false, hasContactCone: true, hasShaft: true, hasPlateRoot: true },
+    raft: { drawsOwnPreview: true, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
+    leaf: { drawsOwnPreview: false, hasContactCone: true, hasShaft: false, hasPlateRoot: false },
+    branch: { drawsOwnPreview: false, hasContactCone: true, hasShaft: true, hasPlateRoot: false },
+    stick: { drawsOwnPreview: true, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
+    twig: { drawsOwnPreview: false, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
+    grid: { drawsOwnPreview: true, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
+    auto: { drawsOwnPreview: false, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
 } as const;
 
 export type SupportKind = keyof typeof SUPPORT_KINDS;
@@ -30,6 +33,14 @@ export function isSupportKind(value: string): value is SupportKind {
 /** Whether the anatomy preview draws this kind itself. */
 export function kindDrawsOwnPreview(kind: SupportKind): boolean {
     return SUPPORT_KINDS[kind].drawsOwnPreview;
+}
+
+/** Whether the sidebar offers this kind the given settings group. */
+export function kindHas(
+    kind: SupportKind | null | undefined,
+    group: 'hasContactCone' | 'hasShaft' | 'hasPlateRoot',
+): boolean {
+    return !!kind && SUPPORT_KINDS[kind][group];
 }
 
 /**
