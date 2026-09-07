@@ -1,16 +1,9 @@
 /**
- * The sidebar tool selector, and what each tool implies.
+ * The sidebar tool selector. Its own vocabulary, not SupportTypeId: it carries
+ * non-type tools (raft, grid, auto) and omits types with no sidebar tool.
  *
- * Its own vocabulary, not SupportTypeId: it carries non-type tools (raft, grid,
- * auto) and omits types with no sidebar tool. Properties are declared here for
- * the same reason support types declare theirs -- a new tool that forgets one
- * silently inherits the default behaviour.
- *
- * `drawsOwnPreview` -- the anatomy preview renders this kind itself rather than
- * falling back to the trunk preview.
- * `hasContactCone` -- the sidebar offers the contact-cone fields (length, angle).
- * `hasShaft` -- the sidebar offers the shaft diameter field.
- * `hasPlateRoot` -- the sidebar offers the roots fields.
+ * `drawsOwnPreview` -- the anatomy preview draws this kind itself.
+ * `hasContactCone` / `hasShaft` / `hasPlateRoot` -- which settings fields show.
  */
 export const SUPPORT_KINDS = {
     trunk: { drawsOwnPreview: false, hasContactCone: true, hasShaft: true, hasPlateRoot: true },

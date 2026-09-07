@@ -551,10 +551,8 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                     let isBottom = false;
 
                     /**
-                     * @deprecated Hand-written type list; belongs in the
-                     * registry as a declared flag. Blocked on a product
-                     * decision: whether a leaf may sprout from a twig, stick,
-                     * anchor or kickstand joint. See docs/dev/backlog.md.
+                     * @deprecated Belongs in the registry as a declared flag,
+                     * pending a decision on which types may host a sprout.
                      */
                     const leafSproutHosts = ['trunk', 'branch'] as const;
 

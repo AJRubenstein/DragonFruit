@@ -161,8 +161,6 @@ export function registerSupportHistoryHandlers(): () => void {
     //
     // Every type's pair inverts the same way: an add undoes by removing the
     // entity and redoes by restoring the payload; a remove does the reverse.
-    // What a payload carries is SUPPORT_REMOVAL_SHAPES, so both directions read
-    // the declared fields rather than a hand-written list per type.
     ...SUPPORT_TYPES.flatMap((descriptor) => [
       registerSupportHistoryHandler(descriptor.historyAdd, (payload, direction) => {
         const seed = seedEntity(descriptor, payload);

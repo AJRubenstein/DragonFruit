@@ -22,12 +22,8 @@ export type SupportSelectionCategory = SupportTypeId | 'root' | 'joint' | 'knot'
 export type SupportCollectionKey = SupportCollectionName;
 
 /**
- * Where a type's instances live.
- *
- * One store. The union carried a second `{ store: 'kickstand' }` member from
- * when kickstands had their own store; nothing ever set it, so a guard written
- * against it was silently dead. Kept as a discriminated shape rather than a
- * bare key so a future second store is a compile error at every read.
+ * Where a type's instances live. Kept as a discriminated shape rather than a
+ * bare key so a second store would be a compile error at every read.
  */
 export type SupportCollectionLocation = { store: 'support'; key: SupportCollectionKey };
 
@@ -108,34 +104,17 @@ export interface SupportPlacementRule {
 }
 
 /**
- * One link from an entity to something it depends on, or that depends on it.
- *
- * `field` names an id-bearing property on the entity. `to` is what that id
- * points at -- a collection, or `'segment'` for a shaft segment, which is not a
- * collection of its own.
- *
- * `ownership` is the direction the cascade travels, and it is the part that
- * matters:
- *
- * - `owns`     -- removing the ENTITY removes the target. A trunk owns its root.
- * - `hostedBy` -- removing the TARGET removes the entity. A leaf dies with the
- *                 knot it hangs from.
+ * One link between entities. `field` holds the id, `to` names the collection it
+ * points into (or `'segment'`), and `ownership` is the cascade direction:
+ * `owns` removes the target with this entity, `hostedBy` removes this with it.
  */
 export interface SupportEdge {
     field: string;
     to: SupportCollectionKey | 'segment';
     ownership: 'owns' | 'hostedBy';
     /**
-     * For a `hostedBy` edge: whether removing this entity also removes the host.
-     *
-     * - `'never'`     -- leave the host alone (a knot on a shaft segment).
-     * - `'ifUnused'`  -- remove it only when nothing else references it.
-     * - `'always'`    -- remove it regardless.
-     *
-     * The three removers that touch a host knot currently disagree, and the
-     * disagreement is deliberate policy rather than drift: a branch takes its
-     * knot AND everything else on it, a leaf tidies up only when it was the last
-     * user. Declaring it keeps both without a per-type branch in the walk.
+     * For a `hostedBy` edge, whether removing this entity removes the host:
+     * `'never'`, `'ifUnused'` (only when nothing else references it), `'always'`.
      */
     takeHost?: 'never' | 'ifUnused' | 'always';
 }
@@ -194,11 +173,8 @@ export interface SupportTypeDescriptor {
      */
     segmentSelectionPrefix?: string;
     /**
-     * Prefix a knot's `parentShaftId` carries when the knot rides this type
-     * rather than a real shaft segment -- a leaf's contact cone, a brace's
-     * span. Distinct from `segmentSelectionPrefix`, which is about selection
-     * ids: the two happen to agree for brace and would not for a type that
-     * hosts knots without being selectable by segment.
+     * Prefix a knot's `parentShaftId` carries when it rides this type rather
+     * than a real shaft segment: a leaf's contact cone, a brace's span.
      */
     knotHostPrefix?: string;
     /**
@@ -845,18 +821,11 @@ export function resolveKnotDiameter(
 
 /**
  * What each type's removal returns, so undo can rebuild what it deleted.
+ * `self` is the field the entity arrives under; `cascade` maps a collection to
+ * the field its removed members arrive under.
  *
- * `self` is the field the removed entity arrives under; types spell it
- * differently and the history handlers read it by name. `cascade` maps a
- * collection to the field its removed members arrive under -- a plural name
- * gets an array, a singular one at most one entity, and a tuple names slots
- * positionally for links that are not interchangeable (a brace's two ends).
- *
- * Declared `as const` and NOT annotated: the literal types are what
- * {@link SupportRemovalResult} derives the per-type return shapes from, so a
- * field renamed here changes every caller's type. Annotating this would widen
- * the literals to `string` and silently break that link -- the same trap that
- * makes a type-level check against SUPPORT_TYPES impossible.
+ * Must stay `as const` and unannotated: {@link SupportRemovalResult} derives
+ * the per-type return shapes from these literals.
  */
 export const SUPPORT_REMOVAL_SHAPES = {
     trunk: { self: 'trunk', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
@@ -1022,12 +991,7 @@ export function contactEndpointsFor(
     return contacts;
 }
 
-/**
- * Whether any contact this type declares satisfies `test`.
- *
- * Interior filtering asks this of every type; written out per type it covered
- * four of the eight and named the fields by hand.
- */
+/** Whether any contact this type declares satisfies `test`. */
 export function anyContactMatches(
     typeId: SupportTypeId,
     entity: unknown,
@@ -1041,13 +1005,7 @@ export function anyContactMatches(
 /** A settings path a placement threshold may read from. */
 export type SupportPlacementSettingPath = 'meshToMesh.stickVsTwigCutoffMm';
 
-/**
- * Reads a declared settings path off the live settings.
- *
- * Callers used to pass this in, which meant each one spelled out the setting
- * a rule reads -- naming the two types the threshold divides, at sites that
- * have no other reason to know either name.
- */
+/** Reads a declared settings path off the live settings. */
 function readPlacementSetting(path: SupportPlacementSettingPath): number | undefined {
     const settings = getSettings();
     switch (path) {
@@ -1265,9 +1223,7 @@ export function isEditableSupportType(id: string): id is SupportTypeId {
  * Where an auto-placed support came from, and what that implies.
  *
  * `convertibleToTree` gates trunk-to-tree conversion: anchors sit near the
- * plate and island trunks carry their own geometry, so neither converts. Stated
- * as a property because "not an anchor" was previously written out at the call
- * site, where a fifth origin would silently have joined the convertible set.
+ * plate and island trunks carry their own geometry, so neither converts.
  */
 export const SUPPORT_ORIGINS = {
     anchor: { convertibleToTree: false },
@@ -1390,12 +1346,7 @@ export const SUPPORT_PRIMITIVE_COLLECTIONS: readonly {
     },
 ];
 
-/**
- * Every collection that takes part in the dependency graph, with its edges.
- *
- * Support types and primitives both, so a graph walk cannot silently skip the
- * primitives the way one reading SUPPORT_TYPES alone would.
- */
+/** Every collection in the dependency graph, types and primitives both. */
 export const SUPPORT_GRAPH_NODES: readonly {
     key: SupportCollectionKey;
     edges: readonly SupportEdge[];
@@ -1470,15 +1421,8 @@ export const MODEL_ID_COLLECTION_KEYS: readonly SupportCollectionKey[] = [
 ];
 
 /**
- * The support hanging off a knot, found through the declared knot edges.
- *
- * Deleting a knot deletes whatever it hosts, so the search has to cover every
- * type that can name a knot. Each caller still handles the match its own way --
- * the payloads differ -- but which types to look at, and which field to read,
- * comes from the edges rather than a hand-kept list.
- *
- * `order` fixes precedence when several types could match, since the first hit
- * wins at the call site.
+ * The support hanging off a knot, from the declared `hostedBy` edges onto
+ * `knots`. `order` decides which wins when several types name the same knot.
  */
 export function findKnotHost(
     state: Pick<SupportState, SupportCollectionKey>,
@@ -1503,12 +1447,7 @@ export function findKnotHost(
     return null;
 }
 
-/**
- * Order `findKnotHost` resolves a knot's host in.
- *
- * A knot can be named by more than one type at once, and deleting it takes the
- * first match. This preserves the precedence the delete path has always used.
- */
+/** Precedence `findKnotHost` resolves in when several types name one knot. */
 export const KNOT_HOST_PRECEDENCE: readonly SupportTypeId[] = [
     'leaf', 'branch', 'brace', 'kickstand',
 ];
@@ -1516,11 +1455,8 @@ export const KNOT_HOST_PRECEDENCE: readonly SupportTypeId[] = [
 /**
  * Whether each type's joint drags publish a live shaft preview.
  *
- * `as const satisfies` keeps the literals, so `JointDragPreviewKind` narrows to
- * exactly the types declared true -- passing an unsupported one stays a compile
- * error -- while a renamed type is a compile error HERE rather than a literal
- * left stale at the call site. Declared apart from `isAutoBraceable` even though
- * the two sets agree today: one is bracing geometry, the other a drag preview.
+ * `as const satisfies` keeps the literals, so `JointDragPreviewTypeId` narrows
+ * to exactly the types declared true.
  */
 export const JOINT_DRAG_PREVIEW_BY_TYPE = {
     trunk: true,

@@ -2,10 +2,7 @@ import { MODEL_ID_COLLECTION_KEYS, type SupportCollectionKey } from './supportTy
 import type { SupportState } from './types';
 
 /**
- * Keys of `SupportState` holding modelId-bearing support entities.
- *
- * A support's type is implicit -- an entity is a Stick because its id is a key in
- * `state.sticks` -- so a walk that misses a collection fails silently. Excludes
+ * Keys of `SupportState` holding modelId-bearing support entities. Excludes
  * `knots`, which are attachments and carry no modelId.
  */
 export const SUPPORT_ENTITY_COLLECTIONS = MODEL_ID_COLLECTION_KEYS;

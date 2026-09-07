@@ -12,12 +12,8 @@ export interface AutoBracingSettings {
     debugSectionColorsEnabled: boolean;
     debugVoronoiSeedsEnabled: boolean;
     /**
-     * Remove existing bracing before generating.
-     *
-     * True keeps the historical behaviour, where a run replaced all bracing. Only
-     * braces and kickstands this tool generated are removed either way -- a
-     * hand-placed one used to be destroyed regardless, because nothing recorded
-     * who made it.
+     * Remove existing bracing before generating. Only braces and kickstands
+     * this tool generated are removed; `generatedBy` distinguishes them.
      */
     removeExistingBracing: boolean;
 }

@@ -104,14 +104,7 @@ export interface SupportKickstandPayload {
   build: KickstandBuildResult;
 }
 
-/**
- * Removal payloads, derived from what the registry declares each type takes.
- *
- * These were hand-written interfaces repeating `SUPPORT_REMOVAL_SHAPES` --
- * twig, stick and anchor all spelled out `{ self, knots, leaves }`, which is
- * exactly what their declared cascade already says. A field renamed in the
- * shape map is now a compile error here rather than a silent undo failure.
- */
+/** Removal payloads, derived from what the registry declares each type takes. */
 export type SupportTwigPayload = SupportEntityPayload<'twig'>;
 export type SupportStickPayload = SupportEntityPayload<'stick'>;
 export type SupportAnchorPayload = SupportEntityPayload<'anchor'>;

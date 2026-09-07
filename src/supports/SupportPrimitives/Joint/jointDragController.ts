@@ -6,11 +6,8 @@ import { clearSupportDragPreview, emitSupportDragPreview } from './jointDragRunt
 export type JointDragSupportKind = SupportTypeId;
 
 /**
- * The types whose joint drag commits through `commitJointDragSupport`.
- *
- * Every shafted type: the commit writes the entity back and clears its preview,
- * and neither step is type-specific. Twig and stick used to do the same two
- * calls by hand, which is what excluded them from this set.
+ * The types whose joint drag commits through `commitJointDragSupport`: every
+ * shafted type, since the commit is not type-specific.
  */
 export const JOINT_DRAG_COMMIT_TYPES: ReadonlySet<SupportTypeId> = new Set(
   SUPPORT_TYPES.filter((descriptor) => descriptor.hasSegments).map((descriptor) => descriptor.id),
