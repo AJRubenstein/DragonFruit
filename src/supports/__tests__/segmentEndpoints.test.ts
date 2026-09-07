@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-    getBranchSegmentEndpoints,
-    getTrunkSegmentEndpoints,
-} from '../SupportPrimitives/Knot/knotUtils';
 import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
 import { SUPPORT_TYPES } from '../supportTypeRegistry';
-import type { Branch, Knot, Roots, Segment, Trunk } from '../types';
+import type { Branch, Knot, Roots, Segment, Trunk, Vec3 } from '../types';
+
+type Endpoints = { start: Vec3; end: Vec3 };
 
 /**
  * The generic walker must agree with the two functions it replaces.
@@ -67,21 +65,61 @@ const SEGMENT_CASES: [string, Segment[], number, unknown][] = [
     ['second segment with no previous top joint', [segment('s0', 2, null), segment('s1', null, 9)], 1, cone(12)],
 ];
 
+/**
+ * Expected endpoints per case, pinned rather than differential.
+ *
+ * These compared the generic against `getTrunkSegmentEndpoints` and
+ * `getBranchSegmentEndpoints`, which had become one-line wrappers around the
+ * generic -- so both sides ran the same code and the comparison could not
+ * fail. The wrappers are gone; these are the values that implementation
+ * produced, so a change to it has to be deliberate.
+ *
+ * A trunk with no bottom joint starts at its root's top: z = 0 (base) + 0.5
+ * (disk) + 1.5 (cone). A branch starts at its host knot, (5, 6, 7).
+ */
+const EXPECTED: Record<string, { trunk: Endpoints; branch: Endpoints }> = {
+    'both joints': {
+        trunk: { start: { x: 0, y: 0, z: 2 }, end: { x: 0, y: 0, z: 6 } },
+        branch: { start: { x: 5, y: 6, z: 7 }, end: { x: 0, y: 0, z: 6 } },
+    },
+    'no bottom joint, first segment': {
+        trunk: { start: { x: 1, y: 2, z: 2 }, end: { x: 0, y: 0, z: 6 } },
+        branch: { start: { x: 5, y: 6, z: 7 }, end: { x: 0, y: 0, z: 6 } },
+    },
+    'no bottom joint, second segment': {
+        trunk: { start: { x: 0, y: 0, z: 6 }, end: { x: 0, y: 0, z: 9 } },
+        branch: { start: { x: 0, y: 0, z: 6 }, end: { x: 0, y: 0, z: 9 } },
+    },
+    'no top joint, falls to contact': {
+        trunk: { start: { x: 0, y: 0, z: 2 }, end: { x: 0, y: 0, z: 14 } },
+        branch: { start: { x: 5, y: 6, z: 7 }, end: { x: 0, y: 0, z: 14 } },
+    },
+    'no top joint, no contact': {
+        trunk: { start: { x: 0, y: 0, z: 2 }, end: { x: 0, y: 0, z: 12 } },
+        branch: { start: { x: 5, y: 6, z: 7 }, end: { x: 5, y: 6, z: 12 } },
+    },
+    'neither joint': {
+        trunk: { start: { x: 1, y: 2, z: 2 }, end: { x: 0, y: 0, z: 14 } },
+        branch: { start: { x: 5, y: 6, z: 7 }, end: { x: 0, y: 0, z: 14 } },
+    },
+    'second segment with no previous top joint': {
+        trunk: { start: { x: 1, y: 2, z: 2 }, end: { x: 0, y: 0, z: 9 } },
+        branch: { start: { x: 5, y: 6, z: 7 }, end: { x: 0, y: 0, z: 9 } },
+    },
+};
+
 for (const [name, segments, index, contact] of SEGMENT_CASES) {
-    test(`trunk endpoints match the original: ${name}`, () => {
-        const trunk = trunkWith(segments, contact);
-        const r = root();
+    test(`trunk endpoints: ${name}`, () => {
         assert.deepEqual(
-            resolveSegmentEndpoints('trunk', trunk as never, segments[index], index, { root: r }),
-            getTrunkSegmentEndpoints(trunk, segments[index], index, r),
+            resolveSegmentEndpoints('trunk', trunkWith(segments, contact) as never, segments[index], index, { root: root() }),
+            EXPECTED[name].trunk,
         );
     });
 
-    test(`branch endpoints match the original: ${name}`, () => {
-        const branch = branchWith(segments, contact);
+    test(`branch endpoints: ${name}`, () => {
         assert.deepEqual(
-            resolveSegmentEndpoints('branch', branch as never, segments[index], index, { hostKnot }),
-            getBranchSegmentEndpoints(branch, segments[index], index, hostKnot),
+            resolveSegmentEndpoints('branch', branchWith(segments, contact) as never, segments[index], index, { hostKnot }),
+            EXPECTED[name].branch,
         );
     });
 }
@@ -163,27 +201,31 @@ test('a knot upper ends the shaft at the knot it braces', () => {
     );
 });
 
-test('a missing host returns null, as the originals did', () => {
+test('a segment needing a host it was not given resolves to nothing', () => {
+    // Segment 0 has no bottom joint, so it can only start at its declared
+    // host. Without one there is no answer, and inventing an origin would put
+    // the shaft somewhere arbitrary.
     const segments = [segment('s0', null, 6)];
-    const trunk = trunkWith(segments, cone(12));
-    const branch = branchWith(segments, cone(12));
 
-    assert.equal(resolveSegmentEndpoints('trunk', trunk as never, segments[0], 0, { root: null }), null);
-    assert.equal(getTrunkSegmentEndpoints(trunk, segments[0], 0, undefined), null);
-
-    assert.equal(resolveSegmentEndpoints('branch', branch as never, segments[0], 0, { hostKnot: null }), null);
-    assert.equal(getBranchSegmentEndpoints(branch, segments[0], 0, undefined), null);
+    assert.equal(
+        resolveSegmentEndpoints('trunk', trunkWith(segments, cone(12)) as never, segments[0], 0, { root: null }),
+        null,
+    );
+    assert.equal(
+        resolveSegmentEndpoints('branch', branchWith(segments, cone(12)) as never, segments[0], 0, { hostKnot: null }),
+        null,
+    );
 });
 
-test('a root falling back to legacy height matches', () => {
-    // Older roots carried `height` rather than `coneHeight`.
+test('a root carrying the legacy height field still gives a start', () => {
+    // Older roots carried `height` rather than `coneHeight`; the start is the
+    // base plus the disk plus that height: 0 + 0.5 + 4.
     const segments = [segment('s0', null, 6)];
-    const trunk = trunkWith(segments, cone(12));
     const legacy = root({ coneHeight: undefined as never, height: 4 } as never);
 
     assert.deepEqual(
-        resolveSegmentEndpoints('trunk', trunk as never, segments[0], 0, { root: legacy }),
-        getTrunkSegmentEndpoints(trunk, segments[0], 0, legacy),
+        resolveSegmentEndpoints('trunk', trunkWith(segments, cone(12)) as never, segments[0], 0, { root: legacy }),
+        { start: { x: 1, y: 2, z: 4.5 }, end: { x: 0, y: 0, z: 6 } },
     );
 });
 

@@ -1,4 +1,5 @@
-import { calculateKnotPositionOnSegmentFromT, getBranchSegmentEndpoints, getTrunkSegmentEndpoints } from '../SupportPrimitives/Knot/knotUtils';
+import { calculateKnotPositionOnSegmentFromT } from '../SupportPrimitives/Knot/knotUtils';
+import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
 import type { Branch, Knot, Roots, Trunk, Vec3 } from '../types';
 import type { Kickstand } from '../SupportTypes/Kickstand/types';
 
@@ -105,7 +106,7 @@ export function computeJointDragPreviewKnots(
       const segmentKnotIds = candidateKnotIdsByParentShaftId.get(segment.id);
       if (!segmentKnotIds || segmentKnotIds.length === 0) continue;
 
-      const endpoints = getTrunkSegmentEndpoints(trunk, segment, segIndex, root);
+      const endpoints = resolveSegmentEndpoints('trunk', trunk, segment, segIndex, { root });
       if (!endpoints) continue;
 
       for (const knotId of segmentKnotIds) {
@@ -173,7 +174,7 @@ export function computeJointDragPreviewKnots(
     const segmentKnotIds = candidateKnotIdsByParentShaftId.get(segment.id);
     if (!segmentKnotIds || segmentKnotIds.length === 0) continue;
 
-    const endpoints = getBranchSegmentEndpoints(branch, segment, segIndex, parentKnot);
+    const endpoints = resolveSegmentEndpoints('branch', branch, segment, segIndex, { hostKnot: parentKnot });
     if (!endpoints) continue;
 
     for (const knotId of segmentKnotIds) {

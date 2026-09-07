@@ -1,6 +1,6 @@
 import { SupportState, SupportEntityAny, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace, Twig, Stick, Anchor } from './types';
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
-import { getBranchSegmentEndpoints, getTrunkSegmentEndpoints, calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
+import { calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import { resolveSegmentEndpoints } from './SupportPrimitives/Knot/segmentEndpoints';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
@@ -659,10 +659,10 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
                     const firstSeg = segments[0];
                     const lastSeg = segments[segments.length - 1];
                     const firstEndpoints = firstSeg
-                        ? getTrunkSegmentEndpoints(trunkRef.trunk, firstSeg, 0, trunkRef.root)
+                        ? resolveSegmentEndpoints('trunk', trunkRef.trunk, firstSeg, 0, { root: trunkRef.root })
                         : null;
                     const lastEndpoints = lastSeg
-                        ? getTrunkSegmentEndpoints(trunkRef.trunk, lastSeg, segments.length - 1, trunkRef.root)
+                        ? resolveSegmentEndpoints('trunk', trunkRef.trunk, lastSeg, segments.length - 1, { root: trunkRef.root })
                         : null;
 
                     if (segments.length > 0 && firstEndpoints && lastEndpoints) {
@@ -673,7 +673,7 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
 
                         for (let idx = 0; idx < segments.length; idx++) {
                             const candidateSeg = segments[idx];
-                            const candidateEndpoints = getTrunkSegmentEndpoints(trunkRef.trunk, candidateSeg, idx, trunkRef.root);
+                            const candidateEndpoints = resolveSegmentEndpoints('trunk', trunkRef.trunk, candidateSeg, idx, { root: trunkRef.root });
                             if (!candidateEndpoints) continue;
 
                             const candidate = scoreBinding(candidateSeg, candidateEndpoints, idx, segments.length, firstEndpoints.start, lastEndpoints.end);
@@ -699,10 +699,10 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
                             const firstSeg = segments[0];
                             const lastSeg = segments[segments.length - 1];
                             const firstEndpoints = firstSeg
-                                ? getBranchSegmentEndpoints(branchRef.branch, firstSeg, 0, parentKnot)
+                                ? resolveSegmentEndpoints('branch', branchRef.branch, firstSeg, 0, { hostKnot: parentKnot })
                                 : null;
                             const lastEndpoints = lastSeg
-                                ? getBranchSegmentEndpoints(branchRef.branch, lastSeg, segments.length - 1, parentKnot)
+                                ? resolveSegmentEndpoints('branch', branchRef.branch, lastSeg, segments.length - 1, { hostKnot: parentKnot })
                                 : null;
 
                             if (segments.length > 0 && firstEndpoints && lastEndpoints) {
@@ -713,7 +713,7 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
 
                                 for (let idx = 0; idx < segments.length; idx++) {
                                     const candidateSeg = segments[idx];
-                                    const candidateEndpoints = getBranchSegmentEndpoints(branchRef.branch, candidateSeg, idx, parentKnot);
+                                    const candidateEndpoints = resolveSegmentEndpoints('branch', branchRef.branch, candidateSeg, idx, { hostKnot: parentKnot });
                                     if (!candidateEndpoints) continue;
 
                                     const candidate = scoreBinding(candidateSeg, candidateEndpoints, idx, segments.length, firstEndpoints.start, lastEndpoints.end);
@@ -885,18 +885,9 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
         nextLeaves = recomputeKnotDependentGeometry(nextLeaves, changedHostPosById);
     }
 
-    const leafCone1 = recomputeLeafConeKnotGeometry(nextLeaves, nextKnots);
-    const braceSeg1 = recomputeBraceSegmentKnotGeometry(snapshot.braces, leafCone1.knots);
-
-    const changedByBrace1 = getChangedKnotPositions(leafCone1.knots, braceSeg1.knots);
-
-    let finalKnots = braceSeg1.knots;
-    if (Object.keys(changedByBrace1).length > 0) {
-        nextLeaves = recomputeKnotDependentGeometry(nextLeaves, changedByBrace1);
-        const leafCone2 = recomputeLeafConeKnotGeometry(nextLeaves, finalKnots);
-        const braceSeg2 = recomputeBraceSegmentKnotGeometry(snapshot.braces, leafCone2.knots);
-        finalKnots = braceSeg2.knots;
-    }
+    const settled = settleKnotDependentGeometry(snapshot.braces, nextLeaves, nextKnots);
+    nextLeaves = settled.leaves;
+    let finalKnots = settled.knots;
 
     // Strip transient import hints from final runtime output, but persist the resolved
     // normalization intent so VOXL save/load roundtrips can replay the same behavior.
@@ -1003,6 +994,40 @@ function recomputeBraceSegmentKnotGeometry(
     return { knots: nextKnots, changed };
 }
 
+/**
+ * Settle the geometry that hangs off knots, after something moved them.
+ *
+ * Three things chain: a moved knot reshapes the leaves on it, a reshaped leaf
+ * cone moves the knots riding that cone, and a moved knot moves the knots on a
+ * brace spanning it. The second pass runs only when the brace step moved
+ * something, which is the condition for any of it to have changed again.
+ *
+ * Five callers ran this by hand -- an entity update, a leaf update, a brace
+ * update, a knot move and the import normaliser.
+ */
+function settleKnotDependentGeometry(
+    braces: Record<string, Brace>,
+    leaves: Record<string, Leaf>,
+    knots: Record<string, Knot>,
+): { knots: Record<string, Knot>; leaves: Record<string, Leaf> } {
+    let nextLeaves = leaves;
+
+    const leafCone1 = recomputeLeafConeKnotGeometry(nextLeaves, knots);
+    const braceSeg1 = recomputeBraceSegmentKnotGeometry(braces, leafCone1.knots);
+
+    const changedByBrace = getChangedKnotPositions(leafCone1.knots, braceSeg1.knots);
+    if (Object.keys(changedByBrace).length === 0) {
+        return { knots: braceSeg1.knots, leaves: nextLeaves };
+    }
+
+    nextLeaves = recomputeKnotDependentGeometry(nextLeaves, changedByBrace);
+    const leafCone2 = recomputeLeafConeKnotGeometry(nextLeaves, braceSeg1.knots);
+    const braceSeg2 = recomputeBraceSegmentKnotGeometry(braces, leafCone2.knots);
+
+    return { knots: braceSeg2.knots, leaves: nextLeaves };
+}
+
+
 function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: Trunk } | null {
     const trunk = state.trunks[trunkId];
     if (!trunk) return null;
@@ -1042,7 +1067,7 @@ function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: 
         const mergedSegment = after.segments[lowerIndex];
 
         if (root && mergedSegmentId && mergedSegment) {
-            const endpoints = getTrunkSegmentEndpoints(after, mergedSegment, lowerIndex, root);
+            const endpoints = resolveSegmentEndpoints('trunk', after, mergedSegment, lowerIndex, { root });
             if (endpoints) {
                 const startVec = new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z);
                 const endVec = new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z);
@@ -1130,7 +1155,7 @@ function removeBranchJoint(branchId: string, jointId: string): { before: Branch;
         const mergedSegment = after.segments[lowerIndex];
 
         if (parentKnot && mergedSegmentId && mergedSegment) {
-            const endpoints = getBranchSegmentEndpoints(after, mergedSegment, lowerIndex, parentKnot);
+            const endpoints = resolveSegmentEndpoints('branch', after, mergedSegment, lowerIndex, { hostKnot: parentKnot });
             if (endpoints) {
                 const startVec = new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z);
                 const endVec = new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z);
@@ -3282,6 +3307,9 @@ export function updateBrace(brace: Brace) {
     if (!state.braces[brace.id]) return;
     const nextBraces = { ...state.braces, [brace.id]: { ...brace, typeId: 'brace' as const } };
 
+    // The brace's own knots move first -- that is what changed -- and the leaf
+    // pass runs only if they did. Ordering matters here, so this does not use
+    // `settleKnotDependentGeometry`, which starts from the leaf side.
     const braceSeg1 = recomputeBraceSegmentKnotGeometry(nextBraces, state.knots);
     const changedByBrace1 = getChangedKnotPositions(state.knots, braceSeg1.knots);
 
@@ -3366,21 +3394,13 @@ export function updateKnot(knot: Knot, options?: { skipDependentGeometry?: boole
         return;
     }
 
-    let nextLeaves = recomputeKnotDependentGeometry(state.leaves, { [knot.id]: knot.pos });
-    const leafCone1 = recomputeLeafConeKnotGeometry(nextLeaves, baseKnots);
-    const braceSeg1 = recomputeBraceSegmentKnotGeometry(state.braces, leafCone1.knots);
+    const settled = settleKnotDependentGeometry(
+        state.braces,
+        recomputeKnotDependentGeometry(state.leaves, { [knot.id]: knot.pos }),
+        baseKnots,
+    );
 
-    const changedByBrace1 = getChangedKnotPositions(leafCone1.knots, braceSeg1.knots);
-
-    let nextKnots = braceSeg1.knots;
-    if (Object.keys(changedByBrace1).length > 0) {
-        nextLeaves = recomputeKnotDependentGeometry(nextLeaves, changedByBrace1);
-        const leafCone2 = recomputeLeafConeKnotGeometry(nextLeaves, nextKnots);
-        const braceSeg2 = recomputeBraceSegmentKnotGeometry(state.braces, leafCone2.knots);
-        nextKnots = braceSeg2.knots;
-    }
-
-    setState({ ...state, knots: nextKnots, leaves: nextLeaves });
+    setState({ ...state, knots: settled.knots, leaves: settled.leaves });
     notify();
 }
 

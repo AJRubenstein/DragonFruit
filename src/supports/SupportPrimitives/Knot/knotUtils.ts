@@ -1,8 +1,6 @@
 import * as THREE from 'three';
-import { Branch, Knot, Roots, Segment, Trunk, Vec3 } from '../../types';
-import { getFinalSocketPosition } from '../ContactCone';
+import { Knot, Segment, Vec3 } from '../../types';
 import { getBezierPointAtT } from '../../Curves/BezierUtils';
-import { resolveSegmentEndpoints } from './segmentEndpoints';
 
 export function projectOntoSegment(
     ray: THREE.Ray,
@@ -20,26 +18,6 @@ export function projectOntoSegment(
         point: { x: pointOnSegment.x, y: pointOnSegment.y, z: pointOnSegment.z },
         t: Math.min(1, Math.max(0, t)),
     };
-}
-
-/** @deprecated Prefer `resolveSegmentEndpoints('trunk', ...)`. */
-export function getTrunkSegmentEndpoints(
-    trunk: Trunk,
-    segment: Segment,
-    segmentIndex: number,
-    root: Roots | undefined
-): { start: Vec3; end: Vec3 } | null {
-    return resolveSegmentEndpoints('trunk', trunk, segment, segmentIndex, { root });
-}
-
-/** @deprecated Prefer `resolveSegmentEndpoints('branch', ...)`. */
-export function getBranchSegmentEndpoints(
-    branch: Branch,
-    segment: Segment,
-    segmentIndex: number,
-    parentKnot: Knot | undefined
-): { start: Vec3; end: Vec3 } | null {
-    return resolveSegmentEndpoints('branch', branch, segment, segmentIndex, { hostKnot: parentKnot });
 }
 
 /**
