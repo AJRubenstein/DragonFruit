@@ -26,18 +26,13 @@ import { isSupportEditInteractionActive } from '../../interaction/gizmoInteracti
 import { previewVecKey, previewNormalKey, quantizePreviewValue } from '../shared/previewSignature';
 import { getClipBounds } from '@/components/scene/SceneCanvas/clipBoundsStore';
 import { findClosestMeshToPoint, calculateSmoothedNormal } from '../../PlacementLogic/PlacementUtils';
+import { markPlacementSurface } from '../../PlacementLogic/placementSurface';
 
 interface ShaftHoverDetail {
     segmentId?: string | null;
     point?: Vec3 | null;
 }
 
-type PlacementSurface = 'interior' | 'exterior';
-
-function markContactPlacementSurface<T extends { placementSurface?: PlacementSurface } | undefined>(contact: T, surface?: PlacementSurface): T {
-    if (!contact || !surface) return contact;
-    return { ...contact, placementSurface: surface } as T;
-}
 
 // Pooled scratch objects — reused each frame to avoid per-frame GC pressure.
 const _buildPlate = new THREE.Plane();
@@ -654,12 +649,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                     hostDiameterMm,
                     mesh: resolveTipMesh(tipPosition),
                 });
-                const markedLeaf = placementSurface
-                    ? {
-                        ...leaf,
-                        contactCone: markContactPlacementSurface(leaf.contactCone, placementSurface),
-                    }
-                    : leaf;
+                const markedLeaf = markPlacementSurface('leaf', leaf, placementSurface);
 
                 addLeaf(markedLeaf);
 
@@ -730,12 +720,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                     hostDiameterMm,
                     mesh: resolveTipMesh(tipPosition),
                 });
-                const markedLeaf = placementSurface
-                    ? {
-                        ...leaf,
-                        contactCone: markContactPlacementSurface(leaf.contactCone, placementSurface),
-                    }
-                    : leaf;
+                const markedLeaf = markPlacementSurface('leaf', leaf, placementSurface);
 
                 addKnot(parentKnot);
                 addLeaf(markedLeaf);

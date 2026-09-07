@@ -50,11 +50,11 @@ test('a registered builder returns an entity with a shaft', () => {
     };
 
     for (const typeId of contactBridgeTypes()) {
-        const built = buildContactBridge(typeId, request) as
-            { id: string; segments?: unknown[] } | null;
+        const built = buildContactBridge(typeId, request);
         assert.ok(built, `${typeId} built a bridge`);
-        assert.ok(built.id, `${typeId} bridge has an id`);
-        assert.ok(built.segments?.length, `${typeId} bridge has a shaft`);
+        const entity = built.entity as { id: string; segments?: unknown[] };
+        assert.ok(entity.id, `${typeId} bridge has an id`);
+        assert.ok(entity.segments?.length, `${typeId} bridge has a shaft`);
     }
 });
 

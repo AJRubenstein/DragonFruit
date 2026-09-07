@@ -7,12 +7,13 @@ import { useInteractionStatus } from '../../interaction/useInteractionStatus';
 import { buildTrunkData } from './trunkBuilder';
 import { applyTrunkReplacement, computeAndApplyTrunkDiameterProfile, planTrunkReplacement } from './TrunkReplacement';
 import { supportDataForEntity, type SupportData } from '../../rendering/SupportBuilder';
+import { markPlacementSurface, markSupportDataPlacementSurface, type PlacementSurface } from '../../PlacementLogic/placementSurface';
 import type { Anchor, Branch, ContactDisk, Leaf, LimitationCode, Segment, Stick, Twig, WarningCode } from '../../types';
 import type { ContactCone } from '../../SupportPrimitives/ContactCone/types';
 import { calculateSmoothedNormal } from '../../PlacementLogic/PlacementUtils';
 import { getSettings } from '../../Settings/state';
 import { decideGridPlacement } from '../../PlacementLogic/Grid';
-import { buildContactBridge, contactEndpointsFor, selectTypeForPlacement, type SupportTypeId } from '../../supportTypeRegistry';
+import { buildContactBridge, selectTypeForPlacement, type SupportTypeId } from '../../supportTypeRegistry';
 import { shaftVerticalCos } from '../Stick/stickVerticality';
 import { clearSupportSelection } from '../../interaction/shared/selection/selectionController';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
@@ -33,46 +34,8 @@ const CAVITY_PREVIEW_CACHE_POS_EPSILON_MM = 1.0;
 const CAVITY_PREVIEW_CACHE_NORMAL_DOT_MIN = 0.99;
 const CAVITY_PREVIEW_CACHE_MISS_MAX_AGE_MS = 220;
 
-type PlacementSurface = 'interior' | 'exterior';
-
 function getPlacementSurfaceFromHit(hit: THREE.Intersection | null): PlacementSurface | undefined {
     return hit?.object?.userData?.supportPlacementSurface === 'interior' ? 'interior' : undefined;
-}
-
-function markContactPlacementSurface<T>(contact: T, surface?: PlacementSurface): T {
-    if (!contact || !surface) return contact;
-    return { ...contact, placementSurface: surface } as T;
-}
-
-/**
- * Stamps the placement surface on a support's declared contacts.
- *
- * Which fields those are comes from the registry, so this is one function
- * rather than one per type. Cone and disk take the same stamp; they differed
- * only in the generic they were written against.
- */
-function markPlacementSurface<T extends object>(
-    typeId: SupportTypeId,
-    entity: T,
-    surface?: PlacementSurface,
-): T {
-    if (!surface) return entity;
-
-    const next = { ...entity } as Record<string, unknown>;
-    for (const { field } of contactEndpointsFor(typeId)) {
-        if (next[field]) next[field] = markContactPlacementSurface(next[field], surface);
-    }
-    return next as T;
-}
-
-function markSupportDataPlacementSurface(data: SupportData, surface?: PlacementSurface): SupportData {
-    if (!surface) return data;
-    return {
-        ...data,
-        contactCone: markContactPlacementSurface(data.contactCone, surface),
-        contactCones: data.contactCones?.map((cone) => markContactPlacementSurface(cone, surface)),
-        contactDisks: data.contactDisks?.map((disk) => markContactPlacementSurface(disk, surface)),
-    };
 }
 
 function markTrunkBuildPlacementSurface<T extends ReturnType<typeof buildTrunkData>>(build: T, surface?: PlacementSurface): T {
@@ -192,7 +155,6 @@ export function buildCavityBridge(
     const bPos = { x: chosen.hit.point.x, y: chosen.hit.point.y, z: chosen.hit.point.z };
     const bNormal = { x: chosen.normal.x, y: chosen.normal.y, z: chosen.normal.z };
 
-
     const dx = tipPos.x - bPos.x;
     const dy = tipPos.y - bPos.y;
     const dz = tipPos.z - bPos.z;
@@ -202,7 +164,7 @@ export function buildCavityBridge(
 
     if (kind === 'stick' && reachedSideways && dist > cutoff) return null;
 
-    const entity = buildContactBridge(kind, {
+    const built = buildContactBridge(kind, {
         modelId,
         aPos: tipPos,
         aNormal: tipNormal,
@@ -210,8 +172,9 @@ export function buildCavityBridge(
         bNormal,
         shaftDiameterMm: sizing?.shaftDiameterMm,
         tipContactDiameterMm: sizing?.tipContactDiameterMm,
-    }) as BridgingEntity | null;
-    if (!entity) return null;
+    });
+    if (!built) return null;
+    const entity = built.entity as BridgingEntity;
 
     // Twigs are short bridges, not lateral props: the visible shaft
     // (socket to socket — a sidewall landing's standoff is what shoves a
