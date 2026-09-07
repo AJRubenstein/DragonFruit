@@ -1356,41 +1356,6 @@ export function reassignAllSupportModelIds(modelId: string): boolean {
     return changed || kickstandChanged;
 }
 
-/**
- * Stamp every entity with the type of the collection holding it. Entities are
- * built unstamped; the store is where `typeId` is applied.
- *
- * Returns `next` unchanged when nothing needed stamping.
- */
-export function stampSupportTypeIds(next: SupportState): SupportState {
-    let changedAny = false;
-    const patched: Record<string, Record<string, unknown>> = {};
-
-    for (const descriptor of SUPPORT_TYPES) {
-        const key = descriptor.location.key;
-        const collection = next[key] as unknown as Record<string, { typeId?: SupportTypeId }>;
-        if (!collection) continue;
-
-        let changed = false;
-        let nextCollection = collection as Record<string, unknown>;
-
-        for (const id in collection) {
-            if (collection[id]?.typeId === descriptor.id) continue;
-            if (!changed) {
-                nextCollection = { ...collection };
-                changed = true;
-            }
-            nextCollection[id] = { ...collection[id], typeId: descriptor.id };
-        }
-
-        if (changed) {
-            patched[key] = nextCollection;
-            changedAny = true;
-        }
-    }
-
-    return changedAny ? { ...next, ...patched } as SupportState : next;
-}
 
 /**
  * Install each collection name as a view over `state.supports`. Enumerable, so
@@ -3501,12 +3466,6 @@ export function getSupportTypeOf(id: string): SupportTypeId | null {
     return null;
 }
 
-/** One entity of any type, by id, without knowing its type first. */
-export function findSupportEntity(id: string): { typeId: SupportTypeId; entity: unknown } | null {
-    const typeId = getSupportTypeOf(id);
-    if (!typeId) return null;
-    return { typeId, entity: getSupportEntity(typeId, id) };
-}
 
 /** Which support owns a shaft segment, searching every shafted type. */
 export function findShaftOwnerOfSegment(
