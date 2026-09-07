@@ -495,19 +495,6 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         return true;
       }
 
-      if (category === 'kickstand') {
-        const kickstandSnapshots = removeSupportEntity('kickstand', id);
-        if (!kickstandSnapshots) return false;
-        if (recordHistory) {
-          pushSupportHistory({
-            type: SUPPORT_REMOVE_KICKSTAND,
-            payload: kickstandSnapshots,
-          });
-        }
-        setSelectedId(null);
-        return true;
-      }
-
       if (category === 'brace') {
         const snapshots = removeBrace(id);
         if (!snapshots) return false;
