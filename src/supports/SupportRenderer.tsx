@@ -3368,13 +3368,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         key={leaf.id}
                         leaf={leaf}
                         parentKnot={knot}
-                        selectedId={selectedId}
-                        isSelected={effectiveSelected}
-                        dimNonSelected={dimNonSelected}
-                        baseColor={resolveDetailSupportColor('leaf', leaf.id, leaf.modelId)}
+                        {...sharedRenderProps('leaf', leaf, effectiveSelected, false)}
                         showKnots={showKnots}
-                        suppressHover={suppressHover}
-                        isInteractable={isInteractable}
                         deferContactConesToSceneBatch={!effectiveSelected && !!leaf.contactCone}
                     />
                     </group>
@@ -3506,14 +3501,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         kickstand={kickstand}
                         root={root}
                         hostKnot={hostKnot}
-                        isSelected={effectiveSelected}
-                        selectedId={effectiveSelected ? selectedId : null}
-                        dimNonSelected={dimNonSelected}
-                        isHovered={isKickstandHovered}
-                        baseColor={resolveBaseColor(kickstand.modelId)}
+                        {...sharedRenderProps('kickstand', kickstand, effectiveSelected, isKickstandHovered)}
                         showKnot={showKnot}
-                        suppressHover={suppressHover}
-                        isInteractable={isInteractable}
                         deferStraightShaftsToSceneBatch={!effectiveSelected && isKickstandBatchable}
                         deferInteractionToSceneBatch={deferKickstandInteractionToSceneBatch}
                         hidePlateContactPrimitives={hidePlateContactPrimitivesEffective}
