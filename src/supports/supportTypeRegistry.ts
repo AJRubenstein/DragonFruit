@@ -372,6 +372,14 @@ export interface SupportTypeDescriptor {
      */
     batchesContactCones: boolean;
     /**
+     * Whether the type's shaft joints are drawn by the shared batched pass.
+     *
+     * The joints a shaft carries hang off its segments. Anchor declares a
+     * shaft but builds none, keeping its single joint on the entity instead,
+     * so there is nothing per-segment for the batch to collect.
+     */
+    batchesShaftJoints: boolean;
+    /**
      * Whether dragging a joint re-solves the type's contact primitives.
      *
      * True where both ends are contacts against the model: moving an end
@@ -431,6 +439,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: true,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        batchesShaftJoints: true,
         bezierContextIdPrefix: '',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: true,
@@ -474,6 +483,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        batchesShaftJoints: true,
         bezierContextIdPrefix: 'branch-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
@@ -517,6 +527,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        batchesShaftJoints: false,
         bezierContextIdPrefix: 'leaf-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
@@ -558,6 +569,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
+        batchesShaftJoints: true,
         bezierContextIdPrefix: 'twig-',
         broadcastsAttachmentsWhileDragging: true,
         knotTakesJointDiameter: false,
@@ -595,6 +607,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
+        batchesShaftJoints: true,
         bezierContextIdPrefix: 'stick-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
@@ -636,6 +649,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
+        batchesShaftJoints: false,
         bezierContextIdPrefix: 'brace-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
@@ -673,6 +687,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
+        batchesShaftJoints: false,
         bezierContextIdPrefix: 'anchor-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
@@ -713,6 +728,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: false,
         batchesContactCones: false,
+        batchesShaftJoints: true,
         bezierContextIdPrefix: 'kickstand-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
