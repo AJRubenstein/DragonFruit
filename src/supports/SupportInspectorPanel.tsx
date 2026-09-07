@@ -3,7 +3,7 @@
 import React, { useMemo, useSyncExternalStore } from 'react';
 
 import { subscribe, getSnapshot } from './state';
-import { inspectSupport, ownerOfPickedId, type SupportInspection } from './supportInspector';
+import { dumpSupportGroup, inspectSupport, ownerOfPickedId, type SupportInspection } from './supportInspector';
 import { useResolvedSelectionState } from './interaction/shared/selection/resolvedSelectionStore';
 import { getSupportsForModel, modelIdOfParentShaft } from './PlacementLogic/SupportModelLinker';
 import {
@@ -149,6 +149,33 @@ export function SupportInspectorPanel({
         [state, hoveredOwner, primary],
     );
 
+    const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'failed'>('idle');
+
+    // The label reverts on its own so the button does not stay stale after a
+    // copy, and resets when the selection moves on.
+    React.useEffect(() => {
+        setCopyState('idle');
+    }, [primary?.id]);
+
+    React.useEffect(() => {
+        if (copyState === 'idle') return;
+        const timer = window.setTimeout(() => setCopyState('idle'), 2000);
+        return () => window.clearTimeout(timer);
+    }, [copyState]);
+
+    const copyGroup = React.useCallback(() => {
+        if (!primary) return;
+        const dump = dumpSupportGroup(state, primary.id);
+        if (!dump) {
+            setCopyState('failed');
+            return;
+        }
+        navigator.clipboard?.writeText(dump).then(
+            () => setCopyState('copied'),
+            () => setCopyState('failed'),
+        );
+    }, [state, primary]);
+
     /**
      * Scene-wide and active-model counts, per collection.
      *
@@ -202,15 +229,33 @@ export function SupportInspectorPanel({
                             : 'Nothing selected'}
                     </div>
                 ) : (
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                        <InspectionRows inspection={inspection} />
-                        {primary && primary.via !== 'entity' && (
-                            <>
-                                <div style={MUTED}>Picked</div>
-                                <div>{primary.via} {short(picked!)}</div>
-                            </>
-                        )}
-                    </div>
+                    <>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                            <InspectionRows inspection={inspection} />
+                            {primary && primary.via !== 'entity' && (
+                                <>
+                                    <div style={MUTED}>Picked</div>
+                                    <div>{primary.via} {short(picked!)}</div>
+                                </>
+                            )}
+                        </div>
+                        <button
+                            type="button"
+                            className="mt-1.5 w-full rounded border px-2 py-1 text-[10px]"
+                            style={{
+                                borderColor: 'var(--border-subtle)',
+                                color: copyState === 'failed' ? '#ff8a8a' : 'var(--text-muted)',
+                                pointerEvents: 'auto',
+                            }}
+                            onClick={copyGroup}
+                        >
+                            {copyState === 'copied'
+                                ? `Copied ${inspection.cascadeCount + 1} entities`
+                                : copyState === 'failed'
+                                    ? 'Copy failed'
+                                    : `Copy this + ${inspection.cascadeCount} connected`}
+                        </button>
+                    </>
                 )}
             </div>
 

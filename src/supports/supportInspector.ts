@@ -7,7 +7,7 @@ import {
     type SupportEndpointKind,
     type SupportTypeId,
 } from './supportTypeRegistry';
-import { collectCascade } from './supportCascade';
+import { collectCascade, groupByCollection } from './supportCascade';
 import { modelIdOfParentShaft } from './PlacementLogic/SupportModelLinker';
 import type { SupportState } from './types';
 
@@ -209,4 +209,42 @@ export function inspectSupport(state: InspectorState, id: string): SupportInspec
         cascadeCount: Math.max(0, collectCascade(state, [{ collection, id }]).size - 1),
         danglingLinks: links.filter((link) => !link.resolved),
     };
+}
+
+/**
+ * The selected support and everything connected to it, as JSON.
+ *
+ * The set is the cascade -- what removing this support would take -- so the
+ * dump is exactly the group that stands or falls together. Entities are
+ * emitted whole rather than summarised: the point is to paste the real data
+ * into a bug report.
+ */
+export function dumpSupportGroup(state: InspectorState, id: string): string | null {
+    const collection = collectionOfEntity(state, id);
+    if (!collection) return null;
+
+    const grouped = groupByCollection(collectCascade(state, [{ collection, id }]));
+    const entities: Record<string, Record<string, unknown>> = {};
+    let total = 0;
+
+    for (const [key, ids] of grouped) {
+        const record = state[key] as unknown as Record<string, unknown> | undefined;
+        if (!record) continue;
+
+        const bucket: Record<string, unknown> = {};
+        for (const entityId of [...ids].sort()) {
+            if (!(entityId in record)) continue;
+            bucket[entityId] = record[entityId];
+            total += 1;
+        }
+        if (Object.keys(bucket).length > 0) entities[key] = bucket;
+    }
+
+    return JSON.stringify({
+        capturedAt: new Date().toISOString(),
+        root: { id, collection },
+        inspection: inspectSupport(state, id),
+        entityCount: total,
+        entities,
+    }, null, 2);
 }

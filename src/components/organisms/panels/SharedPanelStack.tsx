@@ -6,6 +6,7 @@ import type { useSceneCollectionManager } from '@/features/scene/useSceneCollect
 import type { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import type { useTransformManager } from '@/features/transform/useTransformManager';
 import { SupportInspectorPanel } from '@/supports/SupportInspectorPanel';
+import { Card, CardHeader } from '@/components/atoms/Card';
 
 type DebugStamp = { perfMs: number; epochMs: number };
 type Vec3Like = { x: number; y: number; z: number };
@@ -203,29 +204,29 @@ export function SharedPanelStack({
       )}
 
       {isTransformDebugOverlayOpen && (
-        <div
+        <Card
           key="transform-debug-overlay"
-          className="rounded-lg border p-2.5 font-mono text-[10px] leading-tight shadow-xl"
-          style={{
-            borderColor: 'var(--border-subtle)',
-            color: 'var(--text-strong)',
-            background: 'color-mix(in srgb, var(--surface-0), black 14%)',
-            fontSize: '10px',
-          }}
+          className="font-mono text-[10px] leading-tight"
+          style={{ color: 'var(--text-strong)', fontSize: '10px' }}
         >
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-xs font-semibold" style={{ fontFamily: 'var(--font-geist-mono)' }}>
-              {scene.mode === 'printing' ? 'Printing Debug Overlay' : scene.mode === 'support' ? 'Support Debug Overlay' : 'Transform Debug Overlay'}
-            </div>
-            <button
-              type="button"
-              className="rounded border px-2 py-0.5 text-[10px]"
-              style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
-              onClick={() => setIsTransformDebugOverlayOpen(false)}
-            >
-              Close
-            </button>
-          </div>
+          <CardHeader
+            left={(
+              <h3 className="text-xs font-semibold" style={{ fontFamily: 'var(--font-geist-mono)' }}>
+                {scene.mode === 'printing' ? 'Printing Debug Overlay' : scene.mode === 'support' ? 'Support Debug Overlay' : 'Transform Debug Overlay'}
+              </h3>
+            )}
+            right={(
+              <button
+                type="button"
+                className="rounded border px-2 py-0.5 text-[10px]"
+                style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
+                onClick={() => setIsTransformDebugOverlayOpen(false)}
+              >
+                Close
+              </button>
+            )}
+          />
+          <div className="px-2.5 pb-2.5">
 
           {scene.mode === 'printing' ? (
             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
@@ -430,7 +431,8 @@ export function SharedPanelStack({
           <div className="mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
             Toggle: Ctrl+Shift+X
           </div>
-        </div>
+          </div>
+        </Card>
       )}
     </>
   );
