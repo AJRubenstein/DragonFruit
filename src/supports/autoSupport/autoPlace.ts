@@ -5,11 +5,8 @@ import * as THREE from 'three';
 import { quantizeToScale } from '@/utils/math';
 
 /**
- * Diagnostics are reported to 2dp. `quantizeToScale` is the shared form of the
- * `Math.round(v * 100) / 100` this file used to define locally, so the numbers
- * are unchanged. Note it is NOT interchangeable with `round(v, 2)` from the same
- * module: that rounds the decimal representation and the two disagree on values
- * that land exactly halfway, which authored 0.001-grid dimensions often do.
+ * Diagnostics to 2dp. NOT interchangeable with `round(v, 2)`: that rounds the
+ * decimal representation, and the two disagree on exact halfway values.
  */
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
@@ -827,21 +824,11 @@ function placeOneCandidate(
             const band = activeSizingBand();
             const cavityResult = buildCavityBridge(tipPos, tipNormal, candidate.modelId, mesh, band);
             if (cavityResult) {
-                // Long model-to-model bridges under an overhang (jaw → chest)
-                // read as "sticks under the jaw" and are rarely printable —
-                // the older dev build simply rejected these instead of bridging.
-                // Keep short twigs (<5 mm, true cavities) but cap long sticks:
-                // require the bridge to be < 12 mm, otherwise fall through to
-                // reject. The tip will then be reconsidered via fan/merge in a
-                // later pass or left unsupported (coverage still 100% per
-                // report).
-                // BUG (pre-existing, see docs/dev/backlog.md): the 12mm cap
-                // below measured from the type's `upper` contact, which the
-                // builder sorts to the tip -- so the span was always ~0 and
-                // the cap has never rejected anything. Measuring from the
-                // declared `lower` contact would start rejecting long bridges,
-                // a behaviour change left for review rather than folded in
-                // here. The dispatch is derived; the measurement is not.
+                // Keep short cavity twigs but cap long bridges at 12mm; a
+                // rejected tip is reconsidered by fan/merge in a later pass.
+                // BUG (pre-existing, see docs/dev/backlog.md): the cap measures
+                // from `upper`, which the builder sorts to the tip, so the span
+                // is always ~0 and the cap has never rejected anything.
                 const entity = cavityResult.entity;
                 const upperField = contactEndpointsFor(cavityResult.kind)
                     .find(({ end }) => end === 'upper')?.field;
@@ -1242,11 +1229,6 @@ function pointToSegmentDistanceSq(
 
 /**
  * The shaft a knot sits on, across every type that has one.
- *
- * Searched `draft.trunks` alone, so a leaf or branch hosted on a BRANCH, twig,
- * stick, anchor or kickstand shaft resolved to nothing and the orphan cull
- * deleted it as `missingHost`. Running auto-support on a model with hand-placed
- * leaves on branches silently removed them.
  *
  * `trunkId` keeps its name because the two callers below ask a genuine trunk
  * question -- whether the owner is in `trunksToRemove` -- and a non-trunk owner
@@ -2830,7 +2812,6 @@ export function computeAutoSupportPlan(
         analytics,
     };
 
-    // The result used to carry this as a sentence; it is a log line, not UI copy.
     console.log(LOG_PREFIX,
         `Placed ${placedTrunks} trunks, ${placedAnchors} anchors, ${placedBranches} branches, ` +
         `${placedLeaves} leaves, ${placedSticks} sticks. ${rejectedCount} rejected. ` +

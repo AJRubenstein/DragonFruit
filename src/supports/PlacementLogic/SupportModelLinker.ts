@@ -3,9 +3,8 @@ import { getSnapshot, setSnapshot } from '../state';
 import { MODEL_ID_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '../supportTypeRegistry';
 
 /**
-  * Owns the relationship between supports and models: query a model's supports,
-  * and remove them when it is deleted. Both walks come from
-  * MODEL_ID_COLLECTION_KEYS so a collection cannot be silently missed.
+  * The relationship between supports and models: query a model's supports, and
+  * remove them when it is deleted. Both walks read MODEL_ID_COLLECTION_KEYS.
   */
 
 /** Ids of a model's supports, one array per modelId-bearing collection. */

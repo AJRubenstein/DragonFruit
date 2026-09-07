@@ -329,9 +329,8 @@ export function useJointInteraction(enabled: boolean = true) {
                 if (owner) jointParentCacheRef.current.set(jointId, { kind: owner.typeId, supportId: owner.id });
             }
 
-            // The owner names its type, so one lookup replaces the five typed
-            // ones the drag-start chain used to unpack. Only shafted types
-            // reach here: findShaftOwnerOfJoint searches segments.
+            // Only shafted types reach here: findShaftOwnerOfJoint searches
+            // segments, and the owner names its own type.
             const foundParent = owner
                 ? getSupportEntity(owner.typeId, owner.id) as { id: string; segments: Segment[] } | null
                 : null;

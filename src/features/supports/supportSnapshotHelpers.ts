@@ -4,10 +4,7 @@ import { SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from '@/supports/s
 
 export type HomeSupportSnapshot = ReturnType<typeof getSupportSnapshot>;
 
-/**
- * Every entity collection, derived: the hand-written list here used to omit
- * anchors, so anything reading this snapshot silently could not see them.
- */
+/** Every entity collection, derived from the registry. */
 export type HomeSupportCollectionsSnapshot = Pick<HomeSupportSnapshot, SupportCollectionKey>;
 
 export type HomeKickstandSnapshot = ReturnType<typeof getKickstandSnapshot>;

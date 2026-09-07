@@ -17,10 +17,7 @@ export const SHAFTED_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES
     .filter((descriptor) => descriptor.hasSegments)
     .map((descriptor) => descriptor.id);
 
-/**
- * Default when a caller names no types: those with their own snap pass below.
- * Was a hand-written ['trunk', 'branch', 'brace'], which is the same set.
- */
+/** Default when a caller names no types: those with their own snap pass. */
 const DEFAULT_SNAP_TYPES: readonly SupportTypeId[] = SUPPORT_TYPES
     .filter((descriptor) => descriptor.hasDedicatedSnapPass)
     .map((descriptor) => descriptor.id);

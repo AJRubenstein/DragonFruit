@@ -333,9 +333,7 @@ function mergeSupportClipboardPayload(
     } as Kickstand;
   });
 
-  // Every entity collection, from the registry. The hand-written list this
-  // replaces omitted `anchors`, so a copied model's anchors were captured and
-  // then silently dropped on paste.
+  // Every entity collection, from the registry.
   const mergedState: SupportState = { ...state };
   for (const key of SUPPORT_COLLECTION_KEYS) {
     const cloned = key === 'roots'
@@ -523,8 +521,7 @@ export function pasteModelSupportsFromClipboard(
 
   const before = captureSupportEditSnapshot();
 
-  // Every collection, from the registry: the hand-written sum omitted
-  // `anchors`, so a model supported only by anchors pasted nothing at all.
+  // Every collection, from the registry.
   const hasSupports = SUPPORT_COLLECTION_KEYS
     .reduce((total, key) => total + (payload[key]?.length ?? 0), 0);
 

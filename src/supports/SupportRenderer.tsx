@@ -1013,11 +1013,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     ]);
 
     // Cull roots no entity claims any more.
-    //
-    // Kickstand roots and knots used to be copied into support state here. They
-    // now live there already -- getKickstandSnapshot() derives its view FROM
-    // state.roots/state.knots -- so the copy compared each object with itself and
-    // never fired. Only the cull was ever live.
     useEffect(() => {
         if (!interactionHooksEnabled) return;
         const ownedRootIds = collectOwnedRootIds(state);
@@ -2984,15 +2979,11 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     ]);
 
     /**
-     * What each type's detail renderer is, and what it needs.
+     * What each type's detail renderer is and what it needs. Held here rather
+     * than in the registry because every entry closes over live scene state.
      *
-     * The eight near-identical `renderXList.map(...)` blocks this replaces
-     * differed only in the four fields below. Held here rather than in the
-     * registry because every entry closes over live scene state (the knot
-     * indexes, ghosting, settings) that only exists inside this component.
-     *
-     * `hosts` returning null skips the entity, as the old `if (!knot) return
-     * null` guards did. `skip` is the per-type "draws nothing this frame" rule.
+     * `hosts` returning null skips the entity; `skip` is the per-type
+     * "draws nothing this frame" rule.
      */
     const detailRenderers = useMemo((): Partial<Record<SupportTypeId, {
         component: React.ComponentType<Record<string, unknown>>;

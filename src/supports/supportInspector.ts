@@ -126,12 +126,8 @@ function dependentsOf(
 }
 
 /**
- * The support an id belongs to, following it through anything that is not
- * itself an entity.
- *
- * A pick can land on a joint or a segment, neither of which is keyed by any
- * collection -- both live inside a shafted entity. Resolving them to the owner
- * is what makes hovering a joint say something useful.
+ * The support an id belongs to. A pick can land on a joint or a segment,
+ * neither of which is keyed by a collection, so both resolve to their owner.
  */
 export function ownerOfPickedId(
     state: InspectorState,

@@ -165,11 +165,8 @@ function deepClone<T>(value: T): T {
 
 /**
  * Remove a support entity and everything the declared graph says depends on it.
- *
- * The single removal path. Its return type is derived from
- * SUPPORT_REMOVAL_SHAPES, so callers get the right field names without any of
- * them being written out a second time -- rename one in the registry and every
- * consumer fails to compile rather than silently losing undo data.
+ * The return type derives from SUPPORT_REMOVAL_SHAPES, so a field renamed in
+ * the registry is a compile error at every consumer.
  */
 export function removeSupportEntity<T extends SupportTypeId>(
     typeId: T,
@@ -192,13 +189,8 @@ export function removeTwig(twigId: string) {
 
 /**
  * Remove an entity and everything the declared graph says depends on it.
- *
- * One walk for every support type: `collectCascade` works out the doomed set
- * from the registry's edges, and `removalShape` says what to call each piece on
- * the way out, so history payloads keep the field names their handlers read.
- *
- * A collection listed in `cascade` with a singular field name (`knots: 'knot'`)
- * reports at most one entity, matching the shapes that predate this walk.
+ * `collectCascade` finds the doomed set from the registry's edges;
+ * `removalShape` names each piece so history payloads keep their field names.
  */
 function removeSupportEntityCascading(
     typeId: SupportTypeId,
@@ -995,15 +987,11 @@ function recomputeBraceSegmentKnotGeometry(
 }
 
 /**
- * Settle the geometry that hangs off knots, after something moved them.
+ * Settle the geometry hanging off knots after something moved them.
  *
- * Three things chain: a moved knot reshapes the leaves on it, a reshaped leaf
- * cone moves the knots riding that cone, and a moved knot moves the knots on a
- * brace spanning it. The second pass runs only when the brace step moved
- * something, which is the condition for any of it to have changed again.
- *
- * Five callers ran this by hand -- an entity update, a leaf update, a brace
- * update, a knot move and the import normaliser.
+ * Three things chain: a moved knot reshapes its leaves, a reshaped leaf cone
+ * moves the knots riding it, and a moved knot moves the knots on a brace
+ * spanning it. The second pass runs only when the brace step moved something.
  */
 function settleKnotDependentGeometry(
     braces: Record<string, Brace>,
@@ -1405,11 +1393,8 @@ export function stampSupportTypeIds(next: SupportState): SupportState {
 }
 
 /**
- * Install the eight collection names as views over `state.supports`.
- *
- * Enumerable, so `{ ...state }` carries them as plain objects. A spread is
- * then a snapshot rather than a live view, which is what a draft wants;
- * `setState` re-derives from whichever side the writer set.
+ * Install each collection name as a view over `state.supports`. Enumerable, so
+ * `{ ...state }` yields a snapshot rather than a live view.
  */
 function installCollectionViews(next: SupportState): SupportState {
     for (const descriptor of SUPPORT_TYPES) {
@@ -1980,9 +1965,8 @@ export function transformSupportsForModel(
         }
     }
 
-    // Apply the transform to every affected entity. What moves is declared:
-    // segments and contactFields cover six of the eight types, and
-    // SUPPORT_TRANSFORM_EXTRAS names the brace curve and the anchor's own root.
+    // What moves is declared: segments and contactFields, plus whatever
+    // SUPPORT_TRANSFORM_EXTRAS names (a brace curve, an anchor's own root).
     const nextByCollection: Partial<Record<SupportCollectionKey, Record<string, unknown>>> = {};
 
     for (const descriptor of SUPPORT_TYPES) {
@@ -2138,9 +2122,8 @@ export function transformAllSupportsForSingleModel(
     const deltaMatrix = afterMatrix.clone().multiply(beforeMatrix.clone().invert());
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
 
-    // One walk over SUPPORT_ENTITY_COLLECTIONS instead of eight hand-written
-    // loops, so a new collection cannot be silently left untransformed. The
-    // per-type work still differs, so it dispatches on the collection key.
+    // One walk over SUPPORT_ENTITY_COLLECTIONS; the per-type work still
+    // differs, so it dispatches on the collection key.
     const { collections: transformed } = mapSupportEntities(state, (entity, collection) => {
         switch (collection) {
             case 'roots': {
@@ -2890,15 +2873,9 @@ function reconcileSupportModelIds(
 /**
  * Merge an imported support payload into the store.
  *
- * `ownerModelId` binds every support in `data` to that model. The host passes
- * the id of the model this payload was imported alongside, so the model->support
- * association is GUARANTEED by the host rather than assumed from whatever the
- * plugin happened to stamp. A plugin that disagrees with itself (payload
- * `modelId` != the id on its supports) previously produced supports owned by no
- * model: skipped by `getSupportsForModel`, unmoved by per-model transforms.
- *
- * Mismatches are logged rather than silently accepted, so a plugin bug surfaces
- * instead of being masked by the reconciliation.
+ * `ownerModelId` binds every support in `data` to that model, so the
+ * association comes from the host rather than whatever the plugin stamped.
+ * Mismatches are logged rather than accepted, surfacing a plugin bug.
  */
 export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelId?: string) {
     const importDefaults = getSavedImportDefaultsSettings();
@@ -3020,12 +2997,8 @@ export function addSupportEntity(typeId: SupportTypeId, entity: { id: string; se
 }
 
 /**
- * Adds an entity and records the undo entry for it, both keyed on the type.
- *
- * A caller that asked the registry which type to build already has the answer
- * as a `typeId`; without this it has to turn that answer back into a pair of
- * hand-written names -- `addStick` plus `SUPPORT_ADD_STICK`, under the payload
- * key that action expects. The descriptor names all three.
+ * Adds an entity and records its undo entry, both keyed on the type: the
+ * descriptor names the adder, the action and the payload key.
  */
 export function addSupportEntityWithHistory(
     typeId: SupportTypeId,

@@ -289,9 +289,8 @@ export type Kickstand = SupportEntity & KickstandFields;
 /**
  * The entity each collection holds.
  *
- * The one place a collection name is written down. SupportState's collections
- * and the registry's SupportCollectionKey are both derived from this, so adding
- * a type here is what makes it exist everywhere else.
+ * The one place a collection name is written down; SupportState and
+ * SupportCollectionKey both derive from it.
  */
 /**
  * How a collection's entity is reported when a removal takes it.
@@ -366,11 +365,8 @@ export type SupportCollections = {
 
 export interface SupportState extends SupportCollections {
     /**
-     * Every support entity by id, regardless of type. The eight named
-     * collections are non-enumerable views over this, partitioned by `typeId`.
-     *
-     * Optional on input only: a state built from the eight collections is
-     * folded into this shape by the store.
+     * Every support entity by id. The named collections are non-enumerable
+     * views over this, partitioned by `typeId`. Optional on input only.
      */
     supports?: Record<string, SupportEntityAny>;
     // Interaction State

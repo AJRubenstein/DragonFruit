@@ -72,14 +72,9 @@ function firstAllowedModelId(
 type ModelIdResolver = (id: string | null | undefined) => string | null;
 
 /**
- * Builds an O(1) `entityId → modelId` resolver behaviourally identical to
- * {@link getModelIdForSupportEntityId}, but backed by reverse indices computed
- * once (O(N)) instead of scanning the entire support graph per call. The scoped
- * export used to invoke the linear-scan resolver once per knot/branch/leaf,
- * which is O(N²) and froze the main thread for tens of seconds on large scenes.
- *
- * The index order mirrors the scan order in the canonical resolver so ambiguous
- * ids resolve to the same owner (first registration wins).
+ * An O(1) `entityId -> modelId` resolver, backed by reverse indices built once
+ * rather than scanning the graph per call. Index order mirrors
+ * {@link getModelIdForSupportEntityId} so ambiguous ids resolve the same way.
  */
 function createScopedModelIdResolver(
   supportState: SupportState,
@@ -99,9 +94,7 @@ function createScopedModelIdResolver(
     }
   };
 
-  // Every type's shafts and the knots it hangs from, by declaration. The five
-  // loops this replaces covered trunk, branch, twig, stick and kickstand, so an
-  // anchor's segments and joints were in no index.
+  // Every type's shafts and the knots it hangs from, by declaration.
   for (const descriptor of SUPPORT_TYPES) {
     const collection = supportState[descriptor.location.key] as unknown as Record<string, Record<string, unknown>>;
 
@@ -471,12 +464,8 @@ export function extractScopedSupportPayload(
    * Its own `modelId` first, then the ids it links through -- a branch borrows
    * its parent knot's model, a kickstand its root's, its host knot's or its
    * host segment's. Those fall-backs are the type's declared `edges`, in
-   * declared order, which is exactly what the four per-type resolvers this
-   * replaces spelled out.
-   *
-   * `roots` is excluded from the fall-backs: a trunk names one but resolved on
-   * its own `modelId` alone before this, and following it would newly pull in
-   * a trunk whose root carries a model the trunk does not.
+   * declared order. `roots` is excluded: following it would pull in a trunk
+   * whose root carries a model the trunk does not.
    */
   const belongsToScope = (descriptor: SupportTypeDescriptor, entity: Record<string, unknown>): boolean => {
     const linked = descriptor.edges
