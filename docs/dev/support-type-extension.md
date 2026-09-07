@@ -12,10 +12,11 @@ still manual. Steps below are marked accordingly.
 The existing types are `Trunk`, `Branch`, `Leaf`, `Twig`, `Stick`, `Brace`,
 `Anchor`, `Kickstand`.
 
-> **Scale check.** `state.ts` alone carries ~498 hand-written per-type references
-> across 64 functions against 8 registry-derived call sites. The registry is real
-> and load-bearing, but adoption is early — do not assume a step is automatic
-> because the registry exists. Grep before you trust.
+> **Scale check.** `state.ts` carries ~210 hand-written per-type references
+> against ~45 registry-derived call sites — down from ~498 against 8. Adoption
+> is well underway but uneven, so do not assume a step is automatic because the
+> registry exists, and do not assume it is manual because this page once said
+> so. Grep before you trust; this page drifts.
 
 > ⚠️ **Do not convert hand-wired paths to the registry while adding your type.**
 > Use the manual path each step describes, even where it is obviously ripe for
@@ -109,8 +110,11 @@ There is no switch — `SupportRenderer.tsx` hand-wires one block per type:
 1. Import the renderer.
 2. Add a `renderGadgetList` memo (pattern `renderStickList`) and a
    `selectedGadgetIds` memo.
-3. *Optional*: add a scene-batched shaft map (`stickShaftsBySupport` pattern) so
-   unselected straight shafts render via `InstancedShaftGroup`.
+3. *Optional*: declare `batchesPlainShafts` and `batchesShaftJoints` on the
+   descriptor so unselected straight shafts and joints render via
+   `InstancedShaftGroup`. No per-type memo is needed — `plainShaftsByType` and
+   `shaftJointsByType` build from those flags, and the hosts a shaft needs come
+   from `ownsRoot` and the declared `hostedBy` knot edge.
 4. Add the JSX block rendering `<GadgetRenderer .../>` (plus the batched-group
    block if step 3).
 5. *Optional*: add the type to the render-lookup worker for primitive picking.
@@ -120,8 +124,12 @@ There is no switch — `SupportRenderer.tsx` hand-wires one block per type:
 ## 4. History — `src/supports/history/` *(hand-wired)*
 
 1. `actionTypes.ts` — add a `SUPPORT_ADD_GADGET` / `SUPPORT_REMOVE_GADGET`
-   constant pair, a `SupportGadgetPayload { gadget }` interface, and two entries
-   in `SupportHistoryPayloadMap`. The map type-checks every push and handler;
+   constant pair and two entries in `SupportHistoryPayloadMap`. The payload
+   types are **derived**: `SupportEntityPayload<'gadget'>` for the add and
+   `SupportRemovalResult<'gadget'>` for the remove, both read from the entry you
+   declare in `SUPPORT_REMOVAL_SHAPES`. Write the interface out by hand only if
+   your payload carries something the cascade does not (a branch's trunk
+   reprofile, say). The map type-checks every push and handler;
    `SupportHistoryActionType` derives from it.
 2. `useSupportHistoryHandlers.ts` — registration is **all-in-one**: the single
    `registerSupportHistoryHandlers()` registers every type in one array. Add
@@ -135,15 +143,17 @@ ride `SUPPORT_EDIT_REPLACE` with whole-`SupportState` snapshots
 
 ## 5. Store and serialization — `src/supports/state.ts` *(mostly hand-wired)*
 
-This is the heaviest step and the least converted: ~498 hand-written per-type
-references across 64 functions. Expect to touch most of the list below.
+Still the heaviest step, though less so than it was: ~210 hand-written per-type
+references against ~45 derived call sites.
 
 - `initialState` — **nothing to do.** It spreads
   `createEmptySupportCollections()`, which derives from the registry.
 - CRUD — `addGadget`, `updateGadget`, `removeGadget` (return a deep-cloned
   snapshot for undo, pattern `removeStick`).
-- `SelectionCategory` union + `getSelectionLookupCache` + `resolveSelectionCategory`
-  — add gadget segments/joints/contactDisks and the `state.gadgets[id]` branch.
+- `SelectionCategory` union + `getSelectionLookupCache` — **entity resolution
+  needs nothing.** `resolveSelectionCategory` walks `SUPPORT_STATE_COLLECTIONS`,
+  so declaring your type's `selectionCategory` is enough; only the
+  segment/joint/contactDisk lookup cache is still hand-written.
 - `loadFromImportFormat` / `mergeFromImportFormat` — populate `gadgets` guarded
   like the optional arrays.
 - `isolateImportedSupportPayload` — remap primitive ids inside the entity so
@@ -164,15 +174,17 @@ wiring is explicit:
 
 - Invoke `useGadgetPlacement()` alongside the other placement hooks and route
   its callbacks through `resolvePlacementRouting()`.
-- Add the category to `resolveSupportCategoryFromSnapshot`, `collectAllSupportIds`,
-  `deleteSelectionByCategoryAndId`, **and `canDeleteSelection`**. ⚠️ Still true as
-  of this revision: `canDeleteSelection` enumerates seven categories and omits
-  `anchor`, so anchors are deletable but the gate blocks single-selection Delete.
-  Add your category to both places.
+- `resolveSupportCategoryFromSnapshot`, `collectAllSupportIds` and
+  `canDeleteSelection` need **nothing**: all three resolve from the registry
+  now. The anchor gap this page used to warn about — anchors deletable but
+  blocked from single-selection Delete — was that enumerated list, and it is
+  gone.
+- `deleteSelectionByCategoryAndId` **is** still hand-wired; add your category
+  there.
 
-  This is the textbook case for the registry: an enumerated list of type names in
-  a conditional, where forgetting one is silent. It wants a declared descriptor
-  flag rather than a ninth `||` — but **not in your diff**. Add the `||`, note the
+  The enumerated-conditional shape is the textbook case for the registry: a list
+  of type names where forgetting one is silent. Where one remains, add the `||`
+  and note it — but **not in your diff**. Add the `||`, note the
   line, convert it separately.
 - Mount `<GadgetPlacementController />` in `SceneCanvas.tsx` under `mode === 'support'`,
   and add a `SUPPORTS` hotkey binding + resolver entry if it's hotkey-triggered.

@@ -17,7 +17,7 @@ The largest subsystem in the frontend. `src/supports/` owns everything from the 
 | `history/` | The typed history façade for support actions |
 | `Settings/` | Persisted support and raft settings, and the anatomy preview |
 
-Four files at the root carry the weight: `supportTypeRegistry.ts` (what every type IS — see below), `types.ts` (every entity interface plus `SupportState`), `state.ts` (~4 900 lines of store and serialization), and `SupportRenderer.tsx` (~4 400 lines, still one hand-wired block per type).
+Four files at the root carry the weight: `supportTypeRegistry.ts` (what every type IS — see below), `types.ts` (every entity interface plus `SupportState`), `state.ts` (~3 900 lines of store and serialization), and `SupportRenderer.tsx` (~3 550 lines, still one hand-wired JSX block per type).
 
 ## What each piece is
 
@@ -35,7 +35,7 @@ Three shapes are acceptable when a piece of code needs type-specific behaviour, 
 - **Declared** — a property on the descriptor, so the type is named once at its definition.
 - **Subtracted** — `.filter(id => id !== 'trunk')`. Rejected: a new type silently joins or skips the set, which is the failure the registry exists to prevent.
 
-**Adoption is early.** Do not read the registry's existence as the job being done. `state.ts` alone still carries **498 hand-written per-type references across 64 functions**, against 8 registry-derived call sites — plus 26 add/update/remove functions named per type (`addTrunk`, `removeBranch`, and so on). Rendering, export, and the interaction manager are almost entirely hand-wired too.
+**Adoption is partial.** Do not read the registry's existence as the job being done, and do not trust these counts without re-running them — they drift. `state.ts` carries roughly **210 hand-written per-type references against ~45 registry-derived call sites** (it was 498 against 8), plus 22 `@deprecated` add/update/remove wrappers named per type (`addTrunk`, `removeBranch`, and so on) that exist only until their callers move. `SupportRenderer.tsx` is the largest remaining holdout at ~250 type-named identifiers, almost all of them the eight per-type JSX blocks.
 
 Where the bulk sits in `state.ts`, if you are looking for the next thing to convert:
 
@@ -49,7 +49,7 @@ Where the bulk sits in `state.ts`, if you are looking for the next thing to conv
 | `getModelIdForSupportEntityId` | 24 |
 | `getSelectionLookupCache` | 23 |
 
-What the registry HAS taken over is narrow and structural: the collection key lists, `initialState` via `createEmptySupportCollections()`, the modelId and shafted-collection walks, the updater and knot-diameter slots, and root ownership. Everything else is still threaded by hand.
+What the registry has taken over: the collection key lists, `initialState` via `createEmptySupportCollections()`, the modelId and shafted-collection walks, the updater and knot-diameter slots, root ownership, removal cascades and the history payloads derived from them, segment endpoint resolution, contact-bridge construction, placement-surface marking, shaft and joint batching, selection-category resolution, and the delete gate. What remains hand-wired: the renderer's per-type JSX, export reconstruction, and parts of the interaction manager.
 
 See [Adding a New Support Type](support-type-extension.md) for exactly which steps are registry-driven today and which are not.
 

@@ -54,7 +54,7 @@ and active-material sidecar keys. Minimal examples: `printerReachabilityStore.ts
 
 ## The support store
 
-`src/supports/state.ts` is the largest module store in the codebase (~4 900
+`src/supports/state.ts` is the largest module store in the codebase (~3 900
 lines) and departs from the shape above in four ways worth knowing before you
 touch it.
 
