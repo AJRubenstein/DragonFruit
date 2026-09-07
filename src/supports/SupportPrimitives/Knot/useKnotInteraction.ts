@@ -1302,8 +1302,6 @@ export function useKnotInteraction(enabled: boolean = true) {
         }
 
         // Every shafted host projects onto its own bezier segment identically.
-        // Kickstand alone does not snap the result to the drag grid; that is
-        // pre-existing and recorded in docs/dev/backlog.md.
         const shaft = shaftOf(host);
         if (shaft) {
             const seg = shaft.entity.segments.find((s: Segment) => s.id === host.segmentId);
@@ -1317,8 +1315,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                     BEZIER_PROJECTION_STEPS,
                 );
                 t = proj.t;
-                const projected = new THREE.Vector3(proj.point.x, proj.point.y, proj.point.z);
-                finalOnLine = host.containerType === 'kickstand' ? projected : snapVec3(projected);
+                finalOnLine = snapVec3(new THREE.Vector3(proj.point.x, proj.point.y, proj.point.z));
                 bestDiameter = seg.diameter;
             }
         }
