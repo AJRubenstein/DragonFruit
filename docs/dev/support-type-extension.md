@@ -1,29 +1,16 @@
 # Adding a New Support Type
 
-The support system is **partly registry-driven**. `src/supports/supportTypeRegistry.ts`
-now holds one descriptor per type and is the single source of truth for what a
-type *is* — but it does not yet make a new type work on its own. Most of the
-integration points below are still hand-written, so adding a type still means
-threading it through them.
-
-Read the split this way: **declaring** a type is registry work; **wiring** it is
-still manual. Steps below are marked accordingly.
+`src/supports/supportTypeRegistry.ts` holds one descriptor per type and is the
+single source of truth for what a type *is*, but does not yet make a new type
+work on its own: **declaring** a type is registry work, **wiring** it is still
+partly manual. Steps below are marked accordingly.
 
 The existing types are `Trunk`, `Branch`, `Leaf`, `Twig`, `Stick`, `Brace`,
 `Anchor`, `Kickstand`.
 
-> **Scale check.** `state.ts` carries ~210 hand-written per-type references
-> against ~45 registry-derived call sites — down from ~498 against 8. Adoption
-> is well underway but uneven, so do not assume a step is automatic because the
-> registry exists, and do not assume it is manual because this page once said
-> so. Grep before you trust; this page drifts.
-
-> ⚠️ **Do not convert hand-wired paths to the registry while adding your type.**
-> Use the manual path each step describes, even where it is obviously ripe for
-> conversion. Mixing the two puts a new feature and a behaviour-preserving
-> refactor in one diff, which cannot be reviewed or bisected cleanly. Note what
-> you hit, add the type, convert afterwards. See the registry entry in
-> [Backlog](backlog.md).
+> ⚠️ **Do not convert hand-wired paths to the registry while adding your type** —
+> it puts a new feature and a behaviour-preserving refactor in one diff. Note
+> what you hit, add the type, convert afterwards. See [Backlog](backlog.md).
 
 Three reference shapes, by complexity:
 
@@ -32,11 +19,8 @@ Three reference shapes, by complexity:
 - **Leaf** — the canonical *fully placeable* template: renderer + builder +
   placement-state store + page-level placement hook + canvas controller.
 - **Kickstand** — the "owns its own barrel" template
-  (`SupportTypes/Kickstand/index.ts`). Its entity interface now lives in the
-  central `types.ts` like every other type, and `kickstandStore.ts` is a thin
-  adapter over `SupportState` rather than a store of its own. Do **not** copy the
-  adapter for a new type; declare yours centrally and read `SupportState`
-  directly.
+  (`SupportTypes/Kickstand/index.ts`). Do **not** copy its `kickstandStore.ts`
+  adapter: declare your entity in `types.ts` and read `SupportState` directly.
 
 This page walks through adding a new type `Gadget` (avoid the existing names).
 Every numbered step below is required unless marked *optional*.
@@ -105,21 +89,17 @@ whether the type is user-placeable.
 
 ## 3. Rendering — `src/supports/SupportRenderer.tsx` *(hand-wired)*
 
-There is no switch — `SupportRenderer.tsx` hand-wires one block per type:
+1. Import the renderer and add an entry to the `detailRenderers` table:
+   `component`, `entityProp`, and optionally `hosts` (return null to skip),
+   `skip`, `extraProps` and `noClipping`.
+2. Add `{renderDetailFor('gadget')}` to the JSX, in the order your type should
+   draw relative to the batched-shaft passes.
+3. *Optional*: declare `batchesPlainShafts` / `batchesShaftJoints` so unselected
+   straight shafts and joints render via `InstancedShaftGroup`.
+4. *Optional*: add the type to the render-lookup worker for primitive picking.
+   Anchors skip it entirely, so it is not required for selectability.
 
-1. Import the renderer.
-2. Add a `renderGadgetList` memo (pattern `renderStickList`) and a
-   `selectedGadgetIds` memo.
-3. *Optional*: declare `batchesPlainShafts` and `batchesShaftJoints` on the
-   descriptor so unselected straight shafts and joints render via
-   `InstancedShaftGroup`. No per-type memo is needed — `plainShaftsByType` and
-   `shaftJointsByType` build from those flags, and the hosts a shaft needs come
-   from `ownsRoot` and the declared `hostedBy` knot edge.
-4. Add the JSX block rendering `<GadgetRenderer .../>` (plus the batched-group
-   block if step 3).
-5. *Optional*: add the type to the render-lookup worker for primitive picking.
-   Anchors skip the worker entirely (handled by a fallback loop), so it's not
-   required for selectability.
+`detailRendererCoverage.test.ts` fails if a declared type has no entry.
 
 ## 4. History — `src/supports/history/` *(hand-wired)*
 
@@ -143,8 +123,7 @@ ride `SUPPORT_EDIT_REPLACE` with whole-`SupportState` snapshots
 
 ## 5. Store and serialization — `src/supports/state.ts` *(mostly hand-wired)*
 
-Still the heaviest step, though less so than it was: ~210 hand-written per-type
-references against ~45 derived call sites.
+Still the heaviest step.
 
 - `initialState` — **nothing to do.** It spreads
   `createEmptySupportCollections()`, which derives from the registry.

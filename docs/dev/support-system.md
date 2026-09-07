@@ -17,7 +17,7 @@ The largest subsystem in the frontend. `src/supports/` owns everything from the 
 | `history/` | The typed history façade for support actions |
 | `Settings/` | Persisted support and raft settings, and the anatomy preview |
 
-Four files at the root carry the weight: `supportTypeRegistry.ts` (what every type IS — see below), `types.ts` (every entity interface plus `SupportState`), `state.ts` (~3 900 lines of store and serialization), and `SupportRenderer.tsx` (~3 550 lines, still one hand-wired JSX block per type).
+Four files at the root carry the weight: `supportTypeRegistry.ts` (what every type IS — see below), `types.ts` (every entity interface plus `SupportState`), `state.ts` (the store and serialization), and `SupportRenderer.tsx` (the scene render loop).
 
 ## What each piece is
 
@@ -35,23 +35,14 @@ Three shapes are acceptable when a piece of code needs type-specific behaviour, 
 - **Declared** — a property on the descriptor, so the type is named once at its definition.
 - **Subtracted** — `.filter(id => id !== 'trunk')`. Rejected: a new type silently joins or skips the set, which is the failure the registry exists to prevent.
 
-**Adoption is partial.** Do not read the registry's existence as the job being done, and do not trust these counts without re-running them — they drift. `state.ts` carries roughly **210 hand-written per-type references against ~45 registry-derived call sites** (it was 498 against 8), plus 22 `@deprecated` add/update/remove wrappers named per type (`addTrunk`, `removeBranch`, and so on) that exist only until their callers move. `SupportRenderer.tsx` is the largest remaining holdout at ~250 type-named identifiers, almost all of them the eight per-type JSX blocks.
+**Adoption is partial.** `npm run scan:support-types` reports where per-type
+references still sit — run it rather than trusting a number written here.
+`state.ts` also keeps `@deprecated` per-type add/update/remove wrappers
+(`addTrunk`, `removeBranch`) alive until their callers move.
 
-Where the bulk sits in `state.ts`, if you are looking for the next thing to convert:
+What the registry has taken over: collection key lists, `initialState`, the modelId and shafted-collection walks, the updater and knot-diameter slots, root ownership, removal cascades and their history payloads, segment endpoint resolution, contact-bridge construction, placement-surface marking, shaft and joint batching, selection-category resolution, the delete gate, and the renderer's per-type detail table. What remains hand-wired: export reconstruction, per-type builders in the auto-placer, and parts of the interaction manager.
 
-| Function | Hand-written per-type refs |
-| -------- | -------------------------- |
-| `mergeFromImportFormat` | 53 |
-| `removeTrunk` | 40 |
-| `transformSupportsForModel` | 39 |
-| `loadFromImportFormat` | 38 |
-| `removeBranch` | 35 |
-| `getModelIdForSupportEntityId` | 24 |
-| `getSelectionLookupCache` | 23 |
-
-What the registry has taken over: the collection key lists, `initialState` via `createEmptySupportCollections()`, the modelId and shafted-collection walks, the updater and knot-diameter slots, root ownership, removal cascades and the history payloads derived from them, segment endpoint resolution, contact-bridge construction, placement-surface marking, shaft and joint batching, selection-category resolution, and the delete gate. What remains hand-wired: the renderer's per-type JSX, export reconstruction, and parts of the interaction manager.
-
-See [Adding a New Support Type](support-type-extension.md) for exactly which steps are registry-driven today and which are not.
+See [Adding a New Support Type](support-type-extension.md) for which steps are registry-driven today.
 
 **Two rendering paths must agree.** Unselected straight geometry renders through instanced groups (`InstancedShaftGroup`, `InstancedJointGroup`, `InstancedRootsGroup`, `InstancedContactConeGroup`); selected and edited geometry renders individually. Both paths must produce the same hover and click semantics, or a support behaves differently depending on whether it happens to be selected.
 
