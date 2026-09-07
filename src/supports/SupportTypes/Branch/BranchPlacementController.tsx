@@ -607,8 +607,7 @@ export function BranchPlacementController() {
                         const dz = tipPosition.z - bPos.z;
                         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
                         // contactSpan is declared only by twig and stick.
-                        const kind = (selectTypeForPlacement('contactSpan', dist,
-                            () => settings.meshToMesh?.stickVsTwigCutoffMm) ?? 'twig') as 'twig' | 'stick';
+                        const kind = (selectTypeForPlacement('contactSpan', dist) ?? 'twig') as 'twig' | 'stick';
                         meshKindRef.current = kind;
 
                         const meshLinkSignature = [

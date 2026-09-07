@@ -498,7 +498,7 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
 
     // Which type a tip height calls for is declared; anchor claims the
     // near-plate band, trunk everything above it.
-    if (selectTypeForPlacement('tipHeight', tipPos.z, () => undefined) === 'anchor') {
+    if (selectTypeForPlacement('tipHeight', tipPos.z) === 'anchor') {
         const { anchor, supportData } = buildAnchorData({ tipPos, tipNormal, modelId, mesh });
         // The cone body spans contact disk → socket and must never dip below
         // the root joint: a tip lower than the root (or an over-long cone on a

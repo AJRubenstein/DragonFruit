@@ -73,6 +73,13 @@ export function influenceRadiusMm(diffZMm: number): number {
  *  never dedup each other (staircase shelves keep their own supports),
  *  mirroring Prusa's removing_delta. */
 export const SUPPORT_RESTSTACK_DELTA_MM = 5.0;
+/**
+ * Longest cavity bridge auto-placement will keep.
+ *
+ * Currently inert -- the span it is compared against measures ~0. See the
+ * note at the comparison in `autoPlace.ts`.
+ */
+export const MAX_CAVITY_BRIDGE_MM = 12;
 
 /** Distance (mm) within which an existing support tip counts a candidate as already supported. */
 export const ALREADY_SUPPORTED_RADIUS_MM = 3.0;

@@ -11,6 +11,7 @@ import {
 } from './history/actionTypes';
 import type { SupportHistoryActionType } from './history/actionTypes';
 import { ANCHOR_HEIGHT_THRESHOLD_MM } from './autoSupport/constants';
+import { getSettings } from './Settings/state';
 
 /** Every declared support type, named once in `SupportFieldsByType`. */
 export type SupportTypeId = keyof SupportFieldsByType;
@@ -989,6 +990,21 @@ export function anyContactMatches(
 /** A settings path a placement threshold may read from. */
 export type SupportPlacementSettingPath = 'meshToMesh.stickVsTwigCutoffMm';
 
+/**
+ * Reads a declared settings path off the live settings.
+ *
+ * Callers used to pass this in, which meant each one spelled out the setting
+ * a rule reads -- naming the two types the threshold divides, at sites that
+ * have no other reason to know either name.
+ */
+function readPlacementSetting(path: SupportPlacementSettingPath): number | undefined {
+    const settings = getSettings();
+    switch (path) {
+        case 'meshToMesh.stickVsTwigCutoffMm':
+            return settings.meshToMesh?.stickVsTwigCutoffMm;
+    }
+}
+
 /** Resolves a threshold, reading the named setting when there is one. */
 function thresholdMm(
     threshold: SupportPlacementThreshold | undefined,
@@ -1008,7 +1024,7 @@ function thresholdMm(
 export function selectTypeForPlacement(
     metric: SupportPlacementMetric,
     valueMm: number,
-    readSetting: (path: SupportPlacementSettingPath) => number | undefined,
+    readSetting: (path: SupportPlacementSettingPath) => number | undefined = readPlacementSetting,
 ): SupportTypeId | null {
     // A NaN measurement satisfies no comparison, so an unbounded side would
     // otherwise let it through.
@@ -1110,6 +1126,47 @@ export function generateLateralStabilisers(
     request: LateralStabiliserRequest,
 ): unknown[] {
     return LATERAL_STABILISERS.get(typeId)?.(request) ?? [];
+}
+
+/** What a bridge builder is handed: two model contacts and how to size them. */
+export interface ContactBridgeRequest {
+    modelId: string;
+    aPos: { x: number; y: number; z: number };
+    aNormal: { x: number; y: number; z: number };
+    bPos: { x: number; y: number; z: number };
+    bNormal: { x: number; y: number; z: number };
+    shaftDiameterMm?: number;
+    tipContactDiameterMm?: number;
+}
+
+type ContactBridgeBuilder = (request: ContactBridgeRequest) => { id: string } | null;
+
+const CONTACT_BRIDGE_BUILDERS = new Map<SupportTypeId, ContactBridgeBuilder>();
+
+/**
+ * Registered from the type's own folder. A type that can bridge two model
+ * contacts registers how to build one, so a caller that asked
+ * `selectTypeForPlacement` which type to use can build it without turning
+ * that answer back into a name.
+ */
+export function registerContactBridgeBuilder(
+    typeId: SupportTypeId,
+    build: ContactBridgeBuilder,
+): void {
+    CONTACT_BRIDGE_BUILDERS.set(typeId, build);
+}
+
+/** Builds one type's bridge, or nothing when it registers no builder. */
+export function buildContactBridge(
+    typeId: SupportTypeId,
+    request: ContactBridgeRequest,
+): { id: string } | null {
+    return CONTACT_BRIDGE_BUILDERS.get(typeId)?.(request) ?? null;
+}
+
+/** Every type that has registered a bridge builder, in registry order. */
+export function contactBridgeTypes(): readonly SupportTypeId[] {
+    return SUPPORT_TYPES.filter((d) => CONTACT_BRIDGE_BUILDERS.has(d.id)).map((d) => d.id);
 }
 
 export const SUPPORT_TRANSFORM_EXTRAS = {

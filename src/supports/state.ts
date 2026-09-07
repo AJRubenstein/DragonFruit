@@ -5,6 +5,7 @@ import { resolveSegmentEndpoints } from './SupportPrimitives/Knot/segmentEndpoin
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
+import { pushSupportHistory } from './history/supportHistory';
 import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
@@ -2963,6 +2964,27 @@ export function addSupportEntity(typeId: SupportTypeId, entity: { id: string; se
     notify();
 }
 
+/**
+ * Adds an entity and records the undo entry for it, both keyed on the type.
+ *
+ * A caller that asked the registry which type to build already has the answer
+ * as a `typeId`; without this it has to turn that answer back into a pair of
+ * hand-written names -- `addStick` plus `SUPPORT_ADD_STICK`, under the payload
+ * key that action expects. The descriptor names all three.
+ */
+export function addSupportEntityWithHistory(
+    typeId: SupportTypeId,
+    entity: { id: string; settingsCodeHex?: string },
+) {
+    addSupportEntity(typeId, entity);
+    // The declared `self` field is the key that type's add payload carries,
+    // but it is computed here, so the compiler cannot match it to the union.
+    pushSupportHistory({
+        type: getSupportTypeDescriptor(typeId).historyAdd,
+        payload: { [SUPPORT_REMOVAL_SHAPES[typeId].self]: entity },
+    } as unknown as Parameters<typeof pushSupportHistory>[0]);
+}
+
 /** @deprecated Thin wrapper for removal; prefer `addSupportEntity('trunk', entity)`. */
 export function addTrunk(trunk: Trunk) {
     addSupportEntity('trunk', trunk);
@@ -3797,6 +3819,7 @@ export function applySettingsToSupportTarget(target: EditableSupportTarget, sett
 // Per-type registrations live in each type's folder; importing them here runs
 // their side effects once the store exists.
 import './SupportTypes/Twig/twigRegistration';
+import './SupportTypes/Stick/stickRegistration';
 import './SupportTypes/Kickstand/kickstandRegistration';
 import './SupportTypes/Branch/branchRegistration';
 import './SupportTypes/Leaf/leafRegistration';
