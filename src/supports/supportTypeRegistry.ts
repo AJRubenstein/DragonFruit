@@ -1502,3 +1502,37 @@ export function findKnotHost(
 export const KNOT_HOST_PRECEDENCE: readonly SupportTypeId[] = [
     'leaf', 'branch', 'brace', 'kickstand',
 ];
+
+/**
+ * Whether each type's joint drags publish a live shaft preview.
+ *
+ * `as const satisfies` keeps the literals, so `JointDragPreviewKind` narrows to
+ * exactly the types declared true -- passing an unsupported one stays a compile
+ * error -- while a renamed type is a compile error HERE rather than a literal
+ * left stale at the call site. Declared apart from `isAutoBraceable` even though
+ * the two sets agree today: one is bracing geometry, the other a drag preview.
+ */
+export const JOINT_DRAG_PREVIEW_BY_TYPE = {
+    trunk: true,
+    branch: true,
+    leaf: false,
+    twig: false,
+    stick: false,
+    brace: false,
+    anchor: false,
+    kickstand: true,
+} as const satisfies Record<SupportTypeId, boolean>;
+
+/** The types whose joint drags publish a preview. */
+export type JointDragPreviewTypeId = {
+    [K in SupportTypeId]: (typeof JOINT_DRAG_PREVIEW_BY_TYPE)[K] extends true ? K : never;
+}[SupportTypeId];
+
+export const JOINT_DRAG_PREVIEW_TYPES: readonly JointDragPreviewTypeId[] =
+    (Object.keys(JOINT_DRAG_PREVIEW_BY_TYPE) as SupportTypeId[])
+        .filter((id): id is JointDragPreviewTypeId => JOINT_DRAG_PREVIEW_BY_TYPE[id]);
+
+/** Whether an untrusted `kind` off a preview event names such a type. */
+export function isJointDragPreviewType(kind: string): kind is JointDragPreviewTypeId {
+    return (JOINT_DRAG_PREVIEW_TYPES as readonly string[]).includes(kind);
+}
