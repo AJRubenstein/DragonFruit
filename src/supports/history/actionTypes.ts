@@ -1,5 +1,5 @@
-import type { Anchor, Roots, Trunk, Leaf, Knot, Kickstand, Branch, Brace, Twig, Stick, SupportState } from '../types';
-import type { SupportRemovalResult } from '../supportTypeRegistry';
+import type { Roots, Trunk, Leaf, Knot, Kickstand, Branch, Brace, SupportState } from '../types';
+import type { SupportEntityPayload, SupportRemovalResult } from '../supportTypeRegistry';
 import type { KickstandBuildResult } from '../SupportTypes/Kickstand/types';
 
 export const SUPPORT_ADD_TRUNK = 'support:add-trunk' as const;
@@ -76,19 +76,6 @@ export interface SupportBranchUpdatePayload {
   after: Branch;
 }
 
-export interface SupportTwigPayload {
-  twig: Twig;
-}
-
-export interface SupportTwigRemovePayload {
-  twig: Twig;
-  knots: Knot[];
-  leaves: Leaf[];
-}
-
-export interface SupportStickPayload {
-  stick: Stick;
-}
 
 export interface SupportBranchRemovePayload {
   branches: Branch[];
@@ -112,31 +99,26 @@ export interface BraceLinkPayload {
   endKnot?: Knot | null;
 }
 
-export interface SupportAnchorPayload {
-  anchor: Anchor;
-}
-
-/**
- * Anchors and sticks cascade like twigs: a knot on their shaft, and anything
- * hanging off that knot, goes with them. Undo has to put all of it back.
- */
-export interface SupportAnchorRemovePayload {
-  anchor: Anchor;
-  knots: Knot[];
-  leaves: Leaf[];
-}
-
-export interface SupportStickRemovePayload {
-  stick: Stick;
-  knots: Knot[];
-  leaves: Leaf[];
-}
 
 export interface SupportKickstandPayload {
   build: KickstandBuildResult;
 }
 
-/** Derived: a kickstand removal reports what the registry declares it takes. */
+/**
+ * Removal payloads, derived from what the registry declares each type takes.
+ *
+ * These were hand-written interfaces repeating `SUPPORT_REMOVAL_SHAPES` --
+ * twig, stick and anchor all spelled out `{ self, knots, leaves }`, which is
+ * exactly what their declared cascade already says. A field renamed in the
+ * shape map is now a compile error here rather than a silent undo failure.
+ */
+export type SupportTwigPayload = SupportEntityPayload<'twig'>;
+export type SupportStickPayload = SupportEntityPayload<'stick'>;
+export type SupportAnchorPayload = SupportEntityPayload<'anchor'>;
+
+export type SupportTwigRemovePayload = SupportRemovalResult<'twig'>;
+export type SupportStickRemovePayload = SupportRemovalResult<'stick'>;
+export type SupportAnchorRemovePayload = SupportRemovalResult<'anchor'>;
 export type SupportKickstandRemovePayload = SupportRemovalResult<'kickstand'>;
 
 export interface SupportReplaceTrunkPayload {
