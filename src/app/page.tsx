@@ -1867,25 +1867,6 @@ export default function Home() {
     };
   }, []);
 
-  const activeSupportEntityCounts = React.useMemo(() => {
-    const modelId = scene.activeModelId;
-    const emptyCounts = () => {
-      const zeros = {} as Record<SupportCollectionKey, number>;
-      for (const key of SUPPORT_COLLECTION_KEYS) zeros[key] = 0;
-      return zeros;
-    };
-    if (!modelId) return emptyCounts();
-
-    const counts = emptyCounts();
-    const byModel = getSupportsForModel(supportStateSnapshot, modelId);
-    for (const key of MODEL_ID_COLLECTION_KEYS) counts[key] = byModel[key].length;
-
-    counts.knots = Object.values(supportStateSnapshot.knots).filter(
-      (knot) => modelIdOfParentShaft(supportStateSnapshot, knot.parentShaftId) === modelId,
-    ).length;
-    return counts;
-  }, [scene.activeModelId, supportStateSnapshot]);
-
   const transformDebugStats = React.useMemo(() => {
     const activeModel = scene.models.find((m) => m.id === scene.activeModelId) ?? null;
     const storeTransform = activeModel?.transform ?? null;
@@ -9899,7 +9880,6 @@ export default function Home() {
           displayActiveModelId: displayActiveModelId,
           transformDebugStats: transformDebugStats,
           supportDebugStats: supportDebugStats,
-          activeSupportEntityCounts: activeSupportEntityCounts,
           formatDebugVec3: formatDebugVec3,
           formatDebugVec3Like: formatDebugVec3Like,
           formatDebugNumber: formatDebugNumber,

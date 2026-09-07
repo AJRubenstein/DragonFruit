@@ -5,7 +5,7 @@ import type { SliceExportArtifact, SliceExportResult } from '@/features/slicing/
 import type { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import type { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import type { useTransformManager } from '@/features/transform/useTransformManager';
-import { SUPPORT_STATE_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
+import { SupportInspectorPanel } from '@/supports/SupportInspectorPanel';
 
 type DebugStamp = { perfMs: number; epochMs: number };
 type Vec3Like = { x: number; y: number; z: number };
@@ -96,18 +96,8 @@ type SupportDebugStats = {
 };
 
 /** One count per collection, derived so a new support type is counted too. */
-type SupportEntityCounts = Record<SupportCollectionKey, number>;
 
 /** Debug rows: the support types in registry order, then the primitives. */
-const SUPPORT_COUNT_ROWS: ReadonlyArray<{ key: SupportCollectionKey; label: string }> = [
-  ...SUPPORT_STATE_TYPES.map((descriptor) => ({
-    key: descriptor.location.key as SupportCollectionKey,
-    label: descriptor.label,
-  })),
-  { key: 'roots' as SupportCollectionKey, label: 'Roots' },
-  { key: 'knots' as SupportCollectionKey, label: 'Knots' },
-];
-
 export type SharedPanelStackProps = {
   scene: ReturnType<typeof useSceneCollectionManager>;
   slicing: ReturnType<typeof useSlicingManager>;
@@ -125,7 +115,6 @@ export type SharedPanelStackProps = {
   displayActiveModelId: string | null;
   transformDebugStats: TransformDebugStats;
   supportDebugStats: SupportDebugStats;
-  activeSupportEntityCounts: SupportEntityCounts;
 
   formatDebugVec3: (v: THREE.Vector3 | null | undefined) => string;
   formatDebugVec3Like: (v: Vec3Like | null | undefined) => string;
@@ -167,7 +156,6 @@ export function SharedPanelStack({
   displayActiveModelId,
   transformDebugStats,
   supportDebugStats,
-  activeSupportEntityCounts,
   formatDebugVec3,
   formatDebugVec3Like,
   formatDebugNumber,
@@ -376,16 +364,13 @@ export function SharedPanelStack({
             </>
           )}
 
-          <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-subtle)' }}>
-            <div className="mb-1 text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-              Support Counts (all / active model)
-            </div>
-            {SUPPORT_COUNT_ROWS.map(({ key, label }) => (
-              <div key={key}>
-                {label}: {transformDebugStats.supportCounts[key] ?? 0} / {activeSupportEntityCounts[key] ?? 0}
-              </div>
-            ))}
-          </div>
+          {/* Selection, connections and counts, read from the support store.
+              The page snapshot these used to come from is deliberately empty
+              in support mode, so every count read zero exactly here. */}
+          <SupportInspectorPanel
+            activeModelId={scene.activeModelId ?? null}
+            hoveredSupportId={supportDebugStats.hoveredIdForVisual ?? null}
+          />
 
           {scene.mode !== 'support' && scene.mode !== 'printing' && (
             <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-subtle)' }}>

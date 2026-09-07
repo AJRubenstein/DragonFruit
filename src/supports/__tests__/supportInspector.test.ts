@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { inspectSupport, collectionOfEntity } from '../supportInspector';
+import { inspectSupport, collectionOfEntity, ownerOfPickedId } from '../supportInspector';
 import { createEmptySupportCollections, SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { SupportState } from '../types';
 
@@ -147,4 +147,42 @@ test('the cascade count is what removing the support would take with it', () => 
 test('an unknown id inspects to nothing', () => {
     assert.equal(inspectSupport(stateWithOneOfEach(), 'not-a-support'), null);
     assert.equal(collectionOfEntity(stateWithOneOfEach(), 'not-a-support'), null);
+});
+
+test('a picked joint resolves to the support that owns it', () => {
+    // What the overlay showed before: hovering a joint gave "joint" and an id,
+    // and nothing about the support it belongs to.
+    const state = stateWithOneOfEach();
+
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+
+        const owner = ownerOfPickedId(state, `${descriptor.id}-seg-tj`);
+        assert.ok(owner, `${descriptor.id} top joint resolves`);
+        assert.equal(owner.id, `${descriptor.id}-1`);
+        assert.equal(owner.via, 'joint');
+    }
+});
+
+test('a picked segment resolves to the support that owns it', () => {
+    const state = stateWithOneOfEach();
+
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+
+        const owner = ownerOfPickedId(state, `${descriptor.id}-seg`);
+        assert.ok(owner, `${descriptor.id} segment resolves`);
+        assert.equal(owner.id, `${descriptor.id}-1`);
+        assert.equal(owner.via, 'segment');
+    }
+});
+
+test('an entity id resolves to itself', () => {
+    const state = stateWithOneOfEach();
+    const owner = ownerOfPickedId(state, 'trunk-1');
+    assert.deepEqual(owner, { id: 'trunk-1', via: 'entity' });
+});
+
+test('an id belonging to nothing resolves to nothing', () => {
+    assert.equal(ownerOfPickedId(stateWithOneOfEach(), 'ghost'), null);
 });
