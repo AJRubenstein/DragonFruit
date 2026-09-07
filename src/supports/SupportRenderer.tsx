@@ -561,14 +561,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         // whole snapshot is the dependency.
     }, [interiorView, state, kickstandState.knots, matchesInteriorContact]);
 
-    const entitySegmentModelIdById = useMemo(() => {
-        const map = new Map<string, string | undefined>();
-        for (const [id, modelId] of Object.entries(supportRenderLookup.entitySegmentModelIdById)) {
-            map.set(id, modelId);
-        }
-        return map;
-    }, [supportRenderLookup.entitySegmentModelIdById]);
-
     const entityModelIdByKnotId = useMemo(() => {
         const map = new Map<string, string | undefined>();
         for (const [id, modelId] of Object.entries(supportRenderLookup.entityModelIdByKnotId)) {
@@ -1707,38 +1699,20 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const segmentModelIdById = useMemo(() => {
         const map = new Map<string, string | undefined>();
 
-        for (const trunk of renderTrunkList) {
-            for (const segment of trunk.segments) {
-                map.set(segment.id, trunk.modelId);
-            }
-        }
-
-        for (const branch of renderBranchList) {
-            for (const segment of branch.segments) {
-                map.set(segment.id, branch.modelId);
-            }
-        }
-
-        for (const twig of renderTwigList) {
-            for (const segment of twig.segments) {
-                map.set(segment.id, twig.modelId);
-            }
-        }
-
-        for (const stick of renderStickList) {
-            for (const segment of stick.segments) {
-                map.set(segment.id, stick.modelId);
-            }
-        }
-
-        for (const kickstand of renderKickstandList) {
-            for (const segment of kickstand.segments) {
-                map.set(segment.id, kickstand.modelId);
+        // Every type with a shaft, not the five that were listed by hand --
+        // anchor has segments too, and a knot riding one resolved to no model.
+        for (const descriptor of SUPPORT_TYPES) {
+            if (!descriptor.hasSegments) continue;
+            for (const entity of renderListByType[descriptor.id]) {
+                const shafted = entity as { modelId?: string; segments?: { id: string }[] };
+                for (const segment of shafted.segments ?? []) {
+                    map.set(segment.id, shafted.modelId);
+                }
             }
         }
 
         return map;
-    }, [renderBranchList, renderKickstandList, renderStickList, renderTrunkList, renderTwigList, ]);
+    }, [renderListByType]);
 
     const modelIdByKnotId = useMemo(() => {
         const map = new Map<string, string | undefined>();
@@ -1878,30 +1852,19 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return result;
     }, [isModelVisible]);
 
-    const trunkJointsBySupport = useMemo(
-        () => collectShaftJoints('trunk', renderTrunkList),
-        [renderTrunkList, collectShaftJoints],
-    );
-
-    const branchJointsBySupport = useMemo(
-        () => collectShaftJoints('branch', renderBranchList),
-        [renderBranchList, collectShaftJoints],
-    );
-
-    const twigJointsBySupport = useMemo(
-        () => collectShaftJoints('twig', renderTwigList),
-        [renderTwigList, collectShaftJoints],
-    );
-
-    const stickJointsBySupport = useMemo(
-        () => collectShaftJoints('stick', renderStickList),
-        [renderStickList, collectShaftJoints],
-    );
-
-    const kickstandJointsBySupport = useMemo(
-        () => collectShaftJoints('kickstand', renderKickstandList),
-        [renderKickstandList, collectShaftJoints],
-    );
+    /** Shaft joints per batching type, keyed by type id then by support. */
+    const shaftJointsByType = useMemo(() => {
+        const byType = {} as Record<SupportTypeId, ReturnType<typeof collectShaftJoints>>;
+        for (const descriptor of SUPPORT_TYPES) {
+            if (!descriptor.batchesShaftJoints) continue;
+            // The flag admits only types whose segments carry the joints.
+            byType[descriptor.id] = collectShaftJoints(
+                descriptor.id,
+                renderListByType[descriptor.id] as readonly { id: string; modelId?: string; segments: Segment[] }[],
+            );
+        }
+        return byType;
+    }, [renderListByType, collectShaftJoints]);
 
     /** Unselected leaf base knots as batch-ready joints: one instanced draw
      *  instead of a mounted KnotRenderer per leaf. Read through
@@ -1933,6 +1896,21 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return result;
     }, [renderLeafList, isModelVisible, renderKnotsById, modelIdByKnotId]);
 
+    /**
+     * The joint set a support id belongs to, whichever type owns it.
+     *
+     * Ids are unique across types, so the first set holding one is the answer.
+     * The leaf is checked last because its joint is a host knot rather than a
+     * shaft joint, collected separately.
+     */
+    const jointSetForSupport = React.useCallback((supportId: string) => {
+        for (const descriptor of SUPPORT_TYPES) {
+            const jointSet = shaftJointsByType[descriptor.id]?.get(supportId);
+            if (jointSet) return jointSet;
+        }
+        return leafJointsBySupport.get(supportId) ?? null;
+    }, [shaftJointsByType, leafJointsBySupport]);
+
     const sceneBatchedJointGroups = useMemo(() => {
         const grouped = new Map<string, { modelId: string | null; color: string; joints: InstancedJoint[] }>();
 
@@ -1951,54 +1929,23 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             }
         };
 
-        for (const trunk of renderTrunkList) {
-            if (!isModelVisible(trunk.modelId, trunk.id)) continue;
-            if (selectedTrunkIds.has(trunk.id)) continue;
-            const jointSet = trunkJointsBySupport.get(trunk.id);
-            if (!jointSet) continue;
+        // Every batching type walks its own list the same way. The leaf is not
+        // one of them: its joint is a host knot, collected separately, and it
+        // takes its model from that set rather than from itself.
+        for (const descriptor of SUPPORT_TYPES) {
+            const jointsBySupport = shaftJointsByType[descriptor.id];
+            if (!jointsBySupport) continue;
 
-            const color = resolveSceneSupportColor(trunk.modelId, trunk.id, 'trunk');
-            pushJoints(trunk.modelId ?? null, color, jointSet.joints);
-        }
+            const selectedIds = selectedOf(descriptor.id);
+            for (const entity of renderListByType[descriptor.id]) {
+                if (!isModelVisible(entity.modelId, entity.id)) continue;
+                if (selectedIds.has(entity.id)) continue;
+                const jointSet = jointsBySupport.get(entity.id);
+                if (!jointSet) continue;
 
-        for (const branch of renderBranchList) {
-            if (!isModelVisible(branch.modelId, branch.id)) continue;
-            if (selectedBranchIds.has(branch.id)) continue;
-            const jointSet = branchJointsBySupport.get(branch.id);
-            if (!jointSet) continue;
-
-            const color = resolveSceneSupportColor(branch.modelId, branch.id, 'branch');
-            pushJoints(branch.modelId ?? null, color, jointSet.joints);
-        }
-
-        for (const twig of renderTwigList) {
-            if (!isModelVisible(twig.modelId, twig.id)) continue;
-            if (selectedTwigIds.has(twig.id)) continue;
-            const jointSet = twigJointsBySupport.get(twig.id);
-            if (!jointSet) continue;
-
-            const color = resolveSceneSupportColor(twig.modelId, twig.id, 'twig');
-            pushJoints(twig.modelId ?? null, color, jointSet.joints);
-        }
-
-        for (const stick of renderStickList) {
-            if (!isModelVisible(stick.modelId, stick.id)) continue;
-            if (selectedStickIds.has(stick.id)) continue;
-            const jointSet = stickJointsBySupport.get(stick.id);
-            if (!jointSet) continue;
-
-            const color = resolveSceneSupportColor(stick.modelId, stick.id, 'stick');
-            pushJoints(stick.modelId ?? null, color, jointSet.joints);
-        }
-
-        for (const kickstand of renderKickstandList) {
-            if (!isModelVisible(kickstand.modelId, kickstand.id)) continue;
-            if (selectedKickstandIds.has(kickstand.id)) continue;
-            const jointSet = kickstandJointsBySupport.get(kickstand.id);
-            if (!jointSet) continue;
-
-            const color = resolveSceneSupportColor(kickstand.modelId, kickstand.id, 'kickstand');
-            pushJoints(kickstand.modelId ?? null, color, jointSet.joints);
+                const color = resolveSceneSupportColor(entity.modelId, entity.id, descriptor.id);
+                pushJoints(entity.modelId ?? null, color, jointSet.joints);
+            }
         }
 
         for (const leaf of renderLeafList) {
@@ -2014,25 +1961,13 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return Array.from(grouped.values());
     }, [
         disableSelectionAndHover,
-        renderBranchList, renderKickstandList, renderLeafList, renderStickList, renderTrunkList, renderTwigList,
-        
-        
-        
+        renderLeafList,
         renderListByType,
         isModelVisible,
-        selectedTrunkIds,
-        selectedBranchIds,
-        selectedTwigIds,
-        selectedStickIds,
-        selectedKickstandIds,
-        trunkJointsBySupport,
-        branchJointsBySupport,
-        twigJointsBySupport,
-        stickJointsBySupport,
-        kickstandJointsBySupport,
-        leafJointsBySupport,
+        selectedOf,
         selectedLeafIds,
-        renderListByType,
+        shaftJointsByType,
+        leafJointsBySupport,
         applyDropToVec3Like,
         dimNonSelected,
         resolveSceneSupportColor,
@@ -2342,35 +2277,12 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         const hoveredSupportId = hoveredSupportIdForVisual;
         if (!hoveredSupportId) return null;
 
-        const trunkSet = trunkJointsBySupport.get(hoveredSupportId);
-        if (trunkSet) return trunkSet;
-
-        const branchSet = branchJointsBySupport.get(hoveredSupportId);
-        if (branchSet) return branchSet;
-
-        const twigSet = twigJointsBySupport.get(hoveredSupportId);
-        if (twigSet) return twigSet;
-
-        const stickSet = stickJointsBySupport.get(hoveredSupportId);
-        if (stickSet) return stickSet;
-
-        const kickstandSet = kickstandJointsBySupport.get(hoveredSupportId);
-        if (kickstandSet) return kickstandSet;
-
-        const leafSet = leafJointsBySupport.get(hoveredSupportId);
-        if (leafSet) return leafSet;
-
-        return null;
+        return jointSetForSupport(hoveredSupportId);
     }, [
         isInteractable,
         hoveredSupportIdForVisual,
         hoveredSupportIsSelected,
-        trunkJointsBySupport,
-        branchJointsBySupport,
-        twigJointsBySupport,
-        stickJointsBySupport,
-        kickstandJointsBySupport,
-        leafJointsBySupport,
+        jointSetForSupport,
     ]);
 
     const hoveredSupportOverlayJoints = useMemo(() => {
@@ -2517,13 +2429,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
         const overlays: InstancedJoint[] = [];
         for (const supportId of additionalMarqueeHoveredSupportIds) {
-            const jointSet = trunkJointsBySupport.get(supportId)
-                ?? branchJointsBySupport.get(supportId)
-                ?? twigJointsBySupport.get(supportId)
-                ?? stickJointsBySupport.get(supportId)
-                ?? kickstandJointsBySupport.get(supportId)
-                ?? leafJointsBySupport.get(supportId)
-                ?? null;
+            const jointSet = jointSetForSupport(supportId);
             if (!jointSet) continue;
             overlays.push(...jointSet.joints.map((joint) => ({
                 ...joint,
@@ -2532,7 +2438,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             })));
         }
         return overlays;
-    }, [additionalMarqueeHoveredSupportIds, trunkJointsBySupport, branchJointsBySupport, twigJointsBySupport, stickJointsBySupport, kickstandJointsBySupport, leafJointsBySupport, applyDropToVec3Like]);
+    }, [additionalMarqueeHoveredSupportIds, jointSetForSupport, applyDropToVec3Like]);
 
     const marqueeHoveredOverlayRoots = useMemo(() => {
         if (hidePlateContactPrimitivesEffective) return [] as InstancedRoot[];
