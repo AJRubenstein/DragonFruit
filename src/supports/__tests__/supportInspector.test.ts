@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { inspectSupport, collectionOfEntity, ownerOfPickedId } from '../supportInspector';
+import { dumpSupportGroup, inspectSupport, collectionOfEntity, ownerOfPickedId } from '../supportInspector';
 import { createEmptySupportCollections, SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { SupportState } from '../types';
 
@@ -185,4 +185,47 @@ test('an entity id resolves to itself', () => {
 
 test('an id belonging to nothing resolves to nothing', () => {
     assert.equal(ownerOfPickedId(stateWithOneOfEach(), 'ghost'), null);
+});
+
+test('the group dump carries the support and everything connected to it', () => {
+    // The button exists so a bug report can paste the whole group, not a
+    // summary of it -- so the dump has to hold real entities.
+    const state = stateWithOneOfEach();
+    (state.knots as unknown as Record<string, unknown>)['knot-1'] = {
+        id: 'knot-1',
+        parentShaftId: 'trunk-seg',
+        pos: { x: 0, y: 0, z: 2 },
+        diameter: 1,
+    };
+
+    const dump = dumpSupportGroup(state, 'trunk-1');
+    assert.ok(dump, 'a dump is produced');
+
+    const parsed = JSON.parse(dump) as {
+        root: { id: string; collection: string };
+        entityCount: number;
+        entities: Record<string, Record<string, { id: string }>>;
+        inspection: { typeId: string } | null;
+    };
+
+    assert.deepEqual(parsed.root, { id: 'trunk-1', collection: 'trunks' });
+    assert.equal(parsed.inspection?.typeId, 'trunk');
+    assert.ok(parsed.entities.trunks?.['trunk-1'], 'the trunk itself is included');
+    assert.ok(parsed.entities.knots?.['knot-1'], 'the hosted knot comes with it');
+    assert.equal(parsed.entityCount, 2);
+});
+
+test('the dump holds whole entities, not just their ids', () => {
+    const state = stateWithOneOfEach();
+    const parsed = JSON.parse(dumpSupportGroup(state, 'trunk-1')!) as {
+        entities: Record<string, Record<string, { modelId?: string; segments?: unknown[] }>>;
+    };
+
+    const trunk = parsed.entities.trunks['trunk-1'];
+    assert.equal(trunk.modelId, 'model-a', 'fields survive the round trip');
+    assert.equal(trunk.segments?.length, 1, 'segments survive the round trip');
+});
+
+test('dumping something that is not a support produces nothing', () => {
+    assert.equal(dumpSupportGroup(stateWithOneOfEach(), 'ghost'), null);
 });
