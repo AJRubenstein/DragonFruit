@@ -80,6 +80,10 @@ export const ALREADY_SUPPORTED_RADIUS_MM = 3.0;
 /** Gridless mode: merge candidates within this 3D distance of an existing trunk. */
 export const GRIDLESS_MERGE_RADIUS_MM = 4.0;
 
+/** Merge host choice weights longest already-hosted member span this much
+ *  (mm-equivalent per mm) against raw distance — Dumas Score = Gain − k·lmax
+ *  shape with k explicit. Zero hosted members → pure nearest-first. */
+export const MERGE_HOST_LOAD_WEIGHT = 0.5;
 /** Leaf fanning: max distance from a trunk shaft sample to an uncovered island (mm). */
 export const LEAF_FAN_RADIUS_MM = 5.0;
 

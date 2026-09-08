@@ -300,3 +300,22 @@ test('fanLeafToTrunk keeps long overhang spans as leaves', () => {
         assert.equal(Object.keys(fan.draft.leaves).length, 1, 'one leaf attached');
     }
 });
+
+test('findMergeHost prefers the less-loaded of equidistant hosts', () => {
+    // Two shafts 2mm either side of the tip: pure distance ties. Trunk A
+    // already carries a 9.5mm leaf (0.5 × 9.5 load penalty); B is clean.
+    const a = trunkWithShaft('A', -2, 0, 0, 19);
+    const b = trunkWithShaft('B', 2, 0, 0, 19);
+    const draft = a;
+    draft.trunks['B'] = b.trunks['B'];
+    draft.knots['k1'] = { id: 'k1', parentShaftId: 'seg-A', pos: { x: -2, y: 0, z: 0.5 }, diameter: 1 };
+    draft.leaves['l1'] = {
+        id: 'l1',
+        modelId: 'm',
+        parentKnotId: 'k1',
+        contactCone: { id: 'c', pos: { x: -2, y: 0, z: 10 }, normal: { x: 0, y: 0, z: 1 } },
+    } as never;
+
+    const host = findMergeHost({ x: 0, y: 0, z: 1 }, 'm', draft);
+    assert.ok(host && host.trunkId === 'B', 'merge avoids the loaded host');
+});

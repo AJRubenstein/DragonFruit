@@ -57,6 +57,7 @@ import {
     GRID_HOST_FAN_RADIUS_MM,
     LEAF_FAN_MAX_ANGLE_DEG,
     MAX_LEAF_SPAN_BEFORE_BRANCH_MM,
+    MERGE_HOST_LOAD_WEIGHT,
 } from './constants';
 
 const LOG_PREFIX = '[AutoSupport]';
@@ -329,6 +330,34 @@ function countAttachmentsOnTrunk(trunkId: string, draft: SupportState): number {
     return count;
 }
 
+/** Longest hosted member span (mm) on a trunk — knot→tip over its leaves
+ *  and branches. Dumas-style load-concentration signal: merging onto a
+ *  host that already carries long members concentrates peel load on one
+ *  plate anchor. Zero when the trunk hosts nothing. */
+function maxMemberSpanMm(trunkId: string, draft: SupportState): number {
+    const trunk = draft.trunks[trunkId];
+    if (!trunk) return 0;
+    const segmentIds = new Set(trunk.segments.map((s) => s.id));
+    segmentIds.add(trunkId);
+    const knotById = new Map<string, { x: number; y: number; z: number }>();
+    for (const knot of Object.values(draft.knots)) {
+        if (segmentIds.has(knot.parentShaftId)) knotById.set(knot.id, knot.pos);
+    }
+    if (knotById.size === 0) return 0;
+    let longest = 0;
+    const members = [...Object.values(draft.leaves), ...Object.values(draft.branches)];
+    for (const m of members) {
+        const knotPos = knotById.get(m.parentKnotId);
+        const tip = m.contactCone?.pos;
+        if (!knotPos || !tip) continue;
+        const span = Math.sqrt(
+            (tip.x - knotPos.x) ** 2 + (tip.y - knotPos.y) ** 2 + (tip.z - knotPos.z) ** 2,
+        );
+        if (span > longest) longest = span;
+    }
+    return longest;
+}
+
 /** Returns true if the trunk has reached its attachment capacity. */
 function isTrunkAtAttachmentCapacity(trunkId: string, limit: number, draft: SupportState): boolean {
     if (limit <= 0) return false;
@@ -350,7 +379,20 @@ export function findMergeHost(
     const snapshot = draft;
     const r2 = GRIDLESS_MERGE_RADIUS_MM * GRIDLESS_MERGE_RADIUS_MM;
     let best: MergeHost | null = null;
-    let bestDist2 = Infinity;
+    let bestScore = Infinity;
+    // Dumas-style gain ranking: among in-radius hosts, nearer wins, but a
+    // host already carrying long members is penalized (merging there
+    // concentrates peel load on one plate anchor). With no hosted members
+    // the penalty is zero and ranking reduces to nearest-first.
+    const loadOf = new Map<string, number>();
+    const scoreFor = (trunkId: string, adjustedD2: number): number => {
+        let lmax = loadOf.get(trunkId);
+        if (lmax === undefined) {
+            lmax = maxMemberSpanMm(trunkId, snapshot);
+            loadOf.set(trunkId, lmax);
+        }
+        return Math.sqrt(Math.max(0, adjustedD2)) + MERGE_HOST_LOAD_WEIGHT * lmax;
+    };
 
     for (const [id, trunk] of Object.entries(snapshot.trunks)) {
         if (trunk.modelId !== modelId) continue;
@@ -363,9 +405,12 @@ export function findMergeHost(
             const dy = tipPos.y - tp.y;
             const dz = tipPos.z - tp.z;
             const d2 = dx * dx + dy * dy + dz * dz;
-            if (d2 <= r2 && d2 < bestDist2) {
-                bestDist2 = d2;
-                best = { trunkId: id, tipPos: tp };
+            if (d2 <= r2) {
+                const score = scoreFor(id, d2);
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = { trunkId: id, tipPos: tp };
+                }
             }
         }
 
@@ -377,11 +422,11 @@ export function findMergeHost(
             const dy = tipPos.y - jp.y;
             const dz = tipPos.z - jp.z;
             const d2 = dx * dx + dy * dy + dz * dz;
-            // Slight preference for shaft body over tip (multiply by 0.9
-            // so a shaft point at the same distance wins).
             const adjustedD2 = d2 * 0.9;
-            if (adjustedD2 <= r2 && adjustedD2 < bestDist2) {
-                bestDist2 = adjustedD2;
+            if (adjustedD2 > r2) continue;
+            const score = scoreFor(id, adjustedD2);
+            if (score < bestScore) {
+                bestScore = score;
                 best = { trunkId: id, tipPos: jp };
             }
         }
