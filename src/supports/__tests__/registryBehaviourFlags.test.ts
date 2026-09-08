@@ -54,7 +54,13 @@ test('exactly one type records its own edit-history entry', () => {
     assert.deepEqual(idsWhere((d) => d.ownsEditHistoryEntry), ['trunk']);
 });
 
-test('every descriptor declares all four behaviour flags', () => {
+test('claimsModelSurfaceGestures marks the model-face placements', () => {
+    // Brace and kickstand attach to existing supports; trunk takes the model
+    // surface by default rather than competing as a routed owner.
+    assert.deepEqual(idsWhere((d) => d.claimsModelSurfaceGestures), ['branch', 'leaf']);
+});
+
+test('every descriptor declares all the behaviour flags', () => {
     // An added type defaulting to undefined would read as false at every call
     // site -- silently opting into the generic path everywhere.
     for (const d of SUPPORT_TYPES) {
@@ -63,6 +69,7 @@ test('every descriptor declares all four behaviour flags', () => {
             'hasDedicatedSnapPass',
             'hasContactDiskLengthOverride',
             'ownsEditHistoryEntry',
+            'claimsModelSurfaceGestures',
         ] as const) {
             assert.equal(typeof d[flag], 'boolean', `${d.id}.${flag} must be declared`);
         }

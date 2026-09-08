@@ -189,6 +189,12 @@ export interface SupportTypeDescriptor {
      */
     hasPlacementPreview: boolean;
     /**
+     * Whether the placement router hands this type pointer gestures on a model
+     * face. Brace and kickstand attach to existing supports; trunk takes the
+     * model surface by default rather than competing as an owner.
+     */
+    claimsModelSurfaceGestures: boolean;
+    /**
      * What a live placement preview carries.
      *
      * `support` is a whole provisional support, with contacts and any error.
@@ -443,6 +449,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 10, startFallsBackToSplitPoint: false },
         hasOrigin: true,
         hasPlacementPreview: true,
+        claimsModelSurfaceGestures: false,
         previewShape: 'support',
         previewYieldsToOtherModes: true,
         previewPriority: {
@@ -488,6 +495,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
         hasPlacementPreview: true,
+        claimsModelSurfaceGestures: true,
         previewShape: 'support',
         previewRequiresOwnMode: true,
         placementModeDisplacesDefault: true,
@@ -534,6 +542,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         hasOrigin: true,
         hasPlacementPreview: true,
+        claimsModelSurfaceGestures: true,
         previewShape: 'support',
         placementModeDisplacesDefault: true,
         previewPriority: {
@@ -578,6 +587,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasOrigin: false,
         shaftTaper: { segments: 'all', from: ['contactDiskA.contactDiameterMm', 'contactDiskB.contactDiameterMm'] },
         hasPlacementPreview: false,
+        claimsModelSurfaceGestures: false,
         placementRule: { metric: 'contactSpan', maxMm: { setting: 'meshToMesh.stickVsTwigCutoffMm', fallback: 5 } },
         isAutoBraceable: false,
         lower: { kind: 'disk', field: 'contactDiskA' },
@@ -616,6 +626,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: false,
         hasPlacementPreview: false,
+        claimsModelSurfaceGestures: false,
         placementRule: { metric: 'contactSpan', minMm: { setting: 'meshToMesh.stickVsTwigCutoffMm', fallback: 5 } },
         isAutoBraceable: false,
         lower: { kind: 'cone', field: 'contactConeA' },
@@ -661,6 +672,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         knotHostPrefix: 'braceSegment:',
         hasOrigin: false,
         hasPlacementPreview: true,
+        claimsModelSurfaceGestures: false,
         previewShape: 'segment',
         isAutoBraceable: false,
         lower: { kind: 'knot' },
@@ -699,6 +711,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: true },
         hasOrigin: true,
         hasPlacementPreview: false,
+        claimsModelSurfaceGestures: false,
         placementRule: { metric: 'tipHeight', maxMm: ANCHOR_HEIGHT_THRESHOLD_MM, boundary: 'upper' },
         isAutoBraceable: false,
         lower: { kind: 'inlineRoot', field: 'rootPos' },
@@ -742,6 +755,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         hasOrigin: false,
         shaftTaper: { segments: 'last', from: ['profile.terminalStartDiameterMm', 'profile.terminalEndDiameterMm'] },
         hasPlacementPreview: true,
+        claimsModelSurfaceGestures: false,
         previewShape: 'support',
         placementModeDisplacesDefault: true,
         previewPriority: {
@@ -1482,3 +1496,24 @@ export const JOINT_DRAG_PREVIEW_TYPES: readonly JointDragPreviewTypeId[] =
 export function isJointDragPreviewType(kind: string): kind is JointDragPreviewTypeId {
     return (JOINT_DRAG_PREVIEW_TYPES as readonly string[]).includes(kind);
 }
+
+/**
+ * Mirrors each descriptor's `claimsModelSurfaceGestures` with the literals kept,
+ * so the owner union narrows instead of widening to every type.
+ * `supportPlacementRouting.test.ts` holds the two in step.
+ */
+export const MODEL_SURFACE_GESTURE_BY_TYPE = {
+    trunk: false,
+    branch: true,
+    leaf: true,
+    twig: false,
+    stick: false,
+    brace: false,
+    anchor: false,
+    kickstand: false,
+} as const satisfies Record<SupportTypeId, boolean>;
+
+/** The types the placement router hands model-face gestures to. */
+export type ModelSurfaceGestureTypeId = {
+    [K in SupportTypeId]: (typeof MODEL_SURFACE_GESTURE_BY_TYPE)[K] extends true ? K : never;
+}[SupportTypeId];
