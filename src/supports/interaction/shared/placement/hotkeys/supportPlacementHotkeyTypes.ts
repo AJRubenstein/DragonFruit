@@ -1,3 +1,4 @@
+import type * as THREE from 'three';
 import type { ModelSurfaceGestureTypeId, SupportTypeId } from '../../../../supportTypeRegistry';
 import type { HotkeyBinding } from '@/hotkeys/hotkeyConfig';
 
@@ -12,6 +13,15 @@ export type SupportPlacementFamily = 'none' | 'branchFamily' | 'leaf' | 'kicksta
 export type SupportPlacementOwner = 'none' | Extract<SupportTypeId, 'branch' | 'brace' | 'leaf' | 'kickstand'>;
 /** Model-surface gestures route to the types that declare they claim them. */
 export type SupportModelPlacementOwner = 'none' | ModelSurfaceGestureTypeId;
+
+/**
+ * The model-face half of a placement hook. Every claiming type exposes it with
+ * the same signature, so the router's owner can index a table of them.
+ */
+export interface SupportModelPlacementHandlers {
+    onModelHover: (hit: THREE.Intersection | null) => void;
+    onModelClick: (hit: THREE.Intersection | null) => void;
+}
 export type SupportPlacementFirstClickTarget = 'none' | 'model' | 'support';
 
 export interface SupportPlacementModifierState {

@@ -1517,3 +1517,7 @@ export const MODEL_SURFACE_GESTURE_BY_TYPE = {
 export type ModelSurfaceGestureTypeId = {
     [K in SupportTypeId]: (typeof MODEL_SURFACE_GESTURE_BY_TYPE)[K] extends true ? K : never;
 }[SupportTypeId];
+
+export const MODEL_SURFACE_GESTURE_TYPES: readonly ModelSurfaceGestureTypeId[] =
+    (Object.keys(MODEL_SURFACE_GESTURE_BY_TYPE) as SupportTypeId[])
+        .filter((id): id is ModelSurfaceGestureTypeId => MODEL_SURFACE_GESTURE_BY_TYPE[id]);
