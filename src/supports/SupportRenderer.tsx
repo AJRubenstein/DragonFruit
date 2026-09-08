@@ -573,37 +573,35 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         if (modelId) return modelId;
         if (!supportId) return undefined;
 
-        const trunk = state.trunks[supportId];
-        if (trunk?.modelId) return trunk.modelId;
+        // Every type, from the registry: its own modelId, then the knots it
+        // declares a `hostedBy` edge onto. The hand-written chain covered seven
+        // of eight -- an anchor id resolved to undefined.
+        for (const descriptor of SUPPORT_TYPES) {
+            const collection = descriptor.id === 'kickstand'
+                ? kickstandState.kickstands
+                : (state as unknown as Record<string, Record<string, { modelId?: string }>>)[descriptor.location.key];
+            const entity = collection?.[supportId] as Record<string, unknown> | undefined;
+            if (!entity) continue;
 
-        const branch = state.branches[supportId];
-        if (branch) return branch.modelId ?? entityModelIdByKnotId.get(branch.parentKnotId);
+            if (typeof entity.modelId === 'string' && entity.modelId) return entity.modelId;
 
-        const leaf = state.leaves[supportId];
-        if (leaf) return leaf.modelId ?? entityModelIdByKnotId.get(leaf.parentKnotId);
+            if (descriptor.id === 'kickstand') {
+                const rootId = entity.rootId as string | undefined;
+                const rootModelId = rootId ? kickstandState.roots[rootId]?.modelId : undefined;
+                if (rootModelId) return rootModelId;
+            }
 
-        const brace = state.braces[supportId];
-        if (brace) {
-            return brace.modelId
-                ?? entityModelIdByKnotId.get(brace.startKnotId)
-                ?? entityModelIdByKnotId.get(brace.endKnotId);
-        }
-
-        const twig = state.twigs[supportId];
-        if (twig?.modelId) return twig.modelId;
-
-        const stick = state.sticks[supportId];
-        if (stick?.modelId) return stick.modelId;
-
-        const kickstand = kickstandState.kickstands[supportId];
-        if (kickstand) {
-            return kickstand.modelId
-                ?? kickstandState.roots[kickstand.rootId]?.modelId
-                ?? entityModelIdByKnotId.get(kickstand.hostKnotId);
+            for (const edge of descriptor.edges) {
+                if (edge.to !== 'knots' || edge.ownership !== 'hostedBy') continue;
+                const knotId = entity[edge.field] as string | undefined;
+                const viaKnot = knotId ? entityModelIdByKnotId.get(knotId) : undefined;
+                if (viaKnot) return viaKnot;
+            }
+            return undefined;
         }
 
         return undefined;
-    }, [state.trunks, state.branches, state.leaves, state.braces, state.twigs, state.sticks, kickstandState.kickstands, kickstandState.roots, entityModelIdByKnotId]);
+    }, [state, kickstandState.kickstands, kickstandState.roots, entityModelIdByKnotId]);
 
     const isModelVisible = React.useCallback((modelId?: string, supportId?: string) => {
         const resolvedModelId = resolveSupportModelId(modelId, supportId);
