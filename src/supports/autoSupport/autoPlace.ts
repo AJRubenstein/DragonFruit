@@ -55,6 +55,7 @@ import {
     LEAF_FAN_RADIUS_MM,
     GRID_HOST_FAN_RADIUS_MM,
     LEAF_FAN_MAX_ANGLE_DEG,
+    MAX_LEAF_SPAN_BEFORE_BRANCH_MM,
 } from './constants';
 
 const LOG_PREFIX = '[AutoSupport]';
@@ -536,7 +537,7 @@ function placeOneCandidate(
                     logPlacement(
                         `Leaf (grid→island) ${candidate.id} → trunk ${fan.trunkId} ` +
                         `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
-                    return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.leafId };
+                    return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.kind === 'branch' ? fan.branchId : fan.leafId };
                 }
             }
         }
@@ -566,7 +567,7 @@ function placeOneCandidate(
                 logPlacement(
                     `Leaf (fan merge) ${candidate.id} → trunk ${fan.trunkId} ` +
                     `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
-                return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.leafId };
+                return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.kind === 'branch' ? fan.branchId : fan.leafId };
             }
             fanRefusal = fan.reason;
         }
@@ -647,17 +648,16 @@ function placeOneCandidate(
                     // shaft + 0.025, the joint's own rendered diameter.
                     diameter: knotDiameter + 0.125,
                 };
-                // Leaf decision: use tip-to-tip distance (host contact cone →
-                // candidate tip), not shaft-knot distance.  This is the visual
-                // span the leaf would bridge.
-                const hostTip = hostTrunk?.contactCone?.pos ?? knotPos;
-                const tipSpanMm = Math.sqrt(
-                    (tipPos.x - hostTip.x) ** 2 +
-                    (tipPos.y - hostTip.y) ** 2 +
-                    (tipPos.z - hostTip.z) ** 2,
+                // Leaf/branch decision on the ACTUAL span the member will
+                // bridge (knot → tip). Tip-to-host-tip understates it when
+                // the knot sits low on the shaft — a leaf gated on that
+                // built 8–11 mm tapered spikes.
+                const leafSpanMm = Math.sqrt(
+                    (tipPos.x - knotPos.x) ** 2 +
+                    (tipPos.y - knotPos.y) ** 2 +
+                    (tipPos.z - knotPos.z) ** 2,
                 );
-                const MAX_AUTO_LEAF_SPAN_MM = 8.0;
-                if (tipSpanMm <= MAX_AUTO_LEAF_SPAN_MM) {
+                if (leafSpanMm <= MAX_LEAF_SPAN_BEFORE_BRANCH_MM) {
                     // Knot attachment is on the shaft; angle check uses the
                     // actual knot-to-tip geometry for the leaf cone.
                     const hDist = Math.sqrt(
@@ -704,13 +704,13 @@ function placeOneCandidate(
                                     const la = (Math.atan2(hDist, vDist) * 180) / Math.PI;
                                     logPlacement(
                                         `Leaf (merge) ${candidate.id} → host ${host.trunkId} ` +
-                                        `span=${tipSpanMm.toFixed(1)}mm angle=${la.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
+                                        `span=${leafSpanMm.toFixed(1)}mm angle=${la.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
                                     return { kind: 'leaf', preset, draft: d, entityId: leaf.id };
                                 }
                             }
                         } catch {}
                     }
-                } else if (tipSpanMm > MAX_AUTO_LEAF_SPAN_MM && candidate.source !== 'overhang') {
+                } else if (leafSpanMm > MAX_LEAF_SPAN_BEFORE_BRANCH_MM && candidate.source !== 'overhang') {
                     // Branch: requires upward angle from knot to tip. Only ISLAND
                     // candidates branch here — overhang fanning is leaves by rule,
                     // so an overhang single beyond leaf reach falls through and
@@ -722,7 +722,7 @@ function placeOneCandidate(
                     const mergeAngleDeg = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                     if (mergeAngleDeg > 50) {
                         logPlacement(
-                            `Merge skip ${candidate.id}: angle too shallow (${mergeAngleDeg.toFixed(0)}° from vertical > 50°) span=${tipSpanMm.toFixed(1)}mm`);
+                            `Merge skip ${candidate.id}: angle too shallow (${mergeAngleDeg.toFixed(0)}° from vertical > 50°) span=${leafSpanMm.toFixed(1)}mm`);
                     } else try {
                         const band = activeSizingBand();
                         const { branch, supportData: sd } = buildBranchData({
@@ -749,7 +749,7 @@ function placeOneCandidate(
                                 const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                                 logPlacement(
                                     `Branch (merge) ${candidate.id} → host ${host.trunkId} ` +
-                                    `span=${tipSpanMm.toFixed(1)}mm angle=${ma.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
+                                    `span=${leafSpanMm.toFixed(1)}mm angle=${ma.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
                                 return { kind: 'branch', preset, draft: d, entityId: branch.id };
                             }
                         }
@@ -808,8 +808,9 @@ function placeOneCandidate(
                     candidate.source as SupportOrigin | undefined,
                 );
                 if (fan.ok) {
-                    logPlacement(`Leaf (cavity-fan) ${candidate.id} → trunk ${fan.trunkId} dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
-                    return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.leafId };
+                    const fanKind = fan.kind === 'branch' ? 'Branch' : 'Leaf';
+                    logPlacement(`${fanKind} (cavity-fan) ${candidate.id} → trunk ${fan.trunkId} dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
+                    return { kind: fan.kind, preset, draft: fan.draft, entityId: fan.kind === 'branch' ? fan.branchId : fan.leafId };
                 }
                 cavityFanRefusal = fan.reason;
             } catch {}
@@ -1205,7 +1206,8 @@ export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
 }
 
 export type FanLeafResult =
-    | { ok: true; draft: SupportState; trunkId: string; leafId: string; distMm: number; angleDeg: number }
+    | { ok: true; kind: 'leaf'; draft: SupportState; trunkId: string; leafId: string; distMm: number; angleDeg: number }
+    | { ok: true; kind: 'branch'; draft: SupportState; trunkId: string; branchId: string; distMm: number; angleDeg: number }
     | { ok: false; reason: FanLeafRefusal };
 
 // ---------------------------------------------------------------------------
@@ -1282,14 +1284,14 @@ export function rehostLegacyKnots(draft: SupportState): SupportState {
 }
 
 /**
- * Enforce "contact cone body ≤ the shaft it sits on" across the whole draft —
- * the same invariant `setSettings`/`updateTipProfile` clamp for settings-driven
- * builds. The resize pass floors SEGMENTS at the cone demand, but cones are
- * never re-derived when the forest changes shape around them: a leaf fanned
- * while its host was temporarily thicker, a trunk whose cone profile was
- * transplanted by a replacement, or a re-run over a previously resized forest
- * can all leave a cone wider than its shaft. Clamping here makes the whole
- * forest match what clicking a support (rebuild from shaft) produces.
+ * Enforce "contact cone body == the shaft it sits on" across the whole draft —
+ * the same geometry a settings-driven rebuild from the shaft produces. The
+ * resize pass thickens shafts AFTER cones are built, so a cone body lags its
+ * (thickened) shaft and renders as a visible step; conversely a leaf fanned
+ * while its host was temporarily thicker, a transplanted replacement profile,
+ * or a re-run over a resized forest can leave a cone wider than its shaft.
+ * Only the body moves — the tip contact diameter is a peel-force choice and
+ * stays exactly as placed.
  */
 export function syncContactConeDiameters(draft: SupportState): SupportState {
     const segmentDiameter = new Map<string, number>();
@@ -1309,10 +1311,10 @@ export function syncContactConeDiameters(draft: SupportState): SupportState {
     }
 
     let changed = false;
-    const clampCone = (cone: ContactCone | undefined, hostDia: number | undefined): ContactCone | undefined => {
+    const syncCone = (cone: ContactCone | undefined, hostDia: number | undefined): ContactCone | undefined => {
         const body = cone?.profile?.bodyDiameterMm;
         if (!cone || body === undefined || hostDia === undefined) return cone;
-        if (body > hostDia + 1e-6) {
+        if (Math.abs(body - hostDia) > 1e-6) {
             changed = true;
             return { ...cone, profile: { ...cone.profile, bodyDiameterMm: hostDia } };
         }
@@ -1322,7 +1324,7 @@ export function syncContactConeDiameters(draft: SupportState): SupportState {
     const nextTrunks: SupportState['trunks'] = { ...draft.trunks };
     for (const [tid, t] of Object.entries(draft.trunks)) {
         const topSeg = t.segments[t.segments.length - 1];
-        const cone = clampCone(t.contactCone, topSeg?.diameter);
+        const cone = syncCone(t.contactCone, topSeg?.diameter);
         if (cone !== t.contactCone) nextTrunks[tid] = { ...t, contactCone: cone };
     }
     const nextLeaves: SupportState['leaves'] = { ...draft.leaves };
@@ -1331,14 +1333,14 @@ export function syncContactConeDiameters(draft: SupportState): SupportState {
         if (!knot) continue;
         const hostDia = segmentDiameter.get(knot.parentShaftId);
         if (hostDia === undefined) continue;
-        const cone = clampCone(l.contactCone, hostDia);
+        const cone = syncCone(l.contactCone, hostDia);
         if (cone && cone !== l.contactCone) nextLeaves[lid] = { ...l, contactCone: cone };
     }
 
     const nextBranches: SupportState['branches'] = { ...draft.branches };
     for (const [bid, b] of Object.entries(draft.branches)) {
         const firstSeg = b.segments[0];
-        const cone = clampCone(b.contactCone, firstSeg?.diameter);
+        const cone = syncCone(b.contactCone, firstSeg?.diameter);
         if (cone !== b.contactCone) nextBranches[bid] = { ...b, contactCone: cone };
     }
 
@@ -1649,9 +1651,51 @@ export function fanLeafToTrunk(
             continue;
         }
 
+        const resolved = resolveSurfaceNormal(target, mesh ?? undefined);
+        // Long island spans route to branches with real shafts instead of
+        // long tapered leaf cones (spindly spikes). Overhang fanning stays
+        // leaves by rule; failed branch attempts fall through to the next
+        // candidate (a shorter span may still leaf).
+        if (origin !== 'overhang' && Math.sqrt(dist2) > MAX_LEAF_SPAN_BEFORE_BRANCH_MM) {
+            try {
+                const band = activeSizingBand();
+                const built = buildBranchData({
+                    tipPos: resolved.point,
+                    tipNormal: resolved.normal,
+                    modelId,
+                    parentKnot,
+                    mesh: mesh ?? undefined,
+                    shaftDiameterMm: band.shaftDiameterMm,
+                    tipContactDiameterMm: band.tipContactDiameterMm,
+                    rootsDiameterMm: band.rootDiameterMm,
+                });
+                const collides = built.supportData.error || (mesh && branchCollidesWithSDF(built.branch, mesh));
+                if (!collides) {
+                    if (maxAttachments > 0 && isTrunkAtAttachmentCapacity(sp.trunkId, maxAttachments, draft)) {
+                        lastBlockedReason = 'capacity';
+                        continue;
+                    }
+                    const next = draftAddKnot(draft, parentKnot);
+                    built.branch.origin = 'island';
+                    return {
+                        ok: true,
+                        kind: 'branch',
+                        draft: draftAddBranch(next, built.branch),
+                        trunkId: sp.trunkId,
+                        branchId: built.branch.id,
+                        distMm: Math.sqrt(dist2),
+                        angleDeg,
+                    };
+                }
+                lastBlockedReason = 'blocked';
+            } catch {
+                lastBlockedReason = 'build';
+            }
+            continue;
+        }
+
         let leaf;
         try {
-            const resolved = resolveSurfaceNormal(target, mesh ?? undefined);
             const built = buildLeafData({
                 tipPos: resolved.point,
                 surfaceNormal: resolved.normal,
@@ -1690,6 +1734,7 @@ export function fanLeafToTrunk(
         if (origin) leaf.origin = origin;
         return {
             ok: true,
+            kind: 'leaf',
             draft: draftAddLeaf(next, leaf),
             trunkId: sp.trunkId,
             leafId: leaf.id,
@@ -2293,12 +2338,13 @@ export function computeAutoSupportPlan(
             const origin = originKind ?? 'standalone';
             diagnostics.trunksByKind[origin]--;
             placedTrunks--;
-            placedLeaves++;
+            if (fan.kind === 'branch') placedBranches++;
+            else placedLeaves++;
             consolidated++;
             convertedThisPass++;
             const trunkEntry = forestLedger.find((e) => e.entityId === tid);
             if (trunkEntry) {
-                forestLedger.push({ ...trunkEntry, kind: 'leaf', entityId: fan.leafId });
+                forestLedger.push({ ...trunkEntry, kind: fan.kind, entityId: fan.kind === 'branch' ? fan.branchId : fan.leafId });
             }
         }
         if (convertedThisPass === 0) break;
@@ -2473,6 +2519,7 @@ export function computeAutoSupportPlan(
         }
 
         let fannedCount = 0;
+        let fannedBranches = 0;
 
         let skippedDist = 0;
         let skippedAngle = 0;
@@ -2506,24 +2553,26 @@ export function computeAutoSupportPlan(
             }
             draft = fan.draft;
             fannedCount++;
+            if (fan.kind === 'branch') fannedBranches++;
             supportedIds.add(island.id);
             coveredArea += (island.areaMm2 ?? 0);
             forestLedger.push({
                 displayId: island.id,
-                kind: 'leaf',
-                entityId: fan.leafId,
+                kind: fan.kind,
+                entityId: fan.kind === 'branch' ? fan.branchId : fan.leafId,
                 areaMm2: island.areaMm2 ?? 0,
                 zHeight: island.contact.z,
                 preset: presetForArea(island.areaMm2 ?? 0),
                 bandShaftMm: activeSizingBand().shaftDiameterMm,
             });
             console.log(LOG_PREFIX,
-                `Leaf (fan p${pass}) ${island.id} → trunk ${fan.trunkId} ` +
+                `${fan.kind === 'branch' ? 'Branch' : 'Leaf'} (fan p${pass}) ${island.id} → trunk ${fan.trunkId} ` +
                 `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
         }
 
         if (fannedCount > 0) {
-            placedLeaves += fannedCount;
+            placedLeaves += fannedCount - fannedBranches;
+            placedBranches += fannedBranches;
             analytics.islandsCovered += fannedCount;
             analytics.islandsUncovered -= fannedCount;
             analytics.areaCoverage = totalArea > 0 ? coveredArea / totalArea : 0;
@@ -2715,15 +2764,15 @@ export function computeAutoSupportPlan(
 
             // Cone/shaft sync: the resize and merge passes thicken shafts and
             // rehost members, but a contact cone keeps whatever body diameter
-            // it was built with — a leaf fanned onto a then-thicker host (or a
-            // trunk whose profile was transplanted during a replacement) can
-            // end up wider than the shaft it sits on. Clicking the support
-            // rebuilt the cone from the shaft and "snapped it correct"; do
-            // that globally instead of waiting for a click.
+            // it was built with — lagging its (thickened) shaft as a visible
+            // step, or ending up wider than the shaft after a transplant.
+            // Clicking the support rebuilt the cone from the shaft and
+            // "snapped it correct"; do that globally instead of waiting
+            // for a click.
             const coneSynced = syncContactConeDiameters(draft);
             if (coneSynced !== draft) {
                 draft = coneSynced;
-                console.log(LOG_PREFIX, 'Contact cone sync: clamped oversized cone bodies to their host shafts.');
+                console.log(LOG_PREFIX, 'Contact cone sync: matched cone bodies to their host shafts.');
             }
 
             // ── Forest Report ───────────────────────────────────────

@@ -23,6 +23,12 @@ export const ANCHOR_MIN_AREA_MM2 = 12.0;
 /** Max span (mm) for a leaf cone attached to a host knot (grid path). */
 export const MAX_AUTO_LEAF_SPAN_MM = 2.5;
 
+/** Leaf spans above this (mm) route to branches with real shafts instead of
+ *  long tapered leaf cones — an 8–11 mm leaf reads as a spindly spike next
+ *  to its trunk. Applies to merge + fan paths (island origins; overhang
+ *  fanning stays leaves by rule). */
+export const MAX_LEAF_SPAN_BEFORE_BRANCH_MM = 6.0;
+
 /** Distance (mm) within which an existing support tip counts a candidate as already supported. */
 export const ALREADY_SUPPORTED_RADIUS_MM = 3.0;
 

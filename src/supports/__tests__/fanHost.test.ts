@@ -266,3 +266,37 @@ test('fanLeafToTrunk prefers the steepest sample over the nearest', () => {
             `reports the steep angle (${fan.angleDeg.toFixed(2)}°)`);
     }
 });
+
+test('fanLeafToTrunk routes long island spans to branches', () => {
+    // 6.7 mm span at 26°: inside the 8 mm fan radius but past the 6 mm
+    // leaf span — an island target must get a branch with a real shaft,
+    // not a long tapered leaf cone.
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const fan = fanLeafToTrunk(
+        { x: 3, y: 0, z: 18 }, 'm', [sp('host', 0, 0, 12)],
+        new Set(), 'fan-test', 8, 2.5, 60, 12, draft, undefined,
+    );
+
+    assert.equal(fan.ok, true, 'fan succeeds (6.7 mm < 8 mm fan radius)');
+    if (fan.ok) {
+        assert.equal(fan.kind, 'branch', 'long island span becomes a branch');
+        assert.equal(Object.keys(fan.draft.branches).length, 1, 'one branch attached');
+        assert.equal(Object.keys(fan.draft.leaves).length, 0, 'no leaf built');
+    }
+});
+
+test('fanLeafToTrunk keeps long overhang spans as leaves', () => {
+    // Same geometry with overhang origin: overhang fanning stays leaves
+    // by rule, even past the branch threshold.
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const fan = fanLeafToTrunk(
+        { x: 3, y: 0, z: 18 }, 'm', [sp('host', 0, 0, 12)],
+        new Set(), 'fan-test', 8, 2.5, 60, 12, draft, undefined, 'overhang',
+    );
+
+    assert.equal(fan.ok, true, 'fan succeeds');
+    if (fan.ok) {
+        assert.equal(fan.kind, 'leaf', 'overhang origin stays a leaf');
+        assert.equal(Object.keys(fan.draft.leaves).length, 1, 'one leaf attached');
+    }
+});

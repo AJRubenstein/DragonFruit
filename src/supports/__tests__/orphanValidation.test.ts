@@ -77,7 +77,8 @@ test('fanLeafToTrunk creates knot with segmentId and t (not trunkId)', () => {
         // Validate passes (no drift, not missing)
         const validated = validateAndCullOrphans(result.draft, undefined);
         assert.equal(validated.orphans.length, 0, 'valid leaf not orphaned');
-        assert.ok(validated.draft.leaves[result.leafId], 'leaf remains after validation');
+        assert.equal(result.kind, 'leaf', 'short span stays a leaf');
+        if (result.kind === 'leaf') assert.ok(validated.draft.leaves[result.leafId], 'leaf remains after validation');
     }
 });
 
