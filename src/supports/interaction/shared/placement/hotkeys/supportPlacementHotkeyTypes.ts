@@ -1,4 +1,4 @@
-import type { SupportTypeId } from '../../../../supportTypeRegistry';
+import type { ModelSurfaceGestureTypeId, SupportTypeId } from '../../../../supportTypeRegistry';
 import type { HotkeyBinding } from '@/hotkeys/hotkeyConfig';
 
 export type SupportPlacementFamily = 'none' | 'branchFamily' | 'leaf' | 'kickstand';
@@ -10,6 +10,8 @@ export type SupportPlacementFamily = 'none' | 'branchFamily' | 'leaf' | 'kicksta
  * set is held by `supportPlacementRouting.test.ts`.
  */
 export type SupportPlacementOwner = 'none' | Extract<SupportTypeId, 'branch' | 'brace' | 'leaf' | 'kickstand'>;
+/** Model-surface gestures route to the types that declare they claim them. */
+export type SupportModelPlacementOwner = 'none' | ModelSurfaceGestureTypeId;
 export type SupportPlacementFirstClickTarget = 'none' | 'model' | 'support';
 
 export interface SupportPlacementModifierState {
@@ -51,8 +53,8 @@ export interface ResolvedSupportPlacementOwner {
     owner: SupportPlacementOwner;
     basedOnFirstClick: boolean;
     firstClickTarget: SupportPlacementFirstClickTarget;
-    modelHoverOwner: 'none' | 'branch' | 'leaf';
-    modelClickOwner: 'none' | 'branch' | 'leaf';
+    modelHoverOwner: SupportModelPlacementOwner;
+    modelClickOwner: SupportModelPlacementOwner;
     supportHoverOwner: SupportPlacementOwner;
     supportClickOwner: SupportPlacementOwner;
     blocksDefaultModelPlacement: boolean;

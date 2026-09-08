@@ -62,6 +62,7 @@ every descriptor declares all of them:
 | `hasContactDiskLengthOverride` | Does a joint drag strip `diskLengthOverride` from its contact cone? |
 | `ownsEditHistoryEntry` | Does its gizmo record its own before/after entry? |
 | `ownsRoot` | Do instances own a `Roots` entry via `rootId`? |
+| `claimsModelSurfaceGestures` | Does the placement router hand it pointer gestures on a model face? |
 
 ⚠️ `ownsRoot` is not optional bookkeeping: roots no entity claims get culled every
 render, so a type that owns roots and forgets this flag has them deleted out from
@@ -190,7 +191,7 @@ wiring is explicit:
 ## Minimal checklist (bare, render-only Gadget)
 
 1. `types.ts` — entity interface, one line in `SupportEntityByCollection`, format field
-2. `supportTypeRegistry.ts` — `SupportTypeId` + descriptor with all eight behaviour flags
+2. `supportTypeRegistry.ts` — `SupportTypeId` + descriptor with every behaviour flag
 3. `SupportTypes/Gadget/GadgetRenderer.tsx` (+ `gadgetBuilder.ts` if it has geometry)
 4. `SupportRenderer.tsx` — import, render list, selected set, JSX block
 5. `state.ts` — add/update/remove, SelectionCategory, lookup cache, import/merge/isolate
