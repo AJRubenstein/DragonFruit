@@ -1,6 +1,6 @@
 import type { Knot, SupportState } from '../types';
 import type { SupportCollectionKey } from '../supportTypeRegistry';
-import { SUPPORT_TYPES, SHAFTED_COLLECTION_KEYS } from '../supportTypeRegistry';
+import { getSupportTypeDescriptor, parseKnotHostId, SUPPORT_TYPES, SHAFTED_COLLECTION_KEYS } from '../supportTypeRegistry';
 
 export interface SupportRenderLookupSnapshot {
   supportIdBySegmentId: Record<string, string>;
@@ -129,12 +129,13 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
       pushKnotId(knotIdsByParentShaftId, knot.parentShaftId, knot.id);
     }
 
-    if (knot.parentShaftId.startsWith('braceSegment:')) {
-      const braceId = knot.parentShaftId.slice('braceSegment:'.length);
-      entityModelIdByKnotId[knot.id] = state.braces[braceId]?.modelId;
-    } else if (knot.parentShaftId.startsWith('leafCone:')) {
-      const leafId = knot.parentShaftId.slice('leafCone:'.length);
-      entityModelIdByKnotId[knot.id] = state.leaves[leafId]?.modelId;
+    // A knot on a pseudo-shaft takes its model from the host entity; the
+    // prefix naming that host is declared per type.
+    const host = parseKnotHostId(knot.parentShaftId);
+    if (host) {
+      const collections = state as unknown as Record<string, Record<string, { modelId?: string }>>;
+      const collection = collections[getSupportTypeDescriptor(host.typeId).location.key];
+      entityModelIdByKnotId[knot.id] = collection?.[host.entityId]?.modelId;
     } else {
       entityModelIdByKnotId[knot.id] = entitySegmentModelIdById[knot.parentShaftId];
     }
