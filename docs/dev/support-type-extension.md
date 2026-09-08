@@ -143,9 +143,13 @@ Still the heaviest step.
 
 ## 6. Export — `src/features/export/logic/supportExportReconstruction.ts` *(hand-wired)*
 
-- Include gadgets in `extractScopedSupportPayload`.
+- Include gadgets in `extractScopedSupportPayload`. Scoping itself is
+  registry-driven -- `belongsToScope` walks your declared `edges`.
 - Add `gadgets` to `buildScopedSupportExportDocument`'s returned format.
-- Add a `buildGadgetGroup(...)` and append it in `buildScopedSupportGeometryGroup`.
+- Add a `buildGadgetGroup(...)` and one `gadget:` entry to the `groupBuilders`
+  table in `buildScopedSupportGeometryGroup`. The table is typed
+  `Record<SupportTypeId, GroupBuilder>`, so a missing entry fails to compile
+  rather than dropping your type from every export.
 
 ## 7. Interaction — only for user-placeable types *(hand-wired)*
 
