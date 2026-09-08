@@ -231,6 +231,41 @@ function appendStraightOrBezierShafts(
   }
 }
 
+/**
+ * Build one type's export groups. Each closes over its own row type, so the
+ * table can be indexed by type id without widening the rows to a union. A
+ * builder returning null for a row skips that entity: a broken link drops one
+ * support rather than failing the export.
+ */
+type GroupBuilder = () => readonly (THREE.Group | null)[];
+
+function buildTrunkGroup(trunk: Trunk, root: Roots, modelId: string | null | undefined): THREE.Group {
+  const group = SupportGeometryGenerator.generateSupportGroup(
+    {
+      id: trunk.id,
+      roots: root,
+      segments: trunk.segments,
+      contactCone: trunk.contactCone,
+    },
+    modelId ? getRaftSettingsForModel(modelId) : undefined,
+  );
+  group.name = `Trunk_${trunk.id}`;
+  addModelMetadata(group, modelId);
+  return group;
+}
+
+function buildBranchGroup(branch: Branch, parentKnot: Knot, modelId: string | null | undefined): THREE.Group {
+  const group = SupportGeometryGenerator.generateSupportGroup({
+    id: branch.id,
+    startPos: parentKnot.pos,
+    segments: branch.segments,
+    contactCone: branch.contactCone,
+  });
+  group.name = `Branch_${branch.id}`;
+  addModelMetadata(group, modelId);
+  return group;
+}
+
 function buildAnchorGroup(anchor: Anchor, modelId: string | null | undefined): THREE.Group {
   const group = new THREE.Group();
   group.name = `Anchor_${anchor.id}`;
@@ -637,76 +672,51 @@ export function buildScopedSupportGeometryGroup(
   const kickstandRootsById = kickstandState.roots;
   const kickstandKnotsById = kickstandState.knots;
 
-  payload.trunks.forEach((trunk) => {
-    const root = rootsById[trunk.rootId];
-    if (!root) return;
-    const modelId = trunk.modelId ?? root.modelId ?? null;
-    const trunkGroup = SupportGeometryGenerator.generateSupportGroup(
-      {
-        id: trunk.id,
-        roots: root,
-        segments: trunk.segments,
-        contactCone: trunk.contactCone,
-      },
-      modelId ? getRaftSettingsForModel(modelId) : undefined,
-    );
-    trunkGroup.name = `Trunk_${trunk.id}`;
-    addModelMetadata(trunkGroup, modelId);
-    group.add(trunkGroup);
-  });
+  /** One builder per type, over the rows the payload carries for it. */
+  const groupBuilders: Record<SupportTypeId, GroupBuilder> = {
+    trunk: () => payload.trunks.map((trunk) => {
+      const root = rootsById[trunk.rootId];
+      if (!root) return null;
+      return buildTrunkGroup(trunk, root, trunk.modelId ?? root.modelId ?? null);
+    }),
+    branch: () => payload.branches.map((branch) => {
+      const parentKnot = knotsById[branch.parentKnotId];
+      if (!parentKnot) return null;
+      const modelId = branch.modelId ?? getModelIdForSupportEntityId(branch.parentKnotId);
+      return buildBranchGroup(branch, parentKnot, modelId);
+    }),
+    leaf: () => payload.leaves.map((leaf) =>
+      buildLeafGroup(leaf, leaf.modelId ?? getModelIdForSupportEntityId(leaf.parentKnotId))),
+    twig: () => payload.twigs.map((twig) => buildTwigGroup(twig, twig.modelId)),
+    stick: () => payload.sticks.map((stick) => buildStickGroup(stick, stick.modelId)),
+    brace: () => payload.braces.map((brace) => {
+      const startKnot = knotsById[brace.startKnotId];
+      const endKnot = knotsById[brace.endKnotId];
+      if (!startKnot || !endKnot) return null;
+      const modelId = brace.modelId
+        ?? getModelIdForSupportEntityId(brace.startKnotId)
+        ?? getModelIdForSupportEntityId(brace.endKnotId);
+      return buildBraceGroup(brace, startKnot, endKnot, modelId);
+    }),
+    anchor: () => payload.anchors.map((anchor) => buildAnchorGroup(anchor, anchor.modelId)),
+    kickstand: () => payload.kickstands.map((kickstand) => {
+      const root = kickstandRootsById[kickstand.rootId];
+      const hostKnot = kickstandKnotsById[kickstand.hostKnotId];
+      if (!root || !hostKnot) return null;
+      const modelId = kickstand.modelId
+        ?? root.modelId
+        ?? getModelIdForSupportEntityId(kickstand.hostKnotId)
+        ?? getModelIdForSupportEntityId(kickstand.hostSegmentId);
+      return buildKickstandGroup(kickstand, root, hostKnot, modelId);
+    }),
+  };
 
-  payload.branches.forEach((branch) => {
-    const parentKnot = knotsById[branch.parentKnotId];
-    if (!parentKnot) return;
-    const modelId = branch.modelId ?? getModelIdForSupportEntityId(branch.parentKnotId);
-    const branchGroup = SupportGeometryGenerator.generateSupportGroup({
-      id: branch.id,
-      startPos: parentKnot.pos,
-      segments: branch.segments,
-      contactCone: branch.contactCone,
-    });
-    branchGroup.name = `Branch_${branch.id}`;
-    addModelMetadata(branchGroup, modelId);
-    group.add(branchGroup);
-  });
-
-  payload.leaves.forEach((leaf) => {
-    const modelId = leaf.modelId ?? getModelIdForSupportEntityId(leaf.parentKnotId);
-    group.add(buildLeafGroup(leaf, modelId));
-  });
-
-  payload.twigs.forEach((twig) => {
-    group.add(buildTwigGroup(twig, twig.modelId));
-  });
-
-  payload.sticks.forEach((stick) => {
-    group.add(buildStickGroup(stick, stick.modelId));
-  });
-
-  payload.braces.forEach((brace) => {
-    const startKnot = knotsById[brace.startKnotId];
-    const endKnot = knotsById[brace.endKnotId];
-    if (!startKnot || !endKnot) return;
-    const modelId = brace.modelId
-      ?? getModelIdForSupportEntityId(brace.startKnotId)
-      ?? getModelIdForSupportEntityId(brace.endKnotId);
-    group.add(buildBraceGroup(brace, startKnot, endKnot, modelId));
-  });
-
-  payload.kickstands.forEach((kickstand) => {
-    const root = kickstandRootsById[kickstand.rootId];
-    const hostKnot = kickstandKnotsById[kickstand.hostKnotId];
-    if (!root || !hostKnot) return;
-    const modelId = kickstand.modelId
-      ?? root.modelId
-      ?? getModelIdForSupportEntityId(kickstand.hostKnotId)
-      ?? getModelIdForSupportEntityId(kickstand.hostSegmentId);
-    group.add(buildKickstandGroup(kickstand, root, hostKnot, modelId));
-  });
-
-  payload.anchors.forEach((anchor) => {
-    group.add(buildAnchorGroup(anchor, anchor.modelId));
-  });
+  // Registry order, so the exported group is stable as types are added.
+  for (const descriptor of SUPPORT_TYPES) {
+    for (const built of groupBuilders[descriptor.id]()) {
+      if (built) group.add(built);
+    }
+  }
 
   group.updateMatrixWorld(true);
   return group;

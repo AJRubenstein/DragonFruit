@@ -6,6 +6,7 @@ import type { SupportState } from '@/supports/types';
 import { JOINT_DIAMETER_OFFSET_MM } from '@/supports/constants';
 import { SupportGeometryGenerator } from '../SupportGeometryGenerator';
 import { buildScopedSupportExportDocument, buildScopedSupportGeometryGroup } from '../supportExportReconstruction';
+import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 
 function makeSupportState(): SupportState {
   return {
@@ -407,4 +408,35 @@ test('kickstand export does not add a host-knot sphere affordance', () => {
   });
 
   assert.equal(hostSphereMeshes.length, 0);
+});
+
+/**
+ * Every type the payload carries reaches the exported group. The metadata test
+ * above only asserts nothing WRONG is present, so dropping a type's block
+ * entirely left it passing -- the geometry path had no other coverage.
+ */
+test('every populated support type reaches the exported geometry', () => {
+  const supportState = makeSupportState();
+  const kickstandState = makeKickstandState();
+
+  const group = buildScopedSupportGeometryGroup(supportState, kickstandState, ['model-a']);
+  const names = group.children.map((child) => child.name);
+
+  const expected = SUPPORT_TYPES
+    .filter((descriptor) => {
+      const collection = descriptor.id === 'kickstand'
+        ? kickstandState.kickstands
+        : (supportState as unknown as Record<string, Record<string, { modelId?: string }>>)[descriptor.location.key];
+      return Object.values(collection ?? {}).some((entity) => entity.modelId === 'model-a');
+    })
+    .map((descriptor) => descriptor.singular.charAt(0).toUpperCase() + descriptor.singular.slice(1));
+
+  assert.ok(expected.length > 0, 'fixture populates no model-a supports');
+
+  for (const prefix of expected) {
+    assert.ok(
+      names.some((name) => name.startsWith(`${prefix}_`)),
+      `no ${prefix} group in the export; exported: ${names.join(', ')}`,
+    );
+  }
 });
