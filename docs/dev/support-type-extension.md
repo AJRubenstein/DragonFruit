@@ -85,7 +85,7 @@ whether the type is user-placeable.
   renderer).
 - *Placeable only*: `gadgetBuilder.ts` (geometry/state builder), a
   placement-state store, a `useGadgetPlacement` hook, and a
-  `GadgetPlacementController` mounted in `SceneCanvas.tsx`.
+  `GadgetPlacementController` listed in `supports/placementControllers.ts`.
 - `index.ts` barrels are **optional** — only Anchor and Kickstand have one.
 
 ## 3. Rendering — `src/supports/SupportRenderer.tsx` *(hand-wired)*
@@ -175,7 +175,10 @@ wiring is explicit:
   of type names where forgetting one is silent. Where one remains, add the `||`
   and note it — but **not in your diff**. Add the `||`, note the
   line, convert it separately.
-- Mount `<GadgetPlacementController />` in `SceneCanvas.tsx` under `mode === 'support'`,
+- Add `GadgetPlacementController` to `PLACEMENT_CONTROLLERS` in
+  `supports/placementControllers.ts`; the scene mounts every entry under
+  `mode === 'support'`. Placement *hooks* stay hand-wired above: the Rules of
+  Hooks need a static call order, so they cannot come from a table.
   and add a `SUPPORTS` hotkey binding + resolver entry if it's hotkey-triggered.
 
 ## Optional integrations (only if the feature is wanted)

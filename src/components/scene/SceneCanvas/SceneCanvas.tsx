@@ -52,10 +52,7 @@ import { JointPlacementPreview } from '@/supports/SupportPrimitives/Joint/JointP
 import { useJointCreationState } from '@/supports/SupportPrimitives/Joint/jointCreationState';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone/contactConeUtils';
 import { isContactDiskHudInteractionActive } from '@/supports/SupportPrimitives/ContactDisk/contactDiskHudInteraction';
-import { BranchPlacementController } from '@/supports/SupportTypes/Branch/BranchPlacementController';
-import { LeafPlacementController } from '@/supports/SupportTypes/Leaf/LeafPlacementController';
-import { BracePlacementController } from '@/supports/SupportTypes/Brace/BracePlacementController';
-import { KickstandPlacementController } from '@/supports/SupportTypes/Kickstand/KickstandPlacementController';
+import { PLACEMENT_CONTROLLERS, PLACEMENT_CONTROLLER_TYPES } from '@/supports/placementControllers';
 import { clearSupportSelection } from '@/supports/interaction/shared/selection/selectionController';
 import { isSupportTargetHoverCategory } from '@/supports/interaction/shared/hover/supportHoverResolver';
 import { useSceneHoveredSupportId } from '@/supports/interaction/shared/hover/sceneHoverStore';
@@ -7292,17 +7289,11 @@ export function SceneCanvas({
                 <JointPlacementPreview position={jointPlacementPreview.pos} diameter={jointPlacementPreview.diameter} />
               )}
 
-              {/* Branch Placement Controller - handles snapping logic */}
-              {mode === 'support' && <BranchPlacementController />}
-
-              {/* Leaf Placement Controller - handles snapping logic */}
-              {mode === 'support' && <LeafPlacementController activeModelId={activeModelId} />}
-
-              {/* Brace Placement Controller - handles snapping logic */}
-              {mode === 'support' && <BracePlacementController />}
-
-              {/* Kickstand Placement Controller - handles Ctrl-hover preview and click placement */}
-              {mode === 'support' && <KickstandPlacementController />}
+              {/* Each type's placement controller: snapping, hover preview, click placement. */}
+              {mode === 'support' && PLACEMENT_CONTROLLER_TYPES.map((typeId) => {
+                const Controller = PLACEMENT_CONTROLLERS[typeId]!;
+                return <Controller key={typeId} activeModelId={activeModelId} />;
+              })}
 
               {renderSceneOverlays?.({ raycastActiveModelFromRay })}
 
