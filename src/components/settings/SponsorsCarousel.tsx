@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import { useEffect, useState, useLayoutEffect } from 'react';
 import { Heart } from 'lucide-react';
 import fallbackSponsors from '@/components/settings/sponsors.json';
 
@@ -259,7 +259,9 @@ function CachedAvatar({ src, profile, alt, className, totalAmountDonated }: { sr
           width: '3rem',
           boxSizing: 'content-box',
           height: '3rem',
-          padding: hasRing ? ringPad : undefined,
+          // Always reserve the 3px ring gutter so ring-less avatars stay the
+          // same 54px height — otherwise their label sits 6px higher.
+          padding: ringPad,
           background: hasRing ? rank.gradient : undefined,
           boxShadow: hasRing && rank.glow !== 'none' ? rank.glow : undefined,
           borderRadius: '9999px',
@@ -288,7 +290,8 @@ function CachedAvatar({ src, profile, alt, className, totalAmountDonated }: { sr
           boxSizing: 'content-box',
         height: '3rem',
         borderRadius: '9999px',
-        padding: rank.gradient ? '3px' : undefined,
+        // Same constant gutter as above — label alignment across pills.
+        padding: '3px',
         background: rank.gradient ?? undefined,
         boxShadow: rank.glow !== 'none' ? rank.glow : undefined,
       }}
@@ -345,9 +348,7 @@ export function SponsorsCarousel() {
     if (cached && cached.length >= 0) return cached;
     return null;
   });
-  const containerRef = useRef<HTMLDivElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [shouldMarquee, setShouldMarquee] = useState(false);
+  // No overflow measurement: the row always scrolls as an infinite marquee.
 
   // Live sponsors — cached, not just baked-in fallback. Initial paint is cached
   // sponsors if available (instant, no flash), otherwise null → loading spinner
@@ -445,38 +446,8 @@ export function SponsorsCarousel() {
   const hasSponsors = Array.isArray(sponsors) && sponsors.length > 0;
   const isLoadingSponsors = sponsors === null;
 
-  // Only spin when the single sponsor row overflows the container.
-  // With 2 sponsors (Siraya Tech, Cunabula) the pills fit easily, so we
-  // show a static centered row; once sponsors grow beyond the line we
-  // switch to the infinite marquee.
-  useEffect(() => {
-    if (!hasSponsors) {
-      setShouldMarquee(false);
-      return;
-    }
-    const container = containerRef.current;
-    const track = trackRef.current;
-    if (!container || !track) return;
-
-    const update = () => {
-      // When marquee is active the track is duplicated (2× width). Use half
-      // as the single-row width; otherwise use the track's full width.
-      const singleWidth = shouldMarquee ? track.scrollWidth / 2 : track.scrollWidth;
-      setShouldMarquee(singleWidth > container.clientWidth);
-    };
-
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(container);
-    ro.observe(track);
-    window.addEventListener('resize', update);
-    // Re-measure after fonts load (affects pill width)
-    void document.fonts?.ready.then(update);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', update);
-    };
-  }, [sponsors, hasSponsors, shouldMarquee]);
+  // The sponsor row always renders as a single-row infinite marquee
+  // (duplicated list, CSS animation) — no measuring, no observers.
 
   const openExternal = async (url: string) => {
     try {
@@ -545,8 +516,8 @@ export function SponsorsCarousel() {
             Sponsor
           </button>
         </div>
-      ) : shouldMarquee ? (
-        <div ref={containerRef} className="relative mt-2 overflow-hidden rounded-md" style={{ background: 'color-mix(in srgb, var(--surface-0), transparent 20%)' }}>
+      ) : (
+        <div className="relative mt-2 overflow-hidden rounded-md" style={{ background: 'color-mix(in srgb, var(--surface-0), transparent 20%)' }}>
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6"
@@ -558,20 +529,19 @@ export function SponsorsCarousel() {
             style={{ background: 'linear-gradient(270deg, var(--surface-1) 0%, transparent 100%)' }}
           />
           <div
-            ref={trackRef}
             className="sponsors-marquee-track sponsors-marquee-track--animated flex items-center gap-2 py-2 will-change-transform"
             aria-live="polite"
           >
             {[...sponsors, ...sponsors].map((s, idx) => {
               const isDuplicate = idx >= sponsors.length;
+              const isCopyStart = idx % sponsors.length === 0;
               const label = s.name;
               const href = s.profile ?? s.website ?? OPENCOLLECTIVE_URL;
               return (
                 <button
                   key={`${s.name}-${idx}`}
-                  type="button"
+                  className={`inline-flex shrink-0 flex-col items-center gap-2 min-w-[56px] max-w-[80px] px-1 pt-1 pb-0.5 transition-opacity hover:opacity-80${isCopyStart ? ' ml-6' : ''}`}
                   onClick={() => openExternal(href)}
-                  className="inline-flex shrink-0 flex-col items-center gap-1 min-w-[56px] max-w-[80px] p-1 transition-opacity hover:opacity-80"
                   style={{ color: 'var(--text-strong)', background: 'none', border: 'none', cursor: 'pointer' }}
                   aria-label={`${label} — open sponsor profile`}
                   aria-hidden={isDuplicate ? true : undefined}
@@ -592,7 +562,8 @@ export function SponsorsCarousel() {
                         width: '3rem',
           boxSizing: 'content-box',
                         height: '3rem',
-                        padding: getSponsorRank(s.totalAmountDonated).gradient ? '3px' : undefined,
+                        // Same constant gutter — label alignment across pills.
+                        padding: '3px',
                         background: getSponsorRank(s.totalAmountDonated).gradient ?? undefined,
                         boxShadow: getSponsorRank(s.totalAmountDonated).glow !== 'none' ? getSponsorRank(s.totalAmountDonated).glow : undefined,
                         borderRadius: '9999px',
@@ -617,76 +588,22 @@ export function SponsorsCarousel() {
             })}
           </div>
         </div>
-      ) : (
-        <div ref={containerRef} className="mt-2 overflow-hidden rounded-md" style={{ background: 'color-mix(in srgb, var(--surface-0), transparent 20%)' }}>
-          <div
-            ref={trackRef}
-            className="flex flex-wrap items-center justify-center gap-2 py-2"
-            aria-live="polite"
-          >
-            {sponsors.map((s) => {
-              const href = s.profile ?? s.website ?? OPENCOLLECTIVE_URL;
-              return (
-                <button
-                  key={s.name}
-                  type="button"
-                  onClick={() => openExternal(href)}
-                  className="inline-flex shrink-0 flex-col items-center gap-1 min-w-[56px] max-w-[80px] p-1 transition-opacity hover:opacity-80"
-                  style={{ color: 'var(--text-strong)', background: 'none', border: 'none', cursor: 'pointer' }}
-                  aria-label={`${s.name} — open sponsor profile`}
-                >
-                  {s.image ? (
-                    <CachedAvatar
-                      src={s.image}
-                      profile={s.profile}
-                      alt=""
-                      className="h-12 w-12 rounded-full object-cover shrink-0"
-                      totalAmountDonated={s.totalAmountDonated}
-                    />
-                  ) : (
-                    <span
-                      className="inline-flex shrink-0 items-center justify-center rounded-full"
-                      style={{
-                        width: '3rem',
-          boxSizing: 'content-box',
-                        height: '3rem',
-                        padding: getSponsorRank(s.totalAmountDonated).gradient ? '3px' : undefined,
-                        background: getSponsorRank(s.totalAmountDonated).gradient ?? undefined,
-                        boxShadow: getSponsorRank(s.totalAmountDonated).glow !== 'none' ? getSponsorRank(s.totalAmountDonated).glow : undefined,
-                        borderRadius: '9999px',
-                      }}
-                      aria-hidden="true"
-                    >
-                      <span
-                        className="inline-flex h-full w-full items-center justify-center rounded-full border"
-                        style={{
-                          background: 'var(--surface-1)',
-                          color: getSponsorRank(s.totalAmountDonated).gradient ? getSponsorRank(s.totalAmountDonated).borderColor : 'var(--accent)',
-                          borderColor: 'transparent',
-                        }}
-                      >
-                        <Heart className="h-6 w-6" />
-                      </span>
-                    </span>
-                  )}
-                  <span className="w-full truncate text-center text-[11px] font-medium leading-tight">{s.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
       )}
       <style>{`
         .sponsors-marquee-track--animated {
           width: max-content;
-          animation: sponsors-marquee 28s linear infinite;
+          animation: sponsors-marquee 34s linear infinite;
         }
         .sponsors-marquee-track--animated:hover,
         .sponsors-marquee-track--animated:focus-within {
           animation-play-state: paused;
         }
         @keyframes sponsors-marquee {
+          /* 34s loop: 3s dwell at list start, 28s scroll, 3s dwell at rotation end.
+             100% rests at -50% so the loop restart (second copy aligned) is invisible. */
           0% { transform: translateX(0); }
+          8.8% { transform: translateX(0); }
+          91.2% { transform: translateX(-50%); }
           100% { transform: translateX(-50%); }
         }
         @media (prefers-reduced-motion: reduce) {
