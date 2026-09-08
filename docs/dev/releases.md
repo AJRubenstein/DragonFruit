@@ -224,13 +224,28 @@ We are dropping the `nightly` codeword in favor of `preview` or
 
 Until we drop the term, the reality is this: Separate from all of the above:
 `build-nightly.yml` builds an arbitrary branch on demand (`workflow_dispatch`
-or a `/nightly` PR comment) and publishes a rolling `nightly_{branch}`
+or a `/preview` PR comment — `/nightly` still works but is deprecated) and
+publishes a rolling `nightly_{branch}`
 prerelease so a reviewer can download and try an exact commit. It is **not**
 a scheduled build of `dev`, doesn't participate in the versioning/channel
 model above, and isn't wired to the auto-updater at all. The name is
 inherited from an older convention and is somewhat misleading given it isn't
 on any schedule — treat it as a branch/PR preview mechanism, not a "nightly
 channel."
+
+### External (fork) pull requests
+
+A preview build compiles the branch with the release signing secrets in scope,
+so external pull requests are never built automatically: the `preview-build`
+label does not dispatch for them, and `/preview` replies with a pointer to the
+command below.
+
+After reading the diff, a maintainer runs `/create-preview-external`. That
+resolves the pull request's head SHA, points `preview/pr-<number>` at it, and
+builds that branch. It imports **one commit** — later pushes need the command
+again, so every external build is one a maintainer chose to run. Preview
+branches whose pull request has closed are swept away the next time any
+preview is activated.
 
 ## Updater implementation notes
 

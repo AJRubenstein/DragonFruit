@@ -896,7 +896,7 @@ export class ExportManager {
     ws('<triangles>');
 
     for (const entry of geoEntries) {
-      const { geo, mat, startVertex } = entry;
+      const { geo, startVertex } = entry;
       const pos = geo.getAttribute('position')!;
       const idx = geo.getIndex();
 

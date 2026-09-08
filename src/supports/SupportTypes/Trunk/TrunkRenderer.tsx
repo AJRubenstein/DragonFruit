@@ -15,7 +15,7 @@ import { selectPrimitiveById } from '../../interaction/shared/selection/selectio
 import { useHighlight } from '../../interaction/useHighlight';
 import { usePartDragUpdate } from '../../interaction/partDragPreview';
 import { getSnapshot, updateTrunk } from '../../state';
-import { subscribeToSettings, getSettingsSnapshot } from '../../Settings';
+import { subscribeToSettings, getSettingsSnapshot } from '../../Settings/state';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 
 interface TrunkRendererProps {
@@ -49,6 +49,15 @@ export const TrunkRenderer = React.memo(function TrunkRenderer({ trunk: baseTrun
     const liveDragConeRef = React.useRef<import('../../SupportPrimitives/ContactCone/types').ContactCone | null>(null);
     const beforeHistoryRef = React.useRef<ReturnType<typeof captureSupportEditSnapshot> | null>(null);
     const [, setDragTick] = React.useState(0);
+
+    React.useEffect(() => {
+        return () => {
+            dragSessionRef.current?.stop();
+            dragSessionRef.current = null;
+            liveDragConeRef.current = null;
+            beforeHistoryRef.current = null;
+        };
+    }, []);
 
     // Use universal highlight hook
     const { pickRef, visuals, isPickingHovered } = useHighlight({

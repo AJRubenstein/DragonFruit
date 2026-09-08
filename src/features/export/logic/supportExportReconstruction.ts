@@ -419,8 +419,6 @@ function buildKickstandGroup(
   );
   group.add(rootGroup);
 
-  const hasSolidBottom = raftSettings?.bottomMode === 'solid';
-  const raftThickness = raftSettings?.thickness ?? 0;
   const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
   const verticalOffset = 0;
   let currentStart: Vec3 = {

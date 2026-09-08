@@ -467,7 +467,6 @@ export function generateGridCandidates(
         const ny = Math.max(1, Math.round(spanY / spacing));
         const spacingX = spanX / nx;
         const spacingY = spanY / ny;
-        const gridSpacing = Math.max(spacingX, spacingY);
 
         // Grid infill — the lattice spans the region with integer rows and
         // columns (never cut off by a leftover margin), inset by the contact
