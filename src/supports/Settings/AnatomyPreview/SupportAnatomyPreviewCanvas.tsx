@@ -5,10 +5,8 @@ import ReactDOM from 'react-dom';
 import * as THREE from 'three';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, TransformControls } from '@react-three/drei';
-import { RaftPreview } from './PreviewTypes/Raft/RaftPreview';
-import { GridPreview } from './PreviewTypes/Grid/GridPreview';
 import { TrunkPreview } from './PreviewTypes/Trunk/TrunkPreview';
-import { BracePreview } from './PreviewTypes/Brace/BracePreview';
+import { ANATOMY_PREVIEWS } from './anatomyPreviews';
 import { subscribeToSettings, getSettingsSnapshot } from '../state';
 import { subscribeToAnatomyPreviewState, getAnatomyPreviewState, setAnatomyPreviewActiveSettingKey } from './previewState';
 import { ANATOMY_CONFIG } from './AnatomyPreviewConfig';
@@ -301,6 +299,8 @@ function PreviewContent({
     const supportKindState = React.useSyncExternalStore(subscribeToSupportKindState, getSupportKindSnapshot, getSupportKindSnapshot);
     const activeKind = supportKindState.kind;
     const raftSettings = React.useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
+    // A kind that draws its own preview names it; the rest fall through to trunk.
+    const ActivePreview = ANATOMY_PREVIEWS[activeKind];
     const orbitRef = React.useRef<any>(null);
     const isUserInteractingRef = React.useRef(false);
 
@@ -751,35 +751,21 @@ function PreviewContent({
             )}
 
             <group ref={groupRef}>
-                {activeKind === 'raft' && (
-                    <RaftPreview
-                            settings={previewSettings}
-                        liveConfig={liveConfig}
-                        raftSettings={raftSettings}
-                        previewState={previewState}
-                    />
-                )}
-
-                {activeKind === 'grid' && (
-                    <GridPreview
-                            settings={previewSettings}
+                {ActivePreview && (
+                    <ActivePreview
+                        settings={previewSettings}
                         liveConfig={liveConfig}
                         activeKind={activeKind}
                         previewState={previewState}
                         anatomyOverrides={anatomyOverrides}
+                        raftSettings={raftSettings}
                     />
                 )}
 
-                {activeKind === 'stick' && (
-                    <BracePreview
-                        settings={previewSettings}
-                        previewState={previewState}
-                    />
-                )}
-
+                {/* Every kind without its own preview is drawn as a trunk. */}
                 {!kindDrawsOwnPreview(activeKind) && (
                     <TrunkPreview
-                            settings={previewSettings}
+                        settings={previewSettings}
                         liveConfig={liveConfig}
                         activeKind={activeKind}
                         previewState={previewState}
