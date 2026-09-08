@@ -236,6 +236,7 @@ import { useIslandManager } from '@/volumeAnalysis/IslandScan/useIslandManager';
 import { useIslands } from '@/volumeAnalysis/Islands/useIslands';
 import { IslandsPanel } from '@/components/controls/IslandsPanel';
 import { AutoSupportPanel, getAutoSupportBusy, subscribeAutoSupportBusy, autoSupportDrivingScan } from '@/components/controls/AutoSupportPanel';
+import { AutoRotationPanel } from '@/components/controls/AutoRotationPanel';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import { useSupportInteractionManager } from '@/features/supports/useSupportInteractionManager';
 import { useUndoRedoHotkeys } from '@/hotkeys/useUndoRedoHotkeys';
@@ -641,6 +642,12 @@ export default function Home() {
   const autoSupportsExperimentEnabled = React.useSyncExternalStore(
     subscribeToExperiments,
     () => isExperimentEnabled('auto-supports'),
+    // SSR: no localStorage → the manifest default (disabled).
+    () => false,
+  );
+  const autoRotationExperimentEnabled = React.useSyncExternalStore(
+    subscribeToExperiments,
+    () => isExperimentEnabled('auto-rotation'),
     // SSR: no localStorage → the manifest default (disabled).
     () => false,
   );
@@ -10165,6 +10172,29 @@ export default function Home() {
                 islands={islandsPoc}
                 hasGeometry={!!scene.geom}
                 activeModelId={scene.activeModelId ?? undefined}
+              />
+            )}
+            {autoRotationExperimentEnabled && (
+              <AutoRotationPanel
+                key="support-rotation"
+                activeModelId={scene.activeModelId ?? undefined}
+                currentRotation={scene.activeModel?.transform.rotation}
+                onApplyRotation={(modelId, rotation) => {
+                  const current = scene.activeModel?.transform;
+                  if (!current) return;
+                  const before = {
+                    position: current.position.clone(),
+                    rotation: current.rotation.clone(),
+                    scale: current.scale.clone(),
+                  };
+                  const after = {
+                    position: current.position.clone(),
+                    rotation,
+                    scale: current.scale.clone(),
+                  };
+                  scene.updateModelTransform(modelId, after);
+                  scene.commitModelTransformHistory(modelId, before, after, 'Apply Orientation Suggestion');
+                }}
               />
             )}
             <IslandsPanel

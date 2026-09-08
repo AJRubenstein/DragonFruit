@@ -13,6 +13,12 @@
       "name": "Auto Supports",
       "description": "Automatic support generation from model analysis. Early access.",
       "defaultEnabled": false
+    },
+    {
+      "id": "auto-rotation",
+      "name": "Auto Rotation",
+      "description": "Orientation suggestions that minimize support contact area. Early access.",
+      "defaultEnabled": false
     }
   ]
 }
