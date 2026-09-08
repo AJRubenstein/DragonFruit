@@ -17,13 +17,23 @@ import { JOINT_DIAMETER_OFFSET_MM } from '../../constants';
 import { getBezierPointAtT } from '../../Curves/BezierUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { clearKnotDragPreview, emitKnotDragPreview } from '../../interaction/knotDragPreview';
-import { resolveTwigDiameterAtSegmentT, twigJointDiameterForLocalDiameter } from '../../SupportTypes/Twig/twigTaper';
-import { SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
+import { resolveTwigDiameterAtSegmentT } from '../../SupportTypes/Twig/twigTaper';
+import { resolveKnotDiameter, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
 import { knotMoveDescription, type KnotHostType } from './knotUtils';
 
 
-/** Whether this host is a shaft, as opposed to a leaf's cone. */
-function hostsAShaft(containerType: KnotHostType): boolean {
+/**
+ * Whether the host carries real segments a knot slides along. A pseudo-shaft
+ * host declares `knotHostPrefix` -- a leaf's cone, a brace's span -- and
+ * resolves its endpoints from the entity instead.
+ */
+function hostsRealSegments(containerType: KnotHostType): boolean {
+    if (containerType === 'leafCone') return false;
+    return !getSupportTypeDescriptor(containerType).knotHostPrefix;
+}
+
+/** Whether a knot on this host takes its diameter from the shaft it rides. */
+function takesShaftDiameter(containerType: KnotHostType): boolean {
     return containerType !== 'leafCone';
 }
 
@@ -459,7 +469,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
     /** The shafted entity and hosts backing this host record, if it has one. */
     const shaftOf = (host: ActiveHost): { entity: { segments: Segment[] }; hosts: EndpointHosts } | null => {
-        if (!hostsAShaft(host.containerType) || !host.entity?.segments) return null;
+        if (!hostsRealSegments(host.containerType) || !host.entity?.segments) return null;
         return { entity: host.entity as { segments: Segment[] }, hosts: host.hosts };
     };
 
@@ -1317,7 +1327,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
         // Update diameter when crossing into a segment with a different diameter.
         // Every shaft host does this; a leaf cone is the one that does not.
-        if (hostsAShaft(host.containerType)) {
+        if (takesShaftDiameter(host.containerType)) {
             // +0.125 (not the legacy +0.1): the KnotRenderer subtracts the
             // full joint offset, so shaft + 0.125 renders at shaft + 0.025 —
             // the same diameter as a trunk's joint spheres. A moved auto
@@ -1325,16 +1335,13 @@ export function useKnotInteraction(enabled: boolean = true) {
             finalKnot.diameter = bestDiameter + 0.125;
         }
 
-        // A knot on a continuously tapered shaft live-tracks the taper at its
-        // exact slide T, sized 10% larger than that local diameter -- the same
-        // rule the disk-end joints use.
-        if (host.containerType === 'twig' && host.entity) {
-            const localTwigDia = resolveTwigDiameterAtSegmentT(
-                host.entity as unknown as Twig, host.segmentId, t,
+        // A knot on a shaft with its own sizing rule live-tracks it at the exact
+        // slide T. Types without a rule keep the segment diameter above.
+        if (hostsRealSegments(host.containerType) && host.entity) {
+            const ruled = resolveKnotDiameter(
+                host.containerType as SupportTypeId, host.entity, host.segmentId, t,
             );
-            if (localTwigDia !== null) {
-                finalKnot.diameter = twigJointDiameterForLocalDiameter(localTwigDia);
-            }
+            if (ruled !== null) finalKnot.diameter = ruled;
         }
 
         if (!lastAppliedKnotPosRef.current) {
