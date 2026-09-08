@@ -605,7 +605,7 @@ export function BranchPlacementController() {
                         meshKindRef.current = kind;
 
                         const meshLinkSignature = [
-                            kind === 'twig' ? 'branch:twig' : 'branch:stick',
+                            `branch:${kind}`,
                             modelId,
                             bModelId,
                             previewVecKey(tipPosition),

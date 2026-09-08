@@ -1519,6 +1519,18 @@ export type ModelSurfaceGestureTypeId = {
 }[SupportTypeId];
 
 /**
+ * How many segments one instance contributes when it carries none of its own.
+ *
+ * A brace spans one implicit segment between its two knots, which is why it has
+ * a `segmentSelectionPrefix` to select it by. A leaf's contact cone is a knot
+ * host but not a segment, so `knotHostPrefix` cannot answer this.
+ */
+export function implicitSegmentCount(descriptor: SupportTypeDescriptor): number {
+    if (descriptor.hasSegments) return 0;
+    return descriptor.segmentSelectionPrefix ? 1 : 0;
+}
+
+/**
  * Split a prefixed segment selection id into the type that owns it and the
  * entity id, or null when the id is a real segment id. The prefix is declared
  * per type, so no caller spells one out.
