@@ -10,7 +10,8 @@ import { quantizeToScale } from '@/utils/math';
  */
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
-import type { CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo } from './types';
+import type { CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo, PlacementOutcomeKind } from './types';
+import { isLedgerKind } from './types';
 import type { SupportState, SupportOrigin, Vec3 } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
@@ -488,7 +489,7 @@ function placeOneCandidate(
     draft: SupportState,
     _settingsOverride: Partial<AutoSupportSettings> | undefined,
     gridTrunkIds?: ReadonlySet<string>,
-): { kind: string; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected'; cavityFanRefusal?: FanLeafRefusal } {
+): { kind: PlacementOutcomeKind; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected'; cavityFanRefusal?: FanLeafRefusal } {
     const supportSettings = getSettings();
     const snapshot = draft;
     let d = draft;
@@ -2168,15 +2169,21 @@ export function computeAutoSupportPlan(
                 diagnostics.mergeRefusals[result.mergeRefusal] = (diagnostics.mergeRefusals[result.mergeRefusal] ?? 0) + 1;
             }
             if (result.kind !== 'reject' && result.entityId) {
-                forestLedger.push({
-                    displayId: candidate.id,
-                    kind: result.kind as ForestLedgerEntry['kind'],
-                    entityId: result.entityId,
-                    areaMm2: candidate.islandAreaMm2,
-                    zHeight: candidate.zHeight,
-                    preset: result.preset ?? presetForArea(candidate.islandAreaMm2),
-                    bandShaftMm: activeSizingBand().shaftDiameterMm,
-                });
+                if (isLedgerKind(result.kind)) {
+                    forestLedger.push({
+                        displayId: candidate.id,
+                        kind: result.kind,
+                        entityId: result.entityId,
+                        areaMm2: candidate.islandAreaMm2,
+                        zHeight: candidate.zHeight,
+                        preset: result.preset ?? presetForArea(candidate.islandAreaMm2),
+                        bandShaftMm: activeSizingBand().shaftDiameterMm,
+                    });
+                } else {
+                    // The ledger covers the types auto-placement produces. A new
+                    // one reaching here is a wiring gap, not a placement result.
+                    console.warn(LOG_PREFIX, `Placed ${result.kind} has no Forest Report column; omitted from the ledger.`);
+                }
             }
             return result.kind;
         } catch (e) {
