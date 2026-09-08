@@ -1518,6 +1518,22 @@ export type ModelSurfaceGestureTypeId = {
     [K in SupportTypeId]: (typeof MODEL_SURFACE_GESTURE_BY_TYPE)[K] extends true ? K : never;
 }[SupportTypeId];
 
+/**
+ * Split a prefixed segment selection id into the type that owns it and the
+ * entity id, or null when the id is a real segment id. The prefix is declared
+ * per type, so no caller spells one out.
+ */
+export function parsePrefixedSegmentId(
+    segmentId: string,
+): { typeId: SupportTypeId; entityId: string } | null {
+    for (const descriptor of SUPPORT_TYPES) {
+        const prefix = descriptor.segmentSelectionPrefix;
+        if (!prefix || !segmentId.startsWith(prefix)) continue;
+        return { typeId: descriptor.id, entityId: segmentId.slice(prefix.length) };
+    }
+    return null;
+}
+
 export const MODEL_SURFACE_GESTURE_TYPES: readonly ModelSurfaceGestureTypeId[] =
     (Object.keys(MODEL_SURFACE_GESTURE_BY_TYPE) as SupportTypeId[])
         .filter((id): id is ModelSurfaceGestureTypeId => MODEL_SURFACE_GESTURE_BY_TYPE[id]);

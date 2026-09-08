@@ -1,5 +1,6 @@
 import {
     getSupportTypeDescriptor,
+    parsePrefixedSegmentId,
     SUPPORT_TYPES,
     type SupportTypeDescriptor,
     type SupportTypeId,
@@ -101,9 +102,9 @@ export function selectedIdsForType(
     }
 
     // A type whose segments are selected under a prefix resolves back to itself.
-    const prefix = descriptor.segmentSelectionPrefix;
-    if (prefix && selection.selectedCategory === 'segment' && selection.selectedId?.startsWith(prefix)) {
-        selected.add(selection.selectedId.slice(prefix.length));
+    if (selection.selectedCategory === 'segment' && selection.selectedId) {
+        const prefixed = parsePrefixedSegmentId(selection.selectedId);
+        if (prefixed?.typeId === descriptor.id) selected.add(prefixed.entityId);
     }
 
     return selected;

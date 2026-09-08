@@ -4,16 +4,17 @@
  *
  * `drawsOwnPreview` -- the anatomy preview draws this kind itself.
  * `hasContactCone` / `hasShaft` / `hasPlateRoot` -- which settings fields show.
+ * `tab` -- the tab this kind is edited under; leaf, branch and twig share trunk's.
  */
 export const SUPPORT_KINDS = {
-    trunk: { drawsOwnPreview: false, hasContactCone: true, hasShaft: true, hasPlateRoot: true },
-    raft: { drawsOwnPreview: true, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
-    leaf: { drawsOwnPreview: false, hasContactCone: true, hasShaft: false, hasPlateRoot: false },
-    branch: { drawsOwnPreview: false, hasContactCone: true, hasShaft: true, hasPlateRoot: false },
-    stick: { drawsOwnPreview: true, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
-    twig: { drawsOwnPreview: false, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
-    grid: { drawsOwnPreview: true, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
-    auto: { drawsOwnPreview: false, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
+    trunk: { tab: 'trunk', drawsOwnPreview: false, hasContactCone: true, hasShaft: true, hasPlateRoot: true },
+    raft: { tab: 'raft', drawsOwnPreview: true, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
+    leaf: { tab: 'trunk', drawsOwnPreview: false, hasContactCone: true, hasShaft: false, hasPlateRoot: false },
+    branch: { tab: 'trunk', drawsOwnPreview: false, hasContactCone: true, hasShaft: true, hasPlateRoot: false },
+    stick: { tab: 'stick', drawsOwnPreview: true, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
+    twig: { tab: 'trunk', drawsOwnPreview: false, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
+    grid: { tab: 'grid', drawsOwnPreview: true, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
+    auto: { tab: 'auto', drawsOwnPreview: false, hasContactCone: false, hasShaft: false, hasPlateRoot: false },
 } as const;
 
 export type SupportKind = keyof typeof SUPPORT_KINDS;
@@ -21,6 +22,11 @@ export type SupportKind = keyof typeof SUPPORT_KINDS;
 /** Whether a support type id also names a sidebar tool. Not every one does. */
 export function isSupportKind(value: string): value is SupportKind {
     return value in SUPPORT_KINDS;
+}
+
+/** The tab a kind is edited under. Most are their own; some share the trunk tab. */
+export function tabKindFor(kind: SupportKind): SupportKind {
+    return SUPPORT_KINDS[kind].tab;
 }
 
 /** Whether the anatomy preview draws this kind itself. */
