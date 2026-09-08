@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Knot, Segment, Vec3 } from '../../types';
+import type { SupportTypeId } from '../../supportTypeRegistry';
 import { getBezierPointAtT } from '../../Curves/BezierUtils';
 
 export function projectOntoSegment(
@@ -139,3 +140,19 @@ export function calculateKnotPositionOnSegmentFromT(
 
     return calculateKnotPositionFromT(start, end, clampedT);
 }
+
+/**
+ * What a knot rides: a support type's shaft, or a leaf's contact cone. The cone
+ * is a primitive rather than a type, so it is named alongside the type ids.
+ */
+export type KnotHostType = SupportTypeId | 'leafCone';
+
+/**
+ * History label for moving a knot. The type id is already the singular noun, so
+ * a ninth type reads correctly without being listed here.
+ */
+export function knotMoveDescription(host: KnotHostType | null | undefined): string {
+    if (!host) return 'Move support knot';
+    return host === 'leafCone' ? 'Move tip knot' : `Move ${host} knot`;
+}
+
