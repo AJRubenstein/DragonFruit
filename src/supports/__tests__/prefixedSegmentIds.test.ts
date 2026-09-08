@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parsePrefixedSegmentId, SUPPORT_TYPES } from '../supportTypeRegistry';
+import { getSupportTypeDescriptor, implicitSegmentCount, parsePrefixedSegmentId, SUPPORT_TYPES } from '../supportTypeRegistry';
 
 /**
  * Segment selection ids for a type with no real segments carry a declared
@@ -37,5 +37,22 @@ test('only a type declaring a prefix can claim an id', () => {
             null,
             `${descriptor.id} declares no prefix but claimed an id`,
         );
+    }
+});
+
+test('brace is the one type spanning an implicit segment', () => {
+    // Leaf declares a knotHostPrefix but spans nothing, so that field cannot
+    // answer this. Pinned as values, not by restating the implementation.
+    const spanning = SUPPORT_TYPES.filter((d) => implicitSegmentCount(d) > 0).map((d) => d.id);
+
+    assert.deepEqual(spanning, ['brace']);
+    assert.equal(implicitSegmentCount(getSupportTypeDescriptor('leaf')), 0, 'a leaf cone is not a segment');
+});
+
+test('a type with real segments contributes no implicit one', () => {
+    // Otherwise its segments would be double counted.
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        assert.equal(implicitSegmentCount(descriptor), 0, `${descriptor.id} would be double counted`);
     }
 });

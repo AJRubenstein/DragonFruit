@@ -5,7 +5,7 @@ import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { X } from 'lucide-react';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { getSnapshot as getSupportSnapshot } from '@/supports/state';
-import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
+import { implicitSegmentCount, SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 import type { Segment } from '@/supports/types';
 import { getPickingDiagnosticsSnapshot } from '@/components/picking/pickingDiagnostics';
 import {
@@ -132,10 +132,8 @@ function computeSupportDiagnostics(): SupportDiagnosticsStats {
     const collection = supportState[descriptor.location.key] as unknown as Record<string, { segments?: Segment[] }>;
 
     for (const entity of Object.values(collection ?? {})) {
-      // Brace spans one implicit segment between its two knots. Not derivable
-      // from `knotHostPrefix`: leaf declares one too but spans nothing.
       if (!descriptor.hasSegments) {
-        if (descriptor.id === 'brace') segmentCount += 1;
+        segmentCount += implicitSegmentCount(descriptor);
         continue;
       }
       for (const segment of entity.segments ?? []) {
