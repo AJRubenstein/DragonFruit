@@ -1531,6 +1531,32 @@ export function implicitSegmentCount(descriptor: SupportTypeDescriptor): number 
 }
 
 /**
+ * Split a knot's `parentShaftId` into the type it rides and that entity's id,
+ * or null when it names a real shaft segment.
+ *
+ * A knot rides either a real segment or a pseudo-shaft -- a leaf's contact
+ * cone, a brace's span -- whose prefix each type declares. Callers ask rather
+ * than spelling the prefix out, so renaming a type moves the string with it.
+ */
+export function parseKnotHostId(
+    parentShaftId: string,
+): { typeId: SupportTypeId; entityId: string } | null {
+    for (const descriptor of SUPPORT_TYPES) {
+        const prefix = descriptor.knotHostPrefix;
+        if (!prefix || !parentShaftId.startsWith(prefix)) continue;
+        return { typeId: descriptor.id, entityId: parentShaftId.slice(prefix.length) };
+    }
+    return null;
+}
+
+/** The `parentShaftId` a knot carries when it rides this type's pseudo-shaft. */
+export function knotHostId(typeId: SupportTypeId, entityId: string): string {
+    const prefix = getSupportTypeDescriptor(typeId).knotHostPrefix;
+    if (!prefix) throw new Error(`${typeId} declares no knotHostPrefix; its knots ride real segments`);
+    return `${prefix}${entityId}`;
+}
+
+/**
  * Split a prefixed segment selection id into the type that owns it and the
  * entity id, or null when the id is a real segment id. The prefix is declared
  * per type, so no caller spells one out.

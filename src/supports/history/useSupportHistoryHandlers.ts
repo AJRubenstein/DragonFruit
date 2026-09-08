@@ -9,7 +9,7 @@ import {
 import { registerSupportHistoryHandler } from './supportHistory';
 import { removeSupportEntity, updateKnot, setSnapshot, getSnapshot } from '../state';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
-import { getSupportTypeBySelectionCategory, restoreToCollection, updateSupportEntity, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, SUPPORT_REMOVAL_SHAPES, SUPPORT_TYPES, type SupportCollectionKey, type SupportEntityIn, type SupportTypeDescriptor } from '../supportTypeRegistry';
+import { getSupportTypeBySelectionCategory, getSupportTypeDescriptor, parsePrefixedSegmentId, restoreToCollection, updateSupportEntity, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, SUPPORT_REMOVAL_SHAPES, SUPPORT_TYPES, type SupportCollectionKey, type SupportEntityIn, type SupportTypeDescriptor } from '../supportTypeRegistry';
 
 function applySnapshotHistory(payload: SupportReplaceStatePayload, direction: 'undo' | 'redo') {
   clearSupportSelection();
@@ -43,8 +43,12 @@ function selectionExistsInSnapshot(): boolean {
 
   switch (category) {
     case 'segment':
-      if (id.startsWith('braceSegment:')) {
-        return !!state.braces[id.slice('braceSegment:'.length)];
+      {
+        const host = parsePrefixedSegmentId(id);
+        if (host) {
+          const collections = state as unknown as Record<string, Record<string, unknown>>;
+          return !!collections[getSupportTypeDescriptor(host.typeId).location.key]?.[host.entityId];
+        }
       }
       // fall through to joint scan for regular shaft segments
     case 'joint': {

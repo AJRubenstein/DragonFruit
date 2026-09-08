@@ -1,6 +1,6 @@
 import type { Segment, SupportState } from '../types';
 import { getSnapshot, setSnapshot } from '../state';
-import { MODEL_ID_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '../supportTypeRegistry';
+import { getSupportTypeDescriptor, MODEL_ID_COLLECTION_KEYS, parseKnotHostId, SUPPORT_TYPES, type SupportCollectionKey } from '../supportTypeRegistry';
 
 /**
   * The relationship between supports and models: query a model's supports, and
@@ -130,11 +130,14 @@ export function deleteSupportsForModel(state: SupportState, modelId: string): nu
     for (const [knotId, knot] of Object.entries(state.knots)) {
         const parentShaftId = knot.parentShaftId;
         const removeByShaft = segmentsToRemove.has(parentShaftId);
-        const removeByLeafCone = parentShaftId.startsWith('leafCone:')
-            && removingSets.leaves.has(parentShaftId.slice('leafCone:'.length));
-        const removeByBraceSegment = parentShaftId.startsWith('braceSegment:')
-            && removingSets.braces.has(parentShaftId.slice('braceSegment:'.length));
-        if (removeByShaft || removeByLeafCone || removeByBraceSegment) {
+        // A knot riding a pseudo-shaft goes when its host does. Derived, so a
+        // third pseudo-shaft type is covered without another `||`.
+        const host = parseKnotHostId(parentShaftId);
+        const hostCollection = host
+            ? removingSets[getSupportTypeDescriptor(host.typeId).location.key]
+            : undefined;
+        const removeByHost = !!host && !!hostCollection?.has(host.entityId);
+        if (removeByShaft || removeByHost) {
             knotsToRemove.add(knotId);
         }
     }

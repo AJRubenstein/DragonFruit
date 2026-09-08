@@ -6,7 +6,7 @@ import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { getSnapshot as getSupportSnapshot, subscribe as subscribeSupportState } from '@/supports/state';
 import { getSupportsForModel } from '@/supports/PlacementLogic/SupportModelLinker';
-import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_STATE_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
+import { getSupportTypeDescriptor, MODEL_ID_COLLECTION_KEYS, parseKnotHostId, SUPPORT_COLLECTION_KEYS, SUPPORT_STATE_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 
 type ModelSupportsModalProps = {
   isOpen: boolean;
@@ -51,9 +51,11 @@ export function ModelSupportsModal({ isOpen, onClose, model }: ModelSupportsModa
       if (twig) return twig.modelId === modelId;
       const stick = supportSnapshot.sticks[parent];
       if (stick) return stick.modelId === modelId;
-      if (parent.startsWith('braceSegment:')) {
-        const braceId = parent.slice('braceSegment:'.length);
-        return supportSnapshot.braces[braceId]?.modelId === modelId;
+      const host = parseKnotHostId(parent);
+      if (host) {
+        const collections = supportSnapshot as unknown as Record<string, Record<string, { modelId?: string }>>;
+        const collection = collections[getSupportTypeDescriptor(host.typeId).location.key];
+        return collection?.[host.entityId]?.modelId === modelId;
       }
       return false;
     }).map((item) => item.id));
