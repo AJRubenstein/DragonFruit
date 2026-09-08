@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore, useRef } from 'react';
 import * as THREE from 'three';
 import type { SupportMode } from '@/supports/types';
 import type { SupportPlacementPreviews } from '@/supports/rendering';
@@ -37,11 +37,14 @@ import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_REMOVE_BRANCH, SUPPORT_REMOVE_BRACE, SUPPORT_REMOVE_LEAF, SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_AUTO_BRACE_REPLACE, type SupportBranchRemovePayload } from '@/supports/history/actionTypes';
 import { findKnotHost, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, KNOT_HOST_PRECEDENCE, RESHAPED_REMOVAL_PAYLOADS, SUPPORT_TYPES, updateSupportEntity } from '@/supports/supportTypeRegistry';
+import { MODEL_SURFACE_GESTURE_TYPES } from '@/supports/supportTypeRegistry';
+import type { ModelSurfaceGestureTypeId } from '@/supports/supportTypeRegistry';
 import { knotFields } from '@/supports/interaction/shared/selection/selectedIdsByType';
 import { clearSupportSelection, getResolvedPrimarySelection, selectSupportIds } from '@/supports/interaction/shared/selection/selectionController';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { resolveSupportPlacementHotkeyBindings } from '@/supports/interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver';
-import { resolveSupportPlacementRouting } from '@/supports/interaction/shared/placement/hotkeys/supportPlacementRouting';
+import { resolveSupportPlacementRouting, routeModelPlacementHit } from '@/supports/interaction/shared/placement/hotkeys/supportPlacementRouting';
+import type { SupportModelPlacementHandlers, SupportModelPlacementOwner } from '@/supports/interaction/shared/placement/hotkeys/supportPlacementHotkeyTypes';
 import { isKeyPressedSync } from '@/hotkeys/hotkeyStore';
 
 interface SupportInteractionOptions {
@@ -88,6 +91,25 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
   const kickstandPlacement = useKickstandPlacement();
   const { getHotkey } = useHotkeyConfig();
 
+  /**
+   * The model-face placement hooks, keyed by the owner the router names. One
+   * owner takes the hit and the rest are cleared, so the handlers index this
+   * rather than testing the owner against a type name.
+   */
+  const modelPlacementByOwner = useMemo(() => ({
+    branch: branchPlacement,
+    leaf: leafPlacement,
+  } satisfies Record<ModelSurfaceGestureTypeId, SupportModelPlacementHandlers>), [branchPlacement, leafPlacement]);
+
+  /** Route a model-face gesture: `owner` gets the hit, every other owner null. */
+  const dispatchModelHover = useCallback((owner: SupportModelPlacementOwner, hit: THREE.Intersection | null) => {
+    trunkPlacementV2.onSupportHover(null);
+    const routed = routeModelPlacementHit(MODEL_SURFACE_GESTURE_TYPES, owner, hit);
+    for (const id of MODEL_SURFACE_GESTURE_TYPES) {
+      modelPlacementByOwner[id].onModelHover(routed[id]);
+    }
+  }, [trunkPlacementV2, modelPlacementByOwner]);
+
   const altDownRef = useRef(false);
   const deletingRef = useRef(false);
 
@@ -130,66 +152,45 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
   // Handler for MODEL hover (used for trunk placement preview, or branch tip preview)
   const onModelHover = useCallback((hit: THREE.Intersection | null) => {
     if (isSupportEditInteractionActive()) {
-      trunkPlacementV2.onSupportHover(null);
-      branchPlacement.onModelHover(null);
-      leafPlacement.onModelHover(null);
+      dispatchModelHover('none', null);
       return;
     }
 
     if (isContactDiskHudInteractionActive()) {
-      trunkPlacementV2.onSupportHover(null);
-      branchPlacement.onModelHover(null);
-      leafPlacement.onModelHover(null);
+      dispatchModelHover('none', null);
       return;
     }
 
     if (isPlacementHardDisabled) {
-      trunkPlacementV2.onSupportHover(null);
-      branchPlacement.onModelHover(null);
-      leafPlacement.onModelHover(null);
+      dispatchModelHover('none', null);
       return;
     }
 
     if (jointCreationState.isActive) {
-      trunkPlacementV2.onSupportHover(null);
-      branchPlacement.onModelHover(null);
-      leafPlacement.onModelHover(null);
+      dispatchModelHover('none', null);
       return;
     }
 
     const fanningActive = leafPlacement.sproutParentingLockHeld || leafPlacement.stage === 'awaitingSproutTip';
     if (fanningActive) {
-      trunkPlacementV2.onSupportHover(null);
-      branchPlacement.onModelHover(null);
-      leafPlacement.onModelHover(hit);
+      dispatchModelHover('leaf', hit);
       return;
     }
 
     const routing = resolvePlacementRouting();
 
-    if (routing.modelHoverOwner === 'leaf') {
-      trunkPlacementV2.onSupportHover(null);
-      branchPlacement.onModelHover(null);
-      leafPlacement.onModelHover(hit);
-      return;
-    }
-
-    if (routing.modelHoverOwner === 'branch') {
-      trunkPlacementV2.onSupportHover(null);
-      leafPlacement.onModelHover(null);
-      branchPlacement.onModelHover(hit);
+    if (routing.modelHoverOwner !== 'none') {
+      dispatchModelHover(routing.modelHoverOwner, hit);
       return;
     }
 
     if (routing.blocksDefaultModelPlacement) {
-      trunkPlacementV2.onSupportHover(null);
-      branchPlacement.onModelHover(null);
-      leafPlacement.onModelHover(null);
+      dispatchModelHover('none', null);
       return;
     }
 
     trunkPlacementV2.onSupportHover(hit);
-  }, [isPlacementHardDisabled, trunkPlacementV2, branchPlacement, leafPlacement, jointCreationState.isActive, resolvePlacementRouting]);
+  }, [isPlacementHardDisabled, trunkPlacementV2, dispatchModelHover, leafPlacement, jointCreationState.isActive, resolvePlacementRouting]);
 
   // Handler for MODEL click (trunk placement, or branch tip placement)
   const onModelClick = useCallback((hit: THREE.Intersection) => {
@@ -209,13 +210,8 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
 
     const routing = resolvePlacementRouting();
 
-    if (routing.modelClickOwner === 'leaf') {
-      leafPlacement.onModelClick(hit);
-      return;
-    }
-
-    if (routing.modelClickOwner === 'branch') {
-      branchPlacement.onModelClick(hit);
+    if (routing.modelClickOwner !== 'none') {
+      modelPlacementByOwner[routing.modelClickOwner].onModelClick(hit);
       return;
     }
 
@@ -224,7 +220,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
     }
 
     trunkPlacementV2.onSupportClick(hit);
-  }, [trunkPlacementV2, branchPlacement, leafPlacement, jointCreationState.isActive, resolvePlacementRouting]);
+  }, [trunkPlacementV2, modelPlacementByOwner, leafPlacement, jointCreationState.isActive, resolvePlacementRouting]);
 
   // Handler for SUPPORT hover (branch base preview when hovering existing support shafts)
   // NOTE: We do NOT check isPlacementDisabled here because branch placement

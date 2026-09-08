@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveSupportPlacementRouting } from '../interaction/shared/placement/hotkeys/supportPlacementRouting';
-import { MODEL_SURFACE_GESTURE_BY_TYPE, SUPPORT_TYPES } from '../supportTypeRegistry';
+import { resolveSupportPlacementRouting, routeModelPlacementHit } from '../interaction/shared/placement/hotkeys/supportPlacementRouting';
+import { MODEL_SURFACE_GESTURE_BY_TYPE, MODEL_SURFACE_GESTURE_TYPES, SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { SupportPlacementHotkeyBindings, SupportPlacementModifierState, SupportPlacementRoutingState } from '../interaction/shared/placement/hotkeys/supportPlacementHotkeyTypes';
 
 const defaultBindings: SupportPlacementHotkeyBindings = {
@@ -77,4 +77,37 @@ test('the model-surface gesture table matches the descriptors', () => {
     const tableKeys = Object.keys(MODEL_SURFACE_GESTURE_BY_TYPE).sort();
     const registryIds = SUPPORT_TYPES.map((d) => d.id).sort();
     assert.deepEqual(tableKeys, registryIds, 'the table and the registry cover different types');
+});
+
+/**
+ * The manager's model-face dispatch. Inverting it (every gesture delivered to
+ * the wrong hook) left the whole suite green before these tests existed.
+ */
+test('a model-face gesture reaches only the named owner', () => {
+    const hit = { id: 'hit' };
+
+    for (const owner of MODEL_SURFACE_GESTURE_TYPES) {
+        const routed = routeModelPlacementHit(MODEL_SURFACE_GESTURE_TYPES, owner, hit);
+
+        assert.equal(routed[owner], hit, `${owner} should receive the hit`);
+        for (const other of MODEL_SURFACE_GESTURE_TYPES) {
+            if (other === owner) continue;
+            assert.equal(routed[other], null, `${other} should be cleared while ${owner} owns the gesture`);
+        }
+    }
+});
+
+test('an unowned gesture clears every model-face placement', () => {
+    const routed = routeModelPlacementHit(MODEL_SURFACE_GESTURE_TYPES, 'none', { id: 'hit' });
+
+    for (const id of MODEL_SURFACE_GESTURE_TYPES) {
+        assert.equal(routed[id], null, `${id} should be cleared when no owner claims the gesture`);
+    }
+});
+
+test('the derived owner list covers exactly the flagged types', () => {
+    assert.deepEqual(
+        [...MODEL_SURFACE_GESTURE_TYPES].sort(),
+        SUPPORT_TYPES.filter((d) => d.claimsModelSurfaceGestures).map((d) => d.id).sort(),
+    );
 });
