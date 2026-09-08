@@ -593,16 +593,17 @@ test('runAutoPlace merges with a steep knot, not at the host junction', () => {
     clearHistory();
     const disposeHandlers = registerSupportHistoryHandlers();
 
-    // Island A sits 0.5 mm from trunk B's 40 mm shaft with its tip 1 mm
-    // below B's tip. The old code knotted at B's junction (top joint) — a
-    // shallow branch; the first steep fix snapped to the DEEPEST qualifying
-    // sample (kZ≈28, a near-parallel "floating" leaf); the knot must now be
-    // the HIGHEST sample meeting the 60°-above-horizontal minimum (kZ≈36).
-    // B places first (higher Z → higher priority) and stands alone; A then
-    // merges into B as a steep leaf.
+    // Island A sits 1.5 mm from trunk B's 40 mm shaft with its tip 1 mm
+    // below B's tip. (Kept clear of the dedup influence disc so A survives
+    // as its own candidate.) The old code knotted at B's junction (top
+    // joint) — a shallow branch; the first steep fix snapped to the DEEPEST
+    // qualifying sample (kZ≈28, a near-parallel "floating" leaf); the knot
+    // must now be the HIGHEST sample meeting the 60°-above-horizontal
+    // minimum (kZ≈37). B places first (higher Z → higher priority) and
+    // stands alone; A then merges into B as a steep leaf.
     const result = runAutoPlace(
         [
-            makeIsland('A', 0.5, 0, 40, 60),
+            makeIsland('A', 1.5, 0, 40, 60),
             makeIsland('B', 0, 0, 41, 16),
         ],
         'model-a',

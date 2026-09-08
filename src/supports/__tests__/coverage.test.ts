@@ -104,3 +104,14 @@ test('fully covered region gets no gap-fill candidates', () => {
 test('coverage target constant is below 1 so edge voxels do not force infinite fill', () => {
     assert.ok(REGION_COVERAGE_TARGET > 0 && REGION_COVERAGE_TARGET < 1);
 });
+
+test('tip influence grows with height above the tip', () => {
+    const region = rectRegion('o0', -10, 10, -10, 10);
+    // Same center tip at the region plane: 3mm disc.
+    const flat = computeRegionCoverage(region, [{ x: 0, y: 0, z: 10 }]);
+    // Same tip 15mm below the region: 5mm disc covers ~2.8× the area.
+    const grown = computeRegionCoverage(region, [{ x: 0, y: 0, z: -5 }]);
+    assert.ok(grown > flat * 2, `grown coverage ${grown} > 2× flat ${flat}`);
+    const expected = (Math.PI * 25) / 400;
+    assert.ok(Math.abs(grown - expected) < 0.02, `grown coverage ${grown} ≈ ${expected}`);
+});

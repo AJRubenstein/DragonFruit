@@ -1,6 +1,9 @@
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import type { CandidatePoint } from './types';
 import type { AutoSupportSettings } from './settings';
+import { SMALL_ISLAND_TIP_AREA_MM2, SUPPORT_RESTSTACK_DELTA_MM, influenceRadiusMm } from './constants';
+import { smallIslandTipDiameterMm } from './parameterSizing';
+import { TIP_COVERAGE_RADIUS_MM } from './coverage';
 
 /**
  * Convert detected islands into auto-support candidate points.
@@ -69,6 +72,9 @@ export function candidateFromIsland(island: DetectedIsland): CandidatePoint {
         islandAreaMm2: area,
         zHeight: z,
         priority: 0, // computed later
+        // Fine detail keeps a shrunk (detail-band) tip; grid/overhang points
+        // and larger islands take the active band default (undefined).
+        tipDiameterMm: area < SMALL_ISLAND_TIP_AREA_MM2 ? smallIslandTipDiameterMm() : undefined,
     };
 }
 
@@ -95,10 +101,11 @@ function computePriority(
 
 /**
  * Deduplicate candidates using a spatial hash grid.
- * Candidates within tipInfluenceRadiusMm (3D distance) of a higher-priority
- * candidate are removed. The Z axis participates so vertically stacked
- * overhangs at the same XY (staircases, shelves) keep their own supports
- * instead of being merged into one.
+ * A lower-priority candidate inside a higher-priority one's influence disc
+ * is removed. The disc is 2D (XY) and widens with vertical separation
+ * (support influence curve) — but pairs farther apart in Z than
+ * SUPPORT_RESTSTACK_DELTA_MM never suppress each other, so vertically
+ * stacked overhangs (staircases, shelves) keep their own supports.
  */
 export function deduplicateCandidates(
     candidates: CandidatePoint[],
@@ -106,13 +113,17 @@ export function deduplicateCandidates(
 ): CandidatePoint[] {
     if (candidates.length <= 1) return candidates;
 
-    const radius = settings.tipInfluenceRadiusMm;
-    if (radius <= 0) return [...candidates].sort((a, b) => b.priority - a.priority);
-    const radiusSq = radius * radius;
-    const cellSize = radius;
+    const baseRadius = settings.tipInfluenceRadiusMm;
+    if (baseRadius <= 0) return [...candidates].sort((a, b) => b.priority - a.priority);
+    // The suppression disc widens with vertical separation (support influence
+    // curve) — but never across the restack allowance, so staircase shelves
+    // keep their own supports. Neighbor search spans the max grown radius.
+    const maxGate = baseRadius + (6.0 - TIP_COVERAGE_RADIUS_MM);
+    const cellSize = baseRadius;
+    const cellRange = Math.max(1, Math.ceil(maxGate / cellSize));
 
-    // Bucket by XY cell. Any candidate within `radius` of a cell's contents
-    // lives in that cell or one of its 8 neighbors.
+    // Bucket by XY cell. The grown suppression gate reaches `cellRange`
+    // cells out; the per-pair Z check happens inside the loop.
     const grid = new Map<string, CandidatePoint[]>();
     const cellOf = (c: CandidatePoint): string => {
         const cx = Math.round(c.tipPos.x / cellSize);
@@ -138,17 +149,22 @@ export function deduplicateCandidates(
         const cy = parseInt(cyStr);
 
         let duplicate = false;
-        for (let dx = -1; dx <= 1 && !duplicate; dx++) {
-            for (let dy = -1; dy <= 1 && !duplicate; dy++) {
+        for (let dx = -cellRange; dx <= cellRange && !duplicate; dx++) {
+            for (let dy = -cellRange; dy <= cellRange && !duplicate; dy++) {
                 const bucket = grid.get(`${cx + dx},${cy + dy}`);
                 if (!bucket) continue;
                 for (const r of retained) {
                     // Only candidates bucketed here can be this close.
                     if (!bucket.some((rr) => rr.id === r.id)) continue;
+                    const dz = Math.abs(c.tipPos.z - r.tipPos.z);
+                    // Restack: vertically separated shelves never suppress
+                    // each other, however close in XY.
+                    if (dz > SUPPORT_RESTSTACK_DELTA_MM) continue;
+                    const gate = baseRadius
+                        + Math.max(0, influenceRadiusMm(dz) - TIP_COVERAGE_RADIUS_MM);
                     const ddx = c.tipPos.x - r.tipPos.x;
                     const ddy = c.tipPos.y - r.tipPos.y;
-                    const ddz = c.tipPos.z - r.tipPos.z;
-                    if (ddx * ddx + ddy * ddy + ddz * ddz <= radiusSq) {
+                    if (ddx * ddx + ddy * ddy <= gate * gate) {
                         duplicate = true;
                         break;
                     }

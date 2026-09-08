@@ -10,6 +10,7 @@ import {
 import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import type { CandidatePoint } from '../autoSupport/types';
+import { influenceRadiusMm } from '../autoSupport/constants';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -231,4 +232,42 @@ test('candidateFromIsland maps all fields correctly', () => {
     assert.equal(candidate.source, 'voxel');
     assert.equal(candidate.modelId, '');
     assert.deepStrictEqual(candidate.tipNormal, { x: 0, y: 0, z: -1 });
+});
+
+test('candidateFromIsland shrinks tips for small islands', () => {
+    const small = candidateFromIsland(makeIsland({ id: 's', areaMm2: 0.05 }));
+    assert.equal(small.tipDiameterMm, 0.22, 'sub-0.15mm² island gets the detail tip');
+    const big = candidateFromIsland(makeIsland({ id: 'b', areaMm2: 5 }));
+    assert.equal(big.tipDiameterMm, undefined, 'larger island takes the band default');
+});
+
+test('deduplicateCandidates suppresses close shelves via grown influence', () => {
+    // Same XY, 3mm apart in Z with a 0.5mm base radius: the grown gate
+    // (0.5 + influence(3) − 3.0 ≈ 1.26) covers the upper candidate, so the
+    // lower tip's cone is assumed to cover it — one support, not two.
+    const mk = (id: string, z: number, priority: number): CandidatePoint => ({
+        id,
+        tipPos: { x: 0, y: 0, z },
+        tipNormal: { x: 0, y: 0, z: -1 },
+        modelId: '',
+        source: 'voxel',
+        islandAreaMm2: 0.1,
+        zHeight: z,
+        priority,
+    });
+    const settings = { ...createDefaultAutoSupportSettings(), tipInfluenceRadiusMm: 0.5 };
+    const deduped = deduplicateCandidates(
+        [mk('low', 10, 0.9), mk('high', 13, 0.8)], settings);
+    assert.equal(deduped.length, 1, 'close shelf deduped into the lower support cone');
+    assert.equal(deduped[0].id, 'low');
+});
+
+test('influenceRadiusMm follows the support curve', () => {
+    assert.equal(influenceRadiusMm(-5), 3.0, 'below the tip clamps to birth radius');
+    assert.equal(influenceRadiusMm(0), 3.0, 'birth radius');
+    assert.ok(Math.abs(influenceRadiusMm(3.9) - 4.0) < 1e-9, 'first knot');
+    assert.ok(Math.abs(influenceRadiusMm(15) - 5.0) < 1e-9, 'second knot');
+    assert.equal(influenceRadiusMm(100), 6.0, 'capped');
+    const mid = influenceRadiusMm(7.5);
+    assert.ok(mid > 4.0 && mid < 5.0, `interpolates between knots (got ${mid})`);
 });

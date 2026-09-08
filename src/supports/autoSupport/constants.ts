@@ -23,11 +23,45 @@ export const ANCHOR_MIN_AREA_MM2 = 12.0;
 /** Max span (mm) for a leaf cone attached to a host knot (grid path). */
 export const MAX_AUTO_LEAF_SPAN_MM = 2.5;
 
+/** Islands below this area (mm²) get a shrunk per-point tip (detail band)
+ *  instead of the active band contact — matches the detail preset boundary. */
+export const SMALL_ISLAND_TIP_AREA_MM2 = 0.15;
+
 /** Leaf spans above this (mm) route to branches with real shafts instead of
  *  long tapered leaf cones — an 8–11 mm leaf reads as a spindly spike next
  *  to its trunk. Applies to merge + fan paths (island origins; overhang
  *  fanning stays leaves by rule). */
 export const MAX_LEAF_SPAN_BEFORE_BRANCH_MM = 6.0;
+/** Support influence growth with height (mm): a tip's coverage disc widens
+ *  the higher above it you go — Prusa's SLA support curve, adapted to our
+ *  3.0 mm birth radius. Piecewise-linear through (diffZ, radius):
+ *  (0, 3.0) → (3.9, 4.0) → (15, 5.0) → (40, 6.0), capped at 6.0.
+ *  Fresh supports stop spawning once existing cones cover the contour. */
+const INFLUENCE_RADIUS_KNOTS: ReadonlyArray<readonly [number, number]> = [
+    [0, 3.0],
+    [3.9, 4.0],
+    [15, 5.0],
+    [40, 6.0],
+];
+
+export function influenceRadiusMm(diffZMm: number): number {
+    const z = Math.max(0, diffZMm);
+    const knots = INFLUENCE_RADIUS_KNOTS;
+    if (z <= knots[0][0]) return knots[0][1];
+    for (let i = 1; i < knots.length; i++) {
+        if (z <= knots[i][0]) {
+            const [z0, r0] = knots[i - 1];
+            const [z1, r1] = knots[i];
+            return r0 + ((r1 - r0) * (z - z0)) / (z1 - z0);
+        }
+    }
+    return knots[knots.length - 1][1];
+}
+
+/** Vertical restack allowance (mm): candidates farther apart in Z than this
+ *  never dedup each other (staircase shelves keep their own supports),
+ *  mirroring Prusa's removing_delta. */
+export const SUPPORT_RESTSTACK_DELTA_MM = 5.0;
 
 /** Distance (mm) within which an existing support tip counts a candidate as already supported. */
 export const ALREADY_SUPPORTED_RADIUS_MM = 3.0;

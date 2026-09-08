@@ -134,3 +134,16 @@ test('sizing is deterministic', () => {
     const b = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 25, tipNormal: { x: 0.2, y: 0.3, z: -0.93 } }));
     assert.deepEqual(a, b);
 });
+
+test('per-point tip override bypasses band and floor', () => {
+    // Explicit 0.22 tip on a structure shaft: kept as-is even though the
+    // 30%-of-shaft floor (0.3) and the band contact (0.28) both exceed it.
+    const s = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10, tipDiameterMm: 0.22 }));
+    assert.equal(s.tipContactDiameterMm, 0.22, 'explicit tip wins over band and floor');
+    assert.equal(s.tipBodyDiameterMm, s.shaftDiameterMm, 'shaft untouched by the tip override');
+});
+
+test('absent override keeps band × angle with floor', () => {
+    const s = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }));
+    assert.ok(s.tipContactDiameterMm! >= s.shaftDiameterMm! * 0.3 - 1e-9, 'floor holds without override');
+});

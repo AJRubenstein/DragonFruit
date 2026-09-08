@@ -19,6 +19,10 @@ export interface CandidatePoint {
     zHeight: number;
     /** Computed placement priority. Higher = place first. */
     priority: number;
+    /** Per-point tip contact override (mm). Set for small-island candidates
+     *  so fine detail gets a shrunk tip without dragging the shaft down;
+     *  undefined = active band default (full contact for grid/overhang points). */
+    tipDiameterMm?: number;
     /** Density-grid point: must become its own standalone trunk (never merged
      *  into a nearby host) so flat regions get independent supports. */
     gridPoint?: boolean;

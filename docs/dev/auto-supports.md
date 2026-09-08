@@ -64,14 +64,14 @@ anchor density, and the anchor girth multiplier. Density is one knob:
 
 ## Coverage and gap filling
 
-A tip covers surface within `TIP_COVERAGE_RADIUS_MM` (3 mm). A region needs no gap filling once `REGION_COVERAGE_TARGET` (95%) is met; uncovered clusters below `MIN_GAP_CLUSTER_MM2` (2 mm²) are not worth filling, and there are at most `MAX_GAP_FILL_PASSES` (3) passes per run.
+A tip covers surface within `TIP_COVERAGE_RADIUS_MM` (3 mm) at its own height, widening along the `influenceRadiusMm` support curve above (4mm by 3.9mm up, 5mm by 15mm, capped 6mm) — tall regions need fewer fresh tips. A region needs no gap filling once `REGION_COVERAGE_TARGET` (95%) is met; uncovered clusters below `MIN_GAP_CLUSTER_MM2` (2 mm²) are not worth filling, and there are at most `MAX_GAP_FILL_PASSES` (3) passes per run. Dedup uses the same grown disc in 2D, except pairs more than `SUPPORT_RESTSTACK_DELTA_MM` (5 mm) apart in Z never suppress each other (staircase shelves keep their supports).
 
 ## Sizing is empirical, not physics
 
 !!! warning "Physics-based sizing was tried and removed — do not reintroduce it"
     An area-derived shaft curve **inverted the profiles**: a light 16 mm² cell sized *thicker* (1.28 mm) than a heavy 5 mm² cell (1.12 mm), because the curve rose with cell area. Light / Medium / Heavy are now hardcoded profile blocks (detail ≈ 0.8, structure ≈ 1.0, anchor ≈ 1.2 shafts) and sizing follows the active block. Session overrides apply until the next profile switch. See the header comment in `parameterSizing.ts`.
 
-Tip contact is the profile band scaled by underside angle — flat ceilings get the full contact, steeper slopes less — floored at 30% of the shaft so a thick shaft keeps a proportional tip. Roots, tip length and penetration take the profile band flat.
+Tip contact is the profile band scaled by underside angle — flat ceilings get the full contact, steeper slopes less — floored at 30% of the shaft so a thick shaft keeps a proportional tip. Candidates from sub-0.15mm² islands carry a per-point `tipDiameterMm` (detail band, 0.22mm) that bypasses band and floor, so fine detail gets a shrunk tip without dragging the shaft down. Roots, tip length and penetration take the profile band flat.
 
 ## Rules worth knowing before you change placement
 
