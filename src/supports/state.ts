@@ -6,7 +6,7 @@ import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -3473,11 +3473,11 @@ export function findShaftOwnerOfSegment(
 ): { typeId: SupportTypeId; id: string } | null {
     // A type whose segments are selected under a prefix names its owner in the
     // id itself, so there is nothing to scan for.
-    for (const descriptor of SUPPORT_TYPES) {
-        const prefix = descriptor.segmentSelectionPrefix;
-        if (!prefix || !segmentId.startsWith(prefix)) continue;
-        const ownerId = segmentId.slice(prefix.length);
-        return getSupportEntity(descriptor.id, ownerId) ? { typeId: descriptor.id, id: ownerId } : null;
+    const prefixed = parsePrefixedSegmentId(segmentId);
+    if (prefixed) {
+        return getSupportEntity(prefixed.typeId, prefixed.entityId)
+            ? { typeId: prefixed.typeId, id: prefixed.entityId }
+            : null;
     }
 
     for (const entity of Object.values(getSupports()) as { id: string; segments?: Segment[] }[]) {

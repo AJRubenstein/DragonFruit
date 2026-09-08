@@ -15,7 +15,7 @@ import type { ContactCone } from '../../SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import { clearSupportDragPreview, emitSupportDragPreview } from '../../SupportPrimitives/Joint/jointDragRuntime';
 import { clearTwigDragPreview, computeTwigDragAttachmentUpdates, emitTwigDragPreview } from '../../SupportTypes/Twig/twigDragPreview';
-import { getSupportTypeDescriptor, SUPPORT_TYPES, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
+import { getSupportTypeDescriptor, parsePrefixedSegmentId, SUPPORT_TYPES, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
 
 interface HandleContext {
     id: string; // Unique ID for key
@@ -364,22 +364,19 @@ export function BezierGizmoManager() {
             return gizmoContextIndex.jointContextsById.get(selectedId) ?? [];
         }
 
+        // A prefixed segment id names its owning entity, whatever the category
+        // says -- the category can lag a selection change.
+        const prefixed = parsePrefixedSegmentId(selectedId);
+        if (prefixed) {
+            return gizmoContextIndex.braceContextsById.get(prefixed.entityId) ?? [];
+        }
+
         if (selectedCategory === 'segment') {
-            if (selectedId.startsWith('braceSegment:')) {
-                const braceId = selectedId.slice('braceSegment:'.length);
-                return gizmoContextIndex.braceContextsById.get(braceId) ?? [];
-            }
             return gizmoContextIndex.segmentContextsById.get(selectedId) ?? [];
         }
 
         if (selectedCategory === 'brace') {
             return gizmoContextIndex.braceContextsById.get(selectedId) ?? [];
-        }
-
-        // Defensive fallback when category has not yet synchronized.
-        if (selectedId.startsWith('braceSegment:')) {
-            const braceId = selectedId.slice('braceSegment:'.length);
-            return gizmoContextIndex.braceContextsById.get(braceId) ?? [];
         }
 
         return [] as HandleContext[];

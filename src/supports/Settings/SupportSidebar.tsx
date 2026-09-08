@@ -57,6 +57,7 @@ import {
     kindHas,
     setActiveSupportKind,
     subscribeToSupportKindState,
+    tabKindFor,
 } from './supportKindState';
 import {
     getRaftSettings,
@@ -96,13 +97,6 @@ const KIND_META: Record<SupportKind, { label: string; icon: typeof Pickaxe }> = 
 
 const OVERFLOW_COMPACT_KIND_SET = new Set<SupportKind>(['trunk', 'raft', 'grid', 'stick', 'auto']);
 const POPUP_PREVIEW_KIND_SET = new Set<SupportKind>(['trunk']);
-
-function normalizeTabKind(kind: SupportKind): SupportKind {
-    if (kind === 'branch' || kind === 'leaf' || kind === 'twig') {
-        return 'trunk';
-    }
-    return kind;
-}
 
 function hasMeaningfulSupportEditChange(
     before: SupportEditHistorySnapshot,
@@ -200,7 +194,7 @@ export function SupportSidebar() {
     const supportKindState = React.useSyncExternalStore(subscribeToSupportKindState, getSupportKindSnapshot, getSupportKindSnapshot);
     const activeKind = supportKindState.kind;
     const useAdaptiveIconCompactDisplay = isAdaptiveConeAngle && activeKind === 'trunk';
-    const tabKind = normalizeTabKind(activeKind);
+    const tabKind = tabKindFor(activeKind);
     const activeKindMeta = KIND_META[activeKind];
     const raftSettings = React.useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
     const supportState = React.useSyncExternalStore(subscribeToSupportState, getSupportSnapshot, getSupportSnapshot);
@@ -1148,7 +1142,7 @@ export function SupportSidebar() {
         </div>
     );
 
-    const supportGeometryFields = shouldUseCompactTrunkLayout && activeKind === 'trunk'
+    const supportGeometryFields = shouldUseCompactTrunkLayout
         ? supportGeometryFieldsCompactTrunk
         : supportGeometryFieldsDefault;
 

@@ -7,7 +7,7 @@ import {
     LEAF_HOME_FOCUS_STATE,
     TRUNK_HOME_FOCUS_STATE,
 } from '../Settings/AnatomyPreview/PreviewTypes/Trunk/camera';
-import { kindHas, SUPPORT_KINDS, type SupportKind } from '../Settings/supportKindState';
+import { kindHas, SUPPORT_KINDS, tabKindFor, type SupportKind } from '../Settings/supportKindState';
 
 /**
  * What the sidebar offers each tool.
@@ -75,4 +75,32 @@ test('a kind declaring a home focus rests there when no setting is focused', () 
 
     // And a focused setting moves the camera off home.
     assert.notDeepEqual(getTargetFocusState('trunk', 'roots.diameterMm'), TRUNK_HOME_FOCUS_STATE);
+});
+
+test('every kind names a tab that is itself a kind', () => {
+    for (const kind of Object.keys(SUPPORT_KINDS) as SupportKind[]) {
+        assert.ok(kind in SUPPORT_KINDS, `${kind} is not a kind`);
+        assert.ok(tabKindFor(kind) in SUPPORT_KINDS, `${kind} names a tab that is not a kind`);
+    }
+});
+
+test('the shaft-family kinds share the trunk tab', () => {
+    // Editing a branch, leaf or twig shows the trunk tab's fields.
+    for (const kind of ['branch', 'leaf', 'twig'] as const) {
+        assert.equal(tabKindFor(kind), 'trunk', `${kind} should be edited under the trunk tab`);
+    }
+});
+
+test('every other kind is its own tab', () => {
+    for (const kind of ['trunk', 'raft', 'stick', 'grid', 'auto'] as const) {
+        assert.equal(tabKindFor(kind), kind, `${kind} should be its own tab`);
+    }
+});
+
+test('a tab kind is never itself redirected', () => {
+    // Otherwise resolving a tab would need repeating until it settled.
+    for (const kind of Object.keys(SUPPORT_KINDS) as SupportKind[]) {
+        const tab = tabKindFor(kind);
+        assert.equal(tabKindFor(tab), tab, `${kind} resolves to ${tab}, which redirects again`);
+    }
 });
