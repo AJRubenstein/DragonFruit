@@ -1,7 +1,8 @@
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import type { CandidatePoint } from './types';
 import type { AutoSupportSettings } from './settings';
-import { SMALL_ISLAND_TIP_AREA_MM2, SUPPORT_RESTSTACK_DELTA_MM, influenceRadiusMm } from './constants';
+import { SMALL_ISLAND_TIP_AREA_MM2, SUPPORT_RESTSTACK_DELTA_MM, influenceRadiusMm, ISLAND_SUB_HEAD_MM, ISLAND_TWO_POINT_MIN_MM, ISLAND_TWO_POINT_MAX_MM, ISLAND_TWO_POINT_MAX_WIDTH_MM } from './constants';
+import { footprintX, footprintY } from '../../volumeAnalysis/Islands/voxelFootprint';
 import { smallIslandTipDiameterMm } from './parameterSizing';
 import { TIP_COVERAGE_RADIUS_MM } from './coverage';
 
@@ -31,8 +32,7 @@ export function generateCandidates(
     });
 
     // Map to candidates
-    const candidates = eligible.map(island => candidateFromIsland(island));
-
+    const candidates = eligible.flatMap(island => candidatesFromIsland(island));
     // Score and sort
     if (candidates.length === 0) return [];
 
@@ -76,6 +76,62 @@ export function candidateFromIsland(island: DetectedIsland): CandidatePoint {
         // and larger islands take the active band default (undefined).
         tipDiameterMm: area < SMALL_ISLAND_TIP_AREA_MM2 ? smallIslandTipDiameterMm() : undefined,
     };
+}
+/**
+ * Island-typed emission: one island yields one or two candidates by span.
+ * Sub-head specks get a single tip at the bbox center; narrow islands in
+ * the two-point band split into a symmetric pair (each carrying half the
+ * area, so sizing tails stay honest); everything else keeps the single
+ * contact-point candidate. Islands without footprint voxels (minima)
+ * always take the single path.
+ */
+export function candidatesFromIsland(island: DetectedIsland): CandidatePoint[] {
+    const base = candidateFromIsland(island);
+    const voxels = island.contactVoxels;
+    if (!voxels || voxels.count === 0) return [base];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < voxels.count; i++) {
+        const x = footprintX(voxels, i);
+        const y = footprintY(voxels, i);
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+    }
+    const extX = maxX - minX;
+    const extY = maxY - minY;
+    const major = Math.max(extX, extY);
+    if (major <= ISLAND_SUB_HEAD_MM) {
+        return [{
+            ...base,
+            tipPos: { x: (minX + maxX) / 2, y: (minY + maxY) / 2, z: island.contact.z },
+        }];
+    }
+    const minor = Math.min(extX, extY);
+    if (
+        major >= ISLAND_TWO_POINT_MIN_MM && major < ISLAND_TWO_POINT_MAX_MM &&
+        minor < ISLAND_TWO_POINT_MAX_WIDTH_MM
+    ) {
+        const alongX = extX >= extY;
+        const lo = alongX ? minX : minY;
+        const span = alongX ? extX : extY;
+        const fixed = alongX ? (minY + maxY) / 2 : (minX + maxX) / 2;
+        const halfArea = base.islandAreaMm2 / 2;
+        const pairTip = halfArea < SMALL_ISLAND_TIP_AREA_MM2 ? smallIslandTipDiameterMm() : undefined;
+        return [0.25, 0.75].map((t, i) => {
+            const along = lo + span * t;
+            return {
+                ...base,
+                id: `${island.id}-${i === 0 ? 'a' : 'b'}`,
+                tipPos: alongX
+                    ? { x: along, y: fixed, z: island.contact.z }
+                    : { x: fixed, y: along, z: island.contact.z },
+                islandAreaMm2: halfArea,
+                tipDiameterMm: pairTip,
+            };
+        });
+    }
+    return [base];
 }
 
 /**

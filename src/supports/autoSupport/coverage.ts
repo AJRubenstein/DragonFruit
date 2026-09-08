@@ -14,6 +14,18 @@ export const MIN_GAP_CLUSTER_MM2 = 2.0;
 /** Max gap-fill passes per run. */
 export const MAX_GAP_FILL_PASSES = 3;
 
+/**
+ * Effective cover radius for a region of the given footprint area: large
+ * flat regions peel harder (traction ∝ cross-section), so their discs
+ * shrink sublinearly → denser packing. At/near the 8 mm² cell reference
+ * the full radius applies; floored at half radius.
+ */
+export function coverageRadiusForArea(areaMm2: number, baseRadiusMm: number = TIP_COVERAGE_RADIUS_MM): number {
+    if (!(areaMm2 > 0)) return baseRadiusMm;
+    const scale = Math.sqrt(8 / Math.max(areaMm2, 8));
+    return baseRadiusMm * Math.max(0.5, scale);
+}
+
 /** Collect support-tip world positions from a support snapshot. */
 export function collectSupportTips(snapshot: SupportState): Array<{ x: number; y: number; z: number }> {
     const tips: Array<{ x: number; y: number; z: number }> = [];
@@ -193,9 +205,10 @@ export function buildGapFillCandidates(
     for (const region of overhangIslands) {
         if (region.source !== 'overhang') continue;
         if (!region.contactVoxels || region.contactVoxels.count === 0) continue;
-        if (computeRegionCoverage(region, tips) >= coverageTarget) continue;
+        const radius = coverageRadiusForArea(region.areaMm2 ?? 0);
+        if (computeRegionCoverage(region, tips, radius) >= coverageTarget) continue;
 
-        const clusters = findUncoveredClusters(region, tips);
+        const clusters = findUncoveredClusters(region, tips, radius);
         for (const c of clusters) {
             out.push({
                 id: `gap-${region.id}-${c.x.toFixed(2)}-${c.y.toFixed(2)}`,

@@ -6,11 +6,13 @@ import {
     generateCandidates,
     deduplicateCandidates,
     candidateFromIsland,
+    candidatesFromIsland,
 } from '../autoSupport/candidateGeneration';
 import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import type { CandidatePoint } from '../autoSupport/types';
 import { influenceRadiusMm } from '../autoSupport/constants';
+import { footprintFromPoints } from '../../volumeAnalysis/Islands/voxelFootprint';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -270,4 +272,54 @@ test('influenceRadiusMm follows the support curve', () => {
     assert.equal(influenceRadiusMm(100), 6.0, 'capped');
     const mid = influenceRadiusMm(7.5);
     assert.ok(mid > 4.0 && mid < 5.0, `interpolates between knots (got ${mid})`);
+});
+
+test('candidatesFromIsland centers sub-head specks on the bbox', () => {
+    // 0.25×0.25 speck with an off-center contact: the tip snaps to the
+    // bbox center, not the noisy contact point.
+    const island = {
+        ...makeIsland({ id: 'speck', areaMm2: 0.05 }),
+        contact: new THREE.Vector3(0.2, 0.1, 30),
+        contactVoxels: footprintFromPoints([
+            { x: 0, y: 0, z: 30 }, { x: 0.25, y: 0, z: 30 },
+            { x: 0, y: 0.25, z: 30 }, { x: 0.25, y: 0.25, z: 30 },
+        ]),
+    };
+    const out = candidatesFromIsland(island);
+    assert.equal(out.length, 1, 'one tip for a speck');
+    assert.deepStrictEqual(out[0].tipPos, { x: 0.125, y: 0.125, z: 30 });
+});
+
+test('candidatesFromIsland splits narrow mid-size islands in two', () => {
+    // 4×1 sliver: symmetric pair at the quarter points, each with half
+    // the area (sizing tails stay honest).
+    const pts = [];
+    for (let x = 0; x <= 4; x += 0.25) pts.push({ x, y: 0, z: 30 });
+    const island = {
+        ...makeIsland({ id: 'sliver', areaMm2: 2 }),
+        contact: new THREE.Vector3(2, 0, 30),
+        contactVoxels: footprintFromPoints(pts),
+    };
+    const out = candidatesFromIsland(island);
+    assert.equal(out.length, 2, 'sliver gets two tips');
+    assert.deepStrictEqual([out[0].id, out[1].id], ['sliver-a', 'sliver-b']);
+    assert.deepStrictEqual(out[0].tipPos, { x: 1, y: 0, z: 30 });
+    assert.deepStrictEqual(out[1].tipPos, { x: 3, y: 0, z: 30 });
+    assert.ok(out.every((c) => c.islandAreaMm2 === 1), 'area split between the pair');
+});
+
+test('candidatesFromIsland keeps one candidate for wide blobs', () => {
+    // 4×4 blob: too wide for the pair rule — the grid path covers it.
+    const pts = [];
+    for (let x = 0; x <= 4; x += 0.5) {
+        for (let y = 0; y <= 4; y += 0.5) pts.push({ x, y, z: 30 });
+    }
+    const island = {
+        ...makeIsland({ id: 'blob', areaMm2: 16 }),
+        contact: new THREE.Vector3(2, 2, 30),
+        contactVoxels: footprintFromPoints(pts),
+    };
+    const out = candidatesFromIsland(island);
+    assert.equal(out.length, 1, 'wide blob keeps a single candidate');
+    assert.deepStrictEqual(out[0].tipPos, { x: 2, y: 2, z: 30 });
 });

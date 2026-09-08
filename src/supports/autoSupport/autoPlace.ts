@@ -24,6 +24,7 @@ import {
     buildGapFillCandidates,
     collectSupportTips,
     computeRegionCoverage,
+    coverageRadiusForArea,
 } from './coverage';
 import { sizeParameters, presetForArea } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
@@ -2429,7 +2430,7 @@ export function computeAutoSupportPlan(
         // already-supported surfaces (redundant "floating" leaves).
         let fraction: number;
         if (island.contactVoxels && island.contactVoxels.count > 0) {
-            fraction = computeRegionCoverage(island, allTips, SUPPORT_COVERAGE_RADIUS_MM);
+            fraction = computeRegionCoverage(island, allTips, coverageRadiusForArea(area, SUPPORT_COVERAGE_RADIUS_MM));
         } else {
             // No footprint (minima islands): centroid proximity fallback.
             let hit = false;

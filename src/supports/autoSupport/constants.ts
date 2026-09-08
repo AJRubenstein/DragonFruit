@@ -27,6 +27,17 @@ export const MAX_AUTO_LEAF_SPAN_MM = 2.5;
  *  instead of the active band contact — matches the detail preset boundary. */
 export const SMALL_ISLAND_TIP_AREA_MM2 = 0.15;
 
+/** Islands with bbox extent at/below this (mm) get a single tip at the bbox
+ *  center — robust for specks where centroid/medial math is noise. */
+export const ISLAND_SUB_HEAD_MM = 0.5;
+/** Islands this long (mm) or longer with narrow width split into a symmetric
+ *  tip pair instead of one center tip. */
+export const ISLAND_TWO_POINT_MIN_MM = 1.5;
+export const ISLAND_TWO_POINT_MAX_MM = 6.0;
+/** Two-point split only when the minor bbox axis is below this (mm); wide
+ *  blobs keep one candidate (the grid path covers their area). */
+export const ISLAND_TWO_POINT_MAX_WIDTH_MM = 2.5;
+
 /** Leaf spans above this (mm) route to branches with real shafts instead of
  *  long tapered leaf cones — an 8–11 mm leaf reads as a spindly spike next
  *  to its trunk. Applies to merge + fan paths (island origins; overhang
