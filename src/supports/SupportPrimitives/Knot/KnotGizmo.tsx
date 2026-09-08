@@ -16,7 +16,7 @@ import {
 import { Branch, Knot, Segment } from '../../types';
 import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
 import { resolveSegmentEndpoints } from './segmentEndpoints';
-import { projectOntoSegment } from './knotUtils';
+import { knotMoveDescription, projectOntoSegment } from './knotUtils';
 import { ElasticChainInitialState, solveElasticChain } from '../../PlacementLogic/ElasticChainSolver';
 import { getSettings } from '../../Settings/state';
 import { getSocketPosition } from '../ContactCone';
@@ -438,11 +438,9 @@ export function KnotGizmo() {
         document.body.style.cursor = '';
 
         if (beforeHistoryRef.current) {
-            // The type id is already the singular noun, so a ninth type reads
-            // correctly without being listed here.
             const parentShaftId = selectedId ? getKnotById(selectedId)?.parentShaftId : undefined;
             const movedFrom = parentShaftId ? findShaftOwnerOfSegment(parentShaftId) : null;
-            const description = movedFrom ? `Move ${movedFrom.typeId} knot` : 'Move support knot';
+            const description = knotMoveDescription(movedFrom?.typeId);
             pushSupportEditHistory(description, beforeHistoryRef.current, captureSupportEditSnapshot());
         }
         beforeHistoryRef.current = null;

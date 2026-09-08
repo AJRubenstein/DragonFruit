@@ -19,14 +19,8 @@ import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../histor
 import { clearKnotDragPreview, emitKnotDragPreview } from '../../interaction/knotDragPreview';
 import { resolveTwigDiameterAtSegmentT, twigJointDiameterForLocalDiameter } from '../../SupportTypes/Twig/twigTaper';
 import { SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
+import { knotMoveDescription, type KnotHostType } from './knotUtils';
 
-/**
- * What a knot can be dragged along: any support type, or a leaf's contact cone.
- *
- * Derived, so a ninth type is a host by being registered. `leafCone` is not a
- * support type -- it is the cone primitive a leaf knot rides.
- */
-type KnotHostType = SupportTypeId | 'leafCone';
 
 /** Whether this host is a shaft, as opposed to a leaf's cone. */
 function hostsAShaft(containerType: KnotHostType): boolean {
@@ -855,14 +849,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             }
 
             if (activeHostAtEnd && initialEditSnapshotRef.current) {
-                const description =
-                    activeHostAtEnd.containerType === 'leafCone'
-                        ? 'Move tip knot'
-                        : activeHostAtEnd.containerType === 'brace'
-                            ? 'Move brace knot'
-                            : activeHostAtEnd.containerType === 'kickstand'
-                                ? 'Move kickstand host knot'
-                                : 'Move support knot';
+                const description = knotMoveDescription(activeHostAtEnd.containerType);
                 pushSupportEditHistory(description, initialEditSnapshotRef.current, captureSupportEditSnapshot());
             }
 
