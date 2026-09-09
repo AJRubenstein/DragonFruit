@@ -19,6 +19,7 @@ import { normalizeAutoSupportSettings } from './settings';
 import { activeSizingBand } from './parameterSizing';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
 import { generateGridCandidates } from './gridPlacement';
+import { computeStabilizationAnchors } from './stabilization';
 import {
     MAX_GAP_FILL_PASSES,
     buildGapFillCandidates,
@@ -588,7 +589,7 @@ function placeOneCandidate(
             }
         }
     }
-    if (!supportSettings.grid?.enabled && !candidate.gridPoint) {
+    if (!supportSettings.grid?.enabled && !candidate.gridPoint && candidate.source !== 'stabilization') {
         // Overhang-derived candidates (sub-threshold, non-anchor regions)
         // attach via the regular leaf-fanning path — a standalone straight
         // trunk next to fan leaves reads as a misplaced island support. No
@@ -1965,7 +1966,7 @@ export function forestReportToText(report: ForestReport): string {
         const d = report.diagnostics;
         lines.push('PLACEMENT DIAGNOSTICS');
         lines.push(`  Trunks by kind: grid ${d.trunksByKind.gridInfill} (ring + infill), gap-fill ${d.trunksByKind.coverageFill}, standalone ${d.trunksByKind.standalone} (sub-threshold overhang, no host)`);
-        lines.push(`  Candidates by source: voxel ${d.candidatesBySource.voxel} · minima ${d.candidatesBySource.minima} · intersection ${d.candidatesBySource.intersection} · overhang ${d.candidatesBySource.overhang}`);
+        lines.push(`  Candidates by source: voxel ${d.candidatesBySource.voxel} · minima ${d.candidatesBySource.minima} · intersection ${d.candidatesBySource.intersection} · overhang ${d.candidatesBySource.overhang} · stabilization ${d.candidatesBySource.stabilization}`);
         const fanEntries = Object.entries(d.fanRefusals).filter(([, v]) => v);
         const mergeEntries = Object.entries(d.mergeRefusals).filter(([, v]) => v);
         if (fanEntries.length > 0 || mergeEntries.length > 0) {
@@ -2079,6 +2080,29 @@ export function computeAutoSupportPlan(
     let candidates = generateCandidates(islands, autoSettings);
     candidates = candidates.map((c): CandidatePoint => ({ ...c, modelId }));
 
+    // Stabilization pass: when the oriented mesh bears on a point or edge,
+    // formation detection sees nothing to support, so a dedicated bearing
+    // analysis adds anchor contacts to broaden the base. Standalone trunks —
+    // they never fan/merge onto a nearby host (the source gates that below).
+    let stabilizationAnchors = 0;
+    if (autoSettings.stabilizationEnabled !== false && resolvedMesh) {
+        const anchors = computeStabilizationAnchors(resolvedMesh);
+        if (anchors.length > 0) {
+            const stabilizationCandidates: CandidatePoint[] = anchors.map((a, i) => ({
+                id: `stab-${i}`,
+                tipPos: { x: a.x, y: a.y, z: a.z },
+                tipNormal: { x: 0, y: 0, z: -1 }, // placeholder — caller raycasts for the real normal
+                modelId,
+                source: 'stabilization',
+                islandAreaMm2: 0.05,
+                zHeight: a.z,
+                priority: 0,
+            }));
+            stabilizationAnchors = stabilizationCandidates.length;
+            candidates = [...candidates, ...stabilizationCandidates];
+        }
+    }
+
     // Candidate generation phase: every overhang region above the threshold
     // gets the unified fixed-density distribution (2D-projected boundary ring
     // + grid infill). Shape decides the degenerate cases — slivers get a ring
@@ -2109,7 +2133,8 @@ export function computeAutoSupportPlan(
     console.log(LOG_PREFIX,
         `Step 1/3: ${candidates.length} candidates generated ` +
         `(filtered from ${islands.length} islands, min area ${autoSettings.minIslandAreaMm2}mm², ` +
-        `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold)`);
+        `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold, ` +
+        `stabilization: ${stabilizationAnchors} anchors)`);
     if (candidates.length === 0) {
         return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'no-candidates'));
     }
@@ -2179,7 +2204,7 @@ export function computeAutoSupportPlan(
     // Placement-path diagnostics: where each placed trunk came from and why
     // non-fanned candidates didn't fan/merge. Pure counts — no physics.
     const diagnostics: PlacementDiagnostics = {
-        candidatesBySource: { voxel: 0, minima: 0, intersection: 0, overhang: 0 },
+        candidatesBySource: { voxel: 0, minima: 0, intersection: 0, overhang: 0, stabilization: 0 },
         trunksByKind: { gridInfill: 0, coverageFill: 0, standalone: 0 },
         fanRefusals: {},
         mergeRefusals: {},

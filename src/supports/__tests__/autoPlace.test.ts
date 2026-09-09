@@ -199,7 +199,7 @@ test('runAutoPlace places grid trunks on a rotated mesh via the region normal', 
         contactVoxels: footprintFromPoints(contactVoxels),
     };
 
-    const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true });
+    const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true, stabilizationEnabled: false });
 
     assert.ok(result.placedTrunks >= 15,
         `placed ${result.placedTrunks} grid trunks on the rotated face`);

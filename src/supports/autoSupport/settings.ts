@@ -44,6 +44,8 @@ export interface AutoSupportSettings {
      *  standalone) in the scene instead of the model color. */
     debugSupportOriginColors: boolean;
     debugSkipAutoBracing: boolean;
+    /** Add stabilization anchors for poses bearing on a point/edge (default on). */
+    stabilizationEnabled: boolean;
 }
 
 type NumericConstraint = {
@@ -136,6 +138,7 @@ export function createDefaultAutoSupportSettings(): AutoSupportSettings {
         leafFanMaxAngleDeg: AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg.defaultValue,
         debugSupportOriginColors: false,
         debugSkipAutoBracing: false,
+        stabilizationEnabled: true,
     };
 }
 
@@ -164,6 +167,7 @@ export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings
         leafFanMaxAngleDeg: clampNumeric(source.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg),
         debugSupportOriginColors: normalizeBoolean(source.debugSupportOriginColors, defaults.debugSupportOriginColors),
         debugSkipAutoBracing: normalizeBoolean(source.debugSkipAutoBracing, defaults.debugSkipAutoBracing),
+        stabilizationEnabled: normalizeBoolean(source.stabilizationEnabled, defaults.stabilizationEnabled),
     };
 }
 

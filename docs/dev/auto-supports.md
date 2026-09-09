@@ -29,6 +29,25 @@ Six phases inside `computeAutoSupportPlan` (`autoPlace.ts`):
 
 Islands arrive from volume analysis carrying a `source`. Three matter: `overhang` (the mesh-normal classifier's shallow surfaces), `minima` (local low points, only when `class === 'minimaOnly'`), and `intersection`. Emission is island-typed by footprint span: sub-head specks (≤0.5mm) get one tip at the bbox center; narrow islands 1.5–6mm long split into a symmetric pair (half area each); wide blobs keep one candidate (the grid path covers their area).
 
+## Stabilization
+
+Formation overhang and stability are two different failure modes, and the
+island scan only models the first: a corner resting on a point, or a long
+edge on a line, prints fine face-by-face yet nothing holds it against peel.
+`computeStabilizationAnchors` (`stabilization.ts`) closes that gap. It scores
+how the oriented mesh bears on the plate — the projected hull of the low
+surface plus the surface centroid — and, when the pose can tip, lays teeth
+along the low edge skeleton. Two regimes: a part resting on a low edge gets a
+dense line of teeth along that edge plus short flank stubs up the adjacent
+faces, while a lone corner gets teeth climbing its radiating edges to the
+widest base points. The common case (a flat base) emits nothing. Gated by the
+`stabilizationEnabled` setting (default on).
+
+Stabilization anchors enter placement as `source: 'stabilization'` candidates
+and are deliberately standalone trunks: they never fan or merge onto a nearby
+host (the merge gate is source-gated), so a tip pillar and its flanking
+anchors stay independent instead of collapsing into drift-culled leaves.
+
 
 ## Distribution: one fixed-density scheme
 
