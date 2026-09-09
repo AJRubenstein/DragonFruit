@@ -1191,10 +1191,17 @@ function removeBranchJoint(branchId: string, jointId: string): { before: Branch;
     };
 }
 
+/**
+ * Which support lost a joint, and its before/after for the undo payload.
+ *
+ * One shape rather than a variant per type: callers push the update action the
+ * type declares (`historyUpdate`) and select `id`, so a fourth shafted type
+ * needs no new branch.
+ */
 export type RemoveJointByIdResult =
-    | { kind: 'trunk'; trunkId: string; before: Trunk; after: Trunk }
-    | { kind: 'branch'; branchId: string; before: Branch; after: Branch }
-    | { kind: 'kickstand'; kickstandId: string; before: Kickstand; after: Kickstand };
+    | { typeId: 'trunk'; id: string; before: Trunk; after: Trunk }
+    | { typeId: 'branch'; id: string; before: Branch; after: Branch }
+    | { typeId: 'kickstand'; id: string; before: Kickstand; after: Kickstand };
 
 export function removeJointById(jointId: string): RemoveJointByIdResult | null {
     for (const [trunkId, trunk] of Object.entries(state.trunks)) {
@@ -1204,7 +1211,7 @@ export function removeJointById(jointId: string): RemoveJointByIdResult | null {
         if (!hasJoint) continue;
         const result = removeJoint(trunkId, jointId);
         if (result) {
-            return { kind: 'trunk', trunkId, ...result };
+            return { typeId: 'trunk', id: trunkId, ...result };
         }
     }
 
@@ -1215,7 +1222,7 @@ export function removeJointById(jointId: string): RemoveJointByIdResult | null {
         if (!hasJoint) continue;
         const result = removeBranchJoint(branchId, jointId);
         if (result) {
-            return { kind: 'branch', branchId, ...result };
+            return { typeId: 'branch', id: branchId, ...result };
         }
     }
 
@@ -1251,7 +1258,7 @@ export function removeJointById(jointId: string): RemoveJointByIdResult | null {
         }
 
         updateKickstand(after);
-        return { kind: 'kickstand', kickstandId, before, after };
+        return { typeId: 'kickstand', id: kickstandId, before, after };
     }
 
     return null;
