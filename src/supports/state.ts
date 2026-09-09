@@ -3371,6 +3371,53 @@ export function getSupportEntities<T = unknown>(typeId: SupportTypeId): T[] {
 }
 
 
+/**
+ * The primitives a type's entities reference, keyed by id.
+ *
+ * Which fields point where is declared as the type's `edges`, so a caller asks
+ * for "the roots kickstands own" without knowing the field name. Used where a
+ * consumer needs one type's primitives separately from every other type's --
+ * raft base circles count trunk roots and kickstand roots as distinct inputs.
+ */
+export function getOwnedPrimitives<T = unknown>(
+    typeId: SupportTypeId,
+    collection: SupportCollectionKey,
+): Record<string, T> {
+    const descriptor = getSupportTypeDescriptor(typeId);
+    const fields = descriptor.edges
+        .filter((edge) => edge.to === collection)
+        .map((edge) => edge.field);
+    if (fields.length === 0) return {};
+
+    const source = state[collection] as unknown as Record<string, T>;
+    const owned: Record<string, T> = {};
+    for (const entity of Object.values(state[descriptor.location.key]) as Record<string, unknown>[]) {
+        for (const field of fields) {
+            const id = entity[field];
+            if (typeof id !== 'string') continue;
+            const found = source[id];
+            if (found !== undefined) owned[id] = found;
+        }
+    }
+    return owned;
+}
+
+/**
+ * The roots kickstands own, cached by snapshot identity.
+ *
+ * `useSyncExternalStore` compares by reference, so returning a fresh object per
+ * call would re-render forever. Rebuilt only when the snapshot changes.
+ */
+let cachedRootsSource: SupportState | null = null;
+let cachedKickstandRoots: Record<string, Roots> | null = null;
+
+export function getKickstandRoots(): Record<string, Roots> {
+    if (cachedRootsSource === state && cachedKickstandRoots) return cachedKickstandRoots;
+    cachedRootsSource = state;
+    cachedKickstandRoots = getOwnedPrimitives<Roots>('kickstand', 'roots');
+    return cachedKickstandRoots;
+}
+
 export function getKnotById(knotId: string) {
     return state.knots[knotId] ?? null;
 }
