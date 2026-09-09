@@ -363,11 +363,11 @@
           "side": "left-edge"
         },
         "support-auto": {
-          "to": "support-islands",
+          "to": "support-rotation",
           "side": "below"
         },
         "support-rotation": {
-          "to": "support-auto",
+          "to": "support-islands",
           "side": "below"
         }
       }

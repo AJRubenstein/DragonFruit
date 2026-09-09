@@ -16,7 +16,7 @@
     },
     {
       "id": "auto-rotation",
-      "name": "Auto Rotation",
+      "name": "Auto Orientation",
       "description": "Orientation suggestions that minimize support contact area. Early access.",
       "defaultEnabled": false
     }

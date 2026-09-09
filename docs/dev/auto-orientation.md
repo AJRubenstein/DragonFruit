@@ -1,8 +1,11 @@
 # Auto-Orientation (Pre-Plan)
 
 Design pre-plan for automatic build-orientation of models, tuned for
-masked-resin (MSLA) printing. This is a plan, not a shipped feature: the
-phases below are sequenced so each lands as a usable improvement. It
+masked-resin (MSLA) printing. M1 has shipped (`suggestOrientation` in
+`src/supports/autoSupport/orientationAdvisor.ts`, sweeping
+`generateM1Candidates` plus `restingPoseCandidates` with coordinate-descent
+refinement); M2–M5 below are still planned, sequenced so each lands as a
+usable improvement. It
 absorbs the intent of the closed WIP attempt (#224: Fibonacci sweep with
 protected-face painting) while discarding its implementation, which did
 not work well in practice and was never merged. Designed to interlock
@@ -157,9 +160,12 @@ tier band remains the base; peel exposure modulates it.
 
 ## Phases
 
-1. **M1 — Sweep and score**: Fibonacci + resting-pose candidates,
-   CPU scoring (overhang, height, footprint), apply-to-transform UX with
-   before/after scores.
+1. **M1 — Sweep and score** (shipped): Fibonacci + resting-pose candidates,
+   CPU scoring (overhang primary with an anchoring margin that trades up to ~5%
+   contact for the widest base; height/footprint tie-breakers, or height
+   objective rank, one-click apply with optimize-for dropdown (Fewest Supports /
+   Shortest Print Time), auto-lift reseat above the plate, destructive-transform
+   confirm clearing placed supports first, and toast receipts (applied / already-optimal).
 2. **M2 — "No supports" painted faces**: vertex mask via the smoothing
    painter infrastructure, hard-constraint pruning in the search, brush UX.
 3. **M3 — GPU peel proxy**: orthographic coverage rendering, max/integral

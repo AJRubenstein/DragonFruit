@@ -78,7 +78,7 @@ import {
   dispatchDeleteModelAction,
   resolveModelActionTargetIds,
 } from '@/features/scene/modelActionTargets';
-import { buildLiftDropUpdates } from '@/features/scene/selectionLiftDrop';
+import { buildLiftDropUpdates, getModelLowestWorldZ } from '@/features/scene/selectionLiftDrop';
 import { dropOverlaySupportedFormats, dropOverlayUnsupportedFormats } from '@/features/scene/sceneImportMessages';
 import {
   buildCenterSelectionUpdates,
@@ -1056,6 +1056,9 @@ export default function Home() {
     setPrintingMonitorError,
     handleExportSuccess,
     showOperationError,
+    orientationToast,
+    isOrientationToastVisible,
+    showOrientationToast,
   } = useEditorToasts({
     isSceneSaveInProgress,
     isPreSliceSceneSaveInProgress,
@@ -2105,11 +2108,15 @@ export default function Home() {
     };
   }, [bracePlacementSnapshot, supportShaftHoverDebug.point, supportShaftHoverDebug.segmentId, transformDebugTick]);
 
+  // Reads the live stores directly: Home's subscribed snapshot is an empty
+  // stub in support mode (trackSupportCollectionsInHome), so counting from it
+  // would silently report zero exactly where orient needs the truth. In
+  // prepare mode the stub mirrors the store, so existing callers are unaffected.
   const getSupportPrimitiveCountForModel = React.useCallback((modelId: string | null | undefined) => {
     if (!modelId) return 0;
 
-    const supportIds = getSupportsForModel(supportStateSnapshot, modelId);
-    const kickstandCount = Object.values(kickstandStateSnapshot.kickstands)
+    const supportIds = getSupportsForModel(getSupportSnapshot(), modelId);
+    const kickstandCount = Object.values(getKickstandSnapshot().kickstands)
       .filter((kickstand) => kickstand.modelId === modelId)
       .length;
 
@@ -2121,7 +2128,7 @@ export default function Home() {
       + supportIds.twigs.length
       + supportIds.sticks.length
       + kickstandCount;
-  }, [kickstandStateSnapshot.kickstands, supportStateSnapshot]);
+  }, []);
 
   const requestDestructiveTransformSupportDeletion = React.useCallback((operationLabel: string) => {
     if (scene.mode !== 'prepare') return true;
@@ -2153,6 +2160,23 @@ export default function Home() {
     pendingDestructiveTransformContinueRef.current = onContinue;
     return false;
   }, [requestDestructiveTransformSupportDeletion]);
+
+  const requestOrientSupportDeletionWithContinuation = React.useCallback((onContinue: () => void) => {
+    // Unlike the prepare-mode destructive transforms, orient runs from support
+    // mode, so there is no mode gate — placed supports always force the dialog.
+    if (!scene.activeModelId) return true;
+    if (pendingDestructiveTransform) return false;
+    const supportCount = getSupportPrimitiveCountForModel(scene.activeModelId);
+    if (supportCount <= 0) return true;
+    setPendingDestructiveTransform({
+      modelId: scene.activeModelId,
+      modelName: (scene.activeModel?.name ?? scene.activeModelId).trim(),
+      supportCount,
+      operationLabel: 'Auto Orient',
+    });
+    pendingDestructiveTransformContinueRef.current = onContinue;
+    return false;
+  }, [getSupportPrimitiveCountForModel, pendingDestructiveTransform, scene]);
 
   const handleConfirmDestructiveTransform = React.useCallback(() => {
     const pending = pendingDestructiveTransform;
@@ -10180,8 +10204,9 @@ export default function Home() {
                 activeModelId={scene.activeModelId ?? undefined}
                 currentRotation={scene.activeModel?.transform.rotation}
                 onApplyRotation={(modelId, rotation) => {
-                  const current = scene.activeModel?.transform;
-                  if (!current) return;
+                  const activeModel = scene.activeModel;
+                  const current = activeModel?.transform;
+                  if (!activeModel || !current) return;
                   const before = {
                     position: current.position.clone(),
                     rotation: current.rotation.clone(),
@@ -10192,9 +10217,26 @@ export default function Home() {
                     rotation,
                     scale: current.scale.clone(),
                   };
+                  // A new down-axis means new extents: always re-seat above the
+                  // plate at the user's lift clearance. Lift-only — a higher
+                  // float is left alone. One history entry covers rotate + lift.
+                  if (activeModel.id === modelId) {
+                    let liftDistance = 5;
+                    if (typeof window !== 'undefined') {
+                      const parsed = parseFloat(window.localStorage.getItem('liftDistance') ?? '');
+                      if (Number.isFinite(parsed) && parsed >= 0) liftDistance = parsed;
+                    }
+                    const lowestWorldZ = getModelLowestWorldZ({ id: modelId, geometry: activeModel.geometry, transform: after });
+                    if (lowestWorldZ < liftDistance) {
+                      after.position.z += liftDistance - lowestWorldZ;
+                    }
+                  }
                   scene.updateModelTransform(modelId, after);
                   scene.commitModelTransformHistory(modelId, before, after, 'Apply Orientation Suggestion');
                 }}
+                onBeforeOrientApply={(continueApply) => requestOrientSupportDeletionWithContinuation(continueApply)}
+                onOrientationReport={showOrientationToast}
+                activeModelName={scene.activeModel?.name}
               />
             )}
             <IslandsPanel
@@ -11020,6 +11062,8 @@ export default function Home() {
         isExportSuccessToastVisible={isExportSuccessToastVisible}
         exportErrorToast={exportErrorToast}
         isExportErrorToastVisible={isExportErrorToastVisible}
+        orientationToast={orientationToast}
+        isOrientationToastVisible={isOrientationToastVisible}
       />
 
       <SystemNotificationStack />
