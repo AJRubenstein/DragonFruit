@@ -3381,19 +3381,33 @@ export function getOwnedPrimitives<T = unknown>(
 }
 
 /**
- * The roots kickstands own, cached by snapshot identity.
+ * Owned-primitive views, cached by snapshot identity.
  *
  * `useSyncExternalStore` compares by reference, so returning a fresh object per
  * call would re-render forever. Rebuilt only when the snapshot changes.
  */
-let cachedRootsSource: SupportState | null = null;
-let cachedKickstandRoots: Record<string, Roots> | null = null;
+const ownedPrimitiveCache = new Map<string, { source: SupportState; view: Record<string, unknown> }>();
 
+function cachedOwnedPrimitives<T>(
+    typeId: SupportTypeId,
+    collection: SupportCollectionKey,
+): Record<string, T> {
+    const key = `${typeId}:${collection}`;
+    const hit = ownedPrimitiveCache.get(key);
+    if (hit && hit.source === state) return hit.view as Record<string, T>;
+    const view = getOwnedPrimitives<T>(typeId, collection);
+    ownedPrimitiveCache.set(key, { source: state, view: view as Record<string, unknown> });
+    return view;
+}
+
+/** The roots kickstands own. */
 export function getKickstandRoots(): Record<string, Roots> {
-    if (cachedRootsSource === state && cachedKickstandRoots) return cachedKickstandRoots;
-    cachedRootsSource = state;
-    cachedKickstandRoots = getOwnedPrimitives<Roots>('kickstand', 'roots');
-    return cachedKickstandRoots;
+    return cachedOwnedPrimitives<Roots>('kickstand', 'roots');
+}
+
+/** The knots kickstands host. */
+export function getKickstandKnots(): Record<string, Knot> {
+    return cachedOwnedPrimitives<Knot>('kickstand', 'knots');
 }
 
 export function getKnotById(knotId: string) {
