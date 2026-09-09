@@ -2,8 +2,6 @@ import React, { useSyncExternalStore, useCallback, useMemo, useState, useRef, us
 import * as THREE from 'three';
 import { subscribe, getSnapshot, getSupportEntity } from '../../state';
 import { Trunk, Branch, Twig, Stick, Brace, Segment, BezierSegment, Joint } from '../../types';
-import { updateKickstand, useKickstandStoreState } from '../../SupportTypes/Kickstand/kickstandStore';
-import type { Kickstand as KickstandEntity } from '../../SupportTypes/Kickstand/types';
 import { BezierHandle } from './BezierHandle';
 import { calculateControlPoint } from './utils';
 import { useCurveInteractionState, curveInteractionStore } from '../../Curves/curveInteractionState';
@@ -33,7 +31,6 @@ interface HandleContext {
 export function BezierGizmoManager() {
     const MIN_CONTROL_POINT_DELTA_SQ = 1e-10;
     const state = useSyncExternalStore(subscribe, getSnapshot);
-    const kickstandState = useKickstandStoreState();
     const selectedId = state.selectedId;
     const selectedCategory = state.selectedCategory;
     useCurveInteractionState();
@@ -243,9 +240,9 @@ export function BezierGizmoManager() {
             });
         }
 
-        for (const kickstand of Object.values(kickstandState.kickstands)) {
+        for (const kickstand of Object.values(state.kickstands)) {
             const segments = kickstand.segments;
-            const hostKnot = kickstandState.knots[kickstand.hostKnotId];
+            const hostKnot = state.knots[kickstand.hostKnotId];
 
             for (let i = 0; i < segments.length; i++) {
                 const seg = segments[i];
@@ -345,17 +342,7 @@ export function BezierGizmoManager() {
             segmentContextsById,
             braceContextsById,
         };
-    }, [
-        state.trunks,
-        state.roots,
-        state.branches,
-        state.twigs,
-        state.sticks,
-        state.braces,
-        state.knots,
-        kickstandState.kickstands,
-        kickstandState.knots,
-    ]);
+    }, [state]);
 
     const contexts = useMemo(() => {
         if (!selectedId) return [] as HandleContext[];
