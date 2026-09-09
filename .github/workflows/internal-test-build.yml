@@ -1,0 +1,141 @@
+name: Internal Test Build
+
+# Builds installers for internal testing and stops. It never tags, never
+# publishes a release, and never touches the updater feed -- the artifacts are
+# downloadable from the run page and expire on their own.
+#
+# Deliberately unsigned: signing and notarisation need secrets a fork does not
+# have. See the install notes in the job summary for what testers must do.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Which installers to build
+        type: choice
+        default: both
+        options:
+          - both
+          - windows
+          - macos
+
+permissions:
+  contents: read
+
+concurrency:
+  group: internal-test-build-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            selector: windows
+            label: Windows x64
+            args: --target x86_64-pc-windows-msvc --bundles nsis
+            artifact_name: dragonfruit-test-windows-x64
+            artifact_path: src-tauri/target/*/release/bundle/nsis/*
+          - platform: macos-latest
+            selector: macos
+            label: macOS universal
+            args: --target universal-apple-darwin --bundles dmg
+            artifact_name: dragonfruit-test-macos-universal
+            artifact_path: src-tauri/target/*/release/bundle/dmg/*.dmg
+            cmake_archs: "arm64;x86_64"
+            df_build_triple: universal-apple-darwin
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Skip unselected platform
+        id: gate
+        shell: bash
+        run: |
+          selected='${{ github.event.inputs.platforms }}'
+          if [ "$selected" = "both" ] || [ "$selected" = "${{ matrix.selector }}" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "Skipped: this run selected '$selected'." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.build == 'true'
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        if: steps.gate.outputs.build == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.23.2"
+          cache: npm
+
+      - name: Install Rust stable
+        if: steps.gate.outputs.build == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        if: steps.gate.outputs.build == 'true'
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          shared-key: tauri
+
+      - name: Install frontend dependencies
+        if: steps.gate.outputs.build == 'true'
+        run: npm ci
+
+      - name: Enable Windows long paths
+        if: steps.gate.outputs.build == 'true' && runner.os == 'Windows'
+        run: |
+          git config --system core.longpaths true
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
+
+      - name: Build Tauri bundle
+        if: steps.gate.outputs.build == 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          CMAKE_OSX_ARCHITECTURES: ${{ matrix.cmake_archs || '' }}
+          DF_BUILD_TARGET_TRIPLE: ${{ matrix.df_build_triple || '' }}
+        with:
+          tauriScript: npx tauri
+          args: ${{ matrix.args }}
+
+      - name: Upload installer
+        if: steps.gate.outputs.build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Install notes
+        if: steps.gate.outputs.build == 'true'
+        shell: bash
+        run: |
+          {
+            echo "### ${{ matrix.label }} test build"
+            echo
+            echo "Branch \`${{ github.ref_name }}\` at \`${GITHUB_SHA:0:8}\`."
+            echo "Download **${{ matrix.artifact_name }}** from the Artifacts section of this run."
+            echo
+            echo "This build is **unsigned**, so the OS will warn testers:"
+            echo
+            if [ "${{ runner.os }}" = "Windows" ]; then
+              echo "- SmartScreen shows \"Windows protected your PC\": More info -> Run anyway."
+            else
+              echo "- Gatekeeper shows \"damaged and can't be opened\" (the quarantine flag, not real damage)."
+              echo "- Fix: \`xattr -dr com.apple.quarantine /Applications/DragonFruit.app\` after dragging it across."
+            fi
+            echo
+            echo "Not a release: no tag, no updater entry. Version reads 0.1.15 because it"
+            echo "inherits package.json; it does not mean this is 0.1.15."
+          } >> "$GITHUB_STEP_SUMMARY"
