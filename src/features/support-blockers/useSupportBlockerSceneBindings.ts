@@ -31,7 +31,7 @@ export function useSupportBlockerSceneBindings({
   }, []);
 
   React.useEffect(() => {
-    if (mode !== 'prepare' || transformMode !== 'supportBlockers') return;
+    if ((mode !== 'prepare' && mode !== 'support') || transformMode !== 'supportBlockers') return;
     const handlePointerUp = () => {
       finishWithHistory();
     };

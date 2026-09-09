@@ -7375,8 +7375,7 @@ export function SceneCanvas({
           enablePan
           enabled={
             cameraInteractionCycleEnabled
-            && !(mode === 'prepare' && transformMode === 'smoothing' && smoothingBrushState.isStrokeActive)
-            && !(mode === 'prepare' && transformMode === 'supportBlockers' && blockerStrokeActive)
+            && !((mode === 'prepare' || mode === 'support') && transformMode === 'supportBlockers' && blockerStrokeActive)
             && !isGizmoDragging
             && !isMarqueeSelecting
             && !isPlacementActive

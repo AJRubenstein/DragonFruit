@@ -10597,7 +10597,7 @@ export default function Home() {
             {scene.mode === 'prepare' && transformMgr.transformMode === 'smoothing' && (
               <MeshSmoothingBrushCursor />
             )}
-            {scene.mode === 'prepare' && transformMgr.transformMode === 'supportBlockers' && (
+            {(scene.mode === 'prepare' || scene.mode === 'support') && transformMgr.transformMode === 'supportBlockers' && (
               <SupportBlockerCursor />
             )}
             {scene.mode === 'prepare' && transformMgr.transformMode === 'placeOnFace' && (

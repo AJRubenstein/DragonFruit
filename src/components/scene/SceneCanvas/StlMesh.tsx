@@ -1075,8 +1075,8 @@ if (uDitherAmount > 0.0) {
             return;
           }
 
-          // Support placement in support mode
-          if (mode === 'support' && onSupportClick) {
+          // Support placement in support mode — muted while painting blockers.
+          if (mode === 'support' && onSupportClick && transformMode !== 'supportBlockers') {
             if (blockSupportPlacement) return;
 
             // When cross-section is active and a visible support is behind
@@ -1247,7 +1247,7 @@ if (uDitherAmount > 0.0) {
               }
             }
           }
-          if (mode === 'prepare' && transformMode === 'supportBlockers' && isActiveModel) {
+          if ((mode === 'prepare' || mode === 'support') && transformMode === 'supportBlockers' && isActiveModel) {
             if (isGizmoHoverCategory || isSupportLikeHoverCategory) {
               setSupportBlockerHover(null, null);
             } else {
@@ -1270,7 +1270,7 @@ if (uDitherAmount > 0.0) {
             }
           }
 
-          if (mode === 'support' && onSupportHover) {
+          if (mode === 'support' && onSupportHover && transformMode !== 'supportBlockers') {
             // Mute hover when placement is blocked
             if (blockSupportPlacement) return;
 
@@ -1325,7 +1325,7 @@ if (uDitherAmount > 0.0) {
           if (mode === 'prepare' && transformMode === 'smoothing' && isActiveModel) {
             setMeshSmoothingHover(null, null);
           }
-          if (mode === 'prepare' && transformMode === 'supportBlockers' && isActiveModel) {
+          if ((mode === 'prepare' || mode === 'support') && transformMode === 'supportBlockers' && isActiveModel) {
             setSupportBlockerHover(null, null);
           }
 
@@ -1412,7 +1412,7 @@ if (uDitherAmount > 0.0) {
             onSmoothingGeometryActivate?.(geometry);
             beginMeshSmoothingEngineStroke(geometry);
           }
-          if (mode === 'prepare' && transformMode === 'supportBlockers' && isActiveModel && e.button === 0) {
+          if ((mode === 'prepare' || mode === 'support') && transformMode === 'supportBlockers' && isActiveModel && e.button === 0) {
             beginSupportBlockerStroke(modelId);
 
             const localPoint = smoothingScratchLocalPointRef.current;
