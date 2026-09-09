@@ -51,7 +51,7 @@ export function SupportBlockerCursor() {
     return q;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [normal.x, normal.y, normal.z]);
-  const color = isSupportBlockerStrokeActive() ? '#ffd928' : '#fde68a';
+  const color = isSupportBlockerStrokeActive() ? '#3b82f6' : '#7aa5f5';
   if (!point) return null;
 
   return (

@@ -66,7 +66,6 @@ const NO_GEOMETRY = msg`Active model has no readable geometry.`;
 const BLOCKERS = msg`Blockers`;
 const CLEAR_BLOCKERS = msg`Clear`;
 const DONE_BLOCKERS = msg`Done`;
-const BLOCKED_FACES = msg`blocked faces`;
 const BLOCKERS_HINT = msg`Paint nogo areas for supports. Blocked contact is refused when generating supports and avoided when orienting.`;
 const PAINT_TITLE = msg`Blocker Painting Mode`;
 const PAINT_LEAD = msg`Drag to paint nogo areas.`;
@@ -248,13 +247,6 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
               >
                 {_(BLOCKERS)}
               </button>
-            </div>
-          )}
-          {blockersActive && (
-            <div className="flex items-center justify-between">
-              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                {blockedCount} {_(BLOCKED_FACES)}
-              </span>
             </div>
           )}
           {blockersActive && (

@@ -7,7 +7,7 @@ import {
   getSupportBlockersVersion,
 } from '@/supports/autoSupport/supportBlockers';
 
-const BLOCKER_COLOR = '#ffd928';
+const BLOCKER_COLOR = '#3b82f6';
 const BLOCKER_OPACITY = 0.45;
 
 interface SupportBlockerOverlayProps {
