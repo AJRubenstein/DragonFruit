@@ -47,7 +47,9 @@ export interface OrientationCost {
     footprintMm2: number;
     /** Scar-weighted down-facing area (contact plus detail multiple); the primary under the scarring objective. */
     scarAreaMm2: number;
-    /** Weighted total the search minimizes: the objective's primary plus cup terms. */
+    /** Down-facing support-blocked area (mm²): contact the generator must refuse. Weighted into cost under every objective. */
+    blockedAreaMm2: number;
+    /** Weighted total the search minimizes: the objective's primary plus cup and blocked terms. */
     cost: number;
 }
 
@@ -63,6 +65,10 @@ export interface AdvisorOptions {
     scarWeight?: number;
     /** Ranking objective. Default 'supports'. */
     objective?: OrientationObjective;
+    /** Model-space triangle indices painted as support blockers (nogo contact). Default none. */
+    blockedTriangleIndices?: ArrayLike<number> | Set<number> | null;
+    /** Extra weight per mm² of down-facing blocked area. Default 10: blocked contact is refused, so poses needing it lose hard — while staying finite so the result never regresses. */
+    blockedWeight?: number;
     /** Fibonacci-sphere candidate count. Default 120. */
     candidateCount?: number;
     /** Max convex-hull resting poses folded into the sweep. Default 12. */
@@ -90,6 +96,7 @@ const DEFAULT_ANGLE_DEG = 45;
 const CUP_FLAT_COS = 0.95;
 /** Detail weight default; detail itself is 0 (flat) to 1 (≥90° crease). */
 const DEFAULT_SCAR_WEIGHT = 3;
+const DEFAULT_BLOCKED_WEIGHT = 10;
 const DEFAULT_FIBONACCI_COUNT = 120;
 const DEFAULT_RESTING_POSES = 12;
 const DEFAULT_REFINE_TOP_K = 5;
@@ -226,6 +233,15 @@ function rotatedNz(ux: number, uy: number, uz: number, sa: number, ca: number, s
     return -ux * sb + (uy * sa + uz * ca) * cb;
 }
 
+function toBlockedSet(blocked: ArrayLike<number> | Set<number> | null | undefined): Set<number> | null {
+    if (!blocked) return null;
+    if (blocked instanceof Set) return blocked.size > 0 ? blocked : null;
+    if (blocked.length === 0) return null;
+    const out = new Set<number>();
+    for (let i = 0; i < blocked.length; i++) out.add(blocked[i]);
+    return out;
+}
+
 function scoreParts(
     prep: PreparedTriangles,
     threshold: number,
@@ -233,10 +249,12 @@ function scoreParts(
     ca: number,
     sb: number,
     cb: number,
-): { overhang: number; cup: number; scarArea: number } {
+    blocked: Set<number> | null = null,
+): { overhang: number; cup: number; scarArea: number; blockedArea: number } {
     let overhang = 0;
     let cup = 0;
     let scarArea = 0;
+    let blockedArea = 0;
     const { normals, areas, details, triCount } = prep;
     for (let t = 0; t < triCount; t++) {
         const area = areas[t];
@@ -245,10 +263,11 @@ function scoreParts(
         if (nzr < -threshold) {
             overhang += area;
             scarArea += area * details[t];
+            if (blocked !== null && blocked.has(t)) blockedArea += area;
         }
         if (nzr < -CUP_FLAT_COS) cup += area;
     }
-    return { overhang, cup, scarArea };
+    return { overhang, cup, scarArea, blockedArea };
 }
 
 function measureBoundingBox(
@@ -287,7 +306,10 @@ function measureBoundingBox(
 /**
  * Cost of one orientation: down-facing area past the self-support
  * threshold, plus the cup proxy (near-flat down-facing area) at extra
- * weight. Height and footprint are reported for tie-breaking upstream.
+ * weight. Support-blocked down-facing area carries its own heavy weight
+ * under every objective: the generator refuses that contact, so poses
+ * needing it must lose. Height and footprint are reported for tie-breaking
+ * upstream.
  */
 export function evaluateOrientationCost(
     mesh: AdvisorMesh,
@@ -298,17 +320,20 @@ export function evaluateOrientationCost(
     const threshold = Math.cos(((opts.selfSupportAngleDeg ?? DEFAULT_ANGLE_DEG) * Math.PI) / 180);
     const cupWeight = opts.cupWeight ?? 2;
     const scarWeight = opts.scarWeight ?? DEFAULT_SCAR_WEIGHT;
+    const blockedWeight = opts.blockedWeight ?? DEFAULT_BLOCKED_WEIGHT;
     const objective = opts.objective ?? 'supports';
+    const blocked = toBlockedSet(opts.blockedTriangleIndices);
     const prep = prepareTriangles(mesh);
     const sa = Math.sin(rotXRad);
     const ca = Math.cos(rotXRad);
     const sb = Math.sin(rotYRad);
     const cb = Math.cos(rotYRad);
-    const { overhang, cup, scarArea } = scoreParts(prep, threshold, sa, ca, sb, cb);
+    const { overhang, cup, scarArea, blockedArea } = scoreParts(prep, threshold, sa, ca, sb, cb, blocked);
     const { heightMm, footprintMm2 } = measureBoundingBox(mesh.positions, sa, ca, sb, cb);
     const scar = overhang + scarWeight * scarArea;
-    const cost = objective === 'scarring' ? scar + cupWeight * cup : overhang + cupWeight * cup;
-    return { overhangAreaMm2: overhang, cupAreaMm2: cup, scarAreaMm2: scar, heightMm, footprintMm2, cost };
+    const base = objective === 'scarring' ? scar + cupWeight * cup : overhang + cupWeight * cup;
+    const cost = base + blockedWeight * blockedArea;
+    return { overhangAreaMm2: overhang, cupAreaMm2: cup, scarAreaMm2: scar, blockedAreaMm2: blockedArea, heightMm, footprintMm2, cost };
 }
 
 /**
@@ -455,6 +480,7 @@ interface ScoredOrientation extends OrientationCandidate {
     overhang: number;
     cup: number;
     scar: number;
+    blocked: number;
     heightMm: number;
     footprintMm2: number;
 }
@@ -496,7 +522,7 @@ function compareScored(
             if (Math.abs(a.heightMm - b.heightMm) > eps.height) return a.heightMm < b.heightMm ? -1 : 1;
         }
     }
-    if (Math.abs(a.footprintMm2 - b.footprintMm2) > 1e-6) return a.footprintMm2 < b.footprintMm2 ? -1 : 1;
+    if (Math.abs(a.footprintMm2 - b.footprintMm2) > 1e-6) return a.footprintMm2 > b.footprintMm2 ? -1 : 1;
     const da = Math.abs(a.rotXRad) + Math.abs(a.rotYRad);
     const db = Math.abs(b.rotXRad) + Math.abs(b.rotYRad);
     if (Math.abs(da - db) > 1e-9) return da < db ? -1 : 1;
@@ -512,7 +538,9 @@ export function suggestOrientation(mesh: AdvisorMesh, opts: AdvisorOptions = {})
     const threshold = Math.cos(((opts.selfSupportAngleDeg ?? DEFAULT_ANGLE_DEG) * Math.PI) / 180);
     const cupWeight = opts.cupWeight ?? 2;
     const scarWeight = opts.scarWeight ?? DEFAULT_SCAR_WEIGHT;
+    const blockedWeight = opts.blockedWeight ?? DEFAULT_BLOCKED_WEIGHT;
     const objective = opts.objective ?? 'supports';
+    const blocked = toBlockedSet(opts.blockedTriangleIndices);
     const prep = prepareTriangles(mesh);
     const candidates = generateM1Candidates(mesh, opts);
 
@@ -521,11 +549,11 @@ export function suggestOrientation(mesh: AdvisorMesh, opts: AdvisorOptions = {})
         const ca = Math.cos(c.rotXRad);
         const sb = Math.sin(c.rotYRad);
         const cb = Math.cos(c.rotYRad);
-        const { overhang, cup, scarArea } = scoreParts(prep, threshold, sa, ca, sb, cb);
+        const { overhang, cup, scarArea, blockedArea } = scoreParts(prep, threshold, sa, ca, sb, cb, blocked);
         const { heightMm, footprintMm2 } = measureBoundingBox(mesh.positions, sa, ca, sb, cb);
         const scar = overhang + scarWeight * scarArea;
-        const primary = objective === 'scarring' ? scar + cupWeight * cup : overhang + cupWeight * cup;
-        return { ...c, primary, overhang, cup, scar, heightMm, footprintMm2 };
+        const primary = (objective === 'scarring' ? scar + cupWeight * cup : overhang + cupWeight * cup) + blockedWeight * blockedArea;
+        return { ...c, primary, overhang, cup, scar, blocked: blockedArea, heightMm, footprintMm2 };
     };
     const descend = (start: ScoredOrientation, eps: RankEps, obj: OrientationObjective, preferFootprint: boolean): ScoredOrientation => {
         let cur = start;
@@ -579,6 +607,7 @@ export function suggestOrientation(mesh: AdvisorMesh, opts: AdvisorOptions = {})
         overhangAreaMm2: s.overhang,
         cupAreaMm2: s.cup,
         scarAreaMm2: s.scar,
+        blockedAreaMm2: s.blocked,
         heightMm: s.heightMm,
         footprintMm2: s.footprintMm2,
         cost: s.primary,

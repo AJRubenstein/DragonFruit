@@ -73,6 +73,7 @@ import { ScanProgressBar } from '@/components/scene/ScanProgressBar';
 import { SliceMetricsDebugModal } from '@/features/slicing/components/SliceMetricsDebugModal';
 import { MeshSmoothingSettingsPanel } from '@/features/mesh-smoothing/MeshSmoothingSettingsPanel';
 import { MeshSmoothingBrushCursor } from '@/features/mesh-smoothing/MeshSmoothingBrushCursor';
+import { SupportBlockerCursor } from '@/features/support-blockers/SupportBlockerCursor';
 import {
   dispatchCutModelAction,
   dispatchDeleteModelAction,
@@ -10233,6 +10234,10 @@ export default function Home() {
                 onBeforeOrientApply={(continueApply) => requestOrientSupportDeletionWithContinuation(continueApply)}
                 onOrientationReport={showOrientationToast}
                 activeModelName={scene.activeModel?.name}
+                blockersActive={transformMgr.transformMode === 'supportBlockers'}
+                onToggleBlockers={() => {
+                  setTransformModeWithMirrorFinalize(transformMgr.transformMode === 'supportBlockers' ? 'select' : 'supportBlockers');
+                }}
               />
             )}
             <IslandsPanel
@@ -10591,6 +10596,9 @@ export default function Home() {
           >
             {scene.mode === 'prepare' && transformMgr.transformMode === 'smoothing' && (
               <MeshSmoothingBrushCursor />
+            )}
+            {scene.mode === 'prepare' && transformMgr.transformMode === 'supportBlockers' && (
+              <SupportBlockerCursor />
             )}
             {scene.mode === 'prepare' && transformMgr.transformMode === 'placeOnFace' && (
               <PlaceOnFaceTool

@@ -8,6 +8,7 @@ import {
     GRID_SPACING_MAX_FACTOR,
 } from './constants';
 import type { AutoSupportSettings } from './settings';
+import { isSupportBlockedContact } from './supportBlockers';
 
 const FOOTPRINT_TOLERANCE_MM = 0.25;
 
@@ -65,8 +66,10 @@ export function buildBoundaryPoints(
 export const GRID_SPACING_FLOOR_MM = 1.2;
 
 /** Surface sampler: resolve a footprint point to its surface Z, or null when
- *  the point lies outside the region. */
-export type SurfaceSampler = (x: number, y: number) => { z: number } | null;
+ *  the point lies outside the region. The triangle path also reports the
+ *  contact face so callers can honor the support-blocker mask with no extra
+ *  raycast. */
+export type SurfaceSampler = (x: number, y: number) => { z: number; faceIndex?: number } | null;
 
 const _surfaceRaycaster = new THREE.Raycaster();
 const DOUBLE_SIDED_SURFACE_MATERIAL = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
@@ -92,7 +95,7 @@ export function createTriangleSurfaceAt(
     const ids = island.triangleIds;
     if (!mesh || !ids || ids.length === 0) return null;
     const triSet = new Set(ids);
-    return (x: number, y: number): { z: number } | null => {
+    return (x: number, y: number): { z: number; faceIndex?: number } | null => {
         _surfaceRaycaster.set(
             new THREE.Vector3(x, y, island.baseZ - 2),
             new THREE.Vector3(0, 0, 1),
@@ -102,7 +105,7 @@ export function createTriangleSurfaceAt(
         try {
             for (const hit of _surfaceRaycaster.intersectObject(mesh, false)) {
                 if (hit.faceIndex != null && triSet.has(hit.faceIndex)) {
-                    return { z: hit.point.z };
+                    return { z: hit.point.z, faceIndex: hit.faceIndex };
                 }
             }
         } finally {
@@ -322,11 +325,11 @@ export function sampleBoundary2D(
     loops: Array<Array<[number, number, number]>> | undefined,
     spacing: number,
     surfaceAt: SurfaceSampler,
-): Array<{ x: number; y: number; z: number }> | null {
+): Array<{ x: number; y: number; z: number; faceIndex?: number }> | null {
     if (!loops || loops.length === 0 || spacing <= 0) return null;
     if (!loops.some((l) => l.length >= 2)) return null;
 
-    const raw: Array<{ x: number; y: number; z: number }> = [];
+    const raw: Array<{ x: number; y: number; z: number; faceIndex?: number }> = [];
     for (const loop of loops) {
         let acc = 0;
         for (let i = 0; i < loop.length; i++) {
@@ -336,7 +339,7 @@ export function sampleBoundary2D(
             if (segLen < 1e-9) continue;
             if (acc === 0) {
                 const s = surfaceAt(a[0], a[1]);
-                if (s) raw.push({ x: a[0], y: a[1], z: s.z });
+                if (s) raw.push({ x: a[0], y: a[1], z: s.z, faceIndex: s.faceIndex });
             }
             let d = spacing - acc;
             while (d <= segLen) {
@@ -344,14 +347,14 @@ export function sampleBoundary2D(
                 const x = a[0] + (b[0] - a[0]) * t;
                 const y = a[1] + (b[1] - a[1]) * t;
                 const s = surfaceAt(x, y);
-                if (s) raw.push({ x, y, z: s.z });
+                if (s) raw.push({ x, y, z: s.z, faceIndex: s.faceIndex });
                 d += spacing;
             }
             acc = (acc + segLen) % spacing;
         }
     }
 
-    const deduped: Array<{ x: number; y: number; z: number }> = [];
+    const deduped: Array<{ x: number; y: number; z: number; faceIndex?: number }> = [];
     const minDistSq = (spacing * 0.5) * (spacing * 0.5);
     for (const p of raw) {
         let dup = false;
@@ -389,6 +392,7 @@ export function generateGridCandidates(
     overhangIslands: DetectedIsland[],
     settings: AutoSupportSettings,
     mesh?: THREE.Mesh,
+    modelId?: string,
 ): CandidatePoint[] {
     const baseSpacing = Math.sqrt(Math.max(settings.areaPerSupportMm2, 0.5));
     if (baseSpacing <= 0) return [];
@@ -428,7 +432,11 @@ export function generateGridCandidates(
             ?? createVoxelSurfaceAt(voxelPoints, cellSize, island.baseZ);
         const minZ = island.baseZ;
 
-        const emitPoint = (x: number, y: number, z: number, kind: 'grid' | 'fill') => {
+        const emitPoint = (x: number, y: number, z: number, kind: 'grid' | 'fill', faceIndex?: number | null) => {
+            // Support blockers: refuse contacts painted as nogo. Lattice and
+            // ring points carry the sampler's face for free; voxel-fallback
+            // points resolve it with one raycast. Empty mask → no raycasts.
+            if (modelId && mesh && isSupportBlockedContact(modelId, mesh, x, y, z, faceIndex)) return;
             candidates.push({
                 id: `${kind}-${island.id}-${x.toFixed(2)}-${y.toFixed(2)}`,
                 tipPos: { x, y, z },
@@ -481,7 +489,7 @@ export function generateGridCandidates(
                     if (s) {
                         const pt = { x, y, z: s.z };
                         lattice.push(pt);
-                        emitPoint(x, y, s.z, 'grid');
+                        emitPoint(x, y, s.z, 'grid', s.faceIndex);
                     }
                 }
             }
@@ -493,7 +501,7 @@ export function generateGridCandidates(
         // every ring point sits within a lattice cell of some interior point.
         const ringSpacing = Math.max(PERIMETER_SPACING_FLOOR_MM, spacing * PERIMETER_RING_FACTOR) * stride;
         const ringCoverageSq = (ringSpacing * 0.5) * (ringSpacing * 0.5);
-        const boundary = sampleBoundary2D(island.perimeterLoops, ringSpacing, surfaceAt)
+        const boundary: Array<{ x: number; y: number; z: number; faceIndex?: number }> = sampleBoundary2D(island.perimeterLoops, ringSpacing, surfaceAt)
             ?? buildBoundaryPoints(
                 eroded.length > 0 ? eroded : voxelPoints,
                 ringSpacing,
@@ -509,7 +517,7 @@ export function generateGridCandidates(
                     break;
                 }
             }
-            if (!covered) emitPoint(b.x, b.y, b.z, 'fill');
+            if (!covered) emitPoint(b.x, b.y, b.z, 'fill', b.faceIndex);
         }
     }
 

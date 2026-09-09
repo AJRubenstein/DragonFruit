@@ -13,6 +13,13 @@ import {
   type OrientationObjective,
 } from '@/supports/autoSupport/orientationAdvisor';
 import type { OrientationToastReport } from '@/features/notifications/useEditorToasts';
+import {
+  getSupportBlockedCount,
+  clearSupportBlockers,
+  getSupportBlockedTriangles,
+  subscribeSupportBlockers,
+  getSupportBlockersVersion,
+} from '@/supports/autoSupport/supportBlockers';
 
 /** Set while an orient sweep runs. Page-level overlay reads this to show the
  *  "Orienting Model" modal. Module-level (not state) so the panel can flip it
@@ -56,6 +63,10 @@ const OPT_HEIGHT = msg`Shortest Print Time`;
 const OPT_SCARRING = msg`Least Scarring`;
 const NO_MODEL = msg`Load a model to get an orientation suggestion.`;
 const NO_GEOMETRY = msg`Active model has no readable geometry.`;
+const BLOCKERS = msg`Blockers`;
+const CLEAR_BLOCKERS = msg`Clear`;
+const BLOCKED_FACES = msg`blocked faces`;
+const BLOCKERS_HINT = msg`Paint nogo areas for supports. Blocked contact is refused when generating supports and avoided when orienting.`;
 
 export interface AutoRotationPanelProps {
   activeModelId?: string;
@@ -73,14 +84,20 @@ export interface AutoRotationPanelProps {
    * kept the continuation and will run it after confirm. Absent → apply directly.
    */
   onBeforeOrientApply?: (continueApply: () => void) => boolean;
+  /** Whether the scene is in support-blocker paint mode. */
+  blockersActive?: boolean;
+  /** Toggles support-blocker paint mode in the scene. */
+  onToggleBlockers?: () => void;
 }
-
-export function AutoRotationPanel({ activeModelId, activeModelName, currentRotation, onApplyRotation, onOrientationReport, onBeforeOrientApply }: AutoRotationPanelProps) {
+export function AutoRotationPanel({ activeModelId, activeModelName, currentRotation, onApplyRotation, onOrientationReport, onBeforeOrientApply, blockersActive, onToggleBlockers }: AutoRotationPanelProps) {
   const { _ } = useLingui();
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [objective, setObjective] = React.useState<OrientationObjective>('supports');
+  // Support-blocker mask version for the active model (drives Clear).
+  React.useSyncExternalStore(subscribeSupportBlockers, getSupportBlockersVersion, getSupportBlockersVersion);
+  const blockedCount = activeModelId ? getSupportBlockedCount(activeModelId) : 0;
 
   // A new model or goal clears a stale error.
   React.useEffect(() => {
@@ -119,9 +136,10 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
             }
           }
           const index = (mesh.geometry.index?.array as ArrayLike<number> | undefined) ?? null;
+          const blocked = getSupportBlockedTriangles(activeModelId);
           const result = suggestOrientationForGeometry(
             { attributes: { position: { array: baked } }, index },
-            { objective },
+            { objective, ...(blocked.size > 0 ? { blockedTriangleIndices: blocked } : {}) },
           );
           if (!result) {
             setError(_(NO_GEOMETRY));
@@ -186,19 +204,50 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
 
       {expanded && (
         <div className="px-2.5 pb-3 space-y-2.5">
-          <button
-            type="button"
-            onClick={() => { void handleOrient(); }}
-            disabled={busy || !activeModelId}
-            className="ui-button w-full !h-8 text-[11px] disabled:opacity-50"
-            style={{
-              borderColor: 'var(--accent)',
-              background: 'color-mix(in srgb, var(--accent), var(--surface-0) 86%)',
-              color: 'var(--accent)',
-            }}
-          >
-            {busy ? _(msg`Analyzing…`) : _(ORIENT)}
-          </button>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => { void handleOrient(); }}
+              disabled={busy || !activeModelId}
+              className="ui-button flex-1 !h-8 text-[11px] disabled:opacity-50"
+              style={{
+                borderColor: 'var(--accent)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-0) 86%)',
+                color: 'var(--accent)',
+              }}
+            >
+              {busy ? _(msg`Analyzing…`) : _(ORIENT)}
+            </button>
+            <button
+              type="button"
+              onClick={() => { onToggleBlockers?.(); }}
+              disabled={busy || !activeModelId || !onToggleBlockers}
+              className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] disabled:opacity-50"
+              title={_(BLOCKERS_HINT)}
+              aria-pressed={blockersActive === true}
+              style={blockersActive ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
+            >
+              {_(BLOCKERS)}
+            </button>
+          </div>
+          {blockersActive && (
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{_(BLOCKERS_HINT)}</p>
+          )}
+          {blockedCount > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {blockedCount} {_(BLOCKED_FACES)}
+              </span>
+              <button
+                type="button"
+                onClick={() => { if (activeModelId) clearSupportBlockers(activeModelId); }}
+                disabled={busy}
+                className="ui-button ui-button-secondary !h-7 px-2 text-[11px] disabled:opacity-50"
+              >
+                {_(CLEAR_BLOCKERS)}
+              </button>
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             <Select
               value={objective}

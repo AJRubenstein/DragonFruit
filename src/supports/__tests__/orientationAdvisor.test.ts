@@ -259,3 +259,23 @@ test('composed orientation renders canonically at the scored pose', () => {
     assert.ok(identity.x === 0 && identity.y === 0 && identity.z === 0, 'null delta stays put');
     assert.equal(identity.order, 'ZYX');
 });
+
+test('blocked down-facing area is measured and weighted into cost', () => {
+    const mesh = downSquare();
+    const plain = evaluateOrientationCost(mesh, 0, 0);
+    assert.equal(plain.blockedAreaMm2, 0);
+    const blocked = evaluateOrientationCost(mesh, 0, 0, { blockedTriangleIndices: [0, 1] });
+    assert.equal(blocked.blockedAreaMm2, blocked.overhangAreaMm2);
+    assert.ok(blocked.blockedAreaMm2 > 0, 'down-facing plate is blocked contact');
+    assert.ok(blocked.cost > plain.cost, 'blocked poses cost more');
+    // Up-facing square: blocked paint is irrelevant, no supports needed there.
+    const up = evaluateOrientationCost(upSquare(), 0, 0, { blockedTriangleIndices: [0, 1] });
+    assert.equal(up.blockedAreaMm2, 0);
+});
+
+test('blocked mask never regresses the suggestion', () => {
+    const mesh = downSquare();
+    const s = suggestOrientation(mesh, { blockedTriangleIndices: [0, 1] });
+    assert.ok(s.suggested.cost <= s.baseline.cost, 'never worse than identity');
+    assert.equal(s.suggested.blockedAreaMm2, 0, 'winner turns the blocked face away');
+});

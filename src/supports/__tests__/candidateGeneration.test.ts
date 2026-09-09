@@ -342,3 +342,27 @@ test('candidatesFromIsland keeps one candidate for wide blobs', () => {
     assert.equal(out.length, 1, 'wide blob keeps a single candidate');
     assert.deepStrictEqual(out[0].tipPos, { x: 2, y: 2, z: 30 });
 });
+
+test('generateCandidates refuses contacts painted as support blockers', async () => {
+    const { setSupportBlockedTriangles, deleteSupportBlockers } =
+        await import('../autoSupport/supportBlockers');
+    const modelId = 'prune-wiring';
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10));
+    mesh.updateMatrixWorld();
+    // Bottom-face contact in world mm.
+    const islands = [makeIsland({ id: 'sole', contact: new THREE.Vector3(0, 0, -5), baseZ: -5, areaMm2: 100 })];
+    const settings = createDefaultAutoSupportSettings();
+    const unpainted = generateCandidates(islands, settings, { mesh, modelId });
+    assert.equal(unpainted.length, 1, 'unpainted contact survives');
+    // Block the contact face the upward ray resolves.
+    const ray = new THREE.Raycaster(new THREE.Vector3(0, 0, -7), new THREE.Vector3(0, 0, 1));
+    const face = ray.intersectObject(mesh, false)[0]?.faceIndex;
+    if (face == null) throw new Error('expected a bottom contact face');
+    setSupportBlockedTriangles(modelId, [face]);
+    try {
+        const pruned = generateCandidates(islands, settings, { mesh, modelId });
+        assert.equal(pruned.length, 0, 'blocked contact is refused');
+    } finally {
+        deleteSupportBlockers(modelId);
+    }
+});

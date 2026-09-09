@@ -19,6 +19,9 @@ import {
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import IslandSurfaceDotsOverlay from '@/components/scene/IslandSurfaceDotsOverlay';
 import { IslandOverhangOverlay } from '@/components/scene/IslandOverhangOverlay';
+import { SupportBlockerOverlay } from '@/features/support-blockers/SupportBlockerOverlay';
+import { useSupportBlockerSceneBindings } from '@/features/support-blockers/useSupportBlockerSceneBindings';
+import { subscribeSupportBlockers, isSupportBlockerStrokeActive } from '@/supports/autoSupport/supportBlockers';
 import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
 import { IslandVoxelVisualization } from '@/components/scene/IslandVoxelVisualization';
 import { IslandExpansionVisualization } from '@/components/scene/IslandExpansionVisualization';
@@ -1529,6 +1532,12 @@ export function SceneCanvas({
     transformMode,
     containerRef,
   });
+  useSupportBlockerSceneBindings({ mode, transformMode });
+  const blockerStrokeActive = React.useSyncExternalStore(
+    subscribeSupportBlockers,
+    isSupportBlockerStrokeActive,
+    isSupportBlockerStrokeActive,
+  );
 
   const [isCameraBelowBuildPlate, setIsCameraBelowBuildPlate] = React.useState(false);
   const [buildPlateOpacity, setBuildPlateOpacity] = React.useState(1);
@@ -6277,6 +6286,10 @@ export function SceneCanvas({
                           regions={overhangIslands}
                         />
                       )}
+                      <SupportBlockerOverlay
+                        geometry={model.geometry.geometry}
+                        modelId={model.id}
+                      />
                     </StlMesh>
                   </React.Fragment>
                 );
@@ -7351,7 +7364,6 @@ export function SceneCanvas({
         />
         <OrbitControls
           ref={orbitControlsRef as React.RefObject<any>}
-          makeDefault
           enableDamping={cameraFeelPreset !== 'raw'}
           dampingFactor={cameraFeelPreset === 'raw' ? 0 : cameraFeelPreset === 'precise' ? 0.15 : cameraFeelPreset === 'fast' ? 0.085 : 0.12}
           rotateSpeed={cameraFeelPreset === 'raw' ? 1.0 : cameraFeelPreset === 'precise' ? 0.72 : cameraFeelPreset === 'fast' ? 1.03 : 0.85}
@@ -7363,6 +7375,7 @@ export function SceneCanvas({
           enabled={
             cameraInteractionCycleEnabled
             && !(mode === 'prepare' && transformMode === 'smoothing' && smoothingBrushState.isStrokeActive)
+            && !(mode === 'prepare' && transformMode === 'supportBlockers' && blockerStrokeActive)
             && !isGizmoDragging
             && !isMarqueeSelecting
             && !isPlacementActive

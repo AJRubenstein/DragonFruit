@@ -2077,7 +2077,7 @@ export function computeAutoSupportPlan(
 
     console.log(LOG_PREFIX, `Input: ${islands.length} islands from scan`);
 
-    let candidates = generateCandidates(islands, autoSettings);
+    let candidates = generateCandidates(islands, autoSettings, { mesh: resolvedMesh, modelId });
     candidates = candidates.map((c): CandidatePoint => ({ ...c, modelId }));
 
     // Stabilization pass: when the oriented mesh bears on a point or edge,
@@ -2114,7 +2114,7 @@ export function computeAutoSupportPlan(
     if (eligible.length > 0) {
         let generated: CandidatePoint[] = [];
         try {
-            generated = generateGridCandidates(eligible, autoSettings, resolvedMesh)
+            generated = generateGridCandidates(eligible, autoSettings, resolvedMesh, modelId)
                 .map((c): CandidatePoint => ({ ...c, modelId }));
         } catch (e) {
             console.error(LOG_PREFIX,

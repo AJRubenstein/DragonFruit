@@ -5,15 +5,25 @@ import { SMALL_ISLAND_TIP_AREA_MM2, SUPPORT_RESTSTACK_DELTA_MM, influenceRadiusM
 import { footprintX, footprintY } from '../../volumeAnalysis/Islands/voxelFootprint';
 import { smallIslandTipDiameterMm } from './parameterSizing';
 import { TIP_COVERAGE_RADIUS_MM } from './coverage';
+import type * as THREE from 'three';
+import { isSupportBlockedContact } from './supportBlockers';
 
 /**
  * Convert detected islands into auto-support candidate points.
  * Filters out already-supported, grounded, and too-small islands.
  * Scores candidates by priority and sorts descending.
  */
+export interface CandidatePruneContext {
+    /** World-frame mesh for contact-face resolution. */
+    mesh?: THREE.Mesh;
+    /** Model owning the support-blocker mask. Both required to prune. */
+    modelId?: string;
+}
+
 export function generateCandidates(
     islands: DetectedIsland[],
     settings: AutoSupportSettings,
+    prune?: CandidatePruneContext,
 ): CandidatePoint[] {
     if (!islands || islands.length === 0) return [];
 
@@ -32,10 +42,17 @@ export function generateCandidates(
     });
 
     // Map to candidates
-    const candidates = eligible.flatMap(island => candidatesFromIsland(island));
+    let candidates = eligible.flatMap(island => candidatesFromIsland(island));
+    // Support blockers: refuse contacts painted as nogo. The mask check
+    // early-outs internally, so unpainted models skip the raycasts.
+    if (prune?.mesh && prune?.modelId) {
+        const { mesh, modelId } = prune;
+        candidates = candidates.filter(
+            (c) => !isSupportBlockedContact(modelId, mesh, c.tipPos.x, c.tipPos.y, c.tipPos.z),
+        );
+    }
     // Score and sort
     if (candidates.length === 0) return [];
-
     const maxZ = Math.max(...candidates.map(c => c.zHeight), 1);
     const maxArea = Math.max(...candidates.map(c => c.islandAreaMm2), 0.01);
     for (const c of candidates) {

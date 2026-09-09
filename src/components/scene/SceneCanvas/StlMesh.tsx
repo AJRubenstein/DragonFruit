@@ -18,6 +18,11 @@ import {
   ensureMeshSmoothingEngineReady,
 } from '@/features/mesh-smoothing/meshSmoothingEngine';
 import { clampMeshSmoothingBrushSizeMm, getMeshSmoothingSettings } from '@/features/mesh-smoothing/settings';
+import {
+  paintSupportBlockers,
+  beginSupportBlockerStroke,
+  setSupportBlockerHover,
+} from '@/supports/autoSupport/supportBlockers';
 import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { SupportMode } from '@/supports/types';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
@@ -1242,6 +1247,28 @@ if (uDitherAmount > 0.0) {
               }
             }
           }
+          if (mode === 'prepare' && transformMode === 'supportBlockers' && isActiveModel) {
+            if (isGizmoHoverCategory || isSupportLikeHoverCategory) {
+              setSupportBlockerHover(null, null);
+            } else {
+              const normal = e.face?.normal
+                ? e.face.normal
+                  .clone()
+                  .applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(e.object.matrixWorld))
+                  .normalize()
+                : null;
+              setSupportBlockerHover(e.point.clone(), normal);
+
+              // Paint blockers only while the left mouse button is held.
+              if ((e.buttons & 1) === 1 && !disableRaycast) {
+                const localPoint = smoothingScratchLocalPointRef.current;
+                localPoint.copy(e.point);
+                e.object.worldToLocal(localPoint);
+
+                paintSupportBlockers(modelId, geometry, localPoint);
+              }
+            }
+          }
 
           if (mode === 'support' && onSupportHover) {
             // Mute hover when placement is blocked
@@ -1297,6 +1324,9 @@ if (uDitherAmount > 0.0) {
 
           if (mode === 'prepare' && transformMode === 'smoothing' && isActiveModel) {
             setMeshSmoothingHover(null, null);
+          }
+          if (mode === 'prepare' && transformMode === 'supportBlockers' && isActiveModel) {
+            setSupportBlockerHover(null, null);
           }
 
           if (mode === 'support' && onSupportHover) {
@@ -1381,6 +1411,15 @@ if (uDitherAmount > 0.0) {
 
             onSmoothingGeometryActivate?.(geometry);
             beginMeshSmoothingEngineStroke(geometry);
+          }
+          if (mode === 'prepare' && transformMode === 'supportBlockers' && isActiveModel && e.button === 0) {
+            beginSupportBlockerStroke(modelId);
+
+            const localPoint = smoothingScratchLocalPointRef.current;
+            localPoint.copy(e.point);
+            e.object.worldToLocal(localPoint);
+
+            paintSupportBlockers(modelId, geometry, localPoint);
           }
         }}
       >
