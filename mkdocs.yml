@@ -120,7 +120,6 @@ nav:
           - Auto-Supports: dev/auto-supports.md
           - Auto-Orientation (Pre-Plan): dev/auto-orientation.md
           - Adding a New Support Type: dev/support-type-extension.md
-          - Support Type Token Inventory: dev/support-type-token-inventory.md
           - Support Pathfinding V3: dev/support-pathfinding-v3.md
           - Grid and Branching: dev/grid-and-branching.md
           - Raft Geometry: dev/raft-geometry.md
