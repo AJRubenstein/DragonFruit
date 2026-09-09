@@ -7364,6 +7364,7 @@ export function SceneCanvas({
         />
         <OrbitControls
           ref={orbitControlsRef as React.RefObject<any>}
+          makeDefault
           enableDamping={cameraFeelPreset !== 'raw'}
           dampingFactor={cameraFeelPreset === 'raw' ? 0 : cameraFeelPreset === 'precise' ? 0.15 : cameraFeelPreset === 'fast' ? 0.085 : 0.12}
           rotateSpeed={cameraFeelPreset === 'raw' ? 1.0 : cameraFeelPreset === 'precise' ? 0.72 : cameraFeelPreset === 'fast' ? 1.03 : 0.85}
