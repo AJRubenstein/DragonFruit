@@ -13,6 +13,40 @@ import {
 } from '@/supports/autoSupport/orientationAdvisor';
 import type { OrientationToastReport } from '@/features/notifications/useEditorToasts';
 
+/** Set while an orient sweep runs. Page-level overlay reads this to show the
+ *  "Orienting Model" modal. Module-level (not state) so the panel can flip it
+ *  around the synchronous sweep; the page subscribes via the stable getter.
+ *  Mirrors the auto-support busy chain in AutoSupportPanel. */
+let _orientationBusy = false;
+const _orientationBusyListeners = new Set<() => void>();
+
+export function getOrientationBusy(): boolean { return _orientationBusy; }
+export function subscribeOrientationBusy(fn: () => void): () => void {
+  _orientationBusyListeners.add(fn);
+  return () => _orientationBusyListeners.delete(fn);
+}
+function setOrientationBusy(v: boolean): void {
+  if (_orientationBusy !== v) {
+    _orientationBusy = v;
+    for (const fn of _orientationBusyListeners) fn();
+  }
+}
+
+/** Elapsed timer for the orient busy modal. Mounts with the modal so the
+ *  interval lifetime matches visibility exactly (same shape as the islands
+ *  timer: 250 ms ticks, m:ss label). */
+export function OrientElapsed() {
+  const [sec, setSec] = React.useState(0);
+  React.useEffect(() => {
+    const startedAt = Date.now();
+    const id = window.setInterval(() => setSec(Math.floor((Date.now() - startedAt) / 1000)), 250);
+    return () => window.clearInterval(id);
+  }, []);
+  const minutes = Math.floor(sec / 60);
+  const seconds = sec % 60;
+  return <>Elapsed: {minutes}:{seconds.toString().padStart(2, '0')}</>;
+}
+
 /** Module-level labels (React Compiler must not rename Lingui locals). */
 const TITLE = msg`Auto Orientation (Beta)`;
 const ORIENT = msg`Orient Model`;
@@ -61,68 +95,75 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
     }
     if (!onApplyRotation) return;
     setBusy(true);
-    try {
-      const mesh = getModelMesh(activeModelId);
-      const position = mesh?.geometry?.attributes?.position;
-      if (!mesh || !position) {
-        setError(_(NO_GEOMETRY));
-        return;
-      }
-      // Orient in world frame: bake the model's live scene rotation into a
-      // throwaway copy (never mutate the live geometry).
-      const baked = new Float32Array(position.array as ArrayLike<number>);
-      if (currentRotation) {
-        const v = new THREE.Vector3();
-        for (let i = 0; i < baked.length; i += 3) {
-          v.set(baked[i], baked[i + 1], baked[i + 2]).applyEuler(currentRotation);
-          baked[i] = v.x;
-          baked[i + 1] = v.y;
-          baked[i + 2] = v.z;
+    setOrientationBusy(true);
+    // Let the modal paint before the synchronous sweep blocks the thread.
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          const mesh = getModelMesh(activeModelId);
+          const position = mesh?.geometry?.attributes?.position;
+          if (!mesh || !position) {
+            setError(_(NO_GEOMETRY));
+            return;
+          }
+          // Orient in world frame: bake the model's live scene rotation into a
+          // throwaway copy (never mutate the live geometry).
+          const baked = new Float32Array(position.array as ArrayLike<number>);
+          if (currentRotation) {
+            const v = new THREE.Vector3();
+            for (let i = 0; i < baked.length; i += 3) {
+              v.set(baked[i], baked[i + 1], baked[i + 2]).applyEuler(currentRotation);
+              baked[i] = v.x;
+              baked[i + 1] = v.y;
+              baked[i + 2] = v.z;
+            }
+          }
+          const index = (mesh.geometry.index?.array as ArrayLike<number> | undefined) ?? null;
+          const result = suggestOrientationForGeometry(
+            { attributes: { position: { array: baked } }, index },
+            { objective },
+          );
+          if (!result) {
+            setError(_(NO_GEOMETRY));
+            return;
+          }
+          // The scene apply path records history unconditionally, so only
+          // apply a strict improvement — never a no-op rotation.
+          const improved =
+            objective === 'height'
+              ? result.suggested.heightMm < result.baseline.heightMm
+              : result.suggested.cost < result.baseline.cost;
+          if (!improved) {
+            onOrientationReport?.({
+              status: 'already-optimal',
+              modelName: activeModelName ?? activeModelId,
+            });
+            return;
+          }
+          // Advisor evaluates Rx-then-Ry, which is THREE Euler order 'YXZ'
+          // (q = qy * qx). Compose the delta onto the live scene orientation;
+          // the scene path moves supports along and records history.
+          const doApply = () => {
+            const qDelta = new THREE.Quaternion().setFromEuler(
+              new THREE.Euler(deg2rad(result.rotXDeg), deg2rad(result.rotYDeg), 0, 'YXZ'),
+            );
+            const qBase = currentRotation
+              ? new THREE.Quaternion().setFromEuler(currentRotation)
+              : new THREE.Quaternion();
+            const qNew = qDelta.multiply(qBase);
+            onApplyRotation(activeModelId, new THREE.Euler().setFromQuaternion(qNew));
+            onOrientationReport?.({
+              status: 'applied',
+              modelName: activeModelName ?? activeModelId,
+            });
+          };
+          if (!onBeforeOrientApply || onBeforeOrientApply(doApply)) doApply();
+        } finally {
+          setBusy(false);
+          setOrientationBusy(false);
         }
-      }
-      const index = (mesh.geometry.index?.array as ArrayLike<number> | undefined) ?? null;
-      const result = suggestOrientationForGeometry(
-        { attributes: { position: { array: baked } }, index },
-        { objective },
-      );
-      if (!result) {
-        setError(_(NO_GEOMETRY));
-        return;
-      }
-      // The scene apply path records history unconditionally, so only
-      // apply a strict improvement — never a no-op rotation.
-      const improved =
-        objective === 'height'
-          ? result.suggested.heightMm < result.baseline.heightMm
-          : result.suggested.cost < result.baseline.cost;
-      if (!improved) {
-        onOrientationReport?.({
-          status: 'already-optimal',
-          modelName: activeModelName ?? activeModelId,
-        });
-        return;
-      }
-      // Advisor evaluates Rx-then-Ry, which is THREE Euler order 'YXZ'
-      // (q = qy * qx). Compose the delta onto the live scene orientation;
-      // the scene path moves supports along and records history.
-      const doApply = () => {
-        const qDelta = new THREE.Quaternion().setFromEuler(
-          new THREE.Euler(deg2rad(result.rotXDeg), deg2rad(result.rotYDeg), 0, 'YXZ'),
-        );
-        const qBase = currentRotation
-          ? new THREE.Quaternion().setFromEuler(currentRotation)
-          : new THREE.Quaternion();
-        const qNew = qDelta.multiply(qBase);
-        onApplyRotation(activeModelId, new THREE.Euler().setFromQuaternion(qNew));
-        onOrientationReport?.({
-          status: 'applied',
-          modelName: activeModelName ?? activeModelId,
-        });
-      };
-      if (!onBeforeOrientApply || onBeforeOrientApply(doApply)) doApply();
-    } finally {
-      setBusy(false);
-    }
+      }, 0);
+    });
   }, [activeModelId, activeModelName, currentRotation, objective, onApplyRotation, onOrientationReport, onBeforeOrientApply, _]);
 
   return (

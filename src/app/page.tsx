@@ -236,7 +236,7 @@ import { useIslandManager } from '@/volumeAnalysis/IslandScan/useIslandManager';
 import { useIslands } from '@/volumeAnalysis/Islands/useIslands';
 import { IslandsPanel } from '@/components/controls/IslandsPanel';
 import { AutoSupportPanel, getAutoSupportBusy, subscribeAutoSupportBusy, autoSupportDrivingScan } from '@/components/controls/AutoSupportPanel';
-import { AutoRotationPanel } from '@/components/controls/AutoRotationPanel';
+import { AutoRotationPanel, getOrientationBusy, subscribeOrientationBusy, OrientElapsed } from '@/components/controls/AutoRotationPanel';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import { useSupportInteractionManager } from '@/features/supports/useSupportInteractionManager';
 import { useUndoRedoHotkeys } from '@/hotkeys/useUndoRedoHotkeys';
@@ -7221,6 +7221,7 @@ export default function Home() {
   // identity changes, so the Generating modal keeps working across HMR —
   // a `useEffect(..., [])` closure stays bound to the dead listener set.
   const autoSupportBusy = React.useSyncExternalStore(subscribeAutoSupportBusy, getAutoSupportBusy, getAutoSupportBusy);
+  const orientationBusy = React.useSyncExternalStore(subscribeOrientationBusy, getOrientationBusy, getOrientationBusy);
 
   const islandsPoc = useIslands({
     geom: scene.geom,
@@ -7236,6 +7237,7 @@ export default function Home() {
   // the key never reaches whatever is behind it.
   useEscapeToClose(islandsPoc.scanning && !autoSupportDrivingScan, undefined);
   useEscapeToClose(autoSupportBusy, undefined);
+  useEscapeToClose(orientationBusy, undefined);
   useEscapeToClose(isExporting, undefined);
 
   // 5. Supports
@@ -11113,6 +11115,28 @@ export default function Home() {
               Processing 1 model
             </div>
             <ScanProgressBar progress={islandsPoc.scanning ? islandsPoc.scanProgress : null} />
+          </div>
+        </div>
+      )}
+      {orientationBusy && (
+        <div className="absolute inset-0 z-[123] flex items-center justify-center bg-black/45 backdrop-blur-[1px]">
+          <div
+            className="w-[min(520px,92vw)] rounded-xl border px-5 py-4 shadow-xl"
+            style={{ background: 'color-mix(in srgb, var(--surface-0), black 10%)', borderColor: 'var(--border-subtle)' }}
+            role="dialog" aria-modal="true" aria-live="polite"
+          >
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
+              Orienting Model
+            </div>
+            <div className="mt-1 space-y-0.5 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              <p>Sweeping orientations…</p>
+            </div>
+            <div className="mt-2 text-[11px] font-medium tracking-wide" style={{ color: 'var(--accent)' }}>
+              <OrientElapsed />
+            </div>
+            <div className="ui-loading-track mt-3 h-2.5 w-full rounded-full" style={{ background: 'color-mix(in srgb, var(--surface-2), black 20%)' }}>
+              <div className="ui-loading-indicator" style={{ background: 'linear-gradient(90deg, var(--accent), #ff79c6)' }} />
+            </div>
           </div>
         </div>
       )}
