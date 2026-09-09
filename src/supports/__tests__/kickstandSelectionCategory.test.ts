@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { resetStore, setSnapshot, getSnapshot, setSelectedId, resetKickstandsInState} from '../state';
-import { setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
+import { seedKickstands } from './helpers/kickstandFixture';
 import {
   resolveSupportCategoryFromSnapshot,
   resolveSupportOwnerFromSegmentId,
@@ -58,7 +58,7 @@ function seed() {
   resetStore();
   resetKickstandsInState();
   setSnapshot({ ...getSnapshot() });
-  setKickstandSnapshot(makeKickstandState());
+  seedKickstands(makeKickstandState());
 }
 
 test('a kickstand id resolves to the kickstand category, not brace', () => {

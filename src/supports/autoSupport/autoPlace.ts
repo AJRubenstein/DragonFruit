@@ -42,8 +42,6 @@ import { isShaftBlocked } from '../PlacementLogic/CollisionAvoidance';
 import { buildAutoBracedSnapshot } from '../autoBracing/autoBrace';
 import { pushSupportHistory } from '../history/supportHistory';
 import { SUPPORT_AUTO_PLACE } from '../history/actionTypes';
-import { getKickstandSnapshot, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
-import type { KickstandState } from '../SupportTypes/Kickstand/types';
 import { getModelMesh } from './meshStore';
 import {
     ALREADY_SUPPORTED_RADIUS_MM,
@@ -489,7 +487,7 @@ function placeOneCandidate(
     draft: SupportState,
     _settingsOverride: Partial<AutoSupportSettings> | undefined,
     gridTrunkIds?: ReadonlySet<string>,
-): { kind: PlacementOutcomeKind; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected'; cavityFanRefusal?: FanLeafRefusal } {
+): { kind: PlacementOutcomeKind; draft: SupportState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected'; cavityFanRefusal?: FanLeafRefusal } {
     const supportSettings = getSettings();
     const snapshot = draft;
     let d = draft;
@@ -1001,8 +999,7 @@ function placeOneCandidate(
                 `${candidate.id} (Z=${candidate.zHeight.toFixed(1)}) → host ${decision.hostTrunkId}`);
             return {
                 kind: 'trunk', preset, entityId: decision.trunkBuild.trunk.id, draft: d,
-                // the removal cascade can strip auto kickstands — re-sync the draft
-                kickstand: structuredClone(getKickstandSnapshot()),
+
             };
         }
 
@@ -1936,7 +1933,6 @@ export function computeAutoSupportPlan(
     modelId: string,
     settingsOverride?: Partial<AutoSupportSettings>,
     baseState?: SupportState,
-    baseKickstand?: KickstandState,
     mesh?: THREE.Mesh,
 ): AutoSupportPlan | null {
     // ------------------------------------------------------------------
@@ -1950,9 +1946,7 @@ export function computeAutoSupportPlan(
     }
 
     const before = baseState ?? cloneSupportState(getSnapshot());
-    const kickstandBefore = baseKickstand ?? structuredClone(getKickstandSnapshot());
     let draft: SupportState = before;
-    let kickstandDraft: KickstandState = kickstandBefore;
 
     // Trunks placed from density-grid cells — fanning hosts only up close.
     const gridTrunkIds = new Set<string>();
@@ -1962,7 +1956,6 @@ export function computeAutoSupportPlan(
     const noopPlan = (result: AutoPlaceResult): AutoSupportPlan => ({
         before,
         support: draft,
-        kickstand: kickstandDraft,
         analytics: {
             islandsCovered: 0,
             islandsUncovered: islands.length,
@@ -2118,7 +2111,6 @@ export function computeAutoSupportPlan(
         try {
             const result = placeOneCandidate(candidate, draft, settingsOverride, gridTrunkIds);
             draft = result.draft;
-            if (result.kickstand) kickstandDraft = result.kickstand;
             if (candidate.gridPoint && result.kind === 'trunk' && result.entityId) {
                 gridTrunkIds.add(result.entityId);
             }
@@ -2678,10 +2670,6 @@ export function computeAutoSupportPlan(
             `Auto-support failed mid-run — rolling back.`,
             e instanceof Error ? e.message : String(e));
         setSnapshot(before);
-        // Redundant since kickstands moved onto SupportState -- setSnapshot(before)
-        // already restored them. Kept because this is the failure path and a
-        // second restore is cheaper than being wrong about it.
-        setKickstandSnapshot(kickstandBefore);
         return null;
     }
 
@@ -2828,7 +2816,6 @@ export function computeAutoSupportPlan(
     return {
         before,
         support: draft,
-        kickstand: kickstandDraft,
         analytics,
         result,
     };

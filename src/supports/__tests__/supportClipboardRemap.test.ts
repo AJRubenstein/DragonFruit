@@ -7,10 +7,7 @@ import {
   pasteModelSupportsFromClipboard,
   type SupportClipboardPayload,
 } from '../PlacementLogic/supportClipboard';
-import {
-  getKickstandSnapshot,
-  setKickstandSnapshot,
-} from '../SupportTypes/Kickstand/kickstandStore';
+import { readKickstands, seedKickstands } from './helpers/kickstandFixture';
 
 const SOURCE_MODEL_ID = 'model-source';
 const TARGET_MODEL_ID = 'model-target';
@@ -240,7 +237,7 @@ function makePayload(): SupportClipboardPayload {
 describe('support clipboard remap isolation', () => {
   beforeEach(() => {
     resetStore();
-    setKickstandSnapshot({
+    seedKickstands({
       kickstands: {},
       roots: {},
       knots: {},
@@ -267,7 +264,7 @@ describe('support clipboard remap isolation', () => {
     assert.ok(pastedCount > 0);
 
     const state = getSnapshot();
-    const kickstandState = getKickstandSnapshot();
+    const kickstandState = readKickstands();
 
     const sourceIds = new Set<string>([
       ...payload.roots.map((item) => item.id),

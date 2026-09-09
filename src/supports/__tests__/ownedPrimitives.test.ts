@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { getKickstandKnots, getKickstandRoots, getOwnedPrimitives, setSnapshot, getSnapshot } from '../state';
-import { getKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
+import { readKickstands } from './helpers/kickstandFixture';
 import { createEmptySupportCollections, SUPPORT_TYPES } from '../supportTypeRegistry';
 
 /**
- * `getOwnedPrimitives` replaces the hand-filtered view in `kickstandStore`,
+ * `getOwnedPrimitives` replaces the hand-filtered view a per-type shim held,
  * which picked out the roots and knots kickstands own. Consumers need those
  * separately from every other type's -- raft base circles count trunk roots
  * and kickstand roots as distinct inputs, so widening to all roots would
@@ -74,9 +74,9 @@ test('an edge onto another collection does not leak across', () => {
     assert.deepEqual(Object.keys(getOwnedPrimitives('kickstand', 'knots')), ['shared-id']);
 });
 
-test('it reproduces the view kickstandStore built by hand', () => {
+test('it reproduces the view the removed shim built by hand', () => {
     seed();
-    const view = getKickstandSnapshot();
+    const view = readKickstands();
 
     assert.deepEqual(getOwnedPrimitives('kickstand', 'roots'), view.roots);
     assert.deepEqual(getOwnedPrimitives('kickstand', 'knots'), view.knots);

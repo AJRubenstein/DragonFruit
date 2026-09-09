@@ -1548,7 +1548,7 @@ function eulersRoughlyEqual(a: THREE.Euler, b: THREE.Euler, epsilon = 1e-8) {
 }
 
 /* --- Kickstands: a SupportState collection; their root and host knot live in
- * the shared `roots`/`knots`. kickstandStore.ts delegates here. --- */
+ * the shared `roots`/`knots`. --- */
 
 /** Kickstand plus the root and host knot it owns, as callers still expect it. */
 function buildKickstandResult(kickstand: Kickstand): KickstandBuildResult | null {

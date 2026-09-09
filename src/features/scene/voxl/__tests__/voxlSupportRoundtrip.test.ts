@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { buildSupportExportFromStores, buildVoxlDocumentV1, parseVoxlDocument, serializeVoxlDocument } from '../codec';
 import { getSnapshot, loadFromImportFormat, resetStore, resetKickstandsInState} from '@/supports/state';
-import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
+import { readKickstands } from '@/supports/__tests__/helpers/kickstandFixture';
 import type { DragonfruitImportFormat } from '@/supports/types';
 
 function almostEqual(a: number, b: number, epsilon = 1e-6): boolean {
@@ -162,7 +162,7 @@ test('VOXL support roundtrip preserves imported leaf and brace normalization int
     assert.strictEqual(normalizedSnapshot.knots['k-left']?.normalizationHint, 'braceImported', 'Brace start knot should persist brace intent after initial load');
     assert.strictEqual(normalizedSnapshot.knots['k-right']?.normalizationHint, 'braceImported', 'Brace end knot should persist brace intent after initial load');
 
-    const supports = buildSupportExportFromStores(normalizedSnapshot, getKickstandSnapshot());
+    const supports = buildSupportExportFromStores(normalizedSnapshot, readKickstands());
     const document = buildVoxlDocumentV1({
         models: [
             {
