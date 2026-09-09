@@ -10217,19 +10217,13 @@ export default function Home() {
                     rotation,
                     scale: current.scale.clone(),
                   };
-                  // A new down-axis means new extents: always re-seat above the
-                  // plate at the user's lift clearance. Lift-only — a higher
-                  // float is left alone. One history entry covers rotate + lift.
+                  // A new down-axis means new extents: seat to the plate
+                  // clearance after orientation — lift OR drop — so repeated
+                  // orienting never drifts the model upward. One history entry
+                  // covers rotate + lift.
                   if (activeModel.id === modelId) {
-                    let liftDistance = 5;
-                    if (typeof window !== 'undefined') {
-                      const parsed = parseFloat(window.localStorage.getItem('liftDistance') ?? '');
-                      if (Number.isFinite(parsed) && parsed >= 0) liftDistance = parsed;
-                    }
                     const lowestWorldZ = getModelLowestWorldZ({ id: modelId, geometry: activeModel.geometry, transform: after });
-                    if (lowestWorldZ < liftDistance) {
-                      after.position.z += liftDistance - lowestWorldZ;
-                    }
+                    after.position.z += transformMgr.liftDistance - lowestWorldZ;
                   }
                   scene.updateModelTransform(modelId, after);
                   scene.commitModelTransformHistory(modelId, before, after, 'Apply Orientation Suggestion');
