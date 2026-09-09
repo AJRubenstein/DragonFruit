@@ -9,7 +9,6 @@ import {
 } from '@/components/settings/performancePreferences';
 import { getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
-import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { getRaftSettings } from '@/supports/Rafts/Crenelated/RaftState';
 import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
 import { generateChamferedBase } from '@/supports/Rafts/Crenelated/geometry/generateChamferedBase';
@@ -18,7 +17,7 @@ import { generateCrenelatedWallManual } from '@/supports/Rafts/Crenelated/geomet
 import { generateUnionedLineRaftMesh } from '@/supports/Rafts/Crenelated/geometry/generateUnionedLineRaftMesh';
 import { generateChamferedBeam } from '@/supports/Rafts/Crenelated/geometry/generateChamferedBeam';
 import { buildLineRaftEdgePairs } from '@/supports/Rafts/Crenelated/geometry/buildLineRaftEdgePairs';
-import type { ContactDisk, Segment, Vec3 } from '@/supports/types';
+import type { ContactDisk, Segment, SupportState, Vec3 } from '@/supports/types';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone/contactConeUtils';
 import { calculateDiskThickness, getDiskCenter, getDiskRotation } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getBezierPointAtT } from '@/supports/Curves/BezierUtils';
@@ -676,7 +675,7 @@ type SupportSliceTessellation = {
 /** Exported for `local-only/slice-goldens/`; not part of the public surface. */
 export function resolveSupportSliceTessellation(
   supportState: ReturnType<typeof getSupportSnapshot>,
-  kickstandState: ReturnType<typeof getKickstandSnapshot>,
+  kickstandState: SupportState,
 ): SupportSliceTessellation {
   // How much geometry the scene will emit, which decides the detail level.
   let segmentCount = 0;
@@ -859,12 +858,11 @@ export function buildSupportAndRaftWorldTriangles(
 
   const out: WorldTriangle[] = [];
   const supportState = getSupportSnapshot();
-  const kickstandState = getSupportSnapshot();
   const sink: TriangleSink = collector ?? out;
   const raftSettings = getRaftSettings();
   const hasSolidBottom = raftSettings.bottomMode === 'solid';
   const raftThickness = raftSettings.thickness;
-  const tessellation = resolveSupportSliceTessellation(supportState, kickstandState);
+  const tessellation = resolveSupportSliceTessellation(supportState, supportState);
   const segmentTessellation = {
     shaftRadialSegments: tessellation.shaftRadialSegments,
     bezierRadialSegments: tessellation.bezierRadialSegments,
@@ -893,7 +891,7 @@ export function buildSupportAndRaftWorldTriangles(
     }
   }
 
-  for (const kickstand of Object.values(kickstandState.kickstands)) {
+  for (const kickstand of Object.values(supportState.kickstands)) {
     if (!visibleModelIds.has(kickstand.modelId)) continue;
     visibleRootIds.add(kickstand.rootId);
     if (!rootModelKeyById.has(kickstand.rootId)) {
@@ -908,7 +906,7 @@ export function buildSupportAndRaftWorldTriangles(
       rootTopRadiusByRootId.set(trunk.rootId, Math.max(0.05, firstDiameter! * 0.5));
     }
   }
-  for (const kickstand of Object.values(kickstandState.kickstands)) {
+  for (const kickstand of Object.values(supportState.kickstands)) {
     const firstDiameter = kickstand.segments[0]?.diameter;
     if (Number.isFinite(firstDiameter) && firstDiameter! > 0) {
       rootTopRadiusByRootId.set(kickstand.rootId, Math.max(0.05, firstDiameter! * 0.5));
@@ -1071,17 +1069,6 @@ export function buildSupportAndRaftWorldTriangles(
   if (raft.bottomMode !== 'off') {
     const rootsByModel = new Map<string, Array<{ x: number; y: number; r: number }>>();
     for (const root of Object.values(supportState.roots)) {
-      const rootVisibleByModel = visibleModelIds.has(root.modelId);
-      const rootVisibleByLink = visibleRootIds.has(root.id);
-      if (!rootVisibleByModel && !rootVisibleByLink) continue;
-
-      const modelKey = rootModelKeyById.get(root.id) ?? root.modelId ?? `__root_${root.id}`;
-      const arr = rootsByModel.get(modelKey) ?? [];
-      arr.push({ x: root.transform.pos.x, y: root.transform.pos.y, r: root.diameter * 0.5 });
-      rootsByModel.set(modelKey, arr);
-    }
-
-    for (const root of Object.values(kickstandState.roots)) {
       const rootVisibleByModel = visibleModelIds.has(root.modelId);
       const rootVisibleByLink = visibleRootIds.has(root.id);
       if (!rootVisibleByModel && !rootVisibleByLink) continue;
