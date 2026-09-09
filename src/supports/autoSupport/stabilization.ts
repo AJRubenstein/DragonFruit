@@ -24,14 +24,22 @@ const MIN_BEARING_AREA_MM2 = 4.0;
 const MARGIN_MM = 2.0;
 /** Tooth spacing (mm) along the low edges. */
 const SPACING_MM = 2.5;
-/** Most anchors one run emits. */
-const MAX_ANCHORS = 12;
+/** Most anchors one run emits. Generous enough that a tall blade keeps both a
+ *  dense bottom line and buttresses up its long edges (two 60mm edges fully
+ *  toothed is ~48). */
+const MAX_ANCHORS = 48;
 /** When the part already rests on a low edge, flank teeth climb only this far
  *  up the faces (mm) — enough to brace sideways without climbing the part. */
 const FLANK_RISE_MM = 4.0;
 /** When the part rests on a lone point (no bearing edge), teeth climb the
  *  radiating edges this far (mm) to reach the widest base points. */
 const CORNER_RISE_MM = 12.0;
+/** Buttresses/flanks also climb a fraction of the part's height up the rising
+ *  edges, so a tall blade on its edge gets braced partway up instead of only
+ *  at the base. */
+const BUTTRESS_HEIGHT_FRACTION = 0.35;
+/** Hard cap on how far any anchor climbs above the base (mm). */
+const MAX_RISE_MM = 30.0;
 /** Above this many vertices, skip the pass entirely (memory/latency guard). */
 const VERT_CAP = 3_000_000;
 
@@ -116,8 +124,10 @@ export function computeStabilizationAnchors(mesh: THREE.Mesh): StabilizationAnch
     }
 
     let zMin = Infinity;
-    for (const z of vz) {
-        if (z < zMin) zMin = z;
+    let zMax = -Infinity;
+    for (let i = 0; i < vx.length; i++) {
+        if (vz[i] < zMin) zMin = vz[i];
+        if (vz[i] > zMax) zMax = vz[i];
     }
     if (!Number.isFinite(zMin)) return [];
     if (totalArea > 0) {
@@ -155,7 +165,17 @@ export function computeStabilizationAnchors(mesh: THREE.Mesh): StabilizationAnch
         else if (ba || bb) climbEdges.push([a, b]);
     }
 
-    const cell = SPACING_MM;
+    // Climb a fraction of the part's height up the rising edges — a short
+    // cube keeps short flanks, a tall blade gets buttresses partway up its
+    // faces. The dense bottom line still sorts first under the anchor cap.
+    const partHeight = zMax - zMin;
+    const baseRise = bearingEdges.length > 0 ? FLANK_RISE_MM : CORNER_RISE_MM;
+    const riseCap = Math.min(MAX_RISE_MM, Math.max(baseRise, partHeight * BUTTRESS_HEIGHT_FRACTION));
+
+    // Half-spacing XY cell: teeth on a 45° climb edge sit ~1.77mm apart in XY
+    // (2.5mm along the edge), so a full-spacing cell would merge consecutive
+    // teeth on the SAME edge, not just the near-duplicates from parallel edges.
+    const cell = SPACING_MM * 0.5;
     const best = new Map<string, StabilizationAnchor>();
     const put = (x: number, y: number, z: number): void => {
         const key = `${Math.round(x / cell)},${Math.round(y / cell)}`;
@@ -184,15 +204,16 @@ export function computeStabilizationAnchors(mesh: THREE.Mesh): StabilizationAnch
     };
 
     if (bearingEdges.length > 0) {
-        // Edge/face contact: the bearing line is the stance; flanks are short.
+        // Edge/face contact: the bearing line is the stance; flanks (or
+        // buttresses for a tippy part) climb the adjacent faces.
         for (const e of bearingEdges) emitEdge(e[0], e[1], Infinity);
-        for (const e of climbEdges) emitEdge(e[0], e[1], FLANK_RISE_MM);
+        for (const e of climbEdges) emitEdge(e[0], e[1], riseCap);
         const all = [...best.values()].sort((a, b) => a.z - b.z);
         return all.slice(0, MAX_ANCHORS);
     }
     // Lone point: climb the radiating edges for a wide tripod, spreading the
     // cap across the z range so the widest vertices are reached.
-    for (const e of climbEdges) emitEdge(e[0], e[1], CORNER_RISE_MM);
+    for (const e of climbEdges) emitEdge(e[0], e[1], riseCap);
     const all = [...best.values()].sort((a, b) => a.z - b.z);
     if (all.length <= MAX_ANCHORS) return all;
     const anchors: StabilizationAnchor[] = [];

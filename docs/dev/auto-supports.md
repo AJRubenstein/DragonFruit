@@ -38,10 +38,12 @@ edge on a line, prints fine face-by-face yet nothing holds it against peel.
 how the oriented mesh bears on the plate — the projected hull of the low
 surface plus the surface centroid — and, when the pose can tip, lays teeth
 along the low edge skeleton. Two regimes: a part resting on a low edge gets a
-dense line of teeth along that edge plus short flank stubs up the adjacent
-faces, while a lone corner gets teeth climbing its radiating edges to the
-widest base points. The common case (a flat base) emits nothing. Gated by the
-`stabilizationEnabled` setting (default on).
+dense line of teeth along that edge plus flank stubs up the adjacent faces,
+while a lone corner gets teeth climbing its radiating edges to the widest base
+points. Climb height scales with the part (35% of height, capped at 30mm) so a
+tall blade gets buttresses partway up instead of base teeth only. The common
+case (a flat base) emits nothing. Gated by the `stabilizationEnabled` setting
+(default on).
 
 Stabilization anchors enter placement as `source: 'stabilization'` candidates
 and are deliberately standalone trunks: they never fan or merge onto a nearby

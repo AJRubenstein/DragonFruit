@@ -56,6 +56,21 @@ test('an edge-down box is unstable and gets anchors on both sides', () => {
     assert.ok(xs.size > 1 && ys.size > 1, 'anchors spread off the edge line');
 });
 
+/** 20 long × 2 thin × 60 tall blade, tilted 45° about X so a 20mm edge rests on the plate. */
+function bladeOnEdge(): THREE.Mesh {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(20, 2, 60));
+    mesh.rotation.x = Math.PI / 4;
+    mesh.updateMatrixWorld(true);
+    return mesh;
+}
+
+test('a tall blade on its edge gets buttresses up its faces', () => {
+    const anchors = computeStabilizationAnchors(bladeOnEdge());
+    const zs = anchors.map((a) => a.z);
+    const rise = Math.max(...zs) - Math.min(...zs);
+    assert.ok(rise > 6, `buttresses reach up the blade (got ${rise.toFixed(1)}mm rise, want > 6)`);
+});
+
 test('a small part below the bearing minimum is still covered', () => {
     // 2mm cube face-down: hull area 4mm² at the threshold is still stable.
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
