@@ -8,6 +8,15 @@ name: Internal Test Build
 # have. See the install notes in the job summary for what testers must do.
 
 on:
+  # GitHub only lists a workflow once it has been seen running. A dispatch-only
+  # file on a branch that has never run stays invisible in the Actions sidebar,
+  # so this registers it: scoped to this branch and to edits of this file, it
+  # fires when the workflow itself changes and not on ordinary commits.
+  push:
+    branches:
+      - test/internal-test-build
+    paths:
+      - .github/workflows/internal-test-build.yml
   workflow_dispatch:
     inputs:
       platforms:
@@ -64,7 +73,19 @@ jobs:
         shell: bash
         run: |
           selected='${{ github.event.inputs.platforms }}'
-          if [ "$selected" = "both" ] || [ "$selected" = "${{ matrix.selector }}" ]; then
+
+          # A push run exists to register the workflow, not to build: there are
+          # no inputs, and a 40-minute build on every edit of this file is not
+          # what anyone wants. Dispatch it by hand to get installers.
+          if [ '${{ github.event_name }}' != 'workflow_dispatch' ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Registered, not built"
+              echo
+              echo "This run exists so the workflow appears in the Actions sidebar."
+              echo "Use **Run workflow** to build installers."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$selected" = "both" ] || [ "$selected" = "${{ matrix.selector }}" ]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           else
             echo "build=false" >> "$GITHUB_OUTPUT"
