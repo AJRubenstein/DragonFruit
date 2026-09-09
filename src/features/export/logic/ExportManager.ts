@@ -9,7 +9,6 @@ import { type BakedChunk, meshChunkStore } from '@/features/scene/voxl/meshChunk
 import { buildScopedSupportExportDocument, buildScopedSupportGeometryGroup } from '@/features/export/logic/supportExportReconstruction';
 import { allocateMeshStagePath, exportMeshFile, pickSavePathWithNativeDialog, writeChunkedToNativePath, writeFileAtomicToNativePath, writeFileAtomicStreamedToNativePath } from '@/features/slicing/tauri/nativeSlicerBridge';
 import { info as logInfo } from '@tauri-apps/plugin-log';
-import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { getSnapshot } from '@/supports/state';
 import { getRaftSettings, getRaftSettingsForModel } from '@/supports/Rafts/Crenelated/RaftState';
 import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
@@ -974,27 +973,11 @@ export class ExportManager {
       const globalRaftSettings = getRaftSettings();
       if (globalRaftSettings.bottomMode !== 'off') {
         const supportState = getSnapshot();
-        const kickstandState = getSnapshot();
         const allRoots = Object.values(supportState.roots);
-        const allKickstandRoots = Object.values(kickstandState.roots);
 
         // Group roots by modelId so each model gets a separate raft
         const rootsByModel = new Map<string, typeof allRoots>();
         for (const root of allRoots) {
-          const rootModelId = root.modelId ?? null;
-          if (hasScopedModelFilter) {
-            if (!rootModelId || !scopedModelIds.has(rootModelId)) {
-              continue;
-            }
-          }
-
-          const mid = rootModelId ?? '__orphan__';
-          let arr = rootsByModel.get(mid);
-          if (!arr) { arr = []; rootsByModel.set(mid, arr); }
-          arr.push(root);
-        }
-
-        for (const root of allKickstandRoots) {
           const rootModelId = root.modelId ?? null;
           if (hasScopedModelFilter) {
             if (!rootModelId || !scopedModelIds.has(rootModelId)) {

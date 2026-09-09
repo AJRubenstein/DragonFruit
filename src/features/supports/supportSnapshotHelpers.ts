@@ -1,5 +1,4 @@
 import { getSnapshot as getSupportSnapshot } from '@/supports/state';
-import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 
 export type HomeSupportSnapshot = ReturnType<typeof getSupportSnapshot>;
@@ -7,9 +6,9 @@ export type HomeSupportSnapshot = ReturnType<typeof getSupportSnapshot>;
 /** Every entity collection, derived from the registry. */
 export type HomeSupportCollectionsSnapshot = Pick<HomeSupportSnapshot, SupportCollectionKey>;
 
-export type HomeKickstandSnapshot = ReturnType<typeof getKickstandSnapshot>;
+export type HomeKickstandSnapshot = HomeSupportSnapshot;
 export type HomeKickstandCollectionsSnapshot = Pick<
-  HomeKickstandSnapshot,
+  HomeSupportSnapshot,
   'kickstands' | 'roots' | 'knots'
 >;
 
@@ -46,7 +45,7 @@ export function getHomeSupportCollectionsSnapshot(): HomeSupportCollectionsSnaps
 }
 
 export function getHomeKickstandCollectionsSnapshot(): HomeKickstandCollectionsSnapshot {
-  const snapshot = getKickstandSnapshot();
+  const snapshot = getSupportSnapshot();
   const cached = cachedHomeKickstandCollectionsSnapshot;
 
   if (
