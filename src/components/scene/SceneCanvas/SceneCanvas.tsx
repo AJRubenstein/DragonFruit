@@ -41,7 +41,6 @@ import type { ContactCone } from '@/supports/SupportPrimitives/ContactCone/types
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { getModelIdForSupportEntityId } from '@/supports/state';
-import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import FootprintBorderRenderer from '@/supports/Rafts/Crenelated/rendering/FootprintBorderRenderer';
 import SliceSatBoundingMeshRenderer from '@/supports/Rafts/Crenelated/rendering/SliceSatBoundingMeshRenderer';
 import { getRaftSettings, subscribeToRaftStore } from '@/supports/Rafts/Crenelated/RaftState';
@@ -884,12 +883,6 @@ export function SceneCanvas({
     };
   }, []);
 
-  const kickstandStateForBounds = React.useSyncExternalStore(
-    subscribeSupportState,
-    getKickstandSnapshot,
-    getKickstandSnapshot,
-  );
-
   const raftSettingsForBounds = React.useSyncExternalStore(
     subscribeToRaftStore,
     getRaftSettings,
@@ -1579,12 +1572,12 @@ export function SceneCanvas({
       modelKnotIds.add(brace.startKnotId);
       modelKnotIds.add(brace.endKnotId);
     }
-    for (const kickstand of Object.values(kickstandStateForBounds.kickstands)) {
+    for (const kickstand of Object.values(supportStateForBounds.kickstands)) {
       if (kickstand.modelId === modelId) modelKnotIds.add(kickstand.hostKnotId);
     }
 
     for (const knotId of modelKnotIds) {
-      const knot = supportStateForBounds.knots[knotId] ?? kickstandStateForBounds.knots[knotId];
+      const knot = supportStateForBounds.knots[knotId];
       if (!knot?.pos) continue;
       expandByRadius(knot.pos, Math.max(0.001, (knot.diameter ?? 1.2) / 2));
     }
@@ -1644,7 +1637,7 @@ export function SceneCanvas({
       expandByRadius(getFinalSocketPosition(stick.contactConeB), Math.max(0.001, stick.contactConeB.profile.bodyDiameterMm / 2));
     }
 
-    for (const kickstand of Object.values(kickstandStateForBounds.kickstands)) {
+    for (const kickstand of Object.values(supportStateForBounds.kickstands)) {
       if (kickstand.modelId !== modelId) continue;
       for (const seg of kickstand.segments) {
         if (seg.topJoint?.pos) expandByRadius(seg.topJoint.pos, Math.max(0.001, (seg.topJoint.diameter ?? seg.diameter) / 2));
@@ -1687,7 +1680,7 @@ export function SceneCanvas({
     }
 
     return hasAny ? bounds : null;
-  }, [isGizmoDragging, isGizmoRetargeting, kickstandStateForBounds, raftSettingsForBounds, supportStateForBounds]);
+  }, [isGizmoDragging, isGizmoRetargeting, raftSettingsForBounds, supportStateForBounds]);
 
   const computeModelWorldBounds = React.useCallback((
     model: LoadedModel,
@@ -2751,9 +2744,6 @@ export function SceneCanvas({
     for (const root of Object.values(supportStateForBounds.roots)) {
       collectRoot(root.modelId, root.transform.pos, root.diameter);
     }
-    for (const root of Object.values(kickstandStateForBounds.roots)) {
-      collectRoot(root.modelId, root.transform.pos, root.diameter);
-    }
 
     const thickness = raftSettingsForBounds.bottomMode === 'line'
       ? raftSettingsForBounds.lineHeightMm
@@ -2779,7 +2769,7 @@ export function SceneCanvas({
     }
 
     return map;
-  }, [kickstandStateForBounds.roots, raftSettingsForBounds, supportStateForBounds.roots]);
+  }, [raftSettingsForBounds, supportStateForBounds.roots]);
 
   // Every support drawn as the polyline that runs along it: root or host knot,
   // each joint in order, and the contact cone at the tip. Built once per state
@@ -2893,19 +2883,19 @@ export function SceneCanvas({
       ]);
     }
 
-    for (const kickstand of Object.values(kickstandStateForBounds.kickstands)) {
+    for (const kickstand of Object.values(supportStateForBounds.kickstands)) {
       const kickstandModelId = kickstand.modelId
-        ?? kickstandStateForBounds.roots[kickstand.rootId]?.modelId;
+        ?? supportStateForBounds.roots[kickstand.rootId]?.modelId;
       chain(kickstand.id, kickstandModelId, [
-        kickstandStateForBounds.roots[kickstand.rootId]?.transform.pos,
+        supportStateForBounds.roots[kickstand.rootId]?.transform.pos,
         ...jointPositions(kickstand.segments),
         supportStateForBounds.knots[kickstand.hostKnotId]?.pos
-          ?? kickstandStateForBounds.knots[kickstand.hostKnotId]?.pos,
+          ?? supportStateForBounds.knots[kickstand.hostKnotId]?.pos,
       ]);
     }
 
     return shapes;
-  }, [kickstandStateForBounds, supportStateForBounds]);
+  }, [supportStateForBounds]);
 
   const supportMarqueeShapesByModelId = React.useMemo(() => {
     const map = new Map<string, typeof supportMarqueeShapes>();
@@ -3355,12 +3345,6 @@ export function SceneCanvas({
       sourceSupportAnchorCount += 1;
     }
 
-    for (const root of Object.values(kickstandStateForBounds.roots)) {
-      if (root.modelId !== duplicatePreviewModel.id) continue;
-      if (!sourceSupportAnchor) sourceSupportAnchor = new THREE.Vector3();
-      sourceSupportAnchor.add(root.transform.pos);
-      sourceSupportAnchorCount += 1;
-    }
 
     if (sourceSupportAnchor && sourceSupportAnchorCount > 0) {
       sourceSupportAnchor.multiplyScalar(1 / sourceSupportAnchorCount);
@@ -3396,7 +3380,7 @@ export function SceneCanvas({
     );
 
     return targetMatrix.multiply(sourceMatrix.clone().invert());
-  }, [duplicateActivePreviewTransform, duplicatePreviewModel, kickstandStateForBounds.roots, modelById, supportStateForBounds.roots]);
+  }, [duplicateActivePreviewTransform, duplicatePreviewModel, modelById, supportStateForBounds.roots]);
 
   const duplicateSourceSupportPreviewModelId = React.useMemo(() => {
     if (!hideDuplicateSourceDuringApply) return null;
@@ -3976,9 +3960,9 @@ export function SceneCanvas({
     supportTwigsRef: supportStateForBounds.twigs,
     supportSticksRef: supportStateForBounds.sticks,
     supportBracesRef: supportStateForBounds.braces,
-    kickstandKickstandsRef: kickstandStateForBounds.kickstands,
-    kickstandRootsRef: kickstandStateForBounds.roots,
-    kickstandKnotsRef: kickstandStateForBounds.knots,
+    kickstandKickstandsRef: supportStateForBounds.kickstands,
+    kickstandRootsRef: supportStateForBounds.roots,
+    kickstandKnotsRef: supportStateForBounds.knots,
     raftBottomMode: raftSettingsForBounds.bottomMode,
     raftThickness: raftSettingsForBounds.thickness,
     raftLineHeightMm: raftSettingsForBounds.lineHeightMm,
@@ -3993,9 +3977,6 @@ export function SceneCanvas({
   }), [
     effectiveHoldSupportDragDelta,
     isGizmoDragging,
-    kickstandStateForBounds.kickstands,
-    kickstandStateForBounds.knots,
-    kickstandStateForBounds.roots,
     models,
     raftSettingsForBounds.bottomMode,
     raftSettingsForBounds.chamferAngle,
@@ -4003,14 +3984,7 @@ export function SceneCanvas({
     raftSettingsForBounds.thickness,
     raftSettingsForBounds.wallEnabled,
     raftSettingsForBounds.wallHeight,
-    supportStateForBounds.braces,
-    supportStateForBounds.branches,
-    supportStateForBounds.knots,
-    supportStateForBounds.leaves,
-    supportStateForBounds.roots,
-    supportStateForBounds.sticks,
-    supportStateForBounds.trunks,
-    supportStateForBounds.twigs,
+    supportStateForBounds,
     supportDragTransactionId,
     supportRenderRefreshNonce,
     transform,
