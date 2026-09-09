@@ -6,7 +6,6 @@ import { usePicking } from '@/components/picking';
 import { subscribe, getSnapshot, getSupports } from './state';
 import { getRaftSettings, subscribeToRaftStore } from './Rafts/Crenelated/RaftState';
 import { JOINT_DIAMETER_OFFSET_MM } from './constants';
-import { useKickstandStoreState } from './SupportTypes/Kickstand/kickstandStore';
 import { InstancedShaftGroup, type InstancedShaft } from './SupportPrimitives/Shaft/InstancedShaftGroup';
 import { InstancedRootsGroup, type InstancedRoot } from './SupportPrimitives/Roots/InstancedRootsGroup';
 import { InstancedJointGroup, type InstancedJoint } from './SupportPrimitives/Joint/InstancedJointGroup';
@@ -15,7 +14,7 @@ import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactC
 import { calculateDiskThickness } from './SupportPrimitives/ContactDisk/contactDiskUtils';
 import { emitSupportModelPointerHover } from './interaction/clickHandlers';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
-import type { ContactDisk, Segment, Vec3 } from './types';
+import type { ContactDisk, Segment, SupportState, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 
 interface SupportProxyMeshLayerProps {
@@ -89,8 +88,8 @@ type SharedProxyCacheEntry = {
   supportsRef: ReturnType<typeof getSupports>;
   supportRootsRef: ReturnType<typeof getSnapshot>['roots'];
   supportKnotsRef: ReturnType<typeof getSnapshot>['knots'];
-  kickstandRootsRef: ReturnType<typeof useKickstandStoreState>['roots'];
-  kickstandKnotsRef: ReturnType<typeof useKickstandStoreState>['knots'];
+  kickstandRootsRef: SupportState['roots'];
+  kickstandKnotsRef: SupportState['knots'];
   hasSolidBottom: boolean;
   raftThickness: number;
   includeDetailedPrimitives: boolean;
@@ -154,7 +153,7 @@ export function SupportProxyMeshLayer({
   hitCategoryRef.current = hit.category;
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const raftSettings = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
-  const kickstandState = useKickstandStoreState();
+
   const supportTrunks = supportState.trunks;
   const supportRoots = supportState.roots;
   const supportKnots = supportState.knots;
@@ -168,9 +167,11 @@ export function SupportProxyMeshLayer({
   // for the cache signature; the geometry loops below still read their own
   // collection, because each builds different primitives.
   const supports = getSupports();
-  const kickstandKickstands = kickstandState.kickstands;
-  const kickstandRoots = kickstandState.roots;
-  const kickstandKnots = kickstandState.knots;
+  // Roots and knots are reached by the kickstand's own rootId / hostKnotId, so
+  // the shared collections answer without a per-type view.
+  const kickstandKickstands = supportState.kickstands;
+  const kickstandRoots = supportState.roots;
+  const kickstandKnots = supportState.knots;
   const hasSolidBottom = raftSettings.bottomMode === 'solid';
   const raftThickness = raftSettings.thickness ?? 0;
 

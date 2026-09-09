@@ -9,7 +9,6 @@ import { addSupportEntity, addKnot, addRoot, subscribe, getSnapshot } from '../.
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import { getGridSettings } from '../../Settings/state';
 import { snapToGridIndex } from '../../PlacementLogic/Grid/gridMath';
-import { getKickstandSnapshot } from './kickstandStore';
 import { clampKickstandHostT } from './kickstandRules';
 import { buildKickstandData, toKickstandPreviewData } from './kickstandBuilder';
 import { getKickstandPlacementOffsetMm } from './kickstandSettings';
