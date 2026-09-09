@@ -117,20 +117,9 @@ function hasMeaningfulSupportEditChange(
         hoveredCategory: 'none' as const,
     };
 
-    if (JSON.stringify(beforeSupport) !== JSON.stringify(afterSupport)) {
-        return true;
-    }
-
-    const beforeKickstand = {
-        ...before.kickstand,
-        selectedId: null,
-    };
-    const afterKickstand = {
-        ...after.kickstand,
-        selectedId: null,
-    };
-
-    return JSON.stringify(beforeKickstand) !== JSON.stringify(afterKickstand);
+    // Kickstands, their roots and their knots all live on SupportState, so
+    // this comparison covers them.
+    return JSON.stringify(beforeSupport) !== JSON.stringify(afterSupport);
 }
 
 function formatSupportKindLabel(kind: EditableSupportTarget['kind']): string {

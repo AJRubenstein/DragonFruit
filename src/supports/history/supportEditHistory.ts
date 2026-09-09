@@ -1,18 +1,13 @@
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_EDIT_REPLACE } from './actionTypes';
 import { getSnapshot, type SupportState } from '../state';
-import { getKickstandSnapshot, type KickstandState } from '../SupportTypes/Kickstand/kickstandStore';
 
 export interface SupportEditHistorySnapshot {
   support: SupportState;
-  kickstand: KickstandState;
 }
 
 export function captureSupportEditSnapshot(): SupportEditHistorySnapshot {
-  return {
-    support: getSnapshot(),
-    kickstand: getKickstandSnapshot(),
-  };
+  return { support: getSnapshot() };
 }
 
 type SupportEditHistoryJob = {
