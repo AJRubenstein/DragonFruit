@@ -51,8 +51,6 @@ import {
   importLabelVoxlScene,
 } from '@/features/scene/sceneImportMessages';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
-import { getKickstandSnapshot, setKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
-import type { KickstandState } from '@/supports/SupportTypes/Kickstand/types';
 import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
 import { getSavedThemeCustomColors } from '@/components/settings/themeCustomizations';
 import {
@@ -175,20 +173,16 @@ type SceneSnapshot = {
   activeModelId: string | null;
   selectedModelIds: string[];
   supportState?: SupportState;
-  kickstandState?: KickstandState;
 };
 
 type SceneSnapshotCaptureOptions = {
   includeSupportState?: boolean;
   supportStateOverride?: SupportState;
-  kickstandStateOverride?: KickstandState;
 };
 
 type TransformHistorySupportSnapshotOptions = {
   supportBefore?: SupportState;
   supportAfter?: SupportState;
-  kickstandBefore?: KickstandState;
-  kickstandAfter?: KickstandState;
   includeSupportState?: boolean;
 };
 
@@ -283,7 +277,6 @@ function captureSceneSnapshot(
 ): SceneSnapshot {
   const includeSupportState = options?.includeSupportState ?? false;
   const supportStateOverride = options?.supportStateOverride;
-  const kickstandStateOverride = options?.kickstandStateOverride;
 
   return {
     models: models.map(cloneLoadedModel),
@@ -292,7 +285,6 @@ function captureSceneSnapshot(
     ...(includeSupportState
       ? {
           supportState: clonePlainObject(supportStateOverride ?? getSnapshot()),
-          kickstandState: clonePlainObject(kickstandStateOverride ?? getKickstandSnapshot()),
         }
       : {}),
   };
@@ -2684,8 +2676,7 @@ export function useSceneCollectionManager() {
     const includeSupportByOption = supportSnapshotOptions?.includeSupportState === true
       || !!supportSnapshotOptions?.supportBefore
       || !!supportSnapshotOptions?.supportAfter
-      || !!supportSnapshotOptions?.kickstandBefore
-      || !!supportSnapshotOptions?.kickstandAfter;
+;
 
     const includeSupportByState = (() => {
       const supportStateNow = getSnapshot();
@@ -2697,12 +2688,10 @@ export function useSceneCollectionManager() {
     const before = captureSceneSnapshot(beforeModels, currentActiveModelId, currentSelectedModelIds, {
       includeSupportState: includeSupportHistory,
       supportStateOverride: supportSnapshotOptions?.supportBefore,
-      kickstandStateOverride: supportSnapshotOptions?.kickstandBefore,
     });
     const after = captureSceneSnapshot(afterModels, currentActiveModelId, currentSelectedModelIds, {
       includeSupportState: includeSupportHistory,
       supportStateOverride: supportSnapshotOptions?.supportAfter,
-      kickstandStateOverride: supportSnapshotOptions?.kickstandAfter,
     });
     const targetModelName = targetModel.name ?? id;
     pushSceneSnapshotHistory(before, after, description ?? `Transform Model ${targetModelName}`);
@@ -2734,9 +2723,7 @@ export function useSceneCollectionManager() {
     });
     const includeSupportByOption = supportSnapshotOptions?.includeSupportState === true
       || !!supportSnapshotOptions?.supportBefore
-      || !!supportSnapshotOptions?.supportAfter
-      || !!supportSnapshotOptions?.kickstandBefore
-      || !!supportSnapshotOptions?.kickstandAfter;
+      || !!supportSnapshotOptions?.supportAfter;
     const supportStateNow = getSnapshot();
     const includeSupportByState = changedIds.some((id) => hasSupportsForModel(id, supportStateNow));
     const includeSupportHistory = includeSupportByOption || includeSupportByState;
@@ -2744,12 +2731,10 @@ export function useSceneCollectionManager() {
     const before = captureSceneSnapshot(beforeModels, currentActiveModelId, currentSelectedModelIds, {
       includeSupportState: includeSupportHistory,
       supportStateOverride: supportSnapshotOptions?.supportBefore,
-      kickstandStateOverride: supportSnapshotOptions?.kickstandBefore,
     });
     const after = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, {
       includeSupportState: includeSupportHistory,
       supportStateOverride: supportSnapshotOptions?.supportAfter,
-      kickstandStateOverride: supportSnapshotOptions?.kickstandAfter,
     });
     pushSceneSnapshotHistory(before, after, description ?? 'Update Model Transforms');
     return true;
@@ -2849,11 +2834,9 @@ export function useSceneCollectionManager() {
 
     if (shouldPushHistory && before) {
       const supportStateAfter = includeSupportHistory ? getSnapshot() : undefined;
-      const kickstandStateAfter = includeSupportHistory ? getKickstandSnapshot() : undefined;
       const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds, {
         includeSupportState: includeSupportHistory,
         supportStateOverride: supportStateAfter,
-        kickstandStateOverride: kickstandStateAfter,
       });
       pushSceneSnapshotHistory(before, after, updates.length === 1 ? 'Update Model Transform' : 'Update Model Transforms');
     }
@@ -4157,7 +4140,6 @@ export function useSceneCollectionManager() {
       const before = captureSceneSnapshot(beforeModels, beforeActiveModelId, beforeSelectedModelIds, {
         includeSupportState: true,
         supportStateOverride: supportStateBefore,
-        kickstandStateOverride: kickstandStateBefore,
       });
       const after = captureSceneSnapshot(nextModels, id, [id], { includeSupportState: true });
       pushSceneSnapshotHistory(before, after, `Paste Model ${first.name}`);
@@ -4559,7 +4541,6 @@ export function useSceneCollectionManager() {
         const before = captureSceneSnapshot(beforeModels, beforeActiveModelId, beforeSelectedModelIds, {
           includeSupportState: true,
           supportStateOverride: supportStateBefore,
-          kickstandStateOverride: kickstandStateBefore,
         });
         const after = captureSceneSnapshot(nextModels, createdIds[0], createdIds, { includeSupportState: true });
         pushSceneSnapshotHistory(before, after, createdIds.length === 1 ? 'Paste Model' : `Paste ${createdIds.length} Models`);

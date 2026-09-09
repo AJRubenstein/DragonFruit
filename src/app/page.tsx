@@ -191,7 +191,6 @@ import {
   getHomeSupportCollectionsSnapshot,
   getHomeKickstandCollectionsSnapshot,
   type HomeSupportCollectionsSnapshot,
-  type HomeKickstandCollectionsSnapshot,
 } from '@/features/supports/supportSnapshotHelpers';
 import {
   EXPORT_THUMBNAIL_RENDER_OPTIONS_STORAGE_KEY,
@@ -326,7 +325,6 @@ import {
   resolveUvToolsExecutablePath,
 } from '@/components/settings/uvToolsPreferences';
 import { subscribe as subscribeSupportState, findShaftOwnerOfSegment, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, getSupportEntity, toggleSegmentCurve, transformSupportsForModel, updateKnot } from '@/supports/state';
-import { getKickstandSnapshot } from '@/supports/SupportTypes/Kickstand/kickstandStore';
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
 import { splitSupportShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
 import { resolveSegmentEndpoints } from '@/supports/SupportPrimitives/Knot/segmentEndpoints';
@@ -822,14 +820,11 @@ export default function Home() {
     description?: string;
     supportBefore?: ReturnType<typeof getSupportSnapshot>;
     supportAfter?: ReturnType<typeof getSupportSnapshot>;
-    kickstandBefore?: ReturnType<typeof getKickstandSnapshot>;
-    kickstandAfter?: ReturnType<typeof getKickstandSnapshot>;
   } | null>(null);
   const pendingSelectionPositionHistoryRef = React.useRef<{
     targetIdsKey: string;
     beforeTransforms: Array<{ id: string; transform: ModelTransform }>;
     supportBefore: ReturnType<typeof getSupportSnapshot>;
-    kickstandBefore: ReturnType<typeof getKickstandSnapshot>;
   } | null>(null);
   const transformHistoryCommitRequestedRef = React.useRef(false);
   const transformHistoryCommitNonceRef = React.useRef(0);
@@ -5271,13 +5266,7 @@ export default function Home() {
     supportSnapshot.hoveredId = null;
     supportSnapshot.hoveredCategory = 'none';
 
-    const kickstandSnapshot = structuredClone(getKickstandSnapshot());
-    kickstandSnapshot.selectedId = null;
-
-    return {
-      support: supportSnapshot,
-      kickstand: kickstandSnapshot,
-    };
+    return { support: supportSnapshot };
   }, []);
 
   const invalidatePendingTransformHistory = React.useCallback((options?: { clearRotateCommit?: boolean }) => {
@@ -5386,14 +5375,10 @@ export default function Home() {
             }
     );
 
-    const supportHistoryOptions = (
-      pending.supportBefore
-      && pending.kickstandBefore
-    )
+    const supportHistoryOptions = pending.supportBefore
       ? {
           includeSupportState: true,
           supportBefore: pending.supportBefore,
-          kickstandBefore: pending.kickstandBefore,
         }
       : undefined;
 
@@ -6309,7 +6294,6 @@ export default function Home() {
             },
             description: pending?.description,
             supportBefore: beforeSupportSnapshot.support,
-            kickstandBefore: beforeSupportSnapshot.kickstand,
           };
         } else {
           pending.after = {
@@ -6326,7 +6310,6 @@ export default function Home() {
         const pendingAfter = pendingTransformHistoryRef.current;
         if (pendingAfter && pendingAfter.modelId === scene.activeModelId) {
           pendingAfter.supportAfter = afterSupportSnapshot.support;
-          pendingAfter.kickstandAfter = afterSupportSnapshot.kickstand;
         }
 
         if (isDirectTransformPath) {
@@ -8177,7 +8160,6 @@ export default function Home() {
         },
         description: pendingRotateGizmoCommitRef.current.description,
         supportBefore: pendingTransformHistoryRef.current?.supportBefore,
-        kickstandBefore: pendingTransformHistoryRef.current?.kickstandBefore,
       };
       pendingRotateGizmoCommitRef.current = null;
     }
@@ -8246,7 +8228,6 @@ export default function Home() {
 
       const afterSupportSnapshot = captureTransformSupportSnapshot();
       pendingTransformHistoryRef.current.supportAfter = afterSupportSnapshot.support;
-      pendingTransformHistoryRef.current.kickstandAfter = afterSupportSnapshot.kickstand;
     }
 
     const skipCommitToken = skipNextTransformEndCommitRef.current;
@@ -8329,7 +8310,6 @@ export default function Home() {
         },
         description: `transform:${payload.operation} ${targetModelName}`,
         supportBefore: beforeSupportSnapshot.support,
-        kickstandBefore: beforeSupportSnapshot.kickstand,
       };
     }
 
@@ -8426,8 +8406,6 @@ export default function Home() {
         includeSupportState: true,
         supportBefore: pending.supportBefore,
         supportAfter: afterSupportSnapshot.support,
-        kickstandBefore: pending.kickstandBefore,
-        kickstandAfter: afterSupportSnapshot.kickstand,
       },
     );
   }, [captureTransformSupportSnapshot, scene]);
@@ -8485,7 +8463,6 @@ export default function Home() {
           },
         })),
         supportBefore: beforeSupportSnapshot.support,
-        kickstandBefore: beforeSupportSnapshot.kickstand,
       };
     }
 
@@ -8617,7 +8594,6 @@ export default function Home() {
         },
         description: `transform:${operation} ${targetModelName}`,
         supportBefore: captureTransformSupportSnapshot().support,
-        kickstandBefore: captureTransformSupportSnapshot().kickstand,
       };
     }
 
@@ -8650,7 +8626,6 @@ export default function Home() {
           : undefined,
         description: `transform:${operation} ${targetModelName}`,
         supportBefore: beforeSupportSnapshot.support,
-        kickstandBefore: beforeSupportSnapshot.kickstand,
       };
       return;
     }
