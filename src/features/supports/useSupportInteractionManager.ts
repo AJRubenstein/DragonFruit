@@ -295,29 +295,28 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
           if (!kickstandOwner) return false;
           return deleteSelectionByCategoryAndId(kickstandOwner.category, kickstandOwner.id, recordHistory);
         }
-        if (result.kind === 'trunk') {
-          if (recordHistory) {
+        // Whether a joint removal records an update is the type's declared
+        // `historyUpdate`; a type without one (kickstand today) rides the
+        // full-state snapshot. The payload map is keyed per action, so each
+        // push stays narrow while the DECISION comes from the registry.
+        const descriptor = getSupportTypeDescriptor(result.typeId);
+        if (recordHistory && descriptor.historyUpdate) {
+          const description = `Delete ${descriptor.singular} joint`;
+          if (result.typeId === 'trunk') {
             pushSupportHistory({
               type: SUPPORT_UPDATE_TRUNK,
-              description: 'Delete trunk joint',
+              description,
               payload: { before: result.before, after: result.after },
             });
-          }
-          setSelectedId(result.trunkId);
-        } else if (result.kind === 'branch') {
-          if (recordHistory) {
+          } else if (result.typeId === 'branch') {
             pushSupportHistory({
               type: SUPPORT_UPDATE_BRANCH,
+              description,
               payload: { before: result.before, after: result.after },
             });
           }
-          setSelectedId(result.branchId);
-        } else if (result.kind === 'kickstand') {
-          // Joint removed from kickstand — just select the parent kickstand.
-          // No dedicated SUPPORT_UPDATE_KICKSTAND history type exists yet,
-          // so undo is handled via full state snapshot if needed.
-          setSelectedId(result.kickstandId);
         }
+        setSelectedId(result.id);
         return true;
       }
 
@@ -511,11 +510,19 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         const category = getSelectedCategory();
         const id = getSelectedId();
         if (id) {
-          if (category === 'leaf' || category === 'branch') {
+          const hostedType = getSupportTypeBySelectionCategory(category);
+          // The knot a support hangs from is a declared `hostedBy` edge. Only
+          // types with exactly one have an unambiguous parent -- a brace hangs
+          // from two, so it keeps the knot-side traversal below instead.
+          const parentKnotEdges = hostedType?.edges.filter(
+            (edge) => edge.to === 'knots' && edge.ownership === 'hostedBy',
+          ) ?? [];
+
+          if (parentKnotEdges.length === 1) {
             const snapshot = getSnapshot();
-            const parentKnotId = category === 'leaf'
-              ? snapshot.leaves[id]?.parentKnotId
-              : snapshot.branches[id]?.parentKnotId;
+            const entity = (snapshot as unknown as Record<string, Record<string, Record<string, unknown>>>)
+              [hostedType!.location.key]?.[id];
+            const parentKnotId = entity?.[parentKnotEdges[0].field] as string | undefined;
             if (parentKnotId && snapshot.knots[parentKnotId]) {
               setSelectedId(parentKnotId);
             }
