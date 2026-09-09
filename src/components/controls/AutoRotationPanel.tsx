@@ -222,10 +222,10 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
               type="button"
               onClick={() => { onToggleBlockers?.(); }}
               disabled={busy || !activeModelId || !onToggleBlockers}
-              className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] disabled:opacity-50"
+              className="ui-button ui-button-secondary flex-1 !h-8 text-[11px] disabled:opacity-50"
               title={_(BLOCKERS_HINT)}
               aria-pressed={blockersActive === true}
-              style={blockersActive ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
+              style={blockersActive ? { borderColor: 'var(--accent-secondary)', color: 'var(--accent-secondary)' } : undefined}
             >
               {_(BLOCKERS)}
             </button>
@@ -233,7 +233,7 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
           {blockersActive && (
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{_(BLOCKERS_HINT)}</p>
           )}
-          {blockedCount > 0 && (
+          {blockersActive && blockedCount > 0 && (
             <div className="flex items-center justify-between">
               <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {blockedCount} {_(BLOCKED_FACES)}

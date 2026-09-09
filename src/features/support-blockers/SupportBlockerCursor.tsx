@@ -51,9 +51,8 @@ export function SupportBlockerCursor() {
     return q;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [normal.x, normal.y, normal.z]);
-
+  const color = isSupportBlockerStrokeActive() ? '#ffd928' : '#fde68a';
   if (!point) return null;
-  const color = isSupportBlockerStrokeActive() ? '#f87171' : '#fca5a5';
 
   return (
     <group raycast={() => null}>
