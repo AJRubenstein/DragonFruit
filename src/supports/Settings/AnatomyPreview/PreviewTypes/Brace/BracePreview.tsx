@@ -3,6 +3,10 @@ import * as THREE from 'three';
 import { SupportBuilder } from '@/supports/rendering/SupportBuilder';
 import { ANATOMY_CONFIG } from '../../AnatomyPreviewConfig';
 import type { SupportKind } from '../../../supportKindState';
+import { applyInitialPattern } from '@/supports/autoBracing/initialPattern';
+import { applyRepeatingPattern } from '@/supports/autoBracing/repeatingPattern';
+import { runZigZagChain } from '@/supports/autoBracing/zigzagChain';
+import type { AutoBracingPattern } from '@/supports/autoBracing/settings';
 
 interface BracePreviewProps {
     settings: any;
@@ -99,49 +103,6 @@ function buildTrunkData(
 }
 
 /**
- * Real auto-bracing pattern for a single pair of trunks at a given rung Z.
- * 
- * Mirrors the production logic in autoBrace.ts:
- * - The "low" end of each brace sits at `anchorZ` on the first trunk.
- * - The "high" end sits at `anchorZ + horizontalDist` on the second trunk
- *   (dzGuess ≈ horizontal distance between the two supports).
- * - singleDiagonal → one brace (a → b)
- * - crossDiagonal   → two braces (a → b and b → a)
- */
-function applyPatternToPair(
-    result: { start: THREE.Vector3; end: THREE.Vector3; section: 'initial' | 'repeating' }[],
-    aX: number,
-    aY: number,
-    bX: number,
-    bY: number,
-    horizontalDist: number,
-    anchorZ: number,
-    pattern: string,
-    section: 'initial' | 'repeating',
-    trunkTopZ: number,
-) {
-    const dzGuess = horizontalDist;
-
-    // Real auto-bracing rule: skip if the high end would go past the top joint.
-    if (anchorZ + dzGuess >= trunkTopZ - 0.1) return;
-
-    const placeLowHigh = (lowX: number, lowY: number, highX: number, highY: number) => {
-        result.push({
-            start: new THREE.Vector3(lowX, lowY, anchorZ),
-            end: new THREE.Vector3(highX, highY, anchorZ + dzGuess),
-            section,
-        });
-    };
-
-    // singleDiagonal: place(a, b)
-    // crossDiagonal:  place(a, b) + place(b, a)
-    placeLowHigh(aX, aY, bX, bY);
-    if (pattern === 'crossDiagonal') {
-        placeLowHigh(bX, bY, aX, aY);
-    }
-}
-
-/**
  * Brace anatomy preview: 3×3 grid of proper trunks (rendered through SupportBuilder
  * like the Grid preview) with simulated braces between adjacent trunks using
  * the real auto-bracing rules.
@@ -174,7 +135,6 @@ export function BracePreview({
     const isDiameterFocused = focusKey === 'braceDiameterMm';
 
     // Three trunks with varying spacing to show different brace distances
-    const maxBraceLength = autoBracing.maxBraceLengthMm ?? 10.0;
     const rootsTopZ = rootsDiskHeightMm + rootsConeHeightMm;
 
     // Positions: left gap 5mm (X only), right gap 10mm (X + Y offset for 3D scenario)
@@ -223,19 +183,47 @@ export function BracePreview({
     const maxZ = PREVIEW_HEIGHT_MM - 1.0;
     while (curr <= maxZ) { ladder.push(curr); curr += patternInterval; }
 
+    const edges = bracePairs.map((pair) => ({
+        a: { x: pair.aX, y: pair.aY },
+        b: { x: pair.bX, y: pair.bY },
+        hDist: pair.dist,
+    }));
+    const placeAt = (
+        low: { x: number; y: number },
+        high: { x: number; y: number },
+        section: 'initial' | 'repeating',
+        atZ: number,
+    ) => {
+        const dist = Math.sqrt((high.x - low.x) ** 2 + (high.y - low.y) ** 2);
+        // Real auto-bracing rule: skip if the high end would go past the top joint.
+        if (atZ + dist >= PREVIEW_HEIGHT_MM - 0.1) return;
+        braces.push({
+            start: new THREE.Vector3(low.x, low.y, atZ),
+            end: new THREE.Vector3(high.x, high.y, atZ + dist),
+            section,
+        });
+    };
+    // Zigzag runs as continuous per-edge chains like production; other
+    // patterns follow the fixed-interval ladder.
+    if (initialPattern === 'zigZag') {
+        runZigZagChain(edges, rootsTopZ + initialDistance, maxZ, 'initial', placeAt);
+    } else if (repeatingPattern === 'zigZag') {
+        runZigZagChain(edges, rootsTopZ + initialDistance + patternInterval, maxZ, 'repeating', placeAt);
+    }
     ladder.forEach((anchorZ, tierIndex) => {
         const isInitial = tierIndex === 0;
         const pattern = isInitial ? initialPattern : repeatingPattern;
         const section: 'initial' | 'repeating' = isInitial ? 'initial' : 'repeating';
-
-        for (const pair of bracePairs) {
-            applyPatternToPair(
-                braces,
-                pair.aX, pair.aY,
-                pair.bX, pair.bY,
-                pair.dist,
-                anchorZ, pattern, section, PREVIEW_HEIGHT_MM,
-            );
+        // Zigzag tiers are covered by the chains above.
+        if (pattern === 'zigZag') return;
+        const placeAtTier = (
+            low: { x: number; y: number },
+            high: { x: number; y: number },
+        ) => placeAt(low, high, section, anchorZ);
+        if (isInitial) {
+            applyInitialPattern(edges, pattern as AutoBracingPattern, placeAtTier);
+        } else {
+            applyRepeatingPattern(edges, pattern as AutoBracingPattern, placeAtTier);
         }
     });
 

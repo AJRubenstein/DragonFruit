@@ -1,4 +1,4 @@
-export type AutoBracingPattern = 'singleDiagonal' | 'crossDiagonal';
+export type AutoBracingPattern = 'singleDiagonal' | 'crossDiagonal' | 'zigZag';
 
 export interface AutoBracingSettings {
     braceDiameterMm: number;
@@ -32,6 +32,7 @@ type NumericAutoBracingSettingKey =
 export const AUTO_BRACING_PATTERN_OPTIONS: readonly AutoBracingPattern[] = [
     'singleDiagonal',
     'crossDiagonal',
+    'zigZag',
 ];
 
 export const AUTO_BRACING_CONSTRAINTS = {
@@ -85,9 +86,8 @@ function clampNumeric(value: unknown, constraint: NumericConstraint): number {
 
     return Math.min(constraint.max, Math.max(constraint.min, rounded));
 }
-
 function normalizePattern(value: unknown, fallback: AutoBracingPattern): AutoBracingPattern {
-    if (value === 'singleDiagonal' || value === 'crossDiagonal') {
+    if (value === 'singleDiagonal' || value === 'crossDiagonal' || value === 'zigZag') {
         return value;
     }
     return fallback;

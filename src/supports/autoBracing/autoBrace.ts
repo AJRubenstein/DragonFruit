@@ -35,6 +35,7 @@ import { generateRequiredKickstands } from './generativeBracing';
 import { partitionSupportsWithVoronoi } from './voronoiPartitioning';
 import { applyInitialPattern } from './initialPattern';
 import { applyRepeatingPattern } from './repeatingPattern';
+import { runZigZagChain } from './zigzagChain';
 import { buildBraceProfile } from './braceDiameter';
 import { linePassesMeshClearance } from './meshClearance';
 
@@ -876,27 +877,23 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         let curr = settings.initialDistanceMm + settings.patternIntervalMm;
         while (curr <= maxZ) { ladder.push(curr); curr += settings.patternIntervalMm; }
 
-        ladder.forEach((anchorZ, tierIndex) => {
-            const isInitial = tierIndex === 0;
-            const pattern = isInitial ? settings.initialPattern : settings.repeatingPattern;
-            const place = (lowS: SupportSample, highS: SupportSample, section: 'initial' | 'repeating') => {
+            const place = (lowS: SupportSample, highS: SupportSample, section: 'initial' | 'repeating', atZ: number) => {
                 const distanceOverride = pairDistanceOverrides.get(pairKey(lowS.supportId, highS.supportId));
                 const ignoreMaxDistance = Boolean(distanceOverride?.ignoreMaxDistance);
-                const lowAnchor = resolveAnchorAtZ(lowS, anchorZ);
+                const lowAnchor = resolveAnchorAtZ(lowS, atZ);
                 if (!lowAnchor) return;
 
-                const sameTierAnchor = resolveAnchorAtZ(highS, anchorZ);
+                const sameTierAnchor = resolveAnchorAtZ(highS, atZ);
                 if (!sameTierAnchor) return;
 
                 let dzGuess = Math.sqrt(
                     (sameTierAnchor.pos.x - lowAnchor.pos.x) ** 2
                     + (sameTierAnchor.pos.y - lowAnchor.pos.y) ** 2,
                 );
-                if (dzGuess < EPS) return;
 
                 let highAnchor: AnchorPoint | null = null;
                 for (let iter = 0; iter < 3; iter++) {
-                    highAnchor = resolveAnchorAtZ(highS, anchorZ + dzGuess);
+                    highAnchor = resolveAnchorAtZ(highS, atZ + dzGuess);
                     if (!highAnchor) return;
                     const hDist = Math.sqrt(
                         (highAnchor.pos.x - lowAnchor.pos.x) ** 2
@@ -912,9 +909,9 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
 
                 if (!ignoreMaxDistance && dzGuess > maxRun + EPS) return;
 
-                if (anchorZ + dzGuess >= lowS.topReferenceZ - 0.1 || anchorZ + dzGuess >= highS.topReferenceZ - 0.1) return;
+                if (atZ + dzGuess >= lowS.topReferenceZ - 0.1 || atZ + dzGuess >= highS.topReferenceZ - 0.1) return;
 
-                highAnchor = resolveAnchorAtZ(highS, anchorZ + dzGuess);
+                highAnchor = resolveAnchorAtZ(highS, atZ + dzGuess);
                 if (!highAnchor) return;
 
                 const dx = highAnchor.pos.x - lowAnchor.pos.x;
@@ -946,11 +943,25 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
                     }
                 }
             };
-
+        // Zigzag runs as continuous per-edge chains (each link starts where
+        // the previous ended, stepping by its own rise) rather than the
+        // fixed-interval ladder — patternInterval does not apply to it.
+        if (settings.initialPattern === 'zigZag') {
+            runZigZagChain(pairs, settings.initialDistanceMm, maxZ, 'initial', place);
+        } else if (settings.repeatingPattern === 'zigZag') {
+            runZigZagChain(pairs, settings.initialDistanceMm + settings.patternIntervalMm, maxZ, 'repeating', place);
+        }
+        ladder.forEach((anchorZ, tierIndex) => {
+            const isInitial = tierIndex === 0;
+            const pattern = isInitial ? settings.initialPattern : settings.repeatingPattern;
+            // Zigzag tiers are covered by the chains above.
+            if (pattern === 'zigZag') return;
+            const placeAtTier = (lowS: SupportSample, highS: SupportSample, section: 'initial' | 'repeating') =>
+                place(lowS, highS, section, anchorZ);
             if (isInitial) {
-                applyInitialPattern(pairs, pattern, place);
+                applyInitialPattern(pairs, pattern, placeAtTier);
             } else {
-                applyRepeatingPattern(pairs, pattern, place);
+                applyRepeatingPattern(pairs, pattern, placeAtTier);
             }
         });
     }
