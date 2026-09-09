@@ -2,7 +2,10 @@
 
 import React, { useSyncExternalStore, forwardRef, useImperativeHandle, useCallback, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import { removeRootById, subscribe, getSnapshot } from './state';
+import { removeRootById, subscribe, getSnapshot,
+  getKickstandKnots,
+  getKickstandRoots,
+} from './state';
 import {
     buildBracePlacementPreviewBatch,
     buildSupportPlacementPreviewBatch,
@@ -33,7 +36,6 @@ import { InstancedRootsGroup, type InstancedRoot } from './SupportPrimitives/Roo
 import { InstancedContactConeGroup, type InstancedContactCone } from './SupportPrimitives/ContactCone/InstancedContactConeGroup';
 import { useBracePlacementState } from './SupportTypes/Brace/bracePlacementState';
 import { useLeafPlacementState } from './SupportTypes/Leaf/leafPlacementState';
-import { useKickstandStoreState } from './SupportTypes/Kickstand/kickstandStore';
 import type { Kickstand } from './SupportTypes/Kickstand/types';
 import { useKickstandPlacementState } from './SupportTypes/Kickstand/kickstandPlacementState';
 import { useJointInteraction } from './SupportPrimitives/Joint/useJointInteraction';
@@ -364,7 +366,10 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const settings = useSyncExternalStore(subscribeToSettings, getSettingsSnapshot, getSettingsSnapshot);
     const simpleRender = settings.debugSimpleSupportRender;
     const raftSettings = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
-    const kickstandState = useKickstandStoreState();
+    // The knots kickstands host and the roots they own, derived from the
+    // registry's edges rather than a kickstand-specific store.
+    const kickstandKnotsById = useSyncExternalStore(subscribe, getKickstandKnots, getKickstandKnots);
+    const kickstandRootsById = useSyncExternalStore(subscribe, getKickstandRoots, getKickstandRoots);
     const activeJointDragPreview = useActiveJointDragPreview();
     const { isActive: isJointCreationActive } = useJointCreationState();
     const { altActive: braceAltActive } = useBracePlacementState();
@@ -453,14 +458,14 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             state: picked as Pick<typeof state, SupportCollectionKey>,
             kickstandState: {
                 kickstands: state.kickstands,
-                knots: kickstandState.knots,
+                knots: kickstandKnotsById,
             },
             // Keep worker lookups driven by committed state only.
             // Drag previews are resolved locally in this renderer to avoid per-frame
             // structured-clone payload churn during joint dragging.
             activePreviewSupport: null,
         };
-    }, [state, state.kickstands, kickstandState.knots]);
+    }, [state, kickstandKnotsById]);
     const supportRenderLookup = useSupportRenderLookup(supportRenderLookupInput);
 
     const trunkList = useMemo(() => Object.values(state.trunks), [state.trunks]);
@@ -503,7 +508,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         };
     }, [interiorView, cavityGeometryByModelId, modelWorldInverseById]);
     const knotList = useMemo(() => Object.values(state.knots), [state.knots]);
-    const kickstandKnotList = useMemo(() => Object.values(kickstandState.knots), [kickstandState.knots]);
+    const kickstandKnotList = useMemo(() => Object.values(kickstandKnotsById), [kickstandKnotsById]);
     const matchesInteriorBrace = useMemo(() => {
         if (!interiorView) return (_brace: Brace) => true;
 
@@ -521,7 +526,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
         const resolveKnotInterior = (knotId?: string, visitedBraceIds?: Set<string>): boolean => {
             if (!knotId) return false;
-            const knot = state.knots[knotId] ?? kickstandState.knots[knotId];
+            const knot = state.knots[knotId];
             if (!knot) return false;
             return resolveParentShaftInterior(knot.parentShaftId, visitedBraceIds);
         };
@@ -559,7 +564,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         };
         // The loop above walks every shafted type from the registry, so the
         // whole snapshot is the dependency.
-    }, [interiorView, state, kickstandState.knots, matchesInteriorContact]);
+    }, [interiorView, state, matchesInteriorContact]);
 
     const entityModelIdByKnotId = useMemo(() => {
         const map = new Map<string, string | undefined>();
@@ -587,7 +592,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
             if (descriptor.id === 'kickstand') {
                 const rootId = entity.rootId as string | undefined;
-                const rootModelId = rootId ? kickstandState.roots[rootId]?.modelId : undefined;
+                const rootModelId = rootId ? state.roots[rootId]?.modelId : undefined;
                 if (rootModelId) return rootModelId;
             }
 
@@ -601,7 +606,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
 
         return undefined;
-    }, [state, state.kickstands, kickstandState.roots, entityModelIdByKnotId]);
+    }, [state, entityModelIdByKnotId]);
 
     const isModelVisible = React.useCallback((modelId?: string, supportId?: string) => {
         const resolvedModelId = resolveSupportModelId(modelId, supportId);
@@ -1268,18 +1273,18 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
             const kickstandIds = kickstandKnotIdsByParentShaftId.get(segment.id) ?? [];
             for (const knotId of kickstandIds) {
-                const knot = kickstandState.knots[knotId];
+                const knot = state.knots[knotId];
                 if (knot) result[knotId] = knot;
             }
         }
 
         return result;
-    }, [activeJointDragPreview, knotIdsByParentShaftId, kickstandKnotIdsByParentShaftId, state.knots, kickstandState.knots]);
+    }, [activeJointDragPreview, knotIdsByParentShaftId, kickstandKnotIdsByParentShaftId, state.knots]);
 
     const basePreviewKnotOverrides = useJointDragPreviewOverrides({
         roots: state.roots,
         knots: state.knots,
-        kickstandKnots: kickstandState.knots,
+        kickstandKnots: kickstandKnotsById,
         candidateKnots: previewCandidateKnots,
     });
 
@@ -1373,14 +1378,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
         return knots;
     }, [state.knots, previewKnotOverrides, previewKnotOverrideIds, hasPreviewKnotOverrides]);
-    const renderKickstandKnotsById = useMemo(() => {
-        if (!hasPreviewKnotOverrides) return kickstandState.knots;
-        const knots = Object.create(kickstandState.knots) as typeof kickstandState.knots;
-        for (const knotId of previewKnotOverrideIds) {
-            knots[knotId] = previewKnotOverrides[knotId];
-        }
-        return knots;
-    }, [kickstandState.knots, previewKnotOverrides, previewKnotOverrideIds, hasPreviewKnotOverrides]);
 
     // Live brace render: enable whenever any current preview override touches a
     // brace endpoint knot, regardless of which interaction produced it (direct
@@ -1505,8 +1502,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [hasPreviewKnotOverrides, kickstandKnotList, previewKnotOverrides]);
 
     const resolvePreviewKnot = React.useCallback((knotId: string) => {
-        return previewKnotOverrides[knotId] ?? state.knots[knotId] ?? kickstandState.knots[knotId] ?? null;
-    }, [previewKnotOverrides, state.knots, kickstandState.knots]);
+        return previewKnotOverrides[knotId] ?? state.knots[knotId] ?? null;
+    }, [previewKnotOverrides, state.knots]);
 
     /** Reads a dotted path off an entity, for declared diameter sources. */
     const readNumberPath = useCallback((entity: unknown, path: string): number | null => {
@@ -1674,7 +1671,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             // Roots are looked up by the entity's own rootId, so the shared
             // collection answers for every type; only the knot index differs,
             // because kickstand knots carry drag-preview overrides.
-            const knotsById = descriptor.id === 'kickstand' ? renderKickstandKnotsById : renderKnotsById;
             const knotEdge = descriptor.edges.find(
                 (edge) => edge.to === 'knots' && edge.ownership === 'hostedBy',
             );
@@ -1686,7 +1682,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                     const fields = entity as unknown as Record<string, string | undefined>;
                     const hosts: EndpointHosts = {};
                     if (descriptor.ownsRoot) hosts.root = state.roots[fields.rootId ?? ''];
-                    if (knotEdge) hosts.hostKnot = knotsById[fields[knotEdge.field] ?? ''];
+                    if (knotEdge) hosts.hostKnot = renderKnotsById[fields[knotEdge.field] ?? ''];
                     return hosts;
                 },
             );
@@ -1699,7 +1695,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         enableTwigSceneBatching,
         state.roots,
         renderKnotsById,
-        renderKickstandKnotsById,
     ]);
 
     const segmentModelIdById = useMemo(() => {
@@ -2138,9 +2133,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const sceneBatchedKickstandRootGroups = useMemo(
         () => groupRootsForSceneBatch(
             'kickstand', renderKickstandList, selectedKickstandIds,
-            kickstandState.roots, (kickstand) => kickstand.profile.bodyDiameterMm,
+            kickstandRootsById, (kickstand) => kickstand.profile.bodyDiameterMm,
         ),
-        [renderKickstandList, selectedKickstandIds, kickstandState.roots, groupRootsForSceneBatch],
+        [renderKickstandList, selectedKickstandIds, kickstandRootsById, groupRootsForSceneBatch],
     );
 
     const sceneBatchedContactConeGroups = useMemo(() => {
@@ -2324,7 +2319,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
         const kickstand = state.kickstands[supportId];
         if (kickstand) {
-            const root = kickstandState.roots[kickstand.rootId];
+            const root = state.roots[kickstand.rootId];
             if (!root) return null;
 
             const shaftDiameter = Math.max(
@@ -2359,7 +2354,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         state.trunks,
         state.roots,
         state.kickstands,
-        kickstandState.roots,
+        kickstandRootsById,
         applyDropToVec3Like,
     ]);
 
@@ -2971,9 +2966,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         state.braces,
         state.anchors,
         state.knots,
-        kickstandState.roots,
+        kickstandRootsById,
         state.kickstands,
-        kickstandState.knots,
+        kickstandKnotsById,
     ]);
 
     /**
@@ -3104,8 +3099,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             component: KickstandRenderer as never,
             entityProp: 'kickstand',
             hosts: (kickstand: Kickstand) => {
-                const root = kickstandState.roots[kickstand.rootId];
-                const hostKnot = renderKickstandKnotsById[kickstand.hostKnotId];
+                const root = state.roots[kickstand.rootId];
+                const hostKnot = renderKnotsById[kickstand.hostKnotId];
                 return root && hostKnot ? { root, hostKnot } : null;
             },
             skip: ({ isSelected, isBatchable }) => !(isSelected || !isBatchable) || simpleRender,
@@ -3127,8 +3122,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         state.roots,
         renderKnotsById,
         braceRenderKnotsById,
-        renderKickstandKnotsById,
-        kickstandState.roots,
         simpleRender,
         hideUnselectedKnots,
         hidePlateContactPrimitivesEffective,

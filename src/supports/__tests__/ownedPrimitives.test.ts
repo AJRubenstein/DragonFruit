@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getKickstandRoots, getOwnedPrimitives, setSnapshot, getSnapshot } from '../state';
+import { getKickstandKnots, getKickstandRoots, getOwnedPrimitives, setSnapshot, getSnapshot } from '../state';
 import { getKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
 import { createEmptySupportCollections, SUPPORT_TYPES } from '../supportTypeRegistry';
 
@@ -119,4 +119,37 @@ test('an owned root indexes the same in the shared collection', () => {
     for (const [id, root] of Object.entries(owned)) {
         assert.equal(shared[id], root, `${id} differs between the view and the collection`);
     }
+});
+
+test('owned primitives are always a subset of the shared collection', () => {
+    // Why a `state.knots[id] ?? kickstandKnots[id]` fallback cannot fire: the
+    // view is built by reading the shared collection, never alongside it.
+    seed();
+    const shared = getSnapshot();
+
+    for (const collection of ['roots', 'knots'] as const) {
+        const owned = getOwnedPrimitives('kickstand', collection);
+        for (const id of Object.keys(owned)) {
+            assert.ok(
+                id in (shared[collection] as Record<string, unknown>),
+                `${id} is in the kickstand view but not state.${collection}`,
+            );
+        }
+    }
+});
+
+test('each cached view is keyed separately', () => {
+    // One shared cache slot would make the second accessor return the first's
+    // rows -- knots served as roots, silently.
+    seed();
+    const roots = getKickstandRoots();
+    const knots = getKickstandKnots();
+
+    assert.notEqual(roots, knots, 'both accessors returned the same object');
+    assert.deepEqual(Object.keys(roots), ['root-kick']);
+    assert.deepEqual(Object.keys(knots), ['knot-host']);
+
+    // Still stable after interleaving.
+    assert.equal(getKickstandRoots(), roots);
+    assert.equal(getKickstandKnots(), knots);
 });
