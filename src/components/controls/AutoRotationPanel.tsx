@@ -9,6 +9,7 @@ import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack
 import { getModelMesh } from '@/supports/autoSupport/meshStore';
 import {
   suggestOrientationForGeometry,
+  composeOrientationDelta,
   type OrientationObjective,
 } from '@/supports/autoSupport/orientationAdvisor';
 import type { OrientationToastReport } from '@/features/notifications/useEditorToasts';
@@ -55,8 +56,6 @@ const OPT_HEIGHT = msg`Shortest Print Time`;
 const OPT_SCARRING = msg`Least Scarring`;
 const NO_MODEL = msg`Load a model to get an orientation suggestion.`;
 const NO_GEOMETRY = msg`Active model has no readable geometry.`;
-
-const deg2rad = (d: number): number => (d * Math.PI) / 180;
 
 export interface AutoRotationPanelProps {
   activeModelId?: string;
@@ -141,18 +140,10 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
             });
             return;
           }
-          // Advisor evaluates Rx-then-Ry, which is THREE Euler order 'YXZ'
-          // (q = qy * qx). Compose the delta onto the live scene orientation;
+          // Compose in the canonical frame (see composeOrientationDelta) so
           // the scene path moves supports along and records history.
           const doApply = () => {
-            const qDelta = new THREE.Quaternion().setFromEuler(
-              new THREE.Euler(deg2rad(result.rotXDeg), deg2rad(result.rotYDeg), 0, 'YXZ'),
-            );
-            const qBase = currentRotation
-              ? new THREE.Quaternion().setFromEuler(currentRotation)
-              : new THREE.Quaternion();
-            const qNew = qDelta.multiply(qBase);
-            onApplyRotation(activeModelId, new THREE.Euler().setFromQuaternion(qNew));
+            onApplyRotation(activeModelId, composeOrientationDelta(currentRotation, result.rotXDeg, result.rotYDeg));
             onOrientationReport?.({
               status: 'applied',
               modelName: activeModelName ?? activeModelId,

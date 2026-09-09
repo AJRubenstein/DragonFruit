@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as THREE from 'three';
 
 import {
+    composeOrientationDelta,
     computeTriangleDetail,
     evaluateOrientationCost,
     generateM1Candidates,
@@ -9,6 +11,7 @@ import {
     suggestOrientation,
     suggestOrientationForGeometry,
 } from '../autoSupport/orientationAdvisor';
+import { quaternionFromGlobalEuler } from '@/utils/rotation';
 
 /** Unit down-facing square (area 1) in the XY plane. */
 function downSquare(): { positions: number[]; index: number[] } {
@@ -234,4 +237,25 @@ test('scarring returns a valid never-worse suggestion', () => {
     assert.ok(s.suggested.cost <= s.baseline.cost, 'never worse than identity');
     const again = suggestOrientation(mesh, { candidateCount: 120, objective: 'scarring' });
     assert.deepEqual(s, again, 'deterministic');
+});
+
+test('composed orientation renders canonically at the scored pose', () => {
+    const rad = (d: number): number => (d * Math.PI) / 180;
+    const qx = (a: number): THREE.Quaternion =>
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), a);
+    const qy = (a: number): THREE.Quaternion =>
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), a);
+    const qz = (a: number): THREE.Quaternion =>
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), a);
+    const gapDeg = (p: THREE.Quaternion, q: THREE.Quaternion): number =>
+        (2 * Math.acos(Math.min(1, Math.abs(p.dot(q)))) * 180) / Math.PI;
+    const base = { x: 0.2, y: 0.3, z: 0 };
+    const stored = composeOrientationDelta(base, 10, -15);
+    assert.equal(stored.order, 'ZYX', 'order travels for setFromEuler readers');
+    const expected = qy(rad(-15)).multiply(qx(rad(10))).multiply(qz(0).multiply(qy(0.3)).multiply(qx(0.2)));
+    assert.ok(gapDeg(new THREE.Quaternion().setFromEuler(stored), expected) < 1e-3, 'order-carrying readers agree');
+    assert.ok(gapDeg(quaternionFromGlobalEuler(stored), expected) < 1e-3, 'canonical readers agree');
+    const identity = composeOrientationDelta(null, 0, 0);
+    assert.ok(identity.x === 0 && identity.y === 0 && identity.z === 0, 'null delta stays put');
+    assert.equal(identity.order, 'ZYX');
 });

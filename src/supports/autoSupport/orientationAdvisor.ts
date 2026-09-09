@@ -26,6 +26,7 @@
 
 import * as THREE from 'three';
 import { ConvexHull } from 'three-stdlib';
+import { quaternionFromGlobalEuler } from '@/utils/rotation';
 
 export interface AdvisorMesh {
     /** Flat XYZ positions (mm, model space). */
@@ -618,4 +619,25 @@ export function suggestOrientationForGeometry(
     const positions = geometry.attributes?.position?.array;
     if (!positions || positions.length < 9) return null;
     return suggestOrientation({ positions, index: geometry.index ?? null }, opts);
+}
+
+/**
+ * Compose an advisor tilt/turntable delta onto a stored scene orientation.
+ * Reads and stores in the canonical extrinsic frame the renderer uses, so the
+ * applied model lands on the scored orientation: the base triple means
+ * qz * qy * qx, the delta is the advisor's Rx-then-Ry (THREE 'YXZ'), and the
+ * result carries order 'ZYX' (which composes the same way) so canonical and
+ * setFromEuler readers agree. Previously this read/stored XYZ and silently
+ * rotated up to ~17° off the scored pose on compound tilts.
+ */
+export function composeOrientationDelta(
+    currentRotation: { x: number; y: number; z: number } | null | undefined,
+    rotXDeg: number,
+    rotYDeg: number,
+): THREE.Euler {
+    const qDelta = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler((rotXDeg * Math.PI) / 180, (rotYDeg * Math.PI) / 180, 0, 'YXZ'),
+    );
+    const qNew = qDelta.multiply(quaternionFromGlobalEuler(currentRotation));
+    return new THREE.Euler().setFromQuaternion(qNew, 'ZYX');
 }
