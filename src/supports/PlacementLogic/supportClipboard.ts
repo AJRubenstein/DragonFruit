@@ -1,11 +1,7 @@
 import * as THREE from 'three';
 import { getSnapshot, setSnapshot, transformSupportsForModel } from '@/supports/state';
 import type { Brace, Branch, Knot, Leaf, Roots, Segment, Stick, SupportState, Trunk, Twig, Vec3 } from '@/supports/types';
-import {
-  getKickstandSnapshot,
-  setKickstandSnapshot,
-} from '@/supports/SupportTypes/Kickstand/kickstandStore';
-import type { Kickstand, KickstandState } from '@/supports/SupportTypes/Kickstand/types';
+import type { Kickstand } from '@/supports/SupportTypes/Kickstand/types';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '@/supports/history/supportEditHistory';
 import { getRaftSettings } from '@/supports/Rafts/Crenelated/RaftState';
 import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
@@ -167,7 +163,7 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
 function mergeSupportClipboardPayload(
   payload: SupportClipboardPayload,
   targetModelId: string,
-): { mergedState: SupportState; mergedKickstandState: KickstandState } {
+): { mergedState: SupportState } {
   const state = getSnapshot();
   const snapshot = getSnapshot();
 
@@ -336,11 +332,15 @@ function mergeSupportClipboardPayload(
   // Every entity collection, from the registry.
   const mergedState: SupportState = { ...state };
   for (const key of SUPPORT_COLLECTION_KEYS) {
+    // Kickstands remap through their own root/knot maps, so they arrive
+    // already cloned rather than through the generic entity clone.
     const cloned = key === 'roots'
       ? clonedRoots
       : key === 'knots'
         ? clonedKnots
-        : clonedByCollection.get(key) ?? [];
+        : key === 'kickstands'
+          ? clonedKickstands
+          : clonedByCollection.get(key) ?? [];
     if (cloned.length === 0) continue;
 
     (mergedState as unknown as Record<string, Record<string, unknown>>)[key] = {
@@ -349,23 +349,18 @@ function mergeSupportClipboardPayload(
     };
   }
 
-  const mergedKickstandState: KickstandState = {
-    ...snapshot,
-    kickstands: {
-      ...snapshot.kickstands,
-      ...Object.fromEntries(clonedKickstands.map((item) => [item.id, item])),
-    },
-    roots: {
-      ...snapshot.roots,
-      ...Object.fromEntries(clonedKickstandRoots.map((item) => [item.id, item])),
-    },
-    knots: {
-      ...snapshot.knots,
-      ...Object.fromEntries(clonedKickstandKnots.map((item) => [item.id, item])),
-    },
+  // A kickstand's root and host knot live in the shared collections, so they
+  // merge alongside every other primitive rather than through a second write.
+  mergedState.roots = {
+    ...mergedState.roots,
+    ...Object.fromEntries(clonedKickstandRoots.map((item) => [item.id, item])),
+  };
+  mergedState.knots = {
+    ...mergedState.knots,
+    ...Object.fromEntries(clonedKickstandKnots.map((item) => [item.id, item])),
   };
 
-  return { mergedState, mergedKickstandState };
+  return { mergedState };
 }
 
 export function captureModelSupportsToClipboard(modelId: string): SupportClipboardPayload | null {
@@ -527,9 +522,8 @@ export function pasteModelSupportsFromClipboard(
 
   if (hasSupports === 0) return 0;
 
-  const { mergedState, mergedKickstandState } = mergeSupportClipboardPayload(payload, targetModelId);
+  const { mergedState } = mergeSupportClipboardPayload(payload, targetModelId);
   setSnapshot(mergedState);
-  setKickstandSnapshot(mergedKickstandState);
 
   transformSupportsForModel(targetModelId, sourceTransform, targetTransform);
 
