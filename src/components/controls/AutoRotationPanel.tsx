@@ -65,6 +65,7 @@ const NO_MODEL = msg`Load a model to get an orientation suggestion.`;
 const NO_GEOMETRY = msg`Active model has no readable geometry.`;
 const BLOCKERS = msg`Blockers`;
 const CLEAR_BLOCKERS = msg`Clear`;
+const DONE_BLOCKERS = msg`Done`;
 const BLOCKED_FACES = msg`blocked faces`;
 const BLOCKERS_HINT = msg`Paint nogo areas for supports. Blocked contact is refused when generating supports and avoided when orienting.`;
 
@@ -233,18 +234,30 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
           {blockersActive && (
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{_(BLOCKERS_HINT)}</p>
           )}
-          {blockersActive && blockedCount > 0 && (
+          {blockersActive && (
             <div className="flex items-center justify-between">
               <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {blockedCount} {_(BLOCKED_FACES)}
               </span>
+            </div>
+          )}
+          {blockersActive && (
+            <div className="flex gap-1.5">
               <button
                 type="button"
                 onClick={() => { if (activeModelId) clearSupportBlockers(activeModelId); }}
-                disabled={busy}
-                className="ui-button ui-button-secondary !h-7 px-2 text-[11px] disabled:opacity-50"
+                disabled={busy || blockedCount === 0}
+                className="ui-button ui-button-secondary flex-1 !h-8 text-[11px] disabled:opacity-50"
               >
                 {_(CLEAR_BLOCKERS)}
+              </button>
+              <button
+                type="button"
+                onClick={() => { onToggleBlockers?.(); }}
+                disabled={busy}
+                className="ui-button ui-button-accent flex-1 !h-8 text-[11px] disabled:opacity-50"
+              >
+                {_(DONE_BLOCKERS)}
               </button>
             </div>
           )}
