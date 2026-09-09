@@ -5,6 +5,7 @@ import { HolePunchGizmo } from '@/features/hole-punching/HolePunchGizmo';
 import { HollowVoxelEditOverlay } from '@/components/scene/HollowVoxelEditOverlay';
 import { HollowVoxelPreview } from '@/components/scene/HollowVoxelPreview';
 import { getUniformScaleFactorForThickness } from '@/utils/geometryScaling';
+import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import type { HolePunchPlacementState } from '@/features/hole-punching/holePunchGeometry';
 import type { HolePunchPanelState } from '@/features/hole-punching/HolePunchPanel';
 import type { HollowPreviewState } from '@/features/hollowing/hollowingPreviewTypes';
@@ -328,7 +329,7 @@ export function SceneOverlays({
           blockedVoxelIndexSet={blockedPreviewVoxelInstanceIdSet}
           modelTransform={{
             position: previewModel.transform.position,
-            quaternion: new THREE.Quaternion().setFromEuler(previewModel.transform.rotation),
+            quaternion: quaternionFromGlobalEuler(previewModel.transform.rotation),
             scale: previewModel.transform.scale,
           }}
           geometryCenter={previewModel.geometry.center}
@@ -344,7 +345,7 @@ export function SceneOverlays({
               voxelSizeMm={hollowPreview.report.voxelSizeMm}
               modelTransform={{
                 position: previewModel.transform.position,
-                quaternion: new THREE.Quaternion().setFromEuler(previewModel.transform.rotation),
+                quaternion: quaternionFromGlobalEuler(previewModel.transform.rotation),
                 scale: previewModel.transform.scale,
               }}
               geometryCenter={previewModel.geometry.center}
@@ -352,7 +353,7 @@ export function SceneOverlays({
           )}
           <group
             position={previewModel.transform.position}
-            quaternion={new THREE.Quaternion().setFromEuler(previewModel.transform.rotation)}
+            quaternion={quaternionFromGlobalEuler(previewModel.transform.rotation)}
             scale={previewModel.transform.scale}
           >
             {!hollowPreview.previewVoxelSpheres && (
