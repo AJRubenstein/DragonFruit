@@ -19,6 +19,10 @@ import {
   getSupportBlockedTriangles,
   subscribeSupportBlockers,
   getSupportBlockersVersion,
+  getSupportBlockerBrushSizeMm,
+  setSupportBlockerBrushSizeMm,
+  SUPPORT_BLOCKER_BRUSH_MIN_MM,
+  SUPPORT_BLOCKER_BRUSH_MAX_MM,
 } from '@/supports/autoSupport/supportBlockers';
 
 /** Set while an orient sweep runs. Page-level overlay reads this to show the
@@ -71,6 +75,7 @@ const PAINT_TITLE = msg`Blocker Painting Mode`;
 const PAINT_LEAD = msg`Drag to paint nogo areas.`;
 const PAINT_MID = msg`to reset all,`;
 const PAINT_TAIL = msg`to apply.`;
+const BRUSH_SIZE = msg`Brush Size`;
 
 export interface AutoRotationPanelProps {
   activeModelId?: string;
@@ -98,6 +103,7 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const brushSizeMm = getSupportBlockerBrushSizeMm();
   const [objective, setObjective] = React.useState<OrientationObjective>('supports');
   // Support-blocker mask version for the active model (drives Clear).
   React.useSyncExternalStore(subscribeSupportBlockers, getSupportBlockersVersion, getSupportBlockersVersion);
@@ -269,17 +275,36 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
               </button>
             </div>
           )}
-          <div className="flex flex-col gap-1">
-            <Select
-              value={objective}
-              onChange={(e) => setObjective(e.target.value as OrientationObjective)}
-              disabled={busy || !activeModelId}
-            >
-              <option value="supports">{_(OPT_SUPPORTS)}</option>
-              <option value="height">{_(OPT_HEIGHT)}</option>
-              <option value="scarring">{_(OPT_SCARRING)}</option>
-            </Select>
-          </div>
+          {blockersActive ? (
+            <div className="flex flex-col gap-1">
+              <label className="ui-meta flex justify-between">
+                <span>{_(BRUSH_SIZE)}</span>
+                <span>{brushSizeMm.toFixed(1)} mm</span>
+              </label>
+              <input
+                type="range"
+                min={SUPPORT_BLOCKER_BRUSH_MIN_MM}
+                max={SUPPORT_BLOCKER_BRUSH_MAX_MM}
+                step={0.5}
+                value={brushSizeMm}
+                onChange={(e) => setSupportBlockerBrushSizeMm(parseFloat(e.target.value))}
+                disabled={busy || !activeModelId}
+                className="ui-range"
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <Select
+                value={objective}
+                onChange={(e) => setObjective(e.target.value as OrientationObjective)}
+                disabled={busy || !activeModelId}
+              >
+                <option value="supports">{_(OPT_SUPPORTS)}</option>
+                <option value="height">{_(OPT_HEIGHT)}</option>
+                <option value="scarring">{_(OPT_SCARRING)}</option>
+              </Select>
+            </div>
+          )}
 
           {error && (
             <p className="text-[11px]" style={{ color: '#f87171' }}>{error}</p>

@@ -9,13 +9,12 @@ import {
   subscribeSupportBlockers,
   getSupportBlockersVersion,
   isSupportBlockerStrokeActive,
-  SUPPORT_BLOCKER_BRUSH_RADIUS_MM,
+  getSupportBlockerBrushSizeMm,
 } from '@/supports/autoSupport/supportBlockers';
 
 /**
- * Paint cursor for support-blocker mode: a red ring at the fixed dab radius
- * plus a center dot, oriented to the surface normal. Compact sibling of the
- * smoothing cursor — no stroke markers (the red overlay shows paint).
+ * Paint cursor for support-blocker mode: a ring at the live brush radius
+ * plus a center dot. Compact sibling of the smoothing cursor.
  */
 export function SupportBlockerCursor() {
   React.useSyncExternalStore(subscribeSupportBlockers, getSupportBlockersVersion, getSupportBlockersVersion);
@@ -43,7 +42,7 @@ export function SupportBlockerCursor() {
   const thickness = Math.max(0.01, Math.min(0.15, unitsPerPixel * 1.25));
   const dotRadius = Math.max(0.01, Math.min(0.18, unitsPerPixel * 1.75));
   const surfaceOffset = Math.max(0.01, Math.min(0.08, unitsPerPixel * 2.5));
-  const radius = SUPPORT_BLOCKER_BRUSH_RADIUS_MM;
+  const radius = getSupportBlockerBrushSizeMm();
 
   const cursorQuaternion = React.useMemo(() => {
     const q = new THREE.Quaternion();

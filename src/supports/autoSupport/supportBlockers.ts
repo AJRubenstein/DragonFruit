@@ -18,10 +18,25 @@ export type SupportBlockerListener = () => void;
  * version counter, React reads via useSyncExternalStore.
  */
 
-/** Fixed dab radius (mm) — the brush vote was paint + clear, no size UI. */
+/** Default dab radius (mm); adjustable via the paint-mode slider. */
 export const SUPPORT_BLOCKER_BRUSH_RADIUS_MM = 2.5;
+export const SUPPORT_BLOCKER_BRUSH_MIN_MM = 0.5;
+export const SUPPORT_BLOCKER_BRUSH_MAX_MM = 10;
 /** Minimum dab spacing (fraction of radius) — bounds work on fast strokes. */
 const DAB_SPACING_FRACTION = 0.5;
+
+let _brushSizeMm = SUPPORT_BLOCKER_BRUSH_RADIUS_MM;
+
+export function getSupportBlockerBrushSizeMm(): number {
+    return _brushSizeMm;
+}
+
+export function setSupportBlockerBrushSizeMm(next: number): void {
+    const clamped = Math.min(SUPPORT_BLOCKER_BRUSH_MAX_MM, Math.max(SUPPORT_BLOCKER_BRUSH_MIN_MM, next));
+    if (!Number.isFinite(clamped) || clamped === _brushSizeMm) return;
+    _brushSizeMm = clamped;
+    notify();
+}
 
 interface BlockerEntry {
     tris: Set<number>;
@@ -75,7 +90,7 @@ export function isSupportBlocked(modelId: string, triIndex: number): boolean {
 
 /**
  * Dab the blocker brush: marks every triangle with a vertex inside the
- * fixed brush radius of the hit point (model-space local frame). Returns
+ * brush radius of the hit point (model-space local frame). Returns
  * the number of newly blocked triangles. Dab-spacing guard keeps fast
  * strokes O(dabs) instead of O(pointer events).
  */
@@ -83,7 +98,7 @@ export function paintSupportBlockers(
     modelId: string,
     geometry: THREE.BufferGeometry,
     localPoint: THREE.Vector3,
-    radiusMm: number = SUPPORT_BLOCKER_BRUSH_RADIUS_MM,
+    radiusMm: number = getSupportBlockerBrushSizeMm(),
 ): number {
     const pos = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
     if (!pos) return 0;

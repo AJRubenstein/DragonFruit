@@ -110,3 +110,19 @@ test('contact resolution hits the underside face and honors the mask', () => {
     assert.equal(isSupportBlockedContact(id, mesh, 0, 0, 5), false);
     deleteSupportBlockers(id);
 });
+
+test('brush size clamps to its range', async () => {
+    const { getSupportBlockerBrushSizeMm, setSupportBlockerBrushSizeMm } =
+        await import('../autoSupport/supportBlockers');
+    const initial = getSupportBlockerBrushSizeMm();
+    try {
+        setSupportBlockerBrushSizeMm(4);
+        assert.equal(getSupportBlockerBrushSizeMm(), 4);
+        setSupportBlockerBrushSizeMm(100);
+        assert.equal(getSupportBlockerBrushSizeMm(), 10);
+        setSupportBlockerBrushSizeMm(-5);
+        assert.equal(getSupportBlockerBrushSizeMm(), 0.5);
+    } finally {
+        setSupportBlockerBrushSizeMm(initial);
+    }
+});
