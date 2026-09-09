@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { getSnapshot, removeSupportEntity, resetStore, setSnapshot } from '../state';
-import { getKickstandSnapshot, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
+import { readKickstands, seedKickstands } from './helpers/kickstandFixture';
 import type { KickstandState } from '../SupportTypes/Kickstand/types';
 import type { SupportState } from '../types';
 
@@ -269,7 +269,7 @@ function makeKickstandState(): KickstandState {
 test('removing a kickstand takes its descendants and mirrored state', () => {
   resetStore();
   setSnapshot(makeState());
-  setKickstandSnapshot(makeKickstandState());
+  seedKickstands(makeKickstandState());
 
   const removed = removeSupportEntity('kickstand', 'kickstand-1');
 
@@ -286,7 +286,7 @@ test('removing a kickstand takes its descendants and mirrored state', () => {
   );
 
   const snapshot = getSnapshot();
-  const kickstandSnapshot = getKickstandSnapshot();
+  const kickstandSnapshot = readKickstands();
 
   assert.ok(snapshot.trunks['trunk-1'], 'Expected trunk to remain');
   assert.equal(snapshot.branches['branch-1'], undefined);

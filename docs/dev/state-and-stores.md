@@ -71,9 +71,10 @@ shape above in four ways:
   `SHAFTED_COLLECTION_KEYS` rather than writing the names out. See
   [Support System](support-system.md).
 
-Kickstands live on `SupportState` like every other type;
-`SupportTypes/Kickstand/kickstandStore.ts` is a read-through adapter rebuilt on
-any support change, so read `state.kickstands` directly to avoid its re-render.
+Kickstands live on `SupportState` like every other type: read
+`state.kickstands` directly. For the roots or knots one type owns, ask
+`getOwnedPrimitives(typeId, collection)`, which reads that type's declared
+edges rather than filtering by hand.
 
 ## Preferences module pattern
 

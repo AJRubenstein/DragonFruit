@@ -1,6 +1,5 @@
 import type { Vec3, SupportState } from '../types';
 import type { SupportTypeId } from '../supportTypeRegistry';
-import type { KickstandState } from '../SupportTypes/Kickstand/types';
 
 /**
  * Auto-placement reports cover a subset of the support types, not all of them.
@@ -284,11 +283,8 @@ export interface AutoPlaceResult {
 export interface AutoSupportPlan {
     /** Support state committed before the run (for the undo payload). */
     before: SupportState;
-    /** Kickstand state committed before the run. */
-    /** Final braced support state. */
+    /** Final braced support state, kickstands included. */
     support: SupportState;
-    /** Final kickstand state (bracing strips/regenerates auto kickstands). */
-    kickstand: KickstandState;
     /** Placement + coverage analytics. */
     analytics: AutoPlaceAnalytics;
     /** Counts/status — what the panel reports. */

@@ -5,7 +5,7 @@ import { clearHistory, registerHistoryHandler, undo } from '../../history/histor
 import { SUPPORT_AUTO_BRACE_REPLACE } from '../history/actionTypes';
 import { runAutoBracing } from '../autoBracing/autoBrace';
 import { getSnapshot, resetStore, setSnapshot, resetKickstandsInState} from '../state';
-import { getKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
+
 import type { Roots, SupportState, Trunk } from '../types';
 
 function createRoot(id: string, modelId: string, x: number): Roots {
