@@ -68,6 +68,10 @@ const CLEAR_BLOCKERS = msg`Clear`;
 const DONE_BLOCKERS = msg`Done`;
 const BLOCKED_FACES = msg`blocked faces`;
 const BLOCKERS_HINT = msg`Paint nogo areas for supports. Blocked contact is refused when generating supports and avoided when orienting.`;
+const PAINT_TITLE = msg`Blocker Painting Mode`;
+const PAINT_LEAD = msg`Drag to paint nogo areas.`;
+const PAINT_MID = msg`to reset all,`;
+const PAINT_TAIL = msg`to apply.`;
 
 export interface AutoRotationPanelProps {
   activeModelId?: string;
@@ -205,34 +209,46 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
 
       {expanded && (
         <div className="px-2.5 pb-3 space-y-2.5">
-          <div className="flex gap-1.5">
-            <button
-              type="button"
-              onClick={() => { void handleOrient(); }}
-              disabled={busy || !activeModelId}
-              className="ui-button flex-1 !h-8 text-[11px] disabled:opacity-50"
+          {blockersActive ? (
+            <div
+              className="rounded-md border p-2 space-y-1.5 text-center min-h-[4.5rem] box-border"
               style={{
-                borderColor: 'var(--accent)',
-                background: 'color-mix(in srgb, var(--accent), var(--surface-0) 86%)',
-                color: 'var(--accent)',
+                borderColor: 'var(--accent-secondary-action-border)',
+                background: 'var(--accent-secondary-action-bg-92)',
               }}
             >
-              {busy ? _(msg`Analyzing…`) : _(ORIENT)}
-            </button>
-            <button
-              type="button"
-              onClick={() => { onToggleBlockers?.(); }}
-              disabled={busy || !activeModelId || !onToggleBlockers}
-              className="ui-button ui-button-secondary flex-1 !h-8 text-[11px] disabled:opacity-50"
-              title={_(BLOCKERS_HINT)}
-              aria-pressed={blockersActive === true}
-              style={blockersActive ? { borderColor: 'var(--accent-secondary)', color: 'var(--accent-secondary)' } : undefined}
-            >
-              {_(BLOCKERS)}
-            </button>
-          </div>
-          {blockersActive && (
-            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{_(BLOCKERS_HINT)}</p>
+              <div className="ui-meta font-semibold" style={{ color: 'var(--accent-secondary-action-color)' }}>{_(PAINT_TITLE)}</div>
+              <div className="flex items-start justify-center min-h-8">
+                <p className="text-[10px] leading-snug line-clamp-2" style={{ color: 'var(--text-muted)' }}>
+                  {_(PAINT_LEAD)}<br /><span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>{_(CLEAR_BLOCKERS)}</span> {_(PAINT_MID)} <span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>{_(DONE_BLOCKERS)}</span> {_(PAINT_TAIL)}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => { void handleOrient(); }}
+                disabled={busy || !activeModelId}
+                className="ui-button flex-1 !h-8 text-[11px] disabled:opacity-50"
+                style={{
+                  borderColor: 'var(--accent)',
+                  background: 'color-mix(in srgb, var(--accent), var(--surface-0) 86%)',
+                  color: 'var(--accent)',
+                }}
+              >
+                {busy ? _(msg`Analyzing…`) : _(ORIENT)}
+              </button>
+              <button
+                type="button"
+                onClick={() => { onToggleBlockers?.(); }}
+                disabled={busy || !activeModelId || !onToggleBlockers}
+                className="ui-button ui-button-secondary flex-1 !h-8 text-[11px] disabled:opacity-50"
+                title={_(BLOCKERS_HINT)}
+              >
+                {_(BLOCKERS)}
+              </button>
+            </div>
           )}
           {blockersActive && (
             <div className="flex items-center justify-between">
