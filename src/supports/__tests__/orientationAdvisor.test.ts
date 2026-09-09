@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    computeTriangleDetail,
     evaluateOrientationCost,
     generateM1Candidates,
     restingPoseCandidates,
@@ -186,4 +187,51 @@ test('anchoring margin trades a little contact for a wider base', () => {
     );
     assert.ok(s.suggested.footprintMm2 > 80, `widest base wins (got ${s.suggested.footprintMm2})`);
     assert.ok(s.deltaPercent < 0, 'still a strict improvement over the baked tilt');
+});
+
+test('computeTriangleDetail scores folds, flats, and lone triangles', () => {
+    const fold = computeTriangleDetail(
+        [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1],
+        [0, 1, 2, 1, 0, 3],
+        2,
+        new Float64Array([0, 0, -1, -1, 0, 0]),
+        new Float64Array([0.5, 0.5]),
+    );
+    assert.ok(Math.abs(fold[0] - 1) < 1e-9 && Math.abs(fold[1] - 1) < 1e-9, 'right-angle crease reads 1');
+    const flat = computeTriangleDetail(
+        [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0],
+        [0, 1, 2, 1, 3, 2],
+        2,
+        new Float64Array([0, 0, -1, 0, 0, -1]),
+        new Float64Array([0.5, 0.5]),
+    );
+    assert.deepEqual([...flat], [0, 0], 'coplanar pair reads 0');
+    const lone = computeTriangleDetail(
+        [0, 0, 0, 1, 0, 0, 0, 1, 0],
+        [0, 1, 2],
+        1,
+        new Float64Array([0, 0, -1]),
+        new Float64Array([0.5]),
+    );
+    assert.deepEqual([...lone], [0], 'boundary-only triangle reads 0');
+});
+
+test('scar equals overhang on featureless plates', () => {
+    const c = evaluateOrientationCost(downSquare(), 0, 0, {});
+    assert.equal(c.scarAreaMm2, c.overhangAreaMm2, 'no detail, nothing to scar');
+});
+
+test('scarring with zero weight matches supports ranking', () => {
+    const a = suggestOrientation(downSquare(), { objective: 'scarring', scarWeight: 0 });
+    const b = suggestOrientation(downSquare(), {});
+    assert.deepEqual(a, b, 'zero weight degenerates to contact ranking');
+});
+
+test('scarring returns a valid never-worse suggestion', () => {
+    const mesh = tiltedIcosahedron();
+    const s = suggestOrientation(mesh, { candidateCount: 120, objective: 'scarring' });
+    assert.ok(Number.isFinite(s.rotXDeg) && Number.isFinite(s.rotYDeg), 'finite angles');
+    assert.ok(s.suggested.cost <= s.baseline.cost, 'never worse than identity');
+    const again = suggestOrientation(mesh, { candidateCount: 120, objective: 'scarring' });
+    assert.deepEqual(s, again, 'deterministic');
 });

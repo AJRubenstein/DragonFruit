@@ -52,6 +52,7 @@ const TITLE = msg`Auto Orientation (Beta)`;
 const ORIENT = msg`Orient Model`;
 const OPT_SUPPORTS = msg`Fewest Supports`;
 const OPT_HEIGHT = msg`Shortest Print Time`;
+const OPT_SCARRING = msg`Least Scarring`;
 const NO_MODEL = msg`Load a model to get an orientation suggestion.`;
 const NO_GEOMETRY = msg`Active model has no readable geometry.`;
 
@@ -215,6 +216,7 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
             >
               <option value="supports">{_(OPT_SUPPORTS)}</option>
               <option value="height">{_(OPT_HEIGHT)}</option>
+              <option value="scarring">{_(OPT_SCARRING)}</option>
             </Select>
           </div>
 

@@ -164,8 +164,9 @@ tier band remains the base; peel exposure modulates it.
    CPU scoring (overhang primary with an anchoring margin that trades up to ~5%
    contact for the widest base; height/footprint tie-breakers, or height
    objective rank, one-click apply with optimize-for dropdown (Fewest Supports /
-   Shortest Print Time), auto-lift reseat above the plate, destructive-transform
-   confirm clearing placed supports first, and toast receipts (applied / already-optimal).
+   Shortest Print Time / Least Scarring), auto-lift reseat above the plate,
+   destructive-transform confirm clearing placed supports first, and toast
+   receipts (applied / already-optimal).
 2. **M2 — "No supports" painted faces**: vertex mask via the smoothing
    painter infrastructure, hard-constraint pruning in the search, brush UX.
 3. **M3 — GPU peel proxy**: orthographic coverage rendering, max/integral

@@ -10,9 +10,11 @@
  * (largest hull faces stood on the plate — an approximation of the stable
  * set, not a full center-of-mass stability proof), always including the
  * current pose so the result never regresses, then coordinate-descent
- * refinement around the top-K. Same model, same result — no RNG. The
+ * refinement around the top-K candidates from the coarse pass. Same model,
+ * same result — no RNG. The
  * `objective` option picks what ranks first (`supports` contact area by
- * default, `height` for the fastest print). Under `supports`, primaries within
+ * default, `height` for the fastest print, `scarring` for contact weighted by
+ * surface detail). Under `supports`, primaries within
  * the anchoring margin of the minimum tie so a wider base wins a few extra
  * mm² of contact instead of balancing on a point.
  *
@@ -42,18 +44,22 @@ export interface OrientationCost {
     heightMm: number;
     /** XY bounding-box area of the rotated mesh (mm²). Tie-breaker. */
     footprintMm2: number;
-    /** Weighted total the search minimizes (overhang + cup terms). */
+    /** Scar-weighted down-facing area (contact plus detail multiple); the primary under the scarring objective. */
+    scarAreaMm2: number;
+    /** Weighted total the search minimizes: the objective's primary plus cup terms. */
     cost: number;
 }
 
-/** What the sweep ranks first. `supports` minimizes contact area (the resin default); `height` minimizes Z extent (fastest print) and breaks ties by contact area. */
-export type OrientationObjective = 'supports' | 'height';
+/** What the sweep ranks first. `supports` minimizes contact area (the resin default); `height` minimizes Z extent (fastest print) and breaks ties by contact area; `scarring` minimizes contact weighted by surface detail (least scarring) with the same cup guard. */
+export type OrientationObjective = 'supports' | 'height' | 'scarring';
 
 export interface AdvisorOptions {
     /** Face is overhang when normal.z < -cos(angle). Default 45°. */
     selfSupportAngleDeg?: number;
     /** Extra weight per mm² of cup area. Default 2 (cups fail prints). */
     cupWeight?: number;
+    /** Detail multiple on scar-weighted contact. Default 3: a mm² on a sharp crease costs ~4× flat contact. */
+    scarWeight?: number;
     /** Ranking objective. Default 'supports'. */
     objective?: OrientationObjective;
     /** Fibonacci-sphere candidate count. Default 120. */
@@ -81,6 +87,8 @@ export interface OrientationCandidate {
 
 const DEFAULT_ANGLE_DEG = 45;
 const CUP_FLAT_COS = 0.95;
+/** Detail weight default; detail itself is 0 (flat) to 1 (≥90° crease). */
+const DEFAULT_SCAR_WEIGHT = 3;
 const DEFAULT_FIBONACCI_COUNT = 120;
 const DEFAULT_RESTING_POSES = 12;
 const DEFAULT_REFINE_TOP_K = 5;
@@ -101,6 +109,7 @@ function wrapAngle(a: number): number {
 interface PreparedTriangles {
     normals: Float64Array;
     areas: Float64Array;
+    details: Float64Array;
     triCount: number;
 }
 
@@ -131,7 +140,82 @@ function prepareTriangles(mesh: AdvisorMesh): PreparedTriangles {
         normals[t * 3 + 1] = ny / (2 * area);
         normals[t * 3 + 2] = nz / (2 * area);
     }
-    return { normals, areas, triCount };
+    const details = computeTriangleDetail(positions, index, triCount, normals, areas);
+    return { normals, areas, details, triCount };
+}
+
+/**
+ * Per-triangle surface detail in [0,1] from dihedral angles over shared
+ * edges: 0 for flat or boundary-only triangles, rising to 1 at a right-angle
+ * crease. Welds non-indexed soup at 0.1µm so shared edges are found; rotation
+ * independent, so it is computed once per search like the normals.
+ */
+export function computeTriangleDetail(
+    positions: ArrayLike<number>,
+    index: ArrayLike<number> | null | undefined,
+    triCount: number,
+    normals: Float64Array,
+    areas: Float64Array,
+): Float64Array {
+    const details = new Float64Array(triCount);
+    const hasIndex = !!index && index.length > 0;
+    const ids = new Int32Array(triCount * 3);
+    if (hasIndex) {
+        for (let t = 0; t < triCount; t++) {
+            ids[t * 3] = (index as ArrayLike<number>)[t * 3];
+            ids[t * 3 + 1] = (index as ArrayLike<number>)[t * 3 + 1];
+            ids[t * 3 + 2] = (index as ArrayLike<number>)[t * 3 + 2];
+        }
+    } else {
+        const seen = new Map<string, number>();
+        let next = 0;
+        for (let t = 0; t < triCount; t++) {
+            for (let k = 0; k < 3; k++) {
+                const x = positions[(t * 3 + k) * 3];
+                const y = positions[(t * 3 + k) * 3 + 1];
+                const z = positions[(t * 3 + k) * 3 + 2];
+                const key = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+                let id = seen.get(key);
+                if (id === undefined) {
+                    id = next++;
+                    seen.set(key, id);
+                }
+                ids[t * 3 + k] = id;
+            }
+        }
+    }
+    const edgeTris = new Map<string, number[]>();
+    for (let t = 0; t < triCount; t++) {
+        if (areas[t] <= 0) continue;
+        const a = ids[t * 3];
+        const b = ids[t * 3 + 1];
+        const c = ids[t * 3 + 2];
+        const triEdges: Array<[number, number]> = [[a, b], [b, c], [c, a]];
+        for (const [u, v] of triEdges) {
+            const key = u < v ? `${u},${v}` : `${v},${u}`;
+            const list = edgeTris.get(key);
+            if (list) list.push(t);
+            else edgeTris.set(key, [t]);
+        }
+    }
+    for (const list of edgeTris.values()) {
+        if (list.length < 2) continue;
+        for (let i = 0; i < list.length; i++) {
+            for (let j = i + 1; j < list.length; j++) {
+                const s = list[i];
+                const q = list[j];
+                if (areas[s] <= 0 || areas[q] <= 0) continue;
+                const dot =
+                    normals[s * 3] * normals[q * 3] +
+                    normals[s * 3 + 1] * normals[q * 3 + 1] +
+                    normals[s * 3 + 2] * normals[q * 3 + 2];
+                const detail = Math.min(1, Math.acos(Math.min(1, Math.max(-1, dot))) / (Math.PI / 2));
+                if (detail > details[s]) details[s] = detail;
+                if (detail > details[q]) details[q] = detail;
+            }
+        }
+    }
+    return details;
 }
 
 /** Rotated normal z after Rx(a) then Ry(b) applied to unit (ux, uy, uz). */
@@ -148,18 +232,22 @@ function scoreParts(
     ca: number,
     sb: number,
     cb: number,
-): { overhang: number; cup: number } {
+): { overhang: number; cup: number; scarArea: number } {
     let overhang = 0;
     let cup = 0;
-    const { normals, areas, triCount } = prep;
+    let scarArea = 0;
+    const { normals, areas, details, triCount } = prep;
     for (let t = 0; t < triCount; t++) {
         const area = areas[t];
         if (area <= 0) continue;
         const nzr = rotatedNz(normals[t * 3], normals[t * 3 + 1], normals[t * 3 + 2], sa, ca, sb, cb);
-        if (nzr < -threshold) overhang += area;
+        if (nzr < -threshold) {
+            overhang += area;
+            scarArea += area * details[t];
+        }
         if (nzr < -CUP_FLAT_COS) cup += area;
     }
-    return { overhang, cup };
+    return { overhang, cup, scarArea };
 }
 
 function measureBoundingBox(
@@ -208,14 +296,18 @@ export function evaluateOrientationCost(
 ): OrientationCost {
     const threshold = Math.cos(((opts.selfSupportAngleDeg ?? DEFAULT_ANGLE_DEG) * Math.PI) / 180);
     const cupWeight = opts.cupWeight ?? 2;
+    const scarWeight = opts.scarWeight ?? DEFAULT_SCAR_WEIGHT;
+    const objective = opts.objective ?? 'supports';
     const prep = prepareTriangles(mesh);
     const sa = Math.sin(rotXRad);
     const ca = Math.cos(rotXRad);
     const sb = Math.sin(rotYRad);
     const cb = Math.cos(rotYRad);
-    const { overhang, cup } = scoreParts(prep, threshold, sa, ca, sb, cb);
+    const { overhang, cup, scarArea } = scoreParts(prep, threshold, sa, ca, sb, cb);
     const { heightMm, footprintMm2 } = measureBoundingBox(mesh.positions, sa, ca, sb, cb);
-    return { overhangAreaMm2: overhang, cupAreaMm2: cup, heightMm, footprintMm2, cost: overhang + cupWeight * cup };
+    const scar = overhang + scarWeight * scarArea;
+    const cost = objective === 'scarring' ? scar + cupWeight * cup : overhang + cupWeight * cup;
+    return { overhangAreaMm2: overhang, cupAreaMm2: cup, scarAreaMm2: scar, heightMm, footprintMm2, cost };
 }
 
 /**
@@ -361,6 +453,7 @@ interface ScoredOrientation extends OrientationCandidate {
     primary: number;
     overhang: number;
     cup: number;
+    scar: number;
     heightMm: number;
     footprintMm2: number;
 }
@@ -417,6 +510,7 @@ function compareScored(
 export function suggestOrientation(mesh: AdvisorMesh, opts: AdvisorOptions = {}): OrientationSuggestion {
     const threshold = Math.cos(((opts.selfSupportAngleDeg ?? DEFAULT_ANGLE_DEG) * Math.PI) / 180);
     const cupWeight = opts.cupWeight ?? 2;
+    const scarWeight = opts.scarWeight ?? DEFAULT_SCAR_WEIGHT;
     const objective = opts.objective ?? 'supports';
     const prep = prepareTriangles(mesh);
     const candidates = generateM1Candidates(mesh, opts);
@@ -426,9 +520,11 @@ export function suggestOrientation(mesh: AdvisorMesh, opts: AdvisorOptions = {})
         const ca = Math.cos(c.rotXRad);
         const sb = Math.sin(c.rotYRad);
         const cb = Math.cos(c.rotYRad);
-        const { overhang, cup } = scoreParts(prep, threshold, sa, ca, sb, cb);
+        const { overhang, cup, scarArea } = scoreParts(prep, threshold, sa, ca, sb, cb);
         const { heightMm, footprintMm2 } = measureBoundingBox(mesh.positions, sa, ca, sb, cb);
-        return { ...c, primary: overhang + cupWeight * cup, overhang, cup, heightMm, footprintMm2 };
+        const scar = overhang + scarWeight * scarArea;
+        const primary = objective === 'scarring' ? scar + cupWeight * cup : overhang + cupWeight * cup;
+        return { ...c, primary, overhang, cup, scar, heightMm, footprintMm2 };
     };
     const descend = (start: ScoredOrientation, eps: RankEps, obj: OrientationObjective, preferFootprint: boolean): ScoredOrientation => {
         let cur = start;
@@ -481,6 +577,7 @@ export function suggestOrientation(mesh: AdvisorMesh, opts: AdvisorOptions = {})
     const toCost = (s: ScoredOrientation): OrientationCost => ({
         overhangAreaMm2: s.overhang,
         cupAreaMm2: s.cup,
+        scarAreaMm2: s.scar,
         heightMm: s.heightMm,
         footprintMm2: s.footprintMm2,
         cost: s.primary,
