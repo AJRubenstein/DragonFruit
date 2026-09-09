@@ -1461,10 +1461,26 @@ export function validateAndCullOrphans(
             return false;
         }
         const seg = host.segment;
-        const start = seg.bottomJoint?.pos;
-        const end = seg.topJoint?.pos;
+        const trunk = nextDraft.trunks[host.trunkId];
+        // Bottom segments carry no bottomJoint by design (they rise from the
+        // root plate, not a joint entity) — the root top IS the segment
+        // start, mirroring splitShaft's own fallback. Without this every
+        // knot hosted low on a trunk was culled as missingHost.
+        const root = trunk ? nextDraft.roots[trunk.rootId] : undefined;
+        const rootTop = root ? {
+            x: root.transform.pos.x,
+            y: root.transform.pos.y,
+            z: root.transform.pos.z + (root.diskHeight ?? 0) + (root.coneHeight ?? 0),
+        } : undefined;
+        const start = seg.bottomJoint?.pos ?? rootTop;
+        // Top segments connect to the contact cone and carry no topJoint by
+        // design — the cone position IS the segment top. Without this
+        // fallback every knot hosted high on a trunk (the best, shortest
+        // spans) was culled as missingHost.
+        const end = seg.topJoint?.pos ?? trunk?.contactCone?.pos;
         if (!start || !end) {
-            orphans.push({ id, kind, reason: 'missingHost', hostId: host.trunkId, knotId: knot.id, detail: 'segment missing joints' });
+            const segIndex = trunk?.segments.findIndex((s) => s.id === seg.id) ?? -1;
+            orphans.push({ id, kind, reason: 'missingHost', hostId: host.trunkId, knotId: knot.id, detail: `segment missing joints (seg ${seg.id.slice(0, 8)}, topJoint ${seg.topJoint ? 'yes' : 'no'}, bottomJoint ${seg.bottomJoint ? 'yes' : 'no'}, seg ${segIndex + 1}/${trunk?.segments.length ?? 0}, origin ${trunk?.origin ?? 'unset'})` });
             return false;
         }
         const drift2 = pointToSegmentDistanceSq(knot.pos, start, end);
@@ -2798,11 +2814,70 @@ export function computeAutoSupportPlan(
             // This is where the "leaf attached to nowhere" shows up in the report.
             let orphanInfos: OrphanInfo[] = [];
             try {
+                const preCullDraft = draft;
                 const culled = validateAndCullOrphans(draft, resolvedMesh ?? undefined);
                 if (culled.orphans.length > 0) {
                     draft = culled.draft;
                     orphanInfos = culled.orphans;
                     console.log(LOG_PREFIX, `Orphan cull: ${culled.orphans.length} leaves/branches removed — ${culled.orphans.map((o) => `${o.id}:${o.reason}${o.hostId ? `@${o.hostId.slice(0,8)}` : ''}`).join(', ')}`);
+                    // Re-place members orphaned by a culled (blocked) host: the
+                    // island still needs a support — run it back through
+                    // standard placement (merge/fan/trunk decide fresh). Single
+                    // pass; re-placed members are not themselves re-queued.
+                    const requeue = culled.orphans.filter((o) =>
+                        o.reason === 'missingHost' && (o.detail ?? '').includes('host trunk culled'));
+                    if (requeue.length > 0) {
+                        let replaced = 0;
+                        for (const o of requeue) {
+                            const member = preCullDraft.leaves[o.id] ?? preCullDraft.branches[o.id];
+                            const cone = member?.contactCone;
+                            if (!member || !cone?.pos) continue;
+                            const recandidate: CandidatePoint = {
+                                id: `${o.id}-requeue`,
+                                tipPos: cone.pos,
+                                tipNormal: cone.surfaceNormal ?? cone.normal,
+                                modelId: member.modelId,
+                                source: member.origin === 'overhang' ? 'overhang' : 'voxel',
+                                islandAreaMm2: 0.05,
+                                zHeight: cone.pos.z,
+                                priority: 0,
+                            };
+                            try {
+                                const result = placeOneCandidate(recandidate, draft, undefined, gridTrunkIds);
+                                draft = result.draft;
+                                if (result.kickstand) kickstandDraft = result.kickstand;
+                                switch (result.kind) {
+                                    case 'trunk': placedTrunks++; break;
+                                    case 'anchor': placedAnchors++; break;
+                                    case 'branch': placedBranches++; break;
+                                    case 'leaf': placedLeaves++; break;
+                                    case 'reject': rejectedCount++; break;
+                                    default: break;
+                                }
+                                if (result.preset) presets[result.preset]++;
+                                if (result.kind !== 'reject' && result.entityId) {
+                                    forestLedger.push({
+                                        displayId: recandidate.id,
+                                        kind: result.kind as ForestLedgerEntry['kind'],
+                                        entityId: result.entityId,
+                                        areaMm2: recandidate.islandAreaMm2,
+                                        zHeight: recandidate.zHeight,
+                                        preset: result.preset ?? presetForArea(recandidate.islandAreaMm2),
+                                        bandShaftMm: activeSizingBand().shaftDiameterMm,
+                                    });
+                                    replaced++;
+                                }
+                            } catch {
+                                rejectedCount++;
+                            }
+                        }
+                        console.log(LOG_PREFIX, `Orphan re-place: ${replaced}/${requeue.length} culled-host members re-placed.`);
+                        const recheck = validateAndCullOrphans(draft, resolvedMesh ?? undefined);
+                        if (recheck.draft !== draft) {
+                            draft = recheck.draft;
+                            orphanInfos = [...orphanInfos, ...recheck.orphans];
+                        }
+                    }
                 }
             } catch (e) {
                 console.warn(LOG_PREFIX, `Orphan validation failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);

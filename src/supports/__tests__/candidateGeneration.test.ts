@@ -242,11 +242,31 @@ test('candidateFromIsland shrinks tips for small islands', () => {
     const big = candidateFromIsland(makeIsland({ id: 'b', areaMm2: 5 }));
     assert.equal(big.tipDiameterMm, undefined, 'larger island takes the band default');
 });
-
 test('deduplicateCandidates suppresses close shelves via grown influence', () => {
     // Same XY, 3mm apart in Z with a 0.5mm base radius: the grown gate
     // (0.5 + influence(3) − 3.0 ≈ 1.26) covers the upper candidate, so the
     // lower tip's cone is assumed to cover it — one support, not two.
+    // Overhang-lattice pairs only: discrete islands never merge (see below).
+    const mk = (id: string, z: number, priority: number): CandidatePoint => ({
+        id,
+        tipPos: { x: 0, y: 0, z },
+        tipNormal: { x: 0, y: 0, z: -1 },
+        modelId: '',
+        source: 'overhang',
+        islandAreaMm2: 0.1,
+        zHeight: z,
+        priority,
+    });
+    const settings = { ...createDefaultAutoSupportSettings(), tipInfluenceRadiusMm: 0.5 };
+    const deduped = deduplicateCandidates(
+        [mk('low', 10, 0.9), mk('high', 13, 0.8)], settings);
+    assert.equal(deduped.length, 1, 'close shelf deduped into the lower support cone');
+    assert.equal(deduped[0].id, 'low');
+});
+
+test('deduplicateCandidates never merges discrete islands', () => {
+    // Same geometry as above but voxel-source: neighboring islands are
+    // must-support points and both survive.
     const mk = (id: string, z: number, priority: number): CandidatePoint => ({
         id,
         tipPos: { x: 0, y: 0, z },
@@ -260,8 +280,7 @@ test('deduplicateCandidates suppresses close shelves via grown influence', () =>
     const settings = { ...createDefaultAutoSupportSettings(), tipInfluenceRadiusMm: 0.5 };
     const deduped = deduplicateCandidates(
         [mk('low', 10, 0.9), mk('high', 13, 0.8)], settings);
-    assert.equal(deduped.length, 1, 'close shelf deduped into the lower support cone');
-    assert.equal(deduped[0].id, 'low');
+    assert.equal(deduped.length, 2, 'neighboring islands both survive');
 });
 
 test('influenceRadiusMm follows the support curve', () => {

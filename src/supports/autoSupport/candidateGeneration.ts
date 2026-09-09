@@ -157,11 +157,11 @@ function computePriority(
 
 /**
  * Deduplicate candidates using a spatial hash grid.
- * A lower-priority candidate inside a higher-priority one's influence disc
- * is removed. The disc is 2D (XY) and widens with vertical separation
- * (support influence curve) — but pairs farther apart in Z than
- * SUPPORT_RESTSTACK_DELTA_MM never suppress each other, so vertically
- * stacked overhangs (staircases, shelves) keep their own supports.
+ * Overhang-lattice pairs suppress on a 2D (XY) disc that widens with
+ * vertical separation (support influence curve) — except pairs farther
+ * apart in Z than SUPPORT_RESTSTACK_DELTA_MM, so staircase shelves keep
+ * their supports. Discrete islands (voxel/minima/intersection) always use
+ * the flat 3D ball: neighboring islands must never eat each other.
  */
 export function deduplicateCandidates(
     candidates: CandidatePoint[],
@@ -212,14 +212,26 @@ export function deduplicateCandidates(
                 for (const r of retained) {
                     // Only candidates bucketed here can be this close.
                     if (!bucket.some((rr) => rr.id === r.id)) continue;
+                    const ddx = c.tipPos.x - r.tipPos.x;
+                    const ddy = c.tipPos.y - r.tipPos.y;
                     const dz = Math.abs(c.tipPos.z - r.tipPos.z);
+                    // Discrete islands (voxel/minima/intersection) are
+                    // must-support points: flat 3D ball only, so neighboring
+                    // islands never eat each other. The grown disc applies to
+                    // overhang-lattice pairs, where merging is the goal.
+                    if (c.source !== 'overhang' || r.source !== 'overhang') {
+                        const ddz = c.tipPos.z - r.tipPos.z;
+                        if (ddx * ddx + ddy * ddy + ddz * ddz <= baseRadius * baseRadius) {
+                            duplicate = true;
+                            break;
+                        }
+                        continue;
+                    }
                     // Restack: vertically separated shelves never suppress
                     // each other, however close in XY.
                     if (dz > SUPPORT_RESTSTACK_DELTA_MM) continue;
                     const gate = baseRadius
                         + Math.max(0, influenceRadiusMm(dz) - TIP_COVERAGE_RADIUS_MM);
-                    const ddx = c.tipPos.x - r.tipPos.x;
-                    const ddy = c.tipPos.y - r.tipPos.y;
                     if (ddx * ddx + ddy * ddy <= gate * gate) {
                         duplicate = true;
                         break;
