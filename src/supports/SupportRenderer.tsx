@@ -452,7 +452,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return {
             state: picked as Pick<typeof state, SupportCollectionKey>,
             kickstandState: {
-                kickstands: kickstandState.kickstands,
+                kickstands: state.kickstands,
                 knots: kickstandState.knots,
             },
             // Keep worker lookups driven by committed state only.
@@ -460,7 +460,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             // structured-clone payload churn during joint dragging.
             activePreviewSupport: null,
         };
-    }, [state, kickstandState.kickstands, kickstandState.knots]);
+    }, [state, state.kickstands, kickstandState.knots]);
     const supportRenderLookup = useSupportRenderLookup(supportRenderLookupInput);
 
     const trunkList = useMemo(() => Object.values(state.trunks), [state.trunks]);
@@ -487,7 +487,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const stickList = useMemo(() => Object.values(state.sticks), [state.sticks]);
     const braceList = useMemo(() => Object.values(state.braces), [state.braces]);
     const anchorList = useMemo(() => Object.values(state.anchors), [state.anchors]);
-    const kickstandList = useMemo(() => Object.values(kickstandState.kickstands), [kickstandState.kickstands]);
+    const kickstandList = useMemo(() => Object.values(state.kickstands), [state.kickstands]);
     const matchesInteriorContact = useMemo<InteriorContactFilter>(() => {
         if (!interiorView) return () => true;
 
@@ -578,7 +578,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         // of eight -- an anchor id resolved to undefined.
         for (const descriptor of SUPPORT_TYPES) {
             const collection = descriptor.id === 'kickstand'
-                ? kickstandState.kickstands
+                ? state.kickstands
                 : (state as unknown as Record<string, Record<string, { modelId?: string }>>)[descriptor.location.key];
             const entity = collection?.[supportId] as Record<string, unknown> | undefined;
             if (!entity) continue;
@@ -601,7 +601,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
 
         return undefined;
-    }, [state, kickstandState.kickstands, kickstandState.roots, entityModelIdByKnotId]);
+    }, [state, state.kickstands, kickstandState.roots, entityModelIdByKnotId]);
 
     const isModelVisible = React.useCallback((modelId?: string, supportId?: string) => {
         const resolvedModelId = resolveSupportModelId(modelId, supportId);
@@ -1201,9 +1201,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     // its own store, so the lookup routes that one key there.
     const selectionCollections = useCallback<CollectionLookup>((key) => (
         key === 'kickstands'
-            ? (kickstandState.kickstands as unknown as Record<string, unknown>)
+            ? (state.kickstands as unknown as Record<string, unknown>)
             : ((state as unknown as Record<string, Record<string, unknown>>)[key])
-    ), [state, kickstandState.kickstands]);
+    ), [state, state.kickstands]);
 
     const selectionKnotIndex = useMemo(
         () => buildKnotIndex(selectionCollections),
@@ -1671,9 +1671,10 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             if (!descriptor.batchesPlainShafts) continue;
             if (descriptor.id === 'twig' && !enableTwigSceneBatching) continue;
 
-            const ownStore = descriptor.id === 'kickstand';
-            const roots = ownStore ? kickstandState.roots : state.roots;
-            const knotsById = ownStore ? renderKickstandKnotsById : renderKnotsById;
+            // Roots are looked up by the entity's own rootId, so the shared
+            // collection answers for every type; only the knot index differs,
+            // because kickstand knots carry drag-preview overrides.
+            const knotsById = descriptor.id === 'kickstand' ? renderKickstandKnotsById : renderKnotsById;
             const knotEdge = descriptor.edges.find(
                 (edge) => edge.to === 'knots' && edge.ownership === 'hostedBy',
             );
@@ -1684,7 +1685,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 (entity) => {
                     const fields = entity as unknown as Record<string, string | undefined>;
                     const hosts: EndpointHosts = {};
-                    if (descriptor.ownsRoot) hosts.root = roots[fields.rootId ?? ''];
+                    if (descriptor.ownsRoot) hosts.root = state.roots[fields.rootId ?? ''];
                     if (knotEdge) hosts.hostKnot = knotsById[fields[knotEdge.field] ?? ''];
                     return hosts;
                 },
@@ -1697,7 +1698,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         buildPlainShaftSet,
         enableTwigSceneBatching,
         state.roots,
-        kickstandState.roots,
         renderKnotsById,
         renderKickstandKnotsById,
     ]);
@@ -2322,7 +2322,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             };
         }
 
-        const kickstand = kickstandState.kickstands[supportId];
+        const kickstand = state.kickstands[supportId];
         if (kickstand) {
             const root = kickstandState.roots[kickstand.rootId];
             if (!root) return null;
@@ -2358,7 +2358,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         raftSettings.thickness,
         state.trunks,
         state.roots,
-        kickstandState.kickstands,
+        state.kickstands,
         kickstandState.roots,
         applyDropToVec3Like,
     ]);
@@ -2972,7 +2972,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         state.anchors,
         state.knots,
         kickstandState.roots,
-        kickstandState.kickstands,
+        state.kickstands,
         kickstandState.knots,
     ]);
 

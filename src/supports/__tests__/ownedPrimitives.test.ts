@@ -108,3 +108,15 @@ test('getKickstandRoots is reference-stable between snapshots', () => {
     setSnapshot({ ...getSnapshot() });
     assert.notEqual(getKickstandRoots(), first, 'a new snapshot returned the stale object');
 });
+
+test('an owned root indexes the same in the shared collection', () => {
+    // What lets a consumer that looks a root up BY ID drop the filtered view:
+    // the filter changes which roots are present, never which id maps where.
+    seed();
+    const owned = getOwnedPrimitives<{ id: string }>('kickstand', 'roots');
+    const shared = getSnapshot().roots as unknown as Record<string, { id: string }>;
+
+    for (const [id, root] of Object.entries(owned)) {
+        assert.equal(shared[id], root, `${id} differs between the view and the collection`);
+    }
+});

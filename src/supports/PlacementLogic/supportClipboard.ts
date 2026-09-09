@@ -63,7 +63,7 @@ function remapSupportJoint<T extends { id: string; pos: { x: number; y: number; 
 
 function extractSupportClipboardPayload(modelId: string): SupportClipboardPayload | null {
   const state = getSnapshot();
-  const kickstandState = getSnapshot();
+  const snapshot = getSnapshot();
 
   // Every modelId-bearing collection, so a new type is copied unnamed.
   const owned = {} as { [K in SupportCollectionKey]: SupportState[K][string][] };
@@ -84,15 +84,15 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
   const sticks = owned.sticks;
   const braces = owned.braces;
 
-  const kickstands = Object.values(kickstandState.kickstands)
+  const kickstands = Object.values(snapshot.kickstands)
     .filter((item) => item.modelId === modelId)
     .map(clonePlain);
   const kickstandRootIds = new Set(kickstands.map((item) => item.rootId));
   const kickstandKnotIds = new Set(kickstands.map((item) => item.hostKnotId));
-  const kickstandRoots = Object.values(kickstandState.roots)
+  const kickstandRoots = Object.values(snapshot.roots)
     .filter((item) => kickstandRootIds.has(item.id))
     .map(clonePlain);
-  const kickstandKnots = Object.values(kickstandState.knots)
+  const kickstandKnots = Object.values(snapshot.knots)
     .filter((item) => kickstandKnotIds.has(item.id))
     .map(clonePlain);
 
@@ -169,7 +169,7 @@ function mergeSupportClipboardPayload(
   targetModelId: string,
 ): { mergedState: SupportState; mergedKickstandState: KickstandState } {
   const state = getSnapshot();
-  const kickstandState = getSnapshot();
+  const snapshot = getSnapshot();
 
   const idMapsByCollection = new Map<SupportCollectionKey, Map<string, string>>();
   for (const key of SUPPORT_COLLECTION_KEYS) idMapsByCollection.set(key, new Map());
@@ -350,17 +350,17 @@ function mergeSupportClipboardPayload(
   }
 
   const mergedKickstandState: KickstandState = {
-    ...kickstandState,
+    ...snapshot,
     kickstands: {
-      ...kickstandState.kickstands,
+      ...snapshot.kickstands,
       ...Object.fromEntries(clonedKickstands.map((item) => [item.id, item])),
     },
     roots: {
-      ...kickstandState.roots,
+      ...snapshot.roots,
       ...Object.fromEntries(clonedKickstandRoots.map((item) => [item.id, item])),
     },
     knots: {
-      ...kickstandState.knots,
+      ...snapshot.knots,
       ...Object.fromEntries(clonedKickstandKnots.map((item) => [item.id, item])),
     },
   };
@@ -376,7 +376,7 @@ export function estimateSupportBoundsForModel(modelId: string): SupportModelBoun
   if (!modelId) return null;
 
   const state = getSnapshot();
-  const kickstandState = getSnapshot();
+  const snapshot = getSnapshot();
   const raftSettings = getRaftSettings();
 
   let minX = Number.POSITIVE_INFINITY;
@@ -461,12 +461,12 @@ export function estimateSupportBoundsForModel(modelId: string): SupportModelBoun
     .forEach((knot) => expand(knot.pos, Math.max(0.001, (knot.diameter ?? 1.2) / 2)));
 
   const kickstandHostKnotIds = new Set(
-    Object.values(kickstandState.kickstands)
+    Object.values(snapshot.kickstands)
       .filter((kickstand) => kickstand.modelId === modelId)
       .map((kickstand) => kickstand.hostKnotId),
   );
 
-  Object.values(kickstandState.knots)
+  Object.values(snapshot.knots)
     .filter((knot) => kickstandHostKnotIds.has(knot.id))
     .forEach((knot) => expand(knot.pos, Math.max(0.001, (knot.diameter ?? 1.2) / 2)));
 
@@ -500,7 +500,7 @@ export function estimateSupportBoundsForModel(modelId: string): SupportModelBoun
     }
   }
 
-  Object.values(kickstandState.kickstands)
+  Object.values(snapshot.kickstands)
     .filter((kickstand) => kickstand.modelId === modelId)
     .forEach((kickstand) => expandSegments(kickstand.segments as any[]));
 
