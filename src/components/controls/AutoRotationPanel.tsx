@@ -69,6 +69,7 @@ const NO_MODEL = msg`Load a model to get an orientation suggestion.`;
 const NO_GEOMETRY = msg`Active model has no readable geometry.`;
 const BLOCKERS = msg`Blockers`;
 const CLEAR_BLOCKERS = msg`Clear`;
+const DONE_BLOCKERS = msg`Done`;
 const PAINT_LEAD = msg`Drag to paint areas that must stay support-free. Orientation steers them away from the plate, and no supports are placed on them.`;
 const BLOCKERS_HINT = msg`Paint nogo areas for supports. Blocked contact is refused when generating supports and avoided when orienting.`;
 const PAINT_TITLE = msg`Blocker Painting Mode`;
