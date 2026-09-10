@@ -102,12 +102,9 @@ export function JointGizmo() {
         if (!joint) return null;
 
         return { joint, typeId: owner.typeId, id: owner.id, entity: entity as JointDragSupport };
-        // `findShaftOwnerOfJoint` and `getSupportEntity` read the store
-        // directly, so `state` is what actually invalidates this result even
-        // though the body never names it -- ESLint calls it unnecessary because
-        // it cannot see through those calls. The per-collection list this
-        // replaces was the same dependency written by hand, and would have gone
-        // stale on a ninth type.
+        // `findShaftOwnerOfJoint` and `getSupportEntity` read the store directly, so
+        // `state` invalidates this even though the body never names it. ESLint cannot
+        // see through those calls.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedId, state]);
 

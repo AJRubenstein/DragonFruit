@@ -143,8 +143,8 @@ export interface SupportTypeDescriptor {
      * Kickstand alone is: the wire format writes it as
      * `{ kickstand, root, hostKnot }`, so a loader walking the arrays by
      * collection key has to unwrap it instead of reading entities directly.
-     * A wire-format artefact, tracked in docs/dev/backlog.md -- declared here
-     * so the loader can ask rather than test the key by name.
+     * A wire-format artefact, tracked in docs/dev/support-registry-findings.md
+     * -- declared here so the loader can ask rather than test the key by name.
      */
     serialisedAsBundle?: boolean;
     /**

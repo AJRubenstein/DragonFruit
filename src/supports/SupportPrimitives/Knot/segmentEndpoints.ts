@@ -12,10 +12,8 @@ import type { Knot, Roots, Segment, Vec3 } from '../../types';
 /**
  * Where a segment starts and ends in world space, for any shafted type.
  *
- * This replaced getTrunkSegmentEndpoints and getBranchSegmentEndpoints, which
- * were identical apart from what anchors segment 0: a trunk starts at its
- * root's top, a branch at its parent knot. The declared `lower` endpoint says
- * which applies, and `upper` says what the shaft ends at.
+ * The declared `lower` endpoint anchors segment 0 -- a root's top, or a parent
+ * knot -- and `upper` says what the shaft ends at.
  */
 
 export interface SegmentEndpoints {

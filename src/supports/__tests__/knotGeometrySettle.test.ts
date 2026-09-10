@@ -18,10 +18,9 @@ import type { Brace, Knot, Leaf } from '../types';
  * and a brace spanning moved knots moves the knots on its own segment.
  *
  * These cover the first pass. The SECOND pass -- the one that runs when the
- * brace step itself moved something -- is NOT covered here: instrumenting it
- * showed it fires once across the whole suite and changes nothing when it
- * does. See the note in `docs/dev/backlog.md`; it may be dead work rather
- * than a coverage gap, which is why nothing here pretends to pin it.
+ * brace step itself moved something -- is deliberately not pinned here; whether
+ * it is reachable at all is an open question in
+ * `docs/dev/support-registry-findings.md`.
  */
 
 const vec = (x: number, y: number, z: number) => ({ x, y, z });

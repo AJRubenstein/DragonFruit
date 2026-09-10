@@ -159,10 +159,7 @@ wiring is explicit:
 - Invoke `useGadgetPlacement()` alongside the other placement hooks and route
   its callbacks through `resolvePlacementRouting()`.
 - `resolveSupportCategoryFromSnapshot`, `collectAllSupportIds` and
-  `canDeleteSelection` need **nothing**: all three resolve from the registry
-  now. The anchor gap this page used to warn about — anchors deletable but
-  blocked from single-selection Delete — was that enumerated list, and it is
-  gone.
+  `canDeleteSelection` need **nothing**: all three resolve from the registry.
 - `deleteSelectionByCategoryAndId` needs **nothing** for a type whose removal is
   the cascade plus one history entry: a generic block reads `historyRemove` off
   your descriptor. Only a type whose payload carries something extra (a branch's

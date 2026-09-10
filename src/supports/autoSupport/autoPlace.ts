@@ -955,7 +955,7 @@ function placeOneCandidate(
             if (cavityResult) {
                 // Keep short cavity twigs but cap long bridges at 12mm; a
                 // rejected tip is reconsidered by fan/merge in a later pass.
-                // BUG (pre-existing, see docs/dev/backlog.md): the cap measures
+                // BUG (see docs/dev/support-registry-findings.md): the cap measures
                 // from `upper`, which the builder sorts to the tip, so the span
                 // is always ~0 and the cap has never rejected anything.
                 const entity = cavityResult.entity;

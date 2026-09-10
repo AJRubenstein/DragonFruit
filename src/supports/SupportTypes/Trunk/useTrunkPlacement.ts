@@ -444,10 +444,7 @@ export function useTrunkPlacementV2() {
         // exception: decideGridPlacement owns the anchor decision in BOTH
         // modes (its validation also previews the rejection ghost), so they
         // must not take this early out.
-        // Only a tip the anchor rule claims takes the grid path. This replaced
-        // `tipPos.z >= ANCHOR_HEIGHT_THRESHOLD_MM` and matches it for every
-        // finite height; the two differ only on NaN and Infinity, which a
-        // raycast hit against real geometry cannot produce.
+        // Only a tip the anchor rule claims takes the grid path.
         const isNearPlateTip = selectTypeForPlacement('tipHeight', tipPos.z) === 'anchor';
         if (!isGridMode && !isNearPlateTip) {
             setPreviewData(result.supportData);

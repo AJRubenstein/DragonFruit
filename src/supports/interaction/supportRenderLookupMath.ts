@@ -86,14 +86,8 @@ export function computeSupportRenderLookup(input: SupportRenderLookupInput, opti
     }
   }
 
-  // A knot-hosted type also indexes the knot it hangs from.
-  //
-  // Branch additionally does
-  // `pushKnotId(knotIdsByParentShaftId, parentKnotId, parentKnotId)`, keying a
-  // knot id to itself. That bucket is only ever read by SEGMENT id
-  // (`supportPreviewOverlay`), so the entry was unreachable unless a knot id
-  // equalled a segment id -- impossible for UUIDs. Dropped rather than
-  // reproduced; see docs/dev/backlog.md.
+  // A knot-hosted type also indexes the knot it hangs from. `knotIdsByParentShaftId`
+  // is keyed by segment id only; a knot id keyed to itself would be unreachable.
   for (const descriptor of SUPPORT_TYPES) {
     const hostEdges = descriptor.edges.filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy');
     if (hostEdges.length === 0) continue;

@@ -20,10 +20,9 @@ import { SUPPORT_TYPES } from '../supportTypeRegistry';
  * `knotHostPrefix`. Those knots have no `modelId` and no segment of their own,
  * so the transform walk has to reach them through the host that WAS touched.
  *
- * Nothing covered this: deleting the lookup entirely left the whole suite and
- * all 50 goldens green. See the `transformSupportsForModel` rows in
- * `docs/dev/backlog.md` -- this is the third defect class found in this walk
- * that passing tests did not see.
+ * Deleting the lookup entirely leaves the rest of the suite green, so this file
+ * is the only thing holding it. See the `transformSupportsForModel` rows in
+ * `docs/dev/support-registry-findings.md`.
  */
 
 const MODEL = 'model-a';

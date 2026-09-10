@@ -117,8 +117,7 @@ export function commitJointDragSupport<K extends JointDragSupportKind>(
   const committed = normalizeCommittedSupport(kind, support, stripDiskLengthOverride);
 
   // Dispatched by the registry: a fourth draggable type is written to its own
-  // collection without touching this file. The trailing else this replaced put
-  // anything unrecognised into the kickstand collection.
+  // collection without touching this file.
   if (!updateSupportEntity(kind, committed)) {
     throw new Error(`No updater registered for support type ${kind}`);
   }

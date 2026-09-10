@@ -3505,7 +3505,7 @@ export function getSupportTypeOf(id: string): SupportTypeId | null {
 
     // In the store but unstamped: a whole-store payload restored through
     // `setSnapshot` bypasses the writers that stamp. Fall back to the
-    // collection holding it, which is what the field replaced.
+    // collection holding it.
     for (const descriptor of SUPPORT_TYPES) {
         if ((state[descriptor.location.key] as Record<string, unknown>)[id]) return descriptor.id;
     }
