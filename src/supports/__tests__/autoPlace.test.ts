@@ -691,3 +691,80 @@ test('runAutoPlace with no viable candidates returns changed=false and pushes no
     assert.equal(result.changed, false);
     assert.equal(Object.keys(getSnapshot().trunks).length, 0);
 });
+
+/**
+ * A punched drain hole above an interior contact used to delete the support:
+ * the upward contact ray escaped through the hole and the downward fallback
+ * landed on the cavity floor with a flipped normal, so the candidate was
+ * rejected and the cavity ceiling ended up unsupported. The resolver now
+ * steps a small disc around the tip before falling back.
+ */
+test('a punched hole above a cavity ceiling does not delete its support', () => {
+    const buildShell = (ceilingHoleMm: number | null): THREE.Mesh => {
+        const box = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+            const g = new THREE.BoxGeometry(w, h, d);
+            g.translate(x, y, z);
+            return g;
+        };
+        // Interior cavity x,y ∈ (-8,8), z ∈ (2,10); ceiling at z ∈ (10,12).
+        const parts: THREE.BufferGeometry[] = [
+            box(2, 20, 12, -9, 0, 6),
+            box(2, 20, 12, 9, 0, 6),
+            box(20, 2, 12, 0, -9, 6),
+            box(20, 2, 12, 0, 9, 6),
+            box(20, 20, 2, 0, 0, 1),
+        ];
+        if (ceilingHoleMm === null) {
+            parts.push(box(20, 20, 2, 0, 0, 11));
+        } else {
+            const piece = (20 - ceilingHoleMm) / 2;
+            parts.push(box(piece, 20, 2, -(ceilingHoleMm + piece) / 2, 0, 11));
+            parts.push(box(piece, 20, 2, (ceilingHoleMm + piece) / 2, 0, 11));
+        }
+        const geometry = mergeGeometries(parts)!;
+        accelerateGeometry(geometry);
+        const mesh = new THREE.Mesh(geometry);
+        mesh.updateMatrixWorld();
+        return mesh;
+    };
+
+    const run = (ceilingHoleMm: number | null) => {
+        resetStore();
+        resetKickstandStore();
+        clearHistory();
+        const disposeHandlers = registerSupportHistoryHandlers();
+        initializeBVH();
+        setModelMesh('model-a', buildShell(ceilingHoleMm));
+
+        const result = runAutoPlace([makeIsland('ceiling', 0, 0, 10, 16)], 'model-a', {
+            debugSkipAutoBracing: true,
+            stabilizationEnabled: false,
+        });
+        const snapshot = getSnapshot();
+        const bridges = [
+            ...Object.values(snapshot.sticks),
+            ...Object.values(snapshot.twigs),
+        ];
+        const contacts = bridges.flatMap((b) => [
+            'contactConeA' in b ? b.contactConeA?.pos : undefined,
+            'contactConeB' in b ? b.contactConeB?.pos : undefined,
+            'contactDiskA' in b ? b.contactDiskA?.pos : undefined,
+            'contactDiskB' in b ? b.contactDiskB?.pos : undefined,
+        ]).filter((p): p is { x: number; y: number; z: number } => Boolean(p));
+
+        setModelMesh('model-a', null);
+        disposeHandlers();
+        return { result, contacts };
+    };
+
+    const sealed = run(null);
+    assert.equal(sealed.contacts.length, 2, 'sealed cavity: one bridge between ceiling and floor');
+
+    const punched = run(4);
+    assert.equal(punched.result.rejectedCandidates, 0,
+        `punched ceiling: the contact is not rejected (${punched.result.rejectedCandidates})`);
+    assert.equal(punched.contacts.length, 2, 'punched ceiling: the bridge is still placed');
+    const roofContact = punched.contacts.reduce((top, p) => (p.z > top.z ? p : top));
+    assert.ok(Math.abs(roofContact.z - 10) < 0.6,
+        `the contact stays on the ceiling, not on the far side (z=${roofContact.z.toFixed(2)})`);
+});

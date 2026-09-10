@@ -153,6 +153,13 @@ function makeResult(
  * Falls back to a downward ray (normal flipped) for top-surface contacts, and
  * finally to the candidate's placeholder normal when the mesh is unavailable
  * or both rays miss.
+ *
+ * Both rays walk a small DISC of offsets before giving up (radii 0, 0.75,
+ * 1.5, 2.25 mm): a punched drain hole or a gap directly above/below the tip
+ * swallows the single straight ray, and the contact then resolved to the far
+ * side of the wall — the interior ceiling of a cavity lost every support the
+ * moment a hole was punched through it, because the upward ray escaped and
+ * the downward fallback landed on the cavity floor with a flipped normal.
  */
 function resolveSurfaceNormal(
     tipPos: CandidatePoint['tipPos'],
@@ -163,28 +170,53 @@ function resolveSurfaceNormal(
     }
 
     const raycaster = new THREE.Raycaster();
+    const SEARCH_RADII_MM = [0, 0.75, 1.5, 2.25];
+    // A contact never sits BELOW its own candidate: a hit further down than
+    // this came through a hole or gap, not from the surface being supported.
+    const SAME_SIDE_TOLERANCE_MM = 0.5;
+
+    /**
+     * Cast `direction` from the tip's height (±2 mm) at each offset, nearest
+     * radius first, and take the first hit that is still on the tip's side.
+     */
+    const castFromDisc = (directionZ: 1 | -1): THREE.Intersection | null => {
+        const seedZ = directionZ === 1 ? tipPos.z - 2 : tipPos.z + 2;
+        for (const radiusMm of SEARCH_RADII_MM) {
+            const steps = radiusMm === 0 ? 1 : 8;
+            for (let i = 0; i < steps; i++) {
+                const angle = (i / steps) * Math.PI * 2;
+                raycaster.set(
+                    new THREE.Vector3(
+                        tipPos.x + Math.cos(angle) * radiusMm,
+                        tipPos.y + Math.sin(angle) * radiusMm,
+                        seedZ,
+                    ),
+                    new THREE.Vector3(0, 0, directionZ),
+                );
+                const hit = raycaster.intersectObject(mesh, false)
+                    .find((h) => h.point.z >= tipPos.z - SAME_SIDE_TOLERANCE_MM);
+                if (hit) return hit;
+            }
+        }
+        return null;
+    };
 
     // Primary: upward ray from just below the tip (underside contact).
-    raycaster.set(new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z - 2), new THREE.Vector3(0, 0, 1));
-    const upHits = raycaster.intersectObject(mesh, false);
-    if (upHits.length > 0) {
-        const hit = upHits[0];
-        const smoothed = calculateSmoothedNormal(hit);
+    const upHit = castFromDisc(1);
+    if (upHit) {
         return {
-            point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
-            normal: smoothed,
+            point: { x: upHit.point.x, y: upHit.point.y, z: upHit.point.z },
+            normal: calculateSmoothedNormal(upHit),
         };
     }
 
     // Fallback: downward ray from above (top-surface contact), normal flipped
     // so the support still grows away from the face.
-    raycaster.set(new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z + 2), new THREE.Vector3(0, 0, -1));
-    const downHits = raycaster.intersectObject(mesh, false);
-    if (downHits.length > 0) {
-        const hit = downHits[0];
-        const smoothed = calculateSmoothedNormal(hit);
+    const downHit = castFromDisc(-1);
+    if (downHit) {
+        const smoothed = calculateSmoothedNormal(downHit);
         return {
-            point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
+            point: { x: downHit.point.x, y: downHit.point.y, z: downHit.point.z },
             normal: { x: -smoothed.x, y: -smoothed.y, z: -smoothed.z },
         };
     }
