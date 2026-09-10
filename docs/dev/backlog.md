@@ -71,8 +71,8 @@ Known remaining hand-written lists worth converting:
 
 Converting each hand-written type list turned up defects where the list
 disagreed with the registry. They are recorded in
-[`support-registry-findings.md`](support-registry-findings.md) -- 78 findings,
-24 still open -- rather than here, because they are per-site detail rather than
+[`support-registry-findings.md`](support-registry-findings.md) -- 80 findings,
+25 still open -- rather than here, because they are per-site detail rather than
 rules to follow.
 
 The rule they add up to is the one above: derive, never subtract. Two were

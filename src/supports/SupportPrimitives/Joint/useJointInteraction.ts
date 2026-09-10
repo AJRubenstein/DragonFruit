@@ -628,7 +628,6 @@ export function useJointInteraction(enabled: boolean = true) {
                             isCurveMode: false,
                             root,
                             contextStart,
-                            skipContactConeSolve: true,
                         });
 
                         const clampedTrunkJointPos = resolveJointPosById(newTrunk.segments, activeJointId.current!);
@@ -655,7 +654,6 @@ export function useJointInteraction(enabled: boolean = true) {
                             newPos: newPosVec3,
                             isCurveMode: false,
                             contextStart,
-                            skipContactConeSolve: true,
                         });
 
                         const clampedBranchJointPos = resolveJointPosById(newBranch.segments, activeJointId.current!);
@@ -688,7 +686,6 @@ export function useJointInteraction(enabled: boolean = true) {
                             isCurveMode: false,
                             root,
                             contextStart,
-                            skipContactConeSolve: true,
                         });
 
                         const clampedKickstandJointPos = resolveJointPosById(newKickstand.segments, activeJointId.current!);
