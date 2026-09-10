@@ -30,6 +30,7 @@ import {
 import { sizeParameters, presetForArea } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
+import { DEFAULT_GRID_MIN_BRANCH_ANGLE_DEG } from '../Settings/defaults';
 import { getSnapshot, setSnapshot } from '../state';
 import {
     draftAddRoot, draftAddTrunk, draftAddBranch, draftAddLeaf,
@@ -65,6 +66,20 @@ import {
 } from './constants';
 
 const LOG_PREFIX = '[AutoSupport]';
+
+/**
+ * The steepest angle from vertical an auto member or chunk link may lean —
+ * derived from the user's branch-angle rule (`grid.minBranchAngleDeg`, 60°
+ * above the horizontal), the same rule the grid engine and the trunk
+ * promotion path already enforce on manual branches. Auto members used to
+ * ignore it (fan 45°, merge 45° rise, consolidation 75°), which is where the
+ * near-level bars came from: a member at 45° from vertical carries almost
+ * nothing along its axis and reads as a stray branch off the host.
+ */
+function memberMaxAngleFromVerticalDeg(): number {
+    const minRiseDeg = getSettings().grid?.minBranchAngleDeg ?? DEFAULT_GRID_MIN_BRANCH_ANGLE_DEG;
+    return Math.max(0, Math.min(90, 90 - minRiseDeg));
+}
 
 // Per-entity placement logging (Trunk/Leaf/Merge lines) is OFF by default —
 // the Forest Report at the end of each run replaces the per-support spam.
@@ -502,7 +517,7 @@ export function buildConsolidationBranch(args: {
         const vDist = tip.z - sp.pos.z;
         if (vDist < 1.5) continue;
         const angleDeg = (Math.atan2(Math.hypot(ddx, ddy), vDist) * 180) / Math.PI;
-        if (angleDeg > 50) continue;
+        if (angleDeg > Math.min(50, memberMaxAngleFromVerticalDeg())) continue;
         if (dist2 < bestDist2) {
             bestDist2 = dist2;
             best = sp;
@@ -612,7 +627,7 @@ function placeOneCandidate(
                     `auto-fan-${candidate.id}`,
                     Math.max(8, auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM),
                     GRID_HOST_FAN_RADIUS_MM,
-                    auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
+                    Math.min(auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG, memberMaxAngleFromVerticalDeg()),
                     auto.maxAttachmentsPerTrunk ?? 12,
                     draft,
                     mesh,
@@ -642,7 +657,7 @@ function placeOneCandidate(
                 `auto-fan-${candidate.id}`,
                 Math.max(8, auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM),
                 GRID_HOST_FAN_RADIUS_MM,
-                auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
+                Math.min(auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG, memberMaxAngleFromVerticalDeg()),
                 auto.maxAttachmentsPerTrunk ?? 12,
                 draft,
                 mesh,
@@ -682,7 +697,10 @@ function placeOneCandidate(
             // "floating" next to the trunk — the recent defect); a knot at
             // the junction is the original shallow-branch bug. 45° matches
             // the relaxed leafFanMaxAngleDeg default (was 60°).
-            const STEEP_MIN_RISE_DEG = 45;
+            const STEEP_MIN_RISE_DEG = Math.max(
+                45,
+                90 - memberMaxAngleFromVerticalDeg(),
+            );
             const MAX_MERGE_ATTACH_SPAN_MM = 12;
             let maxRiseDeg = 0;
             if (hostTrunk) {
@@ -805,7 +823,7 @@ function placeOneCandidate(
                     );
                     const vDist2 = tipPos.z - knotPos.z;
                     const mergeAngleDeg = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
-                    if (mergeAngleDeg > 50) {
+                    if (mergeAngleDeg > Math.min(50, memberMaxAngleFromVerticalDeg())) {
                         logPlacement(
                             `Merge skip ${candidate.id}: angle too shallow (${mergeAngleDeg.toFixed(0)}° from vertical > 50°) span=${leafSpanMm.toFixed(1)}mm`);
                     } else try {
@@ -886,7 +904,7 @@ function placeOneCandidate(
                     `auto-cavity-fan-${candidate.id}`,
                     Math.max(8, auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM),
                     GRID_HOST_FAN_RADIUS_MM,
-                    auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
+                    Math.min(auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG, memberMaxAngleFromVerticalDeg()),
                     auto.maxAttachmentsPerTrunk ?? 12,
                     draft,
                     mesh,
@@ -2025,7 +2043,7 @@ export function forestReportToText(report: ForestReport): string {
             const fanStr = fanEntries.length > 0 ? fanEntries.map(([k, v]) => `${k}=${v}`).join(', ') : 'none';
             const mergeStr = mergeEntries.length > 0 ? mergeEntries.map(([k, v]) => `${k}=${v}`).join(', ') : 'none';
             const fanMaxDeg = getSettings().autoSupport?.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
-            lines.push(`  Fan refusals: ${fanStr} (noHost=too far >5mm/2.5mm grid, angle=>${fanMaxDeg}° too flat, sameZ|cross|blocked|capacity=host full)`);
+            lines.push(`  Fan refusals: ${fanStr} (noHost=too far >5mm/2.5mm grid, angle=>${Math.min(fanMaxDeg, memberMaxAngleFromVerticalDeg())}° too flat, sameZ|cross|blocked|capacity=host full)`);
             const conEntries = Object.entries(d.consolidationRefusals ?? {}).filter(([, v]) => v);
             if (conEntries.length > 0) {
                 const conStr = conEntries.map(([k, v]) => `${k}=${v}`).join(', ');
@@ -2052,10 +2070,14 @@ export function forestReportToText(report: ForestReport): string {
         {
             const fanMaxDeg = getSettings().autoSupport?.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
             const cap = getSettings().autoSupport?.maxAttachmentsPerTrunk ?? 12;
+            const maxFromVertical = memberMaxAngleFromVerticalDeg();
+            const effectiveFan = Math.min(fanMaxDeg, maxFromVertical);
+            const effectiveLink = Math.min(Math.max(fanMaxDeg, CONSOLIDATION_MAX_ANGLE_DEG), maxFromVertical);
             lines.push(
-                `  (host trunk → its leaves/branches — placement fans ≤${fanMaxDeg}° from vertical within 5mm ` +
-                `(2.5mm for grid hosts), chunk-consolidation links ≤${Math.max(fanMaxDeg, CONSOLIDATION_MAX_ANGLE_DEG)}° within ` +
-                `${CONSOLIDATION_FAN_RADIUS_MM}mm, cap ${cap} members per host. ` +
+                `  (host trunk → its leaves/branches. Every member must rise ≥${90 - maxFromVertical}° above horizontal ` +
+                `(grid.minBranchAngleDeg), so placement fans ≤${effectiveFan}° from vertical within 5mm ` +
+                `(2.5mm for grid hosts) and chunk-consolidation links ≤${effectiveLink}° within ` +
+                `${CONSOLIDATION_FAN_RADIUS_MM}mm; cap ${cap} members per host. ` +
                 `spans/angles are post-resize knot→tip — drift can make a link read shallower than its placement gate)`);
         }
         for (const tree of report.trees) {
@@ -2381,9 +2403,9 @@ export function computeAutoSupportPlan(
     // chunk (see constants.ts for why). Same-height pillars (vDist ≈ 0)
     // still cannot fan and stay as their own trunks.
     const conFanRadiusMm = Math.max(autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM, CONSOLIDATION_FAN_RADIUS_MM);
-    const conFanMaxAngleDeg = Math.max(
-        autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
-        CONSOLIDATION_MAX_ANGLE_DEG,
+    const conFanMaxAngleDeg = Math.min(
+        Math.max(autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG, CONSOLIDATION_MAX_ANGLE_DEG),
+        memberMaxAngleFromVerticalDeg(),
     );
     let consolidated = 0;
     for (let pass = 0; pass < 3; pass++) {
@@ -2643,7 +2665,10 @@ export function computeAutoSupportPlan(
 
     // ── Post-placement leaf fanning (iterative convergence) ──────────
     const fanRadiusMm = autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM;
-    const fanMaxAngleDeg = autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
+    const fanMaxAngleDeg = Math.min(
+        autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
+        memberMaxAngleFromVerticalDeg(),
+    );
 
     console.log(LOG_PREFIX,
         `Leaf fanning: ${analytics.islandsUncovered} uncovered islands, ${placedTrunks} trunks available. ` +
