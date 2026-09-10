@@ -48,7 +48,8 @@ shaft and carries no `modelId`, so its model is derived from its host.
 
 Add `'gadget'` to `SupportTypeId` and one descriptor to `SUPPORT_TYPES`. This is
 what makes every derived walk see the type. Beyond identity
-(`id`, `label`, `location`, `selectionCategory`, `historyAdd`, `historyRemove`),
+(`id`, `label`, `location`, `selectionCategory`; `historyAdd` and
+`historyRemove` are derived from the id),
 you must answer each behaviour flag — they have no defaults, and a test asserts
 every descriptor declares all of them:
 
@@ -108,21 +109,21 @@ whether the type is user-placeable.
 
 `detailRendererCoverage.test.ts` fails if a declared type has no entry.
 
-## 4. History — `src/supports/history/` *(hand-wired)*
+## 4. History — `src/supports/history/` *(registry-driven)*
 
-1. `actionTypes.ts` — add a `SUPPORT_ADD_GADGET` / `SUPPORT_REMOVE_GADGET`
-   constant pair and two entries in `SupportHistoryPayloadMap`. The payload
-   types are **derived**: `SupportEntityPayload<'gadget'>` for the add and
-   `SupportRemovalResult<'gadget'>` for the remove, both read from the entry you
-   declare in `SUPPORT_REMOVAL_SHAPES`. Write the interface out by hand only if
-   your payload carries something the cascade does not (a branch's trunk
-   reprofile, say). The map type-checks every push and handler;
-   `SupportHistoryActionType` derives from it.
-2. `useSupportHistoryHandlers.ts` — registration is **all-in-one**: the single
-   `registerSupportHistoryHandlers()` registers every type in one array. Add
-   add/remove entries (pattern `SUPPORT_ADD_STICK` / `SUPPORT_REMOVE_STICK`),
-   inverting each other: undo of add → `removeGadget`, undo of remove →
-   `addGadget`. The hook is bound at the app root (`app/page.tsx`).
+1. `actionTypes.ts` — **nothing**, for the usual case. Both actions and both
+   payload-map entries derive from the type id: the strings are
+   `support:add-gadget` / `support:remove-gadget` (built by `addAction` /
+   `removeAction`), and the payloads default to `SupportEntityPayload<'gadget'>`
+   and `SupportRemovalResult<'gadget'>`, read from the entry you declare in
+   `SUPPORT_REMOVAL_SHAPES`. Add an entry to `AddPayloadOverrides` or
+   `RemovePayloadOverrides` only if your payload carries something the cascade
+   does not (a branch's trunk reprofile, say). The map type-checks every push
+   and handler; `SupportHistoryActionType` derives from it.
+2. `useSupportHistoryHandlers.ts` — **nothing**. `registerSupportHistoryHandlers()`
+   walks the registry and registers each type's add/remove pair, inverting each
+   other: undo of add removes the entity, undo of remove restores the payload.
+   The hook is bound at the app root (`app/page.tsx`).
 
 Drag/edit undo does **not** need per-type handlers — renderer-initiated edits
 ride `SUPPORT_EDIT_REPLACE` with whole-`SupportState` snapshots
