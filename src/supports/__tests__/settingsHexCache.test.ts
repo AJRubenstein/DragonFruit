@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { addTrunk, addTwig, getSnapshot, resetStore, updateTrunk, updateTwig } from '../state';
-import { SUPPORT_TYPES } from '../supportTypeRegistry';
+import { addSupportEntity, addTrunk, addTwig, getSnapshot, resetStore } from '../state';
+import { SUPPORT_TYPES, updateSupportEntity } from '../supportTypeRegistry';
 import type { Trunk, Twig } from '../types';
 
 /**
@@ -43,7 +43,7 @@ test('adding a trunk with a settings hex seeds the cache', () => {
     // later update that omits one gets it back.
     resetStore();
     addTrunk(trunk('DEADBEEF'));
-    updateTrunk(trunk(undefined));
+    updateSupportEntity('trunk', trunk(undefined));
 
     assert.equal(getSnapshot().trunks['trunk-a'].settingsCodeHex, 'DEADBEEF');
 });
@@ -51,7 +51,7 @@ test('adding a trunk with a settings hex seeds the cache', () => {
 test('an explicit hex on update wins over the cached one', () => {
     resetStore();
     addTrunk(trunk('DEADBEEF'));
-    updateTrunk(trunk('CAFEBABE'));
+    updateSupportEntity('trunk', trunk('CAFEBABE'));
 
     assert.equal(getSnapshot().trunks['trunk-a'].settingsCodeHex, 'CAFEBABE');
 });
@@ -62,29 +62,44 @@ test('a type without a settings hex caches nothing', () => {
     // leaves it absent rather than resurrecting an old value.
     resetStore();
     addTwig(twig('DEADBEEF'));
-    updateTwig(twig(undefined));
+    updateSupportEntity('twig', twig(undefined));
 
     assert.equal(getSnapshot().twigs['twig-a'].settingsCodeHex, undefined);
 });
 
-test('exactly the settings-hex types declare the flag', () => {
-    // The private cache is keyed 'trunk' | 'branch' | 'leaf'; a fourth type
-    // setting the flag would index a bucket that does not exist.
+test('the types the settings menu can edit', () => {
+    // Update deliberately when a type gains or loses editable settings: the flag
+    // decides both what the sidebar can write and what seeds the hex cache.
     assert.deepEqual(
         SUPPORT_TYPES.filter((d) => d.hasEditableSettings).map((d) => d.id).sort(),
-        ['branch', 'leaf', 'trunk'],
+        ['branch', 'kickstand', 'leaf', 'trunk'],
     );
 });
 
 test('the cache buckets are derived, not hand-listed', () => {
-    // A type gaining hasEditableSettings must get a bucket without anyone
-    // editing state.ts. Proven indirectly: every editable type round-trips a
-    // hex through the cache, which only works if its bucket exists.
+    // A type gaining hasEditableSettings gets a bucket without anyone editing
+    // state.ts, because the cache is built from EDITABLE_SUPPORT_TYPES.
     for (const descriptor of SUPPORT_TYPES.filter((d) => d.hasEditableSettings)) {
         assert.ok(
             descriptor.location.key,
             `${descriptor.id} must map to a collection for its cache bucket`,
         );
     }
-    assert.equal(SUPPORT_TYPES.filter((d) => d.hasEditableSettings).length, 3);
+});
+
+test('an editable type seeds and restores its hex through the cache', () => {
+    // The bucket exists for every editable type, not just the original three.
+    resetStore();
+    addSupportEntity('kickstand', {
+        id: 'kickstand-a', modelId: MODEL, rootId: 'root-k',
+        hostKnotId: 'knot-a', hostSegmentId: 'seg-ta',
+        segments: [segment('seg-ka')], settingsCodeHex: 'DEADBEEF',
+    } as never);
+    updateSupportEntity('kickstand', {
+        id: 'kickstand-a', modelId: MODEL, rootId: 'root-k',
+        hostKnotId: 'knot-a', hostSegmentId: 'seg-ta',
+        segments: [segment('seg-ka')],
+    } as never);
+
+    assert.equal(getSnapshot().kickstands['kickstand-a'].settingsCodeHex, 'DEADBEEF');
 });

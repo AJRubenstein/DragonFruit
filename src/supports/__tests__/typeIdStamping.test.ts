@@ -1,23 +1,9 @@
 import assert from 'node:assert/strict';
 import test, { beforeEach } from 'node:test';
 
-import {
-    addSupportEntity,
-    getSnapshot,
-    getSupports,
-    resetStore,
-    setSnapshot,
-    updateAnchor,
-    updateBrace,
-    updateBranch,
-    updateKickstand,
-    updateLeaf,
-    updateStick,
-    updateTrunk,
-    updateTwig,
-} from '../state';
+import { addSupportEntity, getSnapshot, getSupports, resetStore, setSnapshot } from '../state';
 import { draftAddEntity } from '../autoSupport/supportDraft';
-import { SUPPORT_TYPES } from '../supportTypeRegistry';
+import { SUPPORT_TYPES, updateSupportEntity } from '../supportTypeRegistry';
 import type { SupportState } from '../types';
 
 /**
@@ -58,17 +44,6 @@ test('every added entity carries the typeId of its collection', () => {
     }
 });
 
-/** The public updater for each type, which is what production calls. */
-const UPDATERS: Record<string, (entity: never) => void> = {
-    trunk: updateTrunk as (e: never) => void,
-    branch: updateBranch as (e: never) => void,
-    leaf: updateLeaf as (e: never) => void,
-    twig: updateTwig as (e: never) => void,
-    stick: updateStick as (e: never) => void,
-    brace: updateBrace as (e: never) => void,
-    anchor: updateAnchor as (e: never) => void,
-    kickstand: updateKickstand as (e: never) => void,
-};
 
 test('an update preserves the stamp', () => {
     // The realistic way a stamp goes missing: an updater takes a whole entity
@@ -79,7 +54,7 @@ test('an update preserves the stamp', () => {
         addSupportEntity(descriptor.id, entityFor(descriptor.id, id) as never);
 
         // Deliberately UNSTAMPED, as an outside caller would build it.
-        UPDATERS[descriptor.id]({ ...entityFor(descriptor.id, id), modelId: 'model-2' } as never);
+        updateSupportEntity(descriptor.id, { ...entityFor(descriptor.id, id), modelId: 'model-2' } as never);
 
         const collection = getSnapshot()[descriptor.location.key] as unknown as Record<string, { typeId?: string; modelId?: string }>;
         assert.equal(collection[id]?.modelId, 'model-2', `${descriptor.id} update did not apply`);

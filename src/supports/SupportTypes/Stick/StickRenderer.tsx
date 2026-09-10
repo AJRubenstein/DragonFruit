@@ -1,4 +1,5 @@
 import { useContactDiskDragSession } from '../useContactDiskDragSession';
+import { updateSupportEntity } from '../../supportTypeRegistry';
 import { renderShaftSegment } from '../renderShaftSegment';
 import { useShaftSegments } from '../useShaftSegments';
 import React, { useMemo } from 'react';
@@ -14,7 +15,7 @@ import { handleSupportClick } from '../../interaction/clickHandlers';
 import { selectPrimitiveById } from '../../interaction/shared/selection/selectionController';
 import { useHighlight } from '../../interaction/useHighlight';
 import { usePartDragUpdate } from '../../interaction/partDragPreview';
-import { getSnapshot, updateStick } from '../../state';
+import { getSnapshot } from '../../state';
 
 interface StickRendererProps {
   stick: Stick;
@@ -91,7 +92,7 @@ export const StickRenderer = React.memo(function StickRenderer({
     },
     onCommit: ({ key, cone }) => {
       const latestStick = getSnapshot().sticks[stick.id];
-      if (latestStick) updateStick({ ...latestStick, [key]: cone });
+      if (latestStick) updateSupportEntity('stick', { ...latestStick, [key]: cone });
     },
   });
 

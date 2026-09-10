@@ -6,7 +6,7 @@ import type { SupportSelectionCategory } from './supportTypeRegistry';
 import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -250,7 +250,7 @@ function removeSupportEntityCascading(
         const node = SUPPORT_TYPES.find((d) => d.location.key === key);
         if (!node?.hasEditableSettings) continue;
         for (const entityId of ids) {
-            deleteCachedSupportSettingsHex(node.id as 'trunk' | 'branch' | 'leaf', entityId);
+            deleteCachedSupportSettingsHex(node.id, entityId);
         }
     }
 
@@ -1097,8 +1097,8 @@ function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: 
         }
     }
 
-    // Route through updateTrunk so ALL knots attached to this trunk stay connected after joint removal.
-    updateTrunk(after);
+    // Route through the generic update so ALL knots attached to this trunk stay connected after joint removal.
+    applySupportEntityUpdate('trunk', after);
 
     return {
         before,
@@ -1183,7 +1183,7 @@ function removeBranchJoint(branchId: string, jointId: string): { before: Branch;
         }
     }
 
-    updateBranch(after);
+    applySupportEntityUpdate('branch', after);
 
     return {
         before,
@@ -1257,7 +1257,7 @@ export function removeJointById(jointId: string): RemoveJointByIdResult | null {
             lowerSegment.topJoint = undefined;
         }
 
-        updateKickstand(after);
+        applySupportEntityUpdate('kickstand', after);
         return { typeId: 'kickstand', id: kickstandId, before, after };
     }
 
@@ -1544,9 +1544,6 @@ function buildKickstandResult(kickstand: Kickstand): KickstandBuildResult | null
 }
 
 /** @deprecated Thin wrapper for removal; prefer `replaceSupportEntity('kickstand', entity)`. */
-export function updateKickstand(kickstand: Kickstand) {
-    replaceSupportEntity('kickstand', kickstand);
-}
 
 function removeKickstandFromState(id: string): KickstandBuildResult | null {
     const kickstand = state.kickstands[id];
@@ -2248,8 +2245,6 @@ export function toggleSegmentCurve(segmentId: string) {
     // Find the segment in trunks/branches/twigs/sticks
     let targetTrunkId: string | null = null;
     let targetBranchId: string | null = null;
-    let targetTwigId: string | null = null;
-    let targetStickId: string | null = null;
     let targetKickstandId: string | null = null;
     let targetSegmentIndex = -1;
     let container: Trunk | Branch | Twig | Stick | Kickstand | null = null;
@@ -2283,7 +2278,6 @@ export function toggleSegmentCurve(segmentId: string) {
         for (const t of Object.values(state.twigs)) {
             const idx = t.segments.findIndex(s => s.id === segmentId);
             if (idx !== -1) {
-                targetTwigId = t.id;
                 targetSegmentIndex = idx;
                 container = t;
                 break;
@@ -2296,7 +2290,6 @@ export function toggleSegmentCurve(segmentId: string) {
         for (const spt of Object.values(state.sticks)) {
             const idx = spt.segments.findIndex(s => s.id === segmentId);
             if (idx !== -1) {
-                targetStickId = spt.id;
                 targetSegmentIndex = idx;
                 container = spt;
                 break;
@@ -2418,17 +2411,8 @@ export function toggleSegmentCurve(segmentId: string) {
         newContainer.segments[targetSegmentIndex] = bezier;
     }
 
-    if (targetTrunkId) {
-        updateTrunk(newContainer as Trunk);
-    } else if (targetBranchId) {
-        updateBranch(newContainer as Branch);
-    } else if (targetTwigId) {
-        updateTwig(newContainer as Twig);
-    } else if (targetStickId) {
-        updateStick(newContainer as Stick);
-    } else if (targetKickstandId) {
-        updateKickstand(newContainer as Kickstand);
-    }
+    const containerTypeId = getSupportTypeOf(newContainer.id);
+    if (containerTypeId) applySupportEntityUpdate(containerTypeId, newContainer);
 }
 
 export function resetStore() {
@@ -2935,7 +2919,7 @@ export function addRoot(root: Roots) {
 export function addSupportEntity(typeId: SupportTypeId, entity: { id: string; settingsCodeHex?: string }) {
     const descriptor = getSupportTypeDescriptor(typeId);
     if (descriptor.hasEditableSettings && entity.settingsCodeHex) {
-        setCachedSupportSettingsHex(typeId as 'trunk' | 'branch' | 'leaf', entity.id, entity.settingsCodeHex);
+        setCachedSupportSettingsHex(typeId, entity.id, entity.settingsCodeHex);
     }
 
     const key = descriptor.location.key;
@@ -3010,10 +2994,9 @@ function applySupportEntityUpdate(
 
     let next = entity;
     if (descriptor.hasEditableSettings) {
-        const settingsType = typeId as 'trunk' | 'branch' | 'leaf';
-        const cachedHex = getCachedSupportSettingsHex(settingsType, entity.id, entity.settingsCodeHex ?? undefined);
+        const cachedHex = getCachedSupportSettingsHex(typeId, entity.id, entity.settingsCodeHex ?? undefined);
         if (!entity.settingsCodeHex && cachedHex) next = { ...entity, settingsCodeHex: cachedHex };
-        if (next.settingsCodeHex) setCachedSupportSettingsHex(settingsType, next.id, next.settingsCodeHex);
+        if (next.settingsCodeHex) setCachedSupportSettingsHex(typeId, next.id, next.settingsCodeHex);
     }
 
     const nextCollection = { ...state[key], [next.id]: { ...next, typeId } };
@@ -3070,9 +3053,6 @@ function applySupportEntityUpdate(
  * @deprecated for removal -- prefer `updateSupportEntity('trunk', entity)`.
  * Kept for `SupportTypes/Trunk/`, which may name its own type, and for tests.
  */
-export function updateTrunk(trunk: Trunk) {
-    applySupportEntityUpdate('trunk', trunk);
-}
 
 /** @deprecated Thin wrapper for removal; prefer `addSupportEntity('branch', entity)`. */
 export function addBranch(branch: Branch) {
@@ -3135,9 +3115,8 @@ export function addAnchor(anchor: Anchor) {
 /**
  * Overwrite an existing entity in place, no-op if the id is unknown.
  *
- * Only for types whose update is a plain write. `updateTrunk`, `updateBranch`,
- * `updateTwig` and `updateStick` recompute dependent geometry and are
- * deliberately NOT routed through here -- that work genuinely differs per type.
+ * Only for a plain write. A shafted type goes through `applySupportEntityUpdate`
+ * instead, which also repositions the knots riding its segments.
  */
 function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): boolean {
     const key = getSupportTypeDescriptor(typeId).location.key;
@@ -3218,17 +3197,11 @@ for (const descriptor of SUPPORT_TYPES) {
  * @deprecated for removal -- prefer `updateSupportEntity('twig', entity)`.
  * Kept for `SupportTypes/Twig/`, which may name its own type, and for tests.
  */
-export function updateTwig(twig: Twig) {
-    applySupportEntityUpdate('twig', twig);
-}
 
 /**
  * @deprecated for removal -- prefer `updateSupportEntity('stick', entity)`.
  * Kept for `SupportTypes/Stick/`, which may name its own type, and for tests.
  */
-export function updateStick(stick: Stick) {
-    applySupportEntityUpdate('stick', stick);
-}
 
 /**
  * @deprecated for removal -- prefer `updateSupportEntity('brace', entity)`.
@@ -3273,9 +3246,6 @@ export function removeBranch(branchId: string) {
  * @deprecated for removal -- prefer `updateSupportEntity('branch', entity)`.
  * Kept for `SupportTypes/Branch/`, which may name its own type, and for tests.
  */
-export function updateBranch(branch: Branch) {
-    applySupportEntityUpdate('branch', branch);
-}
 
 export function addKnot(knot: Knot) {
     setState({
@@ -3575,6 +3545,62 @@ export type EditableSupportTarget = {
     id: string;
 };
 
+/**
+ * Settings read back off an entity using only what its descriptor declares:
+ * the first `contactFields` cone for the tip, the owned root for the roots, and
+ * segment 0 for the shaft. Each half is skipped when the type declares nothing.
+ */
+function inferSettingsFromDescriptor(
+    descriptor: SupportTypeDescriptor,
+    entity: SupportEntityAny,
+    base?: SupportSettings,
+): SupportSettings {
+    const merged = mergeSettingsWithDefaults(base);
+    const record = entity as unknown as Record<string, unknown>;
+
+    const cone = descriptor.contactFields
+        .map((field) => record[field] as { profile?: SupportTipProfile } | undefined)
+        .find(Boolean);
+    const coneProfile = cone?.profile;
+    const diskConeProfile = coneProfile?.type === 'disk' ? coneProfile : undefined;
+
+    const segments = (record.segments as Segment[] | undefined) ?? [];
+    const shaftDiameter = (record.baseDiameterMm as number | undefined)
+        ?? segments[0]?.diameter
+        ?? merged.shaft.diameterMm;
+
+    const root = descriptor.ownsRoot
+        ? state.roots[(record.rootId as string | undefined) ?? ''] ?? null
+        : null;
+
+    return {
+        ...merged,
+        tip: coneProfile
+            ? {
+                ...merged.tip,
+                contactDiameterMm: coneProfile.contactDiameterMm ?? merged.tip.contactDiameterMm,
+                bodyDiameterMm: coneProfile.bodyDiameterMm ?? merged.tip.bodyDiameterMm,
+                lengthMm: coneProfile.lengthMm ?? merged.tip.lengthMm,
+                penetrationMm: coneProfile.penetrationMm ?? merged.tip.penetrationMm,
+                diskThicknessMm: diskConeProfile?.diskThicknessMm ?? merged.tip.diskThicknessMm,
+                maxStandoffMm: diskConeProfile?.maxStandoffMm ?? merged.tip.maxStandoffMm,
+                standoffAngleThreshold: diskConeProfile?.standoffAngleThreshold ?? merged.tip.standoffAngleThreshold,
+            }
+            : merged.tip,
+        shaft: descriptor.hasSegments
+            ? { ...merged.shaft, diameterMm: shaftDiameter, secondaryDiameterMm: shaftDiameter }
+            : merged.shaft,
+        roots: root
+            ? {
+                ...merged.roots,
+                diameterMm: root.diameter ?? merged.roots.diameterMm,
+                diskHeightMm: root.diskHeight ?? merged.roots.diskHeightMm,
+                coneHeightMm: root.coneHeight ?? merged.roots.coneHeightMm,
+            }
+            : merged.roots,
+    };
+}
+
 function inferSettingsFromTrunk(trunk: Trunk, root: Roots | null, base?: SupportSettings): SupportSettings {
     const merged = mergeSettingsWithDefaults(base);
     const coneProfile = trunk.contactCone?.profile;
@@ -3853,25 +3879,39 @@ import './SupportTypes/Branch/branchRegistration';
 import './SupportTypes/Leaf/leafRegistration';
 
 /* --- Updater registration ------------------------------------------------
- * Fills the registry's updater slot per declared type, looking each function up
- * by convention (`update` + capitalised id). A missing one throws at load.
+ * Every type updates through `applySupportEntityUpdate`. The three listed here
+ * do something the generic path cannot: a leaf reshapes its cone, a brace
+ * recomputes its curve, an anchor writes without touching knots.
  * ---------------------------------------------------------------------- */
-const SUPPORT_UPDATERS: Record<string, (entity: never) => void> = {
-    updateTrunk, updateBranch, updateLeaf, updateTwig,
-    updateStick, updateBrace, updateAnchor, updateKickstand,
+const BESPOKE_UPDATERS: Partial<Record<SupportTypeId, (entity: never) => void>> = {
+    leaf: updateLeaf,
+    brace: updateBrace,
+    anchor: updateAnchor,
 };
 
 for (const descriptor of SUPPORT_TYPES) {
-    const name = `update${descriptor.id.charAt(0).toUpperCase()}${descriptor.id.slice(1)}`;
-    const update = SUPPORT_UPDATERS[name];
-    if (!update) throw new Error(`No ${name} for support type "${descriptor.id}"`);
-    registerSupportUpdater(descriptor.id, update);
+    const bespoke = BESPOKE_UPDATERS[descriptor.id];
+    registerSupportUpdater(
+        descriptor.id,
+        bespoke ?? ((entity: { id: string }) => applySupportEntityUpdate(descriptor.id, entity)),
+    );
 }
 
 // Settings inference per type. Trunks read their root, which is why this is a
 // slot rather than something the registry could hold directly.
 registerSettingsInference<Trunk, SupportSettings, SupportSettings>('trunk', (trunk, base) =>
     inferSettingsFromTrunk(trunk, state.roots[trunk.rootId] ?? null, base));
+
+// Generic inference for every editable type that registered none of its own.
+// What it reads is declared: `contactFields` for the tip, `ownsRoot` for the
+// root, and the shaft from segment 0. A type wanting more registers its own.
+for (const descriptor of EDITABLE_SUPPORT_TYPES) {
+    if (hasSettingsInference(descriptor.id)) continue;
+    registerSettingsInference<SupportEntityAny, SupportSettings, SupportSettings>(
+        descriptor.id,
+        (entity, base) => inferSettingsFromDescriptor(descriptor, entity, base),
+    );
+}
 
 
 // How each collection puts an entity back, for undo. Every type goes through

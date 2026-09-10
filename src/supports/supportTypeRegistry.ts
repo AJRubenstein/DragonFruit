@@ -727,7 +727,7 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
     },
     {
         id: 'kickstand',
-        hasEditableSettings: false,
+        hasEditableSettings: true,
         edges: [
             { field: 'rootId', to: 'roots', ownership: 'owns' },
             { field: 'hostKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' },
@@ -941,6 +941,11 @@ export function registerSettingsInference<E, B, R>(
     infer: (entity: E, base?: B) => R,
 ): void {
     SETTINGS_INFERENCE.set(typeId, infer as SettingsInference);
+}
+
+/** Whether a type registered its own rule, rather than taking the generic one. */
+export function hasSettingsInference(typeId: SupportTypeId): boolean {
+    return SETTINGS_INFERENCE.has(typeId);
 }
 
 /** Settings inferred for `entity`, or null when the type declares no rule. */

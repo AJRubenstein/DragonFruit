@@ -1,4 +1,5 @@
 import { useContactDiskDragSession } from '../useContactDiskDragSession';
+import { updateSupportEntity } from '../../supportTypeRegistry';
 import React, { useSyncExternalStore } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -16,7 +17,7 @@ import { handleSupportClick } from '../../interaction/clickHandlers';
 import { selectPrimitiveById } from '../../interaction/shared/selection/selectionController';
 import { useHighlight } from '../../interaction/useHighlight';
 import { usePartDragUpdate } from '../../interaction/partDragPreview';
-import { getSnapshot, updateTrunk } from '../../state';
+import { getSnapshot } from '../../state';
 import { subscribeToSettings, getSettingsSnapshot } from '../../Settings/state';
 
 interface TrunkRendererProps {
@@ -85,7 +86,7 @@ export const TrunkRenderer = React.memo(function TrunkRenderer({ trunk: baseTrun
         },
         onCommit: (cone) => {
             const latest = getSnapshot().trunks[trunk.id];
-            if (latest) updateTrunk({ ...latest, contactCone: cone });
+            if (latest) updateSupportEntity('trunk', { ...latest, contactCone: cone });
         },
     });
 

@@ -1,5 +1,6 @@
 import type { Branch, Joint, Knot, Roots, SupportState, Trunk, Vec3 } from '../../../types';
-import { cloneSupportState, addBranch, addKnot, addLeaf, addRoot, addTrunk, getSnapshot, removeBranch, removeLeaf, removeTrunk, updateBranch, updateKnot, updateTrunk } from '../../../state';
+import { updateSupportEntity } from '../../../supportTypeRegistry';
+import { cloneSupportState, addBranch, addKnot, addLeaf, addRoot, addTrunk, getSnapshot, removeBranch, removeLeaf, removeTrunk, updateKnot } from '../../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_REPLACE_TRUNK } from '../../../history/actionTypes';
 import type { SupportReplaceTrunkPayload } from '../../../history/actionTypes';
@@ -479,7 +480,7 @@ export function applyTrunkReplacement(
 
         addKnot(newParentKnot);
         const updated = adjustBranchForNewParentKnot(existingBranch, newParentKnot);
-        updateBranch(updated);
+        updateSupportEntity('branch', updated);
     }
 
     // Rehost all connected leaves by recreating the leaf + its parent knot (no leaf update function).
@@ -539,7 +540,7 @@ export function applyTrunkReplacement(
         for (const u of applied.knotUpdates) {
             updateKnot(u.after);
         }
-        updateTrunk(applied.trunk);
+        updateSupportEntity('trunk', applied.trunk);
     }
 
     const after = cloneSupportState(getSnapshot());

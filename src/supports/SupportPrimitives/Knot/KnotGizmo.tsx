@@ -3,16 +3,7 @@ import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { ScreenSpaceGizmo } from '@/components/gizmo/ScreenSpaceGizmo';
 import { isKeyPressedSync } from '@/hotkeys/hotkeyStore';
-import {
-    findShaftOwnerOfSegment,
-    getSupportEntity,
-    subscribe,
-    getSnapshot,
-    getKnotById,
-    getSupportEntities,
-    getRootById,
-    updateKnot,
-} from '../../state';
+import { findShaftOwnerOfSegment, getSupportEntity, subscribe, getSnapshot, getKnotById, getSupportEntities, getRootById, updateKnot } from '../../state';
 import { Branch, Knot, Segment } from '../../types';
 import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
 import { resolveSegmentEndpoints } from './segmentEndpoints';

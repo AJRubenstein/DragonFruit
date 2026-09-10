@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { cloneSupportState, addAnchor, addBranch, addKnot, addLeaf, addRoot, addSupportEntityWithHistory, addTrunk, getSnapshot, setSnapshot, updateKnot, updateTrunk } from '../../state';
+import { cloneSupportState, addAnchor, addBranch, addKnot, addLeaf, addRoot, addSupportEntityWithHistory, addTrunk, getSnapshot, setSnapshot, updateKnot } from '../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_ADD_ANCHOR, SUPPORT_ADD_BRANCH, SUPPORT_ADD_LEAF, SUPPORT_ADD_TRUNK } from '../../history/actionTypes';
 import { useInteractionStatus } from '../../interaction/useInteractionStatus';
@@ -13,7 +13,7 @@ import type { ContactCone } from '../../SupportPrimitives/ContactCone/types';
 import { calculateSmoothedNormal } from '../../PlacementLogic/PlacementUtils';
 import { getSettings } from '../../Settings/state';
 import { decideGridPlacement } from '../../PlacementLogic/Grid';
-import { buildContactBridge, selectTypeForPlacement, type SupportTypeId } from '../../supportTypeRegistry';
+import { buildContactBridge, selectTypeForPlacement, type SupportTypeId, updateSupportEntity } from '../../supportTypeRegistry';
 import { shaftVerticalCos } from '../Stick/stickVerticality';
 import { clearSupportSelection } from '../../interaction/shared/selection/selectionController';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
@@ -699,7 +699,7 @@ export function useTrunkPlacementV2() {
                         updateKnot(u.after);
                     }
 
-                    updateTrunk(applied.trunk);
+                    updateSupportEntity('trunk', applied.trunk);
                     return { before: hostTrunk, after: applied.trunk, knotUpdates: applied.knotUpdates };
                 })()
                 : null;

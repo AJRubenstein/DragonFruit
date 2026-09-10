@@ -14,25 +14,7 @@ import { useJointCreationHotkey } from '@/supports/SupportPrimitives/Joint/useJo
 import { useCurveHotkey } from '@/supports/Curves/useCurveHotkey';
 import { useJointCreationState } from '@/supports/SupportPrimitives/Joint/jointCreationState';
 import { computeAndApplyTrunkDiameterProfile } from '@/supports/SupportTypes/Trunk/TrunkReplacement';
-import { cloneSupportState,
-  getSelectedId,
-  getSelectedCategory,
-  findShaftOwnerOfJoint,
-  findShaftOwnerOfSegment,
-  getSupportEntities,
-  getSupportTypeOf,
-  getSupports,
-  getSnapshot,
-  removeBranch,
-  removeBrace,
-  removeLeaf,
-  removeSupportEntity,
-  removeJointById,
-  updateKnot,
-  setSelectedId,
-  setHoveredState,
-  subscribe,
-} from '@/supports/state';
+import { cloneSupportState, getSelectedId, getSelectedCategory, findShaftOwnerOfJoint, findShaftOwnerOfSegment, getSupportEntities, getSupportTypeOf, getSupports, getSnapshot, removeBranch, removeBrace, removeLeaf, removeSupportEntity, removeJointById, updateKnot, setSelectedId, setHoveredState, subscribe } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_REMOVE_BRANCH, SUPPORT_REMOVE_BRACE, SUPPORT_REMOVE_LEAF, SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_AUTO_BRACE_REPLACE, type SupportBranchRemovePayload } from '@/supports/history/actionTypes';

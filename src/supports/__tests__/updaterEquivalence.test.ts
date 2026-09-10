@@ -1,32 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-    addKnot,
-    addRoot,
-    addSupportEntity,
-    getSnapshot,
-    resetStore,
-    updateBranch,
-    updateBrace,
-    updateLeaf,
-    updateStick,
-    updateTrunk,
-    updateTwig,
-} from '../state';
+import { addKnot, addRoot, addSupportEntity, getSnapshot, resetStore, updateBrace, updateLeaf } from '../state';
 import { SUPPORT_TYPES, updateSupportEntity } from '../supportTypeRegistry';
 import { SUPPORT_UPDATE_BRANCH, SUPPORT_UPDATE_TRUNK } from '../history/actionTypes';
 import type { SupportState } from '../types';
 
 /**
- * What an update writes to the store, for every type that has an updater.
+ * What an update writes to the store, per type.
  *
- * The eight updaters are near-copies of one skeleton: bail if absent, cache the
- * settings hex, write the entity, reposition knots sitting on its shafts, then
- * recompute dependent geometry. These pin the observable result of each so the
- * skeleton can be shared without changing what lands in the store.
+ * The shared skeleton: bail if absent, cache the settings hex, write the
+ * entity, reposition knots sitting on its shafts, then recompute dependent
+ * geometry. Leaf, brace and anchor register their own instead.
  *
- * The whole store is compared, not just the updated collection -- most of these
+ * The whole store is compared, not just the updated collection -- most updates
  * also move knots and leaves, and that spill is the part worth protecting.
  */
 
@@ -134,7 +121,7 @@ test('moving a trunk joint carries its knots, branches and leaves', () => {
     const before = capture();
 
     const trunk = getSnapshot().trunks['trunk-a'];
-    updateTrunk({
+    updateSupportEntity('trunk', {
         ...trunk,
         segments: [{ ...trunk.segments[0], topJoint: { ...trunk.segments[0].topJoint!, pos: { x: 1, y: 0, z: 5 } } }],
     } as never);
@@ -151,7 +138,7 @@ test('a knot on a trunk shaft takes the segment diameter plus 0.125', () => {
     // mutating it passed all 22 goldens.
     scene();
     const trunk = getSnapshot().trunks['trunk-a'];
-    updateTrunk({
+    updateSupportEntity('trunk', {
         ...trunk,
         segments: [{ ...trunk.segments[0], diameter: 2 }],
     } as never);
@@ -163,7 +150,7 @@ test('only the plate-rooted shaft resizes its knots', () => {
     // Branch, twig and stick reposition a knot without touching its diameter.
     scene();
     const branch = getSnapshot().branches['branch-a'];
-    updateBranch({
+    updateSupportEntity('branch', {
         ...branch,
         segments: [{ ...branch.segments[0], diameter: 2 }],
     } as never);
@@ -175,21 +162,20 @@ test('a twig and a stick update identically', () => {
     // The two functions are the same code with the collection key swapped.
     scene();
     const twig = getSnapshot().twigs['twig-a'];
-    updateTwig({ ...twig, segments: [seg('seg-wa', 0, 7)] } as never);
+    updateSupportEntity('twig', { ...twig, segments: [seg('seg-wa', 0, 7)] } as never);
     const twigKnots = JSON.stringify(getSnapshot().knots);
 
     scene();
     const stick = getSnapshot().sticks['stick-a'];
-    updateStick({ ...stick, segments: [seg('seg-sa', 0, 7)] } as never);
+    updateSupportEntity('stick', { ...stick, segments: [seg('seg-sa', 0, 7)] } as never);
     const stickKnots = JSON.stringify(getSnapshot().knots);
 
     assert.equal(twigKnots, stickKnots, 'neither has knots, so both leave them untouched');
 });
 
 test('an update for an entity that is not in the store is a no-op', () => {
-    // `updateTrunk` alone used to INSERT the absent entity rather than bail,
-    // so undo replaying a deleted trunk resurrected it with no root. Sharing
-    // one skeleton gave every type the guard the other seven already had.
+    // An updater that inserts an absent entity rather than bailing lets undo
+    // replay a deleted support and resurrect it with no root.
     for (const descriptor of SUPPORT_TYPES) {
         scene();
         const before = capture();
@@ -198,25 +184,11 @@ test('an update for an entity that is not in the store is a no-op', () => {
     }
 });
 
-test('the registry slot and the direct function agree, for every type', () => {
+test('the registry slot and the bespoke function agree', () => {
+    // Only the types with their own updater can disagree: the rest register the
+    // generic one, so both paths are the same function.
     const cases: Array<[string, (e: never) => void, string, (s: SupportState) => unknown]> = [
-        ['trunk', updateTrunk, 'trunk', (s) => ({
-            ...s.trunks['trunk-a'],
-            segments: [{ ...s.trunks['trunk-a'].segments[0], diameter: 2 }],
-        })],
-        ['branch', updateBranch, 'branch', (s) => ({
-            ...s.branches['branch-a'],
-            segments: [{ ...s.branches['branch-a'].segments[0], diameter: 2 }],
-        })],
         ['leaf', updateLeaf, 'leaf', (s) => ({ ...s.leaves['leaf-a'], modelId: 'model-b' })],
-        ['twig', updateTwig, 'twig', (s) => ({
-            ...s.twigs['twig-a'],
-            segments: [{ ...s.twigs['twig-a'].segments[0], diameter: 2 }],
-        })],
-        ['stick', updateStick, 'stick', (s) => ({
-            ...s.sticks['stick-a'],
-            segments: [{ ...s.sticks['stick-a'].segments[0], diameter: 2 }],
-        })],
         ['brace', updateBrace, 'brace', (s) => ({ ...s.braces['brace-a'], modelId: 'model-b' })],
     ];
 

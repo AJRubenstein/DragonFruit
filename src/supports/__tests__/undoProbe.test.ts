@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { updateSupportEntity } from '../supportTypeRegistry';
 import test from 'node:test';
 
 import { clearHistory, undo } from '../../history/historyStore';
@@ -6,7 +7,7 @@ import { pushSupportHistory } from '../history/supportHistory';
 import { SUPPORT_UPDATE_TRUNK, SUPPORT_REMOVE_TRUNK, SUPPORT_REMOVE_BRANCH } from '../history/actionTypes';
 import { pushSupportEditHistory, captureSupportEditSnapshot } from '../history/supportEditHistory';
 import { registerSupportHistoryHandlers } from '../history/useSupportHistoryHandlers';
-import { resetStore, getSnapshot, setSnapshot, updateTrunk, removeTrunk, removeBranch, addRoot, addTrunk, resetKickstandsInState} from '../state';
+import { resetStore, getSnapshot, setSnapshot, removeTrunk, removeBranch, addRoot, addTrunk, resetKickstandsInState } from '../state';
 import type { SupportState, Trunk, Roots, Segment, Branch } from '../types';
 
 function emptySnapshot(): SupportState {
@@ -41,7 +42,7 @@ function seedTrunk(id: string, segmentId: string, jointPos: { x: number; y: numb
     setSnapshot(snapshot);
 }
 
-test('updateTrunk re-anchors t-less knots when the shaft moves', () => {
+test('a trunk update re-anchors t-less knots when the shaft moves', () => {
     resetStore();
     resetKickstandsInState();
     clearHistory();
@@ -61,7 +62,7 @@ test('updateTrunk re-anchors t-less knots when the shaft moves', () => {
             topJoint: s.topJoint ? { ...s.topJoint, pos: { x: 5, y: 0, z: 12 } } : s.topJoint,
         })),
     };
-    updateTrunk(moved);
+    updateSupportEntity('trunk', moved);
 
     const knot = getSnapshot().knots['k1'];
     assert.ok(knot, 'knot survives');
@@ -88,7 +89,7 @@ test('undo restores a moved trunk joint (SUPPORT_UPDATE_TRUNK)', () => {
             topJoint: s.topJoint ? { ...s.topJoint, pos: { x: 5, y: 0, z: 12 } } : s.topJoint,
         })),
     };
-    updateTrunk(moved);
+    updateSupportEntity('trunk', moved);
     pushSupportHistory({ type: SUPPORT_UPDATE_TRUNK, payload: { before, after: moved } });
 
     assert.equal(getSnapshot().trunks.t1.segments[0].topJoint?.pos.x, 5, 'joint moved before undo');
@@ -142,7 +143,7 @@ test('undo restores a branch-joint move pushed via pushSupportEditHistory (defer
     seedTrunk('t1', 's1', { x: 0, y: 0, z: 10 });
     const before = captureSupportEditSnapshot();
 
-    // Simulate the branch-joint drag: mutate the trunk joint (via updateTrunk)
+    // Simulate the branch-joint drag: mutate the trunk joint
     // then push the edit history exactly like useJointInteraction does.
     const moved: Trunk = {
         ...getSnapshot().trunks.t1,
@@ -151,7 +152,7 @@ test('undo restores a branch-joint move pushed via pushSupportEditHistory (defer
             topJoint: s.topJoint ? { ...s.topJoint, pos: { x: 5, y: 0, z: 12 } } : s.topJoint,
         })),
     };
-    updateTrunk(moved);
+    updateSupportEntity('trunk', moved);
     pushSupportEditHistory('Move branch joint', before, captureSupportEditSnapshot());
 
     // The push is deferred to idle; wait for the flush (setTimeout fallback).
@@ -188,7 +189,7 @@ test('undo preserves selection when the moved support still exists', () => {
             topJoint: s.topJoint ? { ...s.topJoint, pos: { x: 5, y: 0, z: 12 } } : s.topJoint,
         })),
     };
-    updateTrunk(moved);
+    updateSupportEntity('trunk', moved);
     pushSupportHistory({ type: SUPPORT_UPDATE_TRUNK, payload: { before, after: moved } });
 
     undo();
@@ -217,7 +218,7 @@ test('undo clears a selection that points at a removed entity', () => {
             topJoint: s.topJoint ? { ...s.topJoint, pos: { x: 5, y: 0, z: 12 } } : s.topJoint,
         })),
     };
-    updateTrunk(moved);
+    updateSupportEntity('trunk', moved);
     pushSupportHistory({ type: SUPPORT_UPDATE_TRUNK, payload: { before, after: moved } });
 
     undo();

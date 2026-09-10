@@ -1,4 +1,5 @@
 import { useShaftSegments } from '../useShaftSegments';
+import { updateSupportEntity } from '../../supportTypeRegistry';
 import { useContactDiskDragSession } from '../useContactDiskDragSession';
 import React, { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
@@ -14,7 +15,7 @@ import { handleSupportClick } from '../../interaction/clickHandlers';
 import { selectPrimitiveById } from '../../interaction/shared/selection/selectionController';
 import { useHighlight } from '../../interaction/useHighlight';
 import { usePartDragUpdate } from '../../interaction/partDragPreview';
-import { getSnapshot, updateTwig, updateKnot, updateLeaf } from '../../state';
+import { getSnapshot, updateKnot, updateLeaf } from '../../state';
 import { twigDiskJointStandoff } from './twigJointStandoff';
 import { clearTwigDragPreview, computeTwigDragAttachmentUpdates, emitTwigDragPreview } from './twigDragPreview';
 
@@ -212,7 +213,7 @@ export const TwigRenderer = React.memo(function TwigRenderer({
       return nextTwig;
     },
     onCommit: (nextTwig) => {
-      updateTwig(nextTwig);
+      updateSupportEntity('twig', nextTwig);
       const { knotsById, leavesById } = attachmentUpdatesFor(nextTwig);
       for (const knot of Object.values(knotsById)) updateKnot(knot);
       for (const leaf of Object.values(leavesById)) updateLeaf(leaf);

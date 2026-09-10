@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { updateSupportEntity } from '../supportTypeRegistry';
 import test from 'node:test';
 
 import { captureSupportGeometryToken, isSameSupportGeometry } from '../SupportPrimitives/Knot/useKnotInteraction';
-import { addBranch, addKnot, setHoveredState, updateBranch } from '../state';
+import { addBranch, addKnot, setHoveredState } from '../state';
 import type { Branch, Knot } from '../types';
 
 const knot: Knot = {
@@ -35,7 +36,7 @@ test('editing branch geometry invalidates the prewarmed knot-drag capture', () =
     addBranch(branch);
 
     const prewarmed = captureSupportGeometryToken();
-    updateBranch({
+    updateSupportEntity('branch', {
         ...branch,
         segments: [{ ...branch.segments[0], topJoint: { id: 'joint-1', pos: { x: 0, y: 0, z: 8 }, diameter: 1.1 } }],
     });

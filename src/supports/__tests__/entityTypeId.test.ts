@@ -1,19 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-    addKnot,
-    addRoot,
-    addSupportEntity,
-    findShaftOwnerOfJoint,
-    findShaftOwnerOfSegment,
-    getSnapshot,
-    getSupportTypeOf,
-    setSnapshot,
-    loadFromImportFormat,
-    removeSupportEntity,
-    resetStore,
-} from '../state';
+import { addKnot, addRoot, addSupportEntity, findShaftOwnerOfJoint, findShaftOwnerOfSegment, getSnapshot, getSupportTypeOf, setSnapshot, loadFromImportFormat, removeSupportEntity, resetStore } from '../state';
 import { SUPPORT_TYPES, getSupportTypeDescriptor, restoreToCollection, updateSupportEntity } from '../supportTypeRegistry';
 import { buildSupportExportFromStores } from '@/features/scene/voxl/codec';
 

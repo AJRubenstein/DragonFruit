@@ -6,12 +6,13 @@ import {
     addKnot,
     addLeaf,
     addRoot,
+    addSupportEntity,
     addTrunk,
     applySettingsToSupportTarget,
     getSnapshot,
     resetStore,
 } from '../state';
-import { EDITABLE_SUPPORT_TYPES } from '../supportTypeRegistry';
+import { EDITABLE_SUPPORT_TYPES, getSupportTypeDescriptor } from '../supportTypeRegistry';
 import { createDefaultSettings } from '../Settings/types';
 import { DEFAULT_TIP_PROFILE } from '../SupportPrimitives/ContactCone/types';
 import type { Branch, Leaf, Trunk } from '../types';
@@ -59,6 +60,16 @@ function scene() {
         segments: [segment('seg-ba')], contactCone: cone('cone-ba'),
     } as unknown as Branch);
     addLeaf({ id: 'leaf-a', modelId: MODEL, parentKnotId: 'knot-a', contactCone: cone('cone-la') } as unknown as Leaf);
+    addRoot({
+        id: 'root-k', modelId: MODEL,
+        transform: { pos: { x: 5, y: 0, z: 0 }, rot: { x: 0, y: 0, z: 0, w: 1 } },
+        diameter: 3, diskHeight: 0.5, coneHeight: 1.5,
+    } as never);
+    addSupportEntity('kickstand', {
+        id: 'kickstand-a', modelId: MODEL, rootId: 'root-k',
+        hostKnotId: 'knot-a', hostSegmentId: 'seg-ta',
+        segments: [segment('seg-ka')],
+    } as never);
 }
 
 /** Settings distinguishable from the defaults in every field this reads. */
@@ -130,6 +141,30 @@ test('a leaf takes the contact diameter but not the body or length', () => {
     assert.equal(leaf.contactCone.profile.bodyDiameterMm, originalProfile.bodyDiameterMm);
     assert.equal(leaf.contactCone.profile.lengthMm, originalProfile.lengthMm);
     assert.ok(leaf.settingsCodeHex);
+});
+
+test('a kickstand rewrites its shaft and its own root', () => {
+    scene();
+    const trunkRootBefore = getSnapshot().roots['root-a'];
+    applySettingsToSupportTarget({ kind: 'kickstand', id: 'kickstand-a' }, settings() as never);
+
+    const state = getSnapshot();
+    const kickstand = state.kickstands['kickstand-a'];
+
+    assert.equal(kickstand.segments[0].diameter, 2.75, 'the shaft takes the diameter');
+    assert.equal((kickstand as { baseDiameterMm?: number }).baseDiameterMm, 2.75);
+    assert.equal(state.roots['root-k'].diameter, 6.5, 'its own root takes the root settings');
+    assert.deepEqual(state.roots['root-a'], trunkRootBefore, "a kickstand must not touch the trunk's root");
+    assert.ok(kickstand.settingsCodeHex);
+});
+
+test('a kickstand has no contact cone to write a tip onto', () => {
+    // contactFields is empty, so the tip half of the settings has no target.
+    assert.deepEqual(getSupportTypeDescriptor('kickstand').contactFields, []);
+    scene();
+    applySettingsToSupportTarget({ kind: 'kickstand', id: 'kickstand-a' }, settings() as never);
+    const kickstand = getSnapshot().kickstands['kickstand-a'] as unknown as Record<string, unknown>;
+    assert.equal(kickstand.contactCone, undefined);
 });
 
 test('a missing entity or non-editable type applies nothing', () => {

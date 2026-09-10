@@ -4,12 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
-import { findShaftOwnerOfJoint, getSupportEntity, jointPosIn, getSnapshot,
-    getSelectedId,
-    getRootById,
-    getKnotById,
-    setInteractionWarning,
- } from '../../state';
+import { findShaftOwnerOfJoint, getSupportEntity, jointPosIn, getSnapshot, getSelectedId, getRootById, getKnotById, setInteractionWarning } from '../../state';
 import { getSupportTypeDescriptor, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
 import { Vec3, Trunk, Branch, Roots, Segment, Twig, Stick, ContactDisk } from '../../types';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';

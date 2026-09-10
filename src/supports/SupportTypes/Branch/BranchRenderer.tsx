@@ -1,4 +1,5 @@
 import { useContactDiskDragSession } from '../useContactDiskDragSession';
+import { updateSupportEntity } from '../../supportTypeRegistry';
 import { renderShaftSegment } from '../renderShaftSegment';
 import { useShaftSegments } from '../useShaftSegments';
 import React from 'react';
@@ -13,7 +14,7 @@ import { selectPrimitiveById } from '../../interaction/shared/selection/selectio
 import { useHighlight } from '../../interaction/useHighlight';
 import { usePartDragUpdate } from '../../interaction/partDragPreview';
 import { KnotRenderer } from '../../SupportPrimitives/Knot/KnotRenderer';
-import { getSnapshot, updateBranch } from '../../state';
+import { getSnapshot } from '../../state';
 import { getSettings } from '../../Settings/state';
 import { decodeSupportSettingsHex } from '../../Settings/supportSettingsCodec';
 import { buildBranchData, remapBranchGeometryIds } from './branchBuilder';
@@ -115,7 +116,7 @@ export const BranchRenderer = React.memo(function BranchRenderer({
         modelId: latest.modelId,
       };
     },
-    onCommit: (next) => updateBranch(next),
+    onCommit: (next) => updateSupportEntity('branch', next),
   });
 
   const handleContactDiskHudPointerDown = React.useCallback((e: any) => {
