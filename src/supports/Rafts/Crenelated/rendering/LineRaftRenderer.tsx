@@ -3,7 +3,7 @@
 import React from 'react';
 import * as THREE from 'three';
 import { useSyncExternalStore } from 'react';
-import { subscribe, getSnapshot, getKickstandRoots } from '@/supports/state';
+import { subscribe, getSnapshot } from '@/supports/state';
 import { getRaftSettings, subscribeToRaftStore } from '../RaftState';
 import { convexHull2d } from '../geometry/convexHull2d';
 import { computeFootprint } from '../geometry/computeFootprint';
@@ -144,9 +144,6 @@ export default function LineRaftRenderer({
   onModelPointerSelect,
 }: LineRaftRendererProps) {
   const supportState = useSyncExternalStore(subscribe, getSnapshot);
-  // The roots kickstands own, kept separate from every other root: raft
-  // base circles count the two as distinct inputs.
-  const kickstandRoots = useSyncExternalStore(subscribe, getKickstandRoots, getKickstandRoots);
   const raft = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
   const [immediateModelHoverId, setImmediateModelHoverId] = React.useState<string | null>(null);
   const [immediatePrepareActiveModelId, setImmediatePrepareActiveModelId] = React.useState<string | null>(null);
@@ -244,7 +241,6 @@ export default function LineRaftRenderer({
     const rootsByModel = collectRaftBaseCirclesByModel({
       roots: Object.values(supportState.roots),
       anchors: Object.values(supportState.anchors),
-      kickstandRoots: Object.values(kickstandRoots),
     }, {
       modelFilterId,
       excludeModelId,
@@ -347,7 +343,7 @@ export default function LineRaftRenderer({
     }
 
     return meshes;
-  }, [excludeModelId, excludedModelIdSet, modelFilterId, raft, supportState, kickstandRoots, raftOpacity, raftTransparent, ghostRenderOrder, clippingPlanes]);
+  }, [excludeModelId, excludedModelIdSet, modelFilterId, raft, supportState, raftOpacity, raftTransparent, ghostRenderOrder, clippingPlanes]);
 
   const handleClick = React.useCallback((e: any) => {
     const modelId = e?.object?.userData?.modelId;

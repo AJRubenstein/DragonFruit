@@ -3,7 +3,7 @@
 import React from 'react';
 import * as THREE from 'three';
 import { useSyncExternalStore } from 'react';
-import { subscribe, getSnapshot, getKickstandRoots } from '@/supports/state';
+import { subscribe, getSnapshot } from '@/supports/state';
 import { getRaftSettings, subscribeToRaftStore } from '../RaftState';
 import { computeFootprint } from '../geometry/computeFootprint';
 import { computeRaftOuterBoundary } from '../geometry/computeRaftOuterBoundary';
@@ -161,9 +161,6 @@ export default function FootprintBorderRenderer({
   color = '#3b82f6',
 }: FootprintBorderRendererProps) {
   const supportState = useSyncExternalStore(subscribe, getSnapshot);
-  // The roots kickstands own, kept separate from every other root: raft
-  // base circles count the two as distinct inputs.
-  const kickstandRoots = useSyncExternalStore(subscribe, getKickstandRoots, getKickstandRoots);
   const raft = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
   const [localModelFootprintHull, setLocalModelFootprintHull] = React.useState<THREE.Vector2[]>([]);
   const hullCacheKeyRef = React.useRef<string | null>(null);
@@ -172,7 +169,6 @@ export default function FootprintBorderRenderer({
     const circlesByModel = collectRaftBaseCirclesByModel({
       roots: Object.values(supportState.roots),
       anchors: Object.values(supportState.anchors),
-      kickstandRoots: Object.values(kickstandRoots),
     }, modelId != null
       ? { modelFilterId: modelId, fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY }
       : { fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY });
@@ -188,7 +184,7 @@ export default function FootprintBorderRenderer({
 
     const raftOuterBoundary = computeRaftOuterBoundary(baseProfile, raft);
     return raftOuterBoundary && raftOuterBoundary.length >= 3 ? raftOuterBoundary : [];
-  }, [modelId, raft, supportState.anchors, supportState.roots, kickstandRoots]);
+  }, [modelId, raft, supportState.anchors, supportState.roots]);
 
   React.useEffect(() => {
     if (!modelGeometry || !modelTransform) {

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useSyncExternalStore } from 'react';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { usePicking } from '@/components/picking';
-import { subscribe, getSnapshot, getKickstandRoots } from './state';
+import { subscribe, getSnapshot } from './state';
 import { getRaftSettings, subscribeToRaftStore } from './Rafts/Crenelated/RaftState';
 import type { RaftSettings } from './Rafts/Crenelated/RaftTypes';
 import { buildSolidRaftPreviewMeshes } from './Settings/AnatomyPreview/PreviewTypes/Raft/buildSolidRaftPreviewMeshes';
@@ -59,7 +59,6 @@ type VisibleRaftEntry = {
 type RaftProxyCacheEntry = {
   supportRootsRef: ReturnType<typeof getSnapshot>['roots'];
   supportAnchorsRef: ReturnType<typeof getSnapshot>['anchors'];
-  kickstandRootsRef: ReturnType<typeof getKickstandRoots>;
   raftSignature: string;
   geometriesByModel: Map<string, CachedRaftGeometry>;
 };
@@ -199,7 +198,6 @@ export function RaftProxyMeshLayer({
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const supportRoots = supportState.roots;
   const supportAnchors = supportState.anchors;
-  const kickstandRoots = useSyncExternalStore(subscribe, getKickstandRoots, getKickstandRoots);
   const raft = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
 
   const selectedModelIdSet = React.useMemo(() => new Set(selectedModelIds), [selectedModelIds]);
@@ -229,7 +227,6 @@ export function RaftProxyMeshLayer({
       raftProxyCache
       && raftProxyCache.supportRootsRef === supportRoots
       && raftProxyCache.supportAnchorsRef === supportAnchors
-      && raftProxyCache.kickstandRootsRef === kickstandRoots
       && raftProxyCache.raftSignature === raftSignature
     ) {
       return raftProxyCache.geometriesByModel;
@@ -238,7 +235,6 @@ export function RaftProxyMeshLayer({
     const rootCirclesByModel = collectRaftBaseCirclesByModel({
       roots: Object.values(supportRoots),
       anchors: Object.values(supportAnchors),
-      kickstandRoots: Object.values(kickstandRoots),
     }, {
       fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY,
     });
@@ -301,13 +297,12 @@ export function RaftProxyMeshLayer({
     raftProxyCache = {
       supportRootsRef: supportRoots,
       supportAnchorsRef: supportAnchors,
-      kickstandRootsRef: kickstandRoots,
       raftSignature,
       geometriesByModel: next,
     };
 
     return next;
-  }, [raft, raftSignature, supportRoots, supportAnchors, kickstandRoots]);
+  }, [raft, raftSignature, supportRoots, supportAnchors]);
 
   const visibleEntries = React.useMemo<VisibleRaftEntry[]>(() => {
     const entries: VisibleRaftEntry[] = [];

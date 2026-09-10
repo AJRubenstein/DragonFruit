@@ -3330,9 +3330,10 @@ export function getSupportEntities<T = unknown>(typeId: SupportTypeId): T[] {
  * The primitives a type's entities reference, keyed by id.
  *
  * Which fields point where is declared as the type's `edges`, so a caller asks
- * for "the roots kickstands own" without knowing the field name. Used where a
- * consumer needs one type's primitives separately from every other type's --
- * raft base circles count trunk roots and kickstand roots as distinct inputs.
+ * for "the roots kickstands own" without knowing the field name. For a consumer
+ * that needs one type's primitives apart from every other type's -- note that
+ * they are NOT a separate collection, so a caller already walking `roots` has
+ * them and must not add them again.
  */
 export function getOwnedPrimitives<T = unknown>(
     typeId: SupportTypeId,
