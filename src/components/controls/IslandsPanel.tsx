@@ -75,6 +75,8 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
     setShowMinimaOnly,
     showIntersection,
     setShowIntersection,
+    advancedMode,
+    setAdvancedMode,
     filterToggles,
     setFilterToggles,
     orderedIslands,
@@ -265,8 +267,8 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                     </button>
                   </div>
                 </div>
-
-                {/* Display toggles (no header label — the chips are self-explanatory) */}
+                {/* Display toggles (advanced only — the chips are self-explanatory) */}
+                {advancedMode && (
                 <div className="rounded-md border p-2" style={SECTION_CARD}>
                   <div className="grid grid-cols-2 gap-1.5">
                     <ToggleBtn label={_(msg`Voxels`)} checked={showVoxelOnly} onChange={setShowVoxelOnly} color={ISLAND_LAYER_COLORS.voxel} hint={_(msg`Slicing islands and suspended areas detected from layer contours`)} />
@@ -275,6 +277,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                     <ToggleBtn label={_(msg`Overhangs`)} checked={showOverhangs} onChange={setShowOverhangs} color="#ffa500" hint={_(msg`Shallow surfaces detected by the mesh-normal classifier (the surfaces auto-supports grid)`)} />
                   </div>
                 </div>
+                )}
 
                 {/* Filter toggles live in Scan Settings (supported + plate) */}
 
@@ -333,6 +336,21 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
         }
       >
         <div className="space-y-3">
+
+          {/* Display section */}
+          <div className="rounded-md border p-2.5" style={SECTION_CARD}>
+            <SectionHeader title={_(msg`Display`)} />
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={advancedMode}
+                onChange={(e) => setAdvancedMode(e.target.checked)}
+                className="ui-checkbox !w-4 !h-4"
+              />
+              <span className="text-[11px] font-medium" style={{ color: 'var(--text-strong)' }}>{_(msg`Advanced mode`)}</span>
+            </label>
+            <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{_(msg`Shows the Voxels, Minima, Coincident, and Overhangs layer toggles.`)}</p>
+          </div>
 
           {/* Scan section */}
           <div className="rounded-md border p-2.5" style={SECTION_CARD}>

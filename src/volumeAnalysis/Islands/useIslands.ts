@@ -277,6 +277,9 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
   const [showVoxelOnly, setShowVoxelOnly] = useState(true);
   const [showMinimaOnly, setShowMinimaOnly] = useState(true);
   const [showIntersection, setShowIntersection] = useState(true);
+  // Display-only: gates the expert layer toggles in the panel. Immediate,
+  // like the overlay visibility above — not a draft setting, nothing to apply.
+  const [advancedMode, setAdvancedMode] = useState<boolean>(false);
 
   const [selectedMarkerId, setSelectedMarkerId] = useState<number | null>(null);
 
@@ -1087,6 +1090,8 @@ export function useIslands({ geom, transform, layerHeightMm, supportTips, plateZ
     setShowMinimaOnly,
     showIntersection,
     setShowIntersection,
+    advancedMode,
+    setAdvancedMode,
     selectedMarkerId,
     setSelectedMarkerId,
     onRunScan,
