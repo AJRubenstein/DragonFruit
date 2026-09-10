@@ -97,6 +97,26 @@ export const GRID_HOST_FAN_RADIUS_MM = 2.5;
  *  reach overhangs on low-slope surfaces the old gate refused. */
 export const LEAF_FAN_MAX_ANGLE_DEG = 45;
 
+/** Chunk consolidation: MAX distance from a bare overhang pillar's tip to the
+ *  host shaft sample it fans onto (mm) — a ceiling, not a target: the pass
+ *  takes the nearest eligible host, so real links are usually much shorter.
+ *  Wider than {@link LEAF_FAN_RADIUS_MM} so overhang pillars 5–8mm from a host
+ *  can still join the same chunk. */
+export const CONSOLIDATION_FAN_RADIUS_MM = 8;
+
+/** Chunk consolidation: max angle from vertical for a chunk link (deg).
+ *  Relaxed past {@link LEAF_FAN_MAX_ANGLE_DEG} because on a surface sloped
+ *  <45° from horizontal neighbouring pillars can never satisfy the placement
+ *  fan gate — the link angle is always 90° − surface slope — so chunking
+ *  would be geometrically impossible there. The chunk's interior hosts carry
+ *  the load; shallow links are connective tissue. */
+export const CONSOLIDATION_MAX_ANGLE_DEG = 75;
+
+/** Chunk consolidation: routed fallback branches only above this height (mm).
+ *  Near the plate they read as a zig-zag spiderweb; high up they read as
+ *  trees. */
+export const CONSOLIDATION_BRANCH_MIN_HEIGHT_MM = 10;
+
 /** Self-support threshold: surfaces flatter than this angle from horizontal
  *  (deg) are flagged as overhang. Density modulation is normalized to it. */
 export const OVERHANG_SELF_SUPPORT_ANGLE_DEG = 45;

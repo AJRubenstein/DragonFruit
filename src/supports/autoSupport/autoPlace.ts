@@ -57,6 +57,9 @@ import {
     LEAF_FAN_RADIUS_MM,
     GRID_HOST_FAN_RADIUS_MM,
     LEAF_FAN_MAX_ANGLE_DEG,
+    CONSOLIDATION_FAN_RADIUS_MM,
+    CONSOLIDATION_MAX_ANGLE_DEG,
+    CONSOLIDATION_BRANCH_MIN_HEIGHT_MM,
     MAX_LEAF_SPAN_BEFORE_BRANCH_MM,
     MERGE_HOST_LOAD_WEIGHT,
 } from './constants';
@@ -452,21 +455,24 @@ export function buildConsolidationBranch(args: {
 }): { draft: SupportState; branchId: string } | null {
     const { tip, tipNormal, modelId, pool, pruned, mesh, radiusMm, maxAttachments, knotId } = args;
 
-    // Steepest eligible host sample (≤ 50° from vertical — the branch
-    // steepness rule; the leaf fan's angle cap is looser).
+    // Nearest eligible host sample (≤ 50° from vertical — the branch
+    // steepness rule; the leaf fan's angle cap is looser). Nearest, not
+    // steepest: a consolidation link is a local tie between neighbouring
+    // pillars, and steepest-in-reach reaches 8mm across the lattice.
     let best: FanShaftPoint | null = null;
-    let bestAngleDeg = Infinity;
+    let bestDist2 = Infinity;
     for (const sp of pool) {
         const ddx = sp.pos.x - tip.x;
         const ddy = sp.pos.y - tip.y;
         const ddz = sp.pos.z - tip.z;
-        if (ddx * ddx + ddy * ddy + ddz * ddz > radiusMm * radiusMm) continue;
+        const dist2 = ddx * ddx + ddy * ddy + ddz * ddz;
+        if (dist2 > radiusMm * radiusMm) continue;
         const vDist = tip.z - sp.pos.z;
         if (vDist < 1.5) continue;
         const angleDeg = (Math.atan2(Math.hypot(ddx, ddy), vDist) * 180) / Math.PI;
         if (angleDeg > 50) continue;
-        if (angleDeg < bestAngleDeg) {
-            bestAngleDeg = angleDeg;
+        if (dist2 < bestDist2) {
+            bestDist2 = dist2;
             best = sp;
         }
     }
@@ -1257,6 +1263,12 @@ export type FanLeafResult =
     | { ok: true; kind: 'branch'; draft: SupportState; trunkId: string; branchId: string; distMm: number; angleDeg: number }
     | { ok: false; reason: FanLeafRefusal };
 
+/** How a fanning/cluster link picks its host among eligible shaft samples.
+ *  `steepest` (placement fanning) reads as a real branch; `nearest` (chunk
+ *  consolidation) keeps the link local instead of reaching for the tallest
+ *  pillar in range. */
+export type FanHostOrder = 'steepest' | 'nearest';
+
 // ---------------------------------------------------------------------------
 // Fanning orphan detection & legacy rehost
 // ---------------------------------------------------------------------------
@@ -1658,12 +1670,17 @@ export function fanLeafToTrunk(
     draft: SupportState,
     mesh: THREE.Mesh | undefined,
     origin?: SupportOrigin,
+    hostOrder: FanHostOrder = 'steepest',
 ): FanLeafResult {
-    // Single pass over the shaft pool: the STEEPEST sample that is ELIGIBLE
-    // (grid trunks host only up close) and geometrically VALID (not same-Z,
-    // within the max angle from vertical) wins. The nearest sample alone is
-    // not enough — it sits at the shallowest valid angle (the "knot at the
-    // junction" look); the steepest sample in reach reads as a real branch.
+    // Single pass over the shaft pool: the ELIGIBLE sample (grid trunks host
+    // only up close) that is geometrically VALID (not same-Z, within the max
+    // angle from vertical) wins. Placement fanning takes the STEEPEST — the
+    // nearest sample alone sits at the shallowest valid angle (the "knot at
+    // the junction" look), while the steepest sample in reach reads as a real
+    // branch. Chunk consolidation takes the NEAREST instead: its links are
+    // local ties between neighbouring pillars, and "steepest in reach" makes
+    // it skip the adjacent pillar for a taller one up to 8mm away, which is
+    // the long diagonal that reads as a stray branch.
     const candidates: Array<{ sp: FanShaftPoint; dist2: number; angleDeg: number }> = [];
     let refusal: FanLeafRefusal = 'noHost';
 
@@ -1696,8 +1713,11 @@ export function fanLeafToTrunk(
     }
     if (candidates.length === 0) return { ok: false, reason: refusal };
 
-    // Steepest first; distance breaks ties.
-    candidates.sort((a, b) => a.angleDeg - b.angleDeg || a.dist2 - b.dist2);
+    // Steepest first (placement fanning) or nearest first (chunk
+    // consolidation); the other metric breaks ties.
+    candidates.sort((a, b) => (hostOrder === 'nearest'
+        ? a.dist2 - b.dist2 || a.angleDeg - b.angleDeg
+        : a.angleDeg - b.angleDeg || a.dist2 - b.dist2));
 
     // Try each candidate until one clears blocked/cross/capacity/build.
     let lastBlockedReason: FanLeafRefusal | null = null;
@@ -1997,7 +2017,15 @@ export function forestReportToText(report: ForestReport): string {
     if (report.trees.length > 0) {
         lines.push('');
         lines.push('FAN-OUT GROUPS');
-        lines.push(`  (host trunk → leaves/branches within 5mm fan radius, 2.5mm for grid hosts, <${getSettings().autoSupport?.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG}° from vertical, not blocked/crossing, not at capacity)`);
+        {
+            const fanMaxDeg = getSettings().autoSupport?.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG;
+            const cap = getSettings().autoSupport?.maxAttachmentsPerTrunk ?? 12;
+            lines.push(
+                `  (host trunk → its leaves/branches — placement fans ≤${fanMaxDeg}° from vertical within 5mm ` +
+                `(2.5mm for grid hosts), chunk-consolidation links ≤${Math.max(fanMaxDeg, CONSOLIDATION_MAX_ANGLE_DEG)}° within ` +
+                `${CONSOLIDATION_FAN_RADIUS_MM}mm, cap ${cap} members per host. ` +
+                `spans/angles are post-resize knot→tip — drift can make a link read shallower than its placement gate)`);
+        }
         for (const tree of report.trees) {
             const members = tree.members
                 .map((m) => `${m.id}(${m.kind === 'leaf' ? 'L' : 'B'} ${m.spanMm.toFixed(1)}mm/${m.angleDeg.toFixed(0)}°)`)
@@ -2312,28 +2340,18 @@ export function computeAutoSupportPlan(
 
     // ── Overhang→tree consolidation (order-independent) ──────────────
     // A BARE overhang-origin trunk (organic Poisson, coverage fill,
-    // sub-threshold single) whose tip is within the consolidation fan radius
+    // sub-threshold single) whose tip is within CONSOLIDATION_FAN_RADIUS_MM
     // of a valid host is converted into a fan leaf — whether the host placed
     // before or after it, the junction reads as a tree. The radius is wider
-    // than the regular fanning radius (8 mm) so overhang trunks 5–8 mm from
-    // an island trunk still merge, and the angle is relaxed to 75° so
-    // neighbours on shallow surfaces can chunk (see below). Same-height
-    // pillars (vDist ≈ 0) still cannot fan and stay as their own trunks.
-    const CONSOLIDATION_FAN_RADIUS_MM = 8;
-    // Routed consolidation branches only above this height — near the plate
-    // they read as a zig-zag spiderweb; high up they read as trees.
-    const CONSOLIDATION_BRANCH_MIN_HEIGHT_MM = 10;
+    // than the regular fanning radius so overhang trunks 5–8 mm from an
+    // island trunk still merge, and the angle is relaxed to
+    // CONSOLIDATION_MAX_ANGLE_DEG so neighbours on shallow surfaces can
+    // chunk (see constants.ts for why). Same-height pillars (vDist ≈ 0)
+    // still cannot fan and stay as their own trunks.
     const conFanRadiusMm = Math.max(autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM, CONSOLIDATION_FAN_RADIUS_MM);
-    // Chunk links may be shallower than placement fans (75° floor vs the
-    // leafFanMaxAngleDeg gate, now 45° from vertical): on a surface sloped
-    // <45° from horizontal, neighbouring pillars can NEVER satisfy the fan
-    // rule (the link angle is always 90° − surface slope), so chunking would
-    // be geometrically impossible.
-    // The chunk's interior hosts carry the load; the shallow links are the
-    // connective tissue that makes supports release in chunks.
     const conFanMaxAngleDeg = Math.max(
         autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
-        75,
+        CONSOLIDATION_MAX_ANGLE_DEG,
     );
     let consolidated = 0;
     for (let pass = 0; pass < 3; pass++) {
@@ -2378,6 +2396,7 @@ export function computeAutoSupportPlan(
                 pruned,
                 resolvedMesh ?? undefined,
                 'overhang',
+                'nearest',
             );
             if (!fan.ok) {
                 // Routed-branch fallback, HEIGHT-GATED: a straight leaf can be
@@ -2686,6 +2705,12 @@ export function computeAutoSupportPlan(
     const OVERHANG_GRID_SPACING_MM = 2.5;
 
     let overhangSupportsPlaced = 0;
+    // One branch per contact point. Every trunk near the same island stamps
+    // the same (r, c) cells, so without this each contact collects a tentacle
+    // from every trunk in reach — the "kraken". First trunk to reach a cell
+    // owns it; a cell whose only contender was blocked or at capacity is
+    // still open to the next trunk.
+    const claimedCoverageCells = new Set<string>();
 
     for (const [tid, trunk] of Object.entries(draft.trunks)) {
         // Find which island this trunk was placed for by matching tip
@@ -2751,13 +2776,22 @@ export function computeAutoSupportPlan(
                 const cDist = (gx - bestIsland.contact.x) ** 2 + (gy - bestIsland.contact.y) ** 2;
                 if (cDist < 1.0) continue;
 
+                // One branch per contact point across the whole pass.
+                const cellKey = `${bestIsland.id}-${r}-${c}`;
+                if (claimedCoverageCells.has(cellKey)) continue;
+
                 // Place as a branch from the existing trunk.
                 try {
                     const overhangTip = { x: gx, y: gy, z: bestIsland.contact.z };
                     const resolved = resolveSurfaceNormal(overhangTip, mesh);
                     const knotPos = trunk.segments[trunk.segments.length - 1]?.topJoint?.pos ?? tip;
+                    // The id MUST carry the trunk: every trunk near the same
+                    // island stamps the same (r, c) cells, so an
+                    // island+cell-only id is overwritten by the last writer
+                    // and every earlier branch silently re-parents onto that
+                    // trunk — the "dozens of branches on one host" report.
                     const parentKnot = {
-                        id: `auto-overhang-${bestIsland.id}-${r}-${c}`,
+                        id: `auto-overhang-${tid}-${bestIsland.id}-${r}-${c}`,
                         parentShaftId: tid,
                         pos: knotPos,
                         diameter: (trunk.segments[trunk.segments.length - 1]?.diameter ?? 1.0) + 0.1,
@@ -2774,6 +2808,11 @@ export function computeAutoSupportPlan(
                         rootsDiameterMm: activeSizingBand().rootDiameterMm,
                     });
                     if (!sd.error) {
+                        // Every other member-creating path refuses geometry
+                        // that pierces the model; this pass used to stamp it
+                        // and let the validator flag it afterwards (blocked
+                        // members are reported, not culled).
+                        if (bm && branchCollidesWithSDF(branch, bm)) continue;
                         const ohCap = autoSettings.maxAttachmentsPerTrunk;
                         if (isTrunkAtAttachmentCapacity(tid, ohCap, draft)) {
                             continue;
@@ -2782,6 +2821,7 @@ export function computeAutoSupportPlan(
                         branch.origin = 'island';
                         draft = draftAddKnot(draft, parentKnot);
                         draft = draftAddBranch(draft, branch);
+                        claimedCoverageCells.add(cellKey);
                         overhangSupportsPlaced++;
                         placedBranches++;
                     }
@@ -2900,7 +2940,15 @@ export function computeAutoSupportPlan(
                         const recheck = validateAndCullOrphans(draft, resolvedMesh ?? undefined);
                         if (recheck.draft !== draft) {
                             draft = recheck.draft;
-                            orphanInfos = [...orphanInfos, ...recheck.orphans];
+                            // The recheck re-reports everything still present
+                            // (`cross`/`blocked` are flagged, never culled), so
+                            // appending it raw double-counts the ORPHANS
+                            // summary. Keep the first classification per entity.
+                            const reported = new Set(orphanInfos.map((o) => o.id));
+                            orphanInfos = [
+                                ...orphanInfos,
+                                ...recheck.orphans.filter((o) => !reported.has(o.id)),
+                            ];
                         }
                     }
                 }
