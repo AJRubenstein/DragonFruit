@@ -2036,6 +2036,15 @@ export function forestReportToText(report: ForestReport): string {
             `coverage ${s.coveragePercent.toFixed(0)}% of ${s.totalAreaMm2.toFixed(0)}mm² (${s.uncoveredIslands} uncovered) · ${s.rejected} rejected`);
         // Justification: what scan means
         lines.push(`  → ${s.candidates} candidates after dedup/filter from ${s.islands} islands (fixed-density ring + grid infill)`);
+        if (s.dedupedAway || s.alreadySupported) {
+            lines.push(
+                `  → dropped: ${s.dedupedAway ?? 0} dedup, ${s.alreadySupported ?? 0} already supported ` +
+                `(a support within 3mm of the contact — including one BELOW it)`);
+        }
+        const rejectEntries = Object.entries(s.rejectionReasons ?? {}).filter(([, v]) => v > 0);
+        if (rejectEntries.length > 0) {
+            lines.push(`  → rejected as: ${rejectEntries.map(([k, v]) => `${k}=${v}`).join(', ')}`);
+        }
         lines.push('');
     }
     if (report.orphans && report.orphans.length > 0) {
@@ -2260,6 +2269,7 @@ export function computeAutoSupportPlan(
 
     const beforeDedup = candidates.length;
     candidates = deduplicateCandidates(candidates, autoSettings);
+    const dedupedCandidates = candidates.length;
 
     console.log(LOG_PREFIX,
         `Step 2/3: ${candidates.length} candidates after dedup ` +
@@ -2275,6 +2285,7 @@ export function computeAutoSupportPlan(
 
     const beforeSupportFilter = candidates.length;
     candidates = filterAlreadySupported(candidates, draft);
+    const filteredCandidates = candidates.length;
     console.log(LOG_PREFIX,
         `Step 2b: ${candidates.length} candidates after support filter ` +
         `(removed ${beforeSupportFilter - candidates.length} already supported within ${ALREADY_SUPPORTED_RADIUS_MM}mm)`);
@@ -3082,6 +3093,9 @@ export function computeAutoSupportPlan(
                 coveragePercent: analytics.areaCoverage * 100,
                 uncoveredIslands: analytics.islandsUncovered,
                 rejected: rejectedCount,
+                dedupedAway: beforeDedup - dedupedCandidates,
+                alreadySupported: beforeSupportFilter - filteredCandidates,
+                rejectionReasons: { ...rejectionReasons },
             };
             if (orphanInfos.length > 0) {
                 forestReport.orphans = orphanInfos;

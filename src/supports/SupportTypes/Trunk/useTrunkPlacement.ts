@@ -19,6 +19,7 @@ import { perfMark, perfMeasureWithSpike, perfEndFrame } from '../../PlacementLog
 import { buildStick } from '../Stick/stickBuilder';
 import { buildTwig } from '../Twig/twigBuilder';
 import { isShaftBlocked } from '../../PlacementLogic/CollisionAvoidance';
+import { checkShortBridgeCollision } from '../../PlacementLogic/CollisionUtils';
 import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { getSupportPathfindingDebugEnabled, setSupportPathfindingDebugSnapshot } from '../../PlacementLogic/Pathfinding/pathfindingDebugState';
 
@@ -179,38 +180,57 @@ export function buildCavityStick(
     // support at all, even though the floor a couple of mm to the side is
     // right there. Nearest radius wins; the 20° verticality gate below (and
     // the shaft-blocked check after the build) bound how far the cant may go.
-    const SEARCH_RADII_MM = [0, 0.75, 1.5, 2.25];
-    let chosen: Candidate | null = null;
-    let firstBelowCandidate: Candidate | null = null;
-    for (const radiusMm of SEARCH_RADII_MM) {
-        const steps = radiusMm === 0 ? 1 : 8;
-        for (let i = 0; i < steps; i++) {
-            const angle = (i / steps) * Math.PI * 2;
-            const { floor, first } = scanDown(
-                baseOrigin.x + Math.cos(angle) * radiusMm,
-                baseOrigin.y + Math.sin(angle) * radiusMm,
-            );
-            if (floor) {
-                chosen = floor;
-                break;
+    const settings = getSettings();
+    const cutoff = settings.meshToMesh?.stickVsTwigCutoffMm ?? 5;
+    const NEAR_RADII_MM = [0, 0.75, 1.5, 2.25] as const;
+    // A twig's own reach: it is a short bridge, so a lateral offset up to its
+    // maximum length is still a twig.
+    const twigReachRadii = Array.from(
+        { length: Math.max(0, Math.floor(cutoff / 0.75)) },
+        (_, i) => 0.75 * (i + 1),
+    ).filter((r) => r > NEAR_RADII_MM[NEAR_RADII_MM.length - 1]);
+    const runSearch = (radii: readonly number[]): { hit: Candidate | null; usedExtendedReach: boolean } => {
+        let firstBelow: Candidate | null = null;
+        for (const radiusMm of radii) {
+            const steps = radiusMm === 0 ? 1 : 8;
+            for (let i = 0; i < steps; i++) {
+                const angle = (i / steps) * Math.PI * 2;
+                const { floor, first } = scanDown(
+                    baseOrigin.x + Math.cos(angle) * radiusMm,
+                    baseOrigin.y + Math.sin(angle) * radiusMm,
+                );
+                if (floor) return { hit: floor, usedExtendedReach: radiusMm > NEAR_RADII_MM[NEAR_RADII_MM.length - 1] };
+                if (first && !firstBelow) firstBelow = first;
             }
-            if (first && !firstBelowCandidate) firstBelowCandidate = first;
         }
-        if (chosen) break;
+        return { hit: firstBelow, usedExtendedReach: false };
+    };
+
+    const near = runSearch(NEAR_RADII_MM);
+    let chosen = near.hit;
+    let reachedSideways = near.usedExtendedReach;
+    if (!chosen) {
+        // Nothing straight down: a TWIG may still prop the contact off a
+        // neighbouring surface (the underside of a pointed tip, a ledge beside
+        // it). Twigs are short (<= stickVsTwigCutoffMm), so the search may
+        // reach that far sideways; a stick still may not — it has to stay near
+        // vertical, so it keeps the near search it always had.
+        const wide = runSearch(twigReachRadii);
+        chosen = wide.hit;
+        reachedSideways = wide.usedExtendedReach;
     }
-    chosen = chosen ?? firstBelowCandidate;
     if (!chosen) return null;
 
     const bPos = { x: chosen.hit.point.x, y: chosen.hit.point.y, z: chosen.hit.point.z };
     const bNormal = { x: chosen.normal.x, y: chosen.normal.y, z: chosen.normal.z };
 
-    const settings = getSettings();
-    const cutoff = settings.meshToMesh?.stickVsTwigCutoffMm ?? 5;
     const dx = tipPos.x - bPos.x;
     const dy = tipPos.y - bPos.y;
     const dz = tipPos.z - bPos.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const kind: 'twig' | 'stick' = dist > cutoff ? 'stick' : 'twig';
+
+    if (kind === 'stick' && reachedSideways && dist > cutoff) return null;
 
     if (kind === 'twig') {
         const { twig } = buildTwig({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal, tipContactDiameterMm: sizing?.tipContactDiameterMm });
@@ -218,11 +238,13 @@ export function buildCavityStick(
         // post-cull clearance (radius + 0.15mm) and catches the "sticks that
         // shoot right through geometry" seen in auto supports.
         {
+            // Ray-based, like buildTwig: the SDF reads the thin gap a twig
+            // spans as material, so a signed-distance gate would refuse it.
             const seg = twig.segments[0];
             const start = seg?.bottomJoint?.pos ?? bPos;
             const end = seg?.topJoint?.pos ?? tipPos;
             const radius = (seg?.diameter ?? 1) / 2 + 0.15;
-            if (isShaftBlocked(start, end, radius, mesh)) return null;
+            if (checkShortBridgeCollision(start, end, radius, mesh).hit) return null;
         }
         const supportData: SupportData = {
             id: twig.id,

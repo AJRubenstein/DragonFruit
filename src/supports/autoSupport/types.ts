@@ -77,6 +77,14 @@ export interface ForestScanMetrics {
     coveragePercent: number;
     /** Islands still without a nearby support at the end of the run. */
     uncoveredIslands: number;
+    /** Candidates collapsed onto a higher-priority neighbour before placement. */
+    dedupedAway?: number;
+    /** Candidates dropped because a support tip already sits within
+     *  `ALREADY_SUPPORTED_RADIUS_MM` — including one BELOW the contact, which
+     *  does not hold the surface the candidate is on. */
+    alreadySupported?: number;
+    /** Why each rejected candidate was rejected, by reason. */
+    rejectionReasons?: Partial<Record<RejectReason, number>>;
     /** Candidates rejected during placement. */
     rejected: number;
 }
