@@ -1,32 +1,45 @@
 import type { Roots, Trunk, Leaf, Knot, Kickstand, Branch, Brace, SupportState } from '../types';
-import type { SupportEntityPayload, SupportRemovalResult } from '../supportTypeRegistry';
+import type { SupportEntityPayload, SupportRemovalResult, SupportTypeId } from '../supportTypeRegistry';
 import type { KickstandBuildResult } from '../SupportTypes/Kickstand/types';
 
-export const SUPPORT_ADD_TRUNK = 'support:add-trunk' as const;
-export const SUPPORT_REMOVE_TRUNK = 'support:remove-trunk' as const;
+/**
+ * Per-type history actions, derived from the type id.
+ *
+ * The spelling is `support:<verb>-<typeId>`, so a new type gets its actions by
+ * being declared. These are in-memory undo/redo labels -- nothing in the voxl
+ * codec writes them -- so the shape is free to be derived.
+ */
+type AddAction<T extends string> = `support:add-${T}`;
+type RemoveAction<T extends string> = `support:remove-${T}`;
+
+const addAction = <T extends SupportTypeId>(typeId: T): AddAction<T> => `support:add-${typeId}`;
+const removeAction = <T extends SupportTypeId>(typeId: T): RemoveAction<T> => `support:remove-${typeId}`;
+
+export const SUPPORT_ADD_TRUNK = addAction('trunk');
+export const SUPPORT_REMOVE_TRUNK = removeAction('trunk');
 export const SUPPORT_UPDATE_TRUNK = 'support:update-trunk' as const;
 
-export const SUPPORT_ADD_LEAF = 'support:add-leaf' as const;
-export const SUPPORT_REMOVE_LEAF = 'support:remove-leaf' as const;
+export const SUPPORT_ADD_LEAF = addAction('leaf');
+export const SUPPORT_REMOVE_LEAF = removeAction('leaf');
 
-export const SUPPORT_ADD_BRANCH = 'support:add-branch' as const;
-export const SUPPORT_REMOVE_BRANCH = 'support:remove-branch' as const;
+export const SUPPORT_ADD_BRANCH = addAction('branch');
+export const SUPPORT_REMOVE_BRANCH = removeAction('branch');
 export const SUPPORT_UPDATE_BRANCH = 'support:update-branch' as const;
 
-export const SUPPORT_ADD_TWIG = 'support:add-twig' as const;
-export const SUPPORT_REMOVE_TWIG = 'support:remove-twig' as const;
+export const SUPPORT_ADD_TWIG = addAction('twig');
+export const SUPPORT_REMOVE_TWIG = removeAction('twig');
 
-export const SUPPORT_ADD_STICK = 'support:add-stick' as const;
-export const SUPPORT_REMOVE_STICK = 'support:remove-stick' as const;
+export const SUPPORT_ADD_STICK = addAction('stick');
+export const SUPPORT_REMOVE_STICK = removeAction('stick');
 
-export const SUPPORT_ADD_BRACE = 'support:add-brace' as const;
-export const SUPPORT_REMOVE_BRACE = 'support:remove-brace' as const;
+export const SUPPORT_ADD_BRACE = addAction('brace');
+export const SUPPORT_REMOVE_BRACE = removeAction('brace');
 
-export const SUPPORT_ADD_ANCHOR = 'support:add-anchor' as const;
-export const SUPPORT_REMOVE_ANCHOR = 'support:remove-anchor' as const;
+export const SUPPORT_ADD_ANCHOR = addAction('anchor');
+export const SUPPORT_REMOVE_ANCHOR = removeAction('anchor');
 
-export const SUPPORT_ADD_KICKSTAND = 'support:add-kickstand' as const;
-export const SUPPORT_REMOVE_KICKSTAND = 'support:remove-kickstand' as const;
+export const SUPPORT_ADD_KICKSTAND = addAction('kickstand');
+export const SUPPORT_REMOVE_KICKSTAND = removeAction('kickstand');
 
 export const SUPPORT_REPLACE_TRUNK = 'support:replace-trunk' as const;
 export const SUPPORT_AUTO_BRACE_REPLACE = 'support:auto-brace-replace' as const;

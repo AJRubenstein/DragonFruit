@@ -62,16 +62,13 @@ which is the exact failure the registry exists to prevent.
 
 Known remaining hand-written lists worth converting:
 
-- The 16 `SUPPORT_ADD_*` / `SUPPORT_REMOVE_*` constants imported into the
-  registry must be kept in sync with `SupportTypeId` by hand. Deriving them from
-  the type id is possible but needs checking first: history action strings may be
-  persisted in saved projects, and changing one would break loading old files.
+- (none outstanding here; see `support-registry-findings.md` for the open items)
 
 ### Bugs found while converting
 
 Converting each hand-written type list turned up defects where the list
 disagreed with the registry. They are recorded in
-[`support-registry-findings.md`](support-registry-findings.md) -- 88 findings,
+[`support-registry-findings.md`](support-registry-findings.md) -- 89 findings,
 27 still open -- rather than here, because they are per-site detail rather than
 rules to follow.
 

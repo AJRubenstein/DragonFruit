@@ -1,14 +1,5 @@
 import type { SupportCollectionByType, SupportCollectionName, SupportEntityByCollection, SupportFieldsByType, SupportRemovedEntityByCollection, SupportState } from './types';
-import {
-    SUPPORT_ADD_TRUNK, SUPPORT_REMOVE_TRUNK, SUPPORT_UPDATE_TRUNK,
-    SUPPORT_ADD_BRANCH, SUPPORT_REMOVE_BRANCH, SUPPORT_UPDATE_BRANCH,
-    SUPPORT_ADD_LEAF, SUPPORT_REMOVE_LEAF,
-    SUPPORT_ADD_TWIG, SUPPORT_REMOVE_TWIG,
-    SUPPORT_ADD_STICK, SUPPORT_REMOVE_STICK,
-    SUPPORT_ADD_BRACE, SUPPORT_REMOVE_BRACE,
-    SUPPORT_ADD_ANCHOR, SUPPORT_REMOVE_ANCHOR,
-    SUPPORT_ADD_KICKSTAND, SUPPORT_REMOVE_KICKSTAND,
-} from './history/actionTypes';
+import { SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH } from './history/actionTypes';
 import type { SupportHistoryActionType } from './history/actionTypes';
 import { ANCHOR_HEIGHT_THRESHOLD_MM } from './autoSupport/constants';
 import { getSettings } from './Settings/state';
@@ -423,7 +414,14 @@ export interface SupportTypeDescriptor {
     hasEditableSettings: boolean;
 }
 
-export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
+/**
+ * Each type's declaration, minus the fields derived below.
+ *
+ * `historyAdd` / `historyRemove` are filled from the id: they spell
+ * `support:add-<id>` / `support:remove-<id>` for every type, so declaring them
+ * by hand was a second place to keep in sync.
+ */
+const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAdd' | 'historyRemove'>[] = [
     {
         id: 'trunk',
         hasEditableSettings: true,
@@ -465,8 +463,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         singular: 'trunk',
         location: { store: 'support', key: 'trunks' },
         selectionCategory: 'trunk',
-        historyAdd: SUPPORT_ADD_TRUNK,
-        historyRemove: SUPPORT_REMOVE_TRUNK,
         historyUpdate: SUPPORT_UPDATE_TRUNK,
         carriesModelId: true,
     },
@@ -511,8 +507,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         singular: 'branch',
         location: { store: 'support', key: 'branches' },
         selectionCategory: 'branch',
-        historyAdd: SUPPORT_ADD_BRANCH,
-        historyRemove: SUPPORT_REMOVE_BRANCH,
         historyUpdate: SUPPORT_UPDATE_BRANCH,
         carriesModelId: true,
     },
@@ -557,8 +551,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         singular: 'leaf',
         location: { store: 'support', key: 'leaves' },
         selectionCategory: 'leaf',
-        historyAdd: SUPPORT_ADD_LEAF,
-        historyRemove: SUPPORT_REMOVE_LEAF,
         carriesModelId: true,
     },
     {
@@ -597,8 +589,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         singular: 'twig',
         location: { store: 'support', key: 'twigs' },
         selectionCategory: 'twig',
-        historyAdd: SUPPORT_ADD_TWIG,
-        historyRemove: SUPPORT_REMOVE_TWIG,
         carriesModelId: true,
     },
     {
@@ -636,8 +626,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         singular: 'stick',
         location: { store: 'support', key: 'sticks' },
         selectionCategory: 'stick',
-        historyAdd: SUPPORT_ADD_STICK,
-        historyRemove: SUPPORT_REMOVE_STICK,
         carriesModelId: true,
     },
     {
@@ -682,8 +670,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         singular: 'brace',
         location: { store: 'support', key: 'braces' },
         selectionCategory: 'brace',
-        historyAdd: SUPPORT_ADD_BRACE,
-        historyRemove: SUPPORT_REMOVE_BRACE,
         carriesModelId: true,
     },
     {
@@ -721,8 +707,6 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         singular: 'anchor',
         location: { store: 'support', key: 'anchors' },
         selectionCategory: 'anchor',
-        historyAdd: SUPPORT_ADD_ANCHOR,
-        historyRemove: SUPPORT_REMOVE_ANCHOR,
         carriesModelId: true,
     },
     {
@@ -769,12 +753,18 @@ export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = [
         singular: 'kickstand',
         location: { store: 'support', key: 'kickstands' },
         selectionCategory: 'kickstand',
-        historyAdd: SUPPORT_ADD_KICKSTAND,
-        historyRemove: SUPPORT_REMOVE_KICKSTAND,
         serialisedAsBundle: true,
         carriesModelId: true,
     },
 ];
+
+export const SUPPORT_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYPE_DECLARATIONS.map(
+    (declaration) => ({
+        ...declaration,
+        historyAdd: `support:add-${declaration.id}` as SupportHistoryActionType,
+        historyRemove: `support:remove-${declaration.id}` as SupportHistoryActionType,
+    }),
+);
 
 /**
  * The store's update function for a type, filled in by state.ts at load.
