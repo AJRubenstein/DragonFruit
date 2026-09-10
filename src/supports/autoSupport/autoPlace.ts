@@ -1,4 +1,4 @@
-import { footprintX, footprintY } from '@/volumeAnalysis/Islands/voxelFootprint';
+import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
 
 import * as THREE from 'three';
 import { quantizeToScale } from '@/utils/math';
@@ -2705,35 +2705,26 @@ export function computeAutoSupportPlan(
     const OVERHANG_GRID_SPACING_MM = 2.5;
 
     let overhangSupportsPlaced = 0;
-    // One branch per contact point. Every trunk near the same island stamps
-    // the same (r, c) cells, so without this each contact collects a tentacle
-    // from every trunk in reach — the "kraken". First trunk to reach a cell
-    // owns it; a cell whose only contender was blocked or at capacity is
-    // still open to the next trunk.
-    const claimedCoverageCells = new Set<string>();
-
+    // A coverage branch is a STUB off a trunk, never a bridge across the
+    // island: the same reach a placement fan allows.
+    const COVERAGE_STUB_REACH_MM = autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM;
+    // Host shafts for the stubs, sampled once. Trunk set is stable here: the
+    // pass only adds branches.
+    const stubHosts: Array<{ tid: string; pos: { x: number; y: number; z: number }; diameter: number }> = [];
     for (const [tid, trunk] of Object.entries(draft.trunks)) {
-        // Find which island this trunk was placed for by matching tip
-        // proximity to island contact positions.
-        const tip = trunk.contactCone?.pos;
-        if (!tip) continue;
-        let bestIsland: DetectedIsland | null = null;
-        let bestDist2 = Infinity;
-        for (const island of islands) {
-            const dx = tip.x - island.contact.x;
-            const dy = tip.y - island.contact.y;
-            const dz = tip.z - island.contact.z;
-            const d2 = dx * dx + dy * dy + dz * dz;
-            if (d2 < bestDist2) { bestDist2 = d2; bestIsland = island; }
-        }
-        if (!bestIsland) continue;
+        const lastSeg = trunk.segments[trunk.segments.length - 1];
+        const knotPos = lastSeg?.topJoint?.pos ?? trunk.contactCone?.pos;
+        if (!knotPos) continue;
+        stubHosts.push({ tid, pos: knotPos, diameter: lastSeg?.diameter ?? 1.0 });
+    }
 
-        // Overhang regions are gridded by the grid phase — the legacy
-        // overhang-coverage pass is for flat voxel islands only.
-        if (bestIsland.source === 'overhang') continue;
+    for (const island of islands) {
+        // Overhang regions are gridded by the grid phase — this pass covers
+        // flat voxel islands only.
+        if (island.source === 'overhang') continue;
 
-        const area = bestIsland.areaMm2 ?? 0;
-        const voxels = bestIsland.contactVoxels;
+        const area = island.areaMm2 ?? 0;
+        const voxels = island.contactVoxels;
         if (area < OVERHANG_AREA_THRESHOLD_MM2 || !voxels || voxels.count < 3) continue;
 
         // Compute bounding box of contact voxels.
@@ -2760,41 +2751,58 @@ export function computeAutoSupportPlan(
                 const gy = minY + (height * (r + 0.5)) / rows;
 
                 // Check if this grid point is within the voxel footprint
-                // (simple containment: near any contact voxel).
+                // (simple containment: near any contact voxel). The nearest
+                // footprint voxel also supplies the CELL's surface height —
+                // the island's single contact Z used to stamp every cell,
+                // leaving stepped islands with tips floating in air.
                 let inFootprint = false;
+                let cellZ = island.contact.z;
+                let cellDist2 = OVERHANG_GRID_SPACING_MM * OVERHANG_GRID_SPACING_MM;
                 for (let vi = 0; vi < voxels.count; vi++) {
                     const dx = gx - footprintX(voxels, vi);
                     const dy = gy - footprintY(voxels, vi);
-                    if (dx * dx + dy * dy <= OVERHANG_GRID_SPACING_MM * OVERHANG_GRID_SPACING_MM) {
-                        inFootprint = true;
-                        break;
-                    }
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 > cellDist2) continue;
+                    cellDist2 = d2;
+                    inFootprint = true;
+                    cellZ = footprintZ(voxels, vi) ?? island.contact.z;
                 }
                 if (!inFootprint) continue;
 
-                // Skip the centroid (already covered by the trunk tip).
-                const cDist = (gx - bestIsland.contact.x) ** 2 + (gy - bestIsland.contact.y) ** 2;
+                // Skip the centroid (already covered by the island's support).
+                const cDist = (gx - island.contact.x) ** 2 + (gy - island.contact.y) ** 2;
                 if (cDist < 1.0) continue;
 
-                // One branch per contact point across the whole pass.
-                const cellKey = `${bestIsland.id}-${r}-${c}`;
-                if (claimedCoverageCells.has(cellKey)) continue;
+                // Nearest trunk within stub reach. Reach is LATERAL (XY), the
+                // same measure the fan radius uses — the trunk stands under
+                // the island, so its top joint sits at the contact height and
+                // a 3D distance would spend most of the budget on that gap.
+                // Walking trunks and stamping the whole bbox from each of
+                // them is what produced 10–24 mm near-horizontal branches
+                // across the lattice.
+                let host: typeof stubHosts[number] | null = null;
+                let hostDist2 = COVERAGE_STUB_REACH_MM * COVERAGE_STUB_REACH_MM;
+                for (const candidate of stubHosts) {
+                    const dx = gx - candidate.pos.x;
+                    const dy = gy - candidate.pos.y;
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 > hostDist2) continue;
+                    hostDist2 = d2;
+                    host = candidate;
+                }
+                if (!host) continue;
+                if (isTrunkAtAttachmentCapacity(host.tid, autoSettings.maxAttachmentsPerTrunk, draft)) continue;
 
-                // Place as a branch from the existing trunk.
                 try {
-                    const overhangTip = { x: gx, y: gy, z: bestIsland.contact.z };
-                    const resolved = resolveSurfaceNormal(overhangTip, mesh);
-                    const knotPos = trunk.segments[trunk.segments.length - 1]?.topJoint?.pos ?? tip;
-                    // The id MUST carry the trunk: every trunk near the same
-                    // island stamps the same (r, c) cells, so an
-                    // island+cell-only id is overwritten by the last writer
-                    // and every earlier branch silently re-parents onto that
-                    // trunk — the "dozens of branches on one host" report.
+                    const resolved = resolveSurfaceNormal({ x: gx, y: gy, z: cellZ }, mesh);
+                    // The id carries the trunk: without it two writers share a
+                    // knot id and the earlier branch re-parents onto the later
+                    // trunk (the "dozens of branches on one host" report).
                     const parentKnot = {
-                        id: `auto-overhang-${tid}-${bestIsland.id}-${r}-${c}`,
-                        parentShaftId: tid,
-                        pos: knotPos,
-                        diameter: (trunk.segments[trunk.segments.length - 1]?.diameter ?? 1.0) + 0.1,
+                        id: `auto-overhang-${host.tid}-${island.id}-${r}-${c}`,
+                        parentShaftId: host.tid,
+                        pos: host.pos,
+                        diameter: host.diameter + 0.1,
                     };
                     const bm: THREE.Mesh | undefined = resolvedMesh ?? undefined;
                     const { branch, supportData: sd } = buildBranchData({
@@ -2807,34 +2815,28 @@ export function computeAutoSupportPlan(
                         tipContactDiameterMm: activeSizingBand().tipContactDiameterMm,
                         rootsDiameterMm: activeSizingBand().rootDiameterMm,
                     });
-                    if (!sd.error) {
-                        // Every other member-creating path refuses geometry
-                        // that pierces the model; this pass used to stamp it
-                        // and let the validator flag it afterwards (blocked
-                        // members are reported, not culled).
-                        if (bm && branchCollidesWithSDF(branch, bm)) continue;
-                        const ohCap = autoSettings.maxAttachmentsPerTrunk;
-                        if (isTrunkAtAttachmentCapacity(tid, ohCap, draft)) {
-                            continue;
-                        }
-                        // The tips are voxel-island footprints — island origin.
-                        branch.origin = 'island';
-                        draft = draftAddKnot(draft, parentKnot);
-                        draft = draftAddBranch(draft, branch);
-                        claimedCoverageCells.add(cellKey);
-                        overhangSupportsPlaced++;
-                        placedBranches++;
-                    }
+                    if (sd.error) continue;
+                    // Every other member-creating path refuses geometry that
+                    // pierces the model; this pass used to stamp it and let
+                    // the validator flag it afterwards (blocked members are
+                    // reported, not culled).
+                    if (bm && branchCollidesWithSDF(branch, bm)) continue;
+                    // The tips are voxel-island footprints — island origin.
+                    branch.origin = 'island';
+                    draft = draftAddKnot(draft, parentKnot);
+                    draft = draftAddBranch(draft, branch);
+                    overhangSupportsPlaced++;
+                    placedBranches++;
                 } catch {
                     // Skip this grid point.
                 }
             }
         }
+    }
 
-        if (overhangSupportsPlaced > 0) {
-            console.log(LOG_PREFIX,
-                `Overhang coverage: ${overhangSupportsPlaced} additional branches placed for flat surfaces.`);
-        }
+    if (overhangSupportsPlaced > 0) {
+        console.log(LOG_PREFIX,
+            `Overhang coverage: ${overhangSupportsPlaced} additional branches placed for flat surfaces.`);
     }
     } catch (e) {
         // Safety net: the promote path can mid-run swap the store, so restore
