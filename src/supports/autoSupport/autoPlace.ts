@@ -13,7 +13,7 @@ import { quantizeToScale } from '@/utils/math';
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
 import type { CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo } from './types';
-import type { SupportState, SupportOrigin } from '../types';
+import type { Branch, SupportState, SupportOrigin } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
 import { activeSizingBand } from './parameterSizing';
@@ -79,6 +79,25 @@ const LOG_PREFIX = '[AutoSupport]';
 function memberMaxAngleFromVerticalDeg(): number {
     const minRiseDeg = getSettings().grid?.minBranchAngleDeg ?? DEFAULT_GRID_MIN_BRANCH_ANGLE_DEG;
     return Math.max(0, Math.min(90, 90 - minRiseDeg));
+}
+
+/**
+ * Where a BRANCH actually leaves its host, as an angle from vertical.
+ *
+ * The contact cone is clamped toward the surface normal, so a branch can pass
+ * the knot→tip gate and still run out of the host nearly level, only bending
+ * into a steep cone at the tip — measured on a speck field: every branch chord
+ * read 30° while every shaft left the host at 42°. Gate the shaft, not the
+ * chord.
+ */
+function branchDepartureAngleDeg(
+    branch: Branch,
+    knotPos: { x: number; y: number; z: number },
+): number {
+    const firstJoint = branch.segments[0]?.topJoint?.pos;
+    if (!firstJoint) return 0;
+    const lateral = Math.hypot(firstJoint.x - knotPos.x, firstJoint.y - knotPos.y);
+    return (Math.atan2(lateral, firstJoint.z - knotPos.z) * 180) / Math.PI;
 }
 
 // Per-entity placement logging (Trunk/Leaf/Merge lines) is OFF by default —
@@ -502,24 +521,25 @@ export function buildConsolidationBranch(args: {
 }): { draft: SupportState; branchId: string } | null {
     const { tip, tipNormal, modelId, pool, pruned, mesh, radiusMm, maxAttachments, knotId } = args;
 
-    // Nearest eligible host sample (≤ 50° from vertical — the branch
-    // steepness rule; the leaf fan's angle cap is looser). Nearest, not
-    // steepest: a consolidation link is a local tie between neighbouring
-    // pillars, and steepest-in-reach reaches 8mm across the lattice.
+    // Steepest eligible host sample (≤ the branch-angle rule from vertical —
+    // the leaf fan's cap is looser). Steepest, not nearest: the contact cone
+    // is clamped to the surface normal, so the shaft loses its last couple of
+    // millimetres of rise to the cone bend and a link picked at the angle cap
+    // always leaves the host a few degrees too flat. Reaching further down the
+    // shaft buys that rise back; the angle cap keeps the link short anyway.
     let best: FanShaftPoint | null = null;
-    let bestDist2 = Infinity;
+    let bestAngleDeg = Infinity;
     for (const sp of pool) {
         const ddx = sp.pos.x - tip.x;
         const ddy = sp.pos.y - tip.y;
         const ddz = sp.pos.z - tip.z;
-        const dist2 = ddx * ddx + ddy * ddy + ddz * ddz;
-        if (dist2 > radiusMm * radiusMm) continue;
+        if (ddx * ddx + ddy * ddy + ddz * ddz > radiusMm * radiusMm) continue;
         const vDist = tip.z - sp.pos.z;
         if (vDist < 1.5) continue;
         const angleDeg = (Math.atan2(Math.hypot(ddx, ddy), vDist) * 180) / Math.PI;
         if (angleDeg > Math.min(50, memberMaxAngleFromVerticalDeg())) continue;
-        if (dist2 < bestDist2) {
-            bestDist2 = dist2;
+        if (angleDeg < bestAngleDeg) {
+            bestAngleDeg = angleDeg;
             best = sp;
         }
     }
@@ -548,6 +568,7 @@ export function buildConsolidationBranch(args: {
         });
         if (sd.error) return null;
         if (mesh && branchCollidesWithSDF(branch, mesh)) return null;
+        if (branchDepartureAngleDeg(branch, parentKnot.pos) > memberMaxAngleFromVerticalDeg()) return null;
         if (leafPathCrossesSupports(parentKnot.pos, branch.contactCone?.pos ?? tip, 0.25, pruned, best.trunkId)) return null;
 
         let d = draftAddKnot(pruned, parentKnot);
@@ -837,6 +858,10 @@ function placeOneCandidate(
                         const collides = sd.error || (mesh && branchCollidesWithSDF(branch, mesh));
                         if (collides) {
                             logPlacement(`Branch (merge) ${candidate.id}: collision, falling back`);
+                        } else if (branchDepartureAngleDeg(branch, knotPos) > memberMaxAngleFromVerticalDeg()) {
+                            logPlacement(
+                                `Merge skip ${candidate.id}: shaft leaves the host too flat ` +
+                                `(${branchDepartureAngleDeg(branch, knotPos).toFixed(0)}° from vertical) span=${leafSpanMm.toFixed(1)}mm`);
                         } else {
                             const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
                             if (isTrunkAtAttachmentCapacity(host.trunkId, cap, draft)) {
@@ -1803,7 +1828,15 @@ export function fanLeafToTrunk(
                     rootsDiameterMm: band.rootDiameterMm,
                 });
                 const collides = built.supportData.error || (mesh && branchCollidesWithSDF(built.branch, mesh));
-                if (!collides) {
+                if (collides) {
+                    lastBlockedReason = 'blocked';
+                    continue;
+                }
+                if (branchDepartureAngleDeg(built.branch, parentKnot.pos) > maxAngleDeg) {
+                    lastBlockedReason = 'angle';
+                    continue;
+                }
+                {
                     if (maxAttachments > 0 && isTrunkAtAttachmentCapacity(sp.trunkId, maxAttachments, draft)) {
                         lastBlockedReason = 'capacity';
                         continue;

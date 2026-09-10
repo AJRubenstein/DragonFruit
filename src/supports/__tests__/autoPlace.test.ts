@@ -768,3 +768,55 @@ test('a punched hole above a cavity ceiling does not delete its support', () => 
     assert.ok(Math.abs(roofContact.z - 10) < 0.6,
         `the contact stays on the ceiling, not on the far side (z=${roofContact.z.toFixed(2)})`);
 });
+
+/**
+ * The contact cone is clamped toward the surface normal, so a branch can pass
+ * the knot→tip gate and still run out of its host nearly level, bending into a
+ * steep cone only at the tip — on a speck field every branch chord read 30°
+ * while every shaft left the host at 42°. The gate has to look at the shaft.
+ */
+test('no branch leaves its host shallower than the branch-angle rule', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    const islands: DetectedIsland[] = [];
+    for (let i = 0; i < 36; i++) {
+        islands.push(makeIsland(`s${i}`, (i % 6) * 4 - 12, Math.floor(i / 6) * 4 - 12, 20, 1));
+    }
+    runAutoPlace(islands, 'model-a', { debugSkipAutoBracing: true, stabilizationEnabled: false });
+
+    const snapshot = getSnapshot();
+    const minRiseDeg = getSettings().grid.minBranchAngleDeg;
+
+    const tooFlat: string[] = [];
+    for (const [id, branch] of Object.entries(snapshot.branches)) {
+        const knot = snapshot.knots[branch.parentKnotId];
+        const firstJoint = branch.segments[0]?.topJoint?.pos;
+        if (!knot || !firstJoint) continue;
+        const lateral = Math.hypot(firstJoint.x - knot.pos.x, firstJoint.y - knot.pos.y);
+        const riseDeg = (Math.atan2(firstJoint.z - knot.pos.z, lateral) * 180) / Math.PI;
+        if (riseDeg < minRiseDeg) tooFlat.push(`${id.slice(0, 8)} leaves at ${riseDeg.toFixed(0)}°`);
+    }
+    assert.deepEqual(tooFlat, [],
+        `every branch leaves its host at least ${minRiseDeg}° above horizontal`);
+
+    // And the contacts are still supported — refusing a sagging branch must
+    // fall through to a pillar, not drop the island.
+    const tips = [
+        ...Object.values(snapshot.trunks),
+        ...Object.values(snapshot.leaves),
+        ...Object.values(snapshot.branches),
+    ].flatMap((entity) => {
+        const cone = (entity as { contactCone?: { pos?: { x: number; y: number; z: number } } }).contactCone;
+        return cone?.pos ? [cone.pos] : [];
+    });
+    const unsupported = islands.filter((island) => !tips.some((tip) =>
+        Math.hypot(tip.x - island.contact.x, tip.y - island.contact.y, tip.z - island.contact.z) < 3,
+    ));
+    assert.deepEqual(unsupported.map((i) => i.id), [], 'every island keeps a support');
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});

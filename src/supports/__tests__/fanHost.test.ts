@@ -141,7 +141,7 @@ test('buildConsolidationBranch attaches a routed branch to a host shaft', () => 
     const draft = trunkWithShaft('host', 0, 0, 0, 19);
     const pool = collectFanShaftPoints(draft);
     const result = buildConsolidationBranch({
-        tip: { x: 3, y: 0, z: 15 },
+        tip: { x: 1, y: 0, z: 15 },
         tipNormal: { x: 0, y: 0, z: -1 },
         modelId: 'm',
         pool,
@@ -158,6 +158,28 @@ test('buildConsolidationBranch attaches a routed branch to a host shaft', () => 
         const branch = Object.values(result.draft.branches)[0];
         assert.equal(branch.origin, 'overhang', 'branch carries the overhang origin');
     }
+});
+
+/**
+ * A tip further off the host axis is refused rather than linked: the contact
+ * cone is clamped to the surface normal, so the shaft loses its last couple of
+ * millimetres of rise to the cone bend and would leave the host too flat. The
+ * pillar stays standalone instead.
+ */
+test('buildConsolidationBranch refuses a link whose shaft would leave too flat', () => {
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const result = buildConsolidationBranch({
+        tip: { x: 3, y: 0, z: 15 },
+        tipNormal: { x: 0, y: 0, z: -1 },
+        modelId: 'm',
+        pool: collectFanShaftPoints(draft),
+        pruned: draft,
+        mesh: undefined,
+        radiusMm: 8,
+        maxAttachments: 12,
+        knotId: 'con-branch-2',
+    });
+    assert.equal(result, null, 'no member — the pillar stays standalone');
 });
 
 test('collectFanShaftPoints excludes anchor-origin trunks', () => {
