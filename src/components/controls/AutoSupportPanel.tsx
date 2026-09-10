@@ -47,6 +47,9 @@ interface AutoSupportPanelProps {
   islands: UseIslandsReturn;
   hasGeometry: boolean;
   activeModelId?: string;
+  /** Resolve unapplied hollowing / hole punches before generating. Resolves
+   *  false when the user went off to apply them first — the run is abandoned. */
+  onBeforeRun?: () => Promise<boolean>;
 }
 
 type KnobDef = {
@@ -126,7 +129,7 @@ function SliderRow({ knob, draft, setDraft }: { knob: KnobDef; draft: AutoSuppor
   );
 }
 
-export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSupportPanelProps) {
+export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBeforeRun }: AutoSupportPanelProps) {
   const { _ } = useLingui();
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [busy, setBusy] = React.useState(false);
@@ -387,25 +390,28 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
 
   const handleRun = React.useCallback(() => {
     if (!activeModelId || busy) return;
-    const s = getSettings();
-    const list = islands.filteredIslands;
-    // Check for existing supports.
-    const snap = getSnapshot();
-    let hasSupports = false;
-    for (const t of Object.values(snap.trunks)) {
-      if (t.modelId === activeModelId) { hasSupports = true; break; }
-    }
-    if (!hasSupports) {
-      for (const b of Object.values(snap.branches)) {
-        if (b.modelId === activeModelId) { hasSupports = true; break; }
+    void (async () => {
+      // Unapplied holes / hollowing change the mesh a support run is about to
+      // be placed against — ask before generating, not after.
+      if (onBeforeRun && !(await onBeforeRun())) return;
+      // Check for existing supports.
+      const snap = getSnapshot();
+      let hasSupports = false;
+      for (const t of Object.values(snap.trunks)) {
+        if (t.modelId === activeModelId) { hasSupports = true; break; }
       }
-    }
-    if (hasSupports) {
-      setShowReplaceDialog(true);
-      return;
-    }
-    doRun(false);
-  }, [activeModelId, busy, islands.filteredIslands, islands.voxelIslands.length, islands.minimaIslands.length, doRun]);
+      if (!hasSupports) {
+        for (const b of Object.values(snap.branches)) {
+          if (b.modelId === activeModelId) { hasSupports = true; break; }
+        }
+      }
+      if (hasSupports) {
+        setShowReplaceDialog(true);
+        return;
+      }
+      doRun(false);
+    })();
+  }, [activeModelId, busy, islands.filteredIslands, islands.voxelIslands.length, islands.minimaIslands.length, doRun, onBeforeRun]);
 
   const canRun = hasGeometry && !!activeModelId && !busy && !islands.scanning;
 

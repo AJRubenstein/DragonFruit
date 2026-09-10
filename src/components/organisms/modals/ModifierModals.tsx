@@ -6,9 +6,19 @@ import { type HollowingPanelState } from '@/features/hollowing';
 
 type PendingModifierResetAction = 'hollowing' | 'hole_punch' | 'clear_hollowing';
 
+/** What the user chose in the unapplied-modifier prompt. The page performs the
+ *  action — the modal only reports it. */
+export type UnappliedModifierAction = 'apply' | 'skip' | 'goto';
+
+export type UnappliedModifierPrompt = {
+  title: string;
+  subtitle: string;
+  paragraphs: string[];
+  /** Hidden when nothing has unapplied hole punches (nothing to bake). */
+  showApplyAll: boolean;
+};
+
 export type ModifierModalsProps = {
-  handleApplyAllHolePunches: () => void;
-  handleGoToHollowTool: () => void;
   handleCancelDestructiveTransform: () => void;
   handleConfirmBlockerReset: () => void;
   handleConfirmDestructiveTransform: () => void;
@@ -21,16 +31,14 @@ export type ModifierModalsProps = {
   pendingModifierResetAction: PendingModifierResetAction | null;
   setPendingBlockerResetState: React.Dispatch<React.SetStateAction<HollowingPanelState | null>>;
   setPendingModifierResetAction: React.Dispatch<React.SetStateAction<PendingModifierResetAction | null>>;
-  setShowUnappliedHolePunchModal: React.Dispatch<React.SetStateAction<boolean>>;
   showModifierApplyBlockingOverlay: boolean;
   showUnappliedHolePunchModal: boolean;
-  unappliedHolePunchResolveRef: React.RefObject<((action: "apply" | "skip") => void) | null>;
+  unappliedModifierPrompt: UnappliedModifierPrompt;
+  unappliedHolePunchResolveRef: React.RefObject<((action: UnappliedModifierAction) => void) | null>;
 };
 
 /** Editor modal organism: StructuredDialog_unappliedHolePunch, StructuredDialog_modifierReset, StructuredDialog_blockerReset, DestructiveTransformModal, modifierApplyBlockingOverlay. */
 export function ModifierModals({
-  handleApplyAllHolePunches,
-  handleGoToHollowTool,
   handleCancelDestructiveTransform,
   handleConfirmBlockerReset,
   handleConfirmDestructiveTransform,
@@ -43,9 +51,9 @@ export function ModifierModals({
   pendingModifierResetAction,
   setPendingBlockerResetState,
   setPendingModifierResetAction,
-  setShowUnappliedHolePunchModal,
   showModifierApplyBlockingOverlay,
   showUnappliedHolePunchModal,
+  unappliedModifierPrompt,
   unappliedHolePunchResolveRef,
 }: ModifierModalsProps) {
   // A blocking progress overlay: swallow Escape rather than let it through.
@@ -55,27 +63,19 @@ export function ModifierModals({
     <>
       <StructuredDialogModal
         open={showUnappliedHolePunchModal}
-        ariaLabel="Unapplied hole punches"
-        title="Unapplied Holes"
-        subtitle="Some models have unapplied hole punches"
+        ariaLabel="Unapplied model changes"
+        title={unappliedModifierPrompt.title}
+        subtitle={unappliedModifierPrompt.subtitle}
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"
         closeAriaLabel="Close"
-        onClose={() => {
-          setShowUnappliedHolePunchModal(false);
-          unappliedHolePunchResolveRef.current?.('skip');
-          unappliedHolePunchResolveRef.current = null;
-        }}
+        onClose={() => unappliedHolePunchResolveRef.current?.('skip')}
         actions={(
           <>
             <button
               type="button"
               className="ui-button ui-button-secondary !h-9 px-3 text-xs"
-              onClick={() => {
-                setShowUnappliedHolePunchModal(false);
-                unappliedHolePunchResolveRef.current?.('skip');
-                unappliedHolePunchResolveRef.current = null;
-              }}
+              onClick={() => unappliedHolePunchResolveRef.current?.('skip')}
             >
               Continue Without
             </button>
@@ -87,43 +87,37 @@ export function ModifierModals({
                 background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
                 color: 'var(--accent)',
               }}
-              onClick={() => {
-                unappliedHolePunchResolveRef.current = null;
-                handleGoToHollowTool();
-              }}
+              onClick={() => unappliedHolePunchResolveRef.current?.('goto')}
             >
               Go to Hollow Tool
             </button>
-            <button
-              type="button"
-              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
-              style={{
-                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
-                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
-                color: 'var(--accent)',
-              }}
-              onClick={() => {
-                unappliedHolePunchResolveRef.current = null;
-                // Defer so the modal closes before apply starts.
-                setTimeout(() => { handleApplyAllHolePunches(); }, 0);
-              }}
-            >
-              Apply to All
-            </button>
+            {unappliedModifierPrompt.showApplyAll && (
+              <button
+                type="button"
+                className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+                style={{
+                  borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                  background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                  color: 'var(--accent)',
+                }}
+                onClick={() => unappliedHolePunchResolveRef.current?.('apply')}
+              >
+                Apply to All
+              </button>
+            )}
           </>
         )}
       >
         <div className="space-y-2">
-          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            One or more models have hole punches that haven&apos;t been applied.
-            Hole punches must be baked into the geometry before slicing or they
-            will not appear in the output.
-          </p>
-          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            <strong>Apply to All</strong> bakes the holes into every visible model
-            when applicable. Or open the <strong>Hollow</strong> tool to review and
-            apply holes individually.
-          </p>
+          {unappliedModifierPrompt.paragraphs.map((paragraph, index) => (
+            <p
+              key={index}
+              className="text-xs leading-relaxed"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              {paragraph}
+            </p>
+          ))}
         </div>
       </StructuredDialogModal>
 

@@ -237,6 +237,8 @@ import { useIslandManager } from '@/volumeAnalysis/IslandScan/useIslandManager';
 import { useIslands } from '@/volumeAnalysis/Islands/useIslands';
 import { IslandsPanel } from '@/components/controls/IslandsPanel';
 import { AutoSupportPanel, getAutoSupportBusy, subscribeAutoSupportBusy, autoSupportDrivingScan } from '@/components/controls/AutoSupportPanel';
+import { getUnappliedModifiers } from '@/features/mesh-modifiers/unappliedModifiers';
+import type { UnappliedModifierAction } from '@/components/organisms/modals/ModifierModals';
 import { AutoRotationPanel, getOrientationBusy, subscribeOrientationBusy, OrientElapsed } from '@/components/controls/AutoRotationPanel';
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import { useSupportInteractionManager } from '@/features/supports/useSupportInteractionManager';
@@ -1239,7 +1241,8 @@ export default function Home() {
   const printingInFlightBaseResinMlRef = React.useRef<Map<string, Promise<number | null>>>(new Map());
   const lastCompletedResinEstimateSignatureRef = React.useRef<string>('');
   const [showUnappliedHolePunchModal, setShowUnappliedHolePunchModal] = React.useState(false);
-  const unappliedHolePunchResolveRef = React.useRef<((action: 'apply' | 'skip') => void) | null>(null);
+  const [unappliedModifierPromptPurpose, setUnappliedModifierPromptPurpose] = React.useState<'export' | 'supports'>('export');
+  const unappliedHolePunchResolveRef = React.useRef<((action: UnappliedModifierAction) => void) | null>(null);
   const [showPrintingResliceModal, setShowPrintingResliceModal] = React.useState(false);
   const [showSliceCompletedModal, setShowSliceCompletedModal] = React.useState(false);
   const [sliceCompletedModalData, setSliceCompletedModalData] = React.useState<{
@@ -7909,19 +7912,134 @@ export default function Home() {
     scene.setMode('prepare');
   }, [scene.mode, scene.models.length, scene.setMode]);
 
-  // Visible models with unapplied hole punches. Hidden models are ignored
-  // entirely — they neither open the export warning nor get baked by
-  // "Apply to All".
-  const getVisibleModelIdsWithUnappliedHoles = React.useCallback((): string[] => {
-    return scene.models
-      .filter((model) => model.visible)
-      .filter((model) => {
-        const mm = scene.getModelMeshModifiers(model.id);
-        const punches = mm?.holePunches;
-        return Boolean(punches && punches.length > 0 && !mm?.holePunchesBakedIntoGeometry);
-      })
-      .map((model) => model.id);
+  // Visible models with unapplied hole punches and/or unapplied hollowing.
+  // Hidden models are ignored entirely — they neither open the warning nor get
+  // baked by "Apply to All".
+  //
+  // Slicing and export bake both modifiers (`prepareModelGeometry`); support
+  // generation runs against the mesh as it stands, which is why unapplied
+  // holes or hollowing are worth stopping a run for.
+  const getVisibleModelIdsWithUnappliedModifiers = React.useCallback((): {
+    holeIds: string[];
+    hollowIds: string[];
+  } => {
+    const holeIds: string[] = [];
+    const hollowIds: string[] = [];
+    for (const model of scene.models) {
+      if (!model.visible) continue;
+      const unapplied = getUnappliedModifiers(scene.getModelMeshModifiers(model.id));
+      if (unapplied.holePunches) holeIds.push(model.id);
+      if (unapplied.hollowing) hollowIds.push(model.id);
+    }
+    return { holeIds, hollowIds };
   }, [scene.models, scene.getModelMeshModifiers]);
+
+  const getVisibleModelIdsWithUnappliedHoles = React.useCallback(
+    (): string[] => getVisibleModelIdsWithUnappliedModifiers().holeIds,
+    [getVisibleModelIdsWithUnappliedModifiers],
+  );
+
+  // Export-tab "Apply to All": bake holes into every visible model that has
+  // unapplied holes, one at a time. Each model is made active and handed to the
+  // manager's auto-apply effect via pendingHolePunchAutoApplyModelId; the
+  // advance effect below walks the queue as each bake settles.
+  const handleApplyAllHolePunches = React.useCallback(() => {
+    setShowUnappliedHolePunchModal(false);
+    const queue = getVisibleModelIdsWithUnappliedHoles();
+    if (queue.length === 0) return;
+    holePunchApplyAllQueueRef.current = queue.slice(1);
+    setApplyAllHolePunchProgress({ done: 0, total: queue.length });
+    scene.setActiveModelId(queue[0]);
+    setPendingHolePunchAutoApplyModelId(queue[0]);
+  }, [getVisibleModelIdsWithUnappliedHoles, scene.setActiveModelId]);
+
+  // Guide the user to the per-model hole-punch UI (Prepare → Hollow tool).
+  const handleGoToHollowTool = React.useCallback(() => {
+    setShowUnappliedHolePunchModal(false);
+    const { holeIds, hollowIds } = getVisibleModelIdsWithUnappliedModifiers();
+    const firstPending = holeIds[0] ?? hollowIds[0];
+    if (firstPending) {
+      scene.setActiveModelId(firstPending);
+    }
+    scene.setMode('prepare');
+    setTransformModeWithMirrorFinalize('hollowing');
+  }, [getVisibleModelIdsWithUnappliedModifiers, scene.setActiveModelId, scene.setMode, setTransformModeWithMirrorFinalize]);
+
+  // The modal reports which action the user picked; the page performs it and
+  // answers any waiting caller (Generate Supports). The export flow opens the
+  // same modal without a caller to answer.
+  const pendingModifierDecisionResolve = React.useRef<((proceed: boolean) => void) | null>(null);
+
+  const resolveUnappliedModifier = React.useCallback((action: UnappliedModifierAction) => {
+    const answer = pendingModifierDecisionResolve.current;
+    pendingModifierDecisionResolve.current = null;
+    unappliedHolePunchResolveRef.current = null;
+    setShowUnappliedHolePunchModal(false);
+    if (action === 'goto') {
+      handleGoToHollowTool();
+      answer?.(false);
+      return;
+    }
+    if (action === 'apply') {
+      // "Apply to All" bakes holes through a queue; answer once it drains, so a
+      // waiting support run sees the punched geometry.
+      handleApplyAllHolePunches();
+      pendingModifierDecisionResolve.current = answer;
+      return;
+    }
+    answer?.(true);
+  }, [handleApplyAllHolePunches, handleGoToHollowTool]);
+
+  const unappliedModifierPrompt = React.useMemo(() => {
+    const { holeIds, hollowIds } = getVisibleModelIdsWithUnappliedModifiers();
+    const hasHoles = holeIds.length > 0;
+    const hasHollowing = hollowIds.length > 0;
+    if (unappliedModifierPromptPurpose === 'supports') {
+      const what = hasHoles && hasHollowing
+        ? 'hole punches and hollowing'
+        : (hasHoles ? 'hole punches' : 'hollowing');
+      const verb = hasHoles && !hasHollowing
+        ? 'Hole punches are'
+        : (hasHollowing && !hasHoles ? 'Hollowing is' : 'Holes and hollowing are');
+      return {
+        title: 'Unapplied Changes',
+        subtitle: `Some models have unapplied ${what}`,
+        paragraphs: [
+          `Supports are generated against the mesh as it stands. ${verb} only baked in later, so a support generated now can land inside a hole or a cavity that does not exist yet.`,
+          hasHoles
+            ? 'Apply the holes to every visible model, or open the Hollow tool to review and apply them per model.'
+            : 'Open the Hollow tool to apply the hollowing, or continue and supports will follow the current mesh.',
+        ],
+        showApplyAll: hasHoles,
+      };
+    }
+    return {
+      title: 'Unapplied Holes',
+      subtitle: 'Some models have unapplied hole punches',
+      paragraphs: [
+        'One or more models have hole punches that haven\u2019t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output.',
+        'Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually.',
+      ],
+      showApplyAll: true,
+    };
+  }, [getVisibleModelIdsWithUnappliedModifiers, unappliedModifierPromptPurpose]);
+
+  // Generate Supports: stop for unapplied holes / hollowing first, then run
+  // against whatever the user chose.
+  const requestModifierDecisionBeforeSupports = React.useCallback((): Promise<boolean> => {
+    const { holeIds, hollowIds } = getVisibleModelIdsWithUnappliedModifiers();
+    const pendingIds = [...new Set([...holeIds, ...hollowIds])];
+    if (pendingIds.length === 0) return Promise.resolve(true);
+    if (scene.activeModelId === null || !pendingIds.includes(scene.activeModelId)) {
+      scene.setActiveModelId(pendingIds[0]);
+    }
+    setUnappliedModifierPromptPurpose('supports');
+    unappliedHolePunchResolveRef.current = resolveUnappliedModifier;
+    setShowUnappliedHolePunchModal(true);
+    return new Promise<boolean>((resolve) => {
+      pendingModifierDecisionResolve.current = resolve;
+    });
+  }, [getVisibleModelIdsWithUnappliedModifiers, resolveUnappliedModifier, scene.activeModelId, scene.setActiveModelId]);
 
   React.useEffect(() => {
     if (scene.mode !== 'export') return;
@@ -7933,6 +8051,8 @@ export default function Home() {
     // re-open the modal on top of the progress overlay.
     const unbakedHoleModelIds = getVisibleModelIdsWithUnappliedHoles();
     if (unbakedHoleModelIds.length > 0 && unappliedHolePunchResolveRef.current === null && applyAllHolePunchProgress === null) {
+      setUnappliedModifierPromptPurpose('export');
+      unappliedHolePunchResolveRef.current = resolveUnappliedModifier;
       setShowUnappliedHolePunchModal(true);
       // Make the first model with un-baked holes active so the modal's actions
       // (and the user's next glance) land on a model that needs attention,
@@ -7960,32 +8080,8 @@ export default function Home() {
 
     // Select all visible models for export workspace tinting
     scene.setSelectedModelIds(visibleIds);
-  }, [scene.mode, scene.activeModelId, scene.models, scene.setActiveModelId, getVisibleModelIdsWithUnappliedHoles, applyAllHolePunchProgress]);
+  }, [scene.mode, scene.activeModelId, scene.models, scene.setActiveModelId, getVisibleModelIdsWithUnappliedHoles, applyAllHolePunchProgress, resolveUnappliedModifier]);
 
-  // Export-tab "Apply to All": bake holes into every visible model that has
-  // unapplied holes, one at a time. Each model is made active and handed to the
-  // manager's auto-apply effect via pendingHolePunchAutoApplyModelId; the
-  // advance effect below walks the queue as each bake settles.
-  const handleApplyAllHolePunches = React.useCallback(() => {
-    setShowUnappliedHolePunchModal(false);
-    const queue = getVisibleModelIdsWithUnappliedHoles();
-    if (queue.length === 0) return;
-    holePunchApplyAllQueueRef.current = queue.slice(1);
-    setApplyAllHolePunchProgress({ done: 0, total: queue.length });
-    scene.setActiveModelId(queue[0]);
-    setPendingHolePunchAutoApplyModelId(queue[0]);
-  }, [getVisibleModelIdsWithUnappliedHoles, scene.setActiveModelId]);
-
-  // Guide the user to the per-model hole-punch UI (Prepare → Hollow tool).
-  const handleGoToHollowTool = React.useCallback(() => {
-    setShowUnappliedHolePunchModal(false);
-    const firstWithHoles = getVisibleModelIdsWithUnappliedHoles()[0];
-    if (firstWithHoles) {
-      scene.setActiveModelId(firstWithHoles);
-    }
-    scene.setMode('prepare');
-    setTransformModeWithMirrorFinalize('hollowing');
-  }, [getVisibleModelIdsWithUnappliedHoles, scene.setActiveModelId, scene.setMode, setTransformModeWithMirrorFinalize]);
 
   // Advance the "Apply to All" queue once the current model's bake settles.
   // A model is done when it is no longer applying and the auto-apply handoff
@@ -8000,6 +8096,9 @@ export default function Home() {
     const nextModelId = holePunchApplyAllQueueRef.current.shift();
     if (!nextModelId) {
       setApplyAllHolePunchProgress(null);
+      const waiting = pendingModifierDecisionResolve.current;
+      pendingModifierDecisionResolve.current = null;
+      waiting?.(true);
       return;
     }
     setApplyAllHolePunchProgress((previous) => (
@@ -10199,6 +10298,7 @@ export default function Home() {
                 islands={islandsPoc}
                 hasGeometry={!!scene.geom}
                 activeModelId={scene.activeModelId ?? undefined}
+                onBeforeRun={requestModifierDecisionBeforeSupports}
               />
             )}
             {autoRotationExperimentEnabled && (
@@ -11014,8 +11114,6 @@ export default function Home() {
       />
 
       <ModifierModals
-        handleApplyAllHolePunches={handleApplyAllHolePunches}
-        handleGoToHollowTool={handleGoToHollowTool}
         handleCancelDestructiveTransform={handleCancelDestructiveTransform}
         handleConfirmBlockerReset={handleConfirmBlockerReset}
         handleConfirmDestructiveTransform={handleConfirmDestructiveTransform}
@@ -11028,9 +11126,9 @@ export default function Home() {
         pendingModifierResetAction={pendingModifierResetAction}
         setPendingBlockerResetState={setPendingBlockerResetState}
         setPendingModifierResetAction={setPendingModifierResetAction}
-        setShowUnappliedHolePunchModal={setShowUnappliedHolePunchModal}
         showModifierApplyBlockingOverlay={showModifierApplyBlockingOverlay}
         showUnappliedHolePunchModal={showUnappliedHolePunchModal}
+        unappliedModifierPrompt={unappliedModifierPrompt}
         unappliedHolePunchResolveRef={unappliedHolePunchResolveRef}
       />
 
