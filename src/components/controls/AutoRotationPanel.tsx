@@ -255,26 +255,6 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
               </button>
             </div>
           )}
-          {blockersActive && (
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => { if (activeModelId) clearSupportBlockers(activeModelId); }}
-                disabled={busy || blockedCount === 0}
-                className="ui-button ui-button-secondary flex-1 !h-8 text-[11px] disabled:opacity-50"
-              >
-                {_(CLEAR_BLOCKERS)}
-              </button>
-              <button
-                type="button"
-                onClick={() => { onToggleBlockers?.(); }}
-                disabled={busy}
-                className="ui-button ui-button-accent flex-1 !h-8 text-[11px] disabled:opacity-50"
-              >
-                {_(DONE_BLOCKERS)}
-              </button>
-            </div>
-          )}
           {blockersActive ? (
             <div className="flex flex-col gap-1">
               <label className="ui-meta flex justify-between">
@@ -303,6 +283,26 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
                 <option value="height">{_(OPT_HEIGHT)}</option>
                 <option value="scarring">{_(OPT_SCARRING)}</option>
               </Select>
+            </div>
+          )}
+          {blockersActive && (
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => { if (activeModelId) clearSupportBlockers(activeModelId); }}
+                disabled={busy || blockedCount === 0}
+                className="ui-button ui-button-secondary flex-1 !h-8 text-[11px] disabled:opacity-50"
+              >
+                {_(CLEAR_BLOCKERS)}
+              </button>
+              <button
+                type="button"
+                onClick={() => { onToggleBlockers?.(); }}
+                disabled={busy}
+                className="ui-button ui-button-accent flex-1 !h-8 text-[11px] disabled:opacity-50"
+              >
+                {_(DONE_BLOCKERS)}
+              </button>
             </div>
           )}
 
