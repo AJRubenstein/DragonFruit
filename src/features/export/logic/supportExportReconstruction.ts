@@ -46,8 +46,6 @@ export interface ScopedSupportPayload {
   braces: Brace[];
   anchors: Anchor[];
   knots: Knot[];
-  kickstandRoots: Roots[];
-  kickstandKnots: Knot[];
   kickstands: Kickstand[];
 }
 
@@ -538,13 +536,6 @@ export function extractScopedSupportPayload(
     stick: sticks, brace: braces, anchor: anchors, kickstand: kickstands,
   };
 
-  const kickstandRootIds = new Set(kickstands.map((item) => item.rootId));
-  const kickstandKnotIds = new Set(kickstands.map((item) => item.hostKnotId));
-  const kickstandRoots = Object.values(supportState.roots)
-    .filter((item) => kickstandRootIds.has(item.id));
-  const kickstandKnots = Object.values(supportState.knots)
-    .filter((item) => kickstandKnotIds.has(item.id));
-
   /** Every scoped entity, with the descriptor that says what it is. */
   const scopedByType: Array<{ descriptor: SupportTypeDescriptor; entities: Record<string, unknown>[] }> =
     SUPPORT_TYPES.map((descriptor) => ({
@@ -609,8 +600,6 @@ export function extractScopedSupportPayload(
     braces,
     anchors,
     knots,
-    kickstandRoots,
-    kickstandKnots,
     kickstands,
   };
 }
@@ -621,13 +610,15 @@ export function buildScopedSupportExportDocument(
   source = 'dragonfruit-voxl',
 ): DragonfruitImportFormat {
   const payload = extractScopedSupportPayload(supportState, modelIds);
-  const kickstandRootsById = new Map(payload.kickstandRoots.map((item) => [item.id, item]));
-  const kickstandKnotsById = new Map(payload.kickstandKnots.map((item) => [item.id, item]));
+  // A kickstand serialises as a bundle (`serialisedAsBundle`), so the document
+  // nests its root and host knot rather than referencing them by id.
+  const rootsById = new Map(payload.roots.map((item) => [item.id, item]));
+  const knotsById = new Map(payload.knots.map((item) => [item.id, item]));
 
   const kickstandBuilds: KickstandBuildResult[] = payload.kickstands
     .map((kickstand) => {
-      const root = kickstandRootsById.get(kickstand.rootId);
-      const hostKnot = kickstandKnotsById.get(kickstand.hostKnotId);
+      const root = rootsById.get(kickstand.rootId);
+      const hostKnot = knotsById.get(kickstand.hostKnotId);
       if (!root || !hostKnot) return null;
       return { root, hostKnot, kickstand };
     })
@@ -663,8 +654,6 @@ export function buildScopedSupportGeometryGroup(
 
   const rootsById = supportState.roots;
   const knotsById = supportState.knots;
-  const kickstandRootsById = supportState.roots;
-  const kickstandKnotsById = supportState.knots;
 
   /** One builder per type, over the rows the payload carries for it. */
   const groupBuilders: Record<SupportTypeId, GroupBuilder> = {
@@ -694,8 +683,8 @@ export function buildScopedSupportGeometryGroup(
     }),
     anchor: () => payload.anchors.map((anchor) => buildAnchorGroup(anchor, anchor.modelId)),
     kickstand: () => payload.kickstands.map((kickstand) => {
-      const root = kickstandRootsById[kickstand.rootId];
-      const hostKnot = kickstandKnotsById[kickstand.hostKnotId];
+      const root = supportState.roots[kickstand.rootId];
+      const hostKnot = supportState.knots[kickstand.hostKnotId];
       if (!root || !hostKnot) return null;
       const modelId = kickstand.modelId
         ?? root.modelId
