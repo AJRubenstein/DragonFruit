@@ -160,6 +160,16 @@ function makeSupportState(): SupportState {
   };
 }
 
+/** The export takes one state; fold a kickstand fixture into it. */
+function withKickstands(base: SupportState, kick: KickstandState): SupportState {
+  return {
+    ...base,
+    kickstands: { ...base.kickstands, ...kick.kickstands },
+    roots: { ...base.roots, ...kick.roots },
+    knots: { ...base.knots, ...kick.knots },
+  };
+}
+
 function makeKickstandState(): KickstandState {
   return {
     kickstands: {
@@ -211,12 +221,13 @@ function makeKickstandState(): KickstandState {
 }
 
 test('scoped support export document keeps only requested model supports', () => {
-  const supportState = makeSupportState();
-  const kickstandState = makeKickstandState();
+  const supportState = withKickstands(makeSupportState(), makeKickstandState());
 
-  const scoped = buildScopedSupportExportDocument(supportState, kickstandState, ['model-a'], 'test-export');
+  const scoped = buildScopedSupportExportDocument(supportState, ['model-a'], 'test-export');
 
-  assert.equal(scoped.roots.length, 1);
+  // Two: the trunk's, and the one its kickstand owns. Kickstand roots are not a
+  // separate collection, so a model-a scope takes both.
+  assert.equal(scoped.roots.length, 2);
   assert.equal(scoped.trunks.length, 1);
   assert.equal(scoped.branches.length, 1);
   assert.equal(scoped.leaves.length, 1);
@@ -235,10 +246,9 @@ test('scoped support export document keeps only requested model supports', () =>
 });
 
 test('scoped support geometry group only contains requested model metadata', () => {
-  const supportState = makeSupportState();
-  const kickstandState = makeKickstandState();
+  const supportState = withKickstands(makeSupportState(), makeKickstandState());
 
-  const group = buildScopedSupportGeometryGroup(supportState, kickstandState, ['model-a']);
+  const group = buildScopedSupportGeometryGroup(supportState, ['model-a']);
 
   assert.ok(group.children.length > 0);
 
@@ -314,9 +324,8 @@ test('twig disk tips export with finite geometry (no NaN radius)', () => {
 });
 
 test('scoped twig export contains disk tip geometry for the requested model', () => {
-  const supportState = makeSupportState();
-  const kickstandState = makeKickstandState();
-  const group = buildScopedSupportGeometryGroup(supportState, kickstandState, ['model-a']);
+  const supportState = withKickstands(makeSupportState(), makeKickstandState());
+  const group = buildScopedSupportGeometryGroup(supportState, ['model-a']);
 
   const twigGroup = group.children.find((child) => child.name === 'Twig_twig-a');
   assert.ok(twigGroup, 'expected a Twig_ group in the scoped export');
@@ -388,9 +397,8 @@ test('curved (bezier) segments export as piecewise cylinders that follow the cur
 });
 
 test('kickstand export does not add a host-knot sphere affordance', () => {
-  const supportState = makeSupportState();
-  const kickstandState = makeKickstandState();
-  const group = buildScopedSupportGeometryGroup(supportState, kickstandState, ['model-a']);
+  const supportState = withKickstands(makeSupportState(), makeKickstandState());
+  const group = buildScopedSupportGeometryGroup(supportState, ['model-a']);
 
   const kickstandGroup = group.children.find((child) => child.name === 'Kickstand_kickstand-a');
   assert.ok(kickstandGroup);
@@ -416,17 +424,14 @@ test('kickstand export does not add a host-knot sphere affordance', () => {
  * entirely left it passing -- the geometry path had no other coverage.
  */
 test('every populated support type reaches the exported geometry', () => {
-  const supportState = makeSupportState();
-  const kickstandState = makeKickstandState();
+  const supportState = withKickstands(makeSupportState(), makeKickstandState());
 
-  const group = buildScopedSupportGeometryGroup(supportState, kickstandState, ['model-a']);
+  const group = buildScopedSupportGeometryGroup(supportState, ['model-a']);
   const names = group.children.map((child) => child.name);
 
   const expected = SUPPORT_TYPES
     .filter((descriptor) => {
-      const collection = descriptor.id === 'kickstand'
-        ? kickstandState.kickstands
-        : (supportState as unknown as Record<string, Record<string, { modelId?: string }>>)[descriptor.location.key];
+      const collection = (supportState as unknown as Record<string, Record<string, { modelId?: string }>>)[descriptor.location.key];
       return Object.values(collection ?? {}).some((entity) => entity.modelId === 'model-a');
     })
     .map((descriptor) => descriptor.singular.charAt(0).toUpperCase() + descriptor.singular.slice(1));

@@ -5,7 +5,7 @@ import { getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeDescriptor, ty
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone';
 import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getRaftSettingsForModel } from '@/supports/Rafts/Crenelated/RaftState';
-import type { Kickstand, KickstandBuildResult, KickstandState } from '@/supports/SupportTypes/Kickstand/types';
+import type { Kickstand, KickstandBuildResult } from '@/supports/SupportTypes/Kickstand/types';
 import type {
   Anchor,
   Brace,
@@ -78,7 +78,6 @@ type ModelIdResolver = (id: string | null | undefined) => string | null;
  */
 function createScopedModelIdResolver(
   supportState: SupportState,
-  kickstandState: KickstandState,
 ): ModelIdResolver {
   // Ids reachable in the canonical resolver only via linear scans: segment and
   // joint ids, brace start/end knots, and kickstand host knots + segments.
@@ -482,7 +481,6 @@ function buildKickstandGroup(
 
 export function extractScopedSupportPayload(
   supportState: SupportState,
-  kickstandState: KickstandState,
   modelIds: Iterable<string>,
 ): ScopedSupportPayload {
   const allowedModelIds = new Set(Array.from(modelIds).filter((modelId) => modelId.trim().length > 0));
@@ -491,7 +489,7 @@ export function extractScopedSupportPayload(
   // canonical getModelIdForSupportEntityId which linear-scans the whole graph
   // per call. Called once per branch/leaf/brace/kickstand/knot below, so the
   // linear-scan form made this O(N²) — the multi-second autosave freeze.
-  const resolveModelId = createScopedModelIdResolver(supportState, kickstandState);
+  const resolveModelId = createScopedModelIdResolver(supportState);
 
   /**
    * Whether an entity belongs to a requested model.
@@ -517,9 +515,9 @@ export function extractScopedSupportPayload(
     ) !== null;
   };
 
-  const scoped = <T>(typeId: SupportTypeId, from: unknown = supportState): T[] => {
+  const scoped = <T>(typeId: SupportTypeId): T[] => {
     const descriptor = getSupportTypeDescriptor(typeId);
-    const collection = (from as Record<string, unknown>)[descriptor.location.key] as Record<string, Record<string, unknown>> | undefined;
+    const collection = (supportState as unknown as Record<string, unknown>)[descriptor.location.key] as Record<string, Record<string, unknown>> | undefined;
     return Object.values(collection ?? {}).filter((entity) => belongsToScope(descriptor, entity)) as T[];
   };
 
@@ -532,9 +530,7 @@ export function extractScopedSupportPayload(
   const sticks = scoped<Stick>('stick');
   const braces = scoped<Brace>('brace');
   const anchors = scoped<Anchor>('anchor');
-  // Read from `kickstandState`, not `supportState`: this function still takes
-  // the two separately, and a caller may pass different objects.
-  const kickstands = scoped<Kickstand>('kickstand', kickstandState);
+  const kickstands = scoped<Kickstand>('kickstand');
 
   /** The same scoped lists, by type id, for the declaration-driven walks below. */
   const scopedEntities: Record<SupportTypeId, unknown[]> = {
@@ -544,9 +540,9 @@ export function extractScopedSupportPayload(
 
   const kickstandRootIds = new Set(kickstands.map((item) => item.rootId));
   const kickstandKnotIds = new Set(kickstands.map((item) => item.hostKnotId));
-  const kickstandRoots = Object.values(kickstandState.roots)
+  const kickstandRoots = Object.values(supportState.roots)
     .filter((item) => kickstandRootIds.has(item.id));
-  const kickstandKnots = Object.values(kickstandState.knots)
+  const kickstandKnots = Object.values(supportState.knots)
     .filter((item) => kickstandKnotIds.has(item.id));
 
   /** Every scoped entity, with the descriptor that says what it is. */
@@ -621,11 +617,10 @@ export function extractScopedSupportPayload(
 
 export function buildScopedSupportExportDocument(
   supportState: SupportState,
-  kickstandState: KickstandState,
   modelIds: Iterable<string>,
   source = 'dragonfruit-voxl',
 ): DragonfruitImportFormat {
-  const payload = extractScopedSupportPayload(supportState, kickstandState, modelIds);
+  const payload = extractScopedSupportPayload(supportState, modelIds);
   const kickstandRootsById = new Map(payload.kickstandRoots.map((item) => [item.id, item]));
   const kickstandKnotsById = new Map(payload.kickstandKnots.map((item) => [item.id, item]));
 
@@ -660,17 +655,16 @@ export function buildScopedSupportExportDocument(
 
 export function buildScopedSupportGeometryGroup(
   supportState: SupportState,
-  kickstandState: KickstandState,
   modelIds: Iterable<string>,
 ): THREE.Group {
-  const payload = extractScopedSupportPayload(supportState, kickstandState, modelIds);
+  const payload = extractScopedSupportPayload(supportState, modelIds);
   const group = new THREE.Group();
   group.name = 'ScopedSupportExport';
 
   const rootsById = supportState.roots;
   const knotsById = supportState.knots;
-  const kickstandRootsById = kickstandState.roots;
-  const kickstandKnotsById = kickstandState.knots;
+  const kickstandRootsById = supportState.roots;
+  const kickstandKnotsById = supportState.knots;
 
   /** One builder per type, over the rows the payload carries for it. */
   const groupBuilders: Record<SupportTypeId, GroupBuilder> = {

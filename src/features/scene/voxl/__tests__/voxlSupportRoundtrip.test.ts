@@ -162,7 +162,7 @@ test('VOXL support roundtrip preserves imported leaf and brace normalization int
     assert.strictEqual(normalizedSnapshot.knots['k-left']?.normalizationHint, 'braceImported', 'Brace start knot should persist brace intent after initial load');
     assert.strictEqual(normalizedSnapshot.knots['k-right']?.normalizationHint, 'braceImported', 'Brace end knot should persist brace intent after initial load');
 
-    const supports = buildSupportExportFromStores(normalizedSnapshot, readKickstands());
+    const supports = buildSupportExportFromStores(normalizedSnapshot);
     const document = buildVoxlDocumentV1({
         models: [
             {

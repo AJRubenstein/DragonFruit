@@ -957,8 +957,7 @@ export class ExportManager {
     if (options.includeSupports) {
       if (hasScopedModelFilter) {
         const supportSnapshot = getSnapshot();
-        const kickstandSnapshot = supportSnapshot;
-        const scopedSupports = buildScopedSupportGeometryGroup(supportSnapshot, kickstandSnapshot, scopedModelIds);
+        const scopedSupports = buildScopedSupportGeometryGroup(supportSnapshot, scopedModelIds);
         if (scopedSupports.children.length > 0) {
           exportObjects.push(scopedSupports);
         }
@@ -1173,7 +1172,6 @@ export class ExportManager {
     await this.yieldToBrowserFrame();
 
     const supportSnapshot = getSnapshot();
-    const kickstandSnapshot = getSnapshot();
 
     const scopedModelIds = new Set((sceneContext?.models ?? []).map((model) => model.id));
     const hasScopedModelFilter = scopedModelIds.size > 0;
@@ -1181,13 +1179,11 @@ export class ExportManager {
     const supports = hasScopedModelFilter
       ? buildScopedSupportExportDocument(
           supportSnapshot,
-          kickstandSnapshot,
           scopedModelIds,
           'dragonfruit-voxl-export',
         )
       : buildSupportExportFromStores(
           supportSnapshot,
-          kickstandSnapshot,
           'dragonfruit-voxl-export',
         );
 
@@ -1370,7 +1366,6 @@ export class ExportManager {
     const supportsCacheKey = chunkCache
       ? [
           snapshotToken(supportSnapshot),
-          snapshotToken(kickstandSnapshot),
           options.includeSupports ? 'S1' : 'S0',
           hasScopedModelFilter ? [...scopedModelIds].sort().join(',') : '*',
         ].join('|')
