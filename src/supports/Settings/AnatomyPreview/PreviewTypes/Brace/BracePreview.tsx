@@ -189,9 +189,8 @@ export function BracePreview({
         b: { x: pair.bX, y: pair.bY },
         hDist: pair.dist,
     }));
-    // Match production: the chain never climbs tighter than the pattern's own
-    // brace spacing, or than the hard minimum.
-    const zigZagMinRise = Math.max(AUTO_BRACING_HARD_RULES.minZigZagRiseMm, initialDistance);
+    // Match production: the chain never climbs tighter than the hard minimum.
+    const zigZagMinRise = AUTO_BRACING_HARD_RULES.minZigZagRiseMm;
     const placeAt = (
         low: { x: number; y: number },
         high: { x: number; y: number },

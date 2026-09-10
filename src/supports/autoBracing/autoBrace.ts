@@ -315,10 +315,10 @@ function isCardinalDelta(dx: number, dy: number, spacingMm: number): boolean {
     return Math.abs(dx) <= axisToleranceMm || Math.abs(dy) <= axisToleranceMm;
 }
 
-// Supports closer than this are one post: the hard floor, and never less than
-// the two brace surfaces would leave between them.
+// Supports closer than this are one post: two brace surfaces that overlap
+// cannot be bridged, so the floor follows the brace diameter.
 function autoBracingMinPairSpanMm(settings: AutoBracingSettings): number {
-    return Math.max(AUTO_BRACING_HARD_RULES.minPairSpanMm, settings.braceDiameterMm * 2);
+    return Math.max(AUTO_BRACING_HARD_RULES.minPairSpanMm, settings.braceDiameterMm);
 }
 
 function buildGroupPairs(
@@ -975,13 +975,10 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         // Zigzag runs as continuous per-edge chains (each link starts where
         // the previous ended, stepping by its own rise) rather than the
         // fixed-interval ladder — patternInterval does not apply to it.
-        // A zig-zag chain may not climb faster than the pair's span allows, but
-        // it must not climb slower than the pattern's own brace spacing either —
-        // that is what turned close pairs into a dense ladder.
-        const zigZagMinRiseMm = Math.max(
-            AUTO_BRACING_HARD_RULES.minZigZagRiseMm,
-            settings.initialDistanceMm,
-        );
+        // The chain still climbs at least this per link; the floor is
+        // independent of initialDistanceMm / patternIntervalMm, which describe
+        // where tiers start, not how tight a single chain may be.
+        const zigZagMinRiseMm = AUTO_BRACING_HARD_RULES.minZigZagRiseMm;
         if (settings.initialPattern === 'zigZag') {
             runZigZagChain(pairs, settings.initialDistanceMm, maxZ, 'initial', place, zigZagMinRiseMm);
         } else if (settings.repeatingPattern === 'zigZag') {

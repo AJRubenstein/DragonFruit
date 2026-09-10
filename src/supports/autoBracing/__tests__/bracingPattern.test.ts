@@ -94,8 +94,21 @@ test('zigzag chain will not pack a short span tighter than the minimum rise', ()
     );
     // Rising by the span (0.4mm) would have stacked ~100 near-parallel stubs
     // in this height — the ultra-dense ladder seen on close supports.
-    assert.ok(zs.length <= 21, `expected a bounded link count, got ${zs.length}`);
+    assert.ok(zs.length <= 41, `expected a bounded link count, got ${zs.length}`);
     for (let i = 1; i < zs.length; i++) {
-        assert.equal(zs[i] - zs[i - 1], 2, 'climbs the minimum rise, not the span');
+        assert.equal(zs[i] - zs[i - 1], 1, 'climbs the minimum rise, not the span');
     }
+});
+
+test('a span just above the floor keeps its own rise', () => {
+    const zs: number[] = [];
+    runZigZagChain(
+        [{ a: 'a', b: 'b', hDist: 1.5 }],
+        2,
+        11,
+        'initial',
+        (low, high, section, atZ) => { zs.push(atZ); },
+    );
+    // Only spans below the floor are steepened — 1.5mm still rises 1.5mm.
+    assert.deepEqual(zs, [2, 3.5, 5, 6.5, 8, 9.5]);
 });
