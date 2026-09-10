@@ -271,3 +271,50 @@ test('a long thin rib under the area threshold gets its edge supported', () => {
     const patch = rectRegion('p1', -2, 2, -2, 2, 16);
     assert.equal(shouldUseDensityGrid(patch, settings), false, 'small patches keep the pillar path');
 });
+
+/**
+ * A region carries ONE surface normal, but its cells land on a surface that
+ * curves or bends underneath it. Measured on a cylinder underside, every
+ * contact's axis sat a median 26° (worst 41°) from the surface it touched, so
+ * the contact disc dug in on one edge and floated off the other.
+ */
+test('each grid contact takes the normal of the face it lands on', () => {
+    const settings = createDefaultAutoSupportSettings();
+    // Dome-ish underside: a strip of two facets meeting along y = 0, so the
+    // local normal differs cell to cell while the region normal stays -Z.
+    const geometry = new THREE.BufferGeometry();
+    const positions = [
+        // left facet, sloping up towards y = 0
+        -5, -5, 0, 5, -5, 0, 5, 0, 1.5,
+        -5, -5, 0, 5, 0, 1.5, -5, 0, 1.5,
+        // right facet, sloping back down
+        -5, 0, 1.5, 5, 0, 1.5, 5, 5, 0,
+        -5, 0, 1.5, 5, 5, 0, -5, 5, 0,
+    ];
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry);
+    mesh.updateMatrixWorld(true);
+
+    const voxels: { x: number; y: number; z: number }[] = [];
+    for (let x = -4; x <= 4; x += 0.25) {
+        for (let y = -4; y <= 4; y += 0.25) {
+            voxels.push({ x, y, z: (Math.abs(y) > 0 ? 1.5 * (1 - Math.abs(y) / 5) : 1.5) });
+        }
+    }
+    const island: DetectedIsland = {
+        ...rectRegion('o9', -4, 4, -4, 4, 64, 0),
+        baseZ: -2,
+        surfaceNormal: { x: 0, y: 0, z: -1 },
+        triangleIds: [0, 1, 2, 3],
+        contactVoxels: footprintFromPoints(voxels),
+    };
+
+    const candidates = generateGridCandidates([island], settings, mesh, 'm');
+    assert.ok(candidates.length > 5, `region gridded (${candidates.length})`);
+    const tilted = candidates.filter((c) => Math.abs(c.tipNormal.z) < 0.99);
+    assert.ok(tilted.length > 0,
+        'cells on the sloped facets lean with the facet, not with the region');
+    assert.ok(candidates.every((c) => Math.abs(Math.hypot(c.tipNormal.x, c.tipNormal.y, c.tipNormal.z) - 1) < 1e-6),
+        'every emitted normal is a unit vector');
+});

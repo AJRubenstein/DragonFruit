@@ -77,6 +77,15 @@ overhang region above `gridAreaThresholdMm2` gets the same treatment in
   `MAX_GRID_CANDIDATES_PER_REGION` (800) caps each region, falling back to
   angle-only spacing and even subsampling — never silently denser.
 
+Every grid cell also takes the **normal of the face it lands on** (`faceNormalAt`),
+not the region's single `surfaceNormal`: a region's cells sit on a surface that
+curves or bends underneath it, and with one normal for all of them every contact
+axis on a cylinder underside measured a median 26° (worst 41°) from the surface
+it touched — the disc dug in on one edge and floated off the other. The voxel
+fallback (and the boundary-ring fallback, which now samples the surface at its
+own XY instead of keeping the voxel Z) has no face index and keeps the region
+normal.
+
 Surface resolution is triangle-accurate: `createTriangleSurfaceAt` upward-raycasts
 the model mesh and accepts only hits whose face index is in the region's
 `triangleIds` (exact barycentric Z); `createVoxelSurfaceAt` (0.25 mm mask +

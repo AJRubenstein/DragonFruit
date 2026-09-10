@@ -426,6 +426,36 @@ export function shouldUseDensityGrid(
     return Math.max(maxX - minX, maxY - minY) >= ISLAND_TWO_POINT_MAX_MM;
 }
 
+/**
+ * World-space normal of one mesh face. The region carries a SINGLE
+ * `surfaceNormal`, but its cells land on a surface that curves or bends across
+ * the region — measured on a cylinder underside, every contact's axis sat a
+ * median 26° (worst 41°) from the surface it was touching, so the contact disc
+ * dug in on one edge and floated on the other. The sampler already reports the
+ * face it hit, so the per-cell normal is free.
+ */
+function faceNormalAt(
+    mesh: THREE.Mesh,
+    faceIndex: number,
+): { x: number; y: number; z: number } | null {
+    const geometry = mesh.geometry as THREE.BufferGeometry;
+    const position = geometry.getAttribute('position');
+    if (!position) return null;
+    const index = geometry.getIndex();
+    const i0 = index ? index.getX(faceIndex * 3) : faceIndex * 3;
+    const i1 = index ? index.getX(faceIndex * 3 + 1) : faceIndex * 3 + 1;
+    const i2 = index ? index.getX(faceIndex * 3 + 2) : faceIndex * 3 + 2;
+    if (i0 < 0 || i1 < 0 || i2 < 0) return null;
+
+    const a = new THREE.Vector3().fromBufferAttribute(position, i0);
+    const b = new THREE.Vector3().fromBufferAttribute(position, i1);
+    const c = new THREE.Vector3().fromBufferAttribute(position, i2);
+    const normal = b.sub(a).cross(c.sub(a));
+    if (normal.lengthSq() < 1e-12) return null;
+    normal.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize();
+    return { x: normal.x, y: normal.y, z: normal.z };
+}
+
 export function generateGridCandidates(
     overhangIslands: DetectedIsland[],
     settings: AutoSupportSettings,
@@ -468,6 +498,9 @@ export function generateGridCandidates(
         const minZ = island.baseZ;
 
         const emitPoint = (x: number, y: number, z: number, kind: 'grid' | 'fill', faceIndex?: number | null) => {
+            // The contact leans into the face it actually lands on; the
+            // region-wide normal is only the fallback (voxel sampler, blockers).
+            const tipNormal = (mesh && faceIndex != null ? faceNormalAt(mesh, faceIndex) : null) ?? surfaceNormal;
             // Support blockers: refuse contacts painted as nogo. Lattice and
             // ring points carry the sampler's face for free; voxel-fallback
             // points resolve it with one raycast. Empty mask → no raycasts.
@@ -475,7 +508,7 @@ export function generateGridCandidates(
             candidates.push({
                 id: `${kind}-${island.id}-${x.toFixed(2)}-${y.toFixed(2)}`,
                 tipPos: { x, y, z },
-                tipNormal: surfaceNormal,
+                tipNormal,
                 modelId: '',
                 source: 'overhang',
                 islandAreaMm2: settings.areaPerSupportMm2,
@@ -557,7 +590,12 @@ export function generateGridCandidates(
                     break;
                 }
             }
-            if (!covered) emitPoint(b.x, b.y, b.z, 'fill', b.faceIndex);
+            if (covered) continue;
+            // The fallback boundary points carry a voxel Z and no face: sample
+            // the surface at their XY so the ring keeps the same per-cell Z and
+            // normal the lattice got.
+            const sampled = surfaceAt(b.x, b.y);
+            emitPoint(b.x, b.y, sampled?.z ?? b.z, 'fill', sampled?.faceIndex ?? b.faceIndex ?? null);
         }
     }
 
