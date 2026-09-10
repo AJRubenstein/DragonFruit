@@ -5,6 +5,28 @@ import { clearSupportDragPreview, emitSupportDragPreview } from './jointDragRunt
 
 export type JointDragSupportKind = SupportTypeId;
 
+/** Squared mm below which a pointer has not moved far enough to be a drag. */
+export const MIN_COMMIT_DELTA_SQ = 1e-6;
+
+/**
+ * Whether a finished pointer interaction was a drag rather than a click.
+ *
+ * The commit re-solves the contact cone, which the drag preview skips, so a
+ * click that moved nothing would still reposition the tip.
+ */
+export function shouldCommitJointDrag(
+  pressPos: Vec3 | null | undefined,
+  releasePos: Vec3 | null | undefined,
+): boolean {
+  if (!pressPos || !releasePos) return false;
+
+  const dx = releasePos.x - pressPos.x;
+  const dy = releasePos.y - pressPos.y;
+  const dz = releasePos.z - pressPos.z;
+
+  return dx * dx + dy * dy + dz * dz >= MIN_COMMIT_DELTA_SQ;
+}
+
 /**
  * The types whose joint drag commits through `commitJointDragSupport`: every
  * shafted type, since the commit is not type-specific.

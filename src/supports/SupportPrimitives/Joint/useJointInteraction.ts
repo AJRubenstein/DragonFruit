@@ -20,7 +20,7 @@ import {
     isJointInteractionLocked,
     setJointInteractionLock,
 } from './jointDragRuntime';
-import { commitJointDragSupport, computeJointDragSupportPreview, JOINT_DRAG_COMMIT_TYPES, JOINT_DRAG_HOSTED_SHAFT_TYPES, publishJointDragSupportPreview } from './jointDragController';
+import { commitJointDragSupport, computeJointDragSupportPreview, JOINT_DRAG_COMMIT_TYPES, JOINT_DRAG_HOSTED_SHAFT_TYPES, publishJointDragSupportPreview, shouldCommitJointDrag } from './jointDragController';
 import { subscribeSupportInteractionReset } from '../../interaction/supportInteractionReset';
 
 /**
@@ -51,6 +51,8 @@ export function useJointInteraction(enabled: boolean = true) {
     const dragOffset = useRef<THREE.Vector3>(new THREE.Vector3());
     const planeIntersectionRef = useRef<THREE.Vector3>(new THREE.Vector3());
     const lastDragPos = useRef<Vec3 | null>(null);
+    /** Where the joint sat when the drag began, to tell a drag from a click. */
+    const dragStartJointPos = useRef<Vec3 | null>(null);
     const forceEndDragRef = useRef(false);
     const initialTrunkSnapshot = useRef<Trunk | null>(null);
     const initialEditSnapshotRef = useRef<ReturnType<typeof captureSupportEditSnapshot> | null>(null);
@@ -215,6 +217,7 @@ export function useJointInteraction(enabled: boolean = true) {
         activeConstraintStartRef.current = undefined;
         activeJointBindingRef.current = null;
         lastDragPos.current = null;
+        dragStartJointPos.current = null;
         lastEmittedPreviewJointPosRef.current = null;
         applyInteractionWarning(null);
 
@@ -410,6 +413,7 @@ export function useJointInteraction(enabled: boolean = true) {
 
                 emitJointDragPositionPreview(jointId, foundJointPos);
                 lastResolvedJointPosRef.current = { x: foundJointPos.x, y: foundJointPos.y, z: foundJointPos.z };
+                dragStartJointPos.current = { x: foundJointPos.x, y: foundJointPos.y, z: foundJointPos.z };
 
                 const jointVec = new THREE.Vector3(foundJointPos.x, foundJointPos.y, foundJointPos.z);
 
@@ -444,7 +448,11 @@ export function useJointInteraction(enabled: boolean = true) {
 
             // On drag end, do one collision-aware recompute so diskLengthOverride only reflects
             // the final settled joint position (avoids latching max standoff mid-drag).
-            if (lastDragPos.current) {
+            //
+            // Gated on real movement: this recompute re-solves the contact cone, which the
+            // drag preview skips, so a click would otherwise move a tip it never dragged.
+            const committedDragPos = lastDragPos.current;
+            if (committedDragPos && shouldCommitJointDrag(dragStartJointPos.current, committedDragPos)) {
                 if (JOINT_DRAG_HOSTED_SHAFT_TYPES.has(activeSupport.current?.typeId as SupportTypeId)) {
                     // A hosted shaft recomputes identically; the arms differed
                     // only in where the angle clamp measures from, which the
@@ -463,7 +471,7 @@ export function useJointInteraction(enabled: boolean = true) {
                             kind: typeId as never,
                             support: support as never,
                             jointId: activeJointIdAtEnd,
-                            newPos: lastDragPos.current,
+                            newPos: committedDragPos,
                             isCurveMode: false,
                             root,
                             contextStart,
@@ -478,7 +486,7 @@ export function useJointInteraction(enabled: boolean = true) {
                     const { typeId, id } = activeSupport.current;
                     const entity = getSupportEntity(typeId, id) as { segments: Segment[] } | null;
                     if (entity) {
-                        const moved = updateSegmentsJointPos(entity.segments as any[], activeJointIdAtEnd, lastDragPos.current) as Segment[];
+                        const moved = updateSegmentsJointPos(entity.segments as any[], activeJointIdAtEnd, committedDragPos) as Segment[];
                         updateSupportEntity(typeId, resolveDraggedContacts(typeId, entity, activeJointIdAtEnd, moved) as never);
                     }
                 }
@@ -536,6 +544,7 @@ export function useJointInteraction(enabled: boolean = true) {
             }
             applyInteractionWarning(null); // Clear warning on release
             lastDragPos.current = null;
+            dragStartJointPos.current = null;
             clearJointDragPositionPreview(activeJointIdAtEnd);
 
             // Restore OrbitControls enabled state
