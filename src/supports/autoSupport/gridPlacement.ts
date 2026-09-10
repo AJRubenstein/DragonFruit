@@ -6,6 +6,7 @@ import {
     OVERHANG_SELF_SUPPORT_ANGLE_DEG,
     GRID_SPACING_MIN_FACTOR,
     GRID_SPACING_MAX_FACTOR,
+    ISLAND_TWO_POINT_MAX_MM,
 } from './constants';
 import type { AutoSupportSettings } from './settings';
 import { isSupportBlockedContact } from './supportBlockers';
@@ -388,6 +389,43 @@ export function sampleBoundary2D(
  *    climb a limb in Z;
  *  - the per-region candidate cap subsamples evenly, never silently denser.
  */
+/**
+ * Does this overhang region get the ring + lattice treatment?
+ *
+ * Area is the density question, but SHAPE decides whether the region can be
+ * carried by the single-candidate path at all: a thin footprint (a plank's
+ * underside, a fin edge) erodes away, so the lattice has nothing to infill —
+ * yet its boundary ring is exactly the line of supports it needs. Under the
+ * area threshold those slivers used to fall through to one centre pillar: a
+ * 19 mm² plank underside of 15 × 1.3 mm got a single support with both ends
+ * of the anchoring edge unsupported. Anything longer than the two-point band
+ * (`ISLAND_TWO_POINT_MAX_MM`, which already splits 1.5–6 mm islands into a
+ * symmetric pair) is long enough to want its perimeter sampled.
+ */
+export function shouldUseDensityGrid(
+    island: DetectedIsland,
+    settings: AutoSupportSettings,
+): boolean {
+    if (island.source !== 'overhang') return false;
+    if ((island.areaMm2 ?? 0) >= settings.gridAreaThresholdMm2) return true;
+
+    const voxels = island.contactVoxels;
+    if (!voxels || voxels.count === 0) return false;
+    const points = footprintToPoints(voxels);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+    }
+    // Longer than the two-point band: a thin rib (a plank's underside) needs
+    // its edge sampled, whether or not it erodes away completely. The lattice
+    // is skipped for it below — a footprint thinner than one lattice cell has
+    // nothing to infill.
+    return Math.max(maxX - minX, maxY - minY) >= ISLAND_TWO_POINT_MAX_MM;
+}
+
 export function generateGridCandidates(
     overhangIslands: DetectedIsland[],
     settings: AutoSupportSettings,
@@ -396,14 +434,11 @@ export function generateGridCandidates(
 ): CandidatePoint[] {
     const baseSpacing = Math.sqrt(Math.max(settings.areaPerSupportMm2, 0.5));
     if (baseSpacing <= 0) return [];
-    const threshold = settings.gridAreaThresholdMm2;
 
     const candidates: CandidatePoint[] = [];
 
     for (const island of overhangIslands) {
-        if (island.source !== 'overhang') continue;
-        const area = island.areaMm2 ?? 0;
-        if (area < threshold) continue;
+        if (!shouldUseDensityGrid(island, settings)) continue;
         const spacing = computeRegionSpacing(island, settings);
 
         const voxels = island.contactVoxels;
@@ -450,7 +485,9 @@ export function generateGridCandidates(
             });
         };
 
-        // Sliver test: nothing survives footprint erosion → ring only.
+        // Sliver test: nothing survives footprint erosion → ring only. A rib
+        // thinner than one lattice cell is treated the same way — infilling it
+        // would stack a second line of supports a millimetre from the edge.
         const eroded = erodeFootprint(voxelPoints);
         const isSliver = eroded.length === 0;
 
@@ -480,7 +517,10 @@ export function generateGridCandidates(
         // columns (never cut off by a leftover margin), inset by the contact
         // radius so a support never hangs half its disc past the edge.
         const lattice: Array<{ x: number; y: number; z: number }> = [];
-        if (!isSliver) {
+        // A footprint thinner than one lattice cell gets no infill: the rows
+        // would land a fraction of a millimetre apart, doubling the density on
+        // a rib the ring already carries end to end.
+        if (!isSliver && Math.min(width, height) >= spacing) {
             for (let i = 0; i <= nx; i += stride) {
                 for (let j = 0; j <= ny; j += stride) {
                     const x = minX + inset + i * spacingX;

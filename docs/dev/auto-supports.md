@@ -62,13 +62,20 @@ overhang region above `gridAreaThresholdMm2` gets the same treatment in
   not lengthen a boundary, so a sliver's ring is a short line and can never
   climb a limb. Each sample's Z comes from the surface sampler.
 - **Grid infill** — a lattice over the footprint bbox at `computeRegionSpacing`
-  (angle + suction curve), skipped for slivers (nothing survives footprint
-  erosion). The lattice spans the region with integer rows/columns, inset by
-  the contact radius.
-- **Shape handles degenerate cases**: below the threshold → the region's
-  single-candidate path (one pillar); sliver → ring only; normal face → ring +
-  infill. `MAX_GRID_CANDIDATES_PER_REGION` (800) caps each region, falling
-  back to angle-only spacing and even subsampling — never silently denser.
+  (angle + suction curve), skipped for slivers and for footprints thinner than
+  one lattice cell (`Math.min(width, height) < spacing`), where the rows would
+  land a fraction of a millimetre apart and double the density of a rib the
+  ring already carries end to end. The lattice spans the region with integer
+  rows/columns, inset by the contact radius.
+- **Shape handles degenerate cases**: below the area threshold the region keeps
+  its single-candidate path (one pillar) *unless* `shouldUseDensityGrid` routes
+  it here on shape — a footprint longer than `ISLAND_TWO_POINT_MAX_MM` (6 mm).
+  A thin rib can sit well under the area gate (a 15 × 1.3 mm plank underside is
+  19.5 mm²) and one centre pillar leaves both ends of the anchoring edge
+  unsupported; the ring is what it needs, and the two-point band already
+  handles anything shorter. Sliver → ring only; normal face → ring + infill.
+  `MAX_GRID_CANDIDATES_PER_REGION` (800) caps each region, falling back to
+  angle-only spacing and even subsampling — never silently denser.
 
 Surface resolution is triangle-accurate: `createTriangleSurfaceAt` upward-raycasts
 the model mesh and accepts only hits whose face index is in the region's

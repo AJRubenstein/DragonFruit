@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
 
-import { generateGridCandidates, computeRegionSpacing, GRID_SPACING_FLOOR_MM, MAX_GRID_CANDIDATES_PER_REGION } from '../autoSupport/gridPlacement';
+import { generateGridCandidates, computeRegionSpacing, GRID_SPACING_FLOOR_MM, MAX_GRID_CANDIDATES_PER_REGION, shouldUseDensityGrid } from '../autoSupport/gridPlacement';
 import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 
@@ -121,7 +121,10 @@ test('angle-aware density: flat anchor surfaces grid denser than slopes', () => 
 
 test('skips regions below the grid area threshold', () => {
     const settings = { ...createDefaultAutoSupportSettings(), gridAreaThresholdMm2: 25 };
-    const candidates = generateGridCandidates([rectRegion('o0', -10, 10, -10, 10, 10)], settings);
+    // A compact patch: 3 × 3 mm, under the gate and shorter than the two-point
+    // band, so it keeps the single-candidate path. (Longer footprints go to
+    // the grid path on shape — see the rib test below.)
+    const candidates = generateGridCandidates([rectRegion('o0', -1.5, 1.5, -1.5, 1.5, 9)], settings);
     assert.equal(candidates.length, 0, 'small region gets a single support, not a grid');
 });
 
@@ -244,4 +247,27 @@ test('per-region candidate count is capped (densification never exceeds the cap)
     assert.ok(candidates.length > 0, 'region still produces candidates');
     assert.ok(candidates.length <= MAX_GRID_CANDIDATES_PER_REGION,
         `capped (${candidates.length} ≤ ${MAX_GRID_CANDIDATES_PER_REGION})`);
+});
+
+/**
+ * A thin rib under the area threshold used to take the single-candidate path:
+ * one pillar at its centre, both ends of the anchoring edge unsupported. Shape
+ * (longer than the two-point band) now decides, not area alone.
+ */
+test('a long thin rib under the area threshold gets its edge supported', () => {
+    const settings = createDefaultAutoSupportSettings();
+    const plank = rectRegion('p0', -7.5, 7.5, -0.65, 0.65, 19.5); // 15 × 1.3 mm
+
+    assert.ok((plank.areaMm2 ?? 0) < settings.gridAreaThresholdMm2, 'fixture sits under the area gate');
+    assert.equal(shouldUseDensityGrid(plank, settings), true, 'shape, not area, decides');
+
+    const candidates = generateGridCandidates([plank], settings);
+    const xs = candidates.map((c) => c.tipPos.x);
+    assert.ok(candidates.length >= 5, `an edge line, not one pillar (${candidates.length})`);
+    assert.ok(Math.max(...xs) - Math.min(...xs) > 10,
+        `supports span the rib (${(Math.max(...xs) - Math.min(...xs)).toFixed(1)}mm)`);
+
+    // ...and a compact patch stays on the single-candidate path.
+    const patch = rectRegion('p1', -2, 2, -2, 2, 16);
+    assert.equal(shouldUseDensityGrid(patch, settings), false, 'small patches keep the pillar path');
 });

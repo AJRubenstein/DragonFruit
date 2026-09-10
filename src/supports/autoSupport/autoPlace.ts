@@ -18,7 +18,7 @@ import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
 import { activeSizingBand } from './parameterSizing';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
-import { generateGridCandidates } from './gridPlacement';
+import { generateGridCandidates, shouldUseDensityGrid } from './gridPlacement';
 import { computeStabilizationAnchors } from './stabilization';
 import {
     MAX_GAP_FILL_PASSES,
@@ -2225,7 +2225,7 @@ export function computeAutoSupportPlan(
     // generation failure must not kill the whole run — fall back to the
     // region's single candidate.
     const overhangIslands = islands.filter((i) => i.source === 'overhang');
-    const eligible = overhangIslands.filter((i) => (i.areaMm2 ?? 0) >= autoSettings.gridAreaThresholdMm2);
+    const eligible = overhangIslands.filter((i) => shouldUseDensityGrid(i, autoSettings));
     if (eligible.length > 0) {
         let generated: CandidatePoint[] = [];
         try {
