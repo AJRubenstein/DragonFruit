@@ -70,8 +70,14 @@ under it.
 
 If the store must call back into your type, register a slot rather than importing
 `state.ts` from the registry (that would be an initialisation cycle):
-`registerSupportUpdater` for the update function, `registerKnotDiameterRule` if
-knots on your shaft are sized specially (twigs taper, so they do).
+`registerKnotDiameterRule` if knots on your shaft are sized specially (twigs
+taper, so they do), `registerSettingsInference` if reading settings back off your
+entity needs more than the tip/root/shaft the descriptor already declares.
+
+You do **not** register an updater. `state.ts` walks the registry and gives every
+type the generic one, which writes the entity, repositions the knots riding its
+shafts and recomputes dependent geometry. Add an entry to `BESPOKE_UPDATERS` only
+if your type genuinely needs different work -- three do.
 
 ## 2. The per-type directory — `src/supports/SupportTypes/Gadget/` *(hand-wired)*
 
@@ -186,24 +192,30 @@ wiring is explicit:
 
 - **Proxy picking** (`SupportProxyMeshLayer.tsx`) — cached refs + per-type reads
   for raycast selection in prepare mode.
-- **Model-link cascade** (`SupportModelLinker.tsx`) — if gadgets should be removed
+- **Model-link cascade** (`SupportModelLinker.ts`) — if gadgets should be removed
   when their model is deleted, add to the collections tuple and removal logic.
 - **Home snapshot caching** (`supportSnapshotHelpers.ts`) — add `'gadgets'` to
   `HomeSupportCollectionsSnapshot` if home-scene caching should include it.
 - **Settings cards / anatomy preview** — only for types that need a settings UI.
+- **Editable settings** — set `hasEditableSettings` and the sidebar can write to
+  your type: it gets a settings-hex cache bucket, and reads values back off the
+  entity through the generic inference. Leave it false and the menu resolves no
+  target for your type, so edits silently do nothing.
 
 ## Minimal checklist (bare, render-only Gadget)
 
 1. `types.ts` — entity interface, one line in `SupportEntityByCollection`, format field
 2. `supportTypeRegistry.ts` — `SupportTypeId` + descriptor with every behaviour flag
 3. `SupportTypes/Gadget/GadgetRenderer.tsx` (+ `gadgetBuilder.ts` if it has geometry)
-4. `SupportRenderer.tsx` — import, render list, selected set, JSX block
-5. `state.ts` — add/update/remove, SelectionCategory, lookup cache, import/merge/isolate
-   (**not** `initialState` — that derives from the registry)
+4. `SupportRenderer.tsx` — one entry in the `detailRenderers` table; the render
+   loop, selected sets and batching derive from the registry
+5. `state.ts` — SelectionCategory, lookup cache, import/merge/isolate. **Not** the
+   updater (the registry loop covers it) and **not** `initialState` (derived)
 6. `actionTypes.ts` + `useSupportHistoryHandlers.ts` — add/remove handlers
 7. `useSupportInteractionManager.ts` — **nothing**, unless the type reshapes its
    removal payload or can host a knot (see step 7 above)
-8. `supportExportReconstruction.ts` — scoped payload, export document, geometry group
+8. `supportExportReconstruction.ts` — one entry in the `groupBuilders` table,
+   typed `Record<SupportTypeId, GroupBuilder>`, so a missing type is a compile error
 
 After wiring, run the registry tests — they fail loudly on a half-declared type:
 

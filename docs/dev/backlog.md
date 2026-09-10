@@ -34,7 +34,7 @@ from it. `SupportState`'s collections, the modelId and shafted walks, root
 ownership, the updater and knot-diameter slots, and several behaviour decisions
 that used to be hardcoded type names now come from there.
 
-**Adoption is partway.** Measured by `npm run scan:support-types`: **7,295
+**Adoption is partway.** Measured by `npm run scan:support-types`: **7,240
 hand-written type references across 147 files**, down from 12,164. History
 handlers, registration slots, the support primitives, the clipboard, geometry
 export and most of `state.ts` are converted; auto-placement (769) and
