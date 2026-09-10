@@ -26,11 +26,12 @@ test('every support type is declared exactly once', () => {
   );
 });
 
-test('history actions resolve to the exported constants', () => {
-  const known = new Set<string>(Object.values(actionTypes));
+test('history actions match what the builders produce', () => {
+  // Descriptor and push site must spell a type's action the same way, or the
+  // handler registered under one never sees what the other pushes.
   for (const descriptor of SUPPORT_TYPES) {
-    assert.ok(known.has(descriptor.historyAdd), `${descriptor.id} add`);
-    assert.ok(known.has(descriptor.historyRemove), `${descriptor.id} remove`);
+    assert.equal(descriptor.historyAdd, actionTypes.addAction(descriptor.id), `${descriptor.id} add`);
+    assert.equal(descriptor.historyRemove, actionTypes.removeAction(descriptor.id), `${descriptor.id} remove`);
   }
 });
 

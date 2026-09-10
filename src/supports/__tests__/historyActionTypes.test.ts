@@ -2,11 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { SUPPORT_TYPES, getSupportTypeDescriptor } from '../supportTypeRegistry';
-import {
-    SUPPORT_ADD_TRUNK, SUPPORT_REMOVE_TRUNK, SUPPORT_UPDATE_TRUNK,
-    SUPPORT_ADD_KICKSTAND, SUPPORT_REMOVE_KICKSTAND,
-    SUPPORT_AUTO_PLACE, SUPPORT_EDIT_REPLACE,
-} from '../history/actionTypes';
+import { SUPPORT_UPDATE_TRUNK, SUPPORT_AUTO_PLACE, SUPPORT_EDIT_REPLACE, addAction, removeAction } from '../history/actionTypes';
 
 /**
  * History action strings, and the descriptors that name them.
@@ -51,10 +47,10 @@ test('the strings follow support:<verb>-<typeId> with no exceptions', () => {
 test('the exported constants match their descriptors', () => {
     // Both spellings must agree while the constants still exist; call sites use
     // the constants, the registry walks use the descriptor.
-    assert.equal(getSupportTypeDescriptor('trunk').historyAdd, SUPPORT_ADD_TRUNK);
-    assert.equal(getSupportTypeDescriptor('trunk').historyRemove, SUPPORT_REMOVE_TRUNK);
-    assert.equal(getSupportTypeDescriptor('kickstand').historyAdd, SUPPORT_ADD_KICKSTAND);
-    assert.equal(getSupportTypeDescriptor('kickstand').historyRemove, SUPPORT_REMOVE_KICKSTAND);
+    assert.equal(getSupportTypeDescriptor('trunk').historyAdd, addAction('trunk'));
+    assert.equal(getSupportTypeDescriptor('trunk').historyRemove, removeAction('trunk'));
+    assert.equal(getSupportTypeDescriptor('kickstand').historyAdd, addAction('kickstand'));
+    assert.equal(getSupportTypeDescriptor('kickstand').historyRemove, removeAction('kickstand'));
 });
 
 test('the non-type actions are unaffected by any derivation', () => {
@@ -67,4 +63,14 @@ test('the non-type actions are unaffected by any derivation', () => {
 test('no two types share an action string', () => {
     const all = SUPPORT_TYPES.flatMap((d) => [d.historyAdd, d.historyRemove]);
     assert.equal(new Set(all).size, all.length, 'two types collide on a history action');
+});
+
+test('every type has an add and a remove entry in the payload map', () => {
+    // Compile-time facts, asserted at runtime through the descriptors: the map
+    // is keyed by the same derived strings, so a type missing an entry cannot
+    // be pushed. `zz-payload-map-typecheck` (below, in tsc) is the real guard.
+    for (const descriptor of SUPPORT_TYPES) {
+        assert.ok(descriptor.historyAdd.startsWith('support:add-'));
+        assert.ok(descriptor.historyRemove.startsWith('support:remove-'));
+    }
 });

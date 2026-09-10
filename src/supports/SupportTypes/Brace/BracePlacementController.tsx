@@ -8,7 +8,7 @@ import { pushSupportHistory } from '@/supports/history/supportHistory';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import type { Brace, Knot, Segment, Vec3 } from '../../types';
 import { SUPPORT_TYPES } from '../../supportTypeRegistry';
-import { SUPPORT_ADD_BRACE } from '../../history/actionTypes';
+import { addAction } from '../../history/actionTypes';
 import { getSettings, getAutoBracingSettings } from '../../Settings/state';
 import { bracePlacementStore, useBracePlacementState } from './bracePlacementState';
 import { branchPlacementStore } from '../Branch/branchPlacementState';
@@ -892,7 +892,7 @@ export function BracePlacementController() {
                 addBrace(brace);
 
                 pushSupportHistory({
-                    type: SUPPORT_ADD_BRACE,
+                    type: addAction('brace'),
                     payload: {
                         brace,
                         startKnot,
@@ -966,7 +966,7 @@ export function BracePlacementController() {
             addBrace(brace);
 
             pushSupportHistory({
-                type: SUPPORT_ADD_BRACE,
+                type: addAction('brace'),
                 payload: {
                     brace,
                     startKnot,
@@ -1074,7 +1074,7 @@ export function BracePlacementController() {
                 addBrace(brace);
 
                 pushSupportHistory({
-                    type: SUPPORT_ADD_BRACE,
+                    type: addAction('brace'),
                     payload: {
                         brace,
                         startKnot,
@@ -1142,7 +1142,7 @@ export function BracePlacementController() {
             addBrace(brace);
 
             pushSupportHistory({
-                type: SUPPORT_ADD_BRACE,
+                type: addAction('brace'),
                 payload: {
                     brace,
                     startKnot,

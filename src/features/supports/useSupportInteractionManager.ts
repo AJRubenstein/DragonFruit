@@ -17,7 +17,7 @@ import { computeAndApplyTrunkDiameterProfile } from '@/supports/SupportTypes/Tru
 import { cloneSupportState, getSelectedId, getSelectedCategory, findShaftOwnerOfJoint, findShaftOwnerOfSegment, getSupportEntities, getSupportTypeOf, getSupports, getSnapshot, removeBranch, removeBrace, removeLeaf, removeSupportEntity, removeJointById, updateKnot, setSelectedId, setHoveredState, subscribe } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
-import { SUPPORT_REMOVE_BRANCH, SUPPORT_REMOVE_BRACE, SUPPORT_REMOVE_LEAF, SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_AUTO_BRACE_REPLACE, type SupportBranchRemovePayload } from '@/supports/history/actionTypes';
+import { SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_AUTO_BRACE_REPLACE, type SupportBranchRemovePayload, removeAction } from '@/supports/history/actionTypes';
 import { findKnotHost, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, KNOT_HOST_PRECEDENCE, RESHAPED_REMOVAL_PAYLOADS, SUPPORT_TYPES, updateSupportEntity } from '@/supports/supportTypeRegistry';
 import { MODEL_SURFACE_GESTURE_TYPES } from '@/supports/supportTypeRegistry';
 import type { ModelSurfaceGestureTypeId } from '@/supports/supportTypeRegistry';
@@ -313,8 +313,8 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         if (!snapshots) return false;
         if (recordHistory) {
           pushSupportHistory({
-            type: SUPPORT_REMOVE_LEAF,
-            payload: { leaf: snapshots.leaf, knot: snapshots.knot ?? undefined },
+            type: removeAction('leaf'),
+            payload: { leaf: snapshots.leaf, knot: snapshots.knot ?? null },
           });
         }
         setSelectedId(null);
@@ -381,7 +381,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
 
         if (recordHistory) {
           pushSupportHistory({
-            type: SUPPORT_REMOVE_BRANCH,
+            type: removeAction('branch'),
             payload: {
               ...snapshots,
               trunkUpdate,
@@ -398,8 +398,8 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         if (!snapshots) return false;
         if (recordHistory) {
           pushSupportHistory({
-            type: SUPPORT_REMOVE_BRACE,
-            payload: { brace: snapshots.brace, startKnot: snapshots.startKnot ?? undefined, endKnot: snapshots.endKnot ?? undefined },
+            type: removeAction('brace'),
+            payload: { brace: snapshots.brace, startKnot: snapshots.startKnot ?? null, endKnot: snapshots.endKnot ?? null },
           });
         }
         setSelectedId(null);

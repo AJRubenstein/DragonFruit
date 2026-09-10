@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { clearHistory, undo } from '../../history/historyStore';
 import { pushSupportHistory } from '../history/supportHistory';
-import { SUPPORT_UPDATE_TRUNK, SUPPORT_REMOVE_TRUNK, SUPPORT_REMOVE_BRANCH } from '../history/actionTypes';
+import { SUPPORT_UPDATE_TRUNK, removeAction } from '../history/actionTypes';
 import { pushSupportEditHistory, captureSupportEditSnapshot } from '../history/supportEditHistory';
 import { registerSupportHistoryHandlers } from '../history/useSupportHistoryHandlers';
 import { resetStore, getSnapshot, setSnapshot, removeTrunk, removeBranch, addRoot, addTrunk, resetKickstandsInState } from '../state';
@@ -102,7 +102,7 @@ test('undo restores a moved trunk joint (SUPPORT_UPDATE_TRUNK)', () => {
     dispose();
 });
 
-test('undo restores a deleted trunk (SUPPORT_REMOVE_TRUNK)', () => {
+test('undo restores a deleted trunk', () => {
     resetStore();
     resetKickstandsInState();
     clearHistory();
@@ -114,7 +114,7 @@ test('undo restores a deleted trunk (SUPPORT_REMOVE_TRUNK)', () => {
     assert.equal(getSnapshot().trunks.t1, undefined, 'trunk gone after delete');
 
     pushSupportHistory({
-        type: SUPPORT_REMOVE_TRUNK,
+        type: removeAction('trunk'),
         payload: {
             trunk: removed.trunk,
             roots: removed.roots,
@@ -228,7 +228,7 @@ test('undo clears a selection that points at a removed entity', () => {
     dispose();
 });
 
-test('undo restores a deleted branch (SUPPORT_REMOVE_BRANCH cascade)', () => {
+test('undo restores a deleted branch and its cascade', () => {
     resetStore();
     resetKickstandsInState();
     clearHistory();
@@ -252,7 +252,7 @@ test('undo restores a deleted branch (SUPPORT_REMOVE_BRANCH cascade)', () => {
     assert.equal(getSnapshot().branches.b1, undefined, 'branch gone after delete');
 
     pushSupportHistory({
-        type: SUPPORT_REMOVE_BRANCH,
+        type: removeAction('branch'),
         payload: {
             branches: removed.branches,
             braces: removed.braces,

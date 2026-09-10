@@ -2,7 +2,7 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { cloneSupportState, addAnchor, addBranch, addKnot, addLeaf, addRoot, addSupportEntityWithHistory, addTrunk, getSnapshot, setSnapshot, updateKnot } from '../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
-import { SUPPORT_ADD_ANCHOR, SUPPORT_ADD_BRANCH, SUPPORT_ADD_LEAF, SUPPORT_ADD_TRUNK } from '../../history/actionTypes';
+import { addAction } from '../../history/actionTypes';
 import { useInteractionStatus } from '../../interaction/useInteractionStatus';
 import { buildTrunkData } from './trunkBuilder';
 import { applyTrunkReplacement, computeAndApplyTrunkDiameterProfile, planTrunkReplacement } from './TrunkReplacement';
@@ -263,7 +263,7 @@ export function useTrunkPlacementV2() {
         addRoot(markedBuild.root);
         addTrunk(markedBuild.trunk);
         pushSupportHistory({
-            type: SUPPORT_ADD_TRUNK,
+            type: addAction('trunk'),
             payload: {
                 trunk: markedBuild.trunk,
                 roots: [markedBuild.root],
@@ -676,7 +676,7 @@ export function useTrunkPlacementV2() {
             const anchor = markPlacementSurface('anchor', decision.anchor, placementSurface);
             addAnchor(anchor);
             pushSupportHistory({
-                type: SUPPORT_ADD_ANCHOR,
+                type: addAction('anchor'),
                 payload: { anchor },
             });
             clearSupportSelection();
@@ -705,7 +705,7 @@ export function useTrunkPlacementV2() {
                 : null;
 
             pushSupportHistory({
-                type: SUPPORT_ADD_BRANCH,
+                type: addAction('branch'),
                 payload: {
                     branch,
                     knot: decision.knot,
@@ -723,7 +723,7 @@ export function useTrunkPlacementV2() {
             addLeaf(leaf);
 
             pushSupportHistory({
-                type: SUPPORT_ADD_LEAF,
+                type: addAction('leaf'),
                 payload: {
                     leaf,
                     knot: decision.knot,

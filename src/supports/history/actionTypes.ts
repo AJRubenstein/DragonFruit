@@ -12,34 +12,12 @@ import type { KickstandBuildResult } from '../SupportTypes/Kickstand/types';
 type AddAction<T extends string> = `support:add-${T}`;
 type RemoveAction<T extends string> = `support:remove-${T}`;
 
-const addAction = <T extends SupportTypeId>(typeId: T): AddAction<T> => `support:add-${typeId}`;
-const removeAction = <T extends SupportTypeId>(typeId: T): RemoveAction<T> => `support:remove-${typeId}`;
+/** The action a type's add and remove push, spelled from its id. */
+export const addAction = <T extends SupportTypeId>(typeId: T): AddAction<T> => `support:add-${typeId}`;
+export const removeAction = <T extends SupportTypeId>(typeId: T): RemoveAction<T> => `support:remove-${typeId}`;
 
-export const SUPPORT_ADD_TRUNK = addAction('trunk');
-export const SUPPORT_REMOVE_TRUNK = removeAction('trunk');
 export const SUPPORT_UPDATE_TRUNK = 'support:update-trunk' as const;
-
-export const SUPPORT_ADD_LEAF = addAction('leaf');
-export const SUPPORT_REMOVE_LEAF = removeAction('leaf');
-
-export const SUPPORT_ADD_BRANCH = addAction('branch');
-export const SUPPORT_REMOVE_BRANCH = removeAction('branch');
 export const SUPPORT_UPDATE_BRANCH = 'support:update-branch' as const;
-
-export const SUPPORT_ADD_TWIG = addAction('twig');
-export const SUPPORT_REMOVE_TWIG = removeAction('twig');
-
-export const SUPPORT_ADD_STICK = addAction('stick');
-export const SUPPORT_REMOVE_STICK = removeAction('stick');
-
-export const SUPPORT_ADD_BRACE = addAction('brace');
-export const SUPPORT_REMOVE_BRACE = removeAction('brace');
-
-export const SUPPORT_ADD_ANCHOR = addAction('anchor');
-export const SUPPORT_REMOVE_ANCHOR = removeAction('anchor');
-
-export const SUPPORT_ADD_KICKSTAND = addAction('kickstand');
-export const SUPPORT_REMOVE_KICKSTAND = removeAction('kickstand');
 
 export const SUPPORT_REPLACE_TRUNK = 'support:replace-trunk' as const;
 export const SUPPORT_AUTO_BRACE_REPLACE = 'support:auto-brace-replace' as const;
@@ -148,28 +126,58 @@ export interface SupportBlockerStrokePayload {
  * sites and handlers both key off this map, so a type can't be pushed with a
  * payload its handler won't understand.
  */
-export type SupportHistoryPayloadMap = {
-  [SUPPORT_ADD_TRUNK]: SupportTrunkPayload;
-  [SUPPORT_REMOVE_TRUNK]: SupportTrunkPayload;
-  [SUPPORT_UPDATE_TRUNK]: SupportTrunkUpdatePayload;
-  [SUPPORT_ADD_LEAF]: SupportLeafPayload;
-  [SUPPORT_REMOVE_LEAF]: SupportLeafPayload;
-  [SUPPORT_ADD_BRANCH]: SupportBranchPayload;
-  [SUPPORT_REMOVE_BRANCH]: SupportBranchRemovePayload;
-  [SUPPORT_UPDATE_BRANCH]: SupportBranchUpdatePayload;
-  [SUPPORT_ADD_TWIG]: SupportTwigPayload;
-  [SUPPORT_REMOVE_TWIG]: SupportTwigRemovePayload;
-  [SUPPORT_ADD_STICK]: SupportStickPayload;
-  [SUPPORT_REMOVE_STICK]: SupportStickRemovePayload;
-  [SUPPORT_ADD_BRACE]: BraceLinkPayload;
-  [SUPPORT_REMOVE_BRACE]: BraceLinkPayload;
-  [SUPPORT_ADD_ANCHOR]: SupportAnchorPayload;
-  [SUPPORT_REMOVE_ANCHOR]: SupportAnchorRemovePayload;
-  [SUPPORT_ADD_KICKSTAND]: SupportKickstandPayload;
-  [SUPPORT_REMOVE_KICKSTAND]: SupportKickstandRemovePayload;
-  [SUPPORT_REPLACE_TRUNK]: SupportReplaceTrunkPayload;
-  [SUPPORT_EDIT_REPLACE]: SupportReplaceStatePayload;
-  [SUPPORT_AUTO_BRACE_REPLACE]: SupportReplaceStatePayload;
-  [SUPPORT_AUTO_PLACE]: SupportReplaceStatePayload;
-  [SUPPORT_BLOCKER_STROKE]: SupportBlockerStrokePayload;
+/**
+ * What each type's add and remove payload carries.
+ *
+ * The generic entry is what the registry already declares a type takes; the
+ * entries below it are the types whose history payload carries more than the
+ * entity (a trunk sweeps its cascade, a branch re-parents knots).
+ */
+/** Types whose add payload carries more than the entity the registry declares. */
+interface AddPayloadOverrides {
+  trunk: SupportTrunkPayload;
+  leaf: SupportLeafPayload;
+  branch: SupportBranchPayload;
+  brace: BraceLinkPayload;
+  kickstand: SupportKickstandPayload;
+}
+
+/** Types whose remove payload carries more than the registry's removal shape. */
+interface RemovePayloadOverrides {
+  trunk: SupportTrunkPayload;
+  leaf: SupportLeafPayload;
+  branch: SupportBranchRemovePayload;
+  brace: BraceLinkPayload;
+}
+
+type AddPayloadByType = {
+  [K in SupportTypeId]: K extends keyof AddPayloadOverrides
+    ? AddPayloadOverrides[K]
+    : SupportEntityPayload<K>;
 };
+
+type RemovePayloadByType = {
+  [K in SupportTypeId]: K extends keyof RemovePayloadOverrides
+    ? RemovePayloadOverrides[K]
+    : SupportRemovalResult<K>;
+};
+
+/**
+ * The payload each support history action carries. One source of truth: push
+ * sites and handlers both key off this map, so a type can't be pushed with a
+ * payload its handler won't understand.
+ *
+ * Keys are derived, so a new type gets its two actions by being declared.
+ */
+export type SupportHistoryPayloadMap =
+  { [K in SupportTypeId as AddAction<K>]: AddPayloadByType[K] }
+  & { [K in SupportTypeId as RemoveAction<K>]: RemovePayloadByType[K] }
+  & {
+    [SUPPORT_UPDATE_TRUNK]: SupportTrunkUpdatePayload;
+    [SUPPORT_UPDATE_BRANCH]: SupportBranchUpdatePayload;
+    [SUPPORT_REPLACE_TRUNK]: SupportReplaceTrunkPayload;
+    [SUPPORT_EDIT_REPLACE]: SupportReplaceStatePayload;
+    [SUPPORT_AUTO_BRACE_REPLACE]: SupportReplaceStatePayload;
+    [SUPPORT_AUTO_PLACE]: SupportReplaceStatePayload;
+    [SUPPORT_BLOCKER_STROKE]: SupportBlockerStrokePayload;
+  };

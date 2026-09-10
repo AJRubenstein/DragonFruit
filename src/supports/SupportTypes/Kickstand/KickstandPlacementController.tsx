@@ -4,7 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
-import { SUPPORT_ADD_KICKSTAND } from '@/supports/history/actionTypes';
+import { addAction } from '@/supports/history/actionTypes';
 import { addSupportEntity, addKnot, addRoot, subscribe, getSnapshot } from '../../state';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import { getGridSettings } from '../../Settings/state';
@@ -659,7 +659,7 @@ export function KickstandPlacementController() {
             addSupportEntity('kickstand', finalBuild.kickstand);
 
             pushSupportHistory({
-                type: SUPPORT_ADD_KICKSTAND,
+                type: addAction('kickstand'),
                 payload: { build: finalBuild },
             });
 

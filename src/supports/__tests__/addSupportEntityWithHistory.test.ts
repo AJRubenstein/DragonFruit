@@ -10,7 +10,7 @@ import { registerSupportHistoryHandlers } from '../history/useSupportHistoryHand
  * The registry-derived add-and-record path.
  *
  * A caller holding a `typeId` used to turn it back into a hand-written pair --
- * `addStick` plus `SUPPORT_ADD_STICK`, under the payload key that action
+ * `addStick` plus `addAction('stick')`, under the payload key that action
  * expects. `addSupportEntityWithHistory` reads all three off the descriptor,
  * behind a cast the compiler cannot check, so these hold the correspondence
  * that cast asserts: for every type, the entry it pushes is one the registered

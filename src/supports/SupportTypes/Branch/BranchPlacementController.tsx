@@ -22,7 +22,7 @@ import { subscribe, getSnapshot, addBranch, addKnot, addSupportEntityWithHistory
 import { buildContactBridge, selectTypeForPlacement } from '../../supportTypeRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { getClipBounds } from '@/components/scene/SceneCanvas/clipBoundsStore';
-import { SUPPORT_ADD_BRANCH } from '../../history/actionTypes';
+import { addAction } from '../../history/actionTypes';
 import { SnapTarget } from '../../interaction/SnappingManager';
 import { Vec3, Knot, type LimitationCode, type Segment } from '../../types';
 import { getSettings } from '../../Settings/state';
@@ -764,7 +764,7 @@ export function BranchPlacementController() {
             addBranch(markedBranch);
 
             pushSupportHistory({
-                type: SUPPORT_ADD_BRANCH,
+                type: addAction('branch'),
                 payload: {
                     branch: markedBranch,
                     knot: parentKnot,

@@ -12,7 +12,7 @@ import { buildLeafData } from './leafBuilder';
 import { getSettings } from '../../Settings/state';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import { resolveTwigDiameterAtSegmentT, twigJointDiameterForLocalDiameter } from '../Twig/twigTaper';
-import { SUPPORT_ADD_LEAF } from '../../history/actionTypes';
+import { addAction } from '../../history/actionTypes';
 import { JOINT_DIAMETER_OFFSET_MM } from '../../constants';
 import { v4 as uuidv4 } from 'uuid';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
@@ -661,7 +661,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                 leafPlacementStore.setJunctionHub(newParentKnotId, true);
 
                 pushSupportHistory({
-                    type: SUPPORT_ADD_LEAF,
+                    type: addAction('leaf'),
                     payload: {
                         leaf: markedLeaf,
                         knot: snap.junctionHubIsNew ? parentKnot : undefined,
@@ -724,7 +724,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                 addLeaf(markedLeaf);
 
                 pushSupportHistory({
-                    type: SUPPORT_ADD_LEAF,
+                    type: addAction('leaf'),
                     payload: {
                         leaf: markedLeaf,
                         knot: parentKnot,
