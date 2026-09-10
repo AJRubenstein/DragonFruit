@@ -19,6 +19,7 @@ import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../histor
 import { clearKnotDragPreview, emitKnotDragPreview } from '../../interaction/knotDragPreview';
 import { resolveTwigDiameterAtSegmentT } from '../../SupportTypes/Twig/twigTaper';
 import { resolveKnotDiameter, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
+import { shouldCommitJointDrag } from '../Joint/jointDragController';
 import { knotMoveDescription, type KnotHostType } from './knotUtils';
 
 
@@ -84,6 +85,8 @@ export function useKnotInteraction(enabled: boolean = true) {
     const { camera, raycaster, pointer } = useThree();
 
     const activeKnotId = useRef<string | null>(null);
+    /** Where the knot sat when the drag began, to tell a drag from a click. */
+    const dragStartKnotPos = useRef<Vec3 | null>(null);
     const activeHost = useRef<ActiveHost | null>(null);
     const forceEndDragRef = useRef(false);
     const initialEditSnapshotRef = useRef<ReturnType<typeof captureSupportEditSnapshot> | null>(null);
@@ -678,6 +681,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             }
             resolveEndpoints(host);
             activeKnotId.current = knot.id;
+            dragStartKnotPos.current = { x: knot.pos.x, y: knot.pos.y, z: knot.pos.z };
             activeHost.current = host;
             initialEditSnapshotRef.current = captureSupportEditSnapshot();
             setKnotDragInteractionLock(true);
@@ -817,11 +821,13 @@ export function useKnotInteraction(enabled: boolean = true) {
                 }
             }
 
-            if (previewKnotAtEnd && previewKnotAtEnd.id === activeKnotIdAtEnd) {
+            // Only write when the knot actually moved. `updateKnot` resettles
+            // dependent geometry, which re-derives a hosted leaf's cone from the
+            // knot -- so committing a click swings a cone nobody dragged.
+            if (previewKnotAtEnd
+                && previewKnotAtEnd.id === activeKnotIdAtEnd
+                && shouldCommitJointDrag(dragStartKnotPos.current, previewKnotAtEnd.pos)) {
                 updateKnot(previewKnotAtEnd);
-            } else if (activeKnotIdAtEnd) {
-                const knotAtEnd = getKnotById(activeKnotIdAtEnd);
-                if (knotAtEnd) updateKnot(knotAtEnd);
             }
 
             // If the released knot lives on a twig, persist the leaf cone's
@@ -864,6 +870,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             }
 
             activeKnotId.current = null;
+            dragStartKnotPos.current = null;
             activeHost.current = null;
             elasticState.current = {};
             forceEndDragRef.current = false;

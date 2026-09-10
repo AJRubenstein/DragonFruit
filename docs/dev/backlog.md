@@ -71,7 +71,7 @@ Known remaining hand-written lists worth converting:
 
 Converting each hand-written type list turned up defects where the list
 disagreed with the registry. They are recorded in
-[`support-registry-findings.md`](support-registry-findings.md) -- 80 findings,
+[`support-registry-findings.md`](support-registry-findings.md) -- 81 findings,
 25 still open -- rather than here, because they are per-site detail rather than
 rules to follow.
 
