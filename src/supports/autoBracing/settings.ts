@@ -60,6 +60,15 @@ export const AUTO_BRACING_HARD_RULES = {
     minAxisSeparationDeg: 45,
     targetAxisSeparationDeg: 90,
     kickstandMeshClearanceMm: 0.5,
+    // A zig-zag link rises by its own horizontal span, so a pair of nearly
+    // coincident trunks used to stack one 45° stub per fraction of a mm —
+    // hundreds of near-parallel links filling the gap. Guards:
+    //  * the chain never climbs less than minZigZagRiseMm per link (the link
+    //    simply steepens; it still starts where the previous one ended), and
+    //  * supports closer than minPairSpanMm are one post and are not braced
+    //    to each other at all.
+    minZigZagRiseMm: 2.0,
+    minPairSpanMm: 1.5,
 };
 
 function precisionFromStep(step: number): number {

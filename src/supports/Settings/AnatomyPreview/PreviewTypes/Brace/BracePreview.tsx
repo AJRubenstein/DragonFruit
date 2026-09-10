@@ -6,6 +6,7 @@ import type { SupportKind } from '../../../supportKindState';
 import { applyInitialPattern } from '@/supports/autoBracing/initialPattern';
 import { applyRepeatingPattern } from '@/supports/autoBracing/repeatingPattern';
 import { runZigZagChain } from '@/supports/autoBracing/zigzagChain';
+import { AUTO_BRACING_HARD_RULES } from '@/supports/autoBracing/settings';
 import type { AutoBracingPattern } from '@/supports/autoBracing/settings';
 
 interface BracePreviewProps {
@@ -188,27 +189,40 @@ export function BracePreview({
         b: { x: pair.bX, y: pair.bY },
         hDist: pair.dist,
     }));
+    // Match production: the chain never climbs tighter than the pattern's own
+    // brace spacing, or than the hard minimum.
+    const zigZagMinRise = Math.max(AUTO_BRACING_HARD_RULES.minZigZagRiseMm, initialDistance);
     const placeAt = (
         low: { x: number; y: number },
         high: { x: number; y: number },
         section: 'initial' | 'repeating',
         atZ: number,
+        minRiseMm = 0,
     ) => {
         const dist = Math.sqrt((high.x - low.x) ** 2 + (high.y - low.y) ** 2);
+        // Same rise the chain actually spends, so preview links stay joined.
+        const rise = Math.max(dist, minRiseMm);
         // Real auto-bracing rule: skip if the high end would go past the top joint.
-        if (atZ + dist >= PREVIEW_HEIGHT_MM - 0.1) return;
+        if (atZ + rise >= PREVIEW_HEIGHT_MM - 0.1) return;
         braces.push({
             start: new THREE.Vector3(low.x, low.y, atZ),
-            end: new THREE.Vector3(high.x, high.y, atZ + dist),
+            end: new THREE.Vector3(high.x, high.y, atZ + rise),
             section,
         });
     };
     // Zigzag runs as continuous per-edge chains like production; other
     // patterns follow the fixed-interval ladder.
     if (initialPattern === 'zigZag') {
-        runZigZagChain(edges, rootsTopZ + initialDistance, maxZ, 'initial', placeAt);
+        runZigZagChain(edges, rootsTopZ + initialDistance, maxZ, 'initial', placeAt, zigZagMinRise);
     } else if (repeatingPattern === 'zigZag') {
-        runZigZagChain(edges, rootsTopZ + initialDistance + patternInterval, maxZ, 'repeating', placeAt);
+        runZigZagChain(
+            edges,
+            rootsTopZ + initialDistance + patternInterval,
+            maxZ,
+            'repeating',
+            placeAt,
+            zigZagMinRise,
+        );
     }
     ladder.forEach((anchorZ, tierIndex) => {
         const isInitial = tierIndex === 0;

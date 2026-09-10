@@ -315,10 +315,17 @@ function isCardinalDelta(dx: number, dy: number, spacingMm: number): boolean {
     return Math.abs(dx) <= axisToleranceMm || Math.abs(dy) <= axisToleranceMm;
 }
 
+// Supports closer than this are one post: the hard floor, and never less than
+// the two brace surfaces would leave between them.
+function autoBracingMinPairSpanMm(settings: AutoBracingSettings): number {
+    return Math.max(AUTO_BRACING_HARD_RULES.minPairSpanMm, settings.braceDiameterMm * 2);
+}
+
 function buildGroupPairs(
     group: SupportSample[],
     maxLen: number,
     gridSettings?: { enabled: boolean; spacingMm: number },
+    minSpanMm = 0,
 ): Edge[] {
     if (group.length < 2) return [];
 
@@ -340,7 +347,9 @@ function buildGroupPairs(
             }
 
             const hDist = Math.sqrt(dx * dx + dy * dy);
-            if (hDist < 0.001 || hDist > maxRun) continue;
+            // below minSpanMm the two supports are one post: bracing between
+            // them is material with no stiffness to show for it
+            if (hDist < Math.max(0.001, minSpanMm) || hDist > maxRun) continue;
             edges.push({ a, b, hDist, angleRad: normalizeAxisAngleRad(Math.atan2(dy, dx)) });
         }
     }
@@ -515,7 +524,12 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         trunksByModel.set(trunk.modelId, list);
     }
     for (const modelTrunks of trunksByModel.values()) {
-        const pairs = buildGroupPairs(modelTrunks, settings.maxBraceLengthMm, activeGridSettings);
+        const pairs = buildGroupPairs(
+            modelTrunks,
+            settings.maxBraceLengthMm,
+            activeGridSettings,
+            autoBracingMinPairSpanMm(settings),
+        );
         for (const pair of pairs) {
             existingTrunkEdges.push({
                 a: pair.a.supportId,
@@ -663,7 +677,12 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         let pairs = modelId ? pairsByModel.get(modelId) : undefined;
         if (!pairs) {
             const modelTrunks = trunkSamples.filter((s) => s.modelId === modelId);
-            pairs = buildGroupPairs(modelTrunks, settings.maxBraceLengthMm, activeGridSettings);
+            pairs = buildGroupPairs(
+                modelTrunks,
+                settings.maxBraceLengthMm,
+                activeGridSettings,
+                autoBracingMinPairSpanMm(settings),
+            );
             if (modelId) pairsByModel.set(modelId, pairs);
         }
         const extra = groupMembers.filter((s) => s.supportKind === 'kickstand');
@@ -877,7 +896,13 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         let curr = settings.initialDistanceMm + settings.patternIntervalMm;
         while (curr <= maxZ) { ladder.push(curr); curr += settings.patternIntervalMm; }
 
-            const place = (lowS: SupportSample, highS: SupportSample, section: 'initial' | 'repeating', atZ: number) => {
+            const place = (
+                lowS: SupportSample,
+                highS: SupportSample,
+                section: 'initial' | 'repeating',
+                atZ: number,
+                minRiseMm = 0,
+            ) => {
                 const distanceOverride = pairDistanceOverrides.get(pairKey(lowS.supportId, highS.supportId));
                 const ignoreMaxDistance = Boolean(distanceOverride?.ignoreMaxDistance);
                 const lowAnchor = resolveAnchorAtZ(lowS, atZ);
@@ -886,10 +911,13 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
                 const sameTierAnchor = resolveAnchorAtZ(highS, atZ);
                 if (!sameTierAnchor) return;
 
-                let dzGuess = Math.sqrt(
+                // Solve for a 45° link (rise == horizontal span), but never
+                // rise less than the caller's floor: a chain passing a floor
+                // makes the link steeper instead of denser.
+                let dzGuess = Math.max(minRiseMm, Math.sqrt(
                     (sameTierAnchor.pos.x - lowAnchor.pos.x) ** 2
                     + (sameTierAnchor.pos.y - lowAnchor.pos.y) ** 2,
-                );
+                ));
 
                 let highAnchor: AnchorPoint | null = null;
                 for (let iter = 0; iter < 3; iter++) {
@@ -899,11 +927,12 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
                         (highAnchor.pos.x - lowAnchor.pos.x) ** 2
                         + (highAnchor.pos.y - lowAnchor.pos.y) ** 2,
                     );
-                    if (Math.abs(hDist - dzGuess) < 0.01) {
-                        dzGuess = hDist;
+                    const nextGuess = Math.max(minRiseMm, hDist);
+                    if (Math.abs(nextGuess - dzGuess) < 0.01) {
+                        dzGuess = nextGuess;
                         break;
                     }
-                    dzGuess = hDist;
+                    dzGuess = nextGuess;
                     if (dzGuess < EPS) return;
                 }
 
@@ -946,10 +975,24 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         // Zigzag runs as continuous per-edge chains (each link starts where
         // the previous ended, stepping by its own rise) rather than the
         // fixed-interval ladder — patternInterval does not apply to it.
+        // A zig-zag chain may not climb faster than the pair's span allows, but
+        // it must not climb slower than the pattern's own brace spacing either —
+        // that is what turned close pairs into a dense ladder.
+        const zigZagMinRiseMm = Math.max(
+            AUTO_BRACING_HARD_RULES.minZigZagRiseMm,
+            settings.initialDistanceMm,
+        );
         if (settings.initialPattern === 'zigZag') {
-            runZigZagChain(pairs, settings.initialDistanceMm, maxZ, 'initial', place);
+            runZigZagChain(pairs, settings.initialDistanceMm, maxZ, 'initial', place, zigZagMinRiseMm);
         } else if (settings.repeatingPattern === 'zigZag') {
-            runZigZagChain(pairs, settings.initialDistanceMm + settings.patternIntervalMm, maxZ, 'repeating', place);
+            runZigZagChain(
+                pairs,
+                settings.initialDistanceMm + settings.patternIntervalMm,
+                maxZ,
+                'repeating',
+                place,
+                zigZagMinRiseMm,
+            );
         }
         ladder.forEach((anchorZ, tierIndex) => {
             const isInitial = tierIndex === 0;

@@ -82,3 +82,20 @@ test('zigzag chain skips zero-span edges', () => {
     );
     assert.equal(calls.length, 0);
 });
+
+test('zigzag chain will not pack a short span tighter than the minimum rise', () => {
+    const zs: number[] = [];
+    runZigZagChain(
+        [{ a: 'a', b: 'b', hDist: 0.4 }],
+        2,
+        42,
+        'initial',
+        (low, high, section, atZ) => { zs.push(atZ); },
+    );
+    // Rising by the span (0.4mm) would have stacked ~100 near-parallel stubs
+    // in this height — the ultra-dense ladder seen on close supports.
+    assert.ok(zs.length <= 21, `expected a bounded link count, got ${zs.length}`);
+    for (let i = 1; i < zs.length; i++) {
+        assert.equal(zs[i] - zs[i - 1], 2, 'climbs the minimum rise, not the span');
+    }
+});
