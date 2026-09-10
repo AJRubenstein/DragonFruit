@@ -88,8 +88,6 @@ type SharedProxyCacheEntry = {
   supportsRef: ReturnType<typeof getSupports>;
   supportRootsRef: ReturnType<typeof getSnapshot>['roots'];
   supportKnotsRef: ReturnType<typeof getSnapshot>['knots'];
-  kickstandRootsRef: SupportState['roots'];
-  kickstandKnotsRef: SupportState['knots'];
   hasSolidBottom: boolean;
   raftThickness: number;
   includeDetailedPrimitives: boolean;
@@ -169,9 +167,6 @@ export function SupportProxyMeshLayer({
   const supports = getSupports();
   // Roots and knots are reached by the kickstand's own rootId / hostKnotId, so
   // the shared collections answer without a per-type view.
-  const kickstandKickstands = supportState.kickstands;
-  const kickstandRoots = supportState.roots;
-  const kickstandKnots = supportState.knots;
   const hasSolidBottom = raftSettings.bottomMode === 'solid';
   const raftThickness = raftSettings.thickness ?? 0;
 
@@ -481,8 +476,6 @@ export function SupportProxyMeshLayer({
       && sharedProxyCache.supportsRef === supports
       && sharedProxyCache.supportRootsRef === supportRoots
       && sharedProxyCache.supportKnotsRef === supportKnots
-      && sharedProxyCache.kickstandRootsRef === kickstandRoots
-      && sharedProxyCache.kickstandKnotsRef === kickstandKnots
       && sharedProxyCache.hasSolidBottom === hasSolidBottom
       && sharedProxyCache.raftThickness === raftThickness
       && sharedProxyCache.includeDetailedPrimitives === includeDetailedPrimitives
@@ -954,10 +947,10 @@ export function SupportProxyMeshLayer({
       }
     }
 
-    for (const kickstand of Object.values(kickstandKickstands)) {
+    for (const kickstand of Object.values(supportState.kickstands)) {
       if (interiorSupportIdSet && !interiorSupportIdSet.has(`kickstand:${kickstand.id}`)) continue;
-      const root = kickstandRoots[kickstand.rootId];
-      const hostKnot = kickstandKnots[kickstand.hostKnotId];
+      const root = supportRoots[kickstand.rootId];
+      const hostKnot = supportKnots[kickstand.hostKnotId];
       if (!root || !hostKnot) continue;
 
       pushRoot({
@@ -1011,8 +1004,6 @@ export function SupportProxyMeshLayer({
       supportsRef: supports,
       supportRootsRef: supportRoots,
       supportKnotsRef: supportKnots,
-      kickstandRootsRef: kickstandRoots,
-      kickstandKnotsRef: kickstandKnots,
       hasSolidBottom,
       raftThickness,
       includeDetailedPrimitives,
@@ -1032,9 +1023,6 @@ export function SupportProxyMeshLayer({
     supportSticks,
     supportBraces,
     supportAnchors,
-    kickstandKickstands,
-    kickstandRoots,
-    kickstandKnots,
     hasSolidBottom,
     raftThickness,
     includeDetailedPrimitives,
