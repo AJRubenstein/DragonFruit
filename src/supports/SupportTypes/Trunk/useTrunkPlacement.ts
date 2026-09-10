@@ -133,21 +133,12 @@ export function buildCavityStick(
     | { kind: 'stick'; supportData: SupportData; stick: ReturnType<typeof buildStick>['stick'] }
     | { kind: 'twig'; supportData: SupportData; twig: ReturnType<typeof buildTwig>['twig'] }
 ) | null {
-    _cavityRaycaster.set(
-        new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z),
-        _downDir,
-    );
     // Offset origin slightly inward along tip normal so we don't self-hit the
     // surface we just clicked.
     const OFFSET_MM = 0.5;
-    _cavityRaycaster.ray.origin.addScaledVector(
-        new THREE.Vector3(tipNormal.x, tipNormal.y, tipNormal.z),
-        OFFSET_MM,
-    );
-    _cavityRaycaster.ray.origin.z -= OFFSET_MM * 0.1; // nudge down past origin surface
-
-    const hits = _cavityRaycaster.intersectObject(mesh, false);
-    if (hits.length === 0) return null;
+    const baseOrigin = new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z)
+        .addScaledVector(new THREE.Vector3(tipNormal.x, tipNormal.y, tipNormal.z), OFFSET_MM);
+    baseOrigin.z -= OFFSET_MM * 0.1; // nudge down past origin surface
 
     // Prefer a true "floor" hit (normal has meaningful +Z) so the bottom
     // endpoint clings vertically down when possible. Only fall back to any
@@ -158,25 +149,56 @@ export function buildCavityStick(
 
     type Candidate = { hit: THREE.Intersection; normal: THREE.Vector3 };
     const MAX_HIT_SCAN = 64;
-    let scanned = 0;
-    let firstBelowCandidate: Candidate | null = null;
-    let floorCandidate: Candidate | null = null;
 
-    for (const h of hits) {
-        scanned += 1;
-        if (scanned > MAX_HIT_SCAN) break;
-        if (h.point.z >= tipPos.z - BELOW_EPS_MM) continue;
-        if (!h.face) continue;
-        const n = h.face.normal.clone().applyNormalMatrix(normalMatrix).normalize();
-        const candidate = { hit: h, normal: n };
-        if (!firstBelowCandidate) firstBelowCandidate = candidate;
-        if (n.z >= FLOOR_Z_MIN) {
-            floorCandidate = candidate;
-            break;
+    const scanDown = (ox: number, oy: number): { floor: Candidate | null; first: Candidate | null } => {
+        _cavityRaycaster.set(new THREE.Vector3(ox, oy, baseOrigin.z), _downDir);
+        const hits = _cavityRaycaster.intersectObject(mesh, false);
+
+        let floor: Candidate | null = null;
+        let first: Candidate | null = null;
+        let scanned = 0;
+        for (const h of hits) {
+            scanned += 1;
+            if (scanned > MAX_HIT_SCAN) break;
+            if (h.point.z >= tipPos.z - BELOW_EPS_MM) continue;
+            if (!h.face) continue;
+            const n = h.face.normal.clone().applyNormalMatrix(normalMatrix).normalize();
+            const candidate = { hit: h, normal: n };
+            if (!first) first = candidate;
+            if (n.z >= FLOOR_Z_MIN) {
+                floor = candidate;
+                break;
+            }
         }
-    }
+        return { floor, first };
+    };
 
-    const chosen = floorCandidate ?? firstBelowCandidate;
+    // Straight down first, then a small disc around it: when the surface
+    // directly below is missing — a punched drain hole, a gap between
+    // features — the vertical ray escapes and the tip used to end up with no
+    // support at all, even though the floor a couple of mm to the side is
+    // right there. Nearest radius wins; the 20° verticality gate below (and
+    // the shaft-blocked check after the build) bound how far the cant may go.
+    const SEARCH_RADII_MM = [0, 0.75, 1.5, 2.25];
+    let chosen: Candidate | null = null;
+    let firstBelowCandidate: Candidate | null = null;
+    for (const radiusMm of SEARCH_RADII_MM) {
+        const steps = radiusMm === 0 ? 1 : 8;
+        for (let i = 0; i < steps; i++) {
+            const angle = (i / steps) * Math.PI * 2;
+            const { floor, first } = scanDown(
+                baseOrigin.x + Math.cos(angle) * radiusMm,
+                baseOrigin.y + Math.sin(angle) * radiusMm,
+            );
+            if (floor) {
+                chosen = floor;
+                break;
+            }
+            if (first && !firstBelowCandidate) firstBelowCandidate = first;
+        }
+        if (chosen) break;
+    }
+    chosen = chosen ?? firstBelowCandidate;
     if (!chosen) return null;
 
     const bPos = { x: chosen.hit.point.x, y: chosen.hit.point.y, z: chosen.hit.point.z };
