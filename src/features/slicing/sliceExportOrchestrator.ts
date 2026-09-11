@@ -517,23 +517,6 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
             : 'streamed';
     let meshStageFilePath: string | null = null;
 
-    if (meshTransferMode === 'streamed') {
-        // Tell Rust to reserve a realistic staging buffer before chunks arrive.
-        await invoke('stage_mesh_binary_start', { totalBytes: meshTransportBytesEstimate });
-    } else if (meshTransferMode === 'file-backed') {
-        meshStageFilePath = await invoke<string>('allocate_mesh_stage_path');
-    }
-
-    logDebug('Initialized mesh staging buffer', {
-        initialMeshStagingBytes,
-        initialMeshStagingMiB: Number((initialMeshStagingBytes / (1024 * 1024)).toFixed(2)),
-        meshChunkTargetBytes,
-        meshChunkTargetMiB: Number((meshChunkTargetBytes / (1024 * 1024)).toFixed(2)),
-        meshTransportBytesEstimate,
-        meshTransportEncoding,
-        meshTransferMode,
-    });
-
     let cumulativeBytesStage = 0;
     let stageMeshIpcMs = 0;
     let stageMeshChunkCount = 0;
@@ -648,6 +631,24 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
     const meshPrepStartMs = performance.now();
     let solidMesh: Awaited<ReturnType<typeof buildSolidSliceMeshForWasm>>;
     try {
+        if (meshTransferMode === 'streamed') {
+            // Modifier baking leaves raw f32 output in the shared native stage.
+            // Reset it before appending the quantized scene, never before baking.
+            await invoke('stage_mesh_binary_start', { totalBytes: meshTransportBytesEstimate });
+        } else if (meshTransferMode === 'file-backed') {
+            meshStageFilePath = await invoke<string>('allocate_mesh_stage_path');
+        }
+
+        logDebug('Initialized mesh staging buffer', {
+            initialMeshStagingBytes,
+            initialMeshStagingMiB: Number((initialMeshStagingBytes / (1024 * 1024)).toFixed(2)),
+            meshChunkTargetBytes,
+            meshChunkTargetMiB: Number((meshChunkTargetBytes / (1024 * 1024)).toFixed(2)),
+            meshTransportBytesEstimate,
+            meshTransportEncoding,
+            meshTransferMode,
+        });
+
         solidMesh = await buildSolidSliceMeshForWasm({
             models: preparedModelsForOutput.models,
             printerProfile: options.printerProfile,
