@@ -726,9 +726,11 @@ function placeOneCandidate(
             let maxRiseDeg = 0;
             if (hostTrunk) {
                 for (const seg of hostTrunk.segments) {
-                    const start = seg.bottomJoint?.pos ?? { x: 0, y: 0, z: 1.5 };
-                    const end = seg.topJoint?.pos;
-                    if (!end) continue;
+                    // The SAME span the drift check measures against — a knot
+                    // placed on any other line is culled as an orphan.
+                    const span = hostSegmentSpan(snapshot, hostTrunk, seg);
+                    if (!span) continue;
+                    const { start, end } = span;
                     for (let i = 0; i <= 10; i++) {
                         const t = i / 10;
                         const sx = start.x + (end.x - start.x) * t;
@@ -1363,6 +1365,45 @@ function pointToSegmentDistanceSq(
     return dx * dx + dy * dy + dz * dz;
 }
 
+/**
+ * The world-space span of a trunk segment — the line a hosted member's knot has
+ * to lie on. This is the ONE resolver for it: the merge knot search WALKS this
+ * line while `validateAndCullOrphans` measures the knot's drift against it, so
+ * two resolvers that disagree leave the knot floating beside its shaft and the
+ * validator culls the whole member as `drift` — silently stripping the support
+ * it was placed for.
+ *
+ * Both ends carry by-design fallbacks, and the validator's semantics here are
+ * load-bearing (see the constraint notes below), so they are reproduced
+ * verbatim.
+ */
+function hostSegmentSpan(
+    draft: SupportState,
+    trunk: { rootId: string; segments: Array<{ bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null }>; contactCone?: { pos: { x: number; y: number; z: number } } },
+    seg: { bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null },
+): { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } } | null {
+    // Bottom segments carry no bottomJoint by design (they rise from the root
+    // plate, not a joint entity) — the root top IS the segment start. Using
+    // anything else here is what produced the `drift` culls: the merge search
+    // used to fabricate `(0, 0, rootTopZ)`, which is the same line only for a
+    // trunk rooted at the world origin, so on the reported model every minima
+    // member merged onto an off-origin host landed beside its shaft and was
+    // culled — leaving the model's lowest edge, the edge that anchors the
+    // print, with no supports at all.
+    const root = draft.roots[trunk.rootId];
+    const start = seg.bottomJoint?.pos ?? (root ? {
+        x: root.transform.pos.x,
+        y: root.transform.pos.y,
+        z: root.transform.pos.z + (root.diskHeight ?? 0) + (root.coneHeight ?? 0),
+    } : undefined);
+    // Top segments connect to the contact cone and carry no topJoint by design
+    // — the cone position IS the segment top. Without this fallback every knot
+    // hosted high on a trunk (the best, shortest spans) was culled as
+    // missingHost.
+    const end = seg.topJoint?.pos ?? trunk.contactCone?.pos;
+    return start && end ? { start, end } : null;
+}
+
 function findHostSegment(
     draft: SupportState,
     parentShaftId: string,
@@ -1550,27 +1591,13 @@ export function validateAndCullOrphans(
         }
         const seg = host.segment;
         const trunk = nextDraft.trunks[host.trunkId];
-        // Bottom segments carry no bottomJoint by design (they rise from the
-        // root plate, not a joint entity) — the root top IS the segment
-        // start, mirroring splitShaft's own fallback. Without this every
-        // knot hosted low on a trunk was culled as missingHost.
-        const root = trunk ? nextDraft.roots[trunk.rootId] : undefined;
-        const rootTop = root ? {
-            x: root.transform.pos.x,
-            y: root.transform.pos.y,
-            z: root.transform.pos.z + (root.diskHeight ?? 0) + (root.coneHeight ?? 0),
-        } : undefined;
-        const start = seg.bottomJoint?.pos ?? rootTop;
-        // Top segments connect to the contact cone and carry no topJoint by
-        // design — the cone position IS the segment top. Without this
-        // fallback every knot hosted high on a trunk (the best, shortest
-        // spans) was culled as missingHost.
-        const end = seg.topJoint?.pos ?? trunk?.contactCone?.pos;
-        if (!start || !end) {
+        const span = trunk ? hostSegmentSpan(nextDraft, trunk, seg) : null;
+        if (!span) {
             const segIndex = trunk?.segments.findIndex((s) => s.id === seg.id) ?? -1;
             orphans.push({ id, kind, reason: 'missingHost', hostId: host.trunkId, knotId: knot.id, detail: `segment missing joints (seg ${seg.id.slice(0, 8)}, topJoint ${seg.topJoint ? 'yes' : 'no'}, bottomJoint ${seg.bottomJoint ? 'yes' : 'no'}, seg ${segIndex + 1}/${trunk?.segments.length ?? 0}, origin ${trunk?.origin ?? 'unset'})` });
             return false;
         }
+        const { start, end } = span;
         const drift2 = pointToSegmentDistanceSq(knot.pos, start, end);
         if (drift2 > DRIFT_TOL_SQ) {
             orphans.push({ id, kind, reason: 'drift', hostId: host.trunkId, knotId: knot.id, detail: `drift ${(Math.sqrt(drift2)).toFixed(2)}mm from shaft` });

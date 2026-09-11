@@ -373,3 +373,19 @@
   Tightening it would break chunking at grid spacings under ~5 mm, so it needs a
   deliberate decision, not a one-line fix.
 - Context: docs/adr/0038-auto-support-placement-roads-not-taken.md.
+
+### [refactor] Three resolvers for "where does a trunk segment start and end" — M · medium risk
+- Where: `hostSegmentSpan` (autoPlace.ts, now shared by the merge knot search
+  and `validateAndCullOrphans`), `getTrunkSegmentEndpoints` (Knot/knotUtils.ts:
+  state.ts, gizmos, bracing), and `collectFanShaftPoints` (autoPlace.ts).
+- What: the three disagree. knotUtils returns the cone SOCKET for a top segment
+  without a `topJoint`; the validator uses the cone POSITION. `collectFanShaftPoints`
+  skips every joint-less segment, so a segment the validator would accept as a
+  host (bottom segment, root-top fallback) is never offered to the fan — a host
+  the pipeline can legally use but never tries.
+- Why: this is the shape that produced the `drift` culls fixed on
+  feat/auto-supports-v1.6 (two resolvers, one knot). Worth converging on one
+  resolver over `(trunk, segment, index, root)`; the validator's cone-position
+  choice is pinned by `orphanValidation.test.ts`, so that is a decision, not a
+  rename.
+- Context: docs/dev/auto-supports.md § "Orphan validation after resize".
