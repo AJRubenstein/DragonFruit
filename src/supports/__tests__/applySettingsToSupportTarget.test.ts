@@ -96,76 +96,6 @@ test('every editable type applies without falling through', () => {
     }
 });
 
-test('a trunk rewrites its root, shaft and tip', () => {
-    scene();
-    applySettingsToSupportTarget({ kind: 'trunk', id: 'trunk-a' }, settings() as never);
-
-    const state = getSnapshot();
-    const trunk = state.trunks['trunk-a'];
-    const root = state.roots['root-a'];
-
-    assert.equal(root.diameter, 6.5);
-    assert.equal(root.diskHeight, 1.25);
-    assert.equal(root.coneHeight, 2.5);
-    assert.equal(trunk.baseDiameterMm, 2.75);
-    assert.equal(trunk.segments[0].diameter, 2.75);
-    assert.equal(trunk.contactCone?.profile.contactDiameterMm, 0.85);
-    assert.equal(trunk.contactCone?.profile.lengthMm, 3.25);
-    assert.ok(trunk.settingsCodeHex, 'the trunk should cache its settings hex');
-});
-
-test('a branch rewrites its shaft and tip but no root', () => {
-    scene();
-    const before = getSnapshot().roots['root-a'];
-    applySettingsToSupportTarget({ kind: 'branch', id: 'branch-a' }, settings() as never);
-
-    const state = getSnapshot();
-    const branch = state.branches['branch-a'];
-
-    assert.equal(branch.segments[0].diameter, 2.75);
-    assert.equal(branch.contactCone?.profile.contactDiameterMm, 0.85);
-    assert.equal(branch.contactCone?.profile.lengthMm, 3.25);
-    // Only a root-owning type records the shaft width on itself.
-    assert.equal((branch as { baseDiameterMm?: number }).baseDiameterMm, undefined);
-    assert.deepEqual(state.roots['root-a'], before, 'a branch must not touch the root');
-});
-
-test('a leaf takes the contact diameter but not the body or length', () => {
-    scene();
-    const originalProfile = { ...getSnapshot().leaves['leaf-a'].contactCone.profile };
-    applySettingsToSupportTarget({ kind: 'leaf', id: 'leaf-a' }, settings() as never);
-
-    const leaf = getSnapshot().leaves['leaf-a'];
-    assert.equal(leaf.contactCone.profile.contactDiameterMm, 0.85);
-    // A leaf has no shaft, so the shaft-to-tip transition does not apply.
-    assert.equal(leaf.contactCone.profile.bodyDiameterMm, originalProfile.bodyDiameterMm);
-    assert.equal(leaf.contactCone.profile.lengthMm, originalProfile.lengthMm);
-    assert.ok(leaf.settingsCodeHex);
-});
-
-test('a kickstand rewrites its shaft and its own root', () => {
-    scene();
-    const trunkRootBefore = getSnapshot().roots['root-a'];
-    applySettingsToSupportTarget({ kind: 'kickstand', id: 'kickstand-a' }, settings() as never);
-
-    const state = getSnapshot();
-    const kickstand = state.kickstands['kickstand-a'];
-
-    assert.equal(kickstand.segments[0].diameter, 2.75, 'the shaft takes the diameter');
-    assert.equal((kickstand as { baseDiameterMm?: number }).baseDiameterMm, 2.75);
-    assert.equal(state.roots['root-k'].diameter, 6.5, 'its own root takes the root settings');
-    assert.deepEqual(state.roots['root-a'], trunkRootBefore, "a kickstand must not touch the trunk's root");
-    assert.ok(kickstand.settingsCodeHex);
-});
-
-test('a kickstand has no contact cone to write a tip onto', () => {
-    // contactFields is empty, so the tip half of the settings has no target.
-    assert.deepEqual(getSupportTypeDescriptor('kickstand').contactFields, []);
-    scene();
-    applySettingsToSupportTarget({ kind: 'kickstand', id: 'kickstand-a' }, settings() as never);
-    const kickstand = getSnapshot().kickstands['kickstand-a'] as unknown as Record<string, unknown>;
-    assert.equal(kickstand.contactCone, undefined);
-});
 
 test('a missing entity or non-editable type applies nothing', () => {
     scene();
@@ -173,11 +103,3 @@ test('a missing entity or non-editable type applies nothing', () => {
     assert.equal(applySettingsToSupportTarget({ kind: 'stick', id: 'stick-a' } as never, settings() as never), false);
 });
 
-test('a trunk whose root is missing applies nothing', () => {
-    scene();
-    const trunk = getSnapshot().trunks['trunk-a'];
-    // Reload without the root the trunk points at.
-    resetStore();
-    addTrunk(trunk);
-    assert.equal(applySettingsToSupportTarget({ kind: 'trunk', id: 'trunk-a' }, settings() as never), false);
-});

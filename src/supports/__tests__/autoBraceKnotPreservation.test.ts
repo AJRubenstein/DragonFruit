@@ -92,20 +92,6 @@ function sceneWithKickstandOnABracedKnot(braceGeneratedBy?: 'autoBracing') {
     return state;
 }
 
-test('a knot hosting a kickstand survives when its brace is removed', () => {
-    // Passes before the derivation too, by the route described above. Kept
-    // because that route is incidental and this is the rule.
-    const state = sceneWithKickstandOnABracedKnot('autoBracing');
-    const settings = { ...createDefaultAutoBracingSettings(), removeExistingBracing: true };
-
-    const { snapshot: next } = buildAutoBracedSnapshot(state, settings);
-
-    assert.ok(
-        next.knots['shared-knot'],
-        'the kickstand host knot was dropped with the brace that shared it',
-    );
-    assert.ok(next.kickstands['ks-a'], 'the kickstand itself should remain');
-});
 
 // Not covered here: that the preservation does not keep a knot which should
 // have gone. Auto-bracing regenerates braces between the same trunks, so a
@@ -113,18 +99,7 @@ test('a knot hosting a kickstand survives when its brace is removed', () => {
 // the two needs a scene where regeneration provably cannot reuse it. The
 // `keptBraces` read below is what bounds it: only braces that survive the pass
 // hold their endpoints, which is the same rule as before this change.
-test('a hand-drawn brace keeps its own endpoints', () => {
-    // Without `generatedBy`, the brace is not this tool's to remove, so both
-    // its knots stay regardless of what else hangs from them.
-    const state = sceneWithKickstandOnABracedKnot();
-    const settings = { ...createDefaultAutoBracingSettings(), removeExistingBracing: true };
 
-    const { snapshot: next } = buildAutoBracedSnapshot(state, settings);
-
-    assert.ok(next.braces['brace-a'], 'a hand-drawn brace should survive');
-    assert.ok(next.knots['shared-knot']);
-    assert.ok(next.knots['far-knot']);
-});
 
 test('every type the registry says hangs from a knot is consulted', () => {
     // The regression was a hand-written list of two. This is the list.

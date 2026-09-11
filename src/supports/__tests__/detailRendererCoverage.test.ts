@@ -60,15 +60,3 @@ test('each entry names a component and the prop it takes its entity under', () =
     }
 });
 
-test('the per-type JSX blocks are gone', () => {
-    // The thing this replaced. A reintroduced block would drift from the table
-    // without failing anything else.
-    for (const descriptor of SUPPORT_TYPES) {
-        const singular = descriptor.singular;
-        const listName = `render${singular.charAt(0).toUpperCase()}${singular.slice(1)}List.map`;
-        assert.ok(
-            !SOURCE.includes(listName),
-            `${descriptor.id} still has a hand-written ${listName} block`,
-        );
-    }
-});

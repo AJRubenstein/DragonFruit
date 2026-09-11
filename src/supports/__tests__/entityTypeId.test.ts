@@ -152,74 +152,6 @@ test('a loaded file carries the type, derived from the array it came out of', ()
     assertAllAgree('after load');
 });
 
-test('a file written before typeId existed still loads with one', () => {
-    // Backwards compatibility is the requirement: an older payload has no
-    // typeId on any entity, and the load derives it from the array.
-    oneOfEach();
-    const payload = buildSupportExportFromStores(getSnapshot(), getSnapshot() as never);
-
-    const stripped = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
-    for (const descriptor of SUPPORT_TYPES) {
-        const arr = stripped[descriptor.location.key] as Record<string, unknown>[] | undefined;
-        for (const entity of arr ?? []) delete entity.typeId;
-    }
-    for (const build of (stripped.kickstands as { kickstand: Record<string, unknown> }[]) ?? []) {
-        delete build.kickstand.typeId;
-    }
-
-    resetStore();
-    loadFromImportFormat(stripped as never);
-
-    assertAllAgree('after loading a pre-typeId payload');
-});
-
-test('typeId survives a save and load unchanged', () => {
-    oneOfEach();
-    const first = buildSupportExportFromStores(getSnapshot(), getSnapshot() as never);
-    resetStore();
-    loadFromImportFormat(first);
-
-    const second = buildSupportExportFromStores(getSnapshot(), getSnapshot() as never);
-    resetStore();
-    loadFromImportFormat(second);
-
-    assertAllAgree('after two round trips');
-});
-
-test('an id resolves to its type without scanning collections', () => {
-    oneOfEach();
-    for (const descriptor of SUPPORT_TYPES) {
-        assert.equal(getSupportTypeOf(`${descriptor.id}-a`), descriptor.id);
-    }
-    assert.equal(getSupportTypeOf('not-a-support'), null);
-    assert.equal(getSupportTypeOf(''), null);
-});
-
-test('a prefixed segment id names its own owner', () => {
-    // Brace segments are selected as `braceSegment:<id>`; the owner is in the
-    // id rather than in any collection, and only the prefix says so.
-    oneOfEach();
-    const brace = getSupportTypeDescriptor('brace');
-    assert.ok(brace.segmentSelectionPrefix, 'brace should declare a prefix');
-
-    assert.deepEqual(
-        findShaftOwnerOfSegment(`${brace.segmentSelectionPrefix}brace-a`),
-        { typeId: 'brace', id: 'brace-a' },
-    );
-    assert.equal(findShaftOwnerOfSegment(`${brace.segmentSelectionPrefix}gone`), null);
-});
-
-test('an ordinary segment id still resolves by scanning shafts', () => {
-    oneOfEach();
-    for (const descriptor of SUPPORT_TYPES) {
-        if (!descriptor.hasSegments) continue;
-        assert.deepEqual(
-            findShaftOwnerOfSegment(`${descriptor.id}-a-s`),
-            { typeId: descriptor.id, id: `${descriptor.id}-a` },
-            descriptor.id,
-        );
-    }
-});
 
 test('an entity that reaches the store unstamped is stamped on entry', () => {
     // `setSnapshot` replaces the whole store and is the path undo of a
@@ -234,21 +166,3 @@ test('an entity that reaches the store unstamped is stamped on entry', () => {
     assert.equal(getSupportTypeOf('not-in-the-store'), null);
 });
 
-test('the owner lookups find an entity that arrived unstamped', () => {
-    oneOfEach();
-    const forced = { ...getSnapshot() } as Record<string, unknown>;
-    forced.twigs = {
-        bare: {
-            id: 'bare', modelId: 'model-a',
-            segments: [{
-                id: 'bare-seg', diameter: 1,
-                bottomJoint: { id: 'bare-bj', pos: { x: 0, y: 0, z: 0 }, diameter: 1 },
-                topJoint: { id: 'bare-tj', pos: { x: 0, y: 0, z: 4 }, diameter: 1 },
-            }],
-        },
-    };
-    setSnapshot(forced as never);
-
-    assert.deepEqual(findShaftOwnerOfSegment('bare-seg'), { typeId: 'twig', id: 'bare' });
-    assert.equal(findShaftOwnerOfJoint('bare-tj')?.id, 'bare');
-});

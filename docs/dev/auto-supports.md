@@ -6,7 +6,7 @@ Gated behind the `auto-supports` experiment (see [Experiments Framework](experim
 
 ## The seam that matters: plan, then commit
 
-`computeAutoSupportPlan(islands, modelId, settingsOverride?, baseState?, baseKickstand?, mesh?)` is pure with respect to the stores: it clones the current snapshots, works on drafts, and returns an `AutoSupportPlan` holding `before`, `kickstandBefore`, the new `support` and `kickstand` states, and analytics. It commits nothing.
+`computeAutoSupportPlan(islands, modelId, settingsOverride?, baseState?, mesh?)` is pure with respect to the stores: it clones the current snapshot, works on drafts, and returns an `AutoSupportPlan` holding `before`, the new `support` state (kickstands included), `analytics` and `result`. It commits nothing.
 
 `runAutoPlace(...)` is the thin caller that computes a plan and, only if `result.changed`, calls `setSnapshot()` / `setKickstandSnapshot()`.
 

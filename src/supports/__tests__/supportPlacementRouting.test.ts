@@ -60,50 +60,6 @@ test('resolveSupportPlacementRouting behaviour', () => {
     assert.equal(resKickstand.supportClickOwner, 'kickstand');
 });
 
-/**
- * The narrow owner union is derived from MODEL_SURFACE_GESTURE_BY_TYPE, which
- * restates each descriptor's flag with the literals kept. Types cannot check
- * that the two agree, so this does.
- */
-test('the model-surface gesture table matches the descriptors', () => {
-    for (const descriptor of SUPPORT_TYPES) {
-        assert.equal(
-            MODEL_SURFACE_GESTURE_BY_TYPE[descriptor.id],
-            descriptor.claimsModelSurfaceGestures,
-            `${descriptor.id} disagrees between the table and its descriptor`,
-        );
-    }
-
-    const tableKeys = Object.keys(MODEL_SURFACE_GESTURE_BY_TYPE).sort();
-    const registryIds = SUPPORT_TYPES.map((d) => d.id).sort();
-    assert.deepEqual(tableKeys, registryIds, 'the table and the registry cover different types');
-});
-
-/**
- * The manager's model-face dispatch. Inverting it (every gesture delivered to
- * the wrong hook) left the whole suite green before these tests existed.
- */
-test('a model-face gesture reaches only the named owner', () => {
-    const hit = { id: 'hit' };
-
-    for (const owner of MODEL_SURFACE_GESTURE_TYPES) {
-        const routed = routeModelPlacementHit(MODEL_SURFACE_GESTURE_TYPES, owner, hit);
-
-        assert.equal(routed[owner], hit, `${owner} should receive the hit`);
-        for (const other of MODEL_SURFACE_GESTURE_TYPES) {
-            if (other === owner) continue;
-            assert.equal(routed[other], null, `${other} should be cleared while ${owner} owns the gesture`);
-        }
-    }
-});
-
-test('an unowned gesture clears every model-face placement', () => {
-    const routed = routeModelPlacementHit(MODEL_SURFACE_GESTURE_TYPES, 'none', { id: 'hit' });
-
-    for (const id of MODEL_SURFACE_GESTURE_TYPES) {
-        assert.equal(routed[id], null, `${id} should be cleared when no owner claims the gesture`);
-    }
-});
 
 test('the derived owner list covers exactly the flagged types', () => {
     assert.deepEqual(

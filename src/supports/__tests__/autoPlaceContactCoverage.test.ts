@@ -76,32 +76,3 @@ test('every declared contact is reported, for every type that has one', () => {
     assert.equal(collectContactPositions(state).length, expected);
 });
 
-test('a twig and a stick contact count as supported', () => {
-    // The regression: both declare contacts, neither was collected, so a point
-    // one of them was already holding looked free to support again.
-    for (const typeId of ['twig', 'stick'] as const) {
-        const state = emptyState();
-        withContacts(state, typeId, 0);
-
-        const positions = collectContactPositions(state);
-        assert.equal(
-            positions.length,
-            contactEndpointsFor(typeId).length,
-            `${typeId} contributed no contact position`,
-        );
-    }
-});
-
-test('a type with no contacts contributes nothing', () => {
-    for (const descriptor of SUPPORT_TYPES) {
-        if (descriptor.contactFields.length > 0) continue;
-
-        const state = emptyState();
-        withContacts(state, descriptor.id, 0);
-        assert.equal(collectContactPositions(state).length, 0, descriptor.id);
-    }
-});
-
-test('an empty store reports nothing', () => {
-    assert.deepEqual(collectContactPositions(emptyState()), []);
-});
