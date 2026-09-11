@@ -161,19 +161,9 @@ export function ModelSupportsModal({ isOpen, onClose, model }: ModelSupportsModa
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            {[
-              ['Roots', summaryStats.roots],
-              ['Trunks', summaryStats.trunks],
-              ['Branches', summaryStats.branches],
-              ['Leaves', summaryStats.leaves],
-              ['Twigs', summaryStats.twigs],
-              ['Sticks', summaryStats.sticks],
-              ['Braces', summaryStats.braces],
-              ['Kickstands', summaryStats.kickstands],
-              ['Knots', summaryStats.knots],
-            ].map(([label, count]) => (
+            {groupRows.map(({ key, label }) => (
               <div
-                key={label}
+                key={key}
                 className="rounded-md border px-3 py-2"
                 style={{
                   borderColor: 'var(--border-subtle)',
@@ -182,7 +172,7 @@ export function ModelSupportsModal({ isOpen, onClose, model }: ModelSupportsModa
               >
                 <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{label}</div>
                 <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>
-                  {Number(count).toLocaleString()}
+                  {summaryStats[key].toLocaleString()}
                 </div>
               </div>
             ))}

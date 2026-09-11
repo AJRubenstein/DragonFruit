@@ -1526,6 +1526,19 @@ export function implicitSegmentCount(descriptor: SupportTypeDescriptor): number 
 }
 
 /**
+ * The name one of this type's groups carries in an exported mesh.
+ *
+ * `Trunk_<id>`, `Kickstand_<id>` and so on: the singular, capitalised. These
+ * strings land in exported 3MF and OBJ files, so a type's name reaching the
+ * registry reaches the export too -- which is the point, but it does mean
+ * renaming a type renames its groups in every file written afterwards.
+ */
+export function exportGroupName(typeId: SupportTypeId, entityId: string): string {
+    const { singular } = getSupportTypeDescriptor(typeId);
+    return `${singular.charAt(0).toUpperCase()}${singular.slice(1)}_${entityId}`;
+}
+
+/**
  * Split a knot's `parentShaftId` into the type it rides and that entity's id,
  * or null when it names a real shaft segment.
  *

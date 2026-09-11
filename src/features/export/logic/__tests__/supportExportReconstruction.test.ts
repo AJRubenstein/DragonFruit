@@ -6,7 +6,7 @@ import type { SupportState } from '@/supports/types';
 import { JOINT_DIAMETER_OFFSET_MM } from '@/supports/constants';
 import { SupportGeometryGenerator } from '../SupportGeometryGenerator';
 import { buildScopedSupportExportDocument, buildScopedSupportGeometryGroup } from '../supportExportReconstruction';
-import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
+import { exportGroupName, SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 
 function makeSupportState(): SupportState {
   return {
@@ -434,14 +434,17 @@ test('every populated support type reaches the exported geometry', () => {
       const collection = (supportState as unknown as Record<string, Record<string, { modelId?: string }>>)[descriptor.location.key];
       return Object.values(collection ?? {}).some((entity) => entity.modelId === 'model-a');
     })
-    .map((descriptor) => descriptor.singular.charAt(0).toUpperCase() + descriptor.singular.slice(1));
+    .map((descriptor) => descriptor.id);
 
   assert.ok(expected.length > 0, 'fixture populates no model-a supports');
 
-  for (const prefix of expected) {
+  // Named through the registry, not a second copy of the rule here: a test that
+  // recomputed the prefix would agree with a broken derivation.
+  for (const typeId of expected) {
+    const prefix = exportGroupName(typeId, '');
     assert.ok(
-      names.some((name) => name.startsWith(`${prefix}_`)),
-      `no ${prefix} group in the export; exported: ${names.join(', ')}`,
+      names.some((name) => name.startsWith(prefix)),
+      `no ${typeId} group in the export; exported: ${names.join(', ')}`,
     );
   }
 });

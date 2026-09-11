@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { bezierToLineSegments } from '@/supports/Curves/BezierUtils';
 import { getModelIdForSupportEntityId } from '@/supports/state';
-import { getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '@/supports/supportTypeRegistry';
+import { exportGroupName, getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone';
 import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getRaftSettingsForModel } from '@/supports/Rafts/Crenelated/RaftState';
@@ -229,12 +229,16 @@ function appendStraightOrBezierShafts(
 }
 
 /**
- * Build one type's export groups. Each closes over its own row type, so the
- * table can be indexed by type id without widening the rows to a union. A
- * builder returning null for a row skips that entity: a broken link drops one
- * support rather than failing the export.
+ * Build one type's export groups, each paired with the id of the entity it was
+ * built from. Each closes over its own row type, so the table can be indexed by
+ * type id without widening the rows to a union. A null group skips that entity:
+ * a broken link drops one support rather than failing the export.
+ *
+ * The caller names each group from the registry, so no builder spells out its
+ * own `Trunk_` / `Kickstand_` prefix.
  */
-type GroupBuilder = () => readonly (THREE.Group | null)[];
+type BuiltGroup = { id: string; group: THREE.Group | null };
+type GroupBuilder = () => readonly BuiltGroup[];
 
 function buildTrunkGroup(trunk: Trunk, root: Roots, modelId: string | null | undefined): THREE.Group {
   const group = SupportGeometryGenerator.generateSupportGroup(
@@ -246,7 +250,6 @@ function buildTrunkGroup(trunk: Trunk, root: Roots, modelId: string | null | und
     },
     modelId ? getRaftSettingsForModel(modelId) : undefined,
   );
-  group.name = `Trunk_${trunk.id}`;
   addModelMetadata(group, modelId);
   return group;
 }
@@ -258,14 +261,12 @@ function buildBranchGroup(branch: Branch, parentKnot: Knot, modelId: string | nu
     segments: branch.segments,
     contactCone: branch.contactCone,
   });
-  group.name = `Branch_${branch.id}`;
   addModelMetadata(group, modelId);
   return group;
 }
 
 function buildAnchorGroup(anchor: Anchor, modelId: string | null | undefined): THREE.Group {
   const group = new THREE.Group();
-  group.name = `Anchor_${anchor.id}`;
   addModelMetadata(group, modelId);
 
   const rootHeight = Math.max(0.001, anchor.rootHeight);
@@ -311,7 +312,6 @@ function buildBraceGroup(
   modelId: string | null | undefined,
 ): THREE.Group {
   const group = new THREE.Group();
-  group.name = `Brace_${brace.id}`;
   addModelMetadata(group, modelId);
 
   const diameter = Math.max(
@@ -354,7 +354,6 @@ function buildBraceGroup(
 
 function buildLeafGroup(leaf: Leaf, modelId: string | null | undefined): THREE.Group {
   const group = new THREE.Group();
-  group.name = `Leaf_${leaf.id}`;
   addModelMetadata(group, modelId);
   appendConeGeometry(group, leaf.contactCone);
   return group;
@@ -370,7 +369,6 @@ function buildStickGroup(stick: Stick, modelId: string | null | undefined): THRE
       contactCone: stick.contactConeB,
     },
   );
-  group.name = `Stick_${stick.id}`;
   addModelMetadata(group, modelId);
   appendConeGeometry(group, stick.contactConeA);
   return group;
@@ -380,7 +378,6 @@ function buildTwigGroup(twig: Twig, modelId: string | null | undefined): THREE.G
   const startPos = buildTwigDiskTipCenter(twig.contactDiskA);
   const endPos = buildTwigDiskTipCenter(twig.contactDiskB);
   const group = new THREE.Group();
-  group.name = `Twig_${twig.id}`;
   addModelMetadata(group, modelId);
 
   const seenJointIds = new Set<string>();
@@ -438,7 +435,6 @@ function buildKickstandGroup(
   modelId: string | null | undefined,
 ): THREE.Group {
   const group = new THREE.Group();
-  group.name = `Kickstand_${kickstand.id}`;
   addModelMetadata(group, modelId);
 
   const raftSettings = modelId ? getRaftSettingsForModel(modelId) : undefined;
@@ -659,45 +655,52 @@ export function buildScopedSupportGeometryGroup(
   const groupBuilders: Record<SupportTypeId, GroupBuilder> = {
     trunk: () => payload.trunks.map((trunk) => {
       const root = rootsById[trunk.rootId];
-      if (!root) return null;
-      return buildTrunkGroup(trunk, root, trunk.modelId ?? root.modelId ?? null);
+      if (!root) return { id: trunk.id, group: null };
+      return { id: trunk.id, group: buildTrunkGroup(trunk, root, trunk.modelId ?? root.modelId ?? null) };
     }),
     branch: () => payload.branches.map((branch) => {
       const parentKnot = knotsById[branch.parentKnotId];
-      if (!parentKnot) return null;
+      if (!parentKnot) return { id: branch.id, group: null };
       const modelId = branch.modelId ?? getModelIdForSupportEntityId(branch.parentKnotId);
-      return buildBranchGroup(branch, parentKnot, modelId);
+      return { id: branch.id, group: buildBranchGroup(branch, parentKnot, modelId) };
     }),
-    leaf: () => payload.leaves.map((leaf) =>
-      buildLeafGroup(leaf, leaf.modelId ?? getModelIdForSupportEntityId(leaf.parentKnotId))),
-    twig: () => payload.twigs.map((twig) => buildTwigGroup(twig, twig.modelId)),
-    stick: () => payload.sticks.map((stick) => buildStickGroup(stick, stick.modelId)),
+    leaf: () => payload.leaves.map((leaf) => ({
+      id: leaf.id,
+      group: buildLeafGroup(leaf, leaf.modelId ?? getModelIdForSupportEntityId(leaf.parentKnotId)),
+    })),
+    twig: () => payload.twigs.map((twig) => ({ id: twig.id, group: buildTwigGroup(twig, twig.modelId) })),
+    stick: () => payload.sticks.map((stick) => ({ id: stick.id, group: buildStickGroup(stick, stick.modelId) })),
     brace: () => payload.braces.map((brace) => {
       const startKnot = knotsById[brace.startKnotId];
       const endKnot = knotsById[brace.endKnotId];
-      if (!startKnot || !endKnot) return null;
+      if (!startKnot || !endKnot) return { id: brace.id, group: null };
       const modelId = brace.modelId
         ?? getModelIdForSupportEntityId(brace.startKnotId)
         ?? getModelIdForSupportEntityId(brace.endKnotId);
-      return buildBraceGroup(brace, startKnot, endKnot, modelId);
+      return { id: brace.id, group: buildBraceGroup(brace, startKnot, endKnot, modelId) };
     }),
-    anchor: () => payload.anchors.map((anchor) => buildAnchorGroup(anchor, anchor.modelId)),
+    anchor: () => payload.anchors.map((anchor) => ({
+      id: anchor.id,
+      group: buildAnchorGroup(anchor, anchor.modelId),
+    })),
     kickstand: () => payload.kickstands.map((kickstand) => {
       const root = supportState.roots[kickstand.rootId];
       const hostKnot = supportState.knots[kickstand.hostKnotId];
-      if (!root || !hostKnot) return null;
+      if (!root || !hostKnot) return { id: kickstand.id, group: null };
       const modelId = kickstand.modelId
         ?? root.modelId
         ?? getModelIdForSupportEntityId(kickstand.hostKnotId)
         ?? getModelIdForSupportEntityId(kickstand.hostSegmentId);
-      return buildKickstandGroup(kickstand, root, hostKnot, modelId);
+      return { id: kickstand.id, group: buildKickstandGroup(kickstand, root, hostKnot, modelId) };
     }),
   };
 
   // Registry order, so the exported group is stable as types are added.
   for (const descriptor of SUPPORT_TYPES) {
     for (const built of groupBuilders[descriptor.id]()) {
-      if (built) group.add(built);
+      if (!built.group) continue;
+      built.group.name = exportGroupName(descriptor.id, built.id);
+      group.add(built.group);
     }
   }
 

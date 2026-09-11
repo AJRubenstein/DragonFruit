@@ -1,7 +1,6 @@
 import React from 'react';
 import type { SupportState } from '../types';
 import { createEmptySupportCollections, SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from '../supportTypeRegistry';
-import type { KickstandState } from '../SupportTypes/Kickstand/types';
 import { computeSupportRenderLookup, type SupportRenderLookupInput, type SupportRenderLookupSnapshot } from './supportRenderLookupMath';
 import { isSupportEditInteractionActive } from './gizmoInteractionLock';
 import { getSupportWorkerRuntimeCapabilities } from './supportWorkerCapabilities';

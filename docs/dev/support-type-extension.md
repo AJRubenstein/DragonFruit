@@ -157,6 +157,8 @@ Still the heaviest step.
   table in `buildScopedSupportGeometryGroup`. The table is typed
   `Record<SupportTypeId, GroupBuilder>`, so a missing entry fails to compile
   rather than dropping your type from every export.
+- Do **not** name the group: return `{ id, group }` and the dispatch names it
+  `Gadget_<id>` from `exportGroupName`, derived from the descriptor's `singular`.
 
 ## 7. Interaction — only for user-placeable types *(hand-wired)*
 
@@ -212,11 +214,13 @@ wiring is explicit:
    loop, selected sets and batching derive from the registry
 5. `state.ts` — SelectionCategory, lookup cache, import/merge/isolate. **Not** the
    updater (the registry loop covers it) and **not** `initialState` (derived)
-6. `actionTypes.ts` + `useSupportHistoryHandlers.ts` — add/remove handlers
+6. `useSupportHistoryHandlers.ts` — add/remove handlers. **Not** `actionTypes.ts`:
+   the action strings and their payload entries derive from the type id
 7. `useSupportInteractionManager.ts` — **nothing**, unless the type reshapes its
    removal payload or can host a knot (see step 7 above)
 8. `supportExportReconstruction.ts` — one entry in the `groupBuilders` table,
-   typed `Record<SupportTypeId, GroupBuilder>`, so a missing type is a compile error
+   typed `Record<SupportTypeId, GroupBuilder>`, so a missing type is a compile
+   error. The group's exported name derives from `singular`
 
 After wiring, run the registry tests — they fail loudly on a half-declared type:
 

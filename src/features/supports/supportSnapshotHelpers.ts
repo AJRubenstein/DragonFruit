@@ -6,7 +6,6 @@ export type HomeSupportSnapshot = ReturnType<typeof getSupportSnapshot>;
 /** Every entity collection, derived from the registry. */
 export type HomeSupportCollectionsSnapshot = Pick<HomeSupportSnapshot, SupportCollectionKey>;
 
-export type HomeKickstandSnapshot = HomeSupportSnapshot;
 export type HomeKickstandCollectionsSnapshot = Pick<
   HomeSupportSnapshot,
   'kickstands' | 'roots' | 'knots'
