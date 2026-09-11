@@ -82,6 +82,25 @@ export type SupportPlacementThreshold =
     | { setting: SupportPlacementSettingPath; fallback: number };
 
 /**
+ * How densely auto-placement may lay a type down, and how it sizes the shafts.
+ * `placementRule` picks WHICH type serves a candidate; this is the policy for
+ * placing it. Read via {@link autoPlacementFor}.
+ *
+ * Declared but not yet read -- these were unreferenced constants when they
+ * moved here. See docs/dev/support-registry-findings.md.
+ */
+export interface SupportAutoPlacement {
+    /** Closest two of this type may sit (mm). */
+    minSpacingMm?: number;
+    /** Smallest region to densify: both XY extents must exceed this. */
+    minXyMm?: number;
+    /** Smallest region area to densify (mm²); slivers are not load-bearing. */
+    minAreaMm2?: number;
+    /** Multiplier over the sizing band; anchors carry the peel and run thick. */
+    shaftMultiplier?: number;
+}
+
+/**
  * The range of a measurement this type serves. The two rules disagree about
  * which side owns a value sitting exactly on a shared bound, so `boundary`
  * declares it per rule.
@@ -209,6 +228,8 @@ export interface SupportTypeDescriptor {
      * Enforced by `__tests__/placementRules.test.ts`.
      */
     placementRule?: SupportPlacementRule;
+    /** Auto-placement density and shaft sizing. See {@link SupportAutoPlacement}. */
+    autoPlacement?: SupportAutoPlacement;
     /**
      * Whether this type's preview yields to any other placement mode.
      *
@@ -699,6 +720,12 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         hasPlacementPreview: false,
         claimsModelSurfaceGestures: false,
         placementRule: { metric: 'tipHeight', maxMm: ANCHOR_HEIGHT_THRESHOLD_MM, boundary: 'upper' },
+        autoPlacement: {
+            minSpacingMm: 1.8,
+            minXyMm: 4.0,
+            minAreaMm2: 12.0,
+            shaftMultiplier: 1.25,
+        },
         isAutoBraceable: false,
         lower: { kind: 'inlineRoot', field: 'rootPos' },
         upper: { kind: 'cone', field: 'contactCone' },
@@ -1065,6 +1092,19 @@ export function selectTypeForPlacement(
 /** Every type declaring a rule for this metric, in registry order. */
 export function typesForPlacementMetric(metric: SupportPlacementMetric): readonly SupportTypeDescriptor[] {
     return SUPPORT_TYPES.filter((descriptor) => descriptor.placementRule?.metric === metric);
+}
+
+/**
+ * One type's auto-placement policy, empty when it declares none -- so a caller
+ * reads a field and falls back without testing the type by name.
+ */
+export function autoPlacementFor(typeId: SupportTypeId): SupportAutoPlacement {
+    return getSupportTypeDescriptor(typeId).autoPlacement ?? {};
+}
+
+/** Every type declaring an auto-placement policy, in registry order. */
+export function typesWithAutoPlacement(): readonly SupportTypeId[] {
+    return SUPPORT_TYPES.filter((descriptor) => descriptor.autoPlacement).map((d) => d.id);
 }
 
 /**

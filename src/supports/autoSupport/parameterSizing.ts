@@ -135,7 +135,9 @@ export function presetForArea(areaMm2: number): SizingPreset {
 
 /** Shaft diameter: the profile band, then a gentle log tail beyond the cell
  *  reference for merged clusters (sub-linear — strength grows with the
- *  cross-section, not the area). A grid cell is FLAT at the profile band. */
+ *  cross-section, not the area). A grid cell is FLAT at the profile band.
+ *  The anchor girth multiplier is declared on the descriptor but not applied
+ *  here — see docs/dev/support-registry-findings.md. */
 function shaftDiameterForArea(baseDiameterMm: number, areaMm2: number): number {
     const a = Math.max(areaMm2, 0.01);
     const tail = a > CELL_REFERENCE_AREA_MM2
