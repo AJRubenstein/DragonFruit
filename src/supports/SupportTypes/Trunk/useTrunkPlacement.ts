@@ -246,6 +246,17 @@ export function buildCavityStick(
             const radius = (seg?.diameter ?? 1) / 2 + 0.15;
             if (checkShortBridgeCollision(start, end, radius, mesh).hit) return null;
         }
+        // Twigs are short bridges, not lateral props: the visible shaft
+        // (socket to socket — a sidewall landing's standoff is what shoves a
+        // grazing twig sideways) must stay somewhat vertical, like sticks. A
+        // twig much past 45° hangs its island off a whisker that cannot carry
+        // peel, and it renders as the near-horizontal struts in the preview.
+        // Looser than the 20° stick gate because a 1–2 mm strut tolerates cant
+        // a 12 mm column cannot; pointed tips propped off a nearby wall with a
+        // real drop underneath still pass.
+        if (shaftVerticalCos(twig) < Math.cos((CAVITY_TWIG_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
+            return null;
+        }
         const supportData: SupportData = {
             id: twig.id,
             segments: twig.segments,
@@ -259,7 +270,7 @@ export function buildCavityStick(
     // Sticks are only useful as vertical bridges; a shaft that cants off
     // vertical (standoffs + sloped surfaces shoving the sockets sideways)
     // is a crammed stick. Reject it — the caller's trunk fallback applies.
-    if (stickShaftVerticalCos(stick) < Math.cos((CAVITY_STICK_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
+    if (shaftVerticalCos(stick) < Math.cos((CAVITY_STICK_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
         return null;
     }
 
@@ -286,13 +297,13 @@ export function buildCavityStick(
 type CavityStickBuildResult = NonNullable<ReturnType<typeof buildCavityStick>>;
 
 /**
- * |cos| of the shaft's deviation from vertical, 1 = perfectly vertical.
- * The stick's visible shaft runs between its two socket joints — the
- * surface-normal standoffs can shove those sideways on sloped surfaces,
- * which is exactly the "crammed diagonal stick" look to avoid.
+ * |cos| of a cavity bridge's deviation from vertical, 1 = perfectly vertical.
+ * The visible shaft runs between its two socket joints — the surface-normal
+ * standoffs can shove those sideways on sloped surfaces, which is exactly the
+ * "crammed diagonal stick" look to avoid.
  */
-export function stickShaftVerticalCos(stick: { segments: { bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null }[] }): number {
-    const seg = stick.segments[0];
+export function shaftVerticalCos(bridge: { segments: { bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null }[] }): number {
+    const seg = bridge.segments[0];
     const a = seg?.bottomJoint?.pos;
     const b = seg?.topJoint?.pos;
     if (!a || !b) return 1;
@@ -307,6 +318,12 @@ export function stickShaftVerticalCos(stick: { segments: { bottomJoint?: { pos: 
 // A cavity stick bridges straight down; a shaft that cants more than this
 // from vertical is a wedged stick, not a bridge (calibration knob).
 export const CAVITY_STICK_MAX_SHAFT_ANGLE_DEG = 20;
+// A cavity twig bridges down, not sideways: a shaft canted much past this
+// from vertical is a lateral whisker to a sidewall, not a bridge. Looser than
+// the 20° stick gate — measured thin-gap and floor twigs build at ≤17°,
+// pointed-tip props off a nearby wall with a real drop land 23–43°, the
+// grazers at 48° and up (calibration knob).
+export const CAVITY_TWIG_MAX_SHAFT_ANGLE_DEG = 45;
 
 export function useTrunkPlacementV2() {
     // Debounce tuned for human hand drift (~1-2mm) and 60fps target.
