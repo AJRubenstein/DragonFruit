@@ -4,7 +4,7 @@ import { calculateTipOffset } from '../rendering/calculateTipOffset';
 import { getRaftSettingsForModel } from '../Rafts/Crenelated/RaftState';
 import type { Segment, Vec3 } from '../types';
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
-import { SupportGeometryGenerator } from '@/features/export/logic/SupportGeometryGenerator';
+import { SupportGeometryGenerator } from './SupportGeometryGenerator';
 import { getFinalSocketPosition } from '../SupportPrimitives/ContactCone';
 import { getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
 

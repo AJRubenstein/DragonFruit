@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import type { KickstandState } from '@/supports/SupportTypes/Kickstand/types';
 import type { SupportState } from '@/supports/types';
 import { JOINT_DIAMETER_OFFSET_MM } from '@/supports/constants';
-import { SupportGeometryGenerator } from '../SupportGeometryGenerator';
+import { SupportGeometryGenerator } from '@/supports/exportGeometry/SupportGeometryGenerator';
 import { buildScopedSupportExportDocument, buildScopedSupportGeometryGroup } from '../supportExportReconstruction';
 import { exportGroupName, SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 

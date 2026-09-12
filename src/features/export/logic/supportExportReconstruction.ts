@@ -22,20 +22,8 @@ import type {
   Twig,
   Vec3,
 } from '@/supports/types';
-import { SupportGeometryGenerator } from './SupportGeometryGenerator';
 import { getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
 import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
-
-function getGlobalPenetrationMm(): number {
-  const material = getActiveMaterialProfile();
-  const printer = getActivePrinterProfile();
-  if (material && printer) {
-    const pxX = printer.pixelSize?.x ? printer.pixelSize.x / 1000 : (printer.buildVolumeMm?.width ?? 143) / (printer.display?.resolutionX ?? 2560);
-    const pxY = printer.pixelSize?.y ? printer.pixelSize.y / 1000 : (printer.buildVolumeMm?.depth ?? 89) / (printer.display?.resolutionY ?? 1620);
-    return calculateTipOffset(material.antiAliasingSettings, material.layerHeightMm, pxX, pxY);
-  }
-  return 0;
-}
 
 export interface ScopedSupportPayload {
   roots: Roots[];
@@ -149,49 +137,6 @@ function createScopedModelIdResolver(
   };
 
   return resolve;
-}
-
-function buildTwigDiskTipCenter(disk: Twig['contactDiskA']): Vec3 {
-  const thickness = disk.diskLengthOverride ?? calculateDiskThickness(disk.surfaceNormal, disk.coneAxis, disk.profile);
-  return {
-    x: disk.pos.x + (disk.surfaceNormal.x * thickness),
-    y: disk.pos.y + (disk.surfaceNormal.y * thickness),
-    z: disk.pos.z + (disk.surfaceNormal.z * thickness),
-  };
-}
-
-function addModelMetadata(object: THREE.Object3D, modelId: string | null | undefined) {
-  object.userData = {
-    ...object.userData,
-    modelId: modelId ?? null,
-  };
-}
-
-function appendConeGeometry(group: THREE.Group, cone: Leaf['contactCone']) {
-  const pen = getGlobalPenetrationMm();
-  const coneGroup = SupportGeometryGenerator.generateConeMesh(cone, pen);
-  group.add(coneGroup);
-
-  const diskGroup = SupportGeometryGenerator.generateContactDiskMesh(cone, pen);
-  if (diskGroup.children.length > 0) {
-    group.add(diskGroup);
-  }
-}
-
-function appendStraightOrBezierShafts(
-  group: THREE.Group,
-  segment: Segment,
-  start: Vec3,
-  end: Vec3,
-) {
-  const meshes = SupportGeometryGenerator.generateSegmentShaftMeshes(
-    segment,
-    new THREE.Vector3(start.x, start.y, start.z),
-    new THREE.Vector3(end.x, end.y, end.z),
-  );
-  for (const mesh of meshes) {
-    group.add(mesh);
-  }
 }
 
 export function extractScopedSupportPayload(
