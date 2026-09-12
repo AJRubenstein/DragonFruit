@@ -51,6 +51,7 @@ import {
     ALREADY_SUPPORTED_RADIUS_MM,
     GRIDLESS_MERGE_RADIUS_MM,
     LEAF_FAN_RADIUS_MM,
+    MIN_LEAF_FAN_RADIUS_MM,
     GRID_HOST_FAN_RADIUS_MM,
     LEAF_FAN_MAX_ANGLE_DEG,
     CONSOLIDATION_FAN_RADIUS_MM,
@@ -722,7 +723,7 @@ function placeOneCandidate(
                     islandPool,
                     new Set(),
                     `auto-fan-${candidate.id}`,
-                    Math.max(8, auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM),
+                    Math.max(MIN_LEAF_FAN_RADIUS_MM, auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM),
                     GRID_HOST_FAN_RADIUS_MM,
                     Math.min(auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG, memberMaxAngleFromVerticalDeg()),
                     auto.maxAttachmentsPerTrunk ?? 12,
@@ -752,7 +753,7 @@ function placeOneCandidate(
                 collectFanShaftPoints(draft),
                 gridHostIds,
                 `auto-fan-${candidate.id}`,
-                Math.max(8, auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM),
+                Math.max(MIN_LEAF_FAN_RADIUS_MM, auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM),
                 GRID_HOST_FAN_RADIUS_MM,
                 Math.min(auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG, memberMaxAngleFromVerticalDeg()),
                 auto.maxAttachmentsPerTrunk ?? 12,
@@ -1005,7 +1006,7 @@ function placeOneCandidate(
                     collectFanShaftPoints(draft),
                     gridHostIds ?? new Set<string>(),
                     `auto-cavity-fan-${candidate.id}`,
-                    Math.max(8, auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM),
+                    Math.max(MIN_LEAF_FAN_RADIUS_MM, auto.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM),
                     GRID_HOST_FAN_RADIUS_MM,
                     Math.min(auto.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG, memberMaxAngleFromVerticalDeg()),
                     auto.maxAttachmentsPerTrunk ?? 12,
@@ -2873,7 +2874,7 @@ export function computeAutoSupportPlan(
         `${analytics.islandsUncovered} islands uncovered.`);
 
     // ── Post-placement leaf fanning (iterative convergence) ──────────
-    const fanRadiusMm = autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM;
+    const fanRadiusMm = Math.max(MIN_LEAF_FAN_RADIUS_MM, autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM);
     const fanMaxAngleDeg = Math.min(
         autoSettings.leafFanMaxAngleDeg ?? LEAF_FAN_MAX_ANGLE_DEG,
         memberMaxAngleFromVerticalDeg(),
@@ -2970,7 +2971,7 @@ export function computeAutoSupportPlan(
     let overhangSupportsPlaced = 0;
     // A coverage branch is a STUB off a trunk, never a bridge across the
     // island: the same reach a placement fan allows.
-    const COVERAGE_STUB_REACH_MM = autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM;
+    const COVERAGE_STUB_REACH_MM = Math.max(MIN_LEAF_FAN_RADIUS_MM, autoSettings.leafFanRadiusMm ?? LEAF_FAN_RADIUS_MM);
     // Host shafts for the stubs, sampled once. The host set is stable here:
     // the pass only adds branches.
     const stubHosts: Array<{ hostTypeId: SupportTypeId; hostId: string; pos: { x: number; y: number; z: number }; diameter: number }> = [];

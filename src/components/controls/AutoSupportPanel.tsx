@@ -11,7 +11,8 @@ import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
 import { runAutoPlace, forestReportToText } from '@/supports/autoSupport';
 import { DETAIL_PRESET, STRUCTURE_PRESET, ANCHOR_PRESET } from '@/supports/Settings/presets';
-import type { SizingDebugInfo, AutoSupportSettings, ForestReport } from '@/supports/autoSupport';
+import { AUTO_SUPPORT_CONSTRAINTS } from '@/supports/autoSupport';
+import type { SizingDebugInfo, AutoSupportSettings, ForestReport, NumericAutoSupportSettingKey } from '@/supports/autoSupport';
 import { getSettings, updateAutoSupportSettings, subscribeToSettings, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
 import { getSnapshot, setSnapshot } from '@/supports/state';
 import { SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
@@ -52,45 +53,45 @@ interface AutoSupportPanelProps {
   onBeforeRun?: () => Promise<boolean>;
 }
 
+/**
+ * A slider in the panel. Bounds are NOT here — they come from
+ * `AUTO_SUPPORT_CONSTRAINTS`, the same table the settings normalizer clamps
+ * against. They used to be a second copy and had already drifted (the panel
+ * allowed a 2mm² minimum island where the normalizer allowed 10mm²), so a
+ * value the settings accepted could not be dialled in.
+ */
+/**
+ * Settings that hold a NUMBER, derived from `AutoSupportSettings` itself rather
+ * than listed — a numeric setting cannot be added without becoming available to
+ * the panel. (The named sizing tier is excluded by this, correctly: it is not a
+ * number, and it has no business owning a range.)
+ */
+type NumericSettingKey = {
+  [K in keyof AutoSupportSettings]-?: AutoSupportSettings[K] extends number ? K : never;
+}[keyof AutoSupportSettings];
+type NumericKnobKey = Extract<NumericAutoSupportSettingKey, NumericSettingKey>;
+
 type KnobDef = {
-  key: NumericAutoSupportSettingKey;
+  key: NumericKnobKey;
   label: MessageDescriptor;
-  min: number;
-  max: number;
-  step: number;
   unit: string;
   hint: MessageDescriptor;
 };
 
-type NumericAutoSupportSettingKey =
-  | 'minIslandAreaMm2'
-  | 'tipInfluenceRadiusMm'
-  | 'maxAttachmentsPerTrunk'
-  | 'areaPerSupportMm2'
-  | 'gridAreaThresholdMm2'
-  | 'overhangSelfSupportAngleDeg'
-  | 'sizeScale'
-  | 'flatDensityBoost'
-  | 'slopeRelaxFactor'
-  | 'suctionAreaExponent'
-  | 'coverageTargetPercent'
-  | 'leafFanRadiusMm'
-  | 'leafFanMaxAngleDeg';
-
 const KNOBS: KnobDef[] = [
-  { key: 'overhangSelfSupportAngleDeg', label: msg`Self-Support Angle`,  min: 20,   max: 75,  step: 5,  unit: '°',   hint: msg`Surfaces flatter than this angle get supports (resin standard: 45°). Higher = fewer, mostly on the steepest parts.` },
-  { key: 'minIslandAreaMm2',     label: msg`Min Island Size`,       min: 0.01, max: 2,    step: 0.01, unit: 'mm²', hint: msg`Skip detected areas smaller than this — tiny specks rarely need supports` },
-  { key: 'tipInfluenceRadiusMm',  label: msg`Merge Radius`,  min: 0.1,  max: 10,   step: 0.1,  unit: 'mm',  hint: msg`A candidate within this 3D distance of an existing support merges into it instead of starting a new trunk` },
-  { key: 'areaPerSupportMm2',     label: msg`Support Density`,      min: 1,    max: 30,   step: 0.5, unit: 'mm²', hint: msg`Projected area each support carries — smaller = more, tighter supports (grid spacing ≈ √value)` },
-  { key: 'gridAreaThresholdMm2',  label: msg`Grid Threshold`,       min: 5,    max: 200,  step: 5,   unit: 'mm²', hint: msg`Flat regions at/above this area get a full grid; smaller regions get a single support` },
-  { key: 'flatDensityBoost',      label: msg`Flat Boost`,           min: 0.5,  max: 1,    step: 0.05, unit: '×',   hint: msg`Grid spacing on flat ceilings — lower = denser supports on anchor surfaces (0.7 = ~2× the supports)` },
-  { key: 'slopeRelaxFactor',      label: msg`Slope Relax`,          min: 1,    max: 2,    step: 0.1,  unit: '×',   hint: msg`Grid spacing on slopes at the self-support angle — higher = sparser` },
-  { key: 'suctionAreaExponent',   label: msg`Suction Scale`,        min: 0,    max: 0.4,  step: 0.05, unit: '',   hint: msg`How strongly flat density grows with region area — large shallow ceilings carry more peel. 0 = off` },
-  { key: 'sizeScale',             label: msg`Support Size`,         min: 0.5,  max: 2,    step: 0.05, unit: '×',   hint: msg`Master multiplier over the preset sizing bands — thicker or thinner everywhere` },
-  { key: 'coverageTargetPercent', label: msg`Coverage Target`,      min: 75,   max: 100,  step: 5,   unit: '%',   hint: msg`How much of each region's footprint the grid must cover before gap-filling stops` },
-  { key: 'leafFanRadiusMm',       label: msg`Fan Reach`,            min: 2,    max: 15,   step: 0.5, unit: 'mm',  hint: msg`Max horizontal distance a fan-out leaf may span from a trunk shaft` },
-  { key: 'leafFanMaxAngleDeg',    label: msg`Fan Angle`,            min: 20,   max: 80,   step: 5,   unit: '°',   hint: msg`Max angle from vertical for fan-out leaves` },
-  { key: 'maxAttachmentsPerTrunk',         label: msg`Branches per Column`,   min: 2,  max: 50, step: 1,   unit: '',   hint: msg`Max branches + leaves one trunk may carry before new trunks are started` },
+  { key: 'overhangSelfSupportAngleDeg', label: msg`Self-Support Angle`,  unit: '°',   hint: msg`Surfaces flatter than this angle get supports (resin standard: 45°). Higher = fewer, mostly on the steepest parts.` },
+  { key: 'minIslandAreaMm2',     label: msg`Min Island Size`,       unit: 'mm²', hint: msg`Skip detected areas smaller than this — tiny specks rarely need supports` },
+  { key: 'tipInfluenceRadiusMm',  label: msg`Merge Radius`,  unit: 'mm',  hint: msg`A candidate within this 3D distance of an existing support merges into it instead of starting a new trunk` },
+  { key: 'areaPerSupportMm2',     label: msg`Support Density`,      unit: 'mm²', hint: msg`Projected area each support carries — smaller = more, tighter supports (grid spacing ≈ √value)` },
+  { key: 'gridAreaThresholdMm2',  label: msg`Grid Threshold`,       unit: 'mm²', hint: msg`Flat regions at/above this area get a full grid; smaller regions get a single support` },
+  { key: 'flatDensityBoost',      label: msg`Flat Boost`,           unit: '×',   hint: msg`Grid spacing on flat ceilings — lower = denser supports on anchor surfaces (0.7 = ~2× the supports)` },
+  { key: 'slopeRelaxFactor',      label: msg`Slope Relax`,          unit: '×',   hint: msg`Grid spacing on slopes at the self-support angle — higher = sparser` },
+  { key: 'suctionAreaExponent',   label: msg`Suction Scale`,        unit: '',   hint: msg`How strongly flat density grows with region area — large shallow ceilings carry more peel. 0 = off` },
+  { key: 'sizeScale',             label: msg`Support Size`,         unit: '×',   hint: msg`Master multiplier over the preset sizing bands — thicker or thinner everywhere` },
+  { key: 'coverageTargetPercent', label: msg`Coverage Target`,      unit: '%',   hint: msg`How much of each region's footprint the grid must cover before gap-filling stops` },
+  { key: 'leafFanRadiusMm',       label: msg`Fan Reach`,            unit: 'mm',  hint: msg`Max horizontal distance a fan-out leaf may span from a trunk shaft` },
+  { key: 'leafFanMaxAngleDeg',    label: msg`Fan Angle`,            unit: '°',   hint: msg`Max angle from vertical for fan-out leaves` },
+  { key: 'maxAttachmentsPerTrunk',         label: msg`Branches per Column`,   unit: '',   hint: msg`Max branches + leaves one trunk may carry before new trunks are started` },
 ];
 
 const PRESETS = {
@@ -115,13 +116,14 @@ const PRESET_LABELS: Record<keyof typeof PRESETS, MessageDescriptor> = {
 function SliderRow({ knob, draft, setDraft }: { knob: KnobDef; draft: AutoSupportSettings; setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>> }) {
   const { _ } = useLingui();
   const value = draft[knob.key];
+  const { min, max, step } = AUTO_SUPPORT_CONSTRAINTS[knob.key];
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
         <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }} title={_(knob.hint)}>{_(knob.label)}</span>
-        <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{value.toFixed(knob.step < 0.1 ? 2 : knob.step < 1 ? 1 : 0)}{knob.unit}</span>
+        <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{value.toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0)}{knob.unit}</span>
       </div>
-      <input type="range" min={knob.min} max={knob.max} step={knob.step} value={value}
+      <input type="range" min={min} max={max} step={step} value={value}
         onChange={(e) => setDraft((d) => ({ ...d, [knob.key]: parseFloat(e.target.value) }))}
         className="ui-range w-full"
       />

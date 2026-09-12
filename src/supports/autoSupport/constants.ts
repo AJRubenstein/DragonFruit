@@ -74,8 +74,27 @@ export const GRIDLESS_MERGE_RADIUS_MM = 4.0;
  *  (mm-equivalent per mm) against raw distance — Dumas Score = Gain − k·lmax
  *  shape with k explicit. Zero hosted members → pure nearest-first. */
 export const MERGE_HOST_LOAD_WEIGHT = 0.5;
-/** Leaf fanning: max distance from a trunk shaft sample to an uncovered island (mm). */
-export const LEAF_FAN_RADIUS_MM = 5.0;
+/**
+ * Leaf fanning: the least reach the fan is allowed, in mm.
+ *
+ * A fan link shorter than this cannot clear the host's own shaft and cone, so
+ * every path that fans floors its radius here. Declared once because three
+ * places had the literal `8` and one had none — the post-placement loop used the
+ * raw setting, so a user asking for 5mm got 8mm in one path and 5mm in another.
+ *
+ * The settings slider's minimum IS this value: offering a lower number would
+ * offer a value with no effect.
+ */
+export const MIN_LEAF_FAN_RADIUS_MM = 8;
+
+/**
+ * Leaf fanning: max distance from a trunk shaft sample to an uncovered island
+ * (mm), when no setting is available.
+ *
+ * The fallback for absent settings, so it must be a value the slider could
+ * produce -- it was 5.0, below the floor, which no offered setting can be.
+ */
+export const LEAF_FAN_RADIUS_MM = MIN_LEAF_FAN_RADIUS_MM;
 
 /** Leaf fanning: max distance from a DENSITY-GRID trunk shaft (mm). Grid
  *  supports are fanning hosts only up close — a tight threshold keeps fan
