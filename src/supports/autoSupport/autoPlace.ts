@@ -1,4 +1,4 @@
-import { contactBridgeTypes, contactEndpointsFor, isOriginConvertibleToTree, SUPPORT_TYPES } from '../supportTypeRegistry';
+import { contactBridgeTypes, contactEndpointsFor, getSupportTypeDescriptor, isOriginConvertibleToTree, SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { SupportTypeId } from '../supportTypeRegistry';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
 import * as THREE from 'three';
@@ -147,6 +147,12 @@ function emptyPlacedCounts(): Record<SupportTypeId, number> {
     const counts = {} as Record<SupportTypeId, number>;
     for (const descriptor of SUPPORT_TYPES) counts[descriptor.id] = 0;
     return counts;
+}
+
+/** A type's own name for a log line: the declared singular, capitalised. */
+function typeWord(typeId: SupportTypeId): string {
+    const singular = getSupportTypeDescriptor(typeId).singular;
+    return singular.charAt(0).toUpperCase() + singular.slice(1);
 }
 
 function makeResult(
@@ -944,7 +950,7 @@ function placeOneCandidate(
                     candidate.source as SupportOrigin | undefined,
                 );
                 if (fan.ok) {
-                    const fanKind = fan.kind === 'branch' ? 'Branch' : 'Leaf';
+                    const fanKind = typeWord(fan.kind);
                     logPlacement(`${fanKind} (cavity-fan) ${candidate.id} → trunk ${fan.trunkId} dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
                     return { kind: fan.kind, preset, draft: fan.draft, entityId: fan.entityId };
                 }
@@ -2168,7 +2174,7 @@ export function forestReportToText(report: ForestReport): string {
         }
         for (const tree of report.trees) {
             const members = tree.members
-                .map((m) => `${m.id}(${m.kind === 'leaf' ? 'L' : 'B'} ${m.spanMm.toFixed(1)}mm/${m.angleDeg.toFixed(0)}°)`)
+                .map((m) => `${m.id}(${typeWord(m.kind).charAt(0)} ${m.spanMm.toFixed(1)}mm/${m.angleDeg.toFixed(0)}°)`)
                 .join(' ');
             lines.push(`  ${tree.hostId} @ Z=${tree.hostZ.toFixed(1)}mm Ø${tree.shaftDiameterMm.toFixed(2)}mm ` +
                 (tree.sizingNote ? `[${tree.sizingNote}] ` : '') +
@@ -2635,7 +2641,7 @@ export function computeAutoSupportPlan(
     }
 
     console.log(LOG_PREFIX,
-        `Step 3/3: ${placed.trunk}T ${placed.anchor}A ${placed.branch}B ${placed.leaf}L ${placed.stick}S ${placed.twig}W — ${rejectedCount} rejected ` +
+        `Step 3/3: ${SUPPORT_TYPES.map((d) => `${placed[d.id]}${typeWord(d.id).charAt(0)}`).join(' ')} — ${rejectedCount} rejected ` +
         `| presets: detail=${presets.detail} structure=${presets.structure} anchor=${presets.anchor}`);
 
     // ── Coverage analytics ────────────────────────────────────────
@@ -2799,7 +2805,7 @@ export function computeAutoSupportPlan(
                 bandShaftMm: activeSizingBand().shaftDiameterMm,
             });
             console.log(LOG_PREFIX,
-                `${fan.kind === 'branch' ? 'Branch' : 'Leaf'} (fan p${pass}) ${island.id} → trunk ${fan.trunkId} ` +
+                `${typeWord(fan.kind)} (fan p${pass}) ${island.id} → trunk ${fan.trunkId} ` +
                 `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
         }
 
@@ -3158,8 +3164,8 @@ export function computeAutoSupportPlan(
     };
 
     console.log(LOG_PREFIX,
-        `Placed ${placed.trunk} trunks, ${placed.anchor} anchors, ${placed.branch} branches, ` +
-        `${placed.leaf} leaves, ${placed.twig} twigs, ${placed.stick} sticks. ${rejectedCount} rejected. ` +
+        `Placed ${SUPPORT_TYPES.map((d) => `${placed[d.id]} ${d.label.toLowerCase()}`).join(', ')}. ` +
+        `${rejectedCount} rejected. ` +
         `Coverage: ${analytics.islandsCovered}/${islands.length} islands ` +
         `(${(analytics.areaCoverage * 100).toFixed(0)}%).`);
 
