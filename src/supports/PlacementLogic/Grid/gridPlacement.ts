@@ -22,7 +22,7 @@ import { perfMark, perfMeasureWithSpike } from '../Pathfinding/pathfindingPerf';
 import {
     MAX_AUTO_LEAF_SPAN_MM,
 } from '../../autoSupport/constants';
-import { buildContactOverride, GRID_HOST_TYPES, getSupportTypeDescriptor, placementOf, placementOfResolved, selectTypeForPlacement } from '../../supportTypeRegistry';
+import { buildContactOverride, GRID_HOST_TYPES, getSupportTypeDescriptor, placementOfResolved, selectTypeForPlacement } from '../../supportTypeRegistry';
 import type { SupportTypeId } from '../../supportTypeRegistry';
 import type { SupportData } from '../../rendering/SupportBuilder';
 
@@ -273,9 +273,6 @@ function getHostDiameterMmFromKnot(knot: Knot, settings: DecideGridPlacementArgs
 
 function tryBuildAutoLeafDecision(args: {
     nodeKey: string;
-    /** The type this helper builds. Named where the build happens, so callers
-     * that only fall back to it stay type-agnostic. */
-    leafTypeId: SupportTypeId;
     hostTypeId: SupportTypeId;
     hostId: string;
     knot: Knot;
@@ -285,7 +282,7 @@ function tryBuildAutoLeafDecision(args: {
     settings: DecideGridPlacementArgs['settings'];
     mesh?: THREE.Mesh;
 }): GridPlacementDecision | null {
-    const { nodeKey, leafTypeId, hostTypeId, hostId, knot, tipPos, tipNormal, modelId, settings, mesh } = args;
+    const { nodeKey, hostTypeId, hostId, knot, tipPos, tipNormal, modelId, settings, mesh } = args;
     const dx = tipPos.x - knot.pos.x;
     const dy = tipPos.y - knot.pos.y;
     const dz = tipPos.z - knot.pos.z;
@@ -314,8 +311,10 @@ function tryBuildAutoLeafDecision(args: {
     return {
         kind: 'place',
         nodeKey,
-        placed: placementOf(
-            leafTypeId,
+        placed: placementOfResolved(
+            // This function IS the leaf's builder -- it called `buildLeafData`
+            // just above -- so it labels its own result and no caller has to.
+            LEAF_TYPE_ID,
             leaf,
             // The knot it hangs from, under the same field name `edges` declares.
             { parentKnotId: knot },
@@ -473,7 +472,6 @@ function findNeighborAttachment(args: {
                 });
                 const leafDecision = tryBuildAutoLeafDecision({
                     nodeKey: neighborKey,
-                    leafTypeId: 'leaf',
                     hostTypeId: neighborHost.hostTypeId,
                     hostId: neighborHost.hostId,
                     knot: neighborKnot,
@@ -488,8 +486,8 @@ function findNeighborAttachment(args: {
                 return {
                     kind: 'place',
                     nodeKey: neighborKey,
-                    placed: placementOf(
-                        'branch',
+                    placed: placementOfResolved(
+                        BRANCH_TYPE_ID,
                         branch,
                         { parentKnotId: neighborKnot },
                         { typeId: neighborHost.hostTypeId, id: neighborHost.hostId },
@@ -501,6 +499,21 @@ function findNeighborAttachment(args: {
     }
     return null;
 }
+
+/**
+ * The type each hosted member this module builds belongs to.
+ *
+ * Declared ONCE each, beside the `buildLeafData` / `buildBranchData` imports that
+ * produce them, rather than spelled at each of the five sites that emit one.
+ * This is not a dispatch decision -- this module already chose the builder, and
+ * these say which type that builder's output goes into.
+ *
+ * What remains is the CHOICE: the engine picks leaf-or-branch by span without
+ * asking the registry. A `hostedSpan` placement rule would settle that, the way
+ * `tipHeight` already settles anchor-vs-trunk. See the inventory's next stage.
+ */
+const LEAF_TYPE_ID: SupportTypeId = 'leaf';
+const BRANCH_TYPE_ID: SupportTypeId = 'branch';
 
 // Reusable raycaster for trunk collision checks — avoids allocating one per call.
 function trunkCollidesWithMesh(
@@ -777,14 +790,13 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
             hostTypeId: host.hostTypeId,
             hostId: host.hostId,
             placed: placementOfResolved(placedTypeId, promoteBuild.trunk, { rootId: promoteBuild.root }),
-            promotedMember: placementOf('branch', branch, { parentKnotId: selectedKnot }),
+            promotedMember: placementOfResolved(BRANCH_TYPE_ID, branch, { parentKnotId: selectedKnot }),
             supportData: promoteBuild.supportData,
         };
     }
 
     const leafDecision = tryBuildAutoLeafDecision({
         nodeKey,
-        leafTypeId: 'leaf',
         hostTypeId: host.hostTypeId,
         hostId: host.hostId,
         knot: selectedKnot,
@@ -800,10 +812,14 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
     return {
         kind: 'place',
         nodeKey,
-        placed: placementOf('branch', branch, { parentKnotId: selectedKnot }, {
-            typeId: host.hostTypeId,
-            id: host.hostId,
-        }),
+        placed: placementOfResolved(
+            // This function IS the branch's builder -- it called `buildBranchData`
+            // just above -- so it labels its own result.
+            BRANCH_TYPE_ID,
+            branch,
+            { parentKnotId: selectedKnot },
+            { typeId: host.hostTypeId, id: host.hostId },
+        ),
         supportData,
     };
 }
