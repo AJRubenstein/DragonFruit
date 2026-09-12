@@ -32,7 +32,7 @@ import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
 import { DEFAULT_GRID_MIN_BRANCH_ANGLE_DEG } from '../Settings/defaults';
 import { cloneSupportState, getSnapshot, setSnapshot } from '../state';
-import { draftAddEntity, draftAddPrimitive } from './supportDraft';
+import { draftAddEntity, draftAddPrimitive, draftCommitSupport } from './supportDraft';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
@@ -1091,110 +1091,74 @@ function placeOneCandidate(
     });
 
     switch (decision.kind) {
-        case 'place_trunk': {
-            const trunkId = decision.trunkBuild.trunk.id;
-            decision.trunkBuild.trunk.origin = candidate.gridPoint
-                ? 'overhang'
-                : (candidate.source === 'overhang' ? 'standalone' : 'island');
-            d = draftAddPrimitive(d, 'roots', decision.trunkBuild.root);
-            d = draftAddEntity(d, 'trunk', decision.trunkBuild.trunk);
+        case 'place': {
+            // ONE arm for every type. Which collection the entity joins and
+            // which primitives travel with it are both DECLARED on the
+            // descriptor, so nothing here names a type.
+            const { typeId, entity: placed, supplied, hostedBy } = decision.placed;
+
+            // A hosted support is limited by what its host may carry. Checked
+            // here rather than in the engine because the rejection is accounted
+            // with the rest of the ladder's.
+            if (hostedBy) {
+                const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
+                if (isHostAtAttachmentCapacity(hostedBy.typeId, hostedBy.id, cap, draft)) {
+                    logPlacement(
+                        `Grid skip ${candidate.id}: host ${hostedBy.id} at capacity (${cap})`);
+                    return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
+                }
+            }
+
+            const entity = placed as { id: string; origin?: string };
+            // Whether this type records an origin is declared, so no arm has to
+            // know which types stamp one.
+            if (getSupportTypeDescriptor(typeId).hasOrigin) {
+                entity.origin = candidate.gridPoint
+                    ? 'overhang'
+                    : (candidate.source === 'overhang' ? 'standalone' : 'island');
+            }
+            d = draftCommitSupport(d, typeId, entity, supplied);
             logPlacement(
-                `Trunk ${candidate.id} (→ ${trunkId}) @ grid ${decision.nodeKey} ` +
+                `${typeWord(typeId)} ${candidate.id} @ grid ${decision.nodeKey} ` +
                 `area=${candidate.islandAreaMm2.toFixed(2)}mm² Z=${candidate.zHeight.toFixed(1)}mm ${preset}` +
                 (fanRefusal ? ` fan:${fanRefusal}` : '') +
                 (mergeHostFound ? ' merge:rejected' : ''));
             const mergeChecked = !supportSettings.grid?.enabled && !candidate.gridPoint;
             return {
-                kind: 'trunk', preset, entityId: trunkId, draft: d,
+                kind: typeId as PlacementOutcomeKind,
+                preset,
+                draft: d,
+                entityId: entity.id,
                 fanRefusal,
                 mergeRefusal: mergeChecked ? (mergeHostFound ? 'rejected' : 'noHost') : undefined,
             };
         }
 
-        case 'place_typed_support': {
-            // A type overrode the default trunk build for the band it claimed.
-            // Add whatever its own registered builder produced, under its own
-            // collection -- the ladder needs neither the type's name nor its
-            // entity's shape.
-            const typed = decision.entity as { id: string; origin?: string };
-            typed.origin = candidate.gridPoint
-                ? 'overhang'
-                : (candidate.source === 'overhang' ? 'standalone' : 'island');
-            d = draftAddEntity(d, decision.typeId, typed);
-            logPlacement(`${typeWord(decision.typeId)} ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-            return {
-                kind: decision.typeId as PlacementOutcomeKind,
-                preset,
-                draft: d,
-                entityId: typed.id,
-            };
-        }
-
-        case 'place_branch': {
-            const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
-            if (isHostAtAttachmentCapacity(decision.hostTypeId, decision.hostId, cap, draft)) {
-                logPlacement(
-                    `Grid skip ${candidate.id}: host ${decision.hostId} at capacity (${cap})`);
-                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
-            }
-            d = draftAddPrimitive(d, 'knots', decision.knot);
-            d = draftAddEntity(d, 'branch', decision.branch);
-            logPlacement(
-                `Branch ${candidate.id} → ${typeWord(decision.hostTypeId).toLowerCase()} ${decision.hostId} ` +
-                `grid ${decision.nodeKey}`);
-            return { kind: 'branch', preset, draft: d, entityId: decision.branch.id };
-        }
-
-        case 'place_leaf': {
-            const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
-            if (isHostAtAttachmentCapacity(decision.hostTypeId, decision.hostId, cap, draft)) {
-                logPlacement(
-                    `Grid skip ${candidate.id}: host ${decision.hostId} at capacity (${cap})`);
-                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
-            }
-            d = draftAddPrimitive(d, 'knots', decision.knot);
-            d = draftAddEntity(d, 'leaf', decision.leaf);
-            logPlacement(
-                `Leaf ${candidate.id} → ${typeWord(decision.hostTypeId).toLowerCase()} ${decision.hostId} ` +
-                `grid ${decision.nodeKey}`);
-            return { kind: 'leaf', preset, draft: d, entityId: decision.leaf.id };
-        }
-
-        case 'replace_trunk': {
-            const promoteKnot = decision.promoteKnot;
-            const promoteBranch = decision.promoteBranch;
-            if (!promoteKnot || !promoteBranch) {
-                logPlacement(
-                    `Replace skip ${candidate.id}: no promoted branch from grid engine`);
-                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
-            }
+        case 'promote': {
             // The host type's OWN registered promotion. The engine says which
-            // host yields and hands over the pieces it built; rehosting that
-            // host's attachments onto the promoted shaft is that type's
-            // business, so the trunk does it in its own folder rather than this
-            // ladder carrying the trunk's rules.
+            // host yields and hands over the placed support in the generic
+            // shape; rehosting that host's attachments onto the new shaft is
+            // that type's business, so the type does it in its own folder.
             const promoted = promoteAwayHost(decision.hostTypeId, {
                 draft: d,
-                hostId: decision.trunkToRemoveId,
-                promoteKnot,
-                promoteBranch,
-                trunkToAdd: decision.trunkBuild.trunk,
-                rootToAdd: decision.trunkBuild.root,
+                placed: decision.placed,
+                promotedMember: decision.promotedMember,
+                hostId: decision.hostId,
                 nodeKey: decision.nodeKey,
+                recordHistory: false, // the whole run is one undoable entry
             });
             if (!promoted) {
                 logPlacement(
-                    `Replace skip ${candidate.id}: ${typeWord(decision.hostTypeId).toLowerCase()} ` +
-                    `promotion failed (host ${decision.trunkToRemoveId})`);
+                    `Promote skip ${candidate.id}: ${typeWord(decision.hostTypeId).toLowerCase()} ` +
+                    `promotion failed (host ${decision.hostId})`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
             d = promoted;
             logPlacement(
-                `Replace ${typeWord(decision.hostTypeId).toLowerCase()} @ ${decision.nodeKey}: ` +
-                `${candidate.id} (Z=${candidate.zHeight.toFixed(1)}) → host ${decision.trunkToRemoveId}`);
+                `Promote ${typeWord(decision.hostTypeId).toLowerCase()} @ ${decision.nodeKey}: ` +
+                `${candidate.id} (Z=${candidate.zHeight.toFixed(1)}) → host ${decision.hostId}`);
             return {
-                kind: 'trunk', preset, entityId: decision.trunkBuild.trunk.id, draft: d,
-
+                kind: 'trunk', preset, entityId: decision.placed.entity.id, draft: d,
             };
         }
 

@@ -1,5 +1,5 @@
-import type { Branch, Knot, Roots, SupportState, Trunk } from '../../types';
-import { registerHostPromotion } from '../../supportTypeRegistry';
+import type { Roots, SupportState, Trunk } from '../../types';
+import { registerHostPromotion, type HostPromotionRequest } from '../../supportTypeRegistry';
 import { draftAddEntity, draftAddPrimitive } from '../../autoSupport/supportDraft';
 import { planTrunkReplacement } from './TrunkReplacement/planTrunkReplacement';
 import { applyTrunkReplacement } from './TrunkReplacement/applyTrunkReplacement';
@@ -13,51 +13,44 @@ import { getSnapshot, setSnapshot } from '../../state';
  * last part is why this is registered rather than inlined in the engine: the
  * rehosting rules belong to the trunk and nothing else can run them.
  */
-export function promoteTrunkToHigherCandidate(
-    draft: SupportState,
-    hostId: string,
-    promoteKnot: Knot,
-    promoteBranch: Branch,
-    trunkToAdd: Trunk,
-    rootToAdd: Roots,
-    nodeKey: string,
-): SupportState | null {
-    // Add the candidate's contact and member to the draft first: the planner
-    // resolves the promoted branch by id, so it has to be present.
+export function promoteTrunkToHigherCandidate(request: HostPromotionRequest): SupportState | null {
+    const { draft, placed, promotedMember, hostId, nodeKey, recordHistory } = request;
+
+    // Read what this promotion needs off the generic payloads by the field names
+    // the types' own `edges` declare -- the root the new trunk stands on, and
+    // the member carrying the replaced host's contact. Nothing arrives as a
+    // trunk-shaped or branch-shaped parameter.
+    const rootToAdd = placed.supplied.rootId;
+    const promoteKnot = promotedMember?.supplied.parentKnotId;
+    if (!rootToAdd || !promotedMember || !promoteKnot) return null;
+
+    // The promoted member has to be IN the draft before the planner runs: the
+    // planner resolves it by id.
     let working = draftAddPrimitive(draft, 'knots', promoteKnot);
-    working = draftAddEntity(working, 'branch', promoteBranch);
+    working = draftAddEntity(working, promotedMember.typeId, promotedMember.entity);
 
     const planned = planTrunkReplacement({
         snapshot: working,
         trunkIdToRemove: hostId,
         mode: 'grid_promote_candidate_to_trunk',
         nodeKey,
-        promoteBranchId: promoteBranch.id,
+        promoteBranchId: promotedMember.entity.id,
     });
     const plan = planned?.plan;
     if (!plan) return null;
 
     // Store-bound by necessity: the plan phase re-reads the live snapshot, so
-    // the draft is committed, applied, and read back. The run wraps this in one
-    // history entry and its own rollback guard, so the intermediate commit is
-    // never user-visible.
+    // the draft is committed, applied, and read back. `recordHistory` false lets
+    // the auto run wrap the whole thing in its single undo entry.
     setSnapshot(working);
     const ok = applyTrunkReplacement(
-        { ...plan, trunkToAdd, rootToAdd },
+        { ...plan, trunkToAdd: placed.entity as Trunk, rootToAdd: rootToAdd as Roots },
         undefined,
-        { skipHistory: true }, // the whole run is one undoable entry
+        { skipHistory: !recordHistory },
     );
     if (!ok) return null;
 
     return getSnapshot();
 }
 
-registerHostPromotion('trunk', (request) => promoteTrunkToHigherCandidate(
-    request.draft,
-    request.hostId,
-    request.promoteKnot,
-    request.promoteBranch,
-    request.trunkToAdd,
-    request.rootToAdd,
-    request.nodeKey,
-));
+registerHostPromotion('trunk', promoteTrunkToHigherCandidate);

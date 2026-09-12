@@ -119,11 +119,11 @@ test('a branch removal re-solves its host trunk and reports the repair', () => {
     // The trunk still hosts branch-a, so it survives -- and its diameter profile
     // is re-solved. That repair is the whole reason branch declares
     // `repairsHostOnRemoval`.
-    const trunkUpdate = removed.payload.trunkUpdate as { before: unknown; after: unknown } | undefined;
-    assert.ok(trunkUpdate, 'removing a branch reports the trunk it re-solved');
+    const hostUpdate = removed.payload.hostUpdate as { before: unknown; after: unknown } | undefined;
+    assert.ok(hostUpdate, 'removing a branch reports the host it re-solved');
     assert.notEqual(
-        JSON.stringify(trunkUpdate.before),
-        JSON.stringify(trunkUpdate.after),
+        JSON.stringify(hostUpdate.before),
+        JSON.stringify(hostUpdate.after),
         'the reported trunk update is a real change',
     );
 
@@ -132,7 +132,7 @@ test('a branch removal re-solves its host trunk and reports the repair', () => {
     const live = (getSnapshot() as unknown as SupportState).trunks['trunk-a'];
     assert.deepEqual(
         JSON.parse(JSON.stringify(live)),
-        trunkUpdate.after,
+        hostUpdate.after,
         'the live trunk matches the trunk the payload reports',
     );
     void beforeDiameter;
@@ -144,7 +144,7 @@ test('a type that does not repair its host reports no trunk update', () => {
     load();
     const removed = removeSupportEntityWithPayload('anchor', 'anchor-a');
     assert.ok(removed, 'the anchor was removed');
-    assert.equal(removed.payload.trunkUpdate, undefined, 'no repair reported');
+    assert.equal(removed.payload.hostUpdate, undefined, 'no repair reported');
 });
 
 test('an unknown id removes nothing and reports nothing', () => {

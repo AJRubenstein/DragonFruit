@@ -1,4 +1,4 @@
-import type { Branch, Knot, Roots, SupportCollectionByType, SupportCollectionName, SupportEntityByCollection, SupportFieldsByType, SupportRemovedEntityByCollection, SupportState, Trunk } from './types';
+import type { SupportCollectionByType, SupportCollectionName, SupportEntityByCollection, SupportFieldsByType, SupportRemovedEntityByCollection, SupportState } from './types';
 import { SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH } from './history/actionTypes';
 import type { SupportHistoryActionType } from './history/actionTypes';
 import { ANCHOR_HEIGHT_THRESHOLD_MM } from './autoSupport/constants';
@@ -197,6 +197,17 @@ export interface SupportTypeDescriptor {
      * sets it and registers nothing is a load-time error.
      */
     replacedByHigherContact: boolean;
+    /**
+     * Whether ADDING one of these re-solves the diameter of the host it hangs
+     * from.
+     *
+     * Branch alone today. The pair matters: the host declares
+     * `recomputesDiameterFromAttachments` (it CAN be re-solved) while the member
+     * declares this (adding one CHANGES what the host carries). Reading only the
+     * host's flag would re-solve on every leaf too, which is not what the
+     * placement path does today.
+     */
+    repairsHostDiameterOnAdd: boolean;
     /**
      * Whether the bridge search may reach sideways to land this type.
      *
@@ -492,6 +503,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         hasEditableSettings: true,
         recomputesDiameterFromAttachments: true,
         replacedByHigherContact: true,
+        repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: true,
         edges: [{ field: 'rootId', to: 'roots', ownership: 'owns' }],
@@ -571,6 +583,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         upper: { kind: 'cone', field: 'contactCone' },
         recomputesDiameterFromAttachments: false,
         replacedByHigherContact: false,
+        repairsHostDiameterOnAdd: true,
         mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: true,
@@ -618,6 +631,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         upper: { kind: 'cone', field: 'contactCone' },
         recomputesDiameterFromAttachments: false,
         replacedByHigherContact: false,
+        repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: false,
@@ -659,6 +673,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         upper: { kind: 'disk', field: 'contactDiskB' },
         recomputesDiameterFromAttachments: false,
         replacedByHigherContact: false,
+        repairsHostDiameterOnAdd: false,
         mayReachSideways: true,
         canBeGridHost: false,
         hasSegments: true,
@@ -699,6 +714,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         upper: { kind: 'cone', field: 'contactConeB' },
         recomputesDiameterFromAttachments: false,
         replacedByHigherContact: false,
+        repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: true,
@@ -746,6 +762,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         upper: { kind: 'knot' },
         recomputesDiameterFromAttachments: false,
         replacedByHigherContact: false,
+        repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: false,
@@ -792,6 +809,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         upper: { kind: 'cone', field: 'contactCone' },
         recomputesDiameterFromAttachments: false,
         replacedByHigherContact: false,
+        repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: true,
@@ -841,6 +859,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         upper: { kind: 'knot' },
         recomputesDiameterFromAttachments: false,
         replacedByHigherContact: false,
+        repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: true,
@@ -1336,61 +1355,29 @@ export function contactBridgeTypes(): readonly SupportTypeId[] {
 }
 
 /**
- * What a host is handed when a higher candidate is promoted onto its node.
+ * A support the engine has built and is about to place.
  *
- * The whole promotion is the host type's business: adding the candidate's
- * contact and member to the draft, planning the replacement, applying it, and
- * returning the resulting state. The engine supplies the pieces it built and
- * takes back either the new state or `null` for "could not".
+ * This is THE shape a placement travels in, everywhere: the engine returns one,
+ * a type's build override returns one, and the host-type hooks receive one. It
+ * names nothing about the type it carries -- `typeId` says which collection the
+ * entity joins, and `supplied` holds the primitives its own `edges` declare,
+ * keyed by the same field names.
  *
- * Typed from the shared entity records rather than the concrete types, because
- * the registry declares the SEAM: a type that registers a promotion narrows
- * these itself in its own folder.
+ * Deliberately not a union of concrete entity shapes: a caller that had to read
+ * `trunk`/`root`/`branch`/`knot` off it would be a trunk function with a generic
+ * name, which is the thing this shape exists to avoid.
  */
-export interface HostPromotionRequest {
-    /** The draft the run has built so far, which the members are added to. */
-    draft: SupportState;
-    /** The host being replaced. */
-    hostId: string;
-    /** The candidate's contact and member, already built by the grid engine. */
-    promoteKnot: Knot;
-    promoteBranch: Branch;
-    /** The trunk and root the candidate puts on the node. */
-    trunkToAdd: Trunk;
-    rootToAdd: Roots;
-    nodeKey: string;
+export interface PlacedSupport {
+    typeId: SupportTypeId;
+    entity: { id: string };
+    /** Primitives this entity declares `edges` to, keyed by edge field. */
+    supplied: Record<string, { id: string } | undefined>;
+    /** The host it hangs from, when it hangs from one. */
+    hostedBy?: { typeId: SupportTypeId; id: string };
 }
 
-type HostPromotion = (request: HostPromotionRequest) => SupportState | null;
-
-const HOST_PROMOTIONS = new Map<SupportTypeId, HostPromotion>();
-
-/**
- * Registered from the host type's own folder.
- *
- * Declared as a registration rather than a branch because replacing a host is
- * not generic: the removed host's own attachments have to be rebuilt onto the
- * promoted shaft, and only the host type knows how. A type that declares
- * `replacedByHigherContact` and registers nothing is a load-time error.
- */
-export function registerHostPromotion(typeId: SupportTypeId, promote: HostPromotion): void {
-    HOST_PROMOTIONS.set(typeId, promote);
-}
-
-/** Replaces one host with its promoted candidate, or null when it cannot. */
-export function promoteAwayHost(typeId: SupportTypeId, request: HostPromotionRequest): SupportState | null {
-    return HOST_PROMOTIONS.get(typeId)?.(request) ?? null;
-}
-
-/** Every type that declares `replacedByHigherContact` but registered nothing. */
-export function typesMissingHostPromotion(): readonly SupportTypeId[] {
-    return SUPPORT_TYPES
-        .filter((d) => d.replacedByHigherContact && !HOST_PROMOTIONS.has(d.id))
-        .map((d) => d.id);
-}
-
-/** What the auto-placer hands a type it has decided should be placed. */
-export interface AutoPlacementBuildRequest {
+/** What a type's build override is handed. */
+export interface ContactOverrideRequest {
     tipPos: { x: number; y: number; z: number };
     tipNormal: { x: number; y: number; z: number };
     modelId: string;
@@ -1401,63 +1388,97 @@ export interface AutoPlacementBuildRequest {
     mesh?: { isMesh: boolean };
 }
 
-export interface AutoPlacementBuildResult {
-    /** The entity to add to this type's collection. */
-    entity: { id: string };
-    /**
-     * Whatever the caller needs beyond the entity to route the outcome -- a
-     * trunk's root and support data, an anchor's support data. Deliberately
-     * untyped here: the type that registers knows, and the caller reads it back
-     * through the same registration.
-     */
-    extras?: unknown;
+/** What a type's override built, plus whatever preview data describes it. */
+export interface ContactOverrideResult extends PlacedSupport {
+    supportData?: unknown;
 }
 
-type AutoPlacementBuilder = (request: AutoPlacementBuildRequest) => AutoPlacementBuildResult | null;
+type ContactOverride = (request: ContactOverrideRequest) => ContactOverrideResult | null;
 
-const AUTO_PLACEMENT_BUILDERS = new Map<SupportTypeId, AutoPlacementBuilder>();
+const CONTACT_OVERRIDES = new Map<SupportTypeId, ContactOverride>();
 
 /**
- * Registered from the type's own folder.
+ * A type that OVERRIDES the default trunk build for the contact band it claims.
  *
- * This is the DEFAULT-BEHAVIOUR-AND-OVERRIDE seam: auto-placement's default is
- * to stand a trunk on the contact, and a type that declares a `tipHeight`
- * placement rule and registers here REPLACES that for the band it claims. The
- * anchor does exactly this — it owns the near-plate band and builds its own
- * contact primitive instead of a trunk.
- *
- * A registration rather than an inline branch, because the builder is the type's
- * own geometry and the engine has no business importing it.
+ * Auto-placement stands a trunk on a contact by default. A type that claims a
+ * `tipHeight` band and registers here builds its own support instead. Mirrors
+ * the export and preview seams: the builder returns the same generic shape a
+ * placement commits with, so it introduces no per-type branch and no per-type
+ * decision arm.
  */
-export function registerAutoPlacementBuilder(typeId: SupportTypeId, build: AutoPlacementBuilder): void {
-    AUTO_PLACEMENT_BUILDERS.set(typeId, build);
+export function registerContactOverride(typeId: SupportTypeId, build: ContactOverride): void {
+    CONTACT_OVERRIDES.set(typeId, build);
 }
 
-/** Builds this type's support, or nothing when it registers no builder. */
-export function buildAutoPlacementSupport(
-    typeId: SupportTypeId,
-    request: AutoPlacementBuildRequest,
-): AutoPlacementBuildResult | null {
-    return AUTO_PLACEMENT_BUILDERS.get(typeId)?.(request) ?? null;
-}
-
-/** Whether this type overrides the default trunk build. */
-export function overridesAutoPlacement(typeId: SupportTypeId): boolean {
-    return AUTO_PLACEMENT_BUILDERS.has(typeId);
+/** This type's own build for a contact, or undefined when it does not override. */
+export function buildContactOverride(typeId: SupportTypeId): ContactOverride | undefined {
+    return CONTACT_OVERRIDES.get(typeId);
 }
 
 /**
  * Types that claim a `tipHeight` band — the ones auto-placement consults before
- * falling back to a trunk — but registered no builder.
+ * falling back to a trunk — but registered no override.
  *
- * Trunk is excluded deliberately: it IS the default, so claiming the band above
- * the anchor needs no builder. Every other claimant must provide one, or the
- * engine would select a type it cannot build.
+ * Trunk is excluded deliberately: it IS the default the fallback builds, so
+ * claiming the band above the anchor needs no builder. Every other claimant
+ * must provide one, or the engine would select a type it cannot construct.
  */
-export function typesMissingAutoPlacementBuilder(): readonly SupportTypeId[] {
+export function typesMissingContactOverride(): readonly SupportTypeId[] {
     return SUPPORT_TYPES
         .filter((d) => d.placementRule?.metric === 'tipHeight' && d.id !== 'trunk')
-        .filter((d) => !AUTO_PLACEMENT_BUILDERS.has(d.id))
+        .filter((d) => !CONTACT_OVERRIDES.has(d.id))
+        .map((d) => d.id);
+}
+
+/**
+ * What a host type is handed when a placement lands on its grid node and should
+ * replace it.
+ *
+ * The WHOLE placed support arrives in the generic shape, so the host hook reads
+ * what it needs off `placed.supplied` by declared edge field rather than through
+ * parameters named after one type's entity parts.
+ */
+export interface HostPromotionRequest {
+    /** The draft the run has built so far. */
+    draft: SupportState;
+    /** The support being placed, which takes the node. */
+    placed: PlacedSupport;
+    /** The member preserving the replaced host's own contact, when the host
+     *  type promotes one. */
+    promotedMember?: PlacedSupport;
+    /** The host it replaces. */
+    hostId: string;
+    nodeKey: string;
+    /**
+     * How the promotion should be recorded: the auto run wraps everything in one
+     * entry of its own, while a manual click lets the replacement push its own.
+     */
+    recordHistory: boolean;
+}
+
+type HostPromotion = (request: HostPromotionRequest) => SupportState | null;
+
+const HOST_PROMOTIONS = new Map<SupportTypeId, HostPromotion>();
+
+/**
+ * Registered from the host type's own folder, because replacing a host is not
+ * generic: the removed host's attachments have to be rebuilt onto the placed
+ * shaft, and only that host type knows how. A type that declares
+ * `replacedByHigherContact` and registers nothing is a load-time error.
+ */
+export function registerHostPromotion(typeId: SupportTypeId, promote: HostPromotion): void {
+    HOST_PROMOTIONS.set(typeId, promote);
+}
+
+/** Replaces one host with the support landing on its node, or null when it cannot. */
+export function promoteAwayHost(typeId: SupportTypeId, request: HostPromotionRequest): SupportState | null {
+    return HOST_PROMOTIONS.get(typeId)?.(request) ?? null;
+}
+
+/** Every type that declares `replacedByHigherContact` but registered nothing. */
+export function typesMissingHostPromotion(): readonly SupportTypeId[] {
+    return SUPPORT_TYPES
+        .filter((d) => d.replacedByHigherContact && !HOST_PROMOTIONS.has(d.id))
         .map((d) => d.id);
 }
 

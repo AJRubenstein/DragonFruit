@@ -4,7 +4,7 @@ import { calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/kn
 import { resolveSegmentEndpoints } from './SupportPrimitives/Knot/segmentEndpoints';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import {
-    typesMissingAutoPlacementBuilder,
+    typesMissingContactOverride,
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
@@ -2948,17 +2948,23 @@ export function addSupportEntity(typeId: SupportTypeId, entity: { id: string; se
 /**
  * Adds an entity and records its undo entry, both keyed on the type: the
  * descriptor names the adder, the action and the payload key.
+ *
+ * `extras` carries the repair an add has to record so undo can put the scene
+ * back: the knot a member hangs from, and the re-solved host the placement
+ * changed. Those field names are the same ones every type's add payload already
+ * declares, so a caller supplies them without naming the type.
  */
 export function addSupportEntityWithHistory(
     typeId: SupportTypeId,
     entity: { id: string; settingsCodeHex?: string },
+    extras?: Record<string, unknown>,
 ) {
     addSupportEntity(typeId, entity);
     // The declared `self` field is the key that type's add payload carries,
     // but it is computed here, so the compiler cannot match it to the union.
     pushSupportHistory({
         type: getSupportTypeDescriptor(typeId).historyAdd,
-        payload: { [removalShapeFor(typeId).self]: entity },
+        payload: { [removalShapeFor(typeId).self]: entity, ...extras },
     } as unknown as Parameters<typeof pushSupportHistory>[0]);
 }
 
@@ -3105,11 +3111,6 @@ export function updateLeaf(leaf: Leaf) {
 /** @deprecated Thin wrapper for removal; prefer `addSupportEntity('brace', entity)`. */
 export function addBrace(brace: Brace) {
     addSupportEntity('brace', brace);
-}
-
-/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('anchor', entity)`. */
-export function addAnchor(anchor: Anchor) {
-    addSupportEntity('anchor', anchor);
 }
 
 /**
@@ -3955,7 +3956,7 @@ if (missingPromotions.length > 0) {
 // Same again for the auto-placement override: a type that claims a tip-height
 // band would be SELECTED by the engine, so it must be buildable. Without this
 // the engine picks a type it has no way to construct.
-const missingAutoPlacement = typesMissingAutoPlacementBuilder();
+const missingAutoPlacement = typesMissingContactOverride();
 if (missingAutoPlacement.length > 0) {
     throw new Error(`Claims a tipHeight band but registered no auto-placement builder: ${missingAutoPlacement.join(', ')}`);
 }

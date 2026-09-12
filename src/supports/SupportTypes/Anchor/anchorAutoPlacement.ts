@@ -1,20 +1,18 @@
 import type * as THREE from 'three';
 
-import { registerAutoPlacementBuilder } from '../../supportTypeRegistry';
-import type { SupportData } from '../../rendering/SupportBuilder';
-import type { Anchor } from '../../types';
+import { registerContactOverride } from '../../supportTypeRegistry';
 import { buildAnchorData } from './anchorBuilder';
 
 /**
- * The anchor OVERRIDES auto-placement's default for its band.
+ * The anchor OVERRIDES auto-placement's default build for its band.
  *
- * Auto-placement's default is to stand a trunk on a contact. An anchor claims
- * the near-plate band (see the `tipHeight` rule on its descriptor) and puts a
- * stub there instead, which is a different primitive entirely. Registering that
- * here is what lets the grid engine ask "which type claims this height, and
- * build it" without importing the anchor's builder or naming the anchor.
+ * Auto-placement stands a trunk on a contact by default. An anchor claims the
+ * near-plate band (the `tipHeight` rule on its descriptor) and puts a stub
+ * there instead — a different primitive entirely. Registering that here is what
+ * lets the grid engine ask "what does this contact's type build, and build it"
+ * without importing this module or naming the anchor.
  */
-registerAutoPlacementBuilder('anchor', (request) => {
+registerContactOverride('anchor', (request) => {
     const built = buildAnchorData({
         tipPos: request.tipPos,
         tipNormal: request.tipNormal,
@@ -23,9 +21,12 @@ registerAutoPlacementBuilder('anchor', (request) => {
         // renderer; the builder wants the real one, and only ever reads it.
         mesh: request.mesh as THREE.Mesh | undefined,
     });
-    const extras: { anchor: Anchor; supportData: SupportData } = {
-        anchor: built.anchor,
+    return {
+        // An anchor declares no `edges`: its frustum root IS the support, so it
+        // carries no separate primitive into the draft.
+        typeId: 'anchor',
+        entity: built.anchor,
+        supplied: {},
         supportData: built.supportData,
     };
-    return { entity: built.anchor, extras };
 });

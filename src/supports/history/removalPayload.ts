@@ -126,15 +126,16 @@ function repairHostAfterRemoval(
     if (!applied) return {};
 
     for (const update of applied.knotUpdates) updateKnot(update.after);
-    updateSupportEntity('trunk', applied.trunk);
+    updateSupportEntity(owner.typeId, applied.trunk);
 
     const hostsBefore = before[hostKey] as Record<string, unknown> | undefined;
     const beforeHost = hostsBefore?.[owner.id];
     if (!beforeHost) return {};
     return {
-        trunkUpdate: {
-            before: structuredClone(beforeHost),
-            after: structuredClone(applied.trunk),
+        hostUpdate: {
+            typeId: owner.typeId,
+            before: structuredClone(beforeHost) as { id: string },
+            after: structuredClone(applied.trunk) as unknown as { id: string },
         },
         knotUpdates: applied.knotUpdates,
     };

@@ -1,8 +1,8 @@
-import type { Branch, Knot, Leaf, SupportState, Vec3 } from '../../types';
+import type { SupportState, Vec3 } from '../../types';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import type { SupportSettings } from '../../Settings/types';
 import type { TrunkBuildResult } from '../../SupportTypes/Trunk/trunkBuilder';
-import type { SupportTypeId } from '../../supportTypeRegistry';
+import type { PlacedSupport, SupportTypeId } from '../../supportTypeRegistry';
 import type * as THREE from 'three';
 
 export type GridNodeKey = string;
@@ -17,57 +17,47 @@ export type GridPlacementRejectReason =
 
 export type GridPlacementDecision =
     | {
-        kind: 'place_trunk';
-        trunkBuild: TrunkBuildResult;
+        /**
+         * A support is placed on this contact.
+         *
+         * ONE arm for every type. The placed support travels in the registry's
+         * generic shape — `location.key` says which collection it joins and
+         * `edges` says which primitives come with it — so the engine never names
+         * the type it placed and there is no arm per type.
+         */
+        kind: 'place';
+        /** The grid node it landed on, for logging. Empty when the build never
+         * consults the grid (a type's own override). */
         nodeKey: GridNodeKey;
-    }
-    | {
-        kind: 'replace_trunk';
-        nodeKey: GridNodeKey;
-        /** The declared type of the host being replaced, so the caller asks the
-         * registry for that type's promotion rather than assuming a trunk. */
-        hostTypeId: SupportTypeId;
-        /** The host this promotion removes -- genuinely a trunk, by name: the
-         * engine builds every candidate as one. */
-        trunkToRemoveId: string;
-        trunkBuild: TrunkBuildResult;
-        promoteKnot: Knot;
-        promoteBranch: Branch;
-        oldTrunkKnot: Knot | null;
-        oldTrunkBranch: Branch | null;
-    }
-    | {
-        kind: 'place_branch';
-        nodeKey: GridNodeKey;
-        /** The host's declared type and id, so a caller indexes its collection. */
-        hostTypeId: SupportTypeId;
-        hostId: string;
-        knot: Knot;
-        branch: Branch;
-        supportData: SupportData;
-    }
-    | {
-        kind: 'place_leaf';
-        nodeKey: GridNodeKey;
-        /** The host's declared type and id, so a caller indexes its collection. */
-        hostTypeId: SupportTypeId;
-        hostId: string;
-        knot: Knot;
-        leaf: Leaf;
-        supportData: SupportData;
+        placed: PlacedSupport;
+        /** Preview and validation state, whatever built the support. */
+        supportData?: SupportData;
     }
     | {
         /**
-         * A type that OVERRODE the default trunk build for its claimed band.
+         * The placed support replaces the host occupying its grid node.
          *
-         * Carries the type id rather than a named field, so the engine can
-         * return what a type's own registered builder produced without knowing
-         * which type it was or what shape its entity has.
+         * Reports WHICH host yields, by declared type and id. The code that
+         * removes it lives in that host type's own folder, reached through the
+         * registry, because rehosting its attachments is that type's business.
          */
-        kind: 'place_typed_support';
-        typeId: SupportTypeId;
-        entity: { id: string };
-        supportData: SupportData;
+        kind: 'promote';
+        hostTypeId: SupportTypeId;
+        hostId: string;
+        nodeKey: GridNodeKey;
+        /** The support taking the node, in the same generic shape. */
+        placed: PlacedSupport;
+        /**
+         * The member the host's own contact is preserved as.
+         *
+         * A promotion produces two things: the support now standing on the
+         * node, and a member hanging off it that carries the ORIGINAL host's
+         * contact — otherwise the surface the old host was holding is dropped.
+         * Both travel in the same generic shape.
+         */
+        promotedMember?: PlacedSupport;
+        /** Preview state for what is being placed. */
+        supportData?: SupportData;
     }
     | {
         kind: 'reject';

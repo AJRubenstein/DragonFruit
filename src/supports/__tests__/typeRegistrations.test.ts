@@ -50,11 +50,13 @@ test('a promotion that was never registered reports "could not", not a silent su
     const result = promoteAwayHost('branch', {
         draft: {} as never,
         hostId: 'nope',
-        promoteKnot: { id: 'k' } as never,
-        promoteBranch: { id: 'b' } as never,
-        trunkToAdd: { id: 't' } as never,
-        rootToAdd: { id: 'r' } as never,
         nodeKey: '0,0',
+        recordHistory: false,
+        placed: {
+            typeId: 'branch',
+            entity: { id: 'b' },
+            supplied: { parentKnotId: { id: 'k' } },
+        },
     });
     assert.equal(result, null, 'an unregistered promotion must not claim success');
 });
@@ -63,11 +65,13 @@ test('the registered trunk promotion fails rather than throwing on an unknown ho
     const result = promoteAwayHost('trunk', {
         draft: { roots: {}, trunks: {}, branches: {}, knots: {} } as never,
         hostId: 'does-not-exist',
-        promoteKnot: { id: 'k' } as never,
-        promoteBranch: { id: 'b' } as never,
-        trunkToAdd: { id: 't' } as never,
-        rootToAdd: { id: 'r' } as never,
         nodeKey: '0,0',
+        recordHistory: false,
+        placed: {
+            typeId: 'trunk',
+            entity: { id: 't' },
+            supplied: { rootId: { id: 'r' }, parentKnotId: { id: 'k' } },
+        },
     });
     assert.equal(result, null, 'a missing host is a failed promotion, not a crash');
 });
