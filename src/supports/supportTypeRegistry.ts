@@ -869,6 +869,18 @@ export const SUPPORT_REMOVAL_SHAPES = {
 } as const satisfies Record<SupportTypeId, { self: string; cascade: Record<string, string | readonly string[]> }>;
 
 /**
+ * The shape a value-level type id maps to.
+ *
+ * The map above is `as const` so the result TYPES can be derived from its
+ * literals; that also means it is typed as the literal object, which a
+ * `SupportTypeId` value cannot index. Reading it through here keeps the
+ * derivation above and still lets a caller walk a type id it holds as data.
+ */
+export function removalShapeFor(typeId: SupportTypeId): { self: string; cascade: Record<string, string | readonly string[]> } {
+    return (SUPPORT_REMOVAL_SHAPES as Record<SupportTypeId, { self: string; cascade: Record<string, string | readonly string[]> }>)[typeId];
+}
+
+/**
  * Types whose removal history payload is not the cascade result verbatim.
  *
  * Leaf and brace narrow `null` to `undefined`; branch adds the trunk diameter

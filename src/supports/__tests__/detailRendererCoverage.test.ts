@@ -48,15 +48,26 @@ test('every type is drawn by the render loop', () => {
     }
 });
 
-test('each entry names a component and the prop it takes its entity under', () => {
-    const table = detailRendererTable();
+test('each entry names a component, and the entity prop is derived not spelled', () => {
+    // The prop a renderer takes its entity under is the descriptor's `singular`,
+    // read at the call site -- so the table must NOT carry it, or a rename would
+    // need a second edit here.
+    assert.ok(
+        !/entityProp:/.test(SOURCE),
+        'the table spells entityProp again; it is derived from descriptor.singular',
+    );
+    assert.match(
+        SOURCE,
+        /const entityProp = getSupportTypeDescriptor\(typeId\)\.singular;/,
+        'renderDetailFor must derive the entity prop from the registry',
+    );
 
+    const table = detailRendererTable();
     for (const descriptor of SUPPORT_TYPES) {
         const entry = table.slice(table.indexOf(`\n        ${descriptor.id}: {`));
         const body = entry.slice(0, entry.indexOf('\n        },'));
 
         assert.match(body, /component:\s*\w+Renderer/, `${descriptor.id} names no component`);
-        assert.match(body, /entityProp:\s*'[a-z]+'/, `${descriptor.id} declares no entityProp`);
     }
 });
 

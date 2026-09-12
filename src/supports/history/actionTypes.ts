@@ -95,16 +95,6 @@ export interface SupportKickstandPayload {
   build: KickstandBuildResult;
 }
 
-/** Removal payloads, derived from what the registry declares each type takes. */
-export type SupportTwigPayload = SupportEntityPayload<'twig'>;
-export type SupportStickPayload = SupportEntityPayload<'stick'>;
-export type SupportAnchorPayload = SupportEntityPayload<'anchor'>;
-
-export type SupportTwigRemovePayload = SupportRemovalResult<'twig'>;
-export type SupportStickRemovePayload = SupportRemovalResult<'stick'>;
-export type SupportAnchorRemovePayload = SupportRemovalResult<'anchor'>;
-export type SupportKickstandRemovePayload = SupportRemovalResult<'kickstand'>;
-
 export interface SupportReplaceTrunkPayload {
   before: SupportState;
   after: SupportState;

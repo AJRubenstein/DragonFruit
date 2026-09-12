@@ -1,40 +1,37 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { SUPPORT_REMOVAL_SHAPES, SUPPORT_TYPES } from '../supportTypeRegistry';
-import type {
-    SupportAnchorPayload,
-    SupportAnchorRemovePayload,
-    SupportStickPayload,
-    SupportStickRemovePayload,
-    SupportTwigPayload,
-    SupportTwigRemovePayload,
-} from '../history/actionTypes';
+import {
+    SUPPORT_REMOVAL_SHAPES,
+    SUPPORT_TYPES,
+    type SupportEntityPayload,
+    type SupportRemovalResult,
+} from '../supportTypeRegistry';
 import type { Anchor, Knot, Leaf, Stick, Twig } from '../types';
 
 /**
- * History payload shapes, derived rather than written out.
+ * History payload shapes, derived from the registry rather than written out.
  *
- * Six interfaces repeated what `SUPPORT_REMOVAL_SHAPES` already declares --
- * twig, stick and anchor each spelled `{ self }` for their add payload and
- * `{ self, knots, leaves }` for their removal. The compile-time assertions
- * below are the real test: they fail to build if a derived type stops matching
- * the interface it replaced.
+ * Twig, stick and anchor each used to have a hand-written pair of payload
+ * interfaces -- `{ self }` for the add and `{ self, knots, leaves }` for the
+ * removal -- which `SUPPORT_REMOVAL_SHAPES` already declared. The intermediate
+ * aliases are gone; these assertions are the real check, and they fail to build
+ * if a derived payload stops matching the shape it replaced.
  */
 
 // The shapes the hand-written interfaces had. A derived type that drifts from
 // these is a compile error, not a silent change.
-const _twigAdd: SupportTwigPayload = { twig: {} as Twig };
-const _stickAdd: SupportStickPayload = { stick: {} as Stick };
-const _anchorAdd: SupportAnchorPayload = { anchor: {} as Anchor };
+const _twigAdd: SupportEntityPayload<'twig'> = { twig: {} as Twig };
+const _stickAdd: SupportEntityPayload<'stick'> = { stick: {} as Stick };
+const _anchorAdd: SupportEntityPayload<'anchor'> = { anchor: {} as Anchor };
 
-const _twigRemove: SupportTwigRemovePayload = {
+const _twigRemove: SupportRemovalResult<'twig'> = {
     twig: {} as Twig, knots: [] as Knot[], leaves: [] as Leaf[],
 };
-const _stickRemove: SupportStickRemovePayload = {
+const _stickRemove: SupportRemovalResult<'stick'> = {
     stick: {} as Stick, knots: [] as Knot[], leaves: [] as Leaf[],
 };
-const _anchorRemove: SupportAnchorRemovePayload = {
+const _anchorRemove: SupportRemovalResult<'anchor'> = {
     anchor: {} as Anchor, knots: [] as Knot[], leaves: [] as Leaf[],
 };
 

@@ -1,4 +1,4 @@
-import { Trunk, Branch, Twig, Stick, Segment, Joint, Vec3, Roots, Knot, BezierSegment } from '../../types';
+import { Trunk, Segment, Joint, Vec3, Roots, Knot, BezierSegment } from '../../types';
 import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
 import { getSocketPosition, getFinalSocketPosition } from '../ContactCone';
@@ -182,44 +182,6 @@ export function splitShaft(
     const { entity, knotRemaps } = splitSupportShaft('trunk', trunk, segmentId, splitPoint, splitT, { root }, knots);
     return { trunk: entity, knotRemaps };
 }
-
-/** @deprecated for removal -- call splitSupportShaft('branch', ...) directly. */
-export function splitBranchShaft(
-    branch: Branch,
-    segmentId: string,
-    splitPoint: Vec3,
-    splitT?: number,
-    parentKnot?: Knot,
-    knots?: Record<string, Knot>
-): { branch: Branch; knotRemaps: KnotSplitRemap[] } {
-    const { entity, knotRemaps } = splitSupportShaft('branch', branch, segmentId, splitPoint, splitT, { hostKnot: parentKnot }, knots);
-    return { branch: entity, knotRemaps };
-}
-
-/** @deprecated for removal -- call splitSupportShaft('twig', ...) directly. */
-export function splitTwigShaft(
-    twig: Twig,
-    segmentId: string,
-    splitPoint: Vec3,
-    splitT?: number,
-    knots?: Record<string, Knot>
-): { twig: Twig; knotRemaps: KnotSplitRemap[] } {
-    const { entity, knotRemaps } = splitSupportShaft('twig', twig, segmentId, splitPoint, splitT, {}, knots);
-    return { twig: entity, knotRemaps };
-}
-
-/** @deprecated for removal -- call splitSupportShaft('stick', ...) directly. */
-export function splitStickShaft(
-    stick: Stick,
-    segmentId: string,
-    splitPoint: Vec3,
-    splitT?: number,
-    knots?: Record<string, Knot>
-): { stick: Stick; knotRemaps: KnotSplitRemap[] } {
-    const { entity, knotRemaps } = splitSupportShaft('stick', stick, segmentId, splitPoint, splitT, {}, knots);
-    return { stick: entity, knotRemaps };
-}
-
 
 export function findClosestSegment(trunk: Trunk, root: Roots, point: Vec3): { segment: Segment, t: number, pointOnLine: Vec3 } | null {
     // Reconstruct skeleton start

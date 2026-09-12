@@ -3,7 +3,7 @@ import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } fr
 import { calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import { resolveSegmentEndpoints } from './SupportPrimitives/Knot/segmentEndpoints';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
-import { SUPPORT_REMOVAL_SHAPES, type SupportRemovalResult } from './supportTypeRegistry';
+import { removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
 import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
@@ -182,11 +182,6 @@ export function removeSupportEntity<T extends SupportTypeId>(
  * callers move to the generic entry points -- see plans/registry-adoption-map.md.
  */
 
-/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('twig', id)`. */
-export function removeTwig(twigId: string) {
-    return removeSupportEntity('twig', twigId);
-}
-
 /**
  * Remove an entity and everything the declared graph says depends on it.
  * `collectCascade` finds the doomed set from the registry's edges;
@@ -197,7 +192,7 @@ function removeSupportEntityCascading(
     id: string,
 ): Record<string, unknown> | null {
     const descriptor = getSupportTypeDescriptor(typeId);
-    const shape = SUPPORT_REMOVAL_SHAPES[typeId];
+    const shape = removalShapeFor(typeId);
     const collection = descriptor.location.key;
     const existing = state[collection][id] as { id: string } | undefined;
     if (!existing) return null;
@@ -256,11 +251,6 @@ function removeSupportEntityCascading(
 
     notify();
     return result;
-}
-
-/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('stick', id)`. */
-export function removeStick(stickId: string) {
-    return removeSupportEntity('stick', stickId);
 }
 
 function resolveLowerSegmentIndex(segments: Segment[], jointId: string) {
@@ -2965,7 +2955,7 @@ export function addSupportEntityWithHistory(
     // but it is computed here, so the compiler cannot match it to the union.
     pushSupportHistory({
         type: getSupportTypeDescriptor(typeId).historyAdd,
-        payload: { [SUPPORT_REMOVAL_SHAPES[typeId].self]: entity },
+        payload: { [removalShapeFor(typeId).self]: entity },
     } as unknown as Parameters<typeof pushSupportHistory>[0]);
 }
 
@@ -3071,11 +3061,6 @@ function applySupportEntityUpdate(
     notify();
 }
 
-/**
- * @deprecated for removal -- prefer `updateSupportEntity('trunk', entity)`.
- * Kept for `SupportTypes/Trunk/`, which may name its own type, and for tests.
- */
-
 /** @deprecated Thin wrapper for removal; prefer `addSupportEntity('branch', entity)`. */
 export function addBranch(branch: Branch) {
     addSupportEntity('branch', branch);
@@ -3119,16 +3104,6 @@ export function addBrace(brace: Brace) {
     addSupportEntity('brace', brace);
 }
 
-/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('twig', entity)`. */
-export function addTwig(twig: Twig) {
-    addSupportEntity('twig', twig);
-}
-
-/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('stick', entity)`. */
-export function addStick(stick: Stick) {
-    addSupportEntity('stick', stick);
-}
-
 /** @deprecated Thin wrapper for removal; prefer `addSupportEntity('anchor', entity)`. */
 export function addAnchor(anchor: Anchor) {
     addSupportEntity('anchor', anchor);
@@ -3164,11 +3139,6 @@ export function updateAnchor(anchor: Anchor) {
 /** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('brace', id)`. */
 export function removeBrace(braceId: string) {
     return removeSupportEntity('brace', braceId);
-}
-
-/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('anchor', id)`. */
-export function removeAnchor(anchorId: string) {
-    return removeSupportEntity('anchor', anchorId);
 }
 
 /**

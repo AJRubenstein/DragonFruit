@@ -2,25 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-    addAnchor,
     addBrace,
     addBranch,
-    addKnot,
     addLeaf,
-    addRoot,
-    addStick,
     addTrunk,
-    addTwig,
     getSnapshot,
     loadFromImportFormat,
-    removeAnchor,
     removeBrace,
     removeBranch,
     removeLeaf,
-    removeStick,
     removeSupportEntity,
     removeTrunk,
-    removeTwig,
     resetStore,
 } from '../state';
 import { restoreToCollection, SUPPORT_COLLECTION_KEYS } from '../supportTypeRegistry';
@@ -135,38 +127,47 @@ function load() {
     loadFromImportFormat(fixture());
 }
 
-/** Replays a snapshot the way the history handlers do. */
+/**
+ * Replays a snapshot the way the history handlers do.
+ *
+ * The handlers put every entity back through `restoreToCollection` -- the
+ * registered per-collection restore -- so this does too. Using the per-type
+ * adders instead would test a parallel path, and the two could drift.
+ */
 function restore(snapshot: Record<string, unknown>) {
     const list = (field: string) => (snapshot[field] as unknown[] | undefined) ?? [];
     const one = (field: string) => snapshot[field] as never;
+    const putBack = (collection: string, entity: unknown) => {
+        if (entity) restoreToCollection(collection as never, entity);
+    };
 
-    if (one('root')) addRoot(one('root'));
-    for (const root of list('roots')) addRoot(root as never);
+    for (const root of list('roots')) putBack('roots', root);
+    putBack('roots', one('root'));
 
-    if (one('trunk')) addTrunk(one('trunk'));
-    if (one('twig')) addTwig(one('twig'));
-    if (one('stick')) addStick(one('stick'));
-    if (one('anchor')) addAnchor(one('anchor'));
+    // Hosts first: a hosted entity cannot come back before the thing it rides.
+    putBack('trunks', one('trunk'));
+    putBack('twigs', one('twig'));
+    putBack('sticks', one('stick'));
+    putBack('anchors', one('anchor'));
 
-    for (const knot of list('knots')) addKnot(knot as never);
-    if (one('knot')) addKnot(one('knot'));
-    if (one('startKnot')) addKnot(one('startKnot'));
-    if (one('endKnot')) addKnot(one('endKnot'));
+    for (const knot of list('knots')) putBack('knots', knot);
+    putBack('knots', one('knot'));
+    putBack('knots', one('startKnot'));
+    putBack('knots', one('endKnot'));
 
     // Branches come back ONLY via the list, matching the real handler -- which
     // also bails when `branches` is empty. Reading a `branch` field here would
     // hide a seed dropped from the list.
-    for (const branch of list('branches')) addBranch(branch as never);
+    for (const branch of list('branches')) putBack('branches', branch);
 
-    for (const leaf of list('leaves')) addLeaf(leaf as never);
-    if (one('leaf')) addLeaf(one('leaf'));
+    for (const leaf of list('leaves')) putBack('leaves', leaf);
+    putBack('leaves', one('leaf'));
 
-    for (const brace of list('braces')) addBrace(brace as never);
-    if (one('brace')) addBrace(one('brace'));
+    for (const brace of list('braces')) putBack('braces', brace);
+    putBack('braces', one('brace'));
 
-    // Through the registered restore, which is what the handlers use.
-    for (const build of list('kickstands')) restoreToCollection('kickstands', build);
-    if (snapshot.build) restoreToCollection('kickstands', snapshot.build);
+    for (const build of list('kickstands')) putBack('kickstands', build);
+    putBack('kickstands', snapshot.build);
 }
 
 const CASES: [string, () => Record<string, unknown> | null][] = [
@@ -174,10 +175,10 @@ const CASES: [string, () => Record<string, unknown> | null][] = [
     ['removeTrunk (far side)', () => removeTrunk('trunk-b') as never],
     ['removeBranch', () => removeBranch('branch-a') as never],
     ['removeLeaf', () => removeLeaf('leaf-a') as never],
-    ['removeTwig', () => removeTwig('twig-a') as never],
-    ['removeStick', () => removeStick('stick-a') as never],
+    ['removeTwig', () => removeSupportEntity('twig', 'twig-a') as never],
+    ['removeStick', () => removeSupportEntity('stick', 'stick-a') as never],
     ['removeBrace', () => removeBrace('brace-a') as never],
-    ['removeAnchor', () => removeAnchor('anchor-a') as never],
+    ['removeAnchor', () => removeSupportEntity('anchor', 'anchor-a') as never],
     ['removeKickstand', () => removeSupportEntity('kickstand', 'ks-a') as never],
 ];
 

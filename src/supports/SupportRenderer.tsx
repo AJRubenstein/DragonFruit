@@ -74,6 +74,17 @@ import { useSupportRenderLookup } from './interaction/useSupportRenderLookup';
 import { setInteriorSupportInteractionActive } from './interaction/pointerOcclusion';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 
+/** What one type's detail renderer is and what it needs from the frame. */
+interface DetailRendererEntry {
+    component: React.ComponentType<Record<string, unknown>>;
+    hosts?: (entity: never) => Record<string, unknown> | null;
+    skip?: (context: { entity: never; isSelected: boolean; isBatchable: boolean }) => boolean;
+    extraProps?: (context: { entity: never; isSelected: boolean; isBatchable: boolean }) => Record<string, unknown>;
+    noClipping?: (context: { entity: never; isSelected: boolean; isBatchable: boolean }) => boolean;
+    /** Where "is this shaft batched" comes from, when not `plainShaftsOf`. */
+    batchedIds?: ReadonlySet<string> | { has(id: string): boolean };
+}
+
 interface SupportRendererProps {
     mode?: SupportMode;
     navigationLodActive?: boolean;
@@ -1241,9 +1252,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     );
 
     const selectedTrunkIds = selectedOf('trunk');
-    const selectedBranchIds = selectedOf('branch');
     const selectedLeafIds = selectedOf('leaf');
-    const selectedStickIds = selectedOf('stick');
     const selectedBraceIds = selectedOf('brace');
     const selectedKickstandIds = selectedOf('kickstand');
 
@@ -1481,14 +1490,14 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [state, knotDragOverridesById, activePreviewEntity, interiorView, matchesInteriorContact, matchesInteriorBrace]);
 
     /*
-     * Thin typed reads of `renderListByType`, one per type. DEBT, not API: they
-     * exist because ~80 call sites below still name a list, and each binds a
-     * type id and nothing else. They go as those sites move to the map.
+     * Thin typed reads of `renderListByType`. DEBT, not API: they exist because
+     * the call sites below still name a list, and each binds a type id and
+     * nothing else. They go as those sites move to the map -- `trunk`,
+     * `kickstand`, `leaf` and `brace` each have one surviving per-type consumer
+     * (root grouping, leaf joints, brace shafts); `branch` and `stick` are gone.
      */
     const renderTrunkList = renderListByType.trunk as unknown as Trunk[];
-    const renderBranchList = renderListByType.branch as unknown as Branch[];
     const renderLeafList = renderListByType.leaf as unknown as Leaf[];
-    const renderStickList = renderListByType.stick as unknown as Stick[];
     const renderBraceList = renderListByType.brace as unknown as Brace[];
     const renderKickstandList = renderListByType.kickstand as unknown as Kickstand[];
 
@@ -2163,15 +2172,22 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             }
         };
 
-        collect('trunk', renderTrunkList, selectedTrunkIds);
-        collect('branch', renderBranchList, selectedBranchIds);
-        collect('stick', renderStickList, selectedStickIds);
-        collect('leaf', renderLeafList, selectedLeafIds);
+        // The types whose contact cones the shared pass draws, in registry
+        // order. `collect` skips an entity with no cone set, so the set only
+        // has to be right about who CAN batch one -- which is what the flag
+        // declares.
+        for (const descriptor of SUPPORT_TYPES) {
+            if (!descriptor.batchesContactCones) continue;
+            collect(
+                descriptor.id,
+                renderListByType[descriptor.id] as readonly { id: string }[],
+                selectedOf(descriptor.id),
+            );
+        }
 
         return Array.from(grouped.values());
     }, [
-        renderBranchList, renderLeafList, renderStickList, renderTrunkList,
-        selectedTrunkIds, selectedBranchIds, selectedStickIds, selectedLeafIds,
+        renderListByType, selectedOf,
         contactConesBySupport, resolveSceneSupportColor, applyDropToVec3Like,
     ]);
 
@@ -2973,24 +2989,17 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     /**
      * What each type's detail renderer is and what it needs. Held here rather
-     * than in the registry because every entry closes over live scene state.
+     * than in the registry because every entry closes over live scene state,
+     * and the row KEY is a type id -- the one place the renderer says a type's
+     * name. The entity's prop name is the declared `singular`, derived at the
+     * read, so a rename never reaches it.
      *
      * `hosts` returning null skips the entity; `skip` is the per-type
      * "draws nothing this frame" rule.
      */
-    const detailRenderers = useMemo((): Partial<Record<SupportTypeId, {
-        component: React.ComponentType<Record<string, unknown>>;
-        entityProp: string;
-        hosts?: (entity: never) => Record<string, unknown> | null;
-        skip?: (context: { entity: never; isSelected: boolean; isBatchable: boolean }) => boolean;
-        extraProps?: (context: { entity: never; isSelected: boolean; isBatchable: boolean }) => Record<string, unknown>;
-        noClipping?: (context: { entity: never; isSelected: boolean; isBatchable: boolean }) => boolean;
-        /** Where "is this shaft batched" comes from, when not `plainShaftsOf`. */
-        batchedIds?: ReadonlySet<string> | { has(id: string): boolean };
-    }>> => ({
+    const detailRenderers = useMemo((): Partial<Record<SupportTypeId, DetailRendererEntry>> => ({
         trunk: {
             component: TrunkRenderer as never,
-            entityProp: 'trunk',
             hosts: (trunk: Trunk) => {
                 const root = state.roots[trunk.rootId];
                 return root ? { root } : null;
@@ -3009,7 +3018,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         },
         branch: {
             component: BranchRenderer as never,
-            entityProp: 'branch',
             hosts: (branch: Branch) => {
                 const parentKnot = renderKnotsById[branch.parentKnotId];
                 return parentKnot ? { parentKnot } : null;
@@ -3025,7 +3033,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         },
         leaf: {
             component: LeafRenderer as never,
-            entityProp: 'leaf',
             hosts: (leaf: Leaf) => {
                 const parentKnot = renderKnotsById[leaf.parentKnotId];
                 return parentKnot ? { parentKnot } : null;
@@ -3042,7 +3049,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         },
         twig: {
             component: TwigRenderer as never,
-            entityProp: 'twig',
             // A twig always mounts: its contact disks and joints have no
             // scene-batched equivalent and would vanish when unselected.
             noClipping: ({ isSelected }) => isSelected,
@@ -3053,7 +3059,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         },
         stick: {
             component: StickRenderer as never,
-            entityProp: 'stick',
             skip: ({ isSelected, isBatchable }) => !(isSelected || !isBatchable) || simpleRender,
             noClipping: ({ isSelected }) => isSelected,
             extraProps: ({ isSelected, isBatchable }) => ({
@@ -3064,7 +3069,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         },
         brace: {
             component: BraceRenderer as never,
-            entityProp: 'brace',
             // A brace's shaft is a curve between two knots, so it builds its
             // own batched set rather than appearing in `plainShaftsByType`.
             batchedIds: braceShaftsBySupport,
@@ -3097,7 +3101,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         },
         kickstand: {
             component: KickstandRenderer as never,
-            entityProp: 'kickstand',
             hosts: (kickstand: Kickstand) => {
                 const root = state.roots[kickstand.rootId];
                 const hostKnot = renderKnotsById[kickstand.hostKnotId];
@@ -3114,7 +3117,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         },
         anchor: {
             component: AnchorRenderer as never,
-            entityProp: 'anchor',
             // Anchor is drawn entirely by its detail renderer -- no batched
             // shaft pass -- so it never skips and never opts out of clipping.
         },
@@ -3143,6 +3145,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const renderDetailFor = useCallback((typeId: SupportTypeId) => {
         const entry = detailRenderers[typeId];
         if (!entry) return null;
+        // The prop a renderer takes its entity under is this type's own
+        // singular name, declared once in the registry.
+        const entityProp = getSupportTypeDescriptor(typeId).singular;
 
         const Component = entry.component;
         const selected = selectedOf(typeId);
@@ -3162,7 +3167,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             return (
                 <group key={entity.id} userData={{ noClipping: entry.noClipping?.(context) ?? false }}>
                     <Component
-                        {...{ [entry.entityProp]: entity }}
+                        {...{ [entityProp]: entity }}
                         {...hosts}
                         {...sharedRenderProps(typeId, entity, isSelected)}
                         {...(entry.extraProps?.(context) ?? {})}

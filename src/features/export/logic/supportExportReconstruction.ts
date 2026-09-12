@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { bezierToLineSegments } from '@/supports/Curves/BezierUtils';
 import { getModelIdForSupportEntityId } from '@/supports/state';
-import { exportGroupName, getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '@/supports/supportTypeRegistry';
+import { exportGroupName, getSupportTypeDescriptor, parseKnotHostId, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone';
 import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getRaftSettingsForModel } from '@/supports/Rafts/Crenelated/RaftState';
@@ -148,41 +148,6 @@ function createScopedModelIdResolver(
   };
 
   return resolve;
-}
-
-function resolveBranchModelId(branch: Branch, allowedModelIds: ReadonlySet<string>, resolveModelId: ModelIdResolver): string | null {
-  return firstAllowedModelId(
-    allowedModelIds,
-    branch.modelId,
-    resolveModelId(branch.parentKnotId),
-  );
-}
-
-function resolveLeafModelId(leaf: Leaf, allowedModelIds: ReadonlySet<string>, resolveModelId: ModelIdResolver): string | null {
-  return firstAllowedModelId(
-    allowedModelIds,
-    leaf.modelId,
-    resolveModelId(leaf.parentKnotId),
-  );
-}
-
-function resolveBraceModelId(brace: Brace, allowedModelIds: ReadonlySet<string>, resolveModelId: ModelIdResolver): string | null {
-  return firstAllowedModelId(
-    allowedModelIds,
-    brace.modelId,
-    resolveModelId(brace.startKnotId),
-    resolveModelId(brace.endKnotId),
-  );
-}
-
-function resolveKickstandModelId(kickstand: Kickstand, allowedModelIds: ReadonlySet<string>, resolveModelId: ModelIdResolver): string | null {
-  return firstAllowedModelId(
-    allowedModelIds,
-    kickstand.modelId,
-    resolveModelId(kickstand.rootId),
-    resolveModelId(kickstand.hostKnotId),
-    resolveModelId(kickstand.hostSegmentId),
-  );
 }
 
 function buildTwigDiskTipCenter(disk: Twig['contactDiskA']): Vec3 {
@@ -517,20 +482,15 @@ export function extractScopedSupportPayload(
 
   const roots = Object.values(supportState.roots)
     .filter((item) => hasAllowedModelId(allowedModelIds, item.modelId));
-  const trunks = scoped<Trunk>('trunk');
-  const branches = scoped<Branch>('branch');
-  const leaves = scoped<Leaf>('leaf');
-  const twigs = scoped<Twig>('twig');
-  const sticks = scoped<Stick>('stick');
-  const braces = scoped<Brace>('brace');
-  const anchors = scoped<Anchor>('anchor');
-  const kickstands = scoped<Kickstand>('kickstand');
-
-  /** The same scoped lists, by type id, for the declaration-driven walks below. */
-  const scopedEntities: Record<SupportTypeId, unknown[]> = {
-    trunk: trunks, branch: branches, leaf: leaves, twig: twigs,
-    stick: sticks, brace: braces, anchor: anchors, kickstand: kickstands,
-  };
+  /**
+   * The scoped lists, by type id.
+   *
+   * Nothing names a type here: the registry says which types exist, and
+   * `location.key` is the collection / payload field name that is the wire
+   * contract, so one walk fills both.
+   */
+  const scopedEntities: Record<SupportTypeId, unknown[]> = {} as Record<SupportTypeId, unknown[]>;
+  for (const descriptor of SUPPORT_TYPES) scopedEntities[descriptor.id] = scoped(descriptor.id);
 
   /** Every scoped entity, with the descriptor that says what it is. */
   const scopedByType: Array<{ descriptor: SupportTypeDescriptor; entities: Record<string, unknown>[] }> =
@@ -570,34 +530,34 @@ export function extractScopedSupportPayload(
     }
   }
 
-  const leafIds = new Set(leaves.map((item) => item.id));
-  const braceIds = new Set(braces.map((item) => item.id));
-
   const knots = Object.values(supportState.knots)
     .filter((item) => {
       if (referencedKnotIds.has(item.id)) return true;
       if (includedSegmentIds.has(item.parentShaftId)) return true;
-      if (item.parentShaftId.startsWith('leafCone:')) {
-        return leafIds.has(item.parentShaftId.slice('leafCone:'.length));
-      }
-      if (item.parentShaftId.startsWith('braceSegment:')) {
-        return braceIds.has(item.parentShaftId.slice('braceSegment:'.length));
+      // A knot riding a pseudo-shaft (a leaf's cone, a brace's span) carries
+      // the type's declared prefix. Splitting it through the registry means no
+      // literal here to fall out of step when a prefix changes.
+      const host: { typeId: SupportTypeId; entityId: string } | null = parseKnotHostId(item.parentShaftId);
+      if (host) {
+        const owners = scopedEntities[host.typeId] as { id: string }[];
+        return owners.some((owner) => owner.id === host.entityId);
       }
       return hasAllowedModelId(allowedModelIds, resolveModelId(item.id));
     });
 
-  return {
-    roots,
-    trunks,
-    branches,
-    leaves,
-    twigs,
-    sticks,
-    braces,
-    anchors,
-    knots,
-    kickstands,
-  };
+  // The payload's field names ARE the collection keys -- one per declared type,
+  // plus the two primitives -- so it is filled by walking the registry rather
+  // than restated. Field ORDER follows the registry: the primitives bracket the
+  // types because that is the order they are assigned in. Order is incidental
+  // to every reader (they all index by name), but the payload golden records
+  // it, so it is pinned deliberately rather than left to fall out.
+  const payload = { roots } as ScopedSupportPayload;
+  const byField = payload as unknown as Record<string, unknown>;
+  for (const descriptor of SUPPORT_TYPES) {
+    byField[descriptor.location.key] = scopedEntities[descriptor.id];
+  }
+  byField.knots = knots;
+  return payload;
 }
 
 export function buildScopedSupportExportDocument(
