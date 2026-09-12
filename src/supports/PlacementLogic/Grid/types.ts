@@ -2,6 +2,7 @@ import type { Anchor, Branch, Knot, Leaf, SupportState, Vec3 } from '../../types
 import type { SupportData } from '../../rendering/SupportBuilder';
 import type { SupportSettings } from '../../Settings/types';
 import type { TrunkBuildResult } from '../../SupportTypes/Trunk/trunkBuilder';
+import type { SupportTypeId } from '../../supportTypeRegistry';
 import type * as THREE from 'three';
 
 export type GridNodeKey = string;
@@ -23,7 +24,8 @@ export type GridPlacementDecision =
     | {
         kind: 'replace_trunk';
         nodeKey: GridNodeKey;
-        hostTrunkId: string;
+        /** The trunk this promotion removes -- genuinely a trunk, by name. */
+        trunkToRemoveId: string;
         trunkBuild: TrunkBuildResult;
         promoteKnot: Knot;
         promoteBranch: Branch;
@@ -33,7 +35,9 @@ export type GridPlacementDecision =
     | {
         kind: 'place_branch';
         nodeKey: GridNodeKey;
-        hostTrunkId: string;
+        /** The host's declared type and id, so a caller indexes its collection. */
+        hostTypeId: SupportTypeId;
+        hostId: string;
         knot: Knot;
         branch: Branch;
         supportData: SupportData;
@@ -41,7 +45,9 @@ export type GridPlacementDecision =
     | {
         kind: 'place_leaf';
         nodeKey: GridNodeKey;
-        hostTrunkId: string;
+        /** The host's declared type and id, so a caller indexes its collection. */
+        hostTypeId: SupportTypeId;
+        hostId: string;
         knot: Knot;
         leaf: Leaf;
         supportData: SupportData;

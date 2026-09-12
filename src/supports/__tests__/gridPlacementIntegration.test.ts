@@ -194,7 +194,7 @@ test('decideGridPlacement merges into the preferred occupied node before conside
 
     assert.equal(decision.kind, 'place_leaf');
     assert.equal(decision.nodeKey, '0,0');
-    assert.equal(decision.hostTrunkId, preferredHost.build.trunk.id);
+    assert.equal(decision.hostId, preferredHost.build.trunk.id);
 });
 
 test('decideGridPlacement replaces the preferred occupied node before considering nearby empty nodes when the candidate is taller', () => {
@@ -228,7 +228,7 @@ test('decideGridPlacement replaces the preferred occupied node before considerin
 
     assert.equal(decision.kind, 'replace_trunk');
     assert.equal(decision.nodeKey, '0,0');
-    assert.equal(decision.hostTrunkId, preferredHost.build.trunk.id);
+    assert.equal(decision.trunkToRemoveId, preferredHost.build.trunk.id);
 });
 
 test('decideGridPlacement places a branch on the occupied preferred node when the host remains taller', () => {
@@ -263,7 +263,7 @@ test('decideGridPlacement places a branch on the occupied preferred node when th
 
     assert.equal(decision.kind, 'place_leaf');
     assert.equal(decision.nodeKey, '0,0');
-    assert.equal(decision.hostTrunkId, preferredHost.build.trunk.id);
+    assert.equal(decision.hostId, preferredHost.build.trunk.id);
 });
 
 test('decideGridPlacement keeps using a branch when the direct hosted span is too long for an auto-leaf', () => {
@@ -297,7 +297,7 @@ test('decideGridPlacement keeps using a branch when the direct hosted span is to
 
     assert.equal(decision.kind, 'place_branch');
     assert.equal(decision.nodeKey, '0,0');
-    assert.equal(decision.hostTrunkId, preferredHost.build.trunk.id);
+    assert.equal(decision.hostId, preferredHost.build.trunk.id);
 });
 
 test('decideGridPlacement replaces the preferred host trunk when the candidate tip is higher', () => {
@@ -332,7 +332,7 @@ test('decideGridPlacement replaces the preferred host trunk when the candidate t
 
     assert.equal(decision.kind, 'replace_trunk');
     assert.equal(decision.nodeKey, '0,0');
-    assert.equal(decision.hostTrunkId, preferredHost.build.trunk.id);
+    assert.equal(decision.trunkToRemoveId, preferredHost.build.trunk.id);
 });
 
 test('decideGridPlacement rejects when the fixed preferred host cannot accept an attachment', () => {
@@ -479,7 +479,7 @@ test('decideGridPlacement places branch on neighbor host when co-located host ca
 
     assert.equal(decision.kind, 'place_branch');
     assert.equal(decision.nodeKey, '1,0'); // Snapped to neighbor node
-    assert.equal(decision.hostTrunkId, neighborHost.build.trunk.id);
+    assert.equal(decision.hostId, neighborHost.build.trunk.id);
 });
 
 test('decideGridPlacement rejects an anchor whose tip sits below the root joint and previews the ghost', () => {

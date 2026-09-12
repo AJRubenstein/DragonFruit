@@ -55,6 +55,7 @@ every descriptor declares all of them:
 
 | Flag | Ask |
 | ---- | --- |
+| `canBeGridHost` | Can a fan link attach to this type's shaft? (the host pool, merge search, attachment cap and forest report all read it) |
 | `hasSegments` | Do instances have real shafts? |
 | `contactFields` | Which contact primitive fields, in order? |
 | `segmentsCarryBothJoints` | Does each segment carry both its joints, or do endpoints come from a root / parent knot / neighbour? |

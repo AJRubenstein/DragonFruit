@@ -8,7 +8,8 @@ import type { SupportTypeId } from '../supportTypeRegistry';
  */
 export type PlacedKind = Extract<SupportTypeId, 'trunk' | 'anchor' | 'leaf' | 'branch' | 'stick' | 'twig'>;
 type AttachmentKind = Extract<SupportTypeId, 'leaf' | 'branch'>;
-type OrphanKind = Extract<SupportTypeId, 'leaf' | 'branch' | 'trunk'>;
+/** Which kind of entity was culled: any host type, or a hosted member. */
+type OrphanKind = SupportTypeId;
 
 /** What one candidate resolved to: a placed support type, or no placement. */
 export type PlacementOutcomeKind = SupportTypeId | 'reject';
@@ -113,14 +114,16 @@ export interface ForestScanMetrics {
 
 /** Structured per-run summary of the placed forest. */
 export interface ForestReport {
-    trunkCount: number;
+    /** Hosts the forest is built from, one count per declared host type. */
+    hostCount: number;
     anchorCount: number;
     leafCount: number;
     branchCount: number;
     stickCount: number;
     twigCount: number;
     trees: ForestTree[];
-    bareTrunks: Array<{ id: string; z: number; shaftDiameterMm: number; sizingNote: string }>;
+    /** Hosts carrying no fan members. */
+    bareHosts: Array<{ id: string; z: number; shaftDiameterMm: number; sizingNote: string }>;
     /** Input-side island/overhang scan metrics (set by the orchestrator). */
     scan?: ForestScanMetrics;
     /** Leaves/branches whose host knot drifted, crossed, or lost its host segment. */
@@ -128,7 +131,7 @@ export interface ForestReport {
     /** Placement diagnostics: why trunks are where they are, fan/merge refusal counts */
     diagnostics?: {
         candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number; stabilization: number };
-        trunksByKind: { gridInfill: number; coverageFill: number; standalone: number };
+        hostsByKind: { gridInfill: number; coverageFill: number; standalone: number };
         fanRefusals: Partial<Record<string, number>>;
         mergeRefusals: Partial<Record<string, number>>;
         /** Why consolidation (chunk fanning) refused candidates — sameZ means
@@ -148,7 +151,7 @@ export interface ForestReport {
 export interface OrphanInfo {
     id: string;
     kind: OrphanKind;
-    reason: 'missingKnot' | 'missingHost' | 'missingSegment' | 'drift' | 'cross' | 'blocked' | 'trunkBlocked';
+    reason: 'missingKnot' | 'missingHost' | 'missingSegment' | 'drift' | 'cross' | 'blocked' | 'hostBlocked';
     hostId?: string;
     knotId?: string;
     detail?: string;
@@ -203,7 +206,7 @@ export interface PlacementDiagnostics {
     /** Candidate counts by detector source. */
     candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number; stabilization: number };
     /** Placed trunks by origin. */
-    trunksByKind: {
+    hostsByKind: {
         /** Fixed-density grid points (boundary ring + lattice infill). */
         gridInfill: number;
         /** Coverage-convergence gap-fill points. */
@@ -230,9 +233,9 @@ export interface SizingDebugInfo {
     weightPerSupportG: number;
     avgIslandAreaMm2: number;
     /** Standalone trunks (neither fanned nor merged) — the over-supply signal. */
-    standaloneTrunks: number;
+    standaloneHosts: number;
     /** Trunks from the fixed-density grid (boundary ring + infill + gap fill). */
-    gridInfillTrunks: number;
+    gridInfillHosts: number;
     shaftDiameterRange: { min: number; max: number; avg: number };
     tipContactRange: { min: number; max: number; avg: number };
 }

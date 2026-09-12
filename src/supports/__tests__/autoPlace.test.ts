@@ -389,7 +389,7 @@ test('runAutoPlace fans sub-threshold overhang candidates instead of standalone 
         'overhang fanning never branches — leaves only');
 
     const placement = result.analytics?.placement;
-    assert.equal(placement?.trunksByKind.standalone, 1, 'only trunk A is standalone (voxel island)');
+    assert.equal(placement?.hostsByKind.standalone, 1, 'only trunk A is standalone (voxel island)');
     assert.deepEqual(placement?.fanRefusals, {}, 'o15 fanned — no refusal for it');
     assert.deepEqual(placement?.mergeRefusals, { noHost: 1 }, 'trunk A had no host to merge into');
 
@@ -430,7 +430,7 @@ test('runAutoPlace falls back to a standalone trunk when no fan host exists', ()
     assert.equal(result.placed.trunk, 2, 'far overhang keeps its standalone trunk (coverage)');
 
     const placement = result.analytics?.placement;
-    assert.equal(placement?.trunksByKind.standalone, 2, 'both became standalone trunks');
+    assert.equal(placement?.hostsByKind.standalone, 2, 'both became standalone trunks');
     assert.deepEqual(placement?.fanRefusals, { noHost: 1 }, 'o20 found no shaft within the fan radius');
     assert.deepEqual(placement?.mergeRefusals, { noHost: 2 }, 'neither had a host within the merge radius');
 
@@ -480,7 +480,7 @@ test('runAutoPlace dispatches by shape: planar → grid, organic → Poisson', (
 
     const result = runAutoPlace([planar, organic], 'model-a', { debugSkipAutoBracing: true });
 
-    assert.ok((result.analytics?.placement?.trunksByKind.gridInfill ?? 0) > 0,
+    assert.ok((result.analytics?.placement?.hostsByKind.gridInfill ?? 0) > 0,
         'both regions place via the unified grid distribution');
 
     setModelMesh('model-a', null);

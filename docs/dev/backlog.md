@@ -62,7 +62,16 @@ which is the exact failure the registry exists to prevent.
 
 Known remaining hand-written lists worth converting:
 
-- (none outstanding here; see `support-registry-findings.md` for the open items)
+- **`autoPlace.ts` gap-fill stalemate count** — `if (kind === 'trunk' || kind ===
+  'anchor') placedThisPass++` names two types by hand, and `placedThisPass` is
+  the coverage-convergence loop's ONLY termination signal (`if (placedThisPass
+  === 0) break`). A gap-fill candidate that resolved to any other kind reads as
+  "no progress" and ends the pass early. Deriving it to "any non-reject
+  placement" is not a rename: the loop would run further and place more
+  supports. Needs a decision on what the counter is meant to measure — supports
+  placed, or plate-reaching supports (trunk/anchor are exactly the two kinds
+  that reach the plate) — before it changes. Flagged by the user for review;
+  see `support-registry-findings.md`.
 
 ### Bugs found while converting
 

@@ -355,7 +355,7 @@
   the `connectedBranchIds` / `connectedLeafIds` rehost loops).
 - What: the promoted branch's trunk inherits every branch/leaf rehosted off the
   replaced trunk with no capacity check — the only member-adding path in the auto
-  pipeline that does not consult `countAttachmentsOnTrunk`/`isTrunkAtAttachmentCapacity`.
+  pipeline that does not consult `countAttachmentsOnHost`/`isHostAtAttachmentCapacity`.
   A host already at the cap, plus its inherited set, can end up over it.
 - Why: the report cannot explain a host with more members than the setting allows
   (e.g. 36 members on one hub with cap 12 in the fan-out groups), and the layer
@@ -363,8 +363,8 @@
 - Context: docs/dev/auto-supports.md § "Rules worth knowing before you change placement".
 
 ### [fix] Consolidation gives grid hosts the regular 8 mm fan radius — S · medium risk
-- Where: src/supports/autoSupport/autoPlace.ts, `fanLeafToTrunk(...)` call in the
-  consolidation pass (~line 2372) passes `new Set()` as `gridTrunkIds`.
+- Where: src/supports/autoSupport/autoPlace.ts, `fanLeafToHost(...)` call in the
+  consolidation pass (~line 2372) passes `new Set()` as `gridHostIds`.
 - What: with an empty grid set every host is treated as a regular trunk, so chunk
   links reach `CONSOLIDATION_FAN_RADIUS_MM` (8 mm) from grid hosts instead of
   `GRID_HOST_FAN_RADIUS_MM` (2.5 mm).

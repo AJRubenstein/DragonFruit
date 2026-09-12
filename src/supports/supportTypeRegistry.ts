@@ -167,7 +167,18 @@ export interface SupportTypeDescriptor {
      * exists at all.
      */
     historyUpdate?: SupportHistoryActionType;
-    /** Whether instances carry real shafts, for segment and joint walks. */
+    /**
+     * Whether instances can host a fan link off their shaft.
+     *
+     * Trunk alone today. Declared because two things read it and must agree:
+     * `collectFanShaftPoints` builds the fan host pool from these types'
+     * collections, and auto-placement records a grid-placed instance so later
+     * candidates fan to it only up close. A type with no hostable shaft
+     * declares false rather than being tested for by name at either site.
+     */
+    canBeGridHost: boolean;
+    /**
+     * Whether instances carry real shafts, for segment and joint walks. */
     hasSegments: boolean;
     /**
      * Contact primitive fields, lower end first. Use for "every contact",
@@ -440,6 +451,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     {
         id: 'trunk',
         hasEditableSettings: true,
+        canBeGridHost: true,
         edges: [{ field: 'rootId', to: 'roots', ownership: 'owns' }],
         ownsRoot: true,
         segmentsCarryBothJoints: false,
@@ -514,6 +526,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: true,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
+        canBeGridHost: false,
         hasSegments: true,
         label: 'Branches',
         singular: 'branch',
@@ -556,6 +569,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
+        canBeGridHost: false,
         hasSegments: false,
         label: 'Leaves',
         singular: 'leaf',
@@ -592,6 +606,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'disk', field: 'contactDiskA' },
         upper: { kind: 'disk', field: 'contactDiskB' },
+        canBeGridHost: false,
         hasSegments: true,
         label: 'Twigs',
         singular: 'twig',
@@ -627,6 +642,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'cone', field: 'contactConeA' },
         upper: { kind: 'cone', field: 'contactConeB' },
+        canBeGridHost: false,
         hasSegments: true,
         label: 'Sticks',
         singular: 'stick',
@@ -669,6 +685,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'knot' },
         upper: { kind: 'knot' },
+        canBeGridHost: false,
         hasSegments: false,
         label: 'Braces',
         singular: 'brace',
@@ -710,6 +727,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'inlineRoot', field: 'rootPos' },
         upper: { kind: 'cone', field: 'contactCone' },
+        canBeGridHost: false,
         hasSegments: true,
         label: 'Anchors',
         singular: 'anchor',
@@ -754,6 +772,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'knot' },
+        canBeGridHost: false,
         hasSegments: true,
         label: 'Kickstands',
         singular: 'kickstand',
@@ -1339,6 +1358,21 @@ export const SHAFTED_COLLECTION_KEYS: readonly SupportCollectionKey[] = SUPPORT_
 export const SUPPORT_STATE_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYPES.filter(
     (descriptor) => descriptor.location.store === 'support',
 );
+
+/**
+ * Types whose shafts the fan host pool offers, in registry order.
+ *
+ * The pool, the merge search, the attachment-capacity check and the forest
+ * report's host index all walk this one list, so extending `canBeGridHost` to
+ * a second type reaches every one of them.
+ */
+export const GRID_HOST_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYPES.filter(
+    (descriptor) => descriptor.canBeGridHost,
+);
+
+/** Collections whose entities can host a fan link, in registry order. */
+export const GRID_HOST_COLLECTION_KEYS: readonly SupportCollectionKey[] = GRID_HOST_TYPES
+    .map((descriptor) => descriptor.location.key as SupportCollectionKey);
 
 /**
  * Collections on SupportState that are not support types. Roots and knots are

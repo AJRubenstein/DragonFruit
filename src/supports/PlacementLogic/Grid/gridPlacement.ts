@@ -23,7 +23,8 @@ import { perfMark, perfMeasureWithSpike } from '../Pathfinding/pathfindingPerf';
 import {
     MAX_AUTO_LEAF_SPAN_MM,
 } from '../../autoSupport/constants';
-import { selectTypeForPlacement } from '../../supportTypeRegistry';
+import { GRID_HOST_TYPES, getSupportTypeDescriptor, selectTypeForPlacement } from '../../supportTypeRegistry';
+import type { SupportTypeId } from '../../supportTypeRegistry';
 
 /**
  * Matches `validateAndCullOrphans`' post-thickening trunk check
@@ -272,7 +273,8 @@ function getHostDiameterMmFromKnot(knot: Knot, settings: DecideGridPlacementArgs
 
 function tryBuildAutoLeafDecision(args: {
     nodeKey: string;
-    hostTrunkId: string;
+    hostTypeId: SupportTypeId;
+    hostId: string;
     knot: Knot;
     tipPos: Vec3;
     tipNormal: Vec3;
@@ -280,7 +282,7 @@ function tryBuildAutoLeafDecision(args: {
     settings: DecideGridPlacementArgs['settings'];
     mesh?: THREE.Mesh;
 }): GridPlacementDecision | null {
-    const { nodeKey, hostTrunkId, knot, tipPos, tipNormal, modelId, settings, mesh } = args;
+    const { nodeKey, hostTypeId, hostId, knot, tipPos, tipNormal, modelId, settings, mesh } = args;
     const dx = tipPos.x - knot.pos.x;
     const dy = tipPos.y - knot.pos.y;
     const dz = tipPos.z - knot.pos.z;
@@ -309,15 +311,49 @@ function tryBuildAutoLeafDecision(args: {
     return {
         kind: 'place_leaf',
         nodeKey,
-        hostTrunkId,
+        hostTypeId,
+        hostId,
         knot,
         leaf,
         supportData,
     };
 }
 
+/**
+ * A host entity, as the grid engine reads it.
+ *
+ * The pool is every type declaring `canBeGridHost` that owns a root, so the
+ * entity is read through that shape rather than assumed to be a Trunk.
+ */
+interface HostEntity {
+    id: string;
+    modelId?: string;
+    origin?: string;
+    rootId?: string;
+    segments: Trunk['segments'];
+    contactCone?: { pos: Vec3 };
+}
+
+/**
+ * The host as the grid's root-stack resolver sees it.
+ *
+ * `getTrunkSegmentEndpointsWithSettings` reads the plate stack (disk + flare)
+ * from the GRID SETTINGS the host's root was built with, not from the root
+ * entity -- that is the contract a grid host is built under, and it is why
+ * this resolver is not `resolveSegmentEndpoints`. A grid host type that roots
+ * some other way needs its own resolution here; this throws rather than
+ * silently resolving its geometry from the wrong stack.
+ */
+function settingsRootedHost(hostTypeId: SupportTypeId, entity: HostEntity): Trunk {
+    if (getSupportTypeDescriptor(hostTypeId).lower.kind !== 'plateRoot') {
+        throw new Error(`grid attachment search has no root-stack resolution for "${hostTypeId}"`);
+    }
+    return entity as unknown as Trunk;
+}
+
 function selectHighestValidAttachment(args: {
-    hostTrunk: Trunk;
+    hostTypeId: SupportTypeId;
+    hostEntity: HostEntity;
     hostRoot: Roots;
     tipPos: Vec3;
     minAngleDeg: number;
@@ -327,7 +363,8 @@ function selectHighestValidAttachment(args: {
     tipNormal: Vec3;
     modelId: string;
 }): Knot | null {
-    const { hostTrunk, hostRoot, tipPos, minAngleDeg, settings, attachStepMm, mesh, tipNormal, modelId } = args;
+    const { hostRoot, tipPos, minAngleDeg, settings, attachStepMm, mesh, tipNormal, modelId } = args;
+    const hostTrunk = settingsRootedHost(args.hostTypeId, args.hostEntity);
     const shaftDiameterMm = settings.shaft.diameterMm;
 
     // Iterate segments from top (last) to bottom (first).
@@ -385,7 +422,7 @@ function selectHighestValidAttachment(args: {
 
 function findNeighborAttachment(args: {
     nodeKey: string;
-    trunkGridMap: Map<string, { trunkId: string; trunk: Trunk; root: Roots }>;
+    hostGridMap: Map<string, { hostTypeId: SupportTypeId; hostId: string; entity: HostEntity; root: Roots }>;
     tipPos: Vec3;
     tipNormal: Vec3;
     modelId: string;
@@ -406,10 +443,11 @@ function findNeighborAttachment(args: {
 
     for (const offset of neighborOffsets) {
         const neighborKey = `${gx + offset.dx},${gy + offset.dy}`;
-        const neighborHost = args.trunkGridMap.get(neighborKey);
-        if (neighborHost && neighborHost.trunk.segments.length > 0) {
+        const neighborHost = args.hostGridMap.get(neighborKey);
+        if (neighborHost && neighborHost.entity.segments.length > 0) {
             const neighborKnot = selectHighestValidAttachment({
-                hostTrunk: neighborHost.trunk,
+                hostTypeId: neighborHost.hostTypeId,
+                hostEntity: neighborHost.entity,
                 hostRoot: neighborHost.root,
                 tipPos: args.tipPos,
                 minAngleDeg: args.minAngleDeg,
@@ -429,7 +467,8 @@ function findNeighborAttachment(args: {
                 });
                 const leafDecision = tryBuildAutoLeafDecision({
                     nodeKey: neighborKey,
-                    hostTrunkId: neighborHost.trunkId,
+                    hostTypeId: neighborHost.hostTypeId,
+                    hostId: neighborHost.hostId,
                     knot: neighborKnot,
                     tipPos: args.tipPos,
                     tipNormal: args.tipNormal,
@@ -442,7 +481,8 @@ function findNeighborAttachment(args: {
                 return {
                     kind: 'place_branch',
                     nodeKey: neighborKey,
-                    hostTrunkId: neighborHost.trunkId,
+                    hostTypeId: neighborHost.hostTypeId,
+                    hostId: neighborHost.hostId,
                     knot: neighborKnot,
                     branch,
                     supportData,
@@ -486,14 +526,21 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
 
     const spacingMm = settings.grid?.spacingMm ?? 4;
     
-    // Build O(1) grid hash map of hosts
-    const trunkGridMap = new Map<string, { trunkId: string; trunk: Trunk; root: Roots }>();
-    for (const trunk of Object.values(snapshot.trunks)) {
-        if (trunk.modelId !== modelId) continue;
-        const root = snapshot.roots[trunk.rootId];
-        if (!root) continue;
-        const trunkKey = gridNodeKeyFromXY(root.transform.pos.x, root.transform.pos.y, spacingMm);
-        trunkGridMap.set(trunkKey, { trunkId: trunk.id, trunk, root });
+    // Build O(1) grid hash map of hosts. A grid node is occupied by whatever
+    // host type roots there, so the pool is the declared host types -- a host
+    // needs a root, which is what puts it on a node.
+    const hostGridMap = new Map<string, { hostTypeId: SupportTypeId; hostId: string; entity: HostEntity; root: Roots }>();
+    for (const descriptor of GRID_HOST_TYPES) {
+        if (!descriptor.ownsRoot) continue;
+        const collection = snapshot[descriptor.location.key] as unknown as
+            Record<string, HostEntity> | undefined;
+        for (const [hostId, entity] of Object.entries(collection ?? {})) {
+            if (entity.modelId !== modelId) continue;
+            const root = snapshot.roots[entity.rootId ?? ''];
+            if (!root) continue;
+            const hostKey = gridNodeKeyFromXY(root.transform.pos.x, root.transform.pos.y, spacingMm);
+            hostGridMap.set(hostKey, { hostTypeId: descriptor.id, hostId, entity, root });
+        }
     }
 
     // Which type a tip height calls for is declared; anchor claims the
@@ -544,7 +591,7 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
         { x: preferredReference.x, y: preferredReference.y }
     );
     const nodeKey = preferredNodeKey;
-    const host = trunkGridMap.get(nodeKey) ?? null;
+    const host = hostGridMap.get(nodeKey) ?? null;
     const snappedCandidate = hasResolvedSnappedRoot(candidate.route) && nodeKey === resolvedNodeKey
         ? candidate
         : applyGridSnapToNodeKey(
@@ -572,7 +619,7 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
 
         const neighborDecision = findNeighborAttachment({
             nodeKey,
-            trunkGridMap,
+            hostGridMap,
             tipPos,
             tipNormal,
             modelId,
@@ -607,7 +654,7 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
     // or scan distant hosts during hover.
     // ================================================================
 
-    if (host.trunk.segments.length === 0) {
+    if (host.entity.segments.length === 0) {
         return {
             kind: 'reject',
             nodeKey,
@@ -624,7 +671,8 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
     // --- Step 1: Attach to the co-located host. ---
     perfMark('grid:attach-search');
     const selectedKnot = selectHighestValidAttachment({
-        hostTrunk: host.trunk,
+        hostTypeId: host.hostTypeId,
+        hostEntity: host.entity,
         hostRoot: host.root,
         tipPos,
         minAngleDeg,
@@ -639,7 +687,7 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
     if (!selectedKnot) {
         const neighborDecision = findNeighborAttachment({
             nodeKey,
-            trunkGridMap,
+            hostGridMap,
             tipPos,
             tipNormal,
             modelId,
@@ -676,13 +724,13 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
     });
     perfMeasureWithSpike('grid:branch-build', 'branch:build');
 
-    const hostTrunkContactZ = host.trunk.contactCone?.pos.z ?? Number.NEGATIVE_INFINITY;
+    const hostContactZ = host.entity.contactCone?.pos.z ?? Number.NEGATIVE_INFINITY;
     const candidateContactZ = tipPos.z;
-    if (candidateContactZ > hostTrunkContactZ + 0.000001) {
+    if (candidateContactZ > hostContactZ + 0.000001) {
         return {
             kind: 'replace_trunk',
             nodeKey,
-            hostTrunkId: host.trunkId,
+            trunkToRemoveId: host.hostId,
             trunkBuild: withResolvedSnappedRoute(snappedCandidate, {
                 snappedRootPos: getResolvedSnappedRootPos(snappedCandidate.route, snappedCandidate.root.transform.pos),
                 snappedNodeKey: nodeKey,
@@ -697,7 +745,8 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
 
     const leafDecision = tryBuildAutoLeafDecision({
         nodeKey,
-        hostTrunkId: host.trunkId,
+        hostTypeId: host.hostTypeId,
+        hostId: host.hostId,
         knot: selectedKnot,
         tipPos,
         tipNormal,
@@ -711,7 +760,8 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
     return {
         kind: 'place_branch',
         nodeKey,
-        hostTrunkId: host.trunkId,
+        hostTypeId: host.hostTypeId,
+        hostId: host.hostId,
         knot: selectedKnot,
         branch,
         supportData,

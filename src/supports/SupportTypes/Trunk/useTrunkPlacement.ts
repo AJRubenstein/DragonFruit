@@ -689,10 +689,13 @@ export function useTrunkPlacementV2() {
             addBranch(branch);
 
             const snapshotAfterAdd = getSnapshot();
-            const hostTrunk = snapshotAfterAdd.trunks[decision.hostTrunkId];
+            // A grid attachment is always onto a plate-rooted host, which is
+            // what carries a trunk diameter profile.
+            const hostId = decision.hostId;
+            const hostTrunk = snapshotAfterAdd.trunks[hostId];
             const trunkUpdate = hostTrunk
                 ? (() => {
-                    const applied = computeAndApplyTrunkDiameterProfile(snapshotAfterAdd, decision.hostTrunkId);
+                    const applied = computeAndApplyTrunkDiameterProfile(snapshotAfterAdd, hostId);
                     if (!applied) return null;
 
                     for (const u of applied.knotUpdates) {
@@ -744,7 +747,7 @@ export function useTrunkPlacementV2() {
 
             const planned = planTrunkReplacement({
                 snapshot: getSnapshot(),
-                trunkIdToRemove: decision.hostTrunkId,
+                trunkIdToRemove: decision.trunkToRemoveId,
                 mode: 'grid_promote_candidate_to_trunk',
                 nodeKey: decision.nodeKey,
                 promoteBranchId: decision.promoteBranch.id,
