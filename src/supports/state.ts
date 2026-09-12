@@ -3131,10 +3131,14 @@ function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): bo
     return true;
 }
 
-/** @deprecated Thin wrapper for removal; prefer `replaceSupportEntity('anchor', entity)`. */
 /**
- * @deprecated for removal -- prefer `updateSupportEntity('anchor', entity)`.
- * Kept for `SupportTypes/Anchor/`, which may name its own type, and for tests.
+ * The anchor's own updater, registered in `BESPOKE_UPDATERS` below.
+ *
+ * NOT the generic path: an anchor carries no knots, so it does a plain write
+ * where `applySupportEntityUpdate` would cache the settings hex and reposition
+ * the knots riding its segments. The two stacked `@deprecated` notes that used
+ * to sit here contradicted its actual role — it is the registered updater, not
+ * a leftover.
  */
 export function updateAnchor(anchor: Anchor) {
     replaceSupportEntity('anchor', anchor);
