@@ -168,6 +168,16 @@ export interface SupportTypeDescriptor {
      */
     historyUpdate?: SupportHistoryActionType;
     /**
+     * Whether removing one of these re-solves a host it hung from.
+     *
+     * Branch alone today: a branch loads its host trunk, so taking one away
+     * leaves the trunk sized for an attachment that is gone, and the removal
+     * report has to carry the repaired trunk for undo to restore the pair.
+     * Declared here so the removal path asks the registry rather than testing
+     * this type by name.
+     */
+    repairsHostOnRemoval: boolean;
+    /**
      * Whether instances can host a fan link off their shaft.
      *
      * Trunk alone today. Declared because two things read it and must agree:
@@ -451,6 +461,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     {
         id: 'trunk',
         hasEditableSettings: true,
+        repairsHostOnRemoval: false,
         canBeGridHost: true,
         edges: [{ field: 'rootId', to: 'roots', ownership: 'owns' }],
         ownsRoot: true,
@@ -494,6 +505,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     {
         id: 'branch',
         hasEditableSettings: true,
+        repairsHostOnRemoval: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' }],
         ownsRoot: false,
         segmentsCarryBothJoints: false,
@@ -569,6 +581,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
+        repairsHostOnRemoval: false,
         canBeGridHost: false,
         hasSegments: false,
         label: 'Leaves',
@@ -606,6 +619,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'disk', field: 'contactDiskA' },
         upper: { kind: 'disk', field: 'contactDiskB' },
+        repairsHostOnRemoval: false,
         canBeGridHost: false,
         hasSegments: true,
         label: 'Twigs',
@@ -642,6 +656,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'cone', field: 'contactConeA' },
         upper: { kind: 'cone', field: 'contactConeB' },
+        repairsHostOnRemoval: false,
         canBeGridHost: false,
         hasSegments: true,
         label: 'Sticks',
@@ -685,6 +700,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'knot' },
         upper: { kind: 'knot' },
+        repairsHostOnRemoval: false,
         canBeGridHost: false,
         hasSegments: false,
         label: 'Braces',
@@ -727,6 +743,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'inlineRoot', field: 'rootPos' },
         upper: { kind: 'cone', field: 'contactCone' },
+        repairsHostOnRemoval: false,
         canBeGridHost: false,
         hasSegments: true,
         label: 'Anchors',
@@ -772,6 +789,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'knot' },
+        repairsHostOnRemoval: false,
         canBeGridHost: false,
         hasSegments: true,
         label: 'Kickstands',
@@ -879,16 +897,6 @@ export const SUPPORT_REMOVAL_SHAPES = {
 export function removalShapeFor(typeId: SupportTypeId): { self: string; cascade: Record<string, string | readonly string[]> } {
     return (SUPPORT_REMOVAL_SHAPES as Record<SupportTypeId, { self: string; cascade: Record<string, string | readonly string[]> }>)[typeId];
 }
-
-/**
- * Types whose removal history payload is not the cascade result verbatim.
- *
- * Leaf and brace narrow `null` to `undefined`; branch adds the trunk diameter
- * reprofile its removal triggers. Everything else pushes the shape it got.
- */
-export const RESHAPED_REMOVAL_PAYLOADS: ReadonlySet<SupportTypeId> = new Set<SupportTypeId>([
-    'leaf', 'brace', 'branch',
-]);
 
 /**
  * The entity type living in each collection, so a removal result can be typed

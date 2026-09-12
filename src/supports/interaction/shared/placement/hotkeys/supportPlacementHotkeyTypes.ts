@@ -65,9 +65,6 @@ export interface ResolvedSupportPlacementOwner {
     firstClickTarget: SupportPlacementFirstClickTarget;
     modelHoverOwner: SupportModelPlacementOwner;
     modelClickOwner: SupportModelPlacementOwner;
-    supportHoverOwner: SupportPlacementOwner;
-    supportClickOwner: SupportPlacementOwner;
     blocksDefaultModelPlacement: boolean;
-    blocksDefaultSupportPlacement: boolean;
     intent: ResolvedSupportPlacementHotkeyIntent;
 }

@@ -200,12 +200,16 @@ wiring is explicit:
   its callbacks through `resolvePlacementRouting()`.
 - `resolveSupportCategoryFromSnapshot`, `collectAllSupportIds` and
   `canDeleteSelection` need **nothing**: all three resolve from the registry.
-- `deleteSelectionByCategoryAndId` needs **nothing** for a type whose removal is
-  the cascade plus one history entry: a generic block reads `historyRemove` off
-  your descriptor. Only a type whose payload carries something extra (a branch's
-  trunk reprofile) needs its own block, and it must then be listed in
-  `RESHAPED_REMOVAL_PAYLOADS` — otherwise the generic block claims it first and
-  your block is dead code.
+- `deleteSelectionByCategoryAndId` needs **nothing**: the manager resolves the
+  type from `selectionCategory`, removes it with `removeSupportEntity`, and the
+  payload comes from `supports/history/removalPayload.ts`, derived from your
+  `SUPPORT_REMOVAL_SHAPES` entry — its `self` plus one field per declared
+  cascade entry. A field declared as an array (`['startKnot', 'endKnot']`) is a
+  set of NAMED singular slots rather than a list.
+- Removing one of your type also re-solves its host, if it hung from one — set
+  `repairsHostOnRemoval: true` and the host is found through your declared
+  `hostedBy` knot edge and re-solved, with the result reported beside the
+  cascade. Branch is the one type that does.
 - Deleting a **knot** deletes what it hosts, resolved by `findKnotHost` from the
   `hostedBy` edges onto `knots` that you declare. If your type can hang off a
   knot, add it to `KNOT_HOST_PRECEDENCE` (registry) — a knot-hosting type absent

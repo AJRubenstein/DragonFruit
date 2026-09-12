@@ -27,6 +27,12 @@ const defaultRoutingState: SupportPlacementRoutingState = {
     branchAwaitingBase: false
 };
 
+/**
+ * The router answers two questions: which owner a gesture goes to, and whether
+ * the default tool stands down. Its three support-side fields
+ * (`supportHoverOwner` / `supportClickOwner` / `blocksDefaultSupportPlacement`)
+ * are gone with the handlers that read them — see the note in the manager.
+ */
 test('resolveSupportPlacementRouting behaviour', () => {
     // 1. Idle state
     const resIdle = resolveSupportPlacementRouting({
@@ -35,7 +41,6 @@ test('resolveSupportPlacementRouting behaviour', () => {
         state: defaultRoutingState
     });
     assert.equal(resIdle.blocksDefaultModelPlacement, false);
-    assert.equal(resIdle.blocksDefaultSupportPlacement, false);
     assert.equal(resIdle.owner, 'none');
 
     // 2. Leaf active via hotkey
@@ -45,7 +50,6 @@ test('resolveSupportPlacementRouting behaviour', () => {
         state: { ...defaultRoutingState, leafHotkeyActive: true }
     });
     assert.equal(resLeafHotkey.blocksDefaultModelPlacement, true);
-    assert.equal(resLeafHotkey.blocksDefaultSupportPlacement, true);
     assert.equal(resLeafHotkey.owner, 'leaf');
 
     // 3. Kickstand active via Ctrl key modifier
@@ -55,9 +59,7 @@ test('resolveSupportPlacementRouting behaviour', () => {
         state: defaultRoutingState
     });
     assert.equal(resKickstand.blocksDefaultModelPlacement, true);
-    assert.equal(resKickstand.blocksDefaultSupportPlacement, true);
     assert.equal(resKickstand.owner, 'kickstand');
-    assert.equal(resKickstand.supportClickOwner, 'kickstand');
 });
 
 

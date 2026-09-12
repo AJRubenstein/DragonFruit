@@ -31,10 +31,7 @@ export function resolveSupportPlacementRouting(
             firstClickTarget: 'support',
             modelHoverOwner: 'none',
             modelClickOwner: 'none',
-            supportHoverOwner: 'brace',
-            supportClickOwner: 'brace',
             blocksDefaultModelPlacement: true,
-            blocksDefaultSupportPlacement: true,
             intent,
         };
     }
@@ -46,10 +43,7 @@ export function resolveSupportPlacementRouting(
             firstClickTarget: 'model',
             modelHoverOwner: 'none',
             modelClickOwner: 'none',
-            supportHoverOwner: 'leaf',
-            supportClickOwner: 'leaf',
             blocksDefaultModelPlacement: true,
-            blocksDefaultSupportPlacement: true,
             intent,
         };
     }
@@ -61,10 +55,7 @@ export function resolveSupportPlacementRouting(
             firstClickTarget: 'model',
             modelHoverOwner: 'branch',
             modelClickOwner: 'branch',
-            supportHoverOwner: 'branch',
-            supportClickOwner: 'branch',
             blocksDefaultModelPlacement: true,
-            blocksDefaultSupportPlacement: true,
             intent,
         };
     }
@@ -76,10 +67,7 @@ export function resolveSupportPlacementRouting(
             firstClickTarget: 'none',
             modelHoverOwner: 'leaf',
             modelClickOwner: 'leaf',
-            supportHoverOwner: 'leaf',
-            supportClickOwner: 'leaf',
             blocksDefaultModelPlacement: true,
-            blocksDefaultSupportPlacement: true,
             intent,
         };
     }
@@ -91,10 +79,7 @@ export function resolveSupportPlacementRouting(
             firstClickTarget: 'none',
             modelHoverOwner: 'branch',
             modelClickOwner: 'branch',
-            supportHoverOwner: 'brace',
-            supportClickOwner: 'brace',
             blocksDefaultModelPlacement: true,
-            blocksDefaultSupportPlacement: true,
             intent,
         };
     }
@@ -106,10 +91,7 @@ export function resolveSupportPlacementRouting(
             firstClickTarget: 'support',
             modelHoverOwner: 'none',
             modelClickOwner: 'none',
-            supportHoverOwner: 'kickstand',
-            supportClickOwner: 'kickstand',
             blocksDefaultModelPlacement: true,
-            blocksDefaultSupportPlacement: true,
             intent,
         };
     }
@@ -120,10 +102,7 @@ export function resolveSupportPlacementRouting(
         firstClickTarget: 'none',
         modelHoverOwner: 'none',
         modelClickOwner: 'none',
-        supportHoverOwner: 'none',
-        supportClickOwner: 'none',
         blocksDefaultModelPlacement: false,
-        blocksDefaultSupportPlacement: false,
         intent,
     };
 }
