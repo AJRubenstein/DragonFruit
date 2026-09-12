@@ -1,10 +1,10 @@
-import type { SupportKind } from '../Settings/supportKindState';
+import type { SidebarPanel } from '../Settings/sidebarPanels';
 
 type AutoBracingHotkeyContext = {
     active: boolean;
     wasActive: boolean;
     sidebarExpanded: boolean;
-    activeSupportKind: SupportKind;
+    activeSupportKind: SidebarPanel;
     curvePageVisible: boolean;
     modalOpen: boolean;
 };

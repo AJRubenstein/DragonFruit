@@ -256,6 +256,12 @@ wiring is explicit:
   your type: it gets a settings-hex cache bucket, and reads values back off the
   entity through the generic inference. Leave it false and the menu resolves no
   target for your type, so edits silently do nothing.
+- **A sidebar panel** (optional) — the panel's three settings flags derive from
+  the registry automatically, so your type answers them already; offering a panel
+  is adding your id to `TYPE_PANELS` in `Settings/sidebarPanels.ts`. If it should
+  draw its own anatomy preview rather than fall through to the generic renderer,
+  call `registerAnatomyPreview('gadget', GadgetPreview)` from wherever that
+  preview lives. See `registration-seams.md`.
 
 ## Minimal checklist (bare, render-only Gadget)
 

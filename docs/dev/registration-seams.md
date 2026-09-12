@@ -165,6 +165,48 @@ leaves that type mid-flight and the check throws a spurious error. Load `state.t
 (or, for preview geometry, the render-layer module above) and let the chain bring
 the rest.
 
+## Sidebar anatomy previews
+
+`src/supports/Settings/anatomyPreviewRegistry.ts` is where a sidebar panel
+registers the component that draws its anatomy preview:
+
+```ts
+registerAnatomyPreview('gadget', GadgetPreview);
+```
+
+Registered from wherever the preview lives — a type's own folder, or the tool's
+module (raft and grid are tools, not entity types) — so the sidebar mounts what
+is registered rather than a table it must be kept in step with. A panel that
+registers nothing falls through to `TrunkPreview`, the generic renderer, which is
+deliberately not registered.
+
+This replaced a hand-written `ANATOMY_PREVIEWS` table plus a `drawsOwnPreview`
+boolean whose only job was agreeing with that table, policed by a test.
+`hasOwnAnatomyPreview(panel)` is now "did anyone register one", so the two cannot
+drift.
+
+## Sidebar panels
+
+`src/supports/Settings/sidebarPanels.ts` is the sidebar's own vocabulary: a panel
+is a section of the sidebar showing settings plus the preview above. Panels are
+support types AND tools (raft, grid, auto), so the tool rows are declared while
+the type rows are answered by `typePanelFacts(typeId)` from the registry:
+
+| field | derivation |
+| ----- | ---------- |
+| `tab` | the descriptor's `sidebarTab` |
+| `settingsGroups.tip` | `hasEditableSettings && a contact field is a cone` |
+| `settingsGroups.shaft` | `hasEditableSettings && hasSegments && !shaftTaper` |
+| `settingsGroups.roots` | `lower.kind === 'plateRoot'` |
+| `drawsOwnPreview` | `hasOwnAnatomyPreview(id)` — see above |
+
+The compound forms are load-bearing, not incidental: twig and stick have shafts
+and no *editable* shaft diameter, and an anchor has a root with its own fields
+rather than a plate root. Geometry and editability are different questions.
+
+Every type answers, including those with no panel today, so offering one (anchor
+is the obvious candidate) is a UI change rather than a data gap.
+
 ## Writing a new seam
 
 Follow the existing shape so it reads like the rest of the codebase:

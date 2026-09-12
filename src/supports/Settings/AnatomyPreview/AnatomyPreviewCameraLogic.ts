@@ -1,4 +1,4 @@
-import type { SupportKind } from '../supportKindState';
+import type { SidebarPanel } from '../sidebarPanels';
 import type { CameraFocusState } from './AnatomyPreviewCameraTypes';
 import {
     BRANCH_HOME_FOCUS_STATE,
@@ -27,7 +27,7 @@ export { BRACE_HOME_FOCUS_STATE };
  * setting is focused, for the kinds that declare one. A kind with no entry
  * falls back to the shared support framing.
  */
-const CAMERA_BY_KIND: Partial<Record<SupportKind, {
+const CAMERA_BY_KIND: Partial<Record<SidebarPanel, {
     target: (key: string | null) => CameraFocusState;
     home?: CameraFocusState;
 }>> = {
@@ -40,7 +40,7 @@ const CAMERA_BY_KIND: Partial<Record<SupportKind, {
     trunk: { target: getSupportTargetFocusState, home: TRUNK_HOME_FOCUS_STATE },
 };
 
-export function getTargetFocusState(kind: SupportKind, key: string | null): CameraFocusState {
+export function getTargetFocusState(kind: SidebarPanel, key: string | null): CameraFocusState {
     const entry = CAMERA_BY_KIND[kind];
     if (!entry) return getSupportTargetFocusState(key);
     if (!key && entry.home) return entry.home;

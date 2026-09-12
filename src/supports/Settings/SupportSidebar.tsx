@@ -38,7 +38,7 @@ import {
     PresetSelector,
     RaftSettingsCard,
     GridSettingsCard,
-    SupportKindTabs,
+    SidebarPanelTabs,
 } from './components';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { NumberInput } from '@/components/ui/NumberInput';
@@ -51,14 +51,14 @@ import { shouldRunAutoBracingHotkey } from '../autoBracing/autoBracingHotkey';
 import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { setAnatomyPreviewActiveSettingKey, subscribeToAnatomyPreviewState, getAnatomyPreviewState } from './AnatomyPreview/previewState';
 import {
-    DEFAULT_SUPPORT_KIND,
-    getSupportKindSnapshot,
-    isSupportKind,
-    kindHas,
-    setActiveSupportKind,
-    subscribeToSupportKindState,
-    tabKindFor,
-} from './supportKindState';
+    DEFAULT_SIDEBAR_PANEL,
+    getSidebarPanelSnapshot,
+    isSidebarPanel,
+    panelHas,
+    setActiveSidebarPanel,
+    subscribeToSidebarPanel,
+    tabPanelFor,
+} from './sidebarPanels';
 import {
     getRaftSettings,
     subscribeToRaftStore,
@@ -68,7 +68,7 @@ import {
     resetRaftSessionModificationFlag,
 } from '../Rafts/Crenelated/RaftState';
 import { DEFAULT_RAFT_SETTINGS } from '../Rafts/Crenelated/RaftDefaults';
-import type { SupportKind } from './supportKindState';
+import type { SidebarPanel } from './sidebarPanels';
 import { resetSupportSettingsScrollForTabChange } from './supportSidebarScroll';
 
 const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm text-center no-spinners !bg-[var(--surface-0)]';
@@ -81,22 +81,8 @@ const ACCENT_CARD_STYLE: React.CSSProperties = {
     background: 'color-mix(in srgb, var(--accent), var(--surface-1) 95%)',
 };
 
-// `label` is currently unread — only `icon` is consumed (see activeKindMeta
-// below), so these strings are deliberately left out of the catalogue rather
-// than shipped to translators as copy nothing renders.
-const KIND_META: Record<SupportKind, { label: string; icon: typeof Pickaxe }> = {
-    trunk: { label: 'Trunk', icon: Pickaxe },
-    branch: { label: 'Branch', icon: Wrench },
-    leaf: { label: 'Leaf', icon: Sparkles },
-    twig: { label: 'Twig', icon: WandSparkles },
-    raft: { label: 'Raft', icon: Sailboat },
-    grid: { label: 'Grid', icon: Grid3X3 },
-    stick: { label: 'Bracing', icon: WandSparkles },
-    auto: { label: 'Auto', icon: Sparkles },
-};
-
-const OVERFLOW_COMPACT_KIND_SET = new Set<SupportKind>(['trunk', 'raft', 'grid', 'stick', 'auto']);
-const POPUP_PREVIEW_KIND_SET = new Set<SupportKind>(['trunk']);
+const OVERFLOW_COMPACT_KIND_SET = new Set<SidebarPanel>(['trunk', 'raft', 'grid', 'stick', 'auto']);
+const POPUP_PREVIEW_KIND_SET = new Set<SidebarPanel>(['trunk']);
 
 function hasMeaningfulSupportEditChange(
     before: SupportEditHistorySnapshot,
@@ -180,11 +166,10 @@ export function SupportSidebar() {
     const autoBraceStatusTimeoutRef = React.useRef<number | null>(null);
     const autoBracingHotkeyWasActiveRef = React.useRef(false);
     const isAdaptiveConeAngle = (settings.tip.coneAngleMode ?? 'normal') === 'adaptive';
-    const supportKindState = React.useSyncExternalStore(subscribeToSupportKindState, getSupportKindSnapshot, getSupportKindSnapshot);
-    const activeKind = supportKindState.kind;
-    const useAdaptiveIconCompactDisplay = isAdaptiveConeAngle && activeKind === 'trunk';
-    const tabKind = tabKindFor(activeKind);
-    const activeKindMeta = KIND_META[activeKind];
+    const sidebarPanelState = React.useSyncExternalStore(subscribeToSidebarPanel, getSidebarPanelSnapshot, getSidebarPanelSnapshot);
+    const activePanel = sidebarPanelState.panel;
+    const useAdaptiveIconCompactDisplay = isAdaptiveConeAngle && activePanel === 'trunk';
+    const tabKind = tabPanelFor(activePanel);
     const raftSettings = React.useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
     const supportState = React.useSyncExternalStore(subscribeToSupportState, getSupportSnapshot, getSupportSnapshot);
     const previewState = React.useSyncExternalStore(subscribeToAnatomyPreviewState, getAnatomyPreviewState, getAnatomyPreviewState);
@@ -237,16 +222,16 @@ export function SupportSidebar() {
     const compactEnteredWindowHeightRef = React.useRef<number | null>(null);
 
     useEffect(() => {
-        if (!OVERFLOW_COMPACT_KIND_SET.has(activeKind) || !trunkCompactByOverflow) {
+        if (!OVERFLOW_COMPACT_KIND_SET.has(activePanel) || !trunkCompactByOverflow) {
             compactEnteredWindowHeightRef.current = null;
             return;
         }
 
         compactEnteredWindowHeightRef.current = window.innerHeight;
-    }, [activeKind, trunkCompactByOverflow]);
+    }, [activePanel, trunkCompactByOverflow]);
 
     useLayoutEffect(() => {
-        if (!expanded || showCurvePage || !OVERFLOW_COMPACT_KIND_SET.has(activeKind)) return;
+        if (!expanded || showCurvePage || !OVERFLOW_COMPACT_KIND_SET.has(activePanel)) return;
         const viewport = scrollViewportRef.current;
         if (!viewport) return;
 
@@ -314,13 +299,13 @@ export function SupportSidebar() {
                 window.cancelAnimationFrame(rafId);
             }
         };
-    }, [expanded, showCurvePage, activeKind]);
+    }, [expanded, showCurvePage, activePanel]);
 
     useEffect(() => {
-        if (!OVERFLOW_COMPACT_KIND_SET.has(activeKind) && trunkCompactByOverflow) {
+        if (!OVERFLOW_COMPACT_KIND_SET.has(activePanel) && trunkCompactByOverflow) {
             setTrunkCompactByOverflow(false);
         }
-    }, [activeKind, trunkCompactByOverflow]);
+    }, [activePanel, trunkCompactByOverflow]);
 
     const makeRowFocusHandlers = React.useCallback((key: string) => {
         return {
@@ -432,8 +417,8 @@ export function SupportSidebar() {
             globalSettingsBeforeSupportEditRef.current = null;
         }
 
-        if (leavingSupportEdit && activeKind !== DEFAULT_SUPPORT_KIND) {
-            setActiveSupportKind(DEFAULT_SUPPORT_KIND);
+        if (leavingSupportEdit && activePanel !== DEFAULT_SIDEBAR_PANEL) {
+            setActiveSidebarPanel(DEFAULT_SIDEBAR_PANEL);
         }
     }, [editableTarget, commitPendingSettingsSession]);
 
@@ -491,12 +476,12 @@ export function SupportSidebar() {
 
         // Not every editable type has a sidebar tool, so only follow the
         // selection when one exists.
-        if (selectionChanged && activeKind !== editableTarget.kind && isSupportKind(editableTarget.kind)) {
-            setActiveSupportKind(editableTarget.kind);
+        if (selectionChanged && activePanel !== editableTarget.kind && isSidebarPanel(editableTarget.kind)) {
+            setActiveSidebarPanel(editableTarget.kind);
         }
 
         lastEditableTargetKeyRef.current = targetKey;
-    }, [editableTarget, selectedSupportSettings, settings, activeKind]);
+    }, [editableTarget, selectedSupportSettings, settings, activePanel]);
 
     React.useEffect(() => {
         if (!editableTarget) return;
@@ -619,7 +604,7 @@ export function SupportSidebar() {
             active: autoBracingHotkeyActive,
             wasActive: autoBracingHotkeyWasActiveRef.current,
             sidebarExpanded: expanded,
-            activeSupportKind: activeKind,
+            activeSupportKind: activePanel,
             curvePageVisible: showCurvePage,
             modalOpen: document.querySelector('[role="dialog"][aria-modal="true"]') !== null,
         })) {
@@ -630,7 +615,7 @@ export function SupportSidebar() {
         }
 
         autoBracingHotkeyWasActiveRef.current = autoBracingHotkeyActive;
-    }, [activeKind, autoBracingHotkeyActive, expanded, handleAutoBrace, showCurvePage]);
+    }, [activePanel, autoBracingHotkeyActive, expanded, handleAutoBrace, showCurvePage]);
 
     const getInputProps = React.useCallback((key: string, baseClass: string) => {
         const isActive = activeKey === key;
@@ -659,18 +644,18 @@ export function SupportSidebar() {
     );
 
     const sectionScrollClass = 'flex-1 min-h-0 overflow-y-auto custom-scrollbar';
-    const shouldUseOverflowCompactMode = OVERFLOW_COMPACT_KIND_SET.has(activeKind) && trunkCompactByOverflow;
-    const shouldUseCompactTrunkLayout = activeKind === 'trunk' && shouldUseOverflowCompactMode;
-    const hasFloatingTrunkPreviewTrigger = POPUP_PREVIEW_KIND_SET.has(activeKind)
+    const shouldUseOverflowCompactMode = OVERFLOW_COMPACT_KIND_SET.has(activePanel) && trunkCompactByOverflow;
+    const shouldUseCompactTrunkLayout = activePanel === 'trunk' && shouldUseOverflowCompactMode;
+    const hasFloatingTrunkPreviewTrigger = POPUP_PREVIEW_KIND_SET.has(activePanel)
         && (Boolean(activeKey) || Boolean(previewState.hoveredPresetSettings));
     const shouldShowFloatingTrunkPreview = expanded
-        && POPUP_PREVIEW_KIND_SET.has(activeKind)
+        && POPUP_PREVIEW_KIND_SET.has(activePanel)
         && shouldUseOverflowCompactMode
         && floatingTrunkPreviewHeldOpen;
 
     useEffect(() => {
         const supportsFloatingPreview = expanded
-            && POPUP_PREVIEW_KIND_SET.has(activeKind)
+            && POPUP_PREVIEW_KIND_SET.has(activePanel)
             && shouldUseOverflowCompactMode;
         if (!supportsFloatingPreview) {
             if (floatingTrunkPreviewHideTimeoutRef.current !== null) {
@@ -718,7 +703,7 @@ export function SupportSidebar() {
                 setFloatingTrunkPreviewFadingOut(false);
             }, 240);
         }, 2000);
-    }, [expanded, activeKind, shouldUseOverflowCompactMode, hasFloatingTrunkPreviewTrigger, floatingTrunkPreviewHeldOpen]);
+    }, [expanded, activePanel, shouldUseOverflowCompactMode, hasFloatingTrunkPreviewTrigger, floatingTrunkPreviewHeldOpen]);
 
     useEffect(() => {
         return () => {
@@ -840,7 +825,7 @@ export function SupportSidebar() {
                 </div>
             </div>
 
-            {kindHas(activeKind, 'hasContactCone') && (
+            {panelHas(activePanel, 'tip') && (
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('tip.lengthMm')}>
                     <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title={_(msg`Contact Cone Length`)}>{_(msg`Contact Cone Length`)}</div>
                     <div className="relative">
@@ -856,7 +841,7 @@ export function SupportSidebar() {
                 </div>
             )}
 
-            {kindHas(activeKind, 'hasContactCone') && (
+            {panelHas(activePanel, 'tip') && (
                 <div className="space-y-1 min-w-0" {...fieldFocusProps('tip.coneAngleMode', () => setAnatomyPreviewActiveSettingKey('tip.coneAngleMode'), (e) => {
                     const next = e.relatedTarget as Node | null;
                     if (next && e.currentTarget.contains(next)) return;
@@ -914,7 +899,7 @@ export function SupportSidebar() {
                 </div>
             )}
 
-            {kindHas(activeKind, 'hasShaft') && (
+            {panelHas(activePanel, 'shaft') && (
                 <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('shaft.diameterMm')}>
                     <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }} title={_(msg`Trunk Diameter`)}>{_(msg`Trunk Diameter`)}</div>
                     <div className="relative">
@@ -930,7 +915,7 @@ export function SupportSidebar() {
                 </div>
             )}
 
-            {kindHas(activeKind, 'hasPlateRoot') && (
+            {panelHas(activePanel, 'roots') && (
                 <>
                     <div className="h-px" style={{ background: 'var(--border-subtle)' }} />
 
@@ -1135,9 +1120,6 @@ export function SupportSidebar() {
         ? supportGeometryFieldsCompactTrunk
         : supportGeometryFieldsDefault;
 
-    const activeKindIcon = activeKindMeta.icon;
-    const ActiveKindIcon = activeKindIcon;
-
     return (
         <>
 
@@ -1201,7 +1183,7 @@ export function SupportSidebar() {
                                 </>
                             ) : (
                                 <>
-                                    <SupportKindTabs
+                                    <SidebarPanelTabs
                                         value={tabKind}
                                         onChange={(kind) => {
                                             resetSupportSettingsScrollForTabChange(
@@ -1210,11 +1192,11 @@ export function SupportSidebar() {
                                                 kind,
                                             );
                                             setAnatomyPreviewActiveSettingKey(null);
-                                            setActiveSupportKind(kind);
+                                            setActiveSidebarPanel(kind);
                                         }}
                                     />
 
-                                    {activeKind === 'raft' ? (
+                                    {activePanel === 'raft' ? (
                                         <>
                                             {!shouldUseOverflowCompactMode ? (
                                                 renderPreviewBox('h-[220px]')
@@ -1226,7 +1208,7 @@ export function SupportSidebar() {
                                                 />
                                             </div>
                                         </>
-                                    ) : activeKind === 'grid' ? (
+                                    ) : activePanel === 'grid' ? (
                                         <>
                                             {!shouldUseOverflowCompactMode ? (
                                                 renderPreviewBox('h-[220px]')
@@ -1238,7 +1220,7 @@ export function SupportSidebar() {
                                                 />
                                             </div>
                                         </>
-                                    ) : activeKind === 'stick' ? (
+                                    ) : activePanel === 'stick' ? (
                                         <>
                                             {!shouldUseOverflowCompactMode ? (
                                                 renderPreviewBox('h-[220px]')
@@ -1252,7 +1234,7 @@ export function SupportSidebar() {
                                                 />
                                             </div>
                                         </>
-                                    ) : activeKind === 'trunk' ? (
+                                    ) : activePanel === 'trunk' ? (
                                         <>
                                             {shouldUseCompactTrunkLayout ? (
                                                 <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>

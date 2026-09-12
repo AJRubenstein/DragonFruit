@@ -1,3 +1,4 @@
+import { registerAnatomyPreview } from '../../../anatomyPreviewRegistry';
 import React from 'react';
 import * as THREE from 'three';
 import { SupportBuilder } from '@/supports/rendering/SupportBuilder';
@@ -291,3 +292,8 @@ export function BracePreview({
         </group>
     );
 }
+
+// Serves the STICK panel: "Bracing" is the stick's sidebar tab, and this
+// renders the bracing pattern the stick tool produces. Registered under the
+// panel it draws, not the folder it happens to live in.
+registerAnatomyPreview('stick', BracePreview);

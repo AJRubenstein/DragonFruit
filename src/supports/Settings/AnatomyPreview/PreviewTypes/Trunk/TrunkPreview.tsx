@@ -10,12 +10,12 @@ import { buildTwig } from '@/supports/SupportTypes/Twig/twigBuilder';
 import { resolveConeAxisPolicy } from '@/supports/PlacementLogic/ConeAxisPolicy';
 import type { SupportTipProfile } from '@/supports/SupportPrimitives/ContactCone/types';
 import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
-import type { SupportKind } from '../../../supportKindState';
+import type { SidebarPanel } from '../../../sidebarPanels';
 
 interface TrunkPreviewProps {
     settings: any;
     liveConfig: any;
-    activeKind: SupportKind;
+    activePanel: SidebarPanel;
     previewState: any;
     anatomyOverrides: any;
 }
@@ -23,7 +23,7 @@ interface TrunkPreviewProps {
 export function TrunkPreview({
     settings,
     liveConfig,
-    activeKind,
+    activePanel,
     previewState,
     anatomyOverrides
 }: TrunkPreviewProps) {
@@ -77,7 +77,7 @@ export function TrunkPreview({
 
         const tipPos = { x: tipX, y: 0, z: liveConfig.previewHeightMm };
 
-        if (activeKind === 'trunk' || activeKind === 'raft') {
+        if (activePanel === 'trunk' || activePanel === 'raft') {
             return buildTrunkData({
                 tipPos: tipPos,
                 tipNormal: tipNormal,
@@ -94,7 +94,7 @@ export function TrunkPreview({
             }).supportData;
         }
 
-        if (activeKind === 'branch') {
+        if (activePanel === 'branch') {
             const parentKnot = {
                 id: 'anatomy-preview-knot',
                 parentShaftId: 'anatomy-preview-shaft',
@@ -111,7 +111,7 @@ export function TrunkPreview({
             }).supportData;
         }
 
-        if (activeKind === 'leaf') {
+        if (activePanel === 'leaf') {
             const parentKnot = {
                 id: 'anatomy-preview-knot',
                 parentShaftId: 'anatomy-preview-shaft',
@@ -129,7 +129,7 @@ export function TrunkPreview({
             }).supportData;
         }
 
-        if (activeKind === 'stick') {
+        if (activePanel === 'stick') {
             const aPos = { x: -2.8, y: 0, z: 10.5 };
             const bPos = { x: 2.8, y: 0, z: 7.5 };
             const aNormal = { x: 0, y: 0, z: 1 };
@@ -159,7 +159,7 @@ export function TrunkPreview({
             segments: [seg],
             contactDisks: [built.twig.contactDiskA, built.twig.contactDiskB],
         };
-    }, [activeKind, settings, liveConfig]);
+    }, [activePanel, settings, liveConfig]);
 
     // If we're on Raft or Grid, we use those specific previews instead. 
     // BUT the Canvas handles the switching.

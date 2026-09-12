@@ -168,6 +168,15 @@ export interface SupportTypeDescriptor {
      */
     historyUpdate?: SupportHistoryActionType;
     /**
+     * The sidebar tab this type is edited under.
+     *
+     * A sidebar grouping, so the UI can ask rather than hold a second table:
+     * stick has its own tab (it is the bracing tool's page), everything else
+     * shares trunk's. Declared for every type, including ones the sidebar has
+     * no panel for yet, so offering one is a UI change and not a data gap.
+     */
+    sidebarTab: 'trunk' | 'raft' | 'grid' | 'stick';
+    /**
      * Whether removing one of these re-solves a host it hung from.
      *
      * Branch alone today: a branch loads its host trunk, so taking one away
@@ -476,6 +485,7 @@ export interface SupportTypeDescriptor {
 const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAdd' | 'historyRemove'>[] = [
     {
         id: 'trunk',
+        sidebarTab: 'trunk',
         hasEditableSettings: true,
         recomputesDiameterFromAttachments: true,
         mayReachSideways: false,
@@ -521,6 +531,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'branch',
+        sidebarTab: 'trunk',
         hasEditableSettings: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' }],
         ownsRoot: false,
@@ -566,6 +577,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'leaf',
+        sidebarTab: 'trunk',
         hasEditableSettings: true,
         knotHostPrefix: 'leafCone:',
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' }],
@@ -610,6 +622,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'twig',
+        sidebarTab: 'trunk',
         hasEditableSettings: false,
         edges: [],
         ownsRoot: false,
@@ -649,6 +662,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'stick',
+        sidebarTab: 'stick',
         hasEditableSettings: false,
         edges: [],
         ownsRoot: false,
@@ -687,6 +701,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'brace',
+        sidebarTab: 'trunk',
         // Two named knot fields rather than a list: the history payload and its
         // undo handler read them by name, and start/end are not interchangeable.
         hasEditableSettings: false,
@@ -732,6 +747,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'anchor',
+        sidebarTab: 'trunk',
         hasEditableSettings: false,
         edges: [],
         ownsRoot: false,
@@ -776,6 +792,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'kickstand',
+        sidebarTab: 'trunk',
         hasEditableSettings: true,
         edges: [
             { field: 'rootId', to: 'roots', ownership: 'owns' },

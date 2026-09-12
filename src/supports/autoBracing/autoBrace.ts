@@ -39,7 +39,7 @@ import { linePassesMeshClearance } from './meshClearance';
 
 const EPS = 0.000001;
 /** The types auto-bracing samples. Derived, so a ninth type joins by declaring it. */
-type SupportKind = SupportTypeId;
+type SidebarPanel = SupportTypeId;
 
 function maxHorizontalRunFromBraceLen(maxBraceLenMm: number): number {
     return maxBraceLenMm;
@@ -55,7 +55,7 @@ type SegmentSample = {
 
 type SupportSample = {
     supportId: string;
-    supportKind: SupportKind;
+    supportKind: SidebarPanel;
     modelId: string;
     segments: SegmentSample[];
     topReferenceZ: number;

@@ -2,13 +2,13 @@
 
 import React from 'react';
 import { Grid3X3, Pickaxe, Sailboat, WandSparkles, type LucideIcon } from 'lucide-react';
-import type { SupportKind } from '../supportKindState';
+import type { SidebarPanel } from '../sidebarPanels';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 
 type TabDef = {
-    kind: SupportKind;
+    kind: SidebarPanel;
     label: MessageDescriptor;
     icon: LucideIcon;
 };
@@ -21,12 +21,12 @@ const TABS: TabDef[] = [
     { kind: 'stick', label: msg({ message: 'Bracing', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: WandSparkles },
 ];
 
-export function SupportKindTabs({
+export function SidebarPanelTabs({
     value,
     onChange,
 }: {
-    value: SupportKind;
-    onChange: (kind: SupportKind) => void;
+    value: SidebarPanel;
+    onChange: (kind: SidebarPanel) => void;
 }) {
     const { _ } = useLingui();
     const containerRef = React.useRef<HTMLDivElement | null>(null);
