@@ -8,6 +8,7 @@ import {
     promoteAwayHost,
     resolveKnotDiameter,
     SUPPORT_TYPES,
+    placementOf,
     typesMissingHostPromotion,
     updateSupportEntity,
 } from '../supportTypeRegistry';
@@ -52,11 +53,8 @@ test('a promotion that was never registered reports "could not", not a silent su
         hostId: 'nope',
         nodeKey: '0,0',
         recordHistory: false,
-        placed: {
-            typeId: 'branch',
-            entity: { id: 'b' },
-            supplied: { parentKnotId: { id: 'k' } },
-        },
+        placed: placementOf('branch', { id: 'b' } as never),
+        promotedMember: placementOf('branch', { id: 'b' } as never, { parentKnotId: { id: 'k' } as never }),
     });
     assert.equal(result, null, 'an unregistered promotion must not claim success');
 });
@@ -67,11 +65,8 @@ test('the registered trunk promotion fails rather than throwing on an unknown ho
         hostId: 'does-not-exist',
         nodeKey: '0,0',
         recordHistory: false,
-        placed: {
-            typeId: 'trunk',
-            entity: { id: 't' },
-            supplied: { rootId: { id: 'r' }, parentKnotId: { id: 'k' } },
-        },
+        placed: placementOf('trunk', { id: 't' } as never, { rootId: { id: 'r' } as never }),
+        promotedMember: placementOf('branch', { id: 'b' } as never, { parentKnotId: { id: 'k' } as never }),
     });
     assert.equal(result, null, 'a missing host is a failed promotion, not a crash');
 });

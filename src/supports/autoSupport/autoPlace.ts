@@ -1095,7 +1095,8 @@ function placeOneCandidate(
             // ONE arm for every type. Which collection the entity joins and
             // which primitives travel with it are both DECLARED on the
             // descriptor, so nothing here names a type.
-            const { typeId, entity: placed, supplied, hostedBy } = decision.placed;
+            const placed = decision.placed;
+            const { typeId, supplied, hostedBy } = placed;
 
             // A hosted support is limited by what its host may carry. Checked
             // here rather than in the engine because the rejection is accounted
@@ -1109,9 +1110,9 @@ function placeOneCandidate(
                 }
             }
 
-            const entity = placed as { id: string; origin?: string };
             // Whether this type records an origin is declared, so no arm has to
             // know which types stamp one.
+            const entity = { ...placed.entity } as typeof placed.entity & { origin?: SupportOrigin };
             if (getSupportTypeDescriptor(typeId).hasOrigin) {
                 entity.origin = candidate.gridPoint
                     ? 'overhang'

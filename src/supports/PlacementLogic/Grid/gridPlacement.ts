@@ -1,4 +1,4 @@
-import type { Anchor, Knot, Roots, Trunk, Vec3 } from '../../types';
+import type { Knot, Roots, Trunk, Vec3 } from '../../types';
 import type { TrunkBuildResult } from '../../SupportTypes/Trunk/trunkBuilder';
 import type { SnappedTrunkRouteResult } from '../../SupportTypes/Trunk/trunkRouteTypes';
 import { buildBranchData } from '../../SupportTypes/Branch/branchBuilder';
@@ -11,7 +11,7 @@ import {
     hasResolvedSnappedRoot,
 } from '../../SupportTypes/Trunk/trunkRouteResolution';
 import { gridNodeKeyFromXY, gridSnappedXYFromKey } from './gridMath';
-import type { DecideGridPlacementArgs, GridPlacementDecision } from './types';
+import type { DecideGridPlacementArgs, GridPlacementDecision, GridPlacementRejectReason } from './types';
 import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import { calculateKnotPositionOnSegmentFromT } from '../../SupportPrimitives/Knot/knotUtils';
 import { isShaftBlocked } from '../CollisionAvoidance';
@@ -22,7 +22,7 @@ import { perfMark, perfMeasureWithSpike } from '../Pathfinding/pathfindingPerf';
 import {
     MAX_AUTO_LEAF_SPAN_MM,
 } from '../../autoSupport/constants';
-import { buildContactOverride, GRID_HOST_TYPES, getSupportTypeDescriptor, selectTypeForPlacement } from '../../supportTypeRegistry';
+import { buildContactOverride, GRID_HOST_TYPES, getSupportTypeDescriptor, placementOf, placementOfResolved, selectTypeForPlacement } from '../../supportTypeRegistry';
 import type { SupportTypeId } from '../../supportTypeRegistry';
 import type { SupportData } from '../../rendering/SupportBuilder';
 
@@ -314,13 +314,13 @@ function tryBuildAutoLeafDecision(args: {
     return {
         kind: 'place',
         nodeKey,
-        placed: {
-            typeId: leafTypeId,
-            entity: leaf,
+        placed: placementOf(
+            leafTypeId,
+            leaf,
             // The knot it hangs from, under the same field name `edges` declares.
-            supplied: { parentKnotId: knot },
-            hostedBy: { typeId: hostTypeId, id: hostId },
-        },
+            { parentKnotId: knot },
+            { typeId: hostTypeId, id: hostId },
+        ),
         supportData,
     };
 }
@@ -488,12 +488,12 @@ function findNeighborAttachment(args: {
                 return {
                     kind: 'place',
                     nodeKey: neighborKey,
-                    placed: {
-                        typeId: 'branch',
-                        entity: branch,
-                        supplied: { parentKnotId: neighborKnot },
-                        hostedBy: { typeId: neighborHost.hostTypeId, id: neighborHost.hostId },
-                    },
+                    placed: placementOf(
+                        'branch',
+                        branch,
+                        { parentKnotId: neighborKnot },
+                        { typeId: neighborHost.hostTypeId, id: neighborHost.hostId },
+                    ),
                     supportData,
                 };
             }
@@ -562,38 +562,29 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
     const override = claimedTypeId ? buildContactOverride(claimedTypeId) : undefined;
     if (claimedTypeId && override) {
         const built = override({ tipPos, tipNormal, modelId, mesh });
-        if (built) {
-            const anchor = built.entity as Anchor;
-            const supportData = built.supportData as SupportData;
-            // The cone body spans contact disk → socket and must never dip below
-            // the root joint: a tip lower than the root (or an over-long cone on a
-            // downward axis) would push the shaft below the root, into -Z.
-            const jointZ = anchor.joint.pos.z;
-            const lowestShaftZ = Math.min(
-                anchor.contactCone.pos.z,
-                getFinalSocketPosition(anchor.contactCone).z,
-            );
-            if (lowestShaftZ < jointZ - 1e-3) {
-                // Ghost-preview the invalid support (red, with the reason as
-                // `error`) so the hover tooltip explains the rejection.
-                return {
-                    kind: 'reject',
-                    nodeKey: '',
-                    reason: 'ANCHOR_BELOW_ROOT',
-                    supportData: { ...supportData, error: 'ANCHOR_BELOW_ROOT' },
-                };
-            }
+        if (!built) {
+            // A registered builder that cannot build this contact rejects HERE.
+            // It must not fall through to the trunk default: a type claiming the
+            // band has already said this height is not a trunk's to serve.
+            return { kind: 'reject', nodeKey: '', reason: 'NO_VALID_ATTACHMENT' };
+        }
+        if (built.refusal) {
             return {
-                kind: 'place',
+                kind: 'reject',
                 nodeKey: '',
-                placed: {
-                    typeId: claimedTypeId,
-                    entity: built.entity,
-                    supplied: built.supplied,
-                },
-                supportData,
+                // The type's own reason, in the engine's vocabulary. The cast is
+                // the registry/renderer boundary: this module owns the reject
+                // codes while the type owns the reason it refuses for.
+                reason: built.refusal as GridPlacementRejectReason,
+                supportData: built.supportData as SupportData,
             };
         }
+        return {
+            kind: 'place',
+            nodeKey: '',
+            placed: built.placed,
+            supportData: built.supportData as SupportData,
+        };
     }
 
     // Everything below stands the built trunk on the contact. The registry has
@@ -614,12 +605,10 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
         return {
             kind: 'place',
             nodeKey: 'disabled',
-            placed: {
-                typeId: placedTypeId,
-                entity: trunkBuild.trunk,
+            placed: placementOfResolved(placedTypeId, trunkBuild.trunk, {
                 // The root it stands on, under the field name `edges` declares.
-                supplied: { rootId: trunkBuild.root },
-            },
+                rootId: trunkBuild.root,
+            }),
             supportData: trunkBuild.supportData,
         };
     }
@@ -658,11 +647,7 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
             return {
                 kind: 'place',
                 nodeKey,
-                placed: {
-                    typeId: placedTypeId,
-                    entity: trunkBuild.trunk,
-                    supplied: { rootId: trunkBuild.root },
-                },
+                placed: placementOfResolved(placedTypeId, trunkBuild.trunk, { rootId: trunkBuild.root }),
                 supportData: trunkBuild.supportData,
             };
         }
@@ -791,16 +776,8 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
             nodeKey,
             hostTypeId: host.hostTypeId,
             hostId: host.hostId,
-            placed: {
-                typeId: placedTypeId,
-                entity: promoteBuild.trunk,
-                supplied: { rootId: promoteBuild.root },
-            },
-            promotedMember: {
-                typeId: 'branch',
-                entity: branch,
-                supplied: { parentKnotId: selectedKnot },
-            },
+            placed: placementOfResolved(placedTypeId, promoteBuild.trunk, { rootId: promoteBuild.root }),
+            promotedMember: placementOf('branch', branch, { parentKnotId: selectedKnot }),
             supportData: promoteBuild.supportData,
         };
     }
@@ -823,12 +800,10 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
     return {
         kind: 'place',
         nodeKey,
-        placed: {
-            typeId: 'branch',
-            entity: branch,
-            supplied: { parentKnotId: selectedKnot },
-            hostedBy: { typeId: host.hostTypeId, id: host.hostId },
-        },
+        placed: placementOf('branch', branch, { parentKnotId: selectedKnot }, {
+            typeId: host.hostTypeId,
+            id: host.hostId,
+        }),
         supportData,
     };
 }

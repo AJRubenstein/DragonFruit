@@ -1,5 +1,5 @@
-import { getSupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
-import type { SupportState } from '../types';
+import { getSupportTypeDescriptor, type PlacementPrimitives, type SupportEntityFor, type SupportTypeId } from '../supportTypeRegistry';
+import type { Knot, Roots, SupportState } from '../types';
 
 /**
  * Immutable draft mutations for the auto-support PLAN phase.
@@ -59,8 +59,8 @@ export function draftAddPrimitive<K extends 'roots' | 'knots'>(
 export function draftCommitSupport(
     draft: SupportState,
     typeId: SupportTypeId,
-    entity: { id: string },
-    supplied: Record<string, { id: string } | undefined> = {},
+    entity: SupportEntityFor<typeof typeId>,
+    supplied: PlacementPrimitives = {},
 ): SupportState {
     let next = draftAddEntity(draft, typeId, entity);
     for (const edge of getSupportTypeDescriptor(typeId).edges) {
@@ -68,7 +68,13 @@ export function draftCommitSupport(
         // Only roots and knots are collections a placement can carry in.
         if (edge.to !== 'roots' && edge.to !== 'knots') continue;
         const primitive = supplied[edge.field];
-        if (primitive) next = draftAddPrimitive(next, edge.to, primitive);
+        if (!primitive) continue;
+        // The declared edge says which collection this belongs to, so the
+        // narrowing follows the DECLARATION rather than a shape guess. This is
+        // the one cast: a value keyed by edge field cannot be paired with its
+        // collection in the type, and the pairing is exactly what this reads.
+        if (edge.to === 'roots') next = draftAddPrimitive(next, 'roots', primitive as Roots);
+        else next = draftAddPrimitive(next, 'knots', primitive as Knot);
     }
     return next;
 }

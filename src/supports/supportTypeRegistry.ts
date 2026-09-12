@@ -1,4 +1,4 @@
-import type { SupportCollectionByType, SupportCollectionName, SupportEntityByCollection, SupportFieldsByType, SupportRemovedEntityByCollection, SupportState } from './types';
+import type { Branch, Knot, Roots, SupportCollectionByType, SupportCollectionName, SupportEntityAny, SupportEntityByCollection, SupportFieldsByType, SupportRemovedEntityByCollection, SupportState, Trunk } from './types';
 import { SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH } from './history/actionTypes';
 import type { SupportHistoryActionType } from './history/actionTypes';
 import { ANCHOR_HEIGHT_THRESHOLD_MM } from './autoSupport/constants';
@@ -1355,26 +1355,50 @@ export function contactBridgeTypes(): readonly SupportTypeId[] {
 }
 
 /**
+ * The entity type a given type id holds.
+ *
+ * Derived through `SUPPORT_TYPE_COLLECTION` and the collection's own entity
+ * type, so a ninth type joins by being declared. Naming Trunk, Branch and the
+ * rest here is the POINT of this module: the registry is where a type is named,
+ * and a shape that names none of them is a shape no consumer can type-check
+ * against.
+ */
+export type SupportEntityFor<T extends SupportTypeId> =
+    SupportEntityIn<(typeof SUPPORT_TYPE_COLLECTION)[T]>;
+
+/**
+ * The primitives a placement can carry in alongside its entity.
+ *
+ * Only roots and knots: an `edges` entry pointing at `'segment'` names part of
+ * the entity itself rather than a collection member, and every other declared
+ * edge is one of these two.
+ */
+export type PlacementPrimitives = Partial<Record<string, Roots | Knot>>;
+
+/**
  * A support the engine has built and is about to place.
  *
- * This is THE shape a placement travels in, everywhere: the engine returns one,
- * a type's build override returns one, and the host-type hooks receive one. It
- * names nothing about the type it carries -- `typeId` says which collection the
- * entity joins, and `supplied` holds the primitives its own `edges` declare,
- * keyed by the same field names.
+ * A discriminated union on `typeId`, so narrowing on it gives the entity's REAL
+ * type — `placed.typeId === 'trunk'` makes `placed.entity` a `Trunk`. That is
+ * what lets every consumer commit a placement without a cast.
  *
- * Deliberately not a union of concrete entity shapes: a caller that had to read
- * `trunk`/`root`/`branch`/`knot` off it would be a trunk function with a generic
- * name, which is the thing this shape exists to avoid.
+ * The alternative tried and rejected: a body of `{ id: string }` with
+ * `supplied` as an untyped record. It named no types, which looked tidy, but it
+ * erased the typing outright — every consumer then needed `as never` to hand the
+ * value back to the store, and the compiler could no longer check any of it.
  */
-export interface PlacedSupport {
-    typeId: SupportTypeId;
-    entity: { id: string };
-    /** Primitives this entity declares `edges` to, keyed by edge field. */
-    supplied: Record<string, { id: string } | undefined>;
-    /** The host it hangs from, when it hangs from one. */
-    hostedBy?: { typeId: SupportTypeId; id: string };
-}
+export type PlacedSupport = {
+    [T in SupportTypeId]: {
+        typeId: T;
+        entity: SupportEntityFor<T>;
+        /** Primitives keyed by the `edges` field that declares each one, so a
+         *  caller passes what it built under the same names the declaration
+         *  uses and the two cannot drift. */
+        supplied: PlacementPrimitives;
+        /** The host it hangs from, when it hangs from one. */
+        hostedBy?: { typeId: SupportTypeId; id: string };
+    };
+}[SupportTypeId];
 
 /** What a type's build override is handed. */
 export interface ContactOverrideRequest {
@@ -1388,12 +1412,64 @@ export interface ContactOverrideRequest {
     mesh?: { isMesh: boolean };
 }
 
-/** What a type's override built, plus whatever preview data describes it. */
-export interface ContactOverrideResult extends PlacedSupport {
+/**
+ * What a type's override built.
+ *
+ * `refusal` is how a type declines a contact it cannot serve — it carries the
+ * reason rather than the engine inferring one, because the invariant being
+ * checked is the type's own (an anchor's cone must not dip below its root) and
+ * the engine has no business reading that type's geometry to test it.
+ */
+export interface ContactOverrideResult {
+    placed: PlacedSupport;
+    /** Set when the type refuses this contact; passed through as the rejection. */
+    refusal?: string;
+    /** Preview and validation state for the ghost. Typed `unknown` because the
+     *  renderer owns that shape and this module does not depend on it. */
     supportData?: unknown;
 }
 
 type ContactOverride = (request: ContactOverrideRequest) => ContactOverrideResult | null;
+
+/**
+ * Pair a type id with the entity built for it.
+ *
+ * Checked: the entity type comes from the registry for that id, so
+ * `placementOf('trunk', leaf)` is a compile error.
+ *
+ * There is deliberately no union-typed sibling under the same name. An overload
+ * taking `(SupportTypeId, SupportEntityAny)` was tried first and defeated this
+ * entirely — TypeScript falls through to the looser overload, so
+ * `placementOf('trunk', leaf)` compiled clean. The unchecked path is therefore a
+ * differently NAMED function ({@link placementOfResolved}) that a literal call
+ * site cannot reach by accident.
+ */
+export function placementOf<T extends SupportTypeId>(
+    typeId: T,
+    entity: SupportEntityFor<T>,
+    supplied?: PlacementPrimitives,
+    hostedBy?: { typeId: SupportTypeId; id: string },
+): PlacedSupport {
+    return { typeId, entity, supplied: supplied ?? {}, hostedBy } as PlacedSupport;
+}
+
+/**
+ * The same, for the engine's own paths, where the id comes from
+ * `selectTypeForPlacement` at run time and the entity was built to match it.
+ *
+ * Named apart because it witnesses the pairing instead of checking it: the
+ * caller resolved an id and then built that type's support, and nothing in the
+ * type system connects those two facts. One named place to audit, rather than a
+ * cast at each site.
+ */
+export function placementOfResolved(
+    typeId: SupportTypeId,
+    entity: SupportEntityAny,
+    supplied?: PlacementPrimitives,
+    hostedBy?: { typeId: SupportTypeId; id: string },
+): PlacedSupport {
+    return { typeId, entity, supplied: supplied ?? {}, hostedBy } as PlacedSupport;
+}
 
 const CONTACT_OVERRIDES = new Map<SupportTypeId, ContactOverride>();
 
