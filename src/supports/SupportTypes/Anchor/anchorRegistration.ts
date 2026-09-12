@@ -5,6 +5,11 @@ import { addModelMetadata, appendConeGeometry, appendShafts, SupportGeometryGene
 import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import type { Anchor, Vec3 } from '../../types';
 
+// The anchor puts its own primitive in the near-plate band, overriding
+// auto-placement's default trunk. Registered here because the stub's geometry is
+// the anchor's; the grid engine only decides WHICH type claims a tip height.
+import './anchorAutoPlacement';
+
 // An anchor is a near-plate stub: a frustum root, ONE joint, one segment and a
 // contact cone. It has no Roots entry -- the frustum IS its root -- which is why
 // its geometry is built here rather than through the shared generator.

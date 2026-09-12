@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { cloneSupportState, addAnchor, addBranch, addKnot, addLeaf, addRoot, addSupportEntityWithHistory, addTrunk, getSnapshot, setSnapshot, updateKnot } from '../../state';
+import { cloneSupportState, addBranch, addKnot, addLeaf, addRoot, addSupportEntityWithHistory, addTrunk, getSnapshot, setSnapshot, updateKnot } from '../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { addAction } from '../../history/actionTypes';
 import { useInteractionStatus } from '../../interaction/useInteractionStatus';
@@ -497,23 +497,10 @@ export function useTrunkPlacementV2() {
             return;
         }
 
-        if (decision.kind === 'place_branch') {
-            setPreviewData(decision.supportData);
-            setPreviewError(null);
-            setPreviewWarning(null);
-            perfEndFrame();
-            return;
-        }
-
-        if (decision.kind === 'place_leaf') {
-            setPreviewData(decision.supportData);
-            setPreviewError(null);
-            setPreviewWarning(null);
-            perfEndFrame();
-            return;
-        }
-
-        if (decision.kind === 'place_anchor') {
+        // Every successful placement decision previews its own support data,
+        // whichever type produced it.
+        if (decision.kind === 'place_branch' || decision.kind === 'place_leaf'
+            || decision.kind === 'place_typed_support') {
             setPreviewData(decision.supportData);
             setPreviewError(null);
             setPreviewWarning(null);
@@ -674,13 +661,12 @@ export function useTrunkPlacementV2() {
             mesh,
         });
 
-        if (decision.kind === 'place_anchor') {
-            const anchor = markPlacementSurface('anchor', decision.anchor, placementSurface);
-            addAnchor(anchor);
-            pushSupportHistory({
-                type: addAction('anchor'),
-                payload: { anchor },
-            });
+        if (decision.kind === 'place_typed_support') {
+            // A type overrode the default trunk build for the band it claimed.
+            // Add what its own registered builder produced, under that type's
+            // own collection and history action -- no type name needed here.
+            const entity = markPlacementSurface(decision.typeId, decision.entity, placementSurface);
+            addSupportEntityWithHistory(decision.typeId, entity);
             clearSupportSelection();
             return;
         }

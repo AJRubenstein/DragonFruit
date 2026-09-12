@@ -5,8 +5,10 @@ import '../state';
 import {
     collectionsMissingRestore,
     inferSupportSettings,
+    promoteAwayHost,
     resolveKnotDiameter,
     SUPPORT_TYPES,
+    typesMissingHostPromotion,
     updateSupportEntity,
 } from '../supportTypeRegistry';
 
@@ -28,5 +30,45 @@ test('every type registers an updater', () => {
 
 test('every collection registers a restore', () => {
     assert.deepEqual(collectionsMissingRestore(), []);
+});
+
+/**
+ * The same class of check as the two above, for the type overrides auto-placement
+ * asks the registry for.
+ *
+ * `state.ts` already throws when these are empty, so this pins the THROW rather
+ * than re-deriving it: the value is that deleting a registration fails a named
+ * test instead of only failing whatever loads first.
+ */
+test('every type declaring replacedByHigherContact registers a promotion', () => {
+    assert.deepEqual(typesMissingHostPromotion(), []);
+});
+
+test('a promotion that was never registered reports "could not", not a silent success', () => {
+    // Branch declares the flag false, so nothing registered for it -- which is
+    // exactly the shape a forgotten registration takes.
+    const result = promoteAwayHost('branch', {
+        draft: {} as never,
+        hostId: 'nope',
+        promoteKnot: { id: 'k' } as never,
+        promoteBranch: { id: 'b' } as never,
+        trunkToAdd: { id: 't' } as never,
+        rootToAdd: { id: 'r' } as never,
+        nodeKey: '0,0',
+    });
+    assert.equal(result, null, 'an unregistered promotion must not claim success');
+});
+
+test('the registered trunk promotion fails rather than throwing on an unknown host', () => {
+    const result = promoteAwayHost('trunk', {
+        draft: { roots: {}, trunks: {}, branches: {}, knots: {} } as never,
+        hostId: 'does-not-exist',
+        promoteKnot: { id: 'k' } as never,
+        promoteBranch: { id: 'b' } as never,
+        trunkToAdd: { id: 't' } as never,
+        rootToAdd: { id: 'r' } as never,
+        nodeKey: '0,0',
+    });
+    assert.equal(result, null, 'a missing host is a failed promotion, not a crash');
 });
 

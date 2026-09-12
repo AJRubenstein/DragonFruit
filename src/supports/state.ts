@@ -3,7 +3,9 @@ import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } fr
 import { calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import { resolveSegmentEndpoints } from './SupportPrimitives/Knot/segmentEndpoints';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
-import { removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
+import {
+    typesMissingAutoPlacementBuilder,
+    typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
 import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
@@ -3939,4 +3941,21 @@ if (missingRestore.length > 0) {
 const missingExportGroups = typesMissingExportGroupBuilder();
 if (missingExportGroups.length > 0) {
     throw new Error(`No export group builder registered for: ${missingExportGroups.join(', ')}`);
+}
+
+// A type that declares it can be replaced by a higher candidate must register
+// the code that does it. Without this the flag would be a lie that only shows up
+// as a promotion silently failing mid-run -- exactly the drift that made
+// SUPPORT_KINDS untrustworthy, where flags had no implementation to check.
+const missingPromotions = typesMissingHostPromotion();
+if (missingPromotions.length > 0) {
+    throw new Error(`Declares replacedByHigherContact but registered no promotion: ${missingPromotions.join(', ')}`);
+}
+
+// Same again for the auto-placement override: a type that claims a tip-height
+// band would be SELECTED by the engine, so it must be buildable. Without this
+// the engine picks a type it has no way to construct.
+const missingAutoPlacement = typesMissingAutoPlacementBuilder();
+if (missingAutoPlacement.length > 0) {
+    throw new Error(`Claims a tipHeight band but registered no auto-placement builder: ${missingAutoPlacement.join(', ')}`);
 }

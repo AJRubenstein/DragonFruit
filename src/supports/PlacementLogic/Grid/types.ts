@@ -1,4 +1,4 @@
-import type { Anchor, Branch, Knot, Leaf, SupportState, Vec3 } from '../../types';
+import type { Branch, Knot, Leaf, SupportState, Vec3 } from '../../types';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import type { SupportSettings } from '../../Settings/types';
 import type { TrunkBuildResult } from '../../SupportTypes/Trunk/trunkBuilder';
@@ -24,7 +24,11 @@ export type GridPlacementDecision =
     | {
         kind: 'replace_trunk';
         nodeKey: GridNodeKey;
-        /** The trunk this promotion removes -- genuinely a trunk, by name. */
+        /** The declared type of the host being replaced, so the caller asks the
+         * registry for that type's promotion rather than assuming a trunk. */
+        hostTypeId: SupportTypeId;
+        /** The host this promotion removes -- genuinely a trunk, by name: the
+         * engine builds every candidate as one. */
         trunkToRemoveId: string;
         trunkBuild: TrunkBuildResult;
         promoteKnot: Knot;
@@ -53,8 +57,16 @@ export type GridPlacementDecision =
         supportData: SupportData;
     }
     | {
-        kind: 'place_anchor';
-        anchor: Anchor;
+        /**
+         * A type that OVERRODE the default trunk build for its claimed band.
+         *
+         * Carries the type id rather than a named field, so the engine can
+         * return what a type's own registered builder produced without knowing
+         * which type it was or what shape its entity has.
+         */
+        kind: 'place_typed_support';
+        typeId: SupportTypeId;
+        entity: { id: string };
         supportData: SupportData;
     }
     | {

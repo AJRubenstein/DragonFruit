@@ -1,4 +1,4 @@
-import { contactBridgeTypes, contactEndpointsFor, getSupportTypeDescriptor, GRID_HOST_TYPES, isOriginConvertibleToTree, SUPPORT_TYPES } from '../supportTypeRegistry';
+import { contactBridgeTypes, contactEndpointsFor, getSupportTypeDescriptor, GRID_HOST_TYPES, isOriginConvertibleToTree, promoteAwayHost, SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { SupportCollectionKey } from '../supportTypeRegistry';
 import type { SupportTypeId } from '../supportTypeRegistry';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
@@ -36,7 +36,6 @@ import { draftAddEntity, draftAddPrimitive } from './supportDraft';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
-import { applyTrunkReplacement, planTrunkReplacement } from '../SupportTypes/Trunk/TrunkReplacement';
 import { computeForestDiameterProfile } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
 import { buildBranchData } from '../SupportTypes/Branch/branchBuilder';
 import { buildLeafData } from '../SupportTypes/Leaf/leafBuilder';
@@ -1112,13 +1111,24 @@ function placeOneCandidate(
             };
         }
 
-        case 'place_anchor':
-            decision.anchor.origin = candidate.gridPoint
+        case 'place_typed_support': {
+            // A type overrode the default trunk build for the band it claimed.
+            // Add whatever its own registered builder produced, under its own
+            // collection -- the ladder needs neither the type's name nor its
+            // entity's shape.
+            const typed = decision.entity as { id: string; origin?: string };
+            typed.origin = candidate.gridPoint
                 ? 'overhang'
                 : (candidate.source === 'overhang' ? 'standalone' : 'island');
-            d = draftAddEntity(d, 'anchor', decision.anchor);
-            logPlacement(`Anchor ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-            return { kind: 'anchor', preset, draft: d, entityId: decision.anchor.id };
+            d = draftAddEntity(d, decision.typeId, typed);
+            logPlacement(`${typeWord(decision.typeId)} ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
+            return {
+                kind: decision.typeId as PlacementOutcomeKind,
+                preset,
+                draft: d,
+                entityId: typed.id,
+            };
+        }
 
         case 'place_branch': {
             const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
@@ -1151,11 +1161,6 @@ function placeOneCandidate(
         }
 
         case 'replace_trunk': {
-            // Same promote-to-trunk flow as manual placement: materialize the
-            // promoted branch, plan the replacement, then apply it. The old
-            // trunk's contact is preserved as a branch on the new trunk and
-            // rehostable branches/leaves are re-attached — the old trunk is
-            // never left orphaned at the node.
             const promoteKnot = decision.promoteKnot;
             const promoteBranch = decision.promoteBranch;
             if (!promoteKnot || !promoteBranch) {
@@ -1163,40 +1168,29 @@ function placeOneCandidate(
                     `Replace skip ${candidate.id}: no promoted branch from grid engine`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            d = draftAddPrimitive(d, 'knots', promoteKnot);
-            d = draftAddEntity(d, 'branch', promoteBranch);
-            const planned = planTrunkReplacement({
-                snapshot: d,
-                trunkIdToRemove: decision.trunkToRemoveId,
-                mode: 'grid_promote_candidate_to_trunk',
+            // The host type's OWN registered promotion. The engine says which
+            // host yields and hands over the pieces it built; rehosting that
+            // host's attachments onto the promoted shaft is that type's
+            // business, so the trunk does it in its own folder rather than this
+            // ladder carrying the trunk's rules.
+            const promoted = promoteAwayHost(decision.hostTypeId, {
+                draft: d,
+                hostId: decision.trunkToRemoveId,
+                promoteKnot,
+                promoteBranch,
+                trunkToAdd: decision.trunkBuild.trunk,
+                rootToAdd: decision.trunkBuild.root,
                 nodeKey: decision.nodeKey,
-                promoteBranchId: promoteBranch.id,
             });
-            const plan = planned?.plan;
-            if (!plan) {
+            if (!promoted) {
                 logPlacement(
-                    `Replace skip ${candidate.id}: replacement planner failed (host ${decision.trunkToRemoveId})`);
+                    `Replace skip ${candidate.id}: ${typeWord(decision.hostTypeId).toLowerCase()} ` +
+                    `promotion failed (host ${decision.trunkToRemoveId})`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            // The replacement machinery (cascading rehosts, diameter profiles)
-            // is store-bound and shared with manual promote — the plan phase
-            // commits the draft so far, applies the replacement, and re-reads.
-            // The run-level rollback guard + single history entry keep this
-            // atomic for the user; a later worker pass will make it pure.
-            setSnapshot(d);
-            const ok = applyTrunkReplacement(
-                { ...plan, trunkToAdd: decision.trunkBuild.trunk, rootToAdd: decision.trunkBuild.root },
-                undefined,
-                { skipHistory: true }, // the whole run is one undoable entry
-            );
-            d = ok ? getSnapshot() : d;
-            if (!ok) {
-                logPlacement(
-                    `Replace skip ${candidate.id}: applyTrunkReplacement failed (host ${decision.trunkToRemoveId})`);
-                return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
-            }
+            d = promoted;
             logPlacement(
-                `Replace trunk @ ${decision.nodeKey}: ` +
+                `Replace ${typeWord(decision.hostTypeId).toLowerCase()} @ ${decision.nodeKey}: ` +
                 `${candidate.id} (Z=${candidate.zHeight.toFixed(1)}) → host ${decision.trunkToRemoveId}`);
             return {
                 kind: 'trunk', preset, entityId: decision.trunkBuild.trunk.id, draft: d,

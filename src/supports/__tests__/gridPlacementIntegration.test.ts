@@ -7,7 +7,7 @@ import { decideGridPlacement } from '../PlacementLogic/Grid/gridPlacement';
 import { getFinalSocketPosition } from '../SupportPrimitives/ContactCone';
 import { setSettings } from '../Settings/state';
 import { createDefaultSettings } from '../Settings/types';
-import type { SupportState } from '../types';
+import type { Anchor, SupportState } from '../types';
 import {
     buildTrunkDataFromPlacement,
     type TrunkBuildInput,
@@ -530,8 +530,10 @@ test('decideGridPlacement places a valid anchor for an above-root near-plate tip
         tipNormal: { x: 0, y: 0, z: -1 },
         modelId: MODEL_ID,
     });
-    if (decision.kind !== 'place_anchor') assert.fail(`expected place_anchor, got ${decision.kind}`);
-    const anchor = decision.anchor;
+    if (decision.kind !== 'place_typed_support') assert.fail(`expected place_typed_support, got ${decision.kind}`);
+    // The decision no longer names the type; it carries the id the registry
+    // resolved for this tip height, and the entity that type's own builder made.
+    const anchor = decision.entity as Anchor;
     const socketZ = getFinalSocketPosition(anchor.contactCone).z;
     const lowestShaftZ = Math.min(anchor.contactCone.pos.z, socketZ);
     assert.ok(

@@ -1,4 +1,4 @@
-import type { Knot, Roots, Trunk, Vec3 } from '../../types';
+import type { Anchor, Knot, Roots, Trunk, Vec3 } from '../../types';
 import type { TrunkBuildResult } from '../../SupportTypes/Trunk/trunkBuilder';
 import type { SnappedTrunkRouteResult } from '../../SupportTypes/Trunk/trunkRouteTypes';
 import { buildBranchData } from '../../SupportTypes/Branch/branchBuilder';
@@ -17,14 +17,14 @@ import { calculateKnotPositionOnSegmentFromT } from '../../SupportPrimitives/Kno
 import { isShaftBlocked } from '../CollisionAvoidance';
 import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
-import { buildAnchorData } from '../../SupportTypes/Anchor/anchorBuilder';
 import { buildLeafData } from '../../SupportTypes/Leaf/leafBuilder';
 import { perfMark, perfMeasureWithSpike } from '../Pathfinding/pathfindingPerf';
 import {
     MAX_AUTO_LEAF_SPAN_MM,
 } from '../../autoSupport/constants';
-import { GRID_HOST_TYPES, getSupportTypeDescriptor, selectTypeForPlacement } from '../../supportTypeRegistry';
+import { buildAutoPlacementSupport, GRID_HOST_TYPES, getSupportTypeDescriptor, overridesAutoPlacement, selectTypeForPlacement } from '../../supportTypeRegistry';
 import type { SupportTypeId } from '../../supportTypeRegistry';
+import type { SupportData } from '../../rendering/SupportBuilder';
 
 /**
  * Matches `validateAndCullOrphans`' post-thickening trunk check
@@ -543,29 +543,39 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
         }
     }
 
-    // Which type a tip height calls for is declared; anchor claims the
-    // near-plate band, trunk everything above it.
-    if (selectTypeForPlacement('tipHeight', tipPos.z) === 'anchor') {
-        const { anchor, supportData } = buildAnchorData({ tipPos, tipNormal, modelId, mesh });
-        // The cone body spans contact disk → socket and must never dip below
-        // the root joint: a tip lower than the root (or an over-long cone on a
-        // downward axis) would push the shaft below the root, into -Z.
-        const jointZ = anchor.joint.pos.z;
-        const lowestShaftZ = Math.min(
-            anchor.contactCone.pos.z,
-            getFinalSocketPosition(anchor.contactCone).z,
-        );
-        if (lowestShaftZ < jointZ - 1e-3) {
-            // Ghost-preview the invalid anchor (red, with the reason as
-            // `error`) so the hover tooltip explains the rejection.
+    // Which type a tip height calls for is declared, and a type that registers a
+    // builder OVERRIDES the default for the band it claims. The anchor owns the
+    // near-plate band this way; nothing that registers nothing changes anything.
+    const claimedTypeId = selectTypeForPlacement('tipHeight', tipPos.z);
+    if (claimedTypeId && overridesAutoPlacement(claimedTypeId)) {
+        const built = buildAutoPlacementSupport(claimedTypeId, { tipPos, tipNormal, modelId, mesh });
+        if (built) {
+            const { anchor, supportData } = built.extras as { anchor: Anchor; supportData: SupportData };
+            // The cone body spans contact disk → socket and must never dip below
+            // the root joint: a tip lower than the root (or an over-long cone on a
+            // downward axis) would push the shaft below the root, into -Z.
+            const jointZ = anchor.joint.pos.z;
+            const lowestShaftZ = Math.min(
+                anchor.contactCone.pos.z,
+                getFinalSocketPosition(anchor.contactCone).z,
+            );
+            if (lowestShaftZ < jointZ - 1e-3) {
+                // Ghost-preview the invalid support (red, with the reason as
+                // `error`) so the hover tooltip explains the rejection.
+                return {
+                    kind: 'reject',
+                    nodeKey: '',
+                    reason: 'ANCHOR_BELOW_ROOT',
+                    supportData: { ...supportData, error: 'ANCHOR_BELOW_ROOT' },
+                };
+            }
             return {
-                kind: 'reject',
-                nodeKey: '',
-                reason: 'ANCHOR_BELOW_ROOT',
-                supportData: { ...supportData, error: 'ANCHOR_BELOW_ROOT' },
+                kind: 'place_typed_support',
+                typeId: claimedTypeId,
+                entity: built.entity,
+                supportData,
             };
         }
-        return { kind: 'place_anchor', anchor, supportData };
     }
 
     if (!settings.grid?.enabled) {
@@ -726,10 +736,15 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
 
     const hostContactZ = host.entity.contactCone?.pos.z ?? Number.NEGATIVE_INFINITY;
     const candidateContactZ = tipPos.z;
-    if (candidateContactZ > hostContactZ + 0.000001) {
+    // Whether a higher candidate replaces this host is the HOST TYPE's
+    // declaration, not a property of the node: a type that cannot be promoted
+    // away simply takes the branch/leaf path below.
+    if (getSupportTypeDescriptor(host.hostTypeId).replacedByHigherContact
+        && candidateContactZ > hostContactZ + 0.000001) {
         return {
             kind: 'replace_trunk',
             nodeKey,
+            hostTypeId: host.hostTypeId,
             trunkToRemoveId: host.hostId,
             trunkBuild: withResolvedSnappedRoute(snappedCandidate, {
                 snappedRootPos: getResolvedSnappedRootPos(snappedCandidate.route, snappedCandidate.root.transform.pos),
