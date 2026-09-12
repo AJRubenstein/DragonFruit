@@ -7,9 +7,7 @@ import { removeRootById, subscribe, getSnapshot,
   getKickstandRoots,
 } from './state';
 import {
-    buildBracePlacementPreviewBatch,
     buildSupportPlacementPreviewBatch,
-    recomputeLeafPreviewContactCone,
     resolvePlacementPreviewMaterial,
     type InteriorContactFilter,
     type InteriorContactPoint,
@@ -19,6 +17,8 @@ import {
     type PlacementSurface,
     type Vec3Like,
 } from './supportPlacementPreviewMath';
+import { buildSegmentPreviewBatch } from './previewGeometry/seam';
+import './previewGeometry/registerBuiltinPreviewBuilders';
 import { anyContactMatches, collectOwnedRootIds, contactEndpointsFor, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
 import { buildKnotIndex, selectedIdsForType, type CollectionLookup, type SelectionInputs } from './interaction/shared/selection/selectedIdsByType';
 import { resolveSegmentEndpoints, type EndpointHosts } from './SupportPrimitives/Knot/segmentEndpoints';
@@ -215,8 +215,17 @@ function buildPlacementPreviewBatches(
 
         const id = `placement-preview:${descriptor.id}`;
 
+        // A segment-shaped preview (brace's bare span) comes from the type's own
+        // registered builder; everything else shares the generic provisional-
+        // support batch. Which is which is `previewShape`; WHERE it lives is the
+        // type's folder, reached by id.
         if (descriptor.previewShape === 'segment') {
-            const segmentBatch = buildBracePlacementPreviewBatch(id, preview as BracePreviewData);
+            const segmentBatch = buildSegmentPreviewBatch(
+                descriptor.id,
+                id,
+                preview as BracePreviewData,
+                { maxShaftDiameterMm: getAutoBracingSettings().braceDiameterMm },
+            );
             if (segmentBatch) next.push(segmentBatch);
             continue;
         }
@@ -1352,8 +1361,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             previewKnotOverrides,
             leafIdsByParentKnotId,
             leavesById: state.leaves,
-            recomputeLeafPreviewContactCone: (leaf, previewKnot) =>
-                recomputeLeafPreviewContactCone(leaf, previewKnot, twigBySegmentId),
+            twigBySegmentId,
         });
     }, [hasPreviewKnotOverrides, previewKnotOverrideIds, previewKnotOverrides, leafIdsByParentKnotId, state.leaves, twigBySegmentId]);
 

@@ -130,6 +130,41 @@ A folder qualifies when it holds `<type>Registration.ts` (e.g.
 construction, so counting them would measure generated output rather than
 hand-written code.
 
+## Placement preview geometry
+
+`src/supports/previewGeometry/seam.ts` is where a type whose placement preview is
+not a whole provisional support registers the builder for it. The registry
+declares the SHAPE (`previewShape: 'segment'`); this is the implementation.
+
+```ts
+registerSegmentPreviewBatchBuilder<GadgetPreviewData>('gadget', buildGadgetPreviewBatch);
+```
+
+The builder is a pure function of the preview data plus a context:
+
+```ts
+(id: string, preview: GadgetPreviewData, context: SegmentPreviewContext) => PlacementPreviewBatch | null
+```
+
+`context.maxShaftDiameterMm` is supplied by the caller rather than read from
+settings, because the seam must stay out of the settings store — see the load
+order note below. A builder never reads a store.
+
+**Registered from the render layer, not from `<type>Registration.ts`.**
+`previewGeometry/registerBuiltinPreviewBuilders.ts` holds the registrations and is
+imported by `SupportRenderer`. It is deliberately NOT part of the generated
+registration list that `state.ts` loads: those modules run while `state.ts` is
+still initialising, and a preview builder reaches render-layer code, which would
+re-enter the store mid-load. Preview geometry is only needed to draw, so it loads
+with the renderer.
+
+**Do not import a `<type>Registration.ts` module directly.** `state.ts` checks at
+load that every type registered an export builder, and that check assumes
+`state.ts` is the module-graph entry point. Reaching a registration module first
+leaves that type mid-flight and the check throws a spurious error. Load `state.ts`
+(or, for preview geometry, the render-layer module above) and let the chain bring
+the rest.
+
 ## Writing a new seam
 
 Follow the existing shape so it reads like the rest of the codebase:

@@ -1,4 +1,5 @@
-import type { Branch, Brace, Knot, Leaf } from '../types';
+import { recomputeLeafPreviewContactCone } from '../SupportTypes/Leaf/leafPreviewCone';
+import type { Branch, Brace, Knot, Leaf, Twig } from '../types';
 import { computeJointDragPreviewKnots, type JointDragPreviewSnapshot } from './jointDragPreviewMath';
 
 export function buildBranchesByParentKnotId(branches: Branch[]) {
@@ -157,7 +158,8 @@ interface CollectPreviewLeavesByIdOptions {
   previewKnotOverrides: Record<string, Knot>;
   leafIdsByParentKnotId: Map<string, string[]>;
   leavesById: Record<string, Leaf>;
-  recomputeLeafPreviewContactCone: (leaf: Leaf, previewKnot: Knot) => Leaf;
+  /** Which twins host the knots, for the cones that track a tapered host. */
+  twigBySegmentId: Map<string, Twig>;
 }
 
 export function collectPreviewLeavesById({
@@ -165,7 +167,7 @@ export function collectPreviewLeavesById({
   previewKnotOverrides,
   leafIdsByParentKnotId,
   leavesById,
-  recomputeLeafPreviewContactCone,
+  twigBySegmentId,
 }: CollectPreviewLeavesByIdOptions) {
   const map = new Map<string, Leaf>();
   for (const knotId of previewKnotOverrideIds) {
@@ -178,7 +180,7 @@ export function collectPreviewLeavesById({
     for (const leafId of leafIds) {
       const leaf = leavesById[leafId];
       if (!leaf) continue;
-      map.set(leaf.id, recomputeLeafPreviewContactCone(leaf, previewKnot));
+      map.set(leaf.id, recomputeLeafPreviewContactCone(leaf, previewKnot, twigBySegmentId));
     }
   }
   return map;
