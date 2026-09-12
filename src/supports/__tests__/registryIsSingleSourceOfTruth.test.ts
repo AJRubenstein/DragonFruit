@@ -92,10 +92,9 @@ test('every declared support type has a distinct collection key', () => {
 
 test('the modelId walk covers every declared type', () => {
     for (const descriptor of SUPPORT_TYPES) {
-        if (!descriptor.carriesModelId) continue;
         assert.ok(
             MODEL_ID_COLLECTION_KEYS.includes(descriptor.location.key),
-            `${descriptor.id} carries a modelId but is not in MODEL_ID_COLLECTION_KEYS`,
+            `${descriptor.id} is a support type but is not in MODEL_ID_COLLECTION_KEYS`,
         );
     }
 });

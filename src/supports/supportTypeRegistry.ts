@@ -167,8 +167,6 @@ export interface SupportTypeDescriptor {
      * exists at all.
      */
     historyUpdate?: SupportHistoryActionType;
-    /** Whether a modelId walk includes this type. All eight do; the flag exists so a future type can opt out. */
-    carriesModelId: boolean;
     /** Whether instances carry real shafts, for segment and joint walks. */
     hasSegments: boolean;
     /**
@@ -485,7 +483,6 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         location: { store: 'support', key: 'trunks' },
         selectionCategory: 'trunk',
         historyUpdate: SUPPORT_UPDATE_TRUNK,
-        carriesModelId: true,
     },
     {
         id: 'branch',
@@ -529,7 +526,6 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         location: { store: 'support', key: 'branches' },
         selectionCategory: 'branch',
         historyUpdate: SUPPORT_UPDATE_BRANCH,
-        carriesModelId: true,
     },
     {
         id: 'leaf',
@@ -572,7 +568,6 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         singular: 'leaf',
         location: { store: 'support', key: 'leaves' },
         selectionCategory: 'leaf',
-        carriesModelId: true,
     },
     {
         id: 'twig',
@@ -610,7 +605,6 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         singular: 'twig',
         location: { store: 'support', key: 'twigs' },
         selectionCategory: 'twig',
-        carriesModelId: true,
     },
     {
         id: 'stick',
@@ -647,7 +641,6 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         singular: 'stick',
         location: { store: 'support', key: 'sticks' },
         selectionCategory: 'stick',
-        carriesModelId: true,
     },
     {
         id: 'brace',
@@ -691,7 +684,6 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         singular: 'brace',
         location: { store: 'support', key: 'braces' },
         selectionCategory: 'brace',
-        carriesModelId: true,
     },
     {
         id: 'anchor',
@@ -734,7 +726,6 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         singular: 'anchor',
         location: { store: 'support', key: 'anchors' },
         selectionCategory: 'anchor',
-        carriesModelId: true,
     },
     {
         id: 'kickstand',
@@ -781,7 +772,6 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         location: { store: 'support', key: 'kickstands' },
         selectionCategory: 'kickstand',
         serialisedAsBundle: true,
-        carriesModelId: true,
     },
 ];
 
@@ -1362,11 +1352,6 @@ export const SUPPORT_STATE_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYP
     (descriptor) => descriptor.location.store === 'support',
 );
 
-/** Types whose instances carry a modelId. */
-export const MODEL_ID_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYPES.filter(
-    (descriptor) => descriptor.carriesModelId,
-);
-
 /**
  * Collections on SupportState that are not support types. Roots and knots are
  * primitives — they belong to a support rather than being one — but they are
@@ -1461,12 +1446,18 @@ export function countSupportCollections(
     return counts;
 }
 
-/** SupportState collection keys whose entities carry a modelId, in registry order. */
+/**
+ * SupportState collection keys whose entities carry a modelId, in registry
+ * order.
+ *
+ * Every support type does, and `roots` is the one primitive that does -- a
+ * knot's model comes from its host shaft instead. Kept as its own list rather
+ * than collapsed into `SUPPORT_STATE_COLLECTIONS`, which answers a different
+ * question and only coincides today.
+ */
 export const MODEL_ID_COLLECTION_KEYS: readonly SupportCollectionKey[] = [
     'roots' as SupportCollectionKey,
-    ...SUPPORT_STATE_TYPES
-        .filter((d) => d.carriesModelId)
-        .map((d) => d.location.key as SupportCollectionKey),
+    ...SUPPORT_STATE_TYPES.map((descriptor) => descriptor.location.key as SupportCollectionKey),
 ];
 
 /**

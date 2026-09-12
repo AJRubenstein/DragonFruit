@@ -55,7 +55,6 @@ every descriptor declares all of them:
 
 | Flag | Ask |
 | ---- | --- |
-| `carriesModelId` | Do instances own a `modelId`? |
 | `hasSegments` | Do instances have real shafts? |
 | `contactFields` | Which contact primitive fields, in order? |
 | `segmentsCarryBothJoints` | Does each segment carry both its joints, or do endpoints come from a root / parent knot / neighbour? |

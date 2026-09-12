@@ -9,7 +9,6 @@ import {
   countSupportCollections,
   SUPPORT_COLLECTION_KEYS,
   MODEL_ID_COLLECTION_KEYS,
-  MODEL_ID_TYPES,
   SUPPORT_STATE_TYPES,
   SHAFTED_COLLECTION_KEYS,
   getSupportTypeDescriptor,
@@ -53,10 +52,6 @@ test('primitive categories are not support types', () => {
 test('every type lives on SupportState', () => {
   assert.deepEqual(SUPPORT_TYPES.filter((d) => d.location.store !== 'support'), []);
   assert.equal(SUPPORT_STATE_TYPES.length, SUPPORT_TYPES.length);
-});
-
-test('all types carry a modelId', () => {
-  assert.equal(MODEL_ID_TYPES.length, SUPPORT_TYPES.length);
 });
 
 

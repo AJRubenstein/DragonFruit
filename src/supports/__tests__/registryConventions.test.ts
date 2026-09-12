@@ -45,7 +45,7 @@ test('generic resolvers take the type id first, named typeId', () => {
 test('every derived list is built from SUPPORT_TYPES, not written out', () => {
     // A hand-written list is a place a ninth type silently joins or skips.
     const derived = [
-        'MODEL_ID_COLLECTION_KEYS', 'MODEL_ID_TYPES', 'SHAFTED_COLLECTION_KEYS',
+        'MODEL_ID_COLLECTION_KEYS', 'SHAFTED_COLLECTION_KEYS',
         'SUPPORT_COLLECTION_KEYS', 'SUPPORT_STATE_COLLECTIONS', 'SUPPORT_STATE_TYPES',
         'EDITABLE_SUPPORT_TYPES', 'SUPPORT_GRAPH_NODES',
     ];
