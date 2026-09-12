@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from 'react';
-import { createPlacementStore } from '../../interaction/shared/placement/placementStore';
+import { createPlacementStore, usePlacementStoreState } from '../../interaction/shared/placement/placementStore';
+import { vecEq } from '../../interaction/shared/placement/placementComparators';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import type { Vec3 } from '../../types';
 import type { KickstandBuildResult, KickstandHostKind } from './types';
@@ -30,10 +30,6 @@ const initialState: KickstandPlacementState = {
 };
 
 const store = createPlacementStore(initialState);
-
-function vecEq(a: Vec3, b: Vec3): boolean {
-    return a.x === b.x && a.y === b.y && a.z === b.z;
-}
 
 function targetEq(a: KickstandPlacementTarget | null, b: KickstandPlacementTarget | null): boolean {
     if (a === b) return true;
@@ -87,19 +83,15 @@ export const kickstandPlacementStore = {
         });
     },
 
-    // Not store.reset(): the hotkey survives a placement, so releasing a
-    // preview must not also release the mode.
+    // The hotkey survives a placement, so releasing a preview must not also
+    // release the mode.
     reset() {
-        store.write({ ...initialState, hotkeyActive: store.read().hotkeyActive });
+        store.resetPreserving('hotkeyActive');
     },
 };
 
 export function useKickstandPlacementState() {
-    const snapshot = useSyncExternalStore(
-        kickstandPlacementStore.subscribe,
-        kickstandPlacementStore.getSnapshot,
-        kickstandPlacementStore.getSnapshot,
-    );
+    const snapshot = usePlacementStoreState(kickstandPlacementStore);
 
     return {
         ...snapshot,

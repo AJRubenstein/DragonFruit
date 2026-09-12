@@ -18,6 +18,9 @@ Three reference shapes, by complexity:
   placement UX (created as a cavity fallback inside trunk/branch placement).
 - **Leaf** — the canonical *fully placeable* template: renderer + builder +
   placement-state store + page-level placement hook + canvas controller.
+  The store is not written from scratch: `createPlacementStore` supplies the
+  subscribe/getSnapshot/notify/reset half, and the type adds only its own state
+  shape and setters (see `interaction/shared/placement/placementStore.ts`).
 - **Kickstand** — the "owns its own barrel" template
   (`SupportTypes/Kickstand/index.ts`). Declare your entity in `types.ts` and
   read `SupportState` directly; do not add a per-type store.
@@ -90,9 +93,13 @@ whether the type is user-placeable.
   resolves hover via `useHighlight(...)`, and commits edits via
   `captureSupportEditSnapshot()` / `pushSupportEditHistory()` (see the Stick
   renderer).
-- *Placeable only*: `gadgetBuilder.ts` (geometry/state builder), a
-  placement-state store, a `useGadgetPlacement` hook, and a
-  `GadgetPlacementController` listed in `supports/placementControllers.ts`.
+- *Placeable only*: `gadgetBuilder.ts` (geometry/state builder), a placement-state
+  store built on `createPlacementStore` — declare your own state interface,
+  `initialState`, and setters; spread `store.subscribe`/`store.getSnapshot` into
+  your exported store and use `usePlacementStoreState` in the hook — a
+  `useGadgetPlacement` hook, and a `GadgetPlacementController` listed in
+  `supports/placementControllers.ts`. `placementComparators.ts` has the shared
+  value comparisons (`vecEq`, `hostSnapTargetEq`) before you write your own.
 - `index.ts` barrels are **optional** — only Anchor and Kickstand have one.
 
 ## 3. Rendering — `src/supports/SupportRenderer.tsx` *(hand-wired)*
