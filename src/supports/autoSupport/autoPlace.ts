@@ -664,7 +664,7 @@ function placeOneCandidate(
                     logPlacement(
                         `Leaf (grid→island) ${candidate.id} → trunk ${fan.trunkId} ` +
                         `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
-                    return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.kind === 'branch' ? fan.branchId : fan.leafId };
+                    return { kind: fan.kind, preset, draft: fan.draft, entityId: fan.entityId };
                 }
             }
         }
@@ -694,7 +694,7 @@ function placeOneCandidate(
                 logPlacement(
                     `Leaf (fan merge) ${candidate.id} → trunk ${fan.trunkId} ` +
                     `dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
-                return { kind: 'leaf', preset, draft: fan.draft, entityId: fan.kind === 'branch' ? fan.branchId : fan.leafId };
+                return { kind: fan.kind, preset, draft: fan.draft, entityId: fan.entityId };
             }
             fanRefusal = fan.reason;
         }
@@ -946,7 +946,7 @@ function placeOneCandidate(
                 if (fan.ok) {
                     const fanKind = fan.kind === 'branch' ? 'Branch' : 'Leaf';
                     logPlacement(`${fanKind} (cavity-fan) ${candidate.id} → trunk ${fan.trunkId} dist=${fan.distMm.toFixed(1)}mm angle=${fan.angleDeg.toFixed(0)}°`);
-                    return { kind: fan.kind, preset, draft: fan.draft, entityId: fan.kind === 'branch' ? fan.branchId : fan.leafId };
+                    return { kind: fan.kind, preset, draft: fan.draft, entityId: fan.entityId };
                 }
                 cavityFanRefusal = fan.reason;
             } catch {}
@@ -1332,9 +1332,14 @@ export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
     return shaftPoints;
 }
 
+/**
+ * Where a fan attempt attached, and the id of the entity it built there.
+ *
+ * `entityId` names the place, not the type: the caller indexes the collection
+ * by `kind`, so the id needs no per-kind field to keep in step with it.
+ */
 export type FanLeafResult =
-    | { ok: true; kind: 'leaf'; draft: SupportState; trunkId: string; leafId: string; distMm: number; angleDeg: number }
-    | { ok: true; kind: 'branch'; draft: SupportState; trunkId: string; branchId: string; distMm: number; angleDeg: number }
+    | { ok: true; kind: 'leaf' | 'branch'; draft: SupportState; trunkId: string; entityId: string; distMm: number; angleDeg: number }
     | { ok: false; reason: FanLeafRefusal };
 
 /** How a fanning/cluster link picks its host among eligible shaft samples.
@@ -1887,7 +1892,7 @@ export function fanLeafToTrunk(
                         kind: 'branch',
                         draft: draftAddEntity(next, 'branch', built.branch),
                         trunkId: sp.trunkId,
-                        branchId: built.branch.id,
+                        entityId: built.branch.id,
                         distMm: Math.sqrt(dist2),
                         angleDeg,
                     };
@@ -1942,7 +1947,7 @@ export function fanLeafToTrunk(
             kind: 'leaf',
             draft: draftAddEntity(next, 'leaf', leaf),
             trunkId: sp.trunkId,
-            leafId: leaf.id,
+            entityId: leaf.id,
             distMm: Math.sqrt(dist2),
             angleDeg,
         };
@@ -2576,7 +2581,7 @@ export function computeAutoSupportPlan(
             convertedThisPass++;
             const trunkEntry = forestLedger.find((e) => e.entityId === tid);
             if (trunkEntry) {
-                forestLedger.push({ ...trunkEntry, kind: fan.kind, entityId: fan.kind === 'branch' ? fan.branchId : fan.leafId });
+                forestLedger.push({ ...trunkEntry, kind: fan.kind, entityId: fan.entityId });
             }
         }
         if (convertedThisPass === 0) break;
@@ -2782,7 +2787,7 @@ export function computeAutoSupportPlan(
             forestLedger.push({
                 displayId: island.id,
                 kind: fan.kind,
-                entityId: fan.kind === 'branch' ? fan.branchId : fan.leafId,
+                entityId: fan.entityId,
                 areaMm2: island.areaMm2 ?? 0,
                 zHeight: island.contact.z,
                 preset: presetForArea(island.areaMm2 ?? 0),
