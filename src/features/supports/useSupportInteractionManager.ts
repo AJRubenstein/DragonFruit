@@ -279,8 +279,11 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         }
         // Whether a joint removal records an update is the type's declared
         // `historyUpdate`; a type without one (kickstand today) rides the
-        // full-state snapshot. The payload map is keyed per action, so each
-        // push stays narrow while the DECISION comes from the registry.
+        // full-state snapshot. The DECISION is derived; the push is not,
+        // because the history payload map is keyed per action, so the payload
+        // type is per-type and one generic push would need a cast -- the thing
+        // `SupportHistoryPayloadMap` exists to prevent. Add an arm here when a
+        // type gains both a `historyUpdate` and joint editing.
         const descriptor = getSupportTypeDescriptor(result.typeId);
         if (recordHistory && descriptor.historyUpdate) {
           const description = `Delete ${descriptor.singular} joint`;
@@ -322,8 +325,12 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       }
 
       // Types whose removal is the cascade plus one history entry, under the
-      // action they declare. Branch, leaf and brace reshape their payload and
-      // keep their own blocks below.
+      // action they declare. The three types in RESHAPED_REMOVAL_PAYLOADS are
+      // excluded here and keep their own blocks below, because each reshapes
+      // its payload (leaf folds its knots to one field, brace names its two
+      // knots, branch adds the trunk reprofile) -- a per-type payload is what
+      // that set declares, so the blocks that follow are its implementation,
+      // not a hand-written list.
       const removalDescriptor = getSupportTypeBySelectionCategory(category);
       if (removalDescriptor && !RESHAPED_REMOVAL_PAYLOADS.has(removalDescriptor.id)) {
         const snapshots = removeSupportEntity(removalDescriptor.id, id);
@@ -509,16 +516,25 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
               setSelectedId(parentKnotId);
             }
           } else if (category === 'knot') {
+            // Children of a knot are whatever types declare a `hostedBy` edge
+            // onto knots and name this knot. Derived, so a type that can hang
+            // off a knot is walkable here the moment it says so.
             const snapshot = getSnapshot();
-            const childLeaves = Object.values(snapshot.leaves).filter(l => l.parentKnotId === id);
-            const childBranches = Object.values(snapshot.branches).filter(b => b.parentKnotId === id);
-            const children = [
-              ...childLeaves.map(l => ({ id: l.id, category: 'leaf' })),
-              ...childBranches.map(b => ({ id: b.id, category: 'branch' })),
-            ];
-            if (children.length > 0) {
-              children.sort((a, b) => a.id.localeCompare(b.id));
-              selectSupportIds([children[0].id]);
+            const childIds: string[] = [];
+            for (const descriptor of SUPPORT_TYPES) {
+              const fields = descriptor.edges
+                .filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy')
+                .map((edge) => edge.field);
+              if (fields.length === 0) continue;
+              const collection = snapshot[descriptor.location.key] as unknown as
+                Record<string, Record<string, unknown>> | undefined;
+              for (const [childId, entity] of Object.entries(collection ?? {})) {
+                if (fields.some((field) => entity[field] === id)) childIds.push(childId);
+              }
+            }
+            if (childIds.length > 0) {
+              childIds.sort((a, b) => a.localeCompare(b));
+              selectSupportIds([childIds[0]]);
             }
           }
         }
