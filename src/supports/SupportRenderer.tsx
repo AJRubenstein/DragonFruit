@@ -2992,7 +2992,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
      * than in the registry because every entry closes over live scene state,
      * and the row KEY is a type id -- the one place the renderer says a type's
      * name. The entity's prop name is the declared `singular`, derived at the
-     * read, so a rename never reaches it.
+     * read, so a rename never reaches it. Note: I would like to see if this 
+     * can be changed in future.
      *
      * `hosts` returning null skips the entity; `skip` is the per-type
      * "draws nothing this frame" rule.
@@ -3493,6 +3494,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                     onRootPointerOut={isPointerInteractable ? handleSceneBatchedShaftPointerOut : undefined}
                 />
             )}
+
+
+            /* the render calls here would ideally be registry driven, but will be left for now */
 
             {renderDetailFor('trunk')}
 

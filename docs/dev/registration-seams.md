@@ -77,6 +77,59 @@ unregisterMeshForAutoBrace(modelId);
 Same seam shape: registration is keyed, unregistration is a `Map.delete`, and
 consumers read the store by id without importing the registering module.
 
+## Support export geometry
+
+`src/supports/exportGeometry/seam.ts` is the seam between the export pipeline and
+each support type's geometry. A type's export builder lives in that type's own
+folder and registers itself:
+
+```ts
+registerSupportExportGroup<Gadget>('gadget', (gadget, context) => THREE.Group | null);
+```
+
+The export walks `SUPPORT_TYPES` and asks each descriptor's type what it builds —
+so `supportExportReconstruction.ts` holds no type name, and a type added to the
+registry is exported by declaring a builder, not by editing the pipeline.
+
+- `context.supportState` is the live store, for a type that resolves an owned
+  root or host knot; `context.modelIdOf(id)` follows an entity's declared links
+  to its model.
+- Returning `null` drops that ONE entity — a support whose host is missing is a
+  broken link, not a reason to export nothing.
+- The walk names each returned group `exportGroupName(typeId, entityId)` from the
+  descriptor's `singular`; a builder never spells its own prefix.
+- `exportGeometry/helpers.ts` carries what every builder needs:
+  `addModelMetadata`, `appendShafts`, `appendConeGeometry`, `appendJoint`,
+  `raftSettingsFor`, `globalPenetrationMm`, and the `SupportGeometryGenerator`
+  facade. It names no support type.
+
+Two guards, because a registration that never runs is silent:
+
+- **At load** — `state.ts` calls `typesMissingExportGroupBuilder()` beside the
+  same check for collection restores, and throws. A type whose registration
+  module did not load fails at import rather than exporting an empty mesh.
+- **In the folder** — `supportTypeFolders.test.ts` asserts every declared type's
+  folder provides the `<type>Registration.ts` the loader looks for.
+
+### How the registration modules load
+
+There is deliberately **no hand-written import list**. A hand-written list is a
+second place a type's name is written down, and adding a ninth type would
+silently not load it.
+
+`scripts/generate-support-registrations.mjs` discovers the folders under
+`SupportTypes/` and writes `src/supports/generatedSupportRegistrations.ts`, which
+`state.ts` imports for its side effects. The generated file is gitignored and
+rebuilt by `predev` / `prebuild` / `pretest` — the same arrangement as
+`generate-plugin-registry.mjs` and the builtin plugin registry, so a fresh
+checkout always has it before anything compiles or tests.
+
+A folder qualifies when it holds `<type>Registration.ts` (e.g.
+`Trunk/trunkRegistration.ts`). Both metrics — `npm run scan:support-types` and the
+`lysdiag` token inventory — exclude generated modules: they name every type by
+construction, so counting them would measure generated output rather than
+hand-written code.
+
 ## Writing a new seam
 
 Follow the existing shape so it reads like the rest of the codebase:

@@ -7,6 +7,7 @@ import { removalShapeFor, type SupportRemovalResult } from './supportTypeRegistr
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
 import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -3864,12 +3865,11 @@ export function applySettingsToSupportTarget(target: EditableSupportTarget, sett
 
 
 // Per-type registrations live in each type's folder; importing them here runs
-// their side effects once the store exists.
-import './SupportTypes/Twig/twigRegistration';
-import './SupportTypes/Stick/stickRegistration';
-import './SupportTypes/Kickstand/kickstandRegistration';
-import './SupportTypes/Branch/branchRegistration';
-import './SupportTypes/Leaf/leafRegistration';
+// their side effects once the store exists. The list is GENERATED from those
+// folders (scripts/generate-support-registrations.mjs) rather than written out,
+// so a new type's registration loads because the folder exists -- and the
+// export seam's completeness check in `exportGeometry/seam.ts` then finds it.
+import './generatedSupportRegistrations';
 
 /* --- Updater registration ------------------------------------------------
  * Every type updates through `applySupportEntityUpdate`. The three listed here
@@ -3930,4 +3930,13 @@ registerCollectionRestore('knots', (entity) => addKnot(entity as Knot));
 const missingRestore = collectionsMissingRestore();
 if (missingRestore.length > 0) {
     throw new Error(`No restore registered for: ${missingRestore.join(', ')}`);
+}
+
+// Every type exports geometry, so a missing export group builder means a
+// registration module did not load -- which would otherwise surface as a type
+// silently missing from every exported mesh. Same check, same place, as the
+// restore registrations above: fail at load, not at export.
+const missingExportGroups = typesMissingExportGroupBuilder();
+if (missingExportGroups.length > 0) {
+    throw new Error(`No export group builder registered for: ${missingExportGroups.join(', ')}`);
 }

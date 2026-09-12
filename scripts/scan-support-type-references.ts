@@ -120,6 +120,10 @@ const files: Entry[] = [];
 for (const abs of walk(SRC)) {
     const path = relative(ROOT, abs).split(sep).join('/');
     if (path.includes('__tests__')) continue;
+    // Generated modules name every type by construction -- the registration
+    // loader lists one import per type folder. Counting them would make this
+    // metric move with generated output rather than with hand-written code.
+    if (/(^|\/)generated[A-Za-z]*\.tsx?$/.test(path)) continue;
     if (EXEMPT.some((e) => path === e || path.startsWith(e))) continue;
     if (only && !path.includes(only)) continue;
 

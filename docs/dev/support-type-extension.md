@@ -157,17 +157,39 @@ Still the heaviest step.
 - `transformSupportsForModel` / `setSnapshot` — walk gadgets if they must move
   with a model transform.
 
-## 6. Export — `src/features/export/logic/supportExportReconstruction.ts` *(hand-wired)*
+## 6. Export — *(registry-driven, one registration in your folder)*
 
-- Include gadgets in `extractScopedSupportPayload`. Scoping itself is
-  registry-driven -- `belongsToScope` walks your declared `edges`.
-- Add `gadgets` to `buildScopedSupportExportDocument`'s returned format.
-- Add a `buildGadgetGroup(...)` and one `gadget:` entry to the `groupBuilders`
-  table in `buildScopedSupportGeometryGroup`. The table is typed
-  `Record<SupportTypeId, GroupBuilder>`, so a missing entry fails to compile
-  rather than dropping your type from every export.
-- Do **not** name the group: return `{ id, group }` and the dispatch names it
-  `Gadget_<id>` from `exportGroupName`, derived from the descriptor's `singular`.
+Nothing to add in `supportExportReconstruction.ts`. The payload is filled by
+walking `SUPPORT_TYPES` (its field names ARE the collection keys, from
+`location.key`), the document and the geometry group are built the same way, and
+the group is named `Gadget_<id>` from `exportGroupName`.
+
+What you add is the geometry, in **your** folder — one call in
+`SupportTypes/Gadget/gadgetRegistration.ts`:
+
+```ts
+registerSupportExportGroup<Gadget>('gadget', (gadget, context) => {
+    const group = new THREE.Group();
+    addModelMetadata(group, gadget.modelId);
+    // …build into `group`…
+    return group;
+});
+```
+
+- Return `null` to drop ONE entity (a broken host link) rather than failing the
+  export.
+- `context.supportState` is the live store, for a type that resolves an owned
+  root or host knot; `context.modelIdOf(id)` follows an entity's declared links
+  to its model.
+- `supports/exportGeometry/helpers.ts` carries the shared pieces
+  (`addModelMetadata`, `appendShafts`, `appendConeGeometry`, `raftSettingsFor`,
+  `globalPenetrationMm`, the `SupportGeometryGenerator`).
+- Do **not** name the returned group: the walk names it from the registry.
+
+The generator that loads your registration module discovers it from the folder,
+so there is no list to update — `state.ts` throws at load if a type never
+registered a builder, and `supportTypeFolders.test.ts` fails if the file is
+missing.
 
 ## 7. Interaction — only for user-placeable types *(hand-wired)*
 
@@ -227,9 +249,11 @@ wiring is explicit:
    the action strings and their payload entries derive from the type id
 7. `useSupportInteractionManager.ts` — **nothing**, unless the type reshapes its
    removal payload or can host a knot (see step 7 above)
-8. `supportExportReconstruction.ts` — one entry in the `groupBuilders` table,
-   typed `Record<SupportTypeId, GroupBuilder>`, so a missing type is a compile
-   error. The group's exported name derives from `singular`
+8. `SupportTypes/Gadget/gadgetRegistration.ts` — one
+   `registerSupportExportGroup<Gadget>(...)` call under your own type id. The
+   loader, the payload, the document and the group name all derive; the
+   registration file is discovered from your folder, and `state.ts` throws at
+   load if it never ran
 
 After wiring, run the registry tests — they fail loudly on a half-declared type:
 

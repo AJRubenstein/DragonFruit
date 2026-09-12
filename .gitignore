@@ -22,7 +22,7 @@
 src-tauri/frontend-dist/**
 src-tauri/gen/
 
-# generated artifacts
+# generated artifacts (rebuilt by predev / prebuild / pretest, checked in CI)
 **/generated*
 
 # mkdocs Material social-plugin cache (fonts + generated card images).

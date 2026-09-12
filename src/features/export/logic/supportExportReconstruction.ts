@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { bezierToLineSegments } from '@/supports/Curves/BezierUtils';
 import { getModelIdForSupportEntityId } from '@/supports/state';
+import { buildSupportExportGroup, type SupportExportContext } from '@/supports/exportGeometry/seam';
 import { exportGroupName, getSupportTypeDescriptor, parseKnotHostId, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone';
 import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
@@ -193,251 +194,6 @@ function appendStraightOrBezierShafts(
   }
 }
 
-/**
- * Build one type's export groups, each paired with the id of the entity it was
- * built from. Each closes over its own row type, so the table can be indexed by
- * type id without widening the rows to a union. A null group skips that entity:
- * a broken link drops one support rather than failing the export.
- *
- * The caller names each group from the registry, so no builder spells out its
- * own `Trunk_` / `Kickstand_` prefix.
- */
-type BuiltGroup = { id: string; group: THREE.Group | null };
-type GroupBuilder = () => readonly BuiltGroup[];
-
-function buildTrunkGroup(trunk: Trunk, root: Roots, modelId: string | null | undefined): THREE.Group {
-  const group = SupportGeometryGenerator.generateSupportGroup(
-    {
-      id: trunk.id,
-      roots: root,
-      segments: trunk.segments,
-      contactCone: trunk.contactCone,
-    },
-    modelId ? getRaftSettingsForModel(modelId) : undefined,
-  );
-  addModelMetadata(group, modelId);
-  return group;
-}
-
-function buildBranchGroup(branch: Branch, parentKnot: Knot, modelId: string | null | undefined): THREE.Group {
-  const group = SupportGeometryGenerator.generateSupportGroup({
-    id: branch.id,
-    startPos: parentKnot.pos,
-    segments: branch.segments,
-    contactCone: branch.contactCone,
-  });
-  addModelMetadata(group, modelId);
-  return group;
-}
-
-function buildAnchorGroup(anchor: Anchor, modelId: string | null | undefined): THREE.Group {
-  const group = new THREE.Group();
-  addModelMetadata(group, modelId);
-
-  const rootHeight = Math.max(0.001, anchor.rootHeight);
-  const rootMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(
-      Math.max(0.001, anchor.rootTopDiameter / 2),
-      Math.max(0.001, anchor.rootBaseDiameter / 2),
-      rootHeight,
-      20,
-    ),
-  );
-  rootMesh.position.set(anchor.rootPos.x, anchor.rootPos.y, anchor.rootPos.z + (rootHeight / 2));
-  rootMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1));
-  group.add(rootMesh);
-
-  group.add(SupportGeometryGenerator.generateJointMesh(anchor.joint));
-
-  let currentStart: Vec3 = anchor.joint.pos;
-  anchor.segments.forEach((segment) => {
-    const end = segment.topJoint
-      ? segment.topJoint.pos
-      : anchor.contactCone
-        ? getFinalSocketPosition(anchor.contactCone)
-        : currentStart;
-
-    appendStraightOrBezierShafts(group, segment, currentStart, end);
-
-    if (segment.topJoint) {
-      group.add(SupportGeometryGenerator.generateJointMesh(segment.topJoint));
-    }
-
-    currentStart = end;
-  });
-
-  appendConeGeometry(group, anchor.contactCone);
-  return group;
-}
-
-function buildBraceGroup(
-  brace: Brace,
-  startKnot: Knot,
-  endKnot: Knot,
-  modelId: string | null | undefined,
-): THREE.Group {
-  const group = new THREE.Group();
-  addModelMetadata(group, modelId);
-
-  const diameter = Math.max(
-    0.001,
-    brace.profile?.diameter
-      ?? Math.max(
-        0.001,
-        ((startKnot.diameter ?? 1.2) + (endKnot.diameter ?? 1.2)) * 0.5,
-      ),
-  );
-
-  if (brace.curve?.type === 'bezier') {
-    const points = bezierToLineSegments(
-      startKnot.pos,
-      brace.curve.controlPoint1,
-      brace.curve.controlPoint2,
-      endKnot.pos,
-      brace.curve.resolution,
-    );
-    for (let i = 0; i < points.length - 1; i += 1) {
-      const shaft = SupportGeometryGenerator.generateShaftMesh(
-        new THREE.Vector3(points[i].x, points[i].y, points[i].z),
-        new THREE.Vector3(points[i + 1].x, points[i + 1].y, points[i + 1].z),
-        diameter,
-      );
-      if (shaft) group.add(shaft);
-    }
-    return group;
-  }
-
-  const shaft = SupportGeometryGenerator.generateShaftMesh(
-    new THREE.Vector3(startKnot.pos.x, startKnot.pos.y, startKnot.pos.z),
-    new THREE.Vector3(endKnot.pos.x, endKnot.pos.y, endKnot.pos.z),
-    diameter,
-  );
-  if (shaft) group.add(shaft);
-
-  return group;
-}
-
-function buildLeafGroup(leaf: Leaf, modelId: string | null | undefined): THREE.Group {
-  const group = new THREE.Group();
-  addModelMetadata(group, modelId);
-  appendConeGeometry(group, leaf.contactCone);
-  return group;
-}
-
-function buildStickGroup(stick: Stick, modelId: string | null | undefined): THREE.Group {
-  const startPos = getFinalSocketPosition(stick.contactConeA);
-  const group = SupportGeometryGenerator.generateSupportGroup(
-    {
-      id: stick.id,
-      startPos,
-      segments: stick.segments,
-      contactCone: stick.contactConeB,
-    },
-  );
-  addModelMetadata(group, modelId);
-  appendConeGeometry(group, stick.contactConeA);
-  return group;
-}
-
-function buildTwigGroup(twig: Twig, modelId: string | null | undefined): THREE.Group {
-  const startPos = buildTwigDiskTipCenter(twig.contactDiskA);
-  const endPos = buildTwigDiskTipCenter(twig.contactDiskB);
-  const group = new THREE.Group();
-  addModelMetadata(group, modelId);
-
-  const seenJointIds = new Set<string>();
-  let currentStart = startPos;
-
-  twig.segments.forEach((segment, index) => {
-    if (segment.bottomJoint && !seenJointIds.has(segment.bottomJoint.id)) {
-      seenJointIds.add(segment.bottomJoint.id);
-      group.add(SupportGeometryGenerator.generateJointMesh(segment.bottomJoint));
-    }
-
-    const isLast = index === twig.segments.length - 1;
-    const end = segment.topJoint
-      ? segment.topJoint.pos
-      : isLast
-        ? endPos
-        : currentStart;
-
-    appendStraightOrBezierShafts(group, segment, segment.bottomJoint?.pos ?? currentStart, end);
-
-    if (segment.topJoint && !seenJointIds.has(segment.topJoint.id)) {
-      seenJointIds.add(segment.topJoint.id);
-      group.add(SupportGeometryGenerator.generateJointMesh(segment.topJoint));
-    }
-
-    currentStart = end;
-  });
-
-  const pen = getGlobalPenetrationMm();
-  const diskA = SupportGeometryGenerator.generateContactDiskMesh({
-    pos: twig.contactDiskA.pos,
-    normal: twig.contactDiskA.coneAxis,
-    surfaceNormal: twig.contactDiskA.surfaceNormal,
-    diskLengthOverride: twig.contactDiskA.diskLengthOverride,
-    profile: twig.contactDiskA.profile,
-    contactDiameterMm: twig.contactDiskA.contactDiameterMm,
-  }, pen);
-  const diskB = SupportGeometryGenerator.generateContactDiskMesh({
-    pos: twig.contactDiskB.pos,
-    normal: twig.contactDiskB.coneAxis,
-    surfaceNormal: twig.contactDiskB.surfaceNormal,
-    diskLengthOverride: twig.contactDiskB.diskLengthOverride,
-    profile: twig.contactDiskB.profile,
-    contactDiameterMm: twig.contactDiskB.contactDiameterMm,
-  }, pen);
-  if (diskA.children.length > 0) group.add(diskA);
-  if (diskB.children.length > 0) group.add(diskB);
-  return group;
-}
-
-function buildKickstandGroup(
-  kickstand: Kickstand,
-  root: Roots,
-  hostKnot: Knot,
-  modelId: string | null | undefined,
-): THREE.Group {
-  const group = new THREE.Group();
-  addModelMetadata(group, modelId);
-
-  const raftSettings = modelId ? getRaftSettingsForModel(modelId) : undefined;
-  const rootGroup = SupportGeometryGenerator.generateRootsMesh(
-    root,
-    kickstand.segments[0]?.diameter ?? kickstand.profile.bodyDiameterMm,
-    raftSettings,
-  );
-  group.add(rootGroup);
-
-  const effectiveDiskHeight = Math.max(0.001, root.diskHeight);
-  const verticalOffset = 0;
-  let currentStart: Vec3 = {
-    x: root.transform.pos.x,
-    y: root.transform.pos.y,
-    z: root.transform.pos.z + verticalOffset + effectiveDiskHeight + Math.max(0, root.coneHeight),
-  };
-
-  kickstand.segments.forEach((segment, index) => {
-    const isLast = index === kickstand.segments.length - 1;
-    const end = segment.topJoint
-      ? segment.topJoint.pos
-      : isLast
-        ? hostKnot.pos
-        : currentStart;
-
-    appendStraightOrBezierShafts(group, segment, currentStart, end);
-
-    if (segment.topJoint) {
-      group.add(SupportGeometryGenerator.generateJointMesh(segment.topJoint));
-    }
-
-    currentStart = end;
-  });
-
-  return group;
-}
-
 export function extractScopedSupportPayload(
   supportState: SupportState,
   modelIds: Iterable<string>,
@@ -608,59 +364,22 @@ export function buildScopedSupportGeometryGroup(
   const group = new THREE.Group();
   group.name = 'ScopedSupportExport';
 
-  const rootsById = supportState.roots;
-  const knotsById = supportState.knots;
-
-  /** One builder per type, over the rows the payload carries for it. */
-  const groupBuilders: Record<SupportTypeId, GroupBuilder> = {
-    trunk: () => payload.trunks.map((trunk) => {
-      const root = rootsById[trunk.rootId];
-      if (!root) return { id: trunk.id, group: null };
-      return { id: trunk.id, group: buildTrunkGroup(trunk, root, trunk.modelId ?? root.modelId ?? null) };
-    }),
-    branch: () => payload.branches.map((branch) => {
-      const parentKnot = knotsById[branch.parentKnotId];
-      if (!parentKnot) return { id: branch.id, group: null };
-      const modelId = branch.modelId ?? getModelIdForSupportEntityId(branch.parentKnotId);
-      return { id: branch.id, group: buildBranchGroup(branch, parentKnot, modelId) };
-    }),
-    leaf: () => payload.leaves.map((leaf) => ({
-      id: leaf.id,
-      group: buildLeafGroup(leaf, leaf.modelId ?? getModelIdForSupportEntityId(leaf.parentKnotId)),
-    })),
-    twig: () => payload.twigs.map((twig) => ({ id: twig.id, group: buildTwigGroup(twig, twig.modelId) })),
-    stick: () => payload.sticks.map((stick) => ({ id: stick.id, group: buildStickGroup(stick, stick.modelId) })),
-    brace: () => payload.braces.map((brace) => {
-      const startKnot = knotsById[brace.startKnotId];
-      const endKnot = knotsById[brace.endKnotId];
-      if (!startKnot || !endKnot) return { id: brace.id, group: null };
-      const modelId = brace.modelId
-        ?? getModelIdForSupportEntityId(brace.startKnotId)
-        ?? getModelIdForSupportEntityId(brace.endKnotId);
-      return { id: brace.id, group: buildBraceGroup(brace, startKnot, endKnot, modelId) };
-    }),
-    anchor: () => payload.anchors.map((anchor) => ({
-      id: anchor.id,
-      group: buildAnchorGroup(anchor, anchor.modelId),
-    })),
-    kickstand: () => payload.kickstands.map((kickstand) => {
-      const root = supportState.roots[kickstand.rootId];
-      const hostKnot = supportState.knots[kickstand.hostKnotId];
-      if (!root || !hostKnot) return { id: kickstand.id, group: null };
-      const modelId = kickstand.modelId
-        ?? root.modelId
-        ?? getModelIdForSupportEntityId(kickstand.hostKnotId)
-        ?? getModelIdForSupportEntityId(kickstand.hostSegmentId);
-      return { id: kickstand.id, group: buildKickstandGroup(kickstand, root, hostKnot, modelId) };
-    }),
+  const context: SupportExportContext = {
+    supportState,
+    modelIdOf: getModelIdForSupportEntityId,
   };
 
-  // Registry order, so the exported group is stable as types are added.
+  // Every type's own folder registers how it exports (see
+  // supports/exportGeometry/seam.ts). Walking the registry is what keeps this
+  // free of type names: a type that never registered would otherwise export
+  // nothing, silently, so it throws instead.
   for (const descriptor of SUPPORT_TYPES) {
-    for (const built of groupBuilders[descriptor.id]()) {
-      if (!built.group) continue;
-      built.group.name = exportGroupName(descriptor.id, built.id);
-      group.add(built.group);
+    const rows = (payload as unknown as Record<string, readonly { id: string }[]>)[descriptor.location.key] ?? [];
+    for (const entity of rows) {
+      const built = buildSupportExportGroup(descriptor.id, entity, context);
+      if (!built) continue;
+      built.name = exportGroupName(descriptor.id, entity.id);
+      group.add(built);
     }
   }
 

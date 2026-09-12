@@ -1,3 +1,6 @@
+import * as THREE from 'three';
+import { registerSupportExportGroup } from '../../exportGeometry/seam';
+import { addModelMetadata, appendConeGeometry } from '../../exportGeometry/helpers';
 import { registerSettingsInference } from '../../supportTypeRegistry';
 import { mergeSettingsWithDefaults, type SupportSettings } from '../../Settings/types';
 import type { Leaf } from '../../types';
@@ -23,3 +26,13 @@ function inferSettingsFromLeaf(leaf: Leaf, base?: SupportSettings): SupportSetti
 }
 
 registerSettingsInference<Leaf, SupportSettings, SupportSettings>('leaf', inferSettingsFromLeaf);
+
+// A leaf carries a contact cone and no shaft of its own, so its export geometry
+// is the cone and the disk under it.
+registerSupportExportGroup<Leaf>('leaf', (leaf, context) => {
+    const modelId = leaf.modelId ?? context.modelIdOf(leaf.parentKnotId);
+    const group = new THREE.Group();
+    addModelMetadata(group, modelId);
+    appendConeGeometry(group, leaf.contactCone);
+    return group;
+});

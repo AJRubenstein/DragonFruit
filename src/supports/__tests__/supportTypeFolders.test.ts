@@ -48,3 +48,21 @@ test('every type folder provides a renderer', () => {
         );
     }
 });
+
+test('every type folder provides the registration the generator looks for', () => {
+    // `scripts/generate-support-registrations.mjs` builds the module that loads
+    // each type's registrations, and it finds them by this file name. A type
+    // with no such file loads nothing: its seams are never filled, and the
+    // load-time completeness checks in `state.ts` are the only thing that would
+    // notice. This is the earlier, clearer failure.
+    for (const descriptor of SUPPORT_TYPES) {
+        const name = folderFor(descriptor.id);
+        const registration = `${name[0].toLowerCase()}${name.slice(1)}Registration.ts`;
+        const files = readdirSync(path.join(TYPES_DIR, name));
+        assert.ok(
+            files.includes(registration),
+            `${descriptor.id} has no SupportTypes/${name}/${registration}`
+            + ' — its per-type registrations would never load',
+        );
+    }
+});
