@@ -101,7 +101,7 @@ whether the type is user-placeable.
    `skip`, `extraProps` and `noClipping`.
 2. Add `{renderDetailFor('gadget')}` to the JSX, in the order your type should
    draw relative to the batched-shaft passes.
-3. *Optional*: declare `batchesPlainShafts` / `batchesShaftJoints` so unselected
+3. *Optional*: declare `batchesShaft` so unselected
    straight shafts and joints render via `InstancedShaftGroup`.
 4. *Optional*: add the type to the render-lookup worker for primitive picking.
    Anchors skip it entirely, so it is not required for selectability.

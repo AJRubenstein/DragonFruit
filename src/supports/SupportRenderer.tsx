@@ -1665,7 +1665,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         for (const descriptor of SUPPORT_TYPES) {
             // Brace builds its own set (its shaft is a curve between two
             // knots); anchor declares a shaft but builds none.
-            if (!descriptor.batchesPlainShafts) continue;
+            if (!descriptor.batchesShaft) continue;
             if (descriptor.id === 'twig' && !enableTwigSceneBatching) continue;
 
             // Roots are looked up by the entity's own rootId, so the shared
@@ -1857,7 +1857,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const shaftJointsByType = useMemo(() => {
         const byType = {} as Record<SupportTypeId, ReturnType<typeof collectShaftJoints>>;
         for (const descriptor of SUPPORT_TYPES) {
-            if (!descriptor.batchesShaftJoints) continue;
+            if (!descriptor.batchesShaft) continue;
             // The flag admits only types whose segments carry the joints.
             byType[descriptor.id] = collectShaftJoints(
                 descriptor.id,

@@ -372,20 +372,16 @@ export interface SupportTypeDescriptor {
      */
     batchesContactCones: boolean;
     /**
-     * Whether the type's shaft joints are drawn by the shared batched pass.
+     * Whether the shared batched passes draw this type's shaft: its straight
+     * segments and the joints they carry.
      *
-     * The joints a shaft carries hang off its segments. Anchor declares a
-     * shaft but builds none, keeping its single joint on the entity instead,
-     * so there is nothing per-segment for the batch to collect.
+     * One flag, because "the batch builds that support" is one fact the two
+     * passes ask about the same set of types. Brace opts out -- its shaft is a
+     * curve between two knots and it builds its own set. Anchor declares a
+     * shaft but builds none: its renderer draws the single joint directly, so
+     * there is nothing per-segment for either pass to collect.
      */
-    batchesShaftJoints: boolean;
-    /**
-     * Whether the shared plain-shaft batcher builds this type's shafts.
-     *
-     * Brace opts out: its shaft is a curve between two knots and it builds its
-     * own set. Anchor declares a shaft but builds none.
-     */
-    batchesPlainShafts: boolean;
+    batchesShaft: boolean;
     /**
      * Whether dragging a joint re-solves the type's contact primitives.
      *
@@ -453,8 +449,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         ownsEditHistoryEntry: true,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
-        batchesShaftJoints: true,
-        batchesPlainShafts: true,
+        batchesShaft: true,
         bezierContextIdPrefix: '',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: true,
@@ -496,8 +491,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
-        batchesShaftJoints: true,
-        batchesPlainShafts: true,
+        batchesShaft: true,
         bezierContextIdPrefix: 'branch-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
@@ -540,8 +534,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
-        batchesShaftJoints: false,
-        batchesPlainShafts: false,
+        batchesShaft: false,
         bezierContextIdPrefix: 'leaf-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
@@ -581,8 +574,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
-        batchesShaftJoints: true,
-        batchesPlainShafts: true,
+        batchesShaft: true,
         bezierContextIdPrefix: 'twig-',
         broadcastsAttachmentsWhileDragging: true,
         knotTakesJointDiameter: false,
@@ -618,8 +610,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: true,
-        batchesShaftJoints: true,
-        batchesPlainShafts: true,
+        batchesShaft: true,
         bezierContextIdPrefix: 'stick-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
@@ -659,8 +650,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
-        batchesShaftJoints: false,
-        batchesPlainShafts: false,
+        batchesShaft: false,
         bezierContextIdPrefix: 'brace-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
@@ -697,8 +687,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
-        batchesShaftJoints: false,
-        batchesPlainShafts: false,
+        batchesShaft: false,
         bezierContextIdPrefix: 'anchor-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
@@ -743,8 +732,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: false,
         batchesContactCones: false,
-        batchesShaftJoints: true,
-        batchesPlainShafts: true,
+        batchesShaft: true,
         bezierContextIdPrefix: 'kickstand-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
