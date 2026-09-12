@@ -269,7 +269,20 @@ function computeLinearT(
 
 export type TrunkKnotUpdate = { before: Knot; after: Knot };
 
-export function computeAndApplyTrunkDiameterProfile(
+/**
+ * Re-solve a host's stepwise shaft diameter from the branches it carries.
+ *
+ * The entry point for a host type declaring `recomputesDiameterFromAttachments`
+ * — trunk is the one that does today, and this is the algorithm it uses. Its
+ * shape is the flagged host's: segment boundaries are split where a
+ * branch-carrying knot sits, each segment takes the diameter its own load
+ * demands, and the knots move with them.
+ *
+ * `TrunkKnotUpdate` keeps its name because the updates ARE trunk's knots; a
+ * second flagged type reading this would want its own update type and its own
+ * profile, and the flag is what tells the caller which type it is dealing with.
+ */
+export function computeAndApplySupportDiameterProfile(
     snapshot: SupportState,
     trunkId: string,
     options?: { baseShaftDiameterMm?: number }
@@ -523,7 +536,7 @@ export function computeAndApplyTrunkDiameterProfile(
 export function computeForestDiameterProfile(snapshot: SupportState): SupportState {
     let working = snapshot;
     for (const trunkId of Object.keys(snapshot.trunks)) {
-        const applied = computeAndApplyTrunkDiameterProfile(working, trunkId);
+        const applied = computeAndApplySupportDiameterProfile(working, trunkId);
         if (!applied) continue;
 
         let nextKnots = working.knots;

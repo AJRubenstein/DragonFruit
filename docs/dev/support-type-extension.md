@@ -206,10 +206,20 @@ wiring is explicit:
   `SUPPORT_REMOVAL_SHAPES` entry — its `self` plus one field per declared
   cascade entry. A field declared as an array (`['startKnot', 'endKnot']`) is a
   set of NAMED singular slots rather than a list.
-- Removing one of your type also re-solves its host, if it hung from one — set
-  `repairsHostOnRemoval: true` and the host is found through your declared
-  `hostedBy` knot edge and re-solved, with the result reported beside the
-  cascade. Branch is the one type that does.
+- Removing one of your type also re-solves a host it hung from, when that
+  host's own type declares `recomputesDiameterFromAttachments` — the host is
+  found through your declared `hostedBy` knot edge and re-solved, with the
+  result reported beside the cascade. The flag sits on the HOST, not on you:
+  trunk is the one type that declares it, because a stepwise shaft diameter is
+  derived from what it carries.
+- A bridge type you declare for `contactSpan` may refuse a wide landing by
+  leaving `mayReachSideways` false: the bridge search runs near radii first, and
+  only a type allowed to reach sideways may land beyond the near cutoff. Twig
+  allows it (short props off a neighbouring surface); stick does not (it stays
+  near vertical).
+- `PlacedKind` and `LEDGER_KINDS` come from the registry's declared
+  `AUTO_PLACED_TYPE_IDS` — if auto-placement can place your type, add it there
+  rather than to any list in `autoSupport/`.
 - Deleting a **knot** deletes what it hosts, resolved by `findKnotHost` from the
   `hostedBy` edges onto `knots` that you declare. If your type can hang off a
   knot, add it to `KNOT_HOST_PRECEDENCE` (registry) — a knot-hosting type absent

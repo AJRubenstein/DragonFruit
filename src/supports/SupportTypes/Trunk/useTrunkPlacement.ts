@@ -5,15 +5,14 @@ import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { addAction } from '../../history/actionTypes';
 import { useInteractionStatus } from '../../interaction/useInteractionStatus';
 import { buildTrunkData } from './trunkBuilder';
-import { applyTrunkReplacement, computeAndApplyTrunkDiameterProfile, planTrunkReplacement } from './TrunkReplacement';
+import { applyTrunkReplacement, computeAndApplySupportDiameterProfile, planTrunkReplacement } from './TrunkReplacement';
 import { supportDataForEntity, type SupportData } from '../../rendering/SupportBuilder';
 import { markPlacementSurface, markSupportDataPlacementSurface, type PlacementSurface } from '../../PlacementLogic/placementSurface';
-import type { Anchor, Branch, ContactDisk, Leaf, LimitationCode, Segment, Stick, Twig, WarningCode } from '../../types';
-import type { ContactCone } from '../../SupportPrimitives/ContactCone/types';
+import type { LimitationCode, Segment, WarningCode } from '../../types';
 import { calculateSmoothedNormal } from '../../PlacementLogic/PlacementUtils';
 import { getSettings } from '../../Settings/state';
 import { decideGridPlacement } from '../../PlacementLogic/Grid';
-import { buildContactBridge, selectTypeForPlacement, type SupportTypeId, updateSupportEntity } from '../../supportTypeRegistry';
+import { bridgeMayLandSideways, buildContactBridge, selectTypeForPlacement, type SupportTypeId, updateSupportEntity } from '../../supportTypeRegistry';
 import { shaftVerticalCos } from '../Stick/stickVerticality';
 import { clearSupportSelection } from '../../interaction/shared/selection/selectionController';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
@@ -162,7 +161,10 @@ export function buildCavityBridge(
     const kind = selectTypeForPlacement('contactSpan', dist);
     if (kind === null) return null;
 
-    if (kind === 'stick' && reachedSideways && dist > cutoff) return null;
+    // Landing beyond the near cutoff on the wide search is a lateral prop, which
+    // only a type declaring `mayReachSideways` may build. The rule is a plain
+    // function because this caller is a hook and cannot be exercised in tests.
+    if (!bridgeMayLandSideways(kind, dist, cutoff, reachedSideways)) return null;
 
     const built = buildContactBridge(kind, {
         modelId,
@@ -695,7 +697,7 @@ export function useTrunkPlacementV2() {
             const hostTrunk = snapshotAfterAdd.trunks[hostId];
             const trunkUpdate = hostTrunk
                 ? (() => {
-                    const applied = computeAndApplyTrunkDiameterProfile(snapshotAfterAdd, hostId);
+                    const applied = computeAndApplySupportDiameterProfile(snapshotAfterAdd, hostId);
                     if (!applied) return null;
 
                     for (const u of applied.knotUpdates) {

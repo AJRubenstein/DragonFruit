@@ -176,7 +176,23 @@ export interface SupportTypeDescriptor {
      * Declared here so the removal path asks the registry rather than testing
      * this type by name.
      */
-    repairsHostOnRemoval: boolean;
+    /**
+     * Whether this type's diameter is re-solved from what it carries.
+     *
+     * Trunk alone today: its shaft is a stepwise profile derived from the
+     * branches hanging off it, so a change to those attachments leaves it sized
+     * for something that is gone. A removal that changes them re-solves the host
+     * through `computeAndApplySupportDiameterProfile` when this is set.
+     */
+    recomputesDiameterFromAttachments: boolean;
+    /**
+     * Whether the bridge search may reach sideways to land this type.
+     *
+     * Twig alone: a twig is short, so it can prop a contact off a neighbouring
+     * surface the near search misses. A stick has to stay near vertical and
+     * keeps the near search, so the sideways reach never applies to it.
+     */
+    mayReachSideways: boolean;
     /**
      * Whether instances can host a fan link off their shaft.
      *
@@ -461,7 +477,8 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     {
         id: 'trunk',
         hasEditableSettings: true,
-        repairsHostOnRemoval: false,
+        recomputesDiameterFromAttachments: true,
+        mayReachSideways: false,
         canBeGridHost: true,
         edges: [{ field: 'rootId', to: 'roots', ownership: 'owns' }],
         ownsRoot: true,
@@ -505,7 +522,6 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     {
         id: 'branch',
         hasEditableSettings: true,
-        repairsHostOnRemoval: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' }],
         ownsRoot: false,
         segmentsCarryBothJoints: false,
@@ -538,6 +554,8 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: true,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
+        recomputesDiameterFromAttachments: false,
+        mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: true,
         label: 'Branches',
@@ -581,7 +599,8 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
-        repairsHostOnRemoval: false,
+        recomputesDiameterFromAttachments: false,
+        mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: false,
         label: 'Leaves',
@@ -619,7 +638,8 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'disk', field: 'contactDiskA' },
         upper: { kind: 'disk', field: 'contactDiskB' },
-        repairsHostOnRemoval: false,
+        recomputesDiameterFromAttachments: false,
+        mayReachSideways: true,
         canBeGridHost: false,
         hasSegments: true,
         label: 'Twigs',
@@ -656,7 +676,8 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'cone', field: 'contactConeA' },
         upper: { kind: 'cone', field: 'contactConeB' },
-        repairsHostOnRemoval: false,
+        recomputesDiameterFromAttachments: false,
+        mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: true,
         label: 'Sticks',
@@ -700,7 +721,8 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'knot' },
         upper: { kind: 'knot' },
-        repairsHostOnRemoval: false,
+        recomputesDiameterFromAttachments: false,
+        mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: false,
         label: 'Braces',
@@ -743,7 +765,8 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: false,
         lower: { kind: 'inlineRoot', field: 'rootPos' },
         upper: { kind: 'cone', field: 'contactCone' },
-        repairsHostOnRemoval: false,
+        recomputesDiameterFromAttachments: false,
+        mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: true,
         label: 'Anchors',
@@ -789,7 +812,8 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'knot' },
-        repairsHostOnRemoval: false,
+        recomputesDiameterFromAttachments: false,
+        mayReachSideways: false,
         canBeGridHost: false,
         hasSegments: true,
         label: 'Kickstands',
@@ -1083,6 +1107,27 @@ function thresholdMm(
  * Bounds are half-open, so adjacent types meet without overlapping and the
  * answer is unambiguous.
  */
+/**
+ * Whether a bridge of `typeId` may land where the search ended up.
+ *
+ * The bridge search runs near radii first; when that misses, a type declaring
+ * `mayReachSideways` searches wider to prop the contact off a neighbouring
+ * surface. Landing beyond the near cutoff that way is a lateral prop, so a type
+ * that may not reach sideways stops here rather than building one.
+ *
+ * A plain function so the rule is testable: its caller is a React hook.
+ */
+export function bridgeMayLandSideways(
+    typeId: SupportTypeId,
+    distMm: number,
+    cutoffMm: number,
+    reachedSideways: boolean,
+): boolean {
+    if (!reachedSideways) return true;
+    if (distMm <= cutoffMm) return true;
+    return getSupportTypeDescriptor(typeId).mayReachSideways;
+}
+
 export function selectTypeForPlacement(
     metric: SupportPlacementMetric,
     valueMm: number,
@@ -1389,6 +1434,33 @@ export const SUPPORT_STATE_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYP
 export const GRID_HOST_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYPES.filter(
     (descriptor) => descriptor.canBeGridHost,
 );
+
+/**
+ * Types the auto-placement pass can place, in registry order.
+ *
+ * A literal tuple rather than a filter over a descriptor flag: the ledger needs
+ * the NARROW union of these names (`PlacedKind`), and a runtime filter only
+ * yields `SupportTypeId`. Declared here because the registry is the one place a
+ * type may be named -- every consumer derives from this.
+ *
+ * Brace and kickstand are absent: auto-placement neither places nor reports
+ * them; they are only ever added by hand or by their own placement tools.
+ */
+export const AUTO_PLACED_TYPE_IDS = ['trunk', 'anchor', 'leaf', 'branch', 'stick', 'twig'] as const satisfies readonly SupportTypeId[];
+
+/** A type the auto-placement pass can place. */
+export type AutoPlacedTypeId = (typeof AUTO_PLACED_TYPE_IDS)[number];
+
+/**
+ * Whether a placed kind is one the ledger reports.
+ *
+ * Declared here beside the set, because a type predicate has to be able to name
+ * the narrowed type — and a name belongs at the naming point, not in the
+ * consumer that happens to read the set.
+ */
+export function isAutoPlacedType(kind: SupportTypeId | 'reject'): kind is AutoPlacedTypeId {
+    return (AUTO_PLACED_TYPE_IDS as readonly string[]).includes(kind);
+}
 
 /** Collections whose entities can host a fan link, in registry order. */
 export const GRID_HOST_COLLECTION_KEYS: readonly SupportCollectionKey[] = GRID_HOST_TYPES

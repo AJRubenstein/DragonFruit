@@ -1,12 +1,13 @@
 import type { Vec3, SupportState } from '../types';
-import type { SupportTypeId } from '../supportTypeRegistry';
+import { AUTO_PLACED_TYPE_IDS, type AutoPlacedTypeId, type SupportTypeId } from '../supportTypeRegistry';
 
 /**
  * Auto-placement reports cover a subset of the support types, not all of them.
  * `Extract` keeps each subset narrow while tying the names to the registry, so
  * a renamed or misspelled type fails to compile here.
  */
-export type PlacedKind = Extract<SupportTypeId, 'trunk' | 'anchor' | 'leaf' | 'branch' | 'stick' | 'twig'>;
+/** A type the ledger can report, from the registry's declared set. */
+export type PlacedKind = AutoPlacedTypeId;
 type AttachmentKind = Extract<SupportTypeId, 'leaf' | 'branch'>;
 /** Which kind of entity was culled: any host type, or a hosted member. */
 type OrphanKind = SupportTypeId;
@@ -51,14 +52,12 @@ export type RejectReason =
     | 'exception';
 
 /**
- * The ledger's own type set, as values. `satisfies` ties it to `PlacedKind`, so
- * adding a name here that is not a support type fails to compile.
+ * The ledger's own type set, as values — the registry's declared set, so adding
+ * an auto-placed type is one edit there and nothing here.
  */
-export const LEDGER_KINDS = ['trunk', 'anchor', 'leaf', 'branch', 'stick', 'twig'] as const satisfies readonly PlacedKind[];
+export const LEDGER_KINDS: readonly PlacedKind[] = AUTO_PLACED_TYPE_IDS;
 
-export function isLedgerKind(kind: PlacementOutcomeKind): kind is PlacedKind {
-    return (LEDGER_KINDS as readonly string[]).includes(kind);
-}
+export { isAutoPlacedType as isLedgerKind } from '../supportTypeRegistry';
 
 /** Per-placed-entity entry in the Forest Report ledger. */
 export interface ForestLedgerEntry {

@@ -1,4 +1,4 @@
-import { computeAndApplyTrunkDiameterProfile } from '../SupportTypes/Trunk/TrunkReplacement';
+import { computeAndApplySupportDiameterProfile } from '../SupportTypes/Trunk/TrunkReplacement';
 import { findShaftOwnerOfSegment, getSnapshot, removeSupportEntity, updateKnot } from '../state';
 import { getSupportTypeDescriptor, removalShapeFor, updateSupportEntity } from '../supportTypeRegistry';
 import type { SupportTypeId } from '../supportTypeRegistry';
@@ -15,10 +15,12 @@ import type { SupportState } from '../types';
  *    payload is the cascade result re-keyed from that declaration, with its
  *    singular fields normalized from `undefined` to `null`. No type is named.
  *
- * 2. **The host repair.** A type declaring `repairsHostOnRemoval` leaves a host
- *    sized for an attachment that is gone, so the host is re-solved and the
- *    result reported beside the cascade. Which types do that is a registry fact;
- *    which host they hung from is read from their declared `hostedBy` knot edge.
+ * 2. **The host repair.** A HOST type declaring `recomputesDiameterFromAttachments`
+ *    is sized from what it carries, so losing an attachment leaves it sized for
+ *    something that is gone; it is re-solved and the result reported beside the
+ *    cascade. Which types those are is a registry fact, and which host was
+ *    involved is read from the removed entity's declared `hostedBy` knot edge —
+ *    nothing here names a type.
  *
  * It lives here rather than in the interaction manager because a React hook
  * cannot be exercised in tests, and both decisions are worth testing.
@@ -78,10 +80,10 @@ function payloadFields(
  * `hostedBy` knot edge, then that knot's shaft, then whichever type owns the
  * segment — so nothing here names a type.
  *
- * The re-solve itself IS trunk's: a stepwise diameter profile is what a trunk
- * has, and `computeAndApplyTrunkDiameterProfile` is the operation. That is why
- * this calls into `Trunk/` rather than a generic seam; a second type with a
- * profile to re-solve would declare `repairsHostOnRemoval` to reach this path.
+ * The re-solve itself is the flagged type's: `computeAndApplySupportDiameterProfile`
+ * is the stepwise profile a host declaring `recomputesDiameterFromAttachments`
+ * uses, and trunk is the one type that declares it today. The gate is the flag,
+ * not a name, so a second such type reaches this path by declaring it.
  */
 function repairHostAfterRemoval(
     typeId: SupportTypeId,
@@ -109,13 +111,18 @@ function repairHostAfterRemoval(
     const owner = findShaftOwnerOfSegment(parentSegId);
     if (!owner) return {};
 
+    // The gate: does the HOST's own type derive its diameter from what it
+    // carries? Trunk does; nothing else does today. Read from the host rather
+    // than the removed entity, because the specialness is the host's.
+    if (!getSupportTypeDescriptor(owner.typeId).recomputesDiameterFromAttachments) return {};
+
     // The host has to still exist; the profile call reports null when there is
     // nothing to re-solve.
     const hostKey = getSupportTypeDescriptor(owner.typeId).location.key;
     const hostsAfter = after[hostKey] as Record<string, unknown> | undefined;
     if (!hostsAfter?.[owner.id]) return {};
 
-    const applied = computeAndApplyTrunkDiameterProfile(after, owner.id);
+    const applied = computeAndApplySupportDiameterProfile(after, owner.id);
     if (!applied) return {};
 
     for (const update of applied.knotUpdates) updateKnot(update.after);
@@ -136,6 +143,10 @@ function repairHostAfterRemoval(
 /**
  * The history payload for a completed removal: the cascade result re-keyed,
  * plus any host repair the removal forced.
+ *
+ * The repair is attempted for every removal and declines when the host's type
+ * does not declare `recomputesDiameterFromAttachments`, so there is no list of
+ * which types can trigger one.
  */
 export function removalPayloadFor(
     typeId: SupportTypeId,
@@ -145,7 +156,6 @@ export function removalPayloadFor(
     after: SupportState,
 ): RemovalPayload {
     const payload = payloadFields(typeId, snapshots);
-    if (!getSupportTypeDescriptor(typeId).repairsHostOnRemoval) return payload;
     return { ...payload, ...repairHostAfterRemoval(typeId, id, snapshots, before, after) };
 }
 

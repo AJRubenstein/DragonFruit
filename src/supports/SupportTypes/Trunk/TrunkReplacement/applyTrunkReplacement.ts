@@ -12,7 +12,7 @@ import { getFinalSocketPosition } from '../../../SupportPrimitives/ContactCone/c
 import { getSettingsSnapshot } from '../../../Settings/state';
 import { getJointDiameter } from '../../../constants';
 import type { TrunkReplacementPlan } from './types';
-import { computeAndApplyTrunkDiameterProfile } from './maxConnectedDiameter';
+import { computeAndApplySupportDiameterProfile } from './maxConnectedDiameter';
 import { v4 as uuidv4 } from 'uuid';
 
 function satisfiesMinAngleFromHorizontal(tipPos: Vec3, knotPos: Vec3, minAngleDeg: number): boolean {
@@ -533,7 +533,7 @@ export function applyTrunkReplacement(
 
     // Apply stepwise trunk diameter profile on the resulting trunk based on its attached branches.
     const snapshotWithAttachments = getSnapshot();
-    const applied = computeAndApplyTrunkDiameterProfile(snapshotWithAttachments, aligned.trunk.id, {
+    const applied = computeAndApplySupportDiameterProfile(snapshotWithAttachments, aligned.trunk.id, {
         baseShaftDiameterMm: promotedBaselineDiameterMm,
     });
     if (applied) {
