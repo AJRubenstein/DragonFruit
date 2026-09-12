@@ -54,7 +54,7 @@ test('runAutoPlace places standalone trunks and pushes an undoable history entry
 
     const result = runAutoPlace(islands, 'model-a');
 
-    assert.equal(result.placedTrunks, 2, 'both islands become trunks');
+    assert.equal(result.placed.trunk, 2, 'both islands become trunks');
     assert.equal(result.rejectedCandidates, 0);
     assert.equal(result.changed, true);
 
@@ -92,7 +92,7 @@ test('runAutoPlace resolves the underside surface normal from the mesh', () => {
     const islands = [makeIsland('i1', 0, 0, 20, 0.5)];
     const result = runAutoPlace(islands, 'model-a', { debugSkipAutoBracing: true });
 
-    assert.equal(result.placedTrunks, 1, 'underside island places a trunk');
+    assert.equal(result.placed.trunk, 1, 'underside island places a trunk');
 
     const snapshot = getSnapshot();
     const trunk = Object.values(snapshot.trunks)[0];
@@ -138,11 +138,11 @@ test('runAutoPlace grids a large flat region at fixed density (uniform distribut
     // consolidate into fan trees — supports release in chunks, so plate
     // contacts drop well below the candidate count (leaves attach to chunk
     // hosts; branches only appear when a straight leaf is blocked).
-    assert.ok(result.placedTrunks >= 30 && result.placedTrunks <= 120,
-        `placed ${result.placedTrunks} chunk hosts for ~200 tips (consolidated into trees)`);
-    assert.ok(result.placedLeaves >= 50,
-        `consolidated into fan leaves (${result.placedLeaves})`);
-    assert.equal(result.placedBranches, 0,
+    assert.ok(result.placed.trunk >= 30 && result.placed.trunk <= 120,
+        `placed ${result.placed.trunk} chunk hosts for ~200 tips (consolidated into trees)`);
+    assert.ok(result.placed.leaf >= 50,
+        `consolidated into fan leaves (${result.placed.leaf})`);
+    assert.equal(result.placed.branch, 0,
         'flat underside leaves fan straight — no routed branches needed');
 
     const snapshot = getSnapshot();
@@ -152,7 +152,7 @@ test('runAutoPlace grids a large flat region at fixed density (uniform distribut
     assert.equal(Object.keys(snapshot.branches).length, 0,
         'no branches — the flat grid is a pure pillar forest');
     const trunkCount = Object.keys(snapshot.trunks).length;
-    assert.equal(trunkCount, result.placedTrunks, 'trunks committed to the store');
+    assert.equal(trunkCount, result.placed.trunk, 'trunks committed to the store');
 
     setModelMesh('model-a', null);
     disposeHandlers();
@@ -200,8 +200,8 @@ test('runAutoPlace places grid trunks on a rotated mesh via the region normal', 
 
     const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true, stabilizationEnabled: false });
 
-    assert.ok(result.placedTrunks >= 15,
-        `placed ${result.placedTrunks} grid trunks on the rotated face`);
+    assert.ok(result.placed.trunk >= 15,
+        `placed ${result.placed.trunk} grid trunks on the rotated face`);
     assert.equal(result.rejectedCandidates, 0,
         'no rejections: the region normal keeps the cone clear');
 
@@ -260,7 +260,7 @@ function elevatedJawScenario(gridEnabled: boolean): () => void {
     assert.ok(jawTrunk, 'jaw tip is carried by a plate-rooted trunk');
     assert.equal(result.rejectedCandidates, 0,
         `nothing rejected (${result.rejectedCandidates})`);
-    assert.equal(result.placedSticks, 0,
+    assert.equal(result.placed.stick, 0,
         'no cavity stick — the routed trunk made the bridge unnecessary');
     // The routed shaft must actually clear the body: every segment passes
     // the same post-thickening check the orphan cull applies.
@@ -313,8 +313,8 @@ test('runAutoPlace gap-fills under-covered regions (coverage convergence)', () =
 
     // Initial grid at 5.5mm spacing ≈ 16 points + gap-fill, then the
     // anchor-tree pass merges trunks into branches — assert TIPS preserved.
-    assert.ok(result.placedTrunks + result.placedBranches >= 20,
-        `gap-fill + tree merge preserved tips (${result.placedTrunks}T + ${result.placedBranches}B)`);
+    assert.ok(result.placed.trunk + result.placed.branch >= 20,
+        `gap-fill + tree merge preserved tips (${result.placed.trunk}T + ${result.placed.branch}B)`);
 
     setModelMesh('model-a', null);
     disposeHandlers();
@@ -346,7 +346,7 @@ test('runAutoPlace gives small sub-threshold regions a single pillar', () => {
 
     const result = runAutoPlace([foot], 'model-a', { debugSkipAutoBracing: true });
 
-    assert.equal(result.placedTrunks, 1, 'sub-threshold patch → exactly one pillar');
+    assert.equal(result.placed.trunk, 1, 'sub-threshold patch → exactly one pillar');
 
     setModelMesh('model-a', null);
     disposeHandlers();
@@ -381,8 +381,8 @@ test('runAutoPlace fans sub-threshold overhang candidates instead of standalone 
         { debugSkipAutoBracing: true,  },
     );
 
-    assert.equal(result.placedTrunks, 1, 'o15 fanned instead of becoming a trunk');
-    assert.ok(result.placedLeaves >= 1, 'o15 attached as a leaf');
+    assert.equal(result.placed.trunk, 1, 'o15 fanned instead of becoming a trunk');
+    assert.ok(result.placed.leaf >= 1, 'o15 attached as a leaf');
     assert.ok(Object.values(getSnapshot().leaves).some((l) => l.origin === 'overhang'),
         'fanned overhang leaf carries the overhang origin');
     assert.ok(Object.values(getSnapshot().branches).every((b) => b.origin !== 'overhang'),
@@ -427,7 +427,7 @@ test('runAutoPlace falls back to a standalone trunk when no fan host exists', ()
         { debugSkipAutoBracing: true,  },
     );
 
-    assert.equal(result.placedTrunks, 2, 'far overhang keeps its standalone trunk (coverage)');
+    assert.equal(result.placed.trunk, 2, 'far overhang keeps its standalone trunk (coverage)');
 
     const placement = result.analytics?.placement;
     assert.equal(placement?.trunksByKind.standalone, 2, 'both became standalone trunks');
@@ -520,7 +520,7 @@ test('runAutoPlace does not duplicate a pillar on top of an existing island trun
         { debugSkipAutoBracing: true, areaPerSupportMm2: 8 },
     );
 
-    assert.ok(result.placedTrunks >= 10, 'the organic region places its own pillar set');
+    assert.ok(result.placed.trunk >= 10, 'the organic region places its own pillar set');
 
     const snapshot = getSnapshot();
     const aTrunkRoot = Object.values(snapshot.roots).find(
@@ -609,8 +609,8 @@ test('runAutoPlace merges with a steep knot, not at the host junction', () => {
         { debugSkipAutoBracing: true,  },
     );
 
-    assert.equal(result.placedTrunks, 1, 'one trunk — the merge never builds a second');
-    assert.ok(result.placedLeaves >= 1, 'A attached as a leaf');
+    assert.equal(result.placed.trunk, 1, 'one trunk — the merge never builds a second');
+    assert.ok(result.placed.leaf >= 1, 'A attached as a leaf');
 
     const snapshot = getSnapshot();
     const mergeKnot = Object.values(snapshot.knots).find((k) => k.id.startsWith('auto-merge-'));
@@ -667,15 +667,15 @@ test('runAutoPlace places low undersides as a standalone pillar forest', () => {
         { debugSkipAutoBracing: true },
     );
 
-    assert.equal(result.placedBranches, 0, 'leaves only — no routed branches');
+    assert.equal(result.placed.branch, 0, 'leaves only — no routed branches');
 
     const snapshot = getSnapshot();
     const trunks = Object.values(snapshot.trunks);
     assert.ok(trunks.some((t) => t.origin === 'overhang'), 'chunk hosts carry the overhang origin');
     assert.ok(trunks.some((t) => t.origin === 'standalone'),
         'the o15 sliver keeps its own standalone pillar');
-    assert.ok(result.placedLeaves >= 5,
-        `o0 consolidates into fan leaves (${result.placedLeaves})`);
+    assert.ok(result.placed.leaf >= 5,
+        `o0 consolidates into fan leaves (${result.placed.leaf})`);
 
     setModelMesh('model-a', null);
     disposeHandlers();
@@ -753,11 +753,19 @@ test('a punched hole above a cavity ceiling does not delete its support', () => 
 
         setModelMesh('model-a', null);
         disposeHandlers();
-        return { result, contacts };
+        return { result, contacts, bridges };
     };
 
     const sealed = run(null);
     assert.equal(sealed.contacts.length, 2, 'sealed cavity: one bridge between ceiling and floor');
+    // Counted under its own type, whichever the builder chose for the span:
+    // a placed twig used to increment nothing, so a run that bridged only with
+    // twigs reported changed=false and committed nothing.
+    assert.equal(
+        sealed.result.placed.stick + sealed.result.placed.twig,
+        sealed.bridges.length,
+        `every bridge is counted (${sealed.bridges.map((b) => b.id).join(', ')})`,
+    );
 
     const punched = run(4);
     assert.equal(punched.result.rejectedCandidates, 0,
@@ -766,6 +774,54 @@ test('a punched hole above a cavity ceiling does not delete its support', () => 
     const roofContact = punched.contacts.reduce((top, p) => (p.z > top.z ? p : top));
     assert.ok(Math.abs(roofContact.z - 10) < 0.6,
         `the contact stays on the ceiling, not on the far side (z=${roofContact.z.toFixed(2)})`);
+});
+
+/**
+ * A sealed cavity whose floor is within the stick/twig cutoff: the trunk cannot
+ * reach the plate, so the contact is bridged to the cavity floor just below it.
+ * A bridge that short is a TWIG, and a placed twig used to increment no counter
+ * at all — the run reported changed=false and committed nothing, then failed to
+ * push the undo entry that goes with the commit.
+ */
+test('a short cavity bridge is built as a twig and counted', () => {
+    resetStore();
+    resetKickstandsInState();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+    initializeBVH();
+
+    const box = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+        const g = new THREE.BoxGeometry(w, h, d);
+        g.translate(x, y, z);
+        return g;
+    };
+    // Interior cavity x,y ∈ (-8,8), z ∈ (2,6); floor top at z=2, ceiling
+    // underside at z=6 — a 4mm span, inside the 5mm stick/twig cutoff.
+    const geometry = mergeGeometries([
+        box(2, 20, 12, -9, 0, 3),
+        box(2, 20, 12, 9, 0, 3),
+        box(20, 2, 12, 0, -9, 3),
+        box(20, 2, 12, 0, 9, 3),
+        box(20, 20, 2, 0, 0, 1),
+        box(20, 20, 2, 0, 0, 7),
+    ])!;
+    accelerateGeometry(geometry);
+    const mesh = new THREE.Mesh(geometry);
+    mesh.updateMatrixWorld();
+    setModelMesh('model-a', mesh);
+
+    const result = runAutoPlace([makeIsland('ceiling', 0, 0, 6, 16)], 'model-a', {
+        debugSkipAutoBracing: true,
+        stabilizationEnabled: false,
+    });
+
+    const snapshot = getSnapshot();
+    assert.equal(Object.keys(snapshot.twigs).length, 1, 'the short span bridges as a twig');
+    assert.equal(result.placed.twig, 1, 'the placed twig is counted');
+    assert.equal(result.changed, true, 'a twig-only run is a change');
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
 });
 
 /**

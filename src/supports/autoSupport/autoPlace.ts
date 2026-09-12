@@ -1,4 +1,5 @@
 import { contactEndpointsFor, isOriginConvertibleToTree, SUPPORT_TYPES } from '../supportTypeRegistry';
+import type { SupportTypeId } from '../supportTypeRegistry';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
 import * as THREE from 'three';
 import { quantizeToScale } from '@/utils/math';
@@ -141,22 +142,21 @@ function computeMeshVolumeMm3(mesh: THREE.Mesh): number {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** One counter per support type, so no placement path can go uncounted. */
+function emptyPlacedCounts(): Record<SupportTypeId, number> {
+    const counts = {} as Record<SupportTypeId, number>;
+    for (const descriptor of SUPPORT_TYPES) counts[descriptor.id] = 0;
+    return counts;
+}
+
 function makeResult(
-    trunks: number,
-    anchors: number,
-    branches: number,
-    leaves: number,
-    sticks: number,
+    placed: Record<SupportTypeId, number>,
     rejected: number,
     changed: boolean,
     status: AutoPlaceStatus,
 ): AutoPlaceResult {
     return {
-        placedTrunks: trunks,
-        placedAnchors: anchors,
-        placedBranches: branches,
-        placedLeaves: leaves,
-        placedSticks: sticks,
+        placed,
         rejectedCandidates: rejected,
         changed,
         status,
@@ -2294,7 +2294,7 @@ export function computeAutoSupportPlan(
         `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold, ` +
         `stabilization: ${stabilizationAnchors} anchors)`);
     if (candidates.length === 0) {
-        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'no-candidates'));
+        return noopPlan(makeResult(emptyPlacedCounts(), 0, false, 'no-candidates'));
     }
 
     // ------------------------------------------------------------------
@@ -2310,7 +2310,7 @@ export function computeAutoSupportPlan(
         `(removed ${beforeDedup - candidates.length} within ${autoSettings.tipInfluenceRadiusMm}mm radius)`);
 
     if (candidates.length === 0) {
-        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'all-deduplicated'));
+        return noopPlan(makeResult(emptyPlacedCounts(), 0, false, 'all-deduplicated'));
     }
 
     // ------------------------------------------------------------------
@@ -2325,7 +2325,7 @@ export function computeAutoSupportPlan(
         `(removed ${beforeSupportFilter - candidates.length} already supported within ${ALREADY_SUPPORTED_RADIUS_MM}mm)`);
 
     if (candidates.length === 0) {
-        return noopPlan(makeResult(0, 0, 0, 0, 0, 0, false, 'already-supported'));
+        return noopPlan(makeResult(emptyPlacedCounts(), 0, false, 'already-supported'));
     }
 
     // ------------------------------------------------------------------
@@ -2354,11 +2354,7 @@ export function computeAutoSupportPlan(
         };
     }
 
-    let placedTrunks = 0;
-    let placedAnchors = 0;
-    let placedBranches = 0;
-    let placedLeaves = 0;
-    let placedSticks = 0;
+    const placed = emptyPlacedCounts();
     let rejectedCount = 0;
 
     // Placement-path diagnostics: where each placed trunk came from and why
@@ -2398,13 +2394,14 @@ export function computeAutoSupportPlan(
             if (candidate.gridPoint && result.kind === 'trunk' && result.entityId) {
                 gridTrunkIds.add(result.entityId);
             }
-            switch (result.kind) {
-                case 'trunk':   placedTrunks++; break;
-                case 'anchor':  placedAnchors++; break;
-                case 'branch':  placedBranches++; break;
-                case 'leaf':    placedLeaves++; break;
-                case 'stick':
-                case 'twig':
+            if (result.kind === 'reject') {
+                rejectedCount++;
+                if (result.rejectedReason) {
+                    rejectionReasons[result.rejectedReason] = (rejectionReasons[result.rejectedReason] ?? 0) + 1;
+                }
+            } else {
+                placed[result.kind]++;
+                if (result.kind === 'stick' || result.kind === 'twig') {
                     // Cavity fallback: the trunk could not reach the plate, so
                     // we bridged model-to-model. Report WHERE, so avoidable
                     // bridges are visible instead of buried in a count.
@@ -2412,16 +2409,9 @@ export function computeAutoSupportPlan(
                         id: candidate.id,
                         kind: result.kind,
                         tip: candidate.tipPos,
-                        fanRefusal: (result as { cavityFanRefusal?: string }).cavityFanRefusal,
+                        fanRefusal: result.cavityFanRefusal,
                     });
-                    if (result.kind === 'stick') placedSticks++;
-                    break;
-                case 'reject':
-                    rejectedCount++;
-                    if (result.rejectedReason) {
-                        rejectionReasons[result.rejectedReason] = (rejectionReasons[result.rejectedReason] ?? 0) + 1;
-                    }
-                    break;
+                }
             }
             if (result.preset) presets[result.preset]++;
 
@@ -2563,8 +2553,8 @@ export function computeAutoSupportPlan(
                     gridTrunkIds.delete(tid);
                     const origin = originKind ?? 'standalone';
                     diagnostics.trunksByKind[origin]--;
-                    placedTrunks--;
-                    placedBranches++;
+                    placed.trunk--;
+                    placed.branch++;
                     consolidated++;
                     convertedThisPass++;
                     const trunkEntry = forestLedger.find((e) => e.entityId === tid);
@@ -2580,9 +2570,8 @@ export function computeAutoSupportPlan(
             gridTrunkIds.delete(tid);
             const origin = originKind ?? 'standalone';
             diagnostics.trunksByKind[origin]--;
-            placedTrunks--;
-            if (fan.kind === 'branch') placedBranches++;
-            else placedLeaves++;
+            placed.trunk--;
+            placed[fan.kind]++;
             consolidated++;
             convertedThisPass++;
             const trunkEntry = forestLedger.find((e) => e.entityId === tid);
@@ -2636,7 +2625,7 @@ export function computeAutoSupportPlan(
     }
 
     console.log(LOG_PREFIX,
-        `Step 3/3: ${placedTrunks}T ${placedAnchors}A ${placedBranches}B ${placedLeaves}L ${placedSticks}S — ${rejectedCount} rejected ` +
+        `Step 3/3: ${placed.trunk}T ${placed.anchor}A ${placed.branch}B ${placed.leaf}L ${placed.stick}S ${placed.twig}W — ${rejectedCount} rejected ` +
         `| presets: detail=${presets.detail} structure=${presets.structure} anchor=${presets.anchor}`);
 
     // ── Coverage analytics ────────────────────────────────────────
@@ -2705,7 +2694,7 @@ export function computeAutoSupportPlan(
             totalCandidates: modelCtx.totalCandidates,
             // Honest mass share: total model weight divided by the number of
             // placed supports. A load share, not a force estimate.
-            weightPerSupportG: round2Mm(placedTrunks > 0 ? weightG / placedTrunks : 0),
+            weightPerSupportG: round2Mm(placed.trunk > 0 ? weightG / placed.trunk : 0),
             avgIslandAreaMm2: round2Mm(avgArea),
             standaloneTrunks: diagnostics.trunksByKind.standalone,
             gridInfillTrunks: diagnostics.trunksByKind.gridInfill + diagnostics.trunksByKind.coverageFill,
@@ -2743,7 +2732,7 @@ export function computeAutoSupportPlan(
     );
 
     console.log(LOG_PREFIX,
-        `Leaf fanning: ${analytics.islandsUncovered} uncovered islands, ${placedTrunks} trunks available. ` +
+        `Leaf fanning: ${analytics.islandsUncovered} uncovered islands, ${placed.trunk} trunks available. ` +
         `Max ${MAX_FANNING_PASSES} passes, fan radius ${fanRadiusMm}mm, max angle ${fanMaxAngleDeg}°.`);
 
     for (let pass = 0; pass < MAX_FANNING_PASSES && analytics.islandsUncovered > 0; pass++) {
@@ -2754,7 +2743,6 @@ export function computeAutoSupportPlan(
         }
 
         let fannedCount = 0;
-        let fannedBranches = 0;
 
         let skippedDist = 0;
         let skippedAngle = 0;
@@ -2788,7 +2776,7 @@ export function computeAutoSupportPlan(
             }
             draft = fan.draft;
             fannedCount++;
-            if (fan.kind === 'branch') fannedBranches++;
+            placed[fan.kind]++;
             supportedIds.add(island.id);
             coveredArea += (island.areaMm2 ?? 0);
             forestLedger.push({
@@ -2806,8 +2794,6 @@ export function computeAutoSupportPlan(
         }
 
         if (fannedCount > 0) {
-            placedLeaves += fannedCount - fannedBranches;
-            placedBranches += fannedBranches;
             analytics.islandsCovered += fannedCount;
             analytics.islandsUncovered -= fannedCount;
             analytics.areaCoverage = totalArea > 0 ? coveredArea / totalArea : 0;
@@ -2955,7 +2941,7 @@ export function computeAutoSupportPlan(
                     draft = draftAddPrimitive(draft, 'knots', parentKnot);
                     draft = draftAddEntity(draft, 'branch', branch);
                     overhangSupportsPlaced++;
-                    placedBranches++;
+                    placed.branch++;
                 } catch {
                     // Skip this grid point.
                 }
@@ -2978,12 +2964,7 @@ export function computeAutoSupportPlan(
         return null;
     }
 
-    const changed =
-        placedTrunks > 0 ||
-        placedAnchors > 0 ||
-        placedBranches > 0 ||
-        placedLeaves > 0 ||
-        placedSticks > 0;
+    const changed = Object.values(placed).some((count) => count > 0);
 
     // ------------------------------------------------------------------
     // 4. Forest resize pass — re-derive every trunk's stepwise diameter
@@ -3040,19 +3021,13 @@ export function computeAutoSupportPlan(
                             try {
                                 const result = placeOneCandidate(recandidate, draft, undefined, gridTrunkIds);
                                 draft = result.draft;
-                                switch (result.kind) {
-                                    case 'trunk': placedTrunks++; break;
-                                    case 'anchor': placedAnchors++; break;
-                                    case 'branch': placedBranches++; break;
-                                    case 'leaf': placedLeaves++; break;
-                                    case 'reject': rejectedCount++; break;
-                                    default: break;
-                                }
+                                if (result.kind === 'reject') rejectedCount++;
+                                else placed[result.kind]++;
                                 if (result.preset) presets[result.preset]++;
-                                if (result.kind !== 'reject' && result.entityId) {
+                                if (result.entityId && isLedgerKind(result.kind)) {
                                     forestLedger.push({
                                         displayId: recandidate.id,
-                                        kind: result.kind as ForestLedgerEntry['kind'],
+                                        kind: result.kind,
                                         entityId: result.entityId,
                                         areaMm2: recandidate.islandAreaMm2,
                                         zHeight: recandidate.zHeight,
@@ -3168,22 +3143,13 @@ export function computeAutoSupportPlan(
     }
 
     const result: AutoPlaceResult = {
-        ...makeResult(
-            placedTrunks,
-            placedAnchors,
-            placedBranches,
-            placedLeaves,
-            placedSticks,
-            rejectedCount,
-            changed,
-            'placed',
-        ),
+        ...makeResult(placed, rejectedCount, changed, 'placed'),
         analytics,
     };
 
     console.log(LOG_PREFIX,
-        `Placed ${placedTrunks} trunks, ${placedAnchors} anchors, ${placedBranches} branches, ` +
-        `${placedLeaves} leaves, ${placedSticks} sticks. ${rejectedCount} rejected. ` +
+        `Placed ${placed.trunk} trunks, ${placed.anchor} anchors, ${placed.branch} branches, ` +
+        `${placed.leaf} leaves, ${placed.twig} twigs, ${placed.stick} sticks. ${rejectedCount} rejected. ` +
         `Coverage: ${analytics.islandsCovered}/${islands.length} islands ` +
         `(${(analytics.areaCoverage * 100).toFixed(0)}%).`);
 
@@ -3207,7 +3173,7 @@ export function runAutoPlace(
 ): AutoPlaceResult {
     const plan = computeAutoSupportPlan(islands, modelId, settingsOverride);
     if (!plan) {
-        return makeResult(0, 0, 0, 0, 0, 0, false, 'disabled');
+        return makeResult(emptyPlacedCounts(), 0, false, 'disabled');
     }
 
     if (plan.result.changed) {

@@ -258,11 +258,15 @@ export type AutoPlaceStatus =
 
 /** Result returned by the auto-place orchestrator. */
 export interface AutoPlaceResult {
-    placedTrunks: number;
-    placedAnchors: number;
-    placedBranches: number;
-    placedLeaves: number;
-    placedSticks: number;
+    /**
+     * Supports placed this run, one count per support type.
+     *
+     * Keyed by the registry's type ids, so every type reports and a type with
+     * no placement path reports zero rather than going uncounted. Twigs are
+     * placed as cavity fallbacks and were the type missing from the five
+     * hand-written counters this replaced.
+     */
+    placed: Record<SupportTypeId, number>;
     rejectedCandidates: number;
     /** Whether any supports were actually added/removed. */
     changed: boolean;
