@@ -108,6 +108,15 @@ whether the type is user-placeable.
 
 `detailRendererCoverage.test.ts` fails if a declared type has no entry.
 
+Bezier handles come from the registry: `Curves/BezierGizmo/bezierContextIndex.ts`
+walks every `hasSegments` type and builds one context per joint and per segment
+end, keyed by the selection id and prefixed with `bezierContextIdPrefix`. Both
+ends resolve the way `resolveSegmentEndpoints` does — the declared lower
+endpoint where a first segment carries no bottom joint, and the declared upper
+endpoint at the top (a contact socket, or the host knot for a type whose
+`upper.kind` is `knot`). Nothing to add, unless your type needs a handle no
+declaration describes.
+
 ## 4. History — `src/supports/history/` *(registry-driven)*
 
 1. `actionTypes.ts` — **nothing**, for the usual case. Both actions and both
