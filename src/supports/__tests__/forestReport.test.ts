@@ -186,7 +186,7 @@ test('forestReportToText renders the copyable plain-text report', () => {
 
     const text = forestReportToText(report);
     assert.ok(text.startsWith('FOREST REPORT'));
-    assert.ok(text.includes('1 hosts · 1 leaves'), 'host count uses the host term, not a type name');
+    assert.ok(text.includes('1 trunks · 1 leaves'), 'the host count names the declared host type');
     assert.ok(text.includes('v19 @ Z=15.9mm'));
     assert.ok(text.includes('leaf-a(L 6.6mm/'));
     assert.ok(text.includes('SCAN'), 'scan section rendered');
