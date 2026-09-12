@@ -25,8 +25,34 @@ import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
  * these numbers as a behaviour change to explain, not a fixture to update.
  *
  * Deliberately ONE scene rather than many: the value is in a broad signature
- * over the paths a rewrite touches, and a scene that exercises grid placement,
- * island trunks, fanning and the cavity fallback covers the ladder's branches.
+ * over the paths a rewrite touches.
+ *
+ * ## What this actually covers — measured by mutation, not assumed
+ *
+ * Caught:
+ *   - the anchor height threshold (5 -> 40): 4 failures
+ *   - the fan radius the settings resolve to (5 -> 15): 1 failure
+ *
+ * NOT caught, with the reason:
+ *   - `MAX_LEAF_SPAN_BEFORE_BRANCH_MM` — the gridless merge never reaches the
+ *     branch arm. A merge needs a host within 4mm of the candidate's TIP or of a
+ *     segment JOINT, and a single-segment trunk only exposes its tip and its
+ *     bottom joint, so candidates near the middle or top of a shaft find no
+ *     host at all; those it does find are refused as `rejected`.
+ *   - the post-placement FANNING LOOP (`MAX_FANNING_PASSES`). Its precondition
+ *     is reached (`islandsUncovered > 0` happens for far-off tiny islands), but
+ *     the loop's own reach is TIGHTER than the ladder's: the loop uses the raw
+ *     fan radius (5) while the ladder floors its own at 8mm. Every island the
+ *     loop could reach, the ladder already reached, so the loop never places
+ *     anything and its pass count is unobservable.
+ *   - the fan ANGLE gate — the fan is refused for distance before it is refused
+ *     for angle in every geometry reachable here.
+ *   - `ALREADY_SUPPORTED_RADIUS_MM` — widening it does not change this scene.
+ *
+ * So this net guards the ladder, the cavity fallback, the anchor short-circuit,
+ * the grid decision and the fan radius. It does NOT guard the branch promotion
+ * or the fanning loop; converting those without a targeted test is unguarded
+ * work, and a smaller targeted test per path is the cheaper way to close it.
  */
 
 const MODEL = 'model-a';
@@ -126,17 +152,45 @@ function lowAnchorTip(): DetectedIsland {
 }
 
 /**
- * A voxel tip near enough to the planar grid to attach, but beyond leaf span:
- * the merge path that promotes a leaf to a BRANCH.
+ * A voxel host well away from everything else, so the fanning pair below has a
+ * shaft to attach to without disturbing the other islands.
  */
-function mergeBranchTip(): DetectedIsland {
+function fanHost(): DetectedIsland {
     return {
-        id: 'i-merge',
+        id: 'i-fan-host',
         source: 'voxel',
-        contact: new THREE.Vector3(0, 0, 9),
-        baseZ: 9,
-        areaMm2: 4,
-        layerSpan: [0, 180],
+        contact: new THREE.Vector3(80, 80, 40),
+        baseZ: 40,
+        areaMm2: 30,
+        layerSpan: [0, 800],
+    };
+}
+
+/**
+ * A sub-threshold overhang a given offset from that host's shaft.
+ *
+ * The offset picks the outcome, which is why there are two: one close enough to
+ * attach, and one at ~9.8mm that sits OUTSIDE the fan's effective reach. The
+ * far one is the interesting case — it flips between a standalone trunk and a
+ * fanned leaf depending on the fan radius, which is what makes the radius
+ * observable from a whole run.
+ *
+ * (Measured, not assumed: at 3mm the outcome is the same whether the radius is 2
+ * or 15, so a fixture with only the near case cannot see the radius at all.)
+ */
+function fanTarget(xOffsetMm: number, zOffsetMm: number): DetectedIsland {
+    return {
+        id: `o-fan-${xOffsetMm}-${zOffsetMm}`,
+        source: 'overhang',
+        contact: new THREE.Vector3(80 + xOffsetMm, 80, 40 + zOffsetMm),
+        baseZ: 40 + zOffsetMm,
+        areaMm2: 16,
+        contactVoxels: footprintFromPoints([
+            { x: 80 + xOffsetMm, y: 80 },
+            { x: 80 + xOffsetMm + 0.25, y: 80 },
+            { x: 80 + xOffsetMm, y: 80.25 },
+            { x: 80 + xOffsetMm + 0.25, y: 80.25 },
+        ]),
     };
 }
 
@@ -155,7 +209,11 @@ function runSignature(gridEnabled: boolean) {
     setSettings(settings);
 
     const result = runAutoPlace(
-        [planarIsland(), organicIsland(), islandTip(), cavityTip(), lowAnchorTip(), mergeBranchTip()],
+        [
+            planarIsland(), organicIsland(), islandTip(), cavityTip(), lowAnchorTip(),
+            // The fanning pair: one in reach, one beyond it.
+            fanHost(), fanTarget(3, -7), fanTarget(4, 9),
+        ],
         MODEL,
         { debugSkipAutoBracing: true, stabilizationEnabled: false },
     );
@@ -204,19 +262,19 @@ function runSignature(gridEnabled: boolean) {
 const RECORDED = {
     /** Grid enabled: candidates resolve through `decideGridPlacement`, branch-heavy. */
     gridOn: {
-        placed: { trunk: 46, branch: 151, leaf: 0, twig: 199, stick: 0, brace: 0, anchor: 1, kickstand: 0 },
+        placed: { trunk: 49, branch: 151, leaf: 0, twig: 198, stick: 0, brace: 0, anchor: 1, kickstand: 0 },
         rejectedCandidates: 0,
         changed: true,
-        inStore: { trunks: 26, branches: 171, leaves: 0, twigs: 199, sticks: 0, anchors: 1, knots: 171, roots: 26 },
-        forest: { hostCount: 26, leafCount: 0, branchCount: 171, bareHosts: 1 },
+        inStore: { trunks: 28, branches: 172, leaves: 0, twigs: 198, sticks: 0, anchors: 1, knots: 172, roots: 28 },
+        forest: { hostCount: 28, leafCount: 0, branchCount: 172, bareHosts: 2 },
     },
     /** Grid disabled: candidates resolve through the merge/trunk/cavity ladder, leaf-heavy. */
     gridOff: {
-        placed: { trunk: 71, branch: 0, leaf: 126, twig: 198, stick: 0, brace: 0, anchor: 1, kickstand: 0 },
+        placed: { trunk: 73, branch: 0, leaf: 127, twig: 197, stick: 0, brace: 0, anchor: 1, kickstand: 0 },
         rejectedCandidates: 0,
         changed: true,
-        inStore: { trunks: 71, branches: 0, leaves: 126, twigs: 198, sticks: 0, anchors: 1, knots: 126, roots: 71 },
-        forest: { hostCount: 71, leafCount: 126, branchCount: 0, bareHosts: 1 },
+        inStore: { trunks: 73, branches: 0, leaves: 127, twigs: 197, sticks: 0, anchors: 1, knots: 127, roots: 73 },
+        forest: { hostCount: 73, leafCount: 127, branchCount: 0, bareHosts: 2 },
     },
 } as const;
 
