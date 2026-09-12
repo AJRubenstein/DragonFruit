@@ -2283,7 +2283,7 @@ export function forestReportToText(report: ForestReport): string {
         lines.push('');
     }
     lines.push(`${report.hostCount} ${hostLabel.toLowerCase()} · ${report.leafCount} leaves · ${report.branchCount} branches · ` +
-        `${report.bareHosts.length} bare hosts`);
+        `${report.bareHosts.length} bare ${hostLabel.toLowerCase()}`);
     if (report.trees.length > 0) {
         lines.push('');
         lines.push('FAN-OUT GROUPS');
