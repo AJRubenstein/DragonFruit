@@ -8,7 +8,6 @@ import type { SupportTypeId } from '../supportTypeRegistry';
  */
 export type PlacedKind = Extract<SupportTypeId, 'trunk' | 'anchor' | 'leaf' | 'branch' | 'stick' | 'twig'>;
 type AttachmentKind = Extract<SupportTypeId, 'leaf' | 'branch'>;
-type CavityFallbackKind = Extract<SupportTypeId, 'stick' | 'twig'>;
 type OrphanKind = Extract<SupportTypeId, 'leaf' | 'branch' | 'trunk'>;
 
 /** What one candidate resolved to: a placed support type, or no placement. */
@@ -137,10 +136,11 @@ export interface ForestReport {
          *  angle (raft/connector territory). */
         consolidationRefusals: Partial<Record<string, number>>;
         /** Candidates whose trunk could not reach the plate and were bridged
-         *  model-to-model instead (cavity stick/twig). Tip position = where
+         *  model-to-model instead -- by whichever type registered a bridge
+         *  builder. Tip position = where
          *  the bridge starts; each entry is a candidate for elimination by
          *  better routing. */
-        cavityFallbacks: Array<{ id: string; kind: CavityFallbackKind; tip: { x: number; y: number; z: number }; fanRefusal?: string }>;
+        cavityFallbacks: Array<{ id: string; kind: SupportTypeId; tip: { x: number; y: number; z: number }; fanRefusal?: string }>;
     };
 }
 
@@ -216,9 +216,10 @@ export interface PlacementDiagnostics {
     /** Why candidates failed to merge (no host vs host rejected the attachment). */
     mergeRefusals: Partial<Record<'noHost' | 'rejected', number>>;
     /** Candidates whose trunk could not reach the plate and were bridged
-     *  model-to-model instead (cavity stick/twig). Tip = where the bridge
+     *  model-to-model instead -- by whichever type registered a bridge
+     *  builder. Tip = where the bridge
      *  starts; each entry is a candidate for elimination by better routing. */
-    cavityFallbacks: Array<{ id: string; kind: CavityFallbackKind; tip: { x: number; y: number; z: number }; fanRefusal?: string }>;
+    cavityFallbacks: Array<{ id: string; kind: SupportTypeId; tip: { x: number; y: number; z: number }; fanRefusal?: string }>;
 }
 
 /** Physics-based sizing debug data. */

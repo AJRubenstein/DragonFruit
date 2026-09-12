@@ -1,4 +1,4 @@
-import { contactEndpointsFor, isOriginConvertibleToTree, SUPPORT_TYPES } from '../supportTypeRegistry';
+import { contactBridgeTypes, contactEndpointsFor, isOriginConvertibleToTree, SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { SupportTypeId } from '../supportTypeRegistry';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
 import * as THREE from 'three';
@@ -2362,6 +2362,11 @@ export function computeAutoSupportPlan(
     const placed = emptyPlacedCounts();
     let rejectedCount = 0;
 
+    // A placement whose kind is one of these is a model-to-model bridge: the
+    // set is whichever types registered a bridge builder, which is the same
+    // registry fact `buildCavityBridge` resolves its kind from.
+    const bridgingTypes = contactBridgeTypes();
+
     // Placement-path diagnostics: where each placed trunk came from and why
     // non-fanned candidates didn't fan/merge. Pure counts — no physics.
     const diagnostics: PlacementDiagnostics = {
@@ -2406,7 +2411,7 @@ export function computeAutoSupportPlan(
                 }
             } else {
                 placed[result.kind]++;
-                if (result.kind === 'stick' || result.kind === 'twig') {
+                if (bridgingTypes.includes(result.kind)) {
                     // Cavity fallback: the trunk could not reach the plate, so
                     // we bridged model-to-model. Report WHERE, so avoidable
                     // bridges are visible instead of buried in a count.

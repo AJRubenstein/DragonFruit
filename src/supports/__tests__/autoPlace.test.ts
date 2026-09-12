@@ -820,6 +820,12 @@ test('a short cavity bridge is built as a twig and counted', () => {
     assert.equal(result.placed.twig, 1, 'the placed twig is counted');
     assert.equal(result.changed, true, 'a twig-only run is a change');
 
+    // The diagnostic names the type that bridged, so a bridging type added
+    // later is reported without touching the auto-place pass.
+    const fallbacks = result.analytics?.forestReport?.diagnostics?.cavityFallbacks ?? [];
+    assert.equal(fallbacks.length, 1, 'the bridge is reported as a cavity fallback');
+    assert.equal(fallbacks[0]?.kind, 'twig', 'reported under the type that built it');
+
     setModelMesh('model-a', null);
     disposeHandlers();
 });
