@@ -566,6 +566,14 @@ export function ProfileSettingsModal({
     return Math.max(2, Math.min(7, Math.round(printerBitDepth)));
   }, [selectedPrinter?.bitDepth?.bits]);
 
+  // Raw declared depth: lets the AA section tell an 8-bit-or-deeper panel (where
+  // dithering is forced off) apart from a printer that declares nothing.
+  const printerPanelBitDepth = React.useMemo<number | null>(() => {
+    const printerBitDepth = Number(selectedPrinter?.bitDepth?.bits);
+    if (!Number.isFinite(printerBitDepth) || printerBitDepth <= 0) return null;
+    return Math.round(printerBitDepth);
+  }, [selectedPrinter?.bitDepth?.bits]);
+
   const selectedFormatVersionOptions = React.useMemo(() => {
     if (!selectedPrinter) return [] as Array<{ value: string; label: string; isDefault?: boolean }>;
     return getAvailableFormatVersionOptions(selectedPrinter.display.outputFormat);
@@ -4820,6 +4828,7 @@ export function ProfileSettingsModal({
                     draft={editMaterialDraft}
                     onDraftChange={setEditMaterialDraft}
                     printerDitherBitDepth={printerDitherBitDepth}
+                    printerPanelBitDepth={printerPanelBitDepth}
                     outputFormat={selectedPrinter?.display.outputFormat ?? '.lys'}
                     settingsMode={selectedResolvedSettingsMode}
                     adapter={selectedLocalMaterialSettingsAdapter}
@@ -4833,6 +4842,7 @@ export function ProfileSettingsModal({
                       draft={editMaterialDraft}
                       onChange={setEditMaterialDraft}
                       printerDitherBitDepth={printerDitherBitDepth}
+                      printerPanelBitDepth={printerPanelBitDepth}
                     />
                     <PluginLocalMaterialSettingsSections
                       outputFormat={selectedPrinter?.display.outputFormat ?? '.lys'}
@@ -5660,6 +5670,7 @@ export function ProfileSettingsModal({
                     draft={newMaterialDraft}
                     onDraftChange={setNewMaterialDraft}
                     printerDitherBitDepth={printerDitherBitDepth}
+                    printerPanelBitDepth={printerPanelBitDepth}
                     outputFormat={selectedPrinter.display.outputFormat}
                     settingsMode={selectedResolvedSettingsMode}
                     adapter={selectedLocalMaterialSettingsAdapter}
@@ -5673,6 +5684,7 @@ export function ProfileSettingsModal({
                       draft={newMaterialDraft}
                       onChange={setNewMaterialDraft}
                       printerDitherBitDepth={printerDitherBitDepth}
+                      printerPanelBitDepth={printerPanelBitDepth}
                     />
                     <PluginLocalMaterialSettingsSections
                       outputFormat={selectedPrinter.display.outputFormat}
