@@ -4,9 +4,8 @@ import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
 import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getSupportEntities, getKnotById, getRootById, setInteractionWarning, updateKnot, subscribe } from '../../state';
 import { Anchor, Branch, Brace, Knot, Leaf, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
-import { getKickstandSnapshot } from '../../SupportTypes/Kickstand/kickstandStore';
 import { resolveSegmentEndpoints, type EndpointHosts } from './segmentEndpoints';
-import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
+import { SUPPORT_COLLECTION_KEYS, getSupportTypeDescriptor, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { projectOntoSegment, shouldStayOnCurrentSegment } from './knotUtils';
 import { getSettings } from '../../Settings/state';
@@ -58,16 +57,9 @@ export type SupportGeometryToken = Record<string, unknown>;
 /** Identity of every collection the host lookup and the elastic capture read. */
 export function captureSupportGeometryToken(): SupportGeometryToken {
     const snapshot = getSnapshot();
-    return {
-        trunks: snapshot.trunks,
-        branches: snapshot.branches,
-        leaves: snapshot.leaves,
-        twigs: snapshot.twigs,
-        sticks: snapshot.sticks,
-        braces: snapshot.braces,
-        knots: snapshot.knots,
-        kickstands: getKickstandSnapshot().kickstands,
-    };
+    const token: SupportGeometryToken = {};
+    for (const key of SUPPORT_COLLECTION_KEYS) token[key] = snapshot[key];
+    return token;
 }
 
 export function isSameSupportGeometry(a: SupportGeometryToken | null, b: SupportGeometryToken): boolean {

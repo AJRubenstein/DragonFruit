@@ -1401,6 +1401,7 @@ function hostSegmentSpan(
     return start && end ? { start, end } : null;
 }
 
+/**
  * The shaft a knot sits on, across every type that has one.
  *
  * `trunkId` keeps its name because the two callers below ask a genuine trunk
@@ -1879,12 +1880,12 @@ export function fanLeafToTrunk(
                         lastBlockedReason = 'capacity';
                         continue;
                     }
-                    const next = draftAddKnot(draft, parentKnot);
+                    const next = draftAddPrimitive(draft, 'knots', parentKnot);
                     built.branch.origin = 'island';
                     return {
                         ok: true,
                         kind: 'branch',
-                        draft: draftAddBranch(next, built.branch),
+                        draft: draftAddEntity(next, 'branch', built.branch),
                         trunkId: sp.trunkId,
                         branchId: built.branch.id,
                         distMm: Math.sqrt(dist2),
@@ -3039,7 +3040,6 @@ export function computeAutoSupportPlan(
                             try {
                                 const result = placeOneCandidate(recandidate, draft, undefined, gridTrunkIds);
                                 draft = result.draft;
-                                if (result.kickstand) kickstandDraft = result.kickstand;
                                 switch (result.kind) {
                                     case 'trunk': placedTrunks++; break;
                                     case 'anchor': placedAnchors++; break;

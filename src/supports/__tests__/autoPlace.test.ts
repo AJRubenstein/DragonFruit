@@ -729,7 +729,7 @@ test('a punched hole above a cavity ceiling does not delete its support', () => 
 
     const run = (ceilingHoleMm: number | null) => {
         resetStore();
-        resetKickstandStore();
+        resetKickstandsInState();
         clearHistory();
         const disposeHandlers = registerSupportHistoryHandlers();
         initializeBVH();
@@ -776,7 +776,7 @@ test('a punched hole above a cavity ceiling does not delete its support', () => 
  */
 test('no branch leaves its host shallower than the branch-angle rule', () => {
     resetStore();
-    resetKickstandStore();
+    resetKickstandsInState();
     clearHistory();
     const disposeHandlers = registerSupportHistoryHandlers();
 
