@@ -3,6 +3,7 @@ import type { CandidatePoint } from './types';
 import type { AutoSupportSettings } from './settings';
 import type { SupportState } from '../types';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
+import { influenceRadiusMm } from './constants';
 
 /** A tip covers surface within this radius (mm) — mirrors ALREADY_SUPPORTED_RADIUS_MM. */
 export const TIP_COVERAGE_RADIUS_MM = 3.0;
@@ -12,6 +13,18 @@ export const REGION_COVERAGE_TARGET = 0.95;
 export const MIN_GAP_CLUSTER_MM2 = 2.0;
 /** Max gap-fill passes per run. */
 export const MAX_GAP_FILL_PASSES = 3;
+
+/**
+ * Effective cover radius for a region of the given footprint area: large
+ * flat regions peel harder (traction ∝ cross-section), so their discs
+ * shrink sublinearly → denser packing. At/near the 8 mm² cell reference
+ * the full radius applies; floored at half radius.
+ */
+export function coverageRadiusForArea(areaMm2: number, baseRadiusMm: number = TIP_COVERAGE_RADIUS_MM): number {
+    if (!(areaMm2 > 0)) return baseRadiusMm;
+    const scale = Math.sqrt(8 / Math.max(areaMm2, 8));
+    return baseRadiusMm * Math.max(0.5, scale);
+}
 
 /** Collect support-tip world positions from a support snapshot. */
 export function collectSupportTips(snapshot: SupportState): Array<{ x: number; y: number; z: number }> {
@@ -27,10 +40,12 @@ export function collectSupportTips(snapshot: SupportState): Array<{ x: number; y
 }
 
 /**
- * Fraction of an overhang region's projected footprint covered by tips
- * (each tip covers a disc of `radiusMm`). This is the footprint-aware
- * coverage the convergence loop iterates on — a region whose centroid is
- * covered but whose edges are exposed reads as under-covered.
+ * Fraction of an overhang region's projected footprint covered by tips.
+ * Each tip's disc grows with the voxel height above it (support influence
+ * curve): a tip covers `radiusMm` at its own height, widening along
+ * `influenceRadiusMm` above. This is the footprint-aware coverage the
+ * convergence loop iterates on — a region whose centroid is covered but
+ * whose edges are exposed reads as under-covered.
  */
 export function computeRegionCoverage(
     region: DetectedIsland,
@@ -41,16 +56,21 @@ export function computeRegionCoverage(
     if (!voxels || voxels.count === 0) return 0;
     if (tips.length === 0) return 0;
 
-    const r2 = radiusMm * radiusMm;
+    const growthAt = (vz: number, tipZ: number): number => {
+        const growth = influenceRadiusMm(vz - tipZ) - TIP_COVERAGE_RADIUS_MM;
+        const r = radiusMm + Math.max(0, growth);
+        return r * r;
+    };
     let covered = 0;
     for (let i = 0; i < voxels.count; i++) {
         const vx = footprintX(voxels, i);
         const vy = footprintY(voxels, i);
+        const vz = footprintZ(voxels, i) ?? 0;
         let hit = false;
         for (const tip of tips) {
             const dx = vx - tip.x;
             const dy = vy - tip.y;
-            if (dx * dx + dy * dy <= r2) {
+            if (dx * dx + dy * dy <= growthAt(vz, tip.z)) {
                 hit = true;
                 break;
             }
@@ -79,12 +99,16 @@ export function findUncoveredClusters(
         return [];
     }
 
-    const r2 = radiusMm * radiusMm;
+    const growthAt = (vz: number | undefined, tipZ: number): number => {
+        const growth = influenceRadiusMm((vz ?? tipZ) - tipZ) - TIP_COVERAGE_RADIUS_MM;
+        const r = radiusMm + Math.max(0, growth);
+        return r * r;
+    };
     const isCovered = (v: { x: number; y: number; z?: number }): boolean => {
         for (const tip of tips) {
             const dx = v.x - tip.x;
             const dy = v.y - tip.y;
-            if (dx * dx + dy * dy <= r2) return true;
+            if (dx * dx + dy * dy <= growthAt(v.z, tip.z)) return true;
         }
         return false;
     };
@@ -181,9 +205,10 @@ export function buildGapFillCandidates(
     for (const region of overhangIslands) {
         if (region.source !== 'overhang') continue;
         if (!region.contactVoxels || region.contactVoxels.count === 0) continue;
-        if (computeRegionCoverage(region, tips) >= coverageTarget) continue;
+        const radius = coverageRadiusForArea(region.areaMm2 ?? 0);
+        if (computeRegionCoverage(region, tips, radius) >= coverageTarget) continue;
 
-        const clusters = findUncoveredClusters(region, tips);
+        const clusters = findUncoveredClusters(region, tips, radius);
         for (const c of clusters) {
             out.push({
                 id: `gap-${region.id}-${c.x.toFixed(2)}-${c.y.toFixed(2)}`,

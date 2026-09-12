@@ -31,6 +31,7 @@ export const SUPPORT_REPLACE_TRUNK = 'support:replace-trunk' as const;
 export const SUPPORT_AUTO_BRACE_REPLACE = 'support:auto-brace-replace' as const;
 export const SUPPORT_EDIT_REPLACE = 'support:edit-replace' as const;
 export const SUPPORT_AUTO_PLACE = 'support:auto-place' as const;
+export const SUPPORT_BLOCKER_STROKE = 'support:blocker-stroke' as const;
 
 /** Every support history action type, derived from the payload map below. */
 export type SupportHistoryActionType = keyof SupportHistoryPayloadMap;
@@ -131,6 +132,12 @@ export interface SupportReplaceStatePayload {
   kickstandAfter?: KickstandState;
 }
 
+export interface SupportBlockerStrokePayload {
+  modelId: string;
+  before: number[];
+  after: number[];
+}
+
 /**
  * The payload each support history action carries. One source of truth: push
  * sites and handlers both key off this map, so a type can't be pushed with a
@@ -159,4 +166,5 @@ export type SupportHistoryPayloadMap = {
   [SUPPORT_EDIT_REPLACE]: SupportReplaceStatePayload;
   [SUPPORT_AUTO_BRACE_REPLACE]: SupportReplaceStatePayload;
   [SUPPORT_AUTO_PLACE]: SupportReplaceStatePayload;
+  [SUPPORT_BLOCKER_STROKE]: SupportBlockerStrokePayload;
 };

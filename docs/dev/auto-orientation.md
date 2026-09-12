@@ -1,8 +1,11 @@
 # Auto-Orientation (Pre-Plan)
 
 Design pre-plan for automatic build-orientation of models, tuned for
-masked-resin (MSLA) printing. This is a plan, not a shipped feature: the
-phases below are sequenced so each lands as a usable improvement. It
+masked-resin (MSLA) printing. M1 has shipped (`suggestOrientation` in
+`src/supports/autoSupport/orientationAdvisor.ts`, sweeping
+`generateM1Candidates` plus `restingPoseCandidates` with coordinate-descent
+refinement), as has M2 (support blockers — see below); M3–M5 are still
+planned, sequenced so each lands as a usable improvement. It
 absorbs the intent of the closed WIP attempt (#224: Fibonacci sweep with
 protected-face painting) while discarding its implementation, which did
 not work well in practice and was never merged. Designed to interlock
@@ -69,42 +72,31 @@ cheap geometric proxies computed once per candidate:
 All terms are weighted; weights start calibrated, exposed as advanced
 sliders later only if the calibration proves insufficient.
 
-### "No supports" painted faces (hard constraint)
+### "No supports" painted faces (shipped as support blockers)
 
-Users paint faces that must never carry supports — a figurine's face is
-the canonical case. Painted areas are a HARD CONSTRAINT on the
-orientation search, not a weighted term: every painted normal must point
-up, away from the build plate, in the chosen orientation. A weighted
-"protected exposure" term can still sacrifice the face when other terms
-dominate; a constraint cannot be violated.
+Users paint surface regions that must never carry supports — a figurine's
+face is the canonical case — with the Blockers button (secondary, next to
+Orient Model) entering a paint mode with a fixed-radius brush, red overlay,
+and Clear. The mask is a per-model set of model-space triangle indices
+(`src/supports/autoSupport/supportBlockers.ts`), so it rotates with the
+model and stays valid across orientation changes — unlike the hollowing
+voxel blockers, which index a rotation-aligned grid and are cleared on
+rotation. Out-of-range indices (geometry swapped underneath, e.g. by
+hollowing) are ignored by every consumer.
 
-The mask reuses the mesh-smoothing painter's infrastructure
-(`src/features/mesh-smoothing/`):
-
-- `topologyCache.ts` — spatial hash over unique vertices for radius
-  queries (already tuned for a 5 mm brush radius);
-- `brushController.ts` — stroke handling, hover point/normal, preview
-  buffers;
-- `meshSmoothingEngine.ts` — per-vertex application with before/after
-  snapshots for undo.
-
-Mask model: a `Uint8Array` over the same unique-vertex list the
-smoothing engine uses. A "No Supports" paint mode writes the mask; the
-brush cursor and bindings patterns carry over directly.
-
-Search integration: painted vertex normals are precomputed once in
-model space. Per candidate the check is a handful of dot products —
-rotate each painted normal by the candidate rotation and require
-`n'.z >= cos(maxTilt)` (maxTilt ~45°). Candidates violating the mask
-are pruned BEFORE scoring, so the constraint is nearly free and the
-scorer never trades a painted face away. Infeasible masks (painted
-faces on opposite sides of the model) are reported at paint time with a
-stroke-time conflict warning, and the search falls back to best-effort
-with a visible warning rather than silently ignoring the mask.
-
-The support pipeline honors the mask too: the auto-support candidate
-filter extends its already-supported check to skip contacts on painted
-faces, so the guarantee holds after orientation as well.
+Deliberate deviation from the pre-plan: blocked down-facing contact
+carries a heavy FINITE weight (`blockedWeight`, default 10, in
+`evaluateOrientationCost` and the sweep's `scoreFull`) under every
+objective instead of pre-scoring hard pruning. A hard prune breaks the
+never-regress invariant on infeasible masks (paint on opposite sides) and
+needs the stroke-time conflict machinery; the weight keeps the result
+never-worse than identity while still turning blocked faces away from the
+plate whenever a better pose exists. The generator side IS a hard refusal:
+`generateCandidates` and `generateGridCandidates` drop contacts resolving
+to a blocked face (triangle sampler face carried through, upward-raycast
+fallback otherwise), so the guarantee holds after orientation as well.
+Strokes are single history entries (`support:blocker-stroke`) via the
+typed support-history façade.
 
 ### Feedback into the support engine: peel exposure
 
@@ -157,11 +149,17 @@ tier band remains the base; peel exposure modulates it.
 
 ## Phases
 
-1. **M1 — Sweep and score**: Fibonacci + resting-pose candidates,
-   CPU scoring (overhang, height, footprint), apply-to-transform UX with
-   before/after scores.
-2. **M2 — "No supports" painted faces**: vertex mask via the smoothing
-   painter infrastructure, hard-constraint pruning in the search, brush UX.
+1. **M1 — Sweep and score** (shipped): Fibonacci + resting-pose candidates,
+   CPU scoring (overhang primary with an anchoring margin that trades up to ~5%
+   contact for the widest base; height/footprint tie-breakers, or height
+   objective rank, one-click apply with optimize-for dropdown (Fewest Supports /
+   Shortest Print Time / Least Scarring), auto-lift reseat above the plate,
+   destructive-transform confirm clearing placed supports first, and toast
+   receipts (applied / already-optimal).
+2. **M2 — "No supports" painted faces** (shipped): triangle mask with
+   paint mode (Blockers button), red overlay, Clear, stroke history;
+   heavy finite blocked-contact weight in the search, hard refusal in the
+   candidate generators.
 3. **M3 — GPU peel proxy**: orthographic coverage rendering, max/integral
    cross-section terms replacing the CPU proxies.
 4. **M4 — Drainage**: trapped-volume term and drain-path viability for

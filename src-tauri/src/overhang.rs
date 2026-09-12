@@ -20,6 +20,8 @@ use dragonfruit_mesh_repair::{core::mesh::Vec3, IndexedMesh};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use rayon::prelude::*;
+
 /// Binary raster of a region's XY-projected footprint — the containment test
 /// the density grid stage uses to place supports only inside the region.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,22 +106,46 @@ pub fn classify_overhangs(
     // Overhang iff θ < threshold ⟺ normal.z < -cos(threshold).
     let threshold = -self_support_angle_deg.to_radians().cos();
 
-    let mut is_overhang = vec![false; tri_count];
-    let mut normal = vec![Vec3::ZERO; tri_count];
-    for fi in 0..tri_count {
-        let n = mesh.tri_normal(fi as u32);
-        normal[fi] = n;
-        is_overhang[fi] = n.z < threshold;
+    let pairs: Vec<(Vec3, bool)> = (0..tri_count)
+        .into_par_iter()
+        .map(|fi| {
+            let n = mesh.tri_normal(fi as u32);
+            (n, n.z < threshold)
+        })
+        .collect();
+    let mut normal = Vec::with_capacity(tri_count);
+    let mut is_overhang = Vec::with_capacity(tri_count);
+    for (n, o) in pairs {
+        normal.push(n);
+        is_overhang.push(o);
     }
 
     // Triangle adjacency through undirected edges (min, max vertex id).
-    let mut edge_tris: HashMap<(u32, u32), Vec<u32>> = HashMap::new();
-    for (fi, tri) in mesh.triangles.iter().enumerate() {
-        for pair in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
-            let key = if pair.0 < pair.1 { pair } else { (pair.1, pair.0) };
-            edge_tris.entry(key).or_default().push(fi as u32);
-        }
-    }
+    // Fold into thread-local maps, then merge: union-find is order-independent
+    // over the edge pairs, so the result stays deterministic.
+    let edge_tris: HashMap<(u32, u32), Vec<u32>> = mesh
+        .triangles
+        .par_iter()
+        .enumerate()
+        .fold(
+            || HashMap::<(u32, u32), Vec<u32>>::new(),
+            |mut acc, (fi, tri)| {
+                for pair in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
+                    let key = if pair.0 < pair.1 { pair } else { (pair.1, pair.0) };
+                    acc.entry(key).or_default().push(fi as u32);
+                }
+                acc
+            },
+        )
+        .reduce(
+            || HashMap::<(u32, u32), Vec<u32>>::new(),
+            |mut a, b| {
+                for (k, v) in b {
+                    a.entry(k).or_default().extend(v);
+                }
+                a
+            },
+        );
 
     // Union-find over overhang triangles sharing an edge.
     let mut parent: Vec<u32> = (0..tri_count as u32).collect();
@@ -168,7 +194,7 @@ pub fn classify_overhangs(
     groups.sort_by_key(|(root, _)| *root);
 
     groups
-        .into_iter()
+        .into_par_iter()
         .map(|(_, triangle_ids)| build_region(mesh, &normal, triangle_ids, px_mm))
         .collect()
 }
@@ -798,5 +824,93 @@ mod tests {
         assert!((regions[1].angle_deg - 20.0).abs() < 1.5);
         // Deterministic ordering: the two regions are ordered by root triangle id.
         assert!(regions[0].xy_min[0] < regions[1].xy_min[0]);
+    }
+
+    /// n×n grid of unit quads on the z=0 plane, wound with −Z normals so the
+    /// whole thing is one giant down-facing overhang region (2n² triangles).
+    fn grid_mesh(n: usize) -> IndexedMesh {
+        let mut positions = Vec::with_capacity((n + 1) * (n + 1));
+        let mut triangles = Vec::with_capacity(n * n * 2);
+        for y in 0..=n {
+            for x in 0..=n {
+                positions.push(Vec3::new(x as f32, y as f32, 0.0));
+            }
+        }
+        let idx = |x: usize, y: usize| (y * (n + 1) + x) as u32;
+        for y in 0..n {
+            for x in 0..n {
+                let a = idx(x, y);
+                let b = idx(x + 1, y);
+                let c = idx(x + 1, y + 1);
+                let d = idx(x, y + 1);
+                triangles.push([a, c, b]); // −Z normal
+                triangles.push([a, d, c]); // −Z normal
+            }
+        }
+        IndexedMesh { positions, triangles }
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_overhang_classification() {
+        use std::time::Instant;
+        // 1M triangles (1000×1000 quads) — a single flat overhang region.
+        let mesh = grid_mesh(1000);
+        let tri_count = mesh.triangle_count();
+        let start = Instant::now();
+        let regions = classify_overhangs(&mesh, 45.0, 0.25);
+        let elapsed = start.elapsed().as_secs_f64();
+        eprintln!(
+            "overhang bench: {} triangles -> {} regions in {:.1} ms ({:.1} Mtri/s, {} threads)",
+            tri_count,
+            regions.len(),
+            elapsed * 1e3,
+            (tri_count as f64 / 1e6) / elapsed,
+            rayon::current_num_threads(),
+        );
+        assert_eq!(regions.len(), 1, "flat plane is one region");
+    }
+
+    /// n×n separate 1×1 quads, spaced 5mm apart, each its own overhang region.
+    fn disjoint_quads_grid(n: usize) -> IndexedMesh {
+        let mut positions = Vec::with_capacity(n * n * 4);
+        let mut triangles = Vec::with_capacity(n * n * 2);
+        let step = 5.0f32;
+        for gy in 0..n {
+            for gx in 0..n {
+                let ox = gx as f32 * step;
+                let oy = gy as f32 * step;
+                let base = positions.len() as u32;
+                positions.push(Vec3::new(ox, oy, 0.0));
+                positions.push(Vec3::new(ox + 1.0, oy, 0.0));
+                positions.push(Vec3::new(ox + 1.0, oy + 1.0, 0.0));
+                positions.push(Vec3::new(ox, oy + 1.0, 0.0));
+                triangles.push([base, base + 2, base + 1]); // −Z
+                triangles.push([base, base + 3, base + 2]); // −Z
+            }
+        }
+        IndexedMesh { positions, triangles }
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_overhang_many_regions() {
+        use std::time::Instant;
+        // 490k tiny regions / 980k triangles: stresses the parallel phases
+        // (per-triangle classification, edge map, per-region build).
+        let mesh = disjoint_quads_grid(700);
+        let tri_count = mesh.triangle_count();
+        let start = Instant::now();
+        let regions = classify_overhangs(&mesh, 45.0, 0.25);
+        let elapsed = start.elapsed().as_secs_f64();
+        eprintln!(
+            "overhang many-regions: {} triangles -> {} regions in {:.1} ms ({:.1} Mtri/s, {} threads)",
+            tri_count,
+            regions.len(),
+            elapsed * 1e3,
+            (tri_count as f64 / 1e6) / elapsed,
+            rayon::current_num_threads(),
+        );
+        assert_eq!(regions.len(), 490_000, "one region per quad");
     }
 }

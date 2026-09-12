@@ -17,6 +17,7 @@ type Translate = (descriptor: MessageDescriptor) => string;
 const NAMES: Record<string, MessageDescriptor> = {
   'chitubox-import': msg`Chitubox File Import`,
   'auto-supports': msg`Auto Supports`,
+  'auto-rotation': msg`Auto Orientation`,
 };
 
 const DESCRIPTIONS: Record<string, MessageDescriptor> = {

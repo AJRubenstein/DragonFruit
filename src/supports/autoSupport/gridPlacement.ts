@@ -6,8 +6,10 @@ import {
     OVERHANG_SELF_SUPPORT_ANGLE_DEG,
     GRID_SPACING_MIN_FACTOR,
     GRID_SPACING_MAX_FACTOR,
+    ISLAND_TWO_POINT_MAX_MM,
 } from './constants';
 import type { AutoSupportSettings } from './settings';
+import { isSupportBlockedContact } from './supportBlockers';
 
 const FOOTPRINT_TOLERANCE_MM = 0.25;
 
@@ -65,8 +67,10 @@ export function buildBoundaryPoints(
 export const GRID_SPACING_FLOOR_MM = 1.2;
 
 /** Surface sampler: resolve a footprint point to its surface Z, or null when
- *  the point lies outside the region. */
-export type SurfaceSampler = (x: number, y: number) => { z: number } | null;
+ *  the point lies outside the region. The triangle path also reports the
+ *  contact face so callers can honor the support-blocker mask with no extra
+ *  raycast. */
+export type SurfaceSampler = (x: number, y: number) => { z: number; faceIndex?: number } | null;
 
 const _surfaceRaycaster = new THREE.Raycaster();
 const DOUBLE_SIDED_SURFACE_MATERIAL = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
@@ -92,7 +96,7 @@ export function createTriangleSurfaceAt(
     const ids = island.triangleIds;
     if (!mesh || !ids || ids.length === 0) return null;
     const triSet = new Set(ids);
-    return (x: number, y: number): { z: number } | null => {
+    return (x: number, y: number): { z: number; faceIndex?: number } | null => {
         _surfaceRaycaster.set(
             new THREE.Vector3(x, y, island.baseZ - 2),
             new THREE.Vector3(0, 0, 1),
@@ -102,7 +106,7 @@ export function createTriangleSurfaceAt(
         try {
             for (const hit of _surfaceRaycaster.intersectObject(mesh, false)) {
                 if (hit.faceIndex != null && triSet.has(hit.faceIndex)) {
-                    return { z: hit.point.z };
+                    return { z: hit.point.z, faceIndex: hit.faceIndex };
                 }
             }
         } finally {
@@ -322,11 +326,11 @@ export function sampleBoundary2D(
     loops: Array<Array<[number, number, number]>> | undefined,
     spacing: number,
     surfaceAt: SurfaceSampler,
-): Array<{ x: number; y: number; z: number }> | null {
+): Array<{ x: number; y: number; z: number; faceIndex?: number }> | null {
     if (!loops || loops.length === 0 || spacing <= 0) return null;
     if (!loops.some((l) => l.length >= 2)) return null;
 
-    const raw: Array<{ x: number; y: number; z: number }> = [];
+    const raw: Array<{ x: number; y: number; z: number; faceIndex?: number }> = [];
     for (const loop of loops) {
         let acc = 0;
         for (let i = 0; i < loop.length; i++) {
@@ -336,7 +340,7 @@ export function sampleBoundary2D(
             if (segLen < 1e-9) continue;
             if (acc === 0) {
                 const s = surfaceAt(a[0], a[1]);
-                if (s) raw.push({ x: a[0], y: a[1], z: s.z });
+                if (s) raw.push({ x: a[0], y: a[1], z: s.z, faceIndex: s.faceIndex });
             }
             let d = spacing - acc;
             while (d <= segLen) {
@@ -344,14 +348,14 @@ export function sampleBoundary2D(
                 const x = a[0] + (b[0] - a[0]) * t;
                 const y = a[1] + (b[1] - a[1]) * t;
                 const s = surfaceAt(x, y);
-                if (s) raw.push({ x, y, z: s.z });
+                if (s) raw.push({ x, y, z: s.z, faceIndex: s.faceIndex });
                 d += spacing;
             }
             acc = (acc + segLen) % spacing;
         }
     }
 
-    const deduped: Array<{ x: number; y: number; z: number }> = [];
+    const deduped: Array<{ x: number; y: number; z: number; faceIndex?: number }> = [];
     const minDistSq = (spacing * 0.5) * (spacing * 0.5);
     for (const p of raw) {
         let dup = false;
@@ -385,21 +389,86 @@ export function sampleBoundary2D(
  *    climb a limb in Z;
  *  - the per-region candidate cap subsamples evenly, never silently denser.
  */
+/**
+ * Does this overhang region get the ring + lattice treatment?
+ *
+ * Area is the density question, but SHAPE decides whether the region can be
+ * carried by the single-candidate path at all: a thin footprint (a plank's
+ * underside, a fin edge) erodes away, so the lattice has nothing to infill —
+ * yet its boundary ring is exactly the line of supports it needs. Under the
+ * area threshold those slivers used to fall through to one centre pillar: a
+ * 19 mm² plank underside of 15 × 1.3 mm got a single support with both ends
+ * of the anchoring edge unsupported. Anything longer than the two-point band
+ * (`ISLAND_TWO_POINT_MAX_MM`, which already splits 1.5–6 mm islands into a
+ * symmetric pair) is long enough to want its perimeter sampled.
+ */
+export function shouldUseDensityGrid(
+    island: DetectedIsland,
+    settings: AutoSupportSettings,
+): boolean {
+    if (island.source !== 'overhang') return false;
+    if ((island.areaMm2 ?? 0) >= settings.gridAreaThresholdMm2) return true;
+
+    const voxels = island.contactVoxels;
+    if (!voxels || voxels.count === 0) return false;
+    const points = footprintToPoints(voxels);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+    }
+    // Longer than the two-point band: a thin rib (a plank's underside) needs
+    // its edge sampled, whether or not it erodes away completely. The lattice
+    // is skipped for it below — a footprint thinner than one lattice cell has
+    // nothing to infill.
+    return Math.max(maxX - minX, maxY - minY) >= ISLAND_TWO_POINT_MAX_MM;
+}
+
+/**
+ * World-space normal of one mesh face. The region carries a SINGLE
+ * `surfaceNormal`, but its cells land on a surface that curves or bends across
+ * the region — measured on a cylinder underside, every contact's axis sat a
+ * median 26° (worst 41°) from the surface it was touching, so the contact disc
+ * dug in on one edge and floated on the other. The sampler already reports the
+ * face it hit, so the per-cell normal is free.
+ */
+function faceNormalAt(
+    mesh: THREE.Mesh,
+    faceIndex: number,
+): { x: number; y: number; z: number } | null {
+    const geometry = mesh.geometry as THREE.BufferGeometry;
+    const position = geometry.getAttribute('position');
+    if (!position) return null;
+    const index = geometry.getIndex();
+    const i0 = index ? index.getX(faceIndex * 3) : faceIndex * 3;
+    const i1 = index ? index.getX(faceIndex * 3 + 1) : faceIndex * 3 + 1;
+    const i2 = index ? index.getX(faceIndex * 3 + 2) : faceIndex * 3 + 2;
+    if (i0 < 0 || i1 < 0 || i2 < 0) return null;
+
+    const a = new THREE.Vector3().fromBufferAttribute(position, i0);
+    const b = new THREE.Vector3().fromBufferAttribute(position, i1);
+    const c = new THREE.Vector3().fromBufferAttribute(position, i2);
+    const normal = b.sub(a).cross(c.sub(a));
+    if (normal.lengthSq() < 1e-12) return null;
+    normal.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize();
+    return { x: normal.x, y: normal.y, z: normal.z };
+}
+
 export function generateGridCandidates(
     overhangIslands: DetectedIsland[],
     settings: AutoSupportSettings,
     mesh?: THREE.Mesh,
+    modelId?: string,
 ): CandidatePoint[] {
     const baseSpacing = Math.sqrt(Math.max(settings.areaPerSupportMm2, 0.5));
     if (baseSpacing <= 0) return [];
-    const threshold = settings.gridAreaThresholdMm2;
 
     const candidates: CandidatePoint[] = [];
 
     for (const island of overhangIslands) {
-        if (island.source !== 'overhang') continue;
-        const area = island.areaMm2 ?? 0;
-        if (area < threshold) continue;
+        if (!shouldUseDensityGrid(island, settings)) continue;
         const spacing = computeRegionSpacing(island, settings);
 
         const voxels = island.contactVoxels;
@@ -428,11 +497,18 @@ export function generateGridCandidates(
             ?? createVoxelSurfaceAt(voxelPoints, cellSize, island.baseZ);
         const minZ = island.baseZ;
 
-        const emitPoint = (x: number, y: number, z: number, kind: 'grid' | 'fill') => {
+        const emitPoint = (x: number, y: number, z: number, kind: 'grid' | 'fill', faceIndex?: number | null) => {
+            // The contact leans into the face it actually lands on; the
+            // region-wide normal is only the fallback (voxel sampler, blockers).
+            const tipNormal = (mesh && faceIndex != null ? faceNormalAt(mesh, faceIndex) : null) ?? surfaceNormal;
+            // Support blockers: refuse contacts painted as nogo. Lattice and
+            // ring points carry the sampler's face for free; voxel-fallback
+            // points resolve it with one raycast. Empty mask → no raycasts.
+            if (modelId && mesh && isSupportBlockedContact(modelId, mesh, x, y, z, faceIndex)) return;
             candidates.push({
                 id: `${kind}-${island.id}-${x.toFixed(2)}-${y.toFixed(2)}`,
                 tipPos: { x, y, z },
-                tipNormal: surfaceNormal,
+                tipNormal,
                 modelId: '',
                 source: 'overhang',
                 islandAreaMm2: settings.areaPerSupportMm2,
@@ -442,7 +518,9 @@ export function generateGridCandidates(
             });
         };
 
-        // Sliver test: nothing survives footprint erosion → ring only.
+        // Sliver test: nothing survives footprint erosion → ring only. A rib
+        // thinner than one lattice cell is treated the same way — infilling it
+        // would stack a second line of supports a millimetre from the edge.
         const eroded = erodeFootprint(voxelPoints);
         const isSliver = eroded.length === 0;
 
@@ -472,7 +550,10 @@ export function generateGridCandidates(
         // columns (never cut off by a leftover margin), inset by the contact
         // radius so a support never hangs half its disc past the edge.
         const lattice: Array<{ x: number; y: number; z: number }> = [];
-        if (!isSliver) {
+        // A footprint thinner than one lattice cell gets no infill: the rows
+        // would land a fraction of a millimetre apart, doubling the density on
+        // a rib the ring already carries end to end.
+        if (!isSliver && Math.min(width, height) >= spacing) {
             for (let i = 0; i <= nx; i += stride) {
                 for (let j = 0; j <= ny; j += stride) {
                     const x = minX + inset + i * spacingX;
@@ -481,7 +562,7 @@ export function generateGridCandidates(
                     if (s) {
                         const pt = { x, y, z: s.z };
                         lattice.push(pt);
-                        emitPoint(x, y, s.z, 'grid');
+                        emitPoint(x, y, s.z, 'grid', s.faceIndex);
                     }
                 }
             }
@@ -493,7 +574,7 @@ export function generateGridCandidates(
         // every ring point sits within a lattice cell of some interior point.
         const ringSpacing = Math.max(PERIMETER_SPACING_FLOOR_MM, spacing * PERIMETER_RING_FACTOR) * stride;
         const ringCoverageSq = (ringSpacing * 0.5) * (ringSpacing * 0.5);
-        const boundary = sampleBoundary2D(island.perimeterLoops, ringSpacing, surfaceAt)
+        const boundary: Array<{ x: number; y: number; z: number; faceIndex?: number }> = sampleBoundary2D(island.perimeterLoops, ringSpacing, surfaceAt)
             ?? buildBoundaryPoints(
                 eroded.length > 0 ? eroded : voxelPoints,
                 ringSpacing,
@@ -509,7 +590,12 @@ export function generateGridCandidates(
                     break;
                 }
             }
-            if (!covered) emitPoint(b.x, b.y, b.z, 'fill');
+            if (covered) continue;
+            // The fallback boundary points carry a voxel Z and no face: sample
+            // the surface at their XY so the ring keeps the same per-cell Z and
+            // normal the lattice got.
+            const sampled = surfaceAt(b.x, b.y);
+            emitPoint(b.x, b.y, sampled?.z ?? b.z, 'fill', sampled?.faceIndex ?? b.faceIndex ?? null);
         }
     }
 

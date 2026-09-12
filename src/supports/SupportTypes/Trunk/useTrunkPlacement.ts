@@ -19,6 +19,7 @@ import { perfMark, perfMeasureWithSpike, perfEndFrame } from '../../PlacementLog
 import { buildStick } from '../Stick/stickBuilder';
 import { buildTwig } from '../Twig/twigBuilder';
 import { isShaftBlocked } from '../../PlacementLogic/CollisionAvoidance';
+import { checkShortBridgeCollision } from '../../PlacementLogic/CollisionUtils';
 import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { getSupportPathfindingDebugEnabled, setSupportPathfindingDebugSnapshot } from '../../PlacementLogic/Pathfinding/pathfindingDebugState';
 
@@ -133,21 +134,12 @@ export function buildCavityStick(
     | { kind: 'stick'; supportData: SupportData; stick: ReturnType<typeof buildStick>['stick'] }
     | { kind: 'twig'; supportData: SupportData; twig: ReturnType<typeof buildTwig>['twig'] }
 ) | null {
-    _cavityRaycaster.set(
-        new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z),
-        _downDir,
-    );
     // Offset origin slightly inward along tip normal so we don't self-hit the
     // surface we just clicked.
     const OFFSET_MM = 0.5;
-    _cavityRaycaster.ray.origin.addScaledVector(
-        new THREE.Vector3(tipNormal.x, tipNormal.y, tipNormal.z),
-        OFFSET_MM,
-    );
-    _cavityRaycaster.ray.origin.z -= OFFSET_MM * 0.1; // nudge down past origin surface
-
-    const hits = _cavityRaycaster.intersectObject(mesh, false);
-    if (hits.length === 0) return null;
+    const baseOrigin = new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z)
+        .addScaledVector(new THREE.Vector3(tipNormal.x, tipNormal.y, tipNormal.z), OFFSET_MM);
+    baseOrigin.z -= OFFSET_MM * 0.1; // nudge down past origin surface
 
     // Prefer a true "floor" hit (normal has meaningful +Z) so the bottom
     // endpoint clings vertically down when possible. Only fall back to any
@@ -158,37 +150,87 @@ export function buildCavityStick(
 
     type Candidate = { hit: THREE.Intersection; normal: THREE.Vector3 };
     const MAX_HIT_SCAN = 64;
-    let scanned = 0;
-    let firstBelowCandidate: Candidate | null = null;
-    let floorCandidate: Candidate | null = null;
 
-    for (const h of hits) {
-        scanned += 1;
-        if (scanned > MAX_HIT_SCAN) break;
-        if (h.point.z >= tipPos.z - BELOW_EPS_MM) continue;
-        if (!h.face) continue;
-        const n = h.face.normal.clone().applyNormalMatrix(normalMatrix).normalize();
-        const candidate = { hit: h, normal: n };
-        if (!firstBelowCandidate) firstBelowCandidate = candidate;
-        if (n.z >= FLOOR_Z_MIN) {
-            floorCandidate = candidate;
-            break;
+    const scanDown = (ox: number, oy: number): { floor: Candidate | null; first: Candidate | null } => {
+        _cavityRaycaster.set(new THREE.Vector3(ox, oy, baseOrigin.z), _downDir);
+        const hits = _cavityRaycaster.intersectObject(mesh, false);
+
+        let floor: Candidate | null = null;
+        let first: Candidate | null = null;
+        let scanned = 0;
+        for (const h of hits) {
+            scanned += 1;
+            if (scanned > MAX_HIT_SCAN) break;
+            if (h.point.z >= tipPos.z - BELOW_EPS_MM) continue;
+            if (!h.face) continue;
+            const n = h.face.normal.clone().applyNormalMatrix(normalMatrix).normalize();
+            const candidate = { hit: h, normal: n };
+            if (!first) first = candidate;
+            if (n.z >= FLOOR_Z_MIN) {
+                floor = candidate;
+                break;
+            }
         }
-    }
+        return { floor, first };
+    };
 
-    const chosen = floorCandidate ?? firstBelowCandidate;
+    // Straight down first, then a small disc around it: when the surface
+    // directly below is missing — a punched drain hole, a gap between
+    // features — the vertical ray escapes and the tip used to end up with no
+    // support at all, even though the floor a couple of mm to the side is
+    // right there. Nearest radius wins; the 20° verticality gate below (and
+    // the shaft-blocked check after the build) bound how far the cant may go.
+    const settings = getSettings();
+    const cutoff = settings.meshToMesh?.stickVsTwigCutoffMm ?? 5;
+    const NEAR_RADII_MM = [0, 0.75, 1.5, 2.25] as const;
+    // A twig's own reach: it is a short bridge, so a lateral offset up to its
+    // maximum length is still a twig.
+    const twigReachRadii = Array.from(
+        { length: Math.max(0, Math.floor(cutoff / 0.75)) },
+        (_, i) => 0.75 * (i + 1),
+    ).filter((r) => r > NEAR_RADII_MM[NEAR_RADII_MM.length - 1]);
+    const runSearch = (radii: readonly number[]): { hit: Candidate | null; usedExtendedReach: boolean } => {
+        let firstBelow: Candidate | null = null;
+        for (const radiusMm of radii) {
+            const steps = radiusMm === 0 ? 1 : 8;
+            for (let i = 0; i < steps; i++) {
+                const angle = (i / steps) * Math.PI * 2;
+                const { floor, first } = scanDown(
+                    baseOrigin.x + Math.cos(angle) * radiusMm,
+                    baseOrigin.y + Math.sin(angle) * radiusMm,
+                );
+                if (floor) return { hit: floor, usedExtendedReach: radiusMm > NEAR_RADII_MM[NEAR_RADII_MM.length - 1] };
+                if (first && !firstBelow) firstBelow = first;
+            }
+        }
+        return { hit: firstBelow, usedExtendedReach: false };
+    };
+
+    const near = runSearch(NEAR_RADII_MM);
+    let chosen = near.hit;
+    let reachedSideways = near.usedExtendedReach;
+    if (!chosen) {
+        // Nothing straight down: a TWIG may still prop the contact off a
+        // neighbouring surface (the underside of a pointed tip, a ledge beside
+        // it). Twigs are short (<= stickVsTwigCutoffMm), so the search may
+        // reach that far sideways; a stick still may not — it has to stay near
+        // vertical, so it keeps the near search it always had.
+        const wide = runSearch(twigReachRadii);
+        chosen = wide.hit;
+        reachedSideways = wide.usedExtendedReach;
+    }
     if (!chosen) return null;
 
     const bPos = { x: chosen.hit.point.x, y: chosen.hit.point.y, z: chosen.hit.point.z };
     const bNormal = { x: chosen.normal.x, y: chosen.normal.y, z: chosen.normal.z };
 
-    const settings = getSettings();
-    const cutoff = settings.meshToMesh?.stickVsTwigCutoffMm ?? 5;
     const dx = tipPos.x - bPos.x;
     const dy = tipPos.y - bPos.y;
     const dz = tipPos.z - bPos.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const kind: 'twig' | 'stick' = dist > cutoff ? 'stick' : 'twig';
+
+    if (kind === 'stick' && reachedSideways && dist > cutoff) return null;
 
     if (kind === 'twig') {
         const { twig } = buildTwig({ modelId, aPos: tipPos, aNormal: tipNormal, bPos, bNormal, tipContactDiameterMm: sizing?.tipContactDiameterMm });
@@ -196,11 +238,24 @@ export function buildCavityStick(
         // post-cull clearance (radius + 0.15mm) and catches the "sticks that
         // shoot right through geometry" seen in auto supports.
         {
+            // Ray-based, like buildTwig: the SDF reads the thin gap a twig
+            // spans as material, so a signed-distance gate would refuse it.
             const seg = twig.segments[0];
             const start = seg?.bottomJoint?.pos ?? bPos;
             const end = seg?.topJoint?.pos ?? tipPos;
             const radius = (seg?.diameter ?? 1) / 2 + 0.15;
-            if (isShaftBlocked(start, end, radius, mesh)) return null;
+            if (checkShortBridgeCollision(start, end, radius, mesh).hit) return null;
+        }
+        // Twigs are short bridges, not lateral props: the visible shaft
+        // (socket to socket — a sidewall landing's standoff is what shoves a
+        // grazing twig sideways) must stay somewhat vertical, like sticks. A
+        // twig much past 45° hangs its island off a whisker that cannot carry
+        // peel, and it renders as the near-horizontal struts in the preview.
+        // Looser than the 20° stick gate because a 1–2 mm strut tolerates cant
+        // a 12 mm column cannot; pointed tips propped off a nearby wall with a
+        // real drop underneath still pass.
+        if (shaftVerticalCos(twig) < Math.cos((CAVITY_TWIG_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
+            return null;
         }
         const supportData: SupportData = {
             id: twig.id,
@@ -215,7 +270,7 @@ export function buildCavityStick(
     // Sticks are only useful as vertical bridges; a shaft that cants off
     // vertical (standoffs + sloped surfaces shoving the sockets sideways)
     // is a crammed stick. Reject it — the caller's trunk fallback applies.
-    if (stickShaftVerticalCos(stick) < Math.cos((CAVITY_STICK_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
+    if (shaftVerticalCos(stick) < Math.cos((CAVITY_STICK_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
         return null;
     }
 
@@ -242,13 +297,13 @@ export function buildCavityStick(
 type CavityStickBuildResult = NonNullable<ReturnType<typeof buildCavityStick>>;
 
 /**
- * |cos| of the shaft's deviation from vertical, 1 = perfectly vertical.
- * The stick's visible shaft runs between its two socket joints — the
- * surface-normal standoffs can shove those sideways on sloped surfaces,
- * which is exactly the "crammed diagonal stick" look to avoid.
+ * |cos| of a cavity bridge's deviation from vertical, 1 = perfectly vertical.
+ * The visible shaft runs between its two socket joints — the surface-normal
+ * standoffs can shove those sideways on sloped surfaces, which is exactly the
+ * "crammed diagonal stick" look to avoid.
  */
-export function stickShaftVerticalCos(stick: { segments: { bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null }[] }): number {
-    const seg = stick.segments[0];
+export function shaftVerticalCos(bridge: { segments: { bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null }[] }): number {
+    const seg = bridge.segments[0];
     const a = seg?.bottomJoint?.pos;
     const b = seg?.topJoint?.pos;
     if (!a || !b) return 1;
@@ -263,6 +318,12 @@ export function stickShaftVerticalCos(stick: { segments: { bottomJoint?: { pos: 
 // A cavity stick bridges straight down; a shaft that cants more than this
 // from vertical is a wedged stick, not a bridge (calibration knob).
 export const CAVITY_STICK_MAX_SHAFT_ANGLE_DEG = 20;
+// A cavity twig bridges down, not sideways: a shaft canted much past this
+// from vertical is a lateral whisker to a sidewall, not a bridge. Looser than
+// the 20° stick gate — measured thin-gap and floor twigs build at ≤17°,
+// pointed-tip props off a nearby wall with a real drop land 23–43°, the
+// grazers at 48° and up (calibration knob).
+export const CAVITY_TWIG_MAX_SHAFT_ANGLE_DEG = 45;
 
 export function useTrunkPlacementV2() {
     // Debounce tuned for human hand drift (~1-2mm) and 60fps target.

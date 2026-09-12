@@ -74,7 +74,7 @@ msgstr "{done}/{total} procesados"
 msgid "{downloaded} / {total} ({pct}%)"
 msgstr "{downloaded} / {total} ({pct} %)"
 
-#: src/app/page.tsx:466
+#: src/app/page.tsx:467
 #: src/components/controls/ModelStatsCard.tsx:209
 msgid "{hours} h {minutes} min"
 msgstr "{hours} h {minutes} min"
@@ -104,8 +104,8 @@ msgstr "{materialName} ({sourceName})"
 msgid "{minutes} min"
 msgstr "{minutes} min"
 
-#: src/app/page.tsx:458
-#: src/app/page.tsx:467
+#: src/app/page.tsx:459
+#: src/app/page.tsx:468
 #: src/components/controls/ModelStatsCard.tsx:210
 msgid "{minutes} min {seconds} s"
 msgstr "{minutes} min {seconds} s"
@@ -153,12 +153,12 @@ msgid "< 1 min"
 msgstr "< 1 min"
 
 #. Approximate estimated print time (the "~" marks it as a rough estimate). {hours}/{mins} are whole-number quantities.
-#: src/app/page.tsx:450
+#: src/app/page.tsx:451
 msgid "~{hours} h {mins} min"
 msgstr "~{hours} h {mins} min"
 
 #. Approximate estimated print time under an hour (the "~" marks it as a rough estimate).
-#: src/app/page.tsx:451
+#: src/app/page.tsx:452
 msgid "~{mins} min"
 msgstr "~{mins} min"
 
@@ -201,6 +201,10 @@ msgstr "Activo"
 msgid "ACTIVE"
 msgstr "ACTIVO"
 
+#: src/components/controls/AutoRotationPanel.tsx:20
+msgid "Active model has no readable geometry."
+msgstr ""
+
 #: src/supports/Settings/components/TipSettingsCard.tsx:62
 #: src/supports/Settings/SupportSidebar.tsx:885
 #: src/supports/Settings/SupportSidebar.tsx:1042
@@ -223,7 +227,7 @@ msgstr "Desfase adaptativo"
 msgid "Adaptive Offset (deg)"
 msgstr "Desfase adaptativo (grados)"
 
-#: src/app/page.tsx:2257
+#: src/app/page.tsx:2264
 msgid "Add joint"
 msgstr "Añadir unión"
 
@@ -257,6 +261,10 @@ msgstr "Añadida"
 msgid "After updating .env, restart the app, then click “I configured it”."
 msgstr "Después de actualizar el .env, reinicia la aplicación y pulsa «Ya lo he configurado»."
 
+#: src/components/controls/AutoRotationPanel.tsx:154
+msgid "Analyzing…"
+msgstr ""
+
 #: src/supports/Settings/AnatomyPreview/SupportAnatomyPreviewSlot.tsx:49
 msgid "Anatomy preview context menu"
 msgstr "Menú contextual de la vista previa de anatomía"
@@ -279,13 +287,17 @@ msgstr "Antialiasing: nada que suavizar."
 msgid "Apply"
 msgstr "Aplicar"
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:225
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:229
 msgid "Apply Auto Brace"
 msgstr "Aplicar arriostrado automático"
 
 #: src/features/slicing/components/SlicingPanel.tsx:3894
 msgid "Apply for Session"
 msgstr "Aplicar a la sesión"
+
+#: src/components/controls/AutoRotationPanel.tsx:18
+msgid "Apply Rotation"
+msgstr ""
 
 #. Cross-sectional area stats for the current print layer: "Area Σ" = total/summed solid area (Σ is the mathematical summation symbol, usually kept as-is); "Min"/"Max" = smallest/largest single contiguous area, abbreviating "Minimum"/"Maximum".
 #: src/components/organisms/modals/PrintingModals.tsx:1894
@@ -324,6 +336,10 @@ msgstr "«Automático» deduce los ajustes de laminado de la resolución de tu i
 #: src/components/printers/SetupMethodChooser.tsx:61
 msgid "Auto Detect"
 msgstr "Detección automática"
+
+#: src/components/controls/AutoRotationPanel.tsx:16
+msgid "Auto Rotation (Beta)"
+msgstr ""
 
 #: src/features/experiments/experimentMessages.ts:19
 msgid "Auto Supports"
@@ -408,7 +424,7 @@ msgstr "Los archivos de guardado automático solo existen en la versión de escr
 msgid "Autosave idle delay"
 msgstr "Espera antes de guardar"
 
-#: src/app/page.tsx:994
+#: src/app/page.tsx:1001
 msgid "Autosave is not working"
 msgstr "El guardado automático no funciona"
 
@@ -553,7 +569,7 @@ msgstr "Margen del borde"
 msgid "Bottom"
 msgstr "Abajo"
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:108
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:111
 msgid "Brace Diameter"
 msgstr "Diámetro del arriostre"
 
@@ -828,7 +844,7 @@ msgstr "Cerrar aviso"
 msgid "Close window"
 msgstr "Cerrar ventana"
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:173
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:177
 msgid "Cluster Spacing"
 msgstr "Separación entre grupos"
 
@@ -841,6 +857,7 @@ msgstr "Agrupación"
 msgid "Coincident"
 msgstr "Coincidentes"
 
+#: src/components/controls/AutoRotationPanel.tsx:123
 #: src/components/controls/AutoSupportPanel.tsx:420
 #: src/components/controls/ModelManagerPanel.tsx:379
 #: src/features/slicing/components/SlicingPanel.tsx:2468
@@ -996,7 +1013,7 @@ msgstr "Continuar"
 msgid "Contoured regions"
 msgstr "Regiones contorneadas"
 
-#: src/app/page.tsx:8168
+#: src/app/page.tsx:8175
 msgid "Converting support data and model metadata"
 msgstr "Convirtiendo los datos de soportes y los metadatos del modelo"
 
@@ -1322,7 +1339,7 @@ msgstr "DragonFruit va a <0>descargar, verificar e instalar</0> la actualizació
 msgid "Drop supported files"
 msgstr "Suelta archivos compatibles"
 
-#: src/app/page.tsx:10299
+#: src/app/page.tsx:10329
 msgid "Drop supported files to import"
 msgstr "Suelta aquí los ficheros compatibles para importarlos"
 
@@ -1350,7 +1367,7 @@ msgstr "Editar el perfil de material"
 msgid "Edit printer profile"
 msgstr "Editar el perfil de impresora"
 
-#: src/app/page.tsx:2263
+#: src/app/page.tsx:2270
 #: src/components/ui/EditorContextMenu.tsx:126
 msgid "Editor"
 msgstr "Editor"
@@ -1461,6 +1478,7 @@ msgstr "Se han detectado soportes existentes"
 msgid "Existing Supports Detected"
 msgstr "Se han detectado soportes existentes"
 
+#: src/components/controls/AutoRotationPanel.tsx:123
 #: src/components/controls/AutoSupportPanel.tsx:420
 #: src/components/controls/ModelManagerPanel.tsx:379
 #: src/features/slicing/components/SlicingPanel.tsx:2468
@@ -1897,7 +1915,7 @@ msgstr "Aumentar la altura de capa sin conexión"
 msgid "Individual lowest-vertex triangles on the mesh surface"
 msgstr "Triángulos sueltos con el vértice más bajo en la superficie de la malla"
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:138
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:141
 msgid "Initial Distance"
 msgstr "Distancia inicial"
 
@@ -2060,7 +2078,7 @@ msgid "Last remote backup"
 msgstr "Última copia remota"
 
 #. {timestamp} is a locale-formatted date and time.
-#: src/app/page.tsx:601
+#: src/app/page.tsx:602
 msgid "Last successful autosave: {timestamp}. Save your project manually."
 msgstr "Último guardado automático correcto: {timestamp}. Guarda tu proyecto a mano."
 
@@ -2108,7 +2126,7 @@ msgstr "Izq."
 msgid "Length"
 msgstr "Longitud"
 
-#: src/app/page.tsx:8208
+#: src/app/page.tsx:8215
 msgid "Letting DragonFruit finish its startup animation before loading your scene."
 msgstr "Dejando que DragonFruit termine su animación de arranque antes de cargar la escena."
 
@@ -2146,6 +2164,10 @@ msgstr "Carga un modelo y escanea en busca de islas."
 msgid "Load a model in Prepare to unlock this stage"
 msgstr "Carga un modelo en Preparar para desbloquear esta etapa"
 
+#: src/components/controls/AutoRotationPanel.tsx:19
+msgid "Load a model to get an orientation suggestion."
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:583
 msgid "Load Mesh"
 msgstr "Cargar malla"
@@ -2175,7 +2197,7 @@ msgstr "Cargando el estado de las copias…"
 msgid "Loading Mesh Files…"
 msgstr "Cargando ficheros de malla…"
 
-#: src/app/page.tsx:8158
+#: src/app/page.tsx:8165
 #: src/features/scene/sceneImportMessages.ts:23
 msgid "Loading Mesh…"
 msgstr "Cargando malla…"
@@ -2184,9 +2206,9 @@ msgstr "Cargando malla…"
 msgid "Loading remote material…"
 msgstr "Cargando el material remoto…"
 
-#: src/app/page.tsx:4340
-#: src/app/page.tsx:8158
-#: src/app/page.tsx:8167
+#: src/app/page.tsx:4347
+#: src/app/page.tsx:8165
+#: src/app/page.tsx:8174
 msgid "Loading Scene…"
 msgstr "Cargando escena…"
 
@@ -2341,7 +2363,7 @@ msgstr "Ángulo máximo"
 msgid "Max angle from vertical for fan-out leaves"
 msgstr "Ángulo máximo respecto a la vertical para las hojas en abanico"
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:121
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:124
 msgid "Max Brace Distance"
 msgstr "Distancia máxima del arriostre"
 
@@ -2563,7 +2585,7 @@ msgstr "Sin antialiasing"
 msgid "No active printer"
 msgstr "Sin impresora activa"
 
-#: src/app/page.tsx:998
+#: src/app/page.tsx:1005
 msgid "No autosave has succeeded this session. Save your project manually."
 msgstr "Ningún guardado automático ha funcionado en esta sesión. Guarda tu proyecto a mano."
 
@@ -2871,7 +2893,7 @@ msgstr "Abrir escena…"
 msgid "Opening"
 msgstr "Abriendo"
 
-#: src/app/page.tsx:8205
+#: src/app/page.tsx:8212
 msgid "Opening scene…"
 msgstr "Abriendo escena…"
 
@@ -2982,6 +3004,10 @@ msgstr "Complementos"
 #: src/components/settings/SettingsModal.tsx:1228
 msgid "PNG compression and engine metadata"
 msgstr "Compresión PNG y metadatos del motor"
+
+#: src/components/controls/AutoRotationPanel.tsx:21
+msgid "predicted contact change"
+msgstr ""
 
 #: src/components/layout/TopBar.tsx:616
 msgid "Prepare"
@@ -3162,7 +3188,7 @@ msgstr "Repetir el escaneo por líneas"
 msgid "Re-slice required after profile change"
 msgstr "Es necesario volver a laminar tras cambiar de perfil"
 
-#: src/app/page.tsx:4341
+#: src/app/page.tsx:4348
 msgid "Reading autosaved scene…"
 msgstr "Leyendo la escena guardada automáticamente…"
 
@@ -3301,7 +3327,7 @@ msgstr "Reparar"
 msgid "Repair mesh…"
 msgstr "Reparar la malla…"
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:151
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:154
 msgid "Repeat Interval"
 msgstr "Intervalo de repetición"
 
@@ -3367,8 +3393,8 @@ msgstr "Restaurar los valores de fábrica"
 msgid "Restore Factory Defaults?"
 msgstr "¿Restaurar los valores de fábrica?"
 
-#: src/app/page.tsx:4372
-#: src/app/page.tsx:4383
+#: src/app/page.tsx:4379
+#: src/app/page.tsx:4390
 msgid "Restore Failed"
 msgstr "Error al restaurar"
 
@@ -3426,6 +3452,10 @@ msgstr "Raíces"
 #: src/supports/Settings/SupportSidebar.tsx:1091
 msgid "Roots Diameter"
 msgstr "Diámetro de las raíces"
+
+#: src/components/controls/AutoRotationPanel.tsx:183
+msgid "Rotation applies immediately. Re-run the island scan and auto-supports afterwards — tips placed for the old orientation no longer apply."
+msgstr ""
 
 #: src/components/settings/BackupsSettingsTab.tsx:1131
 msgid "Run a sync, verify repository readiness, or disconnect this GitHub account."
@@ -3987,6 +4017,10 @@ msgstr "Estructura"
 msgid "Suction Scale"
 msgstr "Escala de succión"
 
+#: src/components/controls/AutoRotationPanel.tsx:17
+msgid "Suggest Orientation"
+msgstr ""
+
 #: src/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard.tsx:77
 msgid "Suggested starting values:"
 msgstr "Valores iniciales sugeridos:"
@@ -4031,7 +4065,7 @@ msgstr "El soporte chocaría con la geometría del modelo."
 msgid "Supported: {extensions}"
 msgstr "Compatibles: {extensions}"
 
-#: src/app/page.tsx:2263
+#: src/app/page.tsx:2270
 msgid "Supports"
 msgstr "Soportes"
 
@@ -4073,16 +4107,16 @@ msgstr "Temporal"
 msgid "Tension"
 msgstr "Tensión"
 
-#: src/app/page.tsx:4385
+#: src/app/page.tsx:4392
 msgid "The autosave recovery file could not be found."
 msgstr "No se encuentra el archivo de recuperación."
 
-#: src/app/page.tsx:4373
-#: src/app/page.tsx:4386
+#: src/app/page.tsx:4380
+#: src/app/page.tsx:4393
 msgid "The autosaved recovery file is corrupted or unreadable."
 msgstr "El archivo de recuperación está dañado o no se puede leer."
 
-#: src/app/page.tsx:995
+#: src/app/page.tsx:1002
 msgid "The background recovery save failed repeatedly."
 msgstr "El guardado de recuperación en segundo plano ha fallado varias veces seguidas."
 
@@ -4107,7 +4141,7 @@ msgstr "La impresora ha informado de esta variante."
 msgid "The resin is ready. Are you?"
 msgstr "La resina está lista. ¿Y tú?"
 
-#: src/app/page.tsx:4374
+#: src/app/page.tsx:4381
 msgid "The scene importer rejected or could not parse the autosave data."
 msgstr "El importador de escenas rechazó los datos del guardado automático o no pudo interpretarlos."
 
@@ -4190,7 +4224,7 @@ msgstr "Punta"
 msgid "Tip Ø range"
 msgstr "Rango de Ø de la punta"
 
-#: src/app/page.tsx:2252
+#: src/app/page.tsx:2259
 msgid "Toggle curve"
 msgstr "Alternar curva"
 
@@ -4311,7 +4345,7 @@ msgstr "Puedes perder los cambios sin guardar."
 msgid "Unsaved Scene Found"
 msgstr "Hay una escena sin guardar"
 
-#: src/app/page.tsx:10299
+#: src/app/page.tsx:10329
 msgid "Unsupported file format"
 msgstr "Formato de fichero no compatible"
 
@@ -4630,3 +4664,7 @@ msgstr "Tu impresora está lista. Arrastra un modelo para empezar a preparar tu 
 #: src/components/layout/EmptySceneState.tsx:77
 msgid "Zero polygons. Infinite potential."
 msgstr "Cero polígonos. Potencial infinito."
+
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:155
+msgid "Zigzag chains step by their own rise — interval has no effect"
+msgstr ""

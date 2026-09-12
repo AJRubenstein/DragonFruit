@@ -35,6 +35,7 @@ import { generateRequiredKickstands } from './generativeBracing';
 import { partitionSupportsWithVoronoi } from './voronoiPartitioning';
 import { applyInitialPattern } from './initialPattern';
 import { applyRepeatingPattern } from './repeatingPattern';
+import { runZigZagChain } from './zigzagChain';
 import { buildBraceProfile } from './braceDiameter';
 import { linePassesMeshClearance } from './meshClearance';
 
@@ -314,10 +315,17 @@ function isCardinalDelta(dx: number, dy: number, spacingMm: number): boolean {
     return Math.abs(dx) <= axisToleranceMm || Math.abs(dy) <= axisToleranceMm;
 }
 
+// Supports closer than this are one post: two brace surfaces that overlap
+// cannot be bridged, so the floor follows the brace diameter.
+function autoBracingMinPairSpanMm(settings: AutoBracingSettings): number {
+    return Math.max(AUTO_BRACING_HARD_RULES.minPairSpanMm, settings.braceDiameterMm);
+}
+
 function buildGroupPairs(
     group: SupportSample[],
     maxLen: number,
     gridSettings?: { enabled: boolean; spacingMm: number },
+    minSpanMm = 0,
 ): Edge[] {
     if (group.length < 2) return [];
 
@@ -339,7 +347,9 @@ function buildGroupPairs(
             }
 
             const hDist = Math.sqrt(dx * dx + dy * dy);
-            if (hDist < 0.001 || hDist > maxRun) continue;
+            // below minSpanMm the two supports are one post: bracing between
+            // them is material with no stiffness to show for it
+            if (hDist < Math.max(0.001, minSpanMm) || hDist > maxRun) continue;
             edges.push({ a, b, hDist, angleRad: normalizeAxisAngleRad(Math.atan2(dy, dx)) });
         }
     }
@@ -514,7 +524,12 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         trunksByModel.set(trunk.modelId, list);
     }
     for (const modelTrunks of trunksByModel.values()) {
-        const pairs = buildGroupPairs(modelTrunks, settings.maxBraceLengthMm, activeGridSettings);
+        const pairs = buildGroupPairs(
+            modelTrunks,
+            settings.maxBraceLengthMm,
+            activeGridSettings,
+            autoBracingMinPairSpanMm(settings),
+        );
         for (const pair of pairs) {
             existingTrunkEdges.push({
                 a: pair.a.supportId,
@@ -662,7 +677,12 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         let pairs = modelId ? pairsByModel.get(modelId) : undefined;
         if (!pairs) {
             const modelTrunks = trunkSamples.filter((s) => s.modelId === modelId);
-            pairs = buildGroupPairs(modelTrunks, settings.maxBraceLengthMm, activeGridSettings);
+            pairs = buildGroupPairs(
+                modelTrunks,
+                settings.maxBraceLengthMm,
+                activeGridSettings,
+                autoBracingMinPairSpanMm(settings),
+            );
             if (modelId) pairsByModel.set(modelId, pairs);
         }
         const extra = groupMembers.filter((s) => s.supportKind === 'kickstand');
@@ -876,45 +896,51 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
         let curr = settings.initialDistanceMm + settings.patternIntervalMm;
         while (curr <= maxZ) { ladder.push(curr); curr += settings.patternIntervalMm; }
 
-        ladder.forEach((anchorZ, tierIndex) => {
-            const isInitial = tierIndex === 0;
-            const pattern = isInitial ? settings.initialPattern : settings.repeatingPattern;
-            const place = (lowS: SupportSample, highS: SupportSample, section: 'initial' | 'repeating') => {
+            const place = (
+                lowS: SupportSample,
+                highS: SupportSample,
+                section: 'initial' | 'repeating',
+                atZ: number,
+                minRiseMm = 0,
+            ) => {
                 const distanceOverride = pairDistanceOverrides.get(pairKey(lowS.supportId, highS.supportId));
                 const ignoreMaxDistance = Boolean(distanceOverride?.ignoreMaxDistance);
-                const lowAnchor = resolveAnchorAtZ(lowS, anchorZ);
+                const lowAnchor = resolveAnchorAtZ(lowS, atZ);
                 if (!lowAnchor) return;
 
-                const sameTierAnchor = resolveAnchorAtZ(highS, anchorZ);
+                const sameTierAnchor = resolveAnchorAtZ(highS, atZ);
                 if (!sameTierAnchor) return;
 
-                let dzGuess = Math.sqrt(
+                // Solve for a 45° link (rise == horizontal span), but never
+                // rise less than the caller's floor: a chain passing a floor
+                // makes the link steeper instead of denser.
+                let dzGuess = Math.max(minRiseMm, Math.sqrt(
                     (sameTierAnchor.pos.x - lowAnchor.pos.x) ** 2
                     + (sameTierAnchor.pos.y - lowAnchor.pos.y) ** 2,
-                );
-                if (dzGuess < EPS) return;
+                ));
 
                 let highAnchor: AnchorPoint | null = null;
                 for (let iter = 0; iter < 3; iter++) {
-                    highAnchor = resolveAnchorAtZ(highS, anchorZ + dzGuess);
+                    highAnchor = resolveAnchorAtZ(highS, atZ + dzGuess);
                     if (!highAnchor) return;
                     const hDist = Math.sqrt(
                         (highAnchor.pos.x - lowAnchor.pos.x) ** 2
                         + (highAnchor.pos.y - lowAnchor.pos.y) ** 2,
                     );
-                    if (Math.abs(hDist - dzGuess) < 0.01) {
-                        dzGuess = hDist;
+                    const nextGuess = Math.max(minRiseMm, hDist);
+                    if (Math.abs(nextGuess - dzGuess) < 0.01) {
+                        dzGuess = nextGuess;
                         break;
                     }
-                    dzGuess = hDist;
+                    dzGuess = nextGuess;
                     if (dzGuess < EPS) return;
                 }
 
                 if (!ignoreMaxDistance && dzGuess > maxRun + EPS) return;
 
-                if (anchorZ + dzGuess >= lowS.topReferenceZ - 0.1 || anchorZ + dzGuess >= highS.topReferenceZ - 0.1) return;
+                if (atZ + dzGuess >= lowS.topReferenceZ - 0.1 || atZ + dzGuess >= highS.topReferenceZ - 0.1) return;
 
-                highAnchor = resolveAnchorAtZ(highS, anchorZ + dzGuess);
+                highAnchor = resolveAnchorAtZ(highS, atZ + dzGuess);
                 if (!highAnchor) return;
 
                 const dx = highAnchor.pos.x - lowAnchor.pos.x;
@@ -946,11 +972,36 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
                     }
                 }
             };
-
+        // Zigzag runs as continuous per-edge chains (each link starts where
+        // the previous ended, stepping by its own rise) rather than the
+        // fixed-interval ladder — patternInterval does not apply to it.
+        // The chain still climbs at least this per link; the floor is
+        // independent of initialDistanceMm / patternIntervalMm, which describe
+        // where tiers start, not how tight a single chain may be.
+        const zigZagMinRiseMm = AUTO_BRACING_HARD_RULES.minZigZagRiseMm;
+        if (settings.initialPattern === 'zigZag') {
+            runZigZagChain(pairs, settings.initialDistanceMm, maxZ, 'initial', place, zigZagMinRiseMm);
+        } else if (settings.repeatingPattern === 'zigZag') {
+            runZigZagChain(
+                pairs,
+                settings.initialDistanceMm + settings.patternIntervalMm,
+                maxZ,
+                'repeating',
+                place,
+                zigZagMinRiseMm,
+            );
+        }
+        ladder.forEach((anchorZ, tierIndex) => {
+            const isInitial = tierIndex === 0;
+            const pattern = isInitial ? settings.initialPattern : settings.repeatingPattern;
+            // Zigzag tiers are covered by the chains above.
+            if (pattern === 'zigZag') return;
+            const placeAtTier = (lowS: SupportSample, highS: SupportSample, section: 'initial' | 'repeating') =>
+                place(lowS, highS, section, anchorZ);
             if (isInitial) {
-                applyInitialPattern(pairs, pattern, place);
+                applyInitialPattern(pairs, pattern, placeAtTier);
             } else {
-                applyRepeatingPattern(pairs, pattern, place);
+                applyRepeatingPattern(pairs, pattern, placeAtTier);
             }
         });
     }

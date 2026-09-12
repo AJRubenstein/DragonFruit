@@ -47,6 +47,9 @@ interface AutoSupportPanelProps {
   islands: UseIslandsReturn;
   hasGeometry: boolean;
   activeModelId?: string;
+  /** Resolve unapplied hollowing / hole punches before generating. Resolves
+   *  false when the user went off to apply them first — the run is abandoned. */
+  onBeforeRun?: () => Promise<boolean>;
 }
 
 type KnobDef = {
@@ -126,7 +129,7 @@ function SliderRow({ knob, draft, setDraft }: { knob: KnobDef; draft: AutoSuppor
   );
 }
 
-export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSupportPanelProps) {
+export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBeforeRun }: AutoSupportPanelProps) {
   const { _ } = useLingui();
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [busy, setBusy] = React.useState(false);
@@ -134,6 +137,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
   const [settingsTab, setSettingsTab] = React.useState<'detection' | 'distribution' | 'density'>('detection');
   const [showReplaceDialog, setShowReplaceDialog] = React.useState(false);
   const [showSizingDebug, setShowSizingDebug] = React.useState(false);
+  const [showDebug, setShowDebug] = React.useState(false);
   const [sizingDebug, setSizingDebugState] = React.useState<SizingDebugInfo | null>(null);
   const [showForestReport, setShowForestReport] = React.useState(false);
   const [forestReport, setForestReportState] = React.useState<ForestReport | null>(null);
@@ -386,25 +390,28 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
 
   const handleRun = React.useCallback(() => {
     if (!activeModelId || busy) return;
-    const s = getSettings();
-    const list = islands.filteredIslands;
-    // Check for existing supports.
-    const snap = getSnapshot();
-    let hasSupports = false;
-    for (const t of Object.values(snap.trunks)) {
-      if (t.modelId === activeModelId) { hasSupports = true; break; }
-    }
-    if (!hasSupports) {
-      for (const b of Object.values(snap.branches)) {
-        if (b.modelId === activeModelId) { hasSupports = true; break; }
+    void (async () => {
+      // Unapplied holes / hollowing change the mesh a support run is about to
+      // be placed against — ask before generating, not after.
+      if (onBeforeRun && !(await onBeforeRun())) return;
+      // Check for existing supports.
+      const snap = getSnapshot();
+      let hasSupports = false;
+      for (const t of Object.values(snap.trunks)) {
+        if (t.modelId === activeModelId) { hasSupports = true; break; }
       }
-    }
-    if (hasSupports) {
-      setShowReplaceDialog(true);
-      return;
-    }
-    doRun(false);
-  }, [activeModelId, busy, islands.filteredIslands, islands.voxelIslands.length, islands.minimaIslands.length, doRun]);
+      if (!hasSupports) {
+        for (const b of Object.values(snap.branches)) {
+          if (b.modelId === activeModelId) { hasSupports = true; break; }
+        }
+      }
+      if (hasSupports) {
+        setShowReplaceDialog(true);
+        return;
+      }
+      doRun(false);
+    })();
+  }, [activeModelId, busy, islands.filteredIslands, islands.voxelIslands.length, islands.minimaIslands.length, doRun, onBeforeRun]);
 
   const canRun = hasGeometry && !!activeModelId && !busy && !islands.scanning;
 
@@ -497,7 +504,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
             </div>
 
             {/* Sizing debug */}
-            {sizingDebug && (
+            {showDebug && sizingDebug && (
               <div className="rounded-md border" style={SECTION_CARD}>
                 <button type="button" onClick={() => setShowSizingDebug(!showSizingDebug)}
                   className="w-full flex items-center justify-between px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide"
@@ -530,7 +537,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
             )}
 
             {/* Forest Report */}
-            {forestReport && (
+            {showDebug && forestReport && (
               <button
                 type="button"
                 onClick={() => setShowForestReport(true)}
@@ -633,7 +640,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
         <div className="space-y-3">
           {/* ── Toggles row — full width ────────────────────────── */}
           <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-6 gap-2">
               {([
                 { key: 'enabled' as const, label: _(msg`Enabled`), title: _(msg`Generate supports automatically on scan`) },
                 { key: 'prioritizeIntersection' as const, label: _(msg`Prioritize Dual`), title: _(msg`Islands found by BOTH the slice and mesh scans are placed first (they are the most certain)`) },
@@ -655,6 +662,13 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId }: AutoSu
                   ? { borderColor: 'color-mix(in srgb, var(--accent-secondary), white 10%)', background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 84%)', color: 'color-mix(in srgb, var(--accent-secondary), var(--text-strong) 25%)' }
                   : { borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
               >{_(msg`Simplified`)}</button>
+              <button type="button" title={_(msg`Debug: show sizing and forest diagnostics in the panel`)}
+                onClick={() => setShowDebug(!showDebug)}
+                className="min-h-[36px] w-full rounded-md border px-2 text-[11px] font-semibold uppercase tracking-wide transition-colors flex items-center justify-center"
+                style={showDebug
+                  ? { borderColor: 'color-mix(in srgb, var(--accent-secondary), white 10%)', background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 84%)', color: 'color-mix(in srgb, var(--accent-secondary), var(--text-strong) 25%)' }
+                  : { borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
+              >{_(msg`Debug`)}</button>
             </div>
           </div>
 

@@ -9,6 +9,7 @@ import type { MeshShaderType } from '@/features/shaders/mesh';
 import type { HolePunchPanelState } from '@/features/hole-punching/HolePunchPanel';
 import type { HolePunchPlacementState } from '@/features/hole-punching/holePunchGeometry';
 import { snapshotGeometryPositions, geometryFromSnapshot } from '@/utils/geometrySnapshot';
+import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { bytesToBase64, base64ToBytes } from '@/utils/base64';
 import {
   getUniformScaleFactorForThickness,
@@ -197,7 +198,7 @@ export function useHollowingManager({
         );
         const bboxSize = bbox.getSize(new THREE.Vector3());
         const maxExtent = Math.max(bboxSize.x, bboxSize.y, bboxSize.z);
-        const applyQuat = new THREE.Quaternion().setFromEuler(activeModel.transform.rotation);
+        const applyQuat = quaternionFromGlobalEuler(activeModel.transform.rotation);
         const options: HollowOptions = {
           mode: effectiveHollowMode,
           voxelResolution: computeVoxelResolution(worldMmToLocalMm(hollowingState.voxelSizeMm, shellScaleFactor), maxExtent),
@@ -941,7 +942,7 @@ export function useHollowingManager({
     );
     const bboxSize = bbox.getSize(new THREE.Vector3());
     const maxExtent = Math.max(bboxSize.x, bboxSize.y, bboxSize.z);
-    const previewQuat = new THREE.Quaternion().setFromEuler(activeModel.transform.rotation);
+    const previewQuat = quaternionFromGlobalEuler(activeModel.transform.rotation);
     const options: HollowOptions = {
       ...buildHollowingOptions(activeModel.transform.scale, maxExtent, {
         preview: true,
@@ -1457,7 +1458,7 @@ export function useHollowingManager({
       return inside;
     };
 
-    const modelQuaternion = new THREE.Quaternion().setFromEuler(activeModel.transform.rotation);
+    const modelQuaternion = quaternionFromGlobalEuler(activeModel.transform.rotation);
     const selected: string[] = [];
 
     // Removed/cavity voxels are resolved in Rust against the full grid, so the

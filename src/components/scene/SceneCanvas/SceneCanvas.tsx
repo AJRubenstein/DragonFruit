@@ -19,6 +19,9 @@ import {
 import { IslandOverlay } from '@/components/scene/IslandOverlay';
 import IslandSurfaceDotsOverlay from '@/components/scene/IslandSurfaceDotsOverlay';
 import { IslandOverhangOverlay } from '@/components/scene/IslandOverhangOverlay';
+import { SupportBlockerOverlay } from '@/features/support-blockers/SupportBlockerOverlay';
+import { useSupportBlockerSceneBindings } from '@/features/support-blockers/useSupportBlockerSceneBindings';
+import { subscribeSupportBlockers, isSupportBlockerStrokeActive } from '@/supports/autoSupport/supportBlockers';
 import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
 import { IslandVoxelVisualization } from '@/components/scene/IslandVoxelVisualization';
 import { IslandExpansionVisualization } from '@/components/scene/IslandExpansionVisualization';
@@ -1529,6 +1532,12 @@ export function SceneCanvas({
     transformMode,
     containerRef,
   });
+  useSupportBlockerSceneBindings({ mode, transformMode });
+  const blockerStrokeActive = React.useSyncExternalStore(
+    subscribeSupportBlockers,
+    isSupportBlockerStrokeActive,
+    isSupportBlockerStrokeActive,
+  );
 
   const [isCameraBelowBuildPlate, setIsCameraBelowBuildPlate] = React.useState(false);
   const [buildPlateOpacity, setBuildPlateOpacity] = React.useState(1);
@@ -6277,6 +6286,10 @@ export function SceneCanvas({
                           regions={overhangIslands}
                         />
                       )}
+                      <SupportBlockerOverlay
+                        geometry={model.geometry.geometry}
+                        modelId={model.id}
+                      />
                     </StlMesh>
                   </React.Fragment>
                 );
@@ -7362,7 +7375,7 @@ export function SceneCanvas({
           enablePan
           enabled={
             cameraInteractionCycleEnabled
-            && !(mode === 'prepare' && transformMode === 'smoothing' && smoothingBrushState.isStrokeActive)
+            && !((mode === 'prepare' || mode === 'support') && transformMode === 'supportBlockers' && blockerStrokeActive)
             && !isGizmoDragging
             && !isMarqueeSelecting
             && !isPlacementActive

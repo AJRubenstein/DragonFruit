@@ -1,4 +1,4 @@
-export type AutoBracingPattern = 'singleDiagonal' | 'crossDiagonal';
+export type AutoBracingPattern = 'singleDiagonal' | 'crossDiagonal' | 'zigZag';
 
 export interface AutoBracingSettings {
     braceDiameterMm: number;
@@ -32,6 +32,7 @@ type NumericAutoBracingSettingKey =
 export const AUTO_BRACING_PATTERN_OPTIONS: readonly AutoBracingPattern[] = [
     'singleDiagonal',
     'crossDiagonal',
+    'zigZag',
 ];
 
 export const AUTO_BRACING_CONSTRAINTS = {
@@ -59,6 +60,18 @@ export const AUTO_BRACING_HARD_RULES = {
     minAxisSeparationDeg: 45,
     targetAxisSeparationDeg: 90,
     kickstandMeshClearanceMm: 0.5,
+    // A zig-zag link rises by its own horizontal span, so a pair of nearly
+    // coincident trunks used to stack one 45° stub per fraction of a mm —
+    // hundreds of near-parallel links filling the gap. Two floors keep that
+    // from happening without starving close-but-real pairs of bracing:
+    //  * the chain never climbs less than minZigZagRiseMm per link — a pitch
+    //    below one brace thickness is unprintable mush; the link simply
+    //    steepens and still starts where the previous one ended, and
+    //  * supports closer than minPairSpanMm are one post (raised to the brace
+    //    diameter, since two surfaces that overlap cannot be bridged).
+    // Both are deliberately small: they only reject degenerate pairs.
+    minZigZagRiseMm: 1.0,
+    minPairSpanMm: 0.7,
 };
 
 function precisionFromStep(step: number): number {
@@ -85,9 +98,8 @@ function clampNumeric(value: unknown, constraint: NumericConstraint): number {
 
     return Math.min(constraint.max, Math.max(constraint.min, rounded));
 }
-
 function normalizePattern(value: unknown, fallback: AutoBracingPattern): AutoBracingPattern {
-    if (value === 'singleDiagonal' || value === 'crossDiagonal') {
+    if (value === 'singleDiagonal' || value === 'crossDiagonal' || value === 'zigZag') {
         return value;
     }
     return fallback;

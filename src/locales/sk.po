@@ -79,7 +79,7 @@ msgstr ""
 msgid "{downloaded} / {total} ({pct}%)"
 msgstr ""
 
-#: src/app/page.tsx:466
+#: src/app/page.tsx:467
 #: src/components/controls/ModelStatsCard.tsx:209
 msgid "{hours} h {minutes} min"
 msgstr "{hours} h {minutes} min"
@@ -109,8 +109,8 @@ msgstr ""
 msgid "{minutes} min"
 msgstr "{minutes} min"
 
-#: src/app/page.tsx:458
-#: src/app/page.tsx:467
+#: src/app/page.tsx:459
+#: src/app/page.tsx:468
 #: src/components/controls/ModelStatsCard.tsx:210
 msgid "{minutes} min {seconds} s"
 msgstr ""
@@ -158,12 +158,12 @@ msgid "< 1 min"
 msgstr "< 1 min"
 
 #. Approximate estimated print time (the "~" marks it as a rough estimate). {hours}/{mins} are whole-number quantities.
-#: src/app/page.tsx:450
+#: src/app/page.tsx:451
 msgid "~{hours} h {mins} min"
 msgstr "~{hours} h {mins} min"
 
 #. Approximate estimated print time under an hour (the "~" marks it as a rough estimate).
-#: src/app/page.tsx:451
+#: src/app/page.tsx:452
 msgid "~{mins} min"
 msgstr "~{mins} min"
 
@@ -206,6 +206,10 @@ msgstr "Aktívne"
 msgid "ACTIVE"
 msgstr ""
 
+#: src/components/controls/AutoRotationPanel.tsx:20
+msgid "Active model has no readable geometry."
+msgstr ""
+
 #: src/supports/Settings/components/TipSettingsCard.tsx:62
 #: src/supports/Settings/SupportSidebar.tsx:885
 #: src/supports/Settings/SupportSidebar.tsx:1042
@@ -228,7 +232,7 @@ msgstr ""
 msgid "Adaptive Offset (deg)"
 msgstr ""
 
-#: src/app/page.tsx:2257
+#: src/app/page.tsx:2264
 msgid "Add joint"
 msgstr "Pridať Kĺb"
 
@@ -262,6 +266,10 @@ msgstr ""
 msgid "After updating .env, restart the app, then click “I configured it”."
 msgstr ""
 
+#: src/components/controls/AutoRotationPanel.tsx:154
+msgid "Analyzing…"
+msgstr ""
+
 #: src/supports/Settings/AnatomyPreview/SupportAnatomyPreviewSlot.tsx:49
 msgid "Anatomy preview context menu"
 msgstr ""
@@ -284,12 +292,16 @@ msgstr "Anti-aliasing: nič sa nedá anti-aliasovať."
 msgid "Apply"
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:225
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:229
 msgid "Apply Auto Brace"
 msgstr ""
 
 #: src/features/slicing/components/SlicingPanel.tsx:3894
 msgid "Apply for Session"
+msgstr ""
+
+#: src/components/controls/AutoRotationPanel.tsx:18
+msgid "Apply Rotation"
 msgstr ""
 
 #. Cross-sectional area stats for the current print layer: "Area Σ" = total/summed solid area (Σ is the mathematical summation symbol, usually kept as-is); "Min"/"Max" = smallest/largest single contiguous area, abbreviating "Minimum"/"Maximum".
@@ -328,6 +340,10 @@ msgstr ""
 
 #: src/components/printers/SetupMethodChooser.tsx:61
 msgid "Auto Detect"
+msgstr ""
+
+#: src/components/controls/AutoRotationPanel.tsx:16
+msgid "Auto Rotation (Beta)"
 msgstr ""
 
 #: src/features/experiments/experimentMessages.ts:19
@@ -413,7 +429,7 @@ msgstr ""
 msgid "Autosave idle delay"
 msgstr ""
 
-#: src/app/page.tsx:994
+#: src/app/page.tsx:1001
 msgid "Autosave is not working"
 msgstr ""
 
@@ -558,7 +574,7 @@ msgstr ""
 msgid "Bottom"
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:108
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:111
 msgid "Brace Diameter"
 msgstr ""
 
@@ -833,7 +849,7 @@ msgstr "Zatvoriť varovanie"
 msgid "Close window"
 msgstr "Zatvoriť okno"
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:173
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:177
 msgid "Cluster Spacing"
 msgstr ""
 
@@ -846,6 +862,7 @@ msgstr ""
 msgid "Coincident"
 msgstr ""
 
+#: src/components/controls/AutoRotationPanel.tsx:123
 #: src/components/controls/AutoSupportPanel.tsx:420
 #: src/components/controls/ModelManagerPanel.tsx:379
 #: src/features/slicing/components/SlicingPanel.tsx:2468
@@ -1001,7 +1018,7 @@ msgstr "Pokračovať"
 msgid "Contoured regions"
 msgstr ""
 
-#: src/app/page.tsx:8168
+#: src/app/page.tsx:8175
 msgid "Converting support data and model metadata"
 msgstr ""
 
@@ -1327,7 +1344,7 @@ msgstr ""
 msgid "Drop supported files"
 msgstr "Hoď podporované súbory"
 
-#: src/app/page.tsx:10299
+#: src/app/page.tsx:10329
 msgid "Drop supported files to import"
 msgstr ""
 
@@ -1355,7 +1372,7 @@ msgstr ""
 msgid "Edit printer profile"
 msgstr ""
 
-#: src/app/page.tsx:2263
+#: src/app/page.tsx:2270
 #: src/components/ui/EditorContextMenu.tsx:126
 msgid "Editor"
 msgstr "Editor"
@@ -1466,6 +1483,7 @@ msgstr ""
 msgid "Existing Supports Detected"
 msgstr ""
 
+#: src/components/controls/AutoRotationPanel.tsx:123
 #: src/components/controls/AutoSupportPanel.tsx:420
 #: src/components/controls/ModelManagerPanel.tsx:379
 #: src/features/slicing/components/SlicingPanel.tsx:2468
@@ -1902,7 +1920,7 @@ msgstr ""
 msgid "Individual lowest-vertex triangles on the mesh surface"
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:138
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:141
 msgid "Initial Distance"
 msgstr ""
 
@@ -2065,7 +2083,7 @@ msgid "Last remote backup"
 msgstr ""
 
 #. {timestamp} is a locale-formatted date and time.
-#: src/app/page.tsx:601
+#: src/app/page.tsx:602
 msgid "Last successful autosave: {timestamp}. Save your project manually."
 msgstr ""
 
@@ -2113,7 +2131,7 @@ msgstr ""
 msgid "Length"
 msgstr ""
 
-#: src/app/page.tsx:8208
+#: src/app/page.tsx:8215
 msgid "Letting DragonFruit finish its startup animation before loading your scene."
 msgstr ""
 
@@ -2151,6 +2169,10 @@ msgstr ""
 msgid "Load a model in Prepare to unlock this stage"
 msgstr "Načítajte model v Príprave aby ste odomkli túto časť"
 
+#: src/components/controls/AutoRotationPanel.tsx:19
+msgid "Load a model to get an orientation suggestion."
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:583
 msgid "Load Mesh"
 msgstr ""
@@ -2180,7 +2202,7 @@ msgstr ""
 msgid "Loading Mesh Files…"
 msgstr ""
 
-#: src/app/page.tsx:8158
+#: src/app/page.tsx:8165
 #: src/features/scene/sceneImportMessages.ts:23
 msgid "Loading Mesh…"
 msgstr ""
@@ -2189,9 +2211,9 @@ msgstr ""
 msgid "Loading remote material…"
 msgstr ""
 
-#: src/app/page.tsx:4340
-#: src/app/page.tsx:8158
-#: src/app/page.tsx:8167
+#: src/app/page.tsx:4347
+#: src/app/page.tsx:8165
+#: src/app/page.tsx:8174
 msgid "Loading Scene…"
 msgstr ""
 
@@ -2346,7 +2368,7 @@ msgstr ""
 msgid "Max angle from vertical for fan-out leaves"
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:121
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:124
 msgid "Max Brace Distance"
 msgstr ""
 
@@ -2568,7 +2590,7 @@ msgstr ""
 msgid "No active printer"
 msgstr "Žiadne aktívne tlačiarne"
 
-#: src/app/page.tsx:998
+#: src/app/page.tsx:1005
 msgid "No autosave has succeeded this session. Save your project manually."
 msgstr ""
 
@@ -2876,7 +2898,7 @@ msgstr "Otvoriť scénu…"
 msgid "Opening"
 msgstr ""
 
-#: src/app/page.tsx:8205
+#: src/app/page.tsx:8212
 msgid "Opening scene…"
 msgstr ""
 
@@ -2986,6 +3008,10 @@ msgstr ""
 
 #: src/components/settings/SettingsModal.tsx:1228
 msgid "PNG compression and engine metadata"
+msgstr ""
+
+#: src/components/controls/AutoRotationPanel.tsx:21
+msgid "predicted contact change"
 msgstr ""
 
 #: src/components/layout/TopBar.tsx:616
@@ -3167,7 +3193,7 @@ msgstr ""
 msgid "Re-slice required after profile change"
 msgstr "Znovu nasekanie je potrebné po zmene v profile"
 
-#: src/app/page.tsx:4341
+#: src/app/page.tsx:4348
 msgid "Reading autosaved scene…"
 msgstr ""
 
@@ -3306,7 +3332,7 @@ msgstr "Opraviť"
 msgid "Repair mesh…"
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:151
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:154
 msgid "Repeat Interval"
 msgstr ""
 
@@ -3372,8 +3398,8 @@ msgstr ""
 msgid "Restore Factory Defaults?"
 msgstr ""
 
-#: src/app/page.tsx:4372
-#: src/app/page.tsx:4383
+#: src/app/page.tsx:4379
+#: src/app/page.tsx:4390
 msgid "Restore Failed"
 msgstr ""
 
@@ -3430,6 +3456,10 @@ msgstr ""
 #: src/supports/Settings/SupportSidebar.tsx:1091
 #: src/supports/Settings/SupportSidebar.tsx:1091
 msgid "Roots Diameter"
+msgstr ""
+
+#: src/components/controls/AutoRotationPanel.tsx:183
+msgid "Rotation applies immediately. Re-run the island scan and auto-supports afterwards — tips placed for the old orientation no longer apply."
 msgstr ""
 
 #: src/components/settings/BackupsSettingsTab.tsx:1131
@@ -3992,6 +4022,10 @@ msgstr ""
 msgid "Suction Scale"
 msgstr ""
 
+#: src/components/controls/AutoRotationPanel.tsx:17
+msgid "Suggest Orientation"
+msgstr ""
+
 #: src/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard.tsx:77
 msgid "Suggested starting values:"
 msgstr ""
@@ -4036,7 +4070,7 @@ msgstr ""
 msgid "Supported: {extensions}"
 msgstr ""
 
-#: src/app/page.tsx:2263
+#: src/app/page.tsx:2270
 msgid "Supports"
 msgstr "Podpery"
 
@@ -4078,16 +4112,16 @@ msgstr ""
 msgid "Tension"
 msgstr ""
 
-#: src/app/page.tsx:4385
+#: src/app/page.tsx:4392
 msgid "The autosave recovery file could not be found."
 msgstr ""
 
-#: src/app/page.tsx:4373
-#: src/app/page.tsx:4386
+#: src/app/page.tsx:4380
+#: src/app/page.tsx:4393
 msgid "The autosaved recovery file is corrupted or unreadable."
 msgstr ""
 
-#: src/app/page.tsx:995
+#: src/app/page.tsx:1002
 msgid "The background recovery save failed repeatedly."
 msgstr ""
 
@@ -4112,7 +4146,7 @@ msgstr ""
 msgid "The resin is ready. Are you?"
 msgstr "Živica je pripravená. Si ty?"
 
-#: src/app/page.tsx:4374
+#: src/app/page.tsx:4381
 msgid "The scene importer rejected or could not parse the autosave data."
 msgstr ""
 
@@ -4195,7 +4229,7 @@ msgstr ""
 msgid "Tip Ø range"
 msgstr ""
 
-#: src/app/page.tsx:2252
+#: src/app/page.tsx:2259
 msgid "Toggle curve"
 msgstr "Prepnúť Krivku"
 
@@ -4316,7 +4350,7 @@ msgstr ""
 msgid "Unsaved Scene Found"
 msgstr ""
 
-#: src/app/page.tsx:10299
+#: src/app/page.tsx:10329
 msgid "Unsupported file format"
 msgstr ""
 
@@ -4635,3 +4669,7 @@ msgstr ""
 #: src/components/layout/EmptySceneState.tsx:77
 msgid "Zero polygons. Infinite potential."
 msgstr "Nula polygónov. Nekonečný potenciál."
+
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:155
+msgid "Zigzag chains step by their own rise — interval has no effect"
+msgstr ""

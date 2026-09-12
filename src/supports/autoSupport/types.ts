@@ -12,13 +12,17 @@ export interface CandidatePoint {
     /** The model this candidate belongs to. */
     modelId: string;
     /** Which detector produced this candidate. */
-    source: 'voxel' | 'minima' | 'intersection' | 'overhang';
+    source: 'voxel' | 'minima' | 'intersection' | 'overhang' | 'stabilization';
     /** Contact footprint area of the unsupported region (mm²). 0 for minima-only. */
     islandAreaMm2: number;
     /** Z-height above build plate (mm). */
     zHeight: number;
     /** Computed placement priority. Higher = place first. */
     priority: number;
+    /** Per-point tip contact override (mm). Set for small-island candidates
+     *  so fine detail gets a shrunk tip without dragging the shaft down;
+     *  undefined = active band default (full contact for grid/overhang points). */
+    tipDiameterMm?: number;
     /** Density-grid point: must become its own standalone trunk (never merged
      *  into a nearby host) so flat regions get independent supports. */
     gridPoint?: boolean;
@@ -73,6 +77,14 @@ export interface ForestScanMetrics {
     coveragePercent: number;
     /** Islands still without a nearby support at the end of the run. */
     uncoveredIslands: number;
+    /** Candidates collapsed onto a higher-priority neighbour before placement. */
+    dedupedAway?: number;
+    /** Candidates dropped because a support tip already sits within
+     *  `ALREADY_SUPPORTED_RADIUS_MM` — including one BELOW the contact, which
+     *  does not hold the surface the candidate is on. */
+    alreadySupported?: number;
+    /** Why each rejected candidate was rejected, by reason. */
+    rejectionReasons?: Partial<Record<RejectReason, number>>;
     /** Candidates rejected during placement. */
     rejected: number;
 }
@@ -93,7 +105,7 @@ export interface ForestReport {
     orphans?: OrphanInfo[];
     /** Placement diagnostics: why trunks are where they are, fan/merge refusal counts */
     diagnostics?: {
-        candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number };
+        candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number; stabilization: number };
         trunksByKind: { gridInfill: number; coverageFill: number; standalone: number };
         fanRefusals: Partial<Record<string, number>>;
         mergeRefusals: Partial<Record<string, number>>;
@@ -166,7 +178,7 @@ export type FanLeafRefusal =
 /** Why a trunk was placed standalone instead of fanning/merging. */
 export interface PlacementDiagnostics {
     /** Candidate counts by detector source. */
-    candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number };
+    candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number; stabilization: number };
     /** Placed trunks by origin. */
     trunksByKind: {
         /** Fixed-density grid points (boundary ring + lattice infill). */

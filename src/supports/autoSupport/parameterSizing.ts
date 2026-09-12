@@ -112,6 +112,12 @@ export function activeSizingBand(): SizingBand {
     return SIZING_BANDS[preset];
 }
 
+/** Tip contact for small-island candidates (detail band): fine detail gets a
+ *  shrunk tip without dragging the shaft down to the detail band. */
+export function smallIslandTipDiameterMm(): number {
+    return SIZING_BANDS.detail.tipContactDiameterMm;
+}
+
 /** Area a merged cluster must exceed before the shaft tail engages (mm²).
  *  Grid cells sit FLAT at the profile band — the lattice reads exactly the
  *  profile, whatever its density. */
@@ -192,7 +198,8 @@ export interface ModelSizingContext {
  * - Tip contact: profile band × angle factor — a flat ceiling (normal
  *   straight down, |z| ≈ 1) gets the full preset contact; a steep slope is
  *   closer to self-supporting and gets a smaller one (down to 60%). Floored
- *   at 30% of the shaft.
+ *   at 30% of the shaft — unless the candidate carries a per-point
+ *   tipDiameterMm (small-island shrunk tip), which bypasses band and floor.
  * - Roots / tip length / penetration: profile band, flat.
  *
  * @param candidate - The island to size supports for.
@@ -219,14 +226,15 @@ export function sizeParameters(
         clamp(shaftDiameterForArea(band.shaftDiameterMm, areaInput) * heightFactor, 0.001, MAX_SHAFT_DIAMETER_MM)
         * sizeScale,
     3);
-
     // Underside normal z = cos(angle from straight-down). Flat ceilings
     // (|nz| ≈ 1) peel hardest → full preset contact; steep slopes are closer
     // to self-supporting → smaller contact. Bounded to [0.6, 1.0]× band.
     const nz = Math.abs(candidate.tipNormal?.z ?? -1);
     const angleFactor = clamp(0.6 + 0.4 * nz, 0.6, 1.0);
+    // Per-point override (small-island shrunk tip) bypasses the band and
+    // its 30%-of-shaft floor — explicit means explicit.
     const tipContactDiameterMm = round(
-        Math.max(band.tipContactDiameterMm * angleFactor, shaftDiameterMm * 0.3),
+        candidate.tipDiameterMm ?? Math.max(band.tipContactDiameterMm * angleFactor, shaftDiameterMm * 0.3),
     3);
 
     return {

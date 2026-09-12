@@ -41,6 +41,9 @@ export function AutoBracingSettingsCard({
     status,
 }: AutoBracingSettingsCardProps) {
     const { _ } = useLingui();
+    // Zigzag chains step by their own rise, not the fixed interval — when
+    // both patterns are zigzag the interval does nothing and is disabled.
+    const intervalDisabled = settings.initialPattern === 'zigZag' && settings.repeatingPattern === 'zigZag';
     const ToggleButton = ({
         checked,
         onChange,
@@ -91,7 +94,7 @@ export function AutoBracingSettingsCard({
                     onChange={(nextValue) => onPatternChange(nextValue as AutoBracingPattern)}
                     options={AUTO_BRACING_PATTERN_OPTIONS.map((pattern) => ({
                         value: pattern,
-                        label: pattern === 'singleDiagonal' ? 'Single Diagonal' : 'Cross Diagonal',
+                        label: pattern === 'singleDiagonal' ? 'Single Diagonal' : pattern === 'zigZag' ? 'Zig Zag' : 'Cross Diagonal',
                     }))}
                     className="min-w-0 space-y-0"
                     selectClassName="h-[36px] px-3 py-2 text-base"
@@ -147,14 +150,15 @@ export function AutoBracingSettingsCard({
                         {unitHint('mm')}
                     </div>
                 </label>
-                <label className="space-y-1 min-w-0">
+                <label className="space-y-1 min-w-0" style={intervalDisabled ? { opacity: 0.45 } : undefined}>
                     <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>{_(msg`Repeat Interval`)}</div>
-                    <div className="relative">
+                    <div className="relative" title={intervalDisabled ? _(msg`Zigzag chains step by their own rise — interval has no effect`) : undefined}>
                         <NumberInput
                             value={settings.patternIntervalMm}
                             onChange={(value) => onChange({ patternIntervalMm: value })}
                             step={0.1}
                             showStepper={false}
+                            disabled={intervalDisabled}
                             className={compactInputClass}
                         />
                         {unitHint('mm')}

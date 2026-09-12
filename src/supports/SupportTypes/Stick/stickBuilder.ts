@@ -35,9 +35,15 @@ export function buildStick(input: StickBuildInput): StickBuildResult {
 
     const settings = getSettings();
 
+    // Auto-support tier overrides (absent for manual placement). The tier
+    // band sizes the stick; the active Support Studio preset must not, or an
+    // auto run inherits whatever profile the user last selected by hand.
+    const tipContactDiameterMm = input.tipContactDiameterMm ?? settings.tip.contactDiameterMm;
+    const shaftDiameter = input.shaftDiameterMm ?? settings.shaft.diameterMm;
+
     const tipProfile: SupportTipProfile = {
         type: 'disk',
-        contactDiameterMm: settings.tip.contactDiameterMm,
+        contactDiameterMm: tipContactDiameterMm,
         bodyDiameterMm: settings.tip.bodyDiameterMm,
         lengthMm: settings.tip.lengthMm,
         penetrationMm: settings.tip.penetrationMm,
@@ -46,8 +52,6 @@ export function buildStick(input: StickBuildInput): StickBuildResult {
         standoffAngleThreshold: settings.tip.standoffAngleThreshold ?? Math.PI / 4,
     };
 
-    // Stick rule: use regular support shaft diameter logic
-    const shaftDiameter = settings.shaft.diameterMm;
     const jointDiameter = getJointDiameter(shaftDiameter);
 
     const surfaceNormalA = new THREE.Vector3(aNormal.x, aNormal.y, aNormal.z);

@@ -21,6 +21,7 @@ export {
   generateCandidates,
   deduplicateCandidates,
   candidateFromIsland,
+  candidatesFromIsland,
 } from "./candidateGeneration";
 
 export { sizeParameters } from "./parameterSizing";

@@ -199,7 +199,7 @@ test('runAutoPlace places grid trunks on a rotated mesh via the region normal', 
         contactVoxels: footprintFromPoints(contactVoxels),
     };
 
-    const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true });
+    const result = runAutoPlace([facet], 'model-a', { debugSkipAutoBracing: true, stabilizationEnabled: false });
 
     assert.ok(result.placedTrunks >= 15,
         `placed ${result.placedTrunks} grid trunks on the rotated face`);
@@ -593,16 +593,17 @@ test('runAutoPlace merges with a steep knot, not at the host junction', () => {
     clearHistory();
     const disposeHandlers = registerSupportHistoryHandlers();
 
-    // Island A sits 0.5 mm from trunk B's 40 mm shaft with its tip 1 mm
-    // below B's tip. The old code knotted at B's junction (top joint) — a
-    // shallow branch; the first steep fix snapped to the DEEPEST qualifying
-    // sample (kZ≈28, a near-parallel "floating" leaf); the knot must now be
-    // the HIGHEST sample meeting the 60°-above-horizontal minimum (kZ≈36).
-    // B places first (higher Z → higher priority) and stands alone; A then
-    // merges into B as a steep leaf.
+    // Island A sits 1.5 mm from trunk B's 40 mm shaft with its tip 1 mm
+    // below B's tip. (Kept clear of the dedup influence disc so A survives
+    // as its own candidate.) The old code knotted at B's junction (top
+    // joint) — a shallow branch; the first steep fix snapped to the DEEPEST
+    // qualifying sample (kZ≈28, a near-parallel "floating" leaf); the knot
+    // must now be the HIGHEST sample meeting the 60°-above-horizontal
+    // minimum (kZ≈37). B places first (higher Z → higher priority) and
+    // stands alone; A then merges into B as a steep leaf.
     const result = runAutoPlace(
         [
-            makeIsland('A', 0.5, 0, 40, 60),
+            makeIsland('A', 1.5, 0, 40, 60),
             makeIsland('B', 0, 0, 41, 16),
         ],
         'model-a',
@@ -689,4 +690,133 @@ test('runAutoPlace with no viable candidates returns changed=false and pushes no
     const result = runAutoPlace([], 'model-a');
     assert.equal(result.changed, false);
     assert.equal(Object.keys(getSnapshot().trunks).length, 0);
+});
+
+/**
+ * A punched drain hole above an interior contact used to delete the support:
+ * the upward contact ray escaped through the hole and the downward fallback
+ * landed on the cavity floor with a flipped normal, so the candidate was
+ * rejected and the cavity ceiling ended up unsupported. The resolver now
+ * steps a small disc around the tip before falling back.
+ */
+test('a punched hole above a cavity ceiling does not delete its support', () => {
+    const buildShell = (ceilingHoleMm: number | null): THREE.Mesh => {
+        const box = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+            const g = new THREE.BoxGeometry(w, h, d);
+            g.translate(x, y, z);
+            return g;
+        };
+        // Interior cavity x,y ∈ (-8,8), z ∈ (2,10); ceiling at z ∈ (10,12).
+        const parts: THREE.BufferGeometry[] = [
+            box(2, 20, 12, -9, 0, 6),
+            box(2, 20, 12, 9, 0, 6),
+            box(20, 2, 12, 0, -9, 6),
+            box(20, 2, 12, 0, 9, 6),
+            box(20, 20, 2, 0, 0, 1),
+        ];
+        if (ceilingHoleMm === null) {
+            parts.push(box(20, 20, 2, 0, 0, 11));
+        } else {
+            const piece = (20 - ceilingHoleMm) / 2;
+            parts.push(box(piece, 20, 2, -(ceilingHoleMm + piece) / 2, 0, 11));
+            parts.push(box(piece, 20, 2, (ceilingHoleMm + piece) / 2, 0, 11));
+        }
+        const geometry = mergeGeometries(parts)!;
+        accelerateGeometry(geometry);
+        const mesh = new THREE.Mesh(geometry);
+        mesh.updateMatrixWorld();
+        return mesh;
+    };
+
+    const run = (ceilingHoleMm: number | null) => {
+        resetStore();
+        resetKickstandStore();
+        clearHistory();
+        const disposeHandlers = registerSupportHistoryHandlers();
+        initializeBVH();
+        setModelMesh('model-a', buildShell(ceilingHoleMm));
+
+        const result = runAutoPlace([makeIsland('ceiling', 0, 0, 10, 16)], 'model-a', {
+            debugSkipAutoBracing: true,
+            stabilizationEnabled: false,
+        });
+        const snapshot = getSnapshot();
+        const bridges = [
+            ...Object.values(snapshot.sticks),
+            ...Object.values(snapshot.twigs),
+        ];
+        const contacts = bridges.flatMap((b) => [
+            'contactConeA' in b ? b.contactConeA?.pos : undefined,
+            'contactConeB' in b ? b.contactConeB?.pos : undefined,
+            'contactDiskA' in b ? b.contactDiskA?.pos : undefined,
+            'contactDiskB' in b ? b.contactDiskB?.pos : undefined,
+        ]).filter((p): p is { x: number; y: number; z: number } => Boolean(p));
+
+        setModelMesh('model-a', null);
+        disposeHandlers();
+        return { result, contacts };
+    };
+
+    const sealed = run(null);
+    assert.equal(sealed.contacts.length, 2, 'sealed cavity: one bridge between ceiling and floor');
+
+    const punched = run(4);
+    assert.equal(punched.result.rejectedCandidates, 0,
+        `punched ceiling: the contact is not rejected (${punched.result.rejectedCandidates})`);
+    assert.equal(punched.contacts.length, 2, 'punched ceiling: the bridge is still placed');
+    const roofContact = punched.contacts.reduce((top, p) => (p.z > top.z ? p : top));
+    assert.ok(Math.abs(roofContact.z - 10) < 0.6,
+        `the contact stays on the ceiling, not on the far side (z=${roofContact.z.toFixed(2)})`);
+});
+
+/**
+ * The contact cone is clamped toward the surface normal, so a branch can pass
+ * the knot→tip gate and still run out of its host nearly level, bending into a
+ * steep cone only at the tip — on a speck field every branch chord read 30°
+ * while every shaft left the host at 42°. The gate has to look at the shaft.
+ */
+test('no branch leaves its host shallower than the branch-angle rule', () => {
+    resetStore();
+    resetKickstandStore();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+
+    const islands: DetectedIsland[] = [];
+    for (let i = 0; i < 36; i++) {
+        islands.push(makeIsland(`s${i}`, (i % 6) * 4 - 12, Math.floor(i / 6) * 4 - 12, 20, 1));
+    }
+    runAutoPlace(islands, 'model-a', { debugSkipAutoBracing: true, stabilizationEnabled: false });
+
+    const snapshot = getSnapshot();
+    const minRiseDeg = getSettings().grid.minBranchAngleDeg;
+
+    const tooFlat: string[] = [];
+    for (const [id, branch] of Object.entries(snapshot.branches)) {
+        const knot = snapshot.knots[branch.parentKnotId];
+        const firstJoint = branch.segments[0]?.topJoint?.pos;
+        if (!knot || !firstJoint) continue;
+        const lateral = Math.hypot(firstJoint.x - knot.pos.x, firstJoint.y - knot.pos.y);
+        const riseDeg = (Math.atan2(firstJoint.z - knot.pos.z, lateral) * 180) / Math.PI;
+        if (riseDeg < minRiseDeg) tooFlat.push(`${id.slice(0, 8)} leaves at ${riseDeg.toFixed(0)}°`);
+    }
+    assert.deepEqual(tooFlat, [],
+        `every branch leaves its host at least ${minRiseDeg}° above horizontal`);
+
+    // And the contacts are still supported — refusing a sagging branch must
+    // fall through to a pillar, not drop the island.
+    const tips = [
+        ...Object.values(snapshot.trunks),
+        ...Object.values(snapshot.leaves),
+        ...Object.values(snapshot.branches),
+    ].flatMap((entity) => {
+        const cone = (entity as { contactCone?: { pos?: { x: number; y: number; z: number } } }).contactCone;
+        return cone?.pos ? [cone.pos] : [];
+    });
+    const unsupported = islands.filter((island) => !tips.some((tip) =>
+        Math.hypot(tip.x - island.contact.x, tip.y - island.contact.y, tip.z - island.contact.z) < 3,
+    ));
+    assert.deepEqual(unsupported.map((i) => i.id), [], 'every island keeps a support');
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
 });

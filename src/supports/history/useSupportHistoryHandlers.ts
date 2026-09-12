@@ -22,11 +22,13 @@ import {
   SUPPORT_EDIT_REPLACE,
   SUPPORT_AUTO_BRACE_REPLACE,
   SUPPORT_AUTO_PLACE,
+  SUPPORT_BLOCKER_STROKE,
   SupportReplaceStatePayload,
 } from './actionTypes';
 import { registerSupportHistoryHandler } from './supportHistory';
 import { addAnchor, addKnot, addLeaf, addRoot, addTrunk, addBranch, addTwig, addStick, addBrace, removeAnchor, removeLeaf, removeTrunk, removeBranch, removeTwig, removeStick, removeBrace, removeKickstandCascade, updateTrunk, updateBranch, updateKnot, setSnapshot, getSnapshot } from '../state';
 import { addKickstand, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
+import { setSupportBlockedTriangles } from '../autoSupport/supportBlockers';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
 
 function applySnapshotHistory(payload: SupportReplaceStatePayload, direction: 'undo' | 'redo') {
@@ -357,6 +359,11 @@ export function registerSupportHistoryHandlers(): () => void {
     registerSupportHistoryHandler(SUPPORT_AUTO_PLACE, (payload, direction) => {
       if (!payload?.before || !payload?.after) return false;
       applySnapshotHistory(payload, direction);
+      return true;
+    }),
+    registerSupportHistoryHandler(SUPPORT_BLOCKER_STROKE, (payload, direction) => {
+      if (!payload || !payload.modelId) return false;
+      setSupportBlockedTriangles(payload.modelId, direction === 'undo' ? payload.before : payload.after);
       return true;
     }),
   ];

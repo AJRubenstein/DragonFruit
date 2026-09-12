@@ -141,7 +141,7 @@ test('buildConsolidationBranch attaches a routed branch to a host shaft', () => 
     const draft = trunkWithShaft('host', 0, 0, 0, 19);
     const pool = collectFanShaftPoints(draft);
     const result = buildConsolidationBranch({
-        tip: { x: 3, y: 0, z: 15 },
+        tip: { x: 1, y: 0, z: 15 },
         tipNormal: { x: 0, y: 0, z: -1 },
         modelId: 'm',
         pool,
@@ -158,6 +158,28 @@ test('buildConsolidationBranch attaches a routed branch to a host shaft', () => 
         const branch = Object.values(result.draft.branches)[0];
         assert.equal(branch.origin, 'overhang', 'branch carries the overhang origin');
     }
+});
+
+/**
+ * A tip further off the host axis is refused rather than linked: the contact
+ * cone is clamped to the surface normal, so the shaft loses its last couple of
+ * millimetres of rise to the cone bend and would leave the host too flat. The
+ * pillar stays standalone instead.
+ */
+test('buildConsolidationBranch refuses a link whose shaft would leave too flat', () => {
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const result = buildConsolidationBranch({
+        tip: { x: 3, y: 0, z: 15 },
+        tipNormal: { x: 0, y: 0, z: -1 },
+        modelId: 'm',
+        pool: collectFanShaftPoints(draft),
+        pruned: draft,
+        mesh: undefined,
+        radiusMm: 8,
+        maxAttachments: 12,
+        knotId: 'con-branch-2',
+    });
+    assert.equal(result, null, 'no member — the pillar stays standalone');
 });
 
 test('collectFanShaftPoints excludes anchor-origin trunks', () => {
@@ -265,4 +287,57 @@ test('fanLeafToTrunk prefers the steepest sample over the nearest', () => {
         assert.ok(Math.abs(fan.angleDeg - 26.565) < 0.01,
             `reports the steep angle (${fan.angleDeg.toFixed(2)}°)`);
     }
+});
+
+test('fanLeafToTrunk routes long island spans to branches', () => {
+    // 6.7 mm span at 26°: inside the 8 mm fan radius but past the 6 mm
+    // leaf span — an island target must get a branch with a real shaft,
+    // not a long tapered leaf cone.
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const fan = fanLeafToTrunk(
+        { x: 3, y: 0, z: 18 }, 'm', [sp('host', 0, 0, 12)],
+        new Set(), 'fan-test', 8, 2.5, 60, 12, draft, undefined,
+    );
+
+    assert.equal(fan.ok, true, 'fan succeeds (6.7 mm < 8 mm fan radius)');
+    if (fan.ok) {
+        assert.equal(fan.kind, 'branch', 'long island span becomes a branch');
+        assert.equal(Object.keys(fan.draft.branches).length, 1, 'one branch attached');
+        assert.equal(Object.keys(fan.draft.leaves).length, 0, 'no leaf built');
+    }
+});
+
+test('fanLeafToTrunk keeps long overhang spans as leaves', () => {
+    // Same geometry with overhang origin: overhang fanning stays leaves
+    // by rule, even past the branch threshold.
+    const draft = trunkWithShaft('host', 0, 0, 0, 19);
+    const fan = fanLeafToTrunk(
+        { x: 3, y: 0, z: 18 }, 'm', [sp('host', 0, 0, 12)],
+        new Set(), 'fan-test', 8, 2.5, 60, 12, draft, undefined, 'overhang',
+    );
+
+    assert.equal(fan.ok, true, 'fan succeeds');
+    if (fan.ok) {
+        assert.equal(fan.kind, 'leaf', 'overhang origin stays a leaf');
+        assert.equal(Object.keys(fan.draft.leaves).length, 1, 'one leaf attached');
+    }
+});
+
+test('findMergeHost prefers the less-loaded of equidistant hosts', () => {
+    // Two shafts 2mm either side of the tip: pure distance ties. Trunk A
+    // already carries a 9.5mm leaf (0.5 × 9.5 load penalty); B is clean.
+    const a = trunkWithShaft('A', -2, 0, 0, 19);
+    const b = trunkWithShaft('B', 2, 0, 0, 19);
+    const draft = a;
+    draft.trunks['B'] = b.trunks['B'];
+    draft.knots['k1'] = { id: 'k1', parentShaftId: 'seg-A', pos: { x: -2, y: 0, z: 0.5 }, diameter: 1 };
+    draft.leaves['l1'] = {
+        id: 'l1',
+        modelId: 'm',
+        parentKnotId: 'k1',
+        contactCone: { id: 'c', pos: { x: -2, y: 0, z: 10 }, normal: { x: 0, y: 0, z: 1 } },
+    } as never;
+
+    const host = findMergeHost({ x: 0, y: 0, z: 1 }, 'm', draft);
+    assert.ok(host && host.trunkId === 'B', 'merge avoids the loaded host');
 });

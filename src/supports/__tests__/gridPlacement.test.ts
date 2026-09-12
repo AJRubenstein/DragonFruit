@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
 
-import { generateGridCandidates, computeRegionSpacing, GRID_SPACING_FLOOR_MM, MAX_GRID_CANDIDATES_PER_REGION } from '../autoSupport/gridPlacement';
+import { generateGridCandidates, computeRegionSpacing, GRID_SPACING_FLOOR_MM, MAX_GRID_CANDIDATES_PER_REGION, shouldUseDensityGrid } from '../autoSupport/gridPlacement';
 import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 
@@ -121,7 +121,10 @@ test('angle-aware density: flat anchor surfaces grid denser than slopes', () => 
 
 test('skips regions below the grid area threshold', () => {
     const settings = { ...createDefaultAutoSupportSettings(), gridAreaThresholdMm2: 25 };
-    const candidates = generateGridCandidates([rectRegion('o0', -10, 10, -10, 10, 10)], settings);
+    // A compact patch: 3 × 3 mm, under the gate and shorter than the two-point
+    // band, so it keeps the single-candidate path. (Longer footprints go to
+    // the grid path on shape — see the rib test below.)
+    const candidates = generateGridCandidates([rectRegion('o0', -1.5, 1.5, -1.5, 1.5, 9)], settings);
     assert.equal(candidates.length, 0, 'small region gets a single support, not a grid');
 });
 
@@ -244,4 +247,74 @@ test('per-region candidate count is capped (densification never exceeds the cap)
     assert.ok(candidates.length > 0, 'region still produces candidates');
     assert.ok(candidates.length <= MAX_GRID_CANDIDATES_PER_REGION,
         `capped (${candidates.length} ≤ ${MAX_GRID_CANDIDATES_PER_REGION})`);
+});
+
+/**
+ * A thin rib under the area threshold used to take the single-candidate path:
+ * one pillar at its centre, both ends of the anchoring edge unsupported. Shape
+ * (longer than the two-point band) now decides, not area alone.
+ */
+test('a long thin rib under the area threshold gets its edge supported', () => {
+    const settings = createDefaultAutoSupportSettings();
+    const plank = rectRegion('p0', -7.5, 7.5, -0.65, 0.65, 19.5); // 15 × 1.3 mm
+
+    assert.ok((plank.areaMm2 ?? 0) < settings.gridAreaThresholdMm2, 'fixture sits under the area gate');
+    assert.equal(shouldUseDensityGrid(plank, settings), true, 'shape, not area, decides');
+
+    const candidates = generateGridCandidates([plank], settings);
+    const xs = candidates.map((c) => c.tipPos.x);
+    assert.ok(candidates.length >= 5, `an edge line, not one pillar (${candidates.length})`);
+    assert.ok(Math.max(...xs) - Math.min(...xs) > 10,
+        `supports span the rib (${(Math.max(...xs) - Math.min(...xs)).toFixed(1)}mm)`);
+
+    // ...and a compact patch stays on the single-candidate path.
+    const patch = rectRegion('p1', -2, 2, -2, 2, 16);
+    assert.equal(shouldUseDensityGrid(patch, settings), false, 'small patches keep the pillar path');
+});
+
+/**
+ * A region carries ONE surface normal, but its cells land on a surface that
+ * curves or bends underneath it. Measured on a cylinder underside, every
+ * contact's axis sat a median 26° (worst 41°) from the surface it touched, so
+ * the contact disc dug in on one edge and floated off the other.
+ */
+test('each grid contact takes the normal of the face it lands on', () => {
+    const settings = createDefaultAutoSupportSettings();
+    // Dome-ish underside: a strip of two facets meeting along y = 0, so the
+    // local normal differs cell to cell while the region normal stays -Z.
+    const geometry = new THREE.BufferGeometry();
+    const positions = [
+        // left facet, sloping up towards y = 0
+        -5, -5, 0, 5, -5, 0, 5, 0, 1.5,
+        -5, -5, 0, 5, 0, 1.5, -5, 0, 1.5,
+        // right facet, sloping back down
+        -5, 0, 1.5, 5, 0, 1.5, 5, 5, 0,
+        -5, 0, 1.5, 5, 5, 0, -5, 5, 0,
+    ];
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry);
+    mesh.updateMatrixWorld(true);
+
+    const voxels: { x: number; y: number; z: number }[] = [];
+    for (let x = -4; x <= 4; x += 0.25) {
+        for (let y = -4; y <= 4; y += 0.25) {
+            voxels.push({ x, y, z: (Math.abs(y) > 0 ? 1.5 * (1 - Math.abs(y) / 5) : 1.5) });
+        }
+    }
+    const island: DetectedIsland = {
+        ...rectRegion('o9', -4, 4, -4, 4, 64, 0),
+        baseZ: -2,
+        surfaceNormal: { x: 0, y: 0, z: -1 },
+        triangleIds: [0, 1, 2, 3],
+        contactVoxels: footprintFromPoints(voxels),
+    };
+
+    const candidates = generateGridCandidates([island], settings, mesh, 'm');
+    assert.ok(candidates.length > 5, `region gridded (${candidates.length})`);
+    const tilted = candidates.filter((c) => Math.abs(c.tipNormal.z) < 0.99);
+    assert.ok(tilted.length > 0,
+        'cells on the sloped facets lean with the facet, not with the region');
+    assert.ok(candidates.every((c) => Math.abs(Math.hypot(c.tipNormal.x, c.tipNormal.y, c.tipNormal.z) - 1) < 1e-6),
+        'every emitted normal is a unit vector');
 });
