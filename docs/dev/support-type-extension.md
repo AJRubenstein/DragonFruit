@@ -102,13 +102,14 @@ whether the type is user-placeable.
   value comparisons (`vecEq`, `hostSnapTargetEq`) before you write your own.
 - `index.ts` barrels are **optional** — only Anchor and Kickstand have one.
 
-## 3. Rendering — `src/supports/SupportRenderer.tsx` *(hand-wired)*
+## 3. Rendering — your own folder *(registry-driven)*
 
-1. Import the renderer and add an entry to the `detailRenderers` table:
+1. Call `registerSupportDetailRenderer('gadget', …)` from your renderer module,
+   the way `TrunkRenderer.tsx` and `TwigRenderer.tsx` do. The factory returns
    `component`, `entityProp`, and optionally `hosts` (return null to skip),
    `skip`, `extraProps` and `noClipping`.
-2. Add `{renderDetailFor('gadget')}` to the JSX, in the order your type should
-   draw relative to the batched-shaft passes.
+2. `SupportRenderer.tsx` — **nothing.** It asks `detailRenderersFor(...)` and
+   loops over `SUPPORT_TYPES`; there is no table to edit and no JSX to add.
 3. *Optional*: declare `batchesShaft` so unselected
    straight shafts and joints render via `InstancedShaftGroup`.
 4. *Optional*: add the type to the render-lookup worker for primitive picking.
@@ -268,8 +269,10 @@ wiring is explicit:
 1. `types.ts` — entity interface, one line in `SupportEntityByCollection`, format field
 2. `supportTypeRegistry.ts` — `SupportTypeId` + descriptor with every behaviour flag
 3. `SupportTypes/Gadget/GadgetRenderer.tsx` (+ `gadgetBuilder.ts` if it has geometry)
-4. `SupportRenderer.tsx` — one entry in the `detailRenderers` table; the render
-   loop, selected sets and batching derive from the registry
+4. `SupportTypes/Gadget/GadgetRenderer.tsx` — one
+   `registerSupportDetailRenderer('gadget', …)` call. **Not**
+   `SupportRenderer.tsx`: the render loop, selected sets and batching all derive
+   from the registry
 5. `state.ts` — SelectionCategory, lookup cache, import/merge/isolate. **Not** the
    updater (the registry loop covers it) and **not** `initialState` (derived)
 6. `useSupportHistoryHandlers.ts` — add/remove handlers. **Not** `actionTypes.ts`:

@@ -45,19 +45,47 @@ load-time error.
 
 ### 1.1 Baseline
 
-**Measured at `9cd87c63`.** Excludes `supportTypeRegistry.ts` (the naming
+**Measured at `7012c6a2`.** Excludes `supportTypeRegistry.ts` (the naming
 point) and generated files. Each type's own `SupportTypes/<Type>/` folder is
 counted separately and **conceded** — a type is allowed to name itself.
 
-| shape | outside `SupportTypes/` | inside (conceded) | what it is |
-| ----- | --- | --- | --- |
-| **dispatch** | 50 | 9 | `x === 'trunk'`, `case 'leaf'`, `kind === 'brace'` — a branch on the name |
-| **value** | 190 | 61 | the name passed as data: `getSupportEntity('trunk', id)`, `kind: 'leaf'` |
-| **declaration** | 5 | 0 | a table/set listing types |
-| **total** | **245** | 70 | |
+Three instruments, and none of them alone is the picture:
 
-Progress on the metric that was being tracked: **literal dispatch outside
-`SupportTypes/` is 74 → 50** since the refactor began.
+| instrument | what it answers | now |
+| ---------- | --------------- | --- |
+| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | see below |
+| `inventory.py` + `report.py` | every token containing a type name | **6,955** occurrences, 778 distinct tokens |
+| `npm run scan:support-types` | the headline reference metric | **5,909** across 152 files |
+
+**The rename test is the goal mechanised, but it is not the whole picture.** It
+only sees what the compiler can prove. A literal that survives a rename *without*
+a compile error is invisible to it and is exactly the dangerous case — that is
+what the inventory is for. Report both, always.
+
+#### The rename test, per type
+
+Run for all eight, not just the convenient one:
+
+| type | honest remaining |
+| ---- | ---: |
+| branch | **112** |
+| leaf | 67 |
+| trunk | 55 |
+| brace | 17 |
+| kickstand | 12 |
+| stick | 10 |
+| twig | 5 |
+| anchor | 2 |
+
+**Read this table before quoting a headline.** The refactor has largely been
+measured on `stick`, which is the easiest type and now sits at 10. `branch` is
+over ten times worse. A claim that the work is "nearly done" is true only of
+whichever type was measured; it has never been true of the set.
+
+`branch` is worst because it is both a support type and half the placement
+vocabulary (`branchFamily`, `place_branch`, fan kinds). `trunk` is high because
+it is the default tool. Neither is a surprise — but neither shows up if `stick`
+is the only number reported.
 
 ### 1.2 A measurement failure worth reading first
 
@@ -70,12 +98,19 @@ type-name literals spelled at five sites — `placementOf('branch', …)`,
 move: still exactly 50. Five literals were added, then removed in `9cd87c63`, and
 the number never changed.
 
-**Consequence:** the headline number this project has been tracking cannot see
-the most likely regression. It reads as coverage while measuring one narrow
-syntax form.
+**Consequence:** a dispatch-only count cannot see the most likely regression. It
+reads as coverage while measuring one narrow syntax form.
 
-`lysdiag/tools/type-literal-metric.py` (new) counts and classifies **every**
-string literal equal to a type id. Use it from here. Both are described in §7.
+`lysdiag/tools/type-literal-metric.py` counts and classifies **every** string
+literal equal to a type id. Both tools are described in §7.
+
+**The same failure has a second form, and it is the one that bit this plan.** A
+count can be correct and still be reasoned away afterwards. The inventory *did*
+itemise `supportPlacementRouting.ts`; the error was a classification call that
+labelled it "placement family vocabulary — not dispatch", which then hardened
+into a formal concession in §2. A wrong concession is worse than a missed count:
+every later pass skips the site *on purpose*. When classifying a literal as
+out-of-scope, apply the rename question in §2 and record the answer.
 
 ---
 
@@ -99,16 +134,35 @@ wrong or failing to compile.
 - A literal in the registry itself. It *is* the naming point.
 - A literal inside that type's own folder. The type is allowed to know its name —
   `trunkRegistration.ts` registering `'trunk'` is correct.
-- A **different vocabulary** that reuses the word. Verified individually:
-  `origin === 'anchor'` (`SUPPORT_ORIGINS`), `sizingPreset === 'anchor'` (a sizing
-  tier, not a support type), `intent.family === 'leaf'` (a placement family).
-  These must not be "fixed" — they are four values that happen to share a
-  spelling, and conflating them is its own bug.
+- A **different vocabulary** that reuses the word — but only where the value is
+  genuinely not a type id. Two qualify: `origin === 'anchor'`
+  (`SUPPORT_ORIGINS`, a placement provenance) and `sizingPreset === 'anchor'`
+  (a sizing tier). Renaming the anchor type must leave both alone.
 - A literal in a **comment**.
+
+**How to tell a real separate vocabulary from a disguised type id:** ask whether
+renaming the type *should* change this value. An origin stays `'anchor'` when
+the anchor type becomes `anchory`; a placement family named after the leaf type
+does not. When the answer is "it should change", the union is a type-id subset
+and must be derived — not conceded.
+
+> **Correction (a previous revision of this section got one wrong).**
+> `intent.family === 'leaf'` was listed here as a separate vocabulary. It is not.
+> `SupportPlacementFamily` in `supportPlacementHotkeyTypes.ts` is a
+> hand-written union — `'none' | 'branchFamily' | 'leaf' | 'kickstand'` — whose
+> `'leaf'` and `'kickstand'` members *are* support type ids. Rename `leaf` and
+> the `intent.family` comparison in `resolveSupportPlacementRouting` silently
+> stops matching, with no compile error.
+>
+> Four lines above it, `SupportPlacementOwner` gets this right via
+> `Extract<SupportTypeId, …>`, so a rename produces 4 errors there and 0 on the
+> family. Same file, same concept, opposite safety. The derivation template is
+> already in the registry: `ModelSurfaceGestureTypeId` is a mapped type filtered
+> by a descriptor flag. See §3.F.
 
 ---
 
-## 3. The five root causes
+## 3. The root causes
 
 The literals are symptoms. Each has an API or a structure underneath it, and
 fixing that structure removes a whole class at once. Ordered by volume.
@@ -290,6 +344,47 @@ construct.
 >
 > Left as is, with the reasoning recorded so it is not "fixed" later.
 
+### F. Hand-written unions whose members are type ids — **~7 sites**
+
+The opposite of E: a union that *looks* like its own vocabulary, but whose
+members are type ids spelled by hand. No compile error on rename, so this is the
+silent case.
+
+The instance that motivated this section:
+
+```ts
+// supportPlacementHotkeyTypes.ts — hazard, no compile error on rename
+export type SupportPlacementFamily = 'none' | 'branchFamily' | 'leaf' | 'kickstand';
+
+// a few lines below, the same concept done correctly
+export type SupportPlacementOwner = 'none' | Extract<SupportTypeId, 'branch' | 'brace' | 'leaf' | 'kickstand'>;
+```
+
+Renaming `leaf` produces 4 errors on `SupportPlacementOwner` and **0** on
+`SupportPlacementFamily`, so the `intent.family === 'leaf'` comparison in
+`resolveSupportPlacementRouting` silently stops matching. A docstring above
+both claims they are derived; only one is.
+
+**The fix, and the template already exists.** `ModelSurfaceGestureTypeId` in the
+registry is a mapped type filtered by a descriptor flag:
+
+```ts
+export type ModelSurfaceGestureTypeId = {
+    [K in SupportTypeId]: (typeof MODEL_SURFACE_GESTURE_BY_TYPE)[K] extends true ? K : never;
+}[SupportTypeId];
+```
+
+Same subsystem, same file imports it already. Declare a placement-family flag
+per descriptor (the name is the implementer's call), derive the union, then the
+bindings interface and the routing table follow from it.
+
+`'branchFamily'` is a genuine family name (branch + brace share a mode) and stays
+— but it should read from the registry too, as the set of types in that family,
+rather than as a magic string.
+
+**How to find the rest:** any `export type X = 'a' | 'b'` where a member equals a
+type id. Grep the unions, then apply the §2 rename question to each member.
+
 ---
 
 ## 4. Staging
@@ -298,6 +393,10 @@ Each stage is independently shippable and independently verifiable. Order is by
 ratio of volume removed to risk taken.
 
 **Progress: stages 0, 1 (first half), 3 (renderer), 4 (host resolution) and 5 done. Literal dispatch 50 → 39.**
+
+Dispatch count is one instrument. Against the rename test the set still reads
+`branch` 112 / `leaf` 67 / `trunk` 55 / `anchor` 2 — see §1.1 before treating
+a falling dispatch number as the work being nearly finished.
 
 | stage | work | sites | risk | status |
 | --- | --- | --- | --- | --- |
@@ -310,6 +409,7 @@ ratio of volume removed to risk taken.
 | **5** | `autoBrace` uses its flag; `branch` made reachable | 6 | medium | **done** — dispatch 44 → 39 |
 | **6** | Remaining concepts, one at a time | ~30 | high each | pending |
 | **7** | Payload fields | ~32 | low–medium | pending |
+| **8** | Placement-family union derived from the registry (§3F) | ~7 | low | pending — **do this early**; it was wrongly conceded in §2, so it is real work every previous pass skipped on purpose |
 
 **Stage 3 outcome.** The renderer's per-type table and hand-written JSX are now
 derived: each type registers its detail renderer from its own folder
@@ -454,9 +554,9 @@ Therefore, for every stage:
 ### Required gates per stage
 
 - `npx tsc --noEmit -p tsconfig.json` clean.
-- Full suite (903 tests) + goldens (50), **including untracked test files** —
+- Full suite (990 tests) + goldens, **including untracked test files** —
   `git ls-files` silently skips them.
-- `npm run check:docs` (103 documents).
+- `npm run check:docs` clean.
 - Gated lint, `--max-warnings 0`.
 - The whole-run signature (`__tests__/autoPlaceSignature.test.ts`) unchanged for
   any stage that touches placement.
@@ -464,14 +564,19 @@ Therefore, for every stage:
 
 ---
 
-## 8. Decisions (answered)
+## 8. Decisions
 
-1. **`branch.isAutoBraceable`** — **make it reachable.** The flag is right and the
-   passes are wrong. Stage 5.
-2. **The kickstand-on-branch behaviour** — **not a bug, leave it.** A
-   branch-hosted kickstand legitimately does not stabilise that column, so the
-   extra placement is the desired conservative direction (over-supported, never
-   under-supported). Closed in the findings doc so nobody "fixes" it later.
+Each entry records who decided and on what evidence. An entry with neither is not
+a decision — mark it open rather than closing it on inference.
+
+1. **`branch.isAutoBraceable`** — **done.** The flag was right and the passes were
+   wrong; both now call `isAutoBraceableShaftType(...)` instead of filtering on
+   `supportKind === 'trunk'`, and `branch` reaches auto-bracing.
+2. **The kickstand-on-branch behaviour** — **reopened; this was not a decision.**
+   Recorded here as closed "confirmed by the owner", but no such confirmation is
+   on record. The argument given — a branch-hosted kickstand does not stabilise
+   that column, so the extra placement errs toward over-support — is plausible
+   and may be right. It is a print-quality product call, and it is still open.
 3. **The `activePanel === 'trunk'` checks, and the word `trunk` for the menu.**
    **The menu label was a mistake — relabelled to "Support Info".** Done: the tab
    carries the contact cone, cone angle and root settings that apply to supports
@@ -514,18 +619,22 @@ touches every descriptor plus `sidebarPanels.ts`.
   folder, (b) a documented different vocabulary, or (c) an `addSupportEntity` call
   where the type genuinely does not exist yet.
 - `rename-test.py` reports **0 "real work"** errors for every one of the eight
-  types. Current standing, measured at `9cd87c63`:
+  types. Current standing, measured at `7012c6a2`:
 
   | type | honest remaining | | type | honest remaining |
   | --- | --- | --- | --- | --- |
-  | trunk | 76 | | stick | 19 |
-  | branch | 99 | | twig | 13 |
-  | leaf | 71 | | anchor | **4** |
-  | brace | 38 | | kickstand | 28 |
+  | branch | **112** | | brace | 17 |
+  | leaf | 67 | | kickstand | 12 |
+  | trunk | 55 | | stick | 10 |
+  | | | | twig | 5 |
+  | | | | anchor | **2** |
 
-  **348 total**, against a registry that accounts for ~26 of each type's errors
-  legitimately. The `anchor` figure of 4 is the signal that its conversion
-  (stage 4 of the completed work) actually landed — it was comparable to the
-  others beforehand.
+  **280 total**, down from 348. `anchor` at 2 is the proof the pattern works —
+  its conversion landed and it was comparable to the others beforehand. `stick`
+  at 10 is the number most often quoted; `branch` at 112 is the number that
+  describes the remaining work.
+- The inventory (`inventory.py`) shows no token that would survive a rename
+  *without* a compile error. The rename test cannot see those; the two
+  instruments are not interchangeable.
 - The ratchet in CI holds the numbers, so the next instance of §1.1 is caught by
   a gate rather than by a person noticing.

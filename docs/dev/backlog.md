@@ -34,13 +34,25 @@ from it. `SupportState`'s collections, the modelId and shafted walks, root
 ownership, the updater and knot-diameter slots, and several behaviour decisions
 that used to be hardcoded type names now come from there.
 
-**Adoption is partway.** Measured by `npm run scan:support-types`: **7,052
-hand-written type references across 147 files**, down from 12,164. History
+**Adoption is partway.** Measured by `npm run scan:support-types`: **5,909
+hand-written type references across 152 files**, down from 12,164. History
 handlers, registration slots, the support primitives, the clipboard, geometry
-export and most of `state.ts` are converted; auto-placement (769) and
-`SupportRenderer.tsx` (663) remain the two largest holdouts. Adding a type is
-therefore still partly manual — see `dev/support-type-extension.md`, which marks
-each step.
+export and most of `state.ts` are converted; `state.ts` (912),
+`SupportRenderer.tsx` (494) and auto-placement (425) remain the largest
+holdouts. Adding a type is therefore still partly manual — see
+`dev/support-type-extension.md`, which marks each step.
+
+**Quote the per-type rename test, not one headline.** `rename-test.py <type>`
+is the goal mechanised, and the eight types are nowhere near each other:
+`branch` 112, `leaf` 67, `trunk` 55, down to `anchor` 2. Progress has mostly
+been measured on `stick` (10), the easiest one, which makes the work read as
+nearly finished when `branch` is ten times worse. The detail lives in
+`dev/support-type-literal-plan.md` §1.1.
+
+Neither instrument alone is the picture: the rename test sees only what `tsc`
+can prove, so a literal that survives a rename *without* a compile error is
+invisible to it. That is what the token inventory (`lysdiag/tools/inventory.py`,
+6,955 occurrences) catches. Report both.
 
 **Remaining goal:** move the rest of the per-type threading behind the registry,
 so the renderer, interaction manager and export derive their behaviour rather
@@ -70,19 +82,19 @@ Known remaining hand-written lists worth converting:
   placement" is not a rename: the loop would run further and place more
   supports. Needs a decision on what the counter is meant to measure — supports
   placed, or plate-reaching supports (trunk/anchor are exactly the two kinds
-  that reach the plate) — before it changes. Flagged by the user for review;
-  see `support-registry-findings.md`.
+  that reach the plate) — before it changes. Raised but not settled; see
+  `support-registry-findings.md`.
 
 ### Bugs found while converting
 
 Converting each hand-written type list turned up defects where the list
 disagreed with the registry. They are recorded in
-[`support-registry-findings.md`](support-registry-findings.md) -- 89 findings,
-27 still open -- rather than here, because they are per-site detail rather than
+[`support-registry-findings.md`](support-registry-findings.md) -- 101 findings,
+29 still open -- rather than here, because they are per-site detail rather than
 rules to follow.
 
 The rule they add up to is the one above: derive, never subtract. Two were
-invisible to the whole suite AND all 22 goldens, so passing tests are not
+invisible to the whole suite AND every golden, so passing tests are not
 evidence a flag is covered -- see AGENTS.md trap 4.
 
 ## Desired: route every native call through the IPC bridge
