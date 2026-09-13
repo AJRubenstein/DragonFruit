@@ -58,7 +58,7 @@ import {
 } from '@/components/controls/ArrangePanel';
 import { DuplicatePanel, type DuplicateLayoutMode } from '../components/controls/DuplicatePanel';
 import { VisualSettingsPanel } from '@/components/controls/VisualSettingsPanel';
-import { contactEndpointsFor, countSupportCollections, getSupportTypeDescriptor, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, updateSupportEntity, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
+import { contactEndpointsFor, countSupportCollections, getSupportTypeDescriptor, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, updateSupportEntity, type SupportCollectionKey, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { LayerSlider } from '@/components/controls/LayerSlider';
 import { PrintingLayerGpuPreview } from '@/components/controls/PrintingLayerGpuPreview';
 import { SupportSidebar } from '@/supports/Settings/SupportSidebar';
@@ -327,7 +327,7 @@ import {
 import { subscribe as subscribeSupportState, findShaftOwnerOfSegment, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, getSupportEntity, toggleSegmentCurve, transformSupportsForModel, updateKnot } from '@/supports/state';
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
 import { splitSupportShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
-import { resolveSegmentEndpoints } from '@/supports/SupportPrimitives/Knot/segmentEndpoints';
+import { resolveSegmentEndpoints, type ShaftEntity } from '@/supports/SupportPrimitives/Knot/segmentEndpoints';
 import { knotFields } from '@/supports/interaction/shared/selection/selectedIdsByType';
 import type { KnotSplitRemap } from '@/supports/SupportPrimitives/Knot/knotUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '@/supports/history/supportEditHistory';
@@ -2984,7 +2984,7 @@ export default function Home() {
       if (!descriptor.hasSegments && descriptor.contactFields.length === 0) continue;
 
       const collection = supportStateSnapshot[descriptor.location.key as SupportCollectionKey] as unknown as Record<string, {
-        id: string; modelId: string; segments?: Segment[]; rootId?: string; parentKnotId?: string; hostKnotId?: string;
+        id: string; typeId?: SupportTypeId; modelId: string; segments?: Segment[]; rootId?: string; parentKnotId?: string; hostKnotId?: string;
       }>;
 
       for (const entity of Object.values(collection ?? {})) {
@@ -2997,7 +2997,7 @@ export default function Home() {
 
         const segments = entity.segments ?? [];
         for (let i = 0; i < segments.length; i += 1) {
-          const endpoints = resolveSegmentEndpoints(descriptor.id, entity as never, segments[i], i, hosts);
+          const endpoints = resolveSegmentEndpoints(entity as ShaftEntity, segments[i], i, hosts);
           if (!endpoints) continue;
           supportMl += segmentVolumeMl(segments[i], endpoints.start, endpoints.end);
         }
@@ -5757,7 +5757,7 @@ export default function Home() {
         const beforeSnapshot = captureSupportEditSnapshot();
 
         const owner = findShaftOwnerOfSegment(segmentId);
-        const entity = owner ? getSupportEntity(owner.typeId, owner.id) as { segments: Segment[] } | null : null;
+        const entity = owner ? getSupportEntity(owner.typeId, owner.id) as ShaftEntity | null : null;
         if (owner && entity) {
           const segmentIndex = entity.segments.findIndex((segment) => segment.id === segmentId);
           const segment = entity.segments[segmentIndex];
@@ -5769,7 +5769,7 @@ export default function Home() {
                 ? state.knots[(entity as { parentKnotId?: string }).parentKnotId ?? '']
                 : undefined,
             };
-            const endpoints = resolveSegmentEndpoints(owner.typeId, entity, segment, segmentIndex, hosts);
+            const endpoints = resolveSegmentEndpoints(entity, segment, segmentIndex, hosts);
 
             if (endpoints) {
               const { start, end } = endpoints;
@@ -5777,7 +5777,7 @@ export default function Home() {
                 ? projectBezierSplitPoint(start, segment.controlPoint1, segment.controlPoint2, end, splitTargetPoint)
                 : projectSplitPoint(start, end, splitTargetPoint);
               const { entity: updated, knotRemaps } = splitSupportShaft(
-                owner.typeId, entity, segmentId, projected.point, projected.t, hosts, state.knots,
+                entity, segmentId, projected.point, projected.t, hosts, state.knots,
               );
               applyJointSplitKnotRemaps(knotRemaps);
               updateSupportEntity(owner.typeId, updated);

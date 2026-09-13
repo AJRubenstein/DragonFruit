@@ -23,6 +23,7 @@ function createRoot(id: string, modelId: string, x: number, y = 0): Roots {
 function createTrunk(id: string, modelId: string, rootId: string, segmentId: string, x: number, y = 0, topZ = 4): Trunk {
     return {
         id,
+        typeId: 'trunk',
         modelId,
         rootId,
         segments: [

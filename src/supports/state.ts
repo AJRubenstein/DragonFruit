@@ -1,7 +1,7 @@
 import { SupportState, SupportEntityAny, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace, Twig, Stick, Anchor } from './types';
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
-import { resolveSegmentEndpoints } from './SupportPrimitives/Knot/segmentEndpoints';
+import { resolveSegmentEndpoints, type ShaftEntity } from './SupportPrimitives/Knot/segmentEndpoints';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import {
     typesMissingContactOverride,
@@ -556,7 +556,7 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
             // declared endpoints rather than a per-type fallback chain.
             const host = shaftHostBySegmentId.get(knot.parentShaftId);
             if (host) {
-                const owner = host.entity as { segments: Segment[]; rootId?: string; parentKnotId?: string; hostKnotId?: string };
+                const owner = host.entity as ShaftEntity & { rootId?: string; parentKnotId?: string; hostKnotId?: string };
                 const index = owner.segments.findIndex((seg) => seg.id === knot.parentShaftId);
                 if (index !== -1) {
                     const descriptor = getSupportTypeDescriptor(host.typeId);
@@ -565,7 +565,7 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
                     )?.field as keyof typeof owner | undefined;
                     const hostKnotId = knotField ? owner[knotField] : undefined;
 
-                    const resolved = resolveSegmentEndpoints(host.typeId, owner, owner.segments[index], index, {
+                    const resolved = resolveSegmentEndpoints(owner, owner.segments[index], index, {
                         root: owner.rootId ? snapshot.roots[owner.rootId] : undefined,
                         hostKnot: typeof hostKnotId === 'string'
                             ? nextKnots[hostKnotId] ?? snapshot.knots[hostKnotId]
@@ -644,10 +644,10 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
                     const firstSeg = segments[0];
                     const lastSeg = segments[segments.length - 1];
                     const firstEndpoints = firstSeg
-                        ? resolveSegmentEndpoints('trunk', trunkRef.trunk, firstSeg, 0, { root: trunkRef.root })
+                        ? resolveSegmentEndpoints(trunkRef.trunk, firstSeg, 0, { root: trunkRef.root })
                         : null;
                     const lastEndpoints = lastSeg
-                        ? resolveSegmentEndpoints('trunk', trunkRef.trunk, lastSeg, segments.length - 1, { root: trunkRef.root })
+                        ? resolveSegmentEndpoints(trunkRef.trunk, lastSeg, segments.length - 1, { root: trunkRef.root })
                         : null;
 
                     if (segments.length > 0 && firstEndpoints && lastEndpoints) {
@@ -658,7 +658,7 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
 
                         for (let idx = 0; idx < segments.length; idx++) {
                             const candidateSeg = segments[idx];
-                            const candidateEndpoints = resolveSegmentEndpoints('trunk', trunkRef.trunk, candidateSeg, idx, { root: trunkRef.root });
+                            const candidateEndpoints = resolveSegmentEndpoints(trunkRef.trunk, candidateSeg, idx, { root: trunkRef.root });
                             if (!candidateEndpoints) continue;
 
                             const candidate = scoreBinding(candidateSeg, candidateEndpoints, idx, segments.length, firstEndpoints.start, lastEndpoints.end);
@@ -684,10 +684,10 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
                             const firstSeg = segments[0];
                             const lastSeg = segments[segments.length - 1];
                             const firstEndpoints = firstSeg
-                                ? resolveSegmentEndpoints('branch', branchRef.branch, firstSeg, 0, { hostKnot: parentKnot })
+                                ? resolveSegmentEndpoints(branchRef.branch, firstSeg, 0, { hostKnot: parentKnot })
                                 : null;
                             const lastEndpoints = lastSeg
-                                ? resolveSegmentEndpoints('branch', branchRef.branch, lastSeg, segments.length - 1, { hostKnot: parentKnot })
+                                ? resolveSegmentEndpoints(branchRef.branch, lastSeg, segments.length - 1, { hostKnot: parentKnot })
                                 : null;
 
                             if (segments.length > 0 && firstEndpoints && lastEndpoints) {
@@ -698,7 +698,7 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
 
                                 for (let idx = 0; idx < segments.length; idx++) {
                                     const candidateSeg = segments[idx];
-                                    const candidateEndpoints = resolveSegmentEndpoints('branch', branchRef.branch, candidateSeg, idx, { hostKnot: parentKnot });
+                                    const candidateEndpoints = resolveSegmentEndpoints(branchRef.branch, candidateSeg, idx, { hostKnot: parentKnot });
                                     if (!candidateEndpoints) continue;
 
                                     const candidate = scoreBinding(candidateSeg, candidateEndpoints, idx, segments.length, firstEndpoints.start, lastEndpoints.end);
@@ -1048,7 +1048,7 @@ function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: 
         const mergedSegment = after.segments[lowerIndex];
 
         if (root && mergedSegmentId && mergedSegment) {
-            const endpoints = resolveSegmentEndpoints('trunk', after, mergedSegment, lowerIndex, { root });
+            const endpoints = resolveSegmentEndpoints(after, mergedSegment, lowerIndex, { root });
             if (endpoints) {
                 const startVec = new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z);
                 const endVec = new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z);
@@ -1136,7 +1136,7 @@ function removeBranchJoint(branchId: string, jointId: string): { before: Branch;
         const mergedSegment = after.segments[lowerIndex];
 
         if (parentKnot && mergedSegmentId && mergedSegment) {
-            const endpoints = resolveSegmentEndpoints('branch', after, mergedSegment, lowerIndex, { hostKnot: parentKnot });
+            const endpoints = resolveSegmentEndpoints(after, mergedSegment, lowerIndex, { hostKnot: parentKnot });
             if (endpoints) {
                 const startVec = new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z);
                 const endVec = new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z);
@@ -2850,21 +2850,32 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
     };
 
     isolated.roots.forEach(r => { merged.roots[r.id] = r; });
-    isolated.trunks.forEach(t => { merged.trunks[t.id] = t; });
-    isolated.branches.forEach(b => { merged.branches[b.id] = b; });
-    isolated.leaves.forEach(l => { merged.leaves[l.id] = l; });
-    if (isolated.twigs) { isolated.twigs.forEach(t => { merged.twigs[t.id] = t; }); }
-    if (isolated.sticks) { isolated.sticks.forEach(s => { merged.sticks[s.id] = s; }); }
-    isolated.braces.forEach(br => { merged.braces[br.id] = br; });
-    if (isolated.anchors) { isolated.anchors.forEach(a => { merged.anchors[a.id] = a; }); }
     if (isolated.knots) { isolated.knots.forEach(k => { merged.knots[k.id] = k; }); }
 
-    // Into `merged` directly, for the same reason loadFromImportFormat does:
-    // `state = merged` below would discard anything addKickstand wrote.
-    for (const build of isolated.kickstands ?? []) {
-        merged.kickstands[build.kickstand.id] = migrateLegacyGeneratedBy(build.kickstand);
-        merged.roots[build.root.id] = build.root;
-        merged.knots[build.hostKnot.id] = build.hostKnot;
+    // Every declared type, from the array its collection is named after, stamped
+    // with `typeId` exactly as loadFromImportFormat does: a bundled type is
+    // unwrapped here too. The geometry pass below reads these arrays directly,
+    // before the derived views would stamp them on read.
+    for (const descriptor of SUPPORT_TYPES) {
+        const key = descriptor.location.key;
+        const collection = merged[key] as unknown as Record<string, unknown>;
+
+        if (descriptor.serialisedAsBundle) {
+            // Into `merged` directly, for the same reason loadFromImportFormat
+            // does: `state = merged` below would discard anything addKickstand wrote.
+            const bundles = (isolated[key] ?? []) as unknown as KickstandBuildResult[];
+            for (const build of bundles) {
+                collection[build.kickstand.id] = { ...migrateLegacyGeneratedBy(build.kickstand), typeId: descriptor.id };
+                merged.roots[build.root.id] = build.root;
+                merged.knots[build.hostKnot.id] = build.hostKnot;
+            }
+            continue;
+        }
+
+        const incoming = (isolated as unknown as Record<string, { id: string }[] | undefined>)[key];
+        for (const entity of incoming ?? []) {
+            collection[entity.id] = { ...entity, typeId: descriptor.id };
+        }
     }
 
     const normalized = normalizeLoadedKnotAndLeafGeometry(merged);
@@ -3181,7 +3192,7 @@ for (const descriptor of SUPPORT_TYPES) {
             ? segment.diameter + KNOT_JOINT_DIAMETER_BUMP_MM
             : undefined;
 
-        const endpoints = resolveSegmentEndpoints(descriptor.id, entity as never, segment, segmentIndex, hosts);
+        const endpoints = resolveSegmentEndpoints(entity as ShaftEntity, segment, segmentIndex, hosts);
         if (!endpoints) return diameter === undefined ? null : { pos: knot.pos, diameter };
 
         const t = knot.t !== undefined

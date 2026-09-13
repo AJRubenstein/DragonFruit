@@ -90,7 +90,7 @@ export function computeJointDragPreviewKnots(
     const segmentKnotIds = candidateKnotIdsByParentShaftId.get(segment.id);
     if (!segmentKnotIds || segmentKnotIds.length === 0) continue;
 
-    const endpoints = resolveSegmentEndpoints(preview.kind, support, segment, segIndex, hosts);
+    const endpoints = resolveSegmentEndpoints(support, segment, segIndex, hosts);
     if (!endpoints) continue;
 
     for (const knotId of segmentKnotIds) {

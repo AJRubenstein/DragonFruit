@@ -4,7 +4,7 @@ import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
 import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getSupportEntities, getKnotById, getRootById, setInteractionWarning, updateKnot, subscribe } from '../../state';
 import { Anchor, Branch, Brace, Knot, Leaf, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
-import { resolveSegmentEndpoints, type EndpointHosts } from './segmentEndpoints';
+import { resolveSegmentEndpoints, type EndpointHosts, type ShaftEntity } from './segmentEndpoints';
 import { SUPPORT_COLLECTION_KEYS, getSupportTypeDescriptor, parseKnotHostId, parsePrefixedSegmentId, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { projectOntoSegment, shouldStayOnCurrentSegment } from './knotUtils';
@@ -65,7 +65,7 @@ interface ActiveHost {
     segmentId: string;
     containerType: KnotHostType;
     /** The support the knot rides. Absent only for a leaf cone. */
-    entity?: { id: string; segments?: Segment[] };
+    entity?: { id: string; typeId?: SupportTypeId; segments?: Segment[] };
     /** The root and host knot the entity's declared endpoints resolve from. */
     hosts: EndpointHosts;
     leafId?: string;
@@ -492,9 +492,9 @@ export function useKnotInteraction(enabled: boolean = true) {
     };
 
     /** The shafted entity and hosts backing this host record, if it has one. */
-    const shaftOf = (host: ActiveHost): { entity: { segments: Segment[] }; hosts: EndpointHosts } | null => {
+    const shaftOf = (host: ActiveHost): { entity: ShaftEntity; hosts: EndpointHosts } | null => {
         if (!hostsRealSegments(host.containerType) || !host.entity?.segments) return null;
-        return { entity: host.entity as { segments: Segment[] }, hosts: host.hosts };
+        return { entity: host.entity as ShaftEntity, hosts: host.hosts };
     };
 
     const resolveEndpoints = (host: ActiveHost) => {
@@ -505,7 +505,6 @@ export function useKnotInteraction(enabled: boolean = true) {
             const index = shaft.entity.segments.findIndex((s) => s.id === host.segmentId);
             if (index === -1) return;
             const endpoints = resolveSegmentEndpoints(
-                host.containerType as SupportTypeId,
                 shaft.entity,
                 shaft.entity.segments[index],
                 index,
@@ -548,9 +547,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         const shaft = shaftOf(host);
         if (shaft) {
             shaft.entity.segments.forEach((seg, idx) => {
-                const endpoints = resolveSegmentEndpoints(
-                    host.containerType as SupportTypeId, shaft.entity, seg, idx, shaft.hosts,
-                );
+                const endpoints = resolveSegmentEndpoints(shaft.entity, seg, idx, shaft.hosts);
                 if (!endpoints) return;
                 out.push({
                     segmentId: seg.id,

@@ -136,7 +136,7 @@ export const StickRenderer = React.memo(function StickRenderer({
     return Array.from(map.values());
   }, [stick.segments]);
 
-  const shaftSegments = useShaftSegments(typeId, stick, {});
+  const shaftSegments = useShaftSegments(stick, {});
 
   shaftSegments.forEach((shaft) => {
     const seg = shaft.segment;

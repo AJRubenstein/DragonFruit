@@ -37,6 +37,7 @@ function root(id: string, modelId: string, x: number): Roots {
 function trunk(id: string, modelId: string, rootId: string, x: number, topZ = 12): Trunk {
     return {
         id,
+        typeId: 'trunk',
         modelId,
         rootId,
         segments: [{
@@ -51,6 +52,7 @@ function trunk(id: string, modelId: string, rootId: string, x: number, topZ = 12
 function branch(id: string, modelId: string, parentKnotId: string, x: number, y: number): Branch {
     return {
         id,
+        typeId: 'branch',
         modelId,
         parentKnotId,
         segments: [{

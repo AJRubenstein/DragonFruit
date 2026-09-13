@@ -1527,7 +1527,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             let fullyBatchable = true;
 
             entity.segments.forEach((segment, index) => {
-                const endpoints = resolveSegmentEndpoints(typeId, entity, segment, index, hosts);
+                const endpoints = resolveSegmentEndpoints(entity, segment, index, hosts);
                 if (!endpoints) return;
 
                 const start = new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z);

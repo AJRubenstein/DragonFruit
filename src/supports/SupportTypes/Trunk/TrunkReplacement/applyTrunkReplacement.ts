@@ -272,7 +272,7 @@ function createAttachmentKnotOnTrunk(args: {
     // Iterate segments from top to bottom.
     for (let segIndex = trunk.segments.length - 1; segIndex >= 0; segIndex--) {
         const seg = trunk.segments[segIndex];
-        const endpoints = resolveSegmentEndpoints('trunk', trunk, seg, segIndex, { root });
+        const endpoints = resolveSegmentEndpoints(trunk, seg, segIndex, { root });
         if (!seg || !endpoints) continue;
 
         const approxLen = Math.max(

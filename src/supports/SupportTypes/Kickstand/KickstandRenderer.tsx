@@ -81,7 +81,7 @@ export const KickstandRenderer = React.memo(function KickstandRenderer({
     const batchedStraightShafts: InstancedShaft[] = [];
     const joints: React.ReactNode[] = [];
 
-    const shaftSegments = useShaftSegments(typeId, kickstand, { root, hostKnot });
+    const shaftSegments = useShaftSegments(kickstand, { root, hostKnot });
 
     shaftSegments.forEach((shaft) => {
         const segment = shaft.segment;

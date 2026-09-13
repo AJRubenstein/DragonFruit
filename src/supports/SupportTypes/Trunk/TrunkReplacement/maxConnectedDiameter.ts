@@ -1,6 +1,6 @@
 import type { Branch, Knot, Leaf, Roots, SupportState, Trunk } from '../../../types';
 import { getJointDiameter } from '../../../constants';
-import { splitShaft } from '../../../SupportPrimitives/Joint/jointUtils';
+import { splitSupportShaft } from '../../../SupportPrimitives/Joint/jointUtils';
 import { resolveSegmentEndpoints } from '../../../SupportPrimitives/Knot/segmentEndpoints';
 import { getSettings } from '../../../Settings/state';
 import { getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '../../../supportTypeRegistry';
@@ -341,7 +341,7 @@ export function computeAndApplySupportDiameterProfile(
         if (segIndex === -1) continue;
 
         const seg = nextTrunk.segments[segIndex];
-        const endpoints = resolveSegmentEndpoints('trunk', nextTrunk, seg, segIndex, { root });
+        const endpoints = resolveSegmentEndpoints(nextTrunk, seg, segIndex, { root });
 
         const existingT = typeof knot.t === 'number'
             ? Math.min(1, Math.max(0, knot.t))
@@ -373,7 +373,7 @@ export function computeAndApplySupportDiameterProfile(
 
         // This caller performs its own knot rehosting below, so it does not pass
         // knots into splitShaft and only consumes the trunk.
-        const { trunk: trunkAfterSplit } = splitShaft(nextTrunk, segIdToSplit, splitPoint, splitT, root);
+        const { entity: trunkAfterSplit } = splitSupportShaft(nextTrunk, segIdToSplit, splitPoint, splitT, { root });
         const bottomSegIndex = trunkAfterSplit.segments.findIndex((s) => s.id === segIdToSplit);
         if (bottomSegIndex === -1) {
             nextTrunk = trunkAfterSplit;

@@ -180,7 +180,7 @@ function buildSupportSamples(snapshot: SupportState): SupportSample[] {
 
             const segments: SegmentSample[] = [];
             entity.segments.forEach((seg, idx) => {
-                const ep = resolveSegmentEndpoints(descriptor.id, entity, seg, idx, hosts);
+                const ep = resolveSegmentEndpoints(entity, seg, idx, hosts);
                 if (ep) segments.push({ segmentId: seg.id, segment: seg, start: ep.start, end: ep.end, diameterMm: seg.diameter });
             });
             if (segments.length === 0) continue;

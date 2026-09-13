@@ -987,6 +987,16 @@ export function registerSupportTypeResolver(resolve: (id: string) => SupportType
 }
 
 /**
+ * The type an entity is, so a reader can dispatch without the caller restating
+ * it. Falls back to the store's membership scan for an entity that lost its
+ * `typeId` -- a whole-store payload restored through `setSnapshot` bypasses the
+ * writers that stamp it.
+ */
+export function resolveSupportTypeIdOf(entity: { typeId?: SupportTypeId; id: string }): SupportTypeId | null {
+    return entity.typeId ?? resolveSupportTypeOfId?.(entity.id) ?? null;
+}
+
+/**
  * Apply an entity back to the store.
  *
  * Two forms, told apart by the first argument:
@@ -1019,7 +1029,7 @@ export function updateSupportEntity(
         entity = maybeEntity;
     } else {
         entity = typeIdOrEntity;
-        typeId = typeIdOrEntity.typeId ?? resolveSupportTypeOfId?.(typeIdOrEntity.id) ?? null;
+        typeId = resolveSupportTypeIdOf(typeIdOrEntity);
     }
     if (!typeId) return false;
 

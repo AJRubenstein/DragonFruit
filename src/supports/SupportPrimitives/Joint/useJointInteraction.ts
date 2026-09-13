@@ -1,4 +1,4 @@
-import { resolveSegmentEndpoints, resolveShaftAnchor } from '../Knot/segmentEndpoints';
+import { resolveSegmentEndpoints, resolveShaftAnchor, type ShaftEntity } from '../Knot/segmentEndpoints';
 import { resolveDraggedContacts } from './resolveDraggedContacts';
 import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
@@ -392,8 +392,7 @@ export function useJointInteraction(enabled: boolean = true) {
                     .findIndex((s) => s.topJoint?.id === jointId);
                 if (hostRoot && draggedSegIndex > 0) {
                     const endpoints = resolveSegmentEndpoints(
-                        owner.typeId,
-                        foundParent as never,
+                        foundParent as ShaftEntity,
                         (foundParent as { segments: Segment[] }).segments[draggedSegIndex],
                         draggedSegIndex,
                         { root: hostRoot, hostKnot },

@@ -8,7 +8,8 @@ import { getBezierPointAtT, toVector3, subdivideCubicBezier, toVec3 } from '../.
 import { getKnotById } from '../../state';
 import { solveJointConstraint } from '../../PlacementLogic/JointConstraintSolver';
 import { remapKnotAcrossSplit, type KnotSplitRemap } from '../Knot/knotUtils';
-import { getSupportTypeDescriptor, type SupportTypeId } from '../../supportTypeRegistry';
+import { getSupportTypeDescriptor, resolveSupportTypeIdOf } from '../../supportTypeRegistry';
+import type { ShaftEntity } from '../Knot/segmentEndpoints';
 
 function remapKnotsForSplit(
     knots: Record<string, Knot> | undefined,
@@ -116,9 +117,11 @@ export interface SplitHosts {
  * Splits a shaft segment on any type, inserting a joint at `splitPoint`.
  * Start and end come from the declared endpoints; `shaftFallback` covers
  * what to do when neither resolves.
+ *
+ * The type comes off the entity. One that carries no type is not a support, so
+ * nothing is split and a warning says which segment was asked for.
  */
-export function splitSupportShaft<T extends { segments: Segment[] }>(
-    typeId: SupportTypeId,
+export function splitSupportShaft<T extends ShaftEntity>(
     entity: T,
     segmentId: string,
     splitPoint: Vec3,
@@ -126,6 +129,11 @@ export function splitSupportShaft<T extends { segments: Segment[] }>(
     hosts: SplitHosts = {},
     knots?: Record<string, Knot>,
 ): { entity: T; knotRemaps: KnotSplitRemap[] } {
+    const typeId = resolveSupportTypeIdOf(entity);
+    if (!typeId) {
+        console.warn('[JointUtils] Segment has no support type:', segmentId, entity.id);
+        return { entity, knotRemaps: [] };
+    }
     const descriptor = getSupportTypeDescriptor(typeId);
     const { stubLengthMm, startFallsBackToSplitPoint } = descriptor.shaftFallback;
     const unresolved = startFallsBackToSplitPoint ? splitPoint : null;
@@ -168,19 +176,6 @@ export function splitSupportShaft<T extends { segments: Segment[] }>(
         entity: { ...entity, segments: res.newSegments },
         knotRemaps: remapKnotsForSplit(knots, segmentId, res.topSegmentId, splitT),
     };
-}
-
-/** @deprecated for removal — call splitSupportShaft('trunk', ...) directly. */
-export function splitShaft(
-    trunk: Trunk,
-    segmentId: string,
-    splitPoint: Vec3,
-    splitT?: number,
-    root?: Roots,
-    knots?: Record<string, Knot>
-): { trunk: Trunk; knotRemaps: KnotSplitRemap[] } {
-    const { entity, knotRemaps } = splitSupportShaft('trunk', trunk, segmentId, splitPoint, splitT, { root }, knots);
-    return { trunk: entity, knotRemaps };
 }
 
 export function findClosestSegment(trunk: Trunk, root: Roots, point: Vec3): { segment: Segment, t: number, pointOnLine: Vec3 } | null {

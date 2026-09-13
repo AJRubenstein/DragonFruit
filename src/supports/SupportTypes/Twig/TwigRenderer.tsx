@@ -289,7 +289,7 @@ export const TwigRenderer = React.memo(function TwigRenderer({
   const isDiskASelected = selectedId === effectiveTwig.contactDiskA.id;
   const isDiskBSelected = selectedId === effectiveTwig.contactDiskB.id;
 
-  const twigShaftSegments = useShaftSegments(typeId, effectiveTwig, {});
+  const twigShaftSegments = useShaftSegments(effectiveTwig, {});
 
   twigShaftSegments.forEach(({ segment: seg, start: startPosVec, end: endPosVec, startVec: startPoint, endVec: endPoint, ...taper }) => {
     // Twig declares a taper on every segment, so these are always present.

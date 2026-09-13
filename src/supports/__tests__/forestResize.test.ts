@@ -19,6 +19,7 @@ function createRoot(id: string, modelId: string, x: number, y = 0): Roots {
 function createTrunk(id: string, modelId: string, rootId: string, segmentId: string, x: number, y = 0, topZ = 10, shaftDia = 0.8): Trunk {
     return {
         id,
+        typeId: 'trunk',
         modelId,
         rootId,
         segments: [
@@ -35,6 +36,7 @@ function createTrunk(id: string, modelId: string, rootId: string, segmentId: str
 function createBranch(id: string, modelId: string, parentKnotId: string, diameter: number): Branch {
     return {
         id,
+        typeId: 'branch',
         modelId,
         parentKnotId,
         segments: [{ id: `${id}-seg`, diameter }],

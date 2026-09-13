@@ -5,8 +5,8 @@ import { ScreenSpaceGizmo } from '@/components/gizmo/ScreenSpaceGizmo';
 import { isKeyPressedSync } from '@/hotkeys/hotkeyStore';
 import { findShaftOwnerOfSegment, getSupportEntity, subscribe, getSnapshot, getKnotById, getSupportEntities, getRootById, updateKnot } from '../../state';
 import { Branch, Knot, Segment } from '../../types';
-import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
-import { resolveSegmentEndpoints } from './segmentEndpoints';
+import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge, type SupportTypeId } from '../../supportTypeRegistry';
+import { resolveSegmentEndpoints, type ShaftEntity } from './segmentEndpoints';
 import { knotMoveDescription, projectOntoSegment } from './knotUtils';
 import { ElasticChainInitialState, solveElasticChain } from '../../PlacementLogic/ElasticChainSolver';
 import { getSettings } from '../../Settings/state';
@@ -104,7 +104,7 @@ export function KnotGizmo() {
         if (!owner) return null;
 
         const entity = getSupportEntity(owner.typeId, owner.id) as
-            | (Record<string, unknown> & { segments?: Segment[]; rootId?: string })
+            | (Record<string, unknown> & { id: string; typeId?: SupportTypeId; segments?: Segment[]; rootId?: string })
             | null;
         if (!entity) return null;
 
@@ -117,8 +117,7 @@ export function KnotGizmo() {
         )?.field;
 
         const endpoints = resolveSegmentEndpoints(
-            owner.typeId,
-            entity as { segments: Segment[] },
+            entity as ShaftEntity,
             segments[index],
             index,
             {

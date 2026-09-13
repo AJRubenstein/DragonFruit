@@ -139,7 +139,7 @@ export const BranchRenderer = React.memo(function BranchRenderer({
   const joints: React.ReactNode[] = [];
 
   const effectiveBranch = tipDrag.preview ?? previewBranch ?? branch;
-  const shaftSegments = useShaftSegments(typeId, effectiveBranch, { hostKnot: parentKnot });
+  const shaftSegments = useShaftSegments(effectiveBranch, { hostKnot: parentKnot });
 
   shaftSegments.forEach((shaft) => {
     const seg = shaft.segment;

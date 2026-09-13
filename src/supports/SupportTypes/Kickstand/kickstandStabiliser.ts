@@ -314,7 +314,7 @@ export function generateRequiredKickstands(
         const candidateAnchors: CandidateAnchor[] = [];
 
         trunk.segments.forEach((seg, idx) => {
-            const ep = resolveSegmentEndpoints('trunk', trunk, seg, idx, { root });
+            const ep = resolveSegmentEndpoints(trunk, seg, idx, { root });
             if (ep) {
                 if (ep.end.z > maxZ) {
                     maxZ = ep.end.z;
