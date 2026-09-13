@@ -1,4 +1,9 @@
-import { getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeId } from '../supportTypeRegistry';
+import {
+    getSupportTypeDescriptor,
+    SUPPORT_TYPES,
+    type SidebarTab,
+    type SupportTypeId,
+} from '../supportTypeRegistry';
 import { hasOwnAnatomyPreview } from './anatomyPreviewRegistry';
 
 /**
@@ -19,8 +24,8 @@ import { hasOwnAnatomyPreview } from './anatomyPreviewRegistry';
  * showing one needs settings the sidebar has no fields for yet.
  */
 
-/** The sidebar's tabs. A panel is reached through exactly one. */
-export type SidebarTab = 'trunk' | 'raft' | 'grid' | 'stick';
+/** Re-exported so a panel consumer has one import site for the sidebar's vocab. */
+export type { SidebarTab };
 
 /** Panels that are not support types, so nothing else can answer for them. */
 const TOOL_PANELS = {
@@ -109,9 +114,23 @@ export function panelFacts(panel: SidebarPanel): PanelFacts {
     return typePanelFacts(panel as SupportTypeId);
 }
 
-/** The tab a panel is edited under. */
+/**
+ * The tab a panel is edited under. Tool panels answer for themselves; every
+ * type answers from its descriptor.
+ */
 export function tabPanelFor(panel: SidebarPanel): SidebarTab | 'auto' {
     return panelFacts(panel).tab;
+}
+
+/**
+ * The panel a tab opens, the first that declares it. Derived, so the two cannot
+ * drift: the support-info tab opens trunk's panel because trunk is offered
+ * first, and 'bracing' opens stick's because stick alone declares it.
+ */
+export function panelForTab(tab: SidebarTab): SidebarPanel {
+    const panel = SIDEBAR_PANELS.find((candidate) => panelFacts(candidate).tab === tab);
+    if (!panel) throw new Error(`no panel declares the "${tab}" tab`);
+    return panel;
 }
 
 /** Whether the panel offers the given settings group. */

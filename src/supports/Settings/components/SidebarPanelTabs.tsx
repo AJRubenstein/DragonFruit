@@ -2,37 +2,34 @@
 
 import React from 'react';
 import { Grid3X3, Pickaxe, Sailboat, WandSparkles, type LucideIcon } from 'lucide-react';
-import type { SidebarPanel } from '../sidebarPanels';
+import type { SidebarTab } from '../sidebarPanels';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 
 type TabDef = {
-    kind: SidebarPanel;
+    tab: SidebarTab;
     label: MessageDescriptor;
     icon: LucideIcon;
 };
 
 // Module level so React Compiler cannot rename anything the Lingui macro reads.
+// Each id names the PAGE it opens, not a support type: `supportInfo` carries the
+// contact cone, cone angle and root settings that apply to supports generally.
 const TABS: TabDef[] = [
-    // The `trunk` id is the shared "support info" tab, not the trunk's own page:
-    // it carries the contact cone, cone angle and root settings that apply to
-    // supports generally. The LABEL says so. The id still says `trunk`, which is
-    // a leftover -- it is the `sidebarTab` value every non-tool type declares,
-    // so renaming it reaches the registry's `SidebarTab` type and every
-    // descriptor. See the literal plan's open decisions.
-    { kind: 'trunk', label: msg({ message: 'Support Info', comment: 'Support kind tab. One of four tabs on a narrow row; two words here, unlike the others.' }), icon: Pickaxe },
-    { kind: 'raft', label: msg({ message: 'Raft', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: Sailboat },
-    { kind: 'grid', label: msg({ message: 'Grid', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: Grid3X3 },
-    { kind: 'stick', label: msg({ message: 'Bracing', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: WandSparkles },
+    { tab: 'supportInfo', label: msg({ message: 'Support Info', comment: 'Support kind tab. One of four tabs on a narrow row; two words here, unlike the others.' }), icon: Pickaxe },
+    { tab: 'raft', label: msg({ message: 'Raft', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: Sailboat },
+    { tab: 'grid', label: msg({ message: 'Grid', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: Grid3X3 },
+    { tab: 'bracing', label: msg({ message: 'Bracing', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: WandSparkles },
 ];
 
 export function SidebarPanelTabs({
     value,
     onChange,
 }: {
-    value: SidebarPanel;
-    onChange: (kind: SidebarPanel) => void;
+    /** `'auto'` is the auto panel's tab, which no tab in this row opens. */
+    value: SidebarTab | 'auto';
+    onChange: (tab: SidebarTab) => void;
 }) {
     const { _ } = useLingui();
     const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -84,14 +81,14 @@ export function SidebarPanelTabs({
     return (
         <div ref={containerRef} className="grid grid-cols-4 gap-1">
             {TABS.map((tab) => {
-                const isActive = tab.kind === value;
+                const isActive = tab.tab === value;
                 const Icon = tab.icon;
 
                 return (
                     <button
-                        key={tab.kind}
+                        key={tab.tab}
                         type="button"
-                        onClick={() => onChange(tab.kind)}
+                        onClick={() => onChange(tab.tab)}
                         className={`flex h-12 cursor-pointer items-center justify-center rounded-md border px-2 transition-all duration-150 hover:brightness-110 hover:shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${showIcons ? 'gap-2' : 'gap-0'}`}
                         style={isActive
                             ? {

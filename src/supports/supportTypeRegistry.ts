@@ -4,6 +4,16 @@ import type { SupportHistoryActionType } from './history/actionTypes';
 import { ANCHOR_HEIGHT_THRESHOLD_MM } from './autoSupport/constants';
 import { getSettings } from './Settings/state';
 
+/**
+ * The sidebar's tabs, by the PAGE each opens rather than by a type.
+ *
+ * `'trunk'` used to be one of these, which read as the trunk's own page: the
+ * tab carries the contact cone, cone angle and root settings that apply to
+ * supports generally. Two of the four are also tool panel ids, where the page
+ * and the tool genuinely are the same thing.
+ */
+export type SidebarTab = 'supportInfo' | 'raft' | 'grid' | 'bracing';
+
 /** Every declared support type, named once in `SupportFieldsByType`. */
 export type SupportTypeId = keyof SupportFieldsByType;
 
@@ -172,10 +182,10 @@ export interface SupportTypeDescriptor {
      *
      * A sidebar grouping, so the UI can ask rather than hold a second table:
      * stick has its own tab (it is the bracing tool's page), everything else
-     * shares trunk's. Declared for every type, including ones the sidebar has
-     * no panel for yet, so offering one is a UI change and not a data gap.
+     * shares the support-info one. Declared for every type, including ones the
+     * sidebar has no panel for yet, so offering one is a UI change, not a gap.
      */
-    sidebarTab: 'trunk' | 'raft' | 'grid' | 'stick';
+    sidebarTab: SidebarTab;
     /**
      * Whether this type's diameter is re-solved from what it carries.
      *
@@ -559,7 +569,7 @@ export interface SupportTypeDescriptor {
 const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAdd' | 'historyRemove'>[] = [
     {
         id: 'trunk',
-        sidebarTab: 'trunk',
+        sidebarTab: 'supportInfo',
         hasEditableSettings: true,
         recomputesDiameterFromAttachments: true,
         replacedByHigherContact: true,
@@ -610,7 +620,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'branch',
-        sidebarTab: 'trunk',
+        sidebarTab: 'supportInfo',
         hasEditableSettings: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' }],
         ownsRoot: false,
@@ -660,7 +670,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'leaf',
-        sidebarTab: 'trunk',
+        sidebarTab: 'supportInfo',
         hasEditableSettings: true,
         knotHostPrefix: 'leafCone:',
         hostsBraceSnapCone: true,
@@ -709,7 +719,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'twig',
-        sidebarTab: 'trunk',
+        sidebarTab: 'supportInfo',
         hasEditableSettings: false,
         edges: [],
         ownsRoot: false,
@@ -753,7 +763,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'stick',
-        sidebarTab: 'stick',
+        sidebarTab: 'bracing',
         hasEditableSettings: false,
         edges: [],
         ownsRoot: false,
@@ -796,7 +806,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'brace',
-        sidebarTab: 'trunk',
+        sidebarTab: 'supportInfo',
         // Two named knot fields rather than a list: the history payload and its
         // undo handler read them by name, and start/end are not interchangeable.
         hasEditableSettings: false,
@@ -845,7 +855,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'anchor',
-        sidebarTab: 'trunk',
+        sidebarTab: 'supportInfo',
         hasEditableSettings: false,
         edges: [],
         ownsRoot: false,
@@ -893,7 +903,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
     },
     {
         id: 'kickstand',
-        sidebarTab: 'trunk',
+        sidebarTab: 'supportInfo',
         hasEditableSettings: true,
         edges: [
             { field: 'rootId', to: 'roots', ownership: 'owns' },

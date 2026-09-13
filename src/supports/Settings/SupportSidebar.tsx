@@ -57,6 +57,7 @@ import {
     panelHas,
     setActiveSidebarPanel,
     subscribeToSidebarPanel,
+    panelForTab,
     tabPanelFor,
 } from './sidebarPanels';
 import {
@@ -1185,14 +1186,14 @@ export function SupportSidebar() {
                                 <>
                                     <SidebarPanelTabs
                                         value={tabKind}
-                                        onChange={(kind) => {
+                                        onChange={(tab) => {
                                             resetSupportSettingsScrollForTabChange(
                                                 scrollViewportRef.current,
                                                 tabKind,
-                                                kind,
+                                                tab,
                                             );
                                             setAnatomyPreviewActiveSettingKey(null);
-                                            setActiveSidebarPanel(kind);
+                                            setActiveSidebarPanel(panelForTab(tab));
                                         }}
                                     />
 
