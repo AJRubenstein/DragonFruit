@@ -55,16 +55,16 @@ counted separately and **conceded** — a type is allowed to name itself.
 
 Three instruments, and none of them alone is the picture:
 
-**Re-measured after stage 3** (§4). Previous readings, kept for the delta, are
+**Re-measured after stage 4** (§4). Previous readings, kept for the delta, are
 in the *was* column.
 
 | instrument | what it answers | now | was |
 | ---------- | --------------- | --- | --- |
-| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | 236 total | 280 |
-| `inventory.py` + `report.py` | every token containing a type name | **6,836** occurrences, 780 tokens | 6,955 / 778 |
-| `npm run scan:support-types` | the headline reference metric | **5,837** across 152 files | 5,909 |
-| `type-literal-metric.py` | every string literal equal to a type id | 134 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
-| `npm run check:support-literals` | the same, with the ratchet | 121 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
+| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | 230 total | 280 |
+| `inventory.py` + `report.py` | every token containing a type name | **6,828** occurrences, 780 tokens | 6,955 / 778 |
+| `npm run scan:support-types` | the headline reference metric | **5,833** across 151 files | 5,909 |
+| `type-literal-metric.py` | every string literal equal to a type id | 131 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
+| `npm run check:support-literals` | the same, with the ratchet | 118 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
 
 Three readings moved up or held still while the defect count fell, and each is
 expected rather than a regression:
@@ -95,13 +95,13 @@ Run for all eight, not just the convenient one:
 | ---- | ---: | ---: |
 | branch | **91** | 112 |
 | leaf | 51 | 67 |
-| trunk | 46 | 55 |
+| trunk | 43 | 55 |
 | brace | 17 | 17 |
 | kickstand | 14 | 12 |
-| stick | 10 | 10 |
+| stick | 7 | 10 |
 | twig | 5 | 5 |
 | anchor | 2 | 2 |
-| **total** | **236** | 280 |
+| **total** | **230** | 280 |
 
 **Read this table before quoting a headline.** The refactor has largely been
 measured on `stick`, which is the easiest type and now sits at 10. `branch` is
@@ -342,18 +342,20 @@ question to each member. That sweep also found the inline `kind: 'leaf' |
 Down from 50. What is left is concentrated in the settings UI, not the engine:
 
 ```
- 4  Settings/SupportSidebar.tsx
  4  Settings/AnatomyPreview/PreviewTypes/Trunk/TrunkPreview.tsx
+ 4  Settings/SupportSidebar.tsx            3 now page-named (stage 4); 1 is `activePanel === 'trunk'`
  3  Settings/AnatomyPreview/SupportAnatomyPreviewCanvas.tsx
  2  autoSupport/autoPlace.ts          (one is origin === 'anchor' — not a type)
- 2  interaction/.../supportPlacementRouting.ts
  1  autoSupport/settings.ts
  1  Settings/presets.ts
 ```
 
-The two in `supportPlacementRouting.ts` are cause B's symptom — fix the union and
-they follow. The anatomy-preview cluster is a UI question: which preview to draw
-is arguably a panel decision, but it is spelled with type names today.
+The routing sites are gone with stage 1's union — they were cause B's symptom.
+The anatomy-preview cluster dispatches `activePanel`, which is a `SidebarPanel`:
+a `SupportTypeId` or a tool panel id, so `activePanel === 'branch' | 'leaf' |
+'twig' | 'stick'` are type-keyed comparisons a rename already breaks (cause D).
+The sidebar's remaining three are the same, and the fourth is `activePanel ===
+'trunk'` — the tab whose id was the type's name. Stage 4 renamed that id.
 
 ### D. Value literals — **148 sites**
 
@@ -413,7 +415,7 @@ shippable and independently verifiable.
 | **1** | Derive the three hazard unions from the registry | B | 3 | low | **done** — see §3B; three silent classes now fail to compile, test at `__tests__/derivedTypeSubsets.test.ts` |
 | **2** | `resolveSegmentEndpoints` / `splitSupportShaft` take the entity | A | 12 | low | **done** — the type-id parameter is gone; see §3A, including the merge defect it surfaced |
 | **3** | The rest of cause A's accessors | A | 7 | low | **done** — the entity-form writers; the remainder is typed dispatch (stage 6) and deprecated wrappers. See §3A |
-| **4** | Settings/anatomy-preview dispatch | C | 11 | medium | pending — needs a UI decision first, see below |
+| **4** | Settings/anatomy-preview dispatch | C | 11 | low | **done** — it was the tab vocabulary, not a preview decision; see below |
 | **5** | Value literals in argument position | D | 148 | low each | pending |
 | **6** | Per-type prop and hook names | F | ~1,410 | high | pending — design change, no metric moves |
 
@@ -422,23 +424,26 @@ those unions compiling and wrong; stage 2 removed the type-id parameter from the
 endpoint readers, which is what made their call sites reach a rename at all. Both
 are recorded in §3 with the mutations that pin them.
 
-**Stage 4's question is settled, and the answer is narrower than §3C implied.**
-Measured (§3C below): `SidebarPanel` is `SupportTypeId | 'raft' | 'grid' | 'auto'`,
-and `SIDEBAR_PANELS` is built from `TYPE_PANELS: readonly SupportTypeId[]`, so a
-per-type panel id *is* a type id. `activePanel === 'branch' | 'leaf' | 'twig' |
-'stick'` are therefore type-keyed comparisons a rename already breaks — cause D,
-not a hazard. What remains is `activePanel === 'trunk'`, where 'trunk' is
-simultaneously the trunk's panel and the shared support-info page.
+**Stage 4 was smaller than §3C implied, and it is done.** `SidebarPanel` is
+`SupportTypeId | 'raft' | 'grid' | 'auto'`, and `SIDEBAR_PANELS` is built from
+`TYPE_PANELS: readonly SupportTypeId[]`, so a per-type panel id *is* a type id.
+`activePanel === 'branch' | 'leaf' | 'twig' | 'stick'` are therefore type-keyed
+comparisons a rename already breaks — cause D, not a hazard. The one real defect
+was `activePanel === 'trunk'`, where 'trunk' was both the trunk's panel and the
+shared support-info page.
 
-That is the `SidebarTab` vocabulary (§8.1), and it is a rename, not a redesign:
-`SupportTypeDescriptor.sidebarTab` has exactly **one** consumer
-(`sidebarPanels.ts` reads it into `tab: d.sidebarTab`), nothing persists a tab id,
-and the tab row already labels 'trunk' "Support Info" and 'stick' "Bracing". The
-blast radius is the descriptor field, its eight values, `SidebarTab`,
-`TOOL_PANELS`, `SidebarPanelTabs`'s four `kind`s and the two `SidebarPanel` sets
-in `SupportSidebar`. **Whoever lands it should verify it in the browser** — the
-tab row's selection and the panels it swaps have no test, and `lysdiag/tools/
-build-smoke-scene.mjs` exists to give the sidebar a scene to open.
+That was the `SidebarTab` vocabulary (§8.1), and it was a rename, not a redesign:
+`SupportTypeDescriptor.sidebarTab` has exactly **one** consumer, nothing persists
+a tab id, and the tab row already LABELLED 'trunk' "Support Info" and 'stick'
+"Bracing". The ids now say what the labels said, and `panelForTab` derives the
+panel a tab opens from `SIDEBAR_PANELS` rather than the tab row carrying a panel
+id — so the two cannot drift.
+
+Verified in a browser (all four tabs select and swap their panel; the tab row
+highlights the active one). Note for the next person: `lysdiag/tools/
+build-smoke-scene.mjs` was writing a GZIP stream under an `encoding:
+base64-zlib` envelope, which the codec rejects — it now emits raw zlib, and
+`check-smoke-scene.mjs` inflates the same way.
 
 **Stage 6 will not move any number.** Track it by the prop signature.
 
@@ -467,6 +472,7 @@ are one-liners, `updateLeaf`/`updateBrace` carry real ordering logic).
 
 | work | evidence |
 | ---- | -------- |
+| **Page-named sidebar tabs (stage 4)** | `SidebarTab` is `'supportInfo' \| 'raft' \| 'grid' \| 'bracing'`; the descriptor declares it and `panelForTab` derives the panel from `SIDEBAR_PANELS`, so no hand-kept tab→panel table. Verified in a browser: all four tabs select and swap panels |
 | **Entity-form writers (stage 3)** | Seven `updateSupportEntity(typeId, entity)` calls took the entity; the entity overload is generic so a full entity is accepted. The convention test now pins both legal resolver forms |
 | **Endpoint readers take the entity (stage 2)** | `resolveSegmentEndpoints` / `splitSupportShaft` have no type-id parameter and no literal call site. Found and fixed a real defect on the way: `mergeFromImportFormat` did not stamp `typeId`, so the knot-geometry pass diverged (caught by the `merge-with-owner` golden) |
 | **Hazard unions derived (stage 1)** | `SupportPlacementFamily`, `KickstandHostKind`, `RemoveJointByIdResult` all fail to compile on a rename; `hostsKickstand` + `KICKSTAND_HOST_BY_TYPE` + `JOINT_REMOVAL_BY_TYPE` in the registry, held to their flags by `__tests__/derivedTypeSubsets.test.ts` |
@@ -587,19 +593,32 @@ a decision — mark it open rather than closing it on inference.
    that column, so the extra placement errs toward over-support — is plausible
    and may be right. It is a print-quality product call, and it is still open.
 3. **The `activePanel === 'trunk'` checks, and the word `trunk` for the menu.**
-   **The menu label was a mistake — relabelled to "Support Info".** Done: the tab
-   carries the contact cone, cone angle and root settings that apply to supports
-   generally, so "Trunk" was wrong on its face.
+   **The label and the tab id are closed; two layout flags are not.** The menu
+   label was relabelled to "Support Info" earlier (the tab carries the contact
+   cone, cone angle and root settings that apply to supports generally, so
+   "Trunk" was wrong on its face). The *id* was the `sidebarTab` value every
+   non-tool type declares, so renaming it reached the registry's `SidebarTab`
+   type and every descriptor.
 
-   The *id* still says `trunk`, deliberately: it is the `sidebarTab` value every
-   non-tool type declares, so renaming it reaches the registry's `SidebarTab`
-   type and every descriptor — a type-name literal in a place that is not a type.
-   That is a real instance of the class this plan exists to remove, and it is
-   tracked below rather than smuggled into a label change.
+   **Stage 4 renamed the id.** `SidebarTab` is now `'supportInfo' | 'raft' |
+   'grid' | 'bracing'` — page names, not type names — declared in the registry and
+   used by every descriptor; `panelForTab` derives the panel a tab opens from
+   `SIDEBAR_PANELS`, so the two cannot drift. Verified in a browser.
 
-   The remaining `activePanel === 'trunk'` **checks** are a separate question and
-   stay open: they branch on which panel is showing, which is UI layout. Settle
-   when stage 4 reaches that file.
+   **The `activePanel === 'trunk'` checks are NOT all the same thing, and only
+   some are closed.** They compare a `SidebarPanel` (a `SupportTypeId` or a tool
+   panel id), not a tab:
+
+   - `SupportSidebar`'s panel-body chain (`=== 'raft' | 'grid' | 'stick' |
+     'trunk'`) selects which panel body to render. That is a panel decision,
+     correct as written, and a rename reaches it.
+   - `TrunkPreview` / `SupportAnatomyPreviewCanvas` dispatch `activePanel` the
+     same way.
+   - **Two layout flags are open**: `useAdaptiveIconCompactDisplay` and
+     `shouldUseCompactTrunkLayout` fire for the trunk panel alone although the
+     support-info tab is shared by trunk, leaf, branch and twig. Recorded in
+     `support-registry-findings.md` with the measurement — changing them to the
+     tab is NOT behaviour-preserving, so the stage-4 rename left them alone.
 4. **`computeAndApplySupportDiameterProfile`** — **no seam needed.** It is a
    geometry routine, not a type; importing it across folders is not the defect
    this plan is about. Left as is. (The uncovered add-side repair in §6 stands on
@@ -628,18 +647,24 @@ a decision — mark it open rather than closing it on inference.
    resolves its endpoints elsewhere *and* has no removable joint, it needs its own
    flag and this entry is wrong.
 
-### 8.1 Newly tracked: `sidebarTab` names a type but is not one
+### 8.1 Done: `sidebarTab` named a type but was not one
 
-`SupportTypeDescriptor.sidebarTab: 'trunk' | 'raft' | 'grid' | 'stick'` — the
-value `'trunk'` here means "the shared support-info tab", not the trunk type. Two
-of the four values (`raft`, `grid`) are *tools*, and one (`stick`) is both a type
-and its own page.
+`SupportTypeDescriptor.sidebarTab` used to be `'trunk' | 'raft' | 'grid' |
+'stick'`. The value `'trunk'` meant "the shared support-info tab", not the trunk
+type; two values (`raft`, `grid`) are *tools*; one (`stick`) was both a type and
+its own page. The label change showed it read as the trunk's own page to anyone
+looking at the UI.
 
-This is the §2 "different vocabulary" case, except it is not benign: the label
-change above showed it reads as the trunk's own page to anyone looking at the UI.
-Wants a SupportSidebarTab vocabulary with names that describe the PAGES
-("supportInfo", "raft", "grid", "bracing"), declared in the registry. Low risk,
-touches every descriptor plus `sidebarPanels.ts`.
+**Stage 4 renamed it.** `SidebarTab` is `'supportInfo' | 'raft' | 'grid' |
+'bracing'`, declared in the registry beside `SupportTypeId` and referenced by the
+descriptor field, so the vocabulary lives in the registry and the names describe
+the PAGES. `sidebarPanels.ts` re-exports it for panel consumers, and
+`panelForTab` derives which panel a tab opens from `SIDEBAR_PANELS` — the tab row
+no longer carries a panel id, so the mapping cannot drift.
+
+Verified in a browser: all four tabs select, swap their panel, and highlight the
+active one. The tool ids (`raft`, `grid`, `auto`) are unchanged — there the page
+and the tool genuinely are the same thing.
 
 ---
 
@@ -657,11 +682,11 @@ touches every descriptor plus `sidebarPanels.ts`.
   | --- | ---: | ---: | --- | --- | ---: | ---: |
   | branch | **91** | 112 | | brace | 17 | 17 |
   | leaf | 51 | 67 | | kickstand | 14 | 12 |
-  | trunk | 46 | 55 | | stick | 10 | 10 |
+  | trunk | 43 | 55 | | stick | 7 | 10 |
   | | | | | twig | 5 | 5 |
   | | | | | anchor | **2** | 2 |
 
-  **236 total**, down from 280 at the start of stage 1. Two types rose and are
+  **230 total**, down from 280 at the start of stage 1. Two types rose and are
   still above their pre-stage-1 reading (`trunk` 55 → 56 → 50 is net down;
   `kickstand` 12 → 14 is net up) because a silent hazard became a compile error —
   read §3B before treating either as a regression. `anchor` at 2 is the proof the
