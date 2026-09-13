@@ -385,6 +385,35 @@ rather than as a magic string.
 **How to find the rest:** any `export type X = 'a' | 'b'` where a member equals a
 type id. Grep the unions, then apply the §2 rename question to each member.
 
+### G. Per-type prop and variable names — invisible to every instrument
+
+Neither the rename test nor the literal count can see this one, and it is real
+duplication.
+
+`SceneCanvas.tsx` takes `isBranchPlacementActive`, `isLeafPlacementActive`,
+`isBracePlacementActive`, `isKickstandPlacementActive` plus four tip/hover
+positions — then immediately rebuilds them into
+`activePlacementModes: Partial<Record<SupportTypeId, boolean>>`, generic from
+there on. The file holds **zero** type-id literals, so renaming a type breaks
+nothing in it and no metric moves. The per-type shape is in the *names*.
+
+Behind it sit four placement hooks whose fields `useSupportInteractionManager`
+fans into flat per-type names. Collapsing it means passing the record instead of
+the flattened booleans — a design change, not a rename.
+
+**Do not expect a number to move when this lands.** Track it by the prop
+signature, not by the metric.
+
+> **A measured counter-example, worth reading before any "deduplication".**
+> Removing the eight `selectedTrunkIds` / `selectedStickIds` / … aliases in
+> `SupportRenderer` took the rename test from 71 to **74** — it moved one
+> declaration into many use sites. The drag-preview-ref collapse did the same
+> (69 → 71).
+>
+> An alias declared once and used often is *already* the collapsed form. Re-run
+> the rename test after every conversion rather than assuming a change that
+> looks like deduplication reduces anything.
+
 ---
 
 ## 4. Staging
