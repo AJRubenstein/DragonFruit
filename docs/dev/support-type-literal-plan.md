@@ -55,19 +55,27 @@ counted separately and **conceded** — a type is allowed to name itself.
 
 Three instruments, and none of them alone is the picture:
 
-**Re-measured after stage 4** (§4). Previous readings, kept for the delta, are
+**Re-measured after stage 5** (§4). Previous readings, kept for the delta, are
 in the *was* column.
 
 | instrument | what it answers | now | was |
 | ---------- | --------------- | --- | --- |
-| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | 230 total | 280 |
-| `inventory.py` + `report.py` | every token containing a type name | **6,828** occurrences, 780 tokens | 6,955 / 778 |
-| `npm run scan:support-types` | the headline reference metric | **5,833** across 151 files | 5,909 |
-| `type-literal-metric.py` | every string literal equal to a type id | 131 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
-| `npm run check:support-literals` | the same, with the ratchet | 118 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
+| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | 226 total | 280 |
+| `inventory.py` + `report.py` | every token containing a type name | **6,831** occurrences, 780 tokens | 6,955 / 778 |
+| `npm run scan:support-types` | the headline reference metric | **5,838** across 152 files | 5,909 |
+| `type-literal-metric.py` | every string literal equal to a type id | 129 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
+| `npm run check:support-literals` | the same, with the ratchet | 116 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
+| `silent-value-sites.py` | **value literals a rename does NOT reach** | **15, 0 of them real** | 17 real=2 |
 
-Three readings moved up or held still while the defect count fell, and each is
-expected rather than a regression:
+Stage 5 moved the rename total **230 → 226**. The movement is the point: two
+silent sites became loud (the forest ledger's `kind`, the `updateBrace` stamp),
+and five errors that briefly appeared at the ledger *consumer* went with them once
+the builder reported its own type. `silent-value-sites.py` is the instrument that
+proves the class is clear, because the total alone cannot say whether a change
+made a hazard loud or a literal derived.
+
+Readings that moved up or held still while the defect count fell, each expected
+rather than a regression:
 
 - **Occurrences down, distinct tokens up 2.** Stage 1 deletes one type-named
   identifier (`KickstandHostKind`) and adds three (`KICKSTAND_HOST_TYPES`,
@@ -93,15 +101,15 @@ Run for all eight, not just the convenient one:
 
 | type | honest remaining | was |
 | ---- | ---: | ---: |
-| branch | **91** | 112 |
-| leaf | 51 | 67 |
+| branch | **92** | 112 |
+| leaf | 49 | 67 |
 | trunk | 43 | 55 |
-| brace | 17 | 17 |
+| brace | 14 | 17 |
 | kickstand | 14 | 12 |
 | stick | 7 | 10 |
 | twig | 5 | 5 |
 | anchor | 2 | 2 |
-| **total** | **230** | 280 |
+| **total** | **226** | 280 |
 
 **Read this table before quoting a headline.** The refactor has largely been
 measured on `stick`, which is the easiest type and now sits at 10. `branch` is
@@ -357,16 +365,45 @@ a `SupportTypeId` or a tool panel id, so `activePanel === 'branch' | 'leaf' |
 The sidebar's remaining three are the same, and the fourth is `activePanel ===
 'trunk'` — the tab whose id was the type's name. Stage 4 renamed that id.
 
-### D. Value literals — **148 sites**
+### D. Value literals — **stage 5 done, and the premise was wrong**
 
-Everything not dispatch. Mostly `draftAddEntity(d, 'branch', branch)` (6 in
-`autoPlace.ts`) and `kind: 'leaf'` results. `PlacementOutcomeKind` is already
-`SupportTypeId | 'reject'`, so the *type* is derived and only the call sites
-spell names.
+This section used to read "148 sites … lower priority, most are argument-position
+and a rename reaches them through the derived parameter type. Verify that per
+call site rather than assuming it." That verification was never done, and the
+assumption turns out to be right for almost all of them — which means the stage
+was mostly not work.
 
-Lower priority than A–C: most are argument-position and a rename reaches them
-through the derived parameter type. Verify that per call site rather than
-assuming it.
+**Measured** (`silent-value-sites.py`): of 129 value literals outside a type's
+own folder, **114 are reached by a rename** — the compiler refuses stale ones
+through a derived parameter type — and only 17 were silent. Two of those 17 were
+real, and both are fixed:
+
+| site | what it was | fix |
+| ---- | ----------- | --- |
+| the forest ledger's `kind: 'branch'` in `autoPlace.ts` | a literal that reached no check, because `PlacedKind` had also gone stale inside the exempt registry | `buildConsolidationBranch` reports the type it built, and the consumer takes it — the value comes off the builder, like `FanLeafResult` already did |
+| `updateBrace` in `state.ts` | stamped `typeId: 'brace'` onto the entity it wrote | reads the type off the entity (`resolveSupportTypeIdOf`), like `updateLeaf` beside it |
+
+**The ledger literal was silent because of a shadow list inside the exempt
+registry.** `AUTO_PLACED_TYPE_IDS` was a hand-written tuple whose comment claimed
+the narrow union could only come from literals ("a runtime filter only yields
+`SupportTypeId`"). That is false — `KICKSTAND_HOST_BY_TYPE` already showed a
+literal map gives both — and the cost was a rename hazard nothing could see: the
+stale literal errored only *inside the file every check exempts*, so `PlacedKind`
+kept a name that no longer existed and the consumer compiled while writing it.
+It is now `AUTO_PLACED_BY_TYPE` (literals kept) plus an `isAutoPlaced` descriptor
+flag, held to each other by `derivedTypeSubsets.test.ts` — the same shape as the
+kickstand host set.
+
+The other 15 silent hits are false positives or legitimate vocabulary, triaged
+one by one: entity ids threaded through a `u(id)` helper (`u('trunk')` is an id,
+not a type), a focus key (`focusKey.startsWith('brace')`), a doc comment, and the
+two documented different vocabularies (`SizingPreset`, the preset ids). **Zero
+real defects remain in this class.**
+
+Two sites in the list are `Extract<SupportTypeId, …>` unions (`SupportPlacementOwner`,
+`AttachmentKind`). They are *derived*, so a rename does reach them; the scan reports
+them because the error lands at the union's consumer rather than on the literal
+line. Not defects.
 
 ### E. Declarations — **1, and it is not a defect**
 
@@ -416,8 +453,8 @@ shippable and independently verifiable.
 | **2** | `resolveSegmentEndpoints` / `splitSupportShaft` take the entity | A | 12 | low | **done** — the type-id parameter is gone; see §3A, including the merge defect it surfaced |
 | **3** | The rest of cause A's accessors | A | 7 | low | **done** — the entity-form writers; the remainder is typed dispatch (stage 6) and deprecated wrappers. See §3A |
 | **4** | Settings/anatomy-preview dispatch | C | 11 | low | **done** — it was the tab vocabulary, not a preview decision; see below |
-| **5** | Value literals in argument position | D | 148 | low each | pending |
-| **6** | Per-type prop and hook names | F | ~1,410 | high | pending — design change, no metric moves |
+| **5** | Value literals in argument position | D | 129 | low | **done** — 114 were already compiler-checked; the 2 real silent ones are fixed. See §3D |
+| **6** | Per-type prop and hook names | F | ~1,410 | high | **next** — design change, no metric moves |
 
 **Stages 1 and 2 have landed.** Stage 1 was the silent class — a rename left
 those unions compiling and wrong; stage 2 removed the type-id parameter from the
@@ -449,29 +486,27 @@ base64-zlib` envelope, which the codec rejects — it now emits raw zlib, and
 
 ### Where the rename test's remaining errors are
 
-`branch` is still the worst type at 91, and 47 of them sit in three files. The
-breakdown is the starting point for stages 5 and 6; re-measure before trusting it
-(nothing here is a count of literals — it is what `tsc` refuses):
+`branch` is still the worst type at 92, and the remainder is stage 6's shape —
+not literals, but per-type names and per-type arms. Grouped by what has to change:
 
 ```
- 21  SupportPrimitives/Knot/useKnotInteraction.ts     per-type preview caches (stage 6)
- 14  autoSupport/autoPlace.ts                        fan/merge arms, argument-position (stage 5)
- 12  SupportPrimitives/Knot/KnotGizmo.tsx            branch drag payloads (stage 6)
-  8  SupportPrimitives/Joint/useJointInteraction.ts  per-type drag arms (stage 6)
-  5  components/scene/SceneCanvas/SceneCanvas.tsx    per-type placement props (stage 6)
-  5  interaction/.../supportPlacementRouting.ts      family comparisons — already derived (stage 1)
-  4  state.ts                                        deprecated wrappers (debt markers)
+per-type drag arms and preview caches   useKnotInteraction, KnotGizmo,
+                                        useJointInteraction, autoPlace
+                                        (stages 3's leftover + 6)
+per-type placement props                SceneCanvas, placementControllers
+deprecated wrappers in state.ts         add<Type> / update<Type> / remove<Type>,
+                                        each naming its type on purpose (debt)
 ```
 
-The routing five are stage 1's work showing up as intended; they are errors now,
-not silence. `state.ts`'s four are the sanctioned wrappers: each names its type on
-purpose and removing one means migrating its callers first (`add`/`remove` pairs
-are one-liners, `updateLeaf`/`updateBrace` carry real ordering logic).
+Two things are *not* work, and the plan used to count them as such:
 
-### Done
+- The `getSupportEntity('trunk', id)` calls inside the joint-drag arms are typed
+  dispatch — the literal carries the arm's `Trunk` narrowing, so the rename
+  already breaks them and converting them would lose the type (§3A).
+- Stage 5's value literals: 114 of 129 are compiler-checked. Done.
 
-| work | evidence |
-| ---- | -------- |
+---- | -------- |
+| **Value literals measured and cleared (stage 5)** | `silent-value-sites.py`: 114 of 129 value literals are rename-reached by the compiler; the 2 genuinely silent ones (`autoPlace.ts` ledger kind, `updateBrace` stamp) fixed, and the `AUTO_PLACED_TYPE_IDS` shadow list replaced by `AUTO_PLACED_BY_TYPE` + an `isAutoPlaced` flag |
 | **Page-named sidebar tabs (stage 4)** | `SidebarTab` is `'supportInfo' \| 'raft' \| 'grid' \| 'bracing'`; the descriptor declares it and `panelForTab` derives the panel from `SIDEBAR_PANELS`, so no hand-kept tab→panel table. Verified in a browser: all four tabs select and swap panels |
 | **Entity-form writers (stage 3)** | Seven `updateSupportEntity(typeId, entity)` calls took the entity; the entity overload is generic so a full entity is accepted. The convention test now pins both legal resolver forms |
 | **Endpoint readers take the entity (stage 2)** | `resolveSegmentEndpoints` / `splitSupportShaft` have no type-id parameter and no literal call site. Found and fixed a real defect on the way: `mergeFromImportFormat` did not stamp `typeId`, so the knot-geometry pass diverged (caught by the `merge-with-owner` golden) |
@@ -508,7 +543,14 @@ declaration.
   `other-vocab` / `object-key` / `comment`, splitting outside vs. inside a type's
   own folder. Supports `--json` and `--verbose`.
 
-Both must run from the DragonFruit repo root.
+`silent-value-sites.py` — **the stage-5 instrument.** It renames each type in
+`types.ts`, runs `tsc`, and asks which value literals no error landed on. That is
+the question the other two cannot answer: `type-literal-metric.py` counts every
+literal whether or not a rename reaches it, and `rename-test.py` reports totals
+without saying which literal survived. A site with no error near it is silent —
+the only kind of value literal that is work.
+
+All three must run from the DragonFruit repo root.
 
 ### 5.2 The ratchet — **shipped**
 
@@ -676,23 +718,21 @@ and the tool genuinely are the same thing.
   folder, (b) a documented different vocabulary, or (c) an `addSupportEntity` call
   where the type genuinely does not exist yet.
 - `rename-test.py` reports **0 "real work"** errors for every one of the eight
-  types. Current standing, re-measured after stage 1:
+  types. Current standing, re-measured after stage 5:
 
   | type | honest remaining | was | | type | honest remaining | was |
   | --- | ---: | ---: | --- | --- | ---: | ---: |
-  | branch | **91** | 112 | | brace | 17 | 17 |
-  | leaf | 51 | 67 | | kickstand | 14 | 12 |
+  | branch | **92** | 112 | | brace | 14 | 17 |
+  | leaf | 49 | 67 | | kickstand | 14 | 12 |
   | trunk | 43 | 55 | | stick | 7 | 10 |
   | | | | | twig | 5 | 5 |
   | | | | | anchor | **2** | 2 |
 
-  **230 total**, down from 280 at the start of stage 1. Two types rose and are
-  still above their pre-stage-1 reading (`trunk` 55 → 56 → 50 is net down;
-  `kickstand` 12 → 14 is net up) because a silent hazard became a compile error —
-  read §3B before treating either as a regression. `anchor` at 2 is the proof the
-  pattern works — its conversion landed and it was comparable to the others
-  beforehand. `stick` at 10 is the number most often quoted; `branch` at 91 is the
-  number that describes the remaining work.
+  **226 total**, down from 280 at the start of stage 1, and
+  `silent-value-sites.py` reports **0 real defects** left in the value class.
+  `anchor` at 2 is the proof the pattern works — its conversion landed and it was
+  comparable to the others beforehand. `branch` at 92 is the number that describes
+  the remaining work; `stick` at 7 is the one most often quoted.
 - The inventory (`inventory.py`) shows no token that would survive a rename
   *without* a compile error. The rename test cannot see those; the two
   instruments are not interchangeable.

@@ -64,6 +64,7 @@ every descriptor declares all of them:
 | ---- | --- |
 | `canBeGridHost` | Can a fan link attach to this type's shaft? (the host pool, merge search, attachment cap and forest report all read it) |
 | `hostsKickstand` | May a kickstand's host knot ride this type's segments? Read through `KICKSTAND_HOST_TYPES`; `KICKSTAND_HOST_BY_TYPE` mirrors it with literals kept so the host union narrows |
+| `isAutoPlaced` | Does the auto-support pass place this type, and does the ledger report it? Read through `AUTO_PLACED_TYPE_IDS`, or `AUTO_PLACED_BY_TYPE` for the narrowed union |
 | `hasSegments` | Do instances have real shafts? |
 | `contactFields` | Which contact primitive fields, in order? |
 | `segmentsCarryBothJoints` | Does each segment carry both its joints, or do endpoints come from a root / parent knot / neighbour? |
