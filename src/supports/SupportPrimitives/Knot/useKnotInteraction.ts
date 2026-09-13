@@ -32,6 +32,29 @@ function hostsRealSegments(containerType: KnotHostType): boolean {
     return !getSupportTypeDescriptor(containerType).knotHostPrefix;
 }
 
+/**
+ * Whether the host is a span between two knots rather than a segmented shaft.
+ * A span type declares no real segments but selects its span as a segment, so
+ * the descriptor answers without naming the type.
+ */
+function hostsCurveSpan(containerType: KnotHostType): boolean {
+    if (containerType === 'leafCone') return false;
+    const descriptor = getSupportTypeDescriptor(containerType);
+    return !descriptor.hasSegments && descriptor.segmentSelectionPrefix !== undefined;
+}
+
+/** Whether a knot drag on this host defers elastic solving to release. */
+function defersElasticPreview(containerType: KnotHostType): boolean {
+    if (containerType === 'leafCone') return false;
+    return !!getSupportTypeDescriptor(containerType).knotDragDefersElasticPreview;
+}
+
+/** Whether a knot drag on this host updates the attached leaf cones' taper. */
+function updatesLeafConeOnKnotDrag(containerType: KnotHostType): boolean {
+    if (containerType === 'leafCone') return false;
+    return !!getSupportTypeDescriptor(containerType).knotDragUpdatesLeafConeDiameter;
+}
+
 /** Whether a knot on this host takes its diameter from the shaft it rides. */
 function takesShaftDiameter(containerType: KnotHostType): boolean {
     return containerType !== 'leafCone';
@@ -507,7 +530,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             const endVec = new THREE.Vector3(socketPos.x, socketPos.y, socketPos.z);
             host.start.copy(endVec.clone().add(axis.multiplyScalar(-len)));
             host.end.copy(endVec);
-        } else if (host.containerType === 'brace' && host.entity) {
+        } else if (hostsCurveSpan(host.containerType) && host.entity) {
             const brace = host.entity as unknown as Brace;
             const startKnot = getKnotById(brace.startKnotId);
             const endKnot = getKnotById(brace.endKnotId);
@@ -540,7 +563,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             return out;
         }
 
-        if (host.containerType === 'brace' && host.entity) {
+        if (hostsCurveSpan(host.containerType) && host.entity) {
             const brace = host.entity as unknown as Brace;
             const startKnot = getKnotById(brace.startKnotId);
             const endKnot = getKnotById(brace.endKnotId);
@@ -716,7 +739,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
             if (
                 FAST_KNOT_DRAG_ELASTIC_PREVIEW
-                && activeHostAtEnd?.containerType === 'trunk'
+                && activeHostAtEnd && defersElasticPreview(activeHostAtEnd.containerType)
                 && previewKnotAtEnd
                 && Object.keys(elasticState.current).length > 0
             ) {
@@ -833,7 +856,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             // it visibly had during the drag preview.
             if (
                 activeKnotIdAtEnd
-                && activeHostAtEnd?.containerType === 'twig'
+                && activeHostAtEnd && updatesLeafConeOnKnotDrag(activeHostAtEnd.containerType)
                 && (activeHostAtEnd.entity as unknown as Twig)
                 && previewKnotAtEnd
                 && previewKnotAtEnd.t !== undefined
@@ -979,7 +1002,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         let bestT = projectedOnHost.t;
         let bestDistSq = Number.POSITIVE_INFINITY;
 
-        const braceHost = host.containerType === 'brace'
+        const braceHost = hostsCurveSpan(host.containerType)
             ? host.entity as unknown as Brace | undefined
             : undefined;
         if (braceHost?.curve?.type === 'bezier') {
@@ -1143,7 +1166,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         // 2. Elastic Chain Logic
         // Fast trunk-knot preview path: skip heavy per-frame elastic solving and
         // defer exact solving to release for smoother branch/leaf visual response.
-        const shouldSkipElasticPreview = FAST_KNOT_DRAG_ELASTIC_PREVIEW && host.containerType === 'trunk';
+        const shouldSkipElasticPreview = FAST_KNOT_DRAG_ELASTIC_PREVIEW && defersElasticPreview(host.containerType);
         let finalKnotPos = constrainedPos;
 
         if (shouldSkipElasticPreview) {
@@ -1257,7 +1280,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         let finalOnLine = snapVec3(host.start.clone().add(lineVec.clone().multiplyScalar(t)));
 
         // For curved braces: keep knot exactly on the curve and derive t from closest sample.
-        const curvedBrace = host.containerType === 'brace'
+        const curvedBrace = hostsCurveSpan(host.containerType)
             ? host.entity as unknown as Brace | undefined
             : undefined;
         if (curvedBrace?.curve?.type === 'bezier') {

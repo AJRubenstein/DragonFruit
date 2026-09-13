@@ -427,6 +427,17 @@ export interface SupportTypeDescriptor {
      */
     projectsUnparameterisedKnots: boolean;
     /**
+     * Whether a knot drag on this type's shaft defers elastic-chain solving to
+     * release. True for the default host, whose knots are the common case and
+     * skip the per-frame solve for a smoother preview.
+     */
+    knotDragDefersElasticPreview?: boolean;
+    /**
+     * Whether a knot drag on this type's shaft updates the attached leaf cones'
+     * wide-end diameter from the taper at the knot's new position.
+     */
+    knotDragUpdatesLeafConeDiameter?: boolean;
+    /**
      * How interior view decides whether an instance is inside the cavity.
      *
      * - `contacts`  -- test the type's own declared contacts.
@@ -537,6 +548,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: true,
         projectsUnparameterisedKnots: true,
+        knotDragDefersElasticPreview: true,
         interiorVisibility: 'contacts',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: true,
@@ -673,6 +685,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         batchesShaft: true,
         bezierContextIdPrefix: 'twig-',
         broadcastsAttachmentsWhileDragging: true,
+        knotDragUpdatesLeafConeDiameter: true,
         knotTakesJointDiameter: false,
         projectsUnparameterisedKnots: false,
         interiorVisibility: 'contacts',
