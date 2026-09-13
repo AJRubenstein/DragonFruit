@@ -55,16 +55,16 @@ counted separately and **conceded** — a type is allowed to name itself.
 
 Three instruments, and none of them alone is the picture:
 
-**Re-measured after stage 2** (§4). Previous readings, kept for the delta, are
+**Re-measured after stage 3** (§4). Previous readings, kept for the delta, are
 in the *was* column.
 
 | instrument | what it answers | now | was |
 | ---------- | --------------- | --- | --- |
-| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | 241 total | 280 |
-| `inventory.py` + `report.py` | every token containing a type name | **6,850** occurrences, 780 tokens | 6,955 / 778 |
-| `npm run scan:support-types` | the headline reference metric | **5,844** across 152 files | 5,909 |
-| `type-literal-metric.py` | every string literal equal to a type id | 141 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
-| `npm run check:support-literals` | the same, with the ratchet | 128 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
+| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | 236 total | 280 |
+| `inventory.py` + `report.py` | every token containing a type name | **6,836** occurrences, 780 tokens | 6,955 / 778 |
+| `npm run scan:support-types` | the headline reference metric | **5,837** across 152 files | 5,909 |
+| `type-literal-metric.py` | every string literal equal to a type id | 134 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
+| `npm run check:support-literals` | the same, with the ratchet | 121 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
 
 Three readings moved up or held still while the defect count fell, and each is
 expected rather than a regression:
@@ -94,14 +94,14 @@ Run for all eight, not just the convenient one:
 | type | honest remaining | was |
 | ---- | ---: | ---: |
 | branch | **91** | 112 |
-| leaf | 52 | 67 |
-| trunk | 50 | 55 |
+| leaf | 51 | 67 |
+| trunk | 46 | 55 |
 | brace | 17 | 17 |
 | kickstand | 14 | 12 |
 | stick | 10 | 10 |
 | twig | 5 | 5 |
 | anchor | 2 | 2 |
-| **total** | **241** | 280 |
+| **total** | **236** | 280 |
 
 **Read this table before quoting a headline.** The refactor has largely been
 measured on `stick`, which is the easiest type and now sits at 10. `branch` is
@@ -252,8 +252,26 @@ instead of `1.1`. The merge path now stamps per descriptor, like load. Both
 halves are pinned by mutation: returning null from `resolveSupportTypeIdOf` fails
 11 tests, and removing the merge stamping fails the `merge-with-owner` golden.
 
-Top files still holding this shape: `state.ts`, `useJointInteraction.ts`,
-`useKnotInteraction.ts`.
+**Stage 3 closed the rest of that shape where the caller holds the entity.**
+Seven `updateSupportEntity(typeId, entity)` calls became `updateSupportEntity(entity)`
+(a spread or a `getSupportEntity` result, so the entity carries its own type), and
+`updateSupportEntity`'s entity overload is generic now so a full entity is
+accepted rather than a stripped `{ id }`. The convention test was widened to
+match: a resolver takes `typeId: SupportTypeId` **or** an entity carrying
+`typeId?`, and the explicit form is asserted to still exist.
+
+**What is left of this shape is not a plain literal — it is typed dispatch.**
+`getSupportEntity('trunk', id)` inside the joint-drag arm *carries the narrowing*:
+swapping it for `getSupportEntity(owner.typeId, id)` loses the arm's `Trunk` type
+and produces six errors. Same for `commitJointDragSupport('trunk', …)` and
+`publishJointDragSupportPreview('trunk', …)`, whose `kind` selects the payload type
+from a mapped union. A rename reaches all of these (the compiler rejects the
+stale id), so they are cause D, not cause A. Converting them is stage 6 work:
+the arm has to stop being per-type before its literal can go.
+
+The deprecated `add<Type>` / `update<Type>` / `remove<Type>` wrappers in `state.ts`
+are the other remainder, and are debt markers: each names its type on purpose, and
+removing one means migrating its callers first.
 
 ### B. Unions that are type-id subsets — **done, stage 1**
 
@@ -394,7 +412,7 @@ shippable and independently verifiable.
 | --- | --- | --- | ---: | --- | --- |
 | **1** | Derive the three hazard unions from the registry | B | 3 | low | **done** — see §3B; three silent classes now fail to compile, test at `__tests__/derivedTypeSubsets.test.ts` |
 | **2** | `resolveSegmentEndpoints` / `splitSupportShaft` take the entity | A | 12 | low | **done** — the type-id parameter is gone; see §3A, including the merge defect it surfaced |
-| **3** | The rest of cause A's accessors | A | ~20 | low–med | **next** — re-measure the list first; §3A's counts predate stages 1–2 |
+| **3** | The rest of cause A's accessors | A | 7 | low | **done** — the entity-form writers; the remainder is typed dispatch (stage 6) and deprecated wrappers. See §3A |
 | **4** | Settings/anatomy-preview dispatch | C | 11 | medium | pending — needs a UI decision first, see below |
 | **5** | Value literals in argument position | D | 148 | low each | pending |
 | **6** | Per-type prop and hook names | F | ~1,410 | high | pending — design change, no metric moves |
@@ -415,6 +433,7 @@ converting, or the conversion encodes the wrong model.
 
 | work | evidence |
 | ---- | -------- |
+| **Entity-form writers (stage 3)** | Seven `updateSupportEntity(typeId, entity)` calls took the entity; the entity overload is generic so a full entity is accepted. The convention test now pins both legal resolver forms |
 | **Endpoint readers take the entity (stage 2)** | `resolveSegmentEndpoints` / `splitSupportShaft` have no type-id parameter and no literal call site. Found and fixed a real defect on the way: `mergeFromImportFormat` did not stamp `typeId`, so the knot-geometry pass diverged (caught by the `merge-with-owner` golden) |
 | **Hazard unions derived (stage 1)** | `SupportPlacementFamily`, `KickstandHostKind`, `RemoveJointByIdResult` all fail to compile on a rename; `hostsKickstand` + `KICKSTAND_HOST_BY_TYPE` + `JOINT_REMOVAL_BY_TYPE` in the registry, held to their flags by `__tests__/derivedTypeSubsets.test.ts` |
 | Renderer family loop | `SupportRenderer.tsx` holds zero dispatch literals; detail renderers register from their own folders |
@@ -603,12 +622,12 @@ touches every descriptor plus `sidebarPanels.ts`.
   | type | honest remaining | was | | type | honest remaining | was |
   | --- | ---: | ---: | --- | --- | ---: | ---: |
   | branch | **91** | 112 | | brace | 17 | 17 |
-  | leaf | 52 | 67 | | kickstand | 14 | 12 |
-  | trunk | 50 | 55 | | stick | 10 | 10 |
+  | leaf | 51 | 67 | | kickstand | 14 | 12 |
+  | trunk | 46 | 55 | | stick | 10 | 10 |
   | | | | | twig | 5 | 5 |
   | | | | | anchor | **2** | 2 |
 
-  **241 total**, down from 280 at the start of stage 1. Two types rose and are
+  **236 total**, down from 280 at the start of stage 1. Two types rose and are
   still above their pre-stage-1 reading (`trunk` 55 → 56 → 50 is net down;
   `kickstand` 12 → 14 is net up) because a silent hazard became a compile error —
   read §3B before treating either as a regression. `anchor` at 2 is the proof the
