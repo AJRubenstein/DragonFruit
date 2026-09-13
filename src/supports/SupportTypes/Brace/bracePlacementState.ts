@@ -1,11 +1,12 @@
 import { createPlacementStore, usePlacementStoreState } from '../../interaction/shared/placement/placementStore';
 import { vecEq } from '../../interaction/shared/placement/placementComparators';
 import type { Vec3 } from '../../types';
+import type { SupportTypeId } from '../../supportTypeRegistry';
 
 type Stage = 'idle' | 'awaitingEnd';
 
 export interface BraceSnapTarget {
-    kind: 'shaft' | 'leaf';
+    kind: 'shaft' | SupportTypeId;
     snappedPos: Vec3;
     hostDiameterMm?: number;
     ownerModelId?: string;
@@ -14,8 +15,8 @@ export interface BraceSnapTarget {
     segmentId?: string;
     t?: number;
 
-    // Leaf cone endpoint
-    leafId?: string;
+    // Cone-primitive endpoint (the type whose `hostsBraceSnapCone` is true)
+    entityId?: string;
     coneT?: number;
 }
 
@@ -57,7 +58,7 @@ function snapTargetEq(a: BraceSnapTarget | null, b: BraceSnapTarget | null): boo
         && a.ownerModelId === b.ownerModelId
         && a.segmentId === b.segmentId
         && a.t === b.t
-        && a.leafId === b.leafId
+        && a.entityId === b.entityId
         && a.coneT === b.coneT
         && vecEq(a.snappedPos, b.snappedPos)
     );

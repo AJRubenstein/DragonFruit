@@ -289,6 +289,19 @@ export interface SupportTypeDescriptor {
      */
     isAutoBraceable: boolean;
     /**
+     * Whether the auto-bracing hotkey is available while this type's tool is
+     * active. Stick is the auto-placed span support auto-bracing adds braces
+     * to, so its tool is where the hotkey runs.
+     */
+    hasAutoBracingHotkey?: boolean;
+    /**
+     * Whether a brace endpoint snaps to this type's contact cone (a primitive)
+     * rather than a shaft segment. Leaf alone: it carries no shaft, so a brace
+     * snaps to its cone. The brace snap code reads this flag instead of naming
+     * the type, so a rename reaches only this descriptor.
+     */
+    hostsBraceSnapCone?: boolean;
+    /**
      * The measurement range this type serves, when the type is chosen
      * automatically rather than picked by the user.
      *
@@ -439,6 +452,12 @@ export interface SupportTypeDescriptor {
      */
     knotDragDefersElasticPreview?: boolean;
     /**
+     * Whether a knot drag on this type's shaft computes its preview on the main
+     * thread rather than delegating to a worker. True for the default host,
+     * whose previews are the common case and skip the worker handoff.
+     */
+    knotDragComputesInline?: boolean;
+    /**
      * Whether a knot drag on this type's shaft updates the attached leaf cones'
      * wide-end diameter from the taper at the knot's new position.
      */
@@ -555,6 +574,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         knotTakesJointDiameter: true,
         projectsUnparameterisedKnots: true,
         knotDragDefersElasticPreview: true,
+        knotDragComputesInline: true,
         interiorVisibility: 'contacts',
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: true,
@@ -634,6 +654,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         sidebarTab: 'trunk',
         hasEditableSettings: true,
         knotHostPrefix: 'leafCone:',
+        hostsBraceSnapCone: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' }],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -734,6 +755,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         batchesContactCones: true,
         batchesShaft: true,
         bezierContextIdPrefix: 'stick-',
+        hasAutoBracingHotkey: true,
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
         projectsUnparameterisedKnots: false,
@@ -1370,6 +1392,16 @@ export function registerLateralStabiliser(
 /** Every registered stabiliser, in registry order. */
 export function lateralStabiliserTypes(): readonly SupportTypeId[] {
     return SUPPORT_TYPES.filter((d) => LATERAL_STABILISERS.has(d.id)).map((d) => d.id);
+}
+
+/** Whether this type is a lateral stabiliser, generated beside a group. */
+export function isLateralStabiliserType(typeId: SupportTypeId | string): boolean {
+    return (lateralStabiliserTypes() as readonly string[]).includes(typeId);
+}
+
+/** The type whose brace snap target is its contact cone (leaf), if any. */
+export function braceSnapConeType(): SupportTypeId | null {
+    return SUPPORT_TYPES.find((d) => d.hostsBraceSnapCone)?.id ?? null;
 }
 
 /**

@@ -16,7 +16,7 @@ import { useJointCreationState } from '@/supports/SupportPrimitives/Joint/jointC
 import { cloneSupportState, getSelectedId, getSelectedCategory, findShaftOwnerOfJoint, findShaftOwnerOfSegment, getSupportEntities, getSupportTypeOf, getSupports, getSnapshot, removeJointById, setSelectedId, setHoveredState, subscribe } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
-import { SUPPORT_UPDATE_TRUNK, SUPPORT_UPDATE_BRANCH, SUPPORT_AUTO_BRACE_REPLACE } from '@/supports/history/actionTypes';
+import { SUPPORT_AUTO_BRACE_REPLACE } from '@/supports/history/actionTypes';
 import { findKnotHost, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, KNOT_HOST_PRECEDENCE, SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 import { removeSupportEntityWithPayload } from '@/supports/history/removalPayload';
 import { MODEL_SURFACE_GESTURE_TYPES } from '@/supports/supportTypeRegistry';
@@ -217,27 +217,18 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         }
         // Whether a joint removal records an update is the type's declared
         // `historyUpdate`; a type without one (kickstand today) rides the
-        // full-state snapshot. The DECISION is derived; the push is not,
-        // because the history payload map is keyed per action, so the payload
-        // type is per-type and one generic push would need a cast -- the thing
-        // `SupportHistoryPayloadMap` exists to prevent. Add an arm here when a
-        // type gains both a `historyUpdate` and joint editing.
+        // full-state snapshot. The action and payload are the type's own, so
+        // the push uses the declared action; the payload cast keeps the
+        // per-action payload map the single source of truth for what a handler
+        // understands.
         const descriptor = getSupportTypeDescriptor(result.typeId);
         if (recordHistory && descriptor.historyUpdate) {
           const description = `Delete ${descriptor.singular} joint`;
-          if (result.typeId === 'trunk') {
-            pushSupportHistory({
-              type: SUPPORT_UPDATE_TRUNK,
-              description,
-              payload: { before: result.before, after: result.after },
-            });
-          } else if (result.typeId === 'branch') {
-            pushSupportHistory({
-              type: SUPPORT_UPDATE_BRANCH,
-              description,
-              payload: { before: result.before, after: result.after },
-            });
-          }
+          pushSupportHistory({
+            type: descriptor.historyUpdate,
+            description,
+            payload: { before: result.before, after: result.after } as never,
+          });
         }
         setSelectedId(result.id);
         return true;

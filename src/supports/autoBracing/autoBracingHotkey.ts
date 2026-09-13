@@ -1,4 +1,5 @@
 import type { SidebarPanel } from '../Settings/sidebarPanels';
+import { getSupportTypeBySelectionCategory } from '../supportTypeRegistry';
 
 type AutoBracingHotkeyContext = {
     active: boolean;
@@ -20,7 +21,7 @@ export function shouldRunAutoBracingHotkey({
     return active
         && !wasActive
         && sidebarExpanded
-        && activeSupportKind === 'stick'
+        && !!getSupportTypeBySelectionCategory(activeSupportKind)?.hasAutoBracingHotkey
         && !curvePageVisible
         && !modalOpen;
 }

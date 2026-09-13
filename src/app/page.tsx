@@ -2024,7 +2024,7 @@ export default function Home() {
         : null,
       braceSnapKind: snapTarget?.kind ?? null,
       braceSnapSegmentId: snappedSegmentId,
-      braceSnapLeafId: snapTarget?.kind === 'leaf' ? (snapTarget.leafId ?? null) : null,
+      braceSnapPrimitiveId: snapTarget?.entityId ?? null,
       previewStart: preview?.start ?? null,
       previewEnd: preview?.end ?? null,
       hoveredVsSnapMismatch,
@@ -2977,13 +2977,11 @@ export default function Home() {
       addRootVolume(root);
     }
 
-    // Every shafted type, by its declared segments and contacts. Written out
-    // per type this covered six of the eight and left anchors uncounted.
+    // Every type with segments or contacts, by its declared segments and
+    // contacts. A brace has neither (its shaft is a curve between two knots),
+    // so the guard below skips it and it is summed on its own below.
     for (const descriptor of SUPPORT_TYPES) {
       if (!descriptor.hasSegments && descriptor.contactFields.length === 0) continue;
-      // A brace spans two knots along a curve instead of carrying segments; it
-      // is summed on its own below.
-      if (descriptor.id === 'brace') continue;
 
       const collection = supportStateSnapshot[descriptor.location.key as SupportCollectionKey] as unknown as Record<string, {
         id: string; modelId: string; segments?: Segment[]; rootId?: string; parentKnotId?: string; hostKnotId?: string;

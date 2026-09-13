@@ -1684,7 +1684,7 @@ export function validateAndCullOrphans(
         }
         if (tipPos) {
             let blocked = false;
-            if (kind === 'leaf') {
+            if (!getSupportTypeDescriptor(kind).hasSegments) {
                 const leafObj = nextDraft.leaves[id];
                 const cone = leafObj?.contactCone;
                 if (cone && mesh) {
@@ -2722,8 +2722,8 @@ export function computeAutoSupportPlan(
         if (gapCandidates.length === 0) break;
         let placedThisPass = 0;
         for (const c of gapCandidates) {
-            const kind = placeOne(c);
-            if (kind === 'trunk' || kind === 'anchor') placedThisPass++;
+            const kind = placeOne(c) as PlacementOutcomeKind;
+            if (kind !== 'reject' && getSupportTypeDescriptor(kind).placementRule?.metric === 'tipHeight') placedThisPass++;
         }
         gapFilledTrunks += placedThisPass;
         if (placedThisPass === 0) break;

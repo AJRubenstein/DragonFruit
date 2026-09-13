@@ -33,7 +33,7 @@ import { applyRepeatingPattern } from './repeatingPattern';
 import { runZigZagChain } from './zigzagChain';
 import { buildBraceProfile } from './braceDiameter';
 import type { KickstandBuildResult } from '../SupportTypes/Kickstand/types';
-import { generateLateralStabilisers, getSupportTypeDescriptor, isAutoBraceableShaftType, lateralStabiliserTypes, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
+import { generateLateralStabilisers, getSupportTypeDescriptor, isAutoBraceableShaftType, isLateralStabiliserType, lateralStabiliserTypes, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
 import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
 import { linePassesMeshClearance } from './meshClearance';
 
@@ -755,7 +755,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
             );
             if (modelId) pairsByModel.set(modelId, pairs);
         }
-        const extra = groupMembers.filter((s) => s.supportKind === 'kickstand');
+        const extra = groupMembers.filter((s) => isLateralStabiliserType(s.supportKind));
         if (extra.length > 0 && groupTrunks.length > 0) {
             const stabiliserCandidateEdges: Edge[] = [];
             for (const sb of extra) {

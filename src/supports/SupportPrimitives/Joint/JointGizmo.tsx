@@ -242,7 +242,7 @@ export function JointGizmo() {
         // Trunk records its own typed before/after entry. The action's payload
         // type is per-action, so this one stays typed rather than dispatched:
         // widening `type` would lose the payload check that keeps it honest.
-        if (initialTrunkRef.current && owner?.typeId === 'trunk') {
+        if (initialTrunkRef.current && owner && getSupportTypeDescriptor(owner.typeId).ownsEditHistoryEntry) {
             const committedTrunk = livePreviewOf<Trunk>('trunk')
                 ?? getSupportEntity('trunk', owner.id);
             if (committedTrunk) {
