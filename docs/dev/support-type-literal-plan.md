@@ -259,12 +259,36 @@ compared, replace it with the declared flag that already answers the question.
 comparison sites — a payload field typed as a union still needs a literal to
 construct.
 
-### E. Declarations — **5 sites**
+### E. Declarations — **3 sites**
 
-`sidebarPanels.ts` `TYPE_PANELS = ['trunk', 'leaf', 'branch', 'twig', 'stick']`,
-`gridPlacement.ts`'s two localized constants, and a couple of sets. Mostly done.
-`TYPE_PANELS` is the remaining real one: it is the sidebar's second type list, and
-should derive from the registry's `sidebarTab` + `hasEditableSettings`.
+`gridPlacement.ts`'s two localized constants, and `sidebarPanels.ts`'s
+`TYPE_PANELS`. Mostly done.
+
+> **`TYPE_PANELS` is NOT a target — verified, not assumed.** The plan's earlier
+> hypothesis was that it derives from `sidebarTab` + `hasEditableSettings`.
+> Measuring the actual flag values disproves it:
+>
+> | type | hasEditableSettings | sidebarTab | in `TYPE_PANELS` |
+> | --- | --- | --- | --- |
+> | trunk | true | trunk | yes |
+> | branch | true | trunk | yes |
+> | leaf | true | trunk | yes |
+> | twig | **false** | trunk | **yes** |
+> | stick | **false** | stick | **yes** |
+> | brace | false | trunk | no |
+> | anchor | false | trunk | no |
+> | kickstand | **true** | trunk | **no** |
+>
+> It is not `hasEditableSettings` (twig and stick are in with `false`; kickstand
+> is out with `true`), and not `sidebarTab`. The documented reason holds: which
+> panels the sidebar OFFERS is a UI decision.
+>
+> It is also not a rename hazard: the list is annotated `readonly SupportTypeId[]`,
+> so renaming a type in the registry is a COMPILE ERROR here, not a silent stale
+> entry. That is the good case — the compiler catches it — and it is why this list
+> is a declaration rather than a defect.
+>
+> Left as is, with the reasoning recorded so it is not "fixed" later.
 
 ---
 
@@ -273,19 +297,41 @@ should derive from the registry's `sidebarTab` + `hasEditableSettings`.
 Each stage is independently shippable and independently verifiable. Order is by
 ratio of volume removed to risk taken.
 
-| stage | work | sites removed | risk | gate |
-| --- | --- | --- | --- | --- |
-| **0** | Adopt the full-shape metric; add it to CI as a ratchet | 0 | none | metric runs in CI |
-| **1** | Store accessors read `entity.typeId` / `getSupportTypeOf` (root cause A) | ~45 | low | rename test + `getSupportTypeOf` mutation |
-| **2** | `TYPE_PANELS` derives from the registry (E) | 1 table (5 values) | low | sidebar tests |
-| **3** | Renderer family loop (B) | ~18 | medium | scene/export goldens + per-type presence |
-| **4** | Knot-host resolution through the registry (C, first concept) | ~10 | medium | knot interaction tests |
-| **5** | `autoBrace` uses `isAutoBraceable` (C) | 6 | medium | brace tests; see §6 |
-| **6** | Remaining concepts in C, one at a time | ~30 | high each | mutation per concept |
-| **7** | Payload fields (D) | ~32 | low–medium | per-site |
+**Progress: stages 0, 1 (first half) and 5 done. Literal dispatch 50 → 39.**
 
-**Do not parallelise C.** Each concept needs the whole-run signature and the
+| stage | work | sites | risk | status |
+| --- | --- | --- | --- | --- |
+| **0** | Metric + CI ratchet (`scan-type-name-literals.ts`) | 0 | none | **done** |
+| **1a** | Store WRITE accessors derive from the entity; getters gain a typed return | ~45 | low | **done** — 14 casts deleted |
+| **1b** | `resolveSegmentEndpoints` / `splitSupportShaft` take the entity | ~12 | low | **deferred** — the remaining literals sit inside `preview.kind === 'trunk'` branches, so removing them is stage 6 work, not stage 1 (see §3A) |
+| **2** | `TYPE_PANELS` derives from the registry | — | — | **closed, not a target** (see §3E) |
+| **3** | Renderer family loop | ~18 | medium | pending |
+| **4** | Knot-host resolution through the registry | ~10 | medium | pending |
+| **5** | `autoBrace` uses its flag; `branch` made reachable | 6 | medium | **done** — dispatch 44 → 39 |
+| **6** | Remaining concepts, one at a time | ~30 | high each | pending |
+| **7** | Payload fields | ~32 | low–medium | pending |
+
+**Do not parallelise stage 6.** Each concept needs the whole-run signature and the
 rename test to move under it; two landing together make a failure ambiguous.
+
+### 4.1 What stages 0/1a/5 taught that changes the rest
+
+1. **A "declared but unread" flag looks exactly like a false one.** `branch`
+   declared `isAutoBraceable: true` for as long as anyone can remember while six
+   literal filters discarded it. Nothing failed; the smoke alarm was simply not
+   wired. Any flag this plan adds needs a test asserting its effect, not its
+   value.
+2. **The type argument to a store READ accessor is load-bearing.** It is what
+   gives the caller a typed entity. Removing it trades a value literal for a
+   dispatch literal. Chase the CASTS there, not the literals. (§3A)
+3. **A list of types is not automatically a defect.** `TYPE_PANELS` is annotated,
+   so a rename is a compile error — the compiler does the job the metric would
+   have been standing in for. (§3E)
+4. **Beware a test that passes for the wrong reason.** The stage-5 reachability
+   test first used a scene containing a trunk, so `skippedSupportCount > 0` was
+   satisfied by the trunk and it passed under the old literal too. A
+   branches-only scene makes the filter the only possible cause. Mutating the fix
+   back out is what exposed it.
 
 ---
 
