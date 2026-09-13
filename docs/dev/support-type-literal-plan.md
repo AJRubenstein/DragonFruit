@@ -55,16 +55,16 @@ counted separately and **conceded** — a type is allowed to name itself.
 
 Three instruments, and none of them alone is the picture:
 
-**Re-measured after stage 5** (§4). Previous readings, kept for the delta, are
+**Re-measured after stage 6a** (§4). Previous readings, kept for the delta, are
 in the *was* column.
 
 | instrument | what it answers | now | was |
 | ---------- | --------------- | --- | --- |
-| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | 226 total | 280 |
-| `inventory.py` + `report.py` | every token containing a type name | **6,831** occurrences, 780 tokens | 6,955 / 778 |
-| `npm run scan:support-types` | the headline reference metric | **5,838** across 152 files | 5,909 |
-| `type-literal-metric.py` | every string literal equal to a type id | 129 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
-| `npm run check:support-literals` | the same, with the ratchet | 116 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
+| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | **200 total** | 280 |
+| `inventory.py` + `report.py` | every token containing a type name | **6,724** occurrences, 771 tokens | 6,955 / 778 |
+| `npm run scan:support-types` | the headline reference metric | **5,749** across 152 files | 5,909 |
+| `type-literal-metric.py` | every string literal equal to a type id | 111 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
+| `npm run check:support-literals` | the same, with the ratchet | 98 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
 | `silent-value-sites.py` | **value literals a rename does NOT reach** | **15, 0 of them real** | 17 real=2 |
 
 Stage 5 moved the rename total **230 → 226**. The movement is the point: two
@@ -101,15 +101,15 @@ Run for all eight, not just the convenient one:
 
 | type | honest remaining | was |
 | ---- | ---: | ---: |
-| branch | **92** | 112 |
+| branch | **84** | 112 |
 | leaf | 49 | 67 |
-| trunk | 43 | 55 |
+| trunk | 29 | 55 |
 | brace | 14 | 17 |
-| kickstand | 14 | 12 |
+| kickstand | 10 | 12 |
 | stick | 7 | 10 |
 | twig | 5 | 5 |
 | anchor | 2 | 2 |
-| **total** | **226** | 280 |
+| **total** | **200** | 280 |
 
 **Read this table before quoting a headline.** The refactor has largely been
 measured on `stick`, which is the easiest type and now sits at 10. `branch` is
@@ -454,7 +454,8 @@ shippable and independently verifiable.
 | **3** | The rest of cause A's accessors | A | 7 | low | **done** — the entity-form writers; the remainder is typed dispatch (stage 6) and deprecated wrappers. See §3A |
 | **4** | Settings/anatomy-preview dispatch | C | 11 | low | **done** — it was the tab vocabulary, not a preview decision; see below |
 | **5** | Value literals in argument position | D | 129 | low | **done** — 114 were already compiler-checked; the 2 real silent ones are fixed. See §3D |
-| **6** | Per-type prop and hook names | F | ~1,410 | high | **next** — design change, no metric moves |
+| **6a** | The joint-drag arms | F | 4 arms | med | **done** — four arms collapsed to two; see §3F.1 |
+| **6b** | Per-type prop and hook names (previews, placement props) | F | ~1,410 | high | **next** — the prop fan-out; no metric moves |
 
 **Stages 1 and 2 have landed.** Stage 1 was the silent class — a rename left
 those unions compiling and wrong; stage 2 removed the type-id parameter from the
@@ -486,26 +487,69 @@ base64-zlib` envelope, which the codec rejects — it now emits raw zlib, and
 
 ### Where the rename test's remaining errors are
 
-`branch` is still the worst type at 92, and the remainder is stage 6's shape —
-not literals, but per-type names and per-type arms. Grouped by what has to change:
+After stage 6a the total is **200** (from 280 at the start of stage 1). What is
+left is two shapes, and neither is a literal:
 
 ```
-per-type drag arms and preview caches   useKnotInteraction, KnotGizmo,
-                                        useJointInteraction, autoPlace
-                                        (stages 3's leftover + 6)
-per-type placement props                SceneCanvas, placementControllers
-deprecated wrappers in state.ts         add<Type> / update<Type> / remove<Type>,
-                                        each naming its type on purpose (debt)
+per-type preview caches and props   useKnotInteraction, KnotGizmo,
+                                    SceneCanvas, autoPlace     (stage 6b)
+deprecated wrappers in state.ts     add<Type> / update<Type> /
+                                    remove<Type>               (debt)
 ```
 
-Two things are *not* work, and the plan used to count them as such:
+---
 
-- The `getSupportEntity('trunk', id)` calls inside the joint-drag arms are typed
-  dispatch — the literal carries the arm's `Trunk` narrowing, so the rename
-  already breaks them and converting them would lose the type (§3A).
-- Stage 5's value literals: 114 of 129 are compiler-checked. Done.
+### 6a. The joint-drag arms — done
+
+Four arms (`trunk`, `branch`, `kickstand`, and a contacts-at-both-ends fallback)
+became two, in `useJointInteraction` and again in `JointGizmo`:
+
+| what the arms differed by | where it comes from now |
+| ------------------------- | ----------------------- |
+| the root, and the host knot | `resolveDeclaredHosts(typeId, entity)` — the `owns → roots` and `hostedBy → knots` edge fields |
+| where the angle clamp measures from | `descriptor.lower.kind`, then `resolveShaftAnchor` |
+| whether the preview ref is read, or the store compared | `descriptor.jointDragUsesLivePreview` |
+| which typed history action is pushed | `descriptor.historyUpdate` + `ownsEditHistoryEntry` |
+
+`JointGizmo`'s root came from a hardcoded `.rootId`; it now reads the declared
+edge, so a type's root field is named once, in its descriptor.
+
+**Equivalence measured, not assumed.** The drag path has no test and no golden —
+it is a `useFrame` body reading refs — so `lysdiag/tools/joint-arm-equivalence.ts`
+re-expresses the old arms and the new code as pure functions over one input record
+and compares every combination of the things they branch on (8 types × 2⁶ × 3 =
+1,536 cases), using the REAL descriptor flags. Result: **all decision fields
+equal except 72 readings of one field**, every one of them trunk's fallback
+`contextStart`, where the old arm passed no start at all and the new one passes
+the root top.
+
+```
+combinations checked: 1536
+differing field readings: 72   (all trunk contextStartUsed: old=none new=rootTop)
+```
+
+The old code also carried that truncation to the commit path, whose fallback
+measures from the root top exactly as the new one does — so the two disagree
+within one drag, and then commit as though the new value had been used. The new
+code makes the move and the commit agree. A hypothesis test, not a measurement —
+exercising the two back to back needs a UI run nobody has done.
+
+**One behaviour change was found and deliberately NOT taken.** Reading the host
+fields off the declared edges gives kickstand `hostKnotId`, which the old arms
+never read (they looked for `parentKnotId`), and kickstand's upper endpoint IS a
+knot — so the new form could pass a host knot the old one did not. Per the
+repo rule, the conversion lands behaviour-preserving first: the drag start gates
+the pair on the declared lower endpoint, which reproduces the old resolution.
+Whether kickstand's host knot should reach the clamp is recorded open in
+`support-registry-findings.md`.
+
+**A new load-time check.** The typed history push now takes its action from the
+descriptor, and skipping it would drop the undo entry silently. `state.ts` asserts
+at load that no type declares `ownsEditHistoryEntry` without `historyUpdate` —
+mutation-verified by deleting trunk's action and watching it throw.
 
 ---- | -------- |
+| **Joint-drag arms collapsed (stage 6a)** | four arms (trunk/branch/kickstand/contacts) → one hosted path + one contact path, in `useJointInteraction` and `JointGizmo`; hosts and the history action read off the descriptor. `rename-test.py` trunk 43 → 29, branch 92 → 84, kickstand 14 → 10 |
 | **Value literals measured and cleared (stage 5)** | `silent-value-sites.py`: 114 of 129 value literals are rename-reached by the compiler; the 2 genuinely silent ones (`autoPlace.ts` ledger kind, `updateBrace` stamp) fixed, and the `AUTO_PLACED_TYPE_IDS` shadow list replaced by `AUTO_PLACED_BY_TYPE` + an `isAutoPlaced` flag |
 | **Page-named sidebar tabs (stage 4)** | `SidebarTab` is `'supportInfo' \| 'raft' \| 'grid' \| 'bracing'`; the descriptor declares it and `panelForTab` derives the panel from `SIDEBAR_PANELS`, so no hand-kept tab→panel table. Verified in a browser: all four tabs select and swap panels |
 | **Entity-form writers (stage 3)** | Seven `updateSupportEntity(typeId, entity)` calls took the entity; the entity overload is generic so a full entity is accepted. The convention test now pins both legal resolver forms |
@@ -610,7 +654,11 @@ Therefore, for every stage:
 
 ### Required gates per stage
 
-- `npx tsc --noEmit -p tsconfig.json` clean.
+- `npx tsc --noEmit -p tsconfig.json` clean. **Use `-p`.** A plain
+  `npx tsc --noEmit` can reuse a stale `.tsbuildinfo` and print nothing while that
+  form reports real errors — it nearly let a file that does not compile be
+  committed, and neither the suite nor the goldens catch it (they run through
+  `tsx`).
 - Full suite (990 tests) + goldens, **including untracked test files** —
   `git ls-files` silently skips them.
 - `npm run check:docs` clean.
@@ -722,16 +770,16 @@ and the tool genuinely are the same thing.
 
   | type | honest remaining | was | | type | honest remaining | was |
   | --- | ---: | ---: | --- | --- | ---: | ---: |
-  | branch | **92** | 112 | | brace | 14 | 17 |
-  | leaf | 49 | 67 | | kickstand | 14 | 12 |
-  | trunk | 43 | 55 | | stick | 7 | 10 |
+  | branch | **84** | 112 | | brace | 14 | 17 |
+  | leaf | 49 | 67 | | kickstand | 10 | 12 |
+  | trunk | 29 | 55 | | stick | 7 | 10 |
   | | | | | twig | 5 | 5 |
   | | | | | anchor | **2** | 2 |
 
-  **226 total**, down from 280 at the start of stage 1, and
+  **200 total**, down from 280 at the start of stage 1, and
   `silent-value-sites.py` reports **0 real defects** left in the value class.
   `anchor` at 2 is the proof the pattern works — its conversion landed and it was
-  comparable to the others beforehand. `branch` at 92 is the number that describes
+  comparable to the others beforehand. `branch` at 84 is the number that describes
   the remaining work; `stick` at 7 is the one most often quoted.
 - The inventory (`inventory.py`) shows no token that would survive a rename
   *without* a compile error. The rename test cannot see those; the two
