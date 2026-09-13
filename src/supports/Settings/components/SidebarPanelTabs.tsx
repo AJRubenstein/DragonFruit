@@ -15,7 +15,13 @@ type TabDef = {
 
 // Module level so React Compiler cannot rename anything the Lingui macro reads.
 const TABS: TabDef[] = [
-    { kind: 'trunk', label: msg({ message: 'Trunk', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: Pickaxe },
+    // The `trunk` id is the shared "support info" tab, not the trunk's own page:
+    // it carries the contact cone, cone angle and root settings that apply to
+    // supports generally. The LABEL says so. The id still says `trunk`, which is
+    // a leftover -- it is the `sidebarTab` value every non-tool type declares,
+    // so renaming it reaches the registry's `SidebarTab` type and every
+    // descriptor. See the literal plan's open decisions.
+    { kind: 'trunk', label: msg({ message: 'Support Info', comment: 'Support kind tab. One of four tabs on a narrow row; two words here, unlike the others.' }), icon: Pickaxe },
     { kind: 'raft', label: msg({ message: 'Raft', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: Sailboat },
     { kind: 'grid', label: msg({ message: 'Grid', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: Grid3X3 },
     { kind: 'stick', label: msg({ message: 'Bracing', comment: 'Support kind tab. One of four tabs on a narrow row, so keep it to one short word.' }), icon: WandSparkles },

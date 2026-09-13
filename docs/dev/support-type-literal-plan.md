@@ -373,26 +373,45 @@ Therefore, for every stage:
 
 ---
 
-## 8. Open decisions
+## 8. Decisions (answered)
 
-Needing a product or design call, not a refactor:
+1. **`branch.isAutoBraceable`** — **make it reachable.** The flag is right and the
+   passes are wrong. Stage 5.
+2. **The kickstand-on-branch behaviour** — **not a bug, leave it.** A
+   branch-hosted kickstand legitimately does not stabilise that column, so the
+   extra placement is the desired conservative direction (over-supported, never
+   under-supported). Closed in the findings doc so nobody "fixes" it later.
+3. **The `activePanel === 'trunk'` checks, and the word `trunk` for the menu.**
+   **The menu label was a mistake — relabelled to "Support Info".** Done: the tab
+   carries the contact cone, cone angle and root settings that apply to supports
+   generally, so "Trunk" was wrong on its face.
 
-1. **`branch.isAutoBraceable`** — make branch reachable in auto-bracing, or set
-   the flag false? It currently declares a capability nothing reads.
-2. **Do the `activePanel === 'trunk'` checks in the sidebar/anatomy previews
-   count as targets?** They are UI layout branching on which panel is showing.
-   The panel vocabulary is already registry-derived (`sidebarPanels.ts`), so these
-   may be legitimate layout special-cases rather than type dispatch. A call to
-   make before stage 6 touches them.
-3. **The add-side host-diameter repair is uncovered.** Flipping
-   `repairsHostDiameterOnAdd` for branch changed no test result — 903 pass either
-   way. The removal side is covered (`removalPayloadShapes`). Wants a test before
-   anything else moves near it.
-4. **`computeAndApplySupportDiameterProfile` is still imported across folders** by
-   `removalPayload.ts` and the trunk controller's repair helper. A third
-   registry seam of the established shape would remove both imports and make
-   `repairsHostDiameterOnAdd` verifiable. Not started, because it is another
-   typed function and that should be a deliberate choice.
+   The *id* still says `trunk`, deliberately: it is the `sidebarTab` value every
+   non-tool type declares, so renaming it reaches the registry's `SidebarTab`
+   type and every descriptor — a type-name literal in a place that is not a type.
+   That is a real instance of the class this plan exists to remove, and it is
+   tracked below rather than smuggled into a label change.
+
+   The remaining `activePanel === 'trunk'` **checks** are a separate question and
+   stay open: they branch on which panel is showing, which is UI layout. Settle
+   when stage 6 reaches that file.
+4. **`computeAndApplySupportDiameterProfile`** — **no seam needed.** It is a
+   geometry routine, not a type; importing it across folders is not the defect
+   this plan is about. Left as is. (The uncovered add-side repair in §6 stands on
+   its own as a test gap.)
+
+### 8.1 Newly tracked: `sidebarTab` names a type but is not one
+
+`SupportTypeDescriptor.sidebarTab: 'trunk' | 'raft' | 'grid' | 'stick'` — the
+value `'trunk'` here means "the shared support-info tab", not the trunk type. Two
+of the four values (`raft`, `grid`) are *tools*, and one (`stick`) is both a type
+and its own page.
+
+This is the §2 "different vocabulary" case, except it is not benign: the label
+change above showed it reads as the trunk's own page to anyone looking at the UI.
+Wants a `SupportSidebarTab` vocabulary with names that describe the PAGES
+(`supportInfo`, `raft`, `grid`, `bracing`), declared in the registry. Low risk,
+touches every descriptor plus `sidebarPanels.ts`.
 
 ---
 

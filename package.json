@@ -53,7 +53,9 @@
     "tauri:dev": "node scripts/tauri-dev.mjs",
     "test": "node --import tsx --test 'src/**/*.test.{ts,tsx}' 'plugins/**/*.test.{ts,tsx}'",
     "test:watch": "node --import tsx --test --watch 'src/**/*.test.{ts,tsx}' 'plugins/**/*.test.{ts,tsx}'",
-    "generate:support-registrations": "node scripts/generate-support-registrations.mjs"
+    "generate:support-registrations": "node scripts/generate-support-registrations.mjs",
+    "check:support-literals": "tsx scripts/scan-type-name-literals.ts --check",
+    "scan:support-literals": "tsx scripts/scan-type-name-literals.ts"
   },
   "dependencies": {
     "@lingui/core": "^6.3.0",
