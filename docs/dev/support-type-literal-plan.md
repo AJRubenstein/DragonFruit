@@ -422,12 +422,46 @@ those unions compiling and wrong; stage 2 removed the type-id parameter from the
 endpoint readers, which is what made their call sites reach a rename at all. Both
 are recorded in §3 with the mutations that pin them.
 
-**Stage 4 is blocked on a question, not on effort.** `SupportSidebar` and the
-anatomy previews dispatch on type name to choose which preview to draw. That may
-legitimately be a panel decision rather than a type decision — settle it before
-converting, or the conversion encodes the wrong model.
+**Stage 4's question is settled, and the answer is narrower than §3C implied.**
+Measured (§3C below): `SidebarPanel` is `SupportTypeId | 'raft' | 'grid' | 'auto'`,
+and `SIDEBAR_PANELS` is built from `TYPE_PANELS: readonly SupportTypeId[]`, so a
+per-type panel id *is* a type id. `activePanel === 'branch' | 'leaf' | 'twig' |
+'stick'` are therefore type-keyed comparisons a rename already breaks — cause D,
+not a hazard. What remains is `activePanel === 'trunk'`, where 'trunk' is
+simultaneously the trunk's panel and the shared support-info page.
+
+That is the `SidebarTab` vocabulary (§8.1), and it is a rename, not a redesign:
+`SupportTypeDescriptor.sidebarTab` has exactly **one** consumer
+(`sidebarPanels.ts` reads it into `tab: d.sidebarTab`), nothing persists a tab id,
+and the tab row already labels 'trunk' "Support Info" and 'stick' "Bracing". The
+blast radius is the descriptor field, its eight values, `SidebarTab`,
+`TOOL_PANELS`, `SidebarPanelTabs`'s four `kind`s and the two `SidebarPanel` sets
+in `SupportSidebar`. **Whoever lands it should verify it in the browser** — the
+tab row's selection and the panels it swaps have no test, and `lysdiag/tools/
+build-smoke-scene.mjs` exists to give the sidebar a scene to open.
 
 **Stage 6 will not move any number.** Track it by the prop signature.
+
+### Where the rename test's remaining errors are
+
+`branch` is still the worst type at 91, and 47 of them sit in three files. The
+breakdown is the starting point for stages 5 and 6; re-measure before trusting it
+(nothing here is a count of literals — it is what `tsc` refuses):
+
+```
+ 21  SupportPrimitives/Knot/useKnotInteraction.ts     per-type preview caches (stage 6)
+ 14  autoSupport/autoPlace.ts                        fan/merge arms, argument-position (stage 5)
+ 12  SupportPrimitives/Knot/KnotGizmo.tsx            branch drag payloads (stage 6)
+  8  SupportPrimitives/Joint/useJointInteraction.ts  per-type drag arms (stage 6)
+  5  components/scene/SceneCanvas/SceneCanvas.tsx    per-type placement props (stage 6)
+  5  interaction/.../supportPlacementRouting.ts      family comparisons — already derived (stage 1)
+  4  state.ts                                        deprecated wrappers (debt markers)
+```
+
+The routing five are stage 1's work showing up as intended; they are errors now,
+not silence. `state.ts`'s four are the sanctioned wrappers: each names its type on
+purpose and removing one means migrating its callers first (`add`/`remove` pairs
+are one-liners, `updateLeaf`/`updateBrace` carry real ordering logic).
 
 ### Done
 
