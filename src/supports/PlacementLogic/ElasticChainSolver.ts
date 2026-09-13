@@ -1,11 +1,12 @@
 import { Vec3 } from '../types';
 
 /**
- * Snapshot of a branch's state before dragging begins.
+ * Snapshot of a flexing shaft's state before dragging begins.
  * Used to ensure reversibility (elasticity).
  */
 export interface ElasticChainInitialState {
-    branchId: string;
+    /** The flexing shaft this capture belongs to. */
+    shaftId: string;
     knotPos: Vec3; // Initial Knot Position
     joints: { id: string; pos: Vec3 }[]; // Ordered bottom-to-top
     contactCone?: { pos: Vec3 }; // Fixed socket position (where shaft connects)

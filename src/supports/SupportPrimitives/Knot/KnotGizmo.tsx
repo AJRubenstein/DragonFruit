@@ -5,7 +5,8 @@ import { ScreenSpaceGizmo } from '@/components/gizmo/ScreenSpaceGizmo';
 import { isKeyPressedSync } from '@/hotkeys/hotkeyStore';
 import { findShaftOwnerOfSegment, getSupportEntity, subscribe, getSnapshot, getKnotById, getSupportEntities, getRootById, updateKnot } from '../../state';
 import { Branch, Knot, Segment } from '../../types';
-import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge, type SupportTypeId } from '../../supportTypeRegistry';
+import { FLEXING_KNOT_HOST_TYPES, getSupportTypeDescriptor, updateSupportEntity, type SupportEdge, type SupportTypeId } from '../../supportTypeRegistry';
+import type { ContactCone } from '../ContactCone/types';
 import { resolveSegmentEndpoints, type ShaftEntity } from './segmentEndpoints';
 import { knotMoveDescription, projectOntoSegment } from './knotUtils';
 import { ElasticChainInitialState, solveElasticChain } from '../../PlacementLogic/ElasticChainSolver';
@@ -337,12 +338,21 @@ export function KnotGizmo() {
         );
         w.__draggedKnotGroup = isGroup ? coincident.map(k => k.id) : [result.knot.id];
 
-        // Capture elastic state for attached branches
-        const allBranches = getSupportEntities<Branch>('branch');
-        const attached = allBranches.filter(b => w.__draggedKnotGroup.includes(b.parentKnotId));
+        // Capture the initial state of every shaft that flexes off the dragged
+        // knots. Which types those are, and the field naming their knot, come
+        // from the registry.
+        const attached: { typeId: SupportTypeId; entity: ShaftEntity }[] = [];
+        for (const { typeId, knotFields } of FLEXING_KNOT_HOST_TYPES) {
+            for (const entity of getSupportEntities<ShaftEntity>(typeId)) {
+                const record = entity as unknown as Record<string, unknown>;
+                if (knotFields.some((field) => w.__draggedKnotGroup.includes(record[field]))) {
+                    attached.push({ typeId, entity });
+                }
+            }
+        }
         const nextState: Record<string, ElasticChainInitialState> = {};
 
-        for (const branch of attached) {
+        for (const { typeId, entity: branch } of attached) {
             const joints: { id: string; pos: { x: number, y: number, z: number } }[] = [];
 
             for (let i = 0; i < branch.segments.length; i++) {
@@ -356,14 +366,21 @@ export function KnotGizmo() {
                 }
             }
 
+            // Use SOCKET position (where shaft connects), not TIP position (where
+            // cone touches model). Which field holds the contact is the type's
+            // declared upper endpoint -- types spell it differently.
+            const upper = getSupportTypeDescriptor(typeId).upper;
+            const contact = upper.field
+                ? (branch as unknown as Record<string, ContactCone | undefined>)[upper.field]
+                : undefined;
+
             nextState[branch.id] = {
-                branchId: branch.id,
+                shaftId: branch.id,
                 knotPos: { ...result.knot.pos },
                 joints,
-                // Use SOCKET position (where shaft connects), not TIP position (where cone touches model)
-                contactCone: branch.contactCone ? {
-                    pos: getSocketPosition(branch.contactCone.pos, branch.contactCone.normal, branch.contactCone.profile),
-                } : undefined,
+                contactCone: contact
+                    ? { pos: getSocketPosition(contact.pos, contact.normal, contact.profile) }
+                    : undefined,
             };
         }
 

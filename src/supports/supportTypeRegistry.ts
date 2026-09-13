@@ -484,6 +484,12 @@ export interface SupportTypeDescriptor {
      */
     knotDragComputesInline?: boolean;
     /**
+     * Whether this type's shaft flexes when the knot it hangs from is dragged.
+     * The elastic solver walks its segment joints, so a type with no segments
+     * to bend declares nothing and is skipped.
+     */
+    flexesOnHostKnotDrag?: boolean;
+    /**
      * Whether a knot drag on this type's shaft updates the attached leaf cones'
      * wide-end diameter from the taper at the knot's new position.
      */
@@ -632,6 +638,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         id: 'branch',
         sidebarTab: 'supportInfo',
         hasEditableSettings: true,
+        flexesOnHostKnotDrag: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' }],
         ownsRoot: false,
         segmentsCarryBothJoints: false,
@@ -2059,6 +2066,22 @@ export function findKnotHost(
     }
     return null;
 }
+
+/**
+ * Every type that flexes when its host knot is dragged, with the edge fields
+ * naming that knot. Derived, so adding a flexing type needs no change here.
+ */
+export const FLEXING_KNOT_HOST_TYPES: readonly {
+    typeId: SupportTypeId;
+    knotFields: readonly string[];
+}[] = SUPPORT_TYPES
+    .filter((descriptor) => descriptor.flexesOnHostKnotDrag)
+    .map((descriptor) => ({
+        typeId: descriptor.id,
+        knotFields: descriptor.edges
+            .filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy')
+            .map((edge) => edge.field),
+    }));
 
 /** Precedence `findKnotHost` resolves in when several types name one knot. */
 export const KNOT_HOST_PRECEDENCE: readonly SupportTypeId[] = [

@@ -4,6 +4,7 @@ import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
 import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getSupportEntities, getKnotById, getRootById, setInteractionWarning, updateKnot, subscribe } from '../../state';
 import { Anchor, Branch, Brace, Knot, Leaf, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
+import type { ContactCone } from '../ContactCone/types';
 import { resolveSegmentEndpoints, type EndpointHosts, type ShaftEntity } from './segmentEndpoints';
 import { SUPPORT_COLLECTION_KEYS, getSupportTypeDescriptor, parseKnotHostId, parsePrefixedSegmentId, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
@@ -17,7 +18,7 @@ import { getBezierPointAtT } from '../../Curves/BezierUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { clearKnotDragPreview, emitKnotDragPreview } from '../../interaction/knotDragPreview';
 import { resolveTwigDiameterAtSegmentT } from '../../SupportTypes/Twig/twigTaper';
-import { resolveKnotDiameter, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
+import { FLEXING_KNOT_HOST_TYPES, resolveKnotDiameter, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
 import { shouldCommitJointDrag } from '../Joint/jointDragController';
 import { knotMoveDescription, type KnotHostType } from './knotUtils';
 
@@ -608,13 +609,21 @@ export function useKnotInteraction(enabled: boolean = true) {
         return { t: bt, point: { x: bp.x, y: bp.y, z: bp.z }, distSq: best };
     };
 
-    // Capture the initial state of attached branches
+    // Capture the initial state of every shaft that flexes off this knot. Which
+    // types those are, and the field naming their knot, come from the registry.
     const captureElasticState = (knotId: string): Record<string, ElasticChainInitialState> => {
-        const allBranches = getSupportEntities<Branch>('branch');
-        const attached = allBranches.filter(b => b.parentKnotId === knotId);
+        const attached: { typeId: SupportTypeId; entity: ShaftEntity }[] = [];
+        for (const { typeId, knotFields } of FLEXING_KNOT_HOST_TYPES) {
+            for (const entity of getSupportEntities<ShaftEntity>(typeId)) {
+                const record = entity as unknown as Record<string, unknown>;
+                if (knotFields.some((field) => record[field] === knotId)) {
+                    attached.push({ typeId, entity });
+                }
+            }
+        }
         const state: Record<string, ElasticChainInitialState> = {};
 
-        for (const b of attached) {
+        for (const { typeId, entity: b } of attached) {
             const joints: { id: string; pos: { x: number, y: number, z: number } }[] = [];
 
             // Traverse segments to collect joints
@@ -639,14 +648,21 @@ export function useKnotInteraction(enabled: boolean = true) {
 
             const knotPos = getKnotById(knotId)?.pos || { x: 0, y: 0, z: 0 };
 
+            // Use SOCKET position (where shaft connects), not TIP position (where
+            // cone touches model). Which field holds the contact is the type's
+            // declared upper endpoint -- types spell it differently.
+            const upper = getSupportTypeDescriptor(typeId).upper;
+            const contact = upper.field
+                ? (b as unknown as Record<string, ContactCone | undefined>)[upper.field]
+                : undefined;
+
             state[b.id] = {
-                branchId: b.id,
+                shaftId: b.id,
                 knotPos: { ...knotPos },
                 joints,
-                // Use SOCKET position (where shaft connects), not TIP position (where cone touches model)
-                contactCone: b.contactCone ? {
-                    pos: getSocketPosition(b.contactCone.pos, b.contactCone.normal, b.contactCone.profile)
-                } : undefined
+                contactCone: contact
+                    ? { pos: getSocketPosition(contact.pos, contact.normal, contact.profile) }
+                    : undefined,
             };
         }
 
