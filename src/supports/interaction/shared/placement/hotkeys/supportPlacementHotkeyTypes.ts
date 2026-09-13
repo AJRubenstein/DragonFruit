@@ -1,23 +1,31 @@
 import type * as THREE from 'three';
-import type { ModelSurfaceGestureTypeId, SupportTypeId } from '../../../../supportTypeRegistry';
+import { BRANCH_FAMILY_MEMBER_TYPES, PLACEMENT_MODE_OWNER_TYPES, getSupportTypeDescriptor } from '../../../../supportTypeRegistry';
+import type {
+    BranchFamilyMemberTypeId,
+    ModelSurfaceGestureTypeId,
+    OwnNamedPlacementFamilyTypeId,
+    PlacementFamilyName,
+    PlacementModeOwnerTypeId,
+    SupportTypeDescriptor,
+} from '../../../../supportTypeRegistry';
 import type { HotkeyBinding } from '@/hotkeys/hotkeyConfig';
 
 /**
  * Which placement a pointer gesture belongs to.
  *
- * The members that name a type come from `SupportTypeId`, so a rename in the
- * registry renames them here. `branchFamily` is a family, not a type: branch
- * and brace share one placement binding.
+ * Every member that names a type is derived in the registry, so a rename there
+ * renames the family here. `branchFamily` is the one family NAME rather than a
+ * type: branch and brace share one placement binding.
  */
-export type SupportPlacementFamily = 'none' | 'branchFamily' | Extract<SupportTypeId, 'leaf' | 'kickstand'>;
+export type SupportPlacementFamily = 'none' | PlacementFamilyName;
 /**
  * Which placement a pointer gesture belongs to.
  *
- * Drawn from `SupportTypeId` rather than spelled out, so renaming a type in the
- * registry renames it here. Only the types with a placement mode appear; the
- * set is held by `supportPlacementRouting.test.ts`.
+ * Drawn from the registry's `PlacementModeOwnerTypeId` rather than spelled out,
+ * so renaming a type in the registry renames it here. Only the types with a
+ * placement mode appear; the set is held by `supportPlacementRouting.test.ts`.
  */
-export type SupportPlacementOwner = 'none' | Extract<SupportTypeId, 'branch' | 'brace' | 'leaf' | 'kickstand'>;
+export type SupportPlacementOwner = 'none' | PlacementModeOwnerTypeId;
 /** Model-surface gestures route to the types that declare they claim them. */
 export type SupportModelPlacementOwner = 'none' | ModelSurfaceGestureTypeId;
 
@@ -43,6 +51,91 @@ export interface SupportPlacementHotkeyBindings {
     leaf: HotkeyBinding;
     kickstand: HotkeyBinding;
 }
+
+/** Whether `typeId` is placed by the shared branch binding rather than its own. */
+function isBranchFamilyMember(typeId: PlacementModeOwnerTypeId): typeId is BranchFamilyMemberTypeId {
+    return BRANCH_FAMILY_MEMBER_TYPES.some((memberTypeId) => memberTypeId === typeId);
+}
+
+/**
+ * The own-named placement families: the owners that are NOT members of the
+ * shared `branchFamily` binding, and so give their binding their own name.
+ *
+ * Read off the registry, so a type joining or leaving either set moves this
+ * list, and with it the family values below.
+ */
+const OWN_NAMED_PLACEMENT_FAMILY_TYPES: readonly OwnNamedPlacementFamilyTypeId[] =
+    PLACEMENT_MODE_OWNER_TYPES.filter(
+        (typeId): typeId is OwnNamedPlacementFamilyTypeId => !isBranchFamilyMember(typeId),
+    );
+
+/**
+ * The one own-named family declaring `flag`, asserting there is exactly one.
+ *
+ * The two own-named families are told apart by WHERE they place, which is what
+ * `claimsModelSurfaceGestures` already records: a leaf is placed against the
+ * model face and claims a model-surface gesture, while a kickstand is placed
+ * between existing shafts and claims none. Reading that flag is what keeps the
+ * type's name out of this table -- a name is exactly the literal this table
+ * exists to avoid. Should a third own-named family ever appear, one side of the
+ * split would stop being unique; this throws rather than silently picking a
+ * contender, the same shape as the registry's `coneKnotHostType`.
+ */
+function singleOwnNamedFamily(
+    flag: string,
+    test: (descriptor: SupportTypeDescriptor) => boolean,
+): OwnNamedPlacementFamilyTypeId {
+    const matches = OWN_NAMED_PLACEMENT_FAMILY_TYPES.filter((typeId) =>
+        test(getSupportTypeDescriptor(typeId)),
+    );
+    const [typeId, ...rest] = matches;
+    if (!typeId || rest.length > 0) {
+        throw new Error(
+            `expected exactly one own-named placement family ${flag}, found: ${matches.join(', ') || 'none'}.`,
+        );
+    }
+    return typeId;
+}
+
+/** The own-named family that places against the model face. */
+const MODEL_FACE_PLACEMENT_FAMILY = singleOwnNamedFamily(
+    'that claims a model-surface gesture',
+    (descriptor) => descriptor.claimsModelSurfaceGestures,
+);
+
+/** The own-named family that places between existing supports. */
+const BETWEEN_SUPPORTS_PLACEMENT_FAMILY = singleOwnNamedFamily(
+    'that claims no model-surface gesture',
+    (descriptor) => !descriptor.claimsModelSurfaceGestures,
+);
+
+/**
+ * The family each placement binding belongs to.
+ *
+ * A mode with a family of its own gives its binding that family's name -- the
+ * binding and the family are the same word, because the family was never
+ * separate from the type. Branch and brace share the one `branchFamily`
+ * binding, which is a family NAME rather than a type id and so is the only
+ * value here that is not a type.
+ *
+ * Only the `branchFamily` value is spelled here. The two type-named values are
+ * read off the registry's flag-derived families, so renaming a type MOVES them
+ * with the rename rather than leaving a stale family behind. `satisfies` keeps
+ * every value's type checked against the family union -- the same
+ * `as const satisfies` shape the registry uses for its per-type flag tables.
+ *
+ * Keyed by BINDING rather than by owner, which is what makes it readable from
+ * both the router and the intent resolver: the owner constants are derived in
+ * the router, which imports the resolver, so an owner-keyed table could not be
+ * read back there without a cycle. The keys are binding names, which no type
+ * rename moves; only the values do. That is also why no call site can go stale:
+ * a site indexes this by the binding it already holds.
+ */
+export const PLACEMENT_FAMILY_BY_BINDING = {
+    branchFamily: 'branchFamily',
+    leaf: MODEL_FACE_PLACEMENT_FAMILY,
+    kickstand: BETWEEN_SUPPORTS_PLACEMENT_FAMILY,
+} as const satisfies Record<keyof SupportPlacementHotkeyBindings, SupportPlacementFamily>;
 
 export interface ResolvedSupportPlacementHotkeyIntent {
     family: SupportPlacementFamily;

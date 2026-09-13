@@ -33,7 +33,7 @@ import { applyRepeatingPattern } from './repeatingPattern';
 import { runZigZagChain } from './zigzagChain';
 import { buildBraceProfile } from './braceDiameter';
 import type { KickstandBuildResult } from '../SupportTypes/Kickstand/types';
-import { generateLateralStabilisers, getSupportTypeDescriptor, parsePrefixedSegmentId, isAutoBraceableShaftType, isLateralStabiliserType, lateralStabiliserTypes, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
+import { generateLateralStabilisers, getSupportTypeDescriptor, parsePrefixedSegmentId, isAutoBraceableShaftType, isLateralStabiliserType, lateralStabiliserTypes, spanKnotHostType, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
 import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
 import { linePassesMeshClearance } from './meshClearance';
 
@@ -662,8 +662,9 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     }
 
     // The collection this pass rebuilds, so its kept set is read instead of the
-    // snapshot's. Named from the registry rather than written as 'braces'.
-    const bracesKey = getSupportTypeDescriptor('brace').location.key;
+    // snapshot's. The brace type comes from the registry rather than being
+    // written as 'brace': it is the type whose knot host is a selectable span.
+    const bracesKey = getSupportTypeDescriptor(spanKnotHostType()).location.key;
 
     const braceKnotIds = new Set<string>();
     for (const b of Object.values(snapshot.braces)) { braceKnotIds.add(b.startKnotId); braceKnotIds.add(b.endKnotId); }

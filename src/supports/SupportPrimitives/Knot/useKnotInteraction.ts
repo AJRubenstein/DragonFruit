@@ -21,9 +21,17 @@ import { getBezierPointAtT } from '../../Curves/BezierUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { clearKnotDragPreview, emitKnotDragPreview } from '../../interaction/knotDragPreview';
 import { resolveTwigDiameterAtSegmentT } from '../../SupportTypes/Twig/twigTaper';
-import { isConeKnotHost, resolveKnotDiameter, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
+import { coneKnotHostType, isConeKnotHost, resolveKnotDiameter, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
 import { shouldCommitJointDrag } from '../Joint/jointDragController';
 import { knotMoveDescription, type KnotHostType } from './knotUtils';
+
+
+/**
+ * The type whose knots ride a contact cone rather than a span -- the leaf. Read
+ * off the registry, so the sites below that hold only a knot id ask for it
+ * instead of spelling it, and a rename reaches no line here.
+ */
+const CONE_HOSTED_TYPE_ID = coneKnotHostType();
 
 
 /**
@@ -247,7 +255,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         host: ActiveHost,
         maxAngleDeg: number,
     ): { t: number; clamped: boolean } => {
-        const leaves = getSupportEntities<Leaf>('leaf').filter(l => l.parentKnotId === activeKnotId.current);
+        const leaves = getSupportEntities<Leaf>(CONE_HOSTED_TYPE_ID).filter(l => l.parentKnotId === activeKnotId.current);
         if (leaves.length === 0) return { t: tDesired, clamped: false };
 
         let low = 0;
@@ -429,7 +437,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         const coneHost = parseKnotHostId(knot.parentShaftId);
         if (coneHost && isConeKnotHost(coneHost.typeId)) {
             const leafId = coneHost.entityId;
-            const leaf = getSupportEntities<Leaf>('leaf').find(l => l.id === leafId);
+            const leaf = getSupportEntities<Leaf>(coneHost.typeId).find(l => l.id === leafId);
             if (leaf?.contactCone) {
                 host = {
                     segmentId: knot.parentShaftId,
@@ -524,7 +532,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         }
 
         if (host.ridesCone && host.leafId) {
-            const leaf = getSupportEntities<Leaf>('leaf').find((l) => l.id === host.leafId);
+            const leaf = getSupportEntities<Leaf>(host.containerType).find((l) => l.id === host.leafId);
             const cone = leaf?.contactCone;
             if (!cone) return;
 
@@ -792,7 +800,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                     previewKnotAtEnd.t,
                 );
                 if (localTwigDia !== null) {
-                    const attachedLeaves = getSupportEntities<Leaf>('leaf').filter(l => l.parentKnotId === activeKnotIdAtEnd);
+                    const attachedLeaves = getSupportEntities<Leaf>(CONE_HOSTED_TYPE_ID).filter(l => l.parentKnotId === activeKnotIdAtEnd);
                     for (const leaf of attachedLeaves) {
                         if (!leaf.contactCone) continue;
                         if (leaf.contactCone.profile.bodyDiameterMm === localTwigDia) continue;
@@ -863,7 +871,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             raycaster.setFromCamera(pointer, camera);
             const projected = projectOntoSegment(raycaster.ray, host.start, host.end);
 
-            const leaf = getSupportEntities<Leaf>('leaf').find(l => l.id === host.leafId);
+            const leaf = getSupportEntities<Leaf>(host.containerType).find(l => l.id === host.leafId);
             const cone = leaf?.contactCone;
             if (!cone) return;
 

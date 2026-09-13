@@ -1,17 +1,22 @@
 import type { Vec3, SupportState } from '../types';
-import { AUTO_PLACED_TYPE_IDS, type AutoPlacedTypeId, type SupportTypeId } from '../supportTypeRegistry';
+import { AUTO_PLACED_TYPE_IDS, type AutoPlacedTypeId, type ShaftHostedMemberTypeId, type SupportTypeId } from '../supportTypeRegistry';
 
 export type { AutoPlacedTypeId };
 
 /**
  * Auto-placement reports cover a subset of the support types, not all of them.
- * `Extract` keeps each subset narrow while tying the names to the registry, so
- * a renamed or misspelled type fails to compile here.
+ * Each subset is taken from the registry's own declaration of it -- the
+ * auto-placed set and the shaft-hosted member walk -- so a renamed type reaches
+ * these two through the registry instead of as a second literal here.
  */
 /** A type the ledger can report, from the registry's declared set. */
 export type PlacedKind = AutoPlacedTypeId;
-/** A hosted member auto-placement can attach: leaf and branch today. */
-export type AttachmentKind = Extract<SupportTypeId, 'leaf' | 'branch'>;
+/**
+ * A hosted member auto-placement can attach: the types the registry's own
+ * shaft-hosted member walk visits, which the engine reads members back from.
+ * Aliased rather than restated, so the member names stay the walk's business.
+ */
+export type AttachmentKind = ShaftHostedMemberTypeId;
 /** Which kind of entity was culled: any host type, or a hosted member. */
 type OrphanKind = SupportTypeId;
 

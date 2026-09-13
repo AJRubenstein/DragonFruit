@@ -1,8 +1,8 @@
 import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import { resolveShaftAnchor } from '../../SupportPrimitives/Knot/segmentEndpoints';
 import type { ContactCone } from '../../SupportPrimitives/ContactCone/types';
-import { SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
-import type { Joint, Segment, SupportState } from '../../types';
+import { getSupportTypeDescriptor, spanKnotHostType, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
+import type { Brace, Joint, Segment, SupportState } from '../../types';
 
 /**
  * Which bezier handles to offer for the current selection.
@@ -211,7 +211,14 @@ export function buildGizmoContextIndex(state: SupportState): GizmoContextIndex {
         }
     }
 
-    for (const brace of Object.values(state.braces)) {
+    // Brace -- the registry's single span knot host -- keeps its own loop: it
+    // declares no segments, so the generic walk skips it, and its two handles
+    // are the knots its curve runs between. Its descriptor supplies the id and
+    // the collection, so a rename moves the whole loop with it.
+    const spanHost = getSupportTypeDescriptor(spanKnotHostType());
+    const spanHosts = state[spanHost.location.key] as unknown as Record<string, Brace | undefined>;
+
+    for (const brace of Object.values(spanHosts)) {
         if (brace?.curve?.type !== 'bezier') continue;
         const startKnot = state.knots[brace.startKnotId];
         const endKnot = state.knots[brace.endKnotId];
@@ -223,7 +230,7 @@ export function buildGizmoContextIndex(state: SupportState): GizmoContextIndex {
         pushContext(braceContextsById, brace.id, {
             id: `brace-${brace.id}-start-outgoing`,
             entity: brace,
-            typeId: 'brace',
+            typeId: spanHost.id,
             joint: startJoint,
             incomingSegment: undefined,
             incomingIndex: -1,
@@ -235,7 +242,7 @@ export function buildGizmoContextIndex(state: SupportState): GizmoContextIndex {
         pushContext(braceContextsById, brace.id, {
             id: `brace-${brace.id}-end-incoming`,
             entity: brace,
-            typeId: 'brace',
+            typeId: spanHost.id,
             joint: endJoint,
             incomingSegment: undefined,
             incomingIndex: 0,

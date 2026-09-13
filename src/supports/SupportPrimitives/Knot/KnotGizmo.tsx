@@ -7,7 +7,7 @@ import { findShaftOwnerOfSegment, getSupportEntity, subscribe, getSnapshot, getK
 import { Branch, Knot, Segment } from '../../types';
 import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge, type SupportTypeId } from '../../supportTypeRegistry';
 import { resolveSegmentEndpoints, type ShaftEntity } from './segmentEndpoints';
-import { captureFlexingShafts, collectSolvedShaft } from './elasticShaftPreview';
+import { captureFlexingShafts, collectSolvedShaft, getFlexingShaft } from './elasticShaftPreview';
 import { knotMoveDescription, projectOntoSegment } from './knotUtils';
 import { ElasticChainInitialState, solveElasticChain } from '../../PlacementLogic/ElasticChainSolver';
 import { getSettings } from '../../Settings/state';
@@ -221,8 +221,10 @@ export function KnotGizmo() {
             const nextPreviewBranchSegmentsById = { ...previewShaftSegmentsByIdRef.current };
             for (const shaftId of updatedShaftIds) {
                 const nextSegments = shaftSegmentsById[shaftId];
-                const committedBranch = getSupportEntity('branch', shaftId);
-                if (committedBranch && committedBranch.segments === nextSegments) {
+                // By id alone: this map is keyed by flexing shafts, and the
+                // store already knows what type each one is.
+                const committedShaft = getFlexingShaft(shaftId);
+                if (committedShaft && committedShaft.segments === nextSegments) {
                     delete nextPreviewBranchSegmentsById[shaftId];
                 } else {
                     nextPreviewBranchSegmentsById[shaftId] = nextSegments;
@@ -329,9 +331,10 @@ export function KnotGizmo() {
         const previewKnot = previewKnotRef.current;
 
         for (const [shaftId, previewSegments] of Object.entries(previewShaftSegmentsById)) {
-            const branch = getSupportEntity('branch', shaftId);
-            if (!branch) continue;
-            updateSupportEntity({ ...branch, segments: previewSegments });
+            // By id alone: the store holds the type this shaft is.
+            const shaft = getSupportEntity(shaftId);
+            if (!shaft) continue;
+            updateSupportEntity({ ...shaft, segments: previewSegments });
         }
 
         if (previewKnot) {

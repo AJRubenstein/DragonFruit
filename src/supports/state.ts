@@ -9,7 +9,7 @@ import {
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { MODEL_ID_COLLECTION_KEYS, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
@@ -1580,8 +1580,6 @@ function buildKickstandResult(kickstand: Kickstand): KickstandBuildResult | null
     return { kickstand, root, hostKnot };
 }
 
-/** @deprecated Thin wrapper for removal; prefer `replaceSupportEntity('kickstand', entity)`. */
-
 function removeKickstandFromState(id: string): KickstandBuildResult | null {
     const kickstand = state.kickstands[id];
     if (!kickstand) return null;
@@ -3141,13 +3139,20 @@ function applySupportEntityUpdate(
 export function updateLeaf(leaf: Leaf) {
     if (!state.leaves[leaf.id]) return;
 
-    const cachedHex = getCachedSupportSettingsHex('leaf', leaf.id, leaf.settingsCodeHex ?? undefined);
+    // The kind comes off the leaf rather than being named here. The check above
+    // puts the entity in the store, which is what the resolver falls back to, so
+    // it finds a type; a leaf that resolved to none has no cache slot to read,
+    // and reading the wrong one would be worse than not reading at all.
+    const leafTypeId = resolveSupportTypeIdOf(leaf) ?? leaf.typeId;
+    if (!leafTypeId) return;
+
+    const cachedHex = getCachedSupportSettingsHex(leafTypeId, leaf.id, leaf.settingsCodeHex ?? undefined);
     const nextLeaf = !leaf.settingsCodeHex && cachedHex
         ? { ...leaf, settingsCodeHex: cachedHex }
         : leaf;
 
     if (nextLeaf.settingsCodeHex) {
-        setCachedSupportSettingsHex('leaf', nextLeaf.id, nextLeaf.settingsCodeHex);
+        setCachedSupportSettingsHex(leafTypeId, nextLeaf.id, nextLeaf.settingsCodeHex);
     }
 
     const nextLeaves = { ...state.leaves, [nextLeaf.id]: { ...nextLeaf, typeId: resolveSupportTypeIdOf(nextLeaf) ?? nextLeaf.typeId } };
@@ -3168,7 +3173,17 @@ export function updateLeaf(leaf: Leaf) {
  * Only for a plain write. A shafted type goes through `applySupportEntityUpdate`
  * instead, which also repositions the knots riding its segments.
  */
-function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): boolean {
+function replaceSupportEntity(entity: { id: string; typeId?: SupportTypeId }): boolean;
+function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): boolean;
+function replaceSupportEntity(
+    typeIdOrEntity: SupportTypeId | { id: string; typeId?: SupportTypeId },
+    maybeEntity?: { id: string },
+): boolean {
+    const typeId = typeof typeIdOrEntity === 'string'
+        ? typeIdOrEntity
+        : resolveSupportTypeIdOf(typeIdOrEntity);
+    const entity = (typeof typeIdOrEntity === 'string' ? maybeEntity : typeIdOrEntity)!;
+    if (!typeId) return false;
     const key = getSupportTypeDescriptor(typeId).location.key;
     if (!state[key][entity.id]) return false;
 
@@ -3190,7 +3205,7 @@ function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): bo
  * a leftover.
  */
 export function updateAnchor(anchor: Anchor) {
-    replaceSupportEntity('anchor', anchor);
+    replaceSupportEntity(anchor);
 }
 
 /**
@@ -3426,12 +3441,12 @@ function cachedOwnedPrimitives<T>(
 
 /** The roots kickstands own. */
 export function getKickstandRoots(): Record<string, Roots> {
-    return cachedOwnedPrimitives<Roots>('kickstand', 'roots');
+    return cachedOwnedPrimitives<Roots>(bundledSupportTypeId(), 'roots');
 }
 
 /** The knots kickstands host. */
 export function getKickstandKnots(): Record<string, Knot> {
-    return cachedOwnedPrimitives<Knot>('kickstand', 'knots');
+    return cachedOwnedPrimitives<Knot>(bundledSupportTypeId(), 'knots');
 }
 
 export function getKnotById(knotId: string) {
@@ -3802,11 +3817,15 @@ export function resolveEditableSupportTarget(selectedId: string | null, selected
         const knot = state.knots[selectedId];
         if (!knot) return null;
 
-        // A leaf's own cone knot encodes its owner in the shaft id.
+        // A cone-knot host encodes its owner in the shaft id -- both the type
+        // and the id -- so the collection to look in comes from it too.
         const coneHost = parseKnotHostId(knot.parentShaftId);
         if (coneHost && isConeKnotHost(coneHost.typeId)) {
-            const leafId = coneHost.entityId;
-            if (state.leaves[leafId]) return { kind: 'leaf', id: leafId };
+            const ownerCollection = state[getSupportTypeDescriptor(coneHost.typeId).location.key] as
+                Record<string, unknown> | undefined;
+            if (ownerCollection?.[coneHost.entityId]) {
+                return { kind: coneHost.typeId, id: coneHost.entityId };
+            }
         }
 
         return findOwner((entity) =>

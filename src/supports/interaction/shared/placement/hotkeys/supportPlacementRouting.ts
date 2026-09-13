@@ -1,18 +1,19 @@
 import {
     resolveSupportPlacementHotkeyIntent,
 } from './supportPlacementHotkeyResolver';
+import { PLACEMENT_FAMILY_BY_BINDING } from './supportPlacementHotkeyTypes';
 import type {
     ResolvedSupportPlacementOwner,
     SupportModelPlacementOwner,
-    SupportPlacementFamily,
     SupportPlacementHotkeyBindings,
     SupportPlacementModifierState,
     SupportPlacementOwner,
     SupportPlacementRoutingState,
 } from './supportPlacementHotkeyTypes';
-import { MODEL_SURFACE_GESTURE_TYPES, SUPPORT_TYPES } from '../../../../supportTypeRegistry';
+import { MODEL_SURFACE_GESTURE_TYPES, PLACEMENT_MODE_OWNER_TYPES, SUPPORT_TYPES } from '../../../../supportTypeRegistry';
 import type {
     ModelSurfaceGestureTypeId,
+    PlacementModeOwnerTypeId,
     SupportTypeDescriptor,
     SupportTypeId,
 } from '../../../../supportTypeRegistry';
@@ -25,10 +26,11 @@ import type { SupportPlacementActive, SupportPlacementPreviews } from '../../../
  * `previewYieldsToOtherModes` when that preview IS the default tool rather than a
  * mode the user toggles. Trunk declares the latter, so what is left is the modes
  * a pointer gesture can belong to.
+ *
+ * Aliased to the registry's flag table rather than filtered a second time here,
+ * so the router's owner set moves with the table and with a rename in it.
  */
-export const PLACEMENT_MODE_TYPE_IDS: readonly SupportTypeId[] = SUPPORT_TYPES
-    .filter((descriptor) => descriptor.hasPlacementPreview && !descriptor.previewYieldsToOtherModes)
-    .map((descriptor) => descriptor.id);
+export const PLACEMENT_MODE_TYPE_IDS: readonly PlacementModeOwnerTypeId[] = PLACEMENT_MODE_OWNER_TYPES;
 
 /**
  * The placement owner union without the empty arm: the types themselves.
@@ -67,7 +69,7 @@ function singleTypeDeclaring(
  * `__tests__/supportPlacementRouting.test.ts` holds them to each other.
  */
 function isPlacementOwnerType(typeId: SupportTypeId): typeId is PlacementOwnerTypeId {
-    return PLACEMENT_MODE_TYPE_IDS.includes(typeId);
+    return PLACEMENT_MODE_TYPE_IDS.some((ownerTypeId) => ownerTypeId === typeId);
 }
 
 /** Whether `typeId` is one of the types the router hands model-face gestures to. */
@@ -120,19 +122,18 @@ function gestureOwnerDeclaring(
 }
 
 /**
- * The one placement family that has no flag telling it apart from the others.
+ * The kickstand's placement family, read from the one place the family
+ * vocabulary is written down rather than spelled here.
  *
- * `SupportPlacementFamily` is `'none' | 'branchFamily' | Extract<SupportTypeId,
- * 'leaf' | 'kickstand'>`: two of its three named members ARE type ids, because
- * those families were never separate from the type. The branch and the leaf are
- * each read from a flag below, which distinguishes one from the other; nothing
- * in the registry distinguishes the kickstand's placement mode from the trunk's
- * except its name, so this is the one family name the router spells. The
- * comparison that reads it is against `KICKSTAND_PLACEMENT_OWNER`, which the
- * registry declares -- so a rename moves the owner and breaks the comparison
- * rather than leaving a stale family behind.
+ * Two of the family union's three named members ARE type ids, because those
+ * families were never separate from their type; this is the one the router
+ * compares a gesture against. It comes from `PLACEMENT_FAMILY_BY_BINDING`,
+ * whose type-named values are themselves derived from the registry's
+ * placement-owner table -- so a rename moves the family and the
+ * `KICKSTAND_PLACEMENT_OWNER` it names together rather than leaving a stale
+ * spelling behind.
  */
-const KICKSTAND_FAMILY = 'kickstand' satisfies SupportPlacementFamily;
+const KICKSTAND_FAMILY = PLACEMENT_FAMILY_BY_BINDING.kickstand;
 
 /**
  * The type the branch family's gesture belongs to.
@@ -196,9 +197,9 @@ export function resolveSupportPlacementRouting(
     input: SupportPlacementRoutingInput,
 ): ResolvedSupportPlacementOwner {
     const intent = resolveSupportPlacementHotkeyIntent(input.bindings, input.modifierState);
-    const branchFamilyActive = input.state.branchHotkeyActive || input.state.braceHotkeyActive || intent.family === 'branchFamily';
-    const leafActive = input.state.leafHotkeyActive || intent.family === LEAF_PLACEMENT_OWNER;
-    const kickstandActive = input.state.kickstandHotkeyActive || intent.family === KICKSTAND_PLACEMENT_OWNER;
+    const branchFamilyActive = input.state.branchHotkeyActive || input.state.braceHotkeyActive || intent.family === PLACEMENT_FAMILY_BY_BINDING.branchFamily;
+    const leafActive = input.state.leafHotkeyActive || intent.family === PLACEMENT_FAMILY_BY_BINDING.leaf;
+    const kickstandActive = input.state.kickstandHotkeyActive || intent.family === KICKSTAND_FAMILY;
 
     if (input.state.braceAwaitingEnd) {
         return {

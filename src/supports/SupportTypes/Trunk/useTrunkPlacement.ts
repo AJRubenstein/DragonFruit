@@ -12,7 +12,7 @@ import type { LimitationCode, Segment, WarningCode } from '../../types';
 import { calculateSmoothedNormal } from '../../PlacementLogic/PlacementUtils';
 import { getSettings } from '../../Settings/state';
 import { decideGridPlacement } from '../../PlacementLogic/Grid';
-import { getSupportTypeDescriptor, bridgeMayLandSideways, buildContactBridge, buildContactOverride, promoteAwayHost, selectTypeForPlacement, type SupportTypeId, updateSupportEntity } from '../../supportTypeRegistry';
+import { getSupportTypeDescriptor, bridgeMayLandSideways, buildContactBridge, buildContactOverride, promoteAwayHost, resolveSupportTypeIdOf, selectTypeForPlacement, type SupportTypeId, updateSupportEntity } from '../../supportTypeRegistry';
 import { shaftVerticalCos } from '../Stick/stickVerticality';
 import { clearSupportSelection } from '../../interaction/shared/selection/selectionController';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
@@ -66,11 +66,16 @@ function getPlacementSurfaceFromHit(hit: THREE.Intersection | null): PlacementSu
     return hit?.object?.userData?.supportPlacementSurface === 'interior' ? 'interior' : undefined;
 }
 
+/** The build's own trunk, marked with the surface it was placed against. */
 function markTrunkBuildPlacementSurface<T extends ReturnType<typeof buildTrunkData>>(build: T, surface?: PlacementSurface): T {
     if (!surface) return build;
+    // The trunk the builder just returned is stamped with its type, so the
+    // contact fields to mark come off the entity rather than a name here.
+    const typeId = resolveSupportTypeIdOf(build.trunk);
+    if (!typeId) return build;
     return {
         ...build,
-        trunk: markPlacementSurface('trunk', build.trunk, surface),
+        trunk: markPlacementSurface(typeId, build.trunk, surface),
         supportData: markSupportDataPlacementSurface(build.supportData, surface),
     } as T;
 }
@@ -206,6 +211,11 @@ export function buildCavityBridge(
     });
     if (!built) return null;
     const entity = built.entity as BridgingEntity;
+    // The SHORT bridge is the type whose contact-span rule is bounded above --
+    // the registry's own way of saying it serves only the spans under the
+    // stick/twig cutoff. Its shaft is a thin strut, so it tolerates cant a
+    // column cannot; the longer bridge keeps the near-search behaviour.
+    const shortBridge = getSupportTypeDescriptor(kind).placementRule?.maxMm !== undefined;
 
     // Twigs are short bridges, not lateral props: the visible shaft
     // (socket to socket — a sidewall landing's standoff is what shoves a
@@ -216,7 +226,7 @@ export function buildCavityBridge(
     // enforces — because a 1–2 mm strut tolerates cant a 12 mm column cannot;
     // pointed tips propped off a nearby wall with a real drop underneath
     // still pass.
-    if (kind === 'twig' && shaftVerticalCos(entity) < Math.cos((CAVITY_TWIG_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
+    if (shortBridge && shaftVerticalCos(entity) < Math.cos((CAVITY_TWIG_MAX_SHAFT_ANGLE_DEG * Math.PI) / 180)) {
         return null;
     }
 
@@ -229,7 +239,7 @@ export function buildCavityBridge(
     const radius = (seg?.diameter ?? sizing?.shaftDiameterMm ?? 1) / 2 + 0.15;
     // Ray-based for a twig, like buildTwig: the SDF reads the thin gap a twig
     // spans as material, so a signed-distance gate would refuse it.
-    const blocked = kind === 'twig'
+    const blocked = shortBridge
         ? checkShortBridgeCollision(start, end, radius, mesh).hit
         : isShaftBlocked(start, end, radius, mesh);
     if (blocked) return null;
@@ -293,13 +303,17 @@ export function useTrunkPlacementV2() {
         const markedBuild = markTrunkBuildPlacementSurface(trunkBuild, placementSurface);
         addRoot(markedBuild.root);
         addSupportEntity(markedBuild.trunk);
+        // The action and the payload key are both declared by the type, so
+        // neither is written here.
+        const trunkTypeId = resolveSupportTypeIdOf(markedBuild.trunk);
+        if (!trunkTypeId) return;
         pushSupportHistory({
-            type: addAction('trunk'),
+            type: getSupportTypeDescriptor(trunkTypeId).historyAdd,
             payload: {
                 trunk: markedBuild.trunk,
                 roots: [markedBuild.root],
             },
-        });
+        } as Parameters<typeof pushSupportHistory>[0]);
         clearSupportSelection();
     }, []);
 

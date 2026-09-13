@@ -1,5 +1,5 @@
-import { contactBridgeTypes, contactEndpointsFor, getSupportTypeDescriptor, GRID_HOST_TYPES, isOriginConvertibleToTree, promoteAwayHost, SHAFT_HOSTED_MEMBER_TYPES, SUPPORT_TYPES } from '../supportTypeRegistry';
-import type { SupportCollectionKey, ShaftHostedMemberTypeId } from '../supportTypeRegistry';
+import { contactBridgeTypes, contactEndpointsFor, getSupportTypeDescriptor, GRID_HOST_TYPES, isOriginConvertibleToTree, promoteAwayHost, resolveSupportTypeIdOf, SHAFT_HOSTED_MEMBER_TYPES, SUPPORT_TYPES } from '../supportTypeRegistry';
+import type { SupportCollectionKey, ShaftHostedMemberType, ShaftHostedMemberTypeId } from '../supportTypeRegistry';
 import type { SupportTypeId } from '../supportTypeRegistry';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
 import * as THREE from 'three';
@@ -11,7 +11,7 @@ import { quantizeToScale } from '@/utils/math';
  */
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
-import type { AttachmentKind, AutoPlacedTypeId, CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo, PlacementOutcomeKind } from './types';
+import type { AttachmentKind, CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo, PlacementOutcomeKind } from './types';
 import { isLedgerKind } from './types';
 import type { Branch, Segment, SupportState, SupportOrigin, Vec3 } from '../types';
 import type { AutoSupportSettings } from './settings';
@@ -142,6 +142,36 @@ function computeMeshVolumeMm3(mesh: THREE.Mesh): number {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * The registry's walk entry per shaft-hosted member type.
+ *
+ * Built once from the registry's own walk. A `Record` is not available here:
+ * its keys would be the member type names, which is the second naming point
+ * this file exists to avoid. The key set comes from the registry at load.
+ */
+const SHAFT_HOSTED_MEMBER_TYPE_BY_ID: ReadonlyMap<SupportTypeId, ShaftHostedMemberType> = new Map(
+    SHAFT_HOSTED_MEMBER_TYPES.map((memberType) => [memberType.typeId as SupportTypeId, memberType]),
+);
+
+/**
+ * The type a member this file just built belongs to.
+ *
+ * `buildLeafData` and `buildBranchData` stamp `typeId` on the entity they
+ * return, so the member's type crosses with its geometry and no placement site
+ * here writes it out. Read back through the registry's shaft-hosted member walk
+ * -- the same walk the orphan cull and the forest report read those members
+ * through -- so a member the walk does not visit is refused here rather than
+ * placed into a collection nothing walks.
+ */
+function builtMemberTypeId(member: { id: string; typeId?: SupportTypeId }): ShaftHostedMemberTypeId {
+    const typeId = resolveSupportTypeIdOf(member);
+    const memberType = typeId ? SHAFT_HOSTED_MEMBER_TYPE_BY_ID.get(typeId) : undefined;
+    if (!memberType) {
+        throw new Error(`built member ${member.id} is not a shaft-hosted member type (${typeId ?? 'no typeId'})`);
+    }
+    return memberType.typeId;
+}
 
 /** One counter per support type, so no placement path can go uncounted. */
 function emptyPlacedCounts(): Record<SupportTypeId, number> {
@@ -594,7 +624,7 @@ export function buildConsolidationBranch(args: {
     radiusMm: number;
     maxAttachments: number;
     knotId: string;
-}): { draft: SupportState; branchId: string; kind: AutoPlacedTypeId } | null {
+}): { draft: SupportState; branchId: string; kind: AttachmentKind } | null {
     const { tip, tipNormal, modelId, pool, pruned, mesh, radiusMm, maxAttachments, knotId } = args;
 
     // Steepest eligible host sample (≤ the branch-angle rule from vertical —
@@ -649,8 +679,9 @@ export function buildConsolidationBranch(args: {
 
         let d = draftAddPrimitive(pruned, 'knots', parentKnot);
         branch.origin = 'overhang';
-        d = draftAddEntity(d, 'branch', branch);
-        return { draft: d, branchId: branch.id, kind: 'branch' };
+        const memberTypeId = builtMemberTypeId(branch);
+        d = draftAddEntity(d, memberTypeId, branch);
+        return { draft: d, branchId: branch.id, kind: memberTypeId };
     } catch {
         return null;
     }
@@ -902,12 +933,13 @@ function placeOneCandidate(
                                 } else {
                                     d = draftAddPrimitive(d, 'knots', parentKnot);
                                     leaf.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
-                                    d = draftAddEntity(d, 'leaf', leaf);
+                                    const memberTypeId = builtMemberTypeId(leaf);
+                                    d = draftAddEntity(d, memberTypeId, leaf);
                                     const la = (Math.atan2(hDist, vDist) * 180) / Math.PI;
                                     logPlacement(
                                         `Leaf (merge) ${candidate.id} → ${typeWord(host.hostTypeId).toLowerCase()} ${host.hostId} ` +
                                         `span=${leafSpanMm.toFixed(1)}mm angle=${la.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
-                                    return { kind: 'leaf', preset, draft: d, entityId: leaf.id };
+                                    return { kind: memberTypeId, preset, draft: d, entityId: leaf.id };
                                 }
                             }
                         } catch {}
@@ -951,12 +983,13 @@ function placeOneCandidate(
                                 // Branch fallback is island-only (overhang fanning
                                 // is leaves) — the origin is always island here.
                                 branch.origin = 'island';
-                                d = draftAddEntity(d, 'branch', branch);
+                                const memberTypeId = builtMemberTypeId(branch);
+                                d = draftAddEntity(d, memberTypeId, branch);
                                 const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                                 logPlacement(
                                     `Branch (merge) ${candidate.id} → ${typeWord(host.hostTypeId).toLowerCase()} ${host.hostId} ` +
                                     `span=${leafSpanMm.toFixed(1)}mm angle=${ma.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
-                                return { kind: 'branch', preset, draft: d, entityId: branch.id };
+                                return { kind: memberTypeId, preset, draft: d, entityId: branch.id };
                             }
                         }
                     } catch (e) {
@@ -2000,10 +2033,11 @@ export function fanLeafToHost(
                     }
                     const next = draftAddPrimitive(draft, 'knots', parentKnot);
                     built.branch.origin = 'island';
+                    const memberTypeId = builtMemberTypeId(built.branch);
                     return {
                         ok: true,
-                        kind: 'branch',
-                        draft: draftAddEntity(next, 'branch', built.branch),
+                        kind: memberTypeId,
+                        draft: draftAddEntity(next, memberTypeId, built.branch),
                         hostTypeId: sp.hostTypeId,
                         hostId: sp.hostId,
                         entityId: built.branch.id,
@@ -2056,10 +2090,11 @@ export function fanLeafToHost(
 
         const next = draftAddPrimitive(draft, 'knots', parentKnot);
         if (origin) leaf.origin = origin;
+        const memberTypeId = builtMemberTypeId(leaf);
         return {
             ok: true,
-            kind: 'leaf',
-            draft: draftAddEntity(next, 'leaf', leaf),
+            kind: memberTypeId,
+            draft: draftAddEntity(next, memberTypeId, leaf),
             hostTypeId: sp.hostTypeId,
             hostId: sp.hostId,
             entityId: leaf.id,
@@ -3080,10 +3115,11 @@ export function computeAutoSupportPlan(
                     if (bm && branchCollidesWithSDF(branch, bm)) continue;
                     // The tips are voxel-island footprints — island origin.
                     branch.origin = 'island';
+                    const memberTypeId = builtMemberTypeId(branch);
                     draft = draftAddPrimitive(draft, 'knots', parentKnot);
-                    draft = draftAddEntity(draft, 'branch', branch);
+                    draft = draftAddEntity(draft, memberTypeId, branch);
                     overhangSupportsPlaced++;
-                    placed.branch++;
+                    placed[memberTypeId]++;
                 } catch {
                     // Skip this grid point.
                 }

@@ -572,6 +572,15 @@ export interface SupportTypeDescriptor {
      * evict on remove or the next entity reusing that id inherits stale values.
      */
     hasEditableSettings: boolean;
+    /**
+     * Whether the settings sidebar offers a panel for this type.
+     *
+     * NOT the same question as `hasEditableSettings`: kickstand is editable but
+     * has no panel of its own, while twig and stick have panels without being
+     * editable. Declared, because the two sets genuinely differ and no
+     * combination of the other flags selects this one.
+     */
+    offersSidebarPanel: boolean;
 }
 
 /**
@@ -586,6 +595,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         id: 'trunk',
         sidebarTab: 'supportInfo',
         hasEditableSettings: true,
+        offersSidebarPanel: true,
         recomputesDiameterFromAttachments: true,
         replacedByHigherContact: true,
         repairsHostDiameterOnAdd: false,
@@ -638,6 +648,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         id: 'branch',
         sidebarTab: 'supportInfo',
         hasEditableSettings: true,
+        offersSidebarPanel: true,
         flexesOnHostKnotDrag: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' }],
         ownsRoot: false,
@@ -690,6 +701,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         id: 'leaf',
         sidebarTab: 'supportInfo',
         hasEditableSettings: true,
+        offersSidebarPanel: true,
         knotHostPrefix: 'leafCone:',
         hostsBraceSnapCone: true,
         edges: [{ field: 'parentKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' }],
@@ -740,6 +752,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         id: 'twig',
         sidebarTab: 'supportInfo',
         hasEditableSettings: false,
+        offersSidebarPanel: true,
         edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -785,6 +798,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         id: 'stick',
         sidebarTab: 'bracing',
         hasEditableSettings: false,
+        offersSidebarPanel: true,
         edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -831,6 +845,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         // Two named knot fields rather than a list: the history payload and its
         // undo handler read them by name, and start/end are not interchangeable.
         hasEditableSettings: false,
+        offersSidebarPanel: false,
         edges: [
             { field: 'startKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' },
             { field: 'endKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'ifUnused' },
@@ -879,6 +894,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         id: 'anchor',
         sidebarTab: 'supportInfo',
         hasEditableSettings: false,
+        offersSidebarPanel: false,
         edges: [],
         ownsRoot: false,
         segmentsCarryBothJoints: true,
@@ -928,6 +944,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         id: 'kickstand',
         sidebarTab: 'supportInfo',
         hasEditableSettings: true,
+        offersSidebarPanel: false,
         edges: [
             { field: 'rootId', to: 'roots', ownership: 'owns' },
             { field: 'hostKnotId', to: 'knots', ownership: 'hostedBy', takeHost: 'always' },
@@ -1699,13 +1716,16 @@ export function buildContactOverride(typeId: SupportTypeId): ContactOverride | u
  * Types that claim a `tipHeight` band — the ones auto-placement consults before
  * falling back to a trunk — but registered no override.
  *
- * Trunk is excluded deliberately: it IS the default the fallback builds, so
- * claiming the band above the anchor needs no builder. Every other claimant
- * must provide one, or the engine would select a type it cannot construct.
+ * The default tool is excluded deliberately: it IS the default the fallback
+ * builds, so claiming the band above the anchor needs no builder. Every other
+ * claimant must provide one, or the engine would select a type it cannot
+ * construct. Which type that is comes off the declaration rather than being
+ * subtracted by name.
  */
 export function typesMissingContactOverride(): readonly SupportTypeId[] {
+    const defaultToolId = defaultPlacementToolTypeId();
     return SUPPORT_TYPES
-        .filter((d) => d.placementRule?.metric === 'tipHeight' && d.id !== 'trunk')
+        .filter((d) => d.placementRule?.metric === 'tipHeight' && d.id !== defaultToolId)
         .filter((d) => !CONTACT_OVERRIDES.has(d.id))
         .map((d) => d.id);
 }
@@ -1779,6 +1799,46 @@ export function transformExtrasFor(typeId: SupportTypeId): readonly string[] {
  */
 export const EDITABLE_SUPPORT_TYPES: readonly SupportTypeDescriptor[] =
     SUPPORT_TYPES.filter((descriptor) => descriptor.hasEditableSettings);
+
+/**
+ * The order the sidebar offers a type's own panel in.
+ *
+ * Declared, because it IS observable: `panelForTab` opens the FIRST panel
+ * declaring a tab, so the support-info tab opens trunk's panel because trunk
+ * leads this list. Registry order is not it -- the registry declares branch
+ * before leaf, and the sidebar offers leaf first.
+ *
+ * WHICH types are offered is not declared here: `offersSidebarPanel` on each
+ * type is the fact, and `sidebarPanelOrderDrift` holds this list to it.
+ */
+export const SIDEBAR_PANEL_TYPE_ORDER = ['trunk', 'leaf', 'branch', 'twig', 'stick'] as const satisfies readonly SupportTypeId[];
+
+/** How `SIDEBAR_PANEL_TYPE_ORDER` and the `offersSidebarPanel` flag disagree. */
+export function sidebarPanelOrderDrift(): readonly string[] {
+    const derived = SUPPORT_TYPES.filter((descriptor) => descriptor.offersSidebarPanel).map((d) => d.id);
+    const declared: readonly SupportTypeId[] = SIDEBAR_PANEL_TYPE_ORDER;
+    const drift: string[] = [];
+    for (const id of derived) {
+        if (!declared.includes(id)) drift.push(`${id} offers a sidebar panel but is missing from SIDEBAR_PANEL_TYPE_ORDER`);
+    }
+    for (const id of declared) {
+        if (!derived.includes(id)) drift.push(`${id} is in SIDEBAR_PANEL_TYPE_ORDER but does not offer a sidebar panel`);
+    }
+    if (declared.length !== derived.length) {
+        const repeated = declared.filter((id, index) => declared.indexOf(id) !== index);
+        drift.push(`SIDEBAR_PANEL_TYPE_ORDER lists ${[...new Set(repeated)].join(', ')} more than once`);
+    }
+    return drift;
+}
+
+const SIDEBAR_PANEL_ORDER_DRIFT = sidebarPanelOrderDrift();
+if (SIDEBAR_PANEL_ORDER_DRIFT.length > 0) {
+    throw new Error(`Sidebar panel order disagrees with the declared flags: ${SIDEBAR_PANEL_ORDER_DRIFT.join('; ')}`);
+}
+
+/** The types the sidebar offers a panel for, in the order it offers them. */
+export const SIDEBAR_PANEL_TYPE_IDS: readonly SupportTypeId[] = SIDEBAR_PANEL_TYPE_ORDER;
+
 
 /** Whether `id` names a type with editable settings. */
 export function isEditableSupportType(id: string): id is SupportTypeId {
@@ -2156,6 +2216,82 @@ export interface ShaftHostedMemberType {
 }
 
 /**
+ * Mirrors which types own a placement mode of their own, with the literals kept
+ * so the owner union narrows instead of widening to every type.
+ *
+ * A type owns a mode when it previews a placement that is not the default tool.
+ * Keyed by type id, and the mapped types below read their union off these keys,
+ * so a renamed type moves the union with it. `placementModeOwnerDrift` holds the
+ * table to the descriptor flags at load, and
+ * `__tests__/supportPlacementRouting.test.ts` holds the router to it.
+ */
+export const PLACEMENT_MODE_OWNER_BY_TYPE = {
+    trunk: false,
+    branch: true,
+    leaf: true,
+    twig: false,
+    stick: false,
+    brace: true,
+    anchor: false,
+    kickstand: true,
+} as const satisfies Record<SupportTypeId, boolean>;
+
+/** The types that own a placement mode. */
+export type PlacementModeOwnerTypeId = {
+    [K in SupportTypeId]: (typeof PLACEMENT_MODE_OWNER_BY_TYPE)[K] extends true ? K : never;
+}[SupportTypeId];
+
+export const PLACEMENT_MODE_OWNER_TYPES: readonly PlacementModeOwnerTypeId[] =
+    (Object.keys(PLACEMENT_MODE_OWNER_BY_TYPE) as SupportTypeId[])
+        .filter((id): id is PlacementModeOwnerTypeId => PLACEMENT_MODE_OWNER_BY_TYPE[id]);
+
+/** How `PLACEMENT_MODE_OWNER_BY_TYPE` and the descriptor flags disagree. */
+export function placementModeOwnerDrift(): readonly string[] {
+    const derived = SUPPORT_TYPES
+        .filter((descriptor) => descriptor.hasPlacementPreview && !descriptor.previewYieldsToOtherModes)
+        .map((descriptor) => descriptor.id);
+    const declared: readonly SupportTypeId[] = PLACEMENT_MODE_OWNER_TYPES;
+    const drift: string[] = [];
+    for (const id of derived) {
+        if (!declared.includes(id)) drift.push(`${id} owns a placement mode but is missing from PLACEMENT_MODE_OWNER_BY_TYPE`);
+    }
+    for (const id of declared) {
+        if (!derived.includes(id)) drift.push(`${id} is marked as owning a placement mode but declares none`);
+    }
+    return drift;
+}
+
+const PLACEMENT_MODE_OWNER_DRIFT = placementModeOwnerDrift();
+if (PLACEMENT_MODE_OWNER_DRIFT.length > 0) {
+    throw new Error(`Placement mode owners disagree with the declared flags: ${PLACEMENT_MODE_OWNER_DRIFT.join('; ')}`);
+}
+
+/**
+ * The types sharing the ONE `branchFamily` placement binding.
+ *
+ * Branch and brace are placed by the same binding, so the family they belong to
+ * is named `branchFamily` rather than after either type. Every other placement
+ * owner is named after its own type, which is what
+ * `OwnNamedPlacementFamilyTypeId` below says.
+ */
+export const BRANCH_FAMILY_MEMBER_TYPES = ['branch', 'brace'] as const satisfies readonly PlacementModeOwnerTypeId[];
+
+/** A type whose placement is driven by the shared branch binding. */
+export type BranchFamilyMemberTypeId = (typeof BRANCH_FAMILY_MEMBER_TYPES)[number];
+
+/** The placement owners named after their own type rather than folded into a family. */
+export type OwnNamedPlacementFamilyTypeId = Exclude<PlacementModeOwnerTypeId, BranchFamilyMemberTypeId>;
+
+/**
+ * The family a placement mode belongs to.
+ *
+ * `branchFamily` is a family NAME, not a type id -- it exists because branch and
+ * brace are driven by one binding. The rest of the union is derived, so renaming
+ * a type renames its family here.
+ */
+export type PlacementFamilyName = 'branchFamily' | OwnNamedPlacementFamilyTypeId;
+
+/**
  * The shaft-hosted member types, in the order to walk them.
  *
  * The single naming point for those walks: a caller iterates this rather than
@@ -2323,6 +2459,61 @@ export function coneKnotHostType(): SupportTypeId {
         throw new Error(
             `expected exactly one cone knot host, found: ${CONE_KNOT_HOST_TYPES.join(', ') || 'none'}. `
             + 'A caller builds these ids without holding a type; give it the type instead.',
+        );
+    }
+    return typeId;
+}
+
+/**
+ * The single type that is the default placement tool -- the one whose preview
+ * yields to every other mode, and which auto-placement's fallback builds.
+ *
+ * Same contract as `coneKnotHostType`: it asserts the "exactly one" rather than
+ * assuming it, so a second type claiming the flag fails loudly at the call
+ * instead of silently widening what "not the default" excludes.
+ */
+export function defaultPlacementToolTypeId(): SupportTypeId {
+    const matches = SUPPORT_TYPES.filter((descriptor) => descriptor.previewYieldsToOtherModes).map((d) => d.id);
+    const [typeId, ...rest] = matches;
+    if (!typeId || rest.length > 0) {
+        throw new Error(
+            `expected exactly one default placement tool, found: ${matches.join(', ') || 'none'}.`,
+        );
+    }
+    return typeId;
+}
+
+/**
+ * The type whose entities live in `key`.
+ *
+ * The inverse of each descriptor's `location.key`. A caller walking a
+ * `SupportState` collection by key -- which it must, because the key IS the
+ * `SupportState` field -- can ask this for the type that owns what it just read,
+ * rather than naming the type a second time. The state keys do not change when a
+ * type is renamed (`branch` stores into `branches`), so a key written here is
+ * not a second naming point.
+ */
+export function typeIdForCollection(key: SupportCollectionKey): SupportTypeId {
+    const descriptor = SUPPORT_TYPES.find((candidate) => candidate.location.key === key);
+    if (!descriptor) {
+        throw new Error(`no support type stores its entities in the "${key}" collection`);
+    }
+    return descriptor.id;
+}
+
+/**
+ * The single type serialised as a bundle with the root and host knot it owns.
+ *
+ * Same contract as `coneKnotHostType`: it asserts the "exactly one" rather than
+ * assuming it, so a second bundled type is a loud failure instead of a silent
+ * change to whose primitives a caller reads.
+ */
+export function bundledSupportTypeId(): SupportTypeId {
+    const matches = SUPPORT_TYPES.filter((descriptor) => descriptor.serialisedAsBundle).map((d) => d.id);
+    const [typeId, ...rest] = matches;
+    if (!typeId || rest.length > 0) {
+        throw new Error(
+            `expected exactly one bundled support type, found: ${matches.join(', ') || 'none'}.`,
         );
     }
     return typeId;

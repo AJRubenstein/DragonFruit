@@ -55,6 +55,7 @@ import {
     getSidebarPanelSnapshot,
     isSidebarPanel,
     panelHas,
+    SIDEBAR_PANELS,
     setActiveSidebarPanel,
     subscribeToSidebarPanel,
     panelForTab,
@@ -82,8 +83,26 @@ const ACCENT_CARD_STYLE: React.CSSProperties = {
     background: 'color-mix(in srgb, var(--accent), var(--surface-1) 95%)',
 };
 
-const OVERFLOW_COMPACT_KIND_SET = new Set<SidebarPanel>(['trunk', 'raft', 'grid', 'stick', 'auto']);
-const POPUP_PREVIEW_KIND_SET = new Set<SidebarPanel>(['trunk']);
+/**
+ * The panels that swap to the compact layout when their content overflows.
+ *
+ * These are the panels the sidebar opens by opening THEIR tab -- the one that
+ * declares it rather than another sharing it, which leaves out the extra panels
+ * riding the support-info page (leaf, branch, twig). `auto` is reached from the
+ * mode rather than a tab, so it is its own page too.
+ */
+const OVERFLOW_COMPACT_KIND_SET = new Set<SidebarPanel>(
+    SIDEBAR_PANELS.filter((panel) => {
+        const tab = tabPanelFor(panel);
+        return tab === 'auto' || panelForTab(tab) === panel;
+    }),
+);
+
+/**
+ * The panel whose preview floats in a popup when the sidebar is too short to
+ * show it -- the default panel, which is the one shown on opening.
+ */
+const POPUP_PREVIEW_KIND_SET = new Set<SidebarPanel>([DEFAULT_SIDEBAR_PANEL]);
 
 function hasMeaningfulSupportEditChange(
     before: SupportEditHistorySnapshot,
@@ -169,7 +188,7 @@ export function SupportSidebar() {
     const isAdaptiveConeAngle = (settings.tip.coneAngleMode ?? 'normal') === 'adaptive';
     const sidebarPanelState = React.useSyncExternalStore(subscribeToSidebarPanel, getSidebarPanelSnapshot, getSidebarPanelSnapshot);
     const activePanel = sidebarPanelState.panel;
-    const useAdaptiveIconCompactDisplay = isAdaptiveConeAngle && activePanel === 'trunk';
+    const useAdaptiveIconCompactDisplay = isAdaptiveConeAngle && activePanel === DEFAULT_SIDEBAR_PANEL;
     const tabKind = tabPanelFor(activePanel);
     const raftSettings = React.useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
     const supportState = React.useSyncExternalStore(subscribeToSupportState, getSupportSnapshot, getSupportSnapshot);
@@ -646,7 +665,7 @@ export function SupportSidebar() {
 
     const sectionScrollClass = 'flex-1 min-h-0 overflow-y-auto custom-scrollbar';
     const shouldUseOverflowCompactMode = OVERFLOW_COMPACT_KIND_SET.has(activePanel) && trunkCompactByOverflow;
-    const shouldUseCompactTrunkLayout = activePanel === 'trunk' && shouldUseOverflowCompactMode;
+    const shouldUseCompactTrunkLayout = activePanel === DEFAULT_SIDEBAR_PANEL && shouldUseOverflowCompactMode;
     const hasFloatingTrunkPreviewTrigger = POPUP_PREVIEW_KIND_SET.has(activePanel)
         && (Boolean(activeKey) || Boolean(previewState.hoveredPresetSettings));
     const shouldShowFloatingTrunkPreview = expanded
@@ -1221,7 +1240,7 @@ export function SupportSidebar() {
                                                 />
                                             </div>
                                         </>
-                                    ) : activePanel === 'stick' ? (
+                                    ) : tabKind === 'bracing' ? (
                                         <>
                                             {!shouldUseOverflowCompactMode ? (
                                                 renderPreviewBox('h-[220px]')
@@ -1235,7 +1254,7 @@ export function SupportSidebar() {
                                                 />
                                             </div>
                                         </>
-                                    ) : activePanel === 'trunk' ? (
+                                    ) : activePanel === DEFAULT_SIDEBAR_PANEL ? (
                                         <>
                                             {shouldUseCompactTrunkLayout ? (
                                                 <div className="rounded-md border p-2" style={SECTION_CARD_STYLE}>

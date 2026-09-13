@@ -55,6 +55,12 @@ import { PLACEMENT_CONTROLLERS, PLACEMENT_CONTROLLER_TYPES } from '@/supports/pl
 import { clearSupportSelection } from '@/supports/interaction/shared/selection/selectionController';
 import { isSupportTargetHoverCategory } from '@/supports/interaction/shared/hover/supportHoverResolver';
 import { useSceneHoveredSupportId } from '@/supports/interaction/shared/hover/sceneHoverStore';
+import {
+  BRANCH_FAMILY_PLACEMENT_OWNER,
+  isPlacementActiveForType,
+  isPlacementPreviewForType,
+  LEAF_PLACEMENT_OWNER,
+} from '@/supports/interaction/shared/placement/hotkeys/supportPlacementRouting';
 import { SupportLimitationFeedback } from '@/supports/PlacementLogic/SupportLimitations';
 import {
   getSupportPlacementHelpEnabled,
@@ -1942,11 +1948,11 @@ export function SceneCanvas({
   const branchHoverDotVisible = Boolean(
     branchHoverPosition
     && !branchTipPosition
-    && !placementPreviews.branch
+    && !isPlacementPreviewForType(placementPreviews, BRANCH_FAMILY_PLACEMENT_OWNER)
     && !suppressSupportPlacementPreviewRendering
     && !supportHoverTargetActive
     && !!hoveredMeshModelId
-    && !!placementActive.branch,
+    && isPlacementActiveForType(placementActive, BRANCH_FAMILY_PLACEMENT_OWNER),
   );
 
   const hasRaftSelection = !!committedActiveModelId || !!activeModelId || (selectedModelIds?.length ?? 0) > 0;
@@ -2161,7 +2167,7 @@ export function SceneCanvas({
   }, []);
 
   React.useEffect(() => {
-    const visible = !!branchHoverPosition && !branchTipPosition && !placementPreviews.branch;
+    const visible = !!branchHoverPosition && !branchTipPosition && !placementPreviews[BRANCH_FAMILY_PLACEMENT_OWNER];
     if (prevBranchHoverDotVisibleRef.current === null) {
       prevBranchHoverDotVisibleRef.current = visible;
       return;
@@ -2169,10 +2175,10 @@ export function SceneCanvas({
     if (prevBranchHoverDotVisibleRef.current !== visible) {
       prevBranchHoverDotVisibleRef.current = visible;
     }
-  }, [branchHoverPosition, branchTipPosition, placementPreviews.branch]);
+  }, [branchHoverPosition, branchTipPosition, placementPreviews[BRANCH_FAMILY_PLACEMENT_OWNER]]);
 
   React.useEffect(() => {
-    const visible = !!leafHoverPosition && !leafTipPosition && !placementPreviews.leaf;
+    const visible = !!leafHoverPosition && !leafTipPosition && !placementPreviews[LEAF_PLACEMENT_OWNER];
     if (prevLeafHoverDotVisibleRef.current === null) {
       prevLeafHoverDotVisibleRef.current = visible;
       return;
@@ -2180,7 +2186,7 @@ export function SceneCanvas({
     if (prevLeafHoverDotVisibleRef.current !== visible) {
       prevLeafHoverDotVisibleRef.current = visible;
     }
-  }, [leafHoverPosition, leafTipPosition, placementPreviews.leaf]);
+  }, [leafHoverPosition, leafTipPosition, placementPreviews[LEAF_PLACEMENT_OWNER]]);
 
   // Computed refs for active model
   const activeGroupRef = React.useMemo(
@@ -4211,7 +4217,7 @@ export function SceneCanvas({
       if (blockSupportPlacement) return null;
       const displaced = SUPPORT_TYPES.some((other: { id: SupportTypeId; placementModeDisplacesDefault?: boolean }) =>
         other.id !== typeId && other.placementModeDisplacesDefault && activePlacementModes[other.id]);
-      if (displaced || placementPreviews.branch) return null;
+      if (displaced || isPlacementPreviewForType(placementPreviews, BRANCH_FAMILY_PLACEMENT_OWNER)) return null;
     }
 
     return preview;
@@ -7195,7 +7201,7 @@ export function SceneCanvas({
 
               {/* Render Branch Tip Marker - only show when NO preview is visible */}
               {/* Once preview shows, the contact cone at the tip replaces this marker */}
-              {placementActive.branch && branchTipPosition && !placementPreviews.branch && !suppressSupportPlacementPreviewRendering && (
+              {isPlacementActiveForType(placementActive, BRANCH_FAMILY_PLACEMENT_OWNER) && branchTipPosition && !isPlacementPreviewForType(placementPreviews, BRANCH_FAMILY_PLACEMENT_OWNER) && !suppressSupportPlacementPreviewRendering && (
                 <mesh position={[branchTipPosition.x, branchTipPosition.y, branchTipPosition.z]} raycast={() => null}>
                   <sphereGeometry args={[DEFAULT_TIP_CONTACT_DIAMETER_MM / 2 * 0.5, 12, 12]} />
                   <meshStandardMaterial color="#00ff00" transparent opacity={0.7} />
@@ -7204,7 +7210,7 @@ export function SceneCanvas({
 
               {/* Render Leaf Hover Preview Dot - shows when Alt+Shift is held before first click */}
               {/* Uses tip contact diameter to match actual tip size */}
-              {leafHoverPosition && !leafTipPosition && !placementPreviews.leaf && !suppressSupportPlacementPreviewRendering && (
+              {leafHoverPosition && !leafTipPosition && !isPlacementPreviewForType(placementPreviews, LEAF_PLACEMENT_OWNER) && !suppressSupportPlacementPreviewRendering && (
                 <mesh position={[leafHoverPosition.x, leafHoverPosition.y, leafHoverPosition.z]} raycast={() => null}>
                   <sphereGeometry args={[DEFAULT_TIP_CONTACT_DIAMETER_MM / 2 * 0.5, 12, 12]} />
                   <meshStandardMaterial
@@ -7219,7 +7225,7 @@ export function SceneCanvas({
 
               {/* Render Leaf Tip Marker - only show when NO preview is visible */}
               {/* Once preview shows, the contact cone at the tip replaces this marker */}
-              {placementActive.leaf && leafTipPosition && !placementPreviews.leaf && !suppressSupportPlacementPreviewRendering && (
+              {isPlacementActiveForType(placementActive, LEAF_PLACEMENT_OWNER) && leafTipPosition && !isPlacementPreviewForType(placementPreviews, LEAF_PLACEMENT_OWNER) && !suppressSupportPlacementPreviewRendering && (
                 <mesh position={[leafTipPosition.x, leafTipPosition.y, leafTipPosition.z]} raycast={() => null}>
                   <sphereGeometry args={[DEFAULT_TIP_CONTACT_DIAMETER_MM / 2 * 0.5, 12, 12]} />
                   <meshStandardMaterial color="#00ff00" transparent opacity={0.7} />

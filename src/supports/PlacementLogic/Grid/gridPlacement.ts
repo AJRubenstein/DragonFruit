@@ -22,7 +22,7 @@ import { perfMark, perfMeasureWithSpike } from '../Pathfinding/pathfindingPerf';
 import {
     MAX_AUTO_LEAF_SPAN_MM,
 } from '../../autoSupport/constants';
-import { buildContactOverride, GRID_HOST_TYPES, getSupportTypeDescriptor, placementOfResolved, selectTypeForPlacement } from '../../supportTypeRegistry';
+import { buildContactOverride, GRID_HOST_TYPES, getSupportTypeDescriptor, placementOfResolved, resolveSupportTypeIdOf, selectTypeForPlacement } from '../../supportTypeRegistry';
 import type { SupportTypeId } from '../../supportTypeRegistry';
 import type { SupportData } from '../../rendering/SupportBuilder';
 
@@ -267,6 +267,34 @@ function branchCollidesWithMesh(
     return isShaftBlocked(knot.pos, socketApprox, radius, mesh);
 }
 
+/**
+ * What labels the members this module emits.
+ *
+ * This module chooses the BUILDER (leaf-or-branch by span) and the builder's
+ * own folder names the type: `buildLeafData` and `buildBranchData` stamp
+ * `typeId` on the entity they return. So each member's type is read back off
+ * the entity it built rather than restated here, and a renamed member type
+ * reaches the placement through its own builder.
+ *
+ * What remains is the CHOICE: the engine picks leaf-or-branch by span without
+ * asking the registry. A `hostedSpan` placement rule would settle that, the way
+ * `tipHeight` already settles anchor-vs-trunk. See the inventory's next stage.
+ */
+
+/**
+ * The type of a member this module just built.
+ *
+ * One lookup for every site that emits a member, so the "which type is this"
+ * question is answered the same way at each. A builder that returned an entity
+ * with no type would be a bug in that builder's own folder, and it says so
+ * rather than shipping a member the store cannot file.
+ */
+function builtMemberTypeId(member: { id: string; typeId?: SupportTypeId }): SupportTypeId {
+    const typeId = resolveSupportTypeIdOf(member);
+    if (!typeId) throw new Error(`built member ${member.id} carries no typeId`);
+    return typeId;
+}
+
 function getHostDiameterMmFromKnot(knot: Knot, settings: DecideGridPlacementArgs['settings']): number {
     return Math.max(0.001, (knot.diameter ?? (settings.shaft.diameterMm + 0.1)) - 0.1);
 }
@@ -313,8 +341,8 @@ function tryBuildAutoLeafDecision(args: {
         nodeKey,
         placed: placementOfResolved(
             // This function IS the leaf's builder -- it called `buildLeafData`
-            // just above -- so it labels its own result and no caller has to.
-            LEAF_TYPE_ID,
+            // just above -- so the entity carries the type it was built as.
+            builtMemberTypeId(leaf),
             leaf,
             // The knot it hangs from, under the same field name `edges` declares.
             { parentKnotId: knot },
@@ -487,7 +515,7 @@ function findNeighborAttachment(args: {
                     kind: 'place',
                     nodeKey: neighborKey,
                     placed: placementOfResolved(
-                        BRANCH_TYPE_ID,
+                        builtMemberTypeId(branch),
                         branch,
                         { parentKnotId: neighborKnot },
                         { typeId: neighborHost.hostTypeId, id: neighborHost.hostId },
@@ -499,21 +527,6 @@ function findNeighborAttachment(args: {
     }
     return null;
 }
-
-/**
- * The type each hosted member this module builds belongs to.
- *
- * Declared ONCE each, beside the `buildLeafData` / `buildBranchData` imports that
- * produce them, rather than spelled at each of the five sites that emit one.
- * This is not a dispatch decision -- this module already chose the builder, and
- * these say which type that builder's output goes into.
- *
- * What remains is the CHOICE: the engine picks leaf-or-branch by span without
- * asking the registry. A `hostedSpan` placement rule would settle that, the way
- * `tipHeight` already settles anchor-vs-trunk. See the inventory's next stage.
- */
-const LEAF_TYPE_ID: SupportTypeId = 'leaf';
-const BRANCH_TYPE_ID: SupportTypeId = 'branch';
 
 // Reusable raycaster for trunk collision checks — avoids allocating one per call.
 function trunkCollidesWithMesh(
@@ -790,7 +803,7 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
             hostTypeId: host.hostTypeId,
             hostId: host.hostId,
             placed: placementOfResolved(placedTypeId, promoteBuild.trunk, { rootId: promoteBuild.root }),
-            promotedMember: placementOfResolved(BRANCH_TYPE_ID, branch, { parentKnotId: selectedKnot }),
+            promotedMember: placementOfResolved(builtMemberTypeId(branch), branch, { parentKnotId: selectedKnot }),
             supportData: promoteBuild.supportData,
         };
     }
@@ -814,8 +827,8 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
         nodeKey,
         placed: placementOfResolved(
             // This function IS the branch's builder -- it called `buildBranchData`
-            // just above -- so it labels its own result.
-            BRANCH_TYPE_ID,
+            // just above -- so the entity carries the type it was built as.
+            builtMemberTypeId(branch),
             branch,
             { parentKnotId: selectedKnot },
             { typeId: host.hostTypeId, id: host.hostId },

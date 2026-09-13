@@ -1,5 +1,6 @@
 import {
     getSupportTypeDescriptor,
+    SIDEBAR_PANEL_TYPE_IDS,
     SUPPORT_TYPES,
     type SidebarTab,
     type SupportTypeId,
@@ -18,10 +19,12 @@ import { hasOwnAnatomyPreview } from './anatomyPreviewRegistry';
  * registered itself. Only the tool panels are declared here, because there is no
  * registry to ask: they are not support types.
  *
- * Which types the sidebar actually offers is a UI decision, so it is listed
- * rather than derived -- every type COULD be a panel (see `typePanelFacts`,
- * which answers for all of them and is held by `sidebarPanels.test.ts`), but
- * showing one needs settings the sidebar has no fields for yet.
+ * Which types the sidebar actually offers is a UI decision, so each type DECLARES
+ * it (`offersSidebarPanel`) and the registry exports the offered ones in the
+ * order the sidebar shows them -- `SIDEBAR_PANEL_TYPE_IDS`, held to the flags by
+ * a module-load check. Every type COULD be a panel (see `typePanelFacts`, which
+ * answers for all of them), but showing one needs settings the sidebar has no
+ * fields for yet.
  */
 
 /** Re-exported so a panel consumer has one import site for the sidebar's vocab. */
@@ -91,8 +94,16 @@ export function typePanelFacts(typeId: SupportTypeId): PanelFacts {
     };
 }
 
-/** The types the sidebar currently offers a panel for. A UI list, not a fact. */
-const TYPE_PANELS: readonly SupportTypeId[] = ['trunk', 'leaf', 'branch', 'twig', 'stick'];
+/**
+ * The types the sidebar currently offers a panel for.
+ *
+ * A UI list rather than a fact, so it is declared on the descriptors: each type
+ * says whether it is offered (`offersSidebarPanel`), and the registry exports
+ * them in the ORDER the sidebar offers them -- which is observable, because
+ * `panelForTab` opens the first panel declaring a tab. Registry order is not
+ * that order (it declares branch before leaf; the sidebar offers leaf first).
+ */
+const TYPE_PANELS: readonly SupportTypeId[] = SIDEBAR_PANEL_TYPE_IDS;
 
 /** Every panel the sidebar offers, in tab order. */
 export const SIDEBAR_PANELS: readonly SidebarPanel[] = [
@@ -156,8 +167,13 @@ export function panelDrawsOwnPreview(panel: SidebarPanel): boolean {
 
 /**
  * The panel the sidebar returns to when an edit session ends.
+ *
+ * The support-info tab's panel, which is the trunk panel: `panelForTab` answers
+ * with the first panel declaring a tab, and trunk leads `SIDEBAR_PANEL_TYPE_IDS`.
+ * Derived rather than spelled, so a rename reaches it; `panelForTab` throwing
+ * for a tab no panel declares is the load-time check that this stayed true.
  */
-export const DEFAULT_SIDEBAR_PANEL: SidebarPanel = 'trunk';
+export const DEFAULT_SIDEBAR_PANEL: SidebarPanel = panelForTab('supportInfo');
 
 /**
  * Tabs other than the generic support-info one.

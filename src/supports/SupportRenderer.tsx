@@ -19,7 +19,7 @@ import {
 } from './supportPlacementPreviewMath';
 import { buildSegmentPreviewBatch } from './previewGeometry/seam';
 import './previewGeometry/registerBuiltinPreviewBuilders';
-import { anyContactMatches, collectOwnedRootIds, contactEndpointsFor, parseKnotHostId, knotHostId, isConeKnotHost, isSpanKnotHost, spanKnotHostType, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
+import { anyContactMatches, collectOwnedRootIds, contactEndpointsFor, parseKnotHostId, knotHostId, isConeKnotHost, isSpanKnotHost, spanKnotHostType, coneKnotHostType, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
 import { buildKnotIndex, selectedIdsForType, type CollectionLookup, type SelectionInputs } from './interaction/shared/selection/selectedIdsByType';
 import { resolveSegmentEndpoints, type EndpointHosts } from './SupportPrimitives/Knot/segmentEndpoints';
 import './detailRenderer/registerBuiltinDetailRenderers';
@@ -45,7 +45,6 @@ import { ContactDisk, SupportMode, BezierSegment, type Anchor, type Brace, type 
 import { resolveTwigDiameterAtSegmentT } from './SupportTypes/Twig/twigTaper';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
 import { EMPTY_PLACEMENT_PREVIEWS, type SupportData, type SupportPlacementPreviews } from './rendering';
-import type { BracePreviewData } from './SupportTypes/Brace/bracePlacementState';
 import { useJointCreationState } from './SupportPrimitives/Joint/jointCreationState';
 import { subscribeToSettings, getSettingsSnapshot } from './Settings/state';
 import { emitSupportModelPointerHover, emitSupportModelPointerSelect, handleSupportClick } from './interaction/clickHandlers';
@@ -151,6 +150,23 @@ const EMPTY_SUPPORT_ID_LIST: readonly string[] = Object.freeze([]);
 const EMPTY_KNOT_DRAG_SHAFT_SEGMENTS_BY_ID: Record<string, never> = Object.freeze({});
 const FREEZE_DEPENDENT_PREVIEW_DURING_JOINT_DRAG = true;
 
+/**
+ * The two types this layer batches by hand, taken from the registry's own
+ * groupings rather than written here.
+ *
+ * The leaf's knots ride its contact cone, so its "joint" is the host knot it
+ * hangs from rather than a shaft joint the per-type pass collects; the brace's
+ * shaft is its selectable span, so it batches its own curve between two knots.
+ * A rename moves both ids with their descriptors.
+ */
+const LEAF_TYPE_ID = coneKnotHostType();
+const BRACE_TYPE_ID = spanKnotHostType();
+
+/** The leaf's placement-preview batch, whose joints are tinted green while the
+ *  leaf placement is still waiting for its sprout tip. The batch id is the one
+ *  `buildPlacementPreviewBatches` builds from the same descriptor. */
+const LEAF_PREVIEW_BATCH_ID = `placement-preview:${LEAF_TYPE_ID}`;
+
 /** Simple line vector for debugSimpleSupportRender — like J×2 pathfinding debug, but for all shafts. */
 function SimpleShaftLines({ shafts, color }: { shafts: InstancedShaft[]; color: string }) {
     const line = React.useMemo(() => {
@@ -205,7 +221,10 @@ function buildPlacementPreviewBatches(
             const segmentBatch = buildSegmentPreviewBatch(
                 descriptor.id,
                 id,
-                preview as BracePreviewData,
+                // The builder takes the preview as `unknown`: its shape is the
+                // type's own, and casting to one here would pin it to a
+                // particular segment type's shape.
+                preview,
                 { maxShaftDiameterMm: getAutoBracingSettings().braceDiameterMm },
             );
             if (segmentBatch) next.push(segmentBatch);
@@ -312,23 +331,23 @@ export function SupportPlacementPreviewLayer({
                         <InstancedJointGroup
                             joints={batch.joints}
                             color={
-                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                batch.id === LEAF_PREVIEW_BATCH_ID && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
                                     ? '#00ff00'
                                     : batch.color
                             }
                             emissive={
-                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                batch.id === LEAF_PREVIEW_BATCH_ID && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
                                     ? '#00ff00'
                                     : batch.color
                             }
                             emissiveIntensity={
-                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                batch.id === LEAF_PREVIEW_BATCH_ID && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
                                     ? 0.5
                                     : 0.08
                             }
                             transparent
                             opacity={
-                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                batch.id === LEAF_PREVIEW_BATCH_ID && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
                                     ? 0.70
                                     : batch.opacity
                             }
@@ -1237,8 +1256,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         [selectedIdsByType, EMPTY_SELECTION],
     );
 
-    const selectedLeafIds = selectedOf('leaf');
-    const selectedBraceIds = selectedOf('brace');
+    const selectedLeafIds = selectedOf(LEAF_TYPE_ID);
+    const selectedBraceIds = selectedOf(BRACE_TYPE_ID);
 
     const knotIdsByParentShaftId = useMemo(() => {
         const map = new Map<string, string[]>();
@@ -1474,12 +1493,13 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     /*
      * Thin typed reads of `renderListByType`. DEBT, not API: they exist because
-     * the call sites below still name a list, and each binds a type id and
-     * nothing else. They go as those sites move to the map -- `leaf` and `brace`
-     * each have one surviving per-type consumer (leaf joints, brace shafts).
+     * the call sites below still name a list, and each binds one of the two
+     * derived type ids and nothing else. They go as those sites move to the map
+     * -- `leaf` and `brace` each have one surviving per-type consumer (leaf
+     * joints, brace shafts).
      */
-    const renderLeafList = renderListByType.leaf as unknown as Leaf[];
-    const renderBraceList = renderListByType.brace as unknown as Brace[];
+    const renderLeafList = renderListByType[LEAF_TYPE_ID] as unknown as Leaf[];
+    const renderBraceList = renderListByType[BRACE_TYPE_ID] as unknown as Brace[];
 
     const renderKnotList = useMemo(() => {
         if (!hasPreviewKnotOverrides) return knotList;
@@ -1929,7 +1949,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const jointSet = leafJointsBySupport.get(leaf.id);
             if (!jointSet) continue;
 
-            const color = resolveSceneSupportColor(jointSet.modelId, leaf.id, 'leaf');
+            const color = resolveSceneSupportColor(jointSet.modelId, leaf.id, LEAF_TYPE_ID);
             pushJoints(jointSet.modelId ?? null, color, jointSet.joints);
         }
 
@@ -1999,7 +2019,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                 : null;
             const color = debugSection
                 ? AUTO_BRACING_DEBUG_SECTION_COLORS[debugSection]
-                : resolveSceneSupportColor(shaftSet.modelId, brace.id, 'brace');
+                : resolveSceneSupportColor(shaftSet.modelId, brace.id, BRACE_TYPE_ID);
             const groupKey = `${modelKey}:${color}`;
 
             const existing = grouped.get(groupKey);
@@ -3172,23 +3192,23 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         <InstancedJointGroup
                             joints={batch.joints}
                             color={
-                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                batch.id === LEAF_PREVIEW_BATCH_ID && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
                                     ? '#00ff00'
                                     : batch.color
                             }
                             emissive={
-                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                batch.id === LEAF_PREVIEW_BATCH_ID && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
                                     ? '#00ff00'
                                     : batch.color
                             }
                             emissiveIntensity={
-                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                batch.id === LEAF_PREVIEW_BATCH_ID && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
                                     ? 0.5
                                     : 0.08
                             }
                             transparent
                             opacity={
-                                batch.id === 'placement-preview:leaf' && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
+                                batch.id === LEAF_PREVIEW_BATCH_ID && (sproutParentingLockHeld || leafStage === 'awaitingSproutTip')
                                     ? 0.70
                                     : batch.opacity
                             }

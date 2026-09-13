@@ -480,7 +480,10 @@ export function applyTrunkReplacement(
 
         addKnot(newParentKnot);
         const updated = adjustBranchForNewParentKnot(existingBranch, newParentKnot);
-        updateSupportEntity('branch', updated);
+        // The branch came out of the store, so it carries its own `typeId` and
+        // the updater reads the type off it -- naming the type here would be a
+        // second place to keep in sync with the registry.
+        updateSupportEntity(updated);
     }
 
     // Rehost all connected leaves by recreating the leaf + its parent knot (no leaf update function).

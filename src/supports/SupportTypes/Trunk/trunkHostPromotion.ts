@@ -53,4 +53,6 @@ export function promoteTrunkToHigherCandidate(request: HostPromotionRequest): Su
     return getSnapshot();
 }
 
+// Registered from the trunk's own folder, which is where this type may name
+// itself: a host type's promotion replacement is that type's own business.
 registerHostPromotion('trunk', promoteTrunkToHigherCandidate);

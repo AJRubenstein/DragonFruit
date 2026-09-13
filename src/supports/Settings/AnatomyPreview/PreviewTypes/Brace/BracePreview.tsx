@@ -1,4 +1,5 @@
 import { registerAnatomyPreview } from '../../../anatomyPreviewRegistry';
+import { panelForTab } from '../../../sidebarPanels';
 import React from 'react';
 import * as THREE from 'three';
 import { SupportBuilder } from '@/supports/rendering/SupportBuilder';
@@ -293,7 +294,9 @@ export function BracePreview({
     );
 }
 
-// Serves the STICK panel: "Bracing" is the stick's sidebar tab, and this
-// renders the bracing pattern the stick tool produces. Registered under the
-// panel it draws, not the folder it happens to live in.
-registerAnatomyPreview('stick', BracePreview);
+// Serves the panel the BRACING tab opens: "Bracing" is that panel's sidebar
+// page, and this renders the bracing pattern its tool produces. Read off the
+// panel vocabulary rather than spelled, so a rename moves the registration with
+// the tab. Registered under the panel it draws, not the folder it happens to
+// live in.
+registerAnatomyPreview(panelForTab('bracing'), BracePreview);

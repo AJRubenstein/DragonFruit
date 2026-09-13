@@ -1,5 +1,6 @@
 import { recomputeLeafPreviewContactCone } from '../SupportTypes/Leaf/leafPreviewCone';
 import type { Branch, Brace, Knot, Leaf, Twig } from '../types';
+import { isJointDragPreviewType, resolveSupportTypeIdOf } from '../supportTypeRegistry';
 import { computeJointDragPreviewKnots, type JointDragPreviewSnapshot } from './jointDragPreviewMath';
 
 export function buildBranchesByParentKnotId(branches: Branch[]) {
@@ -110,6 +111,17 @@ export function computeCascadedPreviewKnotOverrides({
     const branch = branchesById[branchId];
     if (!branch) continue;
 
+    // The preview's kind is the type the entity itself declares: the maths
+    // reads it back for the entity's own descriptor, so restating the name
+    // here would be a second naming point. An entity that resolves to no type
+    // -- or to one that publishes no joint-drag preview -- has none to
+    // compute, the same way the guards below treat a missing branch.
+    const branchKind = resolveSupportTypeIdOf(branch);
+    if (!branchKind || !isJointDragPreviewType(branchKind)) {
+      processedBranchIds.add(branchId);
+      continue;
+    }
+
     const parentKnot = merged[branch.parentKnotId];
     if (!parentKnot) {
       processedBranchIds.add(branchId);
@@ -129,7 +141,7 @@ export function computeCascadedPreviewKnotOverrides({
     }
 
     const nextBranchPreviewKnots = computeJointDragPreviewKnots(
-      { kind: 'branch', supportId: branch.id, support: branch },
+      { kind: branchKind, supportId: branch.id, support: branch },
       { parentKnot },
       branchPreviewCandidateKnots,
     );

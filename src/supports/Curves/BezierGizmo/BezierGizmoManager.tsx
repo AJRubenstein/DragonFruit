@@ -125,21 +125,25 @@ export function BezierGizmoManager() {
         // is per-action, so this stays typed rather than dispatched.
         if (initialTrunkRef.current && ctx.entity && ctx.typeId
             && getSupportTypeDescriptor(ctx.typeId).ownsEditHistoryEntry) {
+            // The type is the handle's own, asked of the registry: which type
+            // records its own entry, what it is called and which collection it
+            // lives in are all declared there.
+            const ownEntryDescriptor = getSupportTypeDescriptor(ctx.typeId);
             const latestTrunk = (livePreviewRef.current?.support as Trunk | undefined)
-                ?? getSupportEntity('trunk', ctx.entity.id);
+                ?? getSupportEntity(ctx.entity.id);
             if (latestTrunk) {
                 // Final exact reconciliation after drag-time fast-path updates.
                 updateSupportEntity(latestTrunk);
                 pushSupportHistory({
                     type: SUPPORT_UPDATE_TRUNK,
-                    description: `Edit ${getSupportTypeDescriptor('trunk').singular} curve`,
+                    description: `Edit ${ownEntryDescriptor.singular} curve`,
                     payload: {
                         before: initialTrunkRef.current,
                         after: JSON.parse(JSON.stringify(latestTrunk)),
                     },
                 });
             }
-            clearSupportDragPreview('trunk', ctx.entity.id);
+            clearSupportDragPreview(ctx.typeId, ctx.entity.id);
             livePreviewRef.current = null;
             initialTrunkRef.current = null;
         }

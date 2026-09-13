@@ -1,6 +1,7 @@
 import { registerSegmentPreviewBatchBuilder, segmentPreviewTypesMissingBuilder } from './seam';
 import { buildBracePlacementPreviewBatch } from '../SupportTypes/Brace/bracePreviewBatch';
 import type { BracePreviewData } from '../SupportTypes/Brace/bracePlacementState';
+import { SUPPORT_TYPES } from '../supportTypeRegistry';
 
 /**
  * Wires each type's own preview geometry into the segment-preview seam.
@@ -13,7 +14,21 @@ import type { BracePreviewData } from '../SupportTypes/Brace/bracePlacementState
  * One line per type that needs a builder of its own. A type whose preview is a
  * whole provisional support needs nothing -- the shared batch covers it.
  */
-registerSegmentPreviewBatchBuilder<BracePreviewData>('brace', buildBracePlacementPreviewBatch);
+
+/**
+ * The type the builder below belongs to: the one declaring the segment preview
+ * shape, which is the shape it draws. Read off the registry rather than written
+ * here, and read through the same declaration the check underneath uses, so the
+ * two cannot disagree about which types need a builder.
+ */
+const [segmentPreviewTypeId] = SUPPORT_TYPES
+    .filter((descriptor) => descriptor.previewShape === 'segment')
+    .map((descriptor) => descriptor.id);
+if (!segmentPreviewTypeId) {
+    throw new Error('no support type declares `previewShape: \'segment\'`, so there is no builder to register.');
+}
+
+registerSegmentPreviewBatchBuilder<BracePreviewData>(segmentPreviewTypeId, buildBracePlacementPreviewBatch);
 
 // A type declaring `previewShape: 'segment'` draws nothing without a builder, and
 // nothing else would notice: the shared batch covers only whole supports.

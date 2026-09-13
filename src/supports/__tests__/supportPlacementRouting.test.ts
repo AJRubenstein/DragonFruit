@@ -14,8 +14,10 @@ import {
     resolveSupportPlacementRouting,
     routeModelPlacementHit,
 } from '../interaction/shared/placement/hotkeys/supportPlacementRouting';
-import { MODEL_SURFACE_GESTURE_BY_TYPE, MODEL_SURFACE_GESTURE_TYPES, SUPPORT_TYPES } from '../supportTypeRegistry';
+import { BRANCH_FAMILY_MEMBER_TYPES, getSupportTypeDescriptor, KICKSTAND_HOST_TYPES, MODEL_SURFACE_GESTURE_TYPES, PLACEMENT_MODE_OWNER_TYPES, placementModeOwnerDrift, SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { SupportPlacementActive, SupportPlacementPreviews } from '../rendering';
+import type { PlacementOwnerTypeId } from '../interaction/shared/placement/hotkeys/supportPlacementRouting';
+import { PLACEMENT_FAMILY_BY_BINDING } from '../interaction/shared/placement/hotkeys/supportPlacementHotkeyTypes';
 import type { SupportPlacementHotkeyBindings, SupportPlacementModifierState, SupportPlacementRoutingState } from '../interaction/shared/placement/hotkeys/supportPlacementHotkeyTypes';
 
 const defaultBindings: SupportPlacementHotkeyBindings = {
@@ -85,6 +87,43 @@ test('the derived owner list covers exactly the flagged types', () => {
 });
 
 /**
+ * The registry's placement-owner table is held to its own descriptor flags at
+ * load, so this is what says the table a rename has to move has moved.
+ */
+test('the registry placement-owner table agrees with the descriptor flags', () => {
+    assert.deepEqual(placementModeOwnerDrift(), []);
+});
+
+/**
+ * Every placement mode has exactly ONE owner constant, and the router's four
+ * constants are the registry's owners. A mode losing its owner, or two owners
+ * naming one type, would otherwise leave each individual arm compiling.
+ */
+test('the router owner constants are the registry placement modes', () => {
+    const owners: readonly PlacementOwnerTypeId[] = [
+        BRANCH_FAMILY_PLACEMENT_OWNER,
+        LEAF_PLACEMENT_OWNER,
+        BRACE_PLACEMENT_OWNER,
+        KICKSTAND_PLACEMENT_OWNER,
+    ];
+    assert.deepEqual([...owners].sort(), [...PLACEMENT_MODE_OWNER_TYPES].sort());
+});
+
+/**
+ * The two type-named family values cover every owner NOT in the shared branch
+ * family, so the family table and the member list move together: a renamed
+ * member the family values did not follow -- or a third own-named family
+ * arriving -- shows up here rather than silently folding into the family.
+ */
+test('the branch family members are the owners no own-named family covers', () => {
+    const ownNamedFamilyNames = [PLACEMENT_FAMILY_BY_BINDING.leaf, PLACEMENT_FAMILY_BY_BINDING.kickstand];
+    const branchFamilyMembers = PLACEMENT_MODE_OWNER_TYPES.filter(
+        (typeId) => !ownNamedFamilyNames.some((familyName) => familyName === typeId),
+    );
+    assert.deepEqual([...branchFamilyMembers].sort(), [...BRANCH_FAMILY_MEMBER_TYPES].sort());
+});
+
+/**
  * Every state and modifier combination the router can be handed, so the owners
  * it answers with are checked against the registry-derived sets rather than
  * against a handful of examples. A type dropped from a flag would surface here
@@ -139,6 +178,27 @@ test('every owner the router answers with is a registry-declared one', () => {
         }
     }
     assert.equal(exercised, states.length * modifierStates.length);
+});
+
+/**
+ * The host set leaf sprouting walks is the kickstand-host set.
+ *
+ * `LeafPlacementController` hangs a sprout knot off a host's SEGMENT, so a host
+ * with no segments would silently sprout nothing. That flag half of the
+ * relation -- the set IS exactly the types declaring `hostsKickstand` -- is held
+ * in `derivedTypeSubsets.test.ts`; what is pinned here is the structural
+ * requirement the walk itself places on every member, so a host that stops
+ * being a shaft fails loudly instead of quietly dropping out of the search.
+ */
+test('every host leaf sprouting may hang a knot on has segments', () => {
+    assert.ok(KICKSTAND_HOST_TYPES.length > 0, 'a leaf sprout needs at least one host');
+    for (const typeId of KICKSTAND_HOST_TYPES) {
+        assert.equal(
+            getSupportTypeDescriptor(typeId).hasSegments,
+            true,
+            `${typeId} is walked for a sprout knot but declares no segments to hang it on`,
+        );
+    }
 });
 
 /**

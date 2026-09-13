@@ -13,8 +13,9 @@ import { ANATOMY_CONFIG } from './AnatomyPreviewConfig';
 import { getTargetFocusState } from './AnatomyPreviewCameraLogic';
 import type { SidebarPanel } from '../sidebarPanels';
 import { anatomyPreviewFor, hasOwnAnatomyPreview } from '../anatomyPreviewRegistry';
-import { getSidebarPanelSnapshot, subscribeToSidebarPanel } from '../sidebarPanels';
+import { DEFAULT_SIDEBAR_PANEL, getSidebarPanelSnapshot, subscribeToSidebarPanel } from '../sidebarPanels';
 import { getRaftSettings, subscribeToRaftStore } from '../../Rafts/Crenelated/RaftState';
+import { getSupportTypeDescriptor, SIDEBAR_PANEL_TYPE_IDS } from '../../supportTypeRegistry';
 import { resolveConeAxisPolicy } from '@/supports/PlacementLogic/ConeAxisPolicy';
 import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import type { SupportTipProfile } from '@/supports/SupportPrimitives/ContactCone/types';
@@ -283,6 +284,20 @@ function DebugOverlay({
     );
 }
 
+/**
+ * The panels whose type is a span propped between two model contacts -- cones for
+ * the bracing tool, disks for a twig. Read from the registry by what each type
+ * declares at its ends, so no panel is named here and a rename reaches the set.
+ *
+ * A span's contacts sit either side of what the camera frames, so zooming in on
+ * one of them needs a wider band than a support with a single contact.
+ */
+const CONTACT_SPAN_PANEL_IDS: readonly SidebarPanel[] = SIDEBAR_PANEL_TYPE_IDS.filter((typeId) => {
+    const { lower, upper } = getSupportTypeDescriptor(typeId);
+    return (lower.kind === 'cone' || lower.kind === 'disk')
+        && (upper.kind === 'cone' || upper.kind === 'disk');
+});
+
 // Internal component to handle camera framing and support rendering
 function PreviewContent({
     setDebugData,
@@ -448,8 +463,8 @@ function PreviewContent({
 
         // --- Dynamic Zoom Logic for Tip Contact Diameter Only ---
         const isContactDiameterFocus = previewState.activeSettingKey === 'tip.contactDiameterMm';
-        const isStickLikeKind = activePanel === 'stick' || activePanel === 'twig';
-        const isTrunkKind = activePanel === 'trunk';
+        const isStickLikeKind = CONTACT_SPAN_PANEL_IDS.includes(activePanel);
+        const isTrunkKind = activePanel === DEFAULT_SIDEBAR_PANEL;
 
         // Strict scope: ONLY 'tip.contactDiameterMm' triggers dynamic zoom
         // Previously we checked startsWith('tip.'), which caused snapback on other tip settings
