@@ -244,7 +244,7 @@ export function JointGizmo() {
         // widening `type` would lose the payload check that keeps it honest.
         if (initialTrunkRef.current && owner?.typeId === 'trunk') {
             const committedTrunk = livePreviewOf<Trunk>('trunk')
-                ?? getSupportEntity('trunk', owner.id) as Trunk | null;
+                ?? getSupportEntity('trunk', owner.id);
             if (committedTrunk) {
                 const applied = cloneObj(commitJointDragSupport('trunk', committedTrunk));
                 if (applied) {

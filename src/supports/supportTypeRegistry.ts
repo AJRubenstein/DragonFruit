@@ -895,12 +895,60 @@ export function registerSupportUpdater<T>(typeId: SupportTypeId, update: (entity
 }
 
 /**
- * Apply an entity back to the store by type id.
+ * Resolves an id to its type by looking in the store.
+ *
+ * A slot for the same reason the updaters above are one: the answer lives in
+ * `state.ts` (it reads the collections), and `state.ts` calls into this module
+ * while building its initial state, so importing it back is an initialisation
+ * cycle. Registered at load, so it is present by the time anything calls it.
+ *
+ * Only consulted for an entity that has LOST its `typeId` -- a whole-store
+ * payload restored through `setSnapshot` bypasses the writers that stamp it.
+ */
+let resolveSupportTypeOfId: ((id: string) => SupportTypeId | null) | null = null;
+
+/** Called once by state.ts. */
+export function registerSupportTypeResolver(resolve: (id: string) => SupportTypeId | null): void {
+    resolveSupportTypeOfId = resolve;
+}
+
+/**
+ * Apply an entity back to the store.
+ *
+ * Two forms, told apart by the first argument:
+ *   - `updateSupportEntity(entity)` -- reads the type off the entity. PREFER
+ *     THIS: the entity already carries `typeId`, so passing the type again is
+ *     information the caller has to restate, and restating it is where a
+ *     literal type name comes from.
+ *   - `updateSupportEntity(typeId, entity)` -- the explicit form. Still needed
+ *     where the type is not on the entity yet (a fresh build) or where the
+ *     caller is the registry itself.
  *
  * Returns false when nothing is registered for the id, so a caller can tell
  * "no updater" from "updated".
  */
-export function updateSupportEntity(typeId: SupportTypeId, entity: unknown): boolean {
+export function updateSupportEntity(
+    entity: { typeId?: SupportTypeId; id: string },
+): boolean;
+export function updateSupportEntity(typeId: SupportTypeId, entity: unknown): boolean;
+export function updateSupportEntity(
+    typeIdOrEntity: SupportTypeId | { typeId?: SupportTypeId; id: string },
+    maybeEntity?: unknown,
+): boolean {
+    // A string first argument is the explicit form. Anything else must be the
+    // entity, and its own `typeId` decides -- falling back to the store's
+    // membership scan for an entity that lost the field on the way in.
+    let typeId: SupportTypeId | null;
+    let entity: unknown;
+    if (typeof typeIdOrEntity === 'string') {
+        typeId = typeIdOrEntity;
+        entity = maybeEntity;
+    } else {
+        entity = typeIdOrEntity;
+        typeId = typeIdOrEntity.typeId ?? resolveSupportTypeOfId?.(typeIdOrEntity.id) ?? null;
+    }
+    if (!typeId) return false;
+
     const update = UPDATERS.get(typeId);
     if (!update) return false;
     (update as (value: unknown) => void)(entity);

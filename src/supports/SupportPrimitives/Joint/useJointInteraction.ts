@@ -493,7 +493,7 @@ export function useJointInteraction(enabled: boolean = true) {
             }
 
             if (initialTrunkSnapshot.current && activeIdOf('trunk')) {
-                const currentTrunk = getSupportEntity('trunk', activeSupport.current!.id) as Trunk | null;
+                const currentTrunk = getSupportEntity('trunk', activeSupport.current!.id);
                 if (currentTrunk) {
                     pushSupportHistory({
                         type: SUPPORT_UPDATE_TRUNK,
@@ -614,7 +614,7 @@ export function useJointInteraction(enabled: boolean = true) {
 
                 if (activeIdOf('trunk')) {
                     // Update trunk
-                    const trunk = getSupportEntity('trunk', activeSupport.current!.id) as Trunk | null;
+                    const trunk = getSupportEntity('trunk', activeSupport.current!.id);
                     if (trunk) {
                         // Resolve Context for constraints (cached from drag start)
                         const root = activeConstraintRootRef.current ?? getRootById(trunk.rootId) ?? undefined;
@@ -643,7 +643,7 @@ export function useJointInteraction(enabled: boolean = true) {
                     }
                 } else if (activeIdOf('branch')) {
                     // Update branch
-                    const branch = getSupportEntity('branch', activeSupport.current!.id) as Branch | null;
+                    const branch = getSupportEntity('branch', activeSupport.current!.id);
                     if (branch) {
                         const contextStart = activeConstraintStartRef.current ?? getKnotById(branch.parentKnotId)?.pos;
 

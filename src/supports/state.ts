@@ -8,7 +8,7 @@ import {
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, resolveKnotDiameter, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
@@ -3456,10 +3456,44 @@ export function getModelIdForSupportEntityId(id: string | null | undefined): str
     return null;
 }
 
-/** One entity of any type, by id. */
-export function getSupportEntity(typeId: SupportTypeId, id: string) {
-    const { key } = getSupportTypeDescriptor(typeId).location;
-    return (state[key] as Record<string, unknown>)[id] ?? null;
+/**
+ * One entity by id.
+ *
+ * Two forms, told apart by arity:
+ *   - `getSupportEntity(id)` -- resolves the type from the store. PREFER THIS
+ *     where the caller does not otherwise need to know the type: passing it is
+ *     a literal the caller has to restate, and the store already holds the
+ *     answer.
+ *   - `getSupportEntity(typeId, id)` -- the direct form, for a caller that has
+ *     the type in hand (from a descriptor, off an entity).
+ *
+ * The explicit form is GENERIC on the type id, so `getSupportEntity('branch', id)`
+ * comes back a `Branch` -- which is why call sites no longer need
+ * `as Branch | null` on the result.
+ *
+ * Returns null for an unknown id, and for an id whose type cannot be resolved.
+ * A single argument that is a TYPE id rather than an entity id resolves to null
+ * (nothing is named `trunk`), which fails visibly rather than returning the
+ * wrong entity.
+ */
+export function getSupportEntity(id: string): SupportEntityAny | null;
+export function getSupportEntity<T extends SupportTypeId>(typeId: T, id: string): SupportEntityFor<T> | null;
+export function getSupportEntity(
+    // `string`, not `SupportTypeId`: the implementation has to accept every
+    // overload's parameters, and the one-argument form takes any entity id.
+    typeIdOrId: string,
+    maybeId?: string,
+): SupportEntityAny | null {
+    // One argument means the id alone.
+    if (maybeId === undefined) {
+        const resolved = getSupportTypeOf(typeIdOrId);
+        if (!resolved) return null;
+        return getSupportEntity(resolved, typeIdOrId);
+    }
+    const { key } = getSupportTypeDescriptor(typeIdOrId as SupportTypeId).location;
+    // The store is keyed by collection, so its value type there is the union of
+    // every entity; the overloads above narrow it per caller.
+    return (state[key] as Record<string, SupportEntityAny>)[maybeId] ?? null;
 }
 
 /**
@@ -3901,6 +3935,11 @@ for (const descriptor of SUPPORT_TYPES) {
 // slot rather than something the registry could hold directly.
 registerSettingsInference<Trunk, SupportSettings, SupportSettings>('trunk', (trunk, base) =>
     inferSettingsFromTrunk(trunk, state.roots[trunk.rootId] ?? null, base));
+
+// The registry's `updateSupportEntity(entity)` form reads the type off the
+// entity, and needs this only for one that lost it on the way in. A slot for
+// the same cycle reason as the updaters above.
+registerSupportTypeResolver(getSupportTypeOf);
 
 // Generic inference for every editable type that registered none of its own.
 // What it reads is declared: `contactFields` for the tip, `ownsRoot` for the

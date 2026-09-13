@@ -115,6 +115,31 @@ fixing that structure removes a whole class at once. Ordered by volume.
 
 ### A. Store accessors take a type name to mean "the collection of that type" — **~45 sites**
 
+> **Partly retargeted after executing the first half — read this before starting.**
+>
+> Executed: `updateSupportEntity(entity)` (derived from the entity's own `typeId`)
+> and `getSupportEntity(id)` (derived via a registry-resolver slot) both work, and
+> the explicit forms are now GENERIC, so `getSupportEntity('branch', id)` returns
+> a `Branch` instead of `unknown`. That removed **14 unsafe `as X | null` casts**
+> across 5 files — a real win, and the reason to keep going.
+>
+> But it corrected an assumption: **for `getSupportEntity`, the type id is
+> LOAD-BEARING for static typing.** The one-argument form can only return the
+> union `SupportEntityAny`, so a caller that needs `branch.segments` would have to
+> narrow by hand — reintroducing a dispatch literal. Dropping the type argument
+> there trades a value-position literal for a dispatch literal and loses safety:
+> strictly worse. Converting those 14 sites that way broke 10 type errors, which
+> is how the assumption was caught.
+>
+> So the honest target for this class splits:
+>   - **`update*` / `replace*` / `apply*`** — the entity carries `typeId`, the
+>     argument adds nothing, and removing it is a strict win. **Converted.**
+>   - **`get*` by id** — the argument provides the static type. Keep it. The win
+>     there is the typed return, not literal removal.
+>   - **`addSupportEntity`** — genuinely needs the type (the entity is new).
+>   - **`resolveSegmentEndpoints` / `splitSupportShaft`** — the caller already has
+>     the entity; these want the entity-takes-its-own-type treatment.
+
 Exact API list and count (outside `SupportTypes/`):
 
 | API | sites | example |
@@ -409,8 +434,8 @@ and its own page.
 
 This is the §2 "different vocabulary" case, except it is not benign: the label
 change above showed it reads as the trunk's own page to anyone looking at the UI.
-Wants a `SupportSidebarTab` vocabulary with names that describe the PAGES
-(`supportInfo`, `raft`, `grid`, `bracing`), declared in the registry. Low risk,
+Wants a SupportSidebarTab vocabulary with names that describe the PAGES
+("supportInfo", "raft", "grid", "bracing"), declared in the registry. Low risk,
 touches every descriptor plus `sidebarPanels.ts`.
 
 ---

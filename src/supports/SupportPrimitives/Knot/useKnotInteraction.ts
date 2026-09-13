@@ -760,7 +760,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                     const res = elasticResults[branchId];
                     if (!res) continue;
 
-                    const branch = getSupportEntity('branch', branchId) as Branch | null;
+                    const branch = getSupportEntity('branch', branchId);
                     if (!branch) continue;
 
                     let branchChanged = false;
@@ -807,7 +807,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
             // Reconcile drag-time fast-path edits with an exact pass once on release.
             for (const [branchId, previewSegments] of Object.entries(previewBranchSegmentsByIdAtEnd)) {
-                const branch = getSupportEntity('branch', branchId) as Branch | null;
+                const branch = getSupportEntity('branch', branchId);
                 if (branch) {
                     updateSupportEntity('branch', { ...branch, segments: previewSegments });
                 }
@@ -1142,7 +1142,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
         if (shouldSkipElasticPreview) {
             for (const branchId of Object.keys(previewBranchSegmentsByIdRef.current)) {
-                const branch = getSupportEntity('branch', branchId) as Branch | null;
+                const branch = getSupportEntity('branch', branchId);
                 if (branch) {
                     // Explicitly mark previously preview-overridden branches for prune.
                     branchSegmentsById[branch.id] = branch.segments;
@@ -1192,7 +1192,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                 const res = elasticResults[branchId];
                 if (!res) continue;
 
-                const branch = getSupportEntity('branch', branchId) as Branch | null;
+                const branch = getSupportEntity('branch', branchId);
                 if (!branch) continue;
 
                 let branchChanged = false;
@@ -1355,7 +1355,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
             for (const branchId of updatedBranchIds) {
                 const nextSegments = branchSegmentsById[branchId];
-                const committedBranch = getSupportEntity('branch', branchId) as Branch | null;
+                const committedBranch = getSupportEntity('branch', branchId);
                 if (committedBranch && committedBranch.segments === nextSegments) {
                     delete nextPreviewBranchSegmentsById[branchId];
                 } else {

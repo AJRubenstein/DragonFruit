@@ -196,7 +196,7 @@ export function KnotGizmo() {
             }
 
             // Update branch joints
-            const branch = getSupportEntity('branch', branchId) as Branch | null;
+            const branch = getSupportEntity('branch', branchId);
             if (!branch) continue;
 
             let branchChanged = false;
@@ -257,7 +257,7 @@ export function KnotGizmo() {
             const nextPreviewBranchSegmentsById = { ...previewBranchSegmentsByIdRef.current };
             for (const branchId of updatedBranchIds) {
                 const nextSegments = branchSegmentsById[branchId];
-                const committedBranch = getSupportEntity('branch', branchId) as Branch | null;
+                const committedBranch = getSupportEntity('branch', branchId);
                 if (committedBranch && committedBranch.segments === nextSegments) {
                     delete nextPreviewBranchSegmentsById[branchId];
                 } else {
@@ -390,7 +390,7 @@ export function KnotGizmo() {
         const previewKnot = previewKnotRef.current;
 
         for (const [branchId, previewSegments] of Object.entries(previewBranchSegmentsById)) {
-            const branch = getSupportEntity('branch', branchId) as Branch | null;
+            const branch = getSupportEntity('branch', branchId);
             if (!branch) continue;
             updateSupportEntity('branch', { ...branch, segments: previewSegments });
         }

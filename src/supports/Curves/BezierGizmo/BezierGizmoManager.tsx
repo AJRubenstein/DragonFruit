@@ -113,7 +113,7 @@ export function BezierGizmoManager() {
         // is per-action, so this stays typed rather than dispatched.
         if (initialTrunkRef.current && ctx.entity && ctx.typeId === 'trunk') {
             const latestTrunk = (livePreviewRef.current?.support as Trunk | undefined)
-                ?? getSupportEntity('trunk', ctx.entity.id) as Trunk | null;
+                ?? getSupportEntity('trunk', ctx.entity.id);
             if (latestTrunk) {
                 // Final exact reconciliation after drag-time fast-path updates.
                 updateSupportEntity('trunk', latestTrunk);
@@ -147,7 +147,7 @@ export function BezierGizmoManager() {
                 updateSupportEntity(typeId, preview);
             } else if (typeId === 'branch' && draggedId) {
                 // Branches reconcile from the store when no preview was produced.
-                const latestBranch = getSupportEntity('branch', draggedId) as Branch | null;
+                const latestBranch = getSupportEntity('branch', draggedId);
                 if (latestBranch) updateSupportEntity('branch', latestBranch);
             }
 
