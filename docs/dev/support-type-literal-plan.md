@@ -58,15 +58,19 @@ Three instruments, and none of them alone is the picture:
 **Re-measured after stage 6a** (§4). Previous readings, kept for the delta, are
 in the *was* column.
 
-| instrument | what it answers | now | was |
+| instrument | what it answers | now | start of stage 1 |
 | ---------- | --------------- | --- | --- |
-| `remaining-worklist.py` | honest rename errors, with the failing source line | **167** | 280 |
-| `rename-test.py <type>` | the same, counted without the `types.ts` exclusion | 183 (167 + 16 naming-point artifacts) | 280 |
-| `inventory.py` + `report.py` | every token containing a type name | **6,284** occurrences, 743 tokens | 6,955 / 778 |
-| `npm run scan:support-types` | the headline reference metric | **5,380** across 149 files | 5,909 |
-| `type-literal-metric.py` | every string literal equal to a type id | 111 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
-| `npm run check:support-literals` | the same, with the ratchet | 98 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
-| `silent-value-sites.py` | **value literals a rename does NOT reach** | **15, 0 of them real** | 17 real=2 |
+| `remaining-worklist.py` | honest rename errors, with the failing source line | **10** | 280 (old metric — see §4) |
+| `inventory.py` + `report.py` | every token containing a type name | **6,014** occurrences, 736 tokens | 6,955 / 778 |
+| `npm run scan:support-types` | the headline reference metric | **5,219** across 148 files | 5,909 |
+| `type-literal-metric.py` | every string literal equal to a type id | 16 value outside `SupportTypes`, 4 dispatch, 0 declaration | 163 / 16 / 5 |
+| `npm run check:support-literals` | the same, with the ratchet | **30 value, 0 dispatch, 0 declaration** | 149 / 10 / 3 |
+| `silent-value-sites.py` | **value literals a rename does NOT reach** | **11, 0 of them real** | 17 real=2 |
+
+**The `remaining-worklist.py` row is not comparable to its own history.** The tool
+was corrected mid-refactor (§4); it reported 167 under a metric that could not
+rename two of the eight types, so the old figure was mostly harness artifact
+rather than work. Do not read the fall as progress.
 
 Stage 5 moved the rename total **230 → 226**. The movement is the point: two
 silent sites became loud (the forest ledger's `kind`, the `updateBrace` stamp),
@@ -523,33 +527,92 @@ because deriving the capture deleted the type-named locals around it too. Track
 source line that fails, for all eight types. It is the actionable form of the
 table below: run it, pick a cluster, convert, re-run.
 
-**Two measurement corrections, both this session:**
+**Four measurement corrections, and the fourth invalidated the totals.**
 
-1. **`types.ts` must be excluded.** It is the second naming point (where
-   `SupportFieldsByType` declares the eight), so the goal statement exempts it.
-   None of the tools did. Renaming it *alone* leaves its own derived
-   `SupportEntityAny` inconsistent with the registry's `SUPPORT_TYPE_COLLECTION`
-   — an artifact of editing one naming point and not the other, two errors on one
-   line, per type. Every total reported before this correction is inflated by 16.
-2. **The tool now prints source lines**, because a line number is not a worklist.
+1. **`types.ts` and `supportTypeRegistry.ts` must BOTH be renamed.** They are the
+   two naming points. Renaming either one alone leaves the derived
+   `SupportEntityAny` / `SupportEntityFor` mapping inconsistent with
+   `SUPPORT_TYPE_COLLECTION`, which collapses entity types to `unknown` and
+   manufactures errors *far from any naming point*. Those cascades were counted
+   as work. This is the correction that mattered most: an agent measured ~60% of
+   a cluster's errors as cascade rather than a stale reference.
+2. **The collection literal is not `<type>s`.** `types.ts` declares `branch:
+   'branches'` and `leaf: 'leaves'`, so a template that guessed the plural never
+   fired for those two types — the exact two that always led the table. `branch`
+   and `leaf` were over-counted the whole time. A type's own folder must also be
+   renamed with it (the goal statement concedes it), or the folder's own
+   references cascade.
+3. **`types.ts` alone must not be SPOKEN of as exempt in one tool and renamed in
+   another.** An instrument that renames one naming point and excludes the other
+   is not measuring the goal; it is measuring its own partial edit.
+4. **The tool now prints source lines**, because a line number is not a worklist.
 
-Standing: **167 honest remaining** (naming-point artifacts excluded), from 280 at
-the start of stage 1. By cluster:
+Standing: **10 honest remaining**, but that figure is NOT comparable to the 167
+the same tool reported before corrections 1–3 — most of the difference is the
+harness, not the work. The per-cluster movements measured *within* this session,
+under one consistent metric, are the honest deltas. By cluster:
 
-| cluster | errors | what it is | shape of the fix |
-| --- | ---: | --- | --- |
-| `autoPlace.ts` | 24 | the orphan cull walks `leaves` and `branches` by hand (4 sites each), and the forest report's `pushMember` pairs do too; plus `draftAddEntity`/`kind` at the six builder call sites | generalise both walks over the declared `hostedBy` members — the same conversion 6b.2 did for the drag solve. The counters and the promote kind are done |
-| `state.ts` | 17 | `applySupportEntityUpdate('trunk' \| 'branch' \| 'kickstand', …)`, the `removeJointById` return, and the three BESPOKE updaters (`updateLeaf`, `updateBrace`, `updateAnchor`) | the updaters are the type's OWN update logic, registered in `state.ts` where the knot/diameter passes live — their literals are legitimate, not wrappers. The add/remove wrappers and their literals are gone |
-| `supportPlacementRouting` | 13 | mode → owner, one arm per mode | the state type is per-type field names; a record keyed by mode would collapse the arms — a design change |
-| `SceneCanvas` | 12 | five `placementPreviews.branch` reads, two `placementActive.branch` reads, per-type marker meshes | the marker meshes are per-type renderings; collapsing them is a loop over the record |
-| `useSupportInteractionManager` | 11 | the `placementPreviews` (5 keys) and `placementActive` (4 keys) records, and per-type placement state | the records are the existing pattern; deriving their keys needs a registration slot in each placement store |
-| Settings / AnatomyPreview | 25 | `activePanel === '<type>'` comparisons and preview dispatch | compiler-caught today, so not hazards — converting them is the UI question stage 4 deferred, not a rename |
-| knot / renderer / grid / curves | 22 | preview caches, `getSupportEntity('<type>', id)` in typed-dispatch arms, per-type caches in `gridPlacement` | each is a small local derivation; no cluster shapes |
-| scripts / plugins / perf | 6 | `support-drag-perf.ts`, `convertLysData.ts` | test-and-tooling call sites; convert directly |
+| cluster | state | what it was | what it is now |
+| --- | --- | --- | --- |
+| `autoPlace.ts` | **done** | the orphan cull walked `leaves`/`branches` by hand (4 sites each) and `buildForestReport`'s `pushMember` pairs did too | both iterate `SHAFT_HOSTED_MEMBER_TYPES`, derived from the declared `hostedBy` edges; the observable walk order is a declared list held to those edges by `shaftHostedMemberOrderDrift`, which throws at load |
+| `autoPlace.ts` builders | **done** | `draftAddEntity(d, 'branch', b)` / `kind: 'leaf'` at six builder call sites | the built entity reports its own type (`builtMemberTypeId`); `AttachmentKind` became `ShaftHostedMemberTypeId` rather than a hand-written `Extract` |
+| `state.ts` | **8 left, all loud** | 17: the add/remove/update wrappers, `applySupportEntityUpdate('<type>')`, the `removeJointById` return, the owned-primitive lookups | the wrappers are gone; `addSupportEntity`/`updateSupportEntity`/`applySupportEntityUpdate`/`replaceSupportEntity` all take the entity and read its type; the owned-primitive lookups read `bundledSupportTypeId()`. What remains is loud (§3E): the BESPOKE updater table and the three `RemoveJointByIdResult` discriminants |
+| `supportPlacementRouting` + hotkeys | **done** | 13: mode → owner arms, the hand-written `SupportPlacementOwner` / `SupportPlacementFamily` `Extract` unions, `PLACEMENT_MODE_TYPE_IDS` re-derived | the owner and family unions are derived from the registry's `PLACEMENT_MODE_OWNER_BY_TYPE` table and `BRANCH_FAMILY_MEMBER_TYPES`; the blocking step was that `Extract<SupportTypeId, …>` does NOT move with a rename (§3B, corrected) |
+| `SceneCanvas` | **done** | 12: five `placementPreviews.<type>` reads, `placementActive.<type>`, per-type marker guards | `isPlacementPreviewForType` / `isPlacementActiveForType` take the type as a value; the memo dependency arrays index the record by the owner constant, so identity is unchanged |
+| `useSupportInteractionManager` | **done** | 11: the `placementPreviews` and `placementActive` record keys | both keyed by the registry's owner constants; the records keep one key per declared type |
+| Settings / AnatomyPreview | **done** | 25: `activePanel === '<type>'`, the camera map, the preview dispatch chain, `TYPE_PANELS` | `TYPE_PANELS` is the registry's `SIDEBAR_PANEL_TYPE_IDS`, ORDERED because `panelForTab` takes the first panel declaring a tab; the panel → camera/diagram tables are derived from each type's declared preview shape. Two literals stayed, both documented non-hazards |
+| knot / renderer / grid / curves | **done** | 22: preview caches, `getSupportEntity('<type>', id)` in typed-dispatch arms, per-type caches | `coneKnotHostType()` / `spanKnotHostType()` / `defaultPlacementToolTypeId()` / `typeIdForCollection(key)`, and the id-alone accessor forms |
+| scripts / plugins / perf | **2 left** | 6: `support-drag-perf.ts`, `convertLysData.ts` | the perf script derives its simulated member type. The plugin site cannot move: `plugins/lys-import` is a git SUBMODULE, so a change there is not part of this repo's commit — its `HostEntry` union restates the names and must derive first |
 
-**Not a defect: the `Extract<SupportTypeId, …>` unions.** `SupportPlacementOwner`
-and `AttachmentKind` are derived, so a rename reaches them; the count includes
-their *consumers* erroring, which is the union working.
+### The measurement trap, and why `branch`/`leaf` always led
+
+The worst instrument failure of the refactor was not a wrong number but a wrong
+*shape*: a rename harness that treats one naming point as the whole and guesses
+the collection plural. `types.ts` declares `branch: 'branches'`, so for the two
+largest types the harness never renamed the collection key at all. Its remaining
+errors then included every consumer of a collapsed entity type — errors that do
+not exist in the tree and that no amount of work would remove. An agent in this
+session proved it by rebuilding the check and watching its own cluster go to zero
+under the corrected metric while the old one still reported 18.
+
+**A measurement that manufactures errors is worse than no measurement**, because
+it directs effort at phantoms and it hides real regressions inside the noise. Two
+habits guard against it: report the failing SOURCE LINE, not a count, and keep an
+independent instrument (§5) whose number is expected to disagree.
+
+### CORRECTED: the `Extract<SupportTypeId, …>` unions WERE a defect
+
+An earlier revision of this section said these were "derived, so a rename reaches
+them" and called their consumers' errors the union working. **Measurement
+disproved that**, and the claim was load-bearing — it was the reason a whole
+hazard class was left for later.
+
+`SupportPlacementOwner = 'none' | Extract<SupportTypeId, 'branch'|'brace'|'leaf'|'kickstand'>`
+hand-writes its members. `Extract` filters `SupportTypeId` by a LITERAL union, so
+when a type is renamed the filter keeps matching a name that no longer exists and
+the union quietly loses that member. The tell was measured: after renaming
+`branch` in both naming points, the registry-derived constants that name the same
+four types still resolved, while `owner: BRANCH_FAMILY_PLACEMENT_OWNER` failed
+`TS2322` — the constant had moved with the registry and the union had not.
+
+That is the §3B hazard exactly: **a union whose members are type ids must be
+derived from a declared fact, not from `Extract` over literals.** The fix is the
+pattern already in the registry — a per-type flag table with `as const satisfies`,
+a mapped type to read the union off it, and a drift check at load:
+
+    PLACEMENT_MODE_OWNER_BY_TYPE  ->  PlacementModeOwnerTypeId
+    BRANCH_FAMILY_MEMBER_TYPES    ->  BranchFamilyMemberTypeId
+                                  ->  OwnNamedPlacementFamilyTypeId
+                                  ->  PlacementFamilyName
+
+`AttachmentKind` had the same defect and was fixed the same way, onto
+`ShaftHostedMemberTypeId`.
+
+**The general rule this session earned:** a union over type ids is REMOVED from
+the hazard list only when a rename moves it. `Extract<SupportTypeId, 'a'|'b'>`
+does not; `Extract<SupportTypeId, SomeDerivedFlagType>` does. Both spell
+`Extract`, and only measurement tells them apart — which is why an unmeasured
+"this is derived" is not evidence.
 
 ### 6a. The joint-drag arms — done
 
@@ -957,28 +1020,36 @@ and the tool genuinely are the same thing.
 ## 8. What "done" looks like
 
 - `type-literal-metric.py` reports **0 dispatch** and **0 declaration** outside
-  `SupportTypes/`.
+  `SupportTypes/`; `npm run check:support-literals` ratchets at **0 dispatch, 0
+  declaration, 30 value** — all three at or below the target.
 - The remaining value-position literals are all either (a) inside a type's own
   folder, (b) a documented different vocabulary, or (c) an `addSupportEntity` call
   where the type genuinely does not exist yet.
-- `rename-test.py` reports **0 "real work"** errors for every one of the eight
-  types. Current standing, re-measured after stage 5:
-
-  | type | honest remaining | was | | type | honest remaining | was |
-  | --- | ---: | ---: | --- | --- | ---: | ---: |
-  | branch | **84** | 112 | | brace | 14 | 17 |
-  | leaf | 49 | 67 | | kickstand | 10 | 12 |
-  | trunk | 29 | 55 | | stick | 7 | 10 |
-  | | | | | twig | 5 | 5 |
-  | | | | | anchor | **2** | 2 |
-
-  **200 total**, down from 280 at the start of stage 1, and
-  `silent-value-sites.py` reports **0 real defects** left in the value class.
-  `anchor` at 2 is the proof the pattern works — its conversion landed and it was
-  comparable to the others beforehand. `branch` at 84 is the number that describes
-  the remaining work; `stick` at 7 is the one most often quoted.
-- The inventory (`inventory.py`) shows no token that would survive a rename
-  *without* a compile error. The rename test cannot see those; the two
-  instruments are not interchangeable.
+- `remaining-worklist.py` reports **10** for the eight types, under the corrected
+  metric (§4): 8 in `state.ts` (all loud, §3E) and 2 in a git submodule whose own
+  union must derive first. `stick` and `twig` are at 0.
+- `silent-value-sites.py` reports **11 silent, 0 of them real**. Every one is an
+  audited non-hazard: the `brace-trunk-<i>-<part>` synthetic id and the
+  `focusKey?.startsWith('brace')` prefix in `BracePreview.tsx`, the same synthetic
+  id in `previewSupports.ts`, and the `'detail' | 'structure' | 'anchor'` sizing
+  vocabulary (`SizingPreset` in `parameterSizing.ts`) — a tier name that shares
+  the word `anchor` without being the anchor type id.
+- The inventory shows no token that would survive a rename *without* a compile
+  error. The rename test cannot see those; the two instruments are not
+  interchangeable.
 - The ratchet in CI holds the numbers, so the next instance of §1.1 is caught by
   a gate rather than by a person noticing.
+
+### What the goal statement now holds, measured
+
+Renaming any of the eight type ids across both naming points and that type's own
+folder leaves **10** errors, none of them silent, none of them a behaviour
+dispatch, and none in the value class. Every remaining one is a literal in the
+second naming point's consumer set (`state.ts`'s registries) or in a submodule
+whose vocabulary must derive first.
+
+The mechanised test the goal asked for is in place: **a rename is a compile
+error at every stale reference**, and the three instruments disagree in the
+directions they should — the rename test proves the compiler catches it, the
+literal scan proves the strings are gone, and the silent-value scan proves
+nothing survives that the compiler cannot see.
