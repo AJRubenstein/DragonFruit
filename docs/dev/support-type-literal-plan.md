@@ -60,8 +60,8 @@ in the *was* column.
 
 | instrument | what it answers | now | was |
 | ---------- | --------------- | --- | --- |
-| `remaining-worklist.py` | honest rename errors, with the failing source line | **174** | 280 |
-| `rename-test.py <type>` | the same, counted without the `types.ts` exclusion | 190 (174 + 16 naming-point artifacts) | 280 |
+| `remaining-worklist.py` | honest rename errors, with the failing source line | **167** | 280 |
+| `rename-test.py <type>` | the same, counted without the `types.ts` exclusion | 183 (167 + 16 naming-point artifacts) | 280 |
 | `inventory.py` + `report.py` | every token containing a type name | **6,284** occurrences, 743 tokens | 6,955 / 778 |
 | `npm run scan:support-types` | the headline reference metric | **5,380** across 149 files | 5,909 |
 | `type-literal-metric.py` | every string literal equal to a type id | 111 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
@@ -102,15 +102,15 @@ Run for all eight, not just the convenient one:
 
 | type | honest remaining | was |
 | ---- | ---: | ---: |
-| branch | **56** | 112 |
+| branch | **55** | 112 |
 | leaf | 49 | 67 |
-| trunk | 29 | 55 |
+| trunk | 23 | 55 |
 | brace | 15 | 17 |
 | kickstand | 11 | 12 |
 | stick | 7 | 10 |
 | twig | 5 | 5 |
 | anchor | 2 | 2 |
-| **total** | **174** | 280 |
+| **total** | **167** | 280 |
 
 Numbers from `remaining-worklist.py`, which excludes both naming points.
 `branch` has fallen from 112 to 56; `stick` at 7 is no longer the easy case it
@@ -533,12 +533,12 @@ table below: run it, pick a cluster, convert, re-run.
    line, per type. Every total reported before this correction is inflated by 16.
 2. **The tool now prints source lines**, because a line number is not a worklist.
 
-Standing: **174 honest remaining** (naming-point artifacts excluded), from 280 at
+Standing: **167 honest remaining** (naming-point artifacts excluded), from 280 at
 the start of stage 1. By cluster:
 
 | cluster | errors | what it is | shape of the fix |
 | --- | ---: | --- | --- |
-| `autoPlace.ts` | 31 | the orphan cull walks `leaves` and `branches` by hand, and the forest report does the same; plus `placed.<literal>` counters | generalise both walks over the declared `hostedBy` members — the same conversion 6b.2 did for the drag solve |
+| `autoPlace.ts` | 24 | the orphan cull walks `leaves` and `branches` by hand (4 sites each), and the forest report's `pushMember` pairs do too; plus `draftAddEntity`/`kind` at the six builder call sites | generalise both walks over the declared `hostedBy` members — the same conversion 6b.2 did for the drag solve. The counters and the promote kind are done |
 | `state.ts` | 25 | the `add<Type>` / `update<Type>` / `remove<Type>` wrappers, and `applySupportEntityUpdate('trunk', …)` | the wrappers carry real narrowing (`SupportRemovalResult<T>`), so each needs its callers migrated first; 4 callers for `addTrunk`, 5 for `addBranch`, the rest ≤4 |
 | `supportPlacementRouting` | 13 | mode → owner, one arm per mode | the state type is per-type field names; a record keyed by mode would collapse the arms — a design change |
 | `SceneCanvas` | 12 | five `placementPreviews.branch` reads, two `placementActive.branch` reads, per-type marker meshes | the marker meshes are per-type renderings; collapsing them is a loop over the record |

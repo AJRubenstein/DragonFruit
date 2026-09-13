@@ -1159,7 +1159,7 @@ function placeOneCandidate(
                 `Promote ${typeWord(decision.hostTypeId).toLowerCase()} @ ${decision.nodeKey}: ` +
                 `${candidate.id} (Z=${candidate.zHeight.toFixed(1)}) → host ${decision.hostId}`);
             return {
-                kind: 'trunk', preset, entityId: decision.placed.entity.id, draft: d,
+                kind: decision.placed.typeId, preset, entityId: decision.placed.entity.id, draft: d,
             };
         }
 
@@ -2454,6 +2454,13 @@ export function computeAutoSupportPlan(
     }
 
     const placed = emptyPlacedCounts();
+    /**
+     * How many hosts the run has placed, for the per-support mass share. Read
+     * off the declared host types rather than naming one, so a second hostable
+     * type counts and a renamed one keeps working.
+     */
+    const placedHostCount = () =>
+        GRID_HOST_TYPES.reduce((total, descriptor) => total + (placed[descriptor.id] ?? 0), 0);
     let rejectedCount = 0;
 
     // A placement whose kind is one of these is a model-to-model bridge: the
@@ -2661,8 +2668,9 @@ export function computeAutoSupportPlan(
                     gridHostIds.delete(hostId);
                     const origin = originKind ?? 'standalone';
                     diagnostics.hostsByKind[origin]--;
-                    placed.trunk--;
-                    placed.branch++;
+                    // The host that yielded, and the type it became -- both in hand.
+                    placed[hostTypeId]--;
+                    placed[branchResult.kind]++;
                     consolidated++;
                     convertedThisPass++;
                     const hostEntry = forestLedger.find((e) => e.entityId === hostId);
@@ -2680,7 +2688,7 @@ export function computeAutoSupportPlan(
             gridHostIds.delete(hostId);
             const origin = originKind ?? 'standalone';
             diagnostics.hostsByKind[origin]--;
-            placed.trunk--;
+            placed[hostTypeId]--;
             placed[fan.kind]++;
             consolidated++;
             convertedThisPass++;
@@ -2804,7 +2812,7 @@ export function computeAutoSupportPlan(
             totalCandidates: modelCtx.totalCandidates,
             // Honest mass share: total model weight divided by the number of
             // placed supports. A load share, not a force estimate.
-            weightPerSupportG: round2Mm(placed.trunk > 0 ? weightG / placed.trunk : 0),
+            weightPerSupportG: round2Mm(placedHostCount() > 0 ? weightG / placedHostCount() : 0),
             avgIslandAreaMm2: round2Mm(avgArea),
             standaloneHosts: diagnostics.hostsByKind.standalone,
             gridInfillHosts: diagnostics.hostsByKind.gridInfill + diagnostics.hostsByKind.coverageFill,
@@ -2842,7 +2850,7 @@ export function computeAutoSupportPlan(
     );
 
     console.log(LOG_PREFIX,
-        `Leaf fanning: ${analytics.islandsUncovered} uncovered islands, ${placed.trunk} trunks available. ` +
+        `Leaf fanning: ${analytics.islandsUncovered} uncovered islands, ${placedHostCount()} hosts available. ` +
         `Max ${MAX_FANNING_PASSES} passes, fan radius ${fanRadiusMm}mm, max angle ${fanMaxAngleDeg}°.`);
 
     for (let pass = 0; pass < MAX_FANNING_PASSES && analytics.islandsUncovered > 0; pass++) {
