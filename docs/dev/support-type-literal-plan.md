@@ -457,6 +457,7 @@ shippable and independently verifiable.
 | **6a** | The joint-drag arms | F | 4 arms | med | **done** — four arms collapsed to two; see §3F.1 |
 | **6b.1** | The elastic knot-drag capture | F | 2 captures | med | **done** — `flexesOnHostKnotDrag` + `FLEXING_KNOT_HOST_TYPES`; see §6b.1 |
 | **6b.2** | The knot-drag solve and preview channel | F | 55 idents | med | **done** — one shared `elasticShaftPreview`; see §6b.2 |
+| **6c** | Knot-host prefixes spelled out as strings | **new** | 84 sites | med | **done** — invisible to the rename test; see §6c |
 
 **Stages 1 and 2 have landed.** Stage 1 was the silent class — a rename left
 those unions compiling and wrong; stage 2 removed the type-id parameter from the
@@ -666,6 +667,57 @@ shared `ShaftSegmentsById`. The consumer needed no structural change:
 Scan 5,735 to **5,562**. What remains in these files is `leafCone`, `braceHost`
 and `braceSpan`, which are the *host* vocabulary (`KnotHostType`), a different
 axis handled by its own derivation.
+
+---
+
+### 6c. Knot-host prefixes — done
+
+**A cause the plan did not have.** A knot that rides a pseudo-shaft carries a
+`parentShaftId` of `<prefix><entityId>`, and each prefix is already declared by
+the type that owns it -- leaf's `knotHostPrefix: 'leafCone:'`, brace's
+`'braceSegment:'`. Derived readers existed too (`parseKnotHostId`,
+`knotHostId`, `parsePrefixedSegmentId`).
+
+**84 sites across 19 files ignored all of it** and spelled the prefix out:
+`startsWith('leafCone:')`, `` `braceSegment:${brace.id}` ``, `.slice('leafCone:'.length)`.
+`state.ts` alone held 42.
+
+**Why every instrument missed it.** These are STRING literals, so:
+
+| instrument | why it was blind |
+| --- | --- |
+| the rename test | tsc cannot see inside a string; renaming leaf still compiled |
+| `scan:support-types` | counts identifiers, and `'leafCone:'` is not one |
+| tests | 921 passed before and after; nothing exercised a rename |
+
+Only reading the inventory caught it -- which is the user's standing point
+about the token inventory being the only instrument that sees the whole picture,
+demonstrated concretely.
+
+**The failure it would have caused.** Rename leaf and the app compiles clean,
+every test passes, and at runtime every tip knot silently fails to resolve its
+host: `startsWith('leafCone:')` matches nothing, so the knot falls through to
+the real-segment path and is looked up in a collection it is not in.
+
+**What replaced it.** The two host kinds are told apart by what they already
+declare, not by name: a SPAN also declares a `segmentSelectionPrefix` (it is
+selectable as a segment), a CONE host does not. Hence `CONE_KNOT_HOST_TYPES`,
+`SPAN_KNOT_HOST_TYPES`, `isConeKnotHost`, `isSpanKnotHost`, and the asserting
+accessors `coneKnotHostType()` / `spanKnotHostType()` for the callers that build
+an id while holding only the entity.
+
+`KnotHostType` was `SupportTypeId | 'leafCone'` -- a bare string union, the
+shape §3B already names as a hazard. The cone belongs to the type that declares
+it, so the union is now just `SupportTypeId`, and "does this knot ride a cone"
+is a derived fact on the host record.
+
+**Guarded by a source scan**, because no type-level check can see a string:
+`knotHostPrefixes.test.ts` walks `src/` and fails if any file outside the
+registry and a type's own folder spells a declared prefix. Mutation-tested by
+putting one literal back -- it fails naming the file.
+
+Scan 5,562 to **5,424**. The rename test did not move (49 for leaf, 14 for
+brace), which is the point: it never saw these.
 
 ---
 
