@@ -224,7 +224,7 @@ outside the registry, `types.ts`, a type's own folder, and tests.
 | **C. Behaviour dispatch** | 17 | `x === 'trunk'`, `case 'leaf'` |
 | **D. Value literals (everything else)** | 148 | the name passed as data: `draftAddEntity(d, 'branch', b)`, `kind: 'leaf'` |
 | **E. Declarations** | 1 | `TYPE_PANELS` — annotated, so a rename IS a compile error. Not a defect |
-| **F. Per-type identifiers** | ~1,410 distinct | `branchId`, `leafHotkeyActive`, `isLeafPlacementActive`. **No instrument catches these** |
+| **F. Per-type identifiers** | ~1,410 distinct | `branchId`, `leafHotkeyActive`, `kickstandRoots`. **No instrument catches these** |
 
 Renderer family dispatch (a cause in earlier revisions) is **done** —
 `SupportRenderer.tsx` holds zero dispatch literals.
@@ -416,23 +416,38 @@ Left as is. The compiler catches drift, which is the bar.
 
 ### F. Per-type identifiers — **~1,410 distinct, invisible to every instrument**
 
-`branchId` (74 occurrences), `leafId` (70), `isLeafPlacementActive`,
-`leafHotkeyActive`, `kickstandRoots`, `selectedTrunkIds`. A type name inside a
+`branchId` (74 occurrences), `leafId` (70), `leafHotkeyActive`,
+`kickstandRoots`, `selectedTrunkIds`. A type name inside a
 longer identifier is still a type name — each is a place a ninth type is
 silently absent.
 
 Neither the rename test nor any literal count sees these. Only
 `lysdiag/tools/inventory.py` does.
 
-**Worked example:** `SceneCanvas.tsx` holds **zero** type-id literals, yet takes
-`isBranchPlacementActive`, `isLeafPlacementActive`, `isBracePlacementActive`,
-`isKickstandPlacementActive` plus four tip/hover positions — then rebuilds them
-into `Partial<Record<SupportTypeId, boolean>>`, generic from there on. Renaming a
-type breaks nothing there and no metric moves.
+**Worked example (partly closed):** `SceneCanvas.tsx` holds **zero** type-id
+literals. It used to take four flat booleans — one per placement mode — and
+rebuild them into `Partial<Record<SupportTypeId, boolean>>` inside itself.
+`useSupportInteractionManager` now returns that record directly (beside the
+`placementPreviews` record it already built), so the scene takes ONE prop and
+`supportCreationModeActive` is `Object.values(placementActive).some(Boolean)`,
+naming no type. Only two sites still index it by name, where they render that
+type's own marker.
 
-Behind it: four placement hooks whose fields `useSupportInteractionManager` fans
-into flat per-type names. Collapsing it means passing the record — a design
-change, not a rename. **Do not expect a number to move when this lands.**
+**The record costs the metric 7, measured.** It moved the rename total 171 → 178:
++1 per type for the record's key in `useSupportInteractionManager`, +2 for the
+two sites in `SceneCanvas` that index it by name, and −0 for the three dead props
+removed alongside (a JSX *attribute name* is not a literal, so it never counted).
+It is kept because the pattern is already in that same file and function: the
+sibling `placementPreviews` record has five type-keyed keys and is accepted, so
+this is consistency rather than a new kind of site. The four flat props were
+already the collapsed form — what the scene was duplicating was the *rebuild*,
+and that is gone.
+
+**What remains here is the position half:** four tip/hover position props and the
+marker meshes they feed (a branch dot, a leaf dot, and each tip). Those are
+per-type *renderings*, so collapsing them means a loop over the record rather
+than a rename. That is the design change this section describes, and it is not
+attempted here — see §4's remaining-worklist for its size.
 
 > **A measured counter-example, before any "deduplication".** Removing the eight
 > `selectedTrunkIds` / `selectedStickIds` aliases in `SupportRenderer` took the
@@ -553,7 +568,10 @@ descriptor, and skipping it would drop the undo entry silently. `state.ts` asser
 at load that no type declares `ownsEditHistoryEntry` without `historyUpdate` —
 mutation-verified by deleting trunk's action and watching it throw.
 
----- | -------- |
+### Done
+
+| work | evidence |
+| ---- | -------- |
 | **Joint-drag arms collapsed (stage 6a)** | four arms (trunk/branch/kickstand/contacts) → one hosted path + one contact path, in `useJointInteraction` and `JointGizmo`; hosts and the history action read off the descriptor. `rename-test.py` trunk 43 → 29, branch 92 → 84, kickstand 14 → 10 |
 | **Value literals measured and cleared (stage 5)** | `silent-value-sites.py`: 114 of 129 value literals are rename-reached by the compiler; the 2 genuinely silent ones (`autoPlace.ts` ledger kind, `updateBrace` stamp) fixed, and the `AUTO_PLACED_TYPE_IDS` shadow list replaced by `AUTO_PLACED_BY_TYPE` + an `isAutoPlaced` flag |
 | **Page-named sidebar tabs (stage 4)** | `SidebarTab` is `'supportInfo' \| 'raft' \| 'grid' \| 'bracing'`; the descriptor declares it and `panelForTab` derives the panel from `SIDEBAR_PANELS`, so no hand-kept tab→panel table. Verified in a browser: all four tabs select and swap panels |
