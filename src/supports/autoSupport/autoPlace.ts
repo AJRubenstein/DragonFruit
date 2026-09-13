@@ -107,6 +107,28 @@ function logPlacement(message: string): void {
     if (verboseLogging) console.log(LOG_PREFIX, message);
 }
 
+// ---------------------------------------------------------------------------
+// Knot identity
+// ---------------------------------------------------------------------------
+
+/**
+ * Allocate a knot id that is free in the draft.
+ *
+ * Auto knot ids are built from candidate/island ids, and those repeat:
+ * island indices restart at `v0`/`m0`/`o0` in every model's scan, and the
+ * gap-fill passes re-emit the same candidate ids. `draftAddPrimitive`
+ * REPLACES a knot on an id collision rather than failing, so a reused id
+ * silently re-parents the member that already owned the knot onto this run's
+ * host shaft — the "knot from another model" tear, which renders as a long
+ * member reaching across from the other model's forest.
+ */
+function freeKnotId(draft: SupportState, baseId: string): string {
+    if (!draft.knots[baseId]) return baseId;
+    let n = 2;
+    while (draft.knots[`${baseId}-${n}`]) n++;
+    return `${baseId}-${n}`;
+}
+
 
 // ---------------------------------------------------------------------------
 // Mesh volume helper
@@ -536,6 +558,8 @@ export function buildConsolidationBranch(args: {
     let best: FanShaftPoint | null = null;
     let bestAngleDeg = Infinity;
     for (const sp of pool) {
+        // Same rule as the leaf fan: only this model's shafts can host.
+        if (pruned.trunks[sp.trunkId]?.modelId !== modelId) continue;
         const ddx = sp.pos.x - tip.x;
         const ddy = sp.pos.y - tip.y;
         const ddz = sp.pos.z - tip.z;
@@ -553,7 +577,7 @@ export function buildConsolidationBranch(args: {
     if (maxAttachments > 0 && isTrunkAtAttachmentCapacity(best.trunkId, maxAttachments, pruned)) return null;
 
     const parentKnot = {
-        id: knotId,
+        id: freeKnotId(pruned, knotId),
         parentShaftId: best.segmentId ?? best.trunkId,
         t: best.t,
         pos: best.pos,
@@ -769,7 +793,7 @@ function placeOneCandidate(
                     if (seg?.diameter) knotDiameter = seg.diameter;
                 }
                 const parentKnot = {
-                    id: `auto-merge-${candidate.id}`,
+                    id: freeKnotId(d, `auto-merge-${candidate.id}`),
                     parentShaftId: bestKnotSegmentId || host.trunkId,
                     t: bestKnotT,
                     pos: knotPos,
@@ -1301,7 +1325,13 @@ const MAX_FANNING_PASSES = 5;
 
 /** Collect trunk shaft sample points from a snapshot — the fanning host pool.
  *  Anchor-origin trunks are excluded: anchors are load-bearing standalone
- *  pillars and never host fan leaves. */
+ *  pillars and never host fan leaves.
+ *
+ *  The pool spans EVERY model in the snapshot. Host choosers must therefore
+ *  filter on `trunk.modelId` — `fanLeafToTrunk`, `buildConsolidationBranch`,
+ *  the consolidation conversion loop and the flat-island stub pass all do.
+ *  Unfiltered, this model's member attaches to a neighbouring model's shaft
+ *  and its knot lands on that model's segment. */
 export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
     const shaftPoints: FanShaftPoint[] = [];
     for (const [tid, trunk] of Object.entries(draft.trunks)) {
@@ -1799,6 +1829,11 @@ export function fanLeafToTrunk(
     let refusal: FanLeafRefusal = 'noHost';
 
     for (const sp of shaftPoints) {
+        // A host must belong to the model being supported. The shaft pool is
+        // collected from the whole snapshot, which holds every model's forest
+        // — an unfiltered pool attaches this model's leaf to a neighbouring
+        // model's shaft (and its knot to that model's segment).
+        if (draft.trunks[sp.trunkId]?.modelId !== modelId) continue;
         const isGrid = gridTrunkIds.has(sp.trunkId);
         const limit = isGrid ? gridHostFanRadiusMm : fanRadiusMm;
         const ddx = sp.pos.x - target.x;
@@ -1837,7 +1872,7 @@ export function fanLeafToTrunk(
     let lastBlockedReason: FanLeafRefusal | null = null;
     for (const { sp, dist2, angleDeg } of candidates) {
         const parentKnot = {
-            id: knotIdPrefix,
+            id: freeKnotId(draft, knotIdPrefix),
             parentShaftId: sp.segmentId ?? sp.trunkId,
             t: sp.t,
             pos: sp.pos,
@@ -2494,6 +2529,9 @@ export function computeAutoSupportPlan(
     for (let pass = 0; pass < 3; pass++) {
         let convertedThisPass = 0;
         for (const tid of Object.keys(draft.trunks)) {
+            // Only this model's trunks are ours to convert (and to delete —
+            // the conversion replaces the pillar with a leaf of ours).
+            if (draft.trunks[tid].modelId !== modelId) continue;
             // Convertible: ring + grid infill, coverage fill, and
             // sub-threshold overhang singles — the overhang forest reads as
             // TREES: neighbouring pillars fan into each other so supports
@@ -2841,6 +2879,8 @@ export function computeAutoSupportPlan(
     // pass only adds branches.
     const stubHosts: Array<{ tid: string; pos: { x: number; y: number; z: number }; diameter: number }> = [];
     for (const [tid, trunk] of Object.entries(draft.trunks)) {
+        // Stubs hang off this model's trunks only, like every other fan.
+        if (trunk.modelId !== modelId) continue;
         const lastSeg = trunk.segments[trunk.segments.length - 1];
         const knotPos = lastSeg?.topJoint?.pos ?? trunk.contactCone?.pos;
         if (!knotPos) continue;
