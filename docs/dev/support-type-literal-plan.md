@@ -215,7 +215,7 @@ load-time error if a flag is declared without one.**
 
 | file | sites | what it dispatches on | likely mechanism |
 | --- | --- | --- | --- |
-| `Knot/useKnotInteraction.ts` | 7 | the knot's **host container type** | `containerType === 'brace' \| 'trunk' \| 'twig'` behaviour dispatch (curve span, elastic-preview fast path, twig cone persistence) — the host *resolution* side is already registry-driven (§4) |
+| `Knot/useKnotInteraction.ts` | 7 | the knot's **host container type** | **done** — `hostsCurveSpan` (span vs segment), `knotDragDefersElasticPreview`, `knotDragUpdatesLeafConeDiameter` |
 | `autoBracing/autoBrace.ts` | 6 | `supportKind === 'trunk'` while a generic `isAutoBraceable` flag already exists | **this one is a real inconsistency** — see §6 |
 | `Curves/BezierGizmo/BezierGizmoManager.tsx` | 5 | which type's curve is being edited | a declared "editsCurve" flag or a registered curve resolver |
 | `Settings/*` (sidebar, anatomy canvas, TrunkPreview) | 10 | which panel/kind is active | partly done (`sidebarPanels.ts`); the remaining `activePanel === 'trunk'` checks are UI layout, and may legitimately stay |
