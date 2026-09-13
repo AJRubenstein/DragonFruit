@@ -55,16 +55,16 @@ counted separately and **conceded** — a type is allowed to name itself.
 
 Three instruments, and none of them alone is the picture:
 
-**Re-measured after stage 1** (§4). Previous readings, kept for the delta, are
+**Re-measured after stage 2** (§4). Previous readings, kept for the delta, are
 in the *was* column.
 
 | instrument | what it answers | now | was |
 | ---------- | --------------- | --- | --- |
-| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | 251 total | 280 |
-| `inventory.py` + `report.py` | every token containing a type name | **6,892** occurrences, 780 tokens | 6,955 / 778 |
-| `npm run scan:support-types` | the headline reference metric | **5,877** across 152 files | 5,909 |
-| `type-literal-metric.py` | every string literal equal to a type id | 151 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
-| `npm run check:support-literals` | the same, with the ratchet | 137 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
+| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | 241 total | 280 |
+| `inventory.py` + `report.py` | every token containing a type name | **6,850** occurrences, 780 tokens | 6,955 / 778 |
+| `npm run scan:support-types` | the headline reference metric | **5,844** across 152 files | 5,909 |
+| `type-literal-metric.py` | every string literal equal to a type id | 141 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
+| `npm run check:support-literals` | the same, with the ratchet | 128 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
 
 Three readings moved up or held still while the defect count fell, and each is
 expected rather than a regression:
@@ -93,15 +93,15 @@ Run for all eight, not just the convenient one:
 
 | type | honest remaining | was |
 | ---- | ---: | ---: |
-| branch | **95** | 112 |
-| trunk | 56 | 55 |
+| branch | **91** | 112 |
 | leaf | 52 | 67 |
+| trunk | 50 | 55 |
 | brace | 17 | 17 |
 | kickstand | 14 | 12 |
 | stick | 10 | 10 |
 | twig | 5 | 5 |
 | anchor | 2 | 2 |
-| **total** | **251** | 280 |
+| **total** | **241** | 280 |
 
 **Read this table before quoting a headline.** The refactor has largely been
 measured on `stick`, which is the easiest type and now sits at 10. `branch` is
@@ -223,12 +223,12 @@ Renderer family dispatch (a cause in earlier revisions) is **done** —
 
 ---
 
-### A. Store accessors take a type name to mean "the entity's type" — **32 sites**
+### A. Store accessors take a type name to mean "the entity's type" — **stage 2 done, 12 of ~32 sites**
 
 The caller has the entity. Passing its type name alongside is a second source of
 truth that a rename cannot reach.
 
-`resolveSegmentEndpoints` and `splitSupportShaft` are the concentration — 13
+`resolveSegmentEndpoints` and `splitSupportShaft` were the concentration — 12
 literal calls, 8 of them in `state.ts`:
 
 ```ts
@@ -236,11 +236,24 @@ resolveSegmentEndpoints('trunk', trunkRef.trunk, firstSeg, 0, { root: trunkRef.r
 resolveSegmentEndpoints('branch', branchRef.branch, lastSeg, n, { hostKnot: parentKnot })
 ```
 
-**Fix:** take the entity and read its own `typeId`. The write accessors already
-did this (`updateSupportEntity(entity)`); these are the readers left behind.
+**Fixed:** both now take the entity and read its own `typeId`
+(`resolveSupportTypeIdOf`, which falls back to the store's membership scan for an
+entity that lost the field). The type-id parameter is gone, so the literal has
+nowhere to live. `resolveShaftAnchor` keeps its `typeId` — its callers hold the
+type but not the shaft — and `resolveShaftSegments`/`useShaftSegments` dropped
+theirs, resolving from the entity instead.
 
-Top files: `state.ts` (35 value literals, most of them this shape),
-`useJointInteraction.ts` (15), `useKnotInteraction.ts` (14).
+**It surfaced a real defect, which the goldens caught.** `mergeFromImportFormat`
+wrote incoming entities into the store *unstamped*, unlike `loadFromImportFormat`,
+which stamps `typeId` on every entity it reads. Nothing noticed while readers
+took the type explicitly; with the entity as the source, the knot-geometry pass
+that runs before `setState` resolved nothing and a knot's diameter came out `1`
+instead of `1.1`. The merge path now stamps per descriptor, like load. Both
+halves are pinned by mutation: returning null from `resolveSupportTypeIdOf` fails
+11 tests, and removing the merge stamping fails the `merge-with-owner` golden.
+
+Top files still holding this shape: `state.ts`, `useJointInteraction.ts`,
+`useKnotInteraction.ts`.
 
 ### B. Unions that are type-id subsets — **done, stage 1**
 
@@ -380,15 +393,16 @@ shippable and independently verifiable.
 | stage | work | cause | sites | risk | status |
 | --- | --- | --- | ---: | --- | --- |
 | **1** | Derive the three hazard unions from the registry | B | 3 | low | **done** — see §3B; three silent classes now fail to compile, test at `__tests__/derivedTypeSubsets.test.ts` |
-| **2** | `resolveSegmentEndpoints` / `splitSupportShaft` take the entity | A | 13 | low | **next** |
-| **3** | The rest of cause A's accessors | A | 19 | low–med | pending |
+| **2** | `resolveSegmentEndpoints` / `splitSupportShaft` take the entity | A | 12 | low | **done** — the type-id parameter is gone; see §3A, including the merge defect it surfaced |
+| **3** | The rest of cause A's accessors | A | ~20 | low–med | **next** — re-measure the list first; §3A's counts predate stages 1–2 |
 | **4** | Settings/anatomy-preview dispatch | C | 11 | medium | pending — needs a UI decision first, see below |
 | **5** | Value literals in argument position | D | 148 | low each | pending |
 | **6** | Per-type prop and hook names | F | ~1,410 | high | pending — design change, no metric moves |
 
-**Start with stage 1.** Three unions, each a few lines, and it is the only class
-that fails *silently* — a rename leaves the code compiling and wrong. It is also
-the work previous passes skipped on purpose because of a wrong concession in §2.
+**Stages 1 and 2 have landed.** Stage 1 was the silent class — a rename left
+those unions compiling and wrong; stage 2 removed the type-id parameter from the
+endpoint readers, which is what made their call sites reach a rename at all. Both
+are recorded in §3 with the mutations that pin them.
 
 **Stage 4 is blocked on a question, not on effort.** `SupportSidebar` and the
 anatomy previews dispatch on type name to choose which preview to draw. That may
@@ -401,6 +415,7 @@ converting, or the conversion encodes the wrong model.
 
 | work | evidence |
 | ---- | -------- |
+| **Endpoint readers take the entity (stage 2)** | `resolveSegmentEndpoints` / `splitSupportShaft` have no type-id parameter and no literal call site. Found and fixed a real defect on the way: `mergeFromImportFormat` did not stamp `typeId`, so the knot-geometry pass diverged (caught by the `merge-with-owner` golden) |
 | **Hazard unions derived (stage 1)** | `SupportPlacementFamily`, `KickstandHostKind`, `RemoveJointByIdResult` all fail to compile on a rename; `hostsKickstand` + `KICKSTAND_HOST_BY_TYPE` + `JOINT_REMOVAL_BY_TYPE` in the registry, held to their flags by `__tests__/derivedTypeSubsets.test.ts` |
 | Renderer family loop | `SupportRenderer.tsx` holds zero dispatch literals; detail renderers register from their own folders |
 | History actions derived | strings and payload-map entries come from the type id |
@@ -545,7 +560,13 @@ a decision — mark it open rather than closing it on inference.
    a *different* question that wants its own decision (below). The AGENTS rule —
    one way to ask each question — forbids borrowing a flag whose question differs.
    Backed by `derivedTypeSubsets.test.ts`.
-6. **`JOINT_REMOVAL_BY_TYPE` mirrors `hasSegments && !segmentsCarryBothJoints`
+6. **Readers take the entity, not a type id (stage 2).** Decided in this
+   session, on the plan's own §3A: the caller already holds the entity, so a type
+   id argument is a second source of truth a rename cannot reach. An entity with
+   no resolvable type yields null rather than a guess, so a hand-built fixture
+   must declare `typeId` — the six suite failures and one golden diff that
+   followed were all missing stamps, and both import paths now stamp.
+7. **`JOINT_REMOVAL_BY_TYPE` mirrors `hasSegments && !segmentsCarryBothJoints`
    rather than adding a flag.** Decided in this session, on the evidence that
    `segmentsCarryBothJoints` is documented as exactly this distinction ("False for
    types whose endpoints come from elsewhere — a root, a parent knot, or a
@@ -581,17 +602,18 @@ touches every descriptor plus `sidebarPanels.ts`.
 
   | type | honest remaining | was | | type | honest remaining | was |
   | --- | ---: | ---: | --- | --- | ---: | ---: |
-  | branch | **95** | 112 | | brace | 17 | 17 |
-  | trunk | 56 | 55 | | kickstand | 14 | 12 |
-  | leaf | 52 | 67 | | stick | 10 | 10 |
+  | branch | **91** | 112 | | brace | 17 | 17 |
+  | leaf | 52 | 67 | | kickstand | 14 | 12 |
+  | trunk | 50 | 55 | | stick | 10 | 10 |
   | | | | | twig | 5 | 5 |
   | | | | | anchor | **2** | 2 |
 
-  **251 total**, down from 280 (348 before the stage that preceded this one). The
-  two types that *rose* did so because a silent hazard became a compile error —
+  **241 total**, down from 280 at the start of stage 1. Two types rose and are
+  still above their pre-stage-1 reading (`trunk` 55 → 56 → 50 is net down;
+  `kickstand` 12 → 14 is net up) because a silent hazard became a compile error —
   read §3B before treating either as a regression. `anchor` at 2 is the proof the
   pattern works — its conversion landed and it was comparable to the others
-  beforehand. `stick` at 10 is the number most often quoted; `branch` at 95 is the
+  beforehand. `stick` at 10 is the number most often quoted; `branch` at 91 is the
   number that describes the remaining work.
 - The inventory (`inventory.py`) shows no token that would survive a rename
   *without* a compile error. The rename test cannot see those; the two
