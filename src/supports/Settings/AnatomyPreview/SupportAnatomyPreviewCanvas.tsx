@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, TransformControls } from '@react-three/drei';
 import { TrunkPreview } from './PreviewTypes/Trunk/TrunkPreview';
+import './registerBuiltinAnatomyPreviews';
 import { subscribeToSettings, getSettingsSnapshot } from '../state';
 import { subscribeToAnatomyPreviewState, getAnatomyPreviewState, setAnatomyPreviewActiveSettingKey } from './previewState';
 import { ANATOMY_CONFIG } from './AnatomyPreviewConfig';

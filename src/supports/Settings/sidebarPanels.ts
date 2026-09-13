@@ -100,6 +100,7 @@ export const SIDEBAR_PANELS: readonly SidebarPanel[] = [
     ...(Object.keys(TOOL_PANELS) as ToolPanel[]),
 ];
 
+
 export type ToolPanel = keyof typeof TOOL_PANELS;
 export type SidebarPanel = SupportTypeId | ToolPanel;
 
@@ -110,7 +111,14 @@ export function isSidebarPanel(value: string): value is SidebarPanel {
 
 /** The facts for any panel, whichever kind it is. */
 export function panelFacts(panel: SidebarPanel): PanelFacts {
-    if (panel in TOOL_PANELS) return TOOL_PANELS[panel as ToolPanel] as PanelFacts;
+    // A tool panel declares only its tab and groups; `drawsOwnPreview` is derived
+    // for every panel alike, so the cast cannot smuggle an absent field through.
+    if (panel in TOOL_PANELS) {
+        return {
+            ...TOOL_PANELS[panel as ToolPanel],
+            drawsOwnPreview: hasOwnAnatomyPreview(panel),
+        };
+    }
     return typePanelFacts(panel as SupportTypeId);
 }
 
@@ -150,6 +158,22 @@ export function panelDrawsOwnPreview(panel: SidebarPanel): boolean {
  * The panel the sidebar returns to when an edit session ends.
  */
 export const DEFAULT_SIDEBAR_PANEL: SidebarPanel = 'trunk';
+
+/**
+ * Tabs other than the generic support-info one.
+ *
+ * Each opens a panel that draws its own anatomy preview, so this is what the
+ * preview registration barrel checks against -- derived rather than a list, so
+ * no type name is written out to say "stick draws its own".
+ */
+export const TOOL_PANEL_TABS: readonly SidebarTab[] = [
+    ...new Set(
+        SIDEBAR_PANELS
+            .map((panel) => panelFacts(panel).tab)
+            .filter((tab): tab is SidebarTab =>
+                tab !== 'auto' && tab !== panelFacts(DEFAULT_SIDEBAR_PANEL).tab),
+    ),
+];
 
 type SidebarPanelState = {
     panel: SidebarPanel;
