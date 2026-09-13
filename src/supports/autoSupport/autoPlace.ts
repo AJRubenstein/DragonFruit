@@ -1,5 +1,5 @@
-import { contactBridgeTypes, contactEndpointsFor, getSupportTypeDescriptor, GRID_HOST_TYPES, isOriginConvertibleToTree, promoteAwayHost, SUPPORT_TYPES } from '../supportTypeRegistry';
-import type { SupportCollectionKey } from '../supportTypeRegistry';
+import { contactBridgeTypes, contactEndpointsFor, getSupportTypeDescriptor, GRID_HOST_TYPES, isOriginConvertibleToTree, promoteAwayHost, SHAFT_HOSTED_MEMBER_TYPES, SUPPORT_TYPES } from '../supportTypeRegistry';
+import type { SupportCollectionKey, ShaftHostedMemberTypeId } from '../supportTypeRegistry';
 import type { SupportTypeId } from '../supportTypeRegistry';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
 import * as THREE from 'three';
@@ -1587,7 +1587,35 @@ export function syncContactConeDiameters(draft: SupportState): SupportState {
     return { ...draft, trunks: nextTrunks, leaves: nextLeaves, branches: nextBranches };
 }
 
-/** Validate leaves/branches host attachment after forest resize; cull orphans and return them for reporting. */
+/**
+ * One entity of a shaft-hosted member type, as the cull and the report read it.
+ *
+ * The knot field is NOT named here: `SHAFT_HOSTED_MEMBER_TYPES` supplies it, so
+ * a renamed type reaches only the descriptor. `segments` is present exactly on
+ * the members whose type declares `hasSegments`, the same flag that picks the
+ * branch-side collision check below.
+ */
+interface ShaftHostedMemberEntity {
+    id: string;
+    contactCone?: ContactCone;
+    segments: Segment[];
+}
+
+/** The entities of one member collection, whichever member type holds it. */
+function hostedMemberEntities(
+    draft: SupportState,
+    collectionKey: SupportCollectionKey,
+): Record<string, ShaftHostedMemberEntity> {
+    return draft[collectionKey] as unknown as Record<string, ShaftHostedMemberEntity>;
+}
+
+/** The knot a hosted member hangs from, by the field name the registry declares. */
+function memberKnotId(member: ShaftHostedMemberEntity, knotField: string): string | undefined {
+    const value = (member as unknown as Record<string, unknown>)[knotField];
+    return typeof value === 'string' ? value : undefined;
+}
+
+/** Validate hosted members' attachment after forest resize; cull orphans and return them for reporting. */
 export function validateAndCullOrphans(
     draft: SupportState,
     mesh: THREE.Mesh | undefined,
@@ -1647,10 +1675,12 @@ export function validateAndCullOrphans(
     }
     const checkAttachment = (
         id: string,
-        kind: AttachmentKind,
-        parentKnotId: string | undefined,
+        kind: ShaftHostedMemberTypeId,
+        knotField: string,
+        member: ShaftHostedMemberEntity,
         tipPos: { x: number; y: number; z: number } | undefined,
     ) => {
+        const parentKnotId = memberKnotId(member, knotField);
         if (!parentKnotId) {
             orphans.push({ id, kind, reason: 'missingKnot', detail: 'no parentKnotId' });
             return false;
@@ -1685,8 +1715,7 @@ export function validateAndCullOrphans(
         if (tipPos) {
             let blocked = false;
             if (!getSupportTypeDescriptor(kind).hasSegments) {
-                const leafObj = nextDraft.leaves[id];
-                const cone = leafObj?.contactCone;
+                const cone = member.contactCone;
                 if (cone && mesh) {
                     const normal = cone.normal ?? { x: 0, y: 0, z: -1 };
                     const surfaceNormal = cone.surfaceNormal;
@@ -1695,11 +1724,8 @@ export function validateAndCullOrphans(
                     blocked = isShaftBlocked(knot.pos, tipPos, 0.2, mesh);
                 }
             } else {
-                const branchObj = nextDraft.branches[id];
-                if (branchObj && mesh) {
-                    blocked = branchCollidesWithSDF(branchObj, mesh);
-                } else if (mesh) {
-                    blocked = isShaftBlocked(knot.pos, tipPos, 0.2, mesh);
+                if (mesh) {
+                    blocked = branchCollidesWithSDF(member, mesh);
                 }
             }
             if (blocked) {
@@ -1732,65 +1758,65 @@ export function validateAndCullOrphans(
         return true;
     };
 
-    const leavesToRemove = new Set<string>();
-    for (const [lid, leaf] of Object.entries(nextDraft.leaves)) {
-        const tipPos = leaf.contactCone?.pos;
-        const ok = checkAttachment(lid, 'leaf', leaf.parentKnotId, tipPos);
-        if (!ok) leavesToRemove.add(lid);
-    }
-    const branchesToRemove = new Set<string>();
-    for (const [bid, branch] of Object.entries(nextDraft.branches)) {
-        const tipPos = branch.contactCone?.pos;
-        const ok = checkAttachment(bid, 'branch', branch.parentKnotId, tipPos);
-        if (!ok) branchesToRemove.add(bid);
-    }
-    // Leaves/branches whose host was culled (hostBlocked) are also orphaned
-    for (const [lid, leaf] of Object.entries(nextDraft.leaves)) {
-        if (leavesToRemove.has(lid)) continue;
-        const knot = nextDraft.knots[leaf.parentKnotId];
-        if (!knot) continue;
-        const host = findHostSegment(nextDraft, knot.parentShaftId);
-        // A member whose host was culled: the host resolves through the knot's
-        // segment, or -- for a legacy knot keyed to the entity itself -- is the
-        // parent id. Either way the cull recorded the type by name.
-        const culledHostId = host?.hostId ?? knot.parentShaftId;
-        const culledTypeName = culledHostTypeNameById.get(culledHostId);
-        if (culledTypeName) {
-            orphans.push({ id: lid, kind: 'leaf', reason: 'missingHost', hostId: culledHostId, knotId: knot.id, detail: `${culledTypeName} culled (blocked)` });
-            leavesToRemove.add(lid);
+    /**
+     * Members to cull, per type. Every walk below goes through
+     * `SHAFT_HOSTED_MEMBER_TYPES` rather than naming a member's collection, so a
+     * renamed type reaches this file only as a compile error.
+     */
+    const membersToRemove = new Map<ShaftHostedMemberTypeId, Set<string>>();
+    const removedFor = (typeId: ShaftHostedMemberTypeId): Set<string> => {
+        const existing = membersToRemove.get(typeId);
+        if (existing) return existing;
+        const created = new Set<string>();
+        membersToRemove.set(typeId, created);
+        return created;
+    };
+
+    // Registry walk order, which is observable: leaf orphans are reported
+    // before branch ones, and likewise for the missing-host pass below.
+    for (const { typeId, knotField, collectionKey } of SHAFT_HOSTED_MEMBER_TYPES) {
+        const removal = removedFor(typeId);
+        for (const [memberId, member] of Object.entries(hostedMemberEntities(nextDraft, collectionKey))) {
+            const tipPos = member.contactCone?.pos;
+            if (!checkAttachment(memberId, typeId, knotField, member, tipPos)) removal.add(memberId);
         }
     }
-    for (const [bid, branch] of Object.entries(nextDraft.branches)) {
-        if (branchesToRemove.has(bid)) continue;
-        const knot = nextDraft.knots[branch.parentKnotId];
-        if (!knot) continue;
-        const host = findHostSegment(nextDraft, knot.parentShaftId);
-        // A member whose host was culled: the host resolves through the knot's
-        // segment, or -- for a legacy knot keyed to the entity itself -- is the
-        // parent id. Either way the cull recorded the type by name.
-        const culledHostId = host?.hostId ?? knot.parentShaftId;
-        const culledTypeName = culledHostTypeNameById.get(culledHostId);
-        if (culledTypeName) {
-            orphans.push({ id: bid, kind: 'branch', reason: 'missingHost', hostId: culledHostId, knotId: knot.id, detail: `${culledTypeName} culled (blocked)` });
-            branchesToRemove.add(bid);
+    // Members whose host was culled (hostBlocked) are also orphaned
+    for (const { typeId, knotField, collectionKey } of SHAFT_HOSTED_MEMBER_TYPES) {
+        const removal = removedFor(typeId);
+        for (const [memberId, member] of Object.entries(hostedMemberEntities(nextDraft, collectionKey))) {
+            if (removal.has(memberId)) continue;
+            const knotId = memberKnotId(member, knotField);
+            const knot = knotId ? nextDraft.knots[knotId] : undefined;
+            if (!knot) continue;
+            const host = findHostSegment(nextDraft, knot.parentShaftId);
+            // A member whose host was culled: the host resolves through the
+            // knot's segment, or -- for a legacy knot keyed to the entity
+            // itself -- is the parent id. Either way the cull recorded the type
+            // by name.
+            const culledHostId = host?.hostId ?? knot.parentShaftId;
+            const culledTypeName = culledHostTypeNameById.get(culledHostId);
+            if (culledTypeName) {
+                orphans.push({ id: memberId, kind: typeId, reason: 'missingHost', hostId: culledHostId, knotId: knot.id, detail: `${culledTypeName} culled (blocked)` });
+                removal.add(memberId);
+            }
         }
     }
 
-    if (leavesToRemove.size === 0 && branchesToRemove.size === 0 && hostsToRemove.size === 0) {
+    if (SHAFT_HOSTED_MEMBER_TYPES.every(({ typeId }) => removedFor(typeId).size === 0)
+        && hostsToRemove.size === 0) {
         return { draft: nextDraft, orphans };
     }
 
-    // Collect knots that are only used by culled leaves/branches
+    // Collect knots that are only used by culled members
     const remainingKnotUsers = new Map<string, number>();
-    for (const leaf of Object.values(nextDraft.leaves)) {
-        if (leavesToRemove.has(leaf.id)) continue;
-        const kid = leaf.parentKnotId;
-        if (kid) remainingKnotUsers.set(kid, (remainingKnotUsers.get(kid) ?? 0) + 1);
-    }
-    for (const branch of Object.values(nextDraft.branches)) {
-        if (branchesToRemove.has(branch.id)) continue;
-        const kid = branch.parentKnotId;
-        if (kid) remainingKnotUsers.set(kid, (remainingKnotUsers.get(kid) ?? 0) + 1);
+    for (const { typeId, knotField, collectionKey } of SHAFT_HOSTED_MEMBER_TYPES) {
+        const removal = removedFor(typeId);
+        for (const member of Object.values(hostedMemberEntities(nextDraft, collectionKey))) {
+            if (removal.has(member.id)) continue;
+            const kid = memberKnotId(member, knotField);
+            if (kid) remainingKnotUsers.set(kid, (remainingKnotUsers.get(kid) ?? 0) + 1);
+        }
     }
     // Brace knots are separate — never cull a knot that is a brace endpoint
     for (const brace of Object.values(nextDraft.braces)) {
@@ -1798,15 +1824,12 @@ export function validateAndCullOrphans(
         remainingKnotUsers.set(brace.endKnotId, (remainingKnotUsers.get(brace.endKnotId) ?? 0) + 1);
     }
 
-    for (const lid of leavesToRemove) {
-        const leaf = nextDraft.leaves[lid];
-        const kid = leaf.parentKnotId;
-        if (kid && !remainingKnotUsers.has(kid)) knotsToRemove.add(kid);
-    }
-    for (const bid of branchesToRemove) {
-        const branch = nextDraft.branches[bid];
-        const kid = branch.parentKnotId;
-        if (kid && !remainingKnotUsers.has(kid)) knotsToRemove.add(kid);
+    for (const { typeId, knotField, collectionKey } of SHAFT_HOSTED_MEMBER_TYPES) {
+        const collection = hostedMemberEntities(nextDraft, collectionKey);
+        for (const memberId of removedFor(typeId)) {
+            const kid = memberKnotId(collection[memberId], knotField);
+            if (kid && !remainingKnotUsers.has(kid)) knotsToRemove.add(kid);
+        }
     }
     // Knots on removed hosts
     const segmentIdsToRemove = new Set<string>();
@@ -1827,10 +1850,12 @@ export function validateAndCullOrphans(
         }
     }
 
-    const nextLeaves = { ...nextDraft.leaves };
-    for (const id of leavesToRemove) delete nextLeaves[id];
-    const nextBranches = { ...nextDraft.branches };
-    for (const id of branchesToRemove) delete nextBranches[id];
+    const nextMembers: Partial<Record<SupportCollectionKey, Record<string, unknown>>> = {};
+    for (const { typeId, collectionKey } of SHAFT_HOSTED_MEMBER_TYPES) {
+        const cloned = { ...(nextDraft[collectionKey] as unknown as Record<string, unknown>) };
+        for (const id of removedFor(typeId)) delete cloned[id];
+        nextMembers[collectionKey] = cloned;
+    }
     const nextKnots = { ...nextDraft.knots };
     for (const id of knotsToRemove) delete nextKnots[id];
 
@@ -1856,8 +1881,7 @@ export function validateAndCullOrphans(
 
     nextDraft = {
         ...nextDraft,
-        leaves: nextLeaves,
-        branches: nextBranches,
+        ...nextMembers,
         knots: nextKnots,
         roots: nextRoots as SupportState['roots'],
         ...hostCollections,
@@ -2074,7 +2098,7 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
         entryByEntity.set(entry.entityId, entry);
     }
 
-    const memberById = new Map<string, { id: string; kind: AttachmentKind; spanMm: number; angleDeg: number }>();
+    const memberById = new Map<string, { id: string; kind: ShaftHostedMemberTypeId; spanMm: number; angleDeg: number }>();
     const membersByHost = new Map<string, ForestTree['members']>();
 
     // Knots reference their host SEGMENT (or the entity directly for legacy
@@ -2087,7 +2111,7 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
 
     const pushMember = (
         entityId: string,
-        kind: AttachmentKind,
+        kind: ShaftHostedMemberTypeId,
         hostShaftId: string,
         tipPos: { x: number; y: number; z: number } | undefined,
         knotPos: { x: number; y: number; z: number } | undefined,
@@ -2106,15 +2130,15 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
         else membersByHost.set(memberHostId, [member]);
     };
 
-    for (const leaf of Object.values(draft.leaves)) {
-        const knot = draft.knots[leaf.parentKnotId];
-        if (!knot) continue;
-        pushMember(leaf.id, 'leaf', knot.parentShaftId, leaf.contactCone?.pos, knot.pos);
-    }
-    for (const branch of Object.values(draft.branches)) {
-        const knot = draft.knots[branch.parentKnotId];
-        if (!knot) continue;
-        pushMember(branch.id, 'branch', knot.parentShaftId, branch.contactCone?.pos, knot.pos);
+    // Registry walk order, which the member list depends on: a host's leaves
+    // come before its branches, as they did when this named the two collections.
+    for (const { typeId, knotField, collectionKey } of SHAFT_HOSTED_MEMBER_TYPES) {
+        for (const member of Object.values(hostedMemberEntities(draft, collectionKey))) {
+            const knotId = memberKnotId(member, knotField);
+            const knot = knotId ? draft.knots[knotId] : undefined;
+            if (!knot) continue;
+            pushMember(member.id, typeId, knot.parentShaftId, member.contactCone?.pos, knot.pos);
+        }
     }
 
     const trees: ForestTree[] = [];

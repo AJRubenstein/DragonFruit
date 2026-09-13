@@ -25,7 +25,7 @@ import { knotFields } from '@/supports/interaction/shared/selection/selectedIdsB
 import { clearSupportSelection, getResolvedPrimarySelection, selectSupportIds } from '@/supports/interaction/shared/selection/selectionController';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { resolveSupportPlacementHotkeyBindings } from '@/supports/interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver';
-import { resolveSupportPlacementRouting, routeModelPlacementHit } from '@/supports/interaction/shared/placement/hotkeys/supportPlacementRouting';
+import { resolveSupportPlacementRouting, routeModelPlacementHit, BRACE_PLACEMENT_OWNER, BRANCH_FAMILY_PLACEMENT_OWNER, DEFAULT_PLACEMENT_TYPE_ID, KICKSTAND_PLACEMENT_OWNER, LEAF_PLACEMENT_OWNER } from '@/supports/interaction/shared/placement/hotkeys/supportPlacementRouting';
 import type { SupportModelPlacementHandlers, SupportModelPlacementOwner } from '@/supports/interaction/shared/placement/hotkeys/supportPlacementHotkeyTypes';
 import { isKeyPressedSync } from '@/hotkeys/hotkeyStore';
 
@@ -77,11 +77,16 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
    * The model-face placement hooks, keyed by the owner the router names. One
    * owner takes the hit and the rest are cleared, so the handlers index this
    * rather than testing the owner against a type name.
+   *
+   * The keys are the owners the registry declares, so renaming a type moves them
+   * with it: what a type is called is decided in the registry, not here.
    */
-  const modelPlacementByOwner = useMemo(() => ({
-    branch: branchPlacement,
-    leaf: leafPlacement,
-  } satisfies Record<ModelSurfaceGestureTypeId, SupportModelPlacementHandlers>), [branchPlacement, leafPlacement]);
+  const modelPlacementByOwner = useMemo(() => {
+    const handlersByOwner = {} as Record<ModelSurfaceGestureTypeId, SupportModelPlacementHandlers>;
+    handlersByOwner[BRANCH_FAMILY_PLACEMENT_OWNER] = branchPlacement;
+    handlersByOwner[LEAF_PLACEMENT_OWNER] = leafPlacement;
+    return handlersByOwner;
+  }, [branchPlacement, leafPlacement]);
 
   /** Route a model-face gesture: `owner` gets the hit, every other owner null. */
   const dispatchModelHover = useCallback((owner: SupportModelPlacementOwner, hit: THREE.Intersection | null) => {
@@ -155,7 +160,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
 
     const fanningActive = leafPlacement.sproutParentingLockHeld || leafPlacement.stage === 'awaitingSproutTip';
     if (fanningActive) {
-      dispatchModelHover('leaf', hit);
+      dispatchModelHover(LEAF_PLACEMENT_OWNER, hit);
       return;
     }
 
@@ -473,13 +478,18 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
     /**
      * Placement previews, keyed by type. Brace names its field `preview`
      * where the others use `previewData`; that is the only difference.
+     *
+     * Keyed by the owners the registry declares rather than by literals, so a
+     * renamed type moves its key here too. The record is still indexed by type
+     * downstream, which is the point: `placementActive` and `placementPreviews`
+     * keep a key per declared type.
      */
     placementPreviews: {
-      trunk: trunkPlacementV2.previewData,
-      branch: branchPlacement.previewData,
-      leaf: leafPlacement.previewData,
-      brace: bracePlacement.preview,
-      kickstand: kickstandPlacement.previewData,
+      [DEFAULT_PLACEMENT_TYPE_ID]: trunkPlacementV2.previewData,
+      [BRANCH_FAMILY_PLACEMENT_OWNER]: branchPlacement.previewData,
+      [LEAF_PLACEMENT_OWNER]: leafPlacement.previewData,
+      [BRACE_PLACEMENT_OWNER]: bracePlacement.preview,
+      [KICKSTAND_PLACEMENT_OWNER]: kickstandPlacement.previewData,
     } satisfies SupportPlacementPreviews,
     /**
      * Which placement modes are live, keyed by type, next to the previews above
@@ -487,10 +497,10 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
      * is the default tool rather than a mode anything toggles.
      */
     placementActive: {
-      branch: branchPlacement.isActive,
-      leaf: leafPlacement.isActive,
-      brace: bracePlacement.isActive,
-      kickstand: kickstandPlacement.isActive,
+      [BRANCH_FAMILY_PLACEMENT_OWNER]: branchPlacement.isActive,
+      [LEAF_PLACEMENT_OWNER]: leafPlacement.isActive,
+      [BRACE_PLACEMENT_OWNER]: bracePlacement.isActive,
+      [KICKSTAND_PLACEMENT_OWNER]: kickstandPlacement.isActive,
     } satisfies SupportPlacementActive,
   };
 }

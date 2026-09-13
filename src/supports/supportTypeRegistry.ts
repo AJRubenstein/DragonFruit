@@ -2089,6 +2089,92 @@ export const KNOT_HOST_PRECEDENCE: readonly SupportTypeId[] = [
 ];
 
 /**
+ * The order to walk the types that hang off a host shaft by a knot.
+ *
+ * Declared, because the order is observable and registry order is not it: the
+ * cull reports leaf orphans before branch ones, and the forest report lists a
+ * host's leaves before its branches.
+ *
+ * Which types those ARE is not declared here -- `shaftHostedMemberOrderDrift`
+ * reads it off the edge declarations and holds this list to that rule, so a type
+ * that qualifies by its edges cannot be left out of the walk, and a type named
+ * here that stops qualifying cannot stay in it.
+ */
+export const SHAFT_HOSTED_MEMBER_TYPE_ORDER = ['leaf', 'branch'] as const satisfies readonly SupportTypeId[];
+
+/** A type the walk above visits. */
+export type ShaftHostedMemberTypeId = Extract<SupportTypeId, (typeof SHAFT_HOSTED_MEMBER_TYPE_ORDER)[number]>;
+
+/**
+ * How `SHAFT_HOSTED_MEMBER_TYPE_ORDER` and the edge rule disagree, as messages.
+ * Empty when they agree; this module throws at load when they do not.
+ */
+export function shaftHostedMemberOrderDrift(): readonly string[] {
+    // The rule: a shaft-hosted member hangs by a knot and by nothing else --
+    // exactly one `hostedBy` edge onto `knots`, none onto a segment. Leaf and
+    // branch. A brace names two knots, so it is not one; a kickstand names a
+    // knot AND a segment, so it is not one either -- it rides a specific span.
+    const derived = SUPPORT_TYPES
+        .filter((descriptor) => {
+            const hostedBy = descriptor.edges.filter((edge) => edge.ownership === 'hostedBy');
+            return hostedBy.filter((edge) => edge.to === 'knots').length === 1
+                && hostedBy.filter((edge) => edge.to === 'segment').length === 0;
+        })
+        .map((descriptor) => descriptor.id);
+    const declared: readonly SupportTypeId[] = SHAFT_HOSTED_MEMBER_TYPE_ORDER;
+    const drift: string[] = [];
+    for (const id of derived) {
+        if (!declared.includes(id)) {
+            drift.push(`${id} declares a shaft-hosted member but is missing from SHAFT_HOSTED_MEMBER_TYPE_ORDER`);
+        }
+    }
+    for (const id of declared) {
+        if (!derived.includes(id)) {
+            drift.push(`${id} is in SHAFT_HOSTED_MEMBER_TYPE_ORDER but declares no shaft-hosted member`);
+        }
+    }
+    if (declared.length !== derived.length) {
+        const repeated = declared.filter((id, index) => declared.indexOf(id) !== index);
+        drift.push(`SHAFT_HOSTED_MEMBER_TYPE_ORDER lists ${[...new Set(repeated)].join(', ')} more than once`);
+    }
+    return drift;
+}
+
+const SHAFT_HOSTED_MEMBER_ORDER_DRIFT = shaftHostedMemberOrderDrift();
+if (SHAFT_HOSTED_MEMBER_ORDER_DRIFT.length > 0) {
+    throw new Error(`Shaft-hosted member walk order disagrees with the declared edges: ${SHAFT_HOSTED_MEMBER_ORDER_DRIFT.join('; ')}`);
+}
+
+/** One shaft-hosted member type, as a walk over those members needs it. */
+export interface ShaftHostedMemberType {
+    /** The type id, which is also the `kind` a cull record for it carries. */
+    typeId: ShaftHostedMemberTypeId;
+    /** The entity field naming the knot this member hangs from. */
+    knotField: string;
+    /** The SupportState collection its entities live in. */
+    collectionKey: SupportCollectionKey;
+}
+
+/**
+ * The shaft-hosted member types, in the order to walk them.
+ *
+ * The single naming point for those walks: a caller iterates this rather than
+ * naming a collection or a member type, so a renamed type id reaches the
+ * descriptor, this list and the walk together, and a stale walk does not compile.
+ */
+export const SHAFT_HOSTED_MEMBER_TYPES: readonly ShaftHostedMemberType[] =
+    SHAFT_HOSTED_MEMBER_TYPE_ORDER.map((typeId) => {
+        const descriptor = getSupportTypeDescriptor(typeId);
+        const knotField = descriptor.edges.find(
+            (edge) => edge.to === 'knots' && edge.ownership === 'hostedBy',
+        )?.field;
+        if (!knotField) {
+            throw new Error(`${typeId} is walked as a shaft-hosted member but declares no hostedBy edge onto knots`);
+        }
+        return { typeId, knotField, collectionKey: descriptor.location.key };
+    });
+
+/**
  * Whether each type's joint drags publish a live shaft preview.
  *
  * `as const satisfies` keeps the literals, so `JointDragPreviewTypeId` narrows
