@@ -60,9 +60,10 @@ in the *was* column.
 
 | instrument | what it answers | now | was |
 | ---------- | --------------- | --- | --- |
-| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | **200 total** | 280 |
-| `inventory.py` + `report.py` | every token containing a type name | **6,724** occurrences, 771 tokens | 6,955 / 778 |
-| `npm run scan:support-types` | the headline reference metric | **5,749** across 152 files | 5,909 |
+| `remaining-worklist.py` | honest rename errors, with the failing source line | **174** | 280 |
+| `rename-test.py <type>` | the same, counted without the `types.ts` exclusion | 190 (174 + 16 naming-point artifacts) | 280 |
+| `inventory.py` + `report.py` | every token containing a type name | **6,284** occurrences, 743 tokens | 6,955 / 778 |
+| `npm run scan:support-types` | the headline reference metric | **5,380** across 149 files | 5,909 |
 | `type-literal-metric.py` | every string literal equal to a type id | 111 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
 | `npm run check:support-literals` | the same, with the ratchet | 98 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
 | `silent-value-sites.py` | **value literals a rename does NOT reach** | **15, 0 of them real** | 17 real=2 |
@@ -101,15 +102,20 @@ Run for all eight, not just the convenient one:
 
 | type | honest remaining | was |
 | ---- | ---: | ---: |
-| branch | **84** | 112 |
+| branch | **56** | 112 |
 | leaf | 49 | 67 |
 | trunk | 29 | 55 |
-| brace | 14 | 17 |
-| kickstand | 10 | 12 |
+| brace | 15 | 17 |
+| kickstand | 11 | 12 |
 | stick | 7 | 10 |
 | twig | 5 | 5 |
 | anchor | 2 | 2 |
-| **total** | **200** | 280 |
+| **total** | **174** | 280 |
+
+Numbers from `remaining-worklist.py`, which excludes both naming points.
+`branch` has fallen from 112 to 56; `stick` at 7 is no longer the easy case it
+was — the remaining work is spread across eight files of engine code rather than
+concentrated in one type's vocabulary.
 
 **Read this table before quoting a headline.** The refactor has largely been
 measured on `stick`, which is the easiest type and now sits at 10. `branch` is
@@ -120,6 +126,12 @@ whichever type was measured; it has never been true of the set.
 vocabulary (`branchFamily`, `place_branch`, fan kinds). `trunk` is high because
 it is the default tool. Neither is a surprise — but neither shows up if `stick`
 is the only number reported.
+
+**`rename-test.py` over-counts by 16 and `remaining-worklist.py` is the honest
+one.** Both edit `types.ts` alone, but `types.ts` is the *second naming point* —
+the goal statement exempts it — and renaming it without the registry leaves its
+own `SupportEntityAny` inconsistent, two errors on one line per type. The
+worklist excludes it and prints the failing source line beside each error.
 
 #### What a real rename does, and what it misses
 
@@ -505,19 +517,39 @@ from 5,835 to **5,735** and the rename test from 200 to **82 honest remaining**,
 because deriving the capture deleted the type-named locals around it too. Track
 6b by the prop signature, but re-measure anyway -- the prediction was wrong once.
 
-### Where the rename test's remaining errors are
+### Where the rename test's remaining errors are — the full worklist
 
-After stage 6b.1 the honest remaining total is **82** (from 280 at the start of
-stage 1; 200 after 6a). What is left is two shapes, and neither is a literal:
+`lysdiag/tools/remaining-worklist.py` prints every honest rename error with the
+source line that fails, for all eight types. It is the actionable form of the
+table below: run it, pick a cluster, convert, re-run.
 
-```
-knot-drag solve and preview props   useKnotInteraction, KnotGizmo,
-                                    SceneCanvas, autoPlace     (stage 6b.2)
-deprecated wrappers in state.ts     add<Type> / update<Type> /
-                                    remove<Type>               (debt)
-```
+**Two measurement corrections, both this session:**
 
----
+1. **`types.ts` must be excluded.** It is the second naming point (where
+   `SupportFieldsByType` declares the eight), so the goal statement exempts it.
+   None of the tools did. Renaming it *alone* leaves its own derived
+   `SupportEntityAny` inconsistent with the registry's `SUPPORT_TYPE_COLLECTION`
+   — an artifact of editing one naming point and not the other, two errors on one
+   line, per type. Every total reported before this correction is inflated by 16.
+2. **The tool now prints source lines**, because a line number is not a worklist.
+
+Standing: **174 honest remaining** (naming-point artifacts excluded), from 280 at
+the start of stage 1. By cluster:
+
+| cluster | errors | what it is | shape of the fix |
+| --- | ---: | --- | --- |
+| `autoPlace.ts` | 31 | the orphan cull walks `leaves` and `branches` by hand, and the forest report does the same; plus `placed.<literal>` counters | generalise both walks over the declared `hostedBy` members — the same conversion 6b.2 did for the drag solve |
+| `state.ts` | 25 | the `add<Type>` / `update<Type>` / `remove<Type>` wrappers, and `applySupportEntityUpdate('trunk', …)` | the wrappers carry real narrowing (`SupportRemovalResult<T>`), so each needs its callers migrated first; 4 callers for `addTrunk`, 5 for `addBranch`, the rest ≤4 |
+| `supportPlacementRouting` | 13 | mode → owner, one arm per mode | the state type is per-type field names; a record keyed by mode would collapse the arms — a design change |
+| `SceneCanvas` | 12 | five `placementPreviews.branch` reads, two `placementActive.branch` reads, per-type marker meshes | the marker meshes are per-type renderings; collapsing them is a loop over the record |
+| `useSupportInteractionManager` | 11 | the `placementPreviews` (5 keys) and `placementActive` (4 keys) records, and per-type placement state | the records are the existing pattern; deriving their keys needs a registration slot in each placement store |
+| Settings / AnatomyPreview | 25 | `activePanel === '<type>'` comparisons and preview dispatch | compiler-caught today, so not hazards — converting them is the UI question stage 4 deferred, not a rename |
+| knot / renderer / grid / curves | 22 | preview caches, `getSupportEntity('<type>', id)` in typed-dispatch arms, per-type caches in `gridPlacement` | each is a small local derivation; no cluster shapes |
+| scripts / plugins / perf | 6 | `support-drag-perf.ts`, `convertLysData.ts` | test-and-tooling call sites; convert directly |
+
+**Not a defect: the `Extract<SupportTypeId, …>` unions.** `SupportPlacementOwner`
+and `AttachmentKind` are derived, so a rename reaches them; the count includes
+their *consumers* erroring, which is the union working.
 
 ### 6a. The joint-drag arms — done
 
