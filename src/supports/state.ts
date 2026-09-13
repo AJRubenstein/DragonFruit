@@ -171,11 +171,29 @@ function deepClone<T>(value: T): T {
  * Remove a support entity and everything the declared graph says depends on it.
  * The return type derives from SUPPORT_REMOVAL_SHAPES, so a field renamed in
  * the registry is a compile error at every consumer.
+ *
+ * Two forms, told apart by the argument count:
+ *   - `removeSupportEntity(id)` -- the type comes off the entity, so the caller
+ *     holding only an id names nothing. Returns the WIDE removal union, because
+ *     which shape it is depends on a runtime lookup.
+ *   - `removeSupportEntity(typeId, id)` -- the explicit form, which keeps the
+ *     result NARROW (`SupportRemovalResult<T>`).
  */
+export function removeSupportEntity(id: string): SupportRemovalResult<SupportTypeId> | null;
 export function removeSupportEntity<T extends SupportTypeId>(
     typeId: T,
     id: string,
-): SupportRemovalResult<T> | null {
+): SupportRemovalResult<T> | null;
+export function removeSupportEntity<T extends SupportTypeId>(
+    typeIdOrId: T | string,
+    maybeId?: string,
+): SupportRemovalResult<T> | SupportRemovalResult<SupportTypeId> | null {
+    const typeId = maybeId === undefined
+        ? getSupportTypeOf(typeIdOrId)
+        : typeIdOrId as T;
+    const id = maybeId ?? typeIdOrId;
+    if (!typeId) return null;
+
     return removeSupportEntityCascading(typeId, id) as SupportRemovalResult<T> | null;
 }
 
@@ -1092,7 +1110,7 @@ function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: 
     }
 
     // Route through the generic update so ALL knots attached to this trunk stay connected after joint removal.
-    applySupportEntityUpdate('trunk', after);
+    applySupportEntityUpdate(after);
 
     return {
         before,
@@ -1177,7 +1195,7 @@ function removeBranchJoint(branchId: string, jointId: string): { before: Branch;
         }
     }
 
-    applySupportEntityUpdate('branch', after);
+    applySupportEntityUpdate(after);
 
     return {
         before,
@@ -1254,7 +1272,7 @@ export function removeJointById(jointId: string): RemoveJointByIdResult | null {
             lowerSegment.topJoint = undefined;
         }
 
-        applySupportEntityUpdate('kickstand', after);
+        applySupportEntityUpdate(after);
         return { typeId: 'kickstand', id: kickstandId, before, after };
     }
 
@@ -2949,10 +2967,30 @@ export function addRoot(root: Roots) {
 /**
  * Add one entity to the collection its type declares.
  *
- * The generic adder every type uses. A type owning a root or hanging off a knot
- * adds those as ordinary entities too -- there is no bundled form.
+ * Two forms, told apart by the first argument, as `updateSupportEntity` is:
+ *   - `addSupportEntity(entity)` -- reads the type off the entity. PREFER THIS:
+ *     the entity already carries `typeId`, so passing the type again restates
+ *     information the caller has, and restating it is where a literal comes from.
+ *   - `addSupportEntity(typeId, entity)` -- the explicit form, for a caller
+ *     holding a type with no entity yet (a fresh build that did not stamp).
+ *
+ * A type owning a root or hanging off a knot adds those as ordinary entities
+ * too -- there is no bundled form.
  */
-export function addSupportEntity(typeId: SupportTypeId, entity: { id: string; settingsCodeHex?: string }) {
+export function addSupportEntity<E extends { typeId?: SupportTypeId; id: string; settingsCodeHex?: string }>(entity: E): void;
+export function addSupportEntity<E extends { id: string; settingsCodeHex?: string }>(typeId: SupportTypeId, entity: E): void;
+export function addSupportEntity(
+    typeIdOrEntity: SupportTypeId | { typeId?: SupportTypeId; id: string; settingsCodeHex?: string },
+    maybeEntity?: { id: string; settingsCodeHex?: string },
+): void {
+    const entity = typeof typeIdOrEntity === 'string' ? maybeEntity : typeIdOrEntity;
+    const typeId = typeof typeIdOrEntity === 'string'
+        ? typeIdOrEntity
+        : resolveSupportTypeIdOf(typeIdOrEntity);
+    if (!typeId || !entity) {
+        throw new Error(`addSupportEntity: entity ${entity?.id ?? '?'} carries no type and none was given`);
+    }
+
     const descriptor = getSupportTypeDescriptor(typeId);
     if (descriptor.hasEditableSettings && entity.settingsCodeHex) {
         setCachedSupportSettingsHex(typeId, entity.id, entity.settingsCodeHex);
@@ -2989,11 +3027,6 @@ export function addSupportEntityWithHistory(
     } as unknown as Parameters<typeof pushSupportHistory>[0]);
 }
 
-/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('trunk', entity)`. */
-export function addTrunk(trunk: Trunk) {
-    addSupportEntity('trunk', trunk);
-}
-
 /**
  * Where a knot sitting on this entity's shaft belongs after the entity moved.
  *
@@ -3025,10 +3058,20 @@ export function getKnotPlacementOnShaft(typeId: SupportTypeId): KnotPlacementOnS
  * Apply an entity to its collection, then reposition the knots riding its
  * shafts and recompute the geometry those knots carry.
  */
+function applySupportEntityUpdate(entity: { id: string; typeId?: SupportTypeId; settingsCodeHex?: string; segments?: Segment[] }): void;
 function applySupportEntityUpdate(
     typeId: SupportTypeId,
     entity: { id: string; settingsCodeHex?: string; segments?: Segment[] },
+): void;
+function applySupportEntityUpdate(
+    typeIdOrEntity: SupportTypeId | { id: string; typeId?: SupportTypeId; settingsCodeHex?: string; segments?: Segment[] },
+    maybeEntity?: { id: string; settingsCodeHex?: string; segments?: Segment[] },
 ): void {
+    const typeId = typeof typeIdOrEntity === 'string'
+        ? typeIdOrEntity
+        : resolveSupportTypeIdOf(typeIdOrEntity);
+    const entity = (typeof typeIdOrEntity === 'string' ? maybeEntity : typeIdOrEntity)!;
+    if (!typeId) return;
     const descriptor = getSupportTypeDescriptor(typeId);
     const key = descriptor.location.key;
 
@@ -3091,16 +3134,6 @@ function applySupportEntityUpdate(
     notify();
 }
 
-/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('branch', entity)`. */
-export function addBranch(branch: Branch) {
-    addSupportEntity('branch', branch);
-}
-
-/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('leaf', entity)`. */
-export function addLeaf(leaf: Leaf) {
-    addSupportEntity('leaf', leaf);
-}
-
 /**
  * @deprecated for removal -- prefer `updateSupportEntity('leaf', entity)`.
  * Kept for `SupportTypes/Leaf/`, which may name its own type, and for tests.
@@ -3127,11 +3160,6 @@ export function updateLeaf(leaf: Leaf) {
         knots: spanHost.knots,
     });
     notify();
-}
-
-/** @deprecated Thin wrapper for removal; prefer `addSupportEntity('brace', entity)`. */
-export function addBrace(brace: Brace) {
-    addSupportEntity('brace', brace);
 }
 
 /**
@@ -3163,11 +3191,6 @@ function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): bo
  */
 export function updateAnchor(anchor: Anchor) {
     replaceSupportEntity('anchor', anchor);
-}
-
-/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('brace', id)`. */
-export function removeBrace(braceId: string) {
-    return removeSupportEntity('brace', braceId);
 }
 
 /**
@@ -3215,16 +3238,6 @@ for (const descriptor of SUPPORT_TYPES) {
 }
 
 /**
- * @deprecated for removal -- prefer `updateSupportEntity('twig', entity)`.
- * Kept for `SupportTypes/Twig/`, which may name its own type, and for tests.
- */
-
-/**
- * @deprecated for removal -- prefer `updateSupportEntity('stick', entity)`.
- * Kept for `SupportTypes/Stick/`, which may name its own type, and for tests.
- */
-
-/**
  * @deprecated for removal -- prefer `updateSupportEntity('brace', entity)`.
  * Kept for `SupportTypes/Brace/`, which may name its own type, and for tests.
  */
@@ -3260,11 +3273,6 @@ export function updateBrace(brace: Brace) {
     notify();
 }
 
-
-/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('branch', id)`. */
-export function removeBranch(branchId: string) {
-    return removeSupportEntity('branch', branchId);
-}
 
 /**
  * @deprecated for removal -- prefer `updateSupportEntity('branch', entity)`.
@@ -3329,16 +3337,6 @@ export function updateKnot(knot: Knot, options?: { skipDependentGeometry?: boole
     notify();
 }
 
-
-/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('leaf', id)`. */
-export function removeLeaf(leafId: string) {
-    return removeSupportEntity('leaf', leafId);
-}
-
-/** @deprecated Thin wrapper for removal; prefer `removeSupportEntity('trunk', id)`. */
-export function removeTrunk(trunkId: string) {
-    return removeSupportEntity('trunk', trunkId);
-}
 
 // --- Selectors / Hooks Helpers ---
 

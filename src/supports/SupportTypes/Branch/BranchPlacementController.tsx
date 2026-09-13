@@ -18,7 +18,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { matchesConfiguredHotkeyUp } from '@/hotkeys/hotkeyConfig';
-import { subscribe, getSnapshot, addBranch, addKnot, addSupportEntityWithHistory } from '../../state';
+import { addSupportEntity, subscribe, getSnapshot, addKnot, addSupportEntityWithHistory } from '../../state';
 import { buildContactBridge, parsePrefixedSegmentId, selectTypeForPlacement } from '../../supportTypeRegistry';
 import type { SupportTypeId } from '../../supportTypeRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
@@ -768,7 +768,7 @@ export function BranchPlacementController() {
             const markedBranch = markPlacementSurface('branch', branch, placementSurface);
 
             addKnot(parentKnot);
-            addBranch(markedBranch);
+            addSupportEntity(markedBranch);
 
             pushSupportHistory({
                 type: addAction('branch'),

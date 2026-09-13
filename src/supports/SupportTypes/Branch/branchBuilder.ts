@@ -416,6 +416,7 @@ export function buildBranchData(input: BranchBuildInput): BranchBuildResult {
     const branchId = uuidv4();
     const branch: Branch = {
         id: branchId,
+        typeId: 'branch',
         modelId,
         settingsCodeHex,
         parentKnotId: parentKnot.id,

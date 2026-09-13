@@ -7,7 +7,7 @@ import { pushSupportHistory } from '../history/supportHistory';
 import { SUPPORT_UPDATE_TRUNK, removeAction } from '../history/actionTypes';
 import { pushSupportEditHistory, captureSupportEditSnapshot } from '../history/supportEditHistory';
 import { registerSupportHistoryHandlers } from '../history/useSupportHistoryHandlers';
-import { resetStore, getSnapshot, setSnapshot, removeTrunk, removeBranch, addRoot, addTrunk, resetKickstandsInState } from '../state';
+import { resetStore, getSnapshot, setSnapshot, addRoot, resetKickstandsInState } from '../state';
 import type { SupportState, Trunk, Roots, Segment, Branch } from '../types';
 
 function emptySnapshot(): SupportState {

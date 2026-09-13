@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
-import { subscribe, getSnapshot, addKnot, addBrace } from '../../state';
+import { addSupportEntity, subscribe, getSnapshot, addKnot } from '../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import type { Brace, Knot, Segment, Vec3 } from '../../types';
@@ -878,6 +878,7 @@ export function BracePlacementController() {
 
                 const brace: Brace = {
                     id: braceId,
+                    typeId: 'brace',
                     modelId,
                     startKnotId,
                     endKnotId,
@@ -889,7 +890,7 @@ export function BracePlacementController() {
 
                 addKnot(startKnot);
                 addKnot(endKnot);
-                addBrace(brace);
+                addSupportEntity(brace);
 
                 pushSupportHistory({
                     type: addAction('brace'),
@@ -952,6 +953,7 @@ export function BracePlacementController() {
 
             const brace: Brace = {
                 id: braceId,
+                typeId: 'brace',
                 modelId,
                 startKnotId,
                 endKnotId,
@@ -963,7 +965,7 @@ export function BracePlacementController() {
 
             addKnot(startKnot);
             addKnot(endKnot);
-            addBrace(brace);
+            addSupportEntity(brace);
 
             pushSupportHistory({
                 type: addAction('brace'),
@@ -1060,6 +1062,7 @@ export function BracePlacementController() {
                 );
                 const brace: Brace = {
                     id: braceId,
+                    typeId: 'brace',
                     modelId,
                     startKnotId,
                     endKnotId,
@@ -1071,7 +1074,7 @@ export function BracePlacementController() {
 
                 addKnot(startKnot);
                 addKnot(endKnot);
-                addBrace(brace);
+                addSupportEntity(brace);
 
                 pushSupportHistory({
                     type: addAction('brace'),
@@ -1128,6 +1131,7 @@ export function BracePlacementController() {
             );
             const brace: Brace = {
                 id: braceId,
+                typeId: 'brace',
                 modelId,
                 startKnotId,
                 endKnotId,
@@ -1139,7 +1143,7 @@ export function BracePlacementController() {
 
             addKnot(startKnot);
             addKnot(endKnot);
-            addBrace(brace);
+            addSupportEntity(brace);
 
             pushSupportHistory({
                 type: addAction('brace'),

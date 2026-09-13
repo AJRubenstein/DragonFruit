@@ -1,6 +1,6 @@
 import type { Branch, Joint, Knot, Roots, SupportState, Trunk, Vec3 } from '../../../types';
 import { updateSupportEntity } from '../../../supportTypeRegistry';
-import { cloneSupportState, addBranch, addKnot, addLeaf, addRoot, addTrunk, getSnapshot, removeBranch, removeLeaf, removeTrunk, updateKnot } from '../../../state';
+import { addSupportEntity, removeSupportEntity, cloneSupportState, addKnot, addRoot, getSnapshot, updateKnot } from '../../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_REPLACE_TRUNK } from '../../../history/actionTypes';
 import type { SupportReplaceTrunkPayload } from '../../../history/actionTypes';
@@ -403,7 +403,7 @@ export function applyTrunkReplacement(
     };
 
     addRoot(aligned.root);
-    addTrunk(aligned.trunk);
+    addSupportEntity(aligned.trunk);
 
     const settings = getSettingsSnapshot();
     const attachStepMm = settings.grid?.attachSearchStepMm ?? 2.0;
@@ -454,7 +454,7 @@ export function applyTrunkReplacement(
             });
 
             addKnot(oldTrunkContactKnot);
-            addBranch(preservedWithConeAndSocket);
+            addSupportEntity(preservedWithConeAndSocket);
         }
     }
 
@@ -491,7 +491,7 @@ export function applyTrunkReplacement(
         if (!oldParentKnot) continue;
 
         // Remove old leaf first (also removes its knot if present).
-        removeLeaf(existingLeaf.id);
+        removeSupportEntity(existingLeaf.id);
 
         const newParentKnot = createAttachmentKnotOnTrunk({
             trunk: aligned.trunk,
@@ -515,7 +515,7 @@ export function applyTrunkReplacement(
         });
 
         addKnot(newParentKnot);
-        addLeaf({
+        addSupportEntity({
             ...built.leaf,
             id: existingLeaf.id,
             contactCone: {
@@ -526,10 +526,10 @@ export function applyTrunkReplacement(
     }
 
     // Remove the promoted branch (it becomes the new trunk).
-    removeBranch(plan.candidate.branchId);
+    removeSupportEntity(plan.candidate.branchId);
 
     // Now it's safe to remove the old trunk without cascading away the rehosted trees.
-    removeTrunk(plan.trunkToRemoveId);
+    removeSupportEntity(plan.trunkToRemoveId);
 
     // Apply stepwise trunk diameter profile on the resulting trunk based on its attached branches.
     const snapshotWithAttachments = getSnapshot();

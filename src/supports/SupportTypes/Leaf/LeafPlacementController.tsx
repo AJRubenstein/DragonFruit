@@ -2,7 +2,7 @@ import { useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'r
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
-import { subscribe, getSnapshot, addKnot, addLeaf } from '../../state';
+import { addSupportEntity, subscribe, getSnapshot, addKnot } from '../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import type { Vec3, Knot, Joint, Segment } from '../../types';
@@ -649,7 +649,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                 });
                 const markedLeaf = markPlacementSurface('leaf', leaf, placementSurface);
 
-                addLeaf(markedLeaf);
+                addSupportEntity(markedLeaf);
 
                 // Reload pattern: create new knot at the same position and lock junctionHubId to it
                 const newParentKnotId = uuidv4();
@@ -721,7 +721,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                 const markedLeaf = markPlacementSurface('leaf', leaf, placementSurface);
 
                 addKnot(parentKnot);
-                addLeaf(markedLeaf);
+                addSupportEntity(markedLeaf);
 
                 pushSupportHistory({
                     type: addAction('leaf'),

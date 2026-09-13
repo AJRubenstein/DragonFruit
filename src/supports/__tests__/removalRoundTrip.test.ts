@@ -1,20 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-    addBrace,
-    addBranch,
-    addLeaf,
-    addTrunk,
-    getSnapshot,
-    loadFromImportFormat,
-    removeBrace,
-    removeBranch,
-    removeLeaf,
-    removeSupportEntity,
-    removeTrunk,
-    resetStore,
-} from '../state';
+import { getSnapshot, loadFromImportFormat, removeSupportEntity, resetStore } from '../state';
 import { restoreToCollection, SUPPORT_COLLECTION_KEYS } from '../supportTypeRegistry';
 import { DEFAULT_TIP_PROFILE } from '../SupportPrimitives/ContactCone/types';
 import type { DragonfruitImportFormat } from '../types';
@@ -171,13 +158,13 @@ function restore(snapshot: Record<string, unknown>) {
 }
 
 const CASES: [string, () => Record<string, unknown> | null][] = [
-    ['removeTrunk (deep cascade)', () => removeTrunk('trunk-a') as never],
-    ['removeTrunk (far side)', () => removeTrunk('trunk-b') as never],
-    ['removeBranch', () => removeBranch('branch-a') as never],
-    ['removeLeaf', () => removeLeaf('leaf-a') as never],
+    ['removeTrunk (deep cascade)', () => removeSupportEntity('trunk', 'trunk-a') as never],
+    ['removeTrunk (far side)', () => removeSupportEntity('trunk', 'trunk-b') as never],
+    ['removeBranch', () => removeSupportEntity('branch', 'branch-a') as never],
+    ['removeLeaf', () => removeSupportEntity('leaf', 'leaf-a') as never],
     ['removeTwig', () => removeSupportEntity('twig', 'twig-a') as never],
     ['removeStick', () => removeSupportEntity('stick', 'stick-a') as never],
-    ['removeBrace', () => removeBrace('brace-a') as never],
+    ['removeBrace', () => removeSupportEntity('brace', 'brace-a') as never],
     ['removeAnchor', () => removeSupportEntity('anchor', 'anchor-a') as never],
     ['removeKickstand', () => removeSupportEntity('kickstand', 'ks-a') as never],
 ];
@@ -209,7 +196,7 @@ test('a removal reports every collection it emptied', () => {
         for (const id of Object.keys(beforeState[key] ?? {})) beforeIds.add(`${key}:${id}`);
     }
 
-    const snapshot = removeTrunk('trunk-a') as unknown as Record<string, unknown>;
+    const snapshot = removeSupportEntity('trunk', 'trunk-a') as unknown as Record<string, unknown>;
     restore(snapshot);
 
     const afterState = getSnapshot() as unknown as Record<string, Record<string, unknown>>;

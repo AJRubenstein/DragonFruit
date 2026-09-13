@@ -533,6 +533,7 @@ export function buildTrunkDataFromPlacement(input: TrunkBuildInput, placement: T
     // Build Trunk
     const trunk: Trunk = {
         id: trunkId,
+        typeId: 'trunk',
         modelId: modelId, // Link to model
         settingsCodeHex,
         rootId: rootId,

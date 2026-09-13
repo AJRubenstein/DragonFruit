@@ -115,6 +115,7 @@ export function buildLeafData(input: LeafBuildInput): LeafBuildResult {
     const leafId = uuidv4();
     const leaf: Leaf = {
         id: leafId,
+        typeId: 'leaf',
         modelId,
         settingsCodeHex,
         parentKnotId: parentKnot.id,
