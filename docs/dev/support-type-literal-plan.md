@@ -297,7 +297,7 @@ construct.
 Each stage is independently shippable and independently verifiable. Order is by
 ratio of volume removed to risk taken.
 
-**Progress: stages 0, 1 (first half), 4 (host resolution) and 5 done. Literal dispatch 50 → 39.**
+**Progress: stages 0, 1 (first half), 3 (renderer), 4 (host resolution) and 5 done. Literal dispatch 50 → 39.**
 
 | stage | work | sites | risk | status |
 | --- | --- | --- | --- | --- |
@@ -305,11 +305,21 @@ ratio of volume removed to risk taken.
 | **1a** | Store WRITE accessors derive from the entity; getters gain a typed return | ~45 | low | **done** — 14 casts deleted |
 | **1b** | `resolveSegmentEndpoints` / `splitSupportShaft` take the entity | ~12 | low | **deferred** — the remaining literals sit inside `preview.kind === 'trunk'` branches, so removing them is stage 6 work, not stage 1 (see §3A) |
 | **2** | `TYPE_PANELS` derives from the registry | — | — | **closed, not a target** (see §3E) |
-| **3** | Renderer family loop | ~18 | medium | pending |
+| **3** | Renderer family loop | ~18 | medium | **done** — dispatch 53 → 51, value 241 → 237; see the note below for the two single-type sites left |
 | **4** | Knot-host resolution through the registry | ~10 | medium | **done (host resolution)** — see the correction below; the 7 `containerType ===` sites are behaviour dispatch, not host resolution, and sit in stage 6 |
 | **5** | `autoBrace` uses its flag; `branch` made reachable | 6 | medium | **done** — dispatch 44 → 39 |
 | **6** | Remaining concepts, one at a time | ~30 | high each | pending |
 | **7** | Payload fields | ~32 | low–medium | pending |
+
+**Stage 3 outcome.** The renderer's per-type table and hand-written JSX are now
+derived: each type registers its detail renderer from its own folder
+(`registerSupportDetailRenderer`), the JSX is one loop over `SUPPORT_TYPES`, root
+grouping is one loop over `ownsRoot` (with a `shaftFallback.fallbackDiameterMm`
+declared per type), and model-id resolution walks `ownsRoot` instead of naming
+kickstand. Two genuinely single-type sites remain in `SupportRenderer`: leaf base
+knots (`leafJointsBySupport`) and brace curve shafts (`sceneBatchedBraceShaftGroups`).
+Each is *about* one type, not a family dispatch, so they are the next thing to
+move into their type folders rather than a rename hazard in the loop.
 
 **Stage 4 correction, from doing it.** The stage was described as "the knot's
 `parentShaftId` should resolve to `(typeId, entity)` through the registry" and
