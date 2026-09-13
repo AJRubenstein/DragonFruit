@@ -5,7 +5,7 @@ import { usePicking } from '@/components/picking';
 import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getSupportEntities, getKnotById, getRootById, setInteractionWarning, updateKnot, subscribe } from '../../state';
 import { Anchor, Branch, Brace, Knot, Leaf, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
 import { resolveSegmentEndpoints, type EndpointHosts } from './segmentEndpoints';
-import { SUPPORT_COLLECTION_KEYS, getSupportTypeDescriptor, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
+import { SUPPORT_COLLECTION_KEYS, getSupportTypeDescriptor, parseKnotHostId, parsePrefixedSegmentId, updateSupportEntity, type SupportEdge } from '../../supportTypeRegistry';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { projectOntoSegment, shouldStayOnCurrentSegment } from './knotUtils';
 import { getSettings } from '../../Settings/state';
@@ -393,7 +393,10 @@ export function useKnotInteraction(enabled: boolean = true) {
     const findHost = (knot: Knot): ActiveHost | null => {
         let host: ActiveHost | null = null;
 
-        // Leaf cone host (brace endpoints)
+        // A leaf's contact cone is a knot host but not the leaf's own entity --
+        // it names a cone primitive. Its prefix is the leaf's declared
+        // `knotHostPrefix`, but the host it resolves to differs, so it is
+        // handled before the generic pseudo-shaft path below.
         if (knot.parentShaftId.startsWith('leafCone:')) {
             const leafId = knot.parentShaftId.slice('leafCone:'.length);
             const leaf = getSupportEntities<Leaf>('leaf').find(l => l.id === leafId);
@@ -407,25 +410,28 @@ export function useKnotInteraction(enabled: boolean = true) {
                     end: new THREE.Vector3(),
                     initialTopology: {},
                 };
-                return host;
             }
+            return host;
         }
 
-        if (knot.parentShaftId.startsWith('braceSegment:')) {
-            const braceId = knot.parentShaftId.slice('braceSegment:'.length);
-            const brace = getSupportEntities<Brace>('brace').find(b => b.id === braceId);
-            if (brace) {
+        // A type whose knots ride a pseudo-shaft (a brace's span) declares its
+        // prefix in the registry; ask it rather than spelling one out, so a
+        // rename moves the string with it.
+        const pseudoHost = parseKnotHostId(knot.parentShaftId);
+        if (pseudoHost) {
+            const entity = getSupportEntity(pseudoHost.typeId, pseudoHost.entityId) as ActiveHost['entity'] | null;
+            if (entity) {
                 host = {
                     segmentId: knot.parentShaftId,
-                    containerType: 'brace',
-                    entity: brace,
+                    containerType: pseudoHost.typeId,
+                    entity,
                     hosts: {},
                     start: new THREE.Vector3(),
                     end: new THREE.Vector3(),
                     initialTopology: {},
                 };
-                return host;
             }
+            return host;
         }
         const cacheEntry = segmentHostMapRef.current.get(knot.parentShaftId);
         if (cacheEntry) {
@@ -1081,9 +1087,9 @@ export function useKnotInteraction(enabled: boolean = true) {
             }
         }
 
-        if (bestSegmentId.startsWith('braceSegment:')) {
-            const braceId = bestSegmentId.slice('braceSegment:'.length);
-            const brace = getSupportEntities<Brace>('brace').find(b => b.id === braceId);
+        const braceSpan = parsePrefixedSegmentId(bestSegmentId);
+        if (braceSpan) {
+            const brace = getSupportEntity(braceSpan.typeId, braceSpan.entityId) as Brace | null;
             if (brace) {
                 const startKnot = getKnotById(brace.startKnotId);
                 const endKnot = getKnotById(brace.endKnotId);
