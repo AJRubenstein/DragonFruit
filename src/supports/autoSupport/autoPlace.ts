@@ -11,7 +11,7 @@ import { quantizeToScale } from '@/utils/math';
  */
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
-import type { CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo, PlacementOutcomeKind } from './types';
+import type { AttachmentKind, CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo, PlacementOutcomeKind } from './types';
 import { isLedgerKind } from './types';
 import type { Branch, Segment, SupportState, SupportOrigin, Vec3 } from '../types';
 import type { AutoSupportSettings } from './settings';
@@ -1378,7 +1378,7 @@ export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
  * by `kind`, so the id needs no per-kind field to keep in step with it.
  */
 export type FanLeafResult =
-    | { ok: true; kind: 'leaf' | 'branch'; draft: SupportState; hostTypeId: SupportTypeId; hostId: string; entityId: string; distMm: number; angleDeg: number }
+    | { ok: true; kind: AttachmentKind; draft: SupportState; hostTypeId: SupportTypeId; hostId: string; entityId: string; distMm: number; angleDeg: number }
     | { ok: false; reason: FanLeafRefusal };
 
 /** How a fanning/cluster link picks its host among eligible shaft samples.
@@ -1647,7 +1647,7 @@ export function validateAndCullOrphans(
     }
     const checkAttachment = (
         id: string,
-        kind: 'leaf' | 'branch',
+        kind: AttachmentKind,
         parentKnotId: string | undefined,
         tipPos: { x: number; y: number; z: number } | undefined,
     ) => {
@@ -2074,7 +2074,7 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
         entryByEntity.set(entry.entityId, entry);
     }
 
-    const memberById = new Map<string, { id: string; kind: 'leaf' | 'branch'; spanMm: number; angleDeg: number }>();
+    const memberById = new Map<string, { id: string; kind: AttachmentKind; spanMm: number; angleDeg: number }>();
     const membersByHost = new Map<string, ForestTree['members']>();
 
     // Knots reference their host SEGMENT (or the entity directly for legacy
@@ -2087,7 +2087,7 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
 
     const pushMember = (
         entityId: string,
-        kind: 'leaf' | 'branch',
+        kind: AttachmentKind,
         hostShaftId: string,
         tipPos: { x: number; y: number; z: number } | undefined,
         knotPos: { x: number; y: number; z: number } | undefined,

@@ -2,7 +2,14 @@ import type * as THREE from 'three';
 import type { ModelSurfaceGestureTypeId, SupportTypeId } from '../../../../supportTypeRegistry';
 import type { HotkeyBinding } from '@/hotkeys/hotkeyConfig';
 
-export type SupportPlacementFamily = 'none' | 'branchFamily' | 'leaf' | 'kickstand';
+/**
+ * Which placement a pointer gesture belongs to.
+ *
+ * The members that name a type come from `SupportTypeId`, so a rename in the
+ * registry renames them here. `branchFamily` is a family, not a type: branch
+ * and brace share one placement binding.
+ */
+export type SupportPlacementFamily = 'none' | 'branchFamily' | Extract<SupportTypeId, 'leaf' | 'kickstand'>;
 /**
  * Which placement a pointer gesture belongs to.
  *

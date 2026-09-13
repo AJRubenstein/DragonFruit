@@ -17,7 +17,6 @@ export interface SupportRenderLookupSnapshot {
 export interface SupportRenderLookupInput {
   state: Pick<SupportState, SupportCollectionKey>;
   activePreviewSupport?: {
-    kind: 'trunk' | 'branch' | 'kickstand' | null;
     support: { segments: Array<{ id: string }> } | null;
   } | null;
 }

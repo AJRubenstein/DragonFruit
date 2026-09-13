@@ -227,6 +227,13 @@ export interface SupportTypeDescriptor {
      */
     canBeGridHost: boolean;
     /**
+     * Whether a kickstand's host knot may ride this type's segments.
+     *
+     * Trunk and branch: a kickstand braces a shaft standing in the print. Read
+     * through `KICKSTAND_HOST_TYPES`, or `KICKSTAND_HOST_BY_TYPE` for the union.
+     */
+    hostsKickstand: boolean;
+    /**
      * Whether instances carry real shafts, for segment and joint walks. */
     hasSegments: boolean;
     /**
@@ -559,6 +566,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: true,
+        hostsKickstand: true,
         edges: [{ field: 'rootId', to: 'roots', ownership: 'owns' }],
         ownsRoot: true,
         segmentsCarryBothJoints: false,
@@ -642,6 +650,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: true,
         mayReachSideways: false,
         canBeGridHost: false,
+        hostsKickstand: true,
         hasSegments: true,
         label: 'Branches',
         singular: 'branch',
@@ -691,6 +700,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
+        hostsKickstand: false,
         hasSegments: false,
         label: 'Leaves',
         singular: 'leaf',
@@ -734,6 +744,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: true,
         canBeGridHost: false,
+        hostsKickstand: false,
         hasSegments: true,
         label: 'Twigs',
         singular: 'twig',
@@ -776,6 +787,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
+        hostsKickstand: false,
         hasSegments: true,
         label: 'Sticks',
         singular: 'stick',
@@ -824,6 +836,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
+        hostsKickstand: false,
         hasSegments: false,
         label: 'Braces',
         singular: 'brace',
@@ -871,6 +884,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
+        hostsKickstand: false,
         hasSegments: true,
         label: 'Anchors',
         singular: 'anchor',
@@ -921,6 +935,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
+        hostsKickstand: false,
         hasSegments: true,
         label: 'Kickstands',
         singular: 'kickstand',
@@ -2126,3 +2141,55 @@ export function parsePrefixedSegmentId(
 export const MODEL_SURFACE_GESTURE_TYPES: readonly ModelSurfaceGestureTypeId[] =
     (Object.keys(MODEL_SURFACE_GESTURE_BY_TYPE) as SupportTypeId[])
         .filter((id): id is ModelSurfaceGestureTypeId => MODEL_SURFACE_GESTURE_BY_TYPE[id]);
+
+/**
+ * Mirrors each descriptor's `hostsKickstand` with the literals kept, so the host
+ * union narrows instead of widening to every type. `derivedTypeSubsets.test.ts`
+ * holds the two in step.
+ */
+export const KICKSTAND_HOST_BY_TYPE = {
+    trunk: true,
+    branch: true,
+    leaf: false,
+    twig: false,
+    stick: false,
+    brace: false,
+    anchor: false,
+    kickstand: false,
+} as const satisfies Record<SupportTypeId, boolean>;
+
+/** The types a kickstand's host knot may ride. */
+export type KickstandHostTypeId = {
+    [K in SupportTypeId]: (typeof KICKSTAND_HOST_BY_TYPE)[K] extends true ? K : never;
+}[SupportTypeId];
+
+export const KICKSTAND_HOST_TYPES: readonly KickstandHostTypeId[] =
+    (Object.keys(KICKSTAND_HOST_BY_TYPE) as SupportTypeId[])
+        .filter((id): id is KickstandHostTypeId => KICKSTAND_HOST_BY_TYPE[id]);
+
+/** Whether an untrusted `kind` names a type a kickstand may host on. */
+export function isKickstandHostType(kind: string): kind is KickstandHostTypeId {
+    return (KICKSTAND_HOST_TYPES as readonly string[]).includes(kind);
+}
+
+/**
+ * Whether one joint of this type can be removed on its own, keeping the support.
+ *
+ * Such a segment resolves an endpoint from a root, a host knot or its neighbour,
+ * so a joint removal merges two segments. `derivedTypeSubsets.test.ts` holds it.
+ */
+export const JOINT_REMOVAL_BY_TYPE = {
+    trunk: true,
+    branch: true,
+    leaf: false,
+    twig: false,
+    stick: false,
+    brace: false,
+    anchor: false,
+    kickstand: true,
+} as const satisfies Record<SupportTypeId, boolean>;
+
+/** The types whose joints `removeJointById` reports. */
+export type JointRemovalTypeId = {
+    [K in SupportTypeId]: (typeof JOINT_REMOVAL_BY_TYPE)[K] extends true ? K : never;
+}[SupportTypeId];

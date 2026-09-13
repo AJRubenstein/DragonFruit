@@ -8,7 +8,7 @@ import {
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
@@ -1187,14 +1187,17 @@ function removeBranchJoint(branchId: string, jointId: string): { before: Branch;
 /**
  * Which support lost a joint, and its before/after for the undo payload.
  *
- * One shape rather than a variant per type: callers push the update action the
- * type declares (`historyUpdate`) and select `id`, so a fourth shafted type
- * needs no new branch.
+ * One variant per type in `JOINT_REMOVAL_BY_TYPE`, so a rename moves the union.
+ * Callers push the type's declared `historyUpdate` and select `id`.
  */
-export type RemoveJointByIdResult =
-    | { typeId: 'trunk'; id: string; before: Trunk; after: Trunk }
-    | { typeId: 'branch'; id: string; before: Branch; after: Branch }
-    | { typeId: 'kickstand'; id: string; before: Kickstand; after: Kickstand };
+export type RemoveJointByIdResult = {
+    [T in JointRemovalTypeId]: {
+        typeId: T;
+        id: string;
+        before: SupportEntityFor<T>;
+        after: SupportEntityFor<T>;
+    };
+}[JointRemovalTypeId];
 
 export function removeJointById(jointId: string): RemoveJointByIdResult | null {
     for (const [trunkId, trunk] of Object.entries(state.trunks)) {

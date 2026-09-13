@@ -61,17 +61,16 @@ const EXEMPT = [
  * count rises, either the work regressed or the ceiling is wrong -- and the
  * second case needs a deliberate edit to this table, which is the point.
  *
- * `dispatch` is the one that matters most: those are the literals a rename does
- * NOT break, so nothing else catches them. `value` and `declaration` are rename
- * hazards the compiler or a drift check eventually catches.
- *
- * Measured at the commit that introduced this file. See
- * docs/dev/support-type-literal-plan.md for the staged plan that lowers them.
+ * `dispatch` is the one that matters most: a comparison a rename does not break
+ * unless the compared union is derived from the registry. `value` and
+ * `declaration` are rename hazards the compiler or a drift check eventually
+ * catches. See docs/dev/support-type-literal-plan.md for the staged plan that
+ * lowers them.
  */
 const BUDGET = {
-    dispatch: 39,
+    dispatch: 12,
     declaration: 3,
-    value: 175,
+    value: 137,
 };
 
 /**
@@ -112,16 +111,15 @@ function classify(line: string, ids: string[]): LiteralClass {
     // lines also match the dispatch shape and must not be counted as targets.
     //   origin:        `origin === 'anchor'` -- SUPPORT_ORIGINS
     //   sizing preset: 'detail' | 'structure' | 'anchor'
-    //   family:        `intent.family === 'leaf'`
     if (/origin\s*(?:===|!==)\s*['"](?:anchor|overhang|island|standalone)['"]/.test(line)) {
         return 'other-vocab';
     }
     if (/sizingPreset/.test(line) || /['"](?:detail|structure)['"]/.test(line)) {
         return 'other-vocab';
     }
-    if (/\.family\s*(?:===|!==)/.test(line)) {
-        return 'other-vocab';
-    }
+    // NOT exempt: `.family === 'leaf'`. The family's type-id members come from
+    // `Extract<SupportTypeId, ...>` now, so a rename breaks this comparison
+    // (TS2367) -- it is dispatch, and an exemption here hid two live sites.
 
     // `x === 'trunk'`, `case 'leaf'`, `kind === 'brace'`
     if (new RegExp(`(?:===|!==)\\s*['"](?:${ids.join('|')})['"]`).test(line)) {
@@ -199,7 +197,7 @@ if (flag('--json')) {
     console.log(`${sites.length} type-name literals outside the registry and type folders\n`);
     for (const cls of ['dispatch', 'declaration', 'value', 'object-key', 'other-vocab', 'comment']) {
         const n = counts[cls] ?? 0;
-        const note = cls === 'dispatch' ? '  <-- rename does NOT break these'
+        const note = cls === 'dispatch' ? '  <-- branches on the name; a rename breaks it only if the union is derived'
             : cls === 'other-vocab' ? '  (different vocabulary; do not "fix")'
                 : '';
         console.log(`  ${String(n).padStart(4)}  ${cls}${note}`);

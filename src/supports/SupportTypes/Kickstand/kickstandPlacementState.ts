@@ -2,11 +2,12 @@ import { createPlacementStore, usePlacementStoreState } from '../../interaction/
 import { vecEq } from '../../interaction/shared/placement/placementComparators';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import type { Vec3 } from '../../types';
-import type { KickstandBuildResult, KickstandHostKind } from './types';
+import type { KickstandBuildResult } from './types';
+import type { KickstandHostTypeId } from '../../supportTypeRegistry';
 
 export interface KickstandPlacementTarget {
     segmentId: string;
-    supportKind: KickstandHostKind;
+    supportKind: KickstandHostTypeId;
     modelId: string;
     t: number;
     pos: Vec3;

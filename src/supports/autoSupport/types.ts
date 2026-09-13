@@ -8,7 +8,8 @@ import { AUTO_PLACED_TYPE_IDS, type AutoPlacedTypeId, type SupportTypeId } from 
  */
 /** A type the ledger can report, from the registry's declared set. */
 export type PlacedKind = AutoPlacedTypeId;
-type AttachmentKind = Extract<SupportTypeId, 'leaf' | 'branch'>;
+/** A hosted member auto-placement can attach: leaf and branch today. */
+export type AttachmentKind = Extract<SupportTypeId, 'leaf' | 'branch'>;
 /** Which kind of entity was culled: any host type, or a hosted member. */
 type OrphanKind = SupportTypeId;
 
