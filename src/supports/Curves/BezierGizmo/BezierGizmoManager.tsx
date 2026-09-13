@@ -13,6 +13,17 @@ import { clearSupportDragPreview, emitSupportDragPreview } from '../../SupportPr
 import { clearTwigDragPreview, computeTwigDragAttachmentUpdates, emitTwigDragPreview } from '../../SupportTypes/Twig/twigDragPreview';
 import { getSupportTypeDescriptor, parsePrefixedSegmentId, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
 
+/**
+ * Whether the type carries its curve on the entity rather than on segments. A
+ * span type has no real segments and selects its span as a segment, so the
+ * descriptor answers without naming the type.
+ */
+function carriesCurveOnEntity(typeId: SupportTypeId | null | undefined): boolean {
+    if (!typeId) return false;
+    const descriptor = getSupportTypeDescriptor(typeId);
+    return !descriptor.hasSegments && descriptor.segmentSelectionPrefix !== undefined;
+}
+
 export function BezierGizmoManager() {
     const MIN_CONTROL_POINT_DELTA_SQ = 1e-10;
     const state = useSyncExternalStore(subscribe, getSnapshot);
@@ -182,7 +193,7 @@ export function BezierGizmoManager() {
             return (dx * dx + dy * dy + dz * dz) <= MIN_CONTROL_POINT_DELTA_SQ;
         };
 
-        if (typeId === 'brace') {
+        if (carriesCurveOnEntity(typeId)) {
             const brace = entity as unknown as Brace | undefined;
             if (!brace?.curve || brace.curve.type !== 'bezier') return;
             const newBrace = JSON.parse(JSON.stringify(brace)) as Brace;
@@ -315,7 +326,7 @@ export function BezierGizmoManager() {
                 const jointPos = new THREE.Vector3(ctx.joint.pos.x, ctx.joint.pos.y, ctx.joint.pos.z);
                 let cpPos: THREE.Vector3 | null = null;
                 // A type with no segments carries its curve on the entity.
-                const entityCurve = ctx.typeId === 'brace'
+                const entityCurve = carriesCurveOnEntity(ctx.typeId)
                     ? (ctx.entity as unknown as Brace | undefined)?.curve
                     : undefined;
 
