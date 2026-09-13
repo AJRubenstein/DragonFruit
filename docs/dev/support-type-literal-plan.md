@@ -455,7 +455,8 @@ shippable and independently verifiable.
 | **4** | Settings/anatomy-preview dispatch | C | 11 | low | **done** — it was the tab vocabulary, not a preview decision; see below |
 | **5** | Value literals in argument position | D | 129 | low | **done** — 114 were already compiler-checked; the 2 real silent ones are fixed. See §3D |
 | **6a** | The joint-drag arms | F | 4 arms | med | **done** — four arms collapsed to two; see §3F.1 |
-| **6b** | Per-type prop and hook names (previews, placement props) | F | ~1,410 | high | **next** — the prop fan-out; no metric moves |
+| **6b.1** | The elastic knot-drag capture | F | 2 captures | med | **done** — `flexesOnHostKnotDrag` + `FLEXING_KNOT_HOST_TYPES`; see §6b.1 |
+| **6b.2** | The knot-drag solve and preview channel | F | ~1,410 | high | **next** — `branchSegmentsById` and friends; producer only, the renderer is already id-keyed |
 
 **Stages 1 and 2 have landed.** Stage 1 was the silent class — a rename left
 those unions compiling and wrong; stage 2 removed the type-id parameter from the
@@ -483,16 +484,19 @@ build-smoke-scene.mjs` was writing a GZIP stream under an `encoding:
 base64-zlib` envelope, which the codec rejects — it now emits raw zlib, and
 `check-smoke-scene.mjs` inflates the same way.
 
-**Stage 6 will not move any number.** Track it by the prop signature.
+**Stage 6 was expected to move no number. It did.** 6b.1 took the scan metric
+from 5,835 to **5,735** and the rename test from 200 to **82 honest remaining**,
+because deriving the capture deleted the type-named locals around it too. Track
+6b by the prop signature, but re-measure anyway -- the prediction was wrong once.
 
 ### Where the rename test's remaining errors are
 
-After stage 6a the total is **200** (from 280 at the start of stage 1). What is
-left is two shapes, and neither is a literal:
+After stage 6b.1 the honest remaining total is **82** (from 280 at the start of
+stage 1; 200 after 6a). What is left is two shapes, and neither is a literal:
 
 ```
-per-type preview caches and props   useKnotInteraction, KnotGizmo,
-                                    SceneCanvas, autoPlace     (stage 6b)
+knot-drag solve and preview props   useKnotInteraction, KnotGizmo,
+                                    SceneCanvas, autoPlace     (stage 6b.2)
 deprecated wrappers in state.ts     add<Type> / update<Type> /
                                     remove<Type>               (debt)
 ```
@@ -572,6 +576,65 @@ mutation-verified by deleting trunk's action and watching it throw.
 were inline `if`s in the sidebar, so nothing tied them to the registry and they
 drifted. That is why a registry mechanism needs a load-time error, not just a
 declaration.
+
+---
+
+### 6b.1. The elastic knot-drag capture — done
+
+Dragging a knot flexes whatever hangs off it. Both captures — one in
+`useKnotInteraction`, one in `KnotGizmo` — decided *what* hangs off it and *what
+holds its tip* by hand:
+
+```ts
+const allBranches = getSupportEntities<Branch>('branch');
+const attached = allBranches.filter(b => b.parentKnotId === knotId);
+// ... later, per entity:
+contactCone: b.contactCone ? { pos: getSocketPosition(b.contactCone.pos, ...) } : undefined
+```
+
+Three hardcodings in four lines, and each is a different failure:
+
+| hardcoded | what it assumed | why it was wrong |
+| --- | --- | --- |
+| the type `'branch'` | one type flexes | **two** declare `parentKnotId` onto knots (branch, leaf) |
+| the field `parentKnotId` | one edge name | the edge is already declared, per type, in `edges` |
+| the field `contactCone` | one contact spelling | types spell it `contactCone`, `contactConeB`, `contactDiskB` |
+
+All three now come from the registry. The flag is
+`flexesOnHostKnotDrag`, and `FLEXING_KNOT_HOST_TYPES` pairs each flexing type
+with the edge fields naming its knot, both derived:
+
+```ts
+export const FLEXING_KNOT_HOST_TYPES = SUPPORT_TYPES
+    .filter((descriptor) => descriptor.flexesOnHostKnotDrag)
+    .map((descriptor) => ({ typeId: descriptor.id, knotFields: /* hostedBy edges onto knots */ }));
+```
+
+The contact field comes from the type's declared `upper` endpoint, so a type
+that spells it differently keeps its tip constraint instead of silently losing
+it. `ElasticChainInitialState.branchId` — declared, never read — became
+`shaftId`.
+
+**Why a flag and not pure derivation.** "Has segments and hangs off a knot" is
+true of leaf as well, and a leaf does *not* flex: the solver walks segment
+joints, and a leaf's are not a chain. So the behaviour is declared, and
+`flexingKnotHosts.test.ts` holds the declaration honest — a flexing type must
+have segments, must declare a knot edge, and must name its contact field.
+
+**Mutation-tested.** Removing `flexesOnHostKnotDrag` from branch empties the
+capture, and the test fails naming the type, rather than the elastic drag
+silently going dead.
+
+**It moved numbers the plan said it would not:** scan 5,835 → **5,735**, rename
+test 200 → **82 honest remaining**. Deriving the capture deleted the type-named
+locals around it.
+
+**What is left in these files (stage 6b.2).** The capture is derived; the
+*solve* and *preview* half is not. `branchSegmentsById`, `previewBranchSegments-
+ByIdRef` and `branchChanged` still name one type through the whole drag path,
+including across the `knotDragPreview` event payload. Note the consumer is
+already done: `SupportRenderer`'s `knotDragOverridesById` is a plain
+id-keyed map, so **this is a producer-side rename, not a redesign**.
 
 ---
 
