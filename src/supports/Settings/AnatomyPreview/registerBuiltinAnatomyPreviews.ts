@@ -9,10 +9,8 @@ import './PreviewTypes/Brace/BracePreview';
  * Loads every panel that draws its own anatomy preview, so its registration runs.
  *
  * A module nothing imports never executes, so a preview that registers itself
- * from its own file is silently absent and the panel falls through to the
- * generic support diagram -- which is what happened when the old
- * `ANATOMY_PREVIEWS` table was replaced by self-registration and its three
- * imports went with it. Mirrors `previewGeometry/registerBuiltinPreviewBuilders`.
+ * is silently absent and its panel falls through to the generic support
+ * diagram. Mirrors `previewGeometry/registerBuiltinPreviewBuilders`.
  *
  * `TrunkPreview` is deliberately absent: it is the fallback, mounted directly.
  */

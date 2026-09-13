@@ -12,9 +12,8 @@ import type { Segment } from '../types';
 /**
  * Which shafts flex when their host knot is dragged.
  *
- * The elastic capture used to scan one hardcoded type and read one hardcoded
- * contact field, so a second flexing type would have been silently skipped and
- * a type spelling its contact differently silently lost its tip constraint.
+ * Both the flexing types and each one's contact field are declared, so a second
+ * flexing type is captured and keeps its tip constraint.
  */
 
 test('every flexing type declares the knot edge the capture filters on', () => {

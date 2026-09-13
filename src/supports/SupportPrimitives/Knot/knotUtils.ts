@@ -144,10 +144,8 @@ export function calculateKnotPositionOnSegmentFromT(
 /**
  * What a knot rides: always the type that owns the host.
  *
- * A cone host used to be a ninth member of this union, spelled out as a string,
- * which meant a type rename left it behind. The cone belongs to the type that
- * declares it (`knotHostPrefix`), so the type id answers for it, and whether a
- * host is a cone or a real shaft is asked with `isConeKnotHost`.
+ * A cone belongs to the type declaring it (`knotHostPrefix`), so the type id
+ * answers for it; whether a host is a cone is asked with `isConeKnotHost`.
  */
 export type KnotHostType = SupportTypeId;
 

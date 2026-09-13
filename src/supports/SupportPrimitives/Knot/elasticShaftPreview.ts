@@ -12,9 +12,8 @@ import { getSocketPosition } from '../ContactCone';
 /**
  * Applies one solved elastic chain to the shaft it came from.
  *
- * The knot-drag path did this in three places, each re-fetching the entity as
- * one hardcoded type -- so a second flexing type would have been solved and
- * then dropped on the floor. The entity is looked up by id alone.
+ * The entity is looked up by id alone, so every flexing type is written back
+ * rather than only the one a call site named.
  */
 
 /** Solved segments by shaft id, whichever type each shaft is. */

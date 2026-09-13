@@ -54,13 +54,6 @@ interface AutoSupportPanelProps {
 }
 
 /**
- * A slider in the panel. Bounds are NOT here — they come from
- * `AUTO_SUPPORT_CONSTRAINTS`, the same table the settings normalizer clamps
- * against. They used to be a second copy and had already drifted (the panel
- * allowed a 2mm² minimum island where the normalizer allowed 10mm²), so a
- * value the settings accepted could not be dialled in.
- */
-/**
  * Settings that hold a NUMBER, derived from `AutoSupportSettings` itself rather
  * than listed — a numeric setting cannot be added without becoming available to
  * the panel. (The named sizing tier is excluded by this, correctly: it is not a

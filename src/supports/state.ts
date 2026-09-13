@@ -3529,8 +3529,7 @@ export function getModelIdForSupportEntityId(id: string | null | undefined): str
  *     the type in hand (from a descriptor, off an entity).
  *
  * The explicit form is GENERIC on the type id, so `getSupportEntity('branch', id)`
- * comes back a `Branch` -- which is why call sites no longer need
- * `as Branch | null` on the result.
+ * comes back a `Branch`, with no cast at the call site.
  *
  * Returns null for an unknown id, and for an id whose type cannot be resolved.
  * A single argument that is a TYPE id rather than an entity id resolves to null

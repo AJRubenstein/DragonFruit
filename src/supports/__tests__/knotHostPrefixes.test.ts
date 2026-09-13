@@ -18,10 +18,9 @@ import {
 /**
  * A knot's pseudo-shaft prefix is declared once, by the type that owns it.
  *
- * These prefixes are STRINGS, so the compiler cannot see them: a type rename
- * left 99 hand-written `'leafCone:'` literals across 20 files compiling clean
- * and wrong at runtime. Only a source scan catches that, which is what the last
- * test here does.
+ * These prefixes are STRINGS, so no type-level check can see them: a spelled-out
+ * prefix survives a type rename and fails only at runtime. The last test scans
+ * source for that.
  */
 
 const SRC = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));

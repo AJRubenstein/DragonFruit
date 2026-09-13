@@ -118,18 +118,11 @@ const BETWEEN_SUPPORTS_PLACEMENT_FAMILY = singleOwnNamedFamily(
  * binding, which is a family NAME rather than a type id and so is the only
  * value here that is not a type.
  *
- * Only the `branchFamily` value is spelled here. The two type-named values are
- * read off the registry's flag-derived families, so renaming a type MOVES them
- * with the rename rather than leaving a stale family behind. `satisfies` keeps
- * every value's type checked against the family union -- the same
- * `as const satisfies` shape the registry uses for its per-type flag tables.
+ * Only `branchFamily` is spelled here; the type-named values come off the
+ * registry's flag-derived families, so a rename moves them.
  *
- * Keyed by BINDING rather than by owner, which is what makes it readable from
- * both the router and the intent resolver: the owner constants are derived in
- * the router, which imports the resolver, so an owner-keyed table could not be
- * read back there without a cycle. The keys are binding names, which no type
- * rename moves; only the values do. That is also why no call site can go stale:
- * a site indexes this by the binding it already holds.
+ * Keyed by BINDING, not owner: the owner constants are derived in the router,
+ * which imports the resolver, so an owner-keyed table would cycle.
  */
 export const PLACEMENT_FAMILY_BY_BINDING = {
     branchFamily: 'branchFamily',
