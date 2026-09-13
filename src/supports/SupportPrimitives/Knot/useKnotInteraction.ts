@@ -21,7 +21,7 @@ import { getBezierPointAtT } from '../../Curves/BezierUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { clearKnotDragPreview, emitKnotDragPreview } from '../../interaction/knotDragPreview';
 import { resolveTwigDiameterAtSegmentT } from '../../SupportTypes/Twig/twigTaper';
-import { resolveKnotDiameter, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
+import { isConeKnotHost, resolveKnotDiameter, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
 import { shouldCommitJointDrag } from '../Joint/jointDragController';
 import { knotMoveDescription, type KnotHostType } from './knotUtils';
 
@@ -31,9 +31,9 @@ import { knotMoveDescription, type KnotHostType } from './knotUtils';
  * host declares `knotHostPrefix` -- a leaf's cone, a brace's span -- and
  * resolves its endpoints from the entity instead.
  */
-function hostsRealSegments(containerType: KnotHostType): boolean {
-    if (containerType === 'leafCone') return false;
-    return !getSupportTypeDescriptor(containerType).knotHostPrefix;
+function hostsRealSegments(host: ActiveHost): boolean {
+    if (host.ridesCone) return false;
+    return !getSupportTypeDescriptor(host.containerType).knotHostPrefix;
 }
 
 /**
@@ -41,33 +41,35 @@ function hostsRealSegments(containerType: KnotHostType): boolean {
  * A span type declares no real segments but selects its span as a segment, so
  * the descriptor answers without naming the type.
  */
-function hostsCurveSpan(containerType: KnotHostType): boolean {
-    if (containerType === 'leafCone') return false;
-    const descriptor = getSupportTypeDescriptor(containerType);
+function hostsCurveSpan(host: ActiveHost): boolean {
+    if (host.ridesCone) return false;
+    const descriptor = getSupportTypeDescriptor(host.containerType);
     return !descriptor.hasSegments && descriptor.segmentSelectionPrefix !== undefined;
 }
 
 /** Whether a knot drag on this host defers elastic solving to release. */
-function defersElasticPreview(containerType: KnotHostType): boolean {
-    if (containerType === 'leafCone') return false;
-    return !!getSupportTypeDescriptor(containerType).knotDragDefersElasticPreview;
+function defersElasticPreview(host: ActiveHost): boolean {
+    if (host.ridesCone) return false;
+    return !!getSupportTypeDescriptor(host.containerType).knotDragDefersElasticPreview;
 }
 
 /** Whether a knot drag on this host updates the attached leaf cones' taper. */
-function updatesLeafConeOnKnotDrag(containerType: KnotHostType): boolean {
-    if (containerType === 'leafCone') return false;
-    return !!getSupportTypeDescriptor(containerType).knotDragUpdatesLeafConeDiameter;
+function updatesConeDiameterOnKnotDrag(host: ActiveHost): boolean {
+    if (host.ridesCone) return false;
+    return !!getSupportTypeDescriptor(host.containerType).knotDragUpdatesLeafConeDiameter;
 }
 
 /** Whether a knot on this host takes its diameter from the shaft it rides. */
-function takesShaftDiameter(containerType: KnotHostType): boolean {
-    return containerType !== 'leafCone';
+function takesShaftDiameter(host: ActiveHost): boolean {
+    return !host.ridesCone;
 }
 
 /** What a knot is riding: one entity, its type, and the hosts its ends need. */
 interface ActiveHost {
     segmentId: string;
     containerType: KnotHostType;
+    /** Whether the knot rides a contact cone rather than a shaft or span. */
+    ridesCone?: boolean;
     /** The support the knot rides. Absent only for a leaf cone. */
     entity?: { id: string; typeId?: SupportTypeId; segments?: Segment[] };
     /** The root and host knot the entity's declared endpoints resolve from. */
@@ -424,13 +426,15 @@ export function useKnotInteraction(enabled: boolean = true) {
         // it names a cone primitive. Its prefix is the leaf's declared
         // `knotHostPrefix`, but the host it resolves to differs, so it is
         // handled before the generic pseudo-shaft path below.
-        if (knot.parentShaftId.startsWith('leafCone:')) {
-            const leafId = knot.parentShaftId.slice('leafCone:'.length);
+        const coneHost = parseKnotHostId(knot.parentShaftId);
+        if (coneHost && isConeKnotHost(coneHost.typeId)) {
+            const leafId = coneHost.entityId;
             const leaf = getSupportEntities<Leaf>('leaf').find(l => l.id === leafId);
             if (leaf?.contactCone) {
                 host = {
                     segmentId: knot.parentShaftId,
-                    containerType: 'leafCone',
+                    containerType: coneHost.typeId,
+                    ridesCone: true,
                     hosts: {},
                     leafId,
                     start: new THREE.Vector3(),
@@ -495,7 +499,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
     /** The shafted entity and hosts backing this host record, if it has one. */
     const shaftOf = (host: ActiveHost): { entity: ShaftEntity; hosts: EndpointHosts } | null => {
-        if (!hostsRealSegments(host.containerType) || !host.entity?.segments) return null;
+        if (!hostsRealSegments(host) || !host.entity?.segments) return null;
         return { entity: host.entity as ShaftEntity, hosts: host.hosts };
     };
 
@@ -519,7 +523,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             return;
         }
 
-        if (host.containerType === 'leafCone' && host.leafId) {
+        if (host.ridesCone && host.leafId) {
             const leaf = getSupportEntities<Leaf>('leaf').find((l) => l.id === host.leafId);
             const cone = leaf?.contactCone;
             if (!cone) return;
@@ -531,7 +535,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             const endVec = new THREE.Vector3(socketPos.x, socketPos.y, socketPos.z);
             host.start.copy(endVec.clone().add(axis.multiplyScalar(-len)));
             host.end.copy(endVec);
-        } else if (hostsCurveSpan(host.containerType) && host.entity) {
+        } else if (hostsCurveSpan(host) && host.entity) {
             const brace = host.entity as unknown as Brace;
             const startKnot = getKnotById(brace.startKnotId);
             const endKnot = getKnotById(brace.endKnotId);
@@ -562,7 +566,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             return out;
         }
 
-        if (hostsCurveSpan(host.containerType) && host.entity) {
+        if (hostsCurveSpan(host) && host.entity) {
             const brace = host.entity as unknown as Brace;
             const startKnot = getKnotById(brace.startKnotId);
             const endKnot = getKnotById(brace.endKnotId);
@@ -697,7 +701,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
             if (
                 FAST_KNOT_DRAG_ELASTIC_PREVIEW
-                && activeHostAtEnd && defersElasticPreview(activeHostAtEnd.containerType)
+                && activeHostAtEnd && defersElasticPreview(activeHostAtEnd)
                 && previewKnotAtEnd
                 && Object.keys(elasticState.current).length > 0
             ) {
@@ -777,7 +781,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             // it visibly had during the drag preview.
             if (
                 activeKnotIdAtEnd
-                && activeHostAtEnd && updatesLeafConeOnKnotDrag(activeHostAtEnd.containerType)
+                && activeHostAtEnd && updatesConeDiameterOnKnotDrag(activeHostAtEnd)
                 && (activeHostAtEnd.entity as unknown as Twig)
                 && previewKnotAtEnd
                 && previewKnotAtEnd.t !== undefined
@@ -807,7 +811,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             }
 
             if (activeHostAtEnd && initialEditSnapshotRef.current) {
-                const description = knotMoveDescription(activeHostAtEnd.containerType);
+                const description = knotMoveDescription(activeHostAtEnd.containerType, activeHostAtEnd.ridesCone);
                 pushSupportEditHistory(description, initialEditSnapshotRef.current, captureSupportEditSnapshot());
             }
 
@@ -855,7 +859,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         resolveEndpoints(host);
 
         // Leaf-cone knots (brace endpoints) slide along the cone axis.
-        if (host.containerType === 'leafCone' && host.leafId) {
+        if (host.ridesCone && host.leafId) {
             raycaster.setFromCamera(pointer, camera);
             const projected = projectOntoSegment(raycaster.ray, host.start, host.end);
 
@@ -923,7 +927,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         let bestT = projectedOnHost.t;
         let bestDistSq = Number.POSITIVE_INFINITY;
 
-        const braceHost = hostsCurveSpan(host.containerType)
+        const braceHost = hostsCurveSpan(host)
             ? host.entity as unknown as Brace | undefined
             : undefined;
         if (braceHost?.curve?.type === 'bezier') {
@@ -1087,7 +1091,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         // 2. Elastic Chain Logic
         // Fast trunk-knot preview path: skip heavy per-frame elastic solving and
         // defer exact solving to release for smoother branch/leaf visual response.
-        const shouldSkipElasticPreview = FAST_KNOT_DRAG_ELASTIC_PREVIEW && defersElasticPreview(host.containerType);
+        const shouldSkipElasticPreview = FAST_KNOT_DRAG_ELASTIC_PREVIEW && defersElasticPreview(host);
         let finalKnotPos = constrainedPos;
 
         if (shouldSkipElasticPreview) {
@@ -1163,7 +1167,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         let finalOnLine = snapVec3(host.start.clone().add(lineVec.clone().multiplyScalar(t)));
 
         // For curved braces: keep knot exactly on the curve and derive t from closest sample.
-        const curvedBrace = hostsCurveSpan(host.containerType)
+        const curvedBrace = hostsCurveSpan(host)
             ? host.entity as unknown as Brace | undefined
             : undefined;
         if (curvedBrace?.curve?.type === 'bezier') {
@@ -1238,7 +1242,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
         // Update diameter when crossing into a segment with a different diameter.
         // Every shaft host does this; a leaf cone is the one that does not.
-        if (takesShaftDiameter(host.containerType)) {
+        if (takesShaftDiameter(host)) {
             // +0.125 (not the legacy +0.1): the KnotRenderer subtracts the
             // full joint offset, so shaft + 0.125 renders at shaft + 0.025 —
             // the same diameter as a trunk's joint spheres. A moved auto
@@ -1248,7 +1252,7 @@ export function useKnotInteraction(enabled: boolean = true) {
 
         // A knot on a shaft with its own sizing rule live-tracks it at the exact
         // slide T. Types without a rule keep the segment diameter above.
-        if (hostsRealSegments(host.containerType) && host.entity) {
+        if (hostsRealSegments(host) && host.entity) {
             const ruled = resolveKnotDiameter(
                 host.containerType as SupportTypeId, host.entity, host.segmentId, t,
             );

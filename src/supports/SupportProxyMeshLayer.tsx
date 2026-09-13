@@ -16,6 +16,7 @@ import { emitSupportModelPointerHover } from './interaction/clickHandlers';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
 import type { ContactDisk, Segment, SupportState, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
+import { knotHostId, spanKnotHostType } from './supportTypeRegistry';
 
 interface SupportProxyMeshLayerProps {
   mode?: 'prepare' | 'analysis' | 'support' | 'export' | 'printing';
@@ -896,7 +897,7 @@ export function SupportProxyMeshLayer({
       const braceDiameter = (startHostDiameter + endHostDiameter) * 0.5;
       if (brace.curve?.type === 'bezier') {
         pushShaft(braceBezierToBatchedShaft(
-          `braceSegment:${brace.id}`,
+          knotHostId(spanKnotHostType(), brace.id),
           startKnot.pos,
           endKnot.pos,
           brace.curve.controlPoint1,
@@ -908,7 +909,7 @@ export function SupportProxyMeshLayer({
         ));
       } else {
         pushShaft({
-          id: `braceSegment:${brace.id}`,
+          id: knotHostId(spanKnotHostType(), brace.id),
           supportId: brace.id,
           modelId: brace.modelId,
           start: startKnot.pos,

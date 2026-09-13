@@ -9,7 +9,7 @@ import {
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
@@ -148,7 +148,7 @@ function getSelectionLookupCache(): SelectionLookupCache {
 
 function resolveSelectionCategory(id: string): SelectionCategory {
     if (!id) return null;
-    if (id.startsWith('braceSegment:')) return 'segment';
+    if (parsePrefixedSegmentId(id)) return 'segment';
     // Entity collections resolve from the registry, in its order.
     for (const { key, selectionCategory } of SUPPORT_STATE_COLLECTIONS) {
         if (state[key][id]) return selectionCategory;
@@ -362,7 +362,7 @@ function recomputeKnotDependentGeometry(
     return nextLeaves;
 }
 
-function recomputeLeafConeKnotGeometry(
+function recomputeConeHostKnotGeometry(
     leaves: Record<string, Leaf>,
     knots: Record<string, Knot>
 ): { knots: Record<string, Knot>; changed: boolean } {
@@ -370,9 +370,9 @@ function recomputeLeafConeKnotGeometry(
     let nextKnots = knots;
 
     for (const knot of Object.values(knots)) {
-        if (!knot.parentShaftId.startsWith('leafCone:')) continue;
-        const leafId = knot.parentShaftId.slice('leafCone:'.length);
-        const leaf = leaves[leafId];
+        const host = parseKnotHostId(knot.parentShaftId);
+        if (!host || !isConeKnotHost(host.typeId)) continue;
+        const leaf = leaves[host.entityId];
         const cone = leaf?.contactCone;
         if (!leaf || !cone) continue;
 
@@ -548,7 +548,7 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
         for (const knotId of targetHostKnotIds) {
             const knot = nextKnots[knotId];
             if (!knot) continue;
-            if (knot.parentShaftId.startsWith('leafCone:') || knot.parentShaftId.startsWith('braceSegment:')) continue;
+            if (isKnotHostId(knot.parentShaftId)) continue;
 
             let segment: Segment | null = null;
             let endpoints: { start: Vec3; end: Vec3 } | null = null;
@@ -909,7 +909,7 @@ function getChangedKnotPositions(prev: Record<string, Knot>, next: Record<string
     return changed;
 }
 
-function recomputeBraceSegmentKnotGeometry(
+function recomputeSpanHostKnotGeometry(
     braces: Record<string, Brace>,
     knots: Record<string, Knot>
 ): { knots: Record<string, Knot>; changed: boolean } {
@@ -917,9 +917,9 @@ function recomputeBraceSegmentKnotGeometry(
     let nextKnots = knots;
 
     for (const knot of Object.values(knots)) {
-        if (!knot.parentShaftId.startsWith('braceSegment:')) continue;
-        const braceId = knot.parentShaftId.slice('braceSegment:'.length);
-        const brace = braces[braceId];
+        const host = parseKnotHostId(knot.parentShaftId);
+        if (!host || !isSpanKnotHost(host.typeId)) continue;
+        const brace = braces[host.entityId];
         if (!brace) continue;
 
         const startKnot = knots[brace.startKnotId];
@@ -994,19 +994,19 @@ function settleKnotDependentGeometry(
 ): { knots: Record<string, Knot>; leaves: Record<string, Leaf> } {
     let nextLeaves = leaves;
 
-    const leafCone1 = recomputeLeafConeKnotGeometry(nextLeaves, knots);
-    const braceSeg1 = recomputeBraceSegmentKnotGeometry(braces, leafCone1.knots);
+    const coneHost1 = recomputeConeHostKnotGeometry(nextLeaves, knots);
+    const spanHost1 = recomputeSpanHostKnotGeometry(braces, coneHost1.knots);
 
-    const changedByBrace = getChangedKnotPositions(leafCone1.knots, braceSeg1.knots);
+    const changedByBrace = getChangedKnotPositions(coneHost1.knots, spanHost1.knots);
     if (Object.keys(changedByBrace).length === 0) {
-        return { knots: braceSeg1.knots, leaves: nextLeaves };
+        return { knots: spanHost1.knots, leaves: nextLeaves };
     }
 
     nextLeaves = recomputeKnotDependentGeometry(nextLeaves, changedByBrace);
-    const leafCone2 = recomputeLeafConeKnotGeometry(nextLeaves, braceSeg1.knots);
-    const braceSeg2 = recomputeBraceSegmentKnotGeometry(braces, leafCone2.knots);
+    const coneHost2 = recomputeConeHostKnotGeometry(nextLeaves, spanHost1.knots);
+    const spanHost2 = recomputeSpanHostKnotGeometry(braces, coneHost2.knots);
 
-    return { knots: braceSeg2.knots, leaves: nextLeaves };
+    return { knots: spanHost2.knots, leaves: nextLeaves };
 }
 
 
@@ -1754,7 +1754,7 @@ export function transformSupportsForModel(
     const touchedJointIds = new Set<string>();
     const touchedKnotIds = new Set<string>();
     // Touched hosts of the pseudo-shafts a knot can ride, keyed by the prefix
-    // each type declares (`leafCone:`, `braceSegment:`).
+    // each type declares.
     const touchedKnotHostIdsByPrefix = new Map<string, Set<string>>();
     for (const descriptor of SUPPORT_TYPES) {
         if (descriptor.knotHostPrefix) touchedKnotHostIdsByPrefix.set(descriptor.knotHostPrefix, new Set());
@@ -1770,15 +1770,19 @@ export function transformSupportsForModel(
     }
 
     const resolveModelIdFromParentShaft = (parentShaftId: string, visitedBraceIds?: Set<string>): string | undefined => {
-        if (parentShaftId.startsWith('leafCone:')) {
-            const leafId = parentShaftId.slice('leafCone:'.length);
-            const leaf = state.leaves[leafId];
+        // The two host kinds reach their model differently -- a cone through its
+        // own host knot, a span through either end -- so they stay separate arms.
+        // Which prefix names which is declared, not spelled out here.
+        const host = parseKnotHostId(parentShaftId);
+
+        if (host && isConeKnotHost(host.typeId)) {
+            const leaf = state.leaves[host.entityId];
             if (!leaf) return undefined;
             return leaf.modelId ?? resolveModelIdFromKnot(leaf.parentKnotId, visitedBraceIds);
         }
 
-        if (parentShaftId.startsWith('braceSegment:')) {
-            const braceId = parentShaftId.slice('braceSegment:'.length);
+        if (host && isSpanKnotHost(host.typeId)) {
+            const braceId = host.entityId;
             const brace = state.braces[braceId];
             if (!brace) return undefined;
 
@@ -2221,8 +2225,9 @@ export function removeRootById(rootId: string): Roots | null {
 // --- Actions ---
 
 export function toggleSegmentCurve(segmentId: string) {
-    if (segmentId.startsWith('braceSegment:')) {
-        const braceId = segmentId.slice('braceSegment:'.length);
+    const span = parsePrefixedSegmentId(segmentId);
+    if (span) {
+        const braceId = span.entityId;
         const brace = state.braces[braceId];
         if (!brace) return;
 
@@ -2547,6 +2552,20 @@ function isolateImportedSupportPayload(data: DragonfruitImportFormat): Dragonfru
     const segmentIdMap = new Map<string, string>();
     const jointIdMap = new Map<string, string>();
 
+    // A knot's parentShaftId either names a pseudo-shaft (prefix + entity id) or
+    // a real segment. The prefix and the id map both follow from the host type,
+    // so neither is spelled out at the two call sites below.
+    const hostIdMapByType = new Map<SupportTypeId, Map<string, string>>();
+    for (const typeId of CONE_KNOT_HOST_TYPES) hostIdMapByType.set(typeId, leafIdMap);
+    for (const typeId of SPAN_KNOT_HOST_TYPES) hostIdMapByType.set(typeId, braceIdMap);
+
+    const remapParentShaftId = (parentShaftId: string): string => {
+        const host = parseKnotHostId(parentShaftId);
+        const hostIdMap = host && hostIdMapByType.get(host.typeId);
+        if (!host || !hostIdMap) return getOrCreateMappedId(parentShaftId, segmentIdMap);
+        return knotHostId(host.typeId, getOrCreateMappedId(host.entityId, hostIdMap));
+    };
+
     const kickstandRootIdMap = new Map<string, string>();
     const kickstandKnotIdMap = new Map<string, string>();
 
@@ -2731,11 +2750,7 @@ function isolateImportedSupportPayload(data: DragonfruitImportFormat): Dragonfru
             };
         });
 
-        const hostParentShaftId = build.hostKnot.parentShaftId.startsWith('leafCone:')
-            ? `leafCone:${getOrCreateMappedId(build.hostKnot.parentShaftId.slice('leafCone:'.length), leafIdMap)}`
-            : build.hostKnot.parentShaftId.startsWith('braceSegment:')
-                ? `braceSegment:${getOrCreateMappedId(build.hostKnot.parentShaftId.slice('braceSegment:'.length), braceIdMap)}`
-                : getOrCreateMappedId(build.hostKnot.parentShaftId, segmentIdMap);
+        const hostParentShaftId = remapParentShaftId(build.hostKnot.parentShaftId);
 
         return {
             root: {
@@ -2759,16 +2774,7 @@ function isolateImportedSupportPayload(data: DragonfruitImportFormat): Dragonfru
     });
 
     cloned.knots = cloned.knots.map((knot) => {
-        let parentShaftId = knot.parentShaftId;
-        if (parentShaftId.startsWith('leafCone:')) {
-            const leafId = parentShaftId.slice('leafCone:'.length);
-            parentShaftId = `leafCone:${getOrCreateMappedId(leafId, leafIdMap)}`;
-        } else if (parentShaftId.startsWith('braceSegment:')) {
-            const braceId = parentShaftId.slice('braceSegment:'.length);
-            parentShaftId = `braceSegment:${getOrCreateMappedId(braceId, braceIdMap)}`;
-        } else {
-            parentShaftId = getOrCreateMappedId(parentShaftId, segmentIdMap);
-        }
+        const parentShaftId = remapParentShaftId(knot.parentShaftId);
 
         return {
             ...knot,
@@ -3070,9 +3076,9 @@ function applySupportEntityUpdate(
 
         if (knotsChanged) {
             nextLeaves = recomputeKnotDependentGeometry(state.leaves, movedKnotPosById);
-            const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, updatedKnots);
-            const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, leafCone.knots);
-            nextKnots = braceSeg.knots;
+            const coneHost = recomputeConeHostKnotGeometry(nextLeaves, updatedKnots);
+            const spanHost = recomputeSpanHostKnotGeometry(state.braces, coneHost.knots);
+            nextKnots = spanHost.knots;
         }
     }
 
@@ -3112,13 +3118,13 @@ export function updateLeaf(leaf: Leaf) {
     }
 
     const nextLeaves = { ...state.leaves, [nextLeaf.id]: { ...nextLeaf, typeId: resolveSupportTypeIdOf(nextLeaf) ?? nextLeaf.typeId } };
-    const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, state.knots);
-    const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, leafCone.knots);
+    const coneHost = recomputeConeHostKnotGeometry(nextLeaves, state.knots);
+    const spanHost = recomputeSpanHostKnotGeometry(state.braces, coneHost.knots);
 
     setState({
         ...state,
         leaves: nextLeaves,
-        knots: braceSeg.knots,
+        knots: spanHost.knots,
     });
     notify();
 }
@@ -3232,17 +3238,17 @@ export function updateBrace(brace: Brace) {
     // The brace's own knots move first -- that is what changed -- and the leaf
     // pass runs only if they did. Ordering matters here, so this does not use
     // `settleKnotDependentGeometry`, which starts from the leaf side.
-    const braceSeg1 = recomputeBraceSegmentKnotGeometry(nextBraces, state.knots);
-    const changedByBrace1 = getChangedKnotPositions(state.knots, braceSeg1.knots);
+    const spanHost1 = recomputeSpanHostKnotGeometry(nextBraces, state.knots);
+    const changedByBrace1 = getChangedKnotPositions(state.knots, spanHost1.knots);
 
     let nextLeaves = state.leaves;
-    let nextKnots = braceSeg1.knots;
+    let nextKnots = spanHost1.knots;
 
     if (Object.keys(changedByBrace1).length > 0) {
         nextLeaves = recomputeKnotDependentGeometry(nextLeaves, changedByBrace1);
-        const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, nextKnots);
-        const braceSeg2 = recomputeBraceSegmentKnotGeometry(nextBraces, leafCone.knots);
-        nextKnots = braceSeg2.knots;
+        const coneHost = recomputeConeHostKnotGeometry(nextLeaves, nextKnots);
+        const spanHost2 = recomputeSpanHostKnotGeometry(nextBraces, coneHost.knots);
+        nextKnots = spanHost2.knots;
     }
 
     setState({
@@ -3307,8 +3313,8 @@ export function updateKnot(knot: Knot, options?: { skipDependentGeometry?: boole
     if (skipDependentGeometry) {
         // Drag-time fast path: keep knot + brace-segment knots responsive while
         // deferring expensive leaf-dependent geometry recomputes until commit.
-        const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, baseKnots);
-        setState({ ...state, knots: braceSeg.knots });
+        const spanHost = recomputeSpanHostKnotGeometry(state.braces, baseKnots);
+        setState({ ...state, knots: spanHost.knots });
         notify();
         return;
     }
@@ -3453,9 +3459,9 @@ export function getHoveredCategory() {
 export function getModelIdForSupportEntityId(id: string | null | undefined): string | null {
     if (!id) return null;
 
-    if (id.startsWith('braceSegment:')) {
-        const braceId = id.slice('braceSegment:'.length);
-        return (state.braces[braceId] as { modelId?: string } | undefined)?.modelId ?? null;
+    const span = parsePrefixedSegmentId(id);
+    if (span) {
+        return (state.braces[span.entityId] as { modelId?: string } | undefined)?.modelId ?? null;
     }
 
     const modelIdOf = (entity: unknown) => (entity as { modelId?: string } | undefined)?.modelId ?? null;
@@ -3799,8 +3805,9 @@ export function resolveEditableSupportTarget(selectedId: string | null, selected
         if (!knot) return null;
 
         // A leaf's own cone knot encodes its owner in the shaft id.
-        if (knot.parentShaftId.startsWith('leafCone:')) {
-            const leafId = knot.parentShaftId.slice('leafCone:'.length);
+        const coneHost = parseKnotHostId(knot.parentShaftId);
+        if (coneHost && isConeKnotHost(coneHost.typeId)) {
+            const leafId = coneHost.entityId;
             if (state.leaves[leafId]) return { kind: 'leaf', id: leafId };
         }
 

@@ -142,17 +142,24 @@ export function calculateKnotPositionOnSegmentFromT(
 }
 
 /**
- * What a knot rides: a support type's shaft, or a leaf's contact cone. The cone
- * is a primitive rather than a type, so it is named alongside the type ids.
+ * What a knot rides: always the type that owns the host.
+ *
+ * A cone host used to be a ninth member of this union, spelled out as a string,
+ * which meant a type rename left it behind. The cone belongs to the type that
+ * declares it (`knotHostPrefix`), so the type id answers for it, and whether a
+ * host is a cone or a real shaft is asked with `isConeKnotHost`.
  */
-export type KnotHostType = SupportTypeId | 'leafCone';
+export type KnotHostType = SupportTypeId;
 
 /**
  * History label for moving a knot. The type id is already the singular noun, so
  * a ninth type reads correctly without being listed here.
  */
-export function knotMoveDescription(host: KnotHostType | null | undefined): string {
+export function knotMoveDescription(
+    host: KnotHostType | null | undefined,
+    ridesCone = false,
+): string {
     if (!host) return 'Move support knot';
-    return host === 'leafCone' ? 'Move tip knot' : `Move ${host} knot`;
+    return ridesCone ? 'Move tip knot' : `Move ${host} knot`;
 }
 

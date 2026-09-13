@@ -380,7 +380,7 @@ const _leafRaycaster = new THREE.Raycaster();
  *  Raycasts from the knot toward a point just before the tip (offset inward
  *  along the surface normal), excluding the tip contact itself.  Returns true
  *  if the ray hits a model triangle before reaching the offset point. */
-function leafConeCollides(
+function contactConeCollides(
     knotPos: { x: number; y: number; z: number },
     cone: { pos: { x: number; y: number; z: number }; surfaceNormal?: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number } },
     mesh: THREE.Mesh,
@@ -442,7 +442,7 @@ function branchCollidesWithSDF(
 
 /**
  * Count how many knots (branches + leaves) ride the host's shaft.
- * Does NOT count brace knots (they use braceSegment: prefix).
+ * Does NOT count brace knots (they ride their type's declared span prefix).
  */
 function countAttachmentsOnHost(
     hostTypeId: SupportTypeId,
@@ -890,7 +890,7 @@ function placeOneCandidate(
                             if (sd.error) {
                                 logPlacement(
                                     `Leaf (merge) ${candidate.id}: sd.error, trying branch...`);
-                            } else if (mesh && leafConeCollides(parentKnot.pos, leaf.contactCone, mesh)) {
+                            } else if (mesh && contactConeCollides(parentKnot.pos, leaf.contactCone, mesh)) {
                                 logPlacement(
                                     `Leaf (merge) ${candidate.id}: triangle collision, trying branch...`);
                             } else {
@@ -1690,7 +1690,7 @@ export function validateAndCullOrphans(
                 if (cone && mesh) {
                     const normal = cone.normal ?? { x: 0, y: 0, z: -1 };
                     const surfaceNormal = cone.surfaceNormal;
-                    blocked = leafConeCollides(knot.pos, { pos: cone.pos, normal, surfaceNormal }, mesh);
+                    blocked = contactConeCollides(knot.pos, { pos: cone.pos, normal, surfaceNormal }, mesh);
                 } else if (mesh) {
                     blocked = isShaftBlocked(knot.pos, tipPos, 0.2, mesh);
                 }

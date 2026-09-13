@@ -33,7 +33,7 @@ import { applyRepeatingPattern } from './repeatingPattern';
 import { runZigZagChain } from './zigzagChain';
 import { buildBraceProfile } from './braceDiameter';
 import type { KickstandBuildResult } from '../SupportTypes/Kickstand/types';
-import { generateLateralStabilisers, getSupportTypeDescriptor, isAutoBraceableShaftType, isLateralStabiliserType, lateralStabiliserTypes, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
+import { generateLateralStabilisers, getSupportTypeDescriptor, parsePrefixedSegmentId, isAutoBraceableShaftType, isLateralStabiliserType, lateralStabiliserTypes, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
 import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
 import { linePassesMeshClearance } from './meshClearance';
 
@@ -707,7 +707,9 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     const nextKnots: Record<string, Knot> = {};
     for (const [id, k] of Object.entries(snapshot.knots)) { if (!braceKnotIds.has(id) || preservedKnotIds.has(id)) nextKnots[id] = k; }
 
-    const selectedBraceId = snapshot.selectedId?.replace('braceSegment:', '');
+    const selectedBraceId = snapshot.selectedId
+        ? parsePrefixedSegmentId(snapshot.selectedId)?.entityId ?? snapshot.selectedId
+        : undefined;
     const nextSnapshot: SupportState = {
         ...snapshot,
         braces: keptBraces,

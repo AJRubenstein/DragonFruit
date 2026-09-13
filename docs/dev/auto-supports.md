@@ -138,7 +138,7 @@ A run returns `AutoPlaceAnalytics` and a `ForestReport`; `forestReportToText` re
 - **SCAN** — `209 islands (voxel …) → 187 candidates · 1 overhang` plus `coverage 100% of 438mm²`. Coverage is the  footprint fraction @3mm.
 - **ORPHANS CULLED** — grouped by `reason` with counts and human-readable help, then per-entity `id (kind) reason @host knot … — detail`:
   - `hostBlocked` — shaft pierces mesh (would print through model, SDF `distance < radius` on `isShaftBlocked`)
-  - `blocked` — `knot→tip` ray hits mesh (`leafConeCollides` offset ray, tip-0.5mm, not straight segment; `branchCollidesWithSDF` for branches)
+  - `blocked` — `knot→tip` ray hits mesh (`contactConeCollides` offset ray, tip-0.5mm, not straight segment; `branchCollidesWithSDF` for branches)
   - `missingHost`/`missingSegment`/`missingKnot` — knot points to segment/trunk that has no joints or was culled (legacy `trunkId` before `segmentId+t` rehost)
   - `drift` — knot >0.5mm from host shaft (split offset, `pointToSegmentDistanceSq >0.25`)
   - `cross` — leaf/branch crosses another shaft after thickening (`leafPathCrossesSupports` `radius 0.25`, kept but flagged)

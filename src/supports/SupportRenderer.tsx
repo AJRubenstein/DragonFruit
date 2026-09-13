@@ -19,7 +19,7 @@ import {
 } from './supportPlacementPreviewMath';
 import { buildSegmentPreviewBatch } from './previewGeometry/seam';
 import './previewGeometry/registerBuiltinPreviewBuilders';
-import { anyContactMatches, collectOwnedRootIds, contactEndpointsFor, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
+import { anyContactMatches, collectOwnedRootIds, contactEndpointsFor, parseKnotHostId, knotHostId, isConeKnotHost, isSpanKnotHost, spanKnotHostType, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
 import { buildKnotIndex, selectedIdsForType, type CollectionLookup, type SelectionInputs } from './interaction/shared/selection/selectedIdsByType';
 import { resolveSegmentEndpoints, type EndpointHosts } from './SupportPrimitives/Knot/segmentEndpoints';
 import './detailRenderer/registerBuiltinDetailRenderers';
@@ -531,14 +531,15 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         const resolveParentShaftInterior = (parentShaftId?: string, visitedBraceIds?: Set<string>): boolean => {
             if (!parentShaftId) return false;
 
-            if (parentShaftId.startsWith('leafCone:')) {
-                const leafId = parentShaftId.slice('leafCone:'.length);
-                const leaf = state.leaves[leafId];
+            const host = parseKnotHostId(parentShaftId);
+
+            if (host && isConeKnotHost(host.typeId)) {
+                const leaf = state.leaves[host.entityId];
                 return !!leaf && matchesInteriorContact(leaf.contactCone, leaf.modelId);
             }
 
-            if (parentShaftId.startsWith('braceSegment:')) {
-                const braceId = parentShaftId.slice('braceSegment:'.length);
+            if (host && isSpanKnotHost(host.typeId)) {
+                const braceId = host.entityId;
                 const brace = state.braces[braceId];
                 if (!brace) return false;
                 if (brace.placementSurface === 'interior') return true;
@@ -1166,7 +1167,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
 
         for (const brace of braceList) {
-            map.set(`braceSegment:${brace.id}`, brace.id);
+            map.set(knotHostId(spanKnotHostType(), brace.id), brace.id);
         }
 
         return map;
@@ -1607,7 +1608,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             }
 
             const diameter = (startHostDiameter + endHostDiameter) * 0.5;
-            const segmentId = `braceSegment:${brace.id}`;
+            const segmentId = knotHostId(spanKnotHostType(), brace.id);
             const shafts = brace.curve?.type === 'bezier'
                 ? [braceBezierToBatchedShaft(
                     segmentId,
@@ -1704,36 +1705,23 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const modelIdByKnotId = useMemo(() => {
         const map = new Map<string, string | undefined>();
 
-        for (const knot of renderKnotList) {
-            const parentShaftId = knot.parentShaftId;
-            let modelId: string | undefined;
+        // A knot either rides a declared pseudo-shaft or a real segment; which
+        // host kind reads which collection follows from the registry.
+        const modelIdOfParentShaft = (parentShaftId: string): string | undefined => {
+            const host = parseKnotHostId(parentShaftId);
+            if (host && isSpanKnotHost(host.typeId)) return renderBracesById[host.entityId]?.modelId;
+            if (host && isConeKnotHost(host.typeId)) return renderLeavesById[host.entityId]?.modelId;
+            return segmentModelIdById.get(parentShaftId);
+        };
 
-            if (parentShaftId.startsWith('braceSegment:')) {
-                const braceId = parentShaftId.slice('braceSegment:'.length);
-                modelId = renderBracesById[braceId]?.modelId;
-            } else if (parentShaftId.startsWith('leafCone:')) {
-                const leafId = parentShaftId.slice('leafCone:'.length);
-                modelId = renderLeavesById[leafId]?.modelId;
-            } else {
-                modelId = segmentModelIdById.get(parentShaftId);
-            }
+        for (const knot of renderKnotList) {
+            const modelId = modelIdOfParentShaft(knot.parentShaftId);
 
             map.set(knot.id, modelId);
         }
 
         for (const knot of renderKickstandKnotList) {
-            const parentShaftId = knot.parentShaftId;
-            let modelId: string | undefined;
-
-            if (parentShaftId.startsWith('braceSegment:')) {
-                const braceId = parentShaftId.slice('braceSegment:'.length);
-                modelId = renderBracesById[braceId]?.modelId;
-            } else if (parentShaftId.startsWith('leafCone:')) {
-                const leafId = parentShaftId.slice('leafCone:'.length);
-                modelId = renderLeavesById[leafId]?.modelId;
-            } else {
-                modelId = segmentModelIdById.get(parentShaftId);
-            }
+            const modelId = modelIdOfParentShaft(knot.parentShaftId);
 
             map.set(knot.id, modelId);
         }

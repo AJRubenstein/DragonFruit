@@ -263,7 +263,7 @@ function mergeSupportClipboardPayload(
     const id = knotIdMap.get(knot.id) ?? uuidv4();
 
     // A knot names a shaft segment, or one of the prefixed pseudo-shafts a
-    // type declares (`leafCone:`, `braceSegment:`) -- resolved through the
+    // type declares as its `knotHostPrefix` -- resolved through the
     // prefix owner's own id map.
     let parentShaftId = knot.parentShaftId;
     const prefixOwner = SUPPORT_TYPES.find((descriptor) => descriptor.knotHostPrefix

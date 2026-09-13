@@ -49,7 +49,7 @@ function collectAllSupportIds() {
 
 /**
  * @deprecated for removal -- prefer `findShaftOwnerOfSegment(id)` from state,
- * which resolves every type and brace's `braceSegment:` prefix from the registry.
+ * which resolves every type's declared segment prefix from the registry.
  */
 export function resolveSupportOwnerFromSegmentId(segmentId: string) {
   const owner = findShaftOwnerOfSegment(segmentId);

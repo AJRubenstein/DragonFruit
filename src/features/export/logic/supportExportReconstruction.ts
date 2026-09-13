@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { bezierToLineSegments } from '@/supports/Curves/BezierUtils';
 import { getModelIdForSupportEntityId } from '@/supports/state';
 import { buildSupportExportGroup, type SupportExportContext } from '@/supports/exportGeometry/seam';
-import { exportGroupName, getSupportTypeDescriptor, parseKnotHostId, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '@/supports/supportTypeRegistry';
+import { exportGroupName, getSupportTypeDescriptor, parseKnotHostId, parsePrefixedSegmentId, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone';
 import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getRaftSettingsForModel } from '@/supports/Rafts/Crenelated/RaftState';
@@ -111,8 +111,9 @@ function createScopedModelIdResolver(
   const resolve: ModelIdResolver = (id) => {
     if (!id) return null;
 
-    if (id.startsWith('braceSegment:')) {
-      return supportState.braces[id.slice('braceSegment:'.length)]?.modelId ?? null;
+    const span = parsePrefixedSegmentId(id);
+    if (span) {
+      return supportState.braces[span.entityId]?.modelId ?? null;
     }
 
     if (supportState.roots[id]) return supportState.roots[id].modelId ?? null;

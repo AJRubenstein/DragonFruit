@@ -3,7 +3,7 @@ import { getJointDiameter } from '../../../constants';
 import { splitSupportShaft } from '../../../SupportPrimitives/Joint/jointUtils';
 import { resolveSegmentEndpoints } from '../../../SupportPrimitives/Knot/segmentEndpoints';
 import { getSettings } from '../../../Settings/state';
-import { getSupportTypeDescriptor, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '../../../supportTypeRegistry';
+import { coneKnotHostType, getSupportTypeDescriptor, knotHostId, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '../../../supportTypeRegistry';
 
 function maxNum(a: number, b: number) {
     return a > b ? a : b;
@@ -66,8 +66,8 @@ function ownerOfShaft(snapshot: SupportState, shaftId: string): { typeId: Suppor
 }
 
 
-function leafConeKey(leafId: string) {
-    return `leafCone:${leafId}`;
+function coneHostKey(leafId: string) {
+    return knotHostId(coneKnotHostType(), leafId);
 }
 
 /**
@@ -142,7 +142,7 @@ export function computeMaxConnectedDiameterFromTrunk(snapshot: SupportState, tru
             }
 
             // A leaf's cone is addressed as a shaft too, so a knot can sit on it.
-            for (const knotId of knotIdsByShaft.get(leafConeKey(next.id)) ?? []) knotQueue.push(knotId);
+            for (const knotId of knotIdsByShaft.get(coneHostKey(next.id)) ?? []) knotQueue.push(knotId);
 
             continue;
         }

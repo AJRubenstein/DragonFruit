@@ -2184,6 +2184,78 @@ export function parseKnotHostId(
     return null;
 }
 
+/**
+ * The two kinds of pseudo-shaft a knot can ride, told apart by what they
+ * declare rather than by name.
+ *
+ * A SPAN is selectable as a segment, so it declares a `segmentSelectionPrefix`
+ * too (a brace's span between its knots). A CONE host is a knot host only (a
+ * leaf's contact cone), so it declares no segment prefix -- which is exactly
+ * the distinction `implicitSegmentCount` already relies on.
+ */
+function knotHostTypesWhere(wantsSegment: boolean): readonly SupportTypeId[] {
+    return SUPPORT_TYPES
+        .filter((d) => d.knotHostPrefix && !!d.segmentSelectionPrefix === wantsSegment)
+        .map((d) => d.id);
+}
+
+/** Types whose knot host is a cone, not a selectable span. */
+export const CONE_KNOT_HOST_TYPES: readonly SupportTypeId[] = knotHostTypesWhere(false);
+
+/** Types whose knot host is a span that is also selectable as a segment. */
+export const SPAN_KNOT_HOST_TYPES: readonly SupportTypeId[] = knotHostTypesWhere(true);
+
+/** Whether this type hosts knots on a cone rather than a span. */
+export function isConeKnotHost(typeId: SupportTypeId): boolean {
+    return CONE_KNOT_HOST_TYPES.includes(typeId);
+}
+
+/**
+ * The single type whose knot host is a selectable span.
+ *
+ * Callers that build such an id hold the entity but not its type; there is one
+ * span host, and this asserts that rather than assuming it silently.
+ */
+export function spanKnotHostType(): SupportTypeId {
+    const [typeId, ...rest] = SPAN_KNOT_HOST_TYPES;
+    if (!typeId || rest.length > 0) {
+        throw new Error(
+            `expected exactly one span knot host, found: ${SPAN_KNOT_HOST_TYPES.join(', ') || 'none'}. `
+            + 'A caller builds these ids without holding a type; give it the type instead.',
+        );
+    }
+    return typeId;
+}
+
+/**
+ * The single type whose knot host is a contact cone. Same contract as
+ * `spanKnotHostType`: it asserts the "exactly one" rather than assuming it.
+ */
+export function coneKnotHostType(): SupportTypeId {
+    const [typeId, ...rest] = CONE_KNOT_HOST_TYPES;
+    if (!typeId || rest.length > 0) {
+        throw new Error(
+            `expected exactly one cone knot host, found: ${CONE_KNOT_HOST_TYPES.join(', ') || 'none'}. `
+            + 'A caller builds these ids without holding a type; give it the type instead.',
+        );
+    }
+    return typeId;
+}
+
+/** Whether this type hosts knots on a selectable span. */
+export function isSpanKnotHost(typeId: SupportTypeId): boolean {
+    return SPAN_KNOT_HOST_TYPES.includes(typeId);
+}
+
+/**
+ * Whether a `parentShaftId` names a pseudo-shaft rather than a real segment.
+ * Callers that skip such knots used to test each declared prefix by hand, so a
+ * type gaining one was silently left out.
+ */
+export function isKnotHostId(parentShaftId: string): boolean {
+    return parseKnotHostId(parentShaftId) !== null;
+}
+
 /** The `parentShaftId` a knot carries when it rides this type's pseudo-shaft. */
 export function knotHostId(typeId: SupportTypeId, entityId: string): string {
     const prefix = getSupportTypeDescriptor(typeId).knotHostPrefix;

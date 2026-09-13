@@ -19,7 +19,7 @@ import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { matchesConfiguredHotkeyUp } from '@/hotkeys/hotkeyConfig';
 import { subscribe, getSnapshot, addBranch, addKnot, addSupportEntityWithHistory } from '../../state';
-import { buildContactBridge, selectTypeForPlacement } from '../../supportTypeRegistry';
+import { buildContactBridge, parsePrefixedSegmentId, selectTypeForPlacement } from '../../supportTypeRegistry';
 import type { SupportTypeId } from '../../supportTypeRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { getClipBounds } from '@/components/scene/SceneCanvas/clipBoundsStore';
@@ -386,8 +386,9 @@ export function BranchPlacementController() {
             }
 
             // If snapped to a brace, compute local tapered host diameter.
-            if (resolvedSnap.targetId.startsWith('braceSegment:')) {
-                const braceId = resolvedSnap.targetId.slice('braceSegment:'.length);
+            const snapSpan = parsePrefixedSegmentId(resolvedSnap.targetId);
+            if (snapSpan) {
+                const braceId = snapSpan.entityId;
                 const brace = supportState.braces[braceId];
                 const startKnot = brace ? supportState.knots[brace.startKnotId] : undefined;
                 const endKnot = brace ? supportState.knots[brace.endKnotId] : undefined;
@@ -475,8 +476,9 @@ export function BranchPlacementController() {
                     t = projected.t;
                     hostDiameterMm = hoveredTarget.pathSegment.radius * 2;
 
-                    if (segmentId.startsWith('braceSegment:')) {
-                        const braceId = segmentId.slice('braceSegment:'.length);
+                    const hoverSpan = parsePrefixedSegmentId(segmentId);
+                    if (hoverSpan) {
+                        const braceId = hoverSpan.entityId;
                         const brace = supportState.braces[braceId];
                         const startKnot = brace ? supportState.knots[brace.startKnotId] : undefined;
                         const endKnot = brace ? supportState.knots[brace.endKnotId] : undefined;

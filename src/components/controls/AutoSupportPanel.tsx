@@ -15,7 +15,7 @@ import { AUTO_SUPPORT_CONSTRAINTS } from '@/supports/autoSupport';
 import type { SizingDebugInfo, AutoSupportSettings, ForestReport, NumericAutoSupportSettingKey } from '@/supports/autoSupport';
 import { getSettings, updateAutoSupportSettings, subscribeToSettings, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
 import { getSnapshot, setSnapshot } from '@/supports/state';
-import { SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
+import { knotHostId, coneKnotHostType, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 import type { Knot } from '@/supports/types';
 /** Set to true while auto-support is busy (scanning or placing).
  *  Page-level overlay reads this to show the "Generating Supports"
@@ -287,7 +287,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
       // six other consumers treat leaves. Kept explicit until that is a
       // deliberate change of its own.
       for (const l of Object.values(next.leaves)) {
-        survivingSegmentIds.add(`leafCone:${l.id}`);
+        survivingSegmentIds.add(knotHostId(coneKnotHostType(), l.id));
       }
       // The model's kickstands are supports too — drop them from the
       // kickstand store. They used to leak into the next run: stale roots
