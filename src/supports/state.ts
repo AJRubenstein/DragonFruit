@@ -8,7 +8,7 @@ import {
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, parsePrefixedSegmentId, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
@@ -3110,7 +3110,7 @@ export function updateLeaf(leaf: Leaf) {
         setCachedSupportSettingsHex('leaf', nextLeaf.id, nextLeaf.settingsCodeHex);
     }
 
-    const nextLeaves = { ...state.leaves, [nextLeaf.id]: { ...nextLeaf, typeId: 'leaf' as const } };
+    const nextLeaves = { ...state.leaves, [nextLeaf.id]: { ...nextLeaf, typeId: resolveSupportTypeIdOf(nextLeaf) ?? nextLeaf.typeId } };
     const leafCone = recomputeLeafConeKnotGeometry(nextLeaves, state.knots);
     const braceSeg = recomputeBraceSegmentKnotGeometry(state.braces, leafCone.knots);
 
@@ -3223,7 +3223,10 @@ for (const descriptor of SUPPORT_TYPES) {
  */
 export function updateBrace(brace: Brace) {
     if (!state.braces[brace.id]) return;
-    const nextBraces = { ...state.braces, [brace.id]: { ...brace, typeId: 'brace' as const } };
+    // The type comes off the entity the caller handed back, so a renamed brace
+    // type reaches this stamp instead of writing the old id into the store. The
+    // guard above means the entity is in the store, so the lookup cannot miss.
+    const nextBraces = { ...state.braces, [brace.id]: { ...brace, typeId: resolveSupportTypeIdOf(brace) ?? brace.typeId } };
 
     // The brace's own knots move first -- that is what changed -- and the leaf
     // pass runs only if they did. Ordering matters here, so this does not use

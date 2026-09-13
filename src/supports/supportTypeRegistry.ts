@@ -244,6 +244,15 @@ export interface SupportTypeDescriptor {
      */
     hostsKickstand: boolean;
     /**
+     * Whether the auto-support pass places this type, and the ledger reports it.
+     *
+     * Trunk, anchor, leaf, branch, stick and twig: the pass picks them and counts
+     * them. Brace and kickstand are absent because they are added by hand or by
+     * their own placement tools, never by that pass. Read through
+     * `AUTO_PLACED_TYPE_IDS`, or `AUTO_PLACED_BY_TYPE` for the narrowed union.
+     */
+    isAutoPlaced: boolean;
+    /**
      * Whether instances carry real shafts, for segment and joint walks. */
     hasSegments: boolean;
     /**
@@ -611,6 +620,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoBraceable: true,
         lower: { kind: 'plateRoot' },
         upper: { kind: 'cone', field: 'contactCone' },
+        isAutoPlaced: true,
         hasSegments: true,
         label: 'Trunks',
         singular: 'trunk',
@@ -661,6 +671,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         mayReachSideways: false,
         canBeGridHost: false,
         hostsKickstand: true,
+        isAutoPlaced: true,
         hasSegments: true,
         label: 'Branches',
         singular: 'branch',
@@ -711,6 +722,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         mayReachSideways: false,
         canBeGridHost: false,
         hostsKickstand: false,
+        isAutoPlaced: true,
         hasSegments: false,
         label: 'Leaves',
         singular: 'leaf',
@@ -755,6 +767,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         mayReachSideways: true,
         canBeGridHost: false,
         hostsKickstand: false,
+        isAutoPlaced: true,
         hasSegments: true,
         label: 'Twigs',
         singular: 'twig',
@@ -798,6 +811,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         mayReachSideways: false,
         canBeGridHost: false,
         hostsKickstand: false,
+        isAutoPlaced: true,
         hasSegments: true,
         label: 'Sticks',
         singular: 'stick',
@@ -847,6 +861,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         mayReachSideways: false,
         canBeGridHost: false,
         hostsKickstand: false,
+        isAutoPlaced: false,
         hasSegments: false,
         label: 'Braces',
         singular: 'brace',
@@ -895,6 +910,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         mayReachSideways: false,
         canBeGridHost: false,
         hostsKickstand: false,
+        isAutoPlaced: true,
         hasSegments: true,
         label: 'Anchors',
         singular: 'anchor',
@@ -946,6 +962,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         mayReachSideways: false,
         canBeGridHost: false,
         hostsKickstand: false,
+        isAutoPlaced: false,
         hasSegments: true,
         label: 'Kickstands',
         singular: 'kickstand',
@@ -1867,28 +1884,39 @@ export const GRID_HOST_TYPES: readonly SupportTypeDescriptor[] = SUPPORT_TYPES.f
 );
 
 /**
- * Types the auto-placement pass can place, in registry order.
+ * Mirrors each descriptor's `isAutoPlaced` with the literals kept, so the ledger
+ * keeps the NARROW union of these names (`PlacedKind`) instead of widening to
+ * `SupportTypeId`. This used to be a hand-written tuple defended on the grounds
+ * that "a runtime filter only yields `SupportTypeId`" -- true of a filter, but a
+ * literal map gives both, which `KICKSTAND_HOST_BY_TYPE` already showed.
  *
- * A literal tuple rather than a filter over a descriptor flag: the ledger needs
- * the NARROW union of these names (`PlacedKind`), and a runtime filter only
- * yields `SupportTypeId`. Declared here because the registry is the one place a
- * type may be named -- every consumer derives from this.
- *
- * Brace and kickstand are absent: auto-placement neither places nor reports
- * them; they are only ever added by hand or by their own placement tools.
+ * The cost of the tuple was a rename hazard nothing could see: the stale literal
+ * errored only inside this file, which every check exempts as the naming point,
+ * so `PlacedKind` went on containing a name that no longer existed and a consumer
+ * kept compiling while writing it. Held to the flag by `derivedTypeSubsets.test.ts`.
  */
-export const AUTO_PLACED_TYPE_IDS = ['trunk', 'anchor', 'leaf', 'branch', 'stick', 'twig'] as const satisfies readonly SupportTypeId[];
+export const AUTO_PLACED_BY_TYPE = {
+    trunk: true,
+    branch: true,
+    leaf: true,
+    twig: true,
+    stick: true,
+    brace: false,
+    anchor: true,
+    kickstand: false,
+} as const satisfies Record<SupportTypeId, boolean>;
 
 /** A type the auto-placement pass can place. */
-export type AutoPlacedTypeId = (typeof AUTO_PLACED_TYPE_IDS)[number];
+export type AutoPlacedTypeId = {
+    [K in SupportTypeId]: (typeof AUTO_PLACED_BY_TYPE)[K] extends true ? K : never;
+}[SupportTypeId];
 
-/**
- * Whether a placed kind is one the ledger reports.
- *
- * Declared here beside the set, because a type predicate has to be able to name
- * the narrowed type — and a name belongs at the naming point, not in the
- * consumer that happens to read the set.
- */
+/** Every type that pass can place, in registry order. */
+export const AUTO_PLACED_TYPE_IDS: readonly AutoPlacedTypeId[] =
+    (Object.keys(AUTO_PLACED_BY_TYPE) as SupportTypeId[])
+        .filter((id): id is AutoPlacedTypeId => AUTO_PLACED_BY_TYPE[id]);
+
+/** Whether a placed kind is one the ledger reports. */
 export function isAutoPlacedType(kind: SupportTypeId | 'reject'): kind is AutoPlacedTypeId {
     return (AUTO_PLACED_TYPE_IDS as readonly string[]).includes(kind);
 }

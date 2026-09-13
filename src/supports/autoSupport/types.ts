@@ -1,6 +1,8 @@
 import type { Vec3, SupportState } from '../types';
 import { AUTO_PLACED_TYPE_IDS, type AutoPlacedTypeId, type SupportTypeId } from '../supportTypeRegistry';
 
+export type { AutoPlacedTypeId };
+
 /**
  * Auto-placement reports cover a subset of the support types, not all of them.
  * `Extract` keeps each subset narrow while tying the names to the registry, so

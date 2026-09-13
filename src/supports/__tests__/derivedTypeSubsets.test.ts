@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    AUTO_PLACED_BY_TYPE,
+    AUTO_PLACED_TYPE_IDS,
     JOINT_REMOVAL_BY_TYPE,
     KICKSTAND_HOST_BY_TYPE,
     KICKSTAND_HOST_TYPES,
     SUPPORT_TYPES,
+    type AutoPlacedTypeId,
     type JointRemovalTypeId,
     type KickstandHostTypeId,
 } from '../supportTypeRegistry';
@@ -30,6 +33,12 @@ test('the kickstand host set is exactly the types declaring hostsKickstand', () 
     assert.deepEqual(idsSet(KICKSTAND_HOST_BY_TYPE), declared);
 });
 
+test('the auto-placed set is exactly the types declaring isAutoPlaced', () => {
+    const declared = idsFlagged((descriptor) => descriptor.isAutoPlaced);
+    assert.deepEqual([...AUTO_PLACED_TYPE_IDS].sort(), declared);
+    assert.deepEqual(idsSet(AUTO_PLACED_BY_TYPE), declared);
+});
+
 test('the joint-removal set is exactly the shafted types resolving an endpoint elsewhere', () => {
     assert.deepEqual(
         idsSet(JOINT_REMOVAL_BY_TYPE),
@@ -47,6 +56,9 @@ test('a type outside a declared subset is not assignable to it', () => {
     const notAHost: KickstandHostTypeId = 'leaf';
     // @ts-expect-error — twig carries both its own joints, so it removes none alone
     const notJointRemovable: JointRemovalTypeId = 'twig';
+    // @ts-expect-error — brace is placed by hand, never by the auto-support pass
+    const notAutoPlaced: AutoPlacedTypeId = 'brace';
     assert.equal(notAHost, 'leaf');
     assert.equal(notJointRemovable, 'twig');
+    assert.equal(notAutoPlaced, 'brace');
 });

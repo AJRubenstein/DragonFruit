@@ -11,7 +11,7 @@ import { quantizeToScale } from '@/utils/math';
  */
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
-import type { AttachmentKind, CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo, PlacementOutcomeKind } from './types';
+import type { AttachmentKind, AutoPlacedTypeId, CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo, PlacementOutcomeKind } from './types';
 import { isLedgerKind } from './types';
 import type { Branch, Segment, SupportState, SupportOrigin, Vec3 } from '../types';
 import type { AutoSupportSettings } from './settings';
@@ -594,7 +594,7 @@ export function buildConsolidationBranch(args: {
     radiusMm: number;
     maxAttachments: number;
     knotId: string;
-}): { draft: SupportState; branchId: string } | null {
+}): { draft: SupportState; branchId: string; kind: AutoPlacedTypeId } | null {
     const { tip, tipNormal, modelId, pool, pruned, mesh, radiusMm, maxAttachments, knotId } = args;
 
     // Steepest eligible host sample (≤ the branch-angle rule from vertical —
@@ -650,7 +650,7 @@ export function buildConsolidationBranch(args: {
         let d = draftAddPrimitive(pruned, 'knots', parentKnot);
         branch.origin = 'overhang';
         d = draftAddEntity(d, 'branch', branch);
-        return { draft: d, branchId: branch.id };
+        return { draft: d, branchId: branch.id, kind: 'branch' };
     } catch {
         return null;
     }
@@ -2667,7 +2667,9 @@ export function computeAutoSupportPlan(
                     convertedThisPass++;
                     const hostEntry = forestLedger.find((e) => e.entityId === hostId);
                     if (hostEntry) {
-                        forestLedger.push({ ...hostEntry, kind: 'branch', entityId: branchResult.branchId });
+                        // The type comes off the built result, so a renamed type
+                        // reaches here through the builder rather than a literal.
+                        forestLedger.push({ ...hostEntry, kind: branchResult.kind, entityId: branchResult.branchId });
                     }
                     continue;
                 }
