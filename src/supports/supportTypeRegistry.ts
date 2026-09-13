@@ -2189,6 +2189,20 @@ export const MODEL_SURFACE_GESTURE_TYPES: readonly ModelSurfaceGestureTypeId[] =
         .filter((id): id is ModelSurfaceGestureTypeId => MODEL_SURFACE_GESTURE_BY_TYPE[id]);
 
 /**
+ * Types that own their edit-history entry but declare no update action.
+ *
+ * The joint-drag path pushes that type's OWN typed action for the entry, so a
+ * type declaring the flag without the action would record no undo entry at all,
+ * and nothing would say so. `state.ts` asserts this list is empty at load, beside
+ * the other flag-and-registration completeness checks.
+ */
+export function typesDeclaringOwnHistoryEntryWithoutUpdate(): readonly SupportTypeId[] {
+    return SUPPORT_TYPES
+        .filter((descriptor) => descriptor.ownsEditHistoryEntry && !descriptor.historyUpdate)
+        .map((descriptor) => descriptor.id);
+}
+
+/**
  * Mirrors each descriptor's `hostsKickstand` with the literals kept, so the host
  * union narrows instead of widening to every type. `derivedTypeSubsets.test.ts`
  * holds the two in step.

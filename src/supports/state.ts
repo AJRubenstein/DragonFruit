@@ -4,6 +4,7 @@ import { calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/kn
 import { resolveSegmentEndpoints, type ShaftEntity } from './SupportPrimitives/Knot/segmentEndpoints';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import {
+    typesDeclaringOwnHistoryEntryWithoutUpdate,
     typesMissingContactOverride,
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
@@ -3336,6 +3337,30 @@ export function removeTrunk(trunkId: string) {
 // --- Selectors / Hooks Helpers ---
 
 
+/**
+ * The root and host knot an entity's declared endpoints resolve from.
+ *
+ * Read off the descriptor's declared edges rather than by testing the type's
+ * name or naming a field: a type that renames the field it stores its root in
+ * keeps working. Absent when the entity has no edge of that kind, or the id it
+ * names is not in the store.
+ */
+export function resolveDeclaredHosts(
+    typeId: SupportTypeId,
+    entity: Record<string, unknown>,
+): { root?: Roots; hostKnot?: Knot } {
+    const descriptor = getSupportTypeDescriptor(typeId);
+    const fieldOf = (to: 'roots' | 'knots', ownership: 'owns' | 'hostedBy') =>
+        descriptor.edges.find((edge) => edge.to === to && edge.ownership === ownership)?.field;
+    const rootId = entity[fieldOf('roots', 'owns') ?? ''];
+    const knotId = entity[fieldOf('knots', 'hostedBy') ?? ''];
+
+    return {
+        root: typeof rootId === 'string' ? state.roots[rootId] : undefined,
+        hostKnot: typeof knotId === 'string' ? state.knots[knotId] : undefined,
+    };
+}
+
 /** Every entity of one type. */
 export function getSupportEntities<T = unknown>(typeId: SupportTypeId): T[] {
     const { key } = getSupportTypeDescriptor(typeId).location;
@@ -4011,6 +4036,14 @@ if (missingExportGroups.length > 0) {
 const missingPromotions = typesMissingHostPromotion();
 if (missingPromotions.length > 0) {
     throw new Error(`Declares replacedByHigherContact but registered no promotion: ${missingPromotions.join(', ')}`);
+}
+
+// The joint-drag path pushes a type's own typed history action when it owns its
+// entry. A type declaring the flag without the action would push nothing, so the
+// drag would leave no undo entry and no error.
+const missingHistoryUpdate = typesDeclaringOwnHistoryEntryWithoutUpdate();
+if (missingHistoryUpdate.length > 0) {
+    throw new Error(`Declares ownsEditHistoryEntry but no historyUpdate: ${missingHistoryUpdate.join(', ')}`);
 }
 
 // Same again for the auto-placement override: a type that claims a tip-height

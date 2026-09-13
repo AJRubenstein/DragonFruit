@@ -70,7 +70,7 @@ const EXEMPT = [
 const BUDGET = {
     dispatch: 12,
     declaration: 3,
-    value: 116,
+    value: 98,
 };
 
 /**
