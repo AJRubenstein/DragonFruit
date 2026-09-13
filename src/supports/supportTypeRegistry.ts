@@ -489,6 +489,12 @@ export interface SupportTypeDescriptor {
          * self-contained types; a hosted type stays straight instead.
          */
         startFallsBackToSplitPoint: boolean;
+        /**
+         * Shaft diameter when the entity carries no segments. A number is the
+         * constant; a `{ path }` reads the diameter off the entity (a dotted
+         * path, resolved like `shaftTaper.from`).
+         */
+        fallbackDiameterMm?: number | { path: string };
     };
     /**
      * Whether instances have per-entity editable settings.
@@ -535,7 +541,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: true,
         contactFields: ['contactCone'],
-        shaftFallback: { stubLengthMm: 10, startFallsBackToSplitPoint: false },
+        shaftFallback: { stubLengthMm: 10, startFallsBackToSplitPoint: false, fallbackDiameterMm: 1.5 },
         hasOrigin: true,
         hasPlacementPreview: true,
         claimsModelSurfaceGestures: false,
@@ -855,7 +861,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         jointDragMovesContacts: false,
         jointDragCanCurveShaft: true,
         contactFields: [],
-        shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
+        shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false, fallbackDiameterMm: { path: 'profile.bodyDiameterMm' } },
         hasOrigin: false,
         shaftTaper: { segments: 'last', from: ['profile.terminalStartDiameterMm', 'profile.terminalEndDiameterMm'] },
         hasPlacementPreview: true,

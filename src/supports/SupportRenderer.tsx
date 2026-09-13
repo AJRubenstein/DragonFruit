@@ -30,7 +30,6 @@ import { InstancedRootsGroup, type InstancedRoot } from './SupportPrimitives/Roo
 import { InstancedContactConeGroup, type InstancedContactCone } from './SupportPrimitives/ContactCone/InstancedContactConeGroup';
 import { useBracePlacementState } from './SupportTypes/Brace/bracePlacementState';
 import { useLeafPlacementState } from './SupportTypes/Leaf/leafPlacementState';
-import type { Kickstand } from './SupportTypes/Kickstand/types';
 import { useKickstandPlacementState } from './SupportTypes/Kickstand/kickstandPlacementState';
 import { useJointInteraction } from './SupportPrimitives/Joint/useJointInteraction';
 import { useKnotInteraction } from './SupportPrimitives/Knot/useKnotInteraction';
@@ -42,7 +41,7 @@ import { JointCreationManager } from './SupportPrimitives/Joint/JointCreationMan
 import { JointGizmo } from './SupportPrimitives/Joint/JointGizmo';
 import { KnotGizmo } from './SupportPrimitives/Knot/KnotGizmo';
 import { BezierGizmoManager } from './Curves/BezierGizmo/BezierGizmoManager';
-import { ContactDisk, SupportMode, BezierSegment, type Anchor, type Brace, type Knot, type Leaf, type Roots, type Segment, type SupportEntityAny, type Trunk, type Twig, type SupportOrigin, type Vec3 } from './types';
+import { ContactDisk, SupportMode, BezierSegment, type Anchor, type Brace, type Knot, type Leaf, type Roots, type Segment, type SupportEntityAny, type Twig, type SupportOrigin, type Vec3 } from './types';
 import { resolveTwigDiameterAtSegmentT } from './SupportTypes/Twig/twigTaper';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
 import { EMPTY_PLACEMENT_PREVIEWS, type SupportData, type SupportPlacementPreviews } from './rendering';
@@ -394,11 +393,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const useMultiSelectionDetail = hasSupportMultiSelection && effectiveSelectedSupportIds.length <= MULTI_SELECTION_DETAIL_THRESHOLD;
     const dimNonSelected = selectedId !== null || hasSupportMultiSelection;
     const hideUnselectedKnots = selectedId !== null || hasSupportMultiSelection;
-    // Twigs participate in scene-batched shaft rendering like other supports.
-    // TwigRenderer still mounts (to draw the disks + joints, which have no
-    // scene-batched equivalent); it just defers its straight shafts to the
-    // batched pipeline via deferStraightShaftsToSceneBatch.
-    const enableTwigSceneBatching = true;
 
     const interactionHooksEnabled = !passive;
     const [gizmoInteractionLockActive, setGizmoInteractionLockActive] = React.useState(false);
@@ -581,19 +575,18 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         if (modelId) return modelId;
         if (!supportId) return undefined;
 
-        // Every type, from the registry: its own modelId, then the knots it
-        // declares a `hostedBy` edge onto. The hand-written chain covered seven
-        // of eight -- an anchor id resolved to undefined.
+        // Every type, from the registry: its own modelId, then the root it
+        // owns, then the knots it declares a `hostedBy` edge onto.
         for (const descriptor of SUPPORT_TYPES) {
-            const collection = descriptor.id === 'kickstand'
-                ? state.kickstands
-                : (state as unknown as Record<string, Record<string, { modelId?: string }>>)[descriptor.location.key];
+            const collection = (state as unknown as Record<string, Record<string, { modelId?: string }>>)[descriptor.location.key];
             const entity = collection?.[supportId] as Record<string, unknown> | undefined;
             if (!entity) continue;
 
             if (typeof entity.modelId === 'string' && entity.modelId) return entity.modelId;
 
-            if (descriptor.id === 'kickstand') {
+            // A type that owns a root resolves its model from that root. A
+            // kickstand braces a shaft and can carry no model of its own.
+            if (descriptor.ownsRoot) {
                 const rootId = entity.rootId as string | undefined;
                 const rootModelId = rootId ? state.roots[rootId]?.modelId : undefined;
                 if (rootModelId) return rootModelId;
@@ -1243,10 +1236,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         [selectedIdsByType, EMPTY_SELECTION],
     );
 
-    const selectedTrunkIds = selectedOf('trunk');
     const selectedLeafIds = selectedOf('leaf');
     const selectedBraceIds = selectedOf('brace');
-    const selectedKickstandIds = selectedOf('kickstand');
 
     const knotIdsByParentShaftId = useMemo(() => {
         const map = new Map<string, string[]>();
@@ -1483,14 +1474,11 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     /*
      * Thin typed reads of `renderListByType`. DEBT, not API: they exist because
      * the call sites below still name a list, and each binds a type id and
-     * nothing else. They go as those sites move to the map -- `trunk`,
-     * `kickstand`, `leaf` and `brace` each have one surviving per-type consumer
-     * (root grouping, leaf joints, brace shafts); `branch` and `stick` are gone.
+     * nothing else. They go as those sites move to the map -- `leaf` and `brace`
+     * each have one surviving per-type consumer (leaf joints, brace shafts).
      */
-    const renderTrunkList = renderListByType.trunk as unknown as Trunk[];
     const renderLeafList = renderListByType.leaf as unknown as Leaf[];
     const renderBraceList = renderListByType.brace as unknown as Brace[];
-    const renderKickstandList = renderListByType.kickstand as unknown as Kickstand[];
 
     const renderKnotList = useMemo(() => {
         if (!hasPreviewKnotOverrides) return knotList;
@@ -1666,7 +1654,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             // Brace builds its own set (its shaft is a curve between two
             // knots); anchor declares a shaft but builds none.
             if (!descriptor.batchesShaft) continue;
-            if (descriptor.id === 'twig' && !enableTwigSceneBatching) continue;
 
             // Roots are looked up by the entity's own rootId, so the shared
             // collection answers for every type; only the knot index differs,
@@ -1692,7 +1679,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [
         renderListByType,
         buildPlainShaftSet,
-        enableTwigSceneBatching,
         state.roots,
         renderKnotsById,
     ]);
@@ -2125,18 +2111,31 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         resolveSceneSupportColor, applyDropToVec3Like,
     ]);
 
-    const sceneBatchedTrunkRootGroups = useMemo(
-        () => groupRootsForSceneBatch('trunk', renderTrunkList, selectedTrunkIds, state.roots, () => 1.5),
-        [renderTrunkList, selectedTrunkIds, state.roots, groupRootsForSceneBatch],
-    );
-
-    const sceneBatchedKickstandRootGroups = useMemo(
-        () => groupRootsForSceneBatch(
-            'kickstand', renderKickstandList, selectedKickstandIds,
-            kickstandRootsById, (kickstand) => kickstand.profile.bodyDiameterMm,
-        ),
-        [renderKickstandList, selectedKickstandIds, kickstandRootsById, groupRootsForSceneBatch],
-    );
+    /**
+     * Plate roots for the batched pass, keyed by type. The root-owning types
+     * build these identically; only the shaft-diameter fallback differs, and it
+     * is declared per type (`shaftFallback.fallbackDiameterMm`).
+     */
+    const sceneBatchedRootGroupsByType = useMemo(() => {
+        const byType = {} as Record<SupportTypeId, Array<{ modelId: string | null; color: string; roots: InstancedRoot[] }>>;
+        for (const descriptor of SUPPORT_TYPES) {
+            if (!descriptor.ownsRoot) continue;
+            const list = renderListByType[descriptor.id] as readonly { id: string; modelId?: string; rootId: string; segments?: Segment[] }[];
+            byType[descriptor.id] = groupRootsForSceneBatch(
+                descriptor.id,
+                list,
+                selectedOf(descriptor.id),
+                state.roots,
+                (entity) => {
+                    const fallback = descriptor.shaftFallback.fallbackDiameterMm;
+                    if (typeof fallback === 'number') return fallback;
+                    if (fallback) return readNumberPath(entity, fallback.path) ?? 1.5;
+                    return 1.5;
+                },
+            );
+        }
+        return byType;
+    }, [renderListByType, selectedOf, state.roots, groupRootsForSceneBatch, readNumberPath]);
 
     const sceneBatchedContactConeGroups = useMemo(() => {
         const grouped = new Map<string, { modelId: string | null; color: string; cones: InstancedContactCone[] }>();
@@ -3090,8 +3089,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                     />
                 </group>
             ))}
-            {!simpleRender && sceneBatchedTrunkRootGroups.map((group) => (
-                <group key={`scene-trunk-root-batch:${group.modelId ?? 'none'}:${group.color}:${group.roots.length}`} userData={{ modelId: group.modelId ?? null }}>
+            {!simpleRender && Object.entries(sceneBatchedRootGroupsByType).flatMap(([typeId, groups]) => groups.map((group) => (
+                <group key={`scene-${typeId}-root-batch:${group.modelId ?? 'none'}:${group.color}:${group.roots.length}`} userData={{ modelId: group.modelId ?? null }}>
                     <InstancedRootsGroup
                         roots={group.roots}
                         color={group.color}
@@ -3102,21 +3101,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
                         onRootPointerOut={isPointerInteractable ? handleSceneBatchedShaftPointerOut : undefined}
                     />
                 </group>
-            ))}
-
-            {!simpleRender && sceneBatchedKickstandRootGroups.map((group) => (
-                <group key={`scene-kickstand-root-batch:${group.modelId ?? 'none'}:${group.color}:${group.roots.length}`} userData={{ modelId: group.modelId ?? null }}>
-                    <InstancedRootsGroup
-                        roots={group.roots}
-                        color={group.color}
-                        transparent={ghostTransparent}
-                        opacity={ghostOpacityClamped}
-                        onRootClick={isPointerInteractable ? handleSceneBatchedRootClick : undefined}
-                        onRootPointerMove={isPointerInteractable ? handleSceneBatchedRootPointerMove : undefined}
-                        onRootPointerOut={isPointerInteractable ? handleSceneBatchedShaftPointerOut : undefined}
-                    />
-                </group>
-            ))}
+            )))}
             {sceneBatchedContactConeGroups.map((group) => (
                 <group key={`scene-cone-batch:${group.modelId ?? 'none'}:${group.color}:${group.cones.length}`} userData={{ modelId: group.modelId ?? null }}>
                     <InstancedContactConeGroup
