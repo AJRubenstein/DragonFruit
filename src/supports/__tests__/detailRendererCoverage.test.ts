@@ -2,72 +2,54 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
+import '../detailRenderer/registerBuiltinDetailRenderers';
+import { detailRenderersFor, detailRenderersMissingTypes, type DetailRendererContext } from '../detailRenderer/seam';
 import { SUPPORT_TYPES } from '../supportTypeRegistry';
 
 /**
- * Every declared type has a detail renderer entry.
+ * Every declared type registers a detail renderer.
  *
- * `SupportRenderer` used to hold eight hand-written `renderXList.map(...)`
- * blocks; they are one `detailRenderers` table and one `renderDetailFor` loop
- * now. Nothing mounts the component in tests, so this reads the source: a
- * ninth type that reaches the registry without a table entry would draw
- * nothing, silently, and no other check would notice.
+ * `SupportRenderer` used to hold an eight-entry table keyed by type id; the
+ * entries now live in each type's own folder and register into the seam. A
+ * ninth type that reaches the registry without registering would draw nothing,
+ * silently -- so the load-time completeness check asserts the missing list is
+ * empty, and a resolved table has a component for every type.
  */
+
+const EMPTY_CONTEXT: DetailRendererContext = {
+    roots: {},
+    renderKnotsById: {},
+    braceRenderKnotsById: {},
+    simpleRender: false,
+    hideUnselectedKnots: false,
+    hidePlateContactPrimitivesEffective: false,
+    ghostedBraceIdSet: new Set(),
+    ghostOpacityClamped: 1,
+    suppressHover: false,
+    isInteractable: false,
+    debugSectionColorsEnabled: false,
+    braceShaftsBySupport: new Map(),
+};
+
+test('every support type registers a detail renderer', () => {
+    assert.deepEqual(detailRenderersMissingTypes(), []);
+});
+
+test('every type resolves to an entry that names a component', () => {
+    const entries = detailRenderersFor(EMPTY_CONTEXT);
+    for (const descriptor of SUPPORT_TYPES) {
+        const entry = entries[descriptor.id];
+        assert.ok(entry, `${descriptor.id} has no detail renderer entry`);
+        assert.ok(entry.component, `${descriptor.id} names no component`);
+    }
+});
 
 const SOURCE = readFileSync(new URL('../SupportRenderer.tsx', import.meta.url), 'utf8');
 
-/** The table body, so a match cannot come from an unrelated part of the file. */
-function detailRendererTable(): string {
-    const start = SOURCE.indexOf('const detailRenderers = useMemo(');
-    assert.ok(start > 0, 'the detailRenderers table is gone -- this test needs rewriting');
-    const end = SOURCE.indexOf('const renderDetailFor', start);
-    assert.ok(end > start, 'renderDetailFor no longer follows the table');
-    return SOURCE.slice(start, end);
-}
-
-test('every support type has an entry in the detail renderer table', () => {
-    const table = detailRendererTable();
-
-    for (const descriptor of SUPPORT_TYPES) {
-        assert.match(
-            table,
-            new RegExp(`^\\s{8}${descriptor.id}:\\s*\\{`, 'm'),
-            `${descriptor.id} has no detailRenderers entry, so it would render nothing`,
-        );
-    }
-});
-
-test('every type is drawn by the render loop', () => {
-    // The table alone is not enough: the JSX has to call for each type, since
-    // ordering against the batched-shaft passes is still explicit.
-    for (const descriptor of SUPPORT_TYPES) {
-        assert.ok(
-            SOURCE.includes(`renderDetailFor('${descriptor.id}')`),
-            `${descriptor.id} is never passed to renderDetailFor`,
-        );
-    }
-});
-
-test('each entry names a component, and the entity prop is derived not spelled', () => {
-    // The prop a renderer takes its entity under is the descriptor's `singular`,
-    // read at the call site -- so the table must NOT carry it, or a rename would
-    // need a second edit here.
-    assert.ok(
-        !/entityProp:/.test(SOURCE),
-        'the table spells entityProp again; it is derived from descriptor.singular',
-    );
+test('the entity prop is derived from the registry, not spelled per type', () => {
     assert.match(
         SOURCE,
         /const entityProp = getSupportTypeDescriptor\(typeId\)\.singular;/,
         'renderDetailFor must derive the entity prop from the registry',
     );
-
-    const table = detailRendererTable();
-    for (const descriptor of SUPPORT_TYPES) {
-        const entry = table.slice(table.indexOf(`\n        ${descriptor.id}: {`));
-        const body = entry.slice(0, entry.indexOf('\n        },'));
-
-        assert.match(body, /component:\s*\w+Renderer/, `${descriptor.id} names no component`);
-    }
 });
-

@@ -2,6 +2,7 @@ import { useContactDiskDragSession } from '../useContactDiskDragSession';
 import React, { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import type { Anchor, Roots, Vec3 } from '../../types';
+import { registerSupportDetailRenderer } from '../../detailRenderer/seam';
 import type { ContactCone } from '../../SupportPrimitives/ContactCone/types';
 import { RootsRenderer } from '../../SupportPrimitives/Roots/RootsRenderer';
 import { ContactConeRenderer, getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
@@ -138,3 +139,7 @@ export const AnchorRenderer = React.memo(function AnchorRenderer({
 });
 
 AnchorRenderer.displayName = 'AnchorRenderer';
+
+registerSupportDetailRenderer('anchor', () => ({
+    component: AnchorRenderer as never,
+}));

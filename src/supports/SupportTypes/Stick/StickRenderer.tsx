@@ -5,6 +5,7 @@ import { useShaftSegments } from '../useShaftSegments';
 import React, { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import { Stick, type Vec3 } from '../../types';
+import { registerSupportDetailRenderer } from '../../detailRenderer/seam';
 import { JointRenderer } from '../../SupportPrimitives/Joint/JointRenderer';
 import { InstancedShaftGroup, type InstancedShaft } from '../../SupportPrimitives/Shaft/InstancedShaftGroup';
 import { ContactConeRenderer, getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
@@ -239,3 +240,14 @@ export const StickRenderer = React.memo(function StickRenderer({
 });
 
 StickRenderer.displayName = 'StickRenderer';
+
+registerSupportDetailRenderer('stick', (ctx) => ({
+    component: StickRenderer as never,
+    skip: ({ isSelected, isBatchable }) => !(isSelected || !isBatchable) || ctx.simpleRender,
+    noClipping: ({ isSelected }) => isSelected,
+    extraProps: ({ isSelected, isBatchable }) => ({
+        deferStraightShaftsToSceneBatch: !isSelected && isBatchable,
+        deferInteractionToSceneBatch: !isSelected && isBatchable,
+        deferContactConesToSceneBatch: !isSelected,
+    }),
+}));

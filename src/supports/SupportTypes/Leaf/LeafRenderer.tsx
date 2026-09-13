@@ -3,6 +3,7 @@ import { useThree } from '@react-three/fiber';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { getSnapshot, updateLeaf } from '../../state';
 import { Leaf, Knot } from '../../types';
+import { registerSupportDetailRenderer } from '../../detailRenderer/seam';
 import { ContactConeRenderer, getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import { recomputeContactConeForMovedDisk } from '../../SupportPrimitives/ContactDisk';
 import { isPrimaryPointerPress, startContactDiskDragSession, type ContactDiskDragHit, type ContactDiskDragSession } from '../../SupportPrimitives/ContactDisk/contactDiskDragController';
@@ -217,3 +218,17 @@ export const LeafRenderer = React.memo(function LeafRenderer({
 });
 
 LeafRenderer.displayName = 'LeafRenderer';
+
+registerSupportDetailRenderer('leaf', (ctx) => ({
+    component: LeafRenderer as never,
+    hosts: (leaf: Leaf) => {
+        const parentKnot = ctx.renderKnotsById[leaf.parentKnotId];
+        return parentKnot ? { parentKnot } : null;
+    },
+    skip: ({ isSelected }) => !isSelected,
+    noClipping: () => true,
+    extraProps: ({ entity, isSelected }) => ({
+        showKnots: !ctx.simpleRender,
+        deferContactConesToSceneBatch: !isSelected && !!(entity as Leaf).contactCone,
+    }),
+}));

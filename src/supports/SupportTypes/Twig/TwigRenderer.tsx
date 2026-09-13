@@ -5,6 +5,7 @@ import React, { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ContactDisk, Twig, type Segment } from '../../types';
+import { registerSupportDetailRenderer } from '../../detailRenderer/seam';
 import { JointRenderer } from '../../SupportPrimitives/Joint/JointRenderer';
 import { ShaftRenderer } from '../../SupportPrimitives/Shaft/ShaftRenderer';
 import { InstancedShaftGroup, type InstancedShaft } from '../../SupportPrimitives/Shaft/InstancedShaftGroup';
@@ -503,6 +504,15 @@ export const TwigRenderer = React.memo(function TwigRenderer({
 });
 
 TwigRenderer.displayName = 'TwigRenderer';
+
+registerSupportDetailRenderer('twig', () => ({
+    component: TwigRenderer as never,
+    noClipping: ({ isSelected }) => isSelected,
+    extraProps: ({ isSelected, isBatchable }) => ({
+        deferStraightShaftsToSceneBatch: !isSelected && isBatchable,
+        deferInteractionToSceneBatch: !isSelected && isBatchable,
+    }),
+}));
 
 // Invisible pick-only tube hugging a bezier twig segment. Lives inside the
 // twig's pickRef so the GPU picker registers hits on it as twig hits (for
