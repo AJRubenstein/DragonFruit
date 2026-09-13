@@ -36,7 +36,7 @@ import type { ScanResults } from '@/volumeAnalysis/IslandScan/ScanOrchestrator';
 import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { LimitationCode, Segment, SupportMode, WarningCode } from '@/supports/types';
 import { getSupportTypeDescriptor, previewTypesByPriority, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
-import { EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementPreviews } from '@/supports/rendering';
+import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
 import type { ContactCone } from '@/supports/SupportPrimitives/ContactCone/types';
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
@@ -496,10 +496,7 @@ export function SceneCanvas({
   duplicateActivePreviewTransform,
   arrangeArrayPreviewItems,
   hideDuplicateSourceDuringApply,
-  isBranchPlacementActive,
-  isLeafPlacementActive,
-  isBracePlacementActive,
-  isKickstandPlacementActive,
+  placementActive = EMPTY_PLACEMENT_ACTIVE,
   hideCrossSectionCap = false,
   branchTipPosition,
   branchHoverPosition,
@@ -684,10 +681,8 @@ export function SceneCanvas({
     };
   }>;
   hideDuplicateSourceDuringApply?: boolean;
-  isBranchPlacementActive?: boolean;
-  isLeafPlacementActive?: boolean;
-  isBracePlacementActive?: boolean;
-  isKickstandPlacementActive?: boolean;
+  /** Which placement modes are live, keyed by type. */
+  placementActive?: SupportPlacementActive;
   branchTipPosition?: { x: number; y: number; z: number } | null;
   branchHoverPosition?: { x: number; y: number; z: number } | null;
   leafTipPosition?: { x: number; y: number; z: number } | null;
@@ -820,21 +815,9 @@ export function SceneCanvas({
 
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { isActive: isJointCreationActive } = useJointCreationState();
-  const isPlacementActive = React.useMemo(() => {
-    return !!(
-      isBranchPlacementActive ||
-      isLeafPlacementActive ||
-      isBracePlacementActive ||
-      isKickstandPlacementActive ||
-      isJointCreationActive
-    );
-  }, [
-    isBranchPlacementActive,
-    isLeafPlacementActive,
-    isBracePlacementActive,
-    isKickstandPlacementActive,
-    isJointCreationActive
-  ]);
+  /** Whether any placement mode is live. Derived, so no type is named here. */
+  const supportCreationModeActive = Object.values(placementActive).some(Boolean);
+  const isPlacementActive = supportCreationModeActive || isJointCreationActive;
   // The visual-settings panel is a fixed 48px-wide strip; the view cube offsets
   // by its full extent so it never overlaps the floating panel.
   const nonPrintingViewCubeRightMargin = 48 + FLOATING_PANEL_RIGHT_INSET_PX + VIEW_CUBE_PANEL_GAP_PX + VIEW_CUBE_HALF_EXTENT_PX;
@@ -1831,12 +1814,6 @@ export function SceneCanvas({
   }, [activeModelId, hoveredModelId]);
   const supportHoverModelId = modelPickerEnabled ? hoveredModelId : null;
 
-  const supportCreationModeActive = Boolean(
-    isBranchPlacementActive
-    || isLeafPlacementActive
-    || isBracePlacementActive
-    || isKickstandPlacementActive,
-  );
   const suppressSupportSelectionAndHover = !modelPickerEnabled || (mode === 'prepare' && transformMode === 'transform');
 
   const supportHoverTargetActive = isSupportTargetHoverCategory(supportStateForBounds.hoveredCategory);
@@ -1897,12 +1874,9 @@ export function SceneCanvas({
 
   // Which placement mode is active. Read by the preview gate, and by the two
   // questions that consult several live previews in a declared order.
-  const activePlacementModes: Partial<Record<SupportTypeId, boolean>> = React.useMemo(() => ({
-    branch: !!isBranchPlacementActive,
-    leaf: !!isLeafPlacementActive,
-    brace: !!isBracePlacementActive,
-    kickstand: !!isKickstandPlacementActive,
-  }), [isBranchPlacementActive, isLeafPlacementActive, isBracePlacementActive, isKickstandPlacementActive]);
+  // The prop is already the record these memos read, so there is nothing to
+  // rebuild -- and `placementActive` is stable by reference from its producer.
+  const activePlacementModes: Partial<Record<SupportTypeId, boolean>> = placementActive;
 
   // The first live preview with something to say. Suppressed wholesale while a
   // debug overlay owns the viewport.
@@ -1972,7 +1946,7 @@ export function SceneCanvas({
     && !suppressSupportPlacementPreviewRendering
     && !supportHoverTargetActive
     && !!hoveredMeshModelId
-    && isBranchPlacementActive,
+    && !!placementActive.branch,
   );
 
   const hasRaftSelection = !!committedActiveModelId || !!activeModelId || (selectedModelIds?.length ?? 0) > 0;
@@ -6131,9 +6105,6 @@ export function SceneCanvas({
                         )
                       }
                       isMarqueeCandidate={isMarqueeCandidate}
-                      isBranchPlacementActive={isBranchPlacementActive}
-                      isLeafPlacementActive={isLeafPlacementActive}
-                      isBracePlacementActive={isBracePlacementActive}
                       onModelHoverPointChange={onModelHoverPointChange}
                       onModelHoverModelChange={onModelHoverModelChange}
                       hoverTintColor={modelHoverTintColor}
@@ -7224,7 +7195,7 @@ export function SceneCanvas({
 
               {/* Render Branch Tip Marker - only show when NO preview is visible */}
               {/* Once preview shows, the contact cone at the tip replaces this marker */}
-              {isBranchPlacementActive && branchTipPosition && !placementPreviews.branch && !suppressSupportPlacementPreviewRendering && (
+              {placementActive.branch && branchTipPosition && !placementPreviews.branch && !suppressSupportPlacementPreviewRendering && (
                 <mesh position={[branchTipPosition.x, branchTipPosition.y, branchTipPosition.z]} raycast={() => null}>
                   <sphereGeometry args={[DEFAULT_TIP_CONTACT_DIAMETER_MM / 2 * 0.5, 12, 12]} />
                   <meshStandardMaterial color="#00ff00" transparent opacity={0.7} />
@@ -7248,7 +7219,7 @@ export function SceneCanvas({
 
               {/* Render Leaf Tip Marker - only show when NO preview is visible */}
               {/* Once preview shows, the contact cone at the tip replaces this marker */}
-              {isLeafPlacementActive && leafTipPosition && !placementPreviews.leaf && !suppressSupportPlacementPreviewRendering && (
+              {placementActive.leaf && leafTipPosition && !placementPreviews.leaf && !suppressSupportPlacementPreviewRendering && (
                 <mesh position={[leafTipPosition.x, leafTipPosition.y, leafTipPosition.z]} raycast={() => null}>
                   <sphereGeometry args={[DEFAULT_TIP_CONTACT_DIAMETER_MM / 2 * 0.5, 12, 12]} />
                   <meshStandardMaterial color="#00ff00" transparent opacity={0.7} />

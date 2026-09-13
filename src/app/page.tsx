@@ -10218,10 +10218,7 @@ export default function Home() {
             onMarqueeSelectionChange={handleSceneMarqueeSelection}
             placementPreviews={supports.placementPreviews}
             blockSupportPlacement={supports.isPlacementHardDisabled}
-            isBranchPlacementActive={supports.branchPlacement.isActive}
-            isLeafPlacementActive={supports.leafPlacement.isActive}
-            isBracePlacementActive={supports.bracePlacement.isActive}
-            isKickstandPlacementActive={supports.kickstandPlacement.isActive}
+            placementActive={supports.placementActive}
             branchTipPosition={supports.branchPlacement.tipPosition}
             branchHoverPosition={supports.branchPlacement.hoverPosition}
             leafTipPosition={supports.leafPlacement.tipPosition}

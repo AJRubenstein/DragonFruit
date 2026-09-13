@@ -17,3 +17,15 @@ export type SupportPlacementPreviews =
 
 /** Stable identity, so a missing map does not re-run the memos reading it. */
 export const EMPTY_PLACEMENT_PREVIEWS: SupportPlacementPreviews = Object.freeze({});
+
+/**
+ * Which placement modes are live, keyed by type.
+ *
+ * The same shape as the previews above and built in the same place, so a scene
+ * never takes one prop per type. A type absent from the map has no placement
+ * mode; `PLACEMENT_CONTROLLER_TYPES` says which those are.
+ */
+export type SupportPlacementActive = Partial<Record<SupportTypeId, boolean>>;
+
+/** Stable identity, so a missing map does not re-run the memos reading it. */
+export const EMPTY_PLACEMENT_ACTIVE: SupportPlacementActive = Object.freeze({});

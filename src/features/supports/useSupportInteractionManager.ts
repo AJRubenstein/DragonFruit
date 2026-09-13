@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore, useRef } from 'react';
 import * as THREE from 'three';
 import type { SupportMode } from '@/supports/types';
-import type { SupportPlacementPreviews } from '@/supports/rendering';
+import type { SupportPlacementActive, SupportPlacementPreviews } from '@/supports/rendering';
 import { useTrunkPlacementV2 } from '@/supports/SupportTypes/Trunk/useTrunkPlacement';
 import { useBranchPlacement } from '@/supports/SupportTypes/Branch/useBranchPlacement';
 import { useLeafPlacement } from '@/supports/SupportTypes/Leaf/useLeafPlacement';
@@ -481,5 +481,16 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       brace: bracePlacement.preview,
       kickstand: kickstandPlacement.previewData,
     } satisfies SupportPlacementPreviews,
+    /**
+     * Which placement modes are live, keyed by type, next to the previews above
+     * so the scene takes one prop rather than one per type. Trunk is absent: it
+     * is the default tool rather than a mode anything toggles.
+     */
+    placementActive: {
+      branch: branchPlacement.isActive,
+      leaf: leafPlacement.isActive,
+      brace: bracePlacement.isActive,
+      kickstand: kickstandPlacement.isActive,
+    } satisfies SupportPlacementActive,
   };
 }
