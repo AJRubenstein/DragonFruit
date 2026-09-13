@@ -1,19 +1,17 @@
+import { contactEndpointsFor, isOriginConvertibleToTree, SUPPORT_TYPES } from '../supportTypeRegistry';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
-
 import * as THREE from 'three';
 import { quantizeToScale } from '@/utils/math';
 
 /**
- * Diagnostics are reported to 2dp. `quantizeToScale` is the shared form of the
- * `Math.round(v * 100) / 100` this file used to define locally, so the numbers
- * are unchanged. Note it is NOT interchangeable with `round(v, 2)` from the same
- * module: that rounds the decimal representation and the two disagree on values
- * that land exactly halfway, which authored 0.001-grid dimensions often do.
+ * Diagnostics to 2dp. NOT interchangeable with `round(v, 2)`: that rounds the
+ * decimal representation, and the two disagree on exact halfway values.
  */
 const round2Mm = (v: number): number => quantizeToScale(v, 100);
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
-import type { CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo } from './types';
-import type { Branch, SupportState, SupportOrigin } from '../types';
+import type { CandidatePoint, AutoPlaceResult, AutoPlaceStatus, AutoPlaceAnalytics, RejectReason, AutoSupportPlan, PlacementDiagnostics, FanLeafRefusal, ForestLedgerEntry, ForestReport, ForestTree, OrphanInfo, PlacementOutcomeKind } from './types';
+import { isLedgerKind } from './types';
+import type { Branch, SupportState, SupportOrigin, Vec3 } from '../types';
 import type { AutoSupportSettings } from './settings';
 import { normalizeAutoSupportSettings } from './settings';
 import { activeSizingBand } from './parameterSizing';
@@ -31,14 +29,11 @@ import { sizeParameters, presetForArea } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
 import { DEFAULT_GRID_MIN_BRANCH_ANGLE_DEG } from '../Settings/defaults';
-import { getSnapshot, setSnapshot } from '../state';
-import {
-    draftAddRoot, draftAddTrunk, draftAddBranch, draftAddLeaf,
-    draftAddKnot, draftAddAnchor, draftAddStick, draftAddTwig,
-} from './supportDraft';
+import { cloneSupportState, getSnapshot, setSnapshot } from '../state';
+import { draftAddEntity, draftAddPrimitive } from './supportDraft';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
-import { buildCavityStick } from '../SupportTypes/Trunk/useTrunkPlacement';
+import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
 import { applyTrunkReplacement, planTrunkReplacement } from '../SupportTypes/Trunk/TrunkReplacement';
 import { computeForestDiameterProfile } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
 import { buildBranchData } from '../SupportTypes/Branch/branchBuilder';
@@ -49,8 +44,6 @@ import { isShaftBlocked } from '../PlacementLogic/CollisionAvoidance';
 import { buildAutoBracedSnapshot } from '../autoBracing/autoBrace';
 import { pushSupportHistory } from '../history/supportHistory';
 import { SUPPORT_AUTO_PLACE } from '../history/actionTypes';
-import { getKickstandSnapshot, setKickstandSnapshot } from '../SupportTypes/Kickstand/kickstandStore';
-import type { KickstandState } from '../SupportTypes/Kickstand/types';
 import { getModelMesh } from './meshStore';
 import {
     ALREADY_SUPPORTED_RADIUS_MM,
@@ -63,6 +56,7 @@ import {
     CONSOLIDATION_BRANCH_MIN_HEIGHT_MM,
     MAX_LEAF_SPAN_BEFORE_BRANCH_MM,
     MERGE_HOST_LOAD_WEIGHT,
+    MAX_CAVITY_BRIDGE_MM,
 } from './constants';
 
 const LOG_PREFIX = '[AutoSupport]';
@@ -111,6 +105,28 @@ export function setAutoSupportVerboseLogging(enabled: boolean): void {
 
 function logPlacement(message: string): void {
     if (verboseLogging) console.log(LOG_PREFIX, message);
+}
+
+// ---------------------------------------------------------------------------
+// Knot identity
+// ---------------------------------------------------------------------------
+
+/**
+ * Allocate a knot id that is free in the draft.
+ *
+ * Auto knot ids are built from candidate/island ids, and those repeat:
+ * island indices restart at `v0`/`m0`/`o0` in every model's scan, and the
+ * gap-fill passes re-emit the same candidate ids. `draftAddPrimitive`
+ * REPLACES a knot on an id collision rather than failing, so a reused id
+ * silently re-parents the member that already owned the knot onto this run's
+ * host shaft — the "knot from another model" tear, which renders as a long
+ * member reaching across from the other model's forest.
+ */
+function freeKnotId(draft: SupportState, baseId: string): string {
+    if (!draft.knots[baseId]) return baseId;
+    let n = 2;
+    while (draft.knots[`${baseId}-${n}`]) n++;
+    return `${baseId}-${n}`;
 }
 
 
@@ -264,26 +280,38 @@ function resolveSurfaceNormal(
 // ---------------------------------------------------------------------------
 
 /**
- * Remove candidates whose tip position is already covered by an
- * existing support (any trunk / branch / leaf / anchor contact cone).
- * Prevents stacking duplicate supports on repeated runs.
+ * Where every support currently touches the model.
+ *
+ * Both callers -- "is this candidate already supported" and "how much of this
+ * island is covered" -- want the same answer, and each collected it from four
+ * types by hand: trunk, branch, leaf, anchor. Twig and stick declare contacts
+ * too, so a point held by one of those read as unsupported.
+ */
+export function collectContactPositions(snapshot: SupportState): Array<{ x: number; y: number; z: number }> {
+    const positions: Array<{ x: number; y: number; z: number }> = [];
+
+    for (const descriptor of SUPPORT_TYPES) {
+        const collection = snapshot[descriptor.location.key] as unknown as Record<string, Record<string, unknown>>;
+        for (const entity of Object.values(collection ?? {})) {
+            for (const contact of contactEndpointsFor(descriptor.id)) {
+                const pos = (entity[contact.field] as { pos?: { x: number; y: number; z: number } } | undefined)?.pos;
+                if (pos) positions.push(pos);
+            }
+        }
+    }
+
+    return positions;
+}
+
+/**
+ * Remove candidates whose tip position is already covered by an existing
+ * support contact. Prevents stacking duplicate supports on repeated runs.
  */
 function filterAlreadySupported(candidates: CandidatePoint[], draft: SupportState): CandidatePoint[] {
     const snapshot = draft;
     const existingTips: Array<{ x: number; y: number; z: number }> = [];
 
-    for (const t of Object.values(snapshot.trunks)) {
-        if (t.contactCone?.pos) existingTips.push(t.contactCone.pos);
-    }
-    for (const b of Object.values(snapshot.branches)) {
-        if (b.contactCone?.pos) existingTips.push(b.contactCone.pos);
-    }
-    for (const l of Object.values(snapshot.leaves)) {
-        if (l.contactCone?.pos) existingTips.push(l.contactCone.pos);
-    }
-    for (const a of Object.values(snapshot.anchors)) {
-        if (a.contactCone?.pos) existingTips.push(a.contactCone.pos);
-    }
+    existingTips.push(...collectContactPositions(snapshot));
 
     if (existingTips.length === 0) return candidates;
 
@@ -530,6 +558,8 @@ export function buildConsolidationBranch(args: {
     let best: FanShaftPoint | null = null;
     let bestAngleDeg = Infinity;
     for (const sp of pool) {
+        // Same rule as the leaf fan: only this model's shafts can host.
+        if (pruned.trunks[sp.trunkId]?.modelId !== modelId) continue;
         const ddx = sp.pos.x - tip.x;
         const ddy = sp.pos.y - tip.y;
         const ddz = sp.pos.z - tip.z;
@@ -547,7 +577,7 @@ export function buildConsolidationBranch(args: {
     if (maxAttachments > 0 && isTrunkAtAttachmentCapacity(best.trunkId, maxAttachments, pruned)) return null;
 
     const parentKnot = {
-        id: knotId,
+        id: freeKnotId(pruned, knotId),
         parentShaftId: best.segmentId ?? best.trunkId,
         t: best.t,
         pos: best.pos,
@@ -571,9 +601,9 @@ export function buildConsolidationBranch(args: {
         if (branchDepartureAngleDeg(branch, parentKnot.pos) > memberMaxAngleFromVerticalDeg()) return null;
         if (leafPathCrossesSupports(parentKnot.pos, branch.contactCone?.pos ?? tip, 0.25, pruned, best.trunkId)) return null;
 
-        let d = draftAddKnot(pruned, parentKnot);
+        let d = draftAddPrimitive(pruned, 'knots', parentKnot);
         branch.origin = 'overhang';
-        d = draftAddBranch(d, branch);
+        d = draftAddEntity(d, 'branch', branch);
         return { draft: d, branchId: branch.id };
     } catch {
         return null;
@@ -602,7 +632,7 @@ function placeOneCandidate(
     draft: SupportState,
     _settingsOverride: Partial<AutoSupportSettings> | undefined,
     gridTrunkIds?: ReadonlySet<string>,
-): { kind: string; draft: SupportState; kickstand?: KickstandState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected'; cavityFanRefusal?: FanLeafRefusal } {
+): { kind: PlacementOutcomeKind; draft: SupportState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected'; cavityFanRefusal?: FanLeafRefusal } {
     const supportSettings = getSettings();
     const snapshot = draft;
     let d = draft;
@@ -763,7 +793,7 @@ function placeOneCandidate(
                     if (seg?.diameter) knotDiameter = seg.diameter;
                 }
                 const parentKnot = {
-                    id: `auto-merge-${candidate.id}`,
+                    id: freeKnotId(d, `auto-merge-${candidate.id}`),
                     parentShaftId: bestKnotSegmentId || host.trunkId,
                     t: bestKnotT,
                     pos: knotPos,
@@ -824,9 +854,9 @@ function placeOneCandidate(
                                         `Merge skip ${candidate.id}: host ${host.trunkId} at capacity (${cap} attachments)`);
                                     // fall through to standalone trunk
                                 } else {
-                                    d = draftAddKnot(d, parentKnot);
+                                    d = draftAddPrimitive(d, 'knots', parentKnot);
                                     leaf.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
-                                    d = draftAddLeaf(d, leaf);
+                                    d = draftAddEntity(d, 'leaf', leaf);
                                     const la = (Math.atan2(hDist, vDist) * 180) / Math.PI;
                                     logPlacement(
                                         `Leaf (merge) ${candidate.id} → host ${host.trunkId} ` +
@@ -871,11 +901,11 @@ function placeOneCandidate(
                                     `Merge skip ${candidate.id}: host ${host.trunkId} at capacity (${cap} attachments)`);
                                 // fall through to standalone trunk
                             } else {
-                                d = draftAddKnot(d, parentKnot);
+                                d = draftAddPrimitive(d, 'knots', parentKnot);
                                 // Branch fallback is island-only (overhang fanning
                                 // is leaves) — the origin is always island here.
                                 branch.origin = 'island';
-                                d = draftAddBranch(d, branch);
+                                d = draftAddEntity(d, 'branch', branch);
                                 const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                                 logPlacement(
                                     `Branch (merge) ${candidate.id} → host ${host.trunkId} ` +
@@ -945,38 +975,30 @@ function placeOneCandidate(
                 cavityFanRefusal = fan.reason;
             } catch {}
             const band = activeSizingBand();
-            const cavityResult = buildCavityStick(tipPos, tipNormal, candidate.modelId, mesh, band);
+            const cavityResult = buildCavityBridge(tipPos, tipNormal, candidate.modelId, mesh, band);
             if (cavityResult) {
-                // Long model-to-model bridges under an overhang (jaw → chest)
-                // read as "sticks under the jaw" and are rarely printable —
-                // the older dev build simply rejected these instead of bridging.
-                // Keep short twigs (<5 mm, true cavities) but cap long sticks:
-                // require the bridge to be < 12 mm, otherwise fall through to
-                // reject. The tip will then be reconsidered via fan/merge in a
-                // later pass or left unsupported (coverage still 100% per
-                // report).
-                if (cavityResult.kind === 'stick') {
-                    const lower = cavityResult.stick.contactConeB?.pos ?? cavityResult.stick.contactConeA?.pos;
-                    if (lower) {
-                        const dx = tipPos.x - lower.x, dy = tipPos.y - lower.y, dz = tipPos.z - lower.z;
-                        const bridgeLen = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                        if (bridgeLen > 12) {
-                            logPlacement(`Cavity stick rejected (bridge ${bridgeLen.toFixed(1)}mm > 12mm) ${candidate.id}`);
-                            // fall through to rejected trunk path below
-                        } else {
-                            d = draftAddStick(d, cavityResult.stick);
-                            logPlacement(`Stick (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                            return { kind: 'stick', preset, draft: d, entityId: cavityResult.stick.id, cavityFanRefusal };
-                        }
-                    } else {
-                        d = draftAddStick(d, cavityResult.stick);
-                        logPlacement(`Stick (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                        return { kind: 'stick', preset, draft: d, entityId: cavityResult.stick.id, cavityFanRefusal };
-                    }
+                // Keep short cavity twigs but cap long bridges at 12mm; a
+                // rejected tip is reconsidered by fan/merge in a later pass.
+                // BUG (see docs/dev/support-registry-findings.md): the cap measures
+                // from `upper`, which the builder sorts to the tip, so the span
+                // is always ~0 and the cap has never rejected anything.
+                const entity = cavityResult.entity;
+                const upperField = contactEndpointsFor(cavityResult.kind)
+                    .find(({ end }) => end === 'upper')?.field;
+                const lower = upperField
+                    ? (entity as unknown as Record<string, { pos?: Vec3 } | undefined>)[upperField]?.pos
+                    : undefined;
+                const bridgeLen = lower
+                    ? Math.hypot(tipPos.x - lower.x, tipPos.y - lower.y, tipPos.z - lower.z)
+                    : null;
+
+                if (bridgeLen !== null && bridgeLen > MAX_CAVITY_BRIDGE_MM) {
+                    logPlacement(`Cavity ${cavityResult.kind} rejected (bridge ${bridgeLen.toFixed(1)}mm > ${MAX_CAVITY_BRIDGE_MM}mm) ${candidate.id}`);
+                    // fall through to rejected trunk path below
                 } else {
-                    d = draftAddTwig(d, cavityResult.twig);
-                    logPlacement(`Twig (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
-                    return { kind: 'twig', preset, draft: d, entityId: cavityResult.twig.id, cavityFanRefusal };
+                    d = draftAddEntity(d, cavityResult.kind, entity);
+                    logPlacement(`${cavityResult.kind} (cavity) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
+                    return { kind: cavityResult.kind, preset, draft: d, entityId: entity.id, cavityFanRefusal };
                 }
             }
         }
@@ -1028,8 +1050,8 @@ function placeOneCandidate(
             decision.trunkBuild.trunk.origin = candidate.gridPoint
                 ? 'overhang'
                 : (candidate.source === 'overhang' ? 'standalone' : 'island');
-            d = draftAddRoot(d, decision.trunkBuild.root);
-            d = draftAddTrunk(d, decision.trunkBuild.trunk);
+            d = draftAddPrimitive(d, 'roots', decision.trunkBuild.root);
+            d = draftAddEntity(d, 'trunk', decision.trunkBuild.trunk);
             logPlacement(
                 `Trunk ${candidate.id} (→ ${trunkId}) @ grid ${decision.nodeKey} ` +
                 `area=${candidate.islandAreaMm2.toFixed(2)}mm² Z=${candidate.zHeight.toFixed(1)}mm ${preset}` +
@@ -1047,7 +1069,7 @@ function placeOneCandidate(
             decision.anchor.origin = candidate.gridPoint
                 ? 'overhang'
                 : (candidate.source === 'overhang' ? 'standalone' : 'island');
-            d = draftAddAnchor(d, decision.anchor);
+            d = draftAddEntity(d, 'anchor', decision.anchor);
             logPlacement(`Anchor ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
             return { kind: 'anchor', preset, draft: d, entityId: decision.anchor.id };
 
@@ -1058,8 +1080,8 @@ function placeOneCandidate(
                     `Grid skip ${candidate.id}: host ${decision.hostTrunkId} at capacity (${cap})`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            d = draftAddKnot(d, decision.knot);
-            d = draftAddBranch(d, decision.branch);
+            d = draftAddPrimitive(d, 'knots', decision.knot);
+            d = draftAddEntity(d, 'branch', decision.branch);
             logPlacement(
                 `Branch ${candidate.id} → host ${decision.hostTrunkId} ` +
                 `grid ${decision.nodeKey}`);
@@ -1073,8 +1095,8 @@ function placeOneCandidate(
                     `Grid skip ${candidate.id}: host ${decision.hostTrunkId} at capacity (${cap})`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            d = draftAddKnot(d, decision.knot);
-            d = draftAddLeaf(d, decision.leaf);
+            d = draftAddPrimitive(d, 'knots', decision.knot);
+            d = draftAddEntity(d, 'leaf', decision.leaf);
             logPlacement(
                 `Leaf ${candidate.id} → host ${decision.hostTrunkId} ` +
                 `grid ${decision.nodeKey}`);
@@ -1094,8 +1116,8 @@ function placeOneCandidate(
                     `Replace skip ${candidate.id}: no promoted branch from grid engine`);
                 return { kind: 'reject', rejectedReason: 'grid_reject_other', preset, draft: d };
             }
-            d = draftAddKnot(d, promoteKnot);
-            d = draftAddBranch(d, promoteBranch);
+            d = draftAddPrimitive(d, 'knots', promoteKnot);
+            d = draftAddEntity(d, 'branch', promoteBranch);
             const planned = planTrunkReplacement({
                 snapshot: d,
                 trunkIdToRemove: decision.hostTrunkId,
@@ -1131,8 +1153,7 @@ function placeOneCandidate(
                 `${candidate.id} (Z=${candidate.zHeight.toFixed(1)}) → host ${decision.hostTrunkId}`);
             return {
                 kind: 'trunk', preset, entityId: decision.trunkBuild.trunk.id, draft: d,
-                // the removal cascade can strip auto kickstands — re-sync the draft
-                kickstand: structuredClone(getKickstandSnapshot()),
+
             };
         }
 
@@ -1304,7 +1325,13 @@ const MAX_FANNING_PASSES = 5;
 
 /** Collect trunk shaft sample points from a snapshot — the fanning host pool.
  *  Anchor-origin trunks are excluded: anchors are load-bearing standalone
- *  pillars and never host fan leaves. */
+ *  pillars and never host fan leaves.
+ *
+ *  The pool spans EVERY model in the snapshot. Host choosers must therefore
+ *  filter on `trunk.modelId` — `fanLeafToTrunk`, `buildConsolidationBranch`,
+ *  the consolidation conversion loop and the flat-island stub pass all do.
+ *  Unfiltered, this model's member attaches to a neighbouring model's shaft
+ *  and its knot lands on that model's segment. */
 export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
     const shaftPoints: FanShaftPoint[] = [];
     for (const [tid, trunk] of Object.entries(draft.trunks)) {
@@ -1404,18 +1431,33 @@ function hostSegmentSpan(
     return start && end ? { start, end } : null;
 }
 
+/**
+ * The shaft a knot sits on, across every type that has one.
+ *
+ * `trunkId` keeps its name because the two callers below ask a genuine trunk
+ * question -- whether the owner is in `trunksToRemove` -- and a non-trunk owner
+ * is simply never in that set.
+ */
 function findHostSegment(
     draft: SupportState,
     parentShaftId: string,
 ): { trunkId: string; segment: { id: string; bottomJoint?: { pos: { x: number; y: number; z: number } } | null; topJoint?: { pos: { x: number; y: number; z: number } } | null } } | null {
-    for (const [tid, trunk] of Object.entries(draft.trunks)) {
-        for (const seg of trunk.segments) {
-            if (seg.id === parentShaftId) return { trunkId: tid, segment: seg };
-        }
-        if (tid === parentShaftId) {
-            // Legacy: knot parent was trunkId, pick the segment closest to knot.pos later
-            // For validation we treat this as missingSegment so it gets rehosted
-            return null;
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.hasSegments) continue;
+        const collection = draft[descriptor.location.key] as unknown as Record<string, { segments?: { id: string }[] }>;
+
+        for (const [ownerId, entity] of Object.entries(collection ?? {})) {
+            for (const seg of entity.segments ?? []) {
+                if (seg.id === parentShaftId) {
+                    return { trunkId: ownerId, segment: seg as never };
+                }
+            }
+            if (ownerId === parentShaftId) {
+                // Legacy: the knot's parent was the support id rather than a
+                // segment id. Treated as missing so `rehostLegacyKnots` moves it
+                // to the nearest segment instead.
+                return null;
+            }
         }
     }
     return null;
@@ -1787,6 +1829,11 @@ export function fanLeafToTrunk(
     let refusal: FanLeafRefusal = 'noHost';
 
     for (const sp of shaftPoints) {
+        // A host must belong to the model being supported. The shaft pool is
+        // collected from the whole snapshot, which holds every model's forest
+        // — an unfiltered pool attaches this model's leaf to a neighbouring
+        // model's shaft (and its knot to that model's segment).
+        if (draft.trunks[sp.trunkId]?.modelId !== modelId) continue;
         const isGrid = gridTrunkIds.has(sp.trunkId);
         const limit = isGrid ? gridHostFanRadiusMm : fanRadiusMm;
         const ddx = sp.pos.x - target.x;
@@ -1825,7 +1872,7 @@ export function fanLeafToTrunk(
     let lastBlockedReason: FanLeafRefusal | null = null;
     for (const { sp, dist2, angleDeg } of candidates) {
         const parentKnot = {
-            id: knotIdPrefix,
+            id: freeKnotId(draft, knotIdPrefix),
             parentShaftId: sp.segmentId ?? sp.trunkId,
             t: sp.t,
             pos: sp.pos,
@@ -1868,12 +1915,12 @@ export function fanLeafToTrunk(
                         lastBlockedReason = 'capacity';
                         continue;
                     }
-                    const next = draftAddKnot(draft, parentKnot);
+                    const next = draftAddPrimitive(draft, 'knots', parentKnot);
                     built.branch.origin = 'island';
                     return {
                         ok: true,
                         kind: 'branch',
-                        draft: draftAddBranch(next, built.branch),
+                        draft: draftAddEntity(next, 'branch', built.branch),
                         trunkId: sp.trunkId,
                         branchId: built.branch.id,
                         distMm: Math.sqrt(dist2),
@@ -1923,12 +1970,12 @@ export function fanLeafToTrunk(
             continue;
         }
 
-        const next = draftAddKnot(draft, parentKnot);
+        const next = draftAddPrimitive(draft, 'knots', parentKnot);
         if (origin) leaf.origin = origin;
         return {
             ok: true,
             kind: 'leaf',
-            draft: draftAddLeaf(next, leaf),
+            draft: draftAddEntity(next, 'leaf', leaf),
             trunkId: sp.trunkId,
             leafId: leaf.id,
             distMm: Math.sqrt(dist2),
@@ -2179,7 +2226,6 @@ export function computeAutoSupportPlan(
     modelId: string,
     settingsOverride?: Partial<AutoSupportSettings>,
     baseState?: SupportState,
-    baseKickstand?: KickstandState,
     mesh?: THREE.Mesh,
 ): AutoSupportPlan | null {
     // ------------------------------------------------------------------
@@ -2192,10 +2238,8 @@ export function computeAutoSupportPlan(
         return null;
     }
 
-    const before = baseState ?? structuredClone(getSnapshot());
-    const kickstandBefore = baseKickstand ?? structuredClone(getKickstandSnapshot());
+    const before = baseState ?? cloneSupportState(getSnapshot());
     let draft: SupportState = before;
-    let kickstandDraft: KickstandState = kickstandBefore;
 
     // Trunks placed from density-grid cells — fanning hosts only up close.
     const gridTrunkIds = new Set<string>();
@@ -2204,9 +2248,7 @@ export function computeAutoSupportPlan(
     // reported as unchanged, so the caller commits nothing.
     const noopPlan = (result: AutoPlaceResult): AutoSupportPlan => ({
         before,
-        kickstandBefore,
         support: draft,
-        kickstand: kickstandDraft,
         analytics: {
             islandsCovered: 0,
             islandsUncovered: islands.length,
@@ -2388,7 +2430,6 @@ export function computeAutoSupportPlan(
         try {
             const result = placeOneCandidate(candidate, draft, settingsOverride, gridTrunkIds);
             draft = result.draft;
-            if (result.kickstand) kickstandDraft = result.kickstand;
             if (candidate.gridPoint && result.kind === 'trunk' && result.entityId) {
                 gridTrunkIds.add(result.entityId);
             }
@@ -2439,15 +2480,21 @@ export function computeAutoSupportPlan(
                 diagnostics.mergeRefusals[result.mergeRefusal] = (diagnostics.mergeRefusals[result.mergeRefusal] ?? 0) + 1;
             }
             if (result.kind !== 'reject' && result.entityId) {
-                forestLedger.push({
-                    displayId: candidate.id,
-                    kind: result.kind as ForestLedgerEntry['kind'],
-                    entityId: result.entityId,
-                    areaMm2: candidate.islandAreaMm2,
-                    zHeight: candidate.zHeight,
-                    preset: result.preset ?? presetForArea(candidate.islandAreaMm2),
-                    bandShaftMm: activeSizingBand().shaftDiameterMm,
-                });
+                if (isLedgerKind(result.kind)) {
+                    forestLedger.push({
+                        displayId: candidate.id,
+                        kind: result.kind,
+                        entityId: result.entityId,
+                        areaMm2: candidate.islandAreaMm2,
+                        zHeight: candidate.zHeight,
+                        preset: result.preset ?? presetForArea(candidate.islandAreaMm2),
+                        bandShaftMm: activeSizingBand().shaftDiameterMm,
+                    });
+                } else {
+                    // The ledger covers the types auto-placement produces. A new
+                    // one reaching here is a wiring gap, not a placement result.
+                    console.warn(LOG_PREFIX, `Placed ${result.kind} has no Forest Report column; omitted from the ledger.`);
+                }
             }
             return result.kind;
         } catch (e) {
@@ -2482,6 +2529,9 @@ export function computeAutoSupportPlan(
     for (let pass = 0; pass < 3; pass++) {
         let convertedThisPass = 0;
         for (const tid of Object.keys(draft.trunks)) {
+            // Only this model's trunks are ours to convert (and to delete —
+            // the conversion replaces the pillar with a leaf of ours).
+            if (draft.trunks[tid].modelId !== modelId) continue;
             // Convertible: ring + grid infill, coverage fill, and
             // sub-threshold overhang singles — the overhang forest reads as
             // TREES: neighbouring pillars fan into each other so supports
@@ -2489,7 +2539,7 @@ export function computeAutoSupportPlan(
             // bounded by maxAttachmentsPerTrunk; anchors (near-plate) and
             // island trunks are never converted.
             const originKind = trunkOriginById.get(tid);
-            const isConvertible = draft.trunks[tid].origin !== 'anchor'
+            const isConvertible = isOriginConvertibleToTree(draft.trunks[tid].origin)
                 && (originKind === 'gridInfill'
                     || originKind === 'coverageFill'
                     || draft.trunks[tid].origin === 'standalone');
@@ -2635,18 +2685,7 @@ export function computeAutoSupportPlan(
 
     // Collect all support tips from the post-placement snapshot.
     const allTips: Array<{ x: number; y: number; z: number }> = [];
-    for (const t of Object.values(snapshot.trunks)) {
-        if (t.contactCone?.pos) allTips.push(t.contactCone.pos);
-    }
-    for (const b of Object.values(snapshot.branches)) {
-        if (b.contactCone?.pos) allTips.push(b.contactCone.pos);
-    }
-    for (const l of Object.values(snapshot.leaves)) {
-        if (l.contactCone?.pos) allTips.push(l.contactCone.pos);
-    }
-    for (const a of Object.values(snapshot.anchors)) {
-        if (a.contactCone?.pos) allTips.push(a.contactCone.pos);
-    }
+    allTips.push(...collectContactPositions(snapshot));
 
     let coveredArea = 0;
     let totalArea = 0;
@@ -2840,6 +2879,8 @@ export function computeAutoSupportPlan(
     // pass only adds branches.
     const stubHosts: Array<{ tid: string; pos: { x: number; y: number; z: number }; diameter: number }> = [];
     for (const [tid, trunk] of Object.entries(draft.trunks)) {
+        // Stubs hang off this model's trunks only, like every other fan.
+        if (trunk.modelId !== modelId) continue;
         const lastSeg = trunk.segments[trunk.segments.length - 1];
         const knotPos = lastSeg?.topJoint?.pos ?? trunk.contactCone?.pos;
         if (!knotPos) continue;
@@ -2951,8 +2992,8 @@ export function computeAutoSupportPlan(
                     if (bm && branchCollidesWithSDF(branch, bm)) continue;
                     // The tips are voxel-island footprints — island origin.
                     branch.origin = 'island';
-                    draft = draftAddKnot(draft, parentKnot);
-                    draft = draftAddBranch(draft, branch);
+                    draft = draftAddPrimitive(draft, 'knots', parentKnot);
+                    draft = draftAddEntity(draft, 'branch', branch);
                     overhangSupportsPlaced++;
                     placedBranches++;
                 } catch {
@@ -2974,7 +3015,6 @@ export function computeAutoSupportPlan(
             `Auto-support failed mid-run — rolling back.`,
             e instanceof Error ? e.message : String(e));
         setSnapshot(before);
-        setKickstandSnapshot(kickstandBefore);
         return null;
     }
 
@@ -3040,7 +3080,6 @@ export function computeAutoSupportPlan(
                             try {
                                 const result = placeOneCandidate(recandidate, draft, undefined, gridTrunkIds);
                                 draft = result.draft;
-                                if (result.kickstand) kickstandDraft = result.kickstand;
                                 switch (result.kind) {
                                     case 'trunk': placedTrunks++; break;
                                     case 'anchor': placedAnchors++; break;
@@ -3154,9 +3193,8 @@ export function computeAutoSupportPlan(
     if (changed && !autoSettings.debugSkipAutoBracing) {
         console.log(LOG_PREFIX, 'Running auto-brace...');
         try {
-            const braceResult = buildAutoBracedSnapshot(draft, getSettings().autoBracing, kickstandDraft);
+            const braceResult = buildAutoBracedSnapshot(draft, getSettings().autoBracing);
             draft = braceResult.snapshot;
-            kickstandDraft = braceResult.kickstand;
             console.log(LOG_PREFIX,
                 `Auto-brace: ${braceResult.status} ` +
                 `(generated ${braceResult.generatedBraceCount}, removed ${braceResult.removedBraceCount}, ` +
@@ -3183,7 +3221,6 @@ export function computeAutoSupportPlan(
         analytics,
     };
 
-    // The result used to carry this as a sentence; it is a log line, not UI copy.
     console.log(LOG_PREFIX,
         `Placed ${placedTrunks} trunks, ${placedAnchors} anchors, ${placedBranches} branches, ` +
         `${placedLeaves} leaves, ${placedSticks} sticks. ${rejectedCount} rejected. ` +
@@ -3192,9 +3229,7 @@ export function computeAutoSupportPlan(
 
     return {
         before,
-        kickstandBefore,
         support: draft,
-        kickstand: kickstandDraft,
         analytics,
         result,
     };
@@ -3216,16 +3251,14 @@ export function runAutoPlace(
     }
 
     if (plan.result.changed) {
+        // plan.support carries the kickstands now, so one write restores everything.
         setSnapshot(plan.support);
-        setKickstandSnapshot(plan.kickstand);
         try {
             pushSupportHistory({
                 type: SUPPORT_AUTO_PLACE,
                 payload: {
                     before: plan.before,
                     after: plan.support,
-                    kickstandBefore: plan.kickstandBefore,
-                    kickstandAfter: plan.kickstand,
                 },
             });
             console.log(LOG_PREFIX, 'History entry pushed — undo available.');
