@@ -289,7 +289,7 @@ from a mapped union. A rename reaches all of these (the compiler rejects the
 stale id), so they are cause D, not cause A. Converting them is stage 6 work:
 the arm has to stop being per-type before its literal can go.
 
-The deprecated `add<Type>` / `update<Type>` / `remove<Type>` wrappers in `state.ts`
+The deprecated `add`/`update`/`remove` per-type wrappers in `state.ts`
 are the other remainder, and are debt markers: each names its type on purpose, and
 removing one means migrating its callers first.
 
@@ -539,7 +539,7 @@ the start of stage 1. By cluster:
 | cluster | errors | what it is | shape of the fix |
 | --- | ---: | --- | --- |
 | `autoPlace.ts` | 24 | the orphan cull walks `leaves` and `branches` by hand (4 sites each), and the forest report's `pushMember` pairs do too; plus `draftAddEntity`/`kind` at the six builder call sites | generalise both walks over the declared `hostedBy` members — the same conversion 6b.2 did for the drag solve. The counters and the promote kind are done |
-| `state.ts` | 25 | the `add<Type>` / `update<Type>` / `remove<Type>` wrappers, and `applySupportEntityUpdate('trunk', …)` | the wrappers carry real narrowing (`SupportRemovalResult<T>`), so each needs its callers migrated first; 4 callers for `addTrunk`, 5 for `addBranch`, the rest ≤4 |
+| `state.ts` | 17 | `applySupportEntityUpdate('trunk' \| 'branch' \| 'kickstand', …)`, the `removeJointById` return, and the three BESPOKE updaters (`updateLeaf`, `updateBrace`, `updateAnchor`) | the updaters are the type's OWN update logic, registered in `state.ts` where the knot/diameter passes live — their literals are legitimate, not wrappers. The add/remove wrappers and their literals are gone |
 | `supportPlacementRouting` | 13 | mode → owner, one arm per mode | the state type is per-type field names; a record keyed by mode would collapse the arms — a design change |
 | `SceneCanvas` | 12 | five `placementPreviews.branch` reads, two `placementActive.branch` reads, per-type marker meshes | the marker meshes are per-type renderings; collapsing them is a loop over the record |
 | `useSupportInteractionManager` | 11 | the `placementPreviews` (5 keys) and `placementActive` (4 keys) records, and per-type placement state | the records are the existing pattern; deriving their keys needs a registration slot in each placement store |
